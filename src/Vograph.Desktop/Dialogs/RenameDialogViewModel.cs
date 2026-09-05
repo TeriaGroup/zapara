@@ -7,22 +7,24 @@ namespace Vograph.Desktop.Dialogs;
 
 public sealed partial class RenameDialogViewModel : DialogViewModelBase
 {
-    public RenameDialogViewModel(string original, int dayOfWeek, Override? existing)
+    public RenameDialogViewModel(string original, string rawOriginal, int dayOfWeek, Override? existing)
     {
-        Original = original;
+        Original = original;       // what the user sees: type token stripped
+        RawOriginal = rawOriginal; // Core's key; what an untouched name is stored as
         DayOfWeek = dayOfWeek;
         Title = Loc.Current.T("renameTitle");
         ScopeItems = new[] { Loc.Current.T("global"), Loc.Current.T("weekdayOnly") };
         if (existing is not null)
         {
             HasExisting = true;
-            _displayName = existing.DisplayName == original ? "" : existing.DisplayName;
+            _displayName = existing.DisplayName == original || existing.DisplayName == rawOriginal ? "" : existing.DisplayName;
             _note = existing.Note ?? "";
             _scopeIndex = existing.Scope == "global" ? 0 : 1;
         }
     }
 
     public string Original { get; }
+    public string RawOriginal { get; }
     public int DayOfWeek { get; }
     public bool HasExisting { get; }
     public IList<string> ScopeItems { get; }
@@ -35,9 +37,10 @@ public sealed partial class RenameDialogViewModel : DialogViewModelBase
     [ObservableProperty] private string _note = "";
     [ObservableProperty] private int _scopeIndex;
 
-    public string EffectiveName => string.IsNullOrWhiteSpace(DisplayName) ? Original : DisplayName.Trim();
+    /// <summary>What gets persisted. An untouched name means the FULL raw subject, so legacy clients (WPF, Android via sync) see a note, not a rename.</summary>
+    public string EffectiveName => string.IsNullOrWhiteSpace(DisplayName) ? RawOriginal : DisplayName.Trim();
     public string? EffectiveNote => string.IsNullOrWhiteSpace(Note) ? null : Note.Trim();
-    public string Preview => Loc.Current.T("preview", EffectiveName);
+    public string Preview => Loc.Current.T("preview", string.IsNullOrWhiteSpace(DisplayName) ? Original : DisplayName.Trim());
     public string Scope => ScopeIndex == 0 ? "global" : $"weekday:{DayOfWeek}";
 
     /// <summary>"Сбросить": the caller removes the override(s) instead of saving.</summary>

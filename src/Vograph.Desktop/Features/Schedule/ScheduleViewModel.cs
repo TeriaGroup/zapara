@@ -30,7 +30,10 @@ public sealed partial class ScheduleViewModel : ViewModelBase
             SegmentItems = BuildSegmentItems();
             _ = ReloadAsync();
         };
-        shell.GroupChanged += () => _ = ReloadAsync();
+        // Another group: run smart start again — the old offset was chosen for the old group, or for none.
+        // Same guard as ReloadAsync: a section that never loaded has no stale offset to correct, and it
+        // runs smart start on its own first load — starting Core work here would only outlive the shell.
+        shell.GroupChanged += () => { if (_loaded) _ = InitializeAsync(); };
     }
 
     public ObservableCollection<LessonRowViewModel> Lessons { get; } = new();
@@ -52,10 +55,11 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     /// <summary>Smart start: today while lessons remain, otherwise tomorrow.</summary>
     public async Task InitializeAsync()
     {
+        var version = ++_reloadVersion; // a reload already queued behind the gate must not overwrite the smart-start result
         var now = _clock();
         var model = await ComposeAsync(() => _composer.Compose(_composer.InitialOffset(now), now));
         _loaded = true;
-        if (model is null) return;
+        if (model is null || version != _reloadVersion) return;
         _suppressReload = true;
         DayOffset = model.Offset;
         SyncSegment(model.Offset); // DayOffset may already hold that value, and then no change callback ran
@@ -124,7 +128,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         var existing = await RunAsync<Override>(
             () => (App.Overrides.GetOverride(l.SubjectRaw, "global") ?? App.Overrides.GetOverride(l.SubjectRaw, $"weekday:{l.DayOfWeek}"))!,
             "rename");
-        var dlg = new RenameDialogViewModel(ScheduleComposer.StripType(l.SubjectRaw, l.TypeRaw), l.DayOfWeek, existing); // shown without the type token; the Core key below stays l.SubjectRaw
+        var dlg = new RenameDialogViewModel(ScheduleComposer.StripType(l.SubjectRaw, l.TypeRaw), l.SubjectRaw, l.DayOfWeek, existing); // shown stripped; persisted/keyed by the full SubjectRaw
         if (!await _shell.Dialogs.ShowAsync(dlg)) return;
 
         var ok = await RunAsync(() =>

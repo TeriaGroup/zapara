@@ -52,9 +52,11 @@ public sealed partial class ShellViewModel : ViewModelBase
         app.Loc.LanguageChanged += () =>
         {
             foreach (var s in AllSections) s.RefreshLabel();
-            RefreshGroupCard();
+            _ = RefreshGroupCardAsync();
         };
-        RefreshGroupCard();
+        // Startup only: the shell is built before any background Core call exists, so this is the one
+        // synchronous read (same class as the AppServices ctor). Every later refresh goes through RefreshGroupCardAsync.
+        ApplyGroupCard(ReadCard());
         NavigateTo(SectionKey.Schedule);
     }
 
@@ -152,12 +154,14 @@ public sealed partial class ShellViewModel : ViewModelBase
         try
         {
             await RunAsync(() => App.Homework.RecomputeAllStatuses(), "homework statuses");
-            RefreshGroupCard();
+            await RefreshGroupCardAsync();
             _sections.Remove(SectionKey.Schedule); // rebuild against fresh data
             NavigateTo(SectionKey.Schedule);
             await Section<ScheduleViewModel>(SectionKey.Schedule).InitializeAsync();
             if (result.Stale && result.Error is not null) App.Toasts.Warn($"{T("stale").Trim(' ', '·')}: {result.Error}");
-            if (allowNetwork) App.AutoRefresh.Start();
+            // No 24 h auto-check yet: Core's AutoRefreshService writes to SQLite outside the gate while
+            // gated composes run on the pool. Stage 2 adds a Desktop refresher (network outside the gate,
+            // parse + write inside) that also serves F5 and «Обновить расписание».
         }
         catch (Exception ex)
         {
@@ -184,15 +188,30 @@ public sealed partial class ShellViewModel : ViewModelBase
             App.Homework.RecomputeAllStatuses();
         }, "group");
         if (!saved) return;
-        RefreshGroupCard();
+        await RefreshGroupCardAsync(); // before RaiseGroupChanged: sections read GroupName while they react
         RaiseGroupChanged();
         App.Toasts.Ok(T("savedOk"));
     }
 
-    public void RefreshGroupCard()
+    private sealed record CardData(Settings Settings, Group? Group);
+
+    private CardData ReadCard()
     {
-        var settings = App.Settings;
-        var group = string.IsNullOrEmpty(settings.MyGroupId) ? null : App.Db.GetGroup(settings.MyGroupId);
+        var s = App.Db.GetSettings();
+        return new CardData(s, string.IsNullOrEmpty(s.MyGroupId) ? null : App.Db.GetGroup(s.MyGroupId));
+    }
+
+    /// <summary>Re-reads settings + group under the Core gate, then updates the card.</summary>
+    public async Task RefreshGroupCardAsync()
+    {
+        var data = await RunAsync(ReadCard, "group card");
+        if (data is not null) ApplyGroupCard(data);
+    }
+
+    private void ApplyGroupCard(CardData data)
+    {
+        var settings = data.Settings;
+        var group = data.Group;
         if (group is null)
         {
             GroupName = T("noGroup");

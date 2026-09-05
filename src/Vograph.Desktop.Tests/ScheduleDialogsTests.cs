@@ -86,6 +86,70 @@ public class ScheduleDialogsTests : UiTest
     }
 
     [Fact]
+    public async Task Note_Only_Override_Keeps_The_Raw_Name()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm) = await Make(db);
+
+        var task = vm.RenameAsync(vm.Lessons[1]); // пр ОСН РОС ГОС — no override yet
+        var dlg = await WaitForDialogAsync<RenameDialogViewModel>(shell);
+        dlg.Note = "зачёт в декабре";
+        Assert.Equal("Предпросмотр: ОСН РОС ГОС", dlg.Preview); // preview stays in display form
+        dlg.ConfirmCommand.Execute(null);
+        await task;
+
+        var o = db.Services.Overrides.GetOverride("пр ОСН РОС ГОС", "global");
+        Assert.NotNull(o);
+        Assert.Equal("пр ОСН РОС ГОС", o!.DisplayName);       // legacy shape: a note, not a rename
+        Assert.Equal("зачёт в декабре", o.Note);
+        Assert.Equal("ОСН РОС ГОС", vm.Lessons[1].DisplayName);
+        Assert.Null(vm.Lessons[1].Row.OriginalName);          // no «оригинал: …» line — nothing was renamed
+
+        // Reopening shows the note and an empty name field (also covers overrides written by the WPF client).
+        task = vm.RenameAsync(vm.Lessons[1]);
+        dlg = await WaitForDialogAsync<RenameDialogViewModel>(shell);
+        Assert.True(dlg.HasExisting);
+        Assert.Equal("", dlg.DisplayName);
+        Assert.Equal("зачёт в декабре", dlg.Note);
+        dlg.CancelCommand.Execute(null);
+        await task;
+    }
+
+    [AvaloniaFact]
+    public async Task Group_Change_Reapplies_Smart_Start()
+    {
+        using var db = TestDb.Create();
+        var s = db.Services.Db.GetSettings();
+        s.MyGroupId = "";                       // first run: no group yet
+        db.Services.Db.SaveSettings(s);
+        var sunday = new DateTime(2026, 9, 6, 12, 0, 0);
+        var shell = new ShellViewModel(db.Services);
+        var vm = new ScheduleViewModel(db.Services, shell, () => sunday);
+        shell.Register(SectionKey.Schedule, () => vm);
+        shell.NavigateTo(SectionKey.Schedule);
+        await vm.InitializeAsync();
+        Assert.Equal(0, vm.DayOffset);          // no group → today
+        Assert.True(vm.IsEmpty);
+
+        // The user picks a group through the real picker path (save under the gate, refresh card, notify).
+        var pick = shell.OpenGroupPickerCommand.ExecuteAsync(null);
+        var dlg = await WaitForDialogAsync<GroupPickerDialogViewModel>(shell);
+        dlg.Selected = dlg.Filtered.Single(g => g.Id == TestDb.MyGroupId);
+        dlg.ConfirmCommand.Execute(null);
+        await pick;
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (vm.IsEmpty && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, vm.DayOffset);                      // Sunday → smart start lands on Monday, not on the empty Sunday
+        Assert.Equal(new DateTime(2026, 9, 7), vm.Date);
+        Assert.Equal(2, vm.SegmentIndex);
+        Assert.True(vm.ShowGoToday);
+        Assert.Equal(2, vm.Lessons.Count);
+        Assert.Equal("А863С", shell.GroupName);
+    }
+
+    [Fact]
     public async Task Homework_Add_Edit_Toggle_Delete()
     {
         using var db = TestDb.Create();
@@ -110,7 +174,8 @@ public class ScheduleDialogsTests : UiTest
         law = vm.Lessons[1];
         var hw = Assert.Single(law.Homework);
         Assert.Equal("прочитать главу 2", hw.Text);
-        Assert.StartsWith("срок 21.09", hw.Label);
+        Assert.Equal(new DateTime(2026, 9, 21), hw.Item.Due); // status/label come from Core's real-clock ComputeStatus — never assert them here
+        Assert.False(hw.IsDone);
 
         // edit
         var edit = vm.EditHomeworkAsync(hw);

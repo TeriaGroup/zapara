@@ -19,7 +19,6 @@ public sealed class AppServices : IDisposable
     public MapService Maps { get; }
     public LecturerService Lecturers { get; }
     public SyncService Sync { get; }
-    public AutoRefreshService AutoRefresh { get; }
     public AutoUpdateService AutoUpdate { get; }
     public UiPrefs Prefs { get; }
     public ToastService Toasts { get; }
@@ -50,9 +49,8 @@ public sealed class AppServices : IDisposable
         Maps = new MapService(Db, Schedule);
         Lecturers = new LecturerService(Db); // loads lazily from the Teachers section (stage 2)
         Sync = new SyncService(Db);
-        AutoRefresh = new AutoRefreshService(Db, Parser);
         AutoUpdate = new AutoUpdateService();
-        Prefs = UiPrefs.Load(Path.Combine(dataDir, "ui.json"));
+        Prefs = UiPrefs.Load(Path.Combine(dataDir, "ui.json"), ex => Log.Error("prefs", ex));
         Toasts = new ToastService();
     }
 
@@ -63,7 +61,6 @@ public sealed class AppServices : IDisposable
 
     public void Dispose()
     {
-        AutoRefresh.Dispose();
         Db.Dispose();
         CoreGate.Dispose();
     }

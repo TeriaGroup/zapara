@@ -23,7 +23,10 @@ public sealed class UiPrefs
     public bool Animations { get; set; } = true;
     public WindowBounds? Window { get; set; }
 
-    public static UiPrefs Load(string path)
+    private Action<Exception>? _onSaveError;
+
+    /// <param name="onSaveError">Where a failed Save reports (AppServices wires it to AppLog). Save never throws.</param>
+    public static UiPrefs Load(string path, Action<Exception>? onSaveError = null)
     {
         UiPrefs prefs;
         try
@@ -38,13 +41,28 @@ public sealed class UiPrefs
             prefs = new UiPrefs();
         }
         prefs.FilePath = path;
+        prefs._onSaveError = onSaveError;
         return prefs;
     }
 
-    public void Save()
+    /// <summary>Writes ui.json via a temp file + move (a crash mid-write leaves the old file intact).
+    /// Returns false instead of throwing: a prefs write must never take the app down.</summary>
+    public bool Save()
     {
-        var dir = Path.GetDirectoryName(FilePath);
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(this, Json));
+        if (string.IsNullOrEmpty(FilePath)) return false;
+        try
+        {
+            var dir = Path.GetDirectoryName(FilePath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            var tmp = FilePath + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(this, Json));
+            File.Move(tmp, FilePath, overwrite: true);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _onSaveError?.Invoke(ex);
+            return false;
+        }
     }
 }

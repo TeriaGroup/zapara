@@ -36,7 +36,33 @@ public class UiPrefsTests
         Assert.False(loaded.Animations);
         Assert.Equal(new WindowBounds(10, 20, 1300, 820, true), loaded.Window);
         Assert.Contains("\"Theme\": \"Dark\"", File.ReadAllText(path)); // enums as names, hand-editable
+        Assert.False(File.Exists(path + ".tmp"));                      // the atomic write leaves no scratch file behind
     }
+
+    [Fact]
+    public void Save_Failure_Reports_And_Returns_False_Without_Throwing()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "blocker"), "not a directory"); // a FILE where Save needs a directory
+            Exception? captured = null;
+            var prefs = UiPrefs.Load(Path.Combine(dir, "blocker", "ui.json"), ex => captured = ex);
+
+            Assert.False(prefs.Save());
+            Assert.NotNull(captured);
+            Assert.True(captured is IOException or UnauthorizedAccessException);
+            Assert.False(File.Exists(prefs.FilePath));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Save_Without_Path_Returns_False() => Assert.False(new UiPrefs().Save());
 
     [Fact]
     public void Corrupt_File_Falls_Back_To_Defaults()
