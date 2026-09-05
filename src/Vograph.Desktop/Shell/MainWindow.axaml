@@ -3,6 +3,7 @@
         xmlns:c="using:Vograph.Desktop.Controls"
         xmlns:shell="using:Vograph.Desktop.Shell"
         xmlns:loc="using:Vograph.Desktop.Services"
+        xmlns:d="using:Vograph.Desktop.Dialogs"
         x:Class="Vograph.Desktop.Shell.MainWindow"
         x:DataType="shell:ShellViewModel"
         Title="Военмех — расписание и карты"
@@ -24,6 +25,10 @@
     <KeyBinding Gesture="Ctrl+D8" Command="{Binding NavigateCommand}" CommandParameter="Settings" />
     <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding NavigateCommand}" CommandParameter="Settings" />
     <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleSidebarCommand}" />
+    <!-- Enter is NOT bound here: Window.KeyBindings matches gestures even when a nested control (a
+         multi-line TextBox inserting a newline) already marked the key event Handled. DialogHostView's
+         own KeyDown handler respects that flag instead, so Enter only confirms when nothing consumed it. -->
+    <KeyBinding Gesture="Escape" Command="{Binding Dialogs.DismissCommand}" />
   </Window.KeyBindings>
 
   <Panel>
@@ -64,6 +69,7 @@
       </TransitioningContentControl>
     </Grid>
 
+    <d:DialogHostView DataContext="{Binding Dialogs}" />
     <c:ToastHost DataContext="{Binding Toasts}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,18,16" />
   </Panel>
 </Window>

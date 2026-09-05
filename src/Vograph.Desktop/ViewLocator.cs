@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
+using Vograph.Desktop.Dialogs;
 using Vograph.Desktop.ViewModels;
 
 namespace Vograph.Desktop;
@@ -16,6 +17,5 @@ public sealed class ViewLocator : IDataTemplate
             : (Control)Activator.CreateInstance(type)!;
     }
 
-    // Task 9 widens this to 'data is ViewModelBase or DialogViewModelBase'.
-    public bool Match(object? data) => data is ViewModelBase;
+    public bool Match(object? data) => data is ViewModelBase or DialogViewModelBase;
 }

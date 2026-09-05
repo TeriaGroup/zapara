@@ -3,6 +3,7 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Services;
+using Vograph.Desktop.Dialogs;
 using Vograph.Desktop.Features.States;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.ViewModels;
@@ -60,6 +61,7 @@ public sealed partial class ShellViewModel : ViewModelBase
     public IEnumerable<NavSection> AllSections => MainSections.Concat(ToolSections).Append(SettingsSection);
     public IRelayCommand<string> NavigateCommand { get; }
     public ToastService Toasts => App.Toasts;
+    public DialogHostViewModel Dialogs { get; } = new();
 
     [ObservableProperty] private ViewModelBase? _current;
     [ObservableProperty] private SectionKey _currentKey;

@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:d="using:Vograph.Desktop.Dialogs"
+             xmlns:m="using:Vograph.Core.Models"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             x:Class="Vograph.Desktop.Dialogs.GroupPickerDialogView"
+             x:DataType="d:GroupPickerDialogViewModel">
+  <StackPanel Spacing="12" Width="440">
+    <TextBlock Classes="title" Text="{Binding Title}" />
+    <TextBox Name="SearchBox" Text="{Binding Query}" PlaceholderText="{loc:T groupSearchHint}">
+      <TextBox.InnerLeftContent>
+        <c:Icon Data="{StaticResource Icon.Search}" Size="14" Foreground="{DynamicResource Brush.Text3}" />
+      </TextBox.InnerLeftContent>
+    </TextBox>
+    <ListBox ItemsSource="{Binding Filtered}" SelectedItem="{Binding Selected}" Height="320" DoubleTapped="OnDoubleTapped">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="m:Group">
+          <TextBlock Text="{Binding Name}" />
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <Button Content="{loc:T cancel}" Command="{Binding CancelCommand}" />
+      <Button Classes="primary" Content="{loc:T select}" Command="{Binding ConfirmCommand}" />
+    </StackPanel>
+  </StackPanel>
+</UserControl>
