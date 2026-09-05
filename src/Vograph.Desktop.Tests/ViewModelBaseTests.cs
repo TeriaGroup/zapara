@@ -10,8 +10,22 @@ public class ViewModelBaseTests
     {
         public Task<string?> Ok() => RunAsync(() => "42", "probe");
         public Task<string?> Run(Func<string> f) => RunAsync(f, "probe");
-        public Task<string?> Fail() => RunAsync<string>(() => throw new InvalidOperationException("nope"), "probe");
+        // Explicit delegate type: a throw-only lambda fits both RunAsync overloads (Func<string> and Func<Task<string>>) and would be ambiguous.
+        public Task<string?> Fail() => RunAsync(new Func<string>(() => throw new InvalidOperationException("nope")), "probe");
         public Task<bool> FailAction() => RunAsync(() => throw new InvalidOperationException("nope"), "probe");
+        public Task<string?> RunTask(Func<Task<string>> f) => RunAsync(f, "probe");
+    }
+
+    [Fact]
+    public async Task RunAsync_Task_Overload_Awaits_Work_And_Reports_Failures()
+    {
+        using var db = TestDb.Create(seedPersonalization: false);
+        var vm = new Probe(db.Services);
+
+        Assert.Equal("x", await vm.RunTask(async () => { await Task.Delay(10); return "x"; }));
+        Assert.Null(await vm.RunTask(() => Task.FromException<string>(new InvalidOperationException("net down"))));
+        Assert.Contains("net down", db.Services.Toasts.Items[0].Text);
+        Assert.False(vm.IsBusy);
     }
 
     [Fact]

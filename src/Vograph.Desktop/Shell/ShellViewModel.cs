@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Services;
 using Vograph.Desktop.Dialogs;
+using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Features.States;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.ViewModels;
@@ -70,6 +71,14 @@ public sealed partial class ShellViewModel : ViewModelBase
     [ObservableProperty] private string _groupName = "—";
     [ObservableProperty] private string _groupSubtitle = "";
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasStale))]
+    private string? _staleText;
+
+    [ObservableProperty] private bool _staleWarn;
+
+    public bool HasStale => StaleText is not null;
+
     /// <summary>Map the Maps section should show when it opens (set by the ◉ action on a lesson).</summary>
     public MapInfo? PendingMap { get; private set; }
 
@@ -123,6 +132,52 @@ public sealed partial class ShellViewModel : ViewModelBase
     [RelayCommand]
     private void ToggleTheme() => App.Theme?.Toggle();
 
+    /// <summary>Startup: loading state → bootstrap (network unless disabled) → schedule or error state.</summary>
+    public async Task StartAsync(bool allowNetwork = true)
+    {
+        Current = new LoadingViewModel(App);
+        // Network fetch + XML parse + SQLite writes: all under the Core gate, never on the UI thread.
+        var result = await RunAsync(() => DataBootstrap.RunAsync(App, allowNetwork), "bootstrap");
+        if (result is null)
+        {
+            Current = new ErrorStateViewModel(App, null, () => StartAsync(allowNetwork));
+            return;
+        }
+        if (!result.HasData)
+        {
+            Current = new ErrorStateViewModel(App, result.Error, () => StartAsync(allowNetwork));
+            return;
+        }
+        await RunAsync(() => App.Homework.RecomputeAllStatuses(), "homework statuses");
+        RefreshGroupCard();
+        _sections.Remove(SectionKey.Schedule); // rebuild against fresh data
+        NavigateTo(SectionKey.Schedule);
+        await Section<ScheduleViewModel>(SectionKey.Schedule).InitializeAsync();
+        if (result.Stale && result.Error is not null) App.Toasts.Warn($"{T("stale")}: {result.Error}");
+        if (allowNetwork) App.AutoRefresh.Start();
+    }
+
+    [RelayCommand]
+    private async Task OpenGroupPickerAsync()
+    {
+        var groups = await RunAsync(() => App.Db.GetAllGroups(), "groups");
+        if (groups is null) return;
+        var dlg = new GroupPickerDialogViewModel(groups, App.Settings.MyGroupId);
+        if (!await Dialogs.ShowAsync(dlg) || dlg.Selected is null) return;
+        var chosen = dlg.Selected;
+        var saved = await RunAsync(() =>
+        {
+            var s = App.Db.GetSettings();
+            s.MyGroupId = chosen.Id;
+            App.Db.SaveSettings(s);
+            App.Homework.RecomputeAllStatuses();
+        }, "group");
+        if (!saved) return;
+        RefreshGroupCard();
+        RaiseGroupChanged();
+        App.Toasts.Ok(T("savedOk"));
+    }
+
     public void RefreshGroupCard()
     {
         var settings = App.Settings;
@@ -139,6 +194,9 @@ public sealed partial class ShellViewModel : ViewModelBase
         var culture = CultureInfo.GetCultureInfo(App.Loc.Language == "en" ? "en-US" : "ru-RU");
         GroupName = group.Name;
         GroupSubtitle = $"{T("parityWeek", App.I18n.FormatParity(isOdd))} · {DateTime.Today.ToString(App.Loc.Language == "en" ? "MMM d" : "d MMM", culture)}";
+        var (stale, warn) = GroupCardLogic.Stale(settings.LastFetchedAt, DateTime.UtcNow, App.Loc);
+        StaleText = stale;
+        StaleWarn = warn;
     }
 
     /// <summary>Sealed type: 'internal' rather than 'protected' so later dialogs in this assembly can raise it without CS0628.</summary>

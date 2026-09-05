@@ -1,0 +1,12 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Vograph.Desktop.Features.States"
+             x:Class="Vograph.Desktop.Features.States.LoadingView"
+             x:DataType="vm:LoadingViewModel">
+  <StackPanel Margin="32,26" MaxWidth="760" Spacing="10">
+    <TextBlock Classes="display muted" Text="{Binding Title}" Margin="0,0,0,18" />
+    <Border Classes="card"><StackPanel Spacing="10"><Border Classes="skeleton" Width="180" HorizontalAlignment="Left" /><Border Classes="skeleton" Width="320" HorizontalAlignment="Left" /></StackPanel></Border>
+    <Border Classes="card"><StackPanel Spacing="10"><Border Classes="skeleton" Width="140" HorizontalAlignment="Left" /><Border Classes="skeleton" Width="260" HorizontalAlignment="Left" /></StackPanel></Border>
+    <Border Classes="card" Opacity="0.6"><StackPanel Spacing="10"><Border Classes="skeleton" Width="200" HorizontalAlignment="Left" /><Border Classes="skeleton" Width="240" HorizontalAlignment="Left" /></StackPanel></Border>
+  </StackPanel>
+</UserControl>

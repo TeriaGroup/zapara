@@ -90,6 +90,17 @@
     <Setter Property="FontSize" Value="12.5" />
   </Style>
 
+  <Style Selector="Border.chip.stale TextBlock">
+    <Setter Property="FontSize" Value="10.5" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
+  </Style>
+  <Style Selector="Border.chip.stale.warn">
+    <Setter Property="Background" Value="{DynamicResource Brush.WarnSoft}" />
+  </Style>
+  <Style Selector="Border.chip.stale.warn TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Warn}" />
+  </Style>
+
   <Style Selector="Border.badge">
     <Setter Property="Background" Value="{DynamicResource Brush.WarnSoft}" />
     <Setter Property="CornerRadius" Value="{DynamicResource Radius.Pill}" />

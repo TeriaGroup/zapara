@@ -41,13 +41,18 @@
       </StackPanel>
 
       <StackPanel Spacing="2">
-        <Border Name="GroupCard" Classes="card hoverable" Padding="12,10" Margin="0,0,0,12" Cursor="Hand">
-          <StackPanel>
-            <TextBlock Text="{Binding GroupName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-            <TextBlock Classes="muted" Text="{Binding GroupSubtitle}" FontSize="11.5" Margin="0,1,0,0"
-                       TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
-          </StackPanel>
-        </Border>
+        <Button Classes="ghost" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                Command="{Binding OpenGroupPickerCommand}" Margin="0,0,0,12" ToolTip.Tip="{loc:T myGroup}">
+          <Border Classes="card hoverable" Padding="12,10">
+            <StackPanel Spacing="4">
+              <TextBlock Text="{Binding GroupName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+              <TextBlock Classes="muted" Text="{Binding GroupSubtitle}" FontSize="11.5" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
+              <Border Classes="chip stale" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Left" IsVisible="{Binding HasStale}">
+                <TextBlock Text="{Binding StaleText}" />
+              </Border>
+            </StackPanel>
+          </Border>
+        </Button>
 
         <ItemsControl ItemsSource="{Binding MainSections}" ItemTemplate="{StaticResource NavTemplate}">
           <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>

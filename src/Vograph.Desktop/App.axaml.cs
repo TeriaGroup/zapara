@@ -24,7 +24,9 @@ public partial class App : Application
             services.Theme = ThemeService.ForApplication(this, services.Prefs);
 
             var shell = new ShellViewModel(services);
-            desktop.MainWindow = new MainWindow { DataContext = shell };
+            var window = new MainWindow { DataContext = shell };
+            window.Opened += async (_, _) => await shell.StartAsync();
+            desktop.MainWindow = window;
             desktop.Exit += (_, _) => services.Dispose();
             services.Log.Info("desktop started");
         }

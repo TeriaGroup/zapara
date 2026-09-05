@@ -39,6 +39,27 @@ public abstract partial class ViewModelBase : ObservableObject
         }
     }
 
+    /// <summary>Async Core work (e.g. network fetch followed by SQLite writes) under the same gate, off the UI thread.</summary>
+    protected async Task<T?> RunAsync<T>(Func<Task<T>> work, string context) where T : class
+    {
+        IsBusy = true;
+        await App.CoreGate.WaitAsync();
+        try
+        {
+            return await Task.Run(work);
+        }
+        catch (Exception ex)
+        {
+            Report(context, ex);
+            return null;
+        }
+        finally
+        {
+            App.CoreGate.Release();
+            IsBusy = false;
+        }
+    }
+
     protected async Task<bool> RunAsync(Action work, string context)
     {
         IsBusy = true;
