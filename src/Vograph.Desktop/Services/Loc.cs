@@ -83,3 +83,19 @@ public sealed class TExtension
             Mode = BindingMode.OneWay
         };
 }
+
+/// <summary>XAML: Text="{loc:TU navTools}" — the same as {loc:T} but upper-cased (section labels).</summary>
+public sealed class TUExtension
+{
+    public TUExtension(string key) => Key = key;
+
+    public string Key { get; set; }
+
+    public object ProvideValue(IServiceProvider serviceProvider) =>
+        new ReflectionBinding(nameof(LocString.Value))
+        {
+            Source = new LocString(Loc.Current, Key),
+            Mode = BindingMode.OneWay,
+            Converter = Converters.Upper
+        };
+}

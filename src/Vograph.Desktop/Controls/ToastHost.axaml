@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:svc="using:Vograph.Desktop.Services"
+             x:Class="Vograph.Desktop.Controls.ToastHost"
+             x:DataType="svc:ToastService">
+  <ItemsControl ItemsSource="{Binding Items}">
+    <ItemsControl.ItemsPanel>
+      <ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate>
+    </ItemsControl.ItemsPanel>
+    <ItemsControl.ItemTemplate>
+      <DataTemplate x:DataType="svc:ToastItem">
+        <Border Classes="toast" PointerEntered="OnPointerEntered" PointerExited="OnPointerExited">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Ellipse Classes="toastdot" Classes.ok="{Binding IsOk}" Classes.warn="{Binding IsWarn}" Classes.bad="{Binding IsBad}" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding Text}" FontSize="12" TextWrapping="Wrap" MaxWidth="330" VerticalAlignment="Center" />
+          </StackPanel>
+        </Border>
+      </DataTemplate>
+    </ItemsControl.ItemTemplate>
+  </ItemsControl>
+</UserControl>

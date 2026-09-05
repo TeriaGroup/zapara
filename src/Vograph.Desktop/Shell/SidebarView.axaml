@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:shell="using:Vograph.Desktop.Shell"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             x:Class="Vograph.Desktop.Shell.SidebarView"
+             x:DataType="shell:ShellViewModel">
+  <UserControl.Resources>
+    <DataTemplate x:Key="NavTemplate" x:DataType="shell:NavSection">
+      <c:NavItem Content="{Binding Label}"
+                 Icon="{Binding IconKey, Converter={x:Static loc:Converters.IconKey}}"
+                 IsActive="{Binding IsActive}" IsCompact="{Binding IsCompact}" Badge="{Binding Badge}"
+                 Command="{Binding NavigateCommand}" CommandParameter="{Binding KeyName}"
+                 ToolTip.Tip="{Binding Label}" />
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <Border Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,0,1,0" Padding="10,12"
+          Width="{Binding SidebarCollapsed, Converter={x:Static loc:Converters.SidebarWidth}}">
+    <Border.Transitions>
+      <Transitions>
+        <DoubleTransition Property="Width" Duration="0:0:0.2" Easing="CubicEaseOut" />
+      </Transitions>
+    </Border.Transitions>
+    <DockPanel LastChildFill="True">
+
+      <StackPanel DockPanel.Dock="Bottom" Spacing="4">
+        <c:NavItem Content="{Binding SettingsSection.Label}"
+                   Icon="{Binding SettingsSection.IconKey, Converter={x:Static loc:Converters.IconKey}}"
+                   IsActive="{Binding SettingsSection.IsActive}" IsCompact="{Binding SettingsSection.IsCompact}"
+                   Command="{Binding NavigateCommand}" CommandParameter="Settings" ToolTip.Tip="{Binding SettingsSection.Label}" />
+        <!-- WrapPanel, not a horizontal StackPanel: at the 64px rail the second button would be clipped. -->
+        <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
+          <Button Classes="icon" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{loc:T themeToggleTip}">
+            <c:Icon Data="{StaticResource Icon.Moon}" Size="16" />
+          </Button>
+          <Button Classes="icon" Command="{Binding ToggleSidebarCommand}" ToolTip.Tip="{loc:T sidebarToggleTip}">
+            <c:Icon Data="{StaticResource Icon.Panel}" Size="16" />
+          </Button>
+        </WrapPanel>
+      </StackPanel>
+
+      <StackPanel Spacing="2">
+        <Border Name="GroupCard" Classes="card hoverable" Padding="12,10" Margin="0,0,0,12" Cursor="Hand">
+          <StackPanel>
+            <TextBlock Text="{Binding GroupName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="muted" Text="{Binding GroupSubtitle}" FontSize="11.5" Margin="0,1,0,0"
+                       TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
+          </StackPanel>
+        </Border>
+
+        <ItemsControl ItemsSource="{Binding MainSections}" ItemTemplate="{StaticResource NavTemplate}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        </ItemsControl>
+
+        <TextBlock Classes="micro" Text="{loc:TU navTools}" Margin="10,14,10,4" IsVisible="{Binding !SidebarCollapsed}" />
+        <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="8,12" IsVisible="{Binding SidebarCollapsed}" />
+
+        <ItemsControl ItemsSource="{Binding ToolSections}" ItemTemplate="{StaticResource NavTemplate}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        </ItemsControl>
+      </StackPanel>
+
+    </DockPanel>
+  </Border>
+</UserControl>

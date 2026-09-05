@@ -1,20 +1,32 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Logging;
 using Avalonia.Markup.Xaml;
+using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
 
 namespace Vograph.Desktop;
 
 public partial class App : Application
 {
+    public AppServices? Services { get; private set; }
+
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
     public override void OnFrameworkInitializationCompleted()
     {
-        // Headless tests use a different lifetime: no main window there.
+        // Headless tests use a different lifetime and build their own services.
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new MainWindow();
+            var services = AppServices.Create(AppPaths.DataDir);
+            Services = services;
+            Logger.Sink = new AvaloniaLogSink(services.Log);
+            services.Theme = ThemeService.ForApplication(this, services.Prefs);
+
+            var shell = new ShellViewModel(services);
+            desktop.MainWindow = new MainWindow { DataContext = shell };
+            desktop.Exit += (_, _) => services.Dispose();
+            services.Log.Info("desktop started");
         }
         base.OnFrameworkInitializationCompleted();
     }
