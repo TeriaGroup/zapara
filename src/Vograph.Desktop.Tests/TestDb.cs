@@ -39,6 +39,6 @@ public sealed class TestDb : IDisposable
     public void Dispose()
     {
         Services.Dispose();
-        try { Directory.Delete(Dir, recursive: true); } catch (IOException) { /* SQLite may still hold the file for a moment */ }
+        try { Directory.Delete(Dir, recursive: true); } catch (IOException ex) { Console.Error.WriteLine($"TestDb: temp dir left behind ({Dir}): {ex.Message}"); } // SQLite may still hold the file for a moment
     }
 }
