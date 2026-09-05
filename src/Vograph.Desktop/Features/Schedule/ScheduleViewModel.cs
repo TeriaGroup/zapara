@@ -58,13 +58,13 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     {
         var now = _clock();
         var model = await ComposeAsync(() => _composer.Compose(_composer.InitialOffset(now), now));
+        _loaded = true;
         if (model is null) return;
         _suppressReload = true;
         DayOffset = model.Offset;
         SyncSegment(model.Offset); // DayOffset may already hold that value, and then no change callback ran
         _suppressReload = false;
         Apply(model);
-        _loaded = true;
     }
 
     /// <summary>Recomposes the current day. A no-op before the first load: there is nothing to

@@ -81,5 +81,6 @@ public class ScheduleViewModelTests
         Assert.Equal(new[] { "Yesterday", "Today", "Tomorrow" }, vm.SegmentItems);
         Assert.Equal("Today", vm.Title);
         db.Services.Loc.SetLanguage("ru");
+        await vm.ReloadAsync();
     }
 }
