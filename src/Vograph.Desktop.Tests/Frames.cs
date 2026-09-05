@@ -22,7 +22,7 @@ public static class Frames
     public static string Save(WriteableBitmap frame, string name)
     {
         var path = Path.Combine(Dir, name + ".png");
-        frame.Save(path);
+        frame.Save(path, PngBitmapEncoderOptions.Default);
         return path;
     }
 
