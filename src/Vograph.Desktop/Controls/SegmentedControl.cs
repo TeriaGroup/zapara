@@ -31,6 +31,8 @@ public class SegmentedControl : TemplatedControl
         _panel = e.NameScope.Get<StackPanel>("PART_Items");
         _thumb = e.NameScope.Get<Border>("PART_Thumb");
         _panel.LayoutUpdated += OnPanelLayoutUpdated;
+        _placed = false;
+        _lastX = _lastWidth = double.NaN;
         Rebuild();
     }
 
