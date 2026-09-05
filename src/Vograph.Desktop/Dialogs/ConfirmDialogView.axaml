@@ -9,7 +9,7 @@
     <TextBlock Classes="muted" Text="{Binding Message}" TextWrapping="Wrap" />
     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,6,0,0">
       <Button Content="{loc:T cancel}" Command="{Binding CancelCommand}" />
-      <Button Content="{Binding ConfirmText}" Command="{Binding ConfirmCommand}"
+      <Button x:Name="ConfirmButton" Content="{Binding ConfirmText}" Command="{Binding ConfirmCommand}"
               Classes="primary" Classes.danger="{Binding IsDanger}" Classes.filled="{Binding IsDanger}" />
     </StackPanel>
   </StackPanel>

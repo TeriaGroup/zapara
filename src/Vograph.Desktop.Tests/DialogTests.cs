@@ -66,6 +66,32 @@ public class DialogTests : UiTest
     }
 
     /// <summary>
+    /// A freshly-opened dialog must respond to Enter immediately, without the user first Tabbing or
+    /// clicking into it: DialogHostView moves focus into itself (or ConfirmDialogView focuses its own
+    /// confirm button) as soon as the dialog appears, so nothing needs to steal focus for this to work.
+    /// </summary>
+    [AvaloniaFact]
+    public async Task Enter_Confirms_Freshly_Opened_Confirm_Dialog()
+    {
+        using var db = TestDb.Create();
+        db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        var shell = new ShellViewModel(db.Services);
+        var window = new MainWindow { DataContext = shell };
+        window.Show();
+        window.Focus();
+
+        var task = shell.Dialogs.ShowAsync(new ConfirmDialogViewModel("Удалить домашку?", "«§5, задачи 1–12»", "Удалить", danger: true));
+        Pump();
+
+        window.KeyPress(Key.Enter, RawInputModifiers.None, PhysicalKey.Enter, null);
+        Pump();
+
+        Assert.True(await task);
+        Assert.False(shell.Dialogs.HasDialog);
+        AssertNoBindingErrors();
+    }
+
+    /// <summary>
     /// The window-level Enter KeyBinding must not steal Enter away from a multi-line text box: a real
     /// AcceptsReturn box (Task 12's homework editor) consumes Enter to insert a newline, and the dialog
     /// must stay open. Task 9 has no multi-line field of its own, so this flips the group picker's search
