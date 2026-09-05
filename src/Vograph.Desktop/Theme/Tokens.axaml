@@ -1,0 +1,115 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Theme-independent geometry -->
+  <CornerRadius x:Key="Radius.Card">12</CornerRadius>
+  <CornerRadius x:Key="Radius.Control">8</CornerRadius>
+  <CornerRadius x:Key="Radius.Chip">6</CornerRadius>
+  <CornerRadius x:Key="Radius.Pill">999</CornerRadius>
+  <CornerRadius x:Key="Radius.Dialog">14</CornerRadius>
+
+  <ResourceDictionary.ThemeDictionaries>
+
+    <!-- ================= DARK (full dark) ================= -->
+    <ResourceDictionary x:Key="Dark">
+      <SolidColorBrush x:Key="Brush.Canvas" Color="#0D0D0D" />
+      <SolidColorBrush x:Key="Brush.Surface" Color="#111111" />
+      <SolidColorBrush x:Key="Brush.Card" Color="#171717" />
+      <SolidColorBrush x:Key="Brush.CardHover" Color="#1C1C1C" />
+      <SolidColorBrush x:Key="Brush.Chip" Color="#222222" />
+      <SolidColorBrush x:Key="Brush.Line" Color="#262626" />
+      <SolidColorBrush x:Key="Brush.LineStrong" Color="#333333" />
+      <SolidColorBrush x:Key="Brush.Text1" Color="#F2F2F2" />
+      <SolidColorBrush x:Key="Brush.Text2" Color="#8B8B8B" />
+      <SolidColorBrush x:Key="Brush.Text3" Color="#5C5C5C" />
+      <SolidColorBrush x:Key="Brush.Accent" Color="#F2F2F2" />
+      <SolidColorBrush x:Key="Brush.OnAccent" Color="#0D0D0D" />
+      <SolidColorBrush x:Key="Brush.Selection" Color="#14FFFFFF" />
+      <SolidColorBrush x:Key="Brush.FocusRing" Color="#59FFFFFF" />
+      <SolidColorBrush x:Key="Brush.Backdrop" Color="#8C000000" />
+      <SolidColorBrush x:Key="Brush.SegThumb" Color="#171717" />
+      <SolidColorBrush x:Key="Brush.CloseHover" Color="#E81123" />
+
+      <SolidColorBrush x:Key="Brush.Ok" Color="#4CC38A" />
+      <SolidColorBrush x:Key="Brush.Warn" Color="#F2A33C" />
+      <SolidColorBrush x:Key="Brush.WarnSoft" Color="#24F2A33C" />
+      <SolidColorBrush x:Key="Brush.OnWarn" Color="#1A1A1A" />
+      <SolidColorBrush x:Key="Brush.Bad" Color="#EF5B6B" />
+      <SolidColorBrush x:Key="Brush.BadSoft" Color="#24EF5B6B" />
+      <SolidColorBrush x:Key="Brush.Info" Color="#5AA9FF" />
+
+      <SolidColorBrush x:Key="Brush.Friend1" Color="#F2A33C" />
+      <SolidColorBrush x:Key="Brush.Friend2" Color="#4CC38A" />
+      <SolidColorBrush x:Key="Brush.Friend3" Color="#5AA9FF" />
+      <SolidColorBrush x:Key="Brush.Friend4" Color="#C77DFF" />
+      <SolidColorBrush x:Key="Brush.Friend5" Color="#FF7A9C" />
+
+      <BoxShadows x:Key="Shadow.Card">0 2 10 0 #66000000</BoxShadows>
+      <BoxShadows x:Key="Shadow.Thumb">0 1 3 0 #40000000</BoxShadows>
+      <BoxShadows x:Key="Shadow.Dialog">0 16 48 0 #99000000</BoxShadows>
+      <BoxShadows x:Key="Shadow.None">0 0 0 0 #00000000</BoxShadows>
+
+      <!-- Fluent ScrollBar resource overrides (thin, quiet) -->
+      <SolidColorBrush x:Key="ScrollBarThumbFill" Color="#333333" />
+      <SolidColorBrush x:Key="ScrollBarThumbFillPointerOver" Color="#444444" />
+      <SolidColorBrush x:Key="ScrollBarThumbFillPressed" Color="#555555" />
+      <SolidColorBrush x:Key="ScrollBarPanningThumbBackground" Color="#333333" />
+      <SolidColorBrush x:Key="ScrollBarTrackFill" Color="#00000000" />
+      <SolidColorBrush x:Key="ScrollBarTrackStroke" Color="#00000000" />
+      <SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="#111111" />
+      <SolidColorBrush x:Key="ScrollBarTrackStrokePointerOver" Color="#00000000" />
+      <SolidColorBrush x:Key="ScrollBarButtonArrowForeground" Color="#5C5C5C" />
+    </ResourceDictionary>
+
+    <!-- ================= LIGHT ================= -->
+    <ResourceDictionary x:Key="Light">
+      <SolidColorBrush x:Key="Brush.Canvas" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="Brush.Surface" Color="#F7F7F7" />
+      <SolidColorBrush x:Key="Brush.Card" Color="#F5F5F5" />
+      <SolidColorBrush x:Key="Brush.CardHover" Color="#EFEFEF" />
+      <SolidColorBrush x:Key="Brush.Chip" Color="#EBEBEB" />
+      <SolidColorBrush x:Key="Brush.Line" Color="#E5E5E5" />
+      <SolidColorBrush x:Key="Brush.LineStrong" Color="#D4D4D4" />
+      <SolidColorBrush x:Key="Brush.Text1" Color="#111111" />
+      <SolidColorBrush x:Key="Brush.Text2" Color="#767676" />
+      <SolidColorBrush x:Key="Brush.Text3" Color="#A3A3A3" />
+      <SolidColorBrush x:Key="Brush.Accent" Color="#111111" />
+      <SolidColorBrush x:Key="Brush.OnAccent" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="Brush.Selection" Color="#0D000000" />
+      <SolidColorBrush x:Key="Brush.FocusRing" Color="#40000000" />
+      <SolidColorBrush x:Key="Brush.Backdrop" Color="#59000000" />
+      <SolidColorBrush x:Key="Brush.SegThumb" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="Brush.CloseHover" Color="#E81123" />
+
+      <SolidColorBrush x:Key="Brush.Ok" Color="#2FA36B" />
+      <SolidColorBrush x:Key="Brush.Warn" Color="#D9861B" />
+      <SolidColorBrush x:Key="Brush.WarnSoft" Color="#1FD9861B" />
+      <SolidColorBrush x:Key="Brush.OnWarn" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="Brush.Bad" Color="#D7404F" />
+      <SolidColorBrush x:Key="Brush.BadSoft" Color="#1FD7404F" />
+      <SolidColorBrush x:Key="Brush.Info" Color="#2B7FD9" />
+
+      <SolidColorBrush x:Key="Brush.Friend1" Color="#D9861B" />
+      <SolidColorBrush x:Key="Brush.Friend2" Color="#2FA36B" />
+      <SolidColorBrush x:Key="Brush.Friend3" Color="#2B7FD9" />
+      <SolidColorBrush x:Key="Brush.Friend4" Color="#9B51E0" />
+      <SolidColorBrush x:Key="Brush.Friend5" Color="#E0527A" />
+
+      <BoxShadows x:Key="Shadow.Card">0 2 10 0 #14000000</BoxShadows>
+      <BoxShadows x:Key="Shadow.Thumb">0 1 3 0 #22000000</BoxShadows>
+      <BoxShadows x:Key="Shadow.Dialog">0 16 48 0 #33000000</BoxShadows>
+      <BoxShadows x:Key="Shadow.None">0 0 0 0 #00000000</BoxShadows>
+
+      <SolidColorBrush x:Key="ScrollBarThumbFill" Color="#D4D4D4" />
+      <SolidColorBrush x:Key="ScrollBarThumbFillPointerOver" Color="#BDBDBD" />
+      <SolidColorBrush x:Key="ScrollBarThumbFillPressed" Color="#A6A6A6" />
+      <SolidColorBrush x:Key="ScrollBarPanningThumbBackground" Color="#D4D4D4" />
+      <SolidColorBrush x:Key="ScrollBarTrackFill" Color="#00000000" />
+      <SolidColorBrush x:Key="ScrollBarTrackStroke" Color="#00000000" />
+      <SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="#F7F7F7" />
+      <SolidColorBrush x:Key="ScrollBarTrackStrokePointerOver" Color="#00000000" />
+      <SolidColorBrush x:Key="ScrollBarButtonArrowForeground" Color="#A3A3A3" />
+    </ResourceDictionary>
+
+  </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

@@ -1,0 +1,175 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Inter everywhere; inherited by every control inside the window. -->
+  <Style Selector="Window">
+    <Setter Property="FontFamily" Value="fonts:Inter#Inter" />
+    <Setter Property="FontSize" Value="13.5" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" />
+    <Setter Property="Background" Value="{DynamicResource Brush.Canvas}" />
+  </Style>
+
+  <!-- Text scale. Foreground is NOT set on plain TextBlock so it keeps inheriting (buttons, chips). -->
+  <Style Selector="TextBlock.display">
+    <Setter Property="FontSize" Value="26" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="LetterSpacing" Value="-0.5" />
+  </Style>
+  <Style Selector="TextBlock.title">
+    <Setter Property="FontSize" Value="18" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.subject">
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.caption">
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+  <Style Selector="TextBlock.micro">
+    <Setter Property="FontSize" Value="10.5" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="LetterSpacing" Value="0.8" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text3}" />
+  </Style>
+  <Style Selector="TextBlock.muted">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
+  </Style>
+  <Style Selector="TextBlock.faint">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text3}" />
+  </Style>
+  <Style Selector="TextBlock.tnum">
+    <Setter Property="FontFeatures" Value="tnum" />
+  </Style>
+
+  <!-- Card: flat surface with a 1px line; hover lifts it. -->
+  <Style Selector="Border.card">
+    <Setter Property="Background" Value="{DynamicResource Brush.Card}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Line}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Radius.Card}" />
+    <Setter Property="Padding" Value="16,14" />
+    <Setter Property="BoxShadow" Value="{DynamicResource Shadow.None}" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.15" />
+        <BoxShadowsTransition Property="BoxShadow" Duration="0:0:0.15" />
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="Border.card.hoverable:pointerover">
+    <Setter Property="Background" Value="{DynamicResource Brush.CardHover}" />
+    <Setter Property="BoxShadow" Value="{DynamicResource Shadow.Card}" />
+    <Setter Property="RenderTransform" Value="translateY(-1px)" />
+  </Style>
+  <Style Selector="Border.card.next">
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.LineStrong}" />
+  </Style>
+  <Style Selector="Border.card.past">
+    <Setter Property="Opacity" Value="0.6" />
+  </Style>
+
+  <Style Selector="Border.chip">
+    <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Radius.Control}" />
+    <Setter Property="Padding" Value="8,3" />
+  </Style>
+  <Style Selector="Border.chip TextBlock">
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+  <Style Selector="Border.chip.type TextBlock">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
+  </Style>
+  <Style Selector="Border.chip.room">
+    <Setter Property="Padding" Value="10,5" />
+  </Style>
+  <Style Selector="Border.chip.room TextBlock">
+    <Setter Property="FontSize" Value="12.5" />
+  </Style>
+
+  <Style Selector="Border.badge">
+    <Setter Property="Background" Value="{DynamicResource Brush.WarnSoft}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Radius.Pill}" />
+    <Setter Property="Padding" Value="7,1" />
+  </Style>
+  <Style Selector="Border.badge TextBlock">
+    <Setter Property="FontSize" Value="10.5" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Warn}" />
+  </Style>
+
+  <Style Selector="Border.skeleton">
+    <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Radius.Chip}" />
+    <Setter Property="Height" Value="12" />
+  </Style>
+
+  <!-- Homework block (a Button so the flyout opens on click). Status classes are set from the view model. -->
+  <Style Selector="Button.hw">
+    <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
+    <Setter Property="Padding" Value="9,5" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+  </Style>
+  <Style Selector="Button.hw.approaching">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" />
+  </Style>
+  <Style Selector="Button.hw.burning">
+    <Setter Property="Background" Value="{DynamicResource Brush.WarnSoft}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Warn}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="Button.hw.urgent">
+    <Setter Property="Background" Value="{DynamicResource Brush.Warn}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.OnWarn}" />
+    <Setter Property="FontWeight" Value="Bold" />
+  </Style>
+  <Style Selector="Button.hw.overdue">
+    <Setter Property="Background" Value="{DynamicResource Brush.BadSoft}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
+  </Style>
+  <Style Selector="Button.hw.done">
+    <Setter Property="Opacity" Value="0.55" />
+  </Style>
+  <Style Selector="Button.hw.done TextBlock.hwtext">
+    <Setter Property="TextDecorations" Value="Strikethrough" />
+  </Style>
+
+  <!-- Hover-only row actions -->
+  <Style Selector="StackPanel.acts">
+    <Setter Property="Opacity" Value="0" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="Border.card:pointerover StackPanel.acts">
+    <Setter Property="Opacity" Value="1" />
+  </Style>
+
+  <!-- Toasts -->
+  <Style Selector="Border.toast">
+    <Setter Property="Background" Value="{DynamicResource Brush.Card}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Line}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="12,9" />
+    <Setter Property="BoxShadow" Value="{DynamicResource Shadow.Card}" />
+    <Setter Property="MaxWidth" Value="380" />
+  </Style>
+  <Style Selector="Ellipse.toastdot">
+    <Setter Property="Width" Value="7" />
+    <Setter Property="Height" Value="7" />
+    <Setter Property="Fill" Value="{DynamicResource Brush.Info}" />
+  </Style>
+  <Style Selector="Ellipse.toastdot.ok"><Setter Property="Fill" Value="{DynamicResource Brush.Ok}" /></Style>
+  <Style Selector="Ellipse.toastdot.warn"><Setter Property="Fill" Value="{DynamicResource Brush.Warn}" /></Style>
+  <Style Selector="Ellipse.toastdot.bad"><Setter Property="Fill" Value="{DynamicResource Brush.Bad}" /></Style>
+
+</Styles>
