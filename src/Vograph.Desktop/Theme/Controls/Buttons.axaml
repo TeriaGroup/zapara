@@ -1,0 +1,118 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <ControlTheme x:Key="{x:Type Button}" TargetType="Button">
+    <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Radius.Control}" />
+    <Setter Property="Padding" Value="14,7" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="RenderTransformOrigin" Value="50%,50%" />
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.15" />
+        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.1" />
+      </Transitions>
+    </Setter>
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ContentPresenter x:Name="PART_ContentPresenter"
+                          Background="{TemplateBinding Background}"
+                          BorderBrush="{TemplateBinding BorderBrush}"
+                          BorderThickness="{TemplateBinding BorderThickness}"
+                          CornerRadius="{TemplateBinding CornerRadius}"
+                          Content="{TemplateBinding Content}"
+                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                          Padding="{TemplateBinding Padding}"
+                          Foreground="{TemplateBinding Foreground}"
+                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                          RecognizesAccessKey="True" />
+      </ControlTemplate>
+    </Setter>
+
+    <Style Selector="^:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.CardHover}" /></Style>
+    <Style Selector="^:pressed"><Setter Property="RenderTransform" Value="scale(0.98)" /></Style>
+    <Style Selector="^:disabled"><Setter Property="Opacity" Value="0.45" /></Style>
+    <Style Selector="^:focus-visible"><Setter Property="BorderBrush" Value="{DynamicResource Brush.FocusRing}" /><Setter Property="BorderThickness" Value="1" /></Style>
+
+    <!-- primary: inverted -->
+    <Style Selector="^.primary">
+      <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.OnAccent}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="^.primary:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Accent}" /><Setter Property="Opacity" Value="0.9" /></Style>
+
+    <Style Selector="^.ghost"><Setter Property="Background" Value="Transparent" /></Style>
+    <Style Selector="^.ghost:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Selection}" /></Style>
+
+    <Style Selector="^.danger"><Setter Property="Background" Value="Transparent" /><Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" /></Style>
+    <Style Selector="^.danger:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.BadSoft}" /></Style>
+    <Style Selector="^.danger.filled"><Setter Property="Background" Value="{DynamicResource Brush.Bad}" /><Setter Property="Foreground" Value="White" /></Style>
+
+    <!-- icon: 34x34 square -->
+    <Style Selector="^.icon">
+      <Setter Property="Width" Value="34" /><Setter Property="Height" Value="34" />
+      <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="9" />
+      <Setter Property="Background" Value="Transparent" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
+    </Style>
+    <Style Selector="^.icon:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Selection}" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /></Style>
+    <Style Selector="^.icon.small"><Setter Property="Width" Value="26" /><Setter Property="Height" Value="26" /><Setter Property="CornerRadius" Value="7" /><Setter Property="Background" Value="{DynamicResource Brush.Chip}" /></Style>
+
+    <!-- pill: outlined, secondary text -->
+    <Style Selector="^.pill">
+      <Setter Property="CornerRadius" Value="{DynamicResource Radius.Pill}" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="1" /><Setter Property="BorderBrush" Value="{DynamicResource Brush.Line}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" /><Setter Property="Padding" Value="12,6" />
+      <Setter Property="FontSize" Value="12" /><Setter Property="FontWeight" Value="Normal" />
+    </Style>
+    <Style Selector="^.pill:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Selection}" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /></Style>
+
+    <!-- seg: a segment inside SegmentedControl (the class is added in code; the thumb draws the selection) -->
+    <Style Selector="^.seg">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
+      <Setter Property="Padding" Value="14,6" />
+      <Setter Property="CornerRadius" Value="{DynamicResource Radius.Pill}" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="FontWeight" Value="Normal" />
+    </Style>
+    <Style Selector="^.seg:pointerover"><Setter Property="Background" Value="Transparent" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /></Style>
+    <Style Selector="^.seg.on"><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /><Setter Property="FontWeight" Value="Medium" /></Style>
+    <Style Selector="^.seg:pressed"><Setter Property="RenderTransform" Value="none" /></Style>
+
+    <!-- round: 32px circle for arrows -->
+    <Style Selector="^.round">
+      <Setter Property="Width" Value="32" /><Setter Property="Height" Value="32" /><Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="{DynamicResource Radius.Pill}" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
+    </Style>
+    <Style Selector="^.round:pointerover"><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /></Style>
+
+    <!-- caption: window buttons -->
+    <Style Selector="^.caption">
+      <Setter Property="Width" Value="46" /><Setter Property="Height" Value="40" /><Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="0" /><Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" /><Setter Property="Cursor" Value="Arrow" />
+    </Style>
+    <Style Selector="^.caption:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Selection}" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /></Style>
+    <Style Selector="^.caption.close:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.CloseHover}" /><Setter Property="Foreground" Value="White" /></Style>
+    <Style Selector="^.caption:pressed"><Setter Property="RenderTransform" Value="none" /></Style>
+
+    <!-- text button inside the group card / links -->
+    <Style Selector="^.link">
+      <Setter Property="Background" Value="Transparent" /><Setter Property="Padding" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" /><Setter Property="FontWeight" Value="Normal" />
+    </Style>
+    <Style Selector="^.link:pointerover"><Setter Property="Background" Value="Transparent" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /></Style>
+  </ControlTheme>
+
+</ResourceDictionary>
