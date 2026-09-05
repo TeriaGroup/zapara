@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Vograph.Core.Models;
 using Vograph.Core.Services;
 using Vograph.Desktop.Dialogs;
 using Vograph.Desktop.Features.Schedule;
@@ -148,21 +149,31 @@ public sealed partial class ShellViewModel : ViewModelBase
             Current = new ErrorStateViewModel(App, result.Error, () => StartAsync(allowNetwork));
             return;
         }
-        await RunAsync(() => App.Homework.RecomputeAllStatuses(), "homework statuses");
-        RefreshGroupCard();
-        _sections.Remove(SectionKey.Schedule); // rebuild against fresh data
-        NavigateTo(SectionKey.Schedule);
-        await Section<ScheduleViewModel>(SectionKey.Schedule).InitializeAsync();
-        if (result.Stale && result.Error is not null) App.Toasts.Warn($"{T("stale")}: {result.Error}");
-        if (allowNetwork) App.AutoRefresh.Start();
+        try
+        {
+            await RunAsync(() => App.Homework.RecomputeAllStatuses(), "homework statuses");
+            RefreshGroupCard();
+            _sections.Remove(SectionKey.Schedule); // rebuild against fresh data
+            NavigateTo(SectionKey.Schedule);
+            await Section<ScheduleViewModel>(SectionKey.Schedule).InitializeAsync();
+            if (result.Stale && result.Error is not null) App.Toasts.Warn($"{T("stale").Trim(' ', '·')}: {result.Error}");
+            if (allowNetwork) App.AutoRefresh.Start();
+        }
+        catch (Exception ex)
+        {
+            App.Log.Error("startup", ex);
+            Current = new ErrorStateViewModel(App, ex.Message, () => StartAsync(allowNetwork));
+        }
     }
+
+    private sealed record PickerData(List<Group> Groups, string? CurrentId);
 
     [RelayCommand]
     private async Task OpenGroupPickerAsync()
     {
-        var groups = await RunAsync(() => App.Db.GetAllGroups(), "groups");
-        if (groups is null) return;
-        var dlg = new GroupPickerDialogViewModel(groups, App.Settings.MyGroupId);
+        var data = await RunAsync(() => new PickerData(App.Db.GetAllGroups(), App.Db.GetSettings().MyGroupId), "groups");
+        if (data is null) return;
+        var dlg = new GroupPickerDialogViewModel(data.Groups, data.CurrentId);
         if (!await Dialogs.ShowAsync(dlg) || dlg.Selected is null) return;
         var chosen = dlg.Selected;
         var saved = await RunAsync(() =>
