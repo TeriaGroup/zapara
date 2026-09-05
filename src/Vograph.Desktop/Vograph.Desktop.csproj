@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Vograph</AssemblyName>
+    <RootNamespace>Vograph.Desktop</RootNamespace>
+    <Version>2.0.0</Version>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vograph.Core\Vograph.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Bundled assets are still owned by the WPF project until stage 3 moves them here.
+       Core expects them next to the exe: maps\*.jpg, maps\coords.json, TimetableLecturer50.xml. -->
+  <ItemGroup>
+    <None Include="..\Vograph\maps\*.jpg" Link="maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Vograph\maps\coords.json" Link="maps\coords.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Vograph\TimetableLecturer50.xml" Link="TimetableLecturer50.xml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,8 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Vograph.Desktop.Shell.MainWindow"
+        Title="Военмех — расписание и карты"
+        Width="1280" Height="800" MinWidth="960" MinHeight="600"
+        WindowStartupLocation="CenterScreen">
+  <TextBlock Text="Военмех" HorizontalAlignment="Center" VerticalAlignment="Center" />
+</Window>
