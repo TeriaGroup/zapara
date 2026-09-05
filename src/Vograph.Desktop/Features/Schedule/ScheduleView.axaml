@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             xmlns:s="using:Vograph.Desktop.Features.Schedule"
+             x:Class="Vograph.Desktop.Features.Schedule.ScheduleView"
+             x:DataType="s:ScheduleViewModel">
+  <ScrollViewer>
+    <StackPanel MaxWidth="760" Margin="32,26" Spacing="10">
+
+      <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+        <!-- The right margin keeps the subtitle off the arrows; it is trimmed rather than clipped
+             when the "go to today" pill widens the control cluster. -->
+        <StackPanel Margin="0,0,16,0">
+          <TextBlock Classes="display" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+          <TextBlock Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
+          <Button Classes="round" Command="{Binding PrevDayCommand}" ToolTip.Tip="{loc:T prevDay}">
+            <c:Icon Data="{StaticResource Icon.ChevronLeft}" />
+          </Button>
+          <c:SegmentedControl Items="{Binding SegmentItems}" SelectedIndex="{Binding SegmentIndex}" />
+          <Button Classes="round" Command="{Binding NextDayCommand}" ToolTip.Tip="{loc:T nextDay}">
+            <c:Icon Data="{StaticResource Icon.ChevronRight}" />
+          </Button>
+          <Button Classes="pill" Command="{Binding GoTodayCommand}" Content="{loc:T goToday}" IsVisible="{Binding ShowGoToday}" />
+        </StackPanel>
+      </Grid>
+
+      <ItemsControl ItemsSource="{Binding Lessons}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="s:LessonRowViewModel">
+            <s:LessonCardView />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <c:EmptyState IsVisible="{Binding IsEmpty}" Title="{Binding EmptyTitle}" Hint="{Binding EmptyHint}"
+                    Icon="{StaticResource Icon.Calendar}" Margin="0,48,0,0" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

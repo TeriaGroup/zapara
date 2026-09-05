@@ -1,0 +1,74 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             xmlns:s="using:Vograph.Desktop.Features.Schedule"
+             x:Class="Vograph.Desktop.Features.Schedule.LessonCardView"
+             x:DataType="s:LessonRowViewModel">
+  <Border Classes="card hoverable" Classes.next="{Binding IsNext}" Classes.past="{Binding IsPast}">
+    <Grid ColumnDefinitions="64,*,Auto">
+
+      <!-- time column -->
+      <StackPanel>
+        <TextBlock Classes="tnum" Text="{Binding TimeStart}" FontSize="14" FontWeight="Medium" />
+        <TextBlock Classes="tnum muted caption" Text="{Binding TimeEnd}" />
+        <TextBlock Classes="faint" FontSize="11" Text="{Binding NextDateText}" Margin="0,4,0,0" IsVisible="{Binding HasNextDate}" />
+      </StackPanel>
+
+      <!-- subject, teacher, note, homework -->
+      <StackPanel Grid.Column="1" Margin="16,0">
+        <WrapPanel>
+          <TextBlock Classes="subject" Text="{Binding DisplayName}" VerticalAlignment="Center" />
+          <Border Classes="chip type" Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding HasType}">
+            <TextBlock Text="{Binding TypeLabel}" />
+          </Border>
+          <ItemsControl ItemsSource="{Binding Friends}" Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding HasFriends}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="5" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="s:FriendMarkViewModel">
+                <c:FriendDot ColorIndex="{Binding ColorIndex}" Fill="{Binding Fill}" Opacity="{Binding Opacity}" ToolTip.Tip="{Binding Tooltip}" VerticalAlignment="Center" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </WrapPanel>
+        <TextBlock Classes="muted caption" Text="{Binding TeacherLine}" Margin="0,3,0,0" TextWrapping="Wrap" />
+        <TextBlock Classes="muted caption" FontStyle="Italic" Text="{Binding Note}" IsVisible="{Binding HasNote}" Margin="0,2,0,0" TextWrapping="Wrap" />
+
+        <ItemsControl ItemsSource="{Binding Homework}" Margin="0,8,0,0" IsVisible="{Binding HasHomework}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><StackPanel Spacing="4" /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="s:HomeworkItemViewModel">
+              <Button Classes="hw" Classes.approaching="{Binding IsApproaching}" Classes.burning="{Binding IsBurning}"
+                      Classes.urgent="{Binding IsUrgent}" Classes.overdue="{Binding IsOverdue}" Classes.done="{Binding IsDone}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Ellipse Width="6" Height="6" Fill="{Binding $parent[Button].Foreground}" VerticalAlignment="Center" />
+                  <TextBlock Classes="hwtext" Text="{Binding Text}" TextTrimming="CharacterEllipsis" MaxWidth="340" />
+                  <TextBlock Text="{Binding Label}" Opacity="0.85" />
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <!-- room + hover actions -->
+      <StackPanel Grid.Column="2" HorizontalAlignment="Right" Spacing="8">
+        <Border Classes="chip room" HorizontalAlignment="Right">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <TextBlock Classes="tnum" Text="{Binding RoomText}" FontWeight="Medium" />
+            <TextBlock Classes="faint" FontSize="11" Text="{Binding BuildingTag}" IsVisible="{Binding HasBuildingTag}" VerticalAlignment="Center" />
+          </StackPanel>
+        </Border>
+        <StackPanel Classes="acts" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right">
+          <Button Classes="icon small" Command="{Binding ShowMapCommand}" ToolTip.Tip="{loc:T mapTip}" IsVisible="{Binding CanShowMap}">
+            <c:Icon Data="{StaticResource Icon.MapPin}" Size="14" />
+          </Button>
+        </StackPanel>
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>
