@@ -44,6 +44,13 @@
             <DataTemplate x:DataType="s:HomeworkItemViewModel">
               <Button Classes="hw" Classes.approaching="{Binding IsApproaching}" Classes.burning="{Binding IsBurning}"
                       Classes.urgent="{Binding IsUrgent}" Classes.overdue="{Binding IsOverdue}" Classes.done="{Binding IsDone}">
+                <Button.Flyout>
+                  <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                    <MenuItem Header="{Binding DoneLabel}" Command="{Binding ToggleDoneCommand}" />
+                    <MenuItem Header="{loc:T hwEdit}" Command="{Binding EditCommand}" />
+                    <MenuItem Header="{loc:T hwDelete}" Command="{Binding DeleteCommand}" />
+                  </MenuFlyout>
+                </Button.Flyout>
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <Ellipse Width="6" Height="6" Fill="{Binding $parent[Button].Foreground}" VerticalAlignment="Center" />
                   <TextBlock Classes="hwtext" Text="{Binding Text}" TextTrimming="CharacterEllipsis" MaxWidth="340" />
@@ -64,6 +71,12 @@
           </StackPanel>
         </Border>
         <StackPanel Classes="acts" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right">
+          <Button Classes="icon small" Command="{Binding RenameCommand}" ToolTip.Tip="{loc:T renameTip}">
+            <c:Icon Data="{StaticResource Icon.Pencil}" Size="14" />
+          </Button>
+          <Button Classes="icon small" Command="{Binding AddHomeworkCommand}" ToolTip.Tip="{loc:T hwAdd}">
+            <c:Icon Data="{StaticResource Icon.Plus}" Size="14" />
+          </Button>
           <Button Classes="icon small" Command="{Binding ShowMapCommand}" ToolTip.Tip="{loc:T mapTip}" IsVisible="{Binding CanShowMap}">
             <c:Icon Data="{StaticResource Icon.MapPin}" Size="14" />
           </Button>

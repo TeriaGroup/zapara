@@ -1,6 +1,9 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Vograph.Core.Models;
+using Vograph.Core.Services;
+using Vograph.Desktop.Dialogs;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
 using Vograph.Desktop.ViewModels;
@@ -9,13 +12,6 @@ namespace Vograph.Desktop.Features.Schedule;
 
 public sealed partial class ScheduleViewModel : ViewModelBase
 {
-    /// <summary>
-    /// Core's Database owns one SqliteConnection and is not thread-safe, so two composes must not
-    /// overlap. SemaphoreSlim hands the gate to waiters in order, so awaiting a reload also awaits
-    /// the reloads queued ahead of it — including the ones a property change started and dropped.
-    /// </summary>
-    private readonly SemaphoreSlim _composeGate = new(1, 1);
-
     private readonly ScheduleComposer _composer;
     private readonly ShellViewModel _shell;
     private readonly Func<DateTime> _clock;
@@ -80,18 +76,10 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         Apply(model);
     }
 
-    private async Task<DayModel?> ComposeAsync(Func<DayModel> work)
-    {
-        await _composeGate.WaitAsync();
-        try
-        {
-            return await RunAsync(work, "schedule");
-        }
-        finally
-        {
-            _composeGate.Release();
-        }
-    }
+    /// <summary>App.CoreGate (inside RunAsync) hands the gate to waiters in order, so awaiting a
+    /// compose also awaits the composes queued ahead of it — including the ones a property change
+    /// started and dropped.</summary>
+    private Task<DayModel?> ComposeAsync(Func<DayModel> work) => RunAsync(work, "schedule");
 
     private void Apply(DayModel model)
     {
@@ -128,4 +116,76 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     [RelayCommand] private void GoToday() => DayOffset = 0;
 
     public void ShowMap(LessonRowViewModel row) => _shell.ShowMap(row.Row.Map);
+
+    public async Task RenameAsync(LessonRowViewModel row)
+    {
+        var l = row.Row.Lesson;
+        // RunAsync's T is a non-nullable class, and it already returns null for "no result": "no override" lands there too.
+        var existing = await RunAsync<Override>(
+            () => (App.Overrides.GetOverride(l.SubjectRaw, "global") ?? App.Overrides.GetOverride(l.SubjectRaw, $"weekday:{l.DayOfWeek}"))!,
+            "rename");
+        var dlg = new RenameDialogViewModel(ScheduleComposer.StripType(l.SubjectRaw, l.TypeRaw), l.DayOfWeek, existing); // shown without the type token; the Core key below stays l.SubjectRaw
+        if (!await _shell.Dialogs.ShowAsync(dlg)) return;
+
+        var ok = await RunAsync(() =>
+        {
+            if (dlg.ResetRequested)
+            {
+                foreach (var scope in new[] { "global", $"weekday:{l.DayOfWeek}" })
+                    if (App.Overrides.GetOverride(l.SubjectRaw, scope) is { } o) App.Overrides.Remove(o.Id);
+            }
+            else
+            {
+                App.Overrides.AddOrUpdate(l.SubjectRaw, dlg.Scope, dlg.EffectiveName, dlg.EffectiveNote);
+            }
+        }, "rename");
+        if (!ok) return;
+        App.Toasts.Ok(T("savedOk"));
+        await ReloadAsync();
+    }
+
+    public async Task AddHomeworkAsync(LessonRowViewModel row)
+    {
+        var l = row.Row.Lesson;
+        var norm = ParityService.NormalizeSubject(l.SubjectRaw);
+        var today = _clock().Date;
+        var dues = await ComputeDuesAsync(norm, today);
+        if (dues is null) return;
+        var dlg = new HomeworkDialogViewModel(row.DisplayName, nth => dues[Math.Clamp(nth, 1, 10) - 1]);
+        if (!await _shell.Dialogs.ShowAsync(dlg)) return;
+        if (await RunAsync(() => App.Homework.AddHomework(l.SubjectRaw, dlg.Text.Trim(), dlg.Nth, createdAt: today), "homework add"))
+            await ReloadAsync();
+    }
+
+    public async Task EditHomeworkAsync(HomeworkItemViewModel hw)
+    {
+        var existing = await RunAsync<Homework>(() => App.Homework.GetById(hw.Id)!, "homework edit"); // null: gone, or the call failed
+        if (existing is null) return;
+        var dues = await ComputeDuesAsync(existing.SubjectRawNormalized, existing.CreatedAt);
+        if (dues is null) return;
+        var dlg = new HomeworkDialogViewModel(hw.Row.DisplayName, nth => dues[Math.Clamp(nth, 1, 10) - 1],
+            existing.Text, existing.TargetNthOccurrence);
+        if (!await _shell.Dialogs.ShowAsync(dlg)) return;
+        if (await RunAsync(() => App.Homework.UpdateHomework(hw.Id, dlg.Text.Trim(), dlg.Nth), "homework edit"))
+            await ReloadAsync();
+    }
+
+    /// <summary>Every due date the stepper can show, computed once off the UI thread: the dialog then
+    /// only indexes the table, so changing N never touches SQLite from the UI thread.</summary>
+    private Task<DateTime?[]?> ComputeDuesAsync(string subjectNormalized, DateTime from) =>
+        RunAsync(() => Enumerable.Range(1, 10).Select(n => App.Homework.ComputeDueDate(subjectNormalized, from, n)).ToArray(), "homework");
+
+    public async Task ToggleDoneAsync(HomeworkItemViewModel hw)
+    {
+        if (await RunAsync(() => App.Homework.MarkDone(hw.Id, !hw.IsDone), "homework done"))
+            await ReloadAsync();
+    }
+
+    public async Task DeleteHomeworkAsync(HomeworkItemViewModel hw)
+    {
+        var confirm = new ConfirmDialogViewModel(T("hwDelete"), T("hwDeleteConfirm", hw.Text), T("delete"), danger: true);
+        if (!await _shell.Dialogs.ShowAsync(confirm)) return;
+        if (await RunAsync(() => App.Homework.Delete(hw.Id), "homework delete"))
+            await ReloadAsync();
+    }
 }

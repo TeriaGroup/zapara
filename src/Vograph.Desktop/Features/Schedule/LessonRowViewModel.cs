@@ -45,6 +45,9 @@ public sealed partial class LessonRowViewModel : ObservableObject
 
     [RelayCommand]
     private void ShowMap() => _owner.ShowMap(this);
+
+    [RelayCommand] private Task Rename() => _owner.RenameAsync(this);
+    [RelayCommand] private Task AddHomework() => _owner.AddHomeworkAsync(this);
 }
 
 public sealed class FriendMarkViewModel
@@ -76,4 +79,9 @@ public sealed partial class HomeworkItemViewModel : ObservableObject
     public bool IsBurning => Item.Status == "burning";
     public bool IsUrgent => Item.Status == "burning_urgent";
     public bool IsOverdue => Item.Status == "overdue";
+    public string DoneLabel => Loc.Current.T(IsDone ? "hwUndo" : "hwMarkDone");
+
+    [RelayCommand] private Task ToggleDone() => Row.Owner.ToggleDoneAsync(this);
+    [RelayCommand] private Task Edit() => Row.Owner.EditHomeworkAsync(this);
+    [RelayCommand] private Task Delete() => Row.Owner.DeleteHomeworkAsync(this);
 }

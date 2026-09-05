@@ -14,12 +14,15 @@ public abstract partial class ViewModelBase : ObservableObject
     protected string T(string key, params object[] args) => App.Loc.T(key, args);
 
     /// <summary>
-    /// Runs synchronous Core work off the UI thread. Failures become a toast + log entry and
-    /// a null result — callers never see exceptions and the UI thread never blocks on SQLite.
+    /// Runs synchronous Core work off the UI thread, one call at a time across the whole app
+    /// (App.CoreGate — Core's SqliteConnection is not thread-safe). Failures become a toast + log
+    /// entry and a null result — callers never see exceptions and the UI thread never blocks on SQLite.
+    /// <paramref name="work"/> is synchronous, so it cannot start a nested RunAsync: no deadlock.
     /// </summary>
     protected async Task<T?> RunAsync<T>(Func<T> work, string context) where T : class
     {
         IsBusy = true;
+        await App.CoreGate.WaitAsync();
         try
         {
             return await Task.Run(work);
@@ -31,6 +34,7 @@ public abstract partial class ViewModelBase : ObservableObject
         }
         finally
         {
+            App.CoreGate.Release();
             IsBusy = false;
         }
     }
@@ -38,6 +42,7 @@ public abstract partial class ViewModelBase : ObservableObject
     protected async Task<bool> RunAsync(Action work, string context)
     {
         IsBusy = true;
+        await App.CoreGate.WaitAsync();
         try
         {
             await Task.Run(work);
@@ -50,6 +55,7 @@ public abstract partial class ViewModelBase : ObservableObject
         }
         finally
         {
+            App.CoreGate.Release();
             IsBusy = false;
         }
     }

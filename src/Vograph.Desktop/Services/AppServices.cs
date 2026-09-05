@@ -28,6 +28,9 @@ public sealed class AppServices : IDisposable
     /// <summary>Needs a live Application; assigned by App at startup (or by UI tests). Null in plain unit tests.</summary>
     public ThemeService? Theme { get; set; }
 
+    /// <summary>Core's SqliteConnection is not thread-safe: every background Core call goes through this gate.</summary>
+    public SemaphoreSlim CoreGate { get; } = new(1, 1);
+
     private AppServices(string dataDir)
     {
         DataDir = dataDir;
@@ -62,5 +65,6 @@ public sealed class AppServices : IDisposable
     {
         AutoRefresh.Dispose();
         Db.Dispose();
+        CoreGate.Dispose();
     }
 }

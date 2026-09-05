@@ -9,11 +9,11 @@
     <StackPanel MaxWidth="760" Margin="32,26" Spacing="10">
 
       <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,8">
-        <!-- The right margin keeps the subtitle off the arrows; it is trimmed rather than clipped
+        <!-- The right margin keeps the subtitle off the arrows; it wraps rather than being cut
              when the "go to today" pill widens the control cluster. -->
         <StackPanel Margin="0,0,16,0">
           <TextBlock Classes="display" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
-          <TextBlock Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+          <TextBlock Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" TextWrapping="Wrap" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
           <Button Classes="round" Command="{Binding PrevDayCommand}" ToolTip.Tip="{loc:T prevDay}">

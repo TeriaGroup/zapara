@@ -1,0 +1,30 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:d="using:Vograph.Desktop.Dialogs"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             x:Class="Vograph.Desktop.Dialogs.RenameDialogView"
+             x:DataType="d:RenameDialogViewModel">
+  <StackPanel Spacing="12" Width="460">
+    <TextBlock Classes="micro" Text="{Binding Title}" />
+    <TextBlock Classes="muted caption" Text="{Binding OriginalLine}" TextWrapping="Wrap" />
+    <StackPanel Spacing="6">
+      <TextBlock Classes="caption" Text="{loc:T newName}" />
+      <TextBox Name="NameBox" Text="{Binding DisplayName}" PlaceholderText="{Binding Original}" />
+    </StackPanel>
+    <StackPanel Spacing="6">
+      <TextBlock Classes="caption" Text="{loc:T footnote}" />
+      <TextBox Text="{Binding Note}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" VerticalContentAlignment="Top" />
+    </StackPanel>
+    <StackPanel Spacing="6">
+      <TextBlock Classes="caption" Text="{loc:T scope}" />
+      <c:SegmentedControl Items="{Binding ScopeItems}" SelectedIndex="{Binding ScopeIndex}" />
+    </StackPanel>
+    <TextBlock Classes="muted caption" Text="{Binding Preview}" TextWrapping="Wrap" />
+    <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,6,0,0">
+      <Button Classes="danger" Content="{loc:T reset}" Command="{Binding ResetCommand}" IsVisible="{Binding HasExisting}" />
+      <Button Grid.Column="2" Content="{loc:T cancel}" Command="{Binding CancelCommand}" Margin="0,0,8,0" />
+      <Button Grid.Column="3" Classes="primary" Content="{loc:T save}" Command="{Binding ConfirmCommand}" />
+    </Grid>
+  </StackPanel>
+</UserControl>

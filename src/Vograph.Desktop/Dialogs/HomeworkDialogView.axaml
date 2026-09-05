@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:d="using:Vograph.Desktop.Dialogs"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             x:Class="Vograph.Desktop.Dialogs.HomeworkDialogView"
+             x:DataType="d:HomeworkDialogViewModel">
+  <StackPanel Spacing="12" Width="460">
+    <TextBlock Classes="micro" Text="{Binding Title}" />
+    <TextBlock Classes="muted caption" Text="{Binding SubjectLine}" TextWrapping="Wrap" />
+    <StackPanel Spacing="6">
+      <TextBlock Classes="caption" Text="{loc:T hwText}" />
+      <TextBox Name="HwText" Text="{Binding Text}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" VerticalContentAlignment="Top" />
+    </StackPanel>
+    <StackPanel Spacing="6">
+      <TextBlock Classes="caption" Text="{loc:T hwN}" TextWrapping="Wrap" />
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <Button Classes="round" Command="{Binding DecCommand}"><c:Icon Data="{StaticResource Icon.Minus}" Size="14" /></Button>
+        <TextBlock Classes="tnum" Text="{Binding Nth}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" MinWidth="24" TextAlignment="Center" />
+        <Button Classes="round" Command="{Binding IncCommand}"><c:Icon Data="{StaticResource Icon.Plus}" Size="14" /></Button>
+        <TextBlock Classes="muted caption" Text="{Binding DueText}" VerticalAlignment="Center" />
+      </StackPanel>
+    </StackPanel>
+    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,6,0,0">
+      <Button Content="{loc:T cancel}" Command="{Binding CancelCommand}" />
+      <Button Classes="primary" Content="{loc:T save}" Command="{Binding ConfirmCommand}" />
+    </StackPanel>
+  </StackPanel>
+</UserControl>
