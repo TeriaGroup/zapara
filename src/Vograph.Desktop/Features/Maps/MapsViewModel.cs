@@ -40,13 +40,15 @@ public sealed partial class MapsViewModel : ViewModelBase
         _shell.GroupChanged -= _onChange;
         _shell.ScheduleChanged -= _onChange;
         App.Loc.LanguageChanged -= Relabel;
+        SetImage(null); // the section is going away: release the decode with it
     }
 
-    /// <summary>◉ on a lesson hands over a map through the shell; otherwise the section follows the next lesson.</summary>
+    /// <summary>◉ on a lesson hands over a map (and the name the card showed) through the shell; otherwise the
+    /// section follows the next lesson. Called fire-and-forget by the shell, so nothing in here may throw.</summary>
     public override async Task ActivateAsync()
     {
-        RefreshCacheStatus();
-        if (_shell.TakePendingMap() is { } pending) await ShowLessonMapAsync(pending, null);
+        await RefreshCacheStatusAsync();
+        if (_shell.TakePendingMap() is ({ } pending, var lessonName)) await ShowLessonMapAsync(pending, lessonName);
         else if (Mode is MapMode.None or MapMode.NextLesson) await TrackNextAsync();
     }
 
@@ -153,13 +155,24 @@ public sealed partial class MapsViewModel : ViewModelBase
         BuildingIndex = Array.IndexOf(Buildings, shownBuilding) is var i and >= 0 ? i : 0;
         OnBuildingIndexChanged(BuildingIndex); // re-mark the selected floor even when the index did not change
         HasHighlight = false;
-        Image = null;
         ImageError = null;
-        if (map is not { HasMap: true } || map.IsRemote) return;
+        if (map is not { HasMap: true } || map.IsRemote) { SetImage(null); return; }
 
-        var path = App.MapFiles.LocalPath(map) ?? await Task.Run(() => App.MapFiles.EnsureAsync(map));
+        string? path;
+        try
+        {
+            // IMapFiles is file (and, for EnsureAsync, network) work: off the UI thread, and a profile we cannot
+            // read must not escape into the shell's fire-and-forget ActivateAsync.
+            path = await Task.Run(() => App.MapFiles.LocalPath(map)) ?? await Task.Run(() => App.MapFiles.EnsureAsync(map));
+        }
+        catch (Exception ex)
+        {
+            App.Log.Error("maps", ex);
+            path = null; // unreadable cache: the same outcome as "no copy anywhere"
+        }
         if (path is null)
         {
+            SetImage(null);
             ImageError = T("mapNoImage");
             return;
         }
@@ -168,25 +181,45 @@ public sealed partial class MapsViewModel : ViewModelBase
         catch (Exception ex)
         {
             App.Log.Error("map image", ex);
+            SetImage(null);
             ImageError = T("mapNoImage");
             return;
         }
-        if (!ReferenceEquals(Current, map)) { bmp.Dispose(); return; } // superseded while decoding
-        Image?.Dispose();
-        Image = bmp;
+        if (!ReferenceEquals(Current, map)) { bmp.Dispose(); return; } // superseded while decoding: the loser goes, the winner stays
+        SetImage(bmp);
         if (MapsComposer.Highlight(coords, bmp.PixelSize) is { } r)
         {
             HighlightLeft = r.X; HighlightTop = r.Y; HighlightWidth = r.Width; HighlightHeight = r.Height;
             HighlightLabel = MapsComposer.RoomText(map);
             HasHighlight = true;
         }
-        RefreshCacheStatus();
+        await RefreshCacheStatusAsync();
     }
 
-    private void RefreshCacheStatus()
+    /// <summary>Swap, then dispose: the plan on screen stays until the new one is assigned, and only then is the
+    /// old decode released. Nulling first would drop the reference before Dispose ever saw it, so every plan the
+    /// user opened held its Skia buffer until finalization — megabytes per switch on the real ~2000×1400 JPEGs.</summary>
+    private void SetImage(Bitmap? fresh)
     {
-        var (cached, total) = App.MapFiles.CacheStatus();
-        CacheStatus = T("mapCacheStatus", cached, total);
+        var old = Image;
+        if (ReferenceEquals(old, fresh)) return;
+        Image = fresh;
+        old?.Dispose();
+    }
+
+    /// <summary>MapService.GetCacheStatus walks all nine plans (a CreateDirectory plus a File.Exists/FileInfo each),
+    /// so the probe runs off the UI thread; a failing one keeps the last known text instead of taking the section down.</summary>
+    private async Task RefreshCacheStatusAsync()
+    {
+        try
+        {
+            var (cached, total) = await Task.Run(() => App.MapFiles.CacheStatus());
+            CacheStatus = T("mapCacheStatus", cached, total);
+        }
+        catch (Exception ex)
+        {
+            App.Log.Error("maps", ex);
+        }
     }
 
     [RelayCommand(AllowConcurrentExecutions = false)]
@@ -197,7 +230,7 @@ public sealed partial class MapsViewModel : ViewModelBase
         try
         {
             await Task.Run(() => App.MapFiles.DownloadAllAsync(new Progress<string>(s => App.Log.Info($"maps: {s}"))));
-            var (cached, total) = App.MapFiles.CacheStatus();
+            var (cached, total) = await Task.Run(() => App.MapFiles.CacheStatus());
             App.Toasts.Ok(T("mapDownloaded", cached, total));
             if (Current is { } c && Image is null) await ShowMapAsync(c, null);
         }
@@ -209,7 +242,7 @@ public sealed partial class MapsViewModel : ViewModelBase
         finally
         {
             IsDownloading = false;
-            RefreshCacheStatus();
+            await RefreshCacheStatusAsync();
         }
     }
 
@@ -217,21 +250,22 @@ public sealed partial class MapsViewModel : ViewModelBase
     [RelayCommand] private Task OpenFolder() => App.Launcher.OpenFolderAsync(App.MapFiles.CacheDir);
 
     [RelayCommand]
-    private Task Verify()
+    private async Task Verify()
     {
-        RefreshCacheStatus();
+        await RefreshCacheStatusAsync();
         App.Toasts.Info(CacheStatus);
-        return Task.CompletedTask;
     }
 
     [RelayCommand]
     private void ToggleFullscreen() => _shell.Overlay = _shell.Overlay is MapFullscreenViewModel ? null : new MapFullscreenViewModel(App, this);
 
+    /// <summary>Loc.LanguageChanged is a synchronous event, so the re-probe is fire-and-forget — allowed because
+    /// RefreshCacheStatusAsync swallows and logs every failure and therefore cannot throw.</summary>
     private void Relabel()
     {
         OnPropertyChanged(nameof(Title));
         ContextLine = MapsComposer.ContextLine(Mode, Current, _lessonName, _start, _end, _clock(), App.Loc);
         OnBuildingIndexChanged(BuildingIndex);
-        RefreshCacheStatus();
+        _ = RefreshCacheStatusAsync();
     }
 }

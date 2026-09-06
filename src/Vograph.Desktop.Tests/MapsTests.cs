@@ -145,6 +145,81 @@ public class MapsTests : UiTest
     }
 
     [AvaloniaFact]
+    public async Task Lesson_Handover_Names_The_Lesson_In_The_Header()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, _, _) = Make(db, ("ГК", 4));
+        var map = db.Services.Maps.Resolve("493;")!;
+
+        shell.ShowMap(map, "Матан"); // ◉ on a lesson card, with the name the card shows
+        await WaitAsync(() => vm.Image is not null);
+
+        Assert.Equal(MapMode.Lesson, vm.Mode);
+        Assert.StartsWith("Пара: Матан · 493", vm.ContextLine);
+        Assert.Null(shell.PendingLessonName); // consumed together with the map
+    }
+
+    [Fact]
+    public async Task Lesson_Card_Hands_Its_Display_Name_To_The_Shell()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        shell.Register(SectionKey.Maps, () => new Features.States.LoadingViewModel(db.Services)); // nothing consumes the handover
+        var schedule = new Features.Schedule.ScheduleViewModel(db.Services, shell, () => Mon8);
+        shell.Register(SectionKey.Schedule, () => schedule);
+        await schedule.InitializeAsync();
+        var row = schedule.Lessons.First(r => r.CanShowMap);
+        Assert.Equal("Матан", row.DisplayName); // renamed and stripped of the type, exactly as the card shows it
+
+        row.ShowMapCommand.Execute(null); // ◉ on the card
+
+        Assert.Equal(SectionKey.Maps, shell.CurrentKey);
+        var (map, lessonName) = shell.TakePendingMap();
+        Assert.Same(row.Row.Map, map);
+        Assert.Equal(row.DisplayName, lessonName);
+        Assert.Null(shell.PendingMap);
+        Assert.Null(shell.PendingLessonName);
+    }
+
+    [AvaloniaFact]
+    public async Task Switching_Plans_Disposes_The_Previous_Decode()
+    {
+        using var db = TestDb.Create();
+        var (_, vm, _, _) = Make(db, ("ГК", 4), ("УЛК", 5));
+
+        await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("493;")!, "Матан");
+        var first = vm.Image!;
+        await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("526*;")!, "История");
+        var second = vm.Image!;
+
+        Assert.NotSame(first, second);
+        Assert.Equal(new PixelSize(200, 100), second.PixelSize);
+        Assert.Throws<ObjectDisposedException>(() => _ = first.PixelSize);
+
+        vm.Detach();
+        Assert.Null(vm.Image);
+        Assert.Throws<ObjectDisposedException>(() => _ = second.PixelSize);
+    }
+
+    [AvaloniaFact]
+    public async Task Cache_Probe_Failures_Never_Escape_The_Section()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, files, _) = Make(db, ("ГК", 4));
+        shell.NavigateTo(SectionKey.Maps);
+        await WaitAsync(() => vm.Image is not null);
+        Assert.Equal("1 из 9 планов офлайн", vm.CacheStatus);
+
+        files.ThrowOnStatus = true;
+        files.ThrowOnLocalPath = true;
+        await vm.ActivateAsync(); // the shell runs this fire-and-forget: it must never throw
+
+        Assert.Equal("1 из 9 планов офлайн", vm.CacheStatus); // the failed probe keeps the last known text
+        Assert.Equal("План не загружен: нет сети и встроенной копии", vm.ImageError);
+        Assert.Null(vm.Image);
+    }
+
+    [AvaloniaFact]
     public async Task Renders_Both_Themes_And_Fullscreen_Closes_On_Escape()
     {
         using var db = TestDb.Create();
@@ -168,6 +243,14 @@ public class MapsTests : UiTest
         Frames.Capture(window, "maps-fullscreen-light");
         window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
         Assert.Null(shell.Overlay);
+
+        // Swapping the plan disposes the one the window is rendering: the renderer holds its own ref, so this is safe.
+        var shown = vm.Image!;
+        await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("526*;")!, "История");
+        Pump();
+        Frames.Capture(window, "maps-swap-light");
+        Assert.NotSame(shown, vm.Image);
+        Assert.Throws<ObjectDisposedException>(() => _ = shown.PixelSize);
         AssertNoBindingErrors();
     }
 }

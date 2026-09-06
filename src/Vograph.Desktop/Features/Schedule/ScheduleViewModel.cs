@@ -132,7 +132,8 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     [RelayCommand] private void NextDay() => DayOffset++;
     [RelayCommand] private void GoToday() => DayOffset = 0;
 
-    public void ShowMap(LessonRowViewModel row) => _shell.ShowMap(row.Row.Map);
+    /// <summary>The card's own name travels with the map (renamed, type stripped), so the Maps header names the lesson.</summary>
+    public void ShowMap(LessonRowViewModel row) => _shell.ShowMap(row.Row.Map, row.DisplayName);
 
     public async Task RenameAsync(LessonRowViewModel row)
     {

@@ -101,12 +101,17 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// <summary>Map the Maps section should show when it opens (set by the ◉ action on a lesson).</summary>
     public MapInfo? PendingMap { get; private set; }
 
+    /// <summary>Display name of the lesson the pending map came from, so the Maps header can read
+    /// «Пара: Матан · 493 · …» instead of repeating the room. Null when no name is known.</summary>
+    public string? PendingLessonName { get; private set; }
+
     /// <summary>Read once by the Maps section when it activates: a handover, not a standing selection.</summary>
-    internal MapInfo? TakePendingMap()
+    internal (MapInfo? Map, string? LessonName) TakePendingMap()
     {
-        var m = PendingMap;
+        var handover = (PendingMap, PendingLessonName);
         PendingMap = null;
-        return m;
+        PendingLessonName = null;
+        return handover;
     }
 
     /// <summary>Raised after the user picks another group; sections reload themselves.</summary>
@@ -255,9 +260,11 @@ public sealed partial class ShellViewModel : ViewModelBase
         _ = Current.ActivateAsync(); // implementations run under RunAsync and never throw
     }
 
-    public void ShowMap(MapInfo? info)
+    /// <summary>◉ on a lesson card: the caller passes the name the card shows, so the section can name the lesson.</summary>
+    public void ShowMap(MapInfo? info, string? lessonName = null)
     {
         PendingMap = info;
+        PendingLessonName = lessonName;
         NavigateTo(SectionKey.Maps);
     }
 

@@ -22,7 +22,15 @@ public sealed class FakeMapFiles : IMapFiles
     public List<string> Progress { get; } = new();
     public int EnsureCalls { get; private set; }
 
-    public string? LocalPath(MapInfo map) => map.HasMap && _cached.Contains((map.Building == "ВЦ" ? "ГК" : map.Building, map.Floor)) ? Png() : null;
+    /// <summary>An unreadable maps folder (denied profile, a locked file): the probes throw like the real ones can.</summary>
+    public bool ThrowOnStatus { get; set; }
+    public bool ThrowOnLocalPath { get; set; }
+
+    public string? LocalPath(MapInfo map)
+    {
+        if (ThrowOnLocalPath) throw new IOException("maps folder unreadable");
+        return map.HasMap && _cached.Contains((map.Building == "ВЦ" ? "ГК" : map.Building, map.Floor)) ? Png() : null;
+    }
 
     public Task<string?> EnsureAsync(MapInfo map, CancellationToken ct = default)
     {
@@ -31,7 +39,8 @@ public sealed class FakeMapFiles : IMapFiles
         return Task.FromResult<string?>(Png());
     }
 
-    public (int Cached, int Total) CacheStatus() => (_cached.Count, MapService.MapUrls.Count);
+    public (int Cached, int Total) CacheStatus() =>
+        ThrowOnStatus ? throw new IOException("maps folder unreadable") : (_cached.Count, MapService.MapUrls.Count);
 
     public Task DownloadAllAsync(IProgress<string>? progress, CancellationToken ct = default)
     {
