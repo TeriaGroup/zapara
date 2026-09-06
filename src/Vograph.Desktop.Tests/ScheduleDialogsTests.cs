@@ -1,6 +1,8 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 using Vograph.Desktop.Dialogs;
 using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Services;
@@ -231,6 +233,38 @@ public class ScheduleDialogsTests : UiTest
         Frames.Capture(window, "dialog-homework-light");
         shell.Dialogs.Current!.CancelCommand.Execute(null);
         await hw;
+
+        AssertNoBindingErrors();
+    }
+
+    /// <summary>Regression: a lesson card's own IsPast (its time slot already ended today) must not strike
+    /// through a NOT-done homework's text. Border.card.past is shared with the Homework section's row card,
+    /// whose .past means "this homework is done" — the two must stay visually independent.</summary>
+    [AvaloniaFact]
+    public async Task Past_Lesson_Does_Not_Strike_Through_NotDone_Homework_Text()
+    {
+        using var db = TestDb.Create();
+        db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        var shell = new ShellViewModel(db.Services);
+        var afterFirstLesson = new DateTime(2026, 9, 7, 12, 0, 0); // Mon 07.09, after the 09:00-10:35 math lecture ends
+        var vm = new ScheduleViewModel(db.Services, shell, () => afterFirstLesson);
+        shell.Register(SectionKey.Schedule, () => vm);
+        shell.NavigateTo(SectionKey.Schedule);
+        await vm.InitializeAsync();
+
+        var math = vm.Lessons[0];
+        Assert.True(math.IsPast);                // the lesson's own time slot already ended
+        var hw = Assert.Single(math.Homework);
+        Assert.False(hw.IsDone);                 // the fixture homework is not done
+
+        var window = new MainWindow { DataContext = shell };
+        window.Show();
+        Pump();
+
+        var pastCard = window.GetVisualDescendants().OfType<Border>().Single(b => b.Classes.Contains("past"));
+        var text = pastCard.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Classes.Contains("hwtext"));
+        Assert.Equal("§5, задачи 1–12", text.Text);
+        Assert.True(text.TextDecorations is null || text.TextDecorations.Count == 0);
 
         AssertNoBindingErrors();
     }

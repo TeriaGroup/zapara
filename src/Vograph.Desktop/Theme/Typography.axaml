@@ -69,7 +69,11 @@
   <Style Selector="Border.card.past">
     <Setter Property="Opacity" Value="0.6" />
   </Style>
-  <Style Selector="Border.card.past TextBlock.hwtext">
+  <!-- Scoped to .hwrow (the Homework section's own row card) on purpose: Border.card.past is shared with
+       LessonCardView's lesson card, whose .past means "this lesson's time slot already ended today" —
+       unrelated to whether an attached homework is done, so an unscoped rule here would strike through a
+       NOT-done homework's text on any lesson card whose lesson already ended today. -->
+  <Style Selector="Border.card.hwrow.past TextBlock.hwtext">
     <Setter Property="TextDecorations" Value="Strikethrough" />
   </Style>
 

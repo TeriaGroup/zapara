@@ -39,7 +39,7 @@
                 <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="h:HomeworkRowViewModel">
-                    <Border Classes="card hoverable" Classes.past="{Binding IsDone}">
+                    <Border Classes="card hoverable hwrow" Classes.past="{Binding IsDone}">
                       <Grid ColumnDefinitions="*,Auto">
                         <StackPanel Spacing="4">
                           <TextBlock Classes="subject hwtext" Text="{Binding Subject}" />
