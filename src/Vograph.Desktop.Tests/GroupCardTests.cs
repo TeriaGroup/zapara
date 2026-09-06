@@ -1,7 +1,6 @@
 using Vograph.Core.Models;
 using Vograph.Core.Services;
 using Vograph.Desktop.Dialogs;
-using Vograph.Desktop.Features.Homeworks;
 using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Features.States;
 using Vograph.Desktop.Services;
@@ -37,6 +36,13 @@ public class GroupCardTests
         var changed = false;
         shell.GroupChanged += () => changed = true;
 
+        // Baseline for the badge assertion below: while my group is 3313 the fixture homework on
+        // «лек ВЫСШ. МАТЕМАТ» is due Mon 07.09 (group 3313 has that lecture on Monday of both week codes),
+        // one day after the pinned Sunday clock, so HomeworkStatus.BadgeCount is 1 and the badge reads "1".
+        var badge = shell.ToolSections.Single(s => s.Key == SectionKey.Homework);
+        await shell.UpdateHomeworkBadgeAsync();
+        Assert.Equal("1", badge.Badge);
+
         var task = shell.OpenGroupPickerCommand.ExecuteAsync(null);
         var sw = System.Diagnostics.Stopwatch.StartNew();
         while (shell.Dialogs.Current is not GroupPickerDialogViewModel && sw.ElapsedMilliseconds < 2000)
@@ -52,12 +58,11 @@ public class GroupCardTests
         Assert.Equal("09С31", shell.GroupName);
         Assert.True(changed);
 
-        // The awaited picker flow (not a fire-and-forget raiser) refreshes the sidebar badge too: group 3031
-        // has no lesson for the fixture homework's subject, so RecomputeAllStatuses (run before RaiseGroupChanged,
-        // inside OpenGroupPickerAsync's own gated call) clears its due date, and HomeworkStatus.BadgeCount no
-        // longer counts it — proving the badge reflects the *new* group, not a stale fire-and-forget read of the old one.
-        var expectedCount = HomeworkStatus.BadgeCount(db.Services.Homework.GetAll(), today);
-        Assert.Equal(expectedCount > 0 ? expectedCount.ToString() : null, shell.ToolSections.Single(s => s.Key == SectionKey.Homework).Badge);
+        // The awaited picker flow (not a fire-and-forget raiser) refreshes that same badge: group 3031 has no
+        // lesson for the fixture homework's subject, so RecomputeAllStatuses (run before RaiseGroupChanged,
+        // inside OpenGroupPickerAsync's own gated call) clears its due date, the count drops to 0 and the badge
+        // clears. Dropping the awaited UpdateHomeworkBadgeAsync from OpenGroupPickerAsync leaves the stale "1".
+        Assert.Null(badge.Badge);
     }
 
     [Fact]
