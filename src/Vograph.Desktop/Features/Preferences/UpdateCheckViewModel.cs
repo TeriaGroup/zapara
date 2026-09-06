@@ -25,7 +25,7 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
     public UpdateCheckViewModel(AppServices app, Func<DateTime>? clock = null, string? updatesDir = null) : base(app)
     {
         _clock = clock ?? (() => DateTime.Now);
-        _updatesDir = updatesDir ?? AutoUpdateService.UpdatesDir;
+        _updatesDir = updatesDir ?? Path.Combine(App.DataDir, "updates");
         _statusText = T("updIdle");
         Installer = zip => UpdateRunner.Apply(zip, AppContext.BaseDirectory, Shutdown ?? (() => { }));
         Delay = span => Task.Delay(span);
@@ -163,12 +163,14 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Available → download → Ready → hand the zip to the installer (batch + shutdown).</summary>
+    /// <summary>Available → download → Ready → hand the zip to the installer (batch + shutdown). Writes the
+    /// "attempted" marker first (R45) so a silent relaunch that finds it can tell this tag was already tried.</summary>
     [RelayCommand(AllowConcurrentExecutions = false)]
     public async Task InstallAsync()
     {
         if (State == UpdateState.Available && !await DownloadAsync()) return;
         if (State != UpdateState.Ready || _zipPath is null) return;
+        WriteAttemptedMarker(_zipPath);
         try
         {
             Installer(_zipPath);
@@ -183,7 +185,11 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
     [RelayCommand] private Task Check() => CheckAsync(manual: true);
     [RelayCommand] private Task OpenReleases() => App.Launcher.OpenUrlAsync(HtmlUrl ?? SettingsViewModel.ReleasesUrl);
 
-    /// <summary>Spec §6: the silent startup update toasts «Обновляюсь до …» and restarts without a dialog.</summary>
+    /// <summary>Spec §6: the silent startup update toasts «Обновляюсь до …» and restarts without a dialog.
+    /// R45: if this tag's zip already carries an "attempted" marker — a previous silent run got this far but the
+    /// app is back, meaning the install never actually completed (locked directory, AV, disk full) — the check
+    /// still runs, so the sidebar item/badge and the Settings card stay the visible route, but the toast and the
+    /// installer are skipped. Without this, a relaunch that can never unpack would toast and shut down forever.</summary>
     public async Task RunStartupFlowAsync()
     {
         var s = await RunAsync(() => App.Db.GetSettings(), "settings");
@@ -193,9 +199,25 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         _suppress = false;
         if (!await CheckAsync(manual: false)) return;
         if (!await DownloadAsync()) return;
+        if (_zipPath is not null && File.Exists(AttemptedMarkerPath(_zipPath))) return;
         App.Toasts.Info(T("updUpdatingTo", LatestTag!));
         await Delay(TimeSpan.FromSeconds(2));
         await InstallAsync();
+    }
+
+    private static string AttemptedMarkerPath(string zipPath) => zipPath + ".attempted";
+
+    /// <summary>Bookkeeping only: a failed write is logged, never fatal to the install itself.</summary>
+    private void WriteAttemptedMarker(string zipPath)
+    {
+        try
+        {
+            File.WriteAllText(AttemptedMarkerPath(zipPath), $"{LatestTag}\t{_clock():O}");
+        }
+        catch (Exception ex)
+        {
+            App.Log.Error("update marker", ex);
+        }
     }
 
     private void Fail(string text)

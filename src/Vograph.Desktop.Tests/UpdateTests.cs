@@ -113,6 +113,7 @@ public class UpdateTests : UiTest
         Assert.Single(source.Downloads);
         Assert.Single(installed, p => p.EndsWith("ZAPARA_windows-v2.1.0_win-x64.zip") && File.Exists(p));
         Assert.Equal(UpdateState.Ready, vm.State);
+        await WaitAsync(() => vm.Progress == 1.0); // Progress<T>.Report posts its callback asynchronously
         Assert.Equal(1.0, vm.Progress);
     }
 
@@ -137,6 +138,41 @@ public class UpdateTests : UiTest
         Assert.Single(installed);
         Assert.Contains(db.Services.Toasts.Items, t => t.Text == "Обновляюсь до windows-v2.1.0…");
         Assert.DoesNotContain(db.Services.Toasts.Items, t => t.Kind == ToastKind.Bad);
+    }
+
+    /// <summary>R45: a locked install directory (Expand-Archive cannot write under Program Files, an AV lock, disk
+    /// full) must not toast-and-shutdown on every relaunch forever. The marker written before the first attempt
+    /// gates the silent path on the next one — modelled here as two VM instances (a fresh relaunch never carries
+    /// the previous one's in-memory state) that share the same updatesDir (disk state does survive a relaunch).</summary>
+    [Fact]
+    public async Task Startup_Flow_Does_Not_Repeat_For_An_Already_Attempted_Tag()
+    {
+        using var db = TestDb.Create();
+        var updatesDir = Path.Combine(db.Dir, "updates");
+        var source = new FakeUpdateSource { Latest = Newer };
+        db.Services.UpdateSource = source;
+        var installed = new List<string>();
+
+        var vm1 = new UpdateCheckViewModel(db.Services, () => Sun6, updatesDir)
+        {
+            Installer = installed.Add,
+            Shutdown = () => { },
+            Delay = _ => Task.CompletedTask
+        };
+        await vm1.RunStartupFlowAsync();
+        Assert.Single(installed);
+        Assert.Single(db.Services.Toasts.Items, t => t.Text == "Обновляюсь до windows-v2.1.0…");
+
+        var vm2 = new UpdateCheckViewModel(db.Services, () => Sun6, updatesDir) // the app relaunched: a fresh VM
+        {
+            Installer = installed.Add,
+            Shutdown = () => { },
+            Delay = _ => Task.CompletedTask
+        };
+        await vm2.RunStartupFlowAsync();
+        Assert.Single(installed); // the installer is not called a second time
+        Assert.Single(db.Services.Toasts.Items, t => t.Text == "Обновляюсь до windows-v2.1.0…"); // no second toast
+        Assert.True(vm2.IsAvailable); // still the visible route: sidebar item, badge, Settings card
     }
 
     [Fact]
