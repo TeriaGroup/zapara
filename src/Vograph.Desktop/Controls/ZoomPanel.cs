@@ -20,6 +20,7 @@ public sealed class ZoomPanel : Decorator
     private const double WheelStep = 1.15;
     private const double ButtonStep = 1.25;
     private bool _needsFit = true;
+    private bool _batching;
     private Point? _dragLast;
 
     public ZoomPanel()
@@ -70,9 +71,11 @@ public sealed class ZoomPanel : Decorator
 
     private void Apply(double scale, double ox, double oy)
     {
+        _batching = true;
         Scale = scale;
         OffsetX = ox;
         OffsetY = oy;
+        _batching = false;
         UpdateTransform();
         RaiseViewChanged();
     }
@@ -104,9 +107,11 @@ public sealed class ZoomPanel : Decorator
             {
                 _needsFit = false;
                 var (s, ox, oy) = ZoomMath.Fit(finalSize.Width, finalSize.Height, c.DesiredSize.Width, c.DesiredSize.Height);
+                _batching = true;
                 Scale = s;
                 OffsetX = ox;
                 OffsetY = oy;
+                _batching = false;
                 didFit = true;
             }
             UpdateTransform();
@@ -118,7 +123,26 @@ public sealed class ZoomPanel : Decorator
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property == ChildProperty) RequestFit();
+        if (change.Property == ChildProperty)
+        {
+            RequestFit();
+            return;
+        }
+        if (_batching) return;
+        if (change.Property != ScaleProperty && change.Property != OffsetXProperty && change.Property != OffsetYProperty) return;
+
+        // A direct set (XAML attribute, style, animation, or a restored-state binding) bypasses Apply()/ArrangeOverride,
+        // so react here too: clamp Scale back into range (guarding against re-entering this handler), then keep the
+        // rendered transform and the ViewChanged contract in sync with it.
+        var clamped = ZoomMath.Clamp(Scale);
+        if (clamped != Scale)
+        {
+            _batching = true;
+            Scale = clamped;
+            _batching = false;
+        }
+        UpdateTransform();
+        RaiseViewChanged();
     }
 
     /// <summary>An otherwise empty Decorator is not hit-testable; painting the viewport makes wheel and drag land here.</summary>

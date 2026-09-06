@@ -93,10 +93,35 @@ public class ZoomPanelTests : UiTest
         window.Show();
         Pump();
 
-        Assert.True(raised > 0, "ViewChanged should fire for the initial AutoFit.");
+        Assert.Equal(1, raised);
         Assert.Equal(0.5, panel.Scale, 6);
         Assert.Equal(0, panel.OffsetX, 6);
         Assert.Equal(0, panel.OffsetY, 6);
+        AssertNoBindingErrors();
+    }
+
+    [AvaloniaFact]
+    public void Panel_Updates_Transform_And_Raises_ViewChanged_On_Direct_Property_Set()
+    {
+        var content = new Border { Width = 400, Height = 300, Background = Brushes.Gray };
+        var panel = new ZoomPanel { Child = content };
+
+        var window = new Window { Width = 200, Height = 150, Content = panel, SizeToContent = SizeToContent.Manual };
+        window.Show();
+        Pump();
+
+        var raised = 0;
+        panel.ViewChanged += (_, _) => raised++;
+
+        panel.Scale = 2;
+        var matrix = Assert.IsType<MatrixTransform>(content.RenderTransform).Matrix;
+        Assert.Equal(2, matrix.M11, 6);
+        Assert.Equal(1, raised);
+
+        panel.OffsetX = 40;
+        matrix = Assert.IsType<MatrixTransform>(content.RenderTransform).Matrix;
+        Assert.Equal(40, matrix.M31, 6);
+        Assert.Equal(2, raised);
         AssertNoBindingErrors();
     }
 }
