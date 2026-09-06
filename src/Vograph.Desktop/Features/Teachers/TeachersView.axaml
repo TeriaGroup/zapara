@@ -68,7 +68,7 @@
                                     <WrapPanel>
                                       <TextBlock Text="{Binding Name}" TextWrapping="Wrap" />
                                       <Border Classes="chip type" Margin="6,0,0,0" VerticalAlignment="Center"><TextBlock Text="{Binding TypeLabel}" /></Border>
-                                      <Border Classes="badge" Margin="6,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsMine}"><TextBlock Text="{loc:T teachersMine}" /></Border>
+                                      <Border Classes="chip" Margin="6,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsMine}"><TextBlock Text="{loc:T teachersMine}" /></Border>
                                     </WrapPanel>
                                     <TextBlock Classes="muted caption" Text="{Binding Groups}" TextWrapping="Wrap" />
                                   </StackPanel>

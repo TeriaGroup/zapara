@@ -33,6 +33,8 @@ public class HomeworkTests : UiTest
     [InlineData("2026-09-07", 3, "burning")]
     [InlineData("2026-09-08", 1, "approaching")]
     [InlineData("2026-09-08", 0, "approaching")]   // ≤ 3 days, nothing in between
+    [InlineData("2026-09-09", 0, "approaching")]   // exactly 3 days: the last day of «скоро»
+    [InlineData("2026-09-10", 0, "far")]           // 4 days: over the threshold
     [InlineData("2026-09-16", 0, "far")]
     [InlineData("2026-09-16", 2, "far")]
     [InlineData("2026-09-05", 0, "overdue")]

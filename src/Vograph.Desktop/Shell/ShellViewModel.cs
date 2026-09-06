@@ -64,6 +64,11 @@ public sealed partial class ShellViewModel : ViewModelBase
             foreach (var s in AllSections) s.RefreshLabel();
             _ = RefreshGroupCardAsync();
         };
+        // A phone pushing over the LAN must show up even when Settings was never opened this session, so the
+        // shell — not a section — owns this subscription. The event is raised on a pool thread, and the
+        // fire-and-forget hop to the UI thread is safe only because NotifyImportedAsync cannot throw: every
+        // step of it is a RunAsync (gated, logged, toasted) or a plain event raise.
+        app.LanSync.Imported += () => Dispatcher.UIThread.Post(() => _ = NotifyImportedAsync());
         // Startup only: the shell is built before any background Core call exists, so this is the one
         // synchronous read (same class as the AppServices ctor). Every later refresh goes through RefreshGroupCardAsync.
         ApplyGroupCard(ReadCard());
@@ -154,6 +159,18 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// call here used to keep running after an awaited caller returned, racing test teardown's Dispose of
     /// the SQLite connection it reads from.</summary>
     internal void RaiseHomeworkChanged() => HomeworkChanged?.Invoke();
+
+    /// <summary>Data arrived from outside the app — a LAN push or the Settings file import. Both land in SQLite
+    /// through Core's SyncService, which leaves the homework due dates computed against the *sender's* timetable,
+    /// so they are recomputed here before every section recomposes and the sidebar badge is refreshed.
+    /// Never throws (RunAsync swallows and reports), which is what makes the ctor's fire-and-forget hop safe.</summary>
+    public async Task NotifyImportedAsync()
+    {
+        await RunAsync(() => App.Homework.RecomputeAllStatuses(), "import");
+        RaiseScheduleChanged();
+        RaiseHomeworkChanged();
+        await UpdateHomeworkBadgeAsync();
+    }
 
     private sealed record BadgeData(int Count);
 
@@ -301,6 +318,9 @@ public sealed partial class ShellViewModel : ViewModelBase
 
     public void NavigateTo(SectionKey key)
     {
+        // Ctrl+1…8 are Window.KeyBindings and fire straight into NavigateCommand, over the fullscreen map too
+        // (HandleShortcut never sees them). Without this the section would be switched invisibly behind the plan.
+        Overlay = null;
         Current = GetOrCreate(key);
         CurrentKey = key;
         foreach (var s in AllSections) s.IsActive = s.Key == key;

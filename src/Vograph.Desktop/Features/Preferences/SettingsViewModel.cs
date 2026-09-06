@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Text;
 using Avalonia.Media.Imaging;
-using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Models;
@@ -23,7 +22,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private readonly Action _reload;
     private readonly PropertyChangedEventHandler _onShell;
     private readonly Action _onTheme;
-    private readonly Action _onImported;
     private bool _suppress;
     private int _version;
 
@@ -40,7 +38,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         _notificationsEnabled = app.Prefs.NotificationsEnabled;
         _lanSync = app.LanSync.IsRunning;
         _reload = () => _ = LoadAsync();
-        _onImported = () => Dispatcher.UIThread.Post(() => { _shell.RaiseScheduleChanged(); _shell.RaiseHomeworkChanged(); });
         _onShell = (_, e) =>
         {
             if (e.PropertyName == nameof(ShellViewModel.SidebarCollapsed)) { _suppress = true; CompactSidebar = shell.SidebarCollapsed; _suppress = false; }
@@ -51,7 +48,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
         shell.GroupChanged += _reload;
         shell.ScheduleChanged += _reload;
         app.Loc.LanguageChanged += Relabel;
-        app.LanSync.Imported += _onImported; // a phone that pushed its data over the LAN must show up right away
+        // LanSync.Imported is the shell's to handle (NotifyImportedAsync): a LAN push has to refresh the app
+        // whether or not this section was ever built, and ScheduleChanged brings this card along with it.
         if (app.Theme is { } theme) theme.Changed += _onTheme; // mirrors the sidebar's quick-toggle back into ThemeIndex
     }
 
@@ -61,7 +59,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         _shell.GroupChanged -= _reload;
         _shell.ScheduleChanged -= _reload;
         App.Loc.LanguageChanged -= Relabel;
-        App.LanSync.Imported -= _onImported;
         if (App.Theme is { } theme) theme.Changed -= _onTheme;
     }
 
@@ -213,13 +210,12 @@ public sealed partial class SettingsViewModel : ViewModelBase
         var result = await RunAsync(() =>
         {
             var (o, h, f) = App.Sync.ImportFromJson(json);
-            App.Homework.RecomputeAllStatuses();
             return new ImportResult(o, h, f);
         }, "import");
         if (result is null) return;
         App.Toasts.Ok(T("importOk", result.Overrides, result.Homework, result.Friends));
-        _shell.RaiseScheduleChanged();
-        _shell.RaiseHomeworkChanged();
+        // The same path a LAN push takes: recompute the due dates, recompose the sections, refresh the badge.
+        await _shell.NotifyImportedAsync();
         await LoadAsync();
     }
 

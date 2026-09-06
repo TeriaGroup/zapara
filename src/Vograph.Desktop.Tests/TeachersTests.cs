@@ -4,6 +4,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
 using Vograph.Core.Services;
+using Vograph.Desktop.Features.Preferences;
 using Vograph.Desktop.Features.Teachers;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
@@ -15,6 +16,13 @@ public class TeachersTests : UiTest
 {
     private static readonly DateTime Wed9 = new(2026, 9, 9, 12, 0, 0); // even week, Wednesday
     private static string LecturerXml => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-lecturers.xml"));
+
+    private static async Task WaitAsync(Func<bool> done)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (!done() && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+        Assert.True(done(), "condition not met in time");
+    }
 
     private static async Task<TeachersViewModel> Make(TestDb db, ShellViewModel? shell = null)
     {
@@ -99,6 +107,27 @@ public class TeachersTests : UiTest
         var vm = await Make(db);
         vm.Selected = vm.Items.Single(i => i.Info.Id == "1609");
         Assert.Equal("чет", Assert.Single(vm.Detail!.Days[0].Rows).ParityLabel); // XML odd shows as the user's even week
+    }
+
+    /// <summary>Inversion is flipped in Settings, which saves it and raises ScheduleChanged: the open lecturer
+    /// detail has to re-read ParityInvert. Listening to GroupChanged alone leaves the Monday row labelled «нечет»
+    /// (and the user's «нечет/чет» segment must survive the rebuild).</summary>
+    [Fact]
+    public async Task Detail_Follows_A_Parity_Flip_From_Settings()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = await Make(db, shell);
+        vm.Selected = vm.Items.Single(i => i.Info.Id == "1609");
+        Assert.Equal("нечет", Assert.Single(vm.Detail!.Days[0].Rows).ParityLabel);
+        vm.Detail.ParityIndex = 2; // «чет»: that Monday lecture is an odd-week one, so the day goes empty
+        Assert.Empty(vm.Detail.Days[0].Rows);
+
+        var settings = new SettingsViewModel(db.Services, shell, () => Wed9);
+        await settings.LoadAsync();
+        settings.ParityInvert = true; // saves under the gate, then raises ScheduleChanged
+        await WaitAsync(() => vm.Detail?.Days[0].Rows.FirstOrDefault()?.ParityLabel == "чет");
+        Assert.Equal(2, vm.Detail!.ParityIndex); // the segment the user picked survives the rebuild
     }
 
     [Fact]

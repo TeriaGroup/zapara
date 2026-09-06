@@ -173,6 +173,39 @@ public class SyncTests : UiTest
         Assert.False(server.IsRunning);
     }
 
+    /// <summary>A phone pushes over the LAN before the Settings section was ever opened this session: the shell
+    /// itself is the subscriber, so the sections recompose and the sidebar badge is refreshed without a
+    /// SettingsViewModel existing anywhere. Headless (not a plain Fact) because the server raises Imported on a
+    /// pool thread and the shell marshals it with Dispatcher.UIThread.Post — that needs a dispatcher that runs.</summary>
+    [AvaloniaFact]
+    public async Task Lan_Import_Refreshes_The_Shell_Without_Settings()
+    {
+        using var source = TestDb.Create();                              // 1 override, 1 homework, 1 friend
+        using var target = TestDb.Create(seedPersonalization: false);    // nothing personal yet
+        var port = FreePort();
+        // Never the production server (every interface on 8765), and installed before the shell is built:
+        // the shell subscribes to the instance it sees in AppServices at construction time.
+        target.Services.LanSync = new LanSyncServer(target.Services, port, localhostOnly: true);
+        var shell = new ShellViewModel(target.Services) { Clock = () => Sun6 };
+        var changed = 0;
+        shell.ScheduleChanged += () => changed++;
+        var badge = shell.ToolSections.Single(s => s.Key == SectionKey.Homework);
+        await shell.UpdateHomeworkBadgeAsync();
+        Assert.Null(badge.Badge); // no homework on this side yet
+
+        target.Services.LanSync.Start();
+        using var http = new HttpClient();
+        var body = new StringContent(source.Services.Sync.ExportToJson(), Encoding.UTF8, "application/json");
+        var resp = await http.PostAsync($"http://localhost:{port}/sync/", body, TestContext.Current.CancellationToken);
+        Assert.True(resp.IsSuccessStatusCode);
+
+        // The fixture homework («лек ВЫСШ. МАТЕМАТ», created Sat 05.09) is due Mon 07.09 for group 3313 — one day
+        // after the pinned Sunday clock, so the badge the shell refreshes after the import reads "1".
+        await WaitAsync(() => changed > 0 && badge.Badge == "1");
+        Assert.Equal("Матан", target.Services.Overrides.GetDisplayName(TestDb.MathSubject, 1));
+        target.Services.LanSync.Stop();
+    }
+
     /// <summary>A body past the cap is refused unread — and the listener survives it.</summary>
     [Fact]
     public async Task Lan_Server_Refuses_An_Oversized_Body()

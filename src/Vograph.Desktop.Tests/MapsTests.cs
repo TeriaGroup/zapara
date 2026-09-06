@@ -252,5 +252,12 @@ public class MapsTests : UiTest
         Assert.NotSame(shown, vm.Image);
         Assert.Throws<ObjectDisposedException>(() => _ = shown.PixelSize);
         AssertNoBindingErrors();
+
+        // Ctrl+1…8 stay live over the fullscreen map (HandleShortcut only swallows the bare keys), so navigating
+        // has to close it — otherwise the new section is switched to invisibly, behind the plan.
+        vm.ToggleFullscreenCommand.Execute(null);
+        Assert.True(shell.HasOverlay);
+        shell.NavigateTo(SectionKey.Week);
+        Assert.False(shell.HasOverlay);
     }
 }

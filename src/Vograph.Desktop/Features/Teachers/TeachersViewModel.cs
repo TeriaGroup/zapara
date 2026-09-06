@@ -20,7 +20,7 @@ public sealed partial class TeachersViewModel : ViewModelBase
 {
     private readonly ShellViewModel _shell;
     private readonly Func<DateTime> _clock;
-    private readonly Action _onGroup;
+    private readonly Action _onReload;
     private readonly Action _onLanguage;
     private TeacherIndex _index = new(Array.Empty<LecturerInfo>(), Array.Empty<LecturerLesson>());
     private HashSet<string> _myIds = new();
@@ -35,15 +35,19 @@ public sealed partial class TeachersViewModel : ViewModelBase
         _shell = shell;
         _clock = clock ?? (() => DateTime.Now);
         AllowNetwork = allowNetwork;
-        _onGroup = () => _ = LoadMyGroupAsync();
+        _onReload = () => _ = LoadMyGroupAsync();
         _onLanguage = () => { OnPropertyChanged(nameof(Title)); Detail?.Relabel(); };
-        shell.GroupChanged += _onGroup;
+        shell.GroupChanged += _onReload;
+        // ParityInvert lives in settings, and the «нечет/чет» labels here are computed from it: the Settings
+        // switch (and a timetable refresh) raise ScheduleChanged, so both events re-read it the same way.
+        shell.ScheduleChanged += _onReload;
         app.Loc.LanguageChanged += _onLanguage;
     }
 
     public override void Detach()
     {
-        _shell.GroupChanged -= _onGroup;
+        _shell.GroupChanged -= _onReload;
+        _shell.ScheduleChanged -= _onReload;
         App.Loc.LanguageChanged -= _onLanguage;
     }
 
@@ -68,9 +72,21 @@ public sealed partial class TeachersViewModel : ViewModelBase
     partial void OnOnlyMineChanged(bool value) => ApplyFilter();
     partial void OnSelectedChanged(TeacherItem? value)
     {
-        Detail = value is null ? null : new TeacherDetailViewModel(value.Info, _index.LessonsOf(value.Info.Id), value.IsMine, _myGroupId, _myGroupName, _invert, App.Loc, _clock().Date);
+        Detail = value is null ? null : NewDetail(value, parityIndex: 0);
         OnPropertyChanged(nameof(HasDetail));
     }
+
+    /// <summary>A reload re-read ParityInvert and my group, so the open detail has to be rebuilt from them.
+    /// ApplyFilter cannot do it: it re-creates the selected TeacherItem, but the record compares by value, so
+    /// the Selected setter sees no change and OnSelectedChanged never runs. The «нечет/чет» segment the user
+    /// picked is carried over — a background refresh must not reset it.</summary>
+    private void RebuildDetail()
+    {
+        if (Selected is { } item) Detail = NewDetail(item, Detail?.ParityIndex ?? 0);
+    }
+
+    private TeacherDetailViewModel NewDetail(TeacherItem item, int parityIndex) =>
+        new(item.Info, _index.LessonsOf(item.Info.Id), item.IsMine, _myGroupId, _myGroupName, _invert, App.Loc, _clock().Date) { ParityIndex = parityIndex };
 
     /// <summary>Reentrancy guard. ShellViewModel.NavigateTo fires ActivateAsync without awaiting and without a
     /// busy check, and the shell hands back the same cached section instance on every navigation, so two
@@ -138,6 +154,7 @@ public sealed partial class TeachersViewModel : ViewModelBase
         _invert = data.Invert;
         _myIds = TeacherSearch.MyLecturerIds(data.Lessons, _index.Lecturers);
         ApplyFilter();
+        RebuildDetail();
     }
 
     private void ApplyFilter()
