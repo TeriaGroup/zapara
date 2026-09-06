@@ -1,0 +1,85 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             xmlns:st="using:Vograph.Desktop.Features.Preferences"
+             x:Class="Vograph.Desktop.Features.Preferences.SettingsView"
+             x:DataType="st:SettingsViewModel">
+  <UserControl.Styles>
+    <Style Selector="Grid.row"><Setter Property="Margin" Value="0,4" /></Style>
+    <Style Selector="Grid.row > TextBlock"><Setter Property="VerticalAlignment" Value="Center" /></Style>
+  </UserControl.Styles>
+  <ScrollViewer>
+    <StackPanel Margin="32,26" Spacing="14" MaxWidth="720" HorizontalAlignment="Left">
+      <TextBlock Classes="display" Text="{Binding Title}" />
+
+      <!-- Appearance -->
+      <Border Classes="card">
+        <StackPanel Spacing="10">
+          <TextBlock Classes="micro" Text="{loc:TU setAppearance}" />
+          <Grid Classes="row" ColumnDefinitions="200,*">
+            <TextBlock Text="{loc:T setTheme}" />
+            <c:SegmentedControl Grid.Column="1" Items="{Binding ThemeItems}" SelectedIndex="{Binding ThemeIndex}" />
+          </Grid>
+          <Grid Classes="row" ColumnDefinitions="200,*">
+            <TextBlock Text="{loc:T language}" />
+            <c:SegmentedControl Grid.Column="1" Items="{Binding LanguageItems}" SelectedIndex="{Binding LanguageIndex}" />
+          </Grid>
+          <c:Switch Content="{loc:T setCompactSidebar}" IsChecked="{Binding CompactSidebar}" />
+          <c:Switch Content="{loc:T setAnimations}" IsChecked="{Binding Animations}" />
+        </StackPanel>
+      </Border>
+
+      <!-- Schedule -->
+      <Border Classes="card">
+        <StackPanel Spacing="10">
+          <TextBlock Classes="micro" Text="{loc:TU setSchedule}" />
+          <Grid Classes="row" ColumnDefinitions="200,*">
+            <TextBlock Text="{loc:T myGroup}" />
+            <Button Grid.Column="1" HorizontalAlignment="Left" Command="{Binding ChangeGroupCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="{Binding GroupName}" FontWeight="SemiBold" />
+                <TextBlock Classes="muted" Text="{loc:T setChange}" />
+              </StackPanel>
+            </Button>
+          </Grid>
+          <c:Switch Content="{loc:T invertParity}" IsChecked="{Binding ParityInvert}" />
+          <TextBlock Classes="faint caption" Text="{loc:T invertHint}" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <Button Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsRefreshing}" ToolTip.Tip="{loc:T refreshTip}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <c:Icon Data="{StaticResource Icon.Refresh}" Size="14" />
+                <TextBlock Text="{loc:T refresh}" />
+              </StackPanel>
+            </Button>
+            <StackPanel VerticalAlignment="Center">
+              <TextBlock Classes="muted caption" Text="{Binding UpdatedText}" />
+              <TextBlock Classes="faint caption" Text="{Binding AutoCheckText}" />
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Task 10: Notifications card, Sync card -->
+      <!-- Task 11: Updates card -->
+
+      <!-- About -->
+      <Border Classes="card">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="micro" Text="{loc:TU setAbout}" />
+          <TextBlock Text="{Binding VersionText}" />
+          <Button Classes="link" Content="{loc:T setReleases}" Command="{Binding OpenReleasesCommand}" HorizontalAlignment="Left" />
+          <TextBlock Classes="muted caption" Text="{loc:T setSources}" Margin="0,6,0,0" />
+          <Button Classes="link" Content="{loc:T setSourceTimetable}" Command="{Binding OpenTimetableSourceCommand}" HorizontalAlignment="Left" />
+          <Button Classes="link" Content="{loc:T setSourceMaps}" Command="{Binding OpenMapsSourceCommand}" HorizontalAlignment="Left" />
+          <Button Classes="ghost" HorizontalAlignment="Left" Command="{Binding OpenDataFolderCommand}" Margin="0,6,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <c:Icon Data="{StaticResource Icon.Folder}" Size="14" />
+              <TextBlock Text="{loc:T setDataFolder}" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

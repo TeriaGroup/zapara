@@ -152,6 +152,11 @@ public class I18nService
             ["hwOpen1"] = "{0} открытая", ["hwOpen2"] = "{0} открытые", ["hwOpen5"] = "{0} открытых", ["hwDoneCount"] = "сдано {0}",
             ["hwAddShort"] = "Добавить", ["hwEmpty"] = "Домашки нет", ["hwEmptyHint"] = "Добавьте задание кнопкой выше или через ＋ на карточке пары",
             ["hwPickSubject"] = "ПРЕДМЕТ", ["hwPickSubjectHint"] = "Название предмета…",
+            ["setAppearance"] = "Внешний вид", ["setTheme"] = "Тема", ["themeSystem"] = "Как в системе", ["themeLight"] = "Светлая", ["themeDark"] = "Тёмная",
+            ["setCompactSidebar"] = "Компактный сайдбар", ["setAnimations"] = "Анимации", ["setSchedule"] = "Расписание", ["setChange"] = "изменить",
+            ["setAutoCheckAt"] = "автопроверка {0}", ["setNever"] = "ещё не было", ["setAbout"] = "О программе", ["setVersion"] = "Версия {0}",
+            ["setReleases"] = "Страница релизов", ["setSources"] = "Источники данных", ["setSourceTimetable"] = "Расписание студентов — voenmeh.ru",
+            ["setSourceMaps"] = "Планы корпусов — voenmeh.ru/openmap", ["setDataFolder"] = "Открыть папку данных",
         },
         ["en"] = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -285,6 +290,11 @@ public class I18nService
             ["hwOpen1"] = "{0} open", ["hwOpen2"] = "{0} open", ["hwOpen5"] = "{0} open", ["hwDoneCount"] = "{0} done",
             ["hwAddShort"] = "Add", ["hwEmpty"] = "No homework", ["hwEmptyHint"] = "Add one with the button above or via ＋ on a lesson card",
             ["hwPickSubject"] = "SUBJECT", ["hwPickSubjectHint"] = "Subject name…",
+            ["setAppearance"] = "Appearance", ["setTheme"] = "Theme", ["themeSystem"] = "System", ["themeLight"] = "Light", ["themeDark"] = "Dark",
+            ["setCompactSidebar"] = "Compact sidebar", ["setAnimations"] = "Animations", ["setSchedule"] = "Timetable", ["setChange"] = "change",
+            ["setAutoCheckAt"] = "auto-check {0}", ["setNever"] = "not yet", ["setAbout"] = "About", ["setVersion"] = "Version {0}",
+            ["setReleases"] = "Releases page", ["setSources"] = "Data sources", ["setSourceTimetable"] = "Student timetable — voenmeh.ru",
+            ["setSourceMaps"] = "Building plans — voenmeh.ru/openmap", ["setDataFolder"] = "Open data folder",
         }
     };
 
