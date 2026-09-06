@@ -42,10 +42,10 @@
                     <Border Classes="card hoverable" Classes.past="{Binding IsDone}">
                       <Grid ColumnDefinitions="*,Auto">
                         <StackPanel Spacing="4">
-                          <TextBlock Classes="subject" Text="{Binding Subject}" />
-                          <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                          <TextBlock Classes="subject hwtext" Text="{Binding Subject}" />
+                          <TextBlock Classes="hwtext" Text="{Binding Text}" TextWrapping="Wrap" />
                           <Border Classes="chip" HorizontalAlignment="Left" Classes.approaching="{Binding IsApproaching}" Classes.burning="{Binding IsBurning}"
-                                  Classes.urgent="{Binding IsUrgent}" Classes.overdue="{Binding IsOverdue}" Classes.done="{Binding IsDone}">
+                                  Classes.urgent="{Binding IsUrgent}" Classes.overdue="{Binding IsOverdue}" Classes.done="{Binding IsDone}" Classes.far="{Binding IsFar}">
                             <TextBlock Text="{Binding Label}" />
                           </Border>
                         </StackPanel>

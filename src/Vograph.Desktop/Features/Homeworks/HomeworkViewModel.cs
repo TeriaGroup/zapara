@@ -170,6 +170,7 @@ public sealed partial class HomeworkRowViewModel : ObservableObject
     public bool IsBurning => Entry.Status == "burning";
     public bool IsUrgent => Entry.Status == "burning_urgent";
     public bool IsOverdue => Entry.Status == "overdue";
+    public bool IsFar => Entry.Status == "far";
     public string DoneLabel => Loc.Current.T(IsDone ? "hwUndo" : "hwMarkDone");
 
     [RelayCommand] private Task ToggleDone() => _owner.ToggleDoneAsync(this);

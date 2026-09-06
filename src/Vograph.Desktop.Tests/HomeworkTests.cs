@@ -179,6 +179,15 @@ public class HomeworkTests : UiTest
         SetTheme(ThemeVariant.Light);
         Frames.Capture(window, "homework-light");
 
+        // Expand «Сдано» through the group's own ToggleCommand, the way a user would, so the done row's
+        // struck-through/dimmed text (not just the chip) is visible in a frame.
+        var doneGroup = vm.Groups.Single(g => g.IsDone);
+        doneGroup.ToggleCommand.Execute(null);
+        Pump();
+        Frames.Capture(window, "homework-done-light");
+        doneGroup.ToggleCommand.Execute(null);
+        Pump();
+
         // «＋ Добавить» step 1: nothing else renders SubjectPickerDialogView, so it gets a frame here.
         var add = vm.AddCommand.ExecuteAsync(null);
         await WaitForDialogAsync<SubjectPickerDialogViewModel>(shell);
