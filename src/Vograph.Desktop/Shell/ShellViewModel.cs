@@ -180,7 +180,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         if (Current is ScheduleViewModel s) s.ShowDate(date);
     }
 
-    /// <summary>Bare keys that must not fire inside text fields or over a dialog; MainWindow calls this from its routed KeyDown handler.</summary>
+    /// <summary>Bare keys that must not fire inside text fields or over a dialog; MainWindow calls this from its bubbling KeyDown handler.</summary>
     public bool HandleShortcut(Key key)
     {
         if (Dialogs.HasDialog) return false;

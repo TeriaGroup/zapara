@@ -150,9 +150,20 @@ public class GroupCardTests
         await shell.StartAsync(allowNetwork: false);
         var first = Assert.IsType<ScheduleViewModel>(shell.Current);
         var reloads = 0;
-        first.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ScheduleViewModel.Title)) reloads++; };
+        // Every Apply starts with Lessons.Clear(), which raises Reset even on an empty collection, so a
+        // recompose shows up here whatever it produces. Title would not: recomposing the same group at the
+        // same offset yields the identical string, and the [ObservableProperty] setter drops equal values.
+        first.Lessons.CollectionChanged += (_, _) => reloads++;
+
+        // Positive control: while first is still the registered section the shell event does reach it.
+        shell.RaiseScheduleChanged();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (reloads == 0 && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+        Assert.True(reloads > 0, "an attached section must recompose, otherwise the assertion below proves nothing");
+        await Task.Delay(150, TestContext.Current.CancellationToken); // let that recompose finish before the counter is reused
 
         shell.Register(SectionKey.Schedule, () => new ScheduleViewModel(db.Services, shell));
+        reloads = 0;
         shell.RaiseGroupChanged();
         shell.RaiseScheduleChanged();
         await Task.Delay(150, TestContext.Current.CancellationToken);
