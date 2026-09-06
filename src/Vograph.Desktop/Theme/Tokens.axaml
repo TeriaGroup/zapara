@@ -66,6 +66,18 @@
       <SolidColorBrush x:Key="MenuFlyoutItemForeground" Color="#F2F2F2" />
       <SolidColorBrush x:Key="MenuFlyoutItemForegroundPointerOver" Color="#F2F2F2" />
       <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver" Color="#14FFFFFF" />
+
+      <!-- Fluent Slider resource overrides (monochrome — no blue Fluent accent) -->
+      <SolidColorBrush x:Key="SliderThumbBackground" Color="#F2F2F2" />
+      <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#F2F2F2" />
+      <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="#F2F2F2" />
+      <SolidColorBrush x:Key="SliderTrackValueFill" Color="#F2F2F2" />
+      <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#F2F2F2" />
+      <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="#F2F2F2" />
+      <SolidColorBrush x:Key="SliderTrackFill" Color="#262626" />
+      <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="#262626" />
+      <SolidColorBrush x:Key="SliderTrackFillPressed" Color="#262626" />
+      <SolidColorBrush x:Key="SliderTickBarFill" Color="#262626" />
     </ResourceDictionary>
 
     <!-- ================= LIGHT ================= -->
@@ -123,6 +135,18 @@
       <SolidColorBrush x:Key="MenuFlyoutItemForeground" Color="#111111" />
       <SolidColorBrush x:Key="MenuFlyoutItemForegroundPointerOver" Color="#111111" />
       <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver" Color="#0D000000" />
+
+      <!-- Fluent Slider resource overrides (monochrome — no blue Fluent accent) -->
+      <SolidColorBrush x:Key="SliderThumbBackground" Color="#111111" />
+      <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#111111" />
+      <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="#111111" />
+      <SolidColorBrush x:Key="SliderTrackValueFill" Color="#111111" />
+      <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#111111" />
+      <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="#111111" />
+      <SolidColorBrush x:Key="SliderTrackFill" Color="#E5E5E5" />
+      <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="#E5E5E5" />
+      <SolidColorBrush x:Key="SliderTrackFillPressed" Color="#E5E5E5" />
+      <SolidColorBrush x:Key="SliderTickBarFill" Color="#E5E5E5" />
     </ResourceDictionary>
 
   </ResourceDictionary.ThemeDictionaries>

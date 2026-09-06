@@ -146,6 +146,8 @@ public class I18nService
             ["mapZoomIn"] = "Крупнее", ["mapZoomOut"] = "Мельче", ["mapReset"] = "100%", ["mapMore"] = "Ещё",
             ["mapNoImage"] = "План не загружен: нет сети и встроенной копии",
             ["mapRemoteHint"] = "Нажмите ◉ у пары или выберите корпус и этаж",
+            ["friendsSubtitle"] = "До пяти групп: их пары появляются точками на ваших карточках", ["friendsCount"] = "{0} из {1}", ["friendsAdd"] = "Добавить группу", ["friendsMax"] = "Максимум пять групп", ["friendsNames"] = "Имена товарищей", ["friendsEnabled"] = "Показывать", ["friendsRemove"] = "Удалить", ["friendsRemoveConfirm"] = "Убрать группу {0} из друзей?", ["friendsEmpty"] = "Друзей пока нет", ["friendsEmptyHint"] = "Добавьте группу — её пары появятся точками на ваших карточках", ["friendsColor"] = "Цвет", ["friendAdded"] = "Группа {0} добавлена", ["intersections"] = "Пересечения", ["strictnessHint"] = "Точка загорается, когда друг в это же время не дальше выбранного уровня", ["alwaysShowAll"] = "Всегда все светофоры", ["alwaysShowAllHint"] = "Друзья без пересечения — серой точкой", ["previewTitle"] = "Превью", ["previewNone"] = "В ближайшие две недели пересечений нет",
+            ["strictTick25"] = "в вузе", ["strictTick50"] = "корпус", ["strictTick75"] = "этаж", ["strictTick100"] = "аудитория",
         },
         ["en"] = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -273,6 +275,8 @@ public class I18nService
             ["mapZoomIn"] = "Zoom in", ["mapZoomOut"] = "Zoom out", ["mapReset"] = "100%", ["mapMore"] = "More",
             ["mapNoImage"] = "Plan not loaded: no network and no bundled copy",
             ["mapRemoteHint"] = "Press ◉ on a lesson or pick a building and floor",
+            ["friendsSubtitle"] = "Up to five groups: their lessons show up as dots on your cards", ["friendsCount"] = "{0} of {1}", ["friendsAdd"] = "Add a group", ["friendsMax"] = "Five groups at most", ["friendsNames"] = "Friends' names", ["friendsEnabled"] = "Show", ["friendsRemove"] = "Remove", ["friendsRemoveConfirm"] = "Remove group {0} from friends?", ["friendsEmpty"] = "No friends yet", ["friendsEmptyHint"] = "Add a group — its lessons appear as dots on your cards", ["friendsColor"] = "Colour", ["friendAdded"] = "Group {0} added", ["intersections"] = "Intersections", ["strictnessHint"] = "A dot lights up when a friend is, at the same time, no farther than the chosen level", ["alwaysShowAll"] = "Always show all traffic lights", ["alwaysShowAllHint"] = "Friends without an intersection — a grey dot", ["previewTitle"] = "Preview", ["previewNone"] = "No intersections in the next two weeks",
+            ["strictTick25"] = "campus", ["strictTick50"] = "building", ["strictTick75"] = "floor", ["strictTick100"] = "room",
         }
     };
 

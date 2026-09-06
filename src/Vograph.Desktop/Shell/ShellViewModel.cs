@@ -53,6 +53,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         Register(SectionKey.Summary, () => new Features.Summary.SummaryViewModel(App, this));
         Register(SectionKey.Teachers, () => new Features.Teachers.TeachersViewModel(App, this, allowNetwork: App.AllowNetwork));
         Register(SectionKey.Maps, () => new Features.Maps.MapsViewModel(App, this));
+        Register(SectionKey.Friends, () => new Features.Friends.FriendsViewModel(App, this));
 
         SidebarCollapsed = app.Prefs.SidebarCollapsed;
         app.Loc.LanguageChanged += () =>

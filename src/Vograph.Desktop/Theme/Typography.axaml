@@ -183,4 +183,11 @@
   <Style Selector="Ellipse.toastdot.warn"><Setter Property="Fill" Value="{DynamicResource Brush.Warn}" /></Style>
   <Style Selector="Ellipse.toastdot.bad"><Setter Property="Fill" Value="{DynamicResource Brush.Bad}" /></Style>
 
+  <!-- Fluent's Slider paints the value fill with Foreground and the track with Background. -->
+  <Style Selector="Slider">
+    <Setter Property="Background" Value="{DynamicResource Brush.Line}" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+    <Setter Property="MinHeight" Value="28" />
+  </Style>
+
 </Styles>

@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             xmlns:f="using:Vograph.Desktop.Features.Friends"
+             xmlns:s="using:Vograph.Desktop.Features.Schedule"
+             x:Class="Vograph.Desktop.Features.Friends.FriendsView"
+             x:DataType="f:FriendsViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="32,26" Spacing="14" MaxWidth="880" HorizontalAlignment="Left">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Margin="0,0,16,0">
+          <TextBlock Classes="display" Text="{Binding Title}" />
+          <TextBlock Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" TextWrapping="Wrap" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Bottom">
+          <TextBlock Classes="muted caption" Text="{Binding CountText}" VerticalAlignment="Center" />
+          <Button Classes="primary" Command="{Binding AddCommand}" IsEnabled="{Binding CanAdd}" ToolTip.Tip="{loc:T friendsMax}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <c:Icon Data="{StaticResource Icon.Plus}" Size="14" />
+              <TextBlock Text="{loc:T friendsAdd}" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Grid>
+
+      <c:EmptyState IsVisible="{Binding Friends.Count, Converter={x:Static f:FriendConverters.IsZero}}" Title="{loc:T friendsEmpty}" Hint="{loc:T friendsEmptyHint}" Icon="{StaticResource Icon.Friends}" Margin="0,24" />
+
+      <ItemsControl ItemsSource="{Binding Friends}">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="f:FriendItemViewModel">
+            <Border Classes="card">
+              <Grid ColumnDefinitions="Auto,140,*,Auto,Auto" VerticalAlignment="Center">
+                <!-- colour: a dot that opens the palette (taken colours are hidden) -->
+                <Button Classes="icon" ToolTip.Tip="{loc:T friendsColor}">
+                  <Button.Flyout>
+                    <Flyout Placement="Bottom">
+                      <ItemsControl ItemsSource="{Binding ColorOptions}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="f:ColorOption">
+                            <Button Classes="icon" Command="{Binding $parent[ItemsControl].((f:FriendItemViewModel)DataContext).PickColorCommand}" CommandParameter="{Binding}">
+                              <Ellipse Width="14" Height="14" Fill="{Binding Index, Converter={x:Static loc:Converters.FriendBrush}}"
+                                       Stroke="{DynamicResource Brush.Text1}" StrokeThickness="{Binding IsCurrent, Converter={x:Static f:FriendConverters.CurrentStroke}}" />
+                            </Button>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </Flyout>
+                  </Button.Flyout>
+                  <Ellipse Width="14" Height="14" Fill="{Binding ColorIndex, Converter={x:Static loc:Converters.FriendBrush}}" />
+                </Button>
+                <TextBlock Grid.Column="1" Classes="subject" Text="{Binding GroupName}" VerticalAlignment="Center" Margin="10,0" />
+                <TextBox Grid.Column="2" Text="{Binding MemberNames}" PlaceholderText="{loc:T friendsNames}" LostFocus="OnNamesLostFocus" KeyDown="OnNamesKeyDown" Margin="0,0,12,0" />
+                <c:Switch Grid.Column="3" Content="{loc:T friendsEnabled}" IsChecked="{Binding Enabled}" VerticalAlignment="Center" Margin="0,0,12,0" />
+                <Button Grid.Column="4" Classes="danger" Content="{loc:T friendsRemove}" Command="{Binding RemoveCommand}" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <Border Classes="card" Margin="0,10,0,0">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="micro" Text="{loc:TU intersections}" />
+          <TextBlock Classes="muted caption" Text="{loc:T strictnessHint}" TextWrapping="Wrap" />
+          <StackPanel Spacing="2">
+            <Slider Minimum="25" Maximum="100" TickFrequency="25" IsSnapToTickEnabled="True" Value="{Binding Strictness}" />
+            <ItemsControl ItemsSource="{Binding TickLabels}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                  <TextBlock Classes="faint caption" Text="{Binding}" HorizontalAlignment="Center" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+          <TextBlock Classes="caption" Text="{Binding StrictnessLabel}" />
+          <c:Switch Content="{loc:T alwaysShowAll}" IsChecked="{Binding AlwaysShowAll}" />
+          <TextBlock Classes="faint caption" Text="{loc:T alwaysShowAllHint}" />
+          <Border Height="1" Background="{DynamicResource Brush.Line}" />
+          <TextBlock Classes="micro" Text="{loc:TU previewTitle}" />
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock Text="{Binding PreviewLine}" VerticalAlignment="Center" />
+            <ItemsControl ItemsSource="{Binding PreviewMarks}" VerticalAlignment="Center" IsVisible="{Binding HasPreview}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="5" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="s:FriendMarkViewModel">
+                  <c:FriendDot ColorIndex="{Binding ColorIndex}" Fill="{Binding Fill}" Opacity="{Binding Opacity}" ToolTip.Tip="{Binding Tooltip}" VerticalAlignment="Center" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

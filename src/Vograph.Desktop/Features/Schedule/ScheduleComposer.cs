@@ -1,6 +1,5 @@
 using Vograph.Core.Models;
 using Vograph.Core.Services;
-using Vograph.Desktop.Controls;
 using Vograph.Desktop.Services;
 
 namespace Vograph.Desktop.Features.Schedule;
@@ -89,7 +88,7 @@ public sealed class ScheduleComposer
                 IsRemote: remote,
                 IsPast: isPast,
                 IsNext: isNext,
-                Friends: FriendMarks(l, date, friends, settings, loc),
+                Friends: FriendMarks.Compute(_app, l, date, friends, settings, loc),
                 Homework: homework,
                 Map: map));
         }
@@ -128,24 +127,4 @@ public sealed class ScheduleComposer
     {
         "burning_urgent" => 0, "burning" => 1, "overdue" => 2, "approaching" => 3, "done" => 5, _ => 4
     };
-
-    private IReadOnlyList<FriendMark> FriendMarks(Lesson l, DateTime date, List<FriendGroup> friends, Settings settings, Loc loc)
-    {
-        if (friends.Count == 0) return Array.Empty<FriendMark>();
-        // strictness 0 → every time overlap; the visibility threshold is applied below.
-        var results = _app.Intersections.GetIntersections(l, date, friends, strictness: 0);
-        var marks = new List<FriendMark>();
-        foreach (var f in friends)
-        {
-            var best = results.Where(r => r.FriendGroupName == f.GroupName).Select(r => r.Score).DefaultIfEmpty(0).Max();
-            var present = best > 0 && best >= settings.IntersectionStrictness;
-            if (!present && !settings.AlwaysShowAllTrafficLights) continue;
-            var where = present
-                ? loc.T(best switch { >= 100 => "inter100", >= 75 => "inter75", >= 50 => "inter50", _ => "inter25" })
-                : loc.T("friendAbsent");
-            var names = string.IsNullOrWhiteSpace(f.MemberNames) ? "" : $" ({f.MemberNames})";
-            marks.Add(new FriendMark(f.GroupName, f.MemberNames, FriendPalette.IndexOf(f.ColorHex), present ? FriendDot.FromScore(best) : DotFill.Off, $"{f.GroupName}{names} · {where}"));
-        }
-        return marks;
-    }
 }

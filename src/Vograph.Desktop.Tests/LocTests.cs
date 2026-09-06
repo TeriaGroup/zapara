@@ -97,6 +97,9 @@ public class LocTests
         "teachersLoadFail","teachersNoSource","teachersMine","teachersTeachesMine","teachersNotMine",
         "mapNextLesson","mapLessonPrefix","mapPickPlan","mapFloorN","mapInMinutes","mapInHours","mapInDays","mapNow",
         "mapToNext","mapVc","mapDownloadAll","mapOpenFolder","mapVerify","mapCacheStatus","mapDownloaded",
-        "mapFullscreen","mapExitFullscreen","mapFit","mapZoomIn","mapZoomOut","mapReset","mapMore","mapNoImage","mapRemoteHint"
+        "mapFullscreen","mapExitFullscreen","mapFit","mapZoomIn","mapZoomOut","mapReset","mapMore","mapNoImage","mapRemoteHint",
+        "friendsSubtitle","friendsCount","friendsAdd","friendsMax","friendsNames","friendsEnabled","friendsRemove","friendsRemoveConfirm",
+        "friendsEmpty","friendsEmptyHint","friendsColor","friendAdded","intersections","strictnessHint","alwaysShowAll","alwaysShowAllHint",
+        "previewTitle","previewNone","strictTick25","strictTick50","strictTick75","strictTick100"
     };
 }
