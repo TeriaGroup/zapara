@@ -1,6 +1,7 @@
 using Vograph.Core.Models;
 using Vograph.Core.Services;
 using Vograph.Desktop.Dialogs;
+using Vograph.Desktop.Features.Homeworks;
 using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Features.States;
 using Vograph.Desktop.Services;
@@ -31,7 +32,8 @@ public class GroupCardTests
     public async Task Picking_Another_Group_Saves_And_Notifies()
     {
         using var db = TestDb.Create();
-        var shell = new ShellViewModel(db.Services);
+        var today = new DateTime(2026, 9, 6, 12, 0, 0);
+        var shell = new ShellViewModel(db.Services) { Clock = () => today };
         var changed = false;
         shell.GroupChanged += () => changed = true;
 
@@ -49,6 +51,13 @@ public class GroupCardTests
         Assert.Equal("3031", db.Services.Settings.MyGroupId);
         Assert.Equal("09С31", shell.GroupName);
         Assert.True(changed);
+
+        // The awaited picker flow (not a fire-and-forget raiser) refreshes the sidebar badge too: group 3031
+        // has no lesson for the fixture homework's subject, so RecomputeAllStatuses (run before RaiseGroupChanged,
+        // inside OpenGroupPickerAsync's own gated call) clears its due date, and HomeworkStatus.BadgeCount no
+        // longer counts it — proving the badge reflects the *new* group, not a stale fire-and-forget read of the old one.
+        var expectedCount = HomeworkStatus.BadgeCount(db.Services.Homework.GetAll(), today);
+        Assert.Equal(expectedCount > 0 ? expectedCount.ToString() : null, shell.ToolSections.Single(s => s.Key == SectionKey.Homework).Badge);
     }
 
     [Fact]

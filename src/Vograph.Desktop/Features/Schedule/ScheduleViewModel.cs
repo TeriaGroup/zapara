@@ -180,7 +180,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         if (!await _shell.Dialogs.ShowAsync(dlg)) return;
         if (!await RunAsync(() => App.Homework.AddHomework(l.SubjectRaw, dlg.Text.Trim(), dlg.Nth, createdAt: today), "homework add")) return;
         await ReloadAsync();
-        RaiseHomework();
+        await RaiseHomeworkAsync();
     }
 
     public async Task EditHomeworkAsync(HomeworkItemViewModel hw)
@@ -194,7 +194,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         if (!await _shell.Dialogs.ShowAsync(dlg)) return;
         if (!await RunAsync(() => App.Homework.UpdateHomework(hw.Id, dlg.Text.Trim(), dlg.Nth), "homework edit")) return;
         await ReloadAsync();
-        RaiseHomework();
+        await RaiseHomeworkAsync();
     }
 
     /// <summary>Every due date the stepper can show, computed once off the UI thread: the dialog then
@@ -206,7 +206,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     {
         if (!await RunAsync(() => App.Homework.MarkDone(hw.Id, !hw.IsDone), "homework done")) return;
         await ReloadAsync();
-        RaiseHomework();
+        await RaiseHomeworkAsync();
     }
 
     public async Task DeleteHomeworkAsync(HomeworkItemViewModel hw)
@@ -215,15 +215,18 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         if (!await _shell.Dialogs.ShowAsync(confirm)) return;
         if (!await RunAsync(() => App.Homework.Delete(hw.Id), "homework delete")) return;
         await ReloadAsync();
-        RaiseHomework();
+        await RaiseHomeworkAsync();
     }
 
     /// <summary>Tells the Homework section and the sidebar badge about a card-side mutation; the flag keeps
-    /// our own _onHomework handler from starting a second compose of the day we just reloaded.</summary>
-    private void RaiseHomework()
+    /// our own _onHomework handler from starting a second compose of the day we just reloaded. Awaited by
+    /// every caller so the badge refresh's Core read finishes before the caller's own Task completes, instead
+    /// of racing a test's teardown Dispose of the SQLite connection it reads from.</summary>
+    private async Task RaiseHomeworkAsync()
     {
         _raising = true;
         try { _shell.RaiseHomeworkChanged(); }
         finally { _raising = false; }
+        await _shell.UpdateHomeworkBadgeAsync();
     }
 }

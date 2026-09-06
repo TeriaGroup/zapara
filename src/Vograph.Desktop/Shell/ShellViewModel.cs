@@ -122,11 +122,9 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// <summary>Raised after the timetable cache changed (refresh, import): sections recompose.</summary>
     public event Action? ScheduleChanged;
 
-    internal void RaiseScheduleChanged()
-    {
-        ScheduleChanged?.Invoke();
-        _ = UpdateHomeworkBadgeAsync(); // due dates are recomputed against the new timetable
-    }
+    /// <summary>Pure event invocation: callers that need the badge refreshed await
+    /// UpdateHomeworkBadgeAsync themselves, after raising (see RefreshScheduleAsync).</summary>
+    internal void RaiseScheduleChanged() => ScheduleChanged?.Invoke();
 
     /// <summary>Injected clock for badge/status computations (tests pin a date).</summary>
     public Func<DateTime> Clock { get; set; } = () => DateTime.Now;
@@ -134,11 +132,11 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// <summary>Raised after homework changed anywhere (schedule card or Homework section).</summary>
     public event Action? HomeworkChanged;
 
-    internal void RaiseHomeworkChanged()
-    {
-        HomeworkChanged?.Invoke();
-        _ = UpdateHomeworkBadgeAsync();
-    }
+    /// <summary>Pure event invocation: every caller awaits UpdateHomeworkBadgeAsync itself right after
+    /// raising (ScheduleViewModel's RaiseHomeworkAsync, HomeworkViewModel.ChangedAsync). A fire-and-forget
+    /// call here used to keep running after an awaited caller returned, racing test teardown's Dispose of
+    /// the SQLite connection it reads from.</summary>
+    internal void RaiseHomeworkChanged() => HomeworkChanged?.Invoke();
 
     private sealed record BadgeData(int Count);
 
@@ -147,7 +145,8 @@ public sealed partial class ShellViewModel : ViewModelBase
         var today = Clock().Date;
         var data = await RunAsync(() => new BadgeData(Features.Homeworks.HomeworkStatus.BadgeCount(App.Homework.GetAll(), today)), "homework badge");
         if (data is null) return;
-        ToolSections.First(s => s.Key == SectionKey.Homework).Badge = data.Count > 0 ? data.Count.ToString() : null;
+        var section = ToolSections.FirstOrDefault(s => s.Key == SectionKey.Homework);
+        if (section is not null) section.Badge = data.Count > 0 ? data.Count.ToString() : null;
     }
 
     [ObservableProperty] private bool _isRefreshing;
@@ -188,6 +187,7 @@ public sealed partial class ShellViewModel : ViewModelBase
                 if (!await RunAsync(async () => { await App.Parser.RefreshAsync(xmlOverride: xml); }, "refresh")) return false;
                 await RefreshGroupCardAsync();
                 RaiseScheduleChanged();
+                await UpdateHomeworkBadgeAsync(); // due dates are recomputed against the new timetable
                 if (!quiet) App.Toasts.Ok(T("refreshOk"));
                 return true;
             }
@@ -374,6 +374,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         if (!saved) return;
         await RefreshGroupCardAsync(); // before RaiseGroupChanged: sections read GroupName while they react
         RaiseGroupChanged();
+        await UpdateHomeworkBadgeAsync(); // another group means other lessons, so other due dates
         App.Toasts.Ok(T("savedOk"));
     }
 
@@ -413,10 +414,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         StaleWarn = warn;
     }
 
-    /// <summary>Sealed type: 'internal' rather than 'protected' so later dialogs in this assembly can raise it without CS0628.</summary>
-    internal void RaiseGroupChanged()
-    {
-        GroupChanged?.Invoke();
-        _ = UpdateHomeworkBadgeAsync(); // another group means other lessons, so other due dates
-    }
+    /// <summary>Sealed type: 'internal' rather than 'protected' so later dialogs in this assembly can raise it without CS0628.
+    /// Pure event invocation: OpenGroupPickerAsync awaits UpdateHomeworkBadgeAsync itself right after raising.</summary>
+    internal void RaiseGroupChanged() => GroupChanged?.Invoke();
 }

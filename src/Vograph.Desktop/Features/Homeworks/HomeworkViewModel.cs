@@ -116,7 +116,8 @@ public sealed partial class HomeworkViewModel : ViewModelBase
     private async Task ChangedAsync()
     {
         await LoadAsync();
-        _shell.RaiseHomeworkChanged(); // schedule cards + sidebar badge
+        _shell.RaiseHomeworkChanged(); // schedule cards
+        await _shell.UpdateHomeworkBadgeAsync(); // sidebar badge, awaited so nothing outlives this call
     }
 }
 
