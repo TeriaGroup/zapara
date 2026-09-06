@@ -36,6 +36,9 @@ public sealed class AppServices : IDisposable
     /// <summary>Core's SqliteConnection is not thread-safe: every background Core call goes through this gate.</summary>
     public SemaphoreSlim CoreGate { get; } = new(1, 1);
 
+    /// <summary>Process-wide network switch; tests set this false. Sections that can reach the network consult it.</summary>
+    public bool AllowNetwork { get; set; } = true;
+
     private AppServices(string dataDir)
     {
         DataDir = dataDir;

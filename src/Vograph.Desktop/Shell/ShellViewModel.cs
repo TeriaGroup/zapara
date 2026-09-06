@@ -51,7 +51,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         Register(SectionKey.Schedule, () => new Features.Schedule.ScheduleViewModel(App, this));
         Register(SectionKey.Week, () => new Features.Week.WeekViewModel(App, this));
         Register(SectionKey.Summary, () => new Features.Summary.SummaryViewModel(App, this));
-        Register(SectionKey.Teachers, () => new Features.Teachers.TeachersViewModel(App, this));
+        Register(SectionKey.Teachers, () => new Features.Teachers.TeachersViewModel(App, this, allowNetwork: App.AllowNetwork));
 
         SidebarCollapsed = app.Prefs.SidebarCollapsed;
         app.Loc.LanguageChanged += () =>

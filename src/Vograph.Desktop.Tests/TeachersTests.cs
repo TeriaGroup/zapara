@@ -117,6 +117,37 @@ public class TeachersTests : UiTest
         Assert.Empty(vm.Items);
     }
 
+    [Fact]
+    public async Task Failed_Load_Retries_On_The_Next_Activation()
+    {
+        using var db = TestDb.Create();
+        // Same setup as Missing_Reference_Shows_An_Error_Instead_Of_Throwing: no cache, no bundled copy, no network.
+        db.Services.Lecturers = new LecturerStore(new LecturerService(db.Services.Db), db.Services.Log,
+            Path.Combine(db.Dir, "no-cache.xml"), Path.Combine(db.Dir, "no-bundled.xml"));
+        var shell = new ShellViewModel(db.Services);
+        var vm = new TeachersViewModel(db.Services, shell, () => Wed9, allowNetwork: false);
+        await vm.LoadAsync();
+        Assert.NotNull(vm.LoadError);
+        Assert.Empty(vm.Items);
+
+        // A source becomes available (e.g. a later refresh elsewhere): the next activation must retry, not no-op.
+        var store = new LecturerStore(new LecturerService(db.Services.Db), db.Services.Log);
+        await store.LoadXmlAsync(LecturerXml);
+        db.Services.Lecturers = store;
+
+        await vm.ActivateAsync();
+        Assert.Null(vm.LoadError);
+        Assert.NotEmpty(vm.Items);
+    }
+
+    [Fact]
+    public void Teachers_Section_Does_Not_Allow_Network_In_Tests()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        Assert.False(shell.Section<TeachersViewModel>(SectionKey.Teachers).AllowNetwork);
+    }
+
     [AvaloniaFact]
     public async Task Teachers_Render_Both_Themes_And_Click_Selects()
     {

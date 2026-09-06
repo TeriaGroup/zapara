@@ -19,6 +19,7 @@ public sealed class TestDb : IDisposable
         var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         var services = AppServices.Create(dir);
+        services.AllowNetwork = false;
 
         var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-timetable.xml"));
         services.Parser.RefreshAsync(xmlOverride: xml).GetAwaiter().GetResult();

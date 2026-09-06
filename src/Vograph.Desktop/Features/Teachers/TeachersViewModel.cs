@@ -20,7 +20,6 @@ public sealed partial class TeachersViewModel : ViewModelBase
 {
     private readonly ShellViewModel _shell;
     private readonly Func<DateTime> _clock;
-    private readonly bool _allowNetwork;
     private readonly Action _onGroup;
     private readonly Action _onLanguage;
     private TeacherIndex _index = new(Array.Empty<LecturerInfo>(), Array.Empty<LecturerLesson>());
@@ -34,7 +33,7 @@ public sealed partial class TeachersViewModel : ViewModelBase
     {
         _shell = shell;
         _clock = clock ?? (() => DateTime.Now);
-        _allowNetwork = allowNetwork;
+        AllowNetwork = allowNetwork;
         _onGroup = () => _ = LoadMyGroupAsync();
         _onLanguage = () => { OnPropertyChanged(nameof(Title)); Detail?.Relabel(); };
         shell.GroupChanged += _onGroup;
@@ -50,6 +49,9 @@ public sealed partial class TeachersViewModel : ViewModelBase
     public override Task ActivateAsync() => _loadedOnce ? Task.CompletedTask : LoadAsync();
 
     public string Title => T("navTeachers");
+
+    /// <summary>The network switch this instance was built with (AppServices.AllowNetwork at construction); tests assert it.</summary>
+    public bool AllowNetwork { get; }
     public ObservableCollection<TeacherItem> Items { get; } = new();
 
     [ObservableProperty] private string _query = "";
@@ -69,23 +71,25 @@ public sealed partial class TeachersViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasDetail));
     }
 
-    /// <summary>Local copy first (instant), my-teacher ids under the gate, then the network refresh behind the list.</summary>
+    /// <summary>Local copy first (instant), my-teacher ids under the gate, then the network refresh behind the list.
+    /// _loadedOnce is set only once a source of data was actually found, so a failed first load (no cache, no
+    /// bundled copy, no network) is retried the next time the section is activated instead of sticking forever.</summary>
     public async Task LoadAsync()
     {
-        _loadedOnce = true;
         IsLoading = true;
         LoadError = null;
         try
         {
             var have = App.Lecturers.IsLoaded || await Task.Run(() => App.Lecturers.LoadLocalAsync());
-            if (!have && _allowNetwork) have = await Task.Run(() => App.Lecturers.RefreshAsync());
+            if (!have && AllowNetwork) have = await Task.Run(() => App.Lecturers.RefreshAsync());
             if (!have)
             {
                 LoadError = T("teachersLoadFail", T("teachersNoSource"));
                 return;
             }
+            _loadedOnce = true;
             await RebuildAsync();
-            if (_allowNetwork) _ = RefreshInBackgroundAsync(); // RefreshAsync swallows its own failures, RunAsync the rest
+            if (AllowNetwork) _ = RefreshInBackgroundAsync(); // RefreshAsync swallows its own failures, RunAsync the rest
         }
         finally
         {
