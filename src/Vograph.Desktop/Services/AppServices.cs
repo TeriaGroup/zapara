@@ -1,5 +1,6 @@
 using Vograph.Core.Models;
 using Vograph.Core.Services;
+using Vograph.Desktop.Features.Maps;
 using Vograph.Desktop.Features.Teachers;
 
 namespace Vograph.Desktop.Services;
@@ -30,6 +31,12 @@ public sealed class AppServices : IDisposable
     /// <summary>Network half of timetable refreshes; settable so tests script the server with a FakeHttpHandler.</summary>
     public ScheduleRefresher Refresher { get; set; }
 
+    /// <summary>Plan images on disk; settable so tests serve a generated PNG instead of the real maps cache.</summary>
+    public IMapFiles MapFiles { get; set; }
+
+    /// <summary>Browser / Explorer; settable so tests record what would have been opened instead of opening it.</summary>
+    public ILauncherService Launcher { get; set; }
+
     /// <summary>Needs a live Application; assigned by App at startup (or by UI tests). Null in plain unit tests.</summary>
     public ThemeService? Theme { get; set; }
 
@@ -56,6 +63,8 @@ public sealed class AppServices : IDisposable
         Intersections = new IntersectionService(Db);
         Notifications = new NotificationService(Db, Overrides, Homework, Schedule, I18n);
         Maps = new MapService(Db, Schedule);
+        MapFiles = new MapFiles(Maps, Log, () => AllowNetwork);
+        Launcher = new NullLauncher(Log); // App swaps in AvaloniaLauncher once the window exists
         Lecturers = new LecturerStore(new LecturerService(Db), Log); // parsed lazily by the Teachers section
         Sync = new SyncService(Db);
         AutoUpdate = new AutoUpdateService();

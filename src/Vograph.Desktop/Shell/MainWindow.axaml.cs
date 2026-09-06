@@ -16,19 +16,20 @@ public partial class MainWindow : Window
         AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
     }
 
-    /// <summary>←/→/Home step the schedule day. A bubbling handler rather than a KeyBinding, so the focused
-    /// element gets first refusal: a child that already consumed the key (TextBox caret keys, ListBox/Slider/
-    /// ComboBox arrows) keeps it, because the first line bails on an event some descendant marked Handled.
-    /// The one Handled event we still act on is the one raised on the window itself: with nothing focused
-    /// Avalonia's TopLevel keyboard-navigation handler — registered before this window's — marks arrow keys
-    /// Handled while looking for a focus target, and a plain Bubble registration would never be called at all.
+    /// <summary>←/→/Home step the schedule day, Escape closes the dialog or the fullscreen map. A bubbling handler
+    /// rather than a KeyBinding, so the focused element gets first refusal: a child that already consumed the key
+    /// (TextBox caret keys, ListBox/Slider/ComboBox arrows) keeps it, because the first line bails on an event some
+    /// descendant marked Handled. The one Handled event we still act on is the one raised on the window itself: with
+    /// nothing focused Avalonia's TopLevel keyboard-navigation handler — registered before this window's — marks arrow
+    /// keys Handled while looking for a focus target, and a plain Bubble registration would never be called at all.
     /// Hence handledEventsToo plus the Source check rather than plain Bubble (which loses the shortcut on a
     /// freshly opened window) or Tunnel (which would steal the keys from every child before it can react).
-    /// Text fields are excluded by Source and dialogs by HandleShortcut's own Dialogs.HasDialog guard.</summary>
+    /// Text fields are excluded by Source — except for Escape, which must still close a dialog whose search box has
+    /// focus — and dialogs by HandleShortcut's own Dialogs.HasDialog guard.</summary>
     private void OnShellKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Handled && !ReferenceEquals(e.Source, this)) return; // a focused child answered first
-        if (e.KeyModifiers != KeyModifiers.None || e.Source is TextBox) return;
+        if (e.KeyModifiers != KeyModifiers.None || (e.Key != Key.Escape && e.Source is TextBox)) return;
         if (DataContext is ShellViewModel vm && vm.HandleShortcut(e.Key)) e.Handled = true;
     }
 

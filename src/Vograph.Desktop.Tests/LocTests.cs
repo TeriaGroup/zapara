@@ -94,6 +94,9 @@ public class LocTests
         "weekCurrentSuffix","weekOpenDayTip",
         "summaryTotal","summaryByDay","summaryByType","summarySubjects","summaryTeachers","summaryRooms","summaryBothShort",
         "teachersSearchHint","teachersOnlyMine","teachersCount","teachersPick","teachersPickHint","teachersLoading",
-        "teachersLoadFail","teachersNoSource","teachersMine","teachersTeachesMine","teachersNotMine"
+        "teachersLoadFail","teachersNoSource","teachersMine","teachersTeachesMine","teachersNotMine",
+        "mapNextLesson","mapLessonPrefix","mapPickPlan","mapFloorN","mapInMinutes","mapInHours","mapInDays","mapNow",
+        "mapToNext","mapVc","mapDownloadAll","mapOpenFolder","mapVerify","mapCacheStatus","mapDownloaded",
+        "mapFullscreen","mapExitFullscreen","mapFit","mapZoomIn","mapZoomOut","mapReset","mapMore","mapNoImage","mapRemoteHint"
     };
 }

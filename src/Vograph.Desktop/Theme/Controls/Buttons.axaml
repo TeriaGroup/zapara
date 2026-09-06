@@ -76,6 +76,8 @@
       <Setter Property="FontSize" Value="12" /><Setter Property="FontWeight" Value="Normal" />
     </Style>
     <Style Selector="^.pill:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Selection}" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /></Style>
+    <Style Selector="^.pill.on"><Setter Property="Background" Value="{DynamicResource Brush.Accent}" /><Setter Property="Foreground" Value="{DynamicResource Brush.OnAccent}" /></Style>
+    <Style Selector="^.pill.on:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Accent}" /></Style>
 
     <!-- seg: a segment inside SegmentedControl (the class is added in code; the thumb draws the selection) -->
     <Style Selector="^.seg">

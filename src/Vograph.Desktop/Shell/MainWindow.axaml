@@ -28,8 +28,9 @@
     <KeyBinding Gesture="F5" Command="{Binding RefreshScheduleCommand}" />
     <!-- Enter is NOT bound here: Window.KeyBindings matches gestures even when a nested control (a
          multi-line TextBox inserting a newline) already marked the key event Handled. DialogHostView's
-         own KeyDown handler respects that flag instead, so Enter only confirms when nothing consumed it. -->
-    <KeyBinding Gesture="Escape" Command="{Binding Dialogs.DismissCommand}" />
+         own KeyDown handler respects that flag instead, so Enter only confirms when nothing consumed it.
+         Escape is not bound here either: it has to pick between the dialog and the fullscreen map overlay,
+         which ShellViewModel.HandleShortcut does from the bubbling OnShellKeyDown handler below. -->
   </Window.KeyBindings>
 
   <Panel>
@@ -69,6 +70,8 @@
         </TransitioningContentControl.PageTransition>
       </TransitioningContentControl>
     </Grid>
+
+    <ContentControl Content="{Binding Overlay}" IsVisible="{Binding HasOverlay}" />
 
     <d:DialogHostView DataContext="{Binding Dialogs}" />
     <c:ToastHost DataContext="{Binding Toasts}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,18,16" />

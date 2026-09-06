@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             xmlns:m="using:Vograph.Desktop.Features.Maps"
+             x:Class="Vograph.Desktop.Features.Maps.MapFullscreenView"
+             x:DataType="m:MapFullscreenViewModel">
+  <Panel Background="{DynamicResource Brush.Canvas}">
+    <c:ZoomPanel x:Name="Zoom">
+      <Panel>
+        <Image Source="{Binding Owner.Image}" Stretch="None" />
+        <Canvas IsVisible="{Binding Owner.HasHighlight}">
+          <Border Canvas.Left="{Binding Owner.HighlightLeft}" Canvas.Top="{Binding Owner.HighlightTop}" Width="{Binding Owner.HighlightWidth}" Height="{Binding Owner.HighlightHeight}"
+                  BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="2" CornerRadius="4" />
+        </Canvas>
+      </Panel>
+    </c:ZoomPanel>
+    <Border Classes="card" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="16" Padding="12,8">
+      <TextBlock Text="{Binding Owner.ContextLine}" />
+    </Border>
+    <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16">
+      <Button Classes="icon" Click="OnZoomOut" ToolTip.Tip="{loc:T mapZoomOut}"><c:Icon Data="{StaticResource Icon.Minus}" Size="16" /></Button>
+      <Button Classes="icon" Click="OnZoomIn" ToolTip.Tip="{loc:T mapZoomIn}"><c:Icon Data="{StaticResource Icon.Plus}" Size="16" /></Button>
+      <Button Classes="icon" Click="OnFit" ToolTip.Tip="{loc:T mapFit}"><c:Icon Data="{StaticResource Icon.Fit}" Size="16" /></Button>
+      <Button Classes="icon" Command="{Binding CloseCommand}" ToolTip.Tip="{loc:T mapExitFullscreen}"><c:Icon Data="{StaticResource Icon.X}" Size="16" /></Button>
+    </StackPanel>
+  </Panel>
+</UserControl>

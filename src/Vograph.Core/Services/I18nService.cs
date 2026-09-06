@@ -137,6 +137,15 @@ public class I18nService
             ["teachersLoading"] = "Загружаем справочник…", ["teachersLoadFail"] = "Справочник преподавателей недоступен: {0}",
             ["teachersNoSource"] = "нет ни кэша, ни встроенной копии, ни сети", ["teachersMine"] = "моя",
             ["teachersTeachesMine"] = "Ведёт у вашей группы", ["teachersNotMine"] = "Не ведёт у вашей группы",
+            ["mapNextLesson"] = "Следующая пара", ["mapLessonPrefix"] = "Пара: {0}", ["mapPickPlan"] = "Выберите план", ["mapFloorN"] = "{0} этаж",
+            ["mapInMinutes"] = "через {0} мин", ["mapInHours"] = "через {0} ч", ["mapInDays"] = "через {0} дн.", ["mapNow"] = "идёт сейчас",
+            ["mapToNext"] = "К следующей паре", ["mapVc"] = "ВЦ — показан план ГК",
+            ["mapDownloadAll"] = "Скачать свежие планы", ["mapOpenFolder"] = "Открыть папку карт", ["mapVerify"] = "Проверить офлайн-кэш",
+            ["mapCacheStatus"] = "{0} из {1} планов офлайн", ["mapDownloaded"] = "Планы скачаны: {0} из {1}",
+            ["mapFullscreen"] = "На весь экран", ["mapExitFullscreen"] = "Закрыть (Esc)", ["mapFit"] = "Вписать",
+            ["mapZoomIn"] = "Крупнее", ["mapZoomOut"] = "Мельче", ["mapReset"] = "100%", ["mapMore"] = "Ещё",
+            ["mapNoImage"] = "План не загружен: нет сети и встроенной копии",
+            ["mapRemoteHint"] = "Нажмите ◉ у пары или выберите корпус и этаж",
         },
         ["en"] = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -255,6 +264,15 @@ public class I18nService
             ["teachersLoading"] = "Loading the directory…", ["teachersLoadFail"] = "Teacher directory unavailable: {0}",
             ["teachersNoSource"] = "no cache, no bundled copy, no network", ["teachersMine"] = "mine",
             ["teachersTeachesMine"] = "Teaches your group", ["teachersNotMine"] = "Does not teach your group",
+            ["mapNextLesson"] = "Next lesson", ["mapLessonPrefix"] = "Lesson: {0}", ["mapPickPlan"] = "Pick a plan", ["mapFloorN"] = "floor {0}",
+            ["mapInMinutes"] = "in {0} min", ["mapInHours"] = "in {0} h", ["mapInDays"] = "in {0} d", ["mapNow"] = "right now",
+            ["mapToNext"] = "To the next lesson", ["mapVc"] = "ВЦ — showing the ГК plan",
+            ["mapDownloadAll"] = "Download fresh plans", ["mapOpenFolder"] = "Open maps folder", ["mapVerify"] = "Check offline cache",
+            ["mapCacheStatus"] = "{0} of {1} plans offline", ["mapDownloaded"] = "Plans downloaded: {0} of {1}",
+            ["mapFullscreen"] = "Full screen", ["mapExitFullscreen"] = "Close (Esc)", ["mapFit"] = "Fit",
+            ["mapZoomIn"] = "Zoom in", ["mapZoomOut"] = "Zoom out", ["mapReset"] = "100%", ["mapMore"] = "More",
+            ["mapNoImage"] = "Plan not loaded: no network and no bundled copy",
+            ["mapRemoteHint"] = "Press ◉ on a lesson or pick a building and floor",
         }
     };
 

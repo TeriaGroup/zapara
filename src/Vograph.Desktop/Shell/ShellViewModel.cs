@@ -52,6 +52,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         Register(SectionKey.Week, () => new Features.Week.WeekViewModel(App, this));
         Register(SectionKey.Summary, () => new Features.Summary.SummaryViewModel(App, this));
         Register(SectionKey.Teachers, () => new Features.Teachers.TeachersViewModel(App, this, allowNetwork: App.AllowNetwork));
+        Register(SectionKey.Maps, () => new Features.Maps.MapsViewModel(App, this));
 
         SidebarCollapsed = app.Prefs.SidebarCollapsed;
         app.Loc.LanguageChanged += () =>
@@ -90,8 +91,23 @@ public sealed partial class ShellViewModel : ViewModelBase
 
     public bool HasStale => StaleText is not null;
 
+    /// <summary>Full-window content above every section (the fullscreen map); Escape closes it.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasOverlay))]
+    private ViewModelBase? _overlay;
+
+    public bool HasOverlay => Overlay is not null;
+
     /// <summary>Map the Maps section should show when it opens (set by the ◉ action on a lesson).</summary>
     public MapInfo? PendingMap { get; private set; }
+
+    /// <summary>Read once by the Maps section when it activates: a handover, not a standing selection.</summary>
+    internal MapInfo? TakePendingMap()
+    {
+        var m = PendingMap;
+        PendingMap = null;
+        return m;
+    }
 
     /// <summary>Raised after the user picks another group; sections reload themselves.</summary>
     public event Action? GroupChanged;
@@ -183,10 +199,18 @@ public sealed partial class ShellViewModel : ViewModelBase
         if (Current is ScheduleViewModel s) s.ShowDate(date);
     }
 
-    /// <summary>Bare keys that must not fire inside text fields or over a dialog; MainWindow calls this from its bubbling KeyDown handler.</summary>
+    /// <summary>Bare keys that must not fire inside text fields or over a dialog; MainWindow calls this from its bubbling KeyDown handler.
+    /// Escape is the exception that does fire over them: it closes the topmost layer — the dialog first (it is drawn
+    /// above the overlay), then the fullscreen map — and is therefore also let through from a focused text field.</summary>
     public bool HandleShortcut(Key key)
     {
-        if (Dialogs.HasDialog) return false;
+        if (key == Key.Escape)
+        {
+            if (Dialogs.HasDialog) { Dialogs.DismissCommand.Execute(null); return true; }
+            if (Overlay is not null) { Overlay = null; return true; }
+            return false;
+        }
+        if (Dialogs.HasDialog || Overlay is not null) return false;
         if (CurrentKey != SectionKey.Schedule || Current is not ScheduleViewModel s) return false;
         switch (key)
         {

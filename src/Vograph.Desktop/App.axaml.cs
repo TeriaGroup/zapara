@@ -25,6 +25,7 @@ public partial class App : Application
 
             var shell = new ShellViewModel(services);
             var window = new MainWindow { DataContext = shell };
+            services.Launcher = new AvaloniaLauncher(() => window, services.Log);
             window.Opened += async (_, _) => await shell.StartAsync();
             desktop.MainWindow = window;
             desktop.Exit += (_, _) => services.Dispose();
