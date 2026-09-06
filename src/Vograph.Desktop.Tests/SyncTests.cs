@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -133,7 +134,9 @@ public class SyncTests : UiTest
         server.Imported += () => Interlocked.Increment(ref imported);
         server.Start();
         Assert.True(server.IsRunning);
-        Assert.EndsWith($":{port}/sync/", server.Address);
+        Assert.Equal("", server.Address); // resolved lazily off the UI thread, never from the property
+        Assert.EndsWith($":{port}/sync/", await server.ResolveAddressAsync());
+        Assert.EndsWith($":{port}/sync/", server.Address); // and cached from then on
 
         // HTTP.SYS matches the "localhost" prefix by host name only: a request to 127.0.0.1 is answered with 400.
         using var http = new HttpClient();
@@ -170,28 +173,84 @@ public class SyncTests : UiTest
         Assert.False(server.IsRunning);
     }
 
+    /// <summary>A body past the cap is refused unread — and the listener survives it.</summary>
+    [Fact]
+    public async Task Lan_Server_Refuses_An_Oversized_Body()
+    {
+        using var db = TestDb.Create();
+        var port = FreePort();
+        using var server = new LanSyncServer(db.Services, port, localhostOnly: true);
+        var imported = 0;
+        server.Imported += () => Interlocked.Increment(ref imported);
+        server.Start();
+
+        using var http = new HttpClient();
+        var oversized = new ByteArrayContent(new byte[LanSyncServer.MaxBodyBytes + 1]);
+        oversized.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        var resp = await http.PostAsync($"http://localhost:{port}/sync/", oversized, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, resp.StatusCode);
+        Assert.Equal("{\"status\":\"error\"}", await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, imported);
+
+        // Malformed JSON inside the cap is a different answer, and the server is still serving afterwards.
+        var bad = await http.PostAsync($"http://localhost:{port}/sync/", new StringContent("{ not json", Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+        var json = await http.GetStringAsync($"http://localhost:{port}/sync/", TestContext.Current.CancellationToken);
+        var served = JsonSerializer.Deserialize<SyncService.SyncPayload>(json);
+        Assert.NotNull(served);
+        Assert.Equal("Матан", Assert.Single(served.Overrides).DisplayName);
+        Assert.Equal(1, db.Services.CoreGate.CurrentCount);
+    }
+
     [Fact]
     public async Task Lan_Switch_Persists_And_Reports_Failures()
     {
         using var db = TestDb.Create();
+        var port = FreePort();
+        // Never the production server: that one binds every interface on 8765 and needs a URL reservation.
+        db.Services.LanSync = new LanSyncServer(db.Services, port, localhostOnly: true);
         var shell = new ShellViewModel(db.Services);
         var vm = new SettingsViewModel(db.Services, shell, () => Sun6);
         await vm.LoadAsync();
         Assert.False(vm.LanSync);
+        Assert.Equal("", vm.LanAddress);
 
-        vm.LanSync = true; // the real listener needs URL ACL rights; either it starts or the switch reverts with a toast
-        await Task.Delay(100, TestContext.Current.CancellationToken);
-        if (db.Services.LanSync.IsRunning)
-        {
-            Assert.True(UiPrefs.Load(db.Services.Prefs.FilePath).LanSync);
-            Assert.StartsWith("Адрес: http://", vm.LanAddress);
-            vm.LanSync = false;
-            Assert.False(db.Services.LanSync.IsRunning);
-        }
-        else
-        {
-            Assert.False(vm.LanSync);
-            Assert.Contains(db.Services.Toasts.Items, t => t.Text.StartsWith("Не удалось запустить сервер"));
-        }
+        vm.LanSync = true;
+        Assert.True(db.Services.LanSync.IsRunning);
+        Assert.True(UiPrefs.Load(db.Services.Prefs.FilePath).LanSync);
+        await WaitAsync(() => vm.LanAddress.Length > 0); // the address arrives from the resolver, not from the setter
+        Assert.Equal($"Адрес: http://localhost:{port}/sync/", vm.LanAddress);
+
+        vm.LanSync = false;
+        Assert.False(db.Services.LanSync.IsRunning);
+        Assert.Equal("", vm.LanAddress);
+        Assert.False(UiPrefs.Load(db.Services.Prefs.FilePath).LanSync);
+
+        // The failure branch, pinned: a listener already owns the port, so Start() cannot bind it.
+        using var squatter = new LanSyncServer(db.Services, port, localhostOnly: true);
+        squatter.Start();
+        db.Services.LanSync = new LanSyncServer(db.Services, port, localhostOnly: true);
+        var before = db.Services.Toasts.Items.Count;
+        vm.LanSync = true;
+        Assert.False(vm.LanSync);
+        Assert.False(db.Services.LanSync.IsRunning);
+        Assert.Equal("", vm.LanAddress);
+        Assert.False(UiPrefs.Load(db.Services.Prefs.FilePath).LanSync);
+        Assert.Equal(before + 1, db.Services.Toasts.Items.Count);
+        Assert.StartsWith("Не удалось запустить сервер", db.Services.Toasts.Items[0].Text);
+    }
+
+    /// <summary>Access denied on the production prefix is the URL-reservation message, not the generic one.</summary>
+    [Fact]
+    public void Acl_Failure_Gets_Its_Own_Message()
+    {
+        using var db = TestDb.Create();
+        var denied = new HttpListenerException(5, "Access is denied");
+        Assert.Equal(
+            "Сервер не запустился: Windows требует права администратора или резервирование URL (netsh http add urlacl url=http://+:8765/sync/ user=Все)",
+            db.Services.LanSync.StartFailureText(denied));
+        Assert.Equal(
+            "Не удалось запустить сервер: занято",
+            db.Services.LanSync.StartFailureText(new HttpListenerException(183, "занято")));
     }
 }

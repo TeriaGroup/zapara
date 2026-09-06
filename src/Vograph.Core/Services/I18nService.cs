@@ -166,7 +166,9 @@ public class I18nService
             ["syncQrHint"] = "Отсканируйте в Android: Настройки → Синхронизация",
             ["syncQrServerHint"] = "Данных много: QR ведёт на сервер в локальной сети — включите его ниже",
             ["syncLan"] = "Сервер в локальной сети :8765", ["syncLanAddress"] = "Адрес: {0}",
-            ["syncLanFail"] = "Не удалось запустить сервер: {0}", ["syncExported"] = "Экспорт сохранён: {0}",
+            ["syncLanFail"] = "Не удалось запустить сервер: {0}",
+            ["syncLanAcl"] = "Сервер не запустился: Windows требует права администратора или резервирование URL (netsh http add urlacl url=http://+:8765/sync/ user=Все)",
+            ["syncExported"] = "Экспорт сохранён: {0}",
         },
         ["en"] = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -314,7 +316,9 @@ public class I18nService
             ["syncQrHint"] = "Scan it in Android: Settings → Sync",
             ["syncQrServerHint"] = "Too much data for a QR: it points to the LAN server — turn it on below",
             ["syncLan"] = "LAN server :8765", ["syncLanAddress"] = "Address: {0}",
-            ["syncLanFail"] = "Could not start the server: {0}", ["syncExported"] = "Export saved: {0}",
+            ["syncLanFail"] = "Could not start the server: {0}",
+            ["syncLanAcl"] = "The server could not start: Windows requires administrator rights or a URL reservation (netsh http add urlacl url=http://+:8765/sync/ user=Everyone)",
+            ["syncExported"] = "Export saved: {0}",
         }
     };
 

@@ -30,8 +30,19 @@ public partial class App : Application
             services.NotificationScheduler.Start();
             if (services.Prefs.LanSync)
             {
-                try { services.LanSync.Start(); }
-                catch (Exception ex) { services.Log.Error("lan sync start", ex); services.Prefs.LanSync = false; services.Prefs.Save(); }
+                try
+                {
+                    services.LanSync.Start();
+                    _ = services.LanSync.ResolveAddressAsync(); // warms the address off the UI thread; never throws
+                }
+                catch (Exception ex)
+                {
+                    services.Log.Error("lan sync start", ex);
+                    // The window is built but not shown yet: the toast waits in the queue and appears with it.
+                    services.Toasts.Error(services.LanSync.StartFailureText(ex));
+                    services.Prefs.LanSync = false;
+                    services.Prefs.Save();
+                }
             }
             window.Opened += async (_, _) => await shell.StartAsync();
             desktop.MainWindow = window;

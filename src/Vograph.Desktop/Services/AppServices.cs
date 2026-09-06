@@ -43,8 +43,9 @@ public sealed class AppServices : IDisposable
     /// <summary>The two daily lesson notifications; App starts the timer, Settings drives the times and the switch.</summary>
     public NotificationScheduler NotificationScheduler { get; }
 
-    /// <summary>LAN sync host (:8765); App starts it when the preference is on, the Settings switch toggles it.</summary>
-    public LanSyncServer LanSync { get; }
+    /// <summary>LAN sync host (:8765); App starts it when the preference is on, the Settings switch toggles it.
+    /// Settable so tests drive a loopback listener on a free port instead of binding every interface on 8765.</summary>
+    public LanSyncServer LanSync { get; set; }
 
     /// <summary>Needs a live Application; assigned by App at startup (or by UI tests). Null in plain unit tests.</summary>
     public ThemeService? Theme { get; set; }

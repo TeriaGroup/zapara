@@ -255,17 +255,18 @@ public sealed partial class SettingsViewModel : ViewModelBase
             try
             {
                 App.LanSync.Start();
-                LanAddress = T("syncLanAddress", App.LanSync.Address);
             }
             catch (Exception ex)
             {
                 App.Log.Error("lan sync start", ex);
-                App.Toasts.Error(T("syncLanFail", ex.Message));
+                App.Toasts.Error(App.LanSync.StartFailureText(ex));
                 _suppress = true;
                 LanSync = false;
                 _suppress = false;
                 return;
             }
+            LanAddress = "";
+            _ = ShowLanAddressAsync(); // the address needs DNS; it lands a moment after the switch
         }
         else
         {
@@ -274,6 +275,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
         App.Prefs.LanSync = value;
         App.Prefs.Save();
+    }
+
+    /// <summary>«Адрес: …» for the running server. The host name behind it comes from a DNS lookup, so it is resolved
+    /// off the UI thread and shown once it is known — the UI thread never waits on a resolver.</summary>
+    private async Task ShowLanAddressAsync()
+    {
+        var address = await App.LanSync.ResolveAddressAsync(); // never throws: falls back to the loopback address
+        if (App.LanSync.IsRunning) LanAddress = T("syncLanAddress", address);
     }
 
     private sealed record SettingsData(Settings Settings, string? GroupName);
@@ -299,11 +308,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
         NotifyTime2 = data.Settings.NotifyTime2 ?? "07:30";
         LanSync = App.LanSync.IsRunning;
         _suppress = false;
-        LanAddress = App.LanSync.IsRunning ? T("syncLanAddress", App.LanSync.Address) : "";
         if (QrVisible) QrHint = T(_qrViaServer ? "syncQrServerHint" : "syncQrHint");
         UpdatedText = T("updatedChip", Stamp(data.Settings.LastFetchedAt));
         AutoCheckText = T("setAutoCheckAt", Stamp(data.Settings.LastAutoCheckAt));
         IsRefreshing = _shell.IsRefreshing;
+        // Last, because it awaits: the address is resolved off the UI thread and cached by the server.
+        if (App.LanSync.IsRunning) await ShowLanAddressAsync();
+        else LanAddress = "";
     }
 
     /// <summary>ISO UTC → «06.09 15:00» local, or «ещё не было». UpdatedText reuses the sidebar group card's
