@@ -80,4 +80,23 @@ public class ZoomPanelTests : UiTest
         Assert.Equal(panel.OffsetX, matrix.M31, 6);
         AssertNoBindingErrors();
     }
+
+    [AvaloniaFact]
+    public void Panel_Raises_ViewChanged_On_Initial_AutoFit()
+    {
+        var content = new Border { Width = 400, Height = 300, Background = Brushes.Gray };
+        var panel = new ZoomPanel { Child = content };
+        var raised = 0;
+        panel.ViewChanged += (_, _) => raised++;
+
+        var window = new Window { Width = 200, Height = 150, Content = panel, SizeToContent = SizeToContent.Manual };
+        window.Show();
+        Pump();
+
+        Assert.True(raised > 0, "ViewChanged should fire for the initial AutoFit.");
+        Assert.Equal(0.5, panel.Scale, 6);
+        Assert.Equal(0, panel.OffsetX, 6);
+        Assert.Equal(0, panel.OffsetY, 6);
+        AssertNoBindingErrors();
+    }
 }

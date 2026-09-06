@@ -74,8 +74,10 @@ public sealed class ZoomPanel : Decorator
         OffsetX = ox;
         OffsetY = oy;
         UpdateTransform();
-        ViewChanged?.Invoke(this, EventArgs.Empty);
+        RaiseViewChanged();
     }
+
+    private void RaiseViewChanged() => ViewChanged?.Invoke(this, EventArgs.Empty);
 
     private void UpdateTransform()
     {
@@ -97,6 +99,7 @@ public sealed class ZoomPanel : Decorator
         if (Child is { } c)
         {
             c.Arrange(new Rect(c.DesiredSize));
+            var didFit = false;
             if (_needsFit && AutoFit && c.DesiredSize.Width > 0 && finalSize.Width > 0)
             {
                 _needsFit = false;
@@ -104,8 +107,10 @@ public sealed class ZoomPanel : Decorator
                 Scale = s;
                 OffsetX = ox;
                 OffsetY = oy;
+                didFit = true;
             }
             UpdateTransform();
+            if (didFit) RaiseViewChanged();
         }
         return finalSize;
     }
