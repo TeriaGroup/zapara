@@ -157,6 +157,16 @@ public class I18nService
             ["setAutoCheckAt"] = "автопроверка {0}", ["setNever"] = "ещё не было", ["setAbout"] = "О программе", ["setVersion"] = "Версия {0}",
             ["setReleases"] = "Страница релизов", ["setSources"] = "Источники данных", ["setSourceTimetable"] = "Расписание студентов — voenmeh.ru",
             ["setSourceMaps"] = "Планы корпусов — voenmeh.ru/openmap", ["setDataFolder"] = "Открыть папку данных",
+            ["setNotifications"] = "Уведомления", ["notifEnabled"] = "Показывать уведомления о парах",
+            ["notifTime1Label"] = "Вечером — про завтра", ["notifTime2Label"] = "Утром — про сегодня",
+            ["notifSave"] = "Сохранить времена", ["notifTest"] = "Тест уведомления",
+            ["notifBadTime"] = "Время указывается как ЧЧ:ММ", ["notifSaved"] = "Времена сохранены: {0} и {1}",
+            ["setSync"] = "Синхронизация", ["syncExport"] = "Экспорт JSON", ["syncImport"] = "Импорт JSON",
+            ["syncShowQr"] = "Показать QR", ["syncHideQr"] = "Скрыть QR",
+            ["syncQrHint"] = "Отсканируйте в Android: Настройки → Синхронизация",
+            ["syncQrServerHint"] = "Данных много: QR ведёт на сервер в локальной сети — включите его ниже",
+            ["syncLan"] = "Сервер в локальной сети :8765", ["syncLanAddress"] = "Адрес: {0}",
+            ["syncLanFail"] = "Не удалось запустить сервер: {0}", ["syncExported"] = "Экспорт сохранён: {0}",
         },
         ["en"] = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -295,6 +305,16 @@ public class I18nService
             ["setAutoCheckAt"] = "auto-check {0}", ["setNever"] = "not yet", ["setAbout"] = "About", ["setVersion"] = "Version {0}",
             ["setReleases"] = "Releases page", ["setSources"] = "Data sources", ["setSourceTimetable"] = "Student timetable — voenmeh.ru",
             ["setSourceMaps"] = "Building plans — voenmeh.ru/openmap", ["setDataFolder"] = "Open data folder",
+            ["setNotifications"] = "Notifications", ["notifEnabled"] = "Show lesson notifications",
+            ["notifTime1Label"] = "Evening — about tomorrow", ["notifTime2Label"] = "Morning — about today",
+            ["notifSave"] = "Save times", ["notifTest"] = "Test notification",
+            ["notifBadTime"] = "Time must be HH:MM", ["notifSaved"] = "Times saved: {0} and {1}",
+            ["setSync"] = "Sync", ["syncExport"] = "Export JSON", ["syncImport"] = "Import JSON",
+            ["syncShowQr"] = "Show QR", ["syncHideQr"] = "Hide QR",
+            ["syncQrHint"] = "Scan it in Android: Settings → Sync",
+            ["syncQrServerHint"] = "Too much data for a QR: it points to the LAN server — turn it on below",
+            ["syncLan"] = "LAN server :8765", ["syncLanAddress"] = "Address: {0}",
+            ["syncLanFail"] = "Could not start the server: {0}", ["syncExported"] = "Export saved: {0}",
         }
     };
 

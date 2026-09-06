@@ -23,6 +23,12 @@ public sealed class UiPrefs
     public bool Animations { get; set; } = true;
     public WindowBounds? Window { get; set; }
 
+    /// <summary>The two daily lesson notifications; on by default, the times themselves live in Core's settings.</summary>
+    public bool NotificationsEnabled { get; set; } = true;
+
+    /// <summary>LAN sync server on :8765 — off by default, restarted at startup when the user left it on.</summary>
+    public bool LanSync { get; set; }
+
     private Action<Exception>? _onSaveError;
 
     /// <param name="onSaveError">Where a failed Save reports (AppServices wires it to AppLog). Save never throws.</param>

@@ -37,6 +37,15 @@ public sealed class AppServices : IDisposable
     /// <summary>Browser / Explorer; settable so tests record what would have been opened instead of opening it.</summary>
     public ILauncherService Launcher { get; set; }
 
+    /// <summary>JSON Save/Open pickers; settable so tests script the picked path instead of opening an OS dialog.</summary>
+    public IFileDialogs FileDialogs { get; set; } = new NullFileDialogs();
+
+    /// <summary>The two daily lesson notifications; App starts the timer, Settings drives the times and the switch.</summary>
+    public NotificationScheduler NotificationScheduler { get; }
+
+    /// <summary>LAN sync host (:8765); App starts it when the preference is on, the Settings switch toggles it.</summary>
+    public LanSyncServer LanSync { get; }
+
     /// <summary>Needs a live Application; assigned by App at startup (or by UI tests). Null in plain unit tests.</summary>
     public ThemeService? Theme { get; set; }
 
@@ -71,6 +80,8 @@ public sealed class AppServices : IDisposable
         Prefs = UiPrefs.Load(Path.Combine(dataDir, "ui.json"), ex => Log.Error("prefs", ex));
         Refresher = new ScheduleRefresher();
         Toasts = new ToastService();
+        NotificationScheduler = new NotificationScheduler(this);
+        LanSync = new LanSyncServer(this);
     }
 
     public static AppServices Create(string dataDir) => new(dataDir);
@@ -81,6 +92,8 @@ public sealed class AppServices : IDisposable
     public void Dispose()
     {
         Refresher.Dispose();
+        NotificationScheduler.Dispose();
+        LanSync.Dispose();
         Db.Dispose();
         CoreGate.Dispose();
     }

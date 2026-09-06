@@ -29,6 +29,8 @@
       <SolidColorBrush x:Key="Brush.Backdrop" Color="#8C000000" />
       <SolidColorBrush x:Key="Brush.SegThumb" Color="#171717" />
       <SolidColorBrush x:Key="Brush.CloseHover" Color="#E81123" />
+      <!-- Backing for a QR code: white in BOTH themes, a scanner needs the light modules light. -->
+      <SolidColorBrush x:Key="Brush.QrPaper" Color="#FFFFFFFF" />
 
       <SolidColorBrush x:Key="Brush.Ok" Color="#4CC38A" />
       <SolidColorBrush x:Key="Brush.Warn" Color="#F2A33C" />
@@ -99,6 +101,8 @@
       <SolidColorBrush x:Key="Brush.Backdrop" Color="#59000000" />
       <SolidColorBrush x:Key="Brush.SegThumb" Color="#FFFFFF" />
       <SolidColorBrush x:Key="Brush.CloseHover" Color="#E81123" />
+      <!-- Backing for a QR code: white in BOTH themes, a scanner needs the light modules light. -->
+      <SolidColorBrush x:Key="Brush.QrPaper" Color="#FFFFFFFF" />
 
       <SolidColorBrush x:Key="Brush.Ok" Color="#2FA36B" />
       <SolidColorBrush x:Key="Brush.Warn" Color="#D9861B" />

@@ -26,6 +26,13 @@ public partial class App : Application
             var shell = new ShellViewModel(services);
             var window = new MainWindow { DataContext = shell };
             services.Launcher = new AvaloniaLauncher(() => window, services.Log);
+            services.FileDialogs = new AvaloniaFileDialogs(() => window);
+            services.NotificationScheduler.Start();
+            if (services.Prefs.LanSync)
+            {
+                try { services.LanSync.Start(); }
+                catch (Exception ex) { services.Log.Error("lan sync start", ex); services.Prefs.LanSync = false; services.Prefs.Save(); }
+            }
             window.Opened += async (_, _) => await shell.StartAsync();
             desktop.MainWindow = window;
             desktop.Exit += (_, _) => services.Dispose();
