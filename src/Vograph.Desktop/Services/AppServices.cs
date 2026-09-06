@@ -40,6 +40,9 @@ public sealed class AppServices : IDisposable
     /// <summary>JSON Save/Open pickers; settable so tests script the picked path instead of opening an OS dialog.</summary>
     public IFileDialogs FileDialogs { get; set; } = new NullFileDialogs();
 
+    /// <summary>GitHub releases; settable so tests script the release instead of calling the API.</summary>
+    public IUpdateSource UpdateSource { get; set; } = new GitHubUpdateSource();
+
     /// <summary>The two daily lesson notifications; App starts the timer, Settings drives the times and the switch.</summary>
     public NotificationScheduler NotificationScheduler { get; }
 

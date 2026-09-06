@@ -1,0 +1,16 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="using:Vograph.Desktop.Dialogs"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             x:Class="Vograph.Desktop.Dialogs.UpdateDialogView"
+             x:DataType="d:UpdateDialogViewModel">
+  <StackPanel Spacing="12" Width="420">
+    <TextBlock Classes="title" Text="{Binding Title}" TextWrapping="Wrap" />
+    <TextBlock Classes="muted caption" Text="{Binding PublishedText}" IsVisible="{Binding HasPublished}" />
+    <TextBlock Classes="muted" Text="{Binding Hint}" TextWrapping="Wrap" />
+    <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,6,0,0">
+      <Button Grid.Column="1" Content="{loc:T updLater}" Command="{Binding CancelCommand}" Margin="0,0,8,0" />
+      <Button Grid.Column="2" Classes="primary" Content="{loc:T updInstall}" Command="{Binding ConfirmCommand}" x:Name="ConfirmButton" />
+    </Grid>
+  </StackPanel>
+</UserControl>

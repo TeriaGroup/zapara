@@ -24,6 +24,7 @@ public partial class App : Application
             services.Theme = ThemeService.ForApplication(this, services.Prefs);
 
             var shell = new ShellViewModel(services);
+            shell.Shutdown = () => desktop.Shutdown(); // the update batch waits for this process to exit
             var window = new MainWindow { DataContext = shell };
             services.Launcher = new AvaloniaLauncher(() => window, services.Log);
             services.FileDialogs = new AvaloniaFileDialogs(() => window);

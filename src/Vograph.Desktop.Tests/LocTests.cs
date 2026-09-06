@@ -106,6 +106,8 @@ public class LocTests
         "setAppearance","setTheme","themeSystem","themeLight","themeDark","setCompactSidebar","setAnimations","setSchedule","setChange",
         "setAutoCheckAt","setNever","setAbout","setVersion","setReleases","setSources","setSourceTimetable","setSourceMaps","setDataFolder",
         "setNotifications","notifEnabled","notifTime1Label","notifTime2Label","notifSave","notifTest","notifBadTime","notifSaved",
-        "setSync","syncExport","syncImport","syncShowQr","syncHideQr","syncQrHint","syncQrServerHint","syncLan","syncLanAddress","syncLanFail","syncLanAcl","syncExported"
+        "setSync","syncExport","syncImport","syncShowQr","syncHideQr","syncQrHint","syncQrServerHint","syncLan","syncLanAddress","syncLanFail","syncLanAcl","syncExported",
+        "setUpdates","updIdle","updChecking","updUpToDate","updAvailable","updDownloaded","updInstall","updLater","updCheck","updInBrowser",
+        "updRateLimited","updFailWith","updNoReleases","updUpdatingTo","updDialogHint"
     };
 }

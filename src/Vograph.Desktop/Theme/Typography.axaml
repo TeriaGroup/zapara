@@ -38,6 +38,9 @@
   <Style Selector="TextBlock.faint">
     <Setter Property="Foreground" Value="{DynamicResource Brush.Text3}" />
   </Style>
+  <Style Selector="TextBlock.bad">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
+  </Style>
   <Style Selector="TextBlock.tnum">
     <Setter Property="FontFeatures" Value="tnum" />
   </Style>

@@ -25,6 +25,10 @@
     <DockPanel LastChildFill="True">
 
       <StackPanel DockPanel.Dock="Bottom" Spacing="4">
+        <!-- Only while an update is waiting; the badge repeats it on the collapsed rail. -->
+        <c:NavItem Content="{loc:T updTitle}" Icon="{StaticResource Icon.Download}" Badge="{Binding Updates.BadgeText}"
+                   IsCompact="{Binding SidebarCollapsed}" IsVisible="{Binding Updates.IsAvailable}"
+                   Command="{Binding OpenUpdateDialogCommand}" ToolTip.Tip="{Binding Updates.StatusText}" />
         <c:NavItem Content="{Binding SettingsSection.Label}"
                    Icon="{Binding SettingsSection.IconKey, Converter={x:Static loc:Converters.IconKey}}"
                    IsActive="{Binding SettingsSection.IsActive}" IsCompact="{Binding SettingsSection.IsCompact}"

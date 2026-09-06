@@ -65,9 +65,19 @@ public sealed partial class SettingsViewModel : ViewModelBase
         if (App.Theme is { } theme) theme.Changed -= _onTheme;
     }
 
-    public override Task ActivateAsync() => LoadAsync();
+    /// <summary>Spec 5.8: entering Settings checks for an update once per session, and only while the switch is on.
+    /// AllowNetwork is the process-wide gate (false under TestDb), so the check never reaches GitHub in tests.</summary>
+    public override async Task ActivateAsync()
+    {
+        await LoadAsync();
+        await Updates.LoadAsync();
+        if (App.AllowNetwork && Updates.AutoUpdate && !Updates.CheckedThisSession && !Updates.IsChecking) _ = Updates.CheckAsync(manual: false);
+    }
 
     public string Title => T("navSettings");
+
+    /// <summary>The shell's single update state: the card here and the sidebar item show the same check.</summary>
+    public UpdateCheckViewModel Updates => _shell.Updates;
 
     // ---- Appearance ----
     [ObservableProperty] private IList<string> _themeItems;

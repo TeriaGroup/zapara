@@ -169,6 +169,15 @@ public class I18nService
             ["syncLanFail"] = "Не удалось запустить сервер: {0}",
             ["syncLanAcl"] = "Сервер не запустился: Windows требует права администратора или резервирование URL (netsh http add urlacl url=http://+:8765/sync/ user=Все)",
             ["syncExported"] = "Экспорт сохранён: {0}",
+            // Updates card / sidebar item («updTitle», «autoUpdate» and «updDownloading» above are reused as they are)
+            ["setUpdates"] = "Обновления", ["updIdle"] = "Проверка ещё не выполнялась", ["updChecking"] = "Проверка…",
+            ["updUpToDate"] = "Актуальная версия {0} · проверено {1}", ["updAvailable"] = "Доступна {0}",
+            ["updDownloaded"] = "Скачано {0} — готово к установке", ["updInstall"] = "Установить и перезапустить", ["updLater"] = "Позже",
+            ["updCheck"] = "Проверить обновление", ["updInBrowser"] = "В браузере",
+            ["updRateLimited"] = "GitHub ограничил запросы с вашей сети (лимит или VPN). Попробуйте позже или откройте страницу релизов",
+            ["updFailWith"] = "Не удалось проверить обновление: {0}", ["updNoReleases"] = "Релизов для Windows не найдено",
+            ["updUpdatingTo"] = "Обновляюсь до {0}…",
+            ["updDialogHint"] = "Приложение закроется, распакует обновление поверх себя и запустится снова. Данные не затрагиваются.",
         },
         ["en"] = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -319,6 +328,15 @@ public class I18nService
             ["syncLanFail"] = "Could not start the server: {0}",
             ["syncLanAcl"] = "The server could not start: Windows requires administrator rights or a URL reservation (netsh http add urlacl url=http://+:8765/sync/ user=Everyone)",
             ["syncExported"] = "Export saved: {0}",
+            // Updates card / sidebar item («updTitle», «autoUpdate» and «updDownloading» above are reused as they are)
+            ["setUpdates"] = "Updates", ["updIdle"] = "Not checked yet", ["updChecking"] = "Checking…",
+            ["updUpToDate"] = "Up to date: {0} · checked {1}", ["updAvailable"] = "{0} is available",
+            ["updDownloaded"] = "{0} downloaded — ready to install", ["updInstall"] = "Install and restart", ["updLater"] = "Later",
+            ["updCheck"] = "Check for updates", ["updInBrowser"] = "In the browser",
+            ["updRateLimited"] = "GitHub throttled requests from your network (quota or VPN). Try later or open the releases page",
+            ["updFailWith"] = "Could not check for updates: {0}", ["updNoReleases"] = "No Windows releases found",
+            ["updUpdatingTo"] = "Updating to {0}…",
+            ["updDialogHint"] = "The app closes, unpacks the update over itself and starts again. Your data is untouched.",
         }
     };
 

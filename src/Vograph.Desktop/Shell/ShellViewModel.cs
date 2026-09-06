@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Models;
 using Vograph.Core.Services;
 using Vograph.Desktop.Dialogs;
+using Vograph.Desktop.Features.Preferences;
 using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Features.States;
 using Vograph.Desktop.Services;
@@ -23,6 +24,9 @@ public sealed partial class ShellViewModel : ViewModelBase
 
     public ShellViewModel(AppServices app) : base(app)
     {
+        // One update state for the whole window: the sidebar item, the Settings card and the startup flow share it.
+        Updates = new UpdateCheckViewModel(app, () => Clock());
+
         NavigateCommand = new RelayCommand<string>(key =>
         {
             if (Enum.TryParse<SectionKey>(key, ignoreCase: true, out var k)) NavigateTo(k);
@@ -79,6 +83,21 @@ public sealed partial class ShellViewModel : ViewModelBase
     public IRelayCommand<string> NavigateCommand { get; }
     public ToastService Toasts => App.Toasts;
     public DialogHostViewModel Dialogs { get; } = new();
+
+    /// <summary>Update check/download state, shown by the sidebar item and the Settings card.</summary>
+    public UpdateCheckViewModel Updates { get; }
+
+    /// <summary>Set by App: closes the application when the update batch has been started.</summary>
+    public Action? Shutdown { get => Updates.Shutdown; set => Updates.Shutdown = value; }
+
+    /// <summary>The sidebar «Обновление» item: confirm, then download and restart.</summary>
+    [RelayCommand]
+    private async Task OpenUpdateDialog()
+    {
+        if (!Updates.IsAvailable || Updates.LatestTag is null) return;
+        var dlg = new UpdateDialogViewModel(Updates.LatestTag, Updates.PublishedText);
+        if (await Dialogs.ShowAsync(dlg)) await Updates.InstallAsync();
+    }
 
     [ObservableProperty] private ViewModelBase? _current;
     [ObservableProperty] private SectionKey _currentKey;
@@ -346,6 +365,7 @@ public sealed partial class ShellViewModel : ViewModelBase
             {
                 if (data.GroupCount > 0 && ShouldAutoCheck(data.Settings, DateTime.UtcNow)) _ = RefreshScheduleAsync(force: false, quiet: true);
                 StartAutoCheck();
+                _ = Updates.RunStartupFlowAsync(); // silent self-update; every step of it swallows its own failures
             }
         }
         catch (Exception ex)
