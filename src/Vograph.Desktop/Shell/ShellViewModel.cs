@@ -49,6 +49,7 @@ public sealed partial class ShellViewModel : ViewModelBase
             Register(k, () => new PlaceholderViewModel(App, AllSections.First(s => s.Key == k).LabelKey));
         }
         Register(SectionKey.Schedule, () => new Features.Schedule.ScheduleViewModel(App, this));
+        Register(SectionKey.Week, () => new Features.Week.WeekViewModel(App, this));
 
         SidebarCollapsed = app.Prefs.SidebarCollapsed;
         app.Loc.LanguageChanged += () =>

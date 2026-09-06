@@ -129,6 +129,7 @@ public class I18nService
             ["winMinimize"] = "Свернуть", ["winMaximize"] = "Развернуть", ["winClose"] = "Закрыть",
             ["refreshOk"] = "Расписание обновлено", ["refreshNone"] = "Расписание актуально",
             ["refreshFail"] = "Не удалось обновить расписание: {0}", ["refreshTip"] = "Обновить расписание (F5)",
+            ["weekCurrentSuffix"] = " · текущая", ["weekOpenDayTip"] = "Открыть этот день в расписании",
         },
         ["en"] = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -239,6 +240,7 @@ public class I18nService
             ["winMinimize"] = "Minimize", ["winMaximize"] = "Maximize", ["winClose"] = "Close",
             ["refreshOk"] = "Timetable updated", ["refreshNone"] = "Timetable is up to date",
             ["refreshFail"] = "Could not update the timetable: {0}", ["refreshTip"] = "Refresh timetable (F5)",
+            ["weekCurrentSuffix"] = " · current", ["weekOpenDayTip"] = "Open this day in the schedule",
         }
     };
 

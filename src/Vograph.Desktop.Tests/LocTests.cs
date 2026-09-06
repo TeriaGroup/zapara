@@ -90,6 +90,7 @@ public class LocTests
         "groupPickTitle","search","groupSearchHint","select","confirm","delete","updatedChip","errorTitle",
         "bootstrapError","bootstrapHint","retry","friendAbsent","inter100","inter75","inter50","inter25","savedOk","noGroup","noGroupHint",
         "winMinimize","winMaximize","winClose",
-        "refreshOk","refreshNone","refreshFail","refreshTip"
+        "refreshOk","refreshNone","refreshFail","refreshTip",
+        "weekCurrentSuffix","weekOpenDayTip"
     };
 }

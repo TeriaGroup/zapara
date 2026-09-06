@@ -107,7 +107,7 @@ public sealed class ScheduleComposer
             : name;
     }
 
-    private static (string Room, string? Tag, bool Remote) RoomParts(Lesson l, MapInfo? map, Loc loc)
+    public static (string Room, string? Tag, bool Remote) RoomParts(Lesson l, MapInfo? map, Loc loc)
     {
         if (map is null) return (string.IsNullOrWhiteSpace(l.RoomRaw) ? "—" : l.RoomRaw.Replace("*", "").Trim(), null, false);
         if (map.IsRemote) return (loc.T("remote"), null, true);
