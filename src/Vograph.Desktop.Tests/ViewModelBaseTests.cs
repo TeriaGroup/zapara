@@ -57,7 +57,7 @@ public class ViewModelBaseTests
         sw.Stop();
 
         Assert.Equal("done", await work);
-        Assert.True(sw.ElapsedMilliseconds >= 150, $"Dispose returned after {sw.ElapsedMilliseconds} ms — it did not wait for the gated call");
+        Assert.InRange(sw.ElapsedMilliseconds, 150, 1500); // a 2 s timeout (the UI-thread deadlock) would fail the upper bound
         Assert.Null(await vm.Run(() => "never")); // gate gone: queued callers get null, not an exception
         Assert.Empty(services.Toasts.Items);      // shutdown is not an error
         try { Directory.Delete(dir, recursive: true); } catch (IOException ex) { Console.Error.WriteLine($"temp dir left behind ({dir}): {ex.Message}"); }

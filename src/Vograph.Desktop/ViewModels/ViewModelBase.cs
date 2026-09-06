@@ -40,14 +40,30 @@ public abstract partial class ViewModelBase : ObservableObject
     protected async Task<bool> RunAsync(Func<Task> work, string context) =>
         await GatedAsync(async () => { await Task.Run(work); return Done.Instance; }, context) is not null;
 
+    /// <summary>
+    /// Acquires App.CoreGate, runs the work, and releases the gate — the whole sequence on a pool thread,
+    /// via one Task.Run with ConfigureAwait(false) on every await inside it. That is deliberate: Avalonia
+    /// raises desktop.Exit on the UI thread, and AppServices.Dispose() blocks there, synchronously, inside
+    /// CoreGate.Wait(2s). A plain `await CoreGate.WaitAsync(); ... finally { CoreGate.Release(); }` called
+    /// from the UI thread captures the dispatcher's SynchronizationContext, so the continuation that
+    /// releases the gate — the one after `await run()` — gets posted back to the dispatcher instead of
+    /// running immediately. A UI thread stuck inside Dispose() never pumps that dispatcher, so the posted
+    /// release could never run, and Dispose() would deadlock into its own 2 s timeout on every gated call
+    /// that happened to start on the UI thread. Doing the acquire/work/release entirely inside Task.Run
+    /// means the release never depends on the UI thread at all, so a UI-thread Dispose() unblocks as soon
+    /// as the work itself finishes.
+    /// </summary>
     private async Task<T?> GatedAsync<T>(Func<Task<T>> run, string context) where T : class
     {
         IsBusy = true;
         try
         {
-            await App.CoreGate.WaitAsync();
-            try { return await run(); }
-            finally { App.CoreGate.Release(); }
+            return await Task.Run(async () =>
+            {
+                await App.CoreGate.WaitAsync().ConfigureAwait(false); // acquired on the pool
+                try { return await run().ConfigureAwait(false); } // the work (already Task.Run-wrapped by the overloads above)
+                finally { App.CoreGate.Release(); } // released on the pool — a UI-thread Dispose() can proceed
+            });
         }
         catch (ObjectDisposedException ex)
         {

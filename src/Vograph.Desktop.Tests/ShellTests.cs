@@ -20,6 +20,12 @@ public class ShellTests : UiTest
         return (db, new ShellViewModel(db.Services));
     }
 
+    // Mirrors ViewModelBaseTests.Probe: the smallest ViewModelBase that exposes RunAsync for a gated call.
+    private sealed class Probe(AppServices app) : ViewModelBase(app)
+    {
+        public Task<string?> Run(Func<string> f) => RunAsync(f, "probe");
+    }
+
     [AvaloniaFact]
     public void Every_Section_Resolves_To_Its_Real_ViewModel()
     {
@@ -125,5 +131,29 @@ public class ShellTests : UiTest
             Assert.Equal("Schedule", shell.MainSections[0].Label);
             db.Services.Loc.SetLanguage("ru");
         }
+    }
+
+    // R37b: an [AvaloniaFact] runs its body on the headless dispatcher thread, so this reproduces the real
+    // shutdown path — App.axaml.cs runs `desktop.Exit += (_, _) => services.Dispose();` on the UI thread —
+    // in a way ViewModelBaseTests' plain [Fact] cannot. Before the fix, GatedAsync's release after `await
+    // run()` was posted back to this same (now UI-thread-blocked) dispatcher and never ran, so Dispose()
+    // always paid the full 2 s CoreGate.Wait timeout. After the fix the gate is released on the pool thread
+    // that ran the work, so Dispose() unblocks as soon as the ~200 ms probe call finishes.
+    [AvaloniaFact]
+    public async Task Dispose_On_The_UI_Thread_Does_Not_Deadlock_On_A_Gated_Call()
+    {
+        using var db = TestDb.Create();
+        var vm = new Probe(db.Services);
+        var inGate = new ManualResetEventSlim();
+
+        var work = vm.Run(() => { inGate.Set(); Thread.Sleep(200); return "done"; });
+        inGate.Wait(TestContext.Current.CancellationToken);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        db.Services.Dispose(); // synchronous, on the UI thread — must not deadlock into the 2 s gate wait
+        sw.Stop();
+
+        Assert.InRange(sw.ElapsedMilliseconds, 150, 1500); // checked first: a 2 s deadlock is the primary symptom
+        Assert.Equal("done", await work);
     }
 }
