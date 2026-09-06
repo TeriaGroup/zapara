@@ -1,0 +1,101 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             xmlns:s="using:Vograph.Desktop.Features.Summary"
+             x:Class="Vograph.Desktop.Features.Summary.SummaryView"
+             x:DataType="s:SummaryViewModel">
+  <UserControl.Resources>
+    <DataTemplate x:Key="CountRow" x:DataType="s:CountItem">
+      <Grid ColumnDefinitions="36,*" Margin="0,2">
+        <TextBlock Classes="tnum" Text="{Binding Count}" FontWeight="SemiBold" />
+        <TextBlock Grid.Column="1" Text="{Binding Name}" TextWrapping="Wrap" />
+      </Grid>
+    </DataTemplate>
+    <DataTemplate x:Key="CountChip" x:DataType="s:CountItem">
+      <Border Classes="chip" Margin="0,0,6,6">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="{Binding Name}" />
+          <TextBlock Classes="tnum muted" Text="{Binding Count}" />
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <ScrollViewer>
+    <StackPanel Margin="32,26" Spacing="12">
+      <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+        <StackPanel Margin="0,0,16,0">
+          <TextBlock Classes="display" Text="{Binding Title}" />
+          <TextBlock Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" TextWrapping="Wrap" />
+        </StackPanel>
+        <c:SegmentedControl Grid.Column="1" VerticalAlignment="Bottom" Items="{Binding SegmentItems}" SelectedIndex="{Binding SegmentIndex}" />
+      </Grid>
+
+      <c:EmptyState IsVisible="{Binding !HasGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Summary}" Margin="0,48,0,0" />
+
+      <WrapPanel IsVisible="{Binding HasGroup}" ItemSpacing="12" LineSpacing="12">
+        <Border Classes="card" Width="220">
+          <StackPanel Spacing="6">
+            <TextBlock Classes="micro" Text="{loc:TU summaryTotal}" />
+            <TextBlock Classes="display tnum" Text="{Binding TotalText}" FontSize="40" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Width="300">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="micro" Text="{loc:TU summaryByDay}" />
+            <ItemsControl ItemsSource="{Binding DayBars}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="s:DayBar">
+                  <StackPanel Spacing="4" HorizontalAlignment="Center">
+                    <TextBlock Classes="tnum caption" Text="{Binding Count}" HorizontalAlignment="Center" />
+                    <Border Width="18" Height="40" CornerRadius="4" Background="{DynamicResource Brush.Chip}" VerticalAlignment="Bottom">
+                      <Border Height="{Binding Height}" CornerRadius="4" Background="{DynamicResource Brush.Accent}" VerticalAlignment="Bottom" />
+                    </Border>
+                    <TextBlock Classes="micro" Text="{Binding Label}" HorizontalAlignment="Center" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Width="300">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="micro" Text="{loc:TU summaryByType}" />
+            <ItemsControl ItemsSource="{Binding Types}" ItemTemplate="{StaticResource CountChip}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Width="360">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="micro" Text="{loc:TU summarySubjects}" />
+            <ItemsControl ItemsSource="{Binding Subjects}" ItemTemplate="{StaticResource CountRow}" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Width="360" IsVisible="{Binding HasTeachers}">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="micro" Text="{loc:TU summaryTeachers}" />
+            <ItemsControl ItemsSource="{Binding Teachers}" ItemTemplate="{StaticResource CountRow}" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Width="360" IsVisible="{Binding HasRooms}">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="micro" Text="{loc:TU summaryRooms}" />
+            <ItemsControl ItemsSource="{Binding Rooms}" ItemTemplate="{StaticResource CountChip}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+      </WrapPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
