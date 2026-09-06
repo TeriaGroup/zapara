@@ -92,6 +92,8 @@ public class LocTests
         "winMinimize","winMaximize","winClose",
         "refreshOk","refreshNone","refreshFail","refreshTip",
         "weekCurrentSuffix","weekOpenDayTip",
-        "summaryTotal","summaryByDay","summaryByType","summarySubjects","summaryTeachers","summaryRooms","summaryBothShort"
+        "summaryTotal","summaryByDay","summaryByType","summarySubjects","summaryTeachers","summaryRooms","summaryBothShort",
+        "teachersSearchHint","teachersOnlyMine","teachersCount","teachersPick","teachersPickHint","teachersLoading",
+        "teachersLoadFail","teachersNoSource","teachersMine","teachersTeachesMine","teachersNotMine"
     };
 }

@@ -1,5 +1,6 @@
 using Vograph.Core.Models;
 using Vograph.Core.Services;
+using Vograph.Desktop.Features.Teachers;
 
 namespace Vograph.Desktop.Services;
 
@@ -17,12 +18,14 @@ public sealed class AppServices : IDisposable
     public IntersectionService Intersections { get; }
     public NotificationService Notifications { get; }
     public MapService Maps { get; }
-    public LecturerService Lecturers { get; }
     public SyncService Sync { get; }
     public AutoUpdateService AutoUpdate { get; }
     public UiPrefs Prefs { get; }
     public ToastService Toasts { get; }
     public AppLog Log { get; }
+
+    /// <summary>Cache-first lecturer directory; settable so tests point it at local files that cannot exist.</summary>
+    public LecturerStore Lecturers { get; set; }
 
     /// <summary>Network half of timetable refreshes; settable so tests script the server with a FakeHttpHandler.</summary>
     public ScheduleRefresher Refresher { get; set; }
@@ -50,7 +53,7 @@ public sealed class AppServices : IDisposable
         Intersections = new IntersectionService(Db);
         Notifications = new NotificationService(Db, Overrides, Homework, Schedule, I18n);
         Maps = new MapService(Db, Schedule);
-        Lecturers = new LecturerService(Db); // loads lazily from the Teachers section (stage 2)
+        Lecturers = new LecturerStore(new LecturerService(Db), Log); // parsed lazily by the Teachers section
         Sync = new SyncService(Db);
         AutoUpdate = new AutoUpdateService();
         Prefs = UiPrefs.Load(Path.Combine(dataDir, "ui.json"), ex => Log.Error("prefs", ex));

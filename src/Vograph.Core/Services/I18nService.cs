@@ -132,6 +132,11 @@ public class I18nService
             ["weekCurrentSuffix"] = " · текущая", ["weekOpenDayTip"] = "Открыть этот день в расписании",
             ["summaryTotal"] = "Всего пар", ["summaryByDay"] = "По дням", ["summaryByType"] = "По типам",
             ["summarySubjects"] = "Предметы", ["summaryTeachers"] = "Преподаватели", ["summaryRooms"] = "Аудитории", ["summaryBothShort"] = "Обе",
+            ["teachersSearchHint"] = "Фамилия, кафедра или предмет", ["teachersOnlyMine"] = "Только мои", ["teachersCount"] = "{0} из {1}",
+            ["teachersPick"] = "Выберите преподавателя", ["teachersPickHint"] = "Список слева: поиск по фамилии или предмету",
+            ["teachersLoading"] = "Загружаем справочник…", ["teachersLoadFail"] = "Справочник преподавателей недоступен: {0}",
+            ["teachersNoSource"] = "нет ни кэша, ни встроенной копии, ни сети", ["teachersMine"] = "моя",
+            ["teachersTeachesMine"] = "Ведёт у вашей группы", ["teachersNotMine"] = "Не ведёт у вашей группы",
         },
         ["en"] = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -245,6 +250,11 @@ public class I18nService
             ["weekCurrentSuffix"] = " · current", ["weekOpenDayTip"] = "Open this day in the schedule",
             ["summaryTotal"] = "Lessons total", ["summaryByDay"] = "By day", ["summaryByType"] = "By type",
             ["summarySubjects"] = "Subjects", ["summaryTeachers"] = "Teachers", ["summaryRooms"] = "Rooms", ["summaryBothShort"] = "Both",
+            ["teachersSearchHint"] = "Surname, department or subject", ["teachersOnlyMine"] = "Only mine", ["teachersCount"] = "{0} of {1}",
+            ["teachersPick"] = "Pick a teacher", ["teachersPickHint"] = "The list on the left: search by surname or subject",
+            ["teachersLoading"] = "Loading the directory…", ["teachersLoadFail"] = "Teacher directory unavailable: {0}",
+            ["teachersNoSource"] = "no cache, no bundled copy, no network", ["teachersMine"] = "mine",
+            ["teachersTeachesMine"] = "Teaches your group", ["teachersNotMine"] = "Does not teach your group",
         }
     };
 

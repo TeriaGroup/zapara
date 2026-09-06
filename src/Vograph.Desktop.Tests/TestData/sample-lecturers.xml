@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Timetable>
+  <Period Title="ОСЕННИЙ СЕМЕСТР 2026/2027 уч. г." StartYear="2026" StartMonth="9" StartDay="1" />
+  <Weeks WeekCount="2" />
+  <Lecturer IdLecturer="1287" LecturerName="Барт Е.Л." Kafedra="О6 ">
+    <Days>
+      <Day Title="Понедельник">
+        <LecturerLessons>
+          <Lesson><DayTitle>Понедельник</DayTitle><WeekCode>1</WeekCode><Time>9:00 Нечетная</Time><Discipline>лек ВЫСШ. МАТЕМАТ</Discipline><Classroom>493; </Classroom>
+            <Groups><Group><IdGroup>3313</IdGroup><Number>А863С</Number></Group><Group><IdGroup>3314</IdGroup><Number>А864С</Number></Group></Groups></Lesson>
+          <Lesson><DayTitle>Понедельник</DayTitle><WeekCode>2</WeekCode><Time>9:00 Четная</Time><Discipline>лек ВЫСШ. МАТЕМАТ</Discipline><Classroom>493; </Classroom>
+            <Groups><Group><IdGroup>3313</IdGroup><Number>А863С</Number></Group></Groups></Lesson>
+        </LecturerLessons>
+      </Day>
+      <Day Title="Среда">
+        <LecturerLessons>
+          <Lesson><DayTitle>Среда</DayTitle><WeekCode>2</WeekCode><Time>14:55 Четная</Time><Discipline>пр ВЫСШ. МАТЕМАТ</Discipline><Classroom>ВЦ 280; </Classroom>
+            <Groups><Group><IdGroup>3313</IdGroup><Number>А863С</Number></Group></Groups></Lesson>
+        </LecturerLessons>
+      </Day>
+    </Days>
+  </Lecturer>
+  <Lecturer IdLecturer="1609" LecturerName="Лысенко Е.М." Kafedra="Р7 ">
+    <Days>
+      <Day Title="Понедельник">
+        <LecturerLessons>
+          <Lesson><DayTitle>Понедельник</DayTitle><WeekCode>1</WeekCode><Time>12:40 Нечетная</Time><Discipline>пр ОСН РОС ГОС</Discipline><Classroom>563*; </Classroom>
+            <Groups><Group><IdGroup>3313</IdGroup><Number>А863С</Number></Group></Groups></Lesson>
+        </LecturerLessons>
+      </Day>
+    </Days>
+  </Lecturer>
+  <Lecturer IdLecturer="5000" LecturerName="Чужой А.А." Kafedra="И9 ">
+    <Days>
+      <Day Title="Вторник">
+        <LecturerLessons>
+          <Lesson><DayTitle>Вторник</DayTitle><WeekCode>1</WeekCode><Time>9:00 Нечетная</Time><Discipline>лек ФИЗИКА</Discipline><Classroom>227*; </Classroom>
+            <Groups><Group><IdGroup>3031</IdGroup><Number>09С31</Number></Group></Groups></Lesson>
+        </LecturerLessons>
+      </Day>
+    </Days>
+  </Lecturer>
+</Timetable>
