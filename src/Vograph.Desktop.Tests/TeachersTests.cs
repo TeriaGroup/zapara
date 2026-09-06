@@ -141,6 +141,29 @@ public class TeachersTests : UiTest
     }
 
     [Fact]
+    public async Task Overlapping_Loads_Share_One_Task()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        await db.Services.Lecturers.LoadXmlAsync(LecturerXml); // no files, no network
+        var vm = new TeachersViewModel(db.Services, shell, () => Wed9, allowNetwork: false);
+
+        // Two activations back to back (ShellViewModel.NavigateTo fires ActivateAsync without awaiting, and
+        // GetOrCreate hands back this same cached instance) must not race two loads into the shared LecturerService.
+        var t1 = vm.LoadAsync();
+        var t2 = vm.LoadAsync();
+        Assert.Same(t1, t2);
+        await t1;
+        Assert.Equal(2, vm.Items.Count); // «Только мои», same fixture and default filter as Make()
+        Assert.Null(vm.LoadError);
+
+        // Once the in-flight load has completed, the next call must start a fresh one, not replay the old task.
+        var t3 = vm.LoadAsync();
+        Assert.NotSame(t1, t3);
+        await t3;
+    }
+
+    [Fact]
     public void Teachers_Section_Does_Not_Allow_Network_In_Tests()
     {
         using var db = TestDb.Create();

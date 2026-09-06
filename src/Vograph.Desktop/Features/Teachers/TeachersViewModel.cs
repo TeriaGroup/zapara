@@ -28,6 +28,7 @@ public sealed partial class TeachersViewModel : ViewModelBase
     private string _myGroupName = "";
     private bool _invert;
     private bool _loadedOnce;
+    private Task? _inflight;
 
     public TeachersViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null, bool allowNetwork = true) : base(app)
     {
@@ -71,10 +72,22 @@ public sealed partial class TeachersViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasDetail));
     }
 
+    /// <summary>Reentrancy guard. ShellViewModel.NavigateTo fires ActivateAsync without awaiting and without a
+    /// busy check, and the shell hands back the same cached section instance on every navigation, so two
+    /// navigations back to back must share one in-flight load instead of racing two calls into the shared
+    /// LecturerService.Parse() (unsynchronized Clear()+Add() on the same lists). A completed _inflight — including
+    /// one that failed, since _loadedOnce only flips on success — falls through and starts a fresh load rather than
+    /// returning the stale task.</summary>
+    public Task LoadAsync()
+    {
+        if (_inflight is { IsCompleted: false }) return _inflight;
+        return _inflight = LoadOnceAsync();
+    }
+
     /// <summary>Local copy first (instant), my-teacher ids under the gate, then the network refresh behind the list.
     /// _loadedOnce is set only once a source of data was actually found, so a failed first load (no cache, no
     /// bundled copy, no network) is retried the next time the section is activated instead of sticking forever.</summary>
-    public async Task LoadAsync()
+    private async Task LoadOnceAsync()
     {
         IsLoading = true;
         LoadError = null;
