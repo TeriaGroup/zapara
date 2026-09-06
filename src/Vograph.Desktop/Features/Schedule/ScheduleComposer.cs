@@ -114,12 +114,15 @@ public sealed class ScheduleComposer
         return (map.RoomRaw, map.Building, false);
     }
 
+    /// <summary>The card's status comes from the composer's own clock, not from Core's persisted Status
+    /// (Core recomputes it against DateTime.Today, which made the cards drift with the wall clock).</summary>
     private HomeworkItem ToItem(Homework h, Settings settings, DateTime today, Loc loc)
     {
-        var status = h.Status == "done" ? "done" : _app.Homework.ComputeStatus(h);
-        var until = h.DueDateComputed is { } due && status is not ("done" or "overdue")
+        var until = h.Status != "done" && h.DueDateComputed is { } due && due.Date > today.Date
             ? HomeworkLabels.LessonsUntil(_app.Db, settings, h.SubjectRawNormalized, today, due)
             : 0;
+        var status = Homeworks.HomeworkStatus.Compute(h, today, until);
+        if (status == "pending") status = "far";
         return new HomeworkItem(h.Id, h.Text, status, h.DueDateComputed, HomeworkLabels.Label(status, h.DueDateComputed, until, loc), status == "done");
     }
 

@@ -174,7 +174,8 @@ public class ScheduleDialogsTests : UiTest
         law = vm.Lessons[1];
         var hw = Assert.Single(law.Homework);
         Assert.Equal("прочитать главу 2", hw.Text);
-        Assert.Equal(new DateTime(2026, 9, 21), hw.Item.Due); // status/label come from Core's real-clock ComputeStatus — never assert them here
+        Assert.Equal(new DateTime(2026, 9, 21), hw.Item.Due);
+        Assert.Equal("срок 21.09", hw.Label); // status/label now come from the section's own clock (Mon 07.09), no ОСН РОС ГОС in between
         Assert.False(hw.IsDone);
 
         // edit

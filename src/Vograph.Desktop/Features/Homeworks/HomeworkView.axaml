@@ -1,0 +1,68 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             xmlns:h="using:Vograph.Desktop.Features.Homeworks"
+             x:Class="Vograph.Desktop.Features.Homeworks.HomeworkView"
+             x:DataType="h:HomeworkViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="32,26" Spacing="14" MaxWidth="880" HorizontalAlignment="Left">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Margin="0,0,16,0">
+          <TextBlock Classes="display" Text="{Binding Title}" />
+          <TextBlock Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" />
+        </StackPanel>
+        <Button Grid.Column="1" Classes="primary" VerticalAlignment="Bottom" Command="{Binding AddCommand}" IsEnabled="{Binding HasGroup}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <c:Icon Data="{StaticResource Icon.Plus}" Size="14" />
+            <TextBlock Text="{loc:T hwAddShort}" />
+          </StackPanel>
+        </Button>
+      </Grid>
+
+      <c:EmptyState IsVisible="{Binding !HasGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Homework}" Margin="0,24" />
+      <c:EmptyState IsVisible="{Binding IsEmpty}" Title="{loc:T hwEmpty}" Hint="{loc:T hwEmptyHint}" Icon="{StaticResource Icon.Homework}" Margin="0,24" />
+
+      <ItemsControl ItemsSource="{Binding Groups}">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="14" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="h:HomeworkGroupViewModel">
+            <StackPanel Spacing="8">
+              <Button Classes="ghost" Padding="4,2" HorizontalAlignment="Left" Command="{Binding ToggleCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Classes="micro" Text="{Binding Title, Converter={x:Static loc:Converters.Upper}}" VerticalAlignment="Center" />
+                  <Border Classes="chip"><TextBlock Classes="tnum" Text="{Binding Count}" /></Border>
+                  <c:Icon Data="{StaticResource Icon.ChevronRight}" Size="12" IsVisible="{Binding IsCollapsed}" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <ItemsControl ItemsSource="{Binding Items}" IsVisible="{Binding !IsCollapsed}">
+                <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="h:HomeworkRowViewModel">
+                    <Border Classes="card hoverable" Classes.past="{Binding IsDone}">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Spacing="4">
+                          <TextBlock Classes="subject" Text="{Binding Subject}" />
+                          <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                          <Border Classes="chip" HorizontalAlignment="Left" Classes.approaching="{Binding IsApproaching}" Classes.burning="{Binding IsBurning}"
+                                  Classes.urgent="{Binding IsUrgent}" Classes.overdue="{Binding IsOverdue}" Classes.done="{Binding IsDone}">
+                            <TextBlock Text="{Binding Label}" />
+                          </Border>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+                          <Button Classes="pill" Content="{Binding DoneLabel}" Command="{Binding ToggleDoneCommand}" />
+                          <Button Classes="icon small" Command="{Binding EditCommand}" ToolTip.Tip="{loc:T hwEdit}"><c:Icon Data="{StaticResource Icon.Pencil}" Size="14" /></Button>
+                          <Button Classes="icon small" Command="{Binding DeleteCommand}" ToolTip.Tip="{loc:T hwDelete}"><c:Icon Data="{StaticResource Icon.Trash}" Size="14" /></Button>
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

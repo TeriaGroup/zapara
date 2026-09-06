@@ -100,6 +100,8 @@ public class LocTests
         "mapFullscreen","mapExitFullscreen","mapFit","mapZoomIn","mapZoomOut","mapReset","mapMore","mapNoImage","mapRemoteHint",
         "friendsSubtitle","friendsCount","friendsAdd","friendsMax","friendsNames","friendsEnabled","friendsRemove","friendsRemoveConfirm",
         "friendsEmpty","friendsEmptyHint","friendsColor","friendAdded","intersections","strictnessHint","alwaysShowAll","alwaysShowAllHint",
-        "previewTitle","previewNone","strictTick25","strictTick50","strictTick75","strictTick100"
+        "previewTitle","previewNone","strictTick25","strictTick50","strictTick75","strictTick100",
+        "hwGroupUrgent","hwGroupBurning","hwGroupApproaching","hwGroupFar","hwGroupOverdue","hwGroupDone",
+        "hwOpen1","hwOpen2","hwOpen5","hwDoneCount","hwAddShort","hwEmpty","hwEmptyHint","hwPickSubject","hwPickSubjectHint"
     };
 }

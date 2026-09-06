@@ -54,6 +54,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         Register(SectionKey.Teachers, () => new Features.Teachers.TeachersViewModel(App, this, allowNetwork: App.AllowNetwork));
         Register(SectionKey.Maps, () => new Features.Maps.MapsViewModel(App, this));
         Register(SectionKey.Friends, () => new Features.Friends.FriendsViewModel(App, this));
+        Register(SectionKey.Homework, () => new Features.Homeworks.HomeworkViewModel(App, this));
 
         SidebarCollapsed = app.Prefs.SidebarCollapsed;
         app.Loc.LanguageChanged += () =>
@@ -120,7 +121,34 @@ public sealed partial class ShellViewModel : ViewModelBase
 
     /// <summary>Raised after the timetable cache changed (refresh, import): sections recompose.</summary>
     public event Action? ScheduleChanged;
-    internal void RaiseScheduleChanged() => ScheduleChanged?.Invoke();
+
+    internal void RaiseScheduleChanged()
+    {
+        ScheduleChanged?.Invoke();
+        _ = UpdateHomeworkBadgeAsync(); // due dates are recomputed against the new timetable
+    }
+
+    /// <summary>Injected clock for badge/status computations (tests pin a date).</summary>
+    public Func<DateTime> Clock { get; set; } = () => DateTime.Now;
+
+    /// <summary>Raised after homework changed anywhere (schedule card or Homework section).</summary>
+    public event Action? HomeworkChanged;
+
+    internal void RaiseHomeworkChanged()
+    {
+        HomeworkChanged?.Invoke();
+        _ = UpdateHomeworkBadgeAsync();
+    }
+
+    private sealed record BadgeData(int Count);
+
+    public async Task UpdateHomeworkBadgeAsync()
+    {
+        var today = Clock().Date;
+        var data = await RunAsync(() => new BadgeData(Features.Homeworks.HomeworkStatus.BadgeCount(App.Homework.GetAll(), today)), "homework badge");
+        if (data is null) return;
+        ToolSections.First(s => s.Key == SectionKey.Homework).Badge = data.Count > 0 ? data.Count.ToString() : null;
+    }
 
     [ObservableProperty] private bool _isRefreshing;
     private bool _staleToastShown;
@@ -312,6 +340,7 @@ public sealed partial class ShellViewModel : ViewModelBase
             DetachSection(SectionKey.Schedule); // rebuild against fresh data
             NavigateTo(SectionKey.Schedule);
             await Section<ScheduleViewModel>(SectionKey.Schedule).InitializeAsync();
+            await UpdateHomeworkBadgeAsync();
             if (allowNetwork)
             {
                 if (data.GroupCount > 0 && ShouldAutoCheck(data.Settings, DateTime.UtcNow)) _ = RefreshScheduleAsync(force: false, quiet: true);
@@ -385,5 +414,9 @@ public sealed partial class ShellViewModel : ViewModelBase
     }
 
     /// <summary>Sealed type: 'internal' rather than 'protected' so later dialogs in this assembly can raise it without CS0628.</summary>
-    internal void RaiseGroupChanged() => GroupChanged?.Invoke();
+    internal void RaiseGroupChanged()
+    {
+        GroupChanged?.Invoke();
+        _ = UpdateHomeworkBadgeAsync(); // another group means other lessons, so other due dates
+    }
 }

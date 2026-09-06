@@ -148,6 +148,10 @@ public class I18nService
             ["mapRemoteHint"] = "Нажмите ◉ у пары или выберите корпус и этаж",
             ["friendsSubtitle"] = "До пяти групп: их пары появляются точками на ваших карточках", ["friendsCount"] = "{0} из {1}", ["friendsAdd"] = "Добавить группу", ["friendsMax"] = "Максимум пять групп", ["friendsNames"] = "Имена товарищей", ["friendsEnabled"] = "Показывать", ["friendsRemove"] = "Удалить", ["friendsRemoveConfirm"] = "Убрать группу {0} из друзей?", ["friendsEmpty"] = "Друзей пока нет", ["friendsEmptyHint"] = "Добавьте группу — её пары появятся точками на ваших карточках", ["friendsColor"] = "Цвет", ["friendAdded"] = "Группа {0} добавлена", ["intersections"] = "Пересечения", ["strictnessHint"] = "Точка загорается, когда друг в это же время не дальше выбранного уровня", ["alwaysShowAll"] = "Всегда все светофоры", ["alwaysShowAllHint"] = "Друзья без пересечения — серой точкой", ["previewTitle"] = "Превью", ["previewNone"] = "В ближайшие две недели пересечений нет",
             ["strictTick25"] = "в вузе", ["strictTick50"] = "корпус", ["strictTick75"] = "этаж", ["strictTick100"] = "аудитория",
+            ["hwGroupUrgent"] = "Горит сегодня", ["hwGroupBurning"] = "Горит", ["hwGroupApproaching"] = "Скоро", ["hwGroupFar"] = "Далеко", ["hwGroupOverdue"] = "Просрочено", ["hwGroupDone"] = "Сдано",
+            ["hwOpen1"] = "{0} открытая", ["hwOpen2"] = "{0} открытые", ["hwOpen5"] = "{0} открытых", ["hwDoneCount"] = "сдано {0}",
+            ["hwAddShort"] = "Добавить", ["hwEmpty"] = "Домашки нет", ["hwEmptyHint"] = "Добавьте задание кнопкой выше или через ＋ на карточке пары",
+            ["hwPickSubject"] = "ПРЕДМЕТ", ["hwPickSubjectHint"] = "Название предмета…",
         },
         ["en"] = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -277,6 +281,10 @@ public class I18nService
             ["mapRemoteHint"] = "Press ◉ on a lesson or pick a building and floor",
             ["friendsSubtitle"] = "Up to five groups: their lessons show up as dots on your cards", ["friendsCount"] = "{0} of {1}", ["friendsAdd"] = "Add a group", ["friendsMax"] = "Five groups at most", ["friendsNames"] = "Friends' names", ["friendsEnabled"] = "Show", ["friendsRemove"] = "Remove", ["friendsRemoveConfirm"] = "Remove group {0} from friends?", ["friendsEmpty"] = "No friends yet", ["friendsEmptyHint"] = "Add a group — its lessons appear as dots on your cards", ["friendsColor"] = "Colour", ["friendAdded"] = "Group {0} added", ["intersections"] = "Intersections", ["strictnessHint"] = "A dot lights up when a friend is, at the same time, no farther than the chosen level", ["alwaysShowAll"] = "Always show all traffic lights", ["alwaysShowAllHint"] = "Friends without an intersection — a grey dot", ["previewTitle"] = "Preview", ["previewNone"] = "No intersections in the next two weeks",
             ["strictTick25"] = "campus", ["strictTick50"] = "building", ["strictTick75"] = "floor", ["strictTick100"] = "room",
+            ["hwGroupUrgent"] = "Due today", ["hwGroupBurning"] = "Due tomorrow", ["hwGroupApproaching"] = "Soon", ["hwGroupFar"] = "Later", ["hwGroupOverdue"] = "Overdue", ["hwGroupDone"] = "Done",
+            ["hwOpen1"] = "{0} open", ["hwOpen2"] = "{0} open", ["hwOpen5"] = "{0} open", ["hwDoneCount"] = "{0} done",
+            ["hwAddShort"] = "Add", ["hwEmpty"] = "No homework", ["hwEmptyHint"] = "Add one with the button above or via ＋ on a lesson card",
+            ["hwPickSubject"] = "SUBJECT", ["hwPickSubjectHint"] = "Subject name…",
         }
     };
 

@@ -18,9 +18,11 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     private readonly Action _onLanguage;
     private readonly Action _onGroup;
     private readonly Action _onSchedule;
+    private readonly Action _onHomework;
     private int _reloadVersion;
     private bool _suppressReload;
     private bool _loaded;
+    private bool _raising;
 
     public ScheduleViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null) : base(app)
     {
@@ -34,9 +36,13 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         // runs smart start on its own first load — starting Core work here would only outlive the shell.
         _onGroup = () => { if (_loaded) _ = InitializeAsync(); };
         _onSchedule = () => _ = ReloadAsync();
+        // Homework changed elsewhere (the Homework section): recompose the day. Our own mutations already
+        // reloaded before they raised the event, so _raising keeps the card from composing twice.
+        _onHomework = () => { if (!_raising) _ = ReloadAsync(); };
         app.Loc.LanguageChanged += _onLanguage;
         shell.GroupChanged += _onGroup;
         shell.ScheduleChanged += _onSchedule;
+        shell.HomeworkChanged += _onHomework;
     }
 
     public override void Detach()
@@ -44,6 +50,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         App.Loc.LanguageChanged -= _onLanguage;
         _shell.GroupChanged -= _onGroup;
         _shell.ScheduleChanged -= _onSchedule;
+        _shell.HomeworkChanged -= _onHomework;
     }
 
     /// <summary>Week/Teachers hand over a concrete date; the offset change reloads the day.</summary>
@@ -171,8 +178,9 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         if (dues is null) return;
         var dlg = new HomeworkDialogViewModel(row.DisplayName, nth => dues[Math.Clamp(nth, 1, 10) - 1]);
         if (!await _shell.Dialogs.ShowAsync(dlg)) return;
-        if (await RunAsync(() => App.Homework.AddHomework(l.SubjectRaw, dlg.Text.Trim(), dlg.Nth, createdAt: today), "homework add"))
-            await ReloadAsync();
+        if (!await RunAsync(() => App.Homework.AddHomework(l.SubjectRaw, dlg.Text.Trim(), dlg.Nth, createdAt: today), "homework add")) return;
+        await ReloadAsync();
+        RaiseHomework();
     }
 
     public async Task EditHomeworkAsync(HomeworkItemViewModel hw)
@@ -184,8 +192,9 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         var dlg = new HomeworkDialogViewModel(hw.Row.DisplayName, nth => dues[Math.Clamp(nth, 1, 10) - 1],
             existing.Text, existing.TargetNthOccurrence);
         if (!await _shell.Dialogs.ShowAsync(dlg)) return;
-        if (await RunAsync(() => App.Homework.UpdateHomework(hw.Id, dlg.Text.Trim(), dlg.Nth), "homework edit"))
-            await ReloadAsync();
+        if (!await RunAsync(() => App.Homework.UpdateHomework(hw.Id, dlg.Text.Trim(), dlg.Nth), "homework edit")) return;
+        await ReloadAsync();
+        RaiseHomework();
     }
 
     /// <summary>Every due date the stepper can show, computed once off the UI thread: the dialog then
@@ -195,15 +204,26 @@ public sealed partial class ScheduleViewModel : ViewModelBase
 
     public async Task ToggleDoneAsync(HomeworkItemViewModel hw)
     {
-        if (await RunAsync(() => App.Homework.MarkDone(hw.Id, !hw.IsDone), "homework done"))
-            await ReloadAsync();
+        if (!await RunAsync(() => App.Homework.MarkDone(hw.Id, !hw.IsDone), "homework done")) return;
+        await ReloadAsync();
+        RaiseHomework();
     }
 
     public async Task DeleteHomeworkAsync(HomeworkItemViewModel hw)
     {
         var confirm = new ConfirmDialogViewModel(T("hwDelete"), T("hwDeleteConfirm", hw.Text), T("delete"), danger: true);
         if (!await _shell.Dialogs.ShowAsync(confirm)) return;
-        if (await RunAsync(() => App.Homework.Delete(hw.Id), "homework delete"))
-            await ReloadAsync();
+        if (!await RunAsync(() => App.Homework.Delete(hw.Id), "homework delete")) return;
+        await ReloadAsync();
+        RaiseHomework();
+    }
+
+    /// <summary>Tells the Homework section and the sidebar badge about a card-side mutation; the flag keeps
+    /// our own _onHomework handler from starting a second compose of the day we just reloaded.</summary>
+    private void RaiseHomework()
+    {
+        _raising = true;
+        try { _shell.RaiseHomeworkChanged(); }
+        finally { _raising = false; }
     }
 }
