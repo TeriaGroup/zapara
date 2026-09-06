@@ -21,20 +21,25 @@ public class ShellTests : UiTest
     }
 
     [AvaloniaFact]
-    public void Starts_On_Schedule_And_Navigates_Between_Sections()
+    public void Every_Section_Resolves_To_Its_Real_ViewModel()
     {
         var (db, shell) = Make();
         using (db)
         {
             Assert.Equal(SectionKey.Schedule, shell.CurrentKey);
-            Assert.True(shell.MainSections[0].IsActive);
+            Assert.IsType<Features.Week.WeekViewModel>(shell.Section<ViewModelBase>(SectionKey.Week));
+            Assert.IsType<Features.Summary.SummaryViewModel>(shell.Section<ViewModelBase>(SectionKey.Summary));
+            Assert.IsType<Features.Teachers.TeachersViewModel>(shell.Section<ViewModelBase>(SectionKey.Teachers));
+            Assert.IsType<Features.Maps.MapsViewModel>(shell.Section<ViewModelBase>(SectionKey.Maps));
+            Assert.IsType<Features.Friends.FriendsViewModel>(shell.Section<ViewModelBase>(SectionKey.Friends));
+            Assert.IsType<Features.Homeworks.HomeworkViewModel>(shell.Section<ViewModelBase>(SectionKey.Homework));
+            Assert.IsType<Features.Preferences.SettingsViewModel>(shell.Section<ViewModelBase>(SectionKey.Settings));
 
             shell.NavigateCommand.Execute("Week");
-
             Assert.Equal(SectionKey.Week, shell.CurrentKey);
+            Assert.Same(shell.Current, shell.Section<ViewModelBase>(SectionKey.Week)); // cached instance
             Assert.True(shell.MainSections[1].IsActive);
             Assert.False(shell.MainSections[0].IsActive);
-            Assert.Same(shell.Current, shell.Section<ViewModelBase>(SectionKey.Week)); // cached instance
         }
     }
 

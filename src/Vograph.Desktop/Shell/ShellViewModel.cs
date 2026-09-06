@@ -47,11 +47,8 @@ public sealed partial class ShellViewModel : ViewModelBase
         };
         SettingsSection = Make(SectionKey.Settings, "navSettings", "Icon.Settings");
 
-        foreach (var key in Enum.GetValues<SectionKey>())
-        {
-            var k = key;
-            Register(k, () => new PlaceholderViewModel(App, AllSections.First(s => s.Key == k).LabelKey));
-        }
+        // Every SectionKey has a real section; a missing entry here is a KeyNotFoundException on navigation,
+        // which is what SectionsRenderTests and ShellTests guard.
         Register(SectionKey.Schedule, () => new Features.Schedule.ScheduleViewModel(App, this));
         Register(SectionKey.Week, () => new Features.Week.WeekViewModel(App, this));
         Register(SectionKey.Summary, () => new Features.Summary.SummaryViewModel(App, this));
@@ -277,7 +274,8 @@ public sealed partial class ShellViewModel : ViewModelBase
 
     private NavSection Make(SectionKey key, string labelKey, string iconKey) => new(key, labelKey, iconKey, NavigateCommand);
 
-    /// <summary>Later tasks replace the placeholder factory of a section with the real one.</summary>
+    /// <summary>Replaces a section's factory (tests pin the clock this way); the cached instance is detached
+    /// so the next navigation rebuilds the section from the new factory.</summary>
     public void Register(SectionKey key, Func<ViewModelBase> factory)
     {
         _factories[key] = factory;

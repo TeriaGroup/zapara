@@ -42,6 +42,28 @@ public class ViewModelBaseTests
     }
 
     [Fact]
+    public async Task Dispose_Waits_For_The_Gated_Call_Before_Closing_The_Database()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));
+        var services = AppServices.Create(dir);
+        var vm = new ProbeVm(services);
+        var inGate = new ManualResetEventSlim();
+
+        var work = vm.Run(() => { inGate.Set(); Thread.Sleep(200); return "done"; });
+        inGate.Wait(TestContext.Current.CancellationToken);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        services.Dispose(); // must not close SQLite under a running query
+        sw.Stop();
+
+        Assert.Equal("done", await work);
+        Assert.True(sw.ElapsedMilliseconds >= 150, $"Dispose returned after {sw.ElapsedMilliseconds} ms — it did not wait for the gated call");
+        Assert.Null(await vm.Run(() => "never")); // gate gone: queued callers get null, not an exception
+        Assert.Empty(services.Toasts.Items);      // shutdown is not an error
+        try { Directory.Delete(dir, recursive: true); } catch (IOException ex) { Console.Error.WriteLine($"temp dir left behind ({dir}): {ex.Message}"); }
+    }
+
+    [Fact]
     public async Task RunAsync_Task_Overload_Reports_Failure_As_False()
     {
         using var db = TestDb.Create(seedPersonalization: false);

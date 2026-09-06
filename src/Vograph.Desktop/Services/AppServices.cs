@@ -93,11 +93,19 @@ public sealed class AppServices : IDisposable
     /// <summary>Always re-read: Core services write settings behind our back (refresh, homework).</summary>
     public Settings Settings => Db.GetSettings();
 
+    private bool _disposed;
+
     public void Dispose()
     {
+        if (_disposed) return; // the bounded Wait below would throw on a second pass
+        _disposed = true;
         Refresher.Dispose();
         NotificationScheduler.Dispose();
         LanSync.Dispose();
+        // Take the gate before the SQLite connection goes: a gated Core call caught mid-query used to fault
+        // inside SqliteConnection.Dispose. The gate is deliberately NOT released — disposal follows it, and
+        // callers queued behind it land on the ObjectDisposedException path in ViewModelBase.GatedAsync.
+        if (!CoreGate.Wait(TimeSpan.FromSeconds(2))) Log.Warn("shutdown: a Core call still holds the gate after 2 s, closing the database anyway");
         Db.Dispose();
         CoreGate.Dispose();
     }
