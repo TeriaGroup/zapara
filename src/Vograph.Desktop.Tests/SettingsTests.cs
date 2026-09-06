@@ -102,6 +102,27 @@ public class SettingsTests : UiTest
     }
 
     [AvaloniaFact]
+    public async Task Sidebar_Theme_Toggle_Mirrors_Into_Settings_Until_Detached()
+    {
+        using var db = TestDb.Create();
+        var theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        db.Services.Theme = theme;
+        var shell = new ShellViewModel(db.Services);
+        var vm = new SettingsViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+        var before = vm.ThemeIndex;
+
+        shell.ToggleThemeCommand.Execute(null); // the sidebar's quick-toggle button, not the Settings segment
+        Assert.NotEqual(before, vm.ThemeIndex);
+        Assert.Equal(theme.Choice == ThemeChoice.Dark ? 2 : 1, vm.ThemeIndex);
+
+        vm.Detach();
+        var afterDetach = vm.ThemeIndex;
+        shell.ToggleThemeCommand.Execute(null); // flips back; Settings no longer listens once detached
+        Assert.Equal(afterDetach, vm.ThemeIndex);
+    }
+
+    [AvaloniaFact]
     public async Task Settings_Render_Both_Themes_And_Theme_Segment_Switches()
     {
         using var db = TestDb.Create();

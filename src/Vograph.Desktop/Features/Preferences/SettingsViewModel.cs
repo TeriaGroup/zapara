@@ -19,6 +19,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private readonly Func<DateTime> _clock;
     private readonly Action _reload;
     private readonly PropertyChangedEventHandler _onShell;
+    private readonly Action _onTheme;
     private bool _suppress;
     private int _version;
 
@@ -38,10 +39,12 @@ public sealed partial class SettingsViewModel : ViewModelBase
             if (e.PropertyName == nameof(ShellViewModel.SidebarCollapsed)) { _suppress = true; CompactSidebar = shell.SidebarCollapsed; _suppress = false; }
             if (e.PropertyName == nameof(ShellViewModel.IsRefreshing)) IsRefreshing = shell.IsRefreshing;
         };
+        _onTheme = () => { _suppress = true; ThemeIndex = (int)App.Theme!.Choice; _suppress = false; };
         shell.PropertyChanged += _onShell;
         shell.GroupChanged += _reload;
         shell.ScheduleChanged += _reload;
         app.Loc.LanguageChanged += Relabel;
+        if (app.Theme is { } theme) theme.Changed += _onTheme; // mirrors the sidebar's quick-toggle back into ThemeIndex
     }
 
     public override void Detach()
@@ -50,6 +53,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         _shell.GroupChanged -= _reload;
         _shell.ScheduleChanged -= _reload;
         App.Loc.LanguageChanged -= Relabel;
+        if (App.Theme is { } theme) theme.Changed -= _onTheme;
     }
 
     public override Task ActivateAsync() => LoadAsync();
