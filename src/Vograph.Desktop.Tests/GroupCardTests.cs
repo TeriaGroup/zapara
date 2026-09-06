@@ -1,3 +1,4 @@
+using Vograph.Core.Models;
 using Vograph.Core.Services;
 using Vograph.Desktop.Dialogs;
 using Vograph.Desktop.Features.Schedule;
@@ -79,5 +80,83 @@ public class GroupCardTests
         await services.Parser.RefreshAsync(xmlOverride: xml);
         await error.RetryCommand.ExecuteAsync(null);
         Assert.IsType<ScheduleViewModel>(shell.Current);
+    }
+
+    [Fact]
+    public async Task StartAsync_With_Data_Never_Shows_The_Loading_State()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var seen = new List<Type>();
+        shell.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ShellViewModel.Current) && shell.Current is { } c) seen.Add(c.GetType()); };
+
+        await shell.StartAsync(allowNetwork: false);
+
+        Assert.IsType<ScheduleViewModel>(shell.Current);
+        Assert.DoesNotContain(typeof(LoadingViewModel), seen); // cache-first: the loading state is for an empty database only
+    }
+
+    [Fact]
+    public async Task Refresh_Writes_New_Timetable_Under_The_Gate_And_Notifies()
+    {
+        using var db = TestDb.Create();
+        var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-timetable.xml"))
+            .Replace("<Discipline>лек ИСТОРИЯ</Discipline>", "<Discipline>лек ФИЛОСОФИЯ</Discipline>");
+        var handler = new FakeHttpHandler { Respond = _ => FakeHttpHandler.Bytes(System.Text.Encoding.UTF8.GetBytes(xml)) };
+        db.Services.Refresher = new ScheduleRefresher(handler);
+        var shell = new ShellViewModel(db.Services);
+        var changed = 0;
+        shell.ScheduleChanged += () => changed++;
+
+        var ok = await shell.RefreshScheduleAsync(force: true, quiet: false);
+
+        Assert.True(ok);
+        Assert.Equal(1, changed);
+        Assert.Contains(db.Services.Db.GetAllLessonsForGroup("3313"), l => l.SubjectRaw == "лек ФИЛОСОФИЯ");
+        Assert.Single(db.Services.Toasts.Items, t => t.Text == "Расписание обновлено");
+        Assert.Equal(1, db.Services.CoreGate.CurrentCount);
+    }
+
+    [Fact]
+    public async Task Refresh_Failure_Toasts_Once_When_Quiet()
+    {
+        using var db = TestDb.Create();
+        var handler = new FakeHttpHandler { Respond = _ => throw new HttpRequestException("offline") };
+        db.Services.Refresher = new ScheduleRefresher(handler);
+        var shell = new ShellViewModel(db.Services);
+
+        Assert.False(await shell.RefreshScheduleAsync(force: false, quiet: true));
+        Assert.False(await shell.RefreshScheduleAsync(force: false, quiet: true));
+
+        Assert.Single(db.Services.Toasts.Items, t => t.Text.StartsWith("Не удалось обновить расписание"));
+    }
+
+    [Theory]
+    [InlineData(null, null, true)]
+    [InlineData(null, "2026-09-05T10:00:00.0000000Z", true)]      // fetch 26 h ago, never checked
+    [InlineData("2026-09-06T00:00:00.0000000Z", null, false)]     // checked 12 h ago
+    [InlineData("2026-09-05T11:00:00.0000000Z", null, true)]      // checked 25 h ago
+    public void ShouldAutoCheck_Follows_The_24h_Rule(string? lastCheck, string? lastFetch, bool expected)
+    {
+        var s = new Settings { LastAutoCheckAt = lastCheck, LastFetchedAt = lastFetch };
+        Assert.Equal(expected, ShellViewModel.ShouldAutoCheck(s, new DateTime(2026, 9, 6, 12, 0, 0, DateTimeKind.Utc)));
+    }
+
+    [Fact]
+    public async Task Register_Detaches_The_Previous_Section()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        await shell.StartAsync(allowNetwork: false);
+        var first = Assert.IsType<ScheduleViewModel>(shell.Current);
+        var reloads = 0;
+        first.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ScheduleViewModel.Title)) reloads++; };
+
+        shell.Register(SectionKey.Schedule, () => new ScheduleViewModel(db.Services, shell));
+        shell.RaiseGroupChanged();
+        shell.RaiseScheduleChanged();
+        await Task.Delay(150, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, reloads); // the detached section ignores shell events
     }
 }

@@ -25,6 +25,7 @@
     <KeyBinding Gesture="Ctrl+D8" Command="{Binding NavigateCommand}" CommandParameter="Settings" />
     <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding NavigateCommand}" CommandParameter="Settings" />
     <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleSidebarCommand}" />
+    <KeyBinding Gesture="F5" Command="{Binding RefreshScheduleCommand}" />
     <!-- Enter is NOT bound here: Window.KeyBindings matches gestures even when a nested control (a
          multi-line TextBox inserting a newline) already marked the key event Handled. DialogHostView's
          own KeyDown handler respects that flag instead, so Enter only confirms when nothing consumed it. -->

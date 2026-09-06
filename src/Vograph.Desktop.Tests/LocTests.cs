@@ -32,6 +32,18 @@ public class LocTests
         Assert.Equal(nameof(LocString.Value), changed);
     }
 
+    [Fact]
+    public void LocString_Is_Cached_Per_Key_And_Follows_Language()
+    {
+        var loc = new Loc(new I18nService("ru"));
+        var a = loc.String("today");
+        Assert.Same(a, loc.String("today"));
+        Assert.Same(a, loc.String("TODAY")); // keys are case-insensitive in Core
+        Assert.Equal("Сегодня", a.Value);
+        loc.SetLanguage("en");
+        Assert.Equal("Today", a.Value);
+    }
+
     [Theory]
     [InlineData(1, "1 пара")]
     [InlineData(2, "2 пары")]
@@ -77,6 +89,7 @@ public class LocTests
         "renameTip","mapTip","placeholderTitle","placeholderHint","loadingTitle","themeToggleTip","sidebarToggleTip",
         "groupPickTitle","search","groupSearchHint","select","confirm","delete","updatedChip","errorTitle",
         "bootstrapError","bootstrapHint","retry","friendAbsent","inter100","inter75","inter50","inter25","savedOk","noGroup","noGroupHint",
-        "winMinimize","winMaximize","winClose"
+        "winMinimize","winMaximize","winClose",
+        "refreshOk","refreshNone","refreshFail","refreshTip"
     };
 }

@@ -15,6 +15,9 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     private readonly ScheduleComposer _composer;
     private readonly ShellViewModel _shell;
     private readonly Func<DateTime> _clock;
+    private readonly Action _onLanguage;
+    private readonly Action _onGroup;
+    private readonly Action _onSchedule;
     private int _reloadVersion;
     private bool _suppressReload;
     private bool _loaded;
@@ -25,16 +28,26 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         _clock = clock ?? (() => DateTime.Now);
         _composer = new ScheduleComposer(app);
         _segmentItems = BuildSegmentItems();
-        app.Loc.LanguageChanged += () =>
-        {
-            SegmentItems = BuildSegmentItems();
-            _ = ReloadAsync();
-        };
+        _onLanguage = () => { SegmentItems = BuildSegmentItems(); _ = ReloadAsync(); };
         // Another group: run smart start again — the old offset was chosen for the old group, or for none.
         // Same guard as ReloadAsync: a section that never loaded has no stale offset to correct, and it
         // runs smart start on its own first load — starting Core work here would only outlive the shell.
-        shell.GroupChanged += () => { if (_loaded) _ = InitializeAsync(); };
+        _onGroup = () => { if (_loaded) _ = InitializeAsync(); };
+        _onSchedule = () => _ = ReloadAsync();
+        app.Loc.LanguageChanged += _onLanguage;
+        shell.GroupChanged += _onGroup;
+        shell.ScheduleChanged += _onSchedule;
     }
+
+    public override void Detach()
+    {
+        App.Loc.LanguageChanged -= _onLanguage;
+        _shell.GroupChanged -= _onGroup;
+        _shell.ScheduleChanged -= _onSchedule;
+    }
+
+    /// <summary>Week/Teachers hand over a concrete date; the offset change reloads the day.</summary>
+    public void ShowDate(DateTime date) => DayOffset = (date.Date - _clock().Date).Days;
 
     public ObservableCollection<LessonRowViewModel> Lessons { get; } = new();
 

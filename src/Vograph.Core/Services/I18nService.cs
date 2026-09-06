@@ -127,6 +127,8 @@ public class I18nService
             ["friendAbsent"] = "нет рядом", ["inter100"] = "в той же аудитории", ["inter75"] = "на том же этаже", ["inter50"] = "в том же корпусе", ["inter25"] = "в вузе",
             ["savedOk"] = "Сохранено", ["noGroup"] = "Группа не выбрана", ["noGroupHint"] = "Нажмите на карточку группы слева",
             ["winMinimize"] = "Свернуть", ["winMaximize"] = "Развернуть", ["winClose"] = "Закрыть",
+            ["refreshOk"] = "Расписание обновлено", ["refreshNone"] = "Расписание актуально",
+            ["refreshFail"] = "Не удалось обновить расписание: {0}", ["refreshTip"] = "Обновить расписание (F5)",
         },
         ["en"] = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -235,6 +237,8 @@ public class I18nService
             ["friendAbsent"] = "not nearby", ["inter100"] = "same room", ["inter75"] = "same floor", ["inter50"] = "same building", ["inter25"] = "at the university",
             ["savedOk"] = "Saved", ["noGroup"] = "No group selected", ["noGroupHint"] = "Click the group card on the left",
             ["winMinimize"] = "Minimize", ["winMaximize"] = "Maximize", ["winClose"] = "Close",
+            ["refreshOk"] = "Timetable updated", ["refreshNone"] = "Timetable is up to date",
+            ["refreshFail"] = "Could not update the timetable: {0}", ["refreshTip"] = "Refresh timetable (F5)",
         }
     };
 

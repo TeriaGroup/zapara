@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using Avalonia.Input;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Models;
@@ -57,7 +59,10 @@ public sealed partial class ShellViewModel : ViewModelBase
         // Startup only: the shell is built before any background Core call exists, so this is the one
         // synchronous read (same class as the AppServices ctor). Every later refresh goes through RefreshGroupCardAsync.
         ApplyGroupCard(ReadCard());
-        NavigateTo(SectionKey.Schedule);
+        // The schedule section is built by StartAsync against loaded data; until then the host shows the loading state.
+        Current = new LoadingViewModel(App);
+        CurrentKey = SectionKey.Schedule;
+        MainSections[0].IsActive = true;
     }
 
     public ObservableCollection<NavSection> MainSections { get; }
@@ -88,13 +93,119 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// <summary>Raised after the user picks another group; sections reload themselves.</summary>
     public event Action? GroupChanged;
 
+    /// <summary>Raised after the timetable cache changed (refresh, import): sections recompose.</summary>
+    public event Action? ScheduleChanged;
+    internal void RaiseScheduleChanged() => ScheduleChanged?.Invoke();
+
+    [ObservableProperty] private bool _isRefreshing;
+    private bool _staleToastShown;
+    private DispatcherTimer? _autoCheck;
+
+    /// <summary>F5 and «Обновить расписание».</summary>
+    [RelayCommand(AllowConcurrentExecutions = false)]
+    private Task RefreshSchedule() => RefreshScheduleAsync(force: true, quiet: false);
+
+    /// <summary>Network outside the gate (Refresher), parse + SQLite inside (Parser.RefreshAsync(xmlOverride)).
+    /// quiet: startup / 24 h check — only the first failure per session toasts.</summary>
+    public async Task<bool> RefreshScheduleAsync(bool force, bool quiet)
+    {
+        if (IsRefreshing) return false;
+        IsRefreshing = true;
+        try
+        {
+            var settings = await RunAsync(() => App.Db.GetSettings(), "settings");
+            if (settings is null) return false;
+            RefreshCheck check;
+            try
+            {
+                check = await App.Refresher.CheckAsync(force ? null : settings.LastFetchedAt);
+            }
+            catch (Exception ex)
+            {
+                App.Log.Error("refresh", ex);
+                if (!quiet || !_staleToastShown) App.Toasts.Warn(T("refreshFail", ex.Message));
+                _staleToastShown = true;
+                return false;
+            }
+            if (check.Modified)
+            {
+                var xml = check.Xml!;
+                // Block-bodied async lambda: Parser.RefreshAsync returns Task<ValueTuple>, which would bind to the
+                // Func<T> overload (T = the Task itself) and leave the SQLite write running past the gate release.
+                if (!await RunAsync(async () => { await App.Parser.RefreshAsync(xmlOverride: xml); }, "refresh")) return false;
+                await RefreshGroupCardAsync();
+                RaiseScheduleChanged();
+                if (!quiet) App.Toasts.Ok(T("refreshOk"));
+                return true;
+            }
+            await RunAsync(() =>
+            {
+                var s = App.Db.GetSettings();
+                s.LastAutoCheckAt = DateTime.UtcNow.ToString("o");
+                App.Db.SaveSettings(s);
+            }, "settings");
+            await RefreshGroupCardAsync();
+            if (!quiet) App.Toasts.Info(T("refreshNone"));
+            return false;
+        }
+        finally
+        {
+            IsRefreshing = false;
+        }
+    }
+
+    /// <summary>The 24 h rule of the old AutoRefreshService: check when the last check (or fetch) is a day old.</summary>
+    public static bool ShouldAutoCheck(Settings s, DateTime utcNow)
+    {
+        var last = s.LastAutoCheckAt ?? s.LastFetchedAt;
+        if (!DateTime.TryParse(last, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var at)) return true;
+        return (utcNow - at.ToUniversalTime()).TotalHours >= 24;
+    }
+
+    private void StartAutoCheck()
+    {
+        if (_autoCheck is not null) return;
+        _autoCheck = new DispatcherTimer(TimeSpan.FromHours(1), DispatcherPriority.Background, async (_, _) =>
+        {
+            var s = await RunAsync(() => App.Db.GetSettings(), "settings");
+            if (s is not null && ShouldAutoCheck(s, DateTime.UtcNow)) await RefreshScheduleAsync(force: false, quiet: true);
+        });
+        _autoCheck.Start();
+    }
+
+    /// <summary>Week/Teachers: jump to a concrete date in the schedule section.</summary>
+    public void OpenScheduleAt(DateTime date)
+    {
+        NavigateTo(SectionKey.Schedule);
+        if (Current is ScheduleViewModel s) s.ShowDate(date);
+    }
+
+    /// <summary>Bare keys that must not fire inside text fields or over a dialog; MainWindow calls this from its routed KeyDown handler.</summary>
+    public bool HandleShortcut(Key key)
+    {
+        if (Dialogs.HasDialog) return false;
+        if (CurrentKey != SectionKey.Schedule || Current is not ScheduleViewModel s) return false;
+        switch (key)
+        {
+            case Key.Left: s.PrevDayCommand.Execute(null); return true;
+            case Key.Right: s.NextDayCommand.Execute(null); return true;
+            case Key.Home: s.GoTodayCommand.Execute(null); return true;
+            default: return false;
+        }
+    }
+
     private NavSection Make(SectionKey key, string labelKey, string iconKey) => new(key, labelKey, iconKey, NavigateCommand);
 
     /// <summary>Later tasks replace the placeholder factory of a section with the real one.</summary>
     public void Register(SectionKey key, Func<ViewModelBase> factory)
     {
         _factories[key] = factory;
-        _sections.Remove(key);
+        DetachSection(key);
+    }
+
+    private void DetachSection(SectionKey key)
+    {
+        if (_sections.Remove(key, out var vm)) vm.Detach();
     }
 
     public T Section<T>(SectionKey key) where T : ViewModelBase => (T)GetOrCreate(key);
@@ -114,6 +225,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         Current = GetOrCreate(key);
         CurrentKey = key;
         foreach (var s in AllSections) s.IsActive = s.Key == key;
+        _ = Current.ActivateAsync(); // implementations run under RunAsync and never throw
     }
 
     public void ShowMap(MapInfo? info)
@@ -135,33 +247,41 @@ public sealed partial class ShellViewModel : ViewModelBase
     [RelayCommand]
     private void ToggleTheme() => App.Theme?.Toggle();
 
-    /// <summary>Startup: loading state → bootstrap (network unless disabled) → schedule or error state.</summary>
+    private sealed record StartData(int GroupCount, Settings Settings);
+
+    /// <summary>Cache-first startup (spec §8): with data in SQLite the schedule composes at once and the network
+    /// runs behind it; the loading state and a gated bootstrap remain only for an empty database.</summary>
     public async Task StartAsync(bool allowNetwork = true)
     {
-        Current = new LoadingViewModel(App);
-        // Network fetch + XML parse + SQLite writes: all under the Core gate, never on the UI thread.
-        var result = await RunAsync(() => DataBootstrap.RunAsync(App, allowNetwork), "bootstrap");
-        if (result is null)
+        var data = await RunAsync(() => new StartData(App.Db.GetAllGroups().Count, App.Db.GetSettings()), "startup");
+        if (data is null)
         {
             Current = new ErrorStateViewModel(App, null, () => StartAsync(allowNetwork));
             return;
         }
-        if (!result.HasData)
+        if (data.GroupCount == 0)
         {
-            Current = new ErrorStateViewModel(App, result.Error, () => StartAsync(allowNetwork));
-            return;
+            Current = new LoadingViewModel(App);
+            var result = await RunAsync(() => DataBootstrap.RunAsync(App, allowNetwork), "bootstrap");
+            if (result is null || !result.HasData)
+            {
+                Current = new ErrorStateViewModel(App, result?.Error, () => StartAsync(allowNetwork));
+                return;
+            }
+            if (result.Stale && result.Error is not null) App.Toasts.Warn($"{T("stale").Trim(' ', '·')}: {result.Error}");
         }
         try
         {
             await RunAsync(() => App.Homework.RecomputeAllStatuses(), "homework statuses");
             await RefreshGroupCardAsync();
-            _sections.Remove(SectionKey.Schedule); // rebuild against fresh data
+            DetachSection(SectionKey.Schedule); // rebuild against fresh data
             NavigateTo(SectionKey.Schedule);
             await Section<ScheduleViewModel>(SectionKey.Schedule).InitializeAsync();
-            if (result.Stale && result.Error is not null) App.Toasts.Warn($"{T("stale").Trim(' ', '·')}: {result.Error}");
-            // No 24 h auto-check yet: Core's AutoRefreshService writes to SQLite outside the gate while
-            // gated composes run on the pool. Stage 2 adds a Desktop refresher (network outside the gate,
-            // parse + write inside) that also serves F5 and «Обновить расписание».
+            if (allowNetwork)
+            {
+                if (data.GroupCount > 0 && ShouldAutoCheck(data.Settings, DateTime.UtcNow)) _ = RefreshScheduleAsync(force: false, quiet: true);
+                StartAutoCheck();
+            }
         }
         catch (Exception ex)
         {

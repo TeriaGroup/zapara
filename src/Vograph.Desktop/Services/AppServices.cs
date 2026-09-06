@@ -24,6 +24,9 @@ public sealed class AppServices : IDisposable
     public ToastService Toasts { get; }
     public AppLog Log { get; }
 
+    /// <summary>Network half of timetable refreshes; settable so tests script the server with a FakeHttpHandler.</summary>
+    public ScheduleRefresher Refresher { get; set; }
+
     /// <summary>Needs a live Application; assigned by App at startup (or by UI tests). Null in plain unit tests.</summary>
     public ThemeService? Theme { get; set; }
 
@@ -51,6 +54,7 @@ public sealed class AppServices : IDisposable
         Sync = new SyncService(Db);
         AutoUpdate = new AutoUpdateService();
         Prefs = UiPrefs.Load(Path.Combine(dataDir, "ui.json"), ex => Log.Error("prefs", ex));
+        Refresher = new ScheduleRefresher();
         Toasts = new ToastService();
     }
 
@@ -61,6 +65,7 @@ public sealed class AppServices : IDisposable
 
     public void Dispose()
     {
+        Refresher.Dispose();
         Db.Dispose();
         CoreGate.Dispose();
     }

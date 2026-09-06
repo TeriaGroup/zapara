@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Vograph.Desktop.Services;
 
@@ -12,6 +13,18 @@ public partial class MainWindow : Window
         InitializeComponent();
         Opened += OnOpened;
         Closing += OnClosing;
+        AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Tunnel);
+    }
+
+    /// <summary>←/→/Home step the schedule day. A routed handler rather than a KeyBinding, so the focused
+    /// element decides: caret keys inside a text field stay with it (e.Source), and a dialog keeps them too
+    /// (HandleShortcut). It tunnels rather than bubbles because Avalonia's keyboard navigation, registered on
+    /// the TopLevel before this window, already marks arrow keys Handled on their way up — bubbling would
+    /// never see them, and handledEventsToo would step the day on top of whatever else consumed the key.</summary>
+    private void OnShellKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled || e.KeyModifiers != KeyModifiers.None || e.Source is TextBox) return;
+        if (DataContext is ShellViewModel vm && vm.HandleShortcut(e.Key)) e.Handled = true;
     }
 
     private UiPrefs? Prefs => (DataContext as ShellViewModel)?.App.Prefs;

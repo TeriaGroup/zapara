@@ -33,6 +33,19 @@ public sealed class Loc : INotifyPropertyChanged
     public string T(string key, params object[] args) => I18n.T(key, args);
     public void SetLanguage(string lang) => I18n.SetLanguage(lang);
 
+    private readonly Dictionary<string, LocString> _strings = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>One LocString per key for the whole process. {loc:T} inside a DataTemplate used to create a new
+    /// LanguageChanged subscriber for every card ever rendered; the cache bounds them by the number of keys.</summary>
+    public LocString String(string key)
+    {
+        lock (_strings)
+        {
+            if (!_strings.TryGetValue(key, out var s)) _strings[key] = s = new LocString(this, key);
+            return s;
+        }
+    }
+
     /// <summary>Russian: 1 пара / 2 пары / 5 пар; English: one / many.</summary>
     public string Plural(int n, string oneKey, string fewKey, string manyKey)
     {
@@ -79,7 +92,7 @@ public sealed class TExtension
     public object ProvideValue(IServiceProvider serviceProvider) =>
         new ReflectionBinding(nameof(LocString.Value))
         {
-            Source = new LocString(Loc.Current, Key),
+            Source = Loc.Current.String(Key),
             Mode = BindingMode.OneWay
         };
 }
@@ -94,7 +107,7 @@ public sealed class TUExtension
     public object ProvideValue(IServiceProvider serviceProvider) =>
         new ReflectionBinding(nameof(LocString.Value))
         {
-            Source = new LocString(Loc.Current, Key),
+            Source = Loc.Current.String(Key),
             Mode = BindingMode.OneWay,
             Converter = Converters.Upper
         };

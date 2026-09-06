@@ -3,9 +3,10 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Styling;
-using Vograph.Desktop.Features.States;
+using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
+using Vograph.Desktop.ViewModels;
 using Xunit;
 
 namespace Vograph.Desktop.Tests;
@@ -20,7 +21,7 @@ public class ShellTests : UiTest
     }
 
     [AvaloniaFact]
-    public void Starts_On_Schedule_And_Navigates_To_Placeholders()
+    public void Starts_On_Schedule_And_Navigates_Between_Sections()
     {
         var (db, shell) = Make();
         using (db)
@@ -31,11 +32,9 @@ public class ShellTests : UiTest
             shell.NavigateCommand.Execute("Week");
 
             Assert.Equal(SectionKey.Week, shell.CurrentKey);
-            var placeholder = Assert.IsType<PlaceholderViewModel>(shell.Current);
-            Assert.Equal("Неделя", placeholder.Title);
             Assert.True(shell.MainSections[1].IsActive);
             Assert.False(shell.MainSections[0].IsActive);
-            Assert.Same(shell.Current, shell.Section<PlaceholderViewModel>(SectionKey.Week)); // cached instance
+            Assert.Same(shell.Current, shell.Section<ViewModelBase>(SectionKey.Week)); // cached instance
         }
     }
 
@@ -51,11 +50,12 @@ public class ShellTests : UiTest
     }
 
     [AvaloniaFact]
-    public void Window_Renders_Both_Themes_Hotkeys_Navigate_And_Collapse_Persists()
+    public async Task Window_Renders_Both_Themes_Hotkeys_Navigate_And_Collapse_Persists()
     {
         var (db, shell) = Make();
         using (db)
         {
+            await shell.StartAsync(allowNetwork: false); // the frames show a composed day, not an empty control
             var window = new MainWindow { DataContext = shell };
             window.Show();
             window.Focus();
@@ -67,6 +67,24 @@ public class ShellTests : UiTest
 
             window.KeyPress(Key.D3, RawInputModifiers.Control, PhysicalKey.Digit3, null);
             Assert.Equal(SectionKey.Summary, shell.CurrentKey);
+
+            window.KeyPress(Key.D1, RawInputModifiers.Control, PhysicalKey.Digit1, null);
+            var schedule = Assert.IsType<ScheduleViewModel>(shell.Current);
+            var before = schedule.DayOffset;
+            window.KeyPress(Key.Right, RawInputModifiers.None, PhysicalKey.ArrowRight, null);
+            Assert.Equal(before + 1, schedule.DayOffset);
+            window.KeyPress(Key.Home, RawInputModifiers.None, PhysicalKey.Home, null);
+            Assert.Equal(0, schedule.DayOffset);
+
+            // With the group picker open its search box owns the arrow keys.
+            var picker = shell.OpenGroupPickerCommand.ExecuteAsync(null);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (shell.Dialogs.Current is null && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+            Pump();
+            window.KeyPress(Key.Right, RawInputModifiers.None, PhysicalKey.ArrowRight, null);
+            Assert.Equal(0, schedule.DayOffset);
+            window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+            await picker;
 
             window.KeyPress(Key.B, RawInputModifiers.Control, PhysicalKey.B, null);
             Assert.True(shell.SidebarCollapsed);

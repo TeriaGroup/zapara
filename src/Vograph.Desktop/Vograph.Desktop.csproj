@@ -25,6 +25,12 @@
     <ProjectReference Include="..\Vograph.Core\Vograph.Core.csproj" />
   </ItemGroup>
 
+  <!-- ShellViewModel is sealed, so its event raisers are internal rather than protected (CS0628);
+       the tests drive them directly to check that a detached section stops listening. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Vograph.Desktop.Tests" />
+  </ItemGroup>
+
   <!-- Bundled assets are still owned by the WPF project until stage 3 moves them here.
        Core expects them next to the exe: maps\*.jpg, maps\coords.json, TimetableLecturer50.xml. -->
   <ItemGroup>

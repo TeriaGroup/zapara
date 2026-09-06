@@ -16,6 +16,43 @@ public class ViewModelBaseTests
         public Task<string?> RunTask(Func<Task<string>> f) => RunAsync(f, "probe");
     }
 
+    private sealed class ProbeVm : ViewModelBase
+    {
+        public ProbeVm(AppServices app) : base(app) { }
+        public Task<string?> Run(Func<string> work) => RunAsync(work, "probe");
+        public Task<bool> RunTask(Func<Task> work) => RunAsync(work, "probe");
+        public int Detached;
+        public override void Detach() => Detached++;
+    }
+
+    [Fact]
+    public async Task RunAsync_After_Dispose_Returns_Null_Without_Throwing()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));
+        var services = AppServices.Create(dir);
+        var vm = new ProbeVm(services);
+        services.Dispose(); // the gate is gone
+
+        var result = await vm.Run(() => "never");
+
+        Assert.Null(result);
+        Assert.False(vm.IsBusy);
+        Assert.Empty(services.Toasts.Items); // shutdown is not an error
+        try { Directory.Delete(dir, recursive: true); } catch (IOException ex) { Console.Error.WriteLine($"temp dir left behind ({dir}): {ex.Message}"); }
+    }
+
+    [Fact]
+    public async Task RunAsync_Task_Overload_Reports_Failure_As_False()
+    {
+        using var db = TestDb.Create(seedPersonalization: false);
+        var vm = new ProbeVm(db.Services);
+
+        Assert.True(await vm.RunTask(() => Task.CompletedTask));
+        Assert.False(await vm.RunTask(() => throw new InvalidOperationException("boom")));
+        Assert.Single(db.Services.Toasts.Items, t => t.Text.Contains("boom"));
+        Assert.Equal(1, db.Services.CoreGate.CurrentCount); // released after both calls
+    }
+
     [Fact]
     public async Task RunAsync_Task_Overload_Awaits_Work_And_Reports_Failures()
     {

@@ -7,12 +7,16 @@ namespace Vograph.Desktop.Features.States;
 public sealed class PlaceholderViewModel : ViewModelBase
 {
     private readonly string _labelKey;
+    private readonly Action _onLanguage;
 
     public PlaceholderViewModel(AppServices app, string labelKey) : base(app)
     {
         _labelKey = labelKey;
-        app.Loc.LanguageChanged += () => OnPropertyChanged(nameof(Title));
+        _onLanguage = () => OnPropertyChanged(nameof(Title));
+        app.Loc.LanguageChanged += _onLanguage;
     }
+
+    public override void Detach() => App.Loc.LanguageChanged -= _onLanguage;
 
     public string Title => T(_labelKey);
 }
