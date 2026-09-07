@@ -262,11 +262,12 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
 
     private string Stamp() => _clock().ToString("HH:mm", CultureInfo.InvariantCulture);
 
-    /// <summary>A remote tag becomes part of a file name: anything the file system would reject (or «..») becomes «_».</summary>
+    /// <summary>A remote tag becomes part of a file name that is interpolated into the installer's command line:
+    /// keep only the characters a release tag legitimately needs and turn everything else (including «%», which
+    /// cmd.exe would expand inside the generated batch) into «_»; «..» collapses so the name cannot walk up a directory.</summary>
     public static string SafeTag(string tag)
     {
-        var invalid = Path.GetInvalidFileNameChars();
-        var safe = new string(tag.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+        var safe = new string(tag.Select(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_' ? c : '_').ToArray());
         while (safe.Contains("..")) safe = safe.Replace("..", "_");
         return safe;
     }

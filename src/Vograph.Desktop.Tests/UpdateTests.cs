@@ -344,6 +344,8 @@ public class UpdateTests : UiTest
     [InlineData("windows-v2.1.0", "windows-v2.1.0")]
     [InlineData("../../evil", "____evil")]   // '/' → '_', then every ".." → '_'
     [InlineData("win:dows/v2", "win_dows_v2")]
+    [InlineData("windows-v2%TEMP%", "windows-v2_TEMP_")]   // cmd.exe would expand this inside the installer batch
+    [InlineData("windows-v2'; rm x; '", "windows-v2___rm_x___")]
     public void Tags_Are_Sanitised_Before_Becoming_File_Names(string tag, string expected) => Assert.Equal(expected, UpdateCheckViewModel.SafeTag(tag));
 
     [Fact]
@@ -370,5 +372,6 @@ public class UpdateTests : UiTest
         using var db = TestDb.Create();
         using var extra = AppServices.Create(Path.Combine(db.Dir, "x")); // a plain instance: TestDb swaps the source for a fake
         Assert.IsType<GitHubUpdateSource>(extra.UpdateSource);
+        Assert.Same(extra.AutoUpdate, Assert.IsType<GitHubUpdateSource>(extra.UpdateSource).Service);
     }
 }
