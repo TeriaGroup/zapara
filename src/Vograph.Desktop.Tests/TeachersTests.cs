@@ -193,6 +193,49 @@ public class TeachersTests : UiTest
     }
 
     [Fact]
+    public async Task Retry_Button_Reloads_After_A_Failed_Load()
+    {
+        using var db = TestDb.Create();
+        db.Services.Lecturers = new LecturerStore(new LecturerService(db.Services.Db), db.Services.Log,
+            Path.Combine(db.Dir, "no-cache.xml"), Path.Combine(db.Dir, "no-bundled.xml"));
+        var shell = new ShellViewModel(db.Services);
+        var vm = new TeachersViewModel(db.Services, shell, () => Wed9, allowNetwork: false);
+        await vm.LoadAsync();
+        Assert.NotNull(vm.LoadError);
+
+        var store = new LecturerStore(new LecturerService(db.Services.Db), db.Services.Log);
+        await store.LoadXmlAsync(LecturerXml);
+        db.Services.Lecturers = store;
+        await vm.RetryCommand.ExecuteAsync(null); // the «Повторить» button under the error text (T4 #2)
+
+        Assert.Null(vm.LoadError);
+        Assert.Equal(2, vm.Items.Count);
+    }
+
+    [Fact]
+    public async Task Search_Ignores_The_Lesson_Type_Token()
+    {
+        using var db = TestDb.Create();
+        var vm = await Make(db);
+        vm.OnlyMine = false;
+        vm.Query = "лек";   // every lecture starts with it; matching the token would list everyone
+        Assert.Empty(vm.Items);
+        vm.Query = "физ";   // the subject itself still matches
+        Assert.Equal("Чужой А.А.", Assert.Single(vm.Items).Info.Name);
+    }
+
+    [Fact]
+    public async Task Language_Switch_Relabels_The_Count()
+    {
+        using var db = TestDb.Create();
+        var vm = await Make(db);
+        Assert.Equal("2 из 3", vm.CountText);
+        db.Services.Loc.SetLanguage("en");
+        try { Assert.Equal("2 of 3", vm.CountText); }
+        finally { db.Services.Loc.SetLanguage("ru"); }
+    }
+
+    [Fact]
     public void Teachers_Section_Does_Not_Allow_Network_In_Tests()
     {
         using var db = TestDb.Create();

@@ -86,6 +86,93 @@ public class FriendsTests : UiTest
         Assert.Single(db.Services.Db.GetFriends());
     }
 
+    /// <summary>T7 #5: a reload reconciles the list in place — the item the view holds survives, no Reset is raised.</summary>
+    [Fact]
+    public async Task Reload_Keeps_Item_Instances_And_Never_Resets()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+        var first = Assert.Single(vm.Friends);
+        var resets = 0;
+        vm.Friends.CollectionChanged += (_, e) => { if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) resets++; };
+
+        db.Services.Db.InsertFriend(new FriendGroup { GroupName = "Е452Б", ColorHex = FriendPalette.Hex[1], Enabled = true, MemberNames = "" });
+        await vm.LoadAsync();
+
+        Assert.Equal(0, resets);
+        Assert.Same(first, vm.Friends[0]);
+        Assert.Equal("Е452Б", vm.Friends[1].GroupName);
+
+        db.Services.Db.DeleteFriend(first.Model.Id);
+        await vm.LoadAsync();
+        Assert.Equal(0, resets);
+        Assert.Equal("Е452Б", Assert.Single(vm.Friends).GroupName);
+    }
+
+    /// <summary>T7 #7: group numbers are compared case-insensitively when the picker hides existing friends.</summary>
+    [Fact]
+    public async Task Add_Hides_Existing_Friends_Regardless_Of_Case()
+    {
+        using var db = TestDb.Create();
+        db.Services.Db.InsertFriend(new FriendGroup { GroupName = "е452б", ColorHex = FriendPalette.Hex[1], Enabled = true, MemberNames = "" });
+        var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+
+        var add = vm.AddCommand.ExecuteAsync(null);
+        var picker = await WaitForDialogAsync<GroupPickerDialogViewModel>(shell);
+        Assert.Empty(picker.Filtered); // 09С31 and е452б are friends already, 3313 is mine
+        picker.CancelCommand.Execute(null);
+        await add;
+    }
+
+    /// <summary>T7 #6: Add and Remove reload once — their own ScheduleChanged echo must not reload a second time.</summary>
+    [Fact]
+    public async Task Add_Reloads_Once()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+        var loads = 0;
+        // Every LoadAsync assigns a fresh TickLabels array, so its PropertyChanged counts the loads themselves —
+        // the collection would not show a second reload once SyncFriends reconciles in place.
+        vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(FriendsViewModel.TickLabels)) loads++; };
+
+        var add = vm.AddCommand.ExecuteAsync(null);
+        var picker = await WaitForDialogAsync<GroupPickerDialogViewModel>(shell);
+        picker.Selected = picker.Filtered[0];
+        picker.ConfirmCommand.Execute(null);
+        await add;
+        await Task.Delay(150, TestContext.Current.CancellationToken); // an event-driven second reload would land here
+
+        Assert.Equal(1, loads);
+        Assert.Equal(2, vm.Friends.Count);
+    }
+
+    /// <summary>T7 #4: a name edit that lands while a reload swaps the model must not be lost — the write happens
+    /// from a copy, and the in-memory model is updated only after the write succeeded.</summary>
+    [Fact]
+    public async Task Save_Writes_The_Edited_Values_Not_The_Model_Reference()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+        var item = Assert.Single(vm.Friends);
+        var stale = item.Model;
+
+        item.MemberNames = "Иван, Пётр";
+        var save = vm.SaveAsync(item);
+        Assert.Equal("Иван", stale.MemberNames); // untouched until the write is through
+        await save;
+
+        Assert.Equal("Иван, Пётр", db.Services.Db.GetFriends().Single().MemberNames);
+        Assert.Equal("Иван, Пётр", item.Model.MemberNames);
+    }
+
     [Fact]
     public async Task Strictness_And_Always_Show_Persist_And_Drive_The_Preview()
     {

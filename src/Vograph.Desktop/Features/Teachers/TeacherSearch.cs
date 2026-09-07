@@ -92,7 +92,7 @@ public sealed class TeacherIndex
             res = res.Where(l =>
                 l.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
                 l.Kafedra.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                LessonsOf(l.Id).Any(x => x.DisciplineRaw.Contains(q, StringComparison.OrdinalIgnoreCase)));
+                LessonsOf(l.Id).Any(x => x.SubjectRaw.Contains(q, StringComparison.OrdinalIgnoreCase)));
         return res.ToList();
     }
 }

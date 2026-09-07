@@ -39,7 +39,7 @@
         <Button Classes="icon" ToolTip.Tip="{loc:T mapMore}">
           <Button.Flyout>
             <MenuFlyout Placement="BottomEdgeAlignedRight">
-              <MenuItem Header="{loc:T mapDownloadAll}" Command="{Binding DownloadAllCommand}" />
+              <MenuItem Header="{loc:T mapDownloadAll}" Command="{Binding DownloadAllCommand}" IsEnabled="{Binding !IsDownloading}" />
               <MenuItem Header="{loc:T mapOpenSite}" Command="{Binding OpenSiteCommand}" />
               <MenuItem Header="{loc:T mapOpenFolder}" Command="{Binding OpenFolderCommand}" />
               <MenuItem Header="{loc:T mapVerify}" Command="{Binding VerifyCommand}" />
@@ -73,7 +73,10 @@
           <TextBlock Text="{Binding Note}" />
         </Border>
         <Border Classes="chip" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="12">
-          <TextBlock Classes="muted" Text="{Binding CacheStatus}" />
+          <Panel>
+            <TextBlock Classes="muted" Text="{Binding CacheStatus}" IsVisible="{Binding !IsDownloading}" />
+            <TextBlock Classes="muted" Text="{loc:T mapDownloading}" IsVisible="{Binding IsDownloading}" />
+          </Panel>
         </Border>
       </Panel>
     </Border>

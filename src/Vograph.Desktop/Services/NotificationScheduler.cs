@@ -19,6 +19,7 @@ public sealed class NotificationScheduler : IDisposable
     private readonly Func<DateTime> _clock;
     private System.Threading.Timer? _timer;
     private string? _lastFired;
+    private string? _inFlight;
 
     public NotificationScheduler(AppServices app, Func<DateTime>? clock = null)
     {
@@ -55,7 +56,8 @@ public sealed class NotificationScheduler : IDisposable
     {
         if (!_app.Prefs.NotificationsEnabled) return null;
         var key = now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-        if (key == _lastFired) return null;
+        if (key == _lastFired || key == _inFlight) return null; // claimed before the await: a slow build cannot fire twice
+        _inFlight = key;
         try
         {
             var text = await GatedAsync(() =>
@@ -79,6 +81,10 @@ public sealed class NotificationScheduler : IDisposable
         {
             _app.Log.Error("notification", ex);
             return null;
+        }
+        finally
+        {
+            _inFlight = null;
         }
     }
 

@@ -132,6 +132,7 @@ public class MapsTests : UiTest
         await WaitAsync(() => vm.Image is not null);
 
         await vm.DownloadAllCommand.ExecuteAsync(null);
+        Assert.False(vm.IsDownloading);
         Assert.Equal(9, files.Progress.Count);
         Assert.Equal("9 из 9 планов офлайн", vm.CacheStatus);
         Assert.Contains(db.Services.Toasts.Items, t => t.Text == "Планы скачаны: 9 из 9");
@@ -216,6 +217,71 @@ public class MapsTests : UiTest
 
         Assert.Equal("1 из 9 планов офлайн", vm.CacheStatus); // the failed probe keeps the last known text
         Assert.Equal("План не загружен: нет сети и встроенной копии", vm.ImageError);
+        Assert.Null(vm.Image);
+    }
+
+    /// <summary>T6 #4: after «Скачать свежие планы» the plan that failed to load before is shown again — with its
+    /// highlight, not as a bare picture. The room 320 (УЛК 3) is the fixture's only one with coordinates.</summary>
+    [AvaloniaFact]
+    public async Task Download_All_Restores_The_Plan_With_Its_Highlight()
+    {
+        using var db = TestDb.Create();
+        var (_, vm, files, _) = Make(db);
+        files.EnsureFails = true;
+        await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("320*;")!, "Физика");
+        Assert.Null(vm.Image);
+        Assert.Equal("План не загружен: нет сети и встроенной копии", vm.ImageError);
+
+        files.EnsureFails = false;
+        await vm.DownloadAllCommand.ExecuteAsync(null);
+
+        Assert.NotNull(vm.Image);
+        Assert.Null(vm.ImageError);
+        Assert.True(vm.HasHighlight);
+        Assert.Equal("320", vm.HighlightLabel);
+        Assert.Equal(MapMode.Lesson, vm.Mode); // tracking was not switched on behind the user's back
+    }
+
+    /// <summary>T6 #5: Core swallows per-file failures, so the toast compares the cache against the total.</summary>
+    [AvaloniaFact]
+    public async Task Partial_Download_Warns_Instead_Of_Celebrating()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, files, _) = Make(db, ("ГК", 4));
+        files.SkipOnDownload = ("УЛК", 5);
+        shell.NavigateTo(SectionKey.Maps);
+        await WaitAsync(() => vm.Image is not null);
+
+        await vm.DownloadAllCommand.ExecuteAsync(null);
+
+        Assert.Equal("8 из 9 планов офлайн", vm.CacheStatus);
+        Assert.Contains(db.Services.Toasts.Items, t => t.Kind == ToastKind.Warn && t.Text == "Скачано 8 из 9 — часть планов недоступна");
+        Assert.DoesNotContain(db.Services.Toasts.Items, t => t.Text.StartsWith("Планы скачаны"));
+        Assert.False(vm.IsDownloading);
+    }
+
+    /// <summary>T6 #8: the «ВЦ — показан план ГК» note is a localized string and follows the language switch.</summary>
+    [AvaloniaFact]
+    public async Task Vc_Note_Follows_The_Language()
+    {
+        using var db = TestDb.Create();
+        var (_, vm, _, _) = Make(db);
+        await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("ВЦ 280;")!, "Матан");
+        Assert.Equal("ВЦ — показан план ГК", vm.Note);
+        db.Services.Loc.SetLanguage("en");
+        try { Assert.Equal(db.Services.I18n.T("mapVc"), vm.Note); Assert.NotEqual("ВЦ — показан план ГК", vm.Note); }
+        finally { db.Services.Loc.SetLanguage("ru"); }
+    }
+
+    /// <summary>T6 #15: a plan still decoding when the section is detached must not resurface as an undisposed bitmap.</summary>
+    [AvaloniaFact]
+    public async Task Detach_Wins_Over_An_In_Flight_Decode()
+    {
+        using var db = TestDb.Create();
+        var (_, vm, _, _) = Make(db, ("ГК", 4));
+        var showing = vm.ShowLessonMapAsync(db.Services.Maps.Resolve("493;")!, "Матан");
+        vm.Detach();
+        await showing;
         Assert.Null(vm.Image);
     }
 

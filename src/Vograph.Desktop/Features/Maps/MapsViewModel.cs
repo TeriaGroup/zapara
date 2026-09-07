@@ -21,6 +21,8 @@ public sealed partial class MapsViewModel : ViewModelBase
     private int _version;
     private string? _lessonName;
     private DateTime? _start, _end;
+    private CoordsRect? _coords;
+    private bool _detached;
 
     public MapsViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null) : base(app)
     {
@@ -37,6 +39,7 @@ public sealed partial class MapsViewModel : ViewModelBase
 
     public override void Detach()
     {
+        _detached = true;
         _shell.GroupChanged -= _onChange;
         _shell.ScheduleChanged -= _onChange;
         App.Loc.LanguageChanged -= Relabel;
@@ -148,12 +151,14 @@ public sealed partial class MapsViewModel : ViewModelBase
 
     private async Task ShowMapAsync(MapInfo? map, CoordsRect? coords)
     {
+        _coords = coords;
         Current = map;
-        Note = map is null ? null : map.Building == "ВЦ" ? T("mapVc") : string.IsNullOrEmpty(map.Note) ? null : map.Note;
+        Note = map is null ? null : NoteFor(map);
         ContextLine = MapsComposer.ContextLine(Mode, map, _lessonName, _start, _end, _clock(), App.Loc);
         var shownBuilding = map is null ? "ГК" : map.Building == "ВЦ" ? "ГК" : map.Building;
-        BuildingIndex = Array.IndexOf(Buildings, shownBuilding) is var i and >= 0 ? i : 0;
-        OnBuildingIndexChanged(BuildingIndex); // re-mark the selected floor even when the index did not change
+        var index = Array.IndexOf(Buildings, shownBuilding) is var i and >= 0 ? i : 0;
+        if (BuildingIndex == index) OnBuildingIndexChanged(index); // same building: re-mark the floor without a second rebuild (T6 #7)
+        else BuildingIndex = index;
         HasHighlight = false;
         ImageError = null;
         if (map is not { HasMap: true } || map.IsRemote) { SetImage(null); return; }
@@ -185,7 +190,7 @@ public sealed partial class MapsViewModel : ViewModelBase
             ImageError = T("mapNoImage");
             return;
         }
-        if (!ReferenceEquals(Current, map)) { bmp.Dispose(); return; } // superseded while decoding: the loser goes, the winner stays
+        if (_detached || !ReferenceEquals(Current, map)) { bmp.Dispose(); return; } // superseded or detached while decoding (T6 #15)
         SetImage(bmp);
         if (MapsComposer.Highlight(coords, bmp.PixelSize) is { } r)
         {
@@ -195,6 +200,8 @@ public sealed partial class MapsViewModel : ViewModelBase
         }
         await RefreshCacheStatusAsync();
     }
+
+    private string? NoteFor(MapInfo map) => map.Building == "ВЦ" ? T("mapVc") : string.IsNullOrEmpty(map.Note) ? null : map.Note;
 
     /// <summary>Swap, then dispose: the plan on screen stays until the new one is assigned, and only then is the
     /// old decode released. Nulling first would drop the reference before Dispose ever saw it, so every plan the
@@ -231,8 +238,15 @@ public sealed partial class MapsViewModel : ViewModelBase
         {
             await Task.Run(() => App.MapFiles.DownloadAllAsync(new Progress<string>(s => App.Log.Info($"maps: {s}"))));
             var (cached, total) = await Task.Run(() => App.MapFiles.CacheStatus());
-            App.Toasts.Ok(T("mapDownloaded", cached, total));
-            if (Current is { } c && Image is null) await ShowMapAsync(c, null);
+            // Core swallows per-file failures: only the cache count says whether every plan really arrived (T6 #5).
+            if (cached == total) App.Toasts.Ok(T("mapDownloaded", cached, total));
+            else App.Toasts.Warn(T("mapDownloadPartial", cached, total));
+            // A plan that could not be shown before may be here now: re-show it the way it was requested (T6 #4).
+            if (Image is null)
+            {
+                if (IsTracking) await TrackNextAsync();
+                else if (Current is { } c) await ShowMapAsync(c, _coords);
+            }
         }
         catch (Exception ex)
         {
@@ -264,6 +278,7 @@ public sealed partial class MapsViewModel : ViewModelBase
     private void Relabel()
     {
         OnPropertyChanged(nameof(Title));
+        Note = Current is { } c ? NoteFor(c) : null;
         ContextLine = MapsComposer.ContextLine(Mode, Current, _lessonName, _start, _end, _clock(), App.Loc);
         OnBuildingIndexChanged(BuildingIndex);
         _ = RefreshCacheStatusAsync();

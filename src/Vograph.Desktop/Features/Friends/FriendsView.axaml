@@ -15,7 +15,8 @@
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Bottom">
           <TextBlock Classes="muted caption" Text="{Binding CountText}" VerticalAlignment="Center" />
-          <Button Classes="primary" Command="{Binding AddCommand}" IsEnabled="{Binding CanAdd}" ToolTip.Tip="{loc:T friendsMax}">
+          <TextBlock Classes="faint caption" Text="{loc:T friendsMax}" VerticalAlignment="Center" IsVisible="{Binding !CanAdd}" />
+          <Button Classes="primary" Command="{Binding AddCommand}" IsEnabled="{Binding CanAdd}">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <c:Icon Data="{StaticResource Icon.Plus}" Size="14" />
               <TextBlock Text="{loc:T friendsAdd}" />
@@ -49,7 +50,7 @@
                       </ItemsControl>
                     </Flyout>
                   </Button.Flyout>
-                  <Ellipse Width="14" Height="14" Fill="{Binding ColorIndex, Converter={x:Static loc:Converters.FriendBrush}}" />
+                  <c:FriendDot ColorIndex="{Binding ColorIndex}" Fill="Full" Width="14" Height="14" />
                 </Button>
                 <TextBlock Grid.Column="1" Classes="subject" Text="{Binding GroupName}" VerticalAlignment="Center" Margin="10,0" />
                 <TextBox Grid.Column="2" Text="{Binding MemberNames}" PlaceholderText="{loc:T friendsNames}" LostFocus="OnNamesLostFocus" KeyDown="OnNamesKeyDown" Margin="0,0,12,0" />

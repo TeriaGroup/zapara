@@ -123,6 +123,22 @@ public class SettingsTests : UiTest
     }
 
     [AvaloniaFact]
+    public async Task Detach_Disposes_The_Qr_Bitmap()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = new SettingsViewModel(db.Services, shell, () => Sun6);
+        await vm.ToggleQrCommand.ExecuteAsync(null);
+        var qr = vm.QrImage!;
+
+        vm.Detach();
+
+        Assert.Null(vm.QrImage);
+        Assert.False(vm.QrVisible);
+        Assert.Throws<ObjectDisposedException>(() => _ = qr.PixelSize);
+    }
+
+    [AvaloniaFact]
     public async Task Settings_Render_Both_Themes_And_Theme_Segment_Switches()
     {
         using var db = TestDb.Create();

@@ -40,10 +40,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
         _reload = () => _ = LoadAsync();
         _onShell = (_, e) =>
         {
-            if (e.PropertyName == nameof(ShellViewModel.SidebarCollapsed)) { _suppress = true; CompactSidebar = shell.SidebarCollapsed; _suppress = false; }
+            if (e.PropertyName == nameof(ShellViewModel.SidebarCollapsed)) Suppressed(() => CompactSidebar = shell.SidebarCollapsed);
             if (e.PropertyName == nameof(ShellViewModel.IsRefreshing)) IsRefreshing = shell.IsRefreshing;
         };
-        _onTheme = () => { _suppress = true; ThemeIndex = (int)App.Theme!.Choice; _suppress = false; };
+        _onTheme = () => { if (App.Theme is { } t) Suppressed(() => ThemeIndex = (int)t.Choice); };
         shell.PropertyChanged += _onShell;
         shell.GroupChanged += _reload;
         shell.ScheduleChanged += _reload;
@@ -60,6 +60,17 @@ public sealed partial class SettingsViewModel : ViewModelBase
         _shell.ScheduleChanged -= _reload;
         App.Loc.LanguageChanged -= Relabel;
         if (App.Theme is { } theme) theme.Changed -= _onTheme;
+        QrVisible = false;
+        QrImage?.Dispose(); // the section is going away: the decoded QR goes with it (T10 #2)
+        QrImage = null;
+    }
+
+    /// <summary>Mirrors external state into a bound property without triggering the property's own save.</summary>
+    private void Suppressed(Action apply)
+    {
+        _suppress = true;
+        try { apply(); }
+        finally { _suppress = false; }
     }
 
     /// <summary>Spec 5.8: entering Settings checks for an update once per session, and only while the switch is on.
@@ -160,7 +171,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         App.Prefs.Save();
     }
 
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = false)]
     private async Task SaveTimes()
     {
         if (!NotificationScheduler.IsValidTime(NotifyTime1) || !NotificationScheduler.IsValidTime(NotifyTime2))

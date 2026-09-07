@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Avalonia.Data.Converters;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Models;
 using Vograph.Core.Services;
 using Vograph.Desktop.Features.Schedule;
@@ -36,7 +37,7 @@ public sealed partial class TeachersViewModel : ViewModelBase
         _clock = clock ?? (() => DateTime.Now);
         AllowNetwork = allowNetwork;
         _onReload = () => _ = LoadMyGroupAsync();
-        _onLanguage = () => { OnPropertyChanged(nameof(Title)); Detail?.Relabel(); };
+        _onLanguage = () => { OnPropertyChanged(nameof(Title)); Detail?.Relabel(); ApplyFilter(); };
         shell.GroupChanged += _onReload;
         // ParityInvert lives in settings, and the «нечет/чет» labels here are computed from it: the Settings
         // switch (and a timetable refresh) raise ScheduleChanged, so both events re-read it the same way.
@@ -100,6 +101,8 @@ public sealed partial class TeachersViewModel : ViewModelBase
         return _inflight = LoadOnceAsync();
     }
 
+    [RelayCommand] private Task Retry() => LoadAsync();
+
     /// <summary>Local copy first (instant), my-teacher ids under the gate, then the network refresh behind the list.
     /// _loadedOnce is set only once a source of data was actually found, so a failed first load (no cache, no
     /// bundled copy, no network) is retried the next time the section is activated instead of sticking forever.</summary>
@@ -133,26 +136,28 @@ public sealed partial class TeachersViewModel : ViewModelBase
 
     private async Task RebuildAsync()
     {
-        _index = new TeacherIndex(App.Lecturers.Lecturers, App.Lecturers.Lessons);
+        var (lecturers, lessons) = (App.Lecturers.Lecturers, App.Lecturers.Lessons);
+        _index = await Task.Run(() => new TeacherIndex(lecturers, lessons)); // 718 lecturers grouped off the UI thread (T4 minor 90)
         await LoadMyGroupAsync();
     }
 
-    private sealed record MyGroupData(string Id, string Name, bool Invert, List<Lesson> Lessons);
+    private sealed record MyGroupData(string Id, string Name, bool Invert, HashSet<string> MyIds);
 
     private async Task LoadMyGroupAsync()
     {
+        var index = _index; // captured before the lambda: RunAsync moves the work to a pool thread, and a concurrent RebuildAsync could reassign _index meanwhile
         var data = await RunAsync(() =>
         {
             var s = App.Db.GetSettings();
             var id = s.MyGroupId ?? "";
             var name = id.Length == 0 ? "" : App.Db.GetGroup(id)?.Name ?? "";
-            return new MyGroupData(id, name, s.ParityInvert, id.Length == 0 ? new List<Lesson>() : App.Db.GetAllLessonsForGroup(id));
+            return new MyGroupData(id, name, s.ParityInvert, id.Length == 0 ? new HashSet<string>() : TeacherSearch.MyLecturerIds(App.Db.GetAllLessonsForGroup(id), index.Lecturers));
         }, "teachers");
         if (data is null) return;
         _myGroupId = data.Id;
         _myGroupName = data.Name;
         _invert = data.Invert;
-        _myIds = TeacherSearch.MyLecturerIds(data.Lessons, _index.Lecturers);
+        _myIds = data.MyIds;
         ApplyFilter();
         RebuildDetail();
     }

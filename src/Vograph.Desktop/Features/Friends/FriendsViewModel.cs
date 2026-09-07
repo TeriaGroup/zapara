@@ -19,6 +19,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
     private readonly Func<DateTime> _clock;
     private readonly Action _reload;
     private bool _suppress;
+    private bool _suppressReload;
     private int _version;
     private Task? _pendingSettingsSave;
 
@@ -28,7 +29,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
         _clock = clock ?? (() => DateTime.Now);
         _tickLabels = BuildTicks();
         _strictnessLabel = LabelFor(25);
-        _reload = () => _ = LoadAsync();
+        _reload = () => { if (!_suppressReload) _ = LoadAsync(); };
         shell.GroupChanged += _reload;
         shell.ScheduleChanged += _reload;
         app.Loc.LanguageChanged += _reload;
@@ -159,11 +160,19 @@ public sealed partial class FriendsViewModel : ViewModelBase
         _shell.RaiseScheduleChanged();
     }
 
+    /// <summary>Tell the schedule cards without reloading ourselves: callers here have just reloaded (T7 #6).</summary>
+    private void RaiseScheduleChangedQuietly()
+    {
+        _suppressReload = true;
+        try { _shell.RaiseScheduleChanged(); }
+        finally { _suppressReload = false; }
+    }
+
     [RelayCommand(AllowConcurrentExecutions = false)]
     private async Task Add()
     {
         if (!CanAdd) return;
-        var taken = Friends.Select(f => f.GroupName).ToHashSet();
+        var taken = Friends.Select(f => f.GroupName).ToHashSet(StringComparer.OrdinalIgnoreCase); // T7 #7: same group number, different case
         var groups = await RunAsync(() =>
         {
             var my = App.Db.GetSettings().MyGroupId;
@@ -177,7 +186,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
         var ok = await RunAsync(() => App.Db.InsertFriend(new FriendGroup { GroupName = name, ColorHex = color, Enabled = true, MemberNames = "" }), "friend add");
         if (!ok) return;
         await LoadAsync();
-        _shell.RaiseScheduleChanged();
+        RaiseScheduleChangedQuietly();
         App.Toasts.Ok(T("friendAdded", name));
     }
 
@@ -194,16 +203,19 @@ public sealed partial class FriendsViewModel : ViewModelBase
         if (!await _shell.Dialogs.ShowAsync(confirm)) return;
         if (!await RunAsync(() => App.Db.DeleteFriend(item.Model.Id), "friend delete")) return;
         await LoadAsync();
-        _shell.RaiseScheduleChanged();
+        RaiseScheduleChangedQuietly();
     }
 
-    /// <summary>Names / enabled flag: persist the item's model as it is now.</summary>
+    /// <summary>Names / enabled flag. The row is written from a snapshot: a reload landing between the edit and the
+    /// gated write may swap item.Model, and the edit must not be lost or half-applied.</summary>
     public async Task SaveAsync(FriendItemViewModel item)
     {
-        item.Model.MemberNames = item.MemberNames;
-        item.Model.Enabled = item.Enabled;
-        if (!await RunAsync(() => App.Db.UpdateFriend(item.Model), "friend save")) return;
-        _shell.RaiseScheduleChanged();
+        var model = item.Model;
+        var copy = new FriendGroup { Id = model.Id, GroupName = model.GroupName, ColorHex = model.ColorHex, MemberNames = item.MemberNames, Enabled = item.Enabled };
+        if (!await RunAsync(() => App.Db.UpdateFriend(copy), "friend save")) return;
+        model.MemberNames = copy.MemberNames;
+        model.Enabled = copy.Enabled;
+        RaiseScheduleChangedQuietly();
         await RefreshPreviewAsync();
     }
 
@@ -211,11 +223,13 @@ public sealed partial class FriendsViewModel : ViewModelBase
     {
         if (index < 0 || index >= FriendPalette.Hex.Length) return;
         if (Friends.Any(f => !ReferenceEquals(f, item) && f.ColorIndex == index)) return; // taken
-        item.Model.ColorHex = FriendPalette.Hex[index];
-        if (!await RunAsync(() => App.Db.UpdateFriend(item.Model), "friend color")) return;
+        var model = item.Model;
+        var copy = new FriendGroup { Id = model.Id, GroupName = model.GroupName, ColorHex = FriendPalette.Hex[index], MemberNames = model.MemberNames, Enabled = model.Enabled };
+        if (!await RunAsync(() => App.Db.UpdateFriend(copy), "friend color")) return;
+        model.ColorHex = copy.ColorHex;
         item.ColorIndex = index;
         RefreshColorOptions();
-        _shell.RaiseScheduleChanged();
+        RaiseScheduleChangedQuietly();
         await RefreshPreviewAsync();
     }
 
@@ -228,15 +242,25 @@ public sealed partial class FriendsViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Reuses existing item view models by Model.Id instead of rebuilding the collection from scratch,
-    /// so a reference held across a reload (e.g. by the view, or by an in-flight color/name edit) keeps
-    /// reflecting live state instead of being silently orphaned.</summary>
-    private void SyncFriends(List<FriendGroup> friends)
+    /// <summary>Reconciles in place: rows that vanished are removed, new ones inserted at their position, the rest
+    /// updated and moved — never Clear(), so the view keeps its containers and focus, and a reference held across a
+    /// reload (an in-flight name edit) stays live.</summary>
+    private void SyncFriends(List<FriendGroup> fresh)
     {
-        var existing = Friends.ToDictionary(f => f.Model.Id);
-        Friends.Clear();
-        foreach (var f in friends)
-            Friends.Add(existing.TryGetValue(f.Id, out var item) ? item.ApplyModel(f) : new FriendItemViewModel(f, this));
+        for (var i = Friends.Count - 1; i >= 0; i--)
+            if (fresh.All(f => f.Id != Friends[i].Model.Id)) Friends.RemoveAt(i);
+        for (var i = 0; i < fresh.Count; i++)
+        {
+            var f = fresh[i];
+            var at = -1;
+            for (var j = 0; j < Friends.Count; j++) if (Friends[j].Model.Id == f.Id) { at = j; break; }
+            if (at < 0) Friends.Insert(i, new FriendItemViewModel(f, this));
+            else
+            {
+                Friends[at].ApplyModel(f);
+                if (at != i) Friends.Move(at, i);
+            }
+        }
     }
 }
 

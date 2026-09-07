@@ -55,6 +55,25 @@ public class NotificationTests
         Assert.Equal(1, db.Services.CoreGate.CurrentCount);
     }
 
+    /// <summary>T10 #11: two ticks inside the same minute (a slow build) fire once — the minute is claimed before the await.</summary>
+    [Fact]
+    public async Task Overlapping_Ticks_Fire_Once()
+    {
+        using var db = TestDb.Create();
+        var s = db.Services.Db.GetSettings();
+        s.NotifyTime1 = "20:00";
+        db.Services.Db.SaveSettings(s);
+        var scheduler = new NotificationScheduler(db.Services);
+        var now = new DateTime(2026, 9, 6, 20, 0, 5);
+
+        var first = scheduler.TickAsync(now);
+        var second = scheduler.TickAsync(now.AddSeconds(20));
+
+        Assert.NotNull(await first);
+        Assert.Null(await second);
+        Assert.Single(db.Services.Toasts.Items);
+    }
+
     /// <summary>The «[ДЗ!]» marker follows the injected clock, not the status Core persisted with the real one.</summary>
     [Fact]
     public async Task Burning_Marker_Is_Decided_By_The_Injected_Clock()

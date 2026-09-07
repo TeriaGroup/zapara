@@ -16,8 +16,10 @@
       <Grid RowDefinitions="Auto,Auto,Auto,*">
         <TextBox Text="{Binding Query}" PlaceholderText="{loc:T teachersSearchHint}" />
         <c:Switch Grid.Row="1" Content="{loc:T teachersOnlyMine}" IsChecked="{Binding OnlyMine}" Margin="0,10,0,0" />
-        <TextBlock Grid.Row="2" Classes="muted caption" Text="{Binding LoadError}" TextWrapping="Wrap" Margin="0,8,0,0"
-                   IsVisible="{Binding LoadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <StackPanel Grid.Row="2" Spacing="8" Margin="0,8,0,0" IsVisible="{Binding LoadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <TextBlock Classes="muted caption" Text="{Binding LoadError}" TextWrapping="Wrap" />
+          <Button Content="{loc:T retry}" Command="{Binding RetryCommand}" HorizontalAlignment="Left" />
+        </StackPanel>
         <TextBlock Grid.Row="2" Classes="muted caption" Text="{loc:T teachersLoading}" Margin="0,8,0,0" IsVisible="{Binding IsLoading}" />
         <ListBox Grid.Row="3" Margin="0,10,0,0" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}">
           <ListBox.ItemTemplate>

@@ -26,6 +26,12 @@ public sealed class FakeMapFiles : IMapFiles
     public bool ThrowOnStatus { get; set; }
     public bool ThrowOnLocalPath { get; set; }
 
+    /// <summary>No copy anywhere: LocalPath and EnsureAsync both come back empty (an offline first start).</summary>
+    public bool EnsureFails { get; set; }
+
+    /// <summary>One plan that «Скачать свежие планы» cannot fetch (a 404 on the site) — the partial-download toast.</summary>
+    public (string Building, int Floor)? SkipOnDownload { get; set; }
+
     public string? LocalPath(MapInfo map)
     {
         if (ThrowOnLocalPath) throw new IOException("maps folder unreadable");
@@ -35,6 +41,7 @@ public sealed class FakeMapFiles : IMapFiles
     public Task<string?> EnsureAsync(MapInfo map, CancellationToken ct = default)
     {
         EnsureCalls++;
+        if (EnsureFails) return Task.FromResult<string?>(null);
         _cached.Add((map.Building == "ВЦ" ? "ГК" : map.Building, map.Floor));
         return Task.FromResult<string?>(Png());
     }
@@ -46,6 +53,7 @@ public sealed class FakeMapFiles : IMapFiles
     {
         foreach (var key in MapService.MapUrls.Keys)
         {
+            if (SkipOnDownload is { } skip && skip == key) { progress?.Report($"Failed {key.building} {key.floor}"); continue; }
             _cached.Add(key);
             progress?.Report($"Cached {key.building} {key.floor}");
             Progress.Add($"{key.building} {key.floor}");
