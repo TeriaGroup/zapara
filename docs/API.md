@@ -280,7 +280,7 @@ No JSON, no SVG overlay, no room coordinates — floor plans are raster JPGs. Ma
 - floor = first digit of room number (e.g. `493` → 4, `270` → 2, `101` → 1), clamp ГК 4 / УЛК 5 (УЛК 5 retains 5th floor, e.g. `526*` → УЛК 5)
 - building raw codes like `СК`, etc. fallback to ГК if numeric
 
-Cache: `%LocalAppData%\Vograph\maps\karta-*.jpg` + bundled `publish/maps/` + `src/Vograph/maps/` (`CopyToOutputDirectory`) for offline first launch. `MapService.EnsureCachedAsync` prefers local → bundled → download via `HttpClient` (User-Agent Vograph/1.0).
+Cache: `%LocalAppData%\Vograph\maps\karta-*.jpg` + bundled `publish/maps/` + `src/Vograph.Desktop/Assets/maps/` (`CopyToOutputDirectory`) for offline first launch. `MapService.EnsureCachedAsync` prefers local → bundled → download via `HttpClient` (User-Agent Vograph/1.0).
 
 Next lesson resolution: `GetNextLesson(groupId, now)` scans today remaining (timeStart/timeEnd > now) → tomorrow → next 7 days, respects `ParityService` + `settings.parityInvert`, used for “Куда идти — следующая пара” panel (`MapWhereText`, `MapWhenText`, `MapImage`). Per-lesson `◉` button and context menu “Показать на карте” also calls `MapService.Resolve(classroomRaw)`.
 

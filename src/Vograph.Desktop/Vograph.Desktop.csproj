@@ -31,12 +31,11 @@
     <InternalsVisibleTo Include="Vograph.Desktop.Tests" />
   </ItemGroup>
 
-  <!-- Bundled assets are still owned by the WPF project until stage 3 moves them here.
-       Core expects them next to the exe: maps\*.jpg, maps\coords.json, TimetableLecturer50.xml. -->
+  <!-- Offline bundle Core reads next to the exe (maps\*.jpg, maps\coords.json, TimetableLecturer50.xml); the updater zip ships the same layout. -->
   <ItemGroup>
-    <None Include="..\Vograph\maps\*.jpg" Link="maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\Vograph\maps\coords.json" Link="maps\coords.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\Vograph\TimetableLecturer50.xml" Link="TimetableLecturer50.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\maps\*.jpg" Link="maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\maps\coords.json" Link="maps\coords.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\TimetableLecturer50.xml" Link="TimetableLecturer50.xml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

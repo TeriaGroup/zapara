@@ -15,12 +15,6 @@ docs/verify_phase1/raw_TimetableGroup50.xml
 
 # Temp
 dump_raw.py
-src/Vograph.Verify/bin/
-src/Vograph.Verify/obj/
-src/Vograph.Core/bin/
-src/Vograph.Core/obj/
-src/Vograph/bin/
-src/Vograph/obj/
 
 # Android build + local
 android/app/build/

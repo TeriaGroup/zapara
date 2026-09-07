@@ -3,11 +3,5 @@
     <Project Path="src/Vograph.Core/Vograph.Core.csproj" />
     <Project Path="src/Vograph.Desktop/Vograph.Desktop.csproj" />
     <Project Path="src/Vograph.Desktop.Tests/Vograph.Desktop.Tests.csproj" />
-    <Project Path="src/Vograph.Verify/Vograph.Verify.csproj" />
-    <Project Path="src/Vograph.Verify3/Vograph.Verify3.csproj" />
-    <Project Path="src/Vograph.Verify4/Vograph.Verify4.csproj" />
-    <Project Path="src/Vograph.Verify5/Vograph.Verify5.csproj" />
-    <Project Path="src/Vograph.VerifyI18n/Vograph.VerifyI18n.csproj" />
-    <Project Path="src/Vograph/Vograph.csproj" />
   </Folder>
 </Solution>

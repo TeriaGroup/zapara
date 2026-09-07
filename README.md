@@ -7,7 +7,7 @@
 
 ## Приложения
 
-- **Windows** — WPF, .NET 8, интерфейс на русском и английском (переключение без перезапуска).
+- **Windows** — Avalonia 12, .NET 8, две темы (тёмная/светлая), интерфейс на русском и английском (переключение без перезапуска).
 - **Android** — Kotlin + Compose, интерфейс на русском, Android 8.0+.
 
 ## Что умеет
@@ -40,7 +40,7 @@
 
 ## Хранение
 
-- Windows: `%LocalAppData%\Vograph\` — SQLite `vograph.db` (WAL), кэш карт, скачанные обновления.
+- Windows: `%LocalAppData%\Vograph\` — SQLite `vograph.db` (WAL), `ui.json`, `logs\`, кэш карт `maps\`, кэш преподавателей, скачанные обновления `updates\`.
 - Android: приватное хранилище приложения — база Room, кэш карт, скачанные APK.
 
 ## Сборка из исходников
@@ -48,8 +48,11 @@
 Windows (PowerShell, .NET 8 SDK):
 
 ```powershell
-dotnet publish src\Vograph\Vograph.csproj -c Release -r win-x64 --self-contained false
+dotnet publish src\Vograph.Desktop\Vograph.Desktop.csproj -c Release -r win-x64 --self-contained false
+dotnet test src\Vograph.Desktop.Tests\Vograph.Desktop.Tests.csproj
 ```
+
+Тесты (xunit + headless Avalonia, кадры в `VOGRAPH_FRAMES_DIR`)
 
 Android:
 
@@ -63,12 +66,12 @@ cd android
 ## Структура
 
 ```text
-src/Vograph/                 # Windows-клиент: MainWindow, диалоги, темы, карты
+src/Vograph.Desktop/         # Windows-клиент (Avalonia): Shell, Features/<раздел>, Dialogs, Theme, Domain, Assets (планы, coords.json, преподаватели)
+src/Vograph.Desktop.Tests/   # xunit.v3 + Avalonia.Headless: ViewModel-тесты и кадры разделов
 src/Vograph.Core/            # Общая логика Windows: парсер, четность, расписание, ДЗ, карты, sync
 android/app/src/main/        # Android-клиент: Compose-экраны, Room, будильники, автообновление
 docs/API.md                  # Разбор XML/XSL/parity/openmap/lecturer
 docs/PROGRESS.md             # Верификация Windows по фазам
 docs/PROGRESS_ANDROID.md     # Верификация Android по фазам
-docs/dist/                   # Готовые сборки
-data/runs/                   # Логи авторефреша / уведомлений / синхронизации
+docs/dist/                   # Готовые сборки прошлых версий
 ```
