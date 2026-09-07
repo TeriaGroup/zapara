@@ -23,7 +23,7 @@
       <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Homework}" Margin="0,24" />
       <c:EmptyState IsVisible="{Binding IsEmpty}" Title="{loc:T hwEmpty}" Hint="{loc:T hwEmptyHint}" Icon="{StaticResource Icon.Homework}" Margin="0,24" />
 
-      <ItemsControl ItemsSource="{Binding Groups}">
+      <ItemsControl ItemsSource="{Binding Groups}" c:Appear.CascadeHost="True">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="14" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="h:HomeworkGroupViewModel">
@@ -39,7 +39,8 @@
                 <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="h:HomeworkRowViewModel">
-                    <Border Classes="card hoverable hwrow" Classes.past="{Binding IsDone}">
+                    <Border Classes="card hoverable hwrow" Classes.past="{Binding IsDone}"
+                            c:Appear.Kind="Cascade" c:Appear.Index="{Binding Index}">
                       <Grid ColumnDefinitions="*,Auto">
                         <StackPanel Spacing="4">
                           <TextBlock Classes="subject hwtext" Text="{Binding Subject}" />

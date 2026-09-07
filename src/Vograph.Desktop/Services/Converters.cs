@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
@@ -14,6 +15,9 @@ public static class Converters
     public static readonly IValueConverter SidebarWidth = new FuncValueConverter<bool, double>(collapsed => collapsed ? 64 : 232);
 
     public static readonly IValueConverter Upper = new FuncValueConverter<string?, string?>(s => s?.ToUpperInvariant());
+
+    /// <summary>Motion on → the section transition; off → none (TransitioningContentControl swaps instantly).</summary>
+    public static readonly IValueConverter PageTransition = new FuncValueConverter<bool, IPageTransition?>(enabled => enabled ? new Controls.FadeSlide() : null);
 
     /// <summary>Friend colour slot → Brush.Friend1..5 (theme-invariant tokens).</summary>
     public static readonly IValueConverter FriendBrush = new FuncValueConverter<int, IBrush?>(i =>

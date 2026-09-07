@@ -147,7 +147,7 @@ public sealed partial class HomeworkGroupViewModel : ObservableObject
         _owner = owner;
         Status = group.Status;
         Title = group.Title;
-        Items = group.Items.Select(e => new HomeworkRowViewModel(e, owner)).ToList();
+        Items = group.Items.Select((e, i) => new HomeworkRowViewModel(e, owner, i)).ToList();
         _isCollapsed = collapsed;
     }
 
@@ -171,13 +171,16 @@ public sealed partial class HomeworkRowViewModel : ObservableObject
 {
     private readonly HomeworkViewModel _owner;
 
-    public HomeworkRowViewModel(HomeworkEntry entry, HomeworkViewModel owner)
+    /// <param name="index">Position in the group; drives the appear cascade (Appear.Index).</param>
+    public HomeworkRowViewModel(HomeworkEntry entry, HomeworkViewModel owner, int index)
     {
         Entry = entry;
         _owner = owner;
+        Index = index;
     }
 
     public HomeworkEntry Entry { get; }
+    public int Index { get; }
     public string Subject => Entry.Subject;
     public string Text => Entry.Homework.Text;
     public string Label => Entry.Label;

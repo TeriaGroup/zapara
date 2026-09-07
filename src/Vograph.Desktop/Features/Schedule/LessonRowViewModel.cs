@@ -10,15 +10,18 @@ public sealed partial class LessonRowViewModel : ObservableObject
 {
     private readonly ScheduleViewModel _owner;
 
-    public LessonRowViewModel(LessonRow row, ScheduleViewModel owner)
+    /// <param name="index">Position in the day; drives the appear cascade (Appear.Index).</param>
+    public LessonRowViewModel(LessonRow row, ScheduleViewModel owner, int index)
     {
         Row = row;
         _owner = owner;
+        Index = index;
         Friends = row.Friends.Select(f => new FriendMarkViewModel(f)).ToList();
         Homework = new ObservableCollection<HomeworkItemViewModel>(row.Homework.Select(h => new HomeworkItemViewModel(h, this)));
     }
 
     public LessonRow Row { get; }
+    public int Index { get; }
     public ScheduleViewModel Owner => _owner;
 
     public string TimeStart => Row.TimeStart;

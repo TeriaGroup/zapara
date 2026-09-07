@@ -27,7 +27,7 @@
         </StackPanel>
       </Grid>
 
-      <ItemsControl ItemsSource="{Binding Lessons}">
+      <ItemsControl ItemsSource="{Binding Lessons}" c:Appear.CascadeHost="True">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>

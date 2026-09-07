@@ -124,6 +124,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         if (_suppress) return;
         App.Prefs.Animations = value;
         App.Prefs.Save();
+        App.Motion.Refresh(); // App listens and adds/removes Theme/Motion.axaml
     }
 
     // ---- Schedule ----

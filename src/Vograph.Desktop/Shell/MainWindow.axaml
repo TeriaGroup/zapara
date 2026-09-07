@@ -64,11 +64,8 @@
 
       <shell:SidebarView Grid.Row="1" Grid.Column="0" />
 
-      <TransitioningContentControl Grid.Row="1" Grid.Column="1" Content="{Binding Current}">
-        <TransitioningContentControl.PageTransition>
-          <CrossFade Duration="0:0:0.18" />
-        </TransitioningContentControl.PageTransition>
-      </TransitioningContentControl>
+      <TransitioningContentControl x:Name="Host" Grid.Row="1" Grid.Column="1" Content="{Binding Current}"
+                                   PageTransition="{Binding Motion.Enabled, Converter={x:Static loc:Converters.PageTransition}}" />
     </Grid>
 
     <ContentControl Content="{Binding Overlay}" IsVisible="{Binding HasOverlay}" />

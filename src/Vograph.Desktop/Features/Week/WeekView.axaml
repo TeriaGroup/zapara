@@ -15,7 +15,7 @@
         <c:SegmentedControl Grid.Column="1" VerticalAlignment="Bottom" Items="{Binding SegmentItems}" SelectedIndex="{Binding ParityIndex}" />
       </Grid>
 
-      <ItemsControl ItemsSource="{Binding Days}" IsVisible="{Binding HasGroup}">
+      <ItemsControl ItemsSource="{Binding Days}" IsVisible="{Binding HasGroup}" c:Appear.CascadeHost="True">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
@@ -24,6 +24,7 @@
             <!-- A Button so the whole card is one click target and keyboard-focusable. -->
             <Button Classes="ghost weekday" Padding="0" Margin="0,0,12,12" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                     HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                    c:Appear.Kind="Cascade" c:Appear.Index="{Binding Index}"
                     Command="{Binding OpenCommand}" ToolTip.Tip="{loc:T weekOpenDayTip}">
               <Border Classes="card hoverable" Classes.next="{Binding IsToday}" MinHeight="150">
                 <StackPanel Spacing="8">

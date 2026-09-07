@@ -13,7 +13,15 @@ public abstract class UiTest
 {
     protected CapturingLogSink Sink { get; } = new();
 
-    protected UiTest() => Logger.Sink = Sink;
+    protected UiTest()
+    {
+        Logger.Sink = Sink;
+        // Motion off for every UI test: App.axaml ships Theme/Motion.axaml included, and headless tests never
+        // run App's startup switch, so without this the frames would catch transitions mid-flight. Classes here
+        // also hold plain [Fact] tests, which run outside the Avalonia session — no Application and no dispatcher
+        // thread to touch the styles from, and nothing rendered there to keep still either.
+        if (Application.Current is App app && Dispatcher.UIThread.CheckAccess()) app.SetMotion(false);
+    }
 
     /// <summary>Longest transition in the theme (segmented thumb) plus a margin.</summary>
     private const int SettleMs = 260;

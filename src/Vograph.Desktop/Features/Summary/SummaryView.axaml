@@ -34,15 +34,15 @@
 
       <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Summary}" Margin="0,48,0,0" />
 
-      <WrapPanel IsVisible="{Binding HasGroup}" ItemSpacing="12" LineSpacing="12">
-        <Border Classes="card" Width="220">
+      <WrapPanel IsVisible="{Binding HasGroup}" ItemSpacing="12" LineSpacing="12" c:Appear.CascadeHost="True">
+        <Border Classes="card" Width="220" c:Appear.Kind="Cascade" c:Appear.Index="0">
           <StackPanel Spacing="6">
             <TextBlock Classes="micro" Text="{loc:TU summaryTotal}" />
             <TextBlock Classes="display tnum" Text="{Binding TotalText}" FontSize="40" />
           </StackPanel>
         </Border>
 
-        <Border Classes="card" Width="300">
+        <Border Classes="card" Width="300" c:Appear.Kind="Cascade" c:Appear.Index="1">
           <StackPanel Spacing="10">
             <TextBlock Classes="micro" Text="{loc:TU summaryByDay}" />
             <ItemsControl ItemsSource="{Binding DayBars}">
@@ -64,7 +64,7 @@
           </StackPanel>
         </Border>
 
-        <Border Classes="card" Width="300">
+        <Border Classes="card" Width="300" c:Appear.Kind="Cascade" c:Appear.Index="2">
           <StackPanel Spacing="10">
             <TextBlock Classes="micro" Text="{loc:TU summaryByType}" />
             <ItemsControl ItemsSource="{Binding Types}" ItemTemplate="{StaticResource CountChip}">
@@ -73,21 +73,21 @@
           </StackPanel>
         </Border>
 
-        <Border Classes="card" Width="360">
+        <Border Classes="card" Width="360" c:Appear.Kind="Cascade" c:Appear.Index="3">
           <StackPanel Spacing="10">
             <TextBlock Classes="micro" Text="{loc:TU summarySubjects}" />
             <ItemsControl ItemsSource="{Binding Subjects}" ItemTemplate="{StaticResource CountRow}" />
           </StackPanel>
         </Border>
 
-        <Border Classes="card" Width="360" IsVisible="{Binding HasTeachers}">
+        <Border Classes="card" Width="360" IsVisible="{Binding HasTeachers}" c:Appear.Kind="Cascade" c:Appear.Index="4">
           <StackPanel Spacing="10">
             <TextBlock Classes="micro" Text="{loc:TU summaryTeachers}" />
             <ItemsControl ItemsSource="{Binding Teachers}" ItemTemplate="{StaticResource CountRow}" />
           </StackPanel>
         </Border>
 
-        <Border Classes="card" Width="360" IsVisible="{Binding HasRooms}">
+        <Border Classes="card" Width="360" IsVisible="{Binding HasRooms}" c:Appear.Kind="Cascade" c:Appear.Index="5">
           <StackPanel Spacing="10">
             <TextBlock Classes="micro" Text="{loc:TU summaryRooms}" />
             <ItemsControl ItemsSource="{Binding Rooms}" ItemTemplate="{StaticResource CountChip}">

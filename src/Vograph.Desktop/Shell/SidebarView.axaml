@@ -15,61 +15,62 @@
     </DataTemplate>
   </UserControl.Resources>
 
-  <Border Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,0,1,0" Padding="10,12"
+  <Border Classes="sidebar" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,0,1,0" Padding="10,12"
           Width="{Binding SidebarCollapsed, Converter={x:Static loc:Converters.SidebarWidth}}">
-    <Border.Transitions>
-      <Transitions>
-        <DoubleTransition Property="Width" Duration="0:0:0.2" Easing="CubicEaseOut" />
-      </Transitions>
-    </Border.Transitions>
-    <DockPanel LastChildFill="True">
+    <Panel x:Name="Root">
+      <DockPanel LastChildFill="True">
 
-      <StackPanel DockPanel.Dock="Bottom" Spacing="4">
-        <!-- Only while an update is waiting; the badge repeats it on the collapsed rail. -->
-        <c:NavItem Content="{loc:T updTitle}" Icon="{StaticResource Icon.Download}" Badge="{Binding Updates.BadgeText}"
-                   IsCompact="{Binding SidebarCollapsed}" IsVisible="{Binding Updates.IsAvailable}"
-                   Command="{Binding OpenUpdateDialogCommand}" ToolTip.Tip="{Binding Updates.StatusText}" />
-        <c:NavItem Content="{Binding SettingsSection.Label}"
-                   Icon="{Binding SettingsSection.IconKey, Converter={x:Static loc:Converters.IconKey}}"
-                   IsActive="{Binding SettingsSection.IsActive}" IsCompact="{Binding SettingsSection.IsCompact}"
-                   Command="{Binding NavigateCommand}" CommandParameter="Settings" ToolTip.Tip="{Binding SettingsSection.Label}" />
-        <!-- WrapPanel, not a horizontal StackPanel: at the 64px rail the second button would be clipped. -->
-        <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
-          <Button Classes="icon" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{loc:T themeToggleTip}">
-            <c:Icon Data="{StaticResource Icon.Moon}" Size="16" />
+        <StackPanel DockPanel.Dock="Bottom" Spacing="4">
+          <!-- Only while an update is waiting; the badge repeats it on the collapsed rail. -->
+          <c:NavItem Content="{loc:T updTitle}" Icon="{StaticResource Icon.Download}" Badge="{Binding Updates.BadgeText}"
+                     IsCompact="{Binding SidebarCollapsed}" IsVisible="{Binding Updates.IsAvailable}"
+                     Command="{Binding OpenUpdateDialogCommand}" ToolTip.Tip="{Binding Updates.StatusText}" />
+          <c:NavItem Content="{Binding SettingsSection.Label}"
+                     Icon="{Binding SettingsSection.IconKey, Converter={x:Static loc:Converters.IconKey}}"
+                     IsActive="{Binding SettingsSection.IsActive}" IsCompact="{Binding SettingsSection.IsCompact}"
+                     Command="{Binding NavigateCommand}" CommandParameter="Settings" ToolTip.Tip="{Binding SettingsSection.Label}" />
+          <!-- WrapPanel, not a horizontal StackPanel: at the 64px rail the second button would be clipped. -->
+          <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
+            <Button Classes="icon" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{loc:T themeToggleTip}">
+              <c:Icon Data="{StaticResource Icon.Moon}" Size="16" />
+            </Button>
+            <Button Classes="icon" Command="{Binding ToggleSidebarCommand}" ToolTip.Tip="{loc:T sidebarToggleTip}">
+              <c:Icon Data="{StaticResource Icon.Panel}" Size="16" />
+            </Button>
+          </WrapPanel>
+        </StackPanel>
+
+        <StackPanel Spacing="2">
+          <Button Classes="ghost" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                  Command="{Binding OpenGroupPickerCommand}" Margin="0,0,0,12" ToolTip.Tip="{loc:T myGroup}">
+            <Border Classes="card hoverable" Padding="12,10">
+              <StackPanel Spacing="4">
+                <TextBlock Text="{Binding GroupName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Classes="muted" Text="{Binding GroupSubtitle}" FontSize="11.5" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
+                <Border Classes="chip stale" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Left" IsVisible="{Binding HasStale}">
+                  <TextBlock Text="{Binding StaleText}" />
+                </Border>
+              </StackPanel>
+            </Border>
           </Button>
-          <Button Classes="icon" Command="{Binding ToggleSidebarCommand}" ToolTip.Tip="{loc:T sidebarToggleTip}">
-            <c:Icon Data="{StaticResource Icon.Panel}" Size="16" />
-          </Button>
-        </WrapPanel>
-      </StackPanel>
 
-      <StackPanel Spacing="2">
-        <Button Classes="ghost" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                Command="{Binding OpenGroupPickerCommand}" Margin="0,0,0,12" ToolTip.Tip="{loc:T myGroup}">
-          <Border Classes="card hoverable" Padding="12,10">
-            <StackPanel Spacing="4">
-              <TextBlock Text="{Binding GroupName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-              <TextBlock Classes="muted" Text="{Binding GroupSubtitle}" FontSize="11.5" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
-              <Border Classes="chip stale" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Left" IsVisible="{Binding HasStale}">
-                <TextBlock Text="{Binding StaleText}" />
-              </Border>
-            </StackPanel>
-          </Border>
-        </Button>
+          <ItemsControl ItemsSource="{Binding MainSections}" ItemTemplate="{StaticResource NavTemplate}">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          </ItemsControl>
 
-        <ItemsControl ItemsSource="{Binding MainSections}" ItemTemplate="{StaticResource NavTemplate}">
-          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-        </ItemsControl>
+          <TextBlock Classes="micro" Text="{loc:TU navTools}" Margin="10,14,10,4" IsVisible="{Binding !SidebarCollapsed}" />
+          <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="8,12" IsVisible="{Binding SidebarCollapsed}" />
 
-        <TextBlock Classes="micro" Text="{loc:TU navTools}" Margin="10,14,10,4" IsVisible="{Binding !SidebarCollapsed}" />
-        <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="8,12" IsVisible="{Binding SidebarCollapsed}" />
+          <ItemsControl ItemsSource="{Binding ToolSections}" ItemTemplate="{StaticResource NavTemplate}">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          </ItemsControl>
+        </StackPanel>
 
-        <ItemsControl ItemsSource="{Binding ToolSections}" ItemTemplate="{StaticResource NavTemplate}">
-          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-        </ItemsControl>
-      </StackPanel>
-
-    </DockPanel>
+      </DockPanel>
+      <!-- One indicator for the whole sidebar; SidebarView.axaml.cs places it over the active NavItem. -->
+      <Border x:Name="NavIndicator" Width="3" CornerRadius="3" Background="{DynamicResource Brush.Accent}"
+              HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" IsVisible="False"
+              RenderTransform="translateY(0px)" />
+    </Panel>
   </Border>
 </UserControl>

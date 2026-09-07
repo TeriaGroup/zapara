@@ -112,7 +112,8 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         Title = model.Title;
         Subtitle = model.Subtitle;
         Lessons.Clear();
-        foreach (var row in model.Rows) Lessons.Add(new LessonRowViewModel(row, this));
+        var i = 0;
+        foreach (var row in model.Rows) Lessons.Add(new LessonRowViewModel(row, this, i++));
         IsEmpty = model.Rows.Count == 0;
         EmptyTitle = model.EmptyTitle;
         EmptyHint = model.EmptyHint;

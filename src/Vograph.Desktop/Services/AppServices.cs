@@ -22,6 +22,7 @@ public sealed class AppServices : IDisposable
     public SyncService Sync { get; }
     public AutoUpdateService AutoUpdate { get; }
     public UiPrefs Prefs { get; }
+    public MotionSettings Motion { get; }
     public ToastService Toasts { get; }
     public AppLog Log { get; }
 
@@ -59,7 +60,7 @@ public sealed class AppServices : IDisposable
     /// <summary>Process-wide network switch; tests set this false. Sections that can reach the network consult it.</summary>
     public bool AllowNetwork { get; set; } = true;
 
-    private AppServices(string dataDir)
+    private AppServices(string dataDir, Func<bool>? systemAnimations)
     {
         DataDir = dataDir;
         Directory.CreateDirectory(dataDir);
@@ -83,13 +84,15 @@ public sealed class AppServices : IDisposable
         AutoUpdate = new AutoUpdateService();
         UpdateSource = new GitHubUpdateSource(AutoUpdate);
         Prefs = UiPrefs.Load(Path.Combine(dataDir, "ui.json"), ex => Log.Error("prefs", ex));
+        Motion = new MotionSettings(Prefs, systemAnimations);
         Refresher = new ScheduleRefresher();
         Toasts = new ToastService();
         NotificationScheduler = new NotificationScheduler(this);
         LanSync = new LanSyncServer(this);
     }
 
-    public static AppServices Create(string dataDir) => new(dataDir);
+    /// <param name="systemAnimations">The Windows «reduce motion» reader; tests pin it so frames never animate.</param>
+    public static AppServices Create(string dataDir, Func<bool>? systemAnimations = null) => new(dataDir, systemAnimations);
 
     /// <summary>Always re-read: Core services write settings behind our back (refresh, homework).</summary>
     public Settings Settings => Db.GetSettings();

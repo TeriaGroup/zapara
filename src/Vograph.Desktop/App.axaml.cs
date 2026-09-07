@@ -1,7 +1,9 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Logging;
 using Avalonia.Markup.Xaml;
+using Avalonia.Styling;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
 
@@ -13,15 +15,34 @@ public partial class App : Application
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
+    private IStyle? _motionStyles;
+
+    /// <summary>The resource key Theme/Motion.axaml carries so SetMotion can pick it out of Application.Styles:
+    /// Avalonia's XAML compiler inlines App.axaml's same-assembly StyleInclude into a plain Styles object, so there
+    /// is no StyleInclude.Source left to match on.</summary>
+    private const string MotionStylesKey = "Motion.Styles";
+
+    /// <summary>Adds or removes Theme/Motion.axaml (every transition and looping animation). App calls it at startup and
+    /// whenever MotionSettings flips; UI tests call it to keep frames deterministic.</summary>
+    public void SetMotion(bool enabled)
+    {
+        _motionStyles ??= Styles.First(s => s is IResourceProvider { HasResources: true } p && p.TryGetResource(MotionStylesKey, null, out _));
+        var present = Styles.Contains(_motionStyles);
+        if (enabled && !present) Styles.Add(_motionStyles);
+        else if (!enabled && present) Styles.Remove(_motionStyles);
+    }
+
     public override void OnFrameworkInitializationCompleted()
     {
         // Headless tests use a different lifetime and build their own services.
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var services = AppServices.Create(AppPaths.DataDir);
+            var services = AppServices.Create(AppPaths.DataDir, MotionSettings.ReadSystemSetting);
             Services = services;
             Logger.Sink = new AvaloniaLogSink(services.Log);
             services.Theme = ThemeService.ForApplication(this, services.Prefs);
+            SetMotion(services.Motion.Enabled);
+            services.Motion.PropertyChanged += (_, _) => SetMotion(services.Motion.Enabled);
 
             var shell = new ShellViewModel(services);
             shell.Shutdown = () => desktop.Shutdown(); // the update batch waits for this process to exit

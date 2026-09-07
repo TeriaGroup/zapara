@@ -262,6 +262,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
                 if (at != i) Friends.Move(at, i);
             }
         }
+        for (var i = 0; i < Friends.Count; i++) Friends[i].Index = i;
     }
 }
 
@@ -283,6 +284,9 @@ public sealed partial class FriendItemViewModel : ObservableObject
 
     public FriendGroup Model { get; private set; }
     public string GroupName => Model.GroupName;
+
+    /// <summary>Position in the list; drives the appear cascade. Set by FriendsViewModel.SyncFriends.</summary>
+    [ObservableProperty] private int _index;
 
     [ObservableProperty] private string _memberNames;
     [ObservableProperty] private bool _enabled;

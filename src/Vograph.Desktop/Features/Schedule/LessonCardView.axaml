@@ -5,7 +5,8 @@
              xmlns:s="using:Vograph.Desktop.Features.Schedule"
              x:Class="Vograph.Desktop.Features.Schedule.LessonCardView"
              x:DataType="s:LessonRowViewModel">
-  <Border Classes="card hoverable" Classes.next="{Binding IsNext}" Classes.past="{Binding IsPast}">
+  <Border Classes="card hoverable" Classes.next="{Binding IsNext}" Classes.past="{Binding IsPast}"
+          c:Appear.Kind="Cascade" c:Appear.Index="{Binding Index}">
     <Grid ColumnDefinitions="64,*,Auto">
 
       <!-- time column -->

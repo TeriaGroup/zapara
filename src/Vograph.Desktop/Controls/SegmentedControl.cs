@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
@@ -84,9 +85,8 @@ public class SegmentedControl : TemplatedControl
         _lastX = b.X;
         _lastWidth = b.Width;
 
-        // The very first placement must not animate: Width starts as NaN (nothing would be drawn until
-        // the transition ends) and the thumb would slide in from the left edge on every view load.
-        var transitions = _thumb.Transitions;
+        // The very first placement must not animate: Width starts as NaN and the thumb would slide in from the
+        // left edge on every view load. A local null hides the styled Transitions (Motion.axaml); ClearValue brings them back.
         if (!_placed) _thumb.Transitions = null;
 
         _thumb.IsVisible = true;
@@ -96,7 +96,7 @@ public class SegmentedControl : TemplatedControl
 
         if (!_placed)
         {
-            _thumb.Transitions = transitions;
+            _thumb.ClearValue(Animatable.TransitionsProperty);
             _placed = true;
         }
     }

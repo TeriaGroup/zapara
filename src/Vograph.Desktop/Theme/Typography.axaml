@@ -53,13 +53,6 @@
     <Setter Property="CornerRadius" Value="{DynamicResource Radius.Card}" />
     <Setter Property="Padding" Value="16,14" />
     <Setter Property="BoxShadow" Value="{DynamicResource Shadow.None}" />
-    <Setter Property="Transitions">
-      <Transitions>
-        <BrushTransition Property="Background" Duration="0:0:0.15" />
-        <BoxShadowsTransition Property="BoxShadow" Duration="0:0:0.15" />
-        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15" />
-      </Transitions>
-    </Setter>
   </Style>
   <Style Selector="Border.card.hoverable:pointerover">
     <Setter Property="Background" Value="{DynamicResource Brush.CardHover}" />
@@ -198,11 +191,6 @@
   <!-- Hover-only row actions -->
   <Style Selector="StackPanel.acts">
     <Setter Property="Opacity" Value="0" />
-    <Setter Property="Transitions">
-      <Transitions>
-        <DoubleTransition Property="Opacity" Duration="0:0:0.15" />
-      </Transitions>
-    </Setter>
   </Style>
   <Style Selector="Border.card:pointerover StackPanel.acts">
     <Setter Property="Opacity" Value="1" />

@@ -9,6 +9,7 @@
   <Application.Styles>
     <FluentTheme />
     <StyleInclude Source="avares://Vograph/Theme/Typography.axaml" />
+    <StyleInclude Source="avares://Vograph/Theme/Motion.axaml" />
   </Application.Styles>
   <Application.Resources>
     <ResourceDictionary>

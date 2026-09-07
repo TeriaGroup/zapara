@@ -9,6 +9,10 @@ public abstract partial class ViewModelBase : ObservableObject
 
     public AppServices App { get; }
 
+    /// <summary>Spec §7: the app-wide «Анимации» + system reduce-motion switch. Views bind it, MotionSettings.Resolve
+    /// finds it from any control by walking up to the nearest view model.</summary>
+    public MotionSettings Motion => App.Motion;
+
     [ObservableProperty] private bool _isBusy;
 
     protected string T(string key, params object[] args) => App.Loc.T(key, args);

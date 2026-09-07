@@ -1,0 +1,101 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="using:Vograph.Desktop.Controls">
+  <!-- Every transition and looping animation of the design system (spec §7). App includes this file only while
+       MotionSettings.Enabled; without it the same controls snap into place. Nothing here changes layout or behaviour.
+       One curve everywhere: cubic-bezier(.2,.8,.2,1). -->
+
+  <Styles.Resources>
+    <!-- How App.SetMotion recognises this file among Application.Styles: Avalonia's XAML compiler inlines a
+         same-assembly StyleInclude into a plain Styles object, so App.axaml's include leaves no Source to match on. -->
+    <x:String x:Key="Motion.Styles">on</x:String>
+  </Styles.Resources>
+
+  <Style Selector="Button">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.15" Easing="0.2,0.8,0.2,1" />
+        <DoubleTransition Property="Opacity" Duration="0:0:0.15" Easing="0.2,0.8,0.2,1" />
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.1" Easing="0.2,0.8,0.2,1" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="c|NavItem">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.15" Easing="0.2,0.8,0.2,1" />
+        <BrushTransition Property="Foreground" Duration="0:0:0.15" Easing="0.2,0.8,0.2,1" />
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.1" Easing="0.2,0.8,0.2,1" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <!-- The sidebar's single indicator slides between items (220 ms) and stretches to their height. -->
+  <Style Selector="Border#NavIndicator">
+    <Setter Property="Transitions">
+      <Transitions>
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.22" Easing="0.2,0.8,0.2,1" />
+        <DoubleTransition Property="Height" Duration="0:0:0.22" Easing="0.2,0.8,0.2,1" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="Border.sidebar">
+    <Setter Property="Transitions">
+      <Transitions>
+        <DoubleTransition Property="Width" Duration="0:0:0.2" Easing="0.2,0.8,0.2,1" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="Border.card">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.15" Easing="0.2,0.8,0.2,1" />
+        <BoxShadowsTransition Property="BoxShadow" Duration="0:0:0.15" Easing="0.2,0.8,0.2,1" />
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15" Easing="0.2,0.8,0.2,1" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="StackPanel.acts">
+    <Setter Property="Transitions">
+      <Transitions>
+        <DoubleTransition Property="Opacity" Duration="0:0:0.15" Easing="0.2,0.8,0.2,1" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="TextBox">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="BorderBrush" Duration="0:0:0.15" Easing="0.2,0.8,0.2,1" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="c|SegmentedControl /template/ Border#PART_Thumb">
+    <Setter Property="Transitions">
+      <Transitions>
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2" Easing="0.2,0.8,0.2,1" />
+        <DoubleTransition Property="Width" Duration="0:0:0.2" Easing="0.2,0.8,0.2,1" />
+      </Transitions>
+    </Setter>
+  </Style>
+
+  <Style Selector="c|Switch /template/ Border#PART_Track">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.15" Easing="0.2,0.8,0.2,1" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="c|Switch /template/ Border#PART_Knob">
+    <Setter Property="Transitions">
+      <Transitions>
+        <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.15" Easing="0.2,0.8,0.2,1" />
+      </Transitions>
+    </Setter>
+  </Style>
+</Styles>

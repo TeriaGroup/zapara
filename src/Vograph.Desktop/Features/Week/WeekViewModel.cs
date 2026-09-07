@@ -96,6 +96,8 @@ public sealed partial class WeekDayViewModel : ObservableObject
     }
 
     public WeekDay Day { get; }
+    /// <summary>Position in the week (Mon = 0); drives the appear cascade.</summary>
+    public int Index => Day.Dow - 1;
     public string Title => Day.Title;
     public string DateText => DayTitles.ShortDate(Day.Date, Loc.Current);
     public DateTime Date => Day.Date;

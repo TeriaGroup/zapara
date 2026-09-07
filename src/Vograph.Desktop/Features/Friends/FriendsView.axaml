@@ -27,11 +27,11 @@
 
       <c:EmptyState IsVisible="{Binding Friends.Count, Converter={x:Static f:FriendConverters.IsZero}}" Title="{loc:T friendsEmpty}" Hint="{loc:T friendsEmptyHint}" Icon="{StaticResource Icon.Friends}" Margin="0,24" />
 
-      <ItemsControl ItemsSource="{Binding Friends}">
+      <ItemsControl ItemsSource="{Binding Friends}" c:Appear.CascadeHost="True">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="f:FriendItemViewModel">
-            <Border Classes="card">
+            <Border Classes="card" c:Appear.Kind="Cascade" c:Appear.Index="{Binding Index}">
               <Grid ColumnDefinitions="Auto,140,*,Auto,Auto" VerticalAlignment="Center">
                 <!-- colour: a dot that opens the palette (taken colours are hidden) -->
                 <Button Classes="icon" ToolTip.Tip="{loc:T friendsColor}">
