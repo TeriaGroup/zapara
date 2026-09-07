@@ -95,8 +95,7 @@ public class ShellTests : UiTest
 
             // With the group picker open its search box owns the arrow keys.
             var picker = shell.OpenGroupPickerCommand.ExecuteAsync(null);
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            while (shell.Dialogs.Current is null && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+            await Waits.Until(() => shell.Dialogs.Current is not null, "group picker dialog");
             Pump();
             window.KeyPress(Key.Right, RawInputModifiers.None, PhysicalKey.ArrowRight, null);
             Assert.Equal(0, schedule.DayOffset);
@@ -174,8 +173,7 @@ public class ShellTests : UiTest
             Assert.True(shell.IsAutoCheckRunning);
             var week = shell.Section<Features.Week.WeekViewModel>(SectionKey.Week);
             shell.NavigateTo(SectionKey.Week);
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            while (week.Days.Count < 6 && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+            await Waits.Until(() => week.Days.Count >= 6, "week days");
 
             shell.Stop();
 

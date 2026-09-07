@@ -25,15 +25,6 @@ public class ScheduleDialogsTests : UiTest
         return (shell, vm);
     }
 
-    /// <summary>The action opens its dialog after a background Core call, so the dialog appears a
-    /// few continuations later — poll instead of racing it with a single Task.Yield.</summary>
-    private static async Task<T> WaitForDialogAsync<T>(ShellViewModel shell) where T : DialogViewModelBase
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (shell.Dialogs.Current is not T && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
-        return Assert.IsType<T>(shell.Dialogs.Current);
-    }
-
     [Fact]
     public async Task Rename_Saves_Weekday_Override_And_Reloads()
     {
@@ -41,7 +32,7 @@ public class ScheduleDialogsTests : UiTest
         var (shell, vm) = await Make(db);
 
         var task = vm.RenameAsync(vm.Lessons[1]); // ОСН РОС ГОС — no override yet
-        var dlg = await WaitForDialogAsync<RenameDialogViewModel>(shell);
+        var dlg = await Waits.ForDialogAsync<RenameDialogViewModel>(shell);
         Assert.False(dlg.HasExisting);
         Assert.Equal("Оригинал: ОСН РОС ГОС", dlg.OriginalLine);
 
@@ -63,7 +54,7 @@ public class ScheduleDialogsTests : UiTest
         var (shell, vm) = await Make(db);
 
         var task = vm.RenameAsync(vm.Lessons[0]); // Матан (global override from the fixture)
-        var dlg = await WaitForDialogAsync<RenameDialogViewModel>(shell);
+        var dlg = await Waits.ForDialogAsync<RenameDialogViewModel>(shell);
         Assert.True(dlg.HasExisting);
         Assert.Equal("Матан", dlg.DisplayName);
         Assert.Equal(0, dlg.ScopeIndex);
@@ -81,7 +72,7 @@ public class ScheduleDialogsTests : UiTest
         using var db = TestDb.Create();
         var (shell, vm) = await Make(db);
         var task = vm.RenameAsync(vm.Lessons[0]);
-        var dlg = await WaitForDialogAsync<RenameDialogViewModel>(shell);
+        var dlg = await Waits.ForDialogAsync<RenameDialogViewModel>(shell);
         dlg.CancelCommand.Execute(null);
         await task;
         Assert.Equal("Матан", vm.Lessons[0].DisplayName);
@@ -94,7 +85,7 @@ public class ScheduleDialogsTests : UiTest
         var (shell, vm) = await Make(db);
 
         var task = vm.RenameAsync(vm.Lessons[1]); // пр ОСН РОС ГОС — no override yet
-        var dlg = await WaitForDialogAsync<RenameDialogViewModel>(shell);
+        var dlg = await Waits.ForDialogAsync<RenameDialogViewModel>(shell);
         dlg.Note = "зачёт в декабре";
         Assert.Equal("Предпросмотр: ОСН РОС ГОС", dlg.Preview); // preview stays in display form
         dlg.ConfirmCommand.Execute(null);
@@ -109,7 +100,7 @@ public class ScheduleDialogsTests : UiTest
 
         // Reopening shows the note and an empty name field (also covers overrides written by the WPF client).
         task = vm.RenameAsync(vm.Lessons[1]);
-        dlg = await WaitForDialogAsync<RenameDialogViewModel>(shell);
+        dlg = await Waits.ForDialogAsync<RenameDialogViewModel>(shell);
         Assert.True(dlg.HasExisting);
         Assert.Equal("", dlg.DisplayName);
         Assert.Equal("зачёт в декабре", dlg.Note);
@@ -135,13 +126,12 @@ public class ScheduleDialogsTests : UiTest
 
         // The user picks a group through the real picker path (save under the gate, refresh card, notify).
         var pick = shell.OpenGroupPickerCommand.ExecuteAsync(null);
-        var dlg = await WaitForDialogAsync<GroupPickerDialogViewModel>(shell);
+        var dlg = await Waits.ForDialogAsync<GroupPickerDialogViewModel>(shell);
         dlg.Selected = dlg.Filtered.Single(g => g.Id == TestDb.MyGroupId);
         dlg.ConfirmCommand.Execute(null);
         await pick;
 
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (vm.IsEmpty && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Waits.Until(() => !vm.IsEmpty, "schedule after picking a group");
 
         Assert.Equal(1, vm.DayOffset);                      // Sunday → smart start lands on Monday, not on the empty Sunday
         Assert.Equal(new DateTime(2026, 9, 7), vm.Date);
@@ -161,7 +151,7 @@ public class ScheduleDialogsTests : UiTest
 
         // add
         var add = vm.AddHomeworkAsync(law);
-        var dlg = await WaitForDialogAsync<HomeworkDialogViewModel>(shell);
+        var dlg = await Waits.ForDialogAsync<HomeworkDialogViewModel>(shell);
         Assert.False(dlg.IsEdit);
         Assert.False(dlg.ConfirmCommand.CanExecute(null));
         Assert.Equal("Срок: 21.09 (Пн)", dlg.DueText);   // ОСН РОС ГОС is Monday/odd only: 07.09 → next is 21.09
@@ -182,7 +172,7 @@ public class ScheduleDialogsTests : UiTest
 
         // edit
         var edit = vm.EditHomeworkAsync(hw);
-        dlg = await WaitForDialogAsync<HomeworkDialogViewModel>(shell);
+        dlg = await Waits.ForDialogAsync<HomeworkDialogViewModel>(shell);
         Assert.True(dlg.IsEdit);
         Assert.Equal("прочитать главу 2", dlg.Text);
         dlg.Text = "глава 3";
@@ -201,7 +191,7 @@ public class ScheduleDialogsTests : UiTest
 
         // delete with confirmation
         var del = vm.DeleteHomeworkAsync(Assert.Single(vm.Lessons[1].Homework));
-        var confirm = await WaitForDialogAsync<ConfirmDialogViewModel>(shell);
+        var confirm = await Waits.ForDialogAsync<ConfirmDialogViewModel>(shell);
         Assert.Contains("глава 3", confirm.Message);
         confirm.ConfirmCommand.Execute(null);
         await del;
@@ -220,7 +210,7 @@ public class ScheduleDialogsTests : UiTest
 
         SetTheme(ThemeVariant.Dark);
         var rename = vm.RenameAsync(vm.Lessons[0]);
-        await WaitForDialogAsync<RenameDialogViewModel>(shell);
+        await Waits.ForDialogAsync<RenameDialogViewModel>(shell);
         Pump();
         Frames.Capture(window, "dialog-rename-dark");
         shell.Dialogs.Current!.CancelCommand.Execute(null);
@@ -228,7 +218,7 @@ public class ScheduleDialogsTests : UiTest
 
         SetTheme(ThemeVariant.Light);
         var hw = vm.AddHomeworkAsync(vm.Lessons[0]);
-        await WaitForDialogAsync<HomeworkDialogViewModel>(shell);
+        await Waits.ForDialogAsync<HomeworkDialogViewModel>(shell);
         Pump();
         Frames.Capture(window, "dialog-homework-light");
         shell.Dialogs.Current!.CancelCommand.Execute(null);

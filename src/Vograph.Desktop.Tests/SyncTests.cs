@@ -21,13 +21,6 @@ public class SyncTests : UiTest
 {
     private static readonly DateTime Sun6 = new(2026, 9, 6, 15, 0, 0);
 
-    private static async Task WaitAsync(Func<bool> done)
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (!done() && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
-        Assert.True(done(), "condition not met in time");
-    }
-
     /// <summary>An ephemeral loopback port: 8765 may well be taken on the machine running the suite.</summary>
     private static int FreePort()
     {
@@ -111,7 +104,7 @@ public class SyncTests : UiTest
         window.Show();
         shell.NavigateTo(SectionKey.Settings);
         var vm = Assert.IsType<SettingsViewModel>(shell.Current);
-        await WaitAsync(() => vm.GroupName == "А863С");
+        await Waits.Until(() => vm.GroupName == "А863С");
 
         await vm.ToggleQrCommand.ExecuteAsync(null);
         Pump();
@@ -165,7 +158,7 @@ public class SyncTests : UiTest
         var body = JsonSerializer.Serialize(payload);
         var resp = await http.PostAsync($"http://localhost:{port}/sync/", new StringContent(body, Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
         Assert.True(resp.IsSuccessStatusCode);
-        await WaitAsync(() => imported == 1);
+        await Waits.Until(() => imported == 1);
         Assert.Equal("Математика", db.Services.Overrides.GetDisplayName(TestDb.MathSubject, 1));
         Assert.Equal(1, db.Services.CoreGate.CurrentCount);
 
@@ -201,7 +194,7 @@ public class SyncTests : UiTest
 
         // The fixture homework («лек ВЫСШ. МАТЕМАТ», created Sat 05.09) is due Mon 07.09 for group 3313 — one day
         // after the pinned Sunday clock, so the badge the shell refreshes after the import reads "1".
-        await WaitAsync(() => changed > 0 && badge.Badge == "1");
+        await Waits.Until(() => changed > 0 && badge.Badge == "1");
         Assert.Equal("Матан", target.Services.Overrides.GetDisplayName(TestDb.MathSubject, 1));
         target.Services.LanSync.Stop();
     }
@@ -251,7 +244,7 @@ public class SyncTests : UiTest
         vm.LanSync = true;
         Assert.True(db.Services.LanSync.IsRunning);
         Assert.True(UiPrefs.Load(db.Services.Prefs.FilePath).LanSync);
-        await WaitAsync(() => vm.LanAddress.Length > 0); // the address arrives from the resolver, not from the setter
+        await Waits.Until(() => vm.LanAddress.Length > 0); // the address arrives from the resolver, not from the setter
         Assert.Equal($"Адрес: http://localhost:{port}/sync/", vm.LanAddress);
 
         vm.LanSync = false;

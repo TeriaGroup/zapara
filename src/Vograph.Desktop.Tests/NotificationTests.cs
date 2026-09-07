@@ -83,6 +83,7 @@ public class NotificationTests
 
         var far = await scheduler.ShowTestAsync(new DateTime(2026, 8, 30, 12, 0, 0)); // tomorrow = 31.08, homework due 07.09
         Assert.NotNull(far);
+        Assert.Contains("Матан", far);
         Assert.DoesNotContain("[ДЗ!]", far);
     }
 

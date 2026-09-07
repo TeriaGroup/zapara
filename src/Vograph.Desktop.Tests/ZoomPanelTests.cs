@@ -23,6 +23,16 @@ public class ZoomPanelTests : UiTest
     }
 
     [Fact]
+    public void Clamp_Keeps_The_Anchor_Formula_Consistent()
+    {
+        var (s, ox, oy) = ZoomMath.ZoomAt(scale: 5.5, ox: 10, oy: 20, factor: 2, anchorX: 100, anchorY: 60);
+        Assert.Equal(ZoomMath.Max, s);
+        var k = ZoomMath.Max / 5.5; // the clamped scale, not the requested ×2, drives the offsets
+        Assert.Equal(100 - (100 - 10) * k, ox, 6);
+        Assert.Equal(60 - (60 - 20) * k, oy, 6);
+    }
+
+    [Fact]
     public void Zoom_Is_Clamped_And_Fit_Centers()
     {
         Assert.Equal(ZoomMath.Max, ZoomMath.ZoomAt(5, 0, 0, 10, 0, 0).Scale);
@@ -78,6 +88,23 @@ public class ZoomPanelTests : UiTest
         var matrix = Assert.IsType<MatrixTransform>(content.RenderTransform).Matrix;
         Assert.Equal(0.5, matrix.M11, 6);
         Assert.Equal(panel.OffsetX, matrix.M31, 6);
+        AssertNoBindingErrors();
+    }
+
+    [AvaloniaFact]
+    public void Direct_Out_Of_Range_Scale_Is_Clamped_And_Rendered()
+    {
+        var content = new Border { Width = 400, Height = 300, Background = Brushes.Gray };
+        var panel = new ZoomPanel { Child = content };
+        var window = new Window { Width = 200, Height = 150, Content = panel, SizeToContent = SizeToContent.Manual };
+        window.Show();
+        Pump();
+
+        panel.Scale = 50;
+        Assert.Equal(ZoomMath.Max, panel.Scale, 6);
+        Assert.Equal(ZoomMath.Max, Assert.IsType<MatrixTransform>(content.RenderTransform).Matrix.M11, 6);
+        panel.Scale = 0.01;
+        Assert.Equal(ZoomMath.Min, panel.Scale, 6);
         AssertNoBindingErrors();
     }
 

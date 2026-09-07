@@ -1,6 +1,8 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 using Vograph.Core.Models;
 using Vograph.Desktop.Controls;
 using Vograph.Desktop.Dialogs;
@@ -15,13 +17,6 @@ namespace Vograph.Desktop.Tests;
 public class FriendsTests : UiTest
 {
     private static readonly DateTime Sun6 = new(2026, 9, 6, 12, 0, 0);
-
-    private static async Task<T> WaitForDialogAsync<T>(ShellViewModel shell) where T : DialogViewModelBase
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (shell.Dialogs.Current is not T && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
-        return Assert.IsType<T>(shell.Dialogs.Current);
-    }
 
     [Fact]
     public void Marks_Are_Computed_By_The_Shared_Helper()
@@ -51,7 +46,7 @@ public class FriendsTests : UiTest
 
         // add: the picker offers neither my group nor existing friends
         var add = vm.AddCommand.ExecuteAsync(null);
-        var picker = await WaitForDialogAsync<GroupPickerDialogViewModel>(shell);
+        var picker = await Waits.ForDialogAsync<GroupPickerDialogViewModel>(shell);
         Assert.Equal(new[] { "Е452Б" }, picker.Filtered.Select(g => g.Name));
         picker.Selected = picker.Filtered[0];
         picker.ConfirmCommand.Execute(null);
@@ -71,14 +66,13 @@ public class FriendsTests : UiTest
         Assert.Equal("Петя", db.Services.Db.GetFriends().Single(f => f.GroupName == "Е452Б").MemberNames);
         first.Enabled = false;
         await Task.Delay(50, TestContext.Current.CancellationToken);
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (db.Services.Db.GetFriends().Single(f => f.GroupName == "09С31").Enabled && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Waits.Until(() => !db.Services.Db.GetFriends().Single(f => f.GroupName == "09С31").Enabled, "09С31 disabled");
         Assert.False(db.Services.Db.GetFriends().Single(f => f.GroupName == "09С31").Enabled);
         Assert.True(changed >= 3);
 
         // remove with confirmation
         var remove = vm.RemoveAsync(second);
-        var confirm = await WaitForDialogAsync<ConfirmDialogViewModel>(shell);
+        var confirm = await Waits.ForDialogAsync<ConfirmDialogViewModel>(shell);
         Assert.Contains("Е452Б", confirm.Message);
         confirm.ConfirmCommand.Execute(null);
         await remove;
@@ -122,7 +116,7 @@ public class FriendsTests : UiTest
         await vm.LoadAsync();
 
         var add = vm.AddCommand.ExecuteAsync(null);
-        var picker = await WaitForDialogAsync<GroupPickerDialogViewModel>(shell);
+        var picker = await Waits.ForDialogAsync<GroupPickerDialogViewModel>(shell);
         Assert.Empty(picker.Filtered); // 09С31 and е452б are friends already, 3313 is mine
         picker.CancelCommand.Execute(null);
         await add;
@@ -142,7 +136,7 @@ public class FriendsTests : UiTest
         vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(FriendsViewModel.TickLabels)) loads++; };
 
         var add = vm.AddCommand.ExecuteAsync(null);
-        var picker = await WaitForDialogAsync<GroupPickerDialogViewModel>(shell);
+        var picker = await Waits.ForDialogAsync<GroupPickerDialogViewModel>(shell);
         picker.Selected = picker.Filtered[0];
         picker.ConfirmCommand.Execute(null);
         await add;
@@ -214,13 +208,91 @@ public class FriendsTests : UiTest
         window.Show();
         shell.NavigateTo(SectionKey.Friends);
         var vm = Assert.IsType<FriendsViewModel>(shell.Current);
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (!vm.HasPreview && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Waits.Until(() => vm.HasPreview, "friends preview");
         Pump();
         SetTheme(ThemeVariant.Dark);
         Frames.Capture(window, "friends-dark");
+
+        var colorButton = window.GetVisualDescendants().OfType<Button>().First(b => b.Flyout is Flyout);
+        colorButton.Flyout!.ShowAt(colorButton);
+        Pump();
+        Frames.Capture(window, "friends-color-flyout-dark");
+        colorButton.Flyout.Hide();
+        Pump();
+
         SetTheme(ThemeVariant.Light);
         Frames.Capture(window, "friends-light");
         AssertNoBindingErrors();
+    }
+
+    [Fact]
+    public async Task Five_Friends_Disable_Add()
+    {
+        using var db = TestDb.Create();
+        foreach (var (name, i) in new[] { ("А1", 1), ("А2", 2), ("А3", 3), ("А4", 4) })
+            db.Services.Db.InsertFriend(new FriendGroup { GroupName = name, ColorHex = FriendPalette.Hex[i], Enabled = true, MemberNames = "" });
+        var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+        Assert.Equal(5, vm.Friends.Count);
+        Assert.False(vm.CanAdd);
+        Assert.Equal("5 из 5", vm.CountText);
+
+        await vm.AddCommand.ExecuteAsync(null);
+        Assert.Null(shell.Dialogs.Current); // no picker at the cap
+    }
+
+    [Fact]
+    public async Task Removing_The_Last_Friend_Empties_The_Preview()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+        Assert.True(vm.HasPreview);
+
+        var remove = vm.RemoveAsync(vm.Friends.Single());
+        var confirm = await Waits.ForDialogAsync<ConfirmDialogViewModel>(shell);
+        confirm.ConfirmCommand.Execute(null);
+        await remove;
+
+        Assert.Empty(vm.Friends);
+        Assert.True(vm.CanAdd);
+        Assert.False(vm.HasPreview);
+        Assert.Equal("В ближайшие две недели пересечений нет", vm.PreviewLine);
+    }
+
+    [Fact]
+    public async Task Detach_Stops_Reloads()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+        vm.Detach();
+
+        db.Services.Db.InsertFriend(new FriendGroup { GroupName = "Е452Б", ColorHex = FriendPalette.Hex[1], Enabled = true, MemberNames = "" });
+        shell.RaiseScheduleChanged();
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+
+        Assert.Single(vm.Friends); // a live section would show two
+    }
+
+    /// <summary>The production path of the switch: save → ScheduleChanged → reload → preview, without calling RefreshPreviewAsync by hand.</summary>
+    [Fact]
+    public async Task Always_Show_All_Reaches_The_Preview_Through_The_Production_Path()
+    {
+        using var db = TestDb.Create();
+        db.Services.Db.InsertFriend(new FriendGroup { GroupName = "Е452Б", ColorHex = FriendPalette.Hex[1], Enabled = true, MemberNames = "" }); // no lessons → never present
+        var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+        Assert.Single(vm.PreviewMarks);
+
+        vm.AlwaysShowAll = true;
+
+        await Waits.Until(() => vm.PreviewMarks.Count == 2, "absent friend appears in the preview");
+        Assert.Equal(DotFill.Off, vm.PreviewMarks[1].Fill);
+        Assert.True(db.Services.Db.GetSettings().AlwaysShowAllTrafficLights);
     }
 }

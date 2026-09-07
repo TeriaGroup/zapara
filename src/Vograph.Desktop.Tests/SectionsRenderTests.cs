@@ -21,13 +21,6 @@ public class SectionsRenderTests : UiTest
 {
     private static readonly DateTime Mon7 = new(2026, 9, 7, 8, 0, 0);
 
-    private static async Task WaitAsync(Func<bool> done)
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (!done() && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
-        Assert.True(done(), "section did not finish loading in time");
-    }
-
     [AvaloniaFact]
     public async Task All_Sections_Render_In_Both_Themes_And_Relabel_On_Language_Change()
     {
@@ -67,7 +60,7 @@ public class SectionsRenderTests : UiTest
         {
             shell.NavigateTo(key);
             var vm = shell.Current!;
-            await WaitAsync(() => loaded[key](vm));
+            await Waits.Until(() => loaded[key](vm), $"section {key} loaded");
             Pump();
             SetTheme(ThemeVariant.Dark);
             Frames.Capture(window, $"section-{key.ToString().ToLowerInvariant()}-dark");

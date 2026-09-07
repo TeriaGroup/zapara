@@ -1,3 +1,4 @@
+using System.Globalization;
 using Avalonia;
 using Avalonia.Headless.XUnit;
 using Avalonia.Styling;
@@ -13,13 +14,6 @@ namespace Vograph.Desktop.Tests;
 public class SettingsTests : UiTest
 {
     private static readonly DateTime Sun6 = new(2026, 9, 6, 15, 0, 0);
-
-    private static async Task WaitAsync(Func<bool> done)
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (!done() && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
-        Assert.True(done(), "condition not met in time");
-    }
 
     [Fact]
     public void Version_Tag_Comes_From_The_Assembly()
@@ -55,7 +49,7 @@ public class SettingsTests : UiTest
         vm.LanguageIndex = 1;
         Assert.Equal("en", db.Services.Loc.Language);
         Assert.Equal("Schedule", shell.MainSections[0].Label);
-        await WaitAsync(() => db.Services.Db.GetSettings().Language == "en");
+        await Waits.Until(() => db.Services.Db.GetSettings().Language == "en", "language setting saved");
         db.Services.Loc.SetLanguage("ru");
     }
 
@@ -74,13 +68,35 @@ public class SettingsTests : UiTest
         await vm.LoadAsync();
 
         Assert.Equal("А863С", vm.GroupName);
-        Assert.StartsWith("обновлено 06.09", vm.UpdatedText);
+        var expected = DateTime.Parse("2026-09-06T12:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind).ToLocalTime().ToString("dd.MM", CultureInfo.InvariantCulture);
+        Assert.StartsWith($"обновлено {expected}", vm.UpdatedText); // local time: the day can roll over east of UTC+11
         Assert.Equal("автопроверка ещё не было", vm.AutoCheckText);
         Assert.False(vm.ParityInvert);
 
         vm.ParityInvert = true;
-        await WaitAsync(() => db.Services.Db.GetSettings().ParityInvert);
-        await WaitAsync(() => changed == 1);
+        await Waits.Until(() => db.Services.Db.GetSettings().ParityInvert, "parity invert saved");
+        await Waits.Until(() => changed == 1, "schedule changed raised");
+    }
+
+    /// <summary>«Обновить расписание» forces a full download (no HEAD), so the fake answers the GET with the fixture XML.</summary>
+    [Fact]
+    public async Task Refresh_Delegates_To_The_Shell()
+    {
+        using var db = TestDb.Create();
+        var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-timetable.xml"));
+        var handler = new FakeHttpHandler { Respond = _ => FakeHttpHandler.Bytes(System.Text.Encoding.UTF8.GetBytes(xml)) };
+        db.Services.Refresher = new ScheduleRefresher(handler);
+        var shell = new ShellViewModel(db.Services);
+        var vm = new SettingsViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+
+        await vm.RefreshCommand.ExecuteAsync(null);
+
+        Assert.Equal(HttpMethod.Get, Assert.Single(handler.Requests).Method); // force: straight to the download
+        Assert.Contains(db.Services.Toasts.Items, t => t.Text == "Расписание обновлено");
+        Assert.False(vm.IsRefreshing);
+        Assert.False(shell.IsRefreshing);
+        Assert.NotEqual("автопроверка ещё не было", vm.AutoCheckText); // LoadAsync after the refresh shows the new stamp
     }
 
     [Fact]
@@ -150,7 +166,7 @@ public class SettingsTests : UiTest
         window.Show();
         shell.NavigateTo(SectionKey.Settings);
         var vm = Assert.IsType<SettingsViewModel>(shell.Current);
-        await WaitAsync(() => vm.GroupName == "А863С");
+        await Waits.Until(() => vm.GroupName == "А863С", "settings group name");
         Pump();
         SetTheme(ThemeVariant.Dark);
         Frames.Capture(window, "settings-dark");

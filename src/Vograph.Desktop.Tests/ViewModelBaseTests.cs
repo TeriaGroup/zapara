@@ -21,8 +21,6 @@ public class ViewModelBaseTests
         public ProbeVm(AppServices app) : base(app) { }
         public Task<string?> Run(Func<string> work) => RunAsync(work, "probe");
         public Task<bool> RunTask(Func<Task> work) => RunAsync(work, "probe");
-        public int Detached;
-        public override void Detach() => Detached++;
     }
 
     [Fact]

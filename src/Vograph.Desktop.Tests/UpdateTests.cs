@@ -35,13 +35,6 @@ public class UpdateTests : UiTest
 
     private static bool IsUpdateItem(NavItem n) => n.IsEffectivelyVisible && n.Content is string c && c == "Обновление";
 
-    private static async Task WaitAsync(Func<bool> done)
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (!done() && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
-        Assert.True(done(), "condition not met in time");
-    }
-
     [Fact]
     public void Batch_Waits_For_Exit_Unpacks_And_Restarts()
     {
@@ -113,7 +106,7 @@ public class UpdateTests : UiTest
         Assert.Single(source.Downloads);
         Assert.Single(installed, p => p.EndsWith("ZAPARA_windows-v2.1.0_win-x64.zip") && File.Exists(p));
         Assert.Equal(UpdateState.Ready, vm.State);
-        await WaitAsync(() => vm.Progress == 1.0); // Progress<T>.Report posts its callback asynchronously
+        await Waits.Until(() => vm.Progress == 1.0); // Progress<T>.Report posts its callback asynchronously
         Assert.Equal(1.0, vm.Progress);
     }
 
@@ -183,8 +176,7 @@ public class UpdateTests : UiTest
         await vm.LoadAsync();
         Assert.True(vm.AutoUpdate);
         vm.AutoUpdate = false;
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (db.Services.Db.GetSettings().AutoUpdate && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Waits.Until(() => !db.Services.Db.GetSettings().AutoUpdate, "auto-update setting saved");
         Assert.False(db.Services.Db.GetSettings().AutoUpdate);
     }
 
@@ -200,7 +192,7 @@ public class UpdateTests : UiTest
         var vm = new SettingsViewModel(db.Services, shell, () => Sun6);
 
         await vm.ActivateAsync();
-        await WaitAsync(() => source.Checks == 1 && shell.Updates.IsAvailable);
+        await Waits.Until(() => source.Checks == 1 && shell.Updates.IsAvailable);
 
         await vm.ActivateAsync(); // second entry in the same session: no second call
         Assert.Equal(1, source.Checks);

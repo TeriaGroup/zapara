@@ -19,13 +19,6 @@ public class HomeworkTests : UiTest
 {
     private static readonly DateTime Sun6 = new(2026, 9, 6, 12, 0, 0);
 
-    private static async Task<T> WaitForDialogAsync<T>(ShellViewModel shell) where T : DialogViewModelBase
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (shell.Dialogs.Current is not T && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
-        return Assert.IsType<T>(shell.Dialogs.Current);
-    }
-
     private static Homework Hw(string? due, string status = "pending") =>
         new() { SubjectRawNormalized = "x", Text = "t", CreatedAt = Sun6, TargetNthOccurrence = 1, Status = status, DueDateComputed = due is null ? null : DateTime.Parse(due) };
 
@@ -117,11 +110,11 @@ public class HomeworkTests : UiTest
 
         // add: subject picker → homework dialog
         var add = vm.AddCommand.ExecuteAsync(null);
-        var picker = await WaitForDialogAsync<SubjectPickerDialogViewModel>(shell);
+        var picker = await Waits.ForDialogAsync<SubjectPickerDialogViewModel>(shell);
         picker.Query = "истор";
         picker.Selected = Assert.Single(picker.Filtered);
         picker.ConfirmCommand.Execute(null);
-        var dlg = await WaitForDialogAsync<HomeworkDialogViewModel>(shell);
+        var dlg = await Waits.ForDialogAsync<HomeworkDialogViewModel>(shell);
         Assert.Equal("Срок: 16.09 (Ср)", dlg.DueText);
         dlg.Text = "глава 1";
         dlg.ConfirmCommand.Execute(null);
@@ -132,7 +125,7 @@ public class HomeworkTests : UiTest
         // edit
         var row = vm.Groups[1].Items.Single();
         var edit = vm.EditAsync(row);
-        dlg = await WaitForDialogAsync<HomeworkDialogViewModel>(shell);
+        dlg = await Waits.ForDialogAsync<HomeworkDialogViewModel>(shell);
         Assert.True(dlg.IsEdit);
         dlg.Text = "глава 2";
         dlg.ConfirmCommand.Execute(null);
@@ -149,7 +142,7 @@ public class HomeworkTests : UiTest
 
         // delete with confirmation
         var del = vm.DeleteAsync(done.Items.Single());
-        var confirm = await WaitForDialogAsync<ConfirmDialogViewModel>(shell);
+        var confirm = await Waits.ForDialogAsync<ConfirmDialogViewModel>(shell);
         confirm.ConfirmCommand.Execute(null);
         await del;
         Assert.Single(vm.Groups);
@@ -249,8 +242,7 @@ public class HomeworkTests : UiTest
 
         shell.NavigateTo(SectionKey.Homework);
         var vm = Assert.IsType<HomeworkViewModel>(shell.Current);
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (vm.Groups.Count == 0 && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Waits.Until(() => vm.Groups.Count > 0, "homework groups");
         Pump();
         SetTheme(ThemeVariant.Dark);
         Frames.Capture(window, "homework-dark");
@@ -268,7 +260,7 @@ public class HomeworkTests : UiTest
 
         // «＋ Добавить» step 1: nothing else renders SubjectPickerDialogView, so it gets a frame here.
         var add = vm.AddCommand.ExecuteAsync(null);
-        await WaitForDialogAsync<SubjectPickerDialogViewModel>(shell);
+        await Waits.ForDialogAsync<SubjectPickerDialogViewModel>(shell);
         Pump();
         Frames.Capture(window, "dialog-subject-picker-light");
         shell.Dialogs.Current!.CancelCommand.Execute(null);

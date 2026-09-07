@@ -1,5 +1,7 @@
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Vograph.Core.Services;
 using Vograph.Desktop.Features.Maps;
 
@@ -61,12 +63,23 @@ public sealed class FakeMapFiles : IMapFiles
         return Task.CompletedTask;
     }
 
+    /// <summary>A 200×100 «plan»: light paper with a 20px grid, so a committed frame shows the picture and the
+    /// highlight on top of it rather than window chrome alone (the earlier transparent bitmap was invisible).</summary>
     private string Png()
     {
         if (_png is not null) return _png;
         Directory.CreateDirectory(_dir);
         var path = Path.Combine(_dir, "map.png");
-        using var bmp = new WriteableBitmap(new PixelSize(200, 100), new Vector(96, 96));
+        using var bmp = new WriteableBitmap(new PixelSize(200, 100), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
+        using (var fb = bmp.Lock())
+        {
+            for (var y = 0; y < 100; y++)
+                for (var x = 0; x < 200; x++)
+                {
+                    var line = x % 20 == 0 || y % 20 == 0;
+                    Marshal.WriteInt32(fb.Address + y * fb.RowBytes + x * 4, unchecked((int)(line ? 0xFFD4D4D4 : 0xFFF7F7F7)));
+                }
+        }
         bmp.Save(path, PngBitmapEncoderOptions.Default);
         return _png = path;
     }

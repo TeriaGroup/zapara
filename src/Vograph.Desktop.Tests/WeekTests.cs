@@ -76,6 +76,46 @@ public class WeekTests : UiTest
         Assert.Empty(model.Days);
     }
 
+    /// <summary>Inversion maps the user's «odd» onto the XML even week; the dates must follow the same rule.</summary>
+    [Fact]
+    public void Inverted_Odd_Week_Lands_On_The_Xml_Even_Dates()
+    {
+        using var db = TestDb.Create();
+        var s = db.Services.Db.GetSettings();
+        s.ParityInvert = true;
+        db.Services.Db.SaveSettings(s);
+        var inverted = new WeekComposer(db.Services).Compose(1, Mon7);
+        Assert.False(inverted.IsOddToday);
+        // Mon 07.09 is XML-odd → the user's «odd» Monday is 14.09; Tue 08.09 .. Sat 12.09 are XML-even → they are this week.
+        Assert.Equal(new[] { "14.09", "08.09", "09.09", "10.09", "11.09", "12.09" }, inverted.Days.Select(d => d.Date.ToString("dd.MM")));
+        Assert.All(inverted.Days, d => Assert.False(d.IsToday));
+    }
+
+    [Fact]
+    public void Group_Without_Lessons_Gives_Six_Empty_Days()
+    {
+        using var db = TestDb.Create();
+        var s = db.Services.Db.GetSettings();
+        s.MyGroupId = "9999"; // Е452Б
+        db.Services.Db.SaveSettings(s);
+        var model = new WeekComposer(db.Services).Compose(1, Mon7);
+        Assert.True(model.HasGroup);
+        Assert.Equal(0, model.Total);
+        Assert.Equal(6, model.Days.Count);
+        Assert.All(model.Days, d => Assert.Empty(d.Rows));
+    }
+
+    [Fact]
+    public void Sunday_Is_Never_Today_In_The_Grid()
+    {
+        using var db = TestDb.Create();
+        var sunday = new DateTime(2026, 9, 6, 12, 0, 0); // odd week (Tue 01.09 .. Mon 07.09)
+        var model = new WeekComposer(db.Services).Compose(0, sunday);
+        Assert.Equal(1, model.Parity);
+        Assert.Equal("07.09", model.Days[0].Date.ToString("dd.MM")); // the coming Monday of the same odd week
+        Assert.All(model.Days, d => Assert.False(d.IsToday));
+    }
+
     [Fact]
     public async Task ViewModel_Starts_On_The_Current_Week_And_Switches()
     {
@@ -111,8 +151,7 @@ public class WeekTests : UiTest
 
         shell.NavigateTo(SectionKey.Week);
         var week = Assert.IsType<WeekViewModel>(shell.Current);
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (week.Days.Count < 6 && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Waits.Until(() => week.Days.Count >= 6, "week days");
         Pump();
 
         SetTheme(ThemeVariant.Dark);
@@ -124,8 +163,7 @@ public class WeekTests : UiTest
         Assert.Equal(6, cards.Count);
         Click(window, cards[2]); // Wednesday of the odd week → 16.09
         var schedule = Assert.IsType<ScheduleViewModel>(shell.Current);
-        sw.Restart();
-        while (schedule.Date != new DateTime(2026, 9, 16) && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Waits.Until(() => schedule.Date == new DateTime(2026, 9, 16), "schedule date after day click");
         Assert.Equal(new DateTime(2026, 9, 16), schedule.Date);
         Assert.Equal(9, schedule.DayOffset);
 

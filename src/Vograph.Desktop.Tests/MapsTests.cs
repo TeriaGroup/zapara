@@ -28,13 +28,6 @@ public class MapsTests : UiTest
         return (shell, vm, files, launcher);
     }
 
-    private static async Task WaitAsync(Func<bool> done)
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (!done() && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
-        Assert.True(done(), "condition not met in time");
-    }
-
     [Theory]
     [InlineData("2026-09-07T08:00", "2026-09-07T09:00", "2026-09-07T10:35", "через 1 ч")]
     [InlineData("2026-09-07T08:35", "2026-09-07T09:00", "2026-09-07T10:35", "через 25 мин")]
@@ -67,7 +60,7 @@ public class MapsTests : UiTest
         using var db = TestDb.Create();
         var (shell, vm, files, _) = Make(db, ("ГК", 4));
         shell.NavigateTo(SectionKey.Maps);
-        await WaitAsync(() => vm.Image is not null);
+        await Waits.Until(() => vm.Image is not null);
 
         Assert.Equal(MapMode.NextLesson, vm.Mode);
         Assert.True(vm.IsTracking);
@@ -89,7 +82,7 @@ public class MapsTests : UiTest
         var map = db.Services.Maps.Resolve("ВЦ 280;")!;
 
         shell.ShowMap(map); // ◉ on a lesson card
-        await WaitAsync(() => vm.Image is not null);
+        await Waits.Until(() => vm.Image is not null);
 
         Assert.Equal(SectionKey.Maps, shell.CurrentKey);
         Assert.Equal(MapMode.Lesson, vm.Mode);
@@ -107,12 +100,12 @@ public class MapsTests : UiTest
         using var db = TestDb.Create();
         var (shell, vm, _, _) = Make(db, ("ГК", 4), ("УЛК", 3));
         shell.NavigateTo(SectionKey.Maps);
-        await WaitAsync(() => vm.Image is not null);
+        await Waits.Until(() => vm.Image is not null);
 
         vm.BuildingIndex = 1; // УЛК
         Assert.Equal(5, vm.Floors.Count);
         vm.SelectFloorCommand.Execute(vm.Floors[2]);
-        await WaitAsync(() => vm.Current is { Building: "УЛК", Floor: 3 });
+        await Waits.Until(() => vm.Current is { Building: "УЛК", Floor: 3 });
         Assert.Equal(MapMode.Manual, vm.Mode);
         Assert.False(vm.IsTracking);
         Assert.Equal("Выберите план", vm.ContextLine);
@@ -129,7 +122,7 @@ public class MapsTests : UiTest
         using var db = TestDb.Create();
         var (shell, vm, files, launcher) = Make(db, ("ГК", 4));
         shell.NavigateTo(SectionKey.Maps);
-        await WaitAsync(() => vm.Image is not null);
+        await Waits.Until(() => vm.Image is not null);
 
         await vm.DownloadAllCommand.ExecuteAsync(null);
         Assert.False(vm.IsDownloading);
@@ -153,7 +146,7 @@ public class MapsTests : UiTest
         var map = db.Services.Maps.Resolve("493;")!;
 
         shell.ShowMap(map, "Матан"); // ◉ on a lesson card, with the name the card shows
-        await WaitAsync(() => vm.Image is not null);
+        await Waits.Until(() => vm.Image is not null);
 
         Assert.Equal(MapMode.Lesson, vm.Mode);
         Assert.StartsWith("Пара: Матан · 493", vm.ContextLine);
@@ -208,7 +201,7 @@ public class MapsTests : UiTest
         using var db = TestDb.Create();
         var (shell, vm, files, _) = Make(db, ("ГК", 4));
         shell.NavigateTo(SectionKey.Maps);
-        await WaitAsync(() => vm.Image is not null);
+        await Waits.Until(() => vm.Image is not null);
         Assert.Equal("1 из 9 планов офлайн", vm.CacheStatus);
 
         files.ThrowOnStatus = true;
@@ -250,7 +243,7 @@ public class MapsTests : UiTest
         var (shell, vm, files, _) = Make(db, ("ГК", 4));
         files.SkipOnDownload = ("УЛК", 5);
         shell.NavigateTo(SectionKey.Maps);
-        await WaitAsync(() => vm.Image is not null);
+        await Waits.Until(() => vm.Image is not null);
 
         await vm.DownloadAllCommand.ExecuteAsync(null);
 
@@ -295,7 +288,7 @@ public class MapsTests : UiTest
         var window = new MainWindow { DataContext = shell };
         window.Show();
         shell.NavigateTo(SectionKey.Maps);
-        await WaitAsync(() => vm.Image is not null);
+        await Waits.Until(() => vm.Image is not null);
         Pump();
 
         SetTheme(ThemeVariant.Dark);
@@ -325,5 +318,86 @@ public class MapsTests : UiTest
         Assert.True(shell.HasOverlay);
         shell.NavigateTo(SectionKey.Week);
         Assert.False(shell.HasOverlay);
+    }
+
+    [AvaloniaFact]
+    public async Task No_Upcoming_Lessons_Is_Mode_None()
+    {
+        using var db = TestDb.Create();
+        var s = db.Services.Db.GetSettings();
+        s.MyGroupId = "9999";
+        db.Services.Db.SaveSettings(s);
+        var (shell, vm, _, _) = Make(db);
+        shell.NavigateTo(SectionKey.Maps);
+        await Waits.Until(() => vm.Mode == MapMode.None && vm.ContextLine.Length > 0, "maps none-mode");
+        Assert.Equal("Нет предстоящих занятий", vm.ContextLine);
+        Assert.False(vm.HasMap);
+        Assert.Null(vm.Image);
+        Assert.True(vm.ShowGoToNext); // «К следующей паре» stays available: pressing it re-checks the timetable
+    }
+
+    [AvaloniaFact]
+    public async Task Detach_Ignores_Shell_Events()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, _, _) = Make(db, ("ГК", 4));
+        shell.NavigateTo(SectionKey.Maps);
+        await Waits.Until(() => vm.Image is not null, "plan");
+        vm.Detach();
+        Assert.Null(vm.Image);
+
+        shell.RaiseScheduleChanged(); // a live section would re-track and decode the plan again
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+        Assert.Null(vm.Image);
+    }
+
+    /// <summary>R29: with a dialog over the fullscreen map, Escape closes the dialog first, the map second.</summary>
+    [AvaloniaFact]
+    public async Task Escape_Closes_The_Dialog_Before_The_Fullscreen_Map()
+    {
+        using var db = TestDb.Create();
+        db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        var (shell, vm, _, _) = Make(db, ("ГК", 4));
+        await shell.StartAsync(allowNetwork: false);
+        var window = new MainWindow { DataContext = shell };
+        window.Show();
+        window.Focus();
+        shell.NavigateTo(SectionKey.Maps);
+        await Waits.Until(() => vm.Image is not null, "plan");
+        vm.ToggleFullscreenCommand.Execute(null);
+        var dialog = shell.Dialogs.ShowAsync(new Dialogs.ConfirmDialogViewModel("t", "m", "ok", false));
+        Pump();
+
+        window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+        Assert.False(await dialog);
+        Assert.True(shell.HasOverlay);
+
+        window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+        Assert.False(shell.HasOverlay);
+        AssertNoBindingErrors();
+    }
+
+    /// <summary>The fixture's only room with coordinates (coords.json: «УЛК 3» → «320»); the frame must show the highlight.</summary>
+    [AvaloniaFact]
+    public async Task Highlight_Is_Shown_For_A_Room_With_Coordinates()
+    {
+        using var db = TestDb.Create();
+        db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        var (shell, vm, _, _) = Make(db, ("УЛК", 3));
+        await shell.StartAsync(allowNetwork: false);
+        var window = new MainWindow { DataContext = shell };
+        window.Show();
+        shell.ShowMap(db.Services.Maps.Resolve("320*;"), "Физика");
+        await Waits.Until(() => vm.Image is not null, "plan");
+        Pump();
+
+        Assert.True(vm.HasHighlight);
+        Assert.Equal("320", vm.HighlightLabel);
+        Assert.True(vm.HighlightWidth > 0 && vm.HighlightHeight > 0);
+        SetTheme(ThemeVariant.Light);
+        Frames.Capture(window, "maps-highlight-light");
+        SetTheme(ThemeVariant.Dark);
+        Frames.Capture(window, "maps-highlight-dark");
+        AssertNoBindingErrors();
     }
 }

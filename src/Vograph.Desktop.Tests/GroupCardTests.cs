@@ -44,10 +44,7 @@ public class GroupCardTests
         Assert.Equal("1", badge.Badge);
 
         var task = shell.OpenGroupPickerCommand.ExecuteAsync(null);
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (shell.Dialogs.Current is not GroupPickerDialogViewModel && sw.ElapsedMilliseconds < 2000)
-            await Task.Delay(10, TestContext.Current.CancellationToken); // xUnit1051: the token keeps the poll cancellable
-        var dlg = Assert.IsType<GroupPickerDialogViewModel>(shell.Dialogs.Current);
+        var dlg = await Waits.ForDialogAsync<GroupPickerDialogViewModel>(shell);
         Assert.Equal("3313", dlg.Selected!.Id);
 
         dlg.Selected = dlg.Filtered.Single(g => g.Name == "09С31");
@@ -176,8 +173,7 @@ public class GroupCardTests
 
         // Positive control: while first is still the registered section the shell event does reach it.
         shell.RaiseScheduleChanged();
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (reloads == 0 && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Waits.Until(() => reloads > 0, "attached section recompose");
         Assert.True(reloads > 0, "an attached section must recompose, otherwise the assertion below proves nothing");
         await Task.Delay(150, TestContext.Current.CancellationToken); // let that recompose finish before the counter is reused
 

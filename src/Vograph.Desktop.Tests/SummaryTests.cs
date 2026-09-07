@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Headless.XUnit;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
+using Vograph.Core.Models;
+using Vograph.Core.Services;
 using Vograph.Desktop.Controls;
 using Vograph.Desktop.Features.Summary;
 using Vograph.Desktop.Services;
@@ -59,6 +61,19 @@ public class SummaryTests : UiTest
     }
 
     [Fact]
+    public void Co_Taught_Lesson_Counts_Each_Teacher()
+    {
+        var lessons = new[]
+        {
+            new Lesson { DayOfWeek = 1, Parity = 1, TimeStart = "09:00", SubjectRaw = "лек ФИЗИКА", TypeRaw = "лек", TeacherRaw = "Барт Е.Л.; Иванов С.П.", ClassroomRaw = "493;" },
+            new Lesson { DayOfWeek = 2, Parity = 1, TimeStart = "09:00", SubjectRaw = "пр ФИЗИКА", TypeRaw = "пр", TeacherRaw = "Иванов С.П.", ClassroomRaw = "493;" },
+        };
+        var model = SummaryComposer.Build(1, true, lessons, l => l.SubjectRaw, new Loc(new I18nService("ru")));
+        Assert.Equal(new[] { ("Иванов С.П.", 2), ("Барт Е.Л.", 1) }, model.Teachers.Select(t => (t.Name, t.Count)));
+        Assert.Equal(("493", 2), (model.Rooms[0].Name, model.Rooms[0].Count));
+    }
+
+    [Fact]
     public async Task ViewModel_Segments_And_Subtitle()
     {
         using var db = TestDb.Create();
@@ -93,8 +108,7 @@ public class SummaryTests : UiTest
 
         shell.NavigateTo(SectionKey.Summary);
         var vm = Assert.IsType<SummaryViewModel>(shell.Current);
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (vm.TotalText != "5" && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Waits.Until(() => vm.TotalText == "5", "summary total");
         Pump();
         SetTheme(ThemeVariant.Dark);
         Frames.Capture(window, "summary-dark");
@@ -103,8 +117,7 @@ public class SummaryTests : UiTest
 
         var seg = window.GetVisualDescendants().OfType<SegmentedControl>().Single();
         Click(window, seg.GetVisualDescendants().OfType<Avalonia.Controls.Button>().Last()); // «Обе»
-        sw.Restart();
-        while (vm.TotalText != "7" && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Waits.Until(() => vm.TotalText == "7", "summary total after segment switch");
         Assert.Equal("7", vm.TotalText);
         AssertNoBindingErrors();
     }

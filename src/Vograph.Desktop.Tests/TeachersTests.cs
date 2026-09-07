@@ -17,13 +17,6 @@ public class TeachersTests : UiTest
     private static readonly DateTime Wed9 = new(2026, 9, 9, 12, 0, 0); // even week, Wednesday
     private static string LecturerXml => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-lecturers.xml"));
 
-    private static async Task WaitAsync(Func<bool> done)
-    {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (!done() && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
-        Assert.True(done(), "condition not met in time");
-    }
-
     private static async Task<TeachersViewModel> Make(TestDb db, ShellViewModel? shell = null)
     {
         shell ??= new ShellViewModel(db.Services);
@@ -98,6 +91,72 @@ public class TeachersTests : UiTest
     }
 
     [Fact]
+    public async Task Detail_Says_Whether_The_Lecturer_Teaches_My_Group()
+    {
+        using var db = TestDb.Create();
+        var vm = await Make(db);
+        vm.OnlyMine = false;
+        vm.Selected = vm.Items.Single(i => i.Info.Id == "1287");
+        Assert.Equal("Ведёт у вашей группы", vm.Detail!.MineLine);
+        vm.Selected = vm.Items.Single(i => i.Info.Id == "5000");
+        Assert.Equal("Не ведёт у вашей группы", vm.Detail!.MineLine);
+        Assert.False(vm.Detail.IsMine);
+    }
+
+    /// <summary>The «моя» chip also matches by group Number when the lecturer XML carries no IdGroup.</summary>
+    [Fact]
+    public void Row_Is_Mine_By_Group_Number_Too()
+    {
+        var ru = new Loc(new I18nService("ru"));
+        var lesson = new LecturerLesson { DayOfWeek = 1, Parity = 1, TimeStart = "09:00", TimeEnd = "10:35", DisciplineRaw = "лек ФИЗИКА", TypeRaw = "лек", ClassroomRaw = "493;",
+            Groups = { new GroupRef { IdGroup = "", Number = "А863С" } } };
+        var detail = new TeacherDetailViewModel(new LecturerInfo { Id = "x", Name = "Кто-то К.К." }, new[] { lesson }, false, "3313", "А863С", false, ru, Wed9);
+        Assert.True(Assert.Single(detail.Days[0].Rows).IsMine);
+        Assert.Equal("493", detail.Days[0].Rows[0].Room);
+    }
+
+    [Fact]
+    public void Lecturer_Without_Lessons_Shows_Six_Empty_Days()
+    {
+        var ru = new Loc(new I18nService("ru"));
+        var detail = new TeacherDetailViewModel(new LecturerInfo { Id = "x", Name = "Пустой П.П.", Kafedra = "" }, Array.Empty<LecturerLesson>(), false, "3313", "А863С", false, ru, Wed9);
+        Assert.Equal(6, detail.Days.Count);
+        Assert.All(detail.Days, d => Assert.Empty(d.Rows));
+        Assert.False(detail.HasKafedra);
+    }
+
+    [Fact]
+    public async Task Detach_Stops_Following_Group_Changes()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = await Make(db, shell);
+        Assert.Equal("2 из 3", vm.CountText);
+        vm.Detach();
+
+        var s = db.Services.Db.GetSettings();
+        s.MyGroupId = "9999"; // no lessons → no «my» lecturers
+        db.Services.Db.SaveSettings(s);
+        shell.RaiseGroupChanged();
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+
+        Assert.Equal("2 из 3", vm.CountText); // still the old group: detached
+    }
+
+    [Fact]
+    public async Task Refilter_Keeps_The_Parity_Segment()
+    {
+        using var db = TestDb.Create();
+        var vm = await Make(db);
+        vm.Selected = vm.Items.Single(i => i.Info.Id == "1287");
+        vm.Detail!.ParityIndex = 2;
+        vm.Query = "барт";
+        Assert.NotNull(vm.Detail);
+        Assert.Equal("1287", vm.Selected!.Info.Id);
+        Assert.Equal(2, vm.Detail!.ParityIndex);
+    }
+
+    [Fact]
     public async Task Parity_Labels_Follow_Inversion()
     {
         using var db = TestDb.Create();
@@ -126,7 +185,7 @@ public class TeachersTests : UiTest
         var settings = new SettingsViewModel(db.Services, shell, () => Wed9);
         await settings.LoadAsync();
         settings.ParityInvert = true; // saves under the gate, then raises ScheduleChanged
-        await WaitAsync(() => vm.Detail?.Days[0].Rows.FirstOrDefault()?.ParityLabel == "чет");
+        await Waits.Until(() => vm.Detail?.Days[0].Rows.FirstOrDefault()?.ParityLabel == "чет", "parity flip rebuilds the detail");
         Assert.Equal(2, vm.Detail!.ParityIndex); // the segment the user picked survives the rebuild
     }
 
@@ -257,8 +316,7 @@ public class TeachersTests : UiTest
 
         shell.NavigateTo(SectionKey.Teachers);
         var vm = Assert.IsType<TeachersViewModel>(shell.Current);
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (vm.Items.Count == 0 && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+        await Waits.Until(() => vm.Items.Count > 0, "teacher items");
         Pump();
         SetTheme(ThemeVariant.Dark);
         Frames.Capture(window, "teachers-empty-dark");
