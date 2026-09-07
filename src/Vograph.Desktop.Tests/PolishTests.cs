@@ -4,6 +4,7 @@ using Avalonia.Controls.Documents;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
@@ -108,6 +109,12 @@ public class PolishTests : UiTest
         Assert.False(shell.IsMaximized);
         AssertNoBindingErrors();
     }
+
+    [Theory]
+    [InlineData(true, HorizontalAlignment.Center)]
+    [InlineData(false, HorizontalAlignment.Right)]
+    public void Rail_Alignment_Centres_On_The_Rail_And_Sits_Right_When_Expanded(bool collapsed, HorizontalAlignment expected) =>
+        Assert.Equal(expected, Converters.RailAlignment.Convert(collapsed, typeof(HorizontalAlignment), null, System.Globalization.CultureInfo.InvariantCulture));
 
     [AvaloniaFact]
     public async Task Hover_Actions_Are_Hidden_Not_Just_Transparent()

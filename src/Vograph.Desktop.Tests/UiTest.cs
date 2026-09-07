@@ -4,6 +4,7 @@ using Avalonia.Headless;
 using Avalonia.Logging;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Vograph.Desktop.Services;
 using Xunit;
 
 namespace Vograph.Desktop.Tests;
@@ -27,9 +28,14 @@ public abstract class UiTest
     /// <summary>Longest transition in the theme (segmented thumb) plus a margin.</summary>
     private const int SettleMs = 260;
 
-    protected static void SetTheme(ThemeVariant variant)
+    /// <summary>Switches the app's theme. Most tests have no shell, so the default is still the direct set;
+    /// pass the ThemeService when one is reachable (a real shell in the test) so ThemeService.Changed fires
+    /// and ShellViewModel.IsDark — which the footer glyph is bound to — stays in sync, the way a real theme
+    /// switch does.</summary>
+    protected static void SetTheme(ThemeVariant variant, ThemeService? theme = null)
     {
-        Application.Current!.RequestedThemeVariant = variant;
+        if (theme is not null) theme.Apply(variant == ThemeVariant.Dark ? ThemeChoice.Dark : ThemeChoice.Light, save: false);
+        else Application.Current!.RequestedThemeVariant = variant;
         Pump();
     }
 

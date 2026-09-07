@@ -92,9 +92,7 @@ public class GroupPickerTests
         Assert.Equal(new[] { "0", "9С", "31" }, runs.Select(r => r.Text));
         Assert.Equal(FontWeight.SemiBold, runs[1].FontWeight);
 
-        // Not Assert.Null(vm.Selected) here: GroupPickerDialogViewModel.ApplyFilter (unmodified, out of this
-        // task's scope) already auto-selects the sole remaining match once Query narrows Filtered to exactly
-        // one group, which "9c" does (only "09С31" contains "9С") — so Selected is already that group by now.
+        Assert.Null(vm.Selected); // narrowing to the one match is not a pick
         var search = window.GetVisualDescendants().OfType<TextBox>().Single(t => t.Name == "SearchBox");
         search.Focus();
         window.KeyPress(Key.Down, RawInputModifiers.None, PhysicalKey.ArrowDown, null);
@@ -102,5 +100,32 @@ public class GroupPickerTests
         Assert.Equal("09С31", vm.Selected!.Name);
         var list = window.GetVisualDescendants().OfType<ListBox>().Single();
         Assert.True(list.IsKeyboardFocusWithin);
+    }
+
+    /// <summary>T11-R1: a query that narrows Filtered to one match must not pick it — Confirm (and the Enter
+    /// key, which DialogHostViewModel.ConfirmCurrent routes through CanExecute) stays gated until the user
+    /// actually picks a group, by a click or by ↓ into the list.</summary>
+    [Fact]
+    public void Confirm_Waits_For_An_Explicit_Pick_Even_When_Filtering_Leaves_One_Match()
+    {
+        using var db = TestDb.Create(seedPersonalization: false);
+        var vm = new GroupPickerDialogViewModel(Groups, null);
+        var host = new DialogHostViewModel();
+        _ = host.ShowAsync(vm);
+
+        vm.Query = "9c"; // narrows Filtered to the one match ("09С31"), but must not pick it
+        Assert.Single(vm.Filtered);
+        Assert.Null(vm.Selected);
+        Assert.False(vm.ConfirmCommand.CanExecute(null));
+
+        host.ConfirmCurrentCommand.Execute(null); // Enter: gated by CanConfirm, must do nothing
+        Assert.False(vm.Completion.IsCompleted);
+
+        vm.Selected = vm.Filtered[0]; // the explicit pick (a click, or ↓ into the list)
+        Assert.True(vm.ConfirmCommand.CanExecute(null));
+
+        host.ConfirmCurrentCommand.Execute(null); // Enter again: now it confirms, with the picked group
+        Assert.True(vm.Completion.IsCompleted);
+        Assert.Equal("09С31", vm.Selected!.Name);
     }
 }

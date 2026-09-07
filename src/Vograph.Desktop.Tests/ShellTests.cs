@@ -77,9 +77,11 @@ public class ShellTests : UiTest
             window.Show();
             window.Focus();
 
-            SetTheme(ThemeVariant.Dark);
+            SetTheme(ThemeVariant.Dark, db.Services.Theme);
+            Assert.True(shell.IsDark); // the footer glyph is bound to this: Sun in the dark, not a stale Moon
             Frames.Capture(window, "shell-dark");
-            SetTheme(ThemeVariant.Light);
+            SetTheme(ThemeVariant.Light, db.Services.Theme);
+            Assert.False(shell.IsDark);
             Frames.Capture(window, "shell-light");
 
             window.KeyPress(Key.D3, RawInputModifiers.Control, PhysicalKey.Digit3, null);

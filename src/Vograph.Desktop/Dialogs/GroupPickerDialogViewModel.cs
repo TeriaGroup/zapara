@@ -33,7 +33,9 @@ public sealed partial class GroupPickerDialogViewModel : DialogViewModelBase
         var keep = Selected;
         Filtered.Clear();
         foreach (var g in _all.Where(g => GroupSearch.Matches(g.Name, Query))) Filtered.Add(g);
-        if (keep is not null && !Filtered.Contains(keep)) Selected = Filtered.Count == 1 ? Filtered[0] : null;
-        else if (Selected is null && Filtered.Count == 1) Selected = Filtered[0];
+        // Never auto-selects: narrowing to one match is not a pick. A selection the filter drops is cleared;
+        // one that survives (or none at all) is left exactly as the user left it — Confirm (and the Enter key)
+        // stays gated on CanConfirm until an explicit pick (a click, or ↓ into the list) sets Selected.
+        if (keep is not null && !Filtered.Contains(keep)) Selected = null;
     }
 }
