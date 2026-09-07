@@ -108,6 +108,7 @@ public class LocTests
         "setNotifications","notifEnabled","notifTime1Label","notifTime2Label","notifSave","notifTest","notifBadTime","notifSaved",
         "setSync","syncExport","syncImport","syncShowQr","syncHideQr","syncQrHint","syncQrServerHint","syncLan","syncLanAddress","syncLanFail","syncLanBusy","syncExported",
         "setUpdates","updIdle","updChecking","updUpToDate","updAvailable","updDownloaded","updInstall","updLater","updCheck","updInBrowser",
-        "updRateLimited","updFailWith","updNoReleases","updUpdatingTo","updDialogHint"
+        "updRateLimited","updFailWith","updNoReleases","updUpdatingTo","updDialogHint",
+        "updDownloadFail","updApplyFail","updBadZip"
     };
 }

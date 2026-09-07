@@ -41,7 +41,7 @@ public sealed class AppServices : IDisposable
     public IFileDialogs FileDialogs { get; set; } = new NullFileDialogs();
 
     /// <summary>GitHub releases; settable so tests script the release instead of calling the API.</summary>
-    public IUpdateSource UpdateSource { get; set; } = new GitHubUpdateSource();
+    public IUpdateSource UpdateSource { get; set; }
 
     /// <summary>The two daily lesson notifications; App starts the timer, Settings drives the times and the switch.</summary>
     public NotificationScheduler NotificationScheduler { get; }
@@ -81,6 +81,7 @@ public sealed class AppServices : IDisposable
         Lecturers = new LecturerStore(new LecturerService(Db, Path.Combine(dataDir, "TimetableLecturer50.xml"), Path.Combine(AppContext.BaseDirectory, "TimetableLecturer50.xml")), Log); // parsed lazily by the Teachers section
         Sync = new SyncService(Db);
         AutoUpdate = new AutoUpdateService();
+        UpdateSource = new GitHubUpdateSource(AutoUpdate);
         Prefs = UiPrefs.Load(Path.Combine(dataDir, "ui.json"), ex => Log.Error("prefs", ex));
         Refresher = new ScheduleRefresher();
         Toasts = new ToastService();

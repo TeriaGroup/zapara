@@ -80,7 +80,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     {
         await LoadAsync();
         await Updates.LoadAsync();
-        if (App.AllowNetwork && Updates.AutoUpdate && !Updates.CheckedThisSession && !Updates.IsChecking) _ = Updates.CheckAsync(manual: false);
+        if (App.AllowNetwork && Updates.AutoUpdate && !Updates.CheckedThisSession && !Updates.IsChecking) _ = Updates.CheckAsync();
     }
 
     public string Title => T("navSettings");

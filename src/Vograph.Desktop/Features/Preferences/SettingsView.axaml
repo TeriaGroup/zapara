@@ -123,7 +123,7 @@
           <c:Switch Content="{loc:T autoUpdate}" IsChecked="{Binding AutoUpdate}" />
           <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Classes.bad="{Binding IsFailed}" />
           <TextBlock Classes="muted caption" Text="{Binding PublishedText}" IsVisible="{Binding PublishedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-          <Border Height="6" CornerRadius="3" Background="{DynamicResource Brush.Chip}" IsVisible="{Binding IsDownloading}" ClipToBounds="True">
+          <Border Height="6" Width="320" HorizontalAlignment="Left" CornerRadius="3" Background="{DynamicResource Brush.Chip}" IsVisible="{Binding IsDownloading}" ClipToBounds="True">
             <Border HorizontalAlignment="Left" CornerRadius="3" Background="{DynamicResource Brush.Accent}"
                     Width="{Binding Progress, Converter={x:Static st:UpdateConverters.ProgressWidth}}" IsVisible="{Binding HasDeterminateProgress}" />
           </Border>

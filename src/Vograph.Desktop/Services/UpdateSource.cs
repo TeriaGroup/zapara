@@ -11,7 +11,8 @@ public interface IUpdateSource
 
 public sealed class GitHubUpdateSource : IUpdateSource
 {
-    private readonly AutoUpdateService _service = new();
-    public Task<AutoUpdateService.UpdateInfo?> GetLatestAsync(CancellationToken ct = default) => _service.GetLatestAsync("windows");
+    private readonly AutoUpdateService _service;
+    public GitHubUpdateSource(AutoUpdateService service) => _service = service; // the app's single instance and HttpClient
+    public Task<AutoUpdateService.UpdateInfo?> GetLatestAsync(CancellationToken ct = default) => _service.GetLatestAsync("windows", ct);
     public Task DownloadAsync(string url, string destPath, IProgress<double>? progress, CancellationToken ct = default) => _service.DownloadAssetAsync(url, destPath, progress, ct);
 }

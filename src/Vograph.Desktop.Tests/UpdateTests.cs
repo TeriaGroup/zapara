@@ -63,18 +63,18 @@ public class UpdateTests : UiTest
         Assert.Equal(UpdateState.Idle, vm.State);
 
         source.Latest = new AutoUpdateService.UpdateInfo("windows-v2.0.0", "u", "z", "2026-09-01T00:00:00Z");
-        Assert.False(await vm.CheckAsync(manual: true));
+        Assert.False(await vm.CheckAsync());
         Assert.Equal(UpdateState.UpToDate, vm.State);
         Assert.Contains("windows-v2.0.0", vm.StatusText);
         Assert.Contains("15:00", vm.CheckedAt);
         Assert.True(vm.CheckedThisSession);
 
         source.Latest = new AutoUpdateService.UpdateInfo("windows-v1.2.2", "u", "z", "2026-08-01T00:00:00Z"); // the old WPF release
-        Assert.False(await vm.CheckAsync(manual: true));
+        Assert.False(await vm.CheckAsync());
         Assert.Equal(UpdateState.UpToDate, vm.State);
 
         source.Latest = Newer;
-        Assert.True(await vm.CheckAsync(manual: true));
+        Assert.True(await vm.CheckAsync());
         Assert.Equal(UpdateState.Available, vm.State);
         Assert.Equal("windows-v2.1.0", vm.LatestTag);
         Assert.Equal("05.09.2026", vm.PublishedText);
@@ -83,12 +83,12 @@ public class UpdateTests : UiTest
         Assert.Equal("Доступна windows-v2.1.0", vm.StatusText);
 
         source.Latest = null;
-        Assert.False(await vm.CheckAsync(manual: true));
+        Assert.False(await vm.CheckAsync());
         Assert.Equal(UpdateState.Failed, vm.State);
         Assert.Equal("Релизов для Windows не найдено", vm.StatusText);
 
         source.Failure = new HttpRequestException("403");
-        Assert.False(await vm.CheckAsync(manual: true));
+        Assert.False(await vm.CheckAsync());
         Assert.Equal(UpdateState.Failed, vm.State);
         Assert.StartsWith("GitHub ограничил запросы", vm.StatusText);
         Assert.False(vm.IsAvailable);
@@ -100,7 +100,7 @@ public class UpdateTests : UiTest
         using var db = TestDb.Create();
         var (vm, source, installed) = Make(db);
         source.Latest = Newer;
-        await vm.CheckAsync(manual: true);
+        await vm.CheckAsync();
 
         await vm.InstallCommand.ExecuteAsync(null); // Available -> download -> Ready -> install
         Assert.Single(source.Downloads);
@@ -197,9 +197,17 @@ public class UpdateTests : UiTest
         await vm.ActivateAsync(); // second entry in the same session: no second call
         Assert.Equal(1, source.Checks);
 
-        shell.Updates.AutoUpdate = false;
-        await new SettingsViewModel(db.Services, shell, () => Sun6).ActivateAsync();
-        Assert.Equal(1, source.Checks);
+        // The switch off: a fresh session (new database, new shell) never calls out.
+        using var quiet = TestDb.Create();
+        var qs = quiet.Services.Db.GetSettings();
+        qs.AutoUpdate = false;
+        quiet.Services.Db.SaveSettings(qs);
+        var quietSource = new FakeUpdateSource { Latest = Newer };
+        quiet.Services.UpdateSource = quietSource;
+        quiet.Services.AllowNetwork = true;
+        var quietShell = new ShellViewModel(quiet.Services) { Clock = () => Sun6 };
+        await new SettingsViewModel(quiet.Services, quietShell, () => Sun6).ActivateAsync();
+        Assert.Equal(0, quietSource.Checks);
     }
 
     [Fact]
@@ -229,7 +237,7 @@ public class UpdateTests : UiTest
         Pump();
         Assert.DoesNotContain(window.GetVisualDescendants().OfType<NavItem>(), IsUpdateItem);
 
-        await shell.Updates.CheckAsync(manual: true);
+        await shell.Updates.CheckAsync();
         Pump();
         var item = Assert.Single(window.GetVisualDescendants().OfType<NavItem>(), IsUpdateItem);
         Assert.Equal("1", item.Badge);
@@ -246,5 +254,121 @@ public class UpdateTests : UiTest
         Frames.Capture(window, "update-dialog-dark");
         dlg.CancelCommand.Execute(null);
         AssertNoBindingErrors();
+    }
+
+    [Fact]
+    public async Task Corrupt_Zip_Is_Rejected_Before_The_Installer()
+    {
+        using var db = TestDb.Create();
+        var (vm, source, installed) = Make(db);
+        source.Latest = Newer;
+        source.Corrupt = true;
+        await vm.CheckAsync();
+
+        await vm.InstallCommand.ExecuteAsync(null);
+
+        Assert.Empty(installed);
+        Assert.Equal(UpdateState.Failed, vm.State);
+        Assert.Equal("Скачанный архив повреждён — попробуйте ещё раз", vm.StatusText);
+        Assert.Empty(Directory.GetFiles(vm.UpdatesDir, "*.zip")); // the bad file is not kept for a «Ready» on the next start
+    }
+
+    [Fact]
+    public async Task Download_And_Apply_Failures_Have_Their_Own_Wording()
+    {
+        using var db = TestDb.Create();
+        var (vm, source, _) = Make(db);
+        source.Latest = Newer;
+        source.DownloadFailure = new HttpRequestException("offline");
+        await vm.CheckAsync();
+        Assert.False(await vm.DownloadAsync());
+        Assert.Equal("Не удалось скачать обновление: offline", vm.StatusText);
+
+        source.DownloadFailure = null;
+        await vm.CheckAsync();
+        vm.Installer = _ => throw new UnauthorizedAccessException("Program Files");
+        await vm.InstallCommand.ExecuteAsync(null);
+        Assert.Equal(UpdateState.Failed, vm.State);
+        Assert.Equal("Не удалось запустить установку: Program Files", vm.StatusText);
+    }
+
+    [Fact]
+    public async Task A_Later_Check_Clears_The_Previous_Release()
+    {
+        using var db = TestDb.Create();
+        var (vm, source, _) = Make(db);
+        source.Latest = Newer;
+        Assert.True(await vm.CheckAsync());
+        Assert.Equal("windows-v2.1.0", vm.LatestTag);
+
+        source.Latest = new AutoUpdateService.UpdateInfo("windows-v2.0.0", "u", "z", "2026-09-01T00:00:00Z");
+        Assert.False(await vm.CheckAsync());
+        Assert.Equal(UpdateState.UpToDate, vm.State);
+        Assert.Null(vm.LatestTag);
+        Assert.Null(vm.PublishedText);
+        Assert.False(vm.CanInstall);
+        Assert.False(await vm.DownloadAsync()); // nothing to download any more
+    }
+
+    [Fact]
+    public async Task Cleanup_Removes_Installed_And_Older_Downloads()
+    {
+        using var db = TestDb.Create();
+        var (vm, _, _) = Make(db);
+        Directory.CreateDirectory(vm.UpdatesDir);
+        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.0.0_win-x64.zip"), new byte[10]);      // this very version: installed
+        File.WriteAllText(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.0.0_win-x64.zip.attempted"), "x");
+        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v1.2.2_win-x64.zip"), new byte[10]);      // older
+        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.0.0_win-x64.zip.part"), new byte[10]); // a torn download
+        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.0_win-x64.zip"), new byte[10]);      // newer: keep
+
+        await vm.CleanupAsync();
+
+        Assert.Equal(new[] { "ZAPARA_windows-v2.1.0_win-x64.zip" }, Directory.GetFiles(vm.UpdatesDir).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public async Task Concurrent_Install_Calls_Run_The_Installer_Once()
+    {
+        using var db = TestDb.Create();
+        var (vm, source, installed) = Make(db);
+        source.Latest = Newer;
+        await vm.CheckAsync();
+
+        await Task.WhenAll(vm.InstallAsync(), vm.InstallAsync()); // direct calls bypass the command's own guard
+
+        Assert.Single(installed);
+    }
+
+    [Theory]
+    [InlineData("windows-v2.1.0", "windows-v2.1.0")]
+    [InlineData("../../evil", "____evil")]   // '/' → '_', then every ".." → '_'
+    [InlineData("win:dows/v2", "win_dows_v2")]
+    public void Tags_Are_Sanitised_Before_Becoming_File_Names(string tag, string expected) => Assert.Equal(expected, UpdateCheckViewModel.SafeTag(tag));
+
+    [Fact]
+    public void LooksLikeZip_Requires_An_Archive_With_The_Exe()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var good = Path.Combine(dir, "good.zip");
+            File.WriteAllBytes(good, FakeUpdateSource.ReleaseZip());
+            Assert.True(UpdateCheckViewModel.LooksLikeZip(good));
+            var garbage = Path.Combine(dir, "garbage.zip");
+            File.WriteAllBytes(garbage, new byte[4096]);
+            Assert.False(UpdateCheckViewModel.LooksLikeZip(garbage));
+            Assert.False(UpdateCheckViewModel.LooksLikeZip(Path.Combine(dir, "missing.zip")));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public void GitHub_Source_Is_The_Default_And_Shares_The_App_Service()
+    {
+        using var db = TestDb.Create();
+        using var extra = AppServices.Create(Path.Combine(db.Dir, "x")); // a plain instance: TestDb swaps the source for a fake
+        Assert.IsType<GitHubUpdateSource>(extra.UpdateSource);
     }
 }

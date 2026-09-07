@@ -178,6 +178,8 @@ public class I18nService
             ["updFailWith"] = "Не удалось проверить обновление: {0}", ["updNoReleases"] = "Релизов для Windows не найдено",
             ["updUpdatingTo"] = "Обновляюсь до {0}…",
             ["updDialogHint"] = "Приложение закроется, распакует обновление поверх себя и запустится снова. Данные не затрагиваются.",
+            ["updDownloadFail"] = "Не удалось скачать обновление: {0}", ["updApplyFail"] = "Не удалось запустить установку: {0}",
+            ["updBadZip"] = "Скачанный архив повреждён — попробуйте ещё раз",
         },
         ["en"] = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -337,6 +339,8 @@ public class I18nService
             ["updFailWith"] = "Could not check for updates: {0}", ["updNoReleases"] = "No Windows releases found",
             ["updUpdatingTo"] = "Updating to {0}…",
             ["updDialogHint"] = "The app closes, unpacks the update over itself and starts again. Your data is untouched.",
+            ["updDownloadFail"] = "Could not download the update: {0}", ["updApplyFail"] = "Could not start the installer: {0}",
+            ["updBadZip"] = "The downloaded archive is corrupt — try again",
         }
     };
 
