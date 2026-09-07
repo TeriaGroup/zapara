@@ -478,4 +478,34 @@ public class MapsTests : UiTest
     [InlineData(1.0, 0, 700, 100, 60, 100, 378)]  // panned down: same at the far edge
     public void Highlight_Label_Sits_Above_The_Rectangle_In_Viewport_Space(double scale, double ox, double oy, double left, double top, double x, double y) =>
         Assert.Equal(new Point(x, y), MapsComposer.LabelOffset(scale, ox, oy, left, top, new Size(600, 400), new Size(40, 22)));
+
+    /// <summary>
+    /// VOGRAPH_OFFLINE=1 promises «no lecturer or map downloads» (App.axaml.cs), and the «…» menu's «Скачать
+    /// свежие планы» was the one door out of this section that ignored it: EnsureAsync stops at the bundled copy
+    /// with the switch off, DownloadAllAsync went straight to MapService and pulled all nine plans. The package
+    /// stands in for the site here, so both halves cost no network: with the switch on the call fills the cache
+    /// from the bundled folder, with it off the cache stays untouched and the log says why.
+    /// </summary>
+    [Fact]
+    public async Task Download_All_Stops_At_The_Offline_Switch()
+    {
+        using var db = TestDb.Create();
+        var bundled = Path.Combine(db.Dir, "bundled-maps");
+        var cache = Path.Combine(db.Dir, "maps-cache");
+        Directory.CreateDirectory(bundled);
+        foreach (var url in MapService.MapUrls.Values)
+            await File.WriteAllBytesAsync(Path.Combine(bundled, Path.GetFileName(new Uri(url).LocalPath)), new byte[2048], TestContext.Current.CancellationToken);
+        var online = false;
+        var files = new MapFiles(new MapService(db.Services.Db, db.Services.Schedule, cache, bundled), db.Services.Log, () => online);
+
+        await files.DownloadAllAsync(null, TestContext.Current.CancellationToken);
+
+        Assert.Empty(Directory.GetFiles(cache, "*.jpg")); // nothing fetched, nothing even copied
+        Assert.Contains("maps: «Скачать свежие планы» skipped, network disabled for this run", File.ReadAllText(db.Services.Log.CurrentFile));
+
+        online = true;
+        await files.DownloadAllAsync(null, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MapService.MapUrls.Count, Directory.GetFiles(cache, "*.jpg").Length); // the same call does its work when the run is online
+    }
 }

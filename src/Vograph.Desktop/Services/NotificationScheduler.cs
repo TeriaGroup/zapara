@@ -150,12 +150,22 @@ public sealed class NotificationScheduler : IDisposable
         _app.Log.Info($"notification: {text}");
     }
 
-    private async Task<T?> GatedAsync<T>(Func<T?> work) where T : class
-    {
-        await _app.CoreGate.WaitAsync();
-        try { return await Task.Run(work); }
-        finally { _app.CoreGate.Release(); }
-    }
+    /// <summary>
+    /// ViewModelBase.GatedAsync's shape, for the same reason it has it. Both entry points are reached from the UI
+    /// thread — the timer posts every tick to the dispatcher, «Тест уведомления» is a button — and Avalonia raises
+    /// desktop.Exit on that thread, where AppServices.Dispose blocks inside CoreGate.Wait(2 s). Awaiting the gate
+    /// from the UI thread captures the dispatcher's SynchronizationContext, so the continuation that releases it
+    /// is posted back to a thread that is no longer pumping: Dispose could only ever time out, stall shutdown for
+    /// two seconds and close the database anyway. Taking the gate, running the work and releasing it all inside
+    /// one Task.Run puts the release on the pool, where a blocked UI thread cannot hold it up.
+    /// </summary>
+    private Task<T?> GatedAsync<T>(Func<T?> work) where T : class =>
+        Task.Run(async () =>
+        {
+            await _app.CoreGate.WaitAsync().ConfigureAwait(false); // acquired on the pool
+            try { return work(); } // Core is synchronous; this thread is already off the UI
+            finally { _app.CoreGate.Release(); } // released on the pool — a UI-thread Dispose() can proceed
+        });
 
     public void Dispose() => Stop();
 }

@@ -36,22 +36,23 @@ public sealed class Ui : IDisposable
         {
             Window = _app.GetMainWindow(_automation, _timeout) ?? throw new TimeoutException($"main window did not appear within {_timeout}");
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // FlaUI's Application.Dispose only releases the process handle, so without this the exit-2 branch
             // would strand a Vograph.exe on the user's desktop for every failed launch (T12-R3).
-            Killed = KillOurProcess();
+            var end = KillOurProcess();
             _automation.Dispose();
             _app.Dispose();
-            throw;
+            throw new LaunchFailedException(ex.Message, end, Pid, ex);
         }
     }
 
     public int Pid { get; }
     public Window Window { get; } = null!;
 
-    /// <summary>Set when a failure path had to kill the process this driver launched; the report says so.</summary>
-    public bool Killed { get; private set; }
+    /// <summary>What became of the process this driver launched, once a failure path had to deal with it;
+    /// null while it is still running normally. The report quotes it rather than assuming a stop happened.</summary>
+    public ProcessEnd? End { get; private set; }
 
     public AutomationElement Find(string automationId)
     {
@@ -76,7 +77,7 @@ public sealed class Ui : IDisposable
     {
         var el = Find(automationId);
         if (el.Patterns.Invoke.IsSupported) el.Patterns.Invoke.Pattern.Invoke();
-        else el.Click();
+        else MouseClick(el, automationId);
         Thread.Sleep(350); // let the 180–220 ms transitions finish before the next step reads the screen
     }
 
@@ -84,8 +85,19 @@ public sealed class Ui : IDisposable
     {
         var el = Find(automationId);
         if (el.Patterns.Toggle.IsSupported) el.Patterns.Toggle.Pattern.Toggle();
-        else el.Click();
+        else MouseClick(el, automationId);
         Thread.Sleep(350);
+    }
+
+    /// <summary>FlaUI's el.Click() moves the real cursor and presses the real button — global input, exactly like
+    /// Mouse.MoveTo and the keyboard. Nothing reaches it today (every element the driver presses supports Invoke
+    /// or Toggle), but «the driver never touches the user's window» is a contract with no exceptions, so the
+    /// fallback goes through the same foreground check and fails loudly rather than clicking into whatever the
+    /// user has in front (T12-R3).</summary>
+    private void MouseClick(AutomationElement el, string what)
+    {
+        RequireOurFocus($"click «{what}»");
+        el.Click();
     }
 
     /// <summary>Toggle state of a Switch (a ToggleButton), for the steps that must read their own switch back.</summary>
@@ -100,7 +112,7 @@ public sealed class Ui : IDisposable
     public void Invoke(AutomationElement el)
     {
         if (el.Patterns.Invoke.IsSupported) el.Patterns.Invoke.Pattern.Invoke();
-        else el.Click();
+        else MouseClick(el, Safe(() => el.Name));
         Thread.Sleep(350);
     }
 
@@ -294,26 +306,34 @@ public sealed class Ui : IDisposable
     {
         try { Click("Win.Close"); } catch (Exception ex) { Console.Error.WriteLine($"✕ could not be clicked ({ex.Message}); waiting for the process anyway"); }
         var exited = SpinUntilExited(TimeSpan.FromSeconds(10));
-        if (!exited) Killed = KillOurProcess();
+        if (!exited) KillOurProcess();
         return exited;
     }
 
     /// <summary>The only kill in this driver: the process it launched itself, addressed by the handle
-    /// Application.Launch returned. Never by name — the user may have their own Vograph.exe running.</summary>
-    private bool KillOurProcess()
+    /// Application.Launch returned. Never by name — the user may have their own Vograph.exe running.
+    /// Says which of the three things happened, because «stopped» and «could not be stopped» are not the
+    /// same news for whoever reads the report afterwards.</summary>
+    private ProcessEnd KillOurProcess()
     {
+        ProcessEnd end;
         try
         {
-            if (_app.HasExited) return false;
-            _app.Kill();
-            Console.Error.WriteLine($"killed our own Vograph.exe (pid {Pid})");
-            return true;
+            if (_app.HasExited) end = ProcessEnd.AlreadyGone;
+            else
+            {
+                _app.Kill();
+                Console.Error.WriteLine($"killed our own Vograph.exe (pid {Pid})");
+                end = ProcessEnd.Killed;
+            }
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"could not kill pid {Pid}: {ex.Message}");
-            return false;
+            end = ProcessEnd.StillRunning;
         }
+        End = end;
+        return end;
     }
 
     private bool SpinUntilExited(TimeSpan wait)
@@ -350,4 +370,37 @@ public sealed class Ui : IDisposable
     {
         public int Left, Top, Right, Bottom;
     }
+}
+
+/// <summary>What became of the process the driver launched, once a failure path had to deal with it.</summary>
+public enum ProcessEnd
+{
+    /// <summary>The driver killed it.</summary>
+    Killed,
+    /// <summary>It had already exited on its own; there was nothing to kill.</summary>
+    AlreadyGone,
+    /// <summary>The kill failed — it may still be on the user's desktop.</summary>
+    StillRunning,
+}
+
+/// <summary>The main window never appeared. Carries what the driver managed to do about the process it had
+/// already launched, so the report says what actually happened instead of claiming a stop either way.</summary>
+public sealed class LaunchFailedException : Exception
+{
+    public LaunchFailedException(string message, ProcessEnd end, int pid, Exception inner) : base(message, inner)
+    {
+        End = end;
+        Pid = pid;
+    }
+
+    public ProcessEnd End { get; }
+    public int Pid { get; }
+
+    /// <summary>The report line, in the report's language.</summary>
+    public string EndText => End switch
+    {
+        ProcessEnd.Killed => $"запущенный процесс (pid {Pid}) остановлен драйвером",
+        ProcessEnd.AlreadyGone => $"запущенный процесс (pid {Pid}) завершился сам",
+        _ => $"остановить запущенный процесс (pid {Pid}) НЕ удалось — закройте его вручную",
+    };
 }

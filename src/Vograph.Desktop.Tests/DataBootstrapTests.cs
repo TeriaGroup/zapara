@@ -21,7 +21,7 @@ public class DataBootstrapTests
     public async Task Seeded_Db_Is_Fresh_And_Needs_No_Refresh()
     {
         using var db = TestDb.Create();
-        var result = await DataBootstrap.RunAsync(db.Services, allowNetwork: false);
+        var result = await DataBootstrap.RunAsync(db.Services); // no XML: what an offline caller hands in
 
         Assert.True(result.HasData);
         Assert.False(result.Refreshed);
@@ -35,10 +35,26 @@ public class DataBootstrapTests
         var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));
         using var services = AppServices.Create(dir);
 
-        var result = await DataBootstrap.RunAsync(services, allowNetwork: false);
+        var result = await DataBootstrap.RunAsync(services, timetableXml: null, fetchError: "offline");
 
         Assert.False(result.HasData);
         Assert.True(result.Stale);
+        Assert.Equal("offline", result.Error); // the reason the caller's fetch gave, carried through to the error state
+    }
+
+    /// <summary>A fetch that failed outside the gate never throws into the caller — it comes back as the reason,
+    /// which is what the bootstrap then reports.</summary>
+    [Fact]
+    public async Task Fetch_Reports_A_Dead_Network_As_A_Reason()
+    {
+        using var db = TestDb.Create();
+        db.Services.Refresher = new ScheduleRefresher(new FakeHttpHandler { Respond = _ => throw new HttpRequestException("offline") });
+
+        var (xml, error) = await DataBootstrap.FetchAsync(db.Services);
+
+        Assert.Null(xml);
+        Assert.Equal("offline", error);
+        Assert.Equal(1, db.Services.CoreGate.CurrentCount); // the fetch never touches the gate
     }
 
     [Fact]

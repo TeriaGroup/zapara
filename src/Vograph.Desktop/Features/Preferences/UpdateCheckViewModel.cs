@@ -286,14 +286,18 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
     }
 
     /// <summary>The batch unpacks whatever it is given over the install directory: make sure it is an archive and that
-    /// Vograph.exe is inside before a shutdown is triggered on its account.</summary>
+    /// Vograph.exe is inside before a shutdown is triggered on its account. At the archive ROOT, specifically —
+    /// UpdateRunner.BuildBatch expands the zip flat into the install directory and then starts {dir}\Vograph.exe,
+    /// so a mis-built release with the payload one folder down is not «found», it is an install that would land
+    /// beside the app and relaunch the OLD exe, with the R45 «attempted» marker already written and blocking every
+    /// further silent attempt while the card still reads «Доступна». The shipped zip is flat.</summary>
     public static bool LooksLikeZip(string path)
     {
         try
         {
             if (!File.Exists(path) || new FileInfo(path).Length < 1024) return false;
             using var zip = ZipFile.OpenRead(path);
-            return zip.Entries.Any(e => e.FullName.Equals("Vograph.exe", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith("/Vograph.exe", StringComparison.OrdinalIgnoreCase));
+            return zip.Entries.Any(e => e.FullName.Equals("Vograph.exe", StringComparison.OrdinalIgnoreCase));
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
         {

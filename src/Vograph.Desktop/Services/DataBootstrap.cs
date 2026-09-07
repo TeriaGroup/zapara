@@ -14,24 +14,51 @@ public static class DataBootstrap
         return (utcNow - last.ToUniversalTime()).TotalDays > 3;
     }
 
-    public static async Task<BootstrapResult> RunAsync(AppServices app, bool allowNetwork = true)
+    /// <summary>The network half of a first start, run BEFORE the caller takes the Core gate. Never throws: a dead
+    /// network comes back as (null, reason) and the run falls through to the bundled snapshot below.</summary>
+    public static async Task<(string? Xml, string? Error)> FetchAsync(AppServices app)
+    {
+        try
+        {
+            return ((await app.Refresher.CheckAsync(null)).Xml, null);
+        }
+        catch (Exception ex)
+        {
+            app.Log.Error("bootstrap fetch", ex);
+            return (null, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// The Core half: every line here reads or writes SQLite, so the caller runs the whole method under the gate.
+    /// The download does not belong in it — this used to call Parser.RefreshAsync(), which fetches, and it was the
+    /// last path in the app that held the gate across an HTTP request: on the one launch where there is nothing to
+    /// show yet, every other Core call (and AppServices.Dispose, at two seconds) queued behind the 60 s timeout.
+    /// Now the caller fetches first with <see cref="FetchAsync"/> and hands the result in, exactly as
+    /// ScheduleRefresher + Parser.RefreshAsync(xmlOverride) already do for every later refresh.
+    /// </summary>
+    /// <param name="timetableXml">What the caller fetched outside the gate, or null (offline, or the fetch failed).</param>
+    /// <param name="fetchError">Why there is no XML, for the «данные могут быть устаревшими» line.</param>
+    public static async Task<BootstrapResult> RunAsync(AppServices app, string? timetableXml = null, string? fetchError = null)
     {
         var groups = app.Db.GetAllGroups();
         var settings = app.Db.GetSettings();
+        // The shell only bootstraps an empty database, where this is always true — a caller that fetched first
+        // therefore never wasted the request.
         if (!NeedsRefresh(groups.Count, settings.LastFetchedAt, DateTime.UtcNow))
             return new BootstrapResult(HasData: true, Refreshed: false, Stale: false, Error: null);
 
-        string? error = null;
-        if (allowNetwork)
+        var error = fetchError;
+        if (timetableXml is not null)
         {
             try
             {
-                await app.Parser.RefreshAsync();
+                await app.Parser.RefreshAsync(xmlOverride: timetableXml);
                 return new BootstrapResult(true, true, false, null);
             }
             catch (Exception ex)
             {
-                error = ex.Message;
+                error ??= ex.Message;
                 app.Log.Error("bootstrap refresh", ex);
             }
         }

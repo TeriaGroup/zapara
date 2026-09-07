@@ -348,8 +348,14 @@ public class UpdateTests : UiTest
     [InlineData("windows-v2'; rm x; '", "windows-v2___rm_x___")]
     public void Tags_Are_Sanitised_Before_Becoming_File_Names(string tag, string expected) => Assert.Equal(expected, UpdateCheckViewModel.SafeTag(tag));
 
+    /// <summary>The check answers one question — «will the batch's flat unpack put Vograph.exe where the batch
+    /// then starts it?» UpdateRunner.BuildBatch expands the archive over the install directory and runs
+    /// {dir}\Vograph.exe, so an entry one folder down is not «found», it is a mis-built release that would unpack
+    /// beside the app and relaunch the OLD exe — with the «attempted» marker already written, blocking retries
+    /// while the card still says «Доступна». The shipped release zip is flat (verified against the built
+    /// ZAPARA_win-x64.zip: Vograph.exe sits at the root).</summary>
     [Fact]
-    public void LooksLikeZip_Requires_An_Archive_With_The_Exe()
+    public void LooksLikeZip_Requires_The_Exe_At_The_Archive_Root()
     {
         var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
@@ -358,12 +364,59 @@ public class UpdateTests : UiTest
             var good = Path.Combine(dir, "good.zip");
             File.WriteAllBytes(good, FakeUpdateSource.ReleaseZip());
             Assert.True(UpdateCheckViewModel.LooksLikeZip(good));
+            var nested = Path.Combine(dir, "nested.zip");
+            File.WriteAllBytes(nested, FakeUpdateSource.ReleaseZip(nested: true)); // ZAPARA_win-x64/Vograph.exe
+            Assert.False(UpdateCheckViewModel.LooksLikeZip(nested));
             var garbage = Path.Combine(dir, "garbage.zip");
             File.WriteAllBytes(garbage, new byte[4096]);
             Assert.False(UpdateCheckViewModel.LooksLikeZip(garbage));
             Assert.False(UpdateCheckViewModel.LooksLikeZip(Path.Combine(dir, "missing.zip")));
         }
         finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    /// <summary>The same rule end to end: a nested release is refused exactly where a corrupt one is — before the
+    /// installer runs, before a shutdown is triggered, and without leaving the archive behind for a «Ready» on
+    /// the next start.</summary>
+    [Fact]
+    public async Task Nested_Zip_Is_Rejected_Before_The_Installer()
+    {
+        using var db = TestDb.Create();
+        var (vm, source, installed) = Make(db);
+        source.Latest = Newer;
+        source.Nested = true;
+        await vm.CheckAsync();
+
+        await vm.InstallCommand.ExecuteAsync(null);
+
+        Assert.Empty(installed);
+        Assert.Equal(UpdateState.Failed, vm.State);
+        Assert.Equal("Скачанный архив повреждён — попробуйте ещё раз", vm.StatusText);
+        Assert.Empty(Directory.GetFiles(vm.UpdatesDir, "*.zip"));
+    }
+
+    /// <summary>
+    /// T12-R6's gate on «Проверить» in Settings. The switch promises «no update check» (App.axaml.cs), and until
+    /// that gate landed the button reached GitHub on an offline run — AllowNetwork only covered the silent
+    /// startup flow. The fake source counts what a check that got past the gate would have done: one call, a
+    /// «Доступна 2.1.0» card and a sidebar badge instead of the offline reason.
+    /// </summary>
+    [Fact]
+    public async Task Manual_Check_Reaches_No_Source_When_The_Run_Is_Offline()
+    {
+        using var db = TestDb.Create(); // AllowNetwork = false, as App assigns it from VOGRAPH_OFFLINE
+        var (vm, source, _) = Make(db);
+        source.Latest = Newer;
+        Assert.False(db.Services.AllowNetwork);
+
+        await vm.CheckCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, source.Checks);
+        Assert.Equal(UpdateState.Failed, vm.State);
+        Assert.Equal("Не удалось проверить обновление: сеть отключена для этого запуска (VOGRAPH_OFFLINE)", vm.StatusText);
+        Assert.Equal(SettingsViewModel.ReleasesUrl, vm.HtmlUrl);
+        Assert.False(vm.IsAvailable);
+        Assert.Contains("update check: skipped, network disabled for this run", File.ReadAllText(db.Services.Log.CurrentFile));
     }
 
     [Fact]

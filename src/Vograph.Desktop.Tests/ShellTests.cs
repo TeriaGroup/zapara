@@ -189,7 +189,8 @@ public class ShellTests : UiTest
     }
 
     /// <summary>The switch UiVerify sets before it launches the real exe: App reads VOGRAPH_OFFLINE by that exact
-    /// name and nothing else, and an unset variable leaves the run online.</summary>
+    /// name and nothing else, and an unset variable leaves the run online. The last pair is the assignment
+    /// itself — App.AllowNetwork is the negation of the switch, which is what every section then consults.</summary>
     [Fact]
     public void Offline_Switch_Reads_Only_The_VOGRAPH_OFFLINE_Variable()
     {
@@ -198,8 +199,84 @@ public class ShellTests : UiTest
         Assert.Equal(new[] { "VOGRAPH_OFFLINE" }, asked);
         Assert.False(App.ReadOfflineSwitch(_ => null));
 
-        using var db = TestDb.Create();
-        Assert.False(db.Services.AllowNetwork); // what App assigns from the switch; every section consults it
+        var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));
+        using (var services = AppServices.Create(dir)) // a fresh composition root, not TestDb's own offline default
+        {
+            Assert.True(services.AllowNetwork);
+            services.AllowNetwork = !App.ReadOfflineSwitch(_ => "1");
+            Assert.False(services.AllowNetwork);
+            services.AllowNetwork = !App.ReadOfflineSwitch(_ => null);
+            Assert.True(services.AllowNetwork);
+        }
+        try { Directory.Delete(dir, recursive: true); } catch (IOException ex) { Console.Error.WriteLine($"temp dir left behind ({dir}): {ex.Message}"); }
+    }
+
+    /// <summary>
+    /// The first launch — an empty database — was the last path in the app that downloaded while holding the Core
+    /// gate, so on the one start where there is nothing to show yet every other Core call (and Dispose, at two
+    /// seconds) queued behind the HTTP timeout. The handler answers from inside the request, so the count it
+    /// records is the gate's state at the moment of the fetch; the XML it returns still has to land in SQLite.
+    /// </summary>
+    [AvaloniaFact]
+    public async Task First_Launch_Fetches_Outside_The_Gate_And_Writes_Inside_It()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));
+        using (var services = AppServices.Create(dir))
+        {
+            var settings = services.Db.GetSettings();
+            settings.AutoUpdate = false; // keep the silent startup flow out of this test
+            services.Db.SaveSettings(settings);
+            services.UpdateSource = new FakeUpdateSource();
+            var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-timetable.xml"));
+            var gateWhileFetching = -1;
+            var handler = new FakeHttpHandler
+            {
+                Respond = _ =>
+                {
+                    gateWhileFetching = services.CoreGate.CurrentCount;
+                    return FakeHttpHandler.Bytes(System.Text.Encoding.UTF8.GetBytes(xml));
+                }
+            };
+            services.Refresher = new ScheduleRefresher(handler);
+            var shell = new ShellViewModel(services);
+            Assert.Empty(services.Db.GetAllGroups());
+
+            await shell.StartAsync(allowNetwork: true);
+            shell.Stop();
+
+            Assert.Equal(1, gateWhileFetching);                 // nobody was parked behind the download
+            Assert.Equal(3, services.Db.GetAllGroups().Count);  // …and it still ended up in the database
+            Assert.Equal(1, services.CoreGate.CurrentCount);
+            Assert.IsType<ScheduleViewModel>(shell.Current);
+        }
+        try { Directory.Delete(dir, recursive: true); } catch (IOException ex) { Console.Error.WriteLine($"temp dir left behind ({dir}): {ex.Message}"); }
+    }
+
+    /// <summary>
+    /// T12-R6's gate on F5 and Settings' «Обновить расписание». The switch promises «no timetable refresh»
+    /// (App.axaml.cs), and until that gate landed the two manual routes went straight out to the network on an
+    /// offline run. The scripted handler is what makes the gate falsifiable: a refresh that got past it leaves
+    /// its GET on the handler and toasts «Расписание обновлено» instead of the offline reason.
+    /// </summary>
+    [AvaloniaFact]
+    public async Task Manual_Refresh_Reaches_No_Network_When_The_Run_Is_Offline()
+    {
+        var (db, shell) = Make();
+        using (db)
+        {
+            var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-timetable.xml"));
+            var handler = new FakeHttpHandler { Respond = _ => FakeHttpHandler.Bytes(System.Text.Encoding.UTF8.GetBytes(xml)) };
+            db.Services.Refresher = new ScheduleRefresher(handler);
+            Assert.False(db.Services.AllowNetwork);
+            await shell.StartAsync(allowNetwork: false); // the run declares its policy; a never-started shell has none
+            db.Services.Toasts.Items.Clear();
+
+            await shell.RefreshScheduleCommand.ExecuteAsync(null);
+
+            Assert.Empty(handler.Requests);
+            Assert.Single(db.Services.Toasts.Items, t => t.Text == "Не удалось обновить расписание: сеть отключена для этого запуска (VOGRAPH_OFFLINE)");
+            Assert.Contains("refresh: skipped, network disabled for this run", File.ReadAllText(db.Services.Log.CurrentFile));
+        }
     }
 
     [Fact]

@@ -55,6 +55,18 @@ public sealed class MapFiles : IMapFiles
         return (cached, total);
     }
 
-    public Task DownloadAllAsync(IProgress<string>? progress, CancellationToken ct = default) =>
-        _maps.EnsureAllMapsCachedAsync(null, progress, preferBundledFirst: true);
+    /// <summary>The «…» menu's «Скачать свежие планы»: nine plans over the wire, and the one door in this section
+    /// that used to ignore the process switch — VOGRAPH_OFFLINE=1 promises «no lecturer or map downloads»
+    /// (App.axaml.cs) and this went straight to MapService anyway. Gated like EnsureAsync, and with the same
+    /// user-visible outcome as the rest of the offline behaviour: the section reads the cache count afterwards
+    /// and reports «Скачано N из 9» — no new wording, and nothing pretends the plans arrived.</summary>
+    public Task DownloadAllAsync(IProgress<string>? progress, CancellationToken ct = default)
+    {
+        if (!_allowNetwork())
+        {
+            _log.Info("maps: «Скачать свежие планы» skipped, network disabled for this run");
+            return Task.CompletedTask;
+        }
+        return _maps.EnsureAllMapsCachedAsync(null, progress, preferBundledFirst: true);
+    }
 }

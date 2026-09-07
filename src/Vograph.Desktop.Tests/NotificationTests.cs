@@ -1,3 +1,5 @@
+using Avalonia.Headless.XUnit;
+using Avalonia.Threading;
 using Vograph.Desktop.Services;
 using Xunit;
 
@@ -85,6 +87,54 @@ public class NotificationTests
         Assert.NotNull(far);
         Assert.Contains("Матан", far);
         Assert.DoesNotContain("[ДЗ!]", far);
+    }
+
+    /// <summary>
+    /// The timer posts every tick to the UI thread (Start → Dispatcher.UIThread.Post), and Avalonia raises
+    /// desktop.Exit on that same thread, where AppServices.Dispose blocks inside CoreGate.Wait(2 s). A gate
+    /// awaited from the UI thread hands its release to a dispatcher continuation the blocked thread can never
+    /// pump — the shape ViewModelBase.GatedAsync exists to avoid — so an Exit landing inside a tick stalled
+    /// shutdown for the full two seconds and closed the database anyway. The gate is held on purpose here so the
+    /// tick is guaranteed to park on it rather than race through: once the holder lets go, the work and its
+    /// release must both happen off the UI thread, and Dispose must be able to take the gate straight after.
+    /// </summary>
+    [AvaloniaFact]
+    public async Task Dispose_During_A_Tick_Does_Not_Wait_For_The_Blocked_Dispatcher()
+    {
+        using var db = TestDb.Create();
+        var services = db.Services;
+        var s = services.Db.GetSettings();
+        s.NotifyTime1 = "20:00";
+        services.Db.SaveSettings(s);
+        var scheduler = new NotificationScheduler(services);
+
+        var held = new ManualResetEventSlim();
+        var holder = Task.Run(async () =>
+        {
+            await services.CoreGate.WaitAsync();
+            held.Set();
+            await Task.Delay(250);
+            services.CoreGate.Release();
+        });
+        held.Wait(TestContext.Current.CancellationToken);
+
+        Assert.True(Dispatcher.UIThread.CheckAccess()); // the thread the timer posts to and the one Exit runs on
+        var tick = scheduler.TickAsync(new DateTime(2026, 9, 6, 20, 0, 5)); // parks on the gate, held by the pool
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        services.Dispose(); // blocks this thread: from here on nothing queued on the dispatcher can run
+        sw.Stop();
+
+        // AppLog writes its first line lazily, so a shutdown that had nothing to complain about leaves no file.
+        var log = File.Exists(services.Log.CurrentFile) ? File.ReadAllText(services.Log.CurrentFile) : "";
+        Assert.DoesNotContain("closing the database anyway", log);
+        Assert.InRange(sw.ElapsedMilliseconds, 100, 1800); // the 2 s timeout is the stall this pins
+        await holder;
+        // The tick may also be abandoned rather than finished: SemaphoreSlim.Dispose leaves a pending WaitAsync
+        // parked for good, which is precisely the shutdown race TickAsync's ObjectDisposedException branch is
+        // written for. Either way it must never fault — a timer callback that threw would take the process down.
+        await Task.WhenAny(tick, Task.Delay(1000, TestContext.Current.CancellationToken));
+        Assert.False(tick.IsFaulted, tick.Exception?.ToString());
     }
 
     [Fact]

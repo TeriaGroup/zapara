@@ -23,9 +23,12 @@ Ui ui;
 try { ui = new Ui(o); }
 catch (Exception ex)
 {
-    Console.Error.WriteLine($"launch failed: {ex.Message}");
-    report.Fail("Запуск", $"{ex.Message} — запущенный процесс остановлен драйвером");
-    report.Write(o.Out, o, 0, "(приложение не запустилось; свой процесс драйвер остановил)");
+    // The driver kills only the process it launched itself, and that kill can fail (or find it already gone):
+    // the report says which of the three happened rather than announcing a stop that may not have taken place.
+    var fate = ex is LaunchFailedException lf ? lf.EndText : "процесс не был запущен";
+    Console.Error.WriteLine($"launch failed: {ex.Message} — {fate}");
+    report.Fail("Запуск", $"{ex.Message} — {fate}");
+    report.Write(o.Out, o, 0, $"(приложение не запустилось; {fate})");
     return 2;
 }
 using (ui)

@@ -797,8 +797,12 @@ public class MotionTests : UiTest
                 await Task.Delay(20, TestContext.Current.CancellationToken);
             }
 
-            // Some frame really put the card below its place (8 px, spec §7 «Появление списка»)…
-            Assert.True(seen.Any(y => y > 0.5),
+            // The card really travelled (8 px, spec §7 «Появление списка»). Two *different* readings below the
+            // line, not just one: the run pins translateY(8) before the first tick, so «some sample was positive»
+            // holds even for an interpolation that never moved off the pin — which is precisely the regression
+            // this test exists to catch.
+            var moving = seen.Where(y => y > 0.5).ToList();
+            Assert.True(moving.Count >= 2 && moving.Max() - moving.Min() > 0.5,
                 $"the card must slide up into place; translateY only ever read [{string.Join(", ", seen.Select(y => y.ToString("0.##", CultureInfo.InvariantCulture)))}]" +
                 $" and the animator logged [{string.Join(" · ", animations.Lines)}]");
             // …it came to rest level, opaque, and handed RenderTransform back to the styles (T9-R4)…

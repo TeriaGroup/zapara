@@ -439,7 +439,11 @@ public sealed partial class ShellViewModel : ViewModelBase
         if (data.GroupCount == 0)
         {
             Current = new LoadingViewModel(App);
-            var result = await RunAsync(() => DataBootstrap.RunAsync(App, allowNetwork), "bootstrap");
+            // Network outside the gate, parse + SQLite inside — the same split RefreshScheduleAsync uses. The
+            // empty-database bootstrap was the last path that downloaded while holding the gate, so a first
+            // launch behind a dead network parked every other Core call behind the HTTP timeout.
+            var fetched = allowNetwork ? await DataBootstrap.FetchAsync(App) : default;
+            var result = await RunAsync(() => DataBootstrap.RunAsync(App, fetched.Xml, fetched.Error), "bootstrap");
             if (result is null || !result.HasData)
             {
                 Current = new ErrorStateViewModel(App, result?.Error, () => StartAsync(allowNetwork));
@@ -519,12 +523,19 @@ public sealed partial class ShellViewModel : ViewModelBase
             GroupRailLabel = "—";
             return;
         }
-        var isOdd = ParityCodes.IsOdd(DateTime.Today, settings);
+        // The shell's injected clock, not the machine's: the card is the one place that still read DateTime
+        // directly, which made its parity and its date depend on the day the suite happened to run (the import
+        // test had to recompute its own expectation from the same real inputs to say anything at all).
+        var now = Clock();
+        var today = now.Date;
+        var isOdd = ParityCodes.IsOdd(today, settings);
         var culture = CultureInfo.GetCultureInfo(App.Loc.Language == "en" ? "en-US" : "ru-RU");
         GroupName = group.Name;
         GroupRailLabel = GroupCardLogic.RailLabel(group.Name);
-        GroupSubtitle = $"{T("parityWeek", App.I18n.FormatParity(isOdd))} · {DateTime.Today.ToString(App.Loc.Language == "en" ? "MMM d" : "d MMM", culture)}";
-        var (stale, warn) = GroupCardLogic.Stale(settings.LastFetchedAt, DateTime.UtcNow, App.Loc);
+        GroupSubtitle = $"{T("parityWeek", App.I18n.FormatParity(isOdd))} · {today.ToString(App.Loc.Language == "en" ? "MMM d" : "d MMM", culture)}";
+        // LastFetchedAt is stored in UTC and Stale compares against UTC; the default clock is DateTime.Now, so
+        // this is the same instant it always was, only sourced from the clock a test can pin.
+        var (stale, warn) = GroupCardLogic.Stale(settings.LastFetchedAt, now.ToUniversalTime(), App.Loc);
         StaleText = stale;
         StaleWarn = warn;
     }

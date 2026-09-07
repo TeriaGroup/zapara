@@ -20,8 +20,12 @@ public class AutomationIdsTests : UiTest
     private static HashSet<string> Ids(Window window) =>
         window.GetVisualDescendants().OfType<Control>().Select(AutomationProperties.GetAutomationId).Where(id => !string.IsNullOrEmpty(id)).ToHashSet()!;
 
+    /// <summary>What the every-id test below cannot say, because a set has no order: the segmented control numbers
+    /// its buttons by position. UiVerify picks a theme by pressing «SettingsTheme.1» and expects the middle
+    /// segment, so the index has to follow the visual order rather than merely exist somewhere in the window.
+    /// (The id lists this test used to walk were a strict subset of the scheme below — overlap, not coverage.)</summary>
     [AvaloniaFact]
-    public async Task Shell_Schedule_And_Settings_Carry_Their_Ids()
+    public async Task Settings_Segments_Are_Numbered_In_Visual_Order()
     {
         using var db = TestDb.Create();
         db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
@@ -33,24 +37,14 @@ public class AutomationIdsTests : UiTest
         window.Show();
         Pump();
 
-        var ids = Ids(window);
-        foreach (var id in new[] { "Win.Minimize", "Win.Maximize", "Win.Close", "Shell.SidebarToggle", "Shell.GroupCard", "Shell.ThemeToggle",
-                                   "Nav.Schedule", "Nav.Week", "Nav.Summary", "Nav.Teachers", "Nav.Maps", "Nav.Friends", "Nav.Homework", "Nav.Settings",
-                                   "Schedule.Title", "Schedule.Prev", "Schedule.Next", "ScheduleSegment.0", "ScheduleSegment.2", "Lesson.Title", "Lesson.Rename", "Lesson.Homework", "Lesson.Map", "Lesson.Hw" })
-            Assert.Contains(id, ids);
-
         shell.NavigateTo(SectionKey.Settings);
         await Waits.Until(() => ((Features.Preferences.SettingsViewModel)shell.Current!).GroupName == "А863С", "settings");
         Pump();
-        ids = Ids(window);
-        foreach (var id in new[] { "SettingsTheme.0", "SettingsLanguage.1", "Settings.CompactSidebar", "Settings.Animations", "Settings.ChangeGroup", "Settings.ParityInvert", "Settings.Refresh",
-                                   "Settings.NotifyEnabled", "Settings.NotifyTime1", "Settings.SaveTimes", "Settings.TestNotification", "Settings.Export", "Settings.Import", "Settings.Qr", "Settings.LanSync",
-                                   "Updates.AutoUpdate", "Updates.Status", "Updates.Check", "About.Version", "About.DataFolder" })
-            Assert.Contains(id, ids);
 
         var segment = window.GetVisualDescendants().OfType<SegmentedControl>().First(s => s.Name == "SettingsTheme");
         var buttons = segment.GetVisualDescendants().OfType<Button>().ToList();
         Assert.Equal(new[] { "SettingsTheme.0", "SettingsTheme.1", "SettingsTheme.2" }, buttons.Select(AutomationProperties.GetAutomationId));
+        Assert.Equal(new[] { "Как в системе", "Светлая", "Тёмная" }, buttons.Select(b => b.Content as string));
         AssertNoBindingErrors();
     }
 

@@ -407,7 +407,9 @@ public class SyncTests : UiTest
         var ts = target.Services.Db.GetSettings();
         ts.MyGroupId = "";
         target.Services.Db.SaveSettings(ts);
-        var shell = new ShellViewModel(target.Services);
+        // Pinned, not mirrored: the card reads the shell's injected clock, so the whole subtitle is a literal —
+        // Tue 06.10.2026 is week code 2 of the period starting 01.09, which the imported ParityInvert shows as odd.
+        var shell = new ShellViewModel(target.Services) { Clock = () => new DateTime(2026, 10, 6, 9, 0, 0) };
         Assert.Equal("Группа не выбрана", shell.GroupName);
 
         target.Services.Sync.ImportFromJson(json);
@@ -415,8 +417,6 @@ public class SyncTests : UiTest
 
         Assert.Equal("А863С", shell.GroupName);
         Assert.True(target.Services.Db.GetSettings().ParityInvert);
-        // The card's parity text is computed against the real clock; compute the expectation the same way.
-        var expectedOdd = ParityService.IsOddWeek(DateTime.Today, new DateTime(2026, 9, 1), 2, invert: true);
-        Assert.StartsWith(target.Services.I18n.FormatParity(expectedOdd), shell.GroupSubtitle);
+        Assert.Equal("нечетная неделя · 6 окт.", shell.GroupSubtitle);
     }
 }
