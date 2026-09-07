@@ -152,19 +152,11 @@ VALUES (@s,@t,@ca,@n,@due,@st,@da)";
         _db.SaveSettings(s);
     }
 
-    public string GenerateQrContent(string json)
-    {
-        // If json small (< 2000 chars), encode directly, else encode http://ip:8765/sync#token
-        if (json.Length < 1500)
-        {
-            return json;
-        }
-        else
-        {
-            var ip = GetLocalIp();
-            return $"http://{ip}:8765/sync#token";
-        }
-    }
+    public string GenerateQrContent(string json) => GenerateQrContent(json, GetLocalIp());
+
+    /// <summary>The QR carries the export itself while it is small; otherwise a link to the LAN server. The host is a
+    /// parameter so the caller can resolve it off the UI thread and outside the Core gate (the desktop does).</summary>
+    public static string GenerateQrContent(string json, string ip) => json.Length < 1500 ? json : $"http://{ip}:8765/sync#token";
 
     public string GetLocalIp()
     {
@@ -187,81 +179,4 @@ VALUES (@s,@t,@ca,@n,@due,@st,@da)";
         File.WriteAllBytes(path, bytes);
     }
 
-    // Simple HTTP host for LAN sync (host mode)
-    public class SyncHost : IDisposable
-    {
-        private readonly HttpListener _listener;
-        private readonly Database _db;
-        private Task? _task;
-        private bool _running;
-
-        public SyncHost(Database db, int port = 8765)
-        {
-            _db = db;
-            _listener = new HttpListener();
-            _listener.Prefixes.Add($"http://+:{port}/sync/");
-            // Also listen on localhost for fallback
-            try { _listener.Prefixes.Add($"http://localhost:{port}/sync/"); } catch { }
-        }
-
-        public void Start()
-        {
-            _running = true;
-            _listener.Start();
-            _task = Task.Run(async () =>
-            {
-                while (_running)
-                {
-                    try
-                    {
-                        var ctx = await _listener.GetContextAsync();
-                        await Handle(ctx);
-                    }
-                    catch { if (!_running) break; }
-                }
-            });
-        }
-
-        private async Task Handle(HttpListenerContext ctx)
-        {
-            var svc = new SyncService(_db);
-            if (ctx.Request.HttpMethod == "GET")
-            {
-                var json = svc.ExportToJson();
-                var bytes = Encoding.UTF8.GetBytes(json);
-                ctx.Response.ContentType = "application/json";
-                ctx.Response.ContentLength64 = bytes.Length;
-                await ctx.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
-                ctx.Response.Close();
-            }
-            else if (ctx.Request.HttpMethod == "POST")
-            {
-                using var reader = new StreamReader(ctx.Request.InputStream, Encoding.UTF8);
-                var body = await reader.ReadToEndAsync();
-                try { svc.ImportFromJson(body); ctx.Response.StatusCode = 200; }
-                catch { ctx.Response.StatusCode = 400; }
-                var resp = Encoding.UTF8.GetBytes("{\"status\":\"ok\"}");
-                ctx.Response.ContentLength64 = resp.Length;
-                await ctx.Response.OutputStream.WriteAsync(resp, 0, resp.Length);
-                ctx.Response.Close();
-            }
-            else { ctx.Response.StatusCode = 405; ctx.Response.Close(); }
-        }
-
-        public void Stop()
-        {
-            _running = false;
-            try { _listener.Stop(); } catch { }
-        }
-
-        public void Dispose() => Stop();
-    }
-
-    public static async Task<string> JoinViaHttp(string ip, int port = 8765)
-    {
-        using var http = new HttpClient();
-        var url = $"http://{ip}:{port}/sync/";
-        var resp = await http.GetStringAsync(url);
-        return resp;
-    }
 }

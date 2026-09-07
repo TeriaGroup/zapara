@@ -195,8 +195,7 @@ public class TeachersTests : UiTest
         using var db = TestDb.Create();
         // The build copies the real TimetableLecturer50.xml next to the test binaries, and the user's own
         // %LocalAppData% may hold a cache: point the store at paths that cannot exist so "no source" is honest.
-        db.Services.Lecturers = new LecturerStore(new LecturerService(db.Services.Db), db.Services.Log,
-            Path.Combine(db.Dir, "no-cache.xml"), Path.Combine(db.Dir, "no-bundled.xml"));
+        db.Services.Lecturers = new LecturerStore(new LecturerService(db.Services.Db, Path.Combine(db.Dir, "no-cache.xml"), Path.Combine(db.Dir, "no-bundled.xml")), db.Services.Log);
         var shell = new ShellViewModel(db.Services);
         var vm = new TeachersViewModel(db.Services, shell, () => Wed9, allowNetwork: false); // nothing loaded, no local files in tests
         await vm.LoadAsync();
@@ -210,8 +209,7 @@ public class TeachersTests : UiTest
     {
         using var db = TestDb.Create();
         // Same setup as Missing_Reference_Shows_An_Error_Instead_Of_Throwing: no cache, no bundled copy, no network.
-        db.Services.Lecturers = new LecturerStore(new LecturerService(db.Services.Db), db.Services.Log,
-            Path.Combine(db.Dir, "no-cache.xml"), Path.Combine(db.Dir, "no-bundled.xml"));
+        db.Services.Lecturers = new LecturerStore(new LecturerService(db.Services.Db, Path.Combine(db.Dir, "no-cache.xml"), Path.Combine(db.Dir, "no-bundled.xml")), db.Services.Log);
         var shell = new ShellViewModel(db.Services);
         var vm = new TeachersViewModel(db.Services, shell, () => Wed9, allowNetwork: false);
         await vm.LoadAsync();
@@ -255,8 +253,7 @@ public class TeachersTests : UiTest
     public async Task Retry_Button_Reloads_After_A_Failed_Load()
     {
         using var db = TestDb.Create();
-        db.Services.Lecturers = new LecturerStore(new LecturerService(db.Services.Db), db.Services.Log,
-            Path.Combine(db.Dir, "no-cache.xml"), Path.Combine(db.Dir, "no-bundled.xml"));
+        db.Services.Lecturers = new LecturerStore(new LecturerService(db.Services.Db, Path.Combine(db.Dir, "no-cache.xml"), Path.Combine(db.Dir, "no-bundled.xml")), db.Services.Log);
         var shell = new ShellViewModel(db.Services);
         var vm = new TeachersViewModel(db.Services, shell, () => Wed9, allowNetwork: false);
         await vm.LoadAsync();

@@ -75,10 +75,10 @@ public sealed class AppServices : IDisposable
         Homework = new HomeworkService(Db);
         Intersections = new IntersectionService(Db);
         Notifications = new NotificationService(Db, Overrides, Homework, Schedule, I18n);
-        Maps = new MapService(Db, Schedule);
+        Maps = new MapService(Db, Schedule, Path.Combine(dataDir, "maps"), Path.Combine(AppContext.BaseDirectory, "maps"));
         MapFiles = new MapFiles(Maps, Log, () => AllowNetwork);
         Launcher = new NullLauncher(Log); // App swaps in AvaloniaLauncher once the window exists
-        Lecturers = new LecturerStore(new LecturerService(Db), Log); // parsed lazily by the Teachers section
+        Lecturers = new LecturerStore(new LecturerService(Db, Path.Combine(dataDir, "TimetableLecturer50.xml"), Path.Combine(AppContext.BaseDirectory, "TimetableLecturer50.xml")), Log); // parsed lazily by the Teachers section
         Sync = new SyncService(Db);
         AutoUpdate = new AutoUpdateService();
         Prefs = UiPrefs.Load(Path.Combine(dataDir, "ui.json"), ex => Log.Error("prefs", ex));

@@ -28,7 +28,7 @@ public sealed class MapFiles : IMapFiles
         _allowNetwork = allowNetwork;
     }
 
-    public string CacheDir => MapService.GetMapsCacheDir();
+    public string CacheDir => _maps.GetMapsCacheDir();
 
     public string? LocalPath(MapInfo map)
     {
@@ -41,13 +41,13 @@ public sealed class MapFiles : IMapFiles
         {
             _log.Warn($"map file {map.LocalPath}: {ex.GetType().Name}: {ex.Message}"); // unreadable cache entry: fall back to the bundled copy
         }
-        return MapService.GetBundledPathForUrl(map.Url);
+        return _maps.GetBundledPathForUrl(map.Url);
     }
 
     /// <summary>The section fetches a missing plan on its own (opening it, following the next lesson), so this is the
     /// one automatic network call in Maps: with the process switch off it stops at the bundled copy instead.</summary>
     public Task<string?> EnsureAsync(MapInfo map, CancellationToken ct = default) =>
-        _allowNetwork() ? _maps.EnsureCachedAsync(map) : Task.FromResult(map.HasMap ? MapService.GetBundledPathForUrl(map.Url) : null);
+        _allowNetwork() ? _maps.EnsureCachedAsync(map) : Task.FromResult(map.HasMap ? _maps.GetBundledPathForUrl(map.Url) : null);
 
     public (int Cached, int Total) CacheStatus()
     {

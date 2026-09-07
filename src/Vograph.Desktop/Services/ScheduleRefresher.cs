@@ -10,7 +10,7 @@ public sealed record RefreshCheck(bool Modified, string? Xml);
 /// <summary>
 /// Network half of a timetable refresh: HEAD with If-Modified-Since, then GET + decode. Never touches
 /// SQLite — the caller hands the XML to Parser.RefreshAsync(xmlOverride) under the Core gate. Replaces
-/// Core's AutoRefreshService, whose writer ran outside the gate.
+/// Core's former AutoRefreshService, whose writer ran outside the gate.
 /// </summary>
 public sealed class ScheduleRefresher : IDisposable
 {
@@ -39,16 +39,7 @@ public sealed class ScheduleRefresher : IDisposable
             // 200 without a usable Last-Modified (a server ignoring the header): download and let the parser decide.
         }
         var bytes = await _http.GetByteArrayAsync(_url, ct);
-        return new RefreshCheck(true, Decode(bytes));
-    }
-
-    /// <summary>voenmeh.ru serves the XML as UTF-16LE with a BOM; mirrors ParserService.FetchXmlAsync.</summary>
-    public static string Decode(byte[] bytes)
-    {
-        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE) return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
-        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
-        var utf8 = Encoding.UTF8.GetString(bytes);
-        return utf8.Contains('\0') ? Encoding.Unicode.GetString(bytes) : utf8;
+        return new RefreshCheck(true, ParserService.DecodeXml(bytes));
     }
 
     public void Dispose() => _http.Dispose();

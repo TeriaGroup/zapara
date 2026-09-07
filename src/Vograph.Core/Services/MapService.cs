@@ -49,57 +49,50 @@ public class MapService
     private Dictionary<string, Dictionary<string, CoordsRect>> _coords = new(StringComparer.OrdinalIgnoreCase);
     private bool _coordsLoaded = false;
 
-    public MapService(Database db, ScheduleService schedule)
+    /// <summary>How far GetNextLesson looks ahead (spec §5.1: the empty day hints at the next lesson within two weeks).</summary>
+    public const int NextLessonHorizonDays = 14;
+
+    private HttpClient? _http;
+    private HttpClient Http => _http ??= ParserService.CreateHttpClient();
+
+    /// <param name="cacheDir">Downloaded plans and the editable coords.json (the desktop passes VOGRAPH_DATA_DIR\maps).</param>
+    /// <param name="bundledDir">The maps\ folder shipped next to the exe.</param>
+    public MapService(Database db, ScheduleService schedule, string? cacheDir = null, string? bundledDir = null)
     {
         _db = db;
         _schedule = schedule;
+        CacheDir = cacheDir ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vograph", "maps");
+        BundledDir = bundledDir ?? Path.Combine(AppContext.BaseDirectory, "maps");
         LoadCoords();
     }
 
-    public static string GetMapsCacheDir()
+    public string CacheDir { get; }
+    public string BundledDir { get; }
+
+    public string GetMapsCacheDir()
     {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var dir = Path.Combine(appData, "Vograph", "maps");
-        Directory.CreateDirectory(dir);
-        return dir;
+        Directory.CreateDirectory(CacheDir);
+        return CacheDir;
     }
 
-    public static string GetLocalPathForUrl(string url)
-    {
-        var dir = GetMapsCacheDir();
-        var fileName = Path.GetFileName(new Uri(url).LocalPath);
-        return Path.Combine(dir, fileName);
-    }
+    public string GetLocalPathForUrl(string url) => Path.Combine(GetMapsCacheDir(), Path.GetFileName(new Uri(url).LocalPath));
 
-    public static string? GetBundledPathForUrl(string url)
+    public string? GetBundledPathForUrl(string url)
     {
         try
         {
-            var fileName = Path.GetFileName(new Uri(url).LocalPath);
-            var bundled = Path.Combine(AppContext.BaseDirectory, "maps", fileName);
-            if (File.Exists(bundled)) return bundled;
-            // also check parent for dev
-            var alt = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "maps", fileName);
-            if (File.Exists(alt)) return Path.GetFullPath(alt);
+            var bundled = Path.Combine(BundledDir, Path.GetFileName(new Uri(url).LocalPath));
+            return File.Exists(bundled) ? bundled : null;
         }
-        catch { }
-        return null;
+        catch (UriFormatException) { return null; }
     }
 
-    public static string GetCoordsPath()
-    {
-        return Path.Combine(GetMapsCacheDir(), "coords.json");
-    }
+    public string GetCoordsPath() => Path.Combine(GetMapsCacheDir(), "coords.json");
 
-    public static string? GetBundledCoordsPath()
+    public string? GetBundledCoordsPath()
     {
-        var p1 = Path.Combine(AppContext.BaseDirectory, "maps", "coords.json");
-        if (File.Exists(p1)) return p1;
-        var p2 = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "maps", "coords.json");
-        if (File.Exists(p2)) return Path.GetFullPath(p2);
-        var p3 = Path.Combine(GetMapsCacheDir(), "coords.json");
-        if (File.Exists(p3)) return p3;
-        return null;
+        var bundled = Path.Combine(BundledDir, "coords.json");
+        return File.Exists(bundled) ? bundled : null;
     }
 
     private void LoadCoords()
@@ -357,8 +350,7 @@ public class MapService
         }
         try
         {
-            var http = client ?? new HttpClient();
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Vograph/1.0");
+            var http = client ?? Http;
             var bytes = await http.GetByteArrayAsync(info.Url);
             if (bytes.Length < 1000) return null;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -415,8 +407,7 @@ public class MapService
             progress?.Report($"Downloading {kv.Key.building} {kv.Key.floor}...");
             try
             {
-                var http = client ?? new HttpClient();
-                http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 Vograph");
+                var http = client ?? Http;
                 var bytes = await http.GetByteArrayAsync(url);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 await File.WriteAllBytesAsync(path, bytes);
@@ -439,7 +430,7 @@ public class MapService
     public (Lesson? lesson, DateTime date) GetNextLesson(string groupId, DateTime now)
     {
         // Try today
-        for (int offset = 0; offset < 7; offset++)
+        for (int offset = 0; offset < NextLessonHorizonDays; offset++)
         {
             var date = now.Date.AddDays(offset);
             int dow = (int)date.DayOfWeek;

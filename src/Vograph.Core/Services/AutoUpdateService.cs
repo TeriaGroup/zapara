@@ -20,14 +20,14 @@ public class AutoUpdateService
 
     public record UpdateInfo(string Tag, string HtmlUrl, string? ZipUrl, string PublishedAt);
 
-    public async Task<UpdateInfo?> GetLatestAsync(string channel = "windows")
+    public async Task<UpdateInfo?> GetLatestAsync(string channel = "windows", CancellationToken ct = default)
     {
         string pfx = channel == "android" ? "android-" : "windows-";
         // fetch all releases, pick latest matching prefix (api/releases/latest may be android)
         var url = $"https://api.github.com/repos/{Owner}/{Repo}/releases?per_page=20";
-        var resp = await _http.GetAsync(url);
+        var resp = await _http.GetAsync(url, ct);
         resp.EnsureSuccessStatusCode();
-        var json = await resp.Content.ReadAsStringAsync();
+        var json = await resp.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(json);
         foreach (var el in doc.RootElement.EnumerateArray())
         {
@@ -53,8 +53,7 @@ public class AutoUpdateService
         return null;
     }
 
-    public static string CurrentTagWindows => "windows-v1.2.2";
-    public static string CurrentTagAndroid => "android-v1.2.1";
+    public static string CurrentTagWindows => "windows-v2.0.0";
 
     /// <summary>Download a release asset with progress (0..1, -1 if size unknown).</summary>
     public async Task DownloadAssetAsync(string url, string destPath, IProgress<double>? progress = null, CancellationToken ct = default)
@@ -88,9 +87,6 @@ public class AutoUpdateService
             throw;
         }
     }
-
-    public static string UpdatesDir =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vograph", "updates");
 
     public static bool IsNewer(string latestTag, string currentTag)
     {

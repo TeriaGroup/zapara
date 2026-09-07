@@ -14,25 +14,19 @@ public sealed class LecturerStore
     private readonly LecturerService _service;
     private readonly AppLog _log;
 
-    /// <summary>The two local paths are instance state so tests can point the store at files that cannot exist:
-    /// the build copies the real directory next to the binaries and Core's cache lives in the user's own profile.</summary>
-    public LecturerStore(LecturerService service, AppLog log, string? cachePath = null, string? bundledPath = null)
+    public LecturerStore(LecturerService service, AppLog log)
     {
         _service = service;
         _log = log;
-        CachePath = cachePath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vograph", "TimetableLecturer50.xml");
-        BundledPath = bundledPath ?? Path.Combine(AppContext.BaseDirectory, "TimetableLecturer50.xml");
     }
 
     public bool IsLoaded => _service.IsLoaded;
     public IReadOnlyList<LecturerInfo> Lecturers => _service.Lecturers;
     public IReadOnlyList<LecturerLesson> Lessons => _service.Lessons;
 
-    /// <summary>Where Core's FetchXmlAsync writes its copy (real LocalAppData: Core ignores VOGRAPH_DATA_DIR here — cleanup is a stage-3 item).</summary>
-    public string CachePath { get; }
-
-    /// <summary>The copy the build drops next to the exe, for a first launch with no cache and no network.</summary>
-    public string BundledPath { get; }
+    /// <summary>Where Core keeps a downloaded copy — under the data directory since the stage-3 cleanup.</summary>
+    public string CachePath => _service.CachePath;
+    public string BundledPath => _service.BundledPath;
 
     /// <summary>Parses the cached copy, else the bundled one. False when neither exists or parses.</summary>
     public async Task<bool> LoadLocalAsync(CancellationToken ct = default)

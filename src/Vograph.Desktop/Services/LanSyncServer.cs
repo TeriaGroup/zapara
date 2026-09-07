@@ -4,7 +4,7 @@ using System.Text;
 namespace Vograph.Desktop.Services;
 
 /// <summary>
-/// The same protocol as Core's SyncService.SyncHost (GET /sync/ → export JSON, POST /sync/ → import), but every
+/// The same protocol as Core's former SyncService.SyncHost (GET /sync/ → export JSON, POST /sync/ → import), but every
 /// Core call runs under the app-wide gate — Core's host reads and writes SQLite from the listener thread.
 /// </summary>
 public sealed class LanSyncServer : IDisposable
@@ -16,6 +16,7 @@ public sealed class LanSyncServer : IDisposable
     private readonly bool _localhostOnly;
     private HttpListener? _listener;
     private string? _address;
+    private string? _host;
 
     public LanSyncServer(AppServices app, int port = 8765, bool localhostOnly = false)
     {
@@ -35,14 +36,11 @@ public sealed class LanSyncServer : IDisposable
     /// </summary>
     public string Address => _address ?? "";
 
-    /// <summary>
-    /// Fills <see cref="Address"/> off the UI thread and returns it. Resolves at most once per process (the machine's
-    /// own address does not change while it runs) and never throws — a failed lookup falls back to the loopback
-    /// address, exactly like Core does.
-    /// </summary>
-    public async Task<string> ResolveAddressAsync()
+    /// <summary>The host part of Address: this machine's LAN address (Core's DNS lookup), «localhost» for a loopback-only server.
+    /// Resolved once, off the UI thread, never throws.</summary>
+    public async Task<string> ResolveHostAsync()
     {
-        if (_address is { } cached) return cached;
+        if (_host is { } cached) return cached;
         var host = "localhost";
         if (!_localhostOnly)
         {
@@ -53,8 +51,15 @@ public sealed class LanSyncServer : IDisposable
                 host = "127.0.0.1";
             }
         }
-        return _address = $"http://{host}:{Port}/sync/";
+        return _host = host;
     }
+
+    /// <summary>
+    /// Fills <see cref="Address"/> off the UI thread and returns it. Resolves at most once per process (the machine's
+    /// own address does not change while it runs) and never throws — a failed lookup falls back to the loopback
+    /// address, exactly like Core does.
+    /// </summary>
+    public async Task<string> ResolveAddressAsync() => _address ??= $"http://{await ResolveHostAsync()}:{Port}/sync/";
 
     /// <summary>
     /// The toast for a failed <see cref="Start"/>. Windows answers a prefix with no URL reservation with access

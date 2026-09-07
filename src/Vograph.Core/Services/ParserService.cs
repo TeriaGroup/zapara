@@ -15,33 +15,31 @@ public class ParserService
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
     }
 
+    private HttpClient? _http;
+    private HttpClient Http => _http ??= CreateHttpClient();
+
+    /// <summary>One client per service instance (was one per call): the same UA header, no socket churn.</summary>
+    public static HttpClient CreateHttpClient()
+    {
+        var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Vograph/2.0");
+        return http;
+    }
+
     public async Task<(string xml, string raw)> FetchXmlAsync(string url = DefaultUrl, HttpClient? client = null)
     {
-        var http = client ?? new HttpClient();
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Vograph/1.0");
-        var bytes = await http.GetByteArrayAsync(url);
-        // Detect BOM
-        string xml;
-        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
-        {
-            // UTF-16LE
-            xml = Encoding.Unicode.GetString(bytes);
-        }
-        else if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
-        {
-            xml = Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
-        }
-        else
-        {
-            // try UTF-8
-            xml = Encoding.UTF8.GetString(bytes);
-            // if contains null chars, maybe UTF-16BE?
-            if (xml.Contains('\0'))
-            {
-                xml = Encoding.Unicode.GetString(bytes);
-            }
-        }
-        return (xml, Convert.ToBase64String(bytes)); // raw as base64 for storage if needed
+        var bytes = await (client ?? Http).GetByteArrayAsync(url);
+        return (DecodeXml(bytes), Convert.ToBase64String(bytes)); // raw as base64 for storage if needed
+    }
+
+    /// <summary>voenmeh.ru serves the XML as UTF-16LE with a BOM; archives came as UTF-8 with and without one.
+    /// The single decoder for timetables, lecturers and the desktop refresher.</summary>
+    public static string DecodeXml(byte[] bytes)
+    {
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE) return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
+        var utf8 = Encoding.UTF8.GetString(bytes);
+        return utf8.Contains('\0') ? Encoding.Unicode.GetString(bytes) : utf8;
     }
 
     public (List<Group> groups, List<Lesson> lessons, DateTime periodStart, int weekCount, string periodTitle) Parse(string xml)

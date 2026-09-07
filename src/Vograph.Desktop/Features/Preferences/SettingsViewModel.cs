@@ -5,6 +5,7 @@ using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Models;
+using Vograph.Core.Services;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
 using Vograph.Desktop.ViewModels;
@@ -243,12 +244,12 @@ public sealed partial class SettingsViewModel : ViewModelBase
             return;
         }
         var qrPath = Path.Combine(App.DataDir, "sync-qr.png");
+        var host = await App.LanSync.ResolveHostAsync(); // DNS off the UI thread and outside the Core gate
         var data = await RunAsync(() =>
         {
             var json = App.Sync.ExportToJson();
-            var content = App.Sync.GenerateQrContent(json);
+            var content = SyncService.GenerateQrContent(json, host);
             App.Sync.SaveQrImage(content, qrPath);
-            // Core keeps the QR itself under 1500 chars: a bigger export is published over the LAN server instead.
             return new QrData(qrPath, content.StartsWith("http", StringComparison.OrdinalIgnoreCase));
         }, "qr");
         if (data is null) return;
