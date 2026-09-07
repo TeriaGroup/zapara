@@ -162,11 +162,14 @@ public sealed partial class ShellViewModel : ViewModelBase
 
     /// <summary>Data arrived from outside the app — a LAN push or the Settings file import. Both land in SQLite
     /// through Core's SyncService, which leaves the homework due dates computed against the *sender's* timetable,
-    /// so they are recomputed here before every section recomposes and the sidebar badge is refreshed.
+    /// so they are recomputed here before every section recomposes and the sidebar badge is refreshed. The group
+    /// card is refreshed too (R50): an import adopts MyGroupId when the receiver had none and overwrites
+    /// ParityInvert when the payload is newer, and the card shows both.
     /// Never throws (RunAsync swallows and reports), which is what makes the ctor's fire-and-forget hop safe.</summary>
     public async Task NotifyImportedAsync()
     {
         await RunAsync(() => App.Homework.RecomputeAllStatuses(), "import");
+        await RefreshGroupCardAsync();
         RaiseScheduleChanged();
         RaiseHomeworkChanged();
         await UpdateHomeworkBadgeAsync();
@@ -218,7 +221,15 @@ public sealed partial class ShellViewModel : ViewModelBase
                 var xml = check.Xml!;
                 // Block-bodied async lambda: Parser.RefreshAsync returns Task<ValueTuple>, which would bind to the
                 // Func<T> overload (T = the Task itself) and leave the SQLite write running past the gate release.
-                if (!await RunAsync(async () => { await App.Parser.RefreshAsync(xmlOverride: xml); }, "refresh")) return false;
+                // The successful fetch is also the last check: without the stamp the hourly tick could issue one
+                // more HEAD within the same day (T1 #4).
+                if (!await RunAsync(async () =>
+                {
+                    await App.Parser.RefreshAsync(xmlOverride: xml);
+                    var s = App.Db.GetSettings();
+                    s.LastAutoCheckAt = DateTime.UtcNow.ToString("o");
+                    App.Db.SaveSettings(s);
+                }, "refresh")) return false;
                 await RefreshGroupCardAsync();
                 RaiseScheduleChanged();
                 await UpdateHomeworkBadgeAsync(); // due dates are recomputed against the new timetable
@@ -249,7 +260,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         return (utcNow - at.ToUniversalTime()).TotalHours >= 24;
     }
 
-    private void StartAutoCheck()
+    internal void StartAutoCheck()
     {
         if (_autoCheck is not null) return;
         _autoCheck = new DispatcherTimer(TimeSpan.FromHours(1), DispatcherPriority.Background, async (_, _) =>
@@ -258,6 +269,17 @@ public sealed partial class ShellViewModel : ViewModelBase
             if (s is not null && ShouldAutoCheck(s, DateTime.UtcNow)) await RefreshScheduleAsync(force: false, quiet: true);
         });
         _autoCheck.Start();
+    }
+
+    internal bool IsAutoCheckRunning => _autoCheck is { IsEnabled: true };
+
+    /// <summary>Shutdown: stops the hourly check and detaches every cached section (their Loc/shell subscriptions
+    /// die with them). App calls this from desktop.Exit before AppServices.Dispose; tests call it directly.</summary>
+    public void Stop()
+    {
+        _autoCheck?.Stop();
+        _autoCheck = null;
+        foreach (var key in _sections.Keys.ToList()) DetachSection(key);
     }
 
     /// <summary>Week/Teachers: jump to a concrete date in the schedule section.</summary>
@@ -291,12 +313,15 @@ public sealed partial class ShellViewModel : ViewModelBase
 
     private NavSection Make(SectionKey key, string labelKey, string iconKey) => new(key, labelKey, iconKey, NavigateCommand);
 
-    /// <summary>Replaces a section's factory (tests pin the clock this way); the cached instance is detached
-    /// so the next navigation rebuilds the section from the new factory.</summary>
+    /// <summary>Replaces a section's factory (tests pin the clock this way); the cached instance is detached so the
+    /// next navigation rebuilds the section from the new factory. When that instance is the one on screen, the host
+    /// is re-navigated at once: a section that no longer listens must not stay visible (T1 #8).</summary>
     public void Register(SectionKey key, Func<ViewModelBase> factory)
     {
         _factories[key] = factory;
+        var wasCurrent = _sections.TryGetValue(key, out var old) && ReferenceEquals(Current, old);
         DetachSection(key);
+        if (wasCurrent) NavigateTo(key);
     }
 
     private void DetachSection(SectionKey key)

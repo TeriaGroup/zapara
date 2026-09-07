@@ -82,6 +82,26 @@ public class HomeworkTests : UiTest
         Assert.Contains(subjects, s => s.SubjectRaw == "лек ВЫСШ. МАТЕМАТ" && s.Display == "Матан");
     }
 
+    [Theory]
+    [InlineData("лек физика", "ФИЗИКА")]
+    [InlineData("пр осн рос гос", "ОСН РОС ГОС")]
+    [InlineData("иностранный язык", "ИНОСТРАННЫЙ ЯЗЫК")]
+    [InlineData("лек", "ЛЕК")]
+    public void Orphan_Display_Drops_The_Type_Token_And_Upper_Cases(string normalized, string expected) =>
+        Assert.Equal(expected, HomeworkComposer.OrphanDisplay(normalized));
+
+    [Fact]
+    public void Homework_Of_A_Subject_Not_In_The_Timetable_Is_Shown_Readably()
+    {
+        using var db = TestDb.Create();
+        db.Services.Homework.AddHomework("лек ФИЗИКА", "задачи 1–3", 1, new DateTime(2026, 9, 5, 12, 0, 0)); // 3313 has no physics
+        var model = new HomeworkComposer(db.Services).Compose(Sun6.Date);
+        var orphan = model.Groups.SelectMany(g => g.Items).Single(i => i.Homework.Text == "задачи 1–3");
+        Assert.Equal("ФИЗИКА", orphan.Subject);      // not the raw lower-cased key «лек физика»
+        Assert.Equal("far", orphan.Status);           // no due date → pending → shown as far
+        Assert.Equal("Срок: — (нет занятий)", orphan.Label);
+    }
+
     [Fact]
     public async Task ViewModel_Add_Edit_Toggle_Delete_And_Badge()
     {
@@ -136,6 +156,61 @@ public class HomeworkTests : UiTest
 
         await shell.UpdateHomeworkBadgeAsync();
         Assert.Equal("1", shell.ToolSections.Single(s => s.Key == SectionKey.Homework).Badge); // Math burns tomorrow
+    }
+
+    [Fact]
+    public async Task A_Mutation_Reloads_The_Section_Once()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services) { Clock = () => Sun6 };
+        var vm = new HomeworkViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+        var row = vm.Groups.Single().Items.Single();
+        var resets = 0;
+        vm.Groups.CollectionChanged += (_, e) => { if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) resets++; };
+
+        await vm.ToggleDoneAsync(row);
+        await Task.Delay(150, TestContext.Current.CancellationToken); // a second, event-driven reload would land here
+
+        Assert.Equal(1, resets); // ChangedAsync reloads; its own HomeworkChanged echo must not reload again
+        Assert.True(vm.Groups.Single().IsDone);
+    }
+
+    [Fact]
+    public async Task Add_Without_Lessons_Toasts_Instead_Of_Doing_Nothing()
+    {
+        using var db = TestDb.Create();
+        var s = db.Services.Db.GetSettings();
+        s.MyGroupId = "9999"; // Е452Б: a group without lessons
+        db.Services.Db.SaveSettings(s);
+        var shell = new ShellViewModel(db.Services);
+        var vm = new HomeworkViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+        Assert.True(vm.HasGroup);
+
+        await vm.AddCommand.ExecuteAsync(null);
+
+        Assert.Null(shell.Dialogs.Current);
+        Assert.Contains(db.Services.Toasts.Items, t => t.Text == "У группы нет пар — добавить домашку не к чему");
+    }
+
+    [Fact]
+    public async Task No_Group_State_Appears_Only_After_The_First_Load()
+    {
+        using var db = TestDb.Create();
+        var s = db.Services.Db.GetSettings();
+        s.MyGroupId = "";
+        db.Services.Db.SaveSettings(s);
+        var shell = new ShellViewModel(db.Services);
+        var vm = new HomeworkViewModel(db.Services, shell, () => Sun6);
+        Assert.False(vm.ShowNoGroup); // nothing flashes before the first load
+        Assert.False(vm.IsLoaded);
+
+        await vm.LoadAsync();
+
+        Assert.True(vm.IsLoaded);
+        Assert.False(vm.HasGroup);
+        Assert.True(vm.ShowNoGroup);
     }
 
     [AvaloniaFact]

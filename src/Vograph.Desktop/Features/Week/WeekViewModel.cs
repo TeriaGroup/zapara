@@ -45,7 +45,11 @@ public sealed partial class WeekViewModel : ViewModelBase
     [ObservableProperty] private IList<string> _segmentItems;
     [ObservableProperty] private int _parityIndex; // 0 odd, 1 even; lands on the current week on the first load
     [ObservableProperty] private string _subtitle = "";
-    [ObservableProperty] private bool _hasGroup = true;
+    [ObservableProperty] private bool _isLoaded;
+    [ObservableProperty] private bool _hasGroup;
+    public bool ShowNoGroup => IsLoaded && !HasGroup;
+    partial void OnIsLoadedChanged(bool value) => OnPropertyChanged(nameof(ShowNoGroup));
+    partial void OnHasGroupChanged(bool value) => OnPropertyChanged(nameof(ShowNoGroup));
 
     partial void OnParityIndexChanged(int value)
     {
@@ -69,6 +73,7 @@ public sealed partial class WeekViewModel : ViewModelBase
     private void Apply(WeekModel m)
     {
         HasGroup = m.HasGroup;
+        IsLoaded = true;
         var suffix = T("weekCurrentSuffix");
         SegmentItems = new[] { T("weekOdd") + (m.IsOddToday ? suffix : ""), T("weekEven") + (m.IsOddToday ? "" : suffix) };
         Subtitle = $"{T("parityWeek", App.I18n.FormatParity(m.Parity == 1))} · {App.Loc.Plural(m.Total, "lessons1", "lessons2", "lessons5")}";

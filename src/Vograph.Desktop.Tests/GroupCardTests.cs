@@ -97,7 +97,7 @@ public class GroupCardTests
     }
 
     [Fact]
-    public async Task StartAsync_With_Data_Never_Shows_The_Loading_State()
+    public async Task StartAsync_With_Data_Does_Not_Reassign_The_Loading_State()
     {
         using var db = TestDb.Create();
         var shell = new ShellViewModel(db.Services);
@@ -122,6 +122,10 @@ public class GroupCardTests
         var changed = 0;
         shell.ScheduleChanged += () => changed++;
 
+        var s0 = db.Services.Db.GetSettings();
+        s0.LastAutoCheckAt = null;
+        db.Services.Db.SaveSettings(s0);
+
         var ok = await shell.RefreshScheduleAsync(force: true, quiet: false);
 
         Assert.True(ok);
@@ -129,6 +133,7 @@ public class GroupCardTests
         Assert.Contains(db.Services.Db.GetAllLessonsForGroup("3313"), l => l.SubjectRaw == "лек ФИЛОСОФИЯ");
         Assert.Single(db.Services.Toasts.Items, t => t.Text == "Расписание обновлено");
         Assert.Equal(1, db.Services.CoreGate.CurrentCount);
+        Assert.NotNull(db.Services.Db.GetSettings().LastAutoCheckAt); // a successful fetch is also the last check (T1 #4)
     }
 
     [Fact]

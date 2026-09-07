@@ -17,6 +17,7 @@ public sealed partial class HomeworkViewModel : ViewModelBase
     private readonly Func<DateTime> _clock;
     private readonly Action _reload;
     private int _version;
+    private bool _raising;
     private readonly HashSet<string> _expanded = new();
 
     public HomeworkViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null) : base(app)
@@ -24,7 +25,7 @@ public sealed partial class HomeworkViewModel : ViewModelBase
         _shell = shell;
         _clock = clock ?? (() => DateTime.Now);
         _composer = new HomeworkComposer(app);
-        _reload = () => _ = LoadAsync();
+        _reload = () => { if (!_raising) _ = LoadAsync(); };
         shell.GroupChanged += _reload;
         shell.ScheduleChanged += _reload;
         shell.HomeworkChanged += _reload;
@@ -46,7 +47,14 @@ public sealed partial class HomeworkViewModel : ViewModelBase
 
     [ObservableProperty] private string _subtitle = "";
     [ObservableProperty] private bool _isEmpty;
-    [ObservableProperty] private bool _hasGroup = true;
+    [ObservableProperty] private bool _isLoaded;
+    [ObservableProperty] private bool _hasGroup; // false until the first load: ShowNoGroup guards the empty-state flash (T8 #8)
+
+    /// <summary>The «Группа не выбрана» state, only once the first load has said so.</summary>
+    public bool ShowNoGroup => IsLoaded && !HasGroup;
+
+    partial void OnIsLoadedChanged(bool value) => OnPropertyChanged(nameof(ShowNoGroup));
+    partial void OnHasGroupChanged(bool value) => OnPropertyChanged(nameof(ShowNoGroup));
 
     public async Task LoadAsync()
     {
@@ -55,6 +63,7 @@ public sealed partial class HomeworkViewModel : ViewModelBase
         var model = await RunAsync(() => _composer.Compose(today), "homework");
         if (model is null || version != _version) return;
         HasGroup = model.HasGroup;
+        IsLoaded = true;
         Groups.Clear();
         foreach (var g in model.Groups)
             Groups.Add(new HomeworkGroupViewModel(g, this, collapsed: g.Status == "done" && !_expanded.Contains(g.Status)));
@@ -73,7 +82,12 @@ public sealed partial class HomeworkViewModel : ViewModelBase
     private async Task Add()
     {
         var subjects = await RunAsync(() => _composer.Subjects(), "homework subjects");
-        if (subjects is null || subjects.Count == 0) return;
+        if (subjects is null) return;
+        if (subjects.Count == 0)
+        {
+            App.Toasts.Info(T("hwNoSubjects")); // a group without lessons: say so instead of silently doing nothing (T8 #7)
+            return;
+        }
         var pick = new SubjectPickerDialogViewModel(subjects);
         if (!await _shell.Dialogs.ShowAsync(pick) || pick.Selected is null) return;
         var subject = pick.Selected;
@@ -113,10 +127,14 @@ public sealed partial class HomeworkViewModel : ViewModelBase
             await ChangedAsync();
     }
 
+    /// <summary>Reload, then tell the schedule cards and the badge. The flag keeps our own _reload (subscribed to
+    /// the very HomeworkChanged we raise) from composing the section a second time (T8 #1).</summary>
     private async Task ChangedAsync()
     {
         await LoadAsync();
-        _shell.RaiseHomeworkChanged(); // schedule cards
+        _raising = true;
+        try { _shell.RaiseHomeworkChanged(); }
+        finally { _raising = false; }
         await _shell.UpdateHomeworkBadgeAsync(); // sidebar badge, awaited so nothing outlives this call
     }
 }

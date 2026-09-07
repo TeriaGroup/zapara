@@ -47,7 +47,11 @@ public partial class App : Application
             }
             window.Opened += async (_, _) => await shell.StartAsync();
             desktop.MainWindow = window;
-            desktop.Exit += (_, _) => services.Dispose();
+            desktop.Exit += (_, _) =>
+            {
+                shell.Stop();      // timer and section subscriptions first
+                services.Dispose(); // then the gate and SQLite
+            };
             services.Log.Info("desktop started");
         }
         base.OnFrameworkInitializationCompleted();

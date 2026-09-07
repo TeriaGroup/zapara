@@ -20,7 +20,7 @@
         </Button>
       </Grid>
 
-      <c:EmptyState IsVisible="{Binding !HasGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Homework}" Margin="0,24" />
+      <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Homework}" Margin="0,24" />
       <c:EmptyState IsVisible="{Binding IsEmpty}" Title="{loc:T hwEmpty}" Hint="{loc:T hwEmptyHint}" Icon="{StaticResource Icon.Homework}" Margin="0,24" />
 
       <ItemsControl ItemsSource="{Binding Groups}">

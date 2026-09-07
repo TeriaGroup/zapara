@@ -44,7 +44,11 @@ public sealed partial class SummaryViewModel : ViewModelBase
     [ObservableProperty] private IList<string> _segmentItems;
     [ObservableProperty] private int _segmentIndex; // 0 odd, 1 even, 2 both
     [ObservableProperty] private string _subtitle = "";
-    [ObservableProperty] private bool _hasGroup = true;
+    [ObservableProperty] private bool _isLoaded;
+    [ObservableProperty] private bool _hasGroup;
+    public bool ShowNoGroup => IsLoaded && !HasGroup;
+    partial void OnIsLoadedChanged(bool value) => OnPropertyChanged(nameof(ShowNoGroup));
+    partial void OnHasGroupChanged(bool value) => OnPropertyChanged(nameof(ShowNoGroup));
     [ObservableProperty] private string _totalText = "—";
     [ObservableProperty] private IReadOnlyList<DayBar> _dayBars = Array.Empty<DayBar>();
     [ObservableProperty] private IReadOnlyList<CountItem> _types = Array.Empty<CountItem>();
@@ -78,6 +82,7 @@ public sealed partial class SummaryViewModel : ViewModelBase
     private void Apply(SummaryModel m)
     {
         HasGroup = m.HasGroup;
+        IsLoaded = true;
         SegmentItems = BuildSegmentItems();
         TotalText = m.Total.ToString();
         var max = m.ByDay.Count == 0 ? 0 : m.ByDay.Max(d => d.Count);

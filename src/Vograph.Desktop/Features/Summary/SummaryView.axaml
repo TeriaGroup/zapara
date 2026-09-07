@@ -32,7 +32,7 @@
         <c:SegmentedControl Grid.Column="1" VerticalAlignment="Bottom" Items="{Binding SegmentItems}" SelectedIndex="{Binding SegmentIndex}" />
       </Grid>
 
-      <c:EmptyState IsVisible="{Binding !HasGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Summary}" Margin="0,48,0,0" />
+      <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Summary}" Margin="0,48,0,0" />
 
       <WrapPanel IsVisible="{Binding HasGroup}" ItemSpacing="12" LineSpacing="12">
         <Border Classes="card" Width="220">

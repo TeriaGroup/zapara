@@ -286,4 +286,33 @@ public class SyncTests : UiTest
             "Не удалось запустить сервер: занято",
             db.Services.LanSync.StartFailureText(new HttpListenerException(183, "занято")));
     }
+
+    /// <summary>R50: an import may adopt MyGroupId (receiver had none) and overwrite ParityInvert (payload newer
+    /// than the receiver's LastSyncAt). The sidebar card reads both, so NotifyImportedAsync must refresh it —
+    /// before this fix the card kept «Группа не выбрана» until the next timetable refresh.</summary>
+    [Fact]
+    public async Task Import_Adopts_The_Group_And_Refreshes_The_Sidebar_Card()
+    {
+        using var source = TestDb.Create();
+        var ss = source.Services.Db.GetSettings();
+        ss.ParityInvert = true;
+        source.Services.Db.SaveSettings(ss);
+        var json = source.Services.Sync.ExportToJson();
+
+        using var target = TestDb.Create(seedPersonalization: false);
+        var ts = target.Services.Db.GetSettings();
+        ts.MyGroupId = "";
+        target.Services.Db.SaveSettings(ts);
+        var shell = new ShellViewModel(target.Services);
+        Assert.Equal("Группа не выбрана", shell.GroupName);
+
+        target.Services.Sync.ImportFromJson(json);
+        await shell.NotifyImportedAsync();
+
+        Assert.Equal("А863С", shell.GroupName);
+        Assert.True(target.Services.Db.GetSettings().ParityInvert);
+        // The card's parity text is computed against the real clock; compute the expectation the same way.
+        var expectedOdd = ParityService.IsOddWeek(DateTime.Today, new DateTime(2026, 9, 1), 2, invert: true);
+        Assert.StartsWith(target.Services.I18n.FormatParity(expectedOdd), shell.GroupSubtitle);
+    }
 }

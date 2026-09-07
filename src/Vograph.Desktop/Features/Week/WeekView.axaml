@@ -61,7 +61,7 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
 
-      <c:EmptyState IsVisible="{Binding !HasGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Week}" Margin="0,48,0,0" />
+      <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Week}" Margin="0,48,0,0" />
     </StackPanel>
   </ScrollViewer>
 </UserControl>

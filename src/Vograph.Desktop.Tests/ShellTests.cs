@@ -26,6 +26,12 @@ public class ShellTests : UiTest
         public Task<string?> Run(Func<string> f) => RunAsync(f, "probe");
     }
 
+    private sealed class Detachable(AppServices app) : ViewModelBase(app)
+    {
+        public int Detached;
+        public override void Detach() => Detached++;
+    }
+
     [AvaloniaFact]
     public void Every_Section_Resolves_To_Its_Real_ViewModel()
     {
@@ -155,5 +161,53 @@ public class ShellTests : UiTest
 
         Assert.InRange(sw.ElapsedMilliseconds, 150, 1500); // checked first: a 2 s deadlock is the primary symptom
         Assert.Equal("done", await work);
+    }
+
+    [AvaloniaFact]
+    public async Task Stop_Halts_The_Hourly_Check_And_Detaches_Sections()
+    {
+        var (db, shell) = Make();
+        using (db)
+        {
+            await shell.StartAsync(allowNetwork: false); // no network: the check timer is not started by StartAsync
+            shell.StartAutoCheck();
+            Assert.True(shell.IsAutoCheckRunning);
+            var week = shell.Section<Features.Week.WeekViewModel>(SectionKey.Week);
+            shell.NavigateTo(SectionKey.Week);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (week.Days.Count < 6 && sw.ElapsedMilliseconds < 2000) await Task.Delay(10, TestContext.Current.CancellationToken);
+
+            shell.Stop();
+
+            Assert.False(shell.IsAutoCheckRunning);
+            var resets = 0;
+            week.Days.CollectionChanged += (_, _) => resets++; // every reload starts with Days.Clear() → Reset
+            shell.RaiseScheduleChanged();
+            await Task.Delay(200, TestContext.Current.CancellationToken);
+            Assert.Equal(0, resets); // detached: the section no longer listens
+        }
+    }
+
+    [Fact]
+    public void Register_Detaches_The_Cached_Instance_Once_And_Renavigates_When_It_Was_Current()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var probe = new Detachable(db.Services);
+        shell.Register(SectionKey.Week, () => probe);
+        shell.NavigateTo(SectionKey.Week);
+        Assert.Same(probe, shell.Current);
+
+        var replacement = new Detachable(db.Services);
+        shell.Register(SectionKey.Week, () => replacement);
+
+        Assert.Equal(1, probe.Detached);
+        Assert.Same(replacement, shell.Current); // the host never keeps showing a section that stopped listening
+        Assert.Equal(SectionKey.Week, shell.CurrentKey);
+
+        shell.NavigateTo(SectionKey.Summary);
+        shell.Register(SectionKey.Week, () => new Detachable(db.Services)); // not current: detached, no navigation
+        Assert.Equal(1, replacement.Detached);
+        Assert.Equal(SectionKey.Summary, shell.CurrentKey);
     }
 }

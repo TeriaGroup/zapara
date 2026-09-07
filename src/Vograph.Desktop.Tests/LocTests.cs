@@ -102,7 +102,7 @@ public class LocTests
         "friendsEmpty","friendsEmptyHint","friendsColor","friendAdded","intersections","strictnessHint","alwaysShowAll","alwaysShowAllHint",
         "previewTitle","previewNone","strictTick25","strictTick50","strictTick75","strictTick100",
         "hwGroupUrgent","hwGroupBurning","hwGroupApproaching","hwGroupFar","hwGroupOverdue","hwGroupDone",
-        "hwOpen1","hwOpen2","hwOpen5","hwDoneCount","hwAddShort","hwEmpty","hwEmptyHint","hwPickSubject","hwPickSubjectHint",
+        "hwOpen1","hwOpen2","hwOpen5","hwDoneCount","hwAddShort","hwEmpty","hwEmptyHint","hwPickSubject","hwPickSubjectHint","hwNoSubjects",
         "setAppearance","setTheme","themeSystem","themeLight","themeDark","setCompactSidebar","setAnimations","setSchedule","setChange",
         "setAutoCheckAt","setNever","setAbout","setVersion","setReleases","setSources","setSourceTimetable","setSourceMaps","setDataFolder",
         "setNotifications","notifEnabled","notifTime1Label","notifTime2Label","notifSave","notifTest","notifBadTime","notifSaved",

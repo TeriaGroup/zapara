@@ -36,7 +36,7 @@ public sealed class HomeworkComposer
                 : 0;
             var status = HomeworkStatus.Compute(h, today, until);
             var label = HomeworkLabels.Label(status == "pending" ? "far" : status, h.DueDateComputed, until, loc);
-            var (display, raw) = names.TryGetValue(h.SubjectRawNormalized, out var n) ? n : (h.SubjectRawNormalized, h.SubjectRawNormalized);
+            var (display, raw) = names.TryGetValue(h.SubjectRawNormalized, out var n) ? n : (OrphanDisplay(h.SubjectRawNormalized), h.SubjectRawNormalized);
             entries.Add(new HomeworkEntry(h, display, raw, status == "pending" ? "far" : status, h.DueDateComputed, label));
         }
         var groups = entries
@@ -47,6 +47,17 @@ public sealed class HomeworkComposer
             .ToList();
         var done = entries.Count(e => e.Status == "done");
         return new HomeworkModel(true, entries.Count - done, done, groups);
+    }
+
+    private static readonly HashSet<string> TypeTokens = new(StringComparer.OrdinalIgnoreCase) { "лек", "пр", "лаб", "конс", "зач", "экз", "курс", "практика" };
+
+    /// <summary>A homework whose subject left the timetable keeps only Core's key — the lower-cased full discipline
+    /// («лек высш. математ»). Show it the way the timetable spelled it: type token dropped, upper case (T8 #6).</summary>
+    public static string OrphanDisplay(string normalized)
+    {
+        var parts = normalized.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var body = parts.Length == 2 && TypeTokens.Contains(parts[0]) ? parts[1] : normalized;
+        return body.ToUpperInvariant();
     }
 
     /// <summary>Distinct subjects of my group for the «＋ Добавить» picker (full SubjectRaw is what Core is called with).</summary>
