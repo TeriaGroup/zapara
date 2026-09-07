@@ -336,6 +336,10 @@ public class MapsTests : UiTest
         Assert.True(vm.ShowGoToNext); // «К следующей паре» stays available: pressing it re-checks the timetable
     }
 
+    /// <summary>Detach() must unsubscribe the shell events, not merely block the decode: after switching the settings
+    /// to a group without lessons, a live handler would re-track into Mode None («Нет предстоящих занятий»); a detached
+    /// section keeps Mode NextLesson and its «Следующая пара …» line. Those are set before the _detached decode guard,
+    /// so this cannot be satisfied by the guard alone.</summary>
     [AvaloniaFact]
     public async Task Detach_Ignores_Shell_Events()
     {
@@ -343,11 +347,22 @@ public class MapsTests : UiTest
         var (shell, vm, _, _) = Make(db, ("ГК", 4));
         shell.NavigateTo(SectionKey.Maps);
         await Waits.Until(() => vm.Image is not null, "plan");
+        Assert.Equal(MapMode.NextLesson, vm.Mode);
+        var line = vm.ContextLine;
+        Assert.StartsWith("Следующая пара · 493", line);
+
         vm.Detach();
         Assert.Null(vm.Image);
 
-        shell.RaiseScheduleChanged(); // a live section would re-track and decode the plan again
+        var s = db.Services.Db.GetSettings();
+        s.MyGroupId = "9999"; // Е452Б: no lessons — a live handler would now re-track into «Нет предстоящих занятий»
+        db.Services.Db.SaveSettings(s);
+        shell.RaiseScheduleChanged();
+        shell.RaiseGroupChanged();
         await Task.Delay(200, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MapMode.NextLesson, vm.Mode);
+        Assert.Equal(line, vm.ContextLine);
         Assert.Null(vm.Image);
     }
 
