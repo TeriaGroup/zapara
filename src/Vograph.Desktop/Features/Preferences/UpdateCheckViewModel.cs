@@ -215,7 +215,20 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand] private Task Check() => CheckAsync();
+    /// <summary>«Проверить» in Settings. The offline switch is honoured here rather than inside
+    /// <see cref="CheckAsync"/>: the state machine is what the suite drives against a fake release source, the
+    /// button is what a person presses — and VOGRAPH_OFFLINE=1 promises «no update check» (App.axaml.cs), which
+    /// AppServices.AllowNetwork only ever delivered for the silent startup flow (T12-R6). The wording is the
+    /// existing check failure, with the reason in place of the exception message.</summary>
+    [RelayCommand]
+    private Task Check()
+    {
+        if (App.AllowNetwork) return CheckAsync();
+        App.Log.Info("update check: skipped, network disabled for this run");
+        HtmlUrl = SettingsViewModel.ReleasesUrl;
+        Fail(T("updFailWith", T("offlineMode")));
+        return Task.CompletedTask;
+    }
     [RelayCommand] private Task OpenReleases() => App.Launcher.OpenUrlAsync(HtmlUrl ?? SettingsViewModel.ReleasesUrl);
 
     /// <summary>Spec §6: the silent startup update toasts «Обновляюсь до …» and restarts without a dialog.

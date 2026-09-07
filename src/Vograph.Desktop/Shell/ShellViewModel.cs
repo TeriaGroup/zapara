@@ -220,6 +220,7 @@ public sealed partial class ShellViewModel : ViewModelBase
 
     [ObservableProperty] private bool _isRefreshing;
     private bool _staleToastShown;
+    private bool _started;
     private DispatcherTimer? _autoCheck;
 
     /// <summary>F5 and «Обновить расписание».</summary>
@@ -230,6 +231,16 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// quiet: startup / 24 h check — only the first failure per session toasts.</summary>
     public async Task<bool> RefreshScheduleAsync(bool force, bool quiet)
     {
+        // VOGRAPH_OFFLINE=1 promises «no timetable refresh» (App.axaml.cs), and AppServices.AllowNetwork only
+        // ever gated the automatic paths: F5 and Settings' «Обновить расписание» went straight out to the
+        // network on an offline run, contradicting the switch's own comment (T12-R6). The wording is the
+        // existing refresh failure, with the reason in place of the exception message.
+        if (_started && !App.AllowNetwork)
+        {
+            App.Log.Info("refresh: skipped, network disabled for this run");
+            if (!quiet) App.Toasts.Warn(T("refreshFail", T("offlineMode")));
+            return false;
+        }
         if (IsRefreshing) return false;
         IsRefreshing = true;
         try
@@ -415,6 +426,10 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// runs behind it; the loading state and a gated bootstrap remain only for an empty database.</summary>
     public async Task StartAsync(bool allowNetwork = true)
     {
+        // This shell now belongs to a real run whose network policy App has declared, which is what lets the
+        // manual refresh above honour the offline switch. A shell built straight into a test and driven against
+        // an injected refresher never starts, and has no policy for the switch to speak for.
+        _started = true;
         var data = await RunAsync(() => new StartData(App.Db.GetAllGroups().Count, App.Db.GetSettings()), "startup");
         if (data is null)
         {

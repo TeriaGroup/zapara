@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Controls;
+using Avalonia.Data;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
@@ -90,17 +91,21 @@ public static class Appear
     private static async void Run(Control control, TimeSpan delay, double offsetY, TimeSpan duration)
     {
         var target = control.Opacity; // the styled value (0.6 for a past lesson card): the run ends there, not at 1
+        var start = new KeyFrame { Cue = new Cue(0d), Setters = { new Setter(Visual.OpacityProperty, 0d) } };
+        var end = new KeyFrame { Cue = new Cue(1d), Setters = { new Setter(Visual.OpacityProperty, target) } };
+        var slide = offsetY != 0 ? Pin(control, offsetY) : null;
+        if (slide is not null)
+        {
+            start.Setters.Add(new Setter(TranslateTransform.YProperty, offsetY));
+            end.Setters.Add(new Setter(TranslateTransform.YProperty, 0d));
+        }
         var animation = new Animation
         {
             Duration = duration,
             Delay = delay,
             Easing = MotionSettings.Ease,
             FillMode = FillMode.Backward, // hold the first frame through the delay, release Opacity when done
-            Children =
-            {
-                new KeyFrame { Cue = new Cue(0d), Setters = { new Setter(Visual.OpacityProperty, 0d), new Setter(TranslateTransform.YProperty, offsetY) } },
-                new KeyFrame { Cue = new Cue(1d), Setters = { new Setter(Visual.OpacityProperty, target), new Setter(TranslateTransform.YProperty, 0d) } },
-            }
+            Children = { start, end }
         };
         try { await animation.RunAsync(control); }
         catch (Exception ex)
@@ -110,13 +115,32 @@ public static class Appear
         }
         finally
         {
-            // FillMode.Backward releases the animated Opacity but NOT RenderTransform: the transform animator
-            // assigns its own group to that property directly, i.e. at local priority, and a local value shadows
-            // every style-driven transform for good (Border.card.hoverable:pointerover's 1px lift, a button's
-            // :pressed scale). Clearing it is what keeps "animations on" from removing interaction feedback.
+            // Both halves of the release, and both are needed: the pinned group is ours to withdraw, and the
+            // ClearValue keeps Task 9's rule for the local-priority group the animator itself would assign if
+            // Pin ever came back empty-handed. A transform left at either priority shadows every style-driven
+            // one for good (Border.card.hoverable:pointerover's 1px lift, a button's :pressed scale), i.e.
+            // turning animations ON would take the interaction feedback away (T9-R4).
+            slide?.Dispose();
             control.ClearValue(Visual.RenderTransformProperty);
         }
     }
+
+    /// <summary>
+    /// Hands the transform animator a group it can find, at animation priority. Avalonia's animator answers a
+    /// TranslateTransform.Y keyframe by assigning a TransformGroup of its own to RenderTransform — a *local*
+    /// value — and then reading the property back to look the group up; on every control whose RenderTransform
+    /// carries a TransformOperationsTransition (Theme/Motion.axaml: Button, Border.card — the Week day buttons,
+    /// the Summary cards, the lesson cards) that local write starts the transition, whose interpolated
+    /// TransformOperations then wins the read. The animator logged «Cannot find the appropriate transform» and
+    /// returned without animating: the slide half of the cascade never played, only the fade did (T12-R1).
+    /// Animation priority is below the transition's trigger threshold, so nothing intercepts this one, and the
+    /// returned handle takes it away again. Y starts at the offset so the first painted frame is already
+    /// displaced, whatever the render clock does with the animation's own first tick.
+    /// </summary>
+    private static IDisposable? Pin(Control control, double offsetY) =>
+        control.SetValue(Visual.RenderTransformProperty,
+            new TransformGroup { Children = { new TranslateTransform { Y = offsetY } } },
+            BindingPriority.Animation);
 
     /// <summary>The app log in production, the trace listeners anywhere else (tests, design time). A failed
     /// entrance must never be silent, and must not cost this behaviour a dependency of its own either.</summary>

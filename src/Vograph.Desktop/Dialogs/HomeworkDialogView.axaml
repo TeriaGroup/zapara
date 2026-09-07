@@ -16,9 +16,11 @@
     <StackPanel Spacing="6">
       <TextBlock Classes="caption" Text="{loc:T hwN}" TextWrapping="Wrap" />
       <StackPanel Orientation="Horizontal" Spacing="10">
-        <Button Classes="round" Command="{Binding DecCommand}" AutomationProperties.AutomationId="Dialog.Dec"><c:Icon Data="{StaticResource Icon.Minus}" Size="14" /></Button>
+        <!-- The two glyph buttons say what they do to the count next to them; there is no tooltip to borrow a
+             name from, and «−1»/«+1» is what a screen reader needs to hear about a stepper. -->
+        <Button Classes="round" Command="{Binding DecCommand}" AutomationProperties.AutomationId="Dialog.Dec" AutomationProperties.Name="-1"><c:Icon Data="{StaticResource Icon.Minus}" Size="14" /></Button>
         <TextBlock Classes="tnum" Text="{Binding Nth}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" MinWidth="24" TextAlignment="Center" />
-        <Button Classes="round" Command="{Binding IncCommand}" AutomationProperties.AutomationId="Dialog.Inc"><c:Icon Data="{StaticResource Icon.Plus}" Size="14" /></Button>
+        <Button Classes="round" Command="{Binding IncCommand}" AutomationProperties.AutomationId="Dialog.Inc" AutomationProperties.Name="+1"><c:Icon Data="{StaticResource Icon.Plus}" Size="14" /></Button>
         <TextBlock Classes="muted caption" Text="{Binding DueText}" VerticalAlignment="Center" />
       </StackPanel>
     </StackPanel>

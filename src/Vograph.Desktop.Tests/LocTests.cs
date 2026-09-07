@@ -90,7 +90,7 @@ public class LocTests
         "groupPickTitle","search","groupSearchHint","select","confirm","delete","updatedChip","errorTitle",
         "bootstrapError","bootstrapHint","retry","friendAbsent","inter100","inter75","inter50","inter25","savedOk","noGroup","noGroupHint",
         "winMinimize","winMaximize","winClose",
-        "refreshOk","refreshNone","refreshFail","refreshTip",
+        "refreshOk","refreshNone","refreshFail","refreshTip","offlineMode",
         "weekCurrentSuffix","weekOpenDayTip",
         "summaryTotal","summaryByDay","summaryByType","summarySubjects","summaryTeachers","summaryRooms","summaryBothShort",
         "teachersSearchHint","teachersOnlyMine","teachersCount","teachersPick","teachersPickHint","teachersLoading",

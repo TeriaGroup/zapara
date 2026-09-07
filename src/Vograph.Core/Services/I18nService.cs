@@ -129,6 +129,8 @@ public class I18nService
             ["winMinimize"] = "Свернуть", ["winMaximize"] = "Развернуть", ["winClose"] = "Закрыть", ["winRestore"] = "Свернуть в окно",
             ["refreshOk"] = "Расписание обновлено", ["refreshNone"] = "Расписание актуально",
             ["refreshFail"] = "Не удалось обновить расписание: {0}", ["refreshTip"] = "Обновить расписание (F5)",
+            // The reason substituted into refreshFail/updFailWith when the run was started with VOGRAPH_OFFLINE=1.
+            ["offlineMode"] = "сеть отключена для этого запуска (VOGRAPH_OFFLINE)",
             ["weekCurrentSuffix"] = " · текущая", ["weekOpenDayTip"] = "Открыть этот день в расписании",
             ["summaryTotal"] = "Всего пар", ["summaryByDay"] = "По дням", ["summaryByType"] = "По типам",
             ["summarySubjects"] = "Предметы", ["summaryTeachers"] = "Преподаватели", ["summaryRooms"] = "Аудитории", ["summaryBothShort"] = "Обе",
@@ -290,6 +292,7 @@ public class I18nService
             ["winMinimize"] = "Minimize", ["winMaximize"] = "Maximize", ["winClose"] = "Close", ["winRestore"] = "Restore",
             ["refreshOk"] = "Timetable updated", ["refreshNone"] = "Timetable is up to date",
             ["refreshFail"] = "Could not update the timetable: {0}", ["refreshTip"] = "Refresh timetable (F5)",
+            ["offlineMode"] = "the network is off for this run (VOGRAPH_OFFLINE)",
             ["weekCurrentSuffix"] = " · current", ["weekOpenDayTip"] = "Open this day in the schedule",
             ["summaryTotal"] = "Lessons total", ["summaryByDay"] = "By day", ["summaryByType"] = "By type",
             ["summarySubjects"] = "Subjects", ["summaryTeachers"] = "Teachers", ["summaryRooms"] = "Rooms", ["summaryBothShort"] = "Both",

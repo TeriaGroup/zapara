@@ -7,6 +7,7 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Layout;
+using Avalonia.Logging;
 using Avalonia.Media;
 using Avalonia.Media.Transformation;
 using Avalonia.Styling;
@@ -747,5 +748,91 @@ public class MotionTests : UiTest
         await SettleAsync(() => false, 200); // …and it stays parked while the clock keeps ticking
         Assert.Equal(-140, ShineAt(shine), 3);
         Assert.Null(shine.RenderTransform); // the sweep handed the transform back to the styles
+    }
+
+    /// <summary>
+    /// T12-R1: the slide half of the appear cascade, on a control that carries the motion sheet's
+    /// TransformOperationsTransition (Theme/Motion.axaml: `Button`, `Border.card` — the Week day buttons, the
+    /// Summary cards, the lesson cards). Appear used to animate TranslateTransform.Y; Avalonia's transform
+    /// animator answers such a property by putting a TransformGroup of its own on RenderTransform and then
+    /// looking that group back up — and the transition replaces the value in between, so the animator logged
+    /// «Cannot find the appropriate transform» and returned without animating anything. Opacity still faded
+    /// (a separate animator), which is why nobody noticed: the card never moved.
+    /// </summary>
+    [AvaloniaFact]
+    public async Task Cascade_Slides_A_Card_That_Carries_The_Transform_Transition()
+    {
+        var app = (App)Application.Current!;
+        using var db = TestDb.Create();
+        db.Services.Motion.Enabled = true;
+        var shell = new ShellViewModel(db.Services);
+        var animations = new AnimationLog(Logger.Sink);
+        Logger.Sink = animations;
+        try
+        {
+            app.SetMotion(true);
+            var host = new StackPanel();
+            Appear.SetCascadeHost(host, true);
+            var window = new Window { Width = 300, Height = 400, DataContext = shell, Content = host };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var card = Card(0, cls: "card"); // Border.card: TransformOperationsTransition Property="RenderTransform"
+            Appear.CascadeRuns = 0;
+            host.Children.Add(card);
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(1, Appear.CascadeRuns);
+
+            // Sampled off the rendered matrix, not off one property's notifications: what the spec asks for is
+            // that the card is drawn below its place and travels up, whatever machinery carries it there. The
+            // card's styled opacity is already 1, so "has it landed?" holds before the run writes anything —
+            // hence a bounded window that exits once the transform has been handed back.
+            var seen = new List<double>();
+            for (var waited = 0; waited < 2000; waited += 20)
+            {
+                AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                Dispatcher.UIThread.RunJobs();
+                seen.Add(card.RenderTransform?.Value.M32 ?? 0);
+                if (seen.Count > 4 && Landed(card, 1.0) && card.GetValue(Visual.RenderTransformProperty) is null) break;
+                await Task.Delay(20, TestContext.Current.CancellationToken);
+            }
+
+            // Some frame really put the card below its place (8 px, spec §7 «Появление списка»)…
+            Assert.True(seen.Any(y => y > 0.5),
+                $"the card must slide up into place; translateY only ever read [{string.Join(", ", seen.Select(y => y.ToString("0.##", CultureInfo.InvariantCulture)))}]" +
+                $" and the animator logged [{string.Join(" · ", animations.Lines)}]");
+            // …it came to rest level, opaque, and handed RenderTransform back to the styles (T9-R4)…
+            Assert.Equal(1.0, card.Opacity, 2);
+            Assert.Null(card.GetValue(Visual.RenderTransformProperty));
+            // …and the animator never had to guess at a transform it could not find.
+            Assert.DoesNotContain(animations.Lines, l => l.Contains("Cannot find the appropriate transform"));
+        }
+        finally
+        {
+            Logger.Sink = animations.Next;
+            db.Services.Motion.Enabled = false;
+            app.SetMotion(false);
+        }
+    }
+
+    /// <summary>UiTest.Sink keeps binding and property warnings only, and the transform animator writes under
+    /// LogArea.Animations: this listens for that area and hands every line on to the sink it replaced, so
+    /// AssertNoBindingErrors still sees what it always saw.</summary>
+    private sealed class AnimationLog(ILogSink? next) : ILogSink
+    {
+        public ILogSink? Next { get; } = next;
+        public List<string> Lines { get; } = new();
+
+        public bool IsEnabled(LogEventLevel level, string area) => level >= LogEventLevel.Warning || (Next?.IsEnabled(level, area) ?? false);
+
+        public void Log(LogEventLevel level, string area, object? source, string messageTemplate) =>
+            Log(level, area, source, messageTemplate, Array.Empty<object?>());
+
+        public void Log(LogEventLevel level, string area, object? source, string messageTemplate, params object?[] propertyValues)
+        {
+            if (level >= LogEventLevel.Warning && area == LogArea.Animations)
+                Lines.Add($"{messageTemplate} [{string.Join(", ", propertyValues.Select(v => v?.ToString()))}]");
+            Next?.Log(level, area, source, messageTemplate, propertyValues);
+        }
     }
 }
