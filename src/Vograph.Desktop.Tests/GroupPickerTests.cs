@@ -1,4 +1,13 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Documents;
+using Avalonia.Headless;
+using Avalonia.Headless.XUnit;
+using Avalonia.Input;
+using Avalonia.Media;
+using Avalonia.VisualTree;
 using Vograph.Core.Models;
+using Vograph.Desktop.Controls;
 using Vograph.Desktop.Dialogs;
 using Xunit;
 
@@ -48,5 +57,50 @@ public class GroupPickerTests
         using var db = TestDb.Create(seedPersonalization: false);
         var vm = new GroupPickerDialogViewModel(Groups, null);
         Assert.Equal(new[] { "09С31", "А863С", "Е452Б", "О3313" }, vm.Filtered.Select(g => g.Name));
+    }
+
+    [Theory]
+    [InlineData("09С31", "9c", 1, 2)]       // Latin c for Cyrillic С
+    [InlineData("А863С", "a86", 0, 3)]
+    [InlineData("О3313", "3313", 1, 4)]
+    [InlineData("А863С", "  86 ", 1, 2)]    // the query is trimmed, the name is not moved
+    public void MatchRange_Points_Into_The_Original_Name(string name, string query, int start, int length) =>
+        Assert.Equal((start, length), GroupSearch.MatchRange(name, query));
+
+    [Fact]
+    public void MatchRange_Is_Null_Without_A_Match_Or_A_Query()
+    {
+        Assert.Null(GroupSearch.MatchRange("А863С", ""));
+        Assert.Null(GroupSearch.MatchRange("А863С", "   "));
+        Assert.Null(GroupSearch.MatchRange("А863С", "zzz"));
+    }
+
+    [AvaloniaFact]
+    public void Picker_Highlights_The_Match_And_Down_Moves_Into_The_List()
+    {
+        using var db = TestDb.Create(seedPersonalization: false);
+        var vm = new GroupPickerDialogViewModel(Groups, null);
+        var view = new GroupPickerDialogView { DataContext = vm };
+        var window = new Window { Width = 520, Height = 480, Content = view };
+        window.Show();
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+        vm.Query = "9c";
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        var text = window.GetVisualDescendants().OfType<HighlightText>().Single(t => t.Source == "09С31");
+        var runs = text.Inlines!.OfType<Run>().ToList();
+        Assert.Equal(new[] { "0", "9С", "31" }, runs.Select(r => r.Text));
+        Assert.Equal(FontWeight.SemiBold, runs[1].FontWeight);
+
+        // Not Assert.Null(vm.Selected) here: GroupPickerDialogViewModel.ApplyFilter (unmodified, out of this
+        // task's scope) already auto-selects the sole remaining match once Query narrows Filtered to exactly
+        // one group, which "9c" does (only "09С31" contains "9С") — so Selected is already that group by now.
+        var search = window.GetVisualDescendants().OfType<TextBox>().Single(t => t.Name == "SearchBox");
+        search.Focus();
+        window.KeyPress(Key.Down, RawInputModifiers.None, PhysicalKey.ArrowDown, null);
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+        Assert.Equal("09С31", vm.Selected!.Name);
+        var list = window.GetVisualDescendants().OfType<ListBox>().Single();
+        Assert.True(list.IsKeyboardFocusWithin);
     }
 }

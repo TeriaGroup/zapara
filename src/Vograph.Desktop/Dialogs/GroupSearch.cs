@@ -9,9 +9,12 @@ public static class GroupSearch
         ['M'] = 'М', ['O'] = 'О', ['P'] = 'Р', ['T'] = 'Т', ['X'] = 'Х', ['Y'] = 'У',
     };
 
-    public static string Normalize(string s)
+    public static string Normalize(string s) => NormalizeChars(s.Trim());
+
+    /// <summary>Per-character normalisation (upper case + Latin look-alikes) that keeps positions: MatchRange maps back into the original name.</summary>
+    private static string NormalizeChars(string s)
     {
-        var chars = s.Trim().ToUpperInvariant().ToCharArray();
+        var chars = s.ToUpperInvariant().ToCharArray();
         for (var i = 0; i < chars.Length; i++)
             if (LatinToCyrillic.TryGetValue(chars[i], out var cyr)) chars[i] = cyr;
         return new string(chars);
@@ -20,6 +23,15 @@ public static class GroupSearch
     public static bool Matches(string name, string query)
     {
         var q = Normalize(query);
-        return q.Length == 0 || Normalize(name).Contains(q, StringComparison.Ordinal);
+        return q.Length == 0 || NormalizeChars(name).Contains(q, StringComparison.Ordinal);
+    }
+
+    /// <summary>Where the query sits inside the name, as indices into the original string; null without a match or a query.</summary>
+    public static (int Start, int Length)? MatchRange(string name, string query)
+    {
+        var q = Normalize(query);
+        if (q.Length == 0) return null;
+        var at = NormalizeChars(name).IndexOf(q, StringComparison.Ordinal);
+        return at < 0 ? null : (at, q.Length);
     }
 }

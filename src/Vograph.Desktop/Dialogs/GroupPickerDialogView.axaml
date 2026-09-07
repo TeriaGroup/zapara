@@ -8,15 +8,15 @@
              x:DataType="d:GroupPickerDialogViewModel">
   <StackPanel Spacing="12" Width="440">
     <TextBlock Classes="title" Text="{Binding Title}" />
-    <TextBox Name="SearchBox" Text="{Binding Query}" PlaceholderText="{loc:T groupSearchHint}">
+    <TextBox Name="SearchBox" Text="{Binding Query}" PlaceholderText="{loc:T groupSearchHint}" KeyDown="OnSearchKeyDown">
       <TextBox.InnerLeftContent>
         <c:Icon Data="{StaticResource Icon.Search}" Size="14" Foreground="{DynamicResource Brush.Text3}" />
       </TextBox.InnerLeftContent>
     </TextBox>
-    <ListBox ItemsSource="{Binding Filtered}" SelectedItem="{Binding Selected}" Height="320" DoubleTapped="OnDoubleTapped">
+    <ListBox x:Name="List" ItemsSource="{Binding Filtered}" SelectedItem="{Binding Selected}" Height="320" DoubleTapped="OnDoubleTapped">
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="m:Group">
-          <TextBlock Text="{Binding Name}" />
+          <c:HighlightText Source="{Binding Name}" Query="{Binding $parent[ListBox].((d:GroupPickerDialogViewModel)DataContext).Query}" />
         </DataTemplate>
       </ListBox.ItemTemplate>
     </ListBox>

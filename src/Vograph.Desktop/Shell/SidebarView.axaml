@@ -11,7 +11,7 @@
                  Icon="{Binding IconKey, Converter={x:Static loc:Converters.IconKey}}"
                  IsActive="{Binding IsActive}" IsCompact="{Binding IsCompact}" Badge="{Binding Badge}"
                  Command="{Binding NavigateCommand}" CommandParameter="{Binding KeyName}"
-                 ToolTip.Tip="{Binding Label}" />
+                 ToolTip.Tip="{Binding Tip}" AutomationProperties.AutomationId="{Binding AutomationId}" />
     </DataTemplate>
   </UserControl.Resources>
 
@@ -28,28 +28,29 @@
           <c:NavItem Content="{Binding SettingsSection.Label}"
                      Icon="{Binding SettingsSection.IconKey, Converter={x:Static loc:Converters.IconKey}}"
                      IsActive="{Binding SettingsSection.IsActive}" IsCompact="{Binding SettingsSection.IsCompact}"
-                     Command="{Binding NavigateCommand}" CommandParameter="Settings" ToolTip.Tip="{Binding SettingsSection.Label}" />
-          <!-- WrapPanel, not a horizontal StackPanel: at the 64px rail the second button would be clipped. -->
-          <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
-            <Button Classes="icon" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{loc:T themeToggleTip}">
-              <c:Icon Data="{StaticResource Icon.Moon}" Size="16" />
-            </Button>
-            <Button Classes="icon" Command="{Binding ToggleSidebarCommand}" ToolTip.Tip="{loc:T sidebarToggleTip}">
-              <c:Icon Data="{StaticResource Icon.Panel}" Size="16" />
-            </Button>
-          </WrapPanel>
+                     Command="{Binding NavigateCommand}" CommandParameter="Settings" ToolTip.Tip="{Binding SettingsSection.Tip}" />
+          <Button Classes="icon" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{loc:T themeToggleTip}" AutomationProperties.AutomationId="Shell.ThemeToggle" AutomationProperties.Name="{loc:T themeToggleTip}">
+            <c:Icon Data="{Binding IsDark, Converter={x:Static loc:Converters.ThemeIcon}}" Size="16" />
+          </Button>
         </StackPanel>
 
         <StackPanel Spacing="2">
+          <Button Classes="icon" Command="{Binding ToggleSidebarCommand}" ToolTip.Tip="{Binding SidebarToggleTip}" Margin="0,0,0,8"
+                  HorizontalAlignment="{Binding SidebarCollapsed, Converter={x:Static loc:Converters.RailAlignment}}"
+                  AutomationProperties.AutomationId="Shell.SidebarToggle" AutomationProperties.Name="{Binding SidebarToggleTip}">
+            <c:Icon Data="{StaticResource Icon.Menu}" Size="16" />
+          </Button>
           <Button Classes="ghost" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                  Command="{Binding OpenGroupPickerCommand}" Margin="0,0,0,12" ToolTip.Tip="{loc:T myGroup}">
+                  Command="{Binding OpenGroupPickerCommand}" Margin="0,0,0,12" ToolTip.Tip="{Binding GroupCardTip}">
             <Border Classes="card hoverable" Padding="12,10">
               <StackPanel Spacing="4">
-                <TextBlock Text="{Binding GroupName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding GroupName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
+                <TextBlock Text="{Binding GroupRailLabel}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" IsVisible="{Binding SidebarCollapsed}" />
                 <TextBlock Classes="muted" Text="{Binding GroupSubtitle}" FontSize="11.5" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
-                <Border Classes="chip stale" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Left" IsVisible="{Binding HasStale}">
+                <Border Classes="chip stale" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Left" IsVisible="{Binding ShowStaleChip}">
                   <TextBlock Text="{Binding StaleText}" />
                 </Border>
+                <Ellipse Classes="staledot" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Center" IsVisible="{Binding ShowStaleDot}" />
               </StackPanel>
             </Border>
           </Button>

@@ -35,18 +35,18 @@ public sealed partial class ShellViewModel : ViewModelBase
 
         MainSections = new ObservableCollection<NavSection>
         {
-            Make(SectionKey.Schedule, "navSchedule", "Icon.Calendar"),
-            Make(SectionKey.Week, "navWeek", "Icon.Week"),
-            Make(SectionKey.Summary, "navSummary", "Icon.Summary"),
+            Make(SectionKey.Schedule, "navSchedule", "Icon.Calendar", "Ctrl+1"),
+            Make(SectionKey.Week, "navWeek", "Icon.Week", "Ctrl+2"),
+            Make(SectionKey.Summary, "navSummary", "Icon.Summary", "Ctrl+3"),
         };
         ToolSections = new ObservableCollection<NavSection>
         {
-            Make(SectionKey.Teachers, "navTeachers", "Icon.Teachers"),
-            Make(SectionKey.Maps, "navMaps", "Icon.Map"),
-            Make(SectionKey.Friends, "navFriends", "Icon.Friends"),
-            Make(SectionKey.Homework, "navHomework", "Icon.Homework"),
+            Make(SectionKey.Teachers, "navTeachers", "Icon.Teachers", "Ctrl+4"),
+            Make(SectionKey.Maps, "navMaps", "Icon.Map", "Ctrl+5"),
+            Make(SectionKey.Friends, "navFriends", "Icon.Friends", "Ctrl+6"),
+            Make(SectionKey.Homework, "navHomework", "Icon.Homework", "Ctrl+7"),
         };
-        SettingsSection = Make(SectionKey.Settings, "navSettings", "Icon.Settings");
+        SettingsSection = Make(SectionKey.Settings, "navSettings", "Icon.Settings", "Ctrl+8");
 
         // Every SectionKey has a real section; a missing entry here is a KeyNotFoundException on navigation,
         // which is what SectionsRenderTests and ShellTests guard.
@@ -60,10 +60,18 @@ public sealed partial class ShellViewModel : ViewModelBase
         Register(SectionKey.Settings, () => new Features.Preferences.SettingsViewModel(App, this));
 
         SidebarCollapsed = app.Prefs.SidebarCollapsed;
+        if (app.Theme is { } theme)
+        {
+            IsDark = theme.IsDark;
+            theme.Changed += () => IsDark = theme.IsDark;
+        }
         app.Loc.LanguageChanged += () =>
         {
             foreach (var s in AllSections) s.RefreshLabel();
             _ = RefreshGroupCardAsync();
+            OnPropertyChanged(nameof(GroupCardTip));
+            OnPropertyChanged(nameof(SidebarToggleTip));
+            OnPropertyChanged(nameof(MaximizeTip));
         };
         // A phone pushing over the LAN must show up even when Settings was never opened this session, so the
         // shell — not a section — owns this subscription. The event is raised on a pool thread, and the
@@ -105,16 +113,39 @@ public sealed partial class ShellViewModel : ViewModelBase
     [ObservableProperty] private ViewModelBase? _current;
     [ObservableProperty] private SectionKey _currentKey;
     [ObservableProperty] private bool _sidebarCollapsed;
-    [ObservableProperty] private string _groupName = "—";
-    [ObservableProperty] private string _groupSubtitle = "";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasStale))]
+    [NotifyPropertyChangedFor(nameof(GroupCardTip))]
+    private string _groupName = "—";
+
+    [ObservableProperty] private string _groupSubtitle = "";
+
+    [ObservableProperty] private string _groupRailLabel = "—";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasStale), nameof(ShowStaleChip), nameof(ShowStaleDot), nameof(GroupCardTip))]
     private string? _staleText;
 
     [ObservableProperty] private bool _staleWarn;
 
     public bool HasStale => StaleText is not null;
+    public bool ShowStaleChip => HasStale && !SidebarCollapsed;
+    public bool ShowStaleDot => HasStale && SidebarCollapsed;
+
+    /// <summary>Expanded: «Моя группа». On the rail the tooltip carries what the card cannot show: the number and the stale chip's text.</summary>
+    public string GroupCardTip => SidebarCollapsed ? (StaleText is null ? GroupName : $"{GroupName}\n{StaleText}") : T("myGroup");
+
+    public string SidebarToggleTip => T(SidebarCollapsed ? "sidebarExpandTip" : "sidebarToggleTip");
+
+    /// <summary>Mirrors ThemeService.IsDark for the footer button's glyph (Sun in the dark, Moon in the light).</summary>
+    [ObservableProperty] private bool _isDark;
+
+    /// <summary>Set by MainWindow from its WindowState; drives the maximize button's glyph and tooltip.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MaximizeTip))]
+    private bool _isMaximized;
+
+    public string MaximizeTip => T(IsMaximized ? "winRestore" : "winMaximize");
 
     /// <summary>Full-window content above every section (the fullscreen map); Escape closes it.</summary>
     [ObservableProperty]
@@ -312,7 +343,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         }
     }
 
-    private NavSection Make(SectionKey key, string labelKey, string iconKey) => new(key, labelKey, iconKey, NavigateCommand);
+    private NavSection Make(SectionKey key, string labelKey, string iconKey, string hotkey) => new(key, labelKey, iconKey, hotkey, NavigateCommand);
 
     /// <summary>Replaces a section's factory (tests pin the clock this way); the cached instance is detached so the
     /// next navigation rebuilds the section from the new factory. When that instance is the one on screen, the host
@@ -369,6 +400,10 @@ public sealed partial class ShellViewModel : ViewModelBase
         foreach (var s in AllSections) s.IsCompact = value;
         App.Prefs.SidebarCollapsed = value;
         App.Prefs.Save();
+        OnPropertyChanged(nameof(ShowStaleChip));
+        OnPropertyChanged(nameof(ShowStaleDot));
+        OnPropertyChanged(nameof(GroupCardTip));
+        OnPropertyChanged(nameof(SidebarToggleTip));
     }
 
     [RelayCommand]
@@ -466,11 +501,13 @@ public sealed partial class ShellViewModel : ViewModelBase
         {
             GroupName = T("noGroup");
             GroupSubtitle = T("noGroupHint");
+            GroupRailLabel = "—";
             return;
         }
         var isOdd = ParityCodes.IsOdd(DateTime.Today, settings);
         var culture = CultureInfo.GetCultureInfo(App.Loc.Language == "en" ? "en-US" : "ru-RU");
         GroupName = group.Name;
+        GroupRailLabel = GroupCardLogic.RailLabel(group.Name);
         GroupSubtitle = $"{T("parityWeek", App.I18n.FormatParity(isOdd))} · {DateTime.Today.ToString(App.Loc.Language == "en" ? "MMM d" : "d MMM", culture)}";
         var (stale, warn) = GroupCardLogic.Stale(settings.LastFetchedAt, DateTime.UtcNow, App.Loc);
         StaleText = stale;

@@ -7,6 +7,8 @@
   <CornerRadius x:Key="Radius.Chip">6</CornerRadius>
   <CornerRadius x:Key="Radius.Pill">999</CornerRadius>
   <CornerRadius x:Key="Radius.Dialog">14</CornerRadius>
+  <CornerRadius x:Key="Radius.Icon">9</CornerRadius>
+  <CornerRadius x:Key="Radius.Toast">10</CornerRadius>
 
   <ResourceDictionary.ThemeDictionaries>
 
@@ -42,6 +44,7 @@
       <SolidColorBrush x:Key="Brush.OnWarn" Color="#1A1A1A" />
       <SolidColorBrush x:Key="Brush.Bad" Color="#EF5B6B" />
       <SolidColorBrush x:Key="Brush.BadSoft" Color="#24EF5B6B" />
+      <SolidColorBrush x:Key="Brush.OnBad" Color="#FFFFFF" />
       <SolidColorBrush x:Key="Brush.Info" Color="#5AA9FF" />
 
       <SolidColorBrush x:Key="Brush.Friend1" Color="#F2A33C" />
@@ -118,6 +121,7 @@
       <SolidColorBrush x:Key="Brush.OnWarn" Color="#FFFFFF" />
       <SolidColorBrush x:Key="Brush.Bad" Color="#D7404F" />
       <SolidColorBrush x:Key="Brush.BadSoft" Color="#1FD7404F" />
+      <SolidColorBrush x:Key="Brush.OnBad" Color="#FFFFFF" />
       <SolidColorBrush x:Key="Brush.Info" Color="#2B7FD9" />
 
       <SolidColorBrush x:Key="Brush.Friend1" Color="#D9861B" />

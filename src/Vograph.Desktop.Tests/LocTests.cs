@@ -86,7 +86,7 @@ public class LocTests
         "noLessonsDay","noLessonsSunday","nextLessonHint","typeLek","typePr","typeLab","typeKons","typeZach","typeEkz","typeKurs","typePraktika",
         "remote","originalLabel","hwLabel","hwBurningTomorrow","hwBurningToday","hwOverdue","hwDone","hwDueOn",
         "hwInLessons1","hwInLessons2","hwInLessons5","hwMarkDone","hwUndo","hwEdit","hwDelete","hwAdd","hwDeleteConfirm","hwEditTitle",
-        "renameTip","mapTip","placeholderTitle","placeholderHint","loadingTitle","themeToggleTip","sidebarToggleTip",
+        "renameTip","mapTip","placeholderTitle","placeholderHint","loadingTitle","themeToggleTip","sidebarToggleTip","sidebarExpandTip","winRestore",
         "groupPickTitle","search","groupSearchHint","select","confirm","delete","updatedChip","errorTitle",
         "bootstrapError","bootstrapHint","retry","friendAbsent","inter100","inter75","inter50","inter25","savedOk","noGroup","noGroupHint",
         "winMinimize","winMaximize","winClose",

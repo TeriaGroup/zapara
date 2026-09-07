@@ -28,6 +28,7 @@ public class ThemeTests
         Assert.Equal(Color.Parse("#2B7FD9"), BrushColor("Brush.MapInk", ThemeVariant.Dark));   // paper-relative: the same ink on white plans in both themes
         Assert.Equal(Color.Parse("#2B7FD9"), BrushColor("Brush.MapInk", ThemeVariant.Light));
         Assert.Equal(Color.Parse("#FFFFFF"), BrushColor("Brush.OnMapInk", ThemeVariant.Dark));
+        Assert.Equal(Color.Parse("#FFFFFF"), BrushColor("Brush.OnBad", ThemeVariant.Dark));
     }
 
     [AvaloniaFact]

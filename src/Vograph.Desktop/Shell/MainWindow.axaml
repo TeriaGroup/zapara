@@ -51,8 +51,8 @@
             <Button Classes="caption" WindowDecorationProperties.ElementRole="MinimizeButton" Click="OnMinimize" ToolTip.Tip="{loc:T winMinimize}">
               <c:Icon Data="{StaticResource Icon.Minus}" Size="14" />
             </Button>
-            <Button Classes="caption" WindowDecorationProperties.ElementRole="MaximizeButton" Click="OnMaximize" ToolTip.Tip="{loc:T winMaximize}">
-              <c:Icon Data="{StaticResource Icon.Square}" Size="12" />
+            <Button Classes="caption" WindowDecorationProperties.ElementRole="MaximizeButton" Click="OnMaximize" ToolTip.Tip="{Binding MaximizeTip}">
+              <c:Icon Data="{Binding IsMaximized, Converter={x:Static loc:Converters.MaximizeIcon}}" Size="12" />
             </Button>
             <Button Classes="caption close" WindowDecorationProperties.ElementRole="CloseButton" Click="OnClose" ToolTip.Tip="{loc:T winClose}">
               <c:Icon Data="{StaticResource Icon.X}" Size="14" />

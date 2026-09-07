@@ -194,12 +194,22 @@
     <Setter Property="TextDecorations" Value="Strikethrough" />
   </Style>
 
-  <!-- Hover-only row actions -->
+  <!-- Hover-only row actions: hidden, not just transparent, so Tab never lands on an invisible button. -->
   <Style Selector="StackPanel.acts">
+    <Setter Property="IsVisible" Value="False" />
     <Setter Property="Opacity" Value="0" />
   </Style>
   <Style Selector="Border.card:pointerover StackPanel.acts">
+    <Setter Property="IsVisible" Value="True" />
     <Setter Property="Opacity" Value="1" />
+  </Style>
+  <Style Selector="Ellipse.staledot">
+    <Setter Property="Width" Value="6" />
+    <Setter Property="Height" Value="6" />
+    <Setter Property="Fill" Value="{DynamicResource Brush.Text3}" />
+  </Style>
+  <Style Selector="Ellipse.staledot.warn">
+    <Setter Property="Fill" Value="{DynamicResource Brush.Warn}" />
   </Style>
 
   <!-- Toasts -->
@@ -207,7 +217,7 @@
     <Setter Property="Background" Value="{DynamicResource Brush.Card}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Brush.Line}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Radius.Toast}" />
     <Setter Property="Padding" Value="12,9" />
     <Setter Property="BoxShadow" Value="{DynamicResource Shadow.Card}" />
     <Setter Property="MaxWidth" Value="380" />

@@ -15,8 +15,18 @@ public partial class MainWindow : Window
         Opened += OnOpened;
         Closing += OnClosing;
         Closed += OnClosed;
-        DataContextChanged += (_, _) => WireTheme();
+        DataContextChanged += (_, _) =>
+        {
+            WireTheme();
+            if (DataContext is ShellViewModel vm) vm.IsMaximized = WindowState == WindowState.Maximized;
+        };
         AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == WindowStateProperty && DataContext is ShellViewModel vm) vm.IsMaximized = WindowState == WindowState.Maximized;
     }
 
     /// <summary>The crossfade this window installed on the theme service, kept so OnClosed can tell it from someone

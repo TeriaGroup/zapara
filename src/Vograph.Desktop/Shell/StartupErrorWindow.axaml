@@ -1,0 +1,20 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="using:Vograph.Desktop.Shell"
+        x:Class="Vograph.Desktop.Shell.StartupErrorWindow"
+        x:DataType="shell:StartupError"
+        Title="Военмех — ошибка запуска" Width="540" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterScreen" Background="{DynamicResource Brush.Canvas}">
+  <StackPanel Margin="24" Spacing="12">
+    <TextBlock Classes="title" Text="Не удалось запустить приложение" />
+    <TextBlock Classes="muted" Text="Could not start the application. The details were written to the log file below." TextWrapping="Wrap" />
+    <Border Classes="card">
+      <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+    </Border>
+    <TextBlock Classes="muted caption" Text="{Binding LogFile}" TextWrapping="Wrap" />
+    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <Button Content="Открыть папку данных" Click="OnOpenFolder" />
+      <Button Classes="primary" Content="Закрыть" Click="OnClose" />
+    </StackPanel>
+  </StackPanel>
+</Window>

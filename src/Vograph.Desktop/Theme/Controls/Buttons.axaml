@@ -49,12 +49,12 @@
 
     <Style Selector="^.danger"><Setter Property="Background" Value="Transparent" /><Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" /></Style>
     <Style Selector="^.danger:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.BadSoft}" /></Style>
-    <Style Selector="^.danger.filled"><Setter Property="Background" Value="{DynamicResource Brush.Bad}" /><Setter Property="Foreground" Value="White" /></Style>
+    <Style Selector="^.danger.filled"><Setter Property="Background" Value="{DynamicResource Brush.Bad}" /><Setter Property="Foreground" Value="{DynamicResource Brush.OnBad}" /></Style>
 
     <!-- icon: 34x34 square -->
     <Style Selector="^.icon">
       <Setter Property="Width" Value="34" /><Setter Property="Height" Value="34" />
-      <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="9" />
+      <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="{DynamicResource Radius.Icon}" />
       <Setter Property="Background" Value="Transparent" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
     </Style>
     <Style Selector="^.icon:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Selection}" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /></Style>
@@ -99,7 +99,7 @@
       <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" /><Setter Property="Cursor" Value="Arrow" />
     </Style>
     <Style Selector="^.caption:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Selection}" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /></Style>
-    <Style Selector="^.caption.close:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.CloseHover}" /><Setter Property="Foreground" Value="White" /></Style>
+    <Style Selector="^.caption.close:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.CloseHover}" /><Setter Property="Foreground" Value="{DynamicResource Brush.OnBad}" /></Style>
     <Style Selector="^.caption:pressed"><Setter Property="RenderTransform" Value="none" /></Style>
 
     <!-- text button inside the group card / links -->
