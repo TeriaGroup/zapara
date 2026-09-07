@@ -132,4 +132,19 @@ public class ScheduleComposerTests
         Assert.Equal(0, HomeworkLabels.LessonsUntil(db.Services.Db, settings, norm, new DateTime(2026, 9, 5), new DateTime(2026, 9, 7)));
         Assert.Equal(1, HomeworkLabels.LessonsUntil(db.Services.Db, settings, norm, new DateTime(2026, 9, 5), new DateTime(2026, 9, 9)));
     }
+
+    /// <summary>With no PeriodStart in settings the fallback is «1 September of the START date's year» for the whole
+    /// search — not re-derived from every visited day. Re-anchoring per day would put Sept 2027 after Jan 2027 and
+    /// clamp every week code to 1, so the odd-week-only «пр ОСН РОС ГОС» would falsely land on the even Monday 04.01.</summary>
+    [Fact]
+    public void Next_Occurrence_Keeps_One_Period_Anchor_Across_New_Year()
+    {
+        using var db = TestDb.Create();
+        var settings = db.Services.Db.GetSettings();
+        settings.PeriodStart = null; // the fallback path
+        // Mon 28.12.2026 is an odd Monday (week 17 from Mon 31.08.2026): the next odd Monday is 11.01.2027, not 04.01.2027 (even).
+        Assert.Equal(new DateTime(2027, 1, 11), NextOccurrence.Find(db.Services.Db, settings, "пр ОСН РОС ГОС", new DateTime(2026, 12, 28)));
+        // The same anchor rule for the lesson counter: two odd Mondays (11.01 and 25.01) lie strictly between 28.12 and 01.02.
+        Assert.Equal(2, HomeworkLabels.LessonsUntil(db.Services.Db, settings, Vograph.Core.Services.ParityService.NormalizeSubject("пр ОСН РОС ГОС"), new DateTime(2026, 12, 28), new DateTime(2027, 2, 1)));
+    }
 }

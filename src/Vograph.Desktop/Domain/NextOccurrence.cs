@@ -10,11 +10,12 @@ public static class NextOccurrence
     {
         var norm = ParityService.NormalizeSubject(subjectRaw);
         if (norm.Length == 0 || string.IsNullOrEmpty(settings.MyGroupId)) return null;
+        var period = ParityCodes.Period(settings, fromDate);
         for (var offset = 1; offset <= maxDays; offset++)
         {
             var date = fromDate.Date.AddDays(offset);
             if (date.DayOfWeek == DayOfWeek.Sunday) continue;
-            if (db.GetLessons(settings.MyGroupId, (int)date.DayOfWeek, ParityCodes.WeekCode(date, settings)).Any(l => ParityService.NormalizeSubject(l.SubjectRaw) == norm))
+            if (db.GetLessons(settings.MyGroupId, (int)date.DayOfWeek, ParityCodes.WeekCode(date, settings, period)).Any(l => ParityService.NormalizeSubject(l.SubjectRaw) == norm))
                 return date;
         }
         return null;

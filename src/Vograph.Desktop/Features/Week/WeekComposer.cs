@@ -49,11 +49,12 @@ public sealed class WeekComposer
     /// <summary>The first date ≥ today on this weekday whose user-facing parity matches (a two-week cycle always hits within 14 days).</summary>
     public static DateTime NearestDate(int dow, int parity, DateTime today, Settings settings)
     {
+        var period = ParityCodes.Period(settings, today);
         for (var i = 0; i < 14; i++)
         {
             var d = today.Date.AddDays(i);
             if ((int)d.DayOfWeek != dow) continue;
-            if (ParityCodes.IsOdd(d, settings) == (parity == 1)) return d;
+            if (ParityCodes.IsOdd(d, settings, period) == (parity == 1)) return d;
         }
         return today.Date;
     }

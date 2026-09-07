@@ -30,9 +30,9 @@ public sealed class ScheduleComposer
             return new DayModel(date, offset, title, "", Array.Empty<LessonRow>(), loc.T("noGroup"), loc.T("noGroupHint"));
 
         var groupId = settings.MyGroupId;
-        var (periodStart, _) = ParityCodes.Period(settings, date);
-        var isOdd = ParityCodes.IsOdd(date, settings);
-        var weekNumber = ParityService.GetWeekNumber(date, periodStart);
+        var period = ParityCodes.Period(settings, date);
+        var isOdd = ParityCodes.IsOdd(date, settings, period);
+        var weekNumber = ParityService.GetWeekNumber(date, period.PeriodStart);
 
         var lessons = _app.Schedule.GetSchedule(date, groupId).OrderBy(l => ParseTime(l.TimeStart)).ToList();
         var subtitle = DayTitles.Subtitle(date, isOdd, weekNumber, lessons.Count, loc);

@@ -14,19 +14,19 @@ public static class ParityCodes
     public static (DateTime PeriodStart, int WeekCount) Period(Settings s, DateTime anchor) =>
         (DateTime.TryParse(s.PeriodStart, out var ps) ? ps : new DateTime(anchor.Year, 9, 1), s.WeekCount > 0 ? s.WeekCount : 2);
 
-    /// <summary>The XML week code (1 odd / 2 even) the cache stores for the lessons of that date, inversion applied.</summary>
-    public static int WeekCode(DateTime date, Settings s)
-    {
-        var (start, count) = Period(s, date);
-        return ToXml(ParityService.GetWeekCode(date, start, count), s.ParityInvert);
-    }
+    /// <summary>The XML week code (1 odd / 2 even) the cache stores for the lessons of that date, inversion applied.
+    /// Loops must resolve the period ONCE (from their start date) and use the overload below — otherwise a missing
+    /// PeriodStart would be re-anchored on every iterated day and change year across New Year.</summary>
+    public static int WeekCode(DateTime date, Settings s) => WeekCode(date, s, Period(s, date));
+
+    public static int WeekCode(DateTime date, Settings s, (DateTime PeriodStart, int WeekCount) period) =>
+        ToXml(ParityService.GetWeekCode(date, period.PeriodStart, period.WeekCount), s.ParityInvert);
 
     /// <summary>Whether the user sees that date as an odd week (inversion applied).</summary>
-    public static bool IsOdd(DateTime date, Settings s)
-    {
-        var (start, count) = Period(s, date);
-        return ParityService.IsOddWeek(date, start, count, s.ParityInvert);
-    }
+    public static bool IsOdd(DateTime date, Settings s) => IsOdd(date, s, Period(s, date));
+
+    public static bool IsOdd(DateTime date, Settings s, (DateTime PeriodStart, int WeekCount) period) =>
+        ParityService.IsOddWeek(date, period.PeriodStart, period.WeekCount, s.ParityInvert);
 
     /// <summary>User-facing parity → XML code. Identical unless the user inverted parity; an involution, so ToUser is the same map.</summary>
     public static int ToXml(int parity, bool invert) => invert ? (parity == 1 ? 2 : 1) : parity;

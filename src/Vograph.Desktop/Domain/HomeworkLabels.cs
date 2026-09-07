@@ -11,10 +11,11 @@ public static class HomeworkLabels
     {
         if (string.IsNullOrEmpty(settings.MyGroupId)) return 0;
         var count = 0;
+        var period = ParityCodes.Period(settings, today);
         for (var d = today.Date.AddDays(1); d < due.Date; d = d.AddDays(1))
         {
             if (d.DayOfWeek == DayOfWeek.Sunday) continue;
-            count += db.GetLessons(settings.MyGroupId, (int)d.DayOfWeek, ParityCodes.WeekCode(d, settings)).Count(l => ParityService.NormalizeSubject(l.SubjectRaw) == subjectNormalized);
+            count += db.GetLessons(settings.MyGroupId, (int)d.DayOfWeek, ParityCodes.WeekCode(d, settings, period)).Count(l => ParityService.NormalizeSubject(l.SubjectRaw) == subjectNormalized);
         }
         return count;
     }
