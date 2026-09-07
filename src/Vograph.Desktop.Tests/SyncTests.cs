@@ -21,14 +21,9 @@ public class SyncTests : UiTest
 {
     private static readonly DateTime Sun6 = new(2026, 9, 6, 15, 0, 0);
 
-    /// <summary>An ephemeral loopback port: 8765 may well be taken on the machine running the suite.</summary>
-    private static int FreePort()
-    {
-        var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        try { return ((IPEndPoint)probe.LocalEndpoint).Port; }
-        finally { probe.Stop(); }
-    }
+    /// <summary>Never the production server (every interface on 8765): loopback only, and port 0 asks the OS for a
+    /// free one — 8765 may well be taken on the machine running the suite.</summary>
+    private static LanSyncServer Loopback(AppServices services, int port = 0) => new(services, port, localhostOnly: true);
 
     [Fact]
     public async Task Export_And_Import_Through_File_Dialogs()
@@ -121,49 +116,41 @@ public class SyncTests : UiTest
     public async Task Lan_Server_Serves_Export_And_Accepts_Import_Under_The_Gate()
     {
         using var db = TestDb.Create();
-        var port = FreePort();
-        using var server = new LanSyncServer(db.Services, port, localhostOnly: true);
+        using var server = Loopback(db.Services);
         var imported = 0;
         server.Imported += () => Interlocked.Increment(ref imported);
         server.Start();
+        var port = server.Port;
         Assert.True(server.IsRunning);
+        Assert.True(port > 0); // 0 asked the OS for a free one
         Assert.Equal("", server.Address); // resolved lazily off the UI thread, never from the property
-        Assert.EndsWith($":{port}/sync/", await server.ResolveAddressAsync());
-        Assert.EndsWith($":{port}/sync/", server.Address); // and cached from then on
+        Assert.Equal($"http://localhost:{port}/sync/", await server.ResolveAddressAsync());
+        Assert.Equal($"http://localhost:{port}/sync/", server.Address); // and cached from then on
 
-        // HTTP.SYS matches the "localhost" prefix by host name only: a request to 127.0.0.1 is answered with 400.
         using var http = new HttpClient();
         var json = await http.GetStringAsync($"http://localhost:{port}/sync/", TestContext.Current.CancellationToken);
         var served = JsonSerializer.Deserialize<SyncService.SyncPayload>(json);
         Assert.NotNull(served);
         Assert.Equal("Матан", Assert.Single(served.Overrides).DisplayName);
+        // No HTTP.SYS host matching any more: the numeric loopback address and the path without the trailing slash work too.
+        Assert.Contains("\"Version\"", await http.GetStringAsync($"http://127.0.0.1:{port}/sync", TestContext.Current.CancellationToken));
 
-        // A newer override wins on import (SyncService compares CreatedAt), so the display name really flips.
-        // The stamp is taken from the stored row: Core reads it back as a local DateTime, so "UtcNow" would lose.
         var stored = Assert.Single(db.Services.Db.GetOverrides());
         var payload = new SyncService.SyncPayload
         {
             ExportedAt = DateTime.UtcNow,
-            Overrides =
-            {
-                new Override
-                {
-                    SubjectRawNormalized = ParityService.NormalizeSubject(TestDb.MathSubject),
-                    Scope = "global",
-                    DisplayName = "Математика",
-                    CreatedAt = stored.CreatedAt.AddDays(1)
-                }
-            }
+            Overrides = { new Override { SubjectRawNormalized = ParityService.NormalizeSubject(TestDb.MathSubject), Scope = "global", DisplayName = "Математика", CreatedAt = stored.CreatedAt.AddDays(1) } }
         };
-        var body = JsonSerializer.Serialize(payload);
-        var resp = await http.PostAsync($"http://localhost:{port}/sync/", new StringContent(body, Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
-        Assert.True(resp.IsSuccessStatusCode);
-        await Waits.Until(() => imported == 1);
+        var resp = await http.PostAsync($"http://localhost:{port}/sync/", new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        Assert.Equal("{\"status\":\"ok\"}", await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        await Waits.Until(() => imported == 1, "Imported event");
         Assert.Equal("Математика", db.Services.Overrides.GetDisplayName(TestDb.MathSubject, 1));
         Assert.Equal(1, db.Services.CoreGate.CurrentCount);
 
         server.Stop();
         Assert.False(server.IsRunning);
+        await Assert.ThrowsAnyAsync<HttpRequestException>(() => http.GetStringAsync($"http://localhost:{port}/sync/", TestContext.Current.CancellationToken));
     }
 
     /// <summary>A phone pushes over the LAN before the Settings section was ever opened this session: the shell
@@ -175,66 +162,106 @@ public class SyncTests : UiTest
     {
         using var source = TestDb.Create();                              // 1 override, 1 homework, 1 friend
         using var target = TestDb.Create(seedPersonalization: false);    // nothing personal yet
-        var port = FreePort();
-        // Never the production server (every interface on 8765), and installed before the shell is built:
-        // the shell subscribes to the instance it sees in AppServices at construction time.
-        target.Services.LanSync = new LanSyncServer(target.Services, port, localhostOnly: true);
+        target.Services.LanSync = Loopback(target.Services);             // installed before the shell subscribes
         var shell = new ShellViewModel(target.Services) { Clock = () => Sun6 };
         var changed = 0;
         shell.ScheduleChanged += () => changed++;
         var badge = shell.ToolSections.Single(s => s.Key == SectionKey.Homework);
         await shell.UpdateHomeworkBadgeAsync();
-        Assert.Null(badge.Badge); // no homework on this side yet
+        Assert.Null(badge.Badge);
 
         target.Services.LanSync.Start();
         using var http = new HttpClient();
         var body = new StringContent(source.Services.Sync.ExportToJson(), Encoding.UTF8, "application/json");
-        var resp = await http.PostAsync($"http://localhost:{port}/sync/", body, TestContext.Current.CancellationToken);
+        var resp = await http.PostAsync($"http://localhost:{target.Services.LanSync.Port}/sync/", body, TestContext.Current.CancellationToken);
         Assert.True(resp.IsSuccessStatusCode);
 
         // The fixture homework («лек ВЫСШ. МАТЕМАТ», created Sat 05.09) is due Mon 07.09 for group 3313 — one day
         // after the pinned Sunday clock, so the badge the shell refreshes after the import reads "1".
-        await Waits.Until(() => changed > 0 && badge.Badge == "1");
+        await Waits.Until(() => changed > 0 && badge.Badge == "1", "shell refreshed after the LAN import");
         Assert.Equal("Матан", target.Services.Overrides.GetDisplayName(TestDb.MathSubject, 1));
         target.Services.LanSync.Stop();
     }
 
-    /// <summary>A body past the cap is refused unread — and the listener survives it.</summary>
+    /// <summary>Every refusal the hardening owes a peer on the LAN — and the listener survives all of them.</summary>
     [Fact]
-    public async Task Lan_Server_Refuses_An_Oversized_Body()
+    public async Task Lan_Server_Refuses_Bad_Requests_And_Keeps_Serving()
     {
         using var db = TestDb.Create();
-        var port = FreePort();
-        using var server = new LanSyncServer(db.Services, port, localhostOnly: true);
+        using var server = Loopback(db.Services);
         var imported = 0;
         server.Imported += () => Interlocked.Increment(ref imported);
         server.Start();
-
+        var url = $"http://localhost:{server.Port}/sync/";
         using var http = new HttpClient();
+
+        // Declared past the cap: refused before the body is read.
         var oversized = new ByteArrayContent(new byte[LanSyncServer.MaxBodyBytes + 1]);
         oversized.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-        var resp = await http.PostAsync($"http://localhost:{port}/sync/", oversized, TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, resp.StatusCode);
-        Assert.Equal("{\"status\":\"error\"}", await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
-        Assert.Equal(0, imported);
+        var big = await http.PostAsync(url, oversized, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, big.StatusCode);
+        Assert.Equal("{\"status\":\"error\"}", await big.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
 
-        // Malformed JSON inside the cap is a different answer, and the server is still serving afterwards.
-        var bad = await http.PostAsync($"http://localhost:{port}/sync/", new StringContent("{ not json", Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
+        // Chunked: no declared length, so no bound to check against — refused as well.
+        var chunked = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+        chunked.Headers.TransferEncodingChunked = true;
+        Assert.Equal(HttpStatusCode.LengthRequired, (await http.SendAsync(chunked, TestContext.Current.CancellationToken)).StatusCode);
+
+        // Malformed JSON inside the cap.
+        var bad = await http.PostAsync(url, new StringContent("{ not json", Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
-        var json = await http.GetStringAsync($"http://localhost:{port}/sync/", TestContext.Current.CancellationToken);
-        var served = JsonSerializer.Deserialize<SyncService.SyncPayload>(json);
-        Assert.NotNull(served);
-        Assert.Equal("Матан", Assert.Single(served.Overrides).DisplayName);
+
+        // Wrong path, wrong method.
+        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync($"http://localhost:{server.Port}/other", TestContext.Current.CancellationToken)).StatusCode);
+        var put = await http.PutAsync(url, new StringContent("{}"), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, put.StatusCode);
+        Assert.Equal(new[] { "GET", "POST" }, put.Content.Headers.Allow.OrderBy(a => a));
+
+        Assert.Equal(0, imported);
+        var json = await http.GetStringAsync(url, TestContext.Current.CancellationToken); // still alive after every refusal
+        Assert.Equal("Матан", Assert.Single(JsonSerializer.Deserialize<SyncService.SyncPayload>(json)!.Overrides).DisplayName);
         Assert.Equal(1, db.Services.CoreGate.CurrentCount);
+    }
+
+    [Fact]
+    public async Task Two_Parallel_Requests_Are_Served()
+    {
+        using var db = TestDb.Create();
+        using var server = Loopback(db.Services);
+        server.Start();
+        var url = $"http://localhost:{server.Port}/sync/";
+        using var http = new HttpClient();
+        var results = await Task.WhenAll(http.GetStringAsync(url, TestContext.Current.CancellationToken), http.GetStringAsync(url, TestContext.Current.CancellationToken));
+        Assert.All(results, r => Assert.Contains("\"Version\"", r));
+        Assert.Equal(1, db.Services.CoreGate.CurrentCount);
+    }
+
+    [Fact]
+    public void Start_Failure_Leaves_Nothing_Listening_And_Names_The_Busy_Port()
+    {
+        using var db = TestDb.Create();
+        using var squatter = Loopback(db.Services);
+        squatter.Start();
+        var port = squatter.Port;
+
+        using var server = Loopback(db.Services, port);
+        var ex = Assert.Throws<SocketException>(server.Start);
+        Assert.Equal(SocketError.AddressAlreadyInUse, ex.SocketErrorCode);
+        Assert.False(server.IsRunning);
+        Assert.Equal($"Порт {port} занят другой программой", server.StartFailureText(ex));
+        Assert.Equal("Не удалось запустить сервер: boom", server.StartFailureText(new InvalidOperationException("boom")));
+
+        squatter.Stop();
+        server.Start(); // the port is free now: the same instance can start
+        Assert.True(server.IsRunning);
+        Assert.Equal(port, server.Port);
     }
 
     [Fact]
     public async Task Lan_Switch_Persists_And_Reports_Failures()
     {
         using var db = TestDb.Create();
-        var port = FreePort();
-        // Never the production server: that one binds every interface on 8765 and needs a URL reservation.
-        db.Services.LanSync = new LanSyncServer(db.Services, port, localhostOnly: true);
+        db.Services.LanSync = Loopback(db.Services); // never the production server (every interface on 8765)
         var shell = new ShellViewModel(db.Services);
         var vm = new SettingsViewModel(db.Services, shell, () => Sun6);
         await vm.LoadAsync();
@@ -244,40 +271,25 @@ public class SyncTests : UiTest
         vm.LanSync = true;
         Assert.True(db.Services.LanSync.IsRunning);
         Assert.True(UiPrefs.Load(db.Services.Prefs.FilePath).LanSync);
-        await Waits.Until(() => vm.LanAddress.Length > 0); // the address arrives from the resolver, not from the setter
-        Assert.Equal($"Адрес: http://localhost:{port}/sync/", vm.LanAddress);
+        await Waits.Until(() => vm.LanAddress.Length > 0, "LAN address"); // arrives from the resolver, not from the setter
+        Assert.Equal($"Адрес: http://localhost:{db.Services.LanSync.Port}/sync/", vm.LanAddress);
 
         vm.LanSync = false;
         Assert.False(db.Services.LanSync.IsRunning);
         Assert.Equal("", vm.LanAddress);
         Assert.False(UiPrefs.Load(db.Services.Prefs.FilePath).LanSync);
 
-        // The failure branch, pinned: a listener already owns the port, so Start() cannot bind it.
-        using var squatter = new LanSyncServer(db.Services, port, localhostOnly: true);
+        // The failure branch: a listener already owns the port, so Start() cannot bind it.
+        using var squatter = Loopback(db.Services);
         squatter.Start();
-        db.Services.LanSync = new LanSyncServer(db.Services, port, localhostOnly: true);
+        db.Services.LanSync = Loopback(db.Services, squatter.Port);
         var before = db.Services.Toasts.Items.Count;
         vm.LanSync = true;
         Assert.False(vm.LanSync);
         Assert.False(db.Services.LanSync.IsRunning);
-        Assert.Equal("", vm.LanAddress);
         Assert.False(UiPrefs.Load(db.Services.Prefs.FilePath).LanSync);
         Assert.Equal(before + 1, db.Services.Toasts.Items.Count);
-        Assert.StartsWith("Не удалось запустить сервер", db.Services.Toasts.Items[0].Text);
-    }
-
-    /// <summary>Access denied on the production prefix is the URL-reservation message, not the generic one.</summary>
-    [Fact]
-    public void Acl_Failure_Gets_Its_Own_Message()
-    {
-        using var db = TestDb.Create();
-        var denied = new HttpListenerException(5, "Access is denied");
-        Assert.Equal(
-            "Сервер не запустился: Windows требует права администратора или резервирование URL (netsh http add urlacl url=http://+:8765/sync/ user=Все)",
-            db.Services.LanSync.StartFailureText(denied));
-        Assert.Equal(
-            "Не удалось запустить сервер: занято",
-            db.Services.LanSync.StartFailureText(new HttpListenerException(183, "занято")));
+        Assert.Equal($"Порт {squatter.Port} занят другой программой", db.Services.Toasts.Items[0].Text);
     }
 
     /// <summary>R50: an import may adopt MyGroupId (receiver had none) and overwrite ParityInvert (payload newer

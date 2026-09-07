@@ -167,7 +167,7 @@ public class I18nService
             ["syncQrServerHint"] = "Данных много: QR ведёт на сервер в локальной сети — включите его ниже",
             ["syncLan"] = "Сервер в локальной сети :8765", ["syncLanAddress"] = "Адрес: {0}",
             ["syncLanFail"] = "Не удалось запустить сервер: {0}",
-            ["syncLanAcl"] = "Сервер не запустился: Windows требует права администратора или резервирование URL (netsh http add urlacl url=http://+:8765/sync/ user=Все)",
+            ["syncLanBusy"] = "Порт {0} занят другой программой",
             ["syncExported"] = "Экспорт сохранён: {0}",
             // Updates card / sidebar item («updTitle», «autoUpdate» and «updDownloading» above are reused as they are)
             ["setUpdates"] = "Обновления", ["updIdle"] = "Проверка ещё не выполнялась", ["updChecking"] = "Проверка…",
@@ -326,7 +326,7 @@ public class I18nService
             ["syncQrServerHint"] = "Too much data for a QR: it points to the LAN server — turn it on below",
             ["syncLan"] = "LAN server :8765", ["syncLanAddress"] = "Address: {0}",
             ["syncLanFail"] = "Could not start the server: {0}",
-            ["syncLanAcl"] = "The server could not start: Windows requires administrator rights or a URL reservation (netsh http add urlacl url=http://+:8765/sync/ user=Everyone)",
+            ["syncLanBusy"] = "Port {0} is taken by another program",
             ["syncExported"] = "Export saved: {0}",
             // Updates card / sidebar item («updTitle», «autoUpdate» and «updDownloading» above are reused as they are)
             ["setUpdates"] = "Updates", ["updIdle"] = "Not checked yet", ["updChecking"] = "Checking…",
