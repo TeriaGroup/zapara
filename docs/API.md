@@ -284,5 +284,5 @@ Cache: `%LocalAppData%\Vograph\maps\karta-*.jpg` + bundled `publish/maps/` + `sr
 
 Next lesson resolution: `GetNextLesson(groupId, now)` scans today remaining (timeStart/timeEnd > now) → tomorrow → next 7 days, respects `ParityService` + `settings.parityInvert`, used for “Куда идти — следующая пара” panel (`MapWhereText`, `MapWhenText`, `MapImage`). Per-lesson `◉` button and context menu “Показать на карте” also calls `MapService.Resolve(classroomRaw)`.
 
-Verified via `src/Vograph.VerifyMap` (2026-09-01, corrected star=УЛК): 14 classroom cases PASS (`331*;`→УЛК3, `324;`→ГК3, `ВЦ 372*;`→ВЦ, `507*а;`→УЛК5, `526*;`→УЛК5), next lesson 3313 `526*;` → УЛК 5 PASS, `EnsureAllMapsCachedAsync` 9/9 cached PASS.
+Verified via `src/Vograph.VerifyMap` (до удаления WPF-клиента; см. локальный тег `wpf-final`) (2026-09-01, corrected star=УЛК): 14 classroom cases PASS (`331*;`→УЛК3, `324;`→ГК3, `ВЦ 372*;`→ВЦ, `507*а;`→УЛК5, `526*;`→УЛК5), next lesson 3313 `526*;` → УЛК 5 PASS, `EnsureAllMapsCachedAsync` 9/9 cached PASS.
 

@@ -17,7 +17,7 @@
 | Student JS (parity) | `.../studs.js` | 200 | 7 448 | — | `studs_GetWeekCode` unchanged |
 | Lecturer JS | `.../lect.js` | 200 | 8 024 | — | reference only |
 | Map page | `https://voenmeh.ru/openmap/` | 200 | 1 916 908 HTML | — | 9 full-size JPGs + WP `srcset` thumbnails |
-| Map JPGs (×9) | `https://voenmeh.ru/wp-content/uploads/2024/09/karta-*.jpg` | 200 `image/jpeg` ×9 | see §4 | 12 Feb 2025 | byte-identical to `src/Vograph/maps/` bundle |
+| Map JPGs (×9) | `https://voenmeh.ru/wp-content/uploads/2024/09/karta-*.jpg` | 200 `image/jpeg` ×9 | see §4 | 12 Feb 2025 | byte-identical to `src/Vograph/maps/` bundle (до удаления WPF-клиента; см. локальный тег `wpf-final`) |
 
 Base: `https://voenmeh.ru/wp-content/themes/Avada-Child-Theme-Voenmeh/_voenmeh_grafics/`.
 No JSON API, no auth. Poll via `HEAD If-Modified-Since` (24h), full GET only when `Last-Modified` is newer.
@@ -52,7 +52,7 @@ Full-size URLs only (ignore WP `srcset` `-200x95 ... -1536x730` thumbnails):
 | УЛК 4 | 80 726 | 12 Feb 2025 |
 | УЛК 5 | 76 738 | 12 Feb 2025 |
 
-All 9 byte-identical to `src/Vograph/maps/*.jpg`. Total ~0.9 MB — safe to bundle in APK.
+All 9 byte-identical to `src/Vograph/maps/*.jpg` (до удаления WPF-клиента; см. локальный тег `wpf-final`). Total ~0.9 MB — safe to bundle in APK.
 `coords.json` (room rects 0..1) ships alongside; read-only on phone.
 
 ## 5. Parity probe (formula ported 1:1 from `ParityService`)

@@ -7,7 +7,7 @@
 
 ## Приложения
 
-- **Windows** — Avalonia 12, .NET 8, две темы (тёмная/светлая), интерфейс на русском и английском (переключение без перезапуска).
+- **Windows** — Avalonia 12, .NET 8, две темы (тёмная/светлая), интерфейс на русском и английском (переключение без перезапуска), самообновление с проверкой архива, синхронизация по локальной сети без прав администратора.
 - **Android** — Kotlin + Compose, интерфейс на русском, Android 8.0+.
 
 ## Что умеет
@@ -40,7 +40,7 @@
 
 ## Хранение
 
-- Windows: `%LocalAppData%\Vograph\` — SQLite `vograph.db` (WAL), `ui.json`, `logs\`, кэш карт `maps\`, кэш преподавателей, скачанные обновления `updates\`.
+- Windows: `%LocalAppData%\Vograph\` — SQLite `vograph.db` (WAL), `ui.json`, `logs\`, кэш карт `maps\`, кэш преподавателей, скачанные обновления `updates\`; `VOGRAPH_DATA_DIR` переопределяет каталог данных, `VOGRAPH_OFFLINE=1` отключает сеть на запуск.
 - Android: приватное хранилище приложения — база Room, кэш карт, скачанные APK.
 
 ## Сборка из исходников
@@ -53,6 +53,11 @@ dotnet test src\Vograph.Desktop.Tests\Vograph.Desktop.Tests.csproj
 ```
 
 Тесты (xunit + headless Avalonia, кадры в `VOGRAPH_FRAMES_DIR`)
+
+```powershell
+# Реальный прогон опубликованного клиента (FlaUI), кадры и отчёт — вне репозитория:
+dotnet run --project src\Vograph.Desktop.UiVerify -- --exe <путь>\publish\Vograph.exe --out <каталог отчёта>
+```
 
 Android:
 
@@ -68,6 +73,7 @@ cd android
 ```text
 src/Vograph.Desktop/         # Windows-клиент (Avalonia): Shell, Features/<раздел>, Dialogs, Theme, Domain, Assets (планы, coords.json, преподаватели)
 src/Vograph.Desktop.Tests/   # xunit.v3 + Avalonia.Headless: ViewModel-тесты и кадры разделов
+src/Vograph.Desktop.UiVerify/   # Драйвер реального приложения (FlaUI): проходит разделы, диалоги, карты; отчёт и кадры в --out
 src/Vograph.Core/            # Общая логика Windows: парсер, четность, расписание, ДЗ, карты, sync
 android/app/src/main/        # Android-клиент: Compose-экраны, Room, будильники, автообновление
 docs/API.md                  # Разбор XML/XSL/parity/openmap/lecturer
