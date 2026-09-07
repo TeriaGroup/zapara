@@ -19,18 +19,28 @@ public partial class MainWindow : Window
         AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
     }
 
+    /// <summary>The crossfade this window installed on the theme service, kept so OnClosed can tell it from someone
+    /// else's: the service holds one delegate, and a second window (a test opening its own shell) overwrites it.</summary>
+    private Func<Action, Task>? _themeTransition;
+
     /// <summary>The theme service switches inside a crossfade of this window (spec §7); a window without a shell switches plainly.</summary>
     private void WireTheme()
     {
         if (DataContext is ShellViewModel vm && vm.App.Theme is { } theme)
-            theme.Transition = apply => ThemeCrossfade.RunAsync(this, RootPanel, ThemeSnapshot, apply, vm.Motion, vm.App.Log);
+        {
+            _themeTransition = apply => ThemeCrossfade.RunAsync(this, RootPanel, ThemeSnapshot, apply, vm.Motion, vm.App.Log);
+            theme.Transition = _themeTransition;
+        }
     }
 
     /// <summary>A closed window produces no more compositor frames, so a crossfade in flight would never finish: it
-    /// would keep its ~8 MB snapshot alive and the service would go on switching the theme through a dead window.</summary>
+    /// would keep its ~8 MB snapshot alive and the service would go on switching the theme through a dead window.
+    /// Only this window's own delegate is unhooked — clearing whatever is there would take the crossfade away from
+    /// the window that installed it after us.</summary>
     private void OnClosed(object? sender, EventArgs e)
     {
-        if (DataContext is ShellViewModel { App.Theme: { } theme }) theme.Transition = null;
+        if (DataContext is ShellViewModel { App.Theme: { } theme } && ReferenceEquals(theme.Transition, _themeTransition))
+            theme.Transition = null;
         ThemeCrossfade.Teardown(ThemeSnapshot);
     }
 

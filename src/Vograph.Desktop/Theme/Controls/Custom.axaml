@@ -71,16 +71,14 @@
     <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
     <Setter Property="CornerRadius" Value="{DynamicResource Radius.Chip}" />
     <Setter Property="ClipToBounds" Value="True" />
-    <!-- Padding carries where the shine sits — the placeholder has no content of its own to pad — because that is
-         what Motion.axaml can animate: a style animation on a /template/ part is never cancelled when the motion
-         styles are removed (Avalonia's detach does not reach template children), so a sweep driven from inside the
-         template kept running with «Анимации» off, for the life of the process. This is also the park. -->
-    <Setter Property="Padding" Value="-140,0,0,0" />
     <Setter Property="Template">
       <ControlTemplate>
         <Border Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}" ClipToBounds="True">
-          <!-- The shine is a 120px gradient parked off the left edge; Motion.axaml sweeps it to the right on a loop. -->
-          <Border x:Name="PART_Shine" Width="120" HorizontalAlignment="Left" Margin="{TemplateBinding Padding}">
+          <!-- The shine is a 120px gradient parked off the clipped left edge. Skeleton.cs sweeps it to the right on a
+               loop, by animating TranslateTransform.X — so this Margin is the park, and it never moves (no layout
+               pass per frame). RenderTransform must stay unset here: Avalonia's transform animator only builds its
+               own group when it finds none, and a value of ours would leave the sweep with nothing to animate. -->
+          <Border x:Name="PART_Shine" Width="120" HorizontalAlignment="Left" Margin="-140,0,0,0">
             <Border.Background>
               <LinearGradientBrush StartPoint="0%,50%" EndPoint="100%,50%">
                 <GradientStop Offset="0" Color="#00FFFFFF" />

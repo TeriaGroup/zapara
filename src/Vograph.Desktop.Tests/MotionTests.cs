@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Controls;
@@ -164,6 +165,84 @@ public class MotionTests : UiTest
         finally { app.SetMotion(false); }
     }
 
+    /// <summary>
+    /// A style whose selector reaches inside a template — «c|Switch /template/ Border#PART_Knob» — is NOT withdrawn
+    /// when App.SetMotion removes Theme/Motion.axaml: Avalonia's detach never reaches the template children, so with
+    /// «Анимации» off the knob went on gliding and the track on cross-fading for the life of the control. Every part's
+    /// motion is owned by its control now (T10 R9), applied in code from MotionSettings. Both switches are flipped the
+    /// way production flips them (App subscribes SetMotion to MotionSettings.PropertyChanged), and the third block is
+    /// the one that used to fail: each part still had its transitions after motion went off.
+    /// </summary>
+    [AvaloniaFact]
+    public void Template_Parts_Take_Their_Transitions_From_The_Motion_Switch()
+    {
+        var app = (App)Application.Current!;
+        using var db = TestDb.Create();
+        var motion = db.Services.Motion;
+        var toggle = new Switch { Content = "Всегда все светофоры" };
+        var seg = new SegmentedControl { Items = new[] { "Вчера", "Сегодня", "Завтра" }, SelectedIndex = 1 };
+        var panel = new StackPanel { Children = { toggle, seg } };
+        // MotionSettings.Resolve walks up to the nearest view model: without one every control is Off, on purpose.
+        var window = new Window { Width = 320, Height = 140, DataContext = new Features.States.LoadingViewModel(db.Services), Content = panel };
+        window.Show();
+        Pump();
+        var track = Part(toggle, "PART_Track");
+        var knob = Part(toggle, "PART_Knob");
+        var thumb = Part(seg, "PART_Thumb");
+        try
+        {
+            Assert.False(motion.Enabled);
+            Assert.Null(track.Transitions);
+            Assert.Null(knob.Transitions);
+            Assert.Null(thumb.Transitions);
+
+            motion.Enabled = true;
+            app.SetMotion(true);
+            Pump();
+            Assert.Contains(track.Transitions!, t => t is BrushTransition b && b.Property == Border.BackgroundProperty);
+            Assert.Contains(knob.Transitions!, t => t is TransformOperationsTransition tr && tr.Property == Visual.RenderTransformProperty);
+            Assert.Contains(thumb.Transitions!, t => t is TransformOperationsTransition tr && tr.Property == Visual.RenderTransformProperty);
+            Assert.Contains(thumb.Transitions!, t => t is DoubleTransition d && d.Property == Layoutable.WidthProperty);
+
+            motion.Enabled = false;
+            app.SetMotion(false);
+            Pump();
+            Assert.Null(track.Transitions);
+            Assert.Null(knob.Transitions);
+            Assert.Null(thumb.Transitions);
+
+            // Detached, the controls listen to nothing: a handler left on the app-wide MotionSettings would re-apply
+            // the transitions here — and keep a closed window's controls alive with it.
+            panel.Children.Clear();
+            Pump();
+            motion.Enabled = true;
+            Pump();
+            Assert.Null(track.Transitions);
+            Assert.Null(knob.Transitions);
+            Assert.Null(thumb.Transitions);
+        }
+        finally
+        {
+            motion.Enabled = false;
+            app.SetMotion(false);
+        }
+    }
+
+    /// <summary>Pins T10 R9's invariant on the file itself: a transition or animation that a style sheet cannot
+    /// withdraw has no business in Motion.axaml, so no selector there may reach into a template. Comments are
+    /// stripped first — the rule is written down in that file, and saying it must not break the scan.</summary>
+    [Fact]
+    public void Motion_Styles_Never_Reach_Into_A_Template()
+    {
+        var path = System.IO.Path.Combine(ResourceKeysTests.RepoRoot(), "src", "Vograph.Desktop", "Theme", "Motion.axaml");
+        var markup = Regex.Replace(File.ReadAllText(path), "<!--.*?-->", "", RegexOptions.Singleline);
+        Assert.Contains("<Styles", markup); // the scan read the right file
+        Assert.DoesNotContain("/template/", markup);
+    }
+
+    private static Border Part(Control control, string name) =>
+        control.GetVisualDescendants().OfType<Border>().Single(b => b.Name == name);
+
     [AvaloniaFact]
     public async Task FadeSlide_Animates_With_A_Duration_And_Snaps_Without_One()
     {
@@ -241,7 +320,9 @@ public class MotionTests : UiTest
             Dispatcher.UIThread.RunJobs();
             Assert.Equal(0, Appear.CascadeRuns);
         }
-        finally { app.SetMotion(false); }
+        // Both switches go back, not just the styles: a control-owned loop (a skeleton's shine in this shell's
+        // loading view) follows MotionSettings, and would go on sweeping in this window for the rest of the session.
+        finally { db.Services.Motion.Enabled = false; app.SetMotion(false); }
     }
 
     [AvaloniaFact]
@@ -292,7 +373,7 @@ public class MotionTests : UiTest
             Assert.True(Lifted(never), "the un-animated control must show the styled lift");
             Assert.True(Lifted(hovered), "a row that ran Appear must not shadow the styled lift");
         }
-        finally { app.SetMotion(false); }
+        finally { db.Services.Motion.Enabled = false; app.SetMotion(false); }
     }
 
     [AvaloniaFact]
@@ -382,7 +463,7 @@ public class MotionTests : UiTest
             Assert.False(root.IsVisible);
             AssertNoBindingErrors();
         }
-        finally { app.SetMotion(false); }
+        finally { db.Services.Motion.Enabled = false; app.SetMotion(false); }
     }
 
     [AvaloniaFact]
@@ -416,7 +497,7 @@ public class MotionTests : UiTest
             Assert.False(snapshot.IsVisible);
             Assert.Null(snapshot.Source);
         }
-        finally { app.SetMotion(false); }
+        finally { db.Services.Motion.Enabled = false; app.SetMotion(false); }
     }
 
     /// <summary>The landing is awaited rather than slept for: a zoom transition is driven by compositor frames, and
@@ -498,7 +579,7 @@ public class MotionTests : UiTest
             Assert.False(snapshot.IsVisible);
             Assert.Null(theme.Transition);
         }
-        finally { app.SetMotion(false); }
+        finally { db.Services.Motion.Enabled = false; app.SetMotion(false); }
     }
 
     [AvaloniaFact]
@@ -514,24 +595,29 @@ public class MotionTests : UiTest
         AssertNoBindingErrors();
     }
 
-    /// <summary>Where the skeleton's shine sits: the theme parks it at −140 and Motion.axaml sweeps it to +360 by
-    /// animating the Skeleton's Padding, which the template hands to the shine's Margin.</summary>
-    private static double ShineAt(Border shine) => shine.Margin.Left;
+    /// <summary>Where the skeleton's shine actually sits: the theme parks it at −140 (Margin, never animated) and
+    /// Skeleton.cs sweeps it from there with TranslateTransform.X — so the park plus the transform, and a shine that
+    /// has given the transform back reads as parked again.</summary>
+    private static double ShineAt(Border shine) => shine.Margin.Left + (shine.RenderTransform?.Value.M31 ?? 0);
 
-    /// <summary>Spec §7's three looping animations live in Theme/Motion.axaml, so with the suite's motion switched
-    /// off nothing ever proved they run: the skeleton shine sweeps out of its −140 px park, a burning homework dot
-    /// breathes below full opacity, the plan highlight's glow pulses. Each is waited for rather than sampled at a
-    /// fixed moment, and with the styles removed again every property is back where the theme puts it (T9 rule).</summary>
+    /// <summary>Spec §7's three looping animations: the skeleton shine sweeps out of its −140 px park (owned by the
+    /// control, T10 R9), a burning homework dot breathes below full opacity, the plan highlight's glow pulses (both
+    /// from Theme/Motion.axaml). Motion is flipped the way production flips it — MotionSettings first, which the
+    /// controls listen to, then the style sheet App keeps in step with it. Each animation is waited for rather than
+    /// sampled at a fixed moment, and with motion off again every property is back where the theme puts it.</summary>
     [AvaloniaFact]
     public async Task Looping_Animations_Run_Only_While_Motion_Is_On()
     {
         var app = (App)Application.Current!;
+        using var db = TestDb.Create();
+        var motion = db.Services.Motion;
         var skeleton = new Skeleton { Width = 200 };
         var dot = new Ellipse { Classes = { "hwdot" } };
         var glow = new Border { Width = 40, Height = 20, Classes = { "mapglow" } };
         var window = new Window
         {
             Width = 300, Height = 200,
+            DataContext = new Features.States.LoadingViewModel(db.Services), // MotionSettings.Resolve walks up to it
             Content = new StackPanel { Children = { skeleton, new Button { Classes = { "hw", "burning" }, Content = dot }, glow } }
         };
         window.Show();
@@ -542,6 +628,7 @@ public class MotionTests : UiTest
         Assert.Equal(1.0, glow.Opacity, 3);
         try
         {
+            motion.Enabled = true;
             app.SetMotion(true);
             Dispatcher.UIThread.RunJobs();
             await SettleAsync(() => ShineAt(shine) > -140 && dot.Opacity < 1 && glow.Opacity < 1);
@@ -549,14 +636,19 @@ public class MotionTests : UiTest
             Assert.True(dot.Opacity < 1, $"a burning homework dot must breathe; opacity = {dot.Opacity}");
             Assert.True(glow.Opacity < 1, $"the plan glow must pulse; opacity = {glow.Opacity}");
         }
-        finally { app.SetMotion(false); }
+        finally
+        {
+            motion.Enabled = false;
+            app.SetMotion(false);
+        }
         Pump();
         // Switching «Анимации» off must stop all three where the theme wants them, and keep them there: a loop that
         // goes on writing after its style is gone would leave the shine frozen across the bar — and never stop.
         Assert.Equal(-140, ShineAt(shine), 3);
         Assert.Equal(1.0, dot.Opacity, 3);
         Assert.Equal(1.0, glow.Opacity, 3);
-        Pump();
+        await SettleAsync(() => false, 200); // …and it stays parked while the clock keeps ticking
         Assert.Equal(-140, ShineAt(shine), 3);
+        Assert.Null(shine.RenderTransform); // the sweep handed the transform back to the styles
     }
 }
