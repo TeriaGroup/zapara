@@ -6,7 +6,8 @@ namespace Vograph.Desktop.Dialogs;
 
 /// <summary>One modal dialog at a time, rendered as an overlay inside the main window. IsOpen is what Escape and the
 /// hotkeys look at (it drops the instant the dialog completes); Current stays set through the close animation so the
-/// card fades out with its content rather than empty.</summary>
+/// card fades out with its content rather than empty. Showing a dialog over an open one replaces it: the one on
+/// screen completes as cancelled and the host stays open for its replacement.</summary>
 public sealed partial class DialogHostViewModel : ObservableObject
 {
     public DialogHostViewModel(MotionSettings? motion = null) => Motion = motion ?? MotionSettings.Off;
@@ -23,10 +24,13 @@ public sealed partial class DialogHostViewModel : ObservableObject
 
     public async Task<bool> ShowAsync(DialogViewModelBase dialog)
     {
-        Current?.Cancel();
+        Current?.Cancel(); // one at a time: the dialog on screen completes as cancelled and hands the host over
         Current = dialog;
         IsOpen = true;
         var result = await dialog.Completion;
+        // A dialog shown over this one already owns the host, so closing down from here would fade the newer one
+        // out and strand it: IsOpen false gates Escape, Enter and Dismiss, and its own ShowAsync would never return.
+        if (!ReferenceEquals(Current, dialog)) return result;
         IsOpen = false;
         var closing = Motion.Duration(120);
         if (closing > TimeSpan.Zero) await Task.Delay(closing);

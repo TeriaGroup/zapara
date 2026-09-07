@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 
 namespace Vograph.Desktop.Features.Maps;
 
@@ -9,9 +10,14 @@ public partial class MapFullscreenView : UserControl
 {
     private MapsViewModel? _vm;
 
+    /// <summary>The label's own transform rather than its Margin, for the reason MapsView gives: a Margin change
+    /// costs a layout pass of the whole plan on every pan and zoom frame (T10-R6).</summary>
+    private readonly TranslateTransform _labelAt = new();
+
     public MapFullscreenView()
     {
         InitializeComponent();
+        HighlightLabel.RenderTransform = _labelAt;
         DataContextChanged += (_, _) => Hook((DataContext as MapFullscreenViewModel)?.Owner);
         Zoom.ViewChanged += (_, _) => PositionLabel(); // pan or zoom: the label follows the room it names
     }
@@ -41,8 +47,10 @@ public partial class MapFullscreenView : UserControl
     private void PositionLabel()
     {
         if (_vm is not { HasHighlight: true }) return;
-        var p = MapsComposer.LabelOffset(Zoom.Scale, Zoom.OffsetX, Zoom.OffsetY, _vm.HighlightLeft, _vm.HighlightTop);
-        HighlightLabel.Margin = new Thickness(p.X, p.Y, 0, 0);
+        var p = MapsComposer.LabelOffset(Zoom.Scale, Zoom.OffsetX, Zoom.OffsetY, _vm.HighlightLeft, _vm.HighlightTop,
+            Zoom.Bounds.Size, HighlightLabel.Bounds.Size);
+        _labelAt.X = p.X;
+        _labelAt.Y = p.Y;
     }
 
     private void OnZoomIn(object? sender, RoutedEventArgs e) => Zoom.ZoomIn();

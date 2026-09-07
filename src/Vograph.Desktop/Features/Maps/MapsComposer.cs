@@ -41,9 +41,13 @@ public static class MapsComposer
         return new Rect(coords.x * image.Width, coords.y * image.Height, coords.w * image.Width, coords.h * image.Height);
     }
 
-    /// <summary>Where the room label sits in viewport space: above the top-left corner of the highlight, clamped to the viewport.</summary>
-    public static Point LabelOffset(double scale, double offsetX, double offsetY, double left, double top) =>
-        new(Math.Max(0, offsetX + left * scale), Math.Max(0, offsetY + top * scale - 26));
+    /// <summary>Where the room label sits in viewport space: above the top-left corner of the highlight, kept inside
+    /// the viewport at both ends — a plan panned right or down must not push the chip out of the clipped card.</summary>
+    public static Point LabelOffset(double scale, double offsetX, double offsetY, double left, double top, Size viewport, Size label) =>
+        new(Inside(offsetX + left * scale, viewport.Width - label.Width),
+            Inside(offsetY + top * scale - 26, viewport.Height - label.Height));
+
+    private static double Inside(double value, double max) => Math.Clamp(value, 0, Math.Max(0, max));
 
     public static string RoomText(MapInfo map) => string.IsNullOrWhiteSpace(map.ClassroomRaw) ? map.RoomRaw : LessonText.CleanRoom(map.ClassroomRaw);
 

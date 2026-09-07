@@ -422,10 +422,60 @@ public class MapsTests : UiTest
         AssertNoBindingErrors();
     }
 
+    /// <summary>The chip lives outside the zoom transform, so only the code-behind moves it: pan and zoom the plan
+    /// and it must land where MapsComposer.LabelOffset says. And it must get there without a layout pass — a label
+    /// positioned through Margin invalidates its own measure and arrange, and a changed desired size then drags the
+    /// map panel (with the ZoomPanel's arrange and transform) through a full layout pass per pan frame (T10-R6).</summary>
+    [AvaloniaFact]
+    public async Task Highlight_Label_Follows_The_View_Without_A_Layout_Pass()
+    {
+        using var db = TestDb.Create();
+        db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        var (shell, vm, _, _) = Make(db, ("УЛК", 3));
+        await shell.StartAsync(allowNetwork: false);
+        var window = new MainWindow { DataContext = shell };
+        window.Show();
+        shell.ShowMap(db.Services.Maps.Resolve("320*;"), "Физика");
+        await Waits.Until(() => vm.Image is not null, "plan");
+        Pump();
+
+        var zoom = window.GetVisualDescendants().OfType<ZoomPanel>().Single();
+        var label = window.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "HighlightLabel");
+        var host = (Visual)label.GetVisualParent()!;
+        Assert.Null(zoom.Transitions); // motion is off in the suite, so every view change below lands at once
+
+        Point Rendered() => label.TranslatePoint(new Point(0, 0), host)!.Value;
+        Point Expected() => MapsComposer.LabelOffset(zoom.Scale, zoom.OffsetX, zoom.OffsetY, vm.HighlightLeft, vm.HighlightTop,
+            zoom.Bounds.Size, label.Bounds.Size);
+        void AssertTracks()
+        {
+            var (expected, rendered) = (Expected(), Rendered());
+            Assert.Equal(expected.X, rendered.X, 3);
+            Assert.Equal(expected.Y, rendered.Y, 3);
+        }
+
+        AssertTracks();
+        var before = Rendered();
+
+        zoom.Scale = 2;      // zoom in…
+        zoom.OffsetX -= 40;  // …and pan
+        zoom.OffsetY -= 25;
+        Assert.True(label.IsMeasureValid, "moving the label must not invalidate its measure");
+        Assert.True(label.IsArrangeValid, "…nor its arrange: that is a layout pass on every frame of a pan");
+
+        Pump();
+        Assert.NotEqual(before, Rendered());
+        AssertTracks();
+        AssertNoBindingErrors();
+    }
+
+    /// <summary>Viewport 600×400 (the card the plan is clipped to) with a 40×22 room chip in every row.</summary>
     [Theory]
     [InlineData(1.0, 0, 0, 100, 60, 100, 34)]
     [InlineData(2.0, 10, 20, 100, 60, 210, 114)]
-    [InlineData(0.5, -300, 0, 100, 10, 0, 0)]  // off the left/top edge: clamped so the label stays readable
+    [InlineData(0.5, -300, 0, 100, 10, 0, 0)]     // off the left/top edge: clamped so the label stays readable
+    [InlineData(1.0, 900, 0, 100, 60, 560, 34)]   // panned right: the chip stays inside the clipped card
+    [InlineData(1.0, 0, 700, 100, 60, 100, 378)]  // panned down: same at the far edge
     public void Highlight_Label_Sits_Above_The_Rectangle_In_Viewport_Space(double scale, double ox, double oy, double left, double top, double x, double y) =>
-        Assert.Equal(new Point(x, y), MapsComposer.LabelOffset(scale, ox, oy, left, top));
+        Assert.Equal(new Point(x, y), MapsComposer.LabelOffset(scale, ox, oy, left, top, new Size(600, 400), new Size(40, 22)));
 }

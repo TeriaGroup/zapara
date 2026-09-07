@@ -14,6 +14,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         Opened += OnOpened;
         Closing += OnClosing;
+        Closed += OnClosed;
         DataContextChanged += (_, _) => WireTheme();
         AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
     }
@@ -23,6 +24,14 @@ public partial class MainWindow : Window
     {
         if (DataContext is ShellViewModel vm && vm.App.Theme is { } theme)
             theme.Transition = apply => ThemeCrossfade.RunAsync(this, RootPanel, ThemeSnapshot, apply, vm.Motion, vm.App.Log);
+    }
+
+    /// <summary>A closed window produces no more compositor frames, so a crossfade in flight would never finish: it
+    /// would keep its ~8 MB snapshot alive and the service would go on switching the theme through a dead window.</summary>
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        if (DataContext is ShellViewModel { App.Theme: { } theme }) theme.Transition = null;
+        ThemeCrossfade.Teardown(ThemeSnapshot);
     }
 
     /// <summary>←/→/Home step the schedule day, Escape closes the dialog or the fullscreen map. A bubbling handler

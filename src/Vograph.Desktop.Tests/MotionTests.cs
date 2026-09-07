@@ -2,6 +2,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Layout;
@@ -421,7 +422,9 @@ public class MotionTests : UiTest
     /// <summary>The landing is awaited rather than slept for: a zoom transition is driven by compositor frames, and
     /// the headless clock only produces those while something is dirty, so the number of frames a fixed sleep gets
     /// is not fixed. What is deterministic is that the value cannot overshoot its own first frame, and that it ends
-    /// on the target.</summary>
+    /// on the target — on all three targets: scale, offset X and offset Y each ride their own DoubleTransition, and
+    /// the offsets cover a 200× larger range, so waiting on Scale alone once captured an OffsetX still in flight
+    /// (one failure in seven full-suite runs).</summary>
     [AvaloniaFact]
     public async Task Zoom_Animates_Towards_The_Target_When_Asked()
     {
@@ -436,13 +439,20 @@ public class MotionTests : UiTest
             Pump();
             Assert.Equal(0.5, panel.Scale, 6);
 
+            // Where ZoomIn() is headed, from the same arithmetic the panel itself uses (it anchors on the middle
+            // of the viewport), so the settle below waits for the whole view and not just the scale.
+            var target = ZoomMath.ZoomAt(panel.Scale, panel.OffsetX, panel.OffsetY, 1.25, panel.Bounds.Width / 2, panel.Bounds.Height / 2);
             panel.ZoomIn();
             Avalonia.Headless.AvaloniaHeadlessPlatform.ForceRenderTimerTick(); // the transition samples on render ticks
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
             Assert.NotNull(panel.Transitions); // a zoom step glides…
             Assert.True(panel.Scale < 0.5 * 1.25, "the transition is still running");
-            await SettleAsync(() => Math.Abs(panel.Scale - 0.5 * 1.25) < 1e-6);
+            await SettleAsync(() => Math.Abs(panel.Scale - target.Scale) < 1e-6
+                                    && Math.Abs(panel.OffsetX - target.OffsetX) < 1e-6
+                                    && Math.Abs(panel.OffsetY - target.OffsetY) < 1e-6);
             Assert.Equal(0.5 * 1.25, panel.Scale, 3);
+            Assert.Equal(target.OffsetX, panel.OffsetX, 6);
+            Assert.Equal(target.OffsetY, panel.OffsetY, 6);
             Assert.Equal(0.5 * 1.25, ((MatrixTransform)content.RenderTransform!).Matrix.M11, 3);
 
             var (ox, oy) = (panel.OffsetX, panel.OffsetY);
@@ -453,6 +463,40 @@ public class MotionTests : UiTest
             Assert.Null(panel.Transitions);          // …a drag never does: it must follow the pointer exactly
             Assert.Equal(ox + 20, panel.OffsetX, 6);
             Assert.Equal(oy + 10, panel.OffsetY, 6);
+        }
+        finally { app.SetMotion(false); }
+    }
+
+    /// <summary>A window that closes mid-crossfade produces no more compositor frames, so the fade's await never
+    /// returns and its finally never runs: the ~8 MB snapshot would stay alive and the theme service would keep
+    /// switching through a dead window. MainWindow tears both down when it closes (T10-R3 c).</summary>
+    [AvaloniaFact]
+    public void Closing_The_Window_Frees_The_Snapshot_And_Unhooks_The_Theme()
+    {
+        var app = (App)Application.Current!;
+        using var db = TestDb.Create();
+        db.Services.Motion.Enabled = true;
+        var theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        db.Services.Theme = theme;
+        var shell = new ShellViewModel(db.Services);
+        try
+        {
+            app.SetMotion(true);
+            var window = new MainWindow { DataContext = shell };
+            window.Show();
+            Pump();
+            var snapshot = window.GetVisualDescendants().OfType<Image>().Single(i => i.Name == "ThemeSnapshot");
+            Assert.NotNull(theme.Transition);
+
+            shell.ToggleThemeCommand.Execute(null);
+            Dispatcher.UIThread.RunJobs();
+            Assert.NotNull(snapshot.Source); // the 220 ms fade is in flight
+
+            window.Close();
+            Dispatcher.UIThread.RunJobs();
+            Assert.Null(snapshot.Source);    // freed without ever finishing the fade
+            Assert.False(snapshot.IsVisible);
+            Assert.Null(theme.Transition);
         }
         finally { app.SetMotion(false); }
     }
@@ -468,5 +512,51 @@ public class MotionTests : UiTest
         SetTheme(Avalonia.Styling.ThemeVariant.Dark);
         Frames.Capture(window, "loading-dark");
         AssertNoBindingErrors();
+    }
+
+    /// <summary>Where the skeleton's shine sits: the theme parks it at −140 and Motion.axaml sweeps it to +360 by
+    /// animating the Skeleton's Padding, which the template hands to the shine's Margin.</summary>
+    private static double ShineAt(Border shine) => shine.Margin.Left;
+
+    /// <summary>Spec §7's three looping animations live in Theme/Motion.axaml, so with the suite's motion switched
+    /// off nothing ever proved they run: the skeleton shine sweeps out of its −140 px park, a burning homework dot
+    /// breathes below full opacity, the plan highlight's glow pulses. Each is waited for rather than sampled at a
+    /// fixed moment, and with the styles removed again every property is back where the theme puts it (T9 rule).</summary>
+    [AvaloniaFact]
+    public async Task Looping_Animations_Run_Only_While_Motion_Is_On()
+    {
+        var app = (App)Application.Current!;
+        var skeleton = new Skeleton { Width = 200 };
+        var dot = new Ellipse { Classes = { "hwdot" } };
+        var glow = new Border { Width = 40, Height = 20, Classes = { "mapglow" } };
+        var window = new Window
+        {
+            Width = 300, Height = 200,
+            Content = new StackPanel { Children = { skeleton, new Button { Classes = { "hw", "burning" }, Content = dot }, glow } }
+        };
+        window.Show();
+        Pump();
+        var shine = skeleton.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "PART_Shine");
+        Assert.Equal(-140, ShineAt(shine), 3);
+        Assert.Equal(1.0, dot.Opacity, 3);
+        Assert.Equal(1.0, glow.Opacity, 3);
+        try
+        {
+            app.SetMotion(true);
+            Dispatcher.UIThread.RunJobs();
+            await SettleAsync(() => ShineAt(shine) > -140 && dot.Opacity < 1 && glow.Opacity < 1);
+            Assert.True(ShineAt(shine) > -140, $"the skeleton shine must sweep; it sits at {ShineAt(shine)}");
+            Assert.True(dot.Opacity < 1, $"a burning homework dot must breathe; opacity = {dot.Opacity}");
+            Assert.True(glow.Opacity < 1, $"the plan glow must pulse; opacity = {glow.Opacity}");
+        }
+        finally { app.SetMotion(false); }
+        Pump();
+        // Switching «Анимации» off must stop all three where the theme wants them, and keep them there: a loop that
+        // goes on writing after its style is gone would leave the shine frozen across the bar — and never stop.
+        Assert.Equal(-140, ShineAt(shine), 3);
+        Assert.Equal(1.0, dot.Opacity, 3);
+        Assert.Equal(1.0, glow.Opacity, 3);
+        Pump();
+        Assert.Equal(-140, ShineAt(shine), 3);
     }
 }

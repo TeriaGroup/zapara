@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Avalonia;
 using Avalonia.Styling;
 
@@ -40,7 +41,18 @@ public sealed class ThemeService
             ThemeChoice.Dark => ThemeVariant.Dark,
             _ => ThemeVariant.Default
         };
-        if (Transition is { } transition) _ = transition(() => _apply(variant)); // never throws: ThemeCrossfade falls back to the plain switch
+        if (Transition is { } transition)
+        {
+            // ThemeCrossfade guards its whole body — every failure there falls back to the plain switch and is
+            // logged — so this fire-and-forget cannot leave an unobserved exception behind. A transition that
+            // still manages to throw synchronously must not cost the user the switch either.
+            try { _ = transition(() => _apply(variant)); }
+            catch (Exception ex)
+            {
+                Trace.TraceWarning($"theme: the transition failed, switching plainly: {ex.GetType().Name}: {ex.Message}");
+                _apply(variant);
+            }
+        }
         else _apply(variant);
         _prefs.Theme = choice;
         if (save) _prefs.Save();

@@ -116,11 +116,15 @@
       </Animation>
     </Style.Animations>
   </Style>
-  <Style Selector="c|Skeleton /template/ Border#PART_Shine">
+  <!-- The sweep animates the Skeleton's own Padding, which its template hands to the shine's Margin, rather than
+       anything inside the template: a /template/ animation is never cancelled when this file is removed — the shine
+       swept on with «Анимации» off and never stopped — and TranslateTransform.X moved nothing at all against the
+       transform-operations value the shine used to be parked with. -->
+  <Style Selector="c|Skeleton">
     <Style.Animations>
       <Animation Duration="0:0:1.4" IterationCount="INFINITE">
-        <KeyFrame Cue="0%"><Setter Property="TranslateTransform.X" Value="-140" /></KeyFrame>
-        <KeyFrame Cue="100%"><Setter Property="TranslateTransform.X" Value="360" /></KeyFrame>
+        <KeyFrame Cue="0%"><Setter Property="Padding" Value="-140,0,0,0" /></KeyFrame>
+        <KeyFrame Cue="100%"><Setter Property="Padding" Value="360,0,0,0" /></KeyFrame>
       </Animation>
     </Style.Animations>
   </Style>

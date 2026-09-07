@@ -127,6 +127,47 @@ public class DialogTests : UiTest
         await task;
     }
 
+    /// <summary>
+    /// A dialog shown while another is open replaces it (T10-R4): the one being replaced completes as cancelled,
+    /// the replacement becomes Current, and the host stays visible and keyboard-reachable — so Escape closes it and
+    /// its own ShowAsync returns. Before the fix the second Show could not raise IsOpen (already true), the first
+    /// dialog's continuation then faded the host out over the second one, and the second ShowAsync never completed.
+    /// </summary>
+    [AvaloniaFact]
+    public async Task Showing_A_Dialog_Over_An_Open_One_Replaces_It()
+    {
+        using var db = TestDb.Create();
+        db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        var shell = new ShellViewModel(db.Services);
+        var window = new MainWindow { DataContext = shell };
+        window.Show();
+        window.Focus();
+
+        var first = new ConfirmDialogViewModel("Удалить домашку?", "m", "Удалить", danger: true);
+        var second = new ConfirmDialogViewModel("Переименовать?", "m", "ok", danger: false);
+        var firstTask = shell.Dialogs.ShowAsync(first);
+        Pump();
+        var secondTask = shell.Dialogs.ShowAsync(second);
+        Pump();
+
+        Assert.False(await firstTask);                   // the replaced dialog completes as cancelled
+        Assert.Same(second, shell.Dialogs.Current);
+        Assert.True(shell.Dialogs.IsOpen);               // …and the host still belongs to the replacement
+        Assert.True(shell.Dialogs.HasDialog);
+        var root = window.GetVisualDescendants().OfType<DialogHostView>().Single()
+            .GetVisualDescendants().OfType<Panel>().First(p => p.Name == "Root");
+        Assert.True(root.IsVisible);
+
+        window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+        Pump();
+
+        Assert.False(await secondTask);                  // Escape reaches it, so its ShowAsync returns
+        Assert.False(shell.Dialogs.HasDialog);
+        Assert.Null(shell.Dialogs.Current);
+        Assert.False(root.IsVisible);
+        AssertNoBindingErrors();
+    }
+
     [Fact]
     public async Task Host_Without_Motion_Closes_Instantly()
     {

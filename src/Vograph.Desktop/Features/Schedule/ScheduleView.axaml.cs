@@ -35,9 +35,12 @@ public partial class ScheduleView : UserControl
     /// <summary>Spec §7 «контент дня — кроссфейд + сдвиг 12px в сторону листания», 200 ms.</summary>
     private async void OnDayShown(int direction)
     {
-        if (direction == 0 || _vm is null) return;
-        var duration = _vm.Motion.Duration(200);
+        if (direction == 0 || _vm is not { } vm) return;
+        var duration = vm.Motion.Duration(200);
         if (duration == TimeSpan.Zero) return;
+        // Everything the continuation needs is read before the await: a detach runs Hook(null), and a catch block
+        // that dereferenced the nulled _vm would throw an NRE out of an async void method — straight to the process.
+        var (log, body) = (vm.App.Log, Body);
         var generation = ++_generation;
         try
         {
@@ -49,17 +52,17 @@ public partial class ScheduleView : UserControl
                     new KeyFrame { Cue = new Cue(0d), Setters = { new Setter(Visual.OpacityProperty, 0d), new Setter(TranslateTransform.XProperty, 12d * direction) } },
                     new KeyFrame { Cue = new Cue(1d), Setters = { new Setter(Visual.OpacityProperty, 1d), new Setter(TranslateTransform.XProperty, 0d) } },
                 }
-            }.RunAsync(Body);
+            }.RunAsync(body);
         }
         catch (Exception ex)
         {
-            _vm.App.Log.Warn($"day transition: {ex.GetType().Name}: {ex.Message}");
+            log.Warn($"day transition: {ex.GetType().Name}: {ex.Message}");
         }
         finally
         {
             // The transform animator writes RenderTransform at local priority and never releases it (T9-R4);
             // hand it back unless a newer day change already owns the panel.
-            if (generation == _generation) Body.ClearValue(Visual.RenderTransformProperty);
+            if (generation == _generation) body.ClearValue(Visual.RenderTransformProperty);
         }
     }
 }

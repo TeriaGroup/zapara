@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.VisualTree;
 
 namespace Vograph.Desktop.Features.Maps;
@@ -10,9 +11,15 @@ public partial class MapsView : UserControl
 {
     private MapsViewModel? _vm;
 
+    /// <summary>What moves the label, instead of its Margin: a Margin change invalidates the label's own measure,
+    /// and its changed desired size then drags the map panel — ZoomPanel, transform and all — through a layout pass
+    /// on every frame of a pan or a zoom. A render transform only repaints (T10-R6).</summary>
+    private readonly TranslateTransform _labelAt = new();
+
     public MapsView()
     {
         InitializeComponent();
+        HighlightLabel.RenderTransform = _labelAt;
         DataContextChanged += (_, _) => { if (this.IsAttachedToVisualTree()) Hook(DataContext as MapsViewModel); };
         Zoom.ViewChanged += (_, _) => PositionLabel(); // pan or zoom: the label follows the room it names
     }
@@ -48,8 +55,10 @@ public partial class MapsView : UserControl
     private void PositionLabel()
     {
         if (_vm is not { HasHighlight: true }) return;
-        var p = MapsComposer.LabelOffset(Zoom.Scale, Zoom.OffsetX, Zoom.OffsetY, _vm.HighlightLeft, _vm.HighlightTop);
-        HighlightLabel.Margin = new Thickness(p.X, p.Y, 0, 0);
+        var p = MapsComposer.LabelOffset(Zoom.Scale, Zoom.OffsetX, Zoom.OffsetY, _vm.HighlightLeft, _vm.HighlightTop,
+            Zoom.Bounds.Size, HighlightLabel.Bounds.Size);
+        _labelAt.X = p.X;
+        _labelAt.Y = p.Y;
     }
 
     private void OnZoomIn(object? sender, RoutedEventArgs e) => Zoom.ZoomIn();
