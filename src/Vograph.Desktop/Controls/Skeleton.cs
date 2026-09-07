@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 using Vograph.Desktop.Services;
 
 namespace Vograph.Desktop.Controls;
@@ -41,14 +42,35 @@ public class Skeleton : TemplatedControl
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        Listen(MotionSettings.Resolve(this));
-        ApplyMotion();
+        Resolve();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
         Listen(null); // no settings, no sweep: a placeholder off screen animates nothing
+        ApplyMotion();
+    }
+
+    /// <summary>Attach is not the only moment the answer changes: MotionSettings.Resolve reads the nearest view
+    /// model up the tree, and three views here hand a DataContext to a view that is already attached
+    /// (Dialogs/DialogHostView, Features/Maps/MapsView, MapFullscreenView) — a loading placeholder is exactly the
+    /// thing on screen while a view model is still on its way. Resolving only on attach left such a skeleton on
+    /// MotionSettings.Off — a shine parked for good — where the style animation this replaced needed no data
+    /// context at all (T10 R10a).</summary>
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        Resolve();
+    }
+
+    /// <summary>Safe to call as often as anything asks: Listen keeps at most one subscription, and Start refuses to
+    /// spin up a second loop while one is running, so re-resolving neither doubles the sweep nor leaves a handler
+    /// behind. A detached control resolves to nothing — it must not subscribe to the app-wide settings from outside
+    /// the tree, and a placeholder off screen has nothing to animate.</summary>
+    private void Resolve()
+    {
+        Listen(this.IsAttachedToVisualTree() ? MotionSettings.Resolve(this) : null);
         ApplyMotion();
     }
 
@@ -82,7 +104,10 @@ public class Skeleton : TemplatedControl
         if (duration <= TimeSpan.Zero) return; // no duration is no animation, and no loop to spin in either
         var cts = new CancellationTokenSource();
         _sweep = cts;
-        Sweep(_shine, duration, cts); // cannot throw: the whole body is guarded
+        // The sink is read here, on the UI thread, and carried into the loop: the guards down there have to hold
+        // wherever a continuation resumes, and a fresh Application.Current lookup from there is the one thing they
+        // must not depend on.
+        Sweep(_shine, duration, cts, Sink()); // cannot throw: the whole body is guarded
     }
 
     /// <summary>Ends the sweep and parks the shine on this frame, without waiting for the loop's own continuation:
@@ -100,8 +125,9 @@ public class Skeleton : TemplatedControl
     /// <summary>One pass at a time, repeated until cancelled: Animation.RunAsync refuses an infinite IterationCount
     /// and IAnimation.Apply — what a style animation uses to loop — is internal to Avalonia. async void with a
     /// catch-all: nobody can await this, and a placeholder whose shine gives up must neither take the app down nor
-    /// do it silently. Nothing after the await can throw, so a pass that ends on a torn-down dispatcher is inert.</summary>
-    private async void Sweep(Border shine, TimeSpan duration, CancellationTokenSource cts)
+    /// do it silently. Both the loop and its teardown are guarded, so no path out of this method can throw —
+    /// which is what an async void continuation needs, whatever thread it resumes on (T10 R10b).</summary>
+    private async void Sweep(Border shine, TimeSpan duration, CancellationTokenSource cts, Action<string> log)
     {
         var animation = new Animation
         {
@@ -118,27 +144,46 @@ public class Skeleton : TemplatedControl
         }
         catch (Exception ex)
         {
-            Warn("skeleton: the shine stopped sweeping", ex);
+            Warn(log, "skeleton: the shine stopped sweeping", ex);
         }
         finally
         {
-            cts.Dispose();
-            // Stop() has already parked the shine and dropped this source; only a loop that ended on its own — an
-            // error — still owns the transform the animator assigned at local priority.
-            if (ReferenceEquals(_sweep, cts))
+            // The finally needs a guard of its own: it runs from a continuation, where an escaping exception is an
+            // unhandled one that takes the process down — and ClearValue below is exactly the call that would raise
+            // one (VerifyAccess) if this continuation ever resumed off the UI thread.
+            try
             {
-                _sweep = null;
-                shine.ClearValue(Visual.RenderTransformProperty);
+                cts.Dispose();
+                // Stop() has already parked the shine and dropped this source; only a loop that ended on its own —
+                // an error — still owns the transform the animator assigned at local priority.
+                if (ReferenceEquals(_sweep, cts))
+                {
+                    _sweep = null;
+                    shine.ClearValue(Visual.RenderTransformProperty);
+                }
+            }
+            catch (Exception ex)
+            {
+                Warn(log, "skeleton: the shine could not be parked", ex);
             }
         }
     }
 
     /// <summary>The app log in production, the trace listeners anywhere else (tests, design time) — the same sink
-    /// Appear uses, and for the same reason: a placeholder must not carry a dependency to say what went wrong.</summary>
-    private static void Warn(string context, Exception ex)
+    /// Appear uses, and for the same reason: a placeholder must not carry a dependency to say what went wrong. Read
+    /// once, in Start, on the UI thread, so that a sweep can say so from wherever it ends up.</summary>
+    private static Action<string> Sink()
+    {
+        if (Application.Current is App { Services.Log: { } log }) return log.Warn;
+        return static message => Trace.TraceWarning(message);
+    }
+
+    /// <summary>Writes through the sink Start captured, and never throws on the way out: both callers are guards of
+    /// an async void continuation, so a sink that fails falls back to the trace listeners rather than escaping.</summary>
+    private static void Warn(Action<string> log, string context, Exception ex)
     {
         var message = $"{context}: {ex.GetType().Name}: {ex.Message}";
-        if (Application.Current is App { Services.Log: { } log }) log.Warn(message);
-        else Trace.TraceWarning(message);
+        try { log(message); }
+        catch (Exception failed) { Trace.TraceWarning($"{message} (and the log itself failed: {failed.GetType().Name}: {failed.Message})"); }
     }
 }

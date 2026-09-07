@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.VisualTree;
 using Vograph.Desktop.Services;
 
 namespace Vograph.Desktop.Controls;
@@ -35,14 +36,34 @@ public class Switch : ToggleButton
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        Listen(MotionSettings.Resolve(this));
-        ApplyMotion();
+        Resolve();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
         Listen(null);
+        ApplyMotion();
+    }
+
+    /// <summary>Attach is not the only moment the answer changes: MotionSettings.Resolve reads the nearest view
+    /// model up the tree, and three views here hand a DataContext to a view that is already attached
+    /// (Dialogs/DialogHostView, Features/Maps/MapsView, MapFullscreenView). Resolving only on attach left such a
+    /// control on MotionSettings.Off — no transitions, for its whole life — where the «/template/» style this
+    /// replaced needed no data context at all (T10 R10a).</summary>
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        Resolve();
+    }
+
+    /// <summary>Safe to call as often as anything asks: Listen keeps at most one subscription and ApplyMotion
+    /// assigns a fresh Transitions collection instead of adding to one, so re-resolving neither stacks transitions
+    /// nor leaves a second handler behind. A detached control resolves to nothing — it must not subscribe to the
+    /// app-wide settings from outside the tree.</summary>
+    private void Resolve()
+    {
+        Listen(this.IsAttachedToVisualTree() ? MotionSettings.Resolve(this) : null);
         ApplyMotion();
     }
 

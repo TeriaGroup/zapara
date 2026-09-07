@@ -228,6 +228,103 @@ public class MotionTests : UiTest
         }
     }
 
+    /// <summary>
+    /// A control attached BEFORE its view model arrives used to resolve MotionSettings.Off once — in
+    /// OnAttachedToVisualTree, the only place that resolved — and then stay frozen for its whole life, while the
+    /// «/template/» styles it replaced never depended on a DataContext at all. Three views here do hand a data
+    /// context to an already-attached view (Dialogs/DialogHostView, Features/Maps/MapsView, MapFullscreenView), so
+    /// motion is re-resolved on DataContextChanged as well as on attach (T10 R10a). The second half is what a
+    /// re-resolve must not cost: no stacked transitions, no second sweep, and no handler left on the settings it
+    /// used to follow.
+    /// </summary>
+    [AvaloniaFact]
+    public async Task Motion_Is_Re_Resolved_When_The_Data_Context_Arrives()
+    {
+        var app = (App)Application.Current!;
+        using var db = TestDb.Create();
+        using var other = TestDb.Create(seedPersonalization: false); // a second shell, with MotionSettings of its own
+        var motion = db.Services.Motion;
+        var moved = other.Services.Motion;
+        var toggle = new Switch { Content = "Всегда все светофоры" };
+        var seg = new SegmentedControl { Items = new[] { "Вчера", "Сегодня", "Завтра" }, SelectedIndex = 1 };
+        var skeleton = new Skeleton { Width = 200 };
+        // No view model anywhere above the three: MotionSettings.Resolve walks to the root and returns Off.
+        var window = new Window { Width = 320, Height = 220, Content = new StackPanel { Children = { toggle, seg, skeleton } } };
+        window.Show();
+        try
+        {
+            motion.Enabled = true;
+            app.SetMotion(true);
+            Pump();
+            var track = Part(toggle, "PART_Track");
+            var knob = Part(toggle, "PART_Knob");
+            var thumb = Part(seg, "PART_Thumb");
+            var shine = Part(skeleton, "PART_Shine");
+
+            // Attached, laid out, motion on — and nothing to resolve: no transitions, and the shine keeps its park.
+            Assert.Null(track.Transitions);
+            Assert.Null(knob.Transitions);
+            Assert.Null(thumb.Transitions);
+            await SettleAsync(() => false, 200);
+            Assert.Equal(-140, ShineAt(shine), 3);
+
+            // The view model lands on the already-attached view, the way DialogHostView and MapsView get theirs.
+            window.DataContext = new Features.States.LoadingViewModel(db.Services);
+            Pump();
+            Assert.NotNull(track.Transitions); // the finding: resolved once on attach, this stayed null for good
+            Assert.NotNull(knob.Transitions);
+            Assert.NotNull(thumb.Transitions);
+            Assert.Contains(track.Transitions!, t => t is BrushTransition b && b.Property == Border.BackgroundProperty);
+            Assert.Contains(knob.Transitions!, t => t is TransformOperationsTransition tr && tr.Property == Visual.RenderTransformProperty);
+            Assert.Contains(thumb.Transitions!, t => t is TransformOperationsTransition tr && tr.Property == Visual.RenderTransformProperty);
+            Assert.Contains(thumb.Transitions!, t => t is DoubleTransition d && d.Property == Layoutable.WidthProperty);
+            await SettleAsync(() => ShineAt(shine) > -140);
+            Assert.True(ShineAt(shine) > -140, $"the shine must sweep once the view model arrives; it sits at {ShineAt(shine)}");
+
+            // Re-resolving is not additive: the same settings resolved again leave one set of transitions, not two.
+            window.DataContext = new Features.States.LoadingViewModel(db.Services);
+            Pump();
+            Assert.Single(track.Transitions!);
+            Assert.Single(knob.Transitions!);
+            Assert.Equal(2, thumb.Transitions!.Count);
+
+            // …and a re-resolve lets go of the settings it held. A second shell's MotionSettings takes over with
+            // «Анимации» off there: everything withdraws, and the shine parks (a second sweep loop would go on
+            // writing the transform, since Stop only cancels the source the control still holds).
+            window.DataContext = new Features.States.LoadingViewModel(other.Services);
+            Pump();
+            Assert.False(moved.Enabled);
+            Assert.Null(track.Transitions);
+            Assert.Null(knob.Transitions);
+            Assert.Null(thumb.Transitions);
+            await SettleAsync(() => false, 200);
+            Assert.Equal(-140, ShineAt(shine), 3);
+            Assert.Null(shine.RenderTransform); // the sweep handed the transform back to the styles
+
+            // The first settings no longer own these controls — a handler left there is what would keep a closed
+            // window's controls alive — and the ones they moved to do.
+            motion.Enabled = false;
+            motion.Enabled = true;
+            Pump();
+            Assert.Null(track.Transitions);
+            Assert.Null(knob.Transitions);
+            Assert.Null(thumb.Transitions);
+
+            moved.Enabled = true;
+            Pump();
+            Assert.NotNull(track.Transitions);
+            Assert.NotNull(knob.Transitions);
+            Assert.NotNull(thumb.Transitions);
+        }
+        finally
+        {
+            motion.Enabled = false;
+            moved.Enabled = false;
+            app.SetMotion(false);
+        }
+        Pump(); // drain the stop the finally asked for: the sweep's continuation belongs to this test, not the next
+    }
+
     /// <summary>Pins T10 R9's invariant on the file itself: a transition or animation that a style sheet cannot
     /// withdraw has no business in Motion.axaml, so no selector there may reach into a template. Comments are
     /// stripped first — the rule is written down in that file, and saying it must not break the scan.</summary>
