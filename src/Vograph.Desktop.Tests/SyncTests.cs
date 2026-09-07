@@ -25,6 +25,17 @@ public class SyncTests : UiTest
     /// free one — 8765 may well be taken on the machine running the suite.</summary>
     private static LanSyncServer Loopback(AppServices services, int port = 0) => new(services, port, localhostOnly: true);
 
+    /// <summary>One raw HTTP/1.1 exchange over a fresh TcpClient (no HttpClient normalisation in the way): returns the status line.</summary>
+    private static async Task<string> RawStatusAsync(int port, string request, CancellationToken ct)
+    {
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, port, ct);
+        var stream = client.GetStream();
+        await stream.WriteAsync(Encoding.ASCII.GetBytes(request), ct);
+        using var reader = new StreamReader(stream, Encoding.ASCII);
+        return (await reader.ReadLineAsync(ct)) ?? "";
+    }
+
     [Fact]
     public async Task Export_And_Import_Through_File_Dialogs()
     {
@@ -128,7 +139,7 @@ public class SyncTests : UiTest
         Assert.Equal($"http://localhost:{port}/sync/", server.Address); // and cached from then on
 
         using var http = new HttpClient();
-        var json = await http.GetStringAsync($"http://localhost:{port}/sync/", TestContext.Current.CancellationToken);
+        var json = await http.GetStringAsync($"http://127.0.0.1:{port}/sync/", TestContext.Current.CancellationToken);
         var served = JsonSerializer.Deserialize<SyncService.SyncPayload>(json);
         Assert.NotNull(served);
         Assert.Equal("Матан", Assert.Single(served.Overrides).DisplayName);
@@ -141,7 +152,7 @@ public class SyncTests : UiTest
             ExportedAt = DateTime.UtcNow,
             Overrides = { new Override { SubjectRawNormalized = ParityService.NormalizeSubject(TestDb.MathSubject), Scope = "global", DisplayName = "Математика", CreatedAt = stored.CreatedAt.AddDays(1) } }
         };
-        var resp = await http.PostAsync($"http://localhost:{port}/sync/", new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
+        var resp = await http.PostAsync($"http://127.0.0.1:{port}/sync/", new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
         Assert.Equal("{\"status\":\"ok\"}", await resp.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         await Waits.Until(() => imported == 1, "Imported event");
@@ -150,7 +161,7 @@ public class SyncTests : UiTest
 
         server.Stop();
         Assert.False(server.IsRunning);
-        await Assert.ThrowsAnyAsync<HttpRequestException>(() => http.GetStringAsync($"http://localhost:{port}/sync/", TestContext.Current.CancellationToken));
+        await Assert.ThrowsAnyAsync<HttpRequestException>(() => http.GetStringAsync($"http://127.0.0.1:{port}/sync/", TestContext.Current.CancellationToken));
     }
 
     /// <summary>A phone pushes over the LAN before the Settings section was ever opened this session: the shell
@@ -173,7 +184,7 @@ public class SyncTests : UiTest
         target.Services.LanSync.Start();
         using var http = new HttpClient();
         var body = new StringContent(source.Services.Sync.ExportToJson(), Encoding.UTF8, "application/json");
-        var resp = await http.PostAsync($"http://localhost:{target.Services.LanSync.Port}/sync/", body, TestContext.Current.CancellationToken);
+        var resp = await http.PostAsync($"http://127.0.0.1:{target.Services.LanSync.Port}/sync/", body, TestContext.Current.CancellationToken);
         Assert.True(resp.IsSuccessStatusCode);
 
         // The fixture homework («лек ВЫСШ. МАТЕМАТ», created Sat 05.09) is due Mon 07.09 for group 3313 — one day
@@ -192,7 +203,7 @@ public class SyncTests : UiTest
         var imported = 0;
         server.Imported += () => Interlocked.Increment(ref imported);
         server.Start();
-        var url = $"http://localhost:{server.Port}/sync/";
+        var url = $"http://127.0.0.1:{server.Port}/sync/";
         using var http = new HttpClient();
 
         // Declared past the cap: refused before the body is read.
@@ -212,7 +223,7 @@ public class SyncTests : UiTest
         Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
 
         // Wrong path, wrong method.
-        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync($"http://localhost:{server.Port}/other", TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync($"http://127.0.0.1:{server.Port}/other", TestContext.Current.CancellationToken)).StatusCode);
         var put = await http.PutAsync(url, new StringContent("{}"), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.MethodNotAllowed, put.StatusCode);
         Assert.Equal(new[] { "GET", "POST" }, put.Content.Headers.Allow.OrderBy(a => a));
@@ -224,15 +235,103 @@ public class SyncTests : UiTest
     }
 
     [Fact]
-    public async Task Two_Parallel_Requests_Are_Served()
+    public async Task A_Stalled_Connection_Does_Not_Block_Other_Clients()
     {
         using var db = TestDb.Create();
         using var server = Loopback(db.Services);
         server.Start();
-        var url = $"http://localhost:{server.Port}/sync/";
-        using var http = new HttpClient();
-        var results = await Task.WhenAll(http.GetStringAsync(url, TestContext.Current.CancellationToken), http.GetStringAsync(url, TestContext.Current.CancellationToken));
-        Assert.All(results, r => Assert.Contains("\"Version\"", r));
+        using var stalled = new TcpClient();
+        await stalled.ConnectAsync(IPAddress.Loopback, server.Port, TestContext.Current.CancellationToken);
+        await stalled.GetStream().WriteAsync(Encoding.ASCII.GetBytes("GET /sync/ HTTP/1.1\r\nHost: x"), TestContext.Current.CancellationToken); // head never completes
+
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        var json = await http.GetStringAsync($"http://127.0.0.1:{server.Port}/sync/", TestContext.Current.CancellationToken); // served while the other handler waits
+        Assert.Contains("\"Version\"", json);
+        Assert.Equal(1, db.Services.CoreGate.CurrentCount);
+    }
+
+    [Fact]
+    public async Task Connections_Beyond_The_Cap_Wait_For_A_Slot()
+    {
+        using var db = TestDb.Create();
+        using var server = Loopback(db.Services);
+        server.Start();
+        var stalled = new List<TcpClient>();
+        try
+        {
+            for (var i = 0; i < LanSyncServer.MaxConnections; i++)
+            {
+                var c = new TcpClient();
+                await c.ConnectAsync(IPAddress.Loopback, server.Port, TestContext.Current.CancellationToken);
+                await c.GetStream().WriteAsync(Encoding.ASCII.GetBytes("POST /sync/ HTTP/1.1\r\nContent-Length: 2097152\r\n\r\n"), TestContext.Current.CancellationToken); // declared body never arrives
+                stalled.Add(c);
+            }
+            using var http = new HttpClient { Timeout = TimeSpan.FromMilliseconds(1500) };
+            await Assert.ThrowsAnyAsync<Exception>(() => http.GetStringAsync($"http://127.0.0.1:{server.Port}/sync/", TestContext.Current.CancellationToken)); // every slot is taken: this one waits in the backlog past its own timeout
+
+            stalled[0].Dispose(); // one slot frees up (the handler's read fails at once)
+            using var http2 = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            Assert.Contains("\"Version\"", await http2.GetStringAsync($"http://127.0.0.1:{server.Port}/sync/", TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            foreach (var c in stalled) c.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task Import_Is_Committed_And_Announced_When_The_Client_Vanishes()
+    {
+        using var db = TestDb.Create();
+        using var server = Loopback(db.Services);
+        var imported = 0;
+        server.Imported += () => Interlocked.Increment(ref imported);
+        server.Start();
+        var stored = Assert.Single(db.Services.Db.GetOverrides());
+        var payload = new SyncService.SyncPayload
+        {
+            ExportedAt = DateTime.UtcNow,
+            Overrides = { new Override { SubjectRawNormalized = ParityService.NormalizeSubject(TestDb.MathSubject), Scope = "global", DisplayName = "Математика", CreatedAt = stored.CreatedAt.AddDays(1) } }
+        };
+        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
+
+        await db.Services.CoreGate.WaitAsync(TestContext.Current.CancellationToken); // hold the gate: the import cannot run until we let go
+        try
+        {
+            using (var client = new TcpClient())
+            {
+                await client.ConnectAsync(IPAddress.Loopback, server.Port, TestContext.Current.CancellationToken);
+                var stream = client.GetStream();
+                await stream.WriteAsync(Encoding.ASCII.GetBytes($"POST /sync/ HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\n\r\n"), TestContext.Current.CancellationToken);
+                await stream.WriteAsync(body, TestContext.Current.CancellationToken);
+                await stream.FlushAsync(TestContext.Current.CancellationToken);
+                await Waits.Until(() => db.Services.CoreGate.CurrentCount == 0 && server.PendingImports == 1, "the handler is queued on the gate");
+            } // the phone drops off the Wi-Fi before any answer can be written
+        }
+        finally
+        {
+            db.Services.CoreGate.Release();
+        }
+
+        await Waits.Until(() => imported == 1, "Imported after the client vanished");
+        Assert.Equal("Математика", db.Services.Overrides.GetDisplayName(TestDb.MathSubject, 1));
+        await Waits.Until(() => db.Services.CoreGate.CurrentCount == 1, "gate released");
+        await Waits.Until(() => File.ReadAllText(db.Services.Log.CurrentFile).Contains("connection dropped"), "dropped-connection log line"); // a write failure, not an import failure
+        Assert.DoesNotContain("ERROR lan sync import", File.ReadAllText(db.Services.Log.CurrentFile));
+    }
+
+    [Fact]
+    public async Task Target_And_Header_Rules_Follow_The_Rfc()
+    {
+        using var db = TestDb.Create();
+        using var server = Loopback(db.Services);
+        server.Start();
+        var ct = TestContext.Current.CancellationToken;
+        Assert.StartsWith("HTTP/1.1 200", await RawStatusAsync(server.Port, $"GET http://127.0.0.1:{server.Port}/sync/ HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n", ct)); // absolute-form
+        Assert.StartsWith("HTTP/1.1 200", await RawStatusAsync(server.Port, "GET /sync?x=1 HTTP/1.1\r\nHost: x\r\n\r\n", ct));                                   // query on the slash-less path
+        Assert.StartsWith("HTTP/1.1 400", await RawStatusAsync(server.Port, "POST /sync/ HTTP/1.1\r\nContent-Length: 2\r\nContent-Length: 999\r\n\r\n{}", ct));   // conflicting lengths
+        Assert.StartsWith("HTTP/1.1 400", await RawStatusAsync(server.Port, "POST /sync/ HTTP/1.1\r\nContent-Length: -5\r\n\r\n", ct));                          // not a length
+        Assert.StartsWith("HTTP/1.1 400", await RawStatusAsync(server.Port, "GET sync HTTP/1.1\r\n\r\n", ct));                                                   // no leading slash
         Assert.Equal(1, db.Services.CoreGate.CurrentCount);
     }
 

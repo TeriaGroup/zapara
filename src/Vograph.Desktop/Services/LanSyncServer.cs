@@ -14,15 +14,22 @@ public sealed class LanSyncServer : IDisposable
 {
     /// <summary>A whole seeded profile exports to a couple of kilobytes; anything past this is refused unread.</summary>
     public const int MaxBodyBytes = 2 * 1024 * 1024;
+
+    /// <summary>Connections handled at once. One phone syncing needs one; a peer opening sockets it never finishes
+    /// writing to would otherwise cost this process a handler, a deadline timer and a body buffer each. Past this,
+    /// connections wait in the kernel's accept backlog, where they cost nothing managed at all.</summary>
+    public const int MaxConnections = 8;
     private const int MaxHeadBytes = 16 * 1024;
     private static readonly TimeSpan IoTimeout = TimeSpan.FromSeconds(10);
 
     private readonly AppServices _app;
     private readonly bool _localhostOnly;
     private readonly SemaphoreSlim _resolve = new(1, 1);
+    private readonly SemaphoreSlim _slots = new(MaxConnections, MaxConnections);
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
     private string? _host;
+    private int _pendingImports;
 
     /// <param name="port">8765 in the app; 0 asks the OS for a free port (tests), see <see cref="Port"/> after Start.</param>
     public LanSyncServer(AppServices app, int port = 8765, bool localhostOnly = false)
@@ -38,6 +45,9 @@ public sealed class LanSyncServer : IDisposable
 
     /// <summary>«http://192.168.1.5:8765/sync/», empty until ResolveHostAsync has run once. Reading it never resolves anything.</summary>
     public string Address => _host is null ? "" : $"http://{_host}:{Port}/sync/";
+
+    /// <summary>Bodies read off the wire that are waiting on, or running under, the Core gate. For tests.</summary>
+    public int PendingImports => _pendingImports;
 
     /// <summary>Raised (on a pool thread) after a successful POST import.</summary>
     public event Action? Imported;
@@ -108,24 +118,34 @@ public sealed class LanSyncServer : IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
+            // The slot is taken *before* the accept, so a peer opening more sockets than this server will serve leaves
+            // them queued in the kernel's backlog — unaccepted, unread and costing this process nothing — instead of
+            // one handler each. Stop() cancels the token, which aborts the wait rather than deadlocking the loop.
+            try { await _slots.WaitAsync(ct); }
+            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException) { break; }
             TcpClient client;
             try { client = await listener.AcceptTcpClientAsync(ct); }
-            catch (OperationCanceledException) { break; }
+            catch (OperationCanceledException)
+            {
+                _slots.Release();
+                break;
+            }
             catch (Exception ex) when (ex is SocketException or ObjectDisposedException or InvalidOperationException)
             {
+                _slots.Release();
                 if (!ct.IsCancellationRequested) _app.Log.Warn($"lan sync: accept failed: {ex.Message}");
                 break;
             }
-            _ = HandleAsync(client, ct);
+            _ = HandleAsync(client, ct); // gives the slot back in its own finally, whatever happens to the connection
         }
         _app.Log.Info("lan sync: stopped listening");
     }
 
     private async Task HandleAsync(TcpClient client, CancellationToken ct)
     {
-        using (client)
+        try
         {
-            try
+            using (client)
             {
                 using var io = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 io.CancelAfter(IoTimeout);
@@ -144,7 +164,7 @@ public sealed class LanSyncServer : IDisposable
                 switch (request.Method)
                 {
                     case "GET":
-                        await Respond(stream, 200, await GatedAsync(() => _app.Sync.ExportToJson()), io.Token);
+                        await Respond(stream, 200, await GatedAsync(() => _app.Sync.ExportToJson(), io.Token), io.Token);
                         return;
                     case "POST":
                         await ImportAsync(stream, request, io.Token);
@@ -154,14 +174,18 @@ public sealed class LanSyncServer : IDisposable
                         return;
                 }
             }
-            catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or ObjectDisposedException)
-            {
-                _app.Log.Warn($"lan sync: connection dropped: {ex.GetType().Name}: {ex.Message}");
-            }
-            catch (Exception ex)
-            {
-                _app.Log.Error("lan sync", ex);
-            }
+        }
+        catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or ObjectDisposedException)
+        {
+            _app.Log.Warn($"lan sync: connection dropped: {ex.GetType().Name}: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            _app.Log.Error("lan sync", ex);
+        }
+        finally
+        {
+            _slots.Release(); // one accepted client, one slot — released here even when the handler threw or timed out
         }
     }
 
@@ -182,22 +206,33 @@ public sealed class LanSyncServer : IDisposable
             return;
         }
         var body = await request.ReadBodyAsync(stream, ct);
+        // Only the import itself is answered with 400: the phone may well drop off the Wi-Fi between the commit and
+        // the answer, and a failed write must not be reported as a failed import — the data is in the database by
+        // then and the shell has to hear about it. Imported subscribers marshal to the UI thread themselves, so the
+        // event goes out before the response; a write that fails after it is logged as a dropped connection.
+        string counts;
+        Interlocked.Increment(ref _pendingImports);
         try
         {
-            var counts = await GatedAsync(() =>
+            counts = await GatedAsync(() =>
             {
                 var (o, h, f) = _app.Sync.ImportFromJson(body);
                 return $"{o}/{h}/{f}";
-            });
-            await Respond(stream, 200, "{\"status\":\"ok\"}", ct);
-            _app.Log.Info($"lan sync: imported {counts} (overrides/homework/friends)");
-            Imported?.Invoke();
+            }, ct);
         }
         catch (Exception ex)
         {
             _app.Log.Error("lan sync import", ex);
             await Respond(stream, 400, "{\"status\":\"error\"}", ct);
+            return;
         }
+        finally
+        {
+            Interlocked.Decrement(ref _pendingImports);
+        }
+        _app.Log.Info($"lan sync: imported {counts} (overrides/homework/friends)");
+        Imported?.Invoke();
+        await Respond(stream, 200, "{\"status\":\"ok\"}", ct);
     }
 
     /// <param name="drainRequest">For a refusal, whose request body was never read: see <see cref="DrainAsync"/>.</param>
@@ -237,9 +272,12 @@ public sealed class LanSyncServer : IDisposable
         }
     }
 
-    private async Task<T> GatedAsync<T>(Func<T> work)
+    /// <summary>The handler's own deadline covers the wait for the gate too: queued behind a long Core call, a
+    /// request that has already outlived its 10 s gives up here instead of running an import for a socket nobody
+    /// is listening on any more. A cancelled wait never acquired the gate, so it must not release it either.</summary>
+    private async Task<T> GatedAsync<T>(Func<T> work, CancellationToken ct)
     {
-        await _app.CoreGate.WaitAsync();
+        await _app.CoreGate.WaitAsync(ct);
         try { return await Task.Run(work); }
         finally { _app.CoreGate.Release(); }
     }
@@ -251,6 +289,8 @@ public sealed class LanSyncServer : IDisposable
 /// arrived in the same read are kept and handed back by ReadBodyAsync.</summary>
 internal sealed class HttpHead
 {
+    private static readonly char[] QueryOrFragment = new[] { '?', '#' };
+
     private readonly byte[] _leftover;
 
     private HttpHead(string method, string target, long? contentLength, bool chunked, byte[] leftover)
@@ -282,7 +322,9 @@ internal sealed class HttpHead
         }
         var lines = Encoding.ASCII.GetString(buffer, 0, end).Split("\r\n");
         var parts = lines[0].Split(' ');
-        if (parts.Length < 2 || parts[1].Length == 0 || parts[1][0] != '/') return null;
+        if (parts.Length < 2) return null;
+        var target = NormalizeTarget(parts[1]);
+        if (target is null) return null;
         long? length = null;
         var chunked = false;
         foreach (var line in lines.Skip(1))
@@ -291,27 +333,59 @@ internal sealed class HttpHead
             if (colon <= 0) continue;
             var name = line[..colon].Trim();
             var value = line[(colon + 1)..].Trim();
-            if (name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase) && long.TryParse(value, out var l) && l >= 0) length = l;
+            if (name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
+            {
+                // RFC 7230 §3.3.3: a length that is not a non-negative number, and two lengths that disagree, are
+                // both 400. Taking the last one would let a peer that also talks to a proxy have the two of us read
+                // a different number of body bytes off the same connection.
+                if (!long.TryParse(value, out var l) || l < 0) return null;
+                if (length is { } seen && seen != l) return null;
+                length = l;
+            }
             else if (name.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase) && value.Contains("chunked", StringComparison.OrdinalIgnoreCase)) chunked = true;
         }
         var bodyStart = end + 4;
-        return new HttpHead(parts[0].ToUpperInvariant(), parts[1], length, chunked, buffer[bodyStart..read]);
+        return new HttpHead(parts[0].ToUpperInvariant(), target, length, chunked, buffer[bodyStart..read]);
     }
 
-    /// <summary>Exactly Content-Length bytes (the caller checked it against the cap), decoded as UTF-8.</summary>
+    /// <summary>The request target reduced to the path the server routes on. RFC 7230 §5.3.2 obliges an origin
+    /// server to accept the absolute form as well («GET http://192.168.1.5:8765/sync/ HTTP/1.1», which is what a
+    /// client behind a proxy sends), and a query or fragment is no part of the route. Null for anything that is not
+    /// a path after that — the caller answers 400.</summary>
+    private static string? NormalizeTarget(string raw)
+    {
+        var target = raw;
+        if (target.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || target.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            var slash = target.IndexOf('/', target.IndexOf("//", StringComparison.Ordinal) + 2); // the third slash: the end of the authority
+            target = slash < 0 ? "/" : target[slash..];
+        }
+        var cut = target.IndexOfAny(QueryOrFragment);
+        if (cut >= 0) target = target[..cut];
+        return target.StartsWith('/') ? target : null;
+    }
+
+    /// <summary>Exactly Content-Length bytes (the caller checked it against the cap), decoded as UTF-8. The buffer
+    /// grows with the bytes that actually arrive, 8 KB at a time: allocating the declared length up front would let
+    /// a peer make this process reserve a cap's worth of heap per connection for nothing but a header line.</summary>
     public async Task<string> ReadBodyAsync(Stream stream, CancellationToken ct)
     {
         var total = (int)(ContentLength ?? 0);
-        var body = new byte[total];
         var have = Math.Min(_leftover.Length, total);
-        Array.Copy(_leftover, body, have);
-        while (have < total)
+        using var body = new MemoryStream(have);
+        body.Write(_leftover, 0, have);
+        if (have < total)
         {
-            var n = await stream.ReadAsync(body.AsMemory(have, total - have), ct);
-            if (n == 0) throw new IOException("client closed the connection before the declared body arrived");
-            have += n;
+            var chunk = new byte[Math.Min(8 * 1024, total - have)];
+            while (have < total)
+            {
+                var n = await stream.ReadAsync(chunk.AsMemory(0, Math.Min(chunk.Length, total - have)), ct);
+                if (n == 0) throw new IOException("client closed the connection before the declared body arrived");
+                body.Write(chunk, 0, n);
+                have += n;
+            }
         }
-        return Encoding.UTF8.GetString(body);
+        return Encoding.UTF8.GetString(body.GetBuffer(), 0, (int)body.Length);
     }
 
     private static int IndexOfBlankLine(byte[] buffer, int length)
