@@ -16,10 +16,11 @@ public abstract class UiTest
     protected UiTest()
     {
         Logger.Sink = Sink;
-        // Motion off for every UI test: App.axaml ships Theme/Motion.axaml included, and headless tests never
-        // run App's startup switch, so without this the frames would catch transitions mid-flight. Classes here
-        // also hold plain [Fact] tests, which run outside the Avalonia session — no Application and no dispatcher
-        // thread to touch the styles from, and nothing rendered there to keep still either.
+        // Belt and braces. TestAppBuilder switches motion off once for the whole session (which is what covers
+        // the [AvaloniaFact]s in classes that do not derive from this one); this re-asserts it per test, because
+        // MotionTests turn it on for themselves. Classes here also hold plain [Fact] tests, which run outside the
+        // Avalonia session — no Application and no dispatcher thread to touch the styles from, and nothing
+        // rendered there to keep still either.
         if (Application.Current is App app && Dispatcher.UIThread.CheckAccess()) app.SetMotion(false);
     }
 

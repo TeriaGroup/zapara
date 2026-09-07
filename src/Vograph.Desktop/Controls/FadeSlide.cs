@@ -19,6 +19,11 @@ public sealed class FadeSlide : IPageTransition
         {
             if (to is not null) to.IsVisible = true;
             if (from is not null) from.IsVisible = false;
+            // The instant switch releases the transform too: navigating with animations on and then turning them
+            // off used to leave the last animated page pinned at translateX(±8px), so the next section was drawn
+            // 8 px off-centre for as long as the window lived.
+            Release(from);
+            Release(to);
             return;
         }
         var tasks = new List<Task>();
@@ -29,9 +34,19 @@ public sealed class FadeSlide : IPageTransition
             to.IsVisible = true;
             tasks.Add(Animate(to, fromOpacity: 0, toOpacity: 1, fromX: forward ? Offset : -Offset, toX: 0).RunAsync(to, cancellationToken));
         }
-        await Task.WhenAll(tasks);
+        try { await Task.WhenAll(tasks); }
+        finally
+        {
+            // The animator sets RenderTransform itself, at local priority, and never gives it back: the leftover
+            // translate would shadow every style-driven transform inside the page (a card's hover lift, a
+            // button's :pressed scale) for good. Same release as Appear's.
+            Release(from);
+            Release(to);
+        }
         if (from is not null && !cancellationToken.IsCancellationRequested) from.IsVisible = false;
     }
+
+    private static void Release(Visual? visual) => visual?.ClearValue(Visual.RenderTransformProperty);
 
     private Animation Animate(Visual target, double fromOpacity, double toOpacity, double fromX, double toX) => new()
     {

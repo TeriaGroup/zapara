@@ -16,7 +16,9 @@ public static class Converters
 
     public static readonly IValueConverter Upper = new FuncValueConverter<string?, string?>(s => s?.ToUpperInvariant());
 
-    /// <summary>Motion on → the section transition; off → none (TransitioningContentControl swaps instantly).</summary>
+    /// <summary>Motion on → the section transition; off → none (TransitioningContentControl swaps instantly).
+    /// The binding hands this converter Motion.Enabled — a bool, not the MotionSettings itself — so there is no
+    /// instance here to take Duration(180) from; FadeSlide's own defaults are the spec's 180 ms and 8 px.</summary>
     public static readonly IValueConverter PageTransition = new FuncValueConverter<bool, IPageTransition?>(enabled => enabled ? new Controls.FadeSlide() : null);
 
     /// <summary>Friend colour slot → Brush.Friend1..5 (theme-invariant tokens).</summary>

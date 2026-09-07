@@ -36,6 +36,15 @@ public class ScheduleViewTests : UiTest
         Assert.Equal(2, cards.Count);
         Assert.Single(window.GetVisualDescendants().OfType<FriendDot>(), d => d.Fill == DotFill.Full);
 
+        // c:Appear.Index="{Binding Index}" on the card is what staggers the entrance cascade. Read it off the
+        // rendered tree: if the binding resolved after the card attaches, every row would report 0, the stagger
+        // would silently collapse into one flash, and nothing else in the suite would notice.
+        var indices = window.GetVisualDescendants().OfType<Avalonia.Controls.Border>()
+            .Where(b => Appear.GetKind(b) == AppearKind.Cascade)
+            .Select(Appear.GetIndex)
+            .ToList();
+        Assert.Equal(new[] { 0, 1 }, indices);
+
         // Click "Вчера" in the segmented control through the input pipeline.
         var seg = window.GetVisualDescendants().OfType<SegmentedControl>().Single();
         var yesterday = seg.GetVisualDescendants().OfType<Avalonia.Controls.Button>().First();

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Animation.Easings;
@@ -51,11 +52,18 @@ public sealed partial class MotionSettings : ObservableObject
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SystemParametersInfo(uint action, uint param, out int value, uint winIni);
 
-    /// <summary>Windows «Показывать анимацию в окнах»; true elsewhere and whenever the call fails.</summary>
+    /// <summary>Windows «Показывать анимацию в окнах»; true elsewhere and whenever the call fails. A user32 call
+    /// that cannot even be made is no reason to take motion away — but it is written down: this runs from the
+    /// AppServices constructor, before App.Services (and with it the app log) exists, so the trace listeners are
+    /// the only sink available here.</summary>
     public static bool ReadSystemSetting()
     {
         if (!OperatingSystem.IsWindows()) return true;
         try { return !SystemParametersInfo(SpiGetClientAreaAnimation, 0, out var value, 0) || value != 0; }
-        catch (Exception) { return true; }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning($"motion: SPI_GETCLIENTAREAANIMATION failed, assuming animations are allowed: {ex.GetType().Name}: {ex.Message}");
+            return true;
+        }
     }
 }

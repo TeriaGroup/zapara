@@ -14,6 +14,13 @@ public partial class SidebarView : UserControl
     private ShellViewModel? _vm;
     private bool _placed;
 
+    /// <summary>The last target handed to the indicator, not the indicator's current geometry: Height and
+    /// RenderTransform hold mid-transition values while the bar slides, and TransformOperations has no value
+    /// equality, so a guard that read them re-assigned a fresh target on every layout pass and the bar crawled
+    /// behind the click instead of sliding to it. Same shape as SegmentedControl.PositionThumb's _lastX.</summary>
+    private double _lastY = double.NaN;
+    private double _lastHeight = double.NaN;
+
     public SidebarView()
     {
         InitializeComponent();
@@ -42,11 +49,13 @@ public partial class SidebarView : UserControl
         if (active is null || active.Bounds.Height <= 0 || active.TranslatePoint(new Point(0, 9), Root) is not { } top)
         {
             NavIndicator.IsVisible = false;
+            _lastY = _lastHeight = double.NaN; // force a placement when the active item comes back
             return;
         }
         var height = Math.Max(0, active.Bounds.Height - 18);
-        var currentY = NavIndicator.RenderTransform is TransformOperations t ? t.Value.M32 : double.NaN;
-        if (NavIndicator.IsVisible && Math.Abs(NavIndicator.Height - height) < 0.5 && Math.Abs(currentY - top.Y) < 0.5) return;
+        if (NavIndicator.IsVisible && Math.Abs(_lastHeight - height) < 0.5 && Math.Abs(_lastY - top.Y) < 0.5) return;
+        _lastY = top.Y;
+        _lastHeight = height;
 
         if (!_placed) NavIndicator.Transitions = null; // a local null hides the styled transitions for the first placement
         NavIndicator.IsVisible = true;
