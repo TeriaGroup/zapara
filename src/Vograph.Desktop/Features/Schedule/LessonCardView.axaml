@@ -53,7 +53,7 @@
                   </MenuFlyout>
                 </Button.Flyout>
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Ellipse Width="6" Height="6" Fill="{Binding $parent[Button].Foreground}" VerticalAlignment="Center" />
+                  <Ellipse Classes="hwdot" Fill="{Binding $parent[Button].Foreground}" />
                   <TextBlock Classes="hwtext" Text="{Binding Text}" TextTrimming="CharacterEllipsis" MaxWidth="340" />
                   <TextBlock Text="{Binding Label}" Opacity="0.85" />
                 </StackPanel>

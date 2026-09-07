@@ -54,18 +54,23 @@
 
     <Border Grid.Row="2" Classes="card" Padding="0" ClipToBounds="True">
       <Panel>
-        <c:ZoomPanel x:Name="Zoom" IsVisible="{Binding HasMap}">
+        <c:ZoomPanel x:Name="Zoom" IsVisible="{Binding HasMap}" AnimateZoom="{Binding Motion.Enabled}">
           <Panel>
             <Image Source="{Binding Image}" Stretch="None" />
             <Canvas IsVisible="{Binding HasHighlight}">
+              <!-- glow: the same rectangle 6px wider, pulsing (Motion.axaml) -->
+              <Border Classes="mapglow" Canvas.Left="{Binding HighlightLeft}" Canvas.Top="{Binding HighlightTop}" Width="{Binding HighlightWidth}" Height="{Binding HighlightHeight}"
+                      Margin="-6" BorderBrush="{DynamicResource Brush.MapInkSoft}" BorderThickness="6" CornerRadius="8" />
               <Border Canvas.Left="{Binding HighlightLeft}" Canvas.Top="{Binding HighlightTop}" Width="{Binding HighlightWidth}" Height="{Binding HighlightHeight}"
-                      BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="2" CornerRadius="4" />
-              <Border Canvas.Left="{Binding HighlightLeft}" Canvas.Top="{Binding HighlightTop}" Margin="0,-26,0,0" Classes="chip" Background="{DynamicResource Brush.Accent}">
-                <TextBlock Text="{Binding HighlightLabel}" Foreground="{DynamicResource Brush.OnAccent}" FontWeight="SemiBold" />
-              </Border>
+                      BorderBrush="{DynamicResource Brush.MapInk}" BorderThickness="2" CornerRadius="4" />
             </Canvas>
           </Panel>
         </c:ZoomPanel>
+        <!-- The label lives outside the zoom transform (constant size at any scale); MapsView.axaml.cs positions it. -->
+        <Border x:Name="HighlightLabel" Classes="chip" Background="{DynamicResource Brush.MapInk}" HorizontalAlignment="Left" VerticalAlignment="Top"
+                IsVisible="{Binding HasHighlight}" IsHitTestVisible="False">
+          <TextBlock Text="{Binding HighlightLabel}" Foreground="{DynamicResource Brush.OnMapInk}" FontWeight="SemiBold" />
+        </Border>
         <c:EmptyState IsVisible="{Binding !HasMap}" Title="{Binding ContextLine}" Hint="{loc:T mapRemoteHint}" Icon="{StaticResource Icon.Map}" VerticalAlignment="Center" />
         <TextBlock Classes="muted caption" Text="{Binding ImageError}" IsVisible="{Binding ImageError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                    HorizontalAlignment="Center" VerticalAlignment="Center" />

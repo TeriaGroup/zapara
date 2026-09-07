@@ -6,15 +6,23 @@
              x:Class="Vograph.Desktop.Features.Maps.MapFullscreenView"
              x:DataType="m:MapFullscreenViewModel">
   <Panel Background="{DynamicResource Brush.Canvas}">
-    <c:ZoomPanel x:Name="Zoom">
+    <c:ZoomPanel x:Name="Zoom" AnimateZoom="{Binding Owner.Motion.Enabled}">
       <Panel>
         <Image Source="{Binding Owner.Image}" Stretch="None" />
         <Canvas IsVisible="{Binding Owner.HasHighlight}">
+          <!-- glow: the same rectangle 6px wider, pulsing (Motion.axaml) -->
+          <Border Classes="mapglow" Canvas.Left="{Binding Owner.HighlightLeft}" Canvas.Top="{Binding Owner.HighlightTop}" Width="{Binding Owner.HighlightWidth}" Height="{Binding Owner.HighlightHeight}"
+                  Margin="-6" BorderBrush="{DynamicResource Brush.MapInkSoft}" BorderThickness="6" CornerRadius="8" />
           <Border Canvas.Left="{Binding Owner.HighlightLeft}" Canvas.Top="{Binding Owner.HighlightTop}" Width="{Binding Owner.HighlightWidth}" Height="{Binding Owner.HighlightHeight}"
-                  BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="2" CornerRadius="4" />
+                  BorderBrush="{DynamicResource Brush.MapInk}" BorderThickness="2" CornerRadius="4" />
         </Canvas>
       </Panel>
     </c:ZoomPanel>
+    <!-- The label lives outside the zoom transform (constant size at any scale); MapFullscreenView.axaml.cs positions it. -->
+    <Border x:Name="HighlightLabel" Classes="chip" Background="{DynamicResource Brush.MapInk}" HorizontalAlignment="Left" VerticalAlignment="Top"
+            IsVisible="{Binding Owner.HasHighlight}" IsHitTestVisible="False">
+      <TextBlock Text="{Binding Owner.HighlightLabel}" Foreground="{DynamicResource Brush.OnMapInk}" FontWeight="SemiBold" />
+    </Border>
     <Border Classes="card" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="16" Padding="12,8">
       <TextBlock Text="{Binding Owner.ContextLine}" />
     </Border>

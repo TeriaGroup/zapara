@@ -28,14 +28,20 @@ public sealed class ThemeService
     public bool IsDark => _isDark();
     public event Action? Changed;
 
+    /// <summary>Set by MainWindow: runs the variant switch inside a crossfade (snapshot of the old theme fading out).
+    /// Null = switch instantly. The switch itself always happens synchronously inside the delegate, before any await.</summary>
+    public Func<Action, Task>? Transition { get; set; }
+
     public void Apply(ThemeChoice choice, bool save = true)
     {
-        _apply(choice switch
+        var variant = choice switch
         {
             ThemeChoice.Light => ThemeVariant.Light,
             ThemeChoice.Dark => ThemeVariant.Dark,
             _ => ThemeVariant.Default
-        });
+        };
+        if (Transition is { } transition) _ = transition(() => _apply(variant)); // never throws: ThemeCrossfade falls back to the plain switch
+        else _apply(variant);
         _prefs.Theme = choice;
         if (save) _prefs.Save();
         Changed?.Invoke();

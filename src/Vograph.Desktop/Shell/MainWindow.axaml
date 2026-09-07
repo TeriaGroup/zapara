@@ -33,7 +33,7 @@
          which ShellViewModel.HandleShortcut does from the bubbling OnShellKeyDown handler below. -->
   </Window.KeyBindings>
 
-  <Panel>
+  <Panel x:Name="RootPanel">
     <Grid RowDefinitions="40,*" ColumnDefinitions="Auto,*">
 
       <!-- Custom title bar: the OS handles drag / double-click via ElementRole. -->
@@ -72,5 +72,7 @@
 
     <d:DialogHostView DataContext="{Binding Dialogs}" />
     <c:ToastHost DataContext="{Binding Toasts}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,18,16" />
+    <!-- Spec §7: the outgoing theme, snapshotted and fading away over the switched-over window underneath. -->
+    <Image x:Name="ThemeSnapshot" IsVisible="False" IsHitTestVisible="False" Stretch="Fill" />
   </Panel>
 </Window>

@@ -68,14 +68,14 @@
           <TextBlock Classes="muted caption" Text="{loc:T strictnessHint}" TextWrapping="Wrap" />
           <StackPanel Spacing="2">
             <Slider Minimum="25" Maximum="100" TickFrequency="25" IsSnapToTickEnabled="True" Value="{Binding Strictness}" />
-            <ItemsControl ItemsSource="{Binding TickLabels}">
-              <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="x:String">
-                  <TextBlock Classes="faint caption" Text="{Binding}" HorizontalAlignment="Center" />
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <!-- The four labels stand under the ticks at 25/50/75/100, i.e. at 0, ⅓, ⅔ and 1 of the track;
+                 the track of a Fluent slider is inset by half a thumb (7px), hence the margin. -->
+            <Grid ColumnDefinitions="*,*,*" Margin="7,0">
+              <TextBlock Classes="faint caption" Text="{Binding TickLabels[0]}" HorizontalAlignment="Left" />
+              <TextBlock Grid.ColumnSpan="2" Classes="faint caption" Text="{Binding TickLabels[1]}" HorizontalAlignment="Center" />
+              <TextBlock Grid.Column="1" Grid.ColumnSpan="2" Classes="faint caption" Text="{Binding TickLabels[2]}" HorizontalAlignment="Center" />
+              <TextBlock Grid.Column="2" Classes="faint caption" Text="{Binding TickLabels[3]}" HorizontalAlignment="Right" />
+            </Grid>
           </StackPanel>
           <TextBlock Classes="caption" Text="{Binding StrictnessLabel}" />
           <c:Switch Content="{loc:T alwaysShowAll}" IsChecked="{Binding AlwaysShowAll}" />

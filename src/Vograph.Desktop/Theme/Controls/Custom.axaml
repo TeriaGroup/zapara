@@ -66,6 +66,29 @@
     <Style Selector="^:compact /template/ Border#PART_Badge"><Setter Property="IsVisible" Value="False" /></Style>
   </ControlTheme>
 
+  <ControlTheme x:Key="{x:Type c:Skeleton}" TargetType="c:Skeleton">
+    <Setter Property="Height" Value="12" />
+    <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Radius.Chip}" />
+    <Setter Property="ClipToBounds" Value="True" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}" ClipToBounds="True">
+          <!-- The shine is a 120px gradient parked off the left edge; Motion.axaml sweeps it to the right on a loop. -->
+          <Border x:Name="PART_Shine" Width="120" HorizontalAlignment="Left" RenderTransform="translateX(-140px)">
+            <Border.Background>
+              <LinearGradientBrush StartPoint="0%,50%" EndPoint="100%,50%">
+                <GradientStop Offset="0" Color="#00FFFFFF" />
+                <GradientStop Offset="0.5" Color="#22FFFFFF" />
+                <GradientStop Offset="1" Color="#00FFFFFF" />
+              </LinearGradientBrush>
+            </Border.Background>
+          </Border>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
   <ControlTheme x:Key="{x:Type c:EmptyState}" TargetType="c:EmptyState">
     <Setter Property="HorizontalAlignment" Value="Center" />
     <Setter Property="Template">

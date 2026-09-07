@@ -24,6 +24,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     private bool _suppressReload;
     private bool _loaded;
     private bool _raising;
+    private int? _shownOffset;
 
     public ScheduleViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null) : base(app)
     {
@@ -106,8 +107,14 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     /// started and dropped.</summary>
     private Task<DayModel?> ComposeAsync(Func<DayModel> work) => RunAsync(work, "schedule");
 
+    /// <summary>Raised after a day is applied: +1 forward, −1 back, 0 for the first day or a reload of the same one.
+    /// The view runs the 12px crossfade in that direction.</summary>
+    public event Action<int>? DayShown;
+
     private void Apply(DayModel model)
     {
+        var direction = _shownOffset is { } prev ? Math.Sign(model.Offset - prev) : 0;
+        _shownOffset = model.Offset;
         Date = model.Date;
         Title = model.Title;
         Subtitle = model.Subtitle;
@@ -117,6 +124,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         IsEmpty = model.Rows.Count == 0;
         EmptyTitle = model.EmptyTitle;
         EmptyHint = model.EmptyHint;
+        DayShown?.Invoke(direction);
     }
 
     /// <summary>Segment thumb and the "go to today" pill are pure functions of the offset.</summary>

@@ -14,6 +14,7 @@ public partial class MapsView : UserControl
     {
         InitializeComponent();
         DataContextChanged += (_, _) => { if (this.IsAttachedToVisualTree()) Hook(DataContext as MapsViewModel); };
+        Zoom.ViewChanged += (_, _) => PositionLabel(); // pan or zoom: the label follows the room it names
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -39,6 +40,16 @@ public partial class MapsView : UserControl
     private void OnVmChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MapsViewModel.Image)) Zoom.RequestFit();
+        if (e.PropertyName is nameof(MapsViewModel.HasHighlight) or nameof(MapsViewModel.HighlightLeft) or nameof(MapsViewModel.HighlightTop)) PositionLabel();
+    }
+
+    /// <summary>Spec §5.5: the room label sits above the highlight but outside the zoom transform, so it keeps
+    /// its size at any scale. MapsComposer.LabelOffset does the arithmetic; this only carries the result over.</summary>
+    private void PositionLabel()
+    {
+        if (_vm is not { HasHighlight: true }) return;
+        var p = MapsComposer.LabelOffset(Zoom.Scale, Zoom.OffsetX, Zoom.OffsetY, _vm.HighlightLeft, _vm.HighlightTop);
+        HighlightLabel.Margin = new Thickness(p.X, p.Y, 0, 0);
     }
 
     private void OnZoomIn(object? sender, RoutedEventArgs e) => Zoom.ZoomIn();

@@ -4,11 +4,12 @@
              x:Class="Vograph.Desktop.Dialogs.DialogHostView"
              x:DataType="d:DialogHostViewModel"
              KeyDown="OnKeyDown">
-  <Panel x:Name="Root" Focusable="True" IsVisible="{Binding HasDialog}">
-    <Border Background="{DynamicResource Brush.Backdrop}" PointerPressed="OnBackdropPressed" />
-    <Border Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="1"
+  <!-- Visibility is driven from code-behind (open/close animations), not bound to HasDialog. -->
+  <Panel x:Name="Root" Focusable="True" IsVisible="False">
+    <Border x:Name="Backdrop" Background="{DynamicResource Brush.Backdrop}" PointerPressed="OnBackdropPressed" />
+    <Border x:Name="Card" Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="1"
             CornerRadius="{DynamicResource Radius.Dialog}" Padding="22" BoxShadow="{DynamicResource Shadow.Dialog}"
-            HorizontalAlignment="Center" VerticalAlignment="Center" MinWidth="440" MaxWidth="640">
+            HorizontalAlignment="Center" VerticalAlignment="Center" MinWidth="440" MaxWidth="640" RenderTransformOrigin="50%,50%">
       <ContentControl Content="{Binding Current}" />
     </Border>
   </Panel>

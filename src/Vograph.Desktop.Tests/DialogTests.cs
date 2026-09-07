@@ -126,4 +126,17 @@ public class DialogTests : UiTest
         shell.Dialogs.DismissCommand.Execute(null);
         await task;
     }
+
+    [Fact]
+    public async Task Host_Without_Motion_Closes_Instantly()
+    {
+        var host = new DialogHostViewModel();
+        Assert.Same(MotionSettings.Off, host.Motion);
+        var task = host.ShowAsync(new ConfirmDialogViewModel("t", "m", "ok", false));
+        Assert.True(host.IsOpen);
+        host.DismissCommand.Execute(null);
+        Assert.False(await task);
+        Assert.False(host.IsOpen);
+        Assert.Null(host.Current);
+    }
 }

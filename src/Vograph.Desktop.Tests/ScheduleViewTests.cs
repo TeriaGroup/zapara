@@ -59,4 +59,23 @@ public class ScheduleViewTests : UiTest
 
         AssertNoBindingErrors();
     }
+
+    [Fact]
+    public async Task Day_Change_Reports_Its_Direction()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = new ScheduleViewModel(db.Services, shell, () => new DateTime(2026, 9, 7, 8, 0, 0));
+        var directions = new List<int>();
+        vm.DayShown += directions.Add;
+        await vm.InitializeAsync();
+        Assert.Equal(new[] { 0 }, directions);          // the first day has no direction
+        vm.NextDayCommand.Execute(null);
+        await vm.ReloadAsync();
+        vm.PrevDayCommand.Execute(null);
+        await vm.ReloadAsync();
+        vm.ShowDate(new DateTime(2026, 9, 21));
+        await vm.ReloadAsync();
+        Assert.Equal(new[] { 0, 1, -1, 1 }, directions);
+    }
 }

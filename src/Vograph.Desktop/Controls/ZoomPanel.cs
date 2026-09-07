@@ -1,14 +1,17 @@
 using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Vograph.Desktop.Services;
 
 namespace Vograph.Desktop.Controls;
 
 /// <summary>
 /// Pan/zoom viewport for one child (the map image with its highlight overlay). The child keeps its natural size;
 /// a MatrixTransform (scale + translate, origin top-left) does the rest. Wheel zooms ×1.15 around the cursor,
-/// left-drag pans, AutoFit fits the content the first time its size is known.
+/// left-drag pans, AutoFit fits the content the first time its size is known. With AnimateZoom the zoom steps
+/// glide (spec §7, 160 ms); a drag never does.
 /// </summary>
 public sealed class ZoomPanel : Decorator
 {
@@ -16,12 +19,19 @@ public sealed class ZoomPanel : Decorator
     public static readonly StyledProperty<double> OffsetXProperty = AvaloniaProperty.Register<ZoomPanel, double>(nameof(OffsetX));
     public static readonly StyledProperty<double> OffsetYProperty = AvaloniaProperty.Register<ZoomPanel, double>(nameof(OffsetY));
     public static readonly StyledProperty<bool> AutoFitProperty = AvaloniaProperty.Register<ZoomPanel, bool>(nameof(AutoFit), true);
+    public static readonly StyledProperty<bool> AnimateZoomProperty = AvaloniaProperty.Register<ZoomPanel, bool>(nameof(AnimateZoom));
 
     private const double WheelStep = 1.15;
     private const double ButtonStep = 1.25;
+
+    /// <summary>One transform, mutated in place: a fresh instance per frame would make the RenderTransform of the
+    /// child churn while a zoom transition samples it (T5 #3).</summary>
+    private readonly MatrixTransform _transform = new();
+
     private bool _needsFit = true;
     private bool _batching;
     private Point? _dragLast;
+    private Transitions? _zoomTransitions;
 
     public ZoomPanel()
     {
@@ -33,6 +43,9 @@ public sealed class ZoomPanel : Decorator
     public double OffsetX { get => GetValue(OffsetXProperty); set => SetValue(OffsetXProperty, value); }
     public double OffsetY { get => GetValue(OffsetYProperty); set => SetValue(OffsetYProperty, value); }
     public bool AutoFit { get => GetValue(AutoFitProperty); set => SetValue(AutoFitProperty, value); }
+
+    /// <summary>Bound to Motion.Enabled by the map views: «Анимации» off and every zoom step snaps.</summary>
+    public bool AnimateZoom { get => GetValue(AnimateZoomProperty); set => SetValue(AnimateZoomProperty, value); }
 
     public event EventHandler? ViewChanged;
 
@@ -51,14 +64,14 @@ public sealed class ZoomPanel : Decorator
     public void ZoomAt(Point viewportPoint, double factor)
     {
         var (s, ox, oy) = ZoomMath.ZoomAt(Scale, OffsetX, OffsetY, factor, viewportPoint.X, viewportPoint.Y);
-        Apply(s, ox, oy);
+        Apply(s, ox, oy, animate: true);
     }
 
     public void Fit()
     {
         var c = ContentSize;
         var (s, ox, oy) = ZoomMath.Fit(Bounds.Width, Bounds.Height, c.Width, c.Height);
-        Apply(s, ox, oy);
+        Apply(s, ox, oy, animate: true);
     }
 
     /// <summary>100 %, centered.</summary>
@@ -66,16 +79,28 @@ public sealed class ZoomPanel : Decorator
     {
         var c = ContentSize;
         var (ox, oy) = ZoomMath.Centered(Bounds.Width, Bounds.Height, c.Width, c.Height, 1);
-        Apply(1, ox, oy);
+        Apply(1, ox, oy, animate: true);
     }
 
-    private void Apply(double scale, double ox, double oy)
+    /// <summary>Spec §7 «Карта — DoubleTransition масштаба, 160 мс». Only zoom steps animate: a drag must follow the pointer at once.</summary>
+    private Transitions ZoomTransitions() => _zoomTransitions ??= new Transitions
     {
+        new DoubleTransition { Property = ScaleProperty, Duration = TimeSpan.FromMilliseconds(160), Easing = MotionSettings.Ease },
+        new DoubleTransition { Property = OffsetXProperty, Duration = TimeSpan.FromMilliseconds(160), Easing = MotionSettings.Ease },
+        new DoubleTransition { Property = OffsetYProperty, Duration = TimeSpan.FromMilliseconds(160), Easing = MotionSettings.Ease },
+    };
+
+    private void Apply(double scale, double ox, double oy, bool animate)
+    {
+        Transitions = animate && AnimateZoom ? ZoomTransitions() : null;
         _batching = true;
-        Scale = scale;
-        OffsetX = ox;
-        OffsetY = oy;
-        _batching = false;
+        try
+        {
+            Scale = scale;
+            OffsetX = ox;
+            OffsetY = oy;
+        }
+        finally { _batching = false; } // a throwing setter must not leave direct-set reactions disabled (T5 #4)
         UpdateTransform();
         RaiseViewChanged();
     }
@@ -86,7 +111,12 @@ public sealed class ZoomPanel : Decorator
     {
         if (Child is null) return;
         Child.RenderTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Absolute);
-        Child.RenderTransform = new MatrixTransform(new Matrix(Scale, 0, 0, Scale, OffsetX, OffsetY));
+        _transform.Matrix = new Matrix(Scale, 0, 0, Scale, OffsetX, OffsetY);
+        if (!ReferenceEquals(Child.RenderTransform, _transform)) Child.RenderTransform = _transform; // one instance, mutated per frame (T5 #3)
+        // Mutating Matrix in place changes no Avalonia property, so nothing marks the child dirty on its own —
+        // and a zoom transition would then starve: no repaint, no compositor frame, no clock tick, no next value.
+        Child.InvalidateVisual();
+        InvalidateVisual();
     }
 
     protected override Size MeasureOverride(Size availableSize)
@@ -107,11 +137,15 @@ public sealed class ZoomPanel : Decorator
             {
                 _needsFit = false;
                 var (s, ox, oy) = ZoomMath.Fit(finalSize.Width, finalSize.Height, c.DesiredSize.Width, c.DesiredSize.Height);
+                Transitions = null; // an auto-fit lands at once: nothing glides towards a layout the user has not seen yet
                 _batching = true;
-                Scale = s;
-                OffsetX = ox;
-                OffsetY = oy;
-                _batching = false;
+                try
+                {
+                    Scale = s;
+                    OffsetX = ox;
+                    OffsetY = oy;
+                }
+                finally { _batching = false; }
                 didFit = true;
             }
             UpdateTransform();
@@ -133,13 +167,14 @@ public sealed class ZoomPanel : Decorator
 
         // A direct set (XAML attribute, style, animation, or a restored-state binding) bypasses Apply()/ArrangeOverride,
         // so react here too: clamp Scale back into range (guarding against re-entering this handler), then keep the
-        // rendered transform and the ViewChanged contract in sync with it.
+        // rendered transform and the ViewChanged contract in sync with it. The frames of a running zoom transition
+        // arrive here as well, which is what keeps the matrix following it.
         var clamped = ZoomMath.Clamp(Scale);
         if (clamped != Scale)
         {
             _batching = true;
-            Scale = clamped;
-            _batching = false;
+            try { Scale = clamped; }
+            finally { _batching = false; }
         }
         UpdateTransform();
         RaiseViewChanged();
@@ -170,7 +205,7 @@ public sealed class ZoomPanel : Decorator
         base.OnPointerMoved(e);
         if (_dragLast is not { } last) return;
         var p = e.GetPosition(this);
-        Apply(Scale, OffsetX + (p.X - last.X), OffsetY + (p.Y - last.Y));
+        Apply(Scale, OffsetX + (p.X - last.X), OffsetY + (p.Y - last.Y), animate: false);
         _dragLast = p;
     }
 

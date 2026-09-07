@@ -31,6 +31,10 @@
       <SolidColorBrush x:Key="Brush.CloseHover" Color="#E81123" />
       <!-- Backing for a QR code: white in BOTH themes, a scanner needs the light modules light. -->
       <SolidColorBrush x:Key="Brush.QrPaper" Color="#FFFFFFFF" />
+      <!-- Plan highlight: ink relative to the white paper of the plans, identical in both themes (spec §5.5 amendment). -->
+      <SolidColorBrush x:Key="Brush.MapInk" Color="#2B7FD9" />
+      <SolidColorBrush x:Key="Brush.MapInkSoft" Color="#402B7FD9" />
+      <SolidColorBrush x:Key="Brush.OnMapInk" Color="#FFFFFF" />
 
       <SolidColorBrush x:Key="Brush.Ok" Color="#4CC38A" />
       <SolidColorBrush x:Key="Brush.Warn" Color="#F2A33C" />
@@ -103,6 +107,10 @@
       <SolidColorBrush x:Key="Brush.CloseHover" Color="#E81123" />
       <!-- Backing for a QR code: white in BOTH themes, a scanner needs the light modules light. -->
       <SolidColorBrush x:Key="Brush.QrPaper" Color="#FFFFFFFF" />
+      <!-- Plan highlight: ink relative to the white paper of the plans, identical in both themes (spec §5.5 amendment). -->
+      <SolidColorBrush x:Key="Brush.MapInk" Color="#2B7FD9" />
+      <SolidColorBrush x:Key="Brush.MapInkSoft" Color="#402B7FD9" />
+      <SolidColorBrush x:Key="Brush.OnMapInk" Color="#FFFFFF" />
 
       <SolidColorBrush x:Key="Brush.Ok" Color="#2FA36B" />
       <SolidColorBrush x:Key="Brush.Warn" Color="#D9861B" />

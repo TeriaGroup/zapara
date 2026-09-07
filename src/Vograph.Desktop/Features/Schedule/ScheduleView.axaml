@@ -27,19 +27,22 @@
         </StackPanel>
       </Grid>
 
-      <ItemsControl ItemsSource="{Binding Lessons}" c:Appear.CascadeHost="True">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="s:LessonRowViewModel">
-            <s:LessonCardView />
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+      <!-- One panel for the whole day's content: ScheduleView.axaml.cs crossfades and slides it on a day change. -->
+      <Panel x:Name="Body">
+        <ItemsControl ItemsSource="{Binding Lessons}" c:Appear.CascadeHost="True">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="s:LessonRowViewModel">
+              <s:LessonCardView />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
 
-      <c:EmptyState IsVisible="{Binding IsEmpty}" Title="{Binding EmptyTitle}" Hint="{Binding EmptyHint}"
-                    Icon="{StaticResource Icon.Calendar}" Margin="0,48,0,0" />
+        <c:EmptyState IsVisible="{Binding IsEmpty}" Title="{Binding EmptyTitle}" Hint="{Binding EmptyHint}"
+                      Icon="{StaticResource Icon.Calendar}" Margin="0,48,0,0" />
+      </Panel>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

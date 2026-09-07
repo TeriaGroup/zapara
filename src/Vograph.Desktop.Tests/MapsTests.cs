@@ -1,9 +1,12 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 using Vograph.Core.Services;
+using Vograph.Desktop.Controls;
 using Vograph.Desktop.Features.Maps;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
@@ -413,6 +416,16 @@ public class MapsTests : UiTest
         Frames.Capture(window, "maps-highlight-light");
         SetTheme(ThemeVariant.Dark);
         Frames.Capture(window, "maps-highlight-dark");
+        var label = window.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "HighlightLabel");
+        Assert.True(label.IsVisible);
+        Assert.False(label.GetVisualAncestors().OfType<ZoomPanel>().Any()); // outside the zoom transform: constant size
         AssertNoBindingErrors();
     }
+
+    [Theory]
+    [InlineData(1.0, 0, 0, 100, 60, 100, 34)]
+    [InlineData(2.0, 10, 20, 100, 60, 210, 114)]
+    [InlineData(0.5, -300, 0, 100, 10, 0, 0)]  // off the left/top edge: clamped so the label stays readable
+    public void Highlight_Label_Sits_Above_The_Rectangle_In_Viewport_Space(double scale, double ox, double oy, double left, double top, double x, double y) =>
+        Assert.Equal(new Point(x, y), MapsComposer.LabelOffset(scale, ox, oy, left, top));
 }

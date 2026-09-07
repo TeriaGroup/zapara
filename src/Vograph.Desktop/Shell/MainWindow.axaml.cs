@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Vograph.Desktop.Controls;
 using Vograph.Desktop.Services;
 
 namespace Vograph.Desktop.Shell;
@@ -13,7 +14,15 @@ public partial class MainWindow : Window
         InitializeComponent();
         Opened += OnOpened;
         Closing += OnClosing;
+        DataContextChanged += (_, _) => WireTheme();
         AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
+    }
+
+    /// <summary>The theme service switches inside a crossfade of this window (spec §7); a window without a shell switches plainly.</summary>
+    private void WireTheme()
+    {
+        if (DataContext is ShellViewModel vm && vm.App.Theme is { } theme)
+            theme.Transition = apply => ThemeCrossfade.RunAsync(this, RootPanel, ThemeSnapshot, apply, vm.Motion, vm.App.Log);
     }
 
     /// <summary>←/→/Home step the schedule day, Escape closes the dialog or the fullscreen map. A bubbling handler

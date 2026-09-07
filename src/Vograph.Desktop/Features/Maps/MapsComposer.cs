@@ -41,6 +41,10 @@ public static class MapsComposer
         return new Rect(coords.x * image.Width, coords.y * image.Height, coords.w * image.Width, coords.h * image.Height);
     }
 
+    /// <summary>Where the room label sits in viewport space: above the top-left corner of the highlight, clamped to the viewport.</summary>
+    public static Point LabelOffset(double scale, double offsetX, double offsetY, double left, double top) =>
+        new(Math.Max(0, offsetX + left * scale), Math.Max(0, offsetY + top * scale - 26));
+
     public static string RoomText(MapInfo map) => string.IsNullOrWhiteSpace(map.ClassroomRaw) ? map.RoomRaw : LessonText.CleanRoom(map.ClassroomRaw);
 
     /// <summary>«ГК, 4 этаж» — the plan actually shown (ВЦ lessons show the ГК plan).</summary>

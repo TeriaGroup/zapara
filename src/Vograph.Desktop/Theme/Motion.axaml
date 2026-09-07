@@ -98,4 +98,30 @@
       </Transitions>
     </Setter>
   </Style>
+
+  <!-- Spec §7: a burning homework dot breathes (1.6 s, alternate), the map highlight glow pulses, the skeleton shines. -->
+  <Style Selector="Button.hw.burning Ellipse.hwdot, Button.hw.urgent Ellipse.hwdot">
+    <Style.Animations>
+      <Animation Duration="0:0:1.6" IterationCount="INFINITE" PlaybackDirection="Alternate" Easing="SineEaseInOut">
+        <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+        <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.35" /></KeyFrame>
+      </Animation>
+    </Style.Animations>
+  </Style>
+  <Style Selector="Border.mapglow">
+    <Style.Animations>
+      <Animation Duration="0:0:1.6" IterationCount="INFINITE" PlaybackDirection="Alternate" Easing="SineEaseInOut">
+        <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+        <KeyFrame Cue="100%"><Setter Property="Opacity" Value="0.3" /></KeyFrame>
+      </Animation>
+    </Style.Animations>
+  </Style>
+  <Style Selector="c|Skeleton /template/ Border#PART_Shine">
+    <Style.Animations>
+      <Animation Duration="0:0:1.4" IterationCount="INFINITE">
+        <KeyFrame Cue="0%"><Setter Property="TranslateTransform.X" Value="-140" /></KeyFrame>
+        <KeyFrame Cue="100%"><Setter Property="TranslateTransform.X" Value="360" /></KeyFrame>
+      </Animation>
+    </Style.Animations>
+  </Style>
 </Styles>

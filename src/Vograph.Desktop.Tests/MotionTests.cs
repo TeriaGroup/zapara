@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Media.Transformation;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -338,5 +339,134 @@ public class MotionTests : UiTest
         finally { app.SetMotion(false); }
         Pump();
         Assert.Null(indicator.Transitions);
+    }
+
+    [AvaloniaFact]
+    public async Task Dialog_Animates_Open_And_Close_And_Keeps_Content_While_Closing()
+    {
+        var app = (App)Application.Current!;
+        using var db = TestDb.Create();
+        db.Services.Motion.Enabled = true;
+        db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        var shell = new ShellViewModel(db.Services);
+        try
+        {
+            app.SetMotion(true);
+            var window = new MainWindow { DataContext = shell };
+            window.Show();
+            Pump();
+            var host = window.GetVisualDescendants().OfType<Dialogs.DialogHostView>().Single();
+            var root = host.GetVisualDescendants().OfType<Panel>().First(p => p.Name == "Root");
+            var card = host.GetVisualDescendants().OfType<Border>().First(b => b.Name == "Card");
+
+            var dialog = new Dialogs.ConfirmDialogViewModel("t", "m", "ok", false);
+            var shown = shell.Dialogs.ShowAsync(dialog);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Avalonia.Headless.AvaloniaHeadlessPlatform.ForceRenderTimerTick(); // animated values are sampled on a render tick
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Assert.True(root.IsVisible);
+            Assert.True(shell.Dialogs.HasDialog);
+            Assert.True(card.Opacity < 1, "the card starts transparent and fades in");
+            Settle(400);
+            Assert.Equal(1.0, card.Opacity, 2);
+
+            dialog.CancelCommand.Execute(null);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Assert.False(shell.Dialogs.HasDialog);          // Escape/hotkeys see «no dialog» at once
+            Assert.Same(dialog, shell.Dialogs.Current);      // but the content stays for the 120 ms fade-out
+            Assert.True(root.IsVisible);
+            Assert.False(await shown);
+            Settle(400);
+            Assert.Null(shell.Dialogs.Current);
+            Assert.False(root.IsVisible);
+            AssertNoBindingErrors();
+        }
+        finally { app.SetMotion(false); }
+    }
+
+    [AvaloniaFact]
+    public void Theme_Toggle_Crossfades_A_Snapshot_Of_The_Old_Theme()
+    {
+        var app = (App)Application.Current!;
+        using var db = TestDb.Create();
+        db.Services.Motion.Enabled = true;
+        var theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        db.Services.Theme = theme;
+        var shell = new ShellViewModel(db.Services);
+        try
+        {
+            app.SetMotion(true);
+            var window = new MainWindow { DataContext = shell };
+            window.Show();
+            Pump();
+            var snapshot = window.GetVisualDescendants().OfType<Image>().Single(i => i.Name == "ThemeSnapshot");
+            Assert.False(snapshot.IsVisible);
+            var before = Application.Current!.ActualThemeVariant;
+            var fallbacks = ThemeCrossfade.FallbackCount;
+
+            shell.ToggleThemeCommand.Execute(null);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+            Assert.NotEqual(before, Application.Current.ActualThemeVariant); // the switch itself is immediate
+            Assert.Equal(fallbacks, ThemeCrossfade.FallbackCount);              // RenderTargetBitmap worked in headless Skia
+            Assert.True(snapshot.IsVisible);
+            Assert.NotNull(snapshot.Source);
+            Settle(500);
+            Assert.False(snapshot.IsVisible);
+            Assert.Null(snapshot.Source);
+        }
+        finally { app.SetMotion(false); }
+    }
+
+    /// <summary>The landing is awaited rather than slept for: a zoom transition is driven by compositor frames, and
+    /// the headless clock only produces those while something is dirty, so the number of frames a fixed sleep gets
+    /// is not fixed. What is deterministic is that the value cannot overshoot its own first frame, and that it ends
+    /// on the target.</summary>
+    [AvaloniaFact]
+    public async Task Zoom_Animates_Towards_The_Target_When_Asked()
+    {
+        var app = (App)Application.Current!;
+        try
+        {
+            app.SetMotion(true);
+            var content = new Border { Width = 400, Height = 300, Background = Brushes.Gray };
+            var panel = new ZoomPanel { Child = content, AnimateZoom = true };
+            var window = new Window { Width = 200, Height = 150, Content = panel, SizeToContent = SizeToContent.Manual };
+            window.Show();
+            Pump();
+            Assert.Equal(0.5, panel.Scale, 6);
+
+            panel.ZoomIn();
+            Avalonia.Headless.AvaloniaHeadlessPlatform.ForceRenderTimerTick(); // the transition samples on render ticks
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Assert.NotNull(panel.Transitions); // a zoom step glides…
+            Assert.True(panel.Scale < 0.5 * 1.25, "the transition is still running");
+            await SettleAsync(() => Math.Abs(panel.Scale - 0.5 * 1.25) < 1e-6);
+            Assert.Equal(0.5 * 1.25, panel.Scale, 3);
+            Assert.Equal(0.5 * 1.25, ((MatrixTransform)content.RenderTransform!).Matrix.M11, 3);
+
+            var (ox, oy) = (panel.OffsetX, panel.OffsetY);
+            window.MouseDown(new Point(50, 50), Avalonia.Input.MouseButton.Left);
+            window.MouseMove(new Point(70, 60));
+            window.MouseUp(new Point(70, 60), Avalonia.Input.MouseButton.Left);
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            Assert.Null(panel.Transitions);          // …a drag never does: it must follow the pointer exactly
+            Assert.Equal(ox + 20, panel.OffsetX, 6);
+            Assert.Equal(oy + 10, panel.OffsetY, 6);
+        }
+        finally { app.SetMotion(false); }
+    }
+
+    [AvaloniaFact]
+    public void Skeleton_Renders_Without_Binding_Errors()
+    {
+        using var db = TestDb.Create();
+        var window = new Window { Width = 400, Height = 200, DataContext = new Features.States.LoadingViewModel(db.Services), Content = new Features.States.LoadingView() };
+        window.Show();
+        Pump();
+        Assert.Equal(6, window.GetVisualDescendants().OfType<Skeleton>().Count());
+        SetTheme(Avalonia.Styling.ThemeVariant.Dark);
+        Frames.Capture(window, "loading-dark");
+        AssertNoBindingErrors();
     }
 }

@@ -26,6 +26,7 @@ public sealed partial class ShellViewModel : ViewModelBase
     {
         // One update state for the whole window: the sidebar item, the Settings card and the startup flow share it.
         Updates = new UpdateCheckViewModel(app, () => Clock());
+        Dialogs = new DialogHostViewModel(app.Motion);
 
         NavigateCommand = new RelayCommand<string>(key =>
         {
@@ -84,7 +85,7 @@ public sealed partial class ShellViewModel : ViewModelBase
     public IEnumerable<NavSection> AllSections => MainSections.Concat(ToolSections).Append(SettingsSection);
     public IRelayCommand<string> NavigateCommand { get; }
     public ToastService Toasts => App.Toasts;
-    public DialogHostViewModel Dialogs { get; } = new();
+    public DialogHostViewModel Dialogs { get; }
 
     /// <summary>Update check/download state, shown by the sidebar item and the Settings card.</summary>
     public UpdateCheckViewModel Updates { get; }
