@@ -3,7 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Models;
 using Vograph.Core.Services;
-using Vograph.Desktop.Features.Schedule;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
 using Vograph.Desktop.ViewModels;
@@ -108,7 +108,7 @@ public sealed partial class MapsViewModel : ViewModelBase
             var (lesson, date) = App.Maps.GetNextLesson(s.MyGroupId, now);
             if (lesson is null) return new NextData(null, now, null, null, null);
             var map = App.Maps.GetMapForLesson(lesson);
-            var name = ScheduleComposer.StripType(App.Overrides.GetDisplayName(lesson.SubjectRaw, lesson.DayOfWeek), lesson.TypeRaw);
+            var name = LessonText.StripType(App.Overrides.GetDisplayName(lesson.SubjectRaw, lesson.DayOfWeek), lesson.TypeRaw);
             return new NextData(lesson, date, map, name, map is { HasMap: true } ? App.Maps.GetCoords(map.Building == "ВЦ" ? "ГК" : map.Building, map.Floor, map.RoomRaw) : null);
         }, "maps");
         if (data is null || version != _version) return;

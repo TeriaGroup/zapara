@@ -4,7 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Models;
 using Vograph.Core.Services;
-using Vograph.Desktop.Features.Schedule;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
 using Vograph.Desktop.ViewModels;
@@ -180,7 +180,6 @@ public sealed record TeacherDay(string Title, bool IsToday, IReadOnlyList<Teache
 /// <summary>Pure over the lecturer's lessons: no Core access, so it can be built on the UI thread when a row is selected.</summary>
 public sealed partial class TeacherDetailViewModel : ObservableObject
 {
-    private static readonly string[] DayKeys = { "mon", "tue", "wed", "thu", "fri", "sat" };
     private readonly IReadOnlyList<LecturerLesson> _lessons;
     private readonly string _myGroupId;
     private readonly string _myGroupName;
@@ -233,13 +232,13 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
         {
             var rows = _lessons
                 .Where(l => l.DayOfWeek == dow)
-                .Select(l => (Lesson: l, UserParity: _invert ? (l.Parity == 1 ? 2 : 1) : l.Parity))
+                .Select(l => (Lesson: l, UserParity: ParityCodes.ToUser(l.Parity, _invert)))
                 .Where(x => ParityIndex == 0 || x.UserParity == ParityIndex)
                 .OrderBy(x => TimeSpan.TryParse(x.Lesson.TimeStart, out var t) ? t : TimeSpan.Zero)
                 .ThenBy(x => x.UserParity)
                 .Select(x => Row(x.Lesson, x.UserParity, loc))
                 .ToList();
-            days.Add(new TeacherDay(loc.T(DayKeys[dow - 1]), dow == todayDow, rows));
+            days.Add(new TeacherDay(loc.T(DayNames.Key(dow)), dow == todayDow, rows));
         }
         return days;
     }
@@ -249,8 +248,8 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
         var groups = l.Groups.Select(g => g.Number).Where(n => n.Length > 0).ToList();
         var groupsText = string.Join(", ", groups.Take(4)) + (groups.Count > 4 ? $" +{groups.Count - 4}" : "");
         var mine = l.Groups.Any(g => g.IdGroup == _myGroupId || (_myGroupName.Length > 0 && g.Number == _myGroupName));
-        var room = string.IsNullOrWhiteSpace(l.ClassroomRaw) ? "—" : l.ClassroomRaw.Trim().TrimEnd(';').Replace("*", "").Trim();
-        return new TeacherRow(l.TimeStart, l.TimeEnd, ScheduleComposer.StripType(l.DisciplineRaw, l.TypeRaw), DayTitles.TypeLabel(l.TypeRaw, loc),
+        var room = string.IsNullOrWhiteSpace(l.ClassroomRaw) ? "—" : LessonText.CleanRoom(l.ClassroomRaw);
+        return new TeacherRow(l.TimeStart, l.TimeEnd, LessonText.StripType(l.DisciplineRaw, l.TypeRaw), DayTitles.TypeLabel(l.TypeRaw, loc),
             room, groupsText, loc.T(userParity == 1 ? "oddShort" : "evenShort"), mine);
     }
 }

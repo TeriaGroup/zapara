@@ -1,4 +1,4 @@
-namespace Vograph.Desktop.Services;
+namespace Vograph.Desktop.Domain;
 
 /// <summary>Five friend colors. DB keeps the hex; the UI draws Brush.Friend{index+1} so both themes look right.</summary>
 public static class FriendPalette

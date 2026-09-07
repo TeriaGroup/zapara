@@ -1,6 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Vograph.Desktop.Features.Schedule;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 
 namespace Vograph.Desktop.Dialogs;

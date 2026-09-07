@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Vograph.Desktop.Features.Schedule;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
 using Vograph.Desktop.ViewModels;

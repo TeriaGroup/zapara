@@ -1,6 +1,6 @@
 using Vograph.Core.Models;
 using Vograph.Core.Services;
-using Vograph.Desktop.Features.Schedule;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 
 namespace Vograph.Desktop.Features.Homeworks;
@@ -69,7 +69,7 @@ public sealed class HomeworkComposer
         return _app.Db.GetAllLessonsForGroup(settings.MyGroupId)
             .GroupBy(l => l.SubjectRaw, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.First())
-            .Select(l => new SubjectOption(l.SubjectRaw, ScheduleComposer.StripType(_app.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw), DayTitles.TypeLabel(l.TypeRaw, loc)))
+            .Select(l => new SubjectOption(l.SubjectRaw, LessonText.StripType(_app.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw), DayTitles.TypeLabel(l.TypeRaw, loc)))
             .OrderBy(s => s.Display, StringComparer.Create(System.Globalization.CultureInfo.GetCultureInfo("ru-RU"), ignoreCase: true))
             .ToList();
     }
@@ -82,7 +82,7 @@ public sealed class HomeworkComposer
         {
             var key = ParityService.NormalizeSubject(l.SubjectRaw);
             if (map.ContainsKey(key)) continue;
-            map[key] = (ScheduleComposer.StripType(_app.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw), l.SubjectRaw);
+            map[key] = (LessonText.StripType(_app.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw), l.SubjectRaw);
         }
         return map;
     }

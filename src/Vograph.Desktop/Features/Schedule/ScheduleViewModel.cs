@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Models;
 using Vograph.Core.Services;
 using Vograph.Desktop.Dialogs;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
 using Vograph.Desktop.ViewModels;
@@ -149,7 +150,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         var existing = await RunAsync<Override>(
             () => (App.Overrides.GetOverride(l.SubjectRaw, "global") ?? App.Overrides.GetOverride(l.SubjectRaw, $"weekday:{l.DayOfWeek}"))!,
             "rename");
-        var dlg = new RenameDialogViewModel(ScheduleComposer.StripType(l.SubjectRaw, l.TypeRaw), l.SubjectRaw, l.DayOfWeek, existing); // shown stripped; persisted/keyed by the full SubjectRaw
+        var dlg = new RenameDialogViewModel(LessonText.StripType(l.SubjectRaw, l.TypeRaw), l.SubjectRaw, l.DayOfWeek, existing); // shown stripped; persisted/keyed by the full SubjectRaw
         if (!await _shell.Dialogs.ShowAsync(dlg)) return;
 
         var ok = await RunAsync(() =>

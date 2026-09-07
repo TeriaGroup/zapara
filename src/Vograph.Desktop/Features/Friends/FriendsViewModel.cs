@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Models;
 using Vograph.Desktop.Dialogs;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
@@ -113,9 +114,9 @@ public sealed partial class FriendsViewModel : ViewModelBase
             var date = today.AddDays(i);
             foreach (var l in App.Schedule.GetSchedule(date, settings.MyGroupId).OrderBy(x => TimeSpan.TryParse(x.TimeStart, out var t) ? t : TimeSpan.Zero))
             {
-                var marks = FriendMarks.Compute(App, l, date, friends, settings, loc);
+                var marks = FriendMarks.Compute(App.Intersections, l, date, friends, settings, loc);
                 if (marks.Count == 0) continue;
-                var name = ScheduleComposer.StripType(App.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw);
+                var name = LessonText.StripType(App.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw);
                 var line = $"{loc.I18n.FormatDay(date)} {DayTitles.ShortDate(date, loc)} · {l.TimeStart} · {name}";
                 var data = new PreviewData(line, marks);
                 if (marks.Any(m => m.Fill != Controls.DotFill.Off)) return data;

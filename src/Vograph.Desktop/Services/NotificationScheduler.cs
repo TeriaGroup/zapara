@@ -3,8 +3,7 @@ using System.Text;
 using Avalonia.Threading;
 using Vograph.Core.Models;
 using Vograph.Core.Services;
-using Vograph.Desktop.Features.Homeworks;
-using Vograph.Desktop.Features.Schedule;
+using Vograph.Desktop.Domain;
 
 namespace Vograph.Desktop.Services;
 
@@ -113,9 +112,7 @@ public sealed class NotificationScheduler : IDisposable
     private string BuildText(Settings settings, DateTime date, DateTime now)
     {
         if (string.IsNullOrEmpty(settings.MyGroupId)) return _app.I18n.T("noLessons");
-        var periodStart = DateTime.TryParse(settings.PeriodStart, out var ps) ? ps : new DateTime(date.Year, 9, 1);
-        var weekCount = settings.WeekCount > 0 ? settings.WeekCount : 2;
-        var isOdd = ParityService.IsOddWeek(date, periodStart, weekCount, settings.ParityInvert);
+        var isOdd = ParityCodes.IsOdd(date, settings);
         var header = $"{_app.I18n.FormatDay(date)}, {_app.I18n.FormatParity(isOdd)}: ";
 
         var lessons = _app.Schedule.GetSchedule(date, settings.MyGroupId);

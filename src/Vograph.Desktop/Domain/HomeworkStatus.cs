@@ -1,6 +1,6 @@
 using Vograph.Core.Models;
 
-namespace Vograph.Desktop.Features.Homeworks;
+namespace Vograph.Desktop.Domain;
 
 /// <summary>Core's HomeworkService.ComputeStatus with an explicit "today" (Core reads DateTime.Today, which made
 /// the stage-1 suite date-dependent). Thresholds are identical: overdue / due today / due tomorrow / one lesson

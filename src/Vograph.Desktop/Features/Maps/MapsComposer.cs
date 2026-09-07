@@ -1,5 +1,6 @@
 using Avalonia;
 using Vograph.Core.Services;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 
 namespace Vograph.Desktop.Features.Maps;
@@ -40,7 +41,7 @@ public static class MapsComposer
         return new Rect(coords.x * image.Width, coords.y * image.Height, coords.w * image.Width, coords.h * image.Height);
     }
 
-    public static string RoomText(MapInfo map) => string.IsNullOrWhiteSpace(map.ClassroomRaw) ? map.RoomRaw : map.ClassroomRaw.Trim().TrimEnd(';').Replace("*", "").Trim();
+    public static string RoomText(MapInfo map) => string.IsNullOrWhiteSpace(map.ClassroomRaw) ? map.RoomRaw : LessonText.CleanRoom(map.ClassroomRaw);
 
     /// <summary>«ГК, 4 этаж» — the plan actually shown (ВЦ lessons show the ГК plan).</summary>
     public static string Place(MapInfo map, Loc loc) => $"{(map.Building == "ВЦ" ? "ГК" : map.Building)}, {loc.T("mapFloorN", map.Floor)}";

@@ -1,6 +1,5 @@
 using Vograph.Core.Models;
-using Vograph.Core.Services;
-using Vograph.Desktop.Features.Schedule;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 
 namespace Vograph.Desktop.Features.Week;
@@ -13,7 +12,6 @@ public sealed record WeekModel(int Parity, bool IsOddToday, bool HasGroup, int T
 /// <summary>Six day cards of one parity. Synchronous and DB-bound — call from ViewModelBase.RunAsync.</summary>
 public sealed class WeekComposer
 {
-    private static readonly string[] DayKeys = { "mon", "tue", "wed", "thu", "fri", "sat" };
     private readonly AppServices _app;
 
     public WeekComposer(AppServices app) => _app = app;
@@ -23,13 +21,12 @@ public sealed class WeekComposer
     {
         var settings = _app.Settings;
         var loc = _app.Loc;
-        var (periodStart, weekCount) = Period(settings, today);
-        var isOddToday = ParityService.IsOddWeek(today, periodStart, weekCount, settings.ParityInvert);
+        var isOddToday = ParityCodes.IsOdd(today, settings);
         if (parity == 0) parity = isOddToday ? 1 : 2;
         if (string.IsNullOrEmpty(settings.MyGroupId)) return new WeekModel(parity, isOddToday, false, 0, Array.Empty<WeekDay>());
 
         // schedule_cache stores XML week codes; under inversion the user's "odd" is the XML even week.
-        var weekCode = settings.ParityInvert ? (parity == 1 ? 2 : 1) : parity;
+        var weekCode = ParityCodes.ToXml(parity, settings.ParityInvert);
         var days = new List<WeekDay>(6);
         var total = 0;
         for (var dow = 1; dow <= 6; dow++)
@@ -39,12 +36,12 @@ public sealed class WeekComposer
                 .OrderBy(l => TimeSpan.TryParse(l.TimeStart, out var t) ? t : TimeSpan.Zero)
                 .Select(l => new WeekRow(
                     l.TimeStart,
-                    ScheduleComposer.StripType(_app.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw),
+                    LessonText.StripType(_app.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw),
                     DayTitles.TypeLabel(l.TypeRaw, loc),
                     RoomLabel(l, loc)))
                 .ToList();
             total += rows.Count;
-            days.Add(new WeekDay(dow, loc.T(DayKeys[dow - 1]), date, date == today.Date, rows));
+            days.Add(new WeekDay(dow, loc.T(DayNames.Key(dow)), date, date == today.Date, rows));
         }
         return new WeekModel(parity, isOddToday, true, total, days);
     }
@@ -52,22 +49,18 @@ public sealed class WeekComposer
     /// <summary>The first date ≥ today on this weekday whose user-facing parity matches (a two-week cycle always hits within 14 days).</summary>
     public static DateTime NearestDate(int dow, int parity, DateTime today, Settings settings)
     {
-        var (periodStart, weekCount) = Period(settings, today);
         for (var i = 0; i < 14; i++)
         {
             var d = today.Date.AddDays(i);
             if ((int)d.DayOfWeek != dow) continue;
-            if (ParityService.IsOddWeek(d, periodStart, weekCount, settings.ParityInvert) == (parity == 1)) return d;
+            if (ParityCodes.IsOdd(d, settings) == (parity == 1)) return d;
         }
         return today.Date;
     }
 
     private string RoomLabel(Lesson l, Loc loc)
     {
-        var (room, tag, _) = ScheduleComposer.RoomParts(l, _app.Maps.Resolve(l.ClassroomRaw), loc);
+        var (room, tag, _) = LessonText.RoomParts(l, _app.Maps.Resolve(l.ClassroomRaw), loc);
         return tag is null ? room : $"{room} {tag}";
     }
-
-    private static (DateTime PeriodStart, int WeekCount) Period(Settings s, DateTime today) =>
-        (DateTime.TryParse(s.PeriodStart, out var ps) ? ps : new DateTime(today.Year, 9, 1), s.WeekCount > 0 ? s.WeekCount : 2);
 }

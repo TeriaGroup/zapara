@@ -1,6 +1,6 @@
 using Vograph.Core.Models;
 
-namespace Vograph.Desktop.Features.Schedule;
+namespace Vograph.Desktop.Domain;
 
 public static class SmartStart
 {

@@ -1,18 +1,20 @@
 using Vograph.Core.Models;
+using Vograph.Core.Services;
 using Vograph.Desktop.Controls;
+using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Services;
 
-namespace Vograph.Desktop.Features.Schedule;
+namespace Vograph.Desktop.Domain;
 
-/// <summary>Friend dots for one lesson — shared by the day cards and the Friends preview. DB-bound: call under RunAsync.</summary>
+/// <summary>Friend dots for one lesson — shared by the day cards and the Friends preview. DB-bound (IntersectionService reads the friends' timetables): call under RunAsync.</summary>
 public static class FriendMarks
 {
-    public static IReadOnlyList<FriendMark> Compute(AppServices app, Lesson l, DateTime date, IReadOnlyList<FriendGroup> friends, Settings settings, Loc loc)
+    public static IReadOnlyList<FriendMark> Compute(IntersectionService intersections, Lesson l, DateTime date, IReadOnlyList<FriendGroup> friends, Settings settings, Loc loc)
     {
         var enabled = friends.Where(f => f.Enabled).Take(5).ToList();
         if (enabled.Count == 0) return Array.Empty<FriendMark>();
         // strictness 0 → every time overlap; the visibility threshold is applied below.
-        var results = app.Intersections.GetIntersections(l, date, enabled, strictness: 0);
+        var results = intersections.GetIntersections(l, date, enabled, strictness: 0);
         var marks = new List<FriendMark>();
         foreach (var f in enabled)
         {

@@ -1,4 +1,5 @@
 using Vograph.Desktop.Controls;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Features.Schedule;
 using Xunit;
 

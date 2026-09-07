@@ -1,7 +1,7 @@
 using System.Globalization;
 using Vograph.Desktop.Services;
 
-namespace Vograph.Desktop.Features.Schedule;
+namespace Vograph.Desktop.Domain;
 
 public static class DayTitles
 {

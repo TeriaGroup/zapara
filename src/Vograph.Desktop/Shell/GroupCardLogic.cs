@@ -1,5 +1,5 @@
 using System.Globalization;
-using Vograph.Desktop.Features.Schedule;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 
 namespace Vograph.Desktop.Shell;

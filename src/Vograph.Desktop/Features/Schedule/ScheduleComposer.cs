@@ -1,5 +1,6 @@
 using Vograph.Core.Models;
 using Vograph.Core.Services;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 
 namespace Vograph.Desktop.Features.Schedule;
@@ -29,9 +30,8 @@ public sealed class ScheduleComposer
             return new DayModel(date, offset, title, "", Array.Empty<LessonRow>(), loc.T("noGroup"), loc.T("noGroupHint"));
 
         var groupId = settings.MyGroupId;
-        var periodStart = DateTime.TryParse(settings.PeriodStart, out var ps) ? ps : new DateTime(date.Year, 9, 1);
-        var weekCount = settings.WeekCount > 0 ? settings.WeekCount : 2;
-        var isOdd = ParityService.IsOddWeek(date, periodStart, weekCount, settings.ParityInvert);
+        var (periodStart, _) = ParityCodes.Period(settings, date);
+        var isOdd = ParityCodes.IsOdd(date, settings);
         var weekNumber = ParityService.GetWeekNumber(date, periodStart);
 
         var lessons = _app.Schedule.GetSchedule(date, groupId).OrderBy(l => ParseTime(l.TimeStart)).ToList();
@@ -62,11 +62,11 @@ public sealed class ScheduleComposer
             if (isNext) nextAssigned = true;
 
             // Core keys overrides/homework by the FULL Discipline ("лек ВЫСШ. МАТЕМАТ"); the type token is stripped for display only.
-            var shownName = StripType(_app.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw);
-            var shownOriginal = StripType(l.SubjectRaw, l.TypeRaw);
+            var shownName = LessonText.StripType(_app.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw);
+            var shownOriginal = LessonText.StripType(l.SubjectRaw, l.TypeRaw);
             var note = _app.Overrides.GetNote(l.SubjectRaw, l.DayOfWeek);
             var map = _app.Maps.Resolve(l.ClassroomRaw);
-            var (roomText, tag, remote) = RoomParts(l, map, loc);
+            var (roomText, tag, remote) = LessonText.RoomParts(l, map, loc);
             var next = NextOccurrence.Find(_app.Db, settings, l.SubjectRaw, date);
             var homework = _app.Homework.GetForSubject(l.SubjectRaw)
                 .Select(h => ToItem(h, settings, now.Date, loc))
@@ -88,7 +88,7 @@ public sealed class ScheduleComposer
                 IsRemote: remote,
                 IsPast: isPast,
                 IsNext: isNext,
-                Friends: FriendMarks.Compute(_app, l, date, friends, settings, loc),
+                Friends: FriendMarks.Compute(_app.Intersections, l, date, friends, settings, loc),
                 Homework: homework,
                 Map: map));
         }
@@ -97,23 +97,6 @@ public sealed class ScheduleComposer
 
     private static TimeSpan ParseTime(string s) => TimeSpan.TryParse(s, out var t) ? t : TimeSpan.Zero;
 
-    /// <summary>"пр ОСН РОС ГОС" → "ОСН РОС ГОС" when the name starts with the lesson's own type token. Display only — never use for Core keys.</summary>
-    public static string StripType(string name, string typeRaw)
-    {
-        var t = typeRaw.Trim();
-        return t.Length > 0 && name.Length > t.Length + 1 && name.StartsWith(t + " ", StringComparison.OrdinalIgnoreCase)
-            ? name[(t.Length + 1)..].Trim()
-            : name;
-    }
-
-    public static (string Room, string? Tag, bool Remote) RoomParts(Lesson l, MapInfo? map, Loc loc)
-    {
-        if (map is null) return (string.IsNullOrWhiteSpace(l.RoomRaw) ? "—" : l.RoomRaw.Replace("*", "").Trim(), null, false);
-        if (map.IsRemote) return (loc.T("remote"), null, true);
-        if (map.Building == "ВЦ") return ($"ВЦ {map.RoomRaw}", "ГК", false);
-        return (map.RoomRaw, map.Building, false);
-    }
-
     /// <summary>The card's status comes from the composer's own clock, not from Core's persisted Status
     /// (Core recomputes it against DateTime.Today, which made the cards drift with the wall clock).</summary>
     private HomeworkItem ToItem(Homework h, Settings settings, DateTime today, Loc loc)
@@ -121,7 +104,7 @@ public sealed class ScheduleComposer
         var until = h.Status != "done" && h.DueDateComputed is { } due && due.Date > today.Date
             ? HomeworkLabels.LessonsUntil(_app.Db, settings, h.SubjectRawNormalized, today, due)
             : 0;
-        var status = Homeworks.HomeworkStatus.Compute(h, today, until);
+        var status = HomeworkStatus.Compute(h, today, until);
         if (status == "pending") status = "far";
         return new HomeworkItem(h.Id, h.Text, status, h.DueDateComputed, HomeworkLabels.Label(status, h.DueDateComputed, until, loc), status == "done");
     }

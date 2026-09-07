@@ -1,6 +1,6 @@
 using Vograph.Core.Models;
 using Vograph.Core.Services;
-using Vograph.Desktop.Features.Schedule;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 using Xunit;
 
@@ -35,15 +35,6 @@ public class ScheduleLogicTests
     [InlineData("", "")]
     [InlineData("сем", "сем")]
     public void TypeLabel_Maps_Known_Types(string raw, string expected) => Assert.Equal(expected, DayTitles.TypeLabel(raw, Ru));
-
-    [Theory]
-    [InlineData("пр ОСН РОС ГОС", "пр", "ОСН РОС ГОС")]
-    [InlineData("лек ВЫСШ. МАТЕМАТ", "лек", "ВЫСШ. МАТЕМАТ")]
-    [InlineData("Матан", "лек", "Матан")]
-    [InlineData("лек", "лек", "лек")]
-    [InlineData("ПРАВО", "", "ПРАВО")]
-    public void StripType_Removes_Only_The_Leading_Type_Token(string name, string type, string expected) =>
-        Assert.Equal(expected, ScheduleComposer.StripType(name, type));
 
     [Fact]
     public void SmartStart_Today_While_Lessons_Remain_Otherwise_Tomorrow()

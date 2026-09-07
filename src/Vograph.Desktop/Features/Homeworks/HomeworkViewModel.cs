@@ -3,7 +3,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Services;
 using Vograph.Desktop.Dialogs;
-using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
 using Vograph.Desktop.ViewModels;
@@ -157,7 +156,6 @@ public sealed partial class HomeworkGroupViewModel : ObservableObject
     public IReadOnlyList<HomeworkRowViewModel> Items { get; }
     public int Count => Items.Count;
     public bool IsDone => Status == "done";
-    public string CssClass => HomeworkLabels.StatusClass(Status);
 
     [ObservableProperty] private bool _isCollapsed;
 

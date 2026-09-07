@@ -5,8 +5,8 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Models;
-using Vograph.Core.Services;
 using Vograph.Desktop.Dialogs;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Features.Preferences;
 using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Features.States;
@@ -180,7 +180,7 @@ public sealed partial class ShellViewModel : ViewModelBase
     public async Task UpdateHomeworkBadgeAsync()
     {
         var today = Clock().Date;
-        var data = await RunAsync(() => new BadgeData(Features.Homeworks.HomeworkStatus.BadgeCount(App.Homework.GetAll(), today)), "homework badge");
+        var data = await RunAsync(() => new BadgeData(HomeworkStatus.BadgeCount(App.Homework.GetAll(), today)), "homework badge");
         if (data is null) return;
         var section = ToolSections.FirstOrDefault(s => s.Key == SectionKey.Homework);
         if (section is not null) section.Badge = data.Count > 0 ? data.Count.ToString() : null;
@@ -467,9 +467,7 @@ public sealed partial class ShellViewModel : ViewModelBase
             GroupSubtitle = T("noGroupHint");
             return;
         }
-        var periodStart = DateTime.TryParse(settings.PeriodStart, out var ps) ? ps : new DateTime(DateTime.Today.Year, 9, 1);
-        var weekCount = settings.WeekCount > 0 ? settings.WeekCount : 2;
-        var isOdd = ParityService.IsOddWeek(DateTime.Today, periodStart, weekCount, settings.ParityInvert);
+        var isOdd = ParityCodes.IsOdd(DateTime.Today, settings);
         var culture = CultureInfo.GetCultureInfo(App.Loc.Language == "en" ? "en-US" : "ru-RU");
         GroupName = group.Name;
         GroupSubtitle = $"{T("parityWeek", App.I18n.FormatParity(isOdd))} · {DateTime.Today.ToString(App.Loc.Language == "en" ? "MMM d" : "d MMM", culture)}";

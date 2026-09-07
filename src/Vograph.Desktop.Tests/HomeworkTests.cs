@@ -6,6 +6,7 @@ using Avalonia.Styling;
 using Avalonia.VisualTree;
 using Vograph.Core.Models;
 using Vograph.Desktop.Dialogs;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Features.Homeworks;
 using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Services;

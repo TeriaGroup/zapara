@@ -4,8 +4,8 @@ using Avalonia.Styling;
 using Vograph.Core.Models;
 using Vograph.Desktop.Controls;
 using Vograph.Desktop.Dialogs;
+using Vograph.Desktop.Domain;
 using Vograph.Desktop.Features.Friends;
-using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
 using Xunit;
@@ -28,7 +28,7 @@ public class FriendsTests : UiTest
     {
         using var db = TestDb.Create();
         var lesson = db.Services.Db.GetLessons("3313", 1, 1).Single(l => l.TimeStart == "09:00");
-        var marks = FriendMarks.Compute(db.Services, lesson, new DateTime(2026, 9, 7), db.Services.Db.GetFriends(), db.Services.Db.GetSettings(), db.Services.Loc);
+        var marks = FriendMarks.Compute(db.Services.Intersections, lesson, new DateTime(2026, 9, 7), db.Services.Db.GetFriends(), db.Services.Db.GetSettings(), db.Services.Loc);
         var m = Assert.Single(marks);
         Assert.Equal(("09С31", 0, DotFill.Full), (m.GroupName, m.ColorIndex, m.Fill)); // physics in 493 at the same time
         Assert.Contains("Иван", m.Tooltip);
