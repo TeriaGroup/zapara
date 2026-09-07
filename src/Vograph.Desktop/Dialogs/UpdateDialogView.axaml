@@ -9,8 +9,8 @@
     <TextBlock Classes="muted caption" Text="{Binding PublishedText}" IsVisible="{Binding HasPublished}" />
     <TextBlock Classes="muted" Text="{Binding Hint}" TextWrapping="Wrap" />
     <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,6,0,0">
-      <Button Grid.Column="1" Content="{loc:T updLater}" Command="{Binding CancelCommand}" Margin="0,0,8,0" />
-      <Button Grid.Column="2" Classes="primary" Content="{loc:T updInstall}" Command="{Binding ConfirmCommand}" x:Name="ConfirmButton" />
+      <Button Grid.Column="1" Content="{loc:T updLater}" Command="{Binding CancelCommand}" Margin="0,0,8,0" AutomationProperties.AutomationId="Dialog.Cancel" />
+      <Button Grid.Column="2" Classes="primary" Content="{loc:T updInstall}" Command="{Binding ConfirmCommand}" x:Name="ConfirmButton" AutomationProperties.AutomationId="Dialog.Confirm" />
     </Grid>
   </StackPanel>
 </UserControl>

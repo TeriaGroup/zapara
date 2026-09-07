@@ -19,7 +19,7 @@
       <!-- subject, teacher, note, homework -->
       <StackPanel Grid.Column="1" Margin="16,0">
         <WrapPanel>
-          <TextBlock Classes="subject" Text="{Binding DisplayName}" VerticalAlignment="Center" />
+          <TextBlock Classes="subject" Text="{Binding DisplayName}" VerticalAlignment="Center" AutomationProperties.AutomationId="Lesson.Title" />
           <Border Classes="chip type" Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding HasType}">
             <TextBlock Text="{Binding TypeLabel}" />
           </Border>
@@ -44,7 +44,8 @@
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="s:HomeworkItemViewModel">
               <Button Classes="hw" Classes.approaching="{Binding IsApproaching}" Classes.burning="{Binding IsBurning}"
-                      Classes.urgent="{Binding IsUrgent}" Classes.overdue="{Binding IsOverdue}" Classes.done="{Binding IsDone}">
+                      Classes.urgent="{Binding IsUrgent}" Classes.overdue="{Binding IsOverdue}" Classes.done="{Binding IsDone}"
+                      AutomationProperties.AutomationId="Lesson.Hw" AutomationProperties.Name="{Binding Text}">
                 <Button.Flyout>
                   <MenuFlyout Placement="BottomEdgeAlignedLeft">
                     <MenuItem Header="{Binding DoneLabel}" Command="{Binding ToggleDoneCommand}" />
@@ -72,13 +73,16 @@
           </StackPanel>
         </Border>
         <StackPanel Classes="acts" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right">
-          <Button Classes="icon small" Command="{Binding RenameCommand}" ToolTip.Tip="{loc:T renameTip}">
+          <Button Classes="icon small" Command="{Binding RenameCommand}" ToolTip.Tip="{loc:T renameTip}"
+                  AutomationProperties.AutomationId="Lesson.Rename" AutomationProperties.Name="{loc:T renameTip}">
             <c:Icon Data="{StaticResource Icon.Pencil}" Size="14" />
           </Button>
-          <Button Classes="icon small" Command="{Binding AddHomeworkCommand}" ToolTip.Tip="{loc:T hwAdd}">
+          <Button Classes="icon small" Command="{Binding AddHomeworkCommand}" ToolTip.Tip="{loc:T hwAdd}"
+                  AutomationProperties.AutomationId="Lesson.Homework" AutomationProperties.Name="{loc:T hwAdd}">
             <c:Icon Data="{StaticResource Icon.Plus}" Size="14" />
           </Button>
-          <Button Classes="icon small" Command="{Binding ShowMapCommand}" ToolTip.Tip="{loc:T mapTip}" IsVisible="{Binding CanShowMap}">
+          <Button Classes="icon small" Command="{Binding ShowMapCommand}" ToolTip.Tip="{loc:T mapTip}" IsVisible="{Binding CanShowMap}"
+                  AutomationProperties.AutomationId="Lesson.Map" AutomationProperties.Name="{loc:T mapTip}">
             <c:Icon Data="{StaticResource Icon.MapPin}" Size="14" />
           </Button>
         </StackPanel>

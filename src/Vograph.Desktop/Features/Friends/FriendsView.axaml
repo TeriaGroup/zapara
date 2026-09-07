@@ -16,7 +16,8 @@
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Bottom">
           <TextBlock Classes="muted caption" Text="{Binding CountText}" VerticalAlignment="Center" />
           <TextBlock Classes="faint caption" Text="{loc:T friendsMax}" VerticalAlignment="Center" IsVisible="{Binding !CanAdd}" />
-          <Button Classes="primary" Command="{Binding AddCommand}" IsEnabled="{Binding CanAdd}">
+          <Button Classes="primary" Command="{Binding AddCommand}" IsEnabled="{Binding CanAdd}"
+                  AutomationProperties.AutomationId="Friends.Add" AutomationProperties.Name="{loc:T friendsAdd}">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <c:Icon Data="{StaticResource Icon.Plus}" Size="14" />
               <TextBlock Text="{loc:T friendsAdd}" />
@@ -34,7 +35,8 @@
             <Border Classes="card" c:Appear.Kind="Cascade" c:Appear.Index="{Binding Index}">
               <Grid ColumnDefinitions="Auto,140,*,Auto,Auto" VerticalAlignment="Center">
                 <!-- colour: a dot that opens the palette (taken colours are hidden) -->
-                <Button Classes="icon" ToolTip.Tip="{loc:T friendsColor}">
+                <Button Classes="icon" ToolTip.Tip="{loc:T friendsColor}"
+                        AutomationProperties.AutomationId="Friend.Color" AutomationProperties.Name="{loc:T friendsColor}">
                   <Button.Flyout>
                     <Flyout Placement="Bottom">
                       <ItemsControl ItemsSource="{Binding ColorOptions}">
@@ -53,9 +55,12 @@
                   <c:FriendDot ColorIndex="{Binding ColorIndex}" Fill="Full" Width="14" Height="14" />
                 </Button>
                 <TextBlock Grid.Column="1" Classes="subject" Text="{Binding GroupName}" VerticalAlignment="Center" Margin="10,0" />
-                <TextBox Grid.Column="2" Text="{Binding MemberNames}" PlaceholderText="{loc:T friendsNames}" LostFocus="OnNamesLostFocus" KeyDown="OnNamesKeyDown" Margin="0,0,12,0" />
-                <c:Switch Grid.Column="3" Content="{loc:T friendsEnabled}" IsChecked="{Binding Enabled}" VerticalAlignment="Center" Margin="0,0,12,0" />
-                <Button Grid.Column="4" Classes="danger" Content="{loc:T friendsRemove}" Command="{Binding RemoveCommand}" />
+                <TextBox Grid.Column="2" Text="{Binding MemberNames}" PlaceholderText="{loc:T friendsNames}" LostFocus="OnNamesLostFocus" KeyDown="OnNamesKeyDown" Margin="0,0,12,0"
+                         AutomationProperties.AutomationId="Friend.Names" />
+                <c:Switch Grid.Column="3" Content="{loc:T friendsEnabled}" IsChecked="{Binding Enabled}" VerticalAlignment="Center" Margin="0,0,12,0"
+                          AutomationProperties.AutomationId="Friend.Enabled" />
+                <Button Grid.Column="4" Classes="danger" Content="{loc:T friendsRemove}" Command="{Binding RemoveCommand}"
+                        AutomationProperties.AutomationId="Friend.Remove" />
               </Grid>
             </Border>
           </DataTemplate>
@@ -67,7 +72,8 @@
           <TextBlock Classes="micro" Text="{loc:TU intersections}" />
           <TextBlock Classes="muted caption" Text="{loc:T strictnessHint}" TextWrapping="Wrap" />
           <StackPanel Spacing="2">
-            <Slider Minimum="25" Maximum="100" TickFrequency="25" IsSnapToTickEnabled="True" Value="{Binding Strictness}" />
+            <Slider Minimum="25" Maximum="100" TickFrequency="25" IsSnapToTickEnabled="True" Value="{Binding Strictness}"
+                    AutomationProperties.AutomationId="Friends.Strictness" />
             <!-- The four labels stand under the ticks at 25/50/75/100, i.e. at 0, ⅓, ⅔ and 1 of the track;
                  the track of a Fluent slider is inset by half a thumb (7px), hence the margin. -->
             <Grid ColumnDefinitions="*,*,*" Margin="7,0">
@@ -78,7 +84,7 @@
             </Grid>
           </StackPanel>
           <TextBlock Classes="caption" Text="{Binding StrictnessLabel}" />
-          <c:Switch Content="{loc:T alwaysShowAll}" IsChecked="{Binding AlwaysShowAll}" />
+          <c:Switch Content="{loc:T alwaysShowAll}" IsChecked="{Binding AlwaysShowAll}" AutomationProperties.AutomationId="Friends.AlwaysAll" />
           <TextBlock Classes="faint caption" Text="{loc:T alwaysShowAllHint}" />
           <Border Height="1" Background="{DynamicResource Brush.Line}" />
           <TextBlock Classes="micro" Text="{loc:TU previewTitle}" />

@@ -10,7 +10,8 @@
     </ItemsControl.ItemsPanel>
     <ItemsControl.ItemTemplate>
       <DataTemplate x:DataType="svc:ToastItem">
-        <Border Classes="toast" c:Appear.Kind="SlideUp" PointerEntered="OnPointerEntered" PointerExited="OnPointerExited">
+        <Border Classes="toast" c:Appear.Kind="SlideUp" PointerEntered="OnPointerEntered" PointerExited="OnPointerExited"
+                AutomationProperties.AutomationId="Toast" AutomationProperties.Name="{Binding Text}" AutomationProperties.AccessibilityView="Content">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Ellipse Classes="toastdot" Classes.ok="{Binding IsOk}" Classes.warn="{Binding IsWarn}" Classes.bad="{Binding IsBad}" VerticalAlignment="Center" />
             <TextBlock Text="{Binding Text}" FontSize="12" TextWrapping="Wrap" MaxWidth="330" VerticalAlignment="Center" />

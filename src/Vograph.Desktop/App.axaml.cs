@@ -52,6 +52,10 @@ public partial class App : Application
         }
     }
 
+    /// <summary>VOGRAPH_OFFLINE=1 (UiVerify, demos on a metered link): no timetable refresh, no update check, no lecturer or map downloads.</summary>
+    public static bool ReadOfflineSwitch(Func<string, string?> env) =>
+        env("VOGRAPH_OFFLINE") is { } v && (v == "1" || v.Equals("true", StringComparison.OrdinalIgnoreCase));
+
     private static string SafeDataDir()
     {
         try { return AppPaths.DataDir; }
@@ -79,6 +83,8 @@ public partial class App : Application
                 return;
             }
             Services = services;
+            services.AllowNetwork = !ReadOfflineSwitch(Environment.GetEnvironmentVariable);
+            if (!services.AllowNetwork) services.Log.Info("offline switch: network disabled for this run");
             Logger.Sink = new AvaloniaLogSink(services.Log);
             services.Theme = ThemeService.ForApplication(this, services.Prefs);
             SetMotion(services.Motion.Enabled);
@@ -106,7 +112,7 @@ public partial class App : Application
                     services.Prefs.Save();
                 }
             }
-            window.Opened += async (_, _) => await shell.StartAsync();
+            window.Opened += async (_, _) => await shell.StartAsync(services.AllowNetwork);
             desktop.MainWindow = window;
             desktop.Exit += (_, _) =>
             {

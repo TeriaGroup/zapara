@@ -12,7 +12,8 @@
           <TextBlock Classes="display" Text="{Binding Title}" />
           <TextBlock Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" />
         </StackPanel>
-        <Button Grid.Column="1" Classes="primary" VerticalAlignment="Bottom" Command="{Binding AddCommand}" IsEnabled="{Binding HasGroup}">
+        <Button Grid.Column="1" Classes="primary" VerticalAlignment="Bottom" Command="{Binding AddCommand}" IsEnabled="{Binding HasGroup}"
+                AutomationProperties.AutomationId="Homework.Add" AutomationProperties.Name="{loc:T hwAddShort}">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <c:Icon Data="{StaticResource Icon.Plus}" Size="14" />
             <TextBlock Text="{loc:T hwAddShort}" />
@@ -51,9 +52,12 @@
                           </Border>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
-                          <Button Classes="pill" Content="{Binding DoneLabel}" Command="{Binding ToggleDoneCommand}" />
-                          <Button Classes="icon small" Command="{Binding EditCommand}" ToolTip.Tip="{loc:T hwEdit}"><c:Icon Data="{StaticResource Icon.Pencil}" Size="14" /></Button>
-                          <Button Classes="icon small" Command="{Binding DeleteCommand}" ToolTip.Tip="{loc:T hwDelete}"><c:Icon Data="{StaticResource Icon.Trash}" Size="14" /></Button>
+                          <Button Classes="pill" Content="{Binding DoneLabel}" Command="{Binding ToggleDoneCommand}"
+                                  AutomationProperties.AutomationId="Homework.Done" AutomationProperties.Name="{Binding DoneLabel}" />
+                          <Button Classes="icon small" Command="{Binding EditCommand}" ToolTip.Tip="{loc:T hwEdit}"
+                                  AutomationProperties.AutomationId="Homework.Edit" AutomationProperties.Name="{loc:T hwEdit}"><c:Icon Data="{StaticResource Icon.Pencil}" Size="14" /></Button>
+                          <Button Classes="icon small" Command="{Binding DeleteCommand}" ToolTip.Tip="{loc:T hwDelete}"
+                                  AutomationProperties.AutomationId="Homework.Delete" AutomationProperties.Name="{loc:T hwDelete}"><c:Icon Data="{StaticResource Icon.Trash}" Size="14" /></Button>
                         </StackPanel>
                       </Grid>
                     </Border>

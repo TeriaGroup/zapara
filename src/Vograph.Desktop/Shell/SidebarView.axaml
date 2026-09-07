@@ -24,11 +24,13 @@
           <!-- Only while an update is waiting; the badge repeats it on the collapsed rail. -->
           <c:NavItem Content="{loc:T updTitle}" Icon="{StaticResource Icon.Download}" Badge="{Binding Updates.BadgeText}"
                      IsCompact="{Binding SidebarCollapsed}" IsVisible="{Binding Updates.IsAvailable}"
-                     Command="{Binding OpenUpdateDialogCommand}" ToolTip.Tip="{Binding Updates.StatusText}" />
+                     Command="{Binding OpenUpdateDialogCommand}" ToolTip.Tip="{Binding Updates.StatusText}"
+                     AutomationProperties.AutomationId="Nav.Update" AutomationProperties.Name="{loc:T updTitle}" />
           <c:NavItem Content="{Binding SettingsSection.Label}"
                      Icon="{Binding SettingsSection.IconKey, Converter={x:Static loc:Converters.IconKey}}"
                      IsActive="{Binding SettingsSection.IsActive}" IsCompact="{Binding SettingsSection.IsCompact}"
-                     Command="{Binding NavigateCommand}" CommandParameter="Settings" ToolTip.Tip="{Binding SettingsSection.Tip}" />
+                     Command="{Binding NavigateCommand}" CommandParameter="Settings" ToolTip.Tip="{Binding SettingsSection.Tip}"
+                     AutomationProperties.AutomationId="{Binding SettingsSection.AutomationId}" />
           <Button Classes="icon" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{loc:T themeToggleTip}" AutomationProperties.AutomationId="Shell.ThemeToggle" AutomationProperties.Name="{loc:T themeToggleTip}">
             <c:Icon Data="{Binding IsDark, Converter={x:Static loc:Converters.ThemeIcon}}" Size="16" />
           </Button>
@@ -41,7 +43,8 @@
             <c:Icon Data="{StaticResource Icon.Menu}" Size="16" />
           </Button>
           <Button Classes="ghost" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                  Command="{Binding OpenGroupPickerCommand}" Margin="0,0,0,12" ToolTip.Tip="{Binding GroupCardTip}">
+                  Command="{Binding OpenGroupPickerCommand}" Margin="0,0,0,12" ToolTip.Tip="{Binding GroupCardTip}"
+                  AutomationProperties.AutomationId="Shell.GroupCard" AutomationProperties.Name="{Binding GroupName}">
             <Border Classes="card hoverable" Padding="12,10">
               <StackPanel Spacing="4">
                 <TextBlock Text="{Binding GroupName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />

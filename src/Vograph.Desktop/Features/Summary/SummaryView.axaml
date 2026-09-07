@@ -29,7 +29,7 @@
           <TextBlock Classes="display" Text="{Binding Title}" />
           <TextBlock Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" TextWrapping="Wrap" />
         </StackPanel>
-        <c:SegmentedControl Grid.Column="1" VerticalAlignment="Bottom" Items="{Binding SegmentItems}" SelectedIndex="{Binding SegmentIndex}" />
+        <c:SegmentedControl Name="SummarySegment" Grid.Column="1" VerticalAlignment="Bottom" Items="{Binding SegmentItems}" SelectedIndex="{Binding SegmentIndex}" />
       </Grid>
 
       <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Summary}" Margin="0,48,0,0" />
@@ -38,7 +38,7 @@
         <Border Classes="card" Width="220" c:Appear.Kind="Cascade" c:Appear.Index="0">
           <StackPanel Spacing="6">
             <TextBlock Classes="micro" Text="{loc:TU summaryTotal}" />
-            <TextBlock Classes="display tnum" Text="{Binding TotalText}" FontSize="40" />
+            <TextBlock Classes="display tnum" Text="{Binding TotalText}" FontSize="40" AutomationProperties.AutomationId="Summary.Total" />
           </StackPanel>
         </Border>
 

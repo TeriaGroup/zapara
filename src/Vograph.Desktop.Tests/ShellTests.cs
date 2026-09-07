@@ -188,6 +188,20 @@ public class ShellTests : UiTest
         }
     }
 
+    /// <summary>The switch UiVerify sets before it launches the real exe: App reads VOGRAPH_OFFLINE by that exact
+    /// name and nothing else, and an unset variable leaves the run online.</summary>
+    [Fact]
+    public void Offline_Switch_Reads_Only_The_VOGRAPH_OFFLINE_Variable()
+    {
+        var asked = new List<string>();
+        Assert.True(App.ReadOfflineSwitch(name => { asked.Add(name); return "1"; }));
+        Assert.Equal(new[] { "VOGRAPH_OFFLINE" }, asked);
+        Assert.False(App.ReadOfflineSwitch(_ => null));
+
+        using var db = TestDb.Create();
+        Assert.False(db.Services.AllowNetwork); // what App assigns from the switch; every section consults it
+    }
+
     [Fact]
     public void Register_Detaches_The_Cached_Instance_Once_And_Renavigates_When_It_Was_Current()
     {

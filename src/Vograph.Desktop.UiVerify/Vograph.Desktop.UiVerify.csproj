@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Vograph.Desktop.UiVerify</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FlaUI.UIA3" Version="5.0.0" />
+  </ItemGroup>
+
+  <!-- Seeding only: the driver never runs Avalonia itself, it builds the data folder with AppServices and launches the exe. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Vograph.Desktop\Vograph.Desktop.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\Vograph.Desktop.Tests\TestData\sample-timetable.xml" Link="Seed\sample-timetable.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Vograph.Desktop.Tests\TestData\sample-lecturers.xml" Link="Seed\sample-lecturers.xml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

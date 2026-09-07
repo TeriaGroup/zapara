@@ -27,10 +27,14 @@
       <TextBlock Text="{Binding Owner.ContextLine}" />
     </Border>
     <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16">
-      <Button Classes="icon" Click="OnZoomOut" ToolTip.Tip="{loc:T mapZoomOut}"><c:Icon Data="{StaticResource Icon.Minus}" Size="16" /></Button>
-      <Button Classes="icon" Click="OnZoomIn" ToolTip.Tip="{loc:T mapZoomIn}"><c:Icon Data="{StaticResource Icon.Plus}" Size="16" /></Button>
-      <Button Classes="icon" Click="OnFit" ToolTip.Tip="{loc:T mapFit}"><c:Icon Data="{StaticResource Icon.Fit}" Size="16" /></Button>
-      <Button Classes="icon" Command="{Binding CloseCommand}" ToolTip.Tip="{loc:T mapExitFullscreen}"><c:Icon Data="{StaticResource Icon.X}" Size="16" /></Button>
+      <Button Classes="icon" Click="OnZoomOut" ToolTip.Tip="{loc:T mapZoomOut}"
+              AutomationProperties.AutomationId="MapsFull.ZoomOut" AutomationProperties.Name="{loc:T mapZoomOut}"><c:Icon Data="{StaticResource Icon.Minus}" Size="16" /></Button>
+      <Button Classes="icon" Click="OnZoomIn" ToolTip.Tip="{loc:T mapZoomIn}"
+              AutomationProperties.AutomationId="MapsFull.ZoomIn" AutomationProperties.Name="{loc:T mapZoomIn}"><c:Icon Data="{StaticResource Icon.Plus}" Size="16" /></Button>
+      <Button Classes="icon" Click="OnFit" ToolTip.Tip="{loc:T mapFit}"
+              AutomationProperties.AutomationId="MapsFull.Fit" AutomationProperties.Name="{loc:T mapFit}"><c:Icon Data="{StaticResource Icon.Fit}" Size="16" /></Button>
+      <Button Classes="icon" Command="{Binding CloseCommand}" ToolTip.Tip="{loc:T mapExitFullscreen}"
+              AutomationProperties.AutomationId="MapsFull.Close" AutomationProperties.Name="{loc:T mapExitFullscreen}"><c:Icon Data="{StaticResource Icon.X}" Size="16" /></Button>
     </StackPanel>
   </Panel>
 </UserControl>

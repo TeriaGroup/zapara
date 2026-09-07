@@ -3,5 +3,6 @@
     <Project Path="src/Vograph.Core/Vograph.Core.csproj" />
     <Project Path="src/Vograph.Desktop/Vograph.Desktop.csproj" />
     <Project Path="src/Vograph.Desktop.Tests/Vograph.Desktop.Tests.csproj" />
+    <Project Path="src/Vograph.Desktop.UiVerify/Vograph.Desktop.UiVerify.csproj" />
   </Folder>
 </Solution>

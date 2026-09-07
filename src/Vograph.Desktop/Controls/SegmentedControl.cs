@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Animation;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
@@ -135,6 +136,9 @@ public class SegmentedControl : TemplatedControl
             var index = i;
             var button = new Button { Content = items[i] };
             button.Classes.Add("seg");
+            // The pill buttons are built here, so UiVerify can only address them by index off the control's own
+            // Name: «ScheduleSegment.0», «SettingsLanguage.1» … An unnamed segment falls back to «Seg».
+            AutomationProperties.SetAutomationId(button, $"{(string.IsNullOrEmpty(Name) ? "Seg" : Name)}.{i}");
             button.Click += (_, _) => SelectedIndex = index;
             _panel.Children.Add(button);
             _buttons.Add(button);

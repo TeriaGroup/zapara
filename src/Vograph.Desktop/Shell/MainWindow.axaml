@@ -48,13 +48,16 @@
             <TextBlock Text="Военмех" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
           </StackPanel>
           <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-            <Button Classes="caption" WindowDecorationProperties.ElementRole="MinimizeButton" Click="OnMinimize" ToolTip.Tip="{loc:T winMinimize}">
+            <Button Classes="caption" WindowDecorationProperties.ElementRole="MinimizeButton" Click="OnMinimize" ToolTip.Tip="{loc:T winMinimize}"
+                    AutomationProperties.AutomationId="Win.Minimize" AutomationProperties.Name="{loc:T winMinimize}">
               <c:Icon Data="{StaticResource Icon.Minus}" Size="14" />
             </Button>
-            <Button Classes="caption" WindowDecorationProperties.ElementRole="MaximizeButton" Click="OnMaximize" ToolTip.Tip="{Binding MaximizeTip}">
+            <Button Classes="caption" WindowDecorationProperties.ElementRole="MaximizeButton" Click="OnMaximize" ToolTip.Tip="{Binding MaximizeTip}"
+                    AutomationProperties.AutomationId="Win.Maximize" AutomationProperties.Name="{Binding MaximizeTip}">
               <c:Icon Data="{Binding IsMaximized, Converter={x:Static loc:Converters.MaximizeIcon}}" Size="12" />
             </Button>
-            <Button Classes="caption close" WindowDecorationProperties.ElementRole="CloseButton" Click="OnClose" ToolTip.Tip="{loc:T winClose}">
+            <Button Classes="caption close" WindowDecorationProperties.ElementRole="CloseButton" Click="OnClose" ToolTip.Tip="{loc:T winClose}"
+                    AutomationProperties.AutomationId="Win.Close" AutomationProperties.Name="{loc:T winClose}">
               <c:Icon Data="{StaticResource Icon.X}" Size="14" />
             </Button>
           </StackPanel>

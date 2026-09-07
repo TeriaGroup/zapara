@@ -21,14 +21,14 @@
           <TextBlock Classes="micro" Text="{loc:TU setAppearance}" />
           <Grid Classes="row" ColumnDefinitions="200,*">
             <TextBlock Text="{loc:T setTheme}" />
-            <c:SegmentedControl Grid.Column="1" Items="{Binding ThemeItems}" SelectedIndex="{Binding ThemeIndex}" />
+            <c:SegmentedControl Name="SettingsTheme" Grid.Column="1" Items="{Binding ThemeItems}" SelectedIndex="{Binding ThemeIndex}" />
           </Grid>
           <Grid Classes="row" ColumnDefinitions="200,*">
             <TextBlock Text="{loc:T language}" />
-            <c:SegmentedControl Grid.Column="1" Items="{Binding LanguageItems}" SelectedIndex="{Binding LanguageIndex}" />
+            <c:SegmentedControl Name="SettingsLanguage" Grid.Column="1" Items="{Binding LanguageItems}" SelectedIndex="{Binding LanguageIndex}" />
           </Grid>
-          <c:Switch Content="{loc:T setCompactSidebar}" IsChecked="{Binding CompactSidebar}" />
-          <c:Switch Content="{loc:T setAnimations}" IsChecked="{Binding Animations}" />
+          <c:Switch Content="{loc:T setCompactSidebar}" IsChecked="{Binding CompactSidebar}" AutomationProperties.AutomationId="Settings.CompactSidebar" />
+          <c:Switch Content="{loc:T setAnimations}" IsChecked="{Binding Animations}" AutomationProperties.AutomationId="Settings.Animations" />
         </StackPanel>
       </Border>
 
@@ -38,17 +38,19 @@
           <TextBlock Classes="micro" Text="{loc:TU setSchedule}" />
           <Grid Classes="row" ColumnDefinitions="200,*">
             <TextBlock Text="{loc:T myGroup}" />
-            <Button Grid.Column="1" HorizontalAlignment="Left" Command="{Binding ChangeGroupCommand}">
+            <Button Grid.Column="1" HorizontalAlignment="Left" Command="{Binding ChangeGroupCommand}"
+                    AutomationProperties.AutomationId="Settings.ChangeGroup" AutomationProperties.Name="{Binding GroupName}">
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <TextBlock Text="{Binding GroupName}" FontWeight="SemiBold" />
                 <TextBlock Classes="muted" Text="{loc:T setChange}" />
               </StackPanel>
             </Button>
           </Grid>
-          <c:Switch Content="{loc:T invertParity}" IsChecked="{Binding ParityInvert}" />
+          <c:Switch Content="{loc:T invertParity}" IsChecked="{Binding ParityInvert}" AutomationProperties.AutomationId="Settings.ParityInvert" />
           <TextBlock Classes="faint caption" Text="{loc:T invertHint}" TextWrapping="Wrap" />
           <StackPanel Orientation="Horizontal" Spacing="12">
-            <Button Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsRefreshing}" ToolTip.Tip="{loc:T refreshTip}">
+            <Button Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsRefreshing}" ToolTip.Tip="{loc:T refreshTip}"
+                    AutomationProperties.AutomationId="Settings.Refresh" AutomationProperties.Name="{loc:T refresh}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <c:Icon Data="{StaticResource Icon.Refresh}" Size="14" />
                 <TextBlock Text="{loc:T refresh}" />
@@ -66,16 +68,17 @@
       <Border Classes="card">
         <StackPanel Spacing="10">
           <TextBlock Classes="micro" Text="{loc:TU setNotifications}" />
-          <c:Switch Content="{loc:T notifEnabled}" IsChecked="{Binding NotificationsEnabled}" />
+          <c:Switch Content="{loc:T notifEnabled}" IsChecked="{Binding NotificationsEnabled}" AutomationProperties.AutomationId="Settings.NotifyEnabled" />
           <Grid Classes="row" ColumnDefinitions="200,120,24,200,120,*" IsEnabled="{Binding NotificationsEnabled}">
             <TextBlock Text="{loc:T notifTime1Label}" />
-            <TextBox Grid.Column="1" Text="{Binding NotifyTime1}" Classes="tnum" />
+            <TextBox Grid.Column="1" Text="{Binding NotifyTime1}" Classes="tnum" AutomationProperties.AutomationId="Settings.NotifyTime1" />
             <TextBlock Grid.Column="3" Text="{loc:T notifTime2Label}" Margin="12,0,0,0" />
-            <TextBox Grid.Column="4" Text="{Binding NotifyTime2}" Classes="tnum" />
+            <TextBox Grid.Column="4" Text="{Binding NotifyTime2}" Classes="tnum" AutomationProperties.AutomationId="Settings.NotifyTime2" />
           </Grid>
           <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding NotificationsEnabled}">
-            <Button Classes="primary" Content="{loc:T notifSave}" Command="{Binding SaveTimesCommand}" />
-            <Button Command="{Binding TestNotificationCommand}">
+            <Button Classes="primary" Content="{loc:T notifSave}" Command="{Binding SaveTimesCommand}" AutomationProperties.AutomationId="Settings.SaveTimes" />
+            <Button Command="{Binding TestNotificationCommand}"
+                    AutomationProperties.AutomationId="Settings.TestNotification" AutomationProperties.Name="{loc:T notifTest}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <c:Icon Data="{StaticResource Icon.Bell}" Size="14" />
                 <TextBlock Text="{loc:T notifTest}" />
@@ -90,13 +93,13 @@
         <StackPanel Spacing="10">
           <TextBlock Classes="micro" Text="{loc:TU setSync}" />
           <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Command="{Binding ExportCommand}">
+            <Button Command="{Binding ExportCommand}" AutomationProperties.AutomationId="Settings.Export" AutomationProperties.Name="{loc:T syncExport}">
               <StackPanel Orientation="Horizontal" Spacing="6"><c:Icon Data="{StaticResource Icon.Download}" Size="14" /><TextBlock Text="{loc:T syncExport}" /></StackPanel>
             </Button>
-            <Button Command="{Binding ImportCommand}">
+            <Button Command="{Binding ImportCommand}" AutomationProperties.AutomationId="Settings.Import" AutomationProperties.Name="{loc:T syncImport}">
               <StackPanel Orientation="Horizontal" Spacing="6"><c:Icon Data="{StaticResource Icon.Upload}" Size="14" /><TextBlock Text="{loc:T syncImport}" /></StackPanel>
             </Button>
-            <Button Command="{Binding ToggleQrCommand}">
+            <Button Command="{Binding ToggleQrCommand}" AutomationProperties.AutomationId="Settings.Qr" AutomationProperties.Name="{loc:T syncShowQr}">
               <StackPanel Orientation="Horizontal" Spacing="6">
                 <c:Icon Data="{StaticResource Icon.Qr}" Size="14" />
                 <TextBlock Text="{loc:T syncShowQr}" IsVisible="{Binding !QrVisible}" />
@@ -111,8 +114,9 @@
             </Border>
             <TextBlock Classes="muted caption" Text="{Binding QrHint}" TextWrapping="Wrap" />
           </StackPanel>
-          <c:Switch Content="{loc:T syncLan}" IsChecked="{Binding LanSync}" />
-          <TextBlock Classes="muted caption" Text="{Binding LanAddress}" IsVisible="{Binding LanAddress, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <c:Switch Content="{loc:T syncLan}" IsChecked="{Binding LanSync}" AutomationProperties.AutomationId="Settings.LanSync" />
+          <TextBlock Classes="muted caption" Text="{Binding LanAddress}" IsVisible="{Binding LanAddress, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                     AutomationProperties.AutomationId="Settings.LanAddress" />
         </StackPanel>
       </Border>
 
@@ -120,17 +124,17 @@
       <Border Classes="card">
         <StackPanel Spacing="10" DataContext="{Binding Updates}" x:DataType="st:UpdateCheckViewModel">
           <TextBlock Classes="micro" Text="{loc:TU setUpdates}" />
-          <c:Switch Content="{loc:T autoUpdate}" IsChecked="{Binding AutoUpdate}" />
-          <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Classes.bad="{Binding IsFailed}" />
+          <c:Switch Content="{loc:T autoUpdate}" IsChecked="{Binding AutoUpdate}" AutomationProperties.AutomationId="Updates.AutoUpdate" />
+          <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Classes.bad="{Binding IsFailed}" AutomationProperties.AutomationId="Updates.Status" />
           <TextBlock Classes="muted caption" Text="{Binding PublishedText}" IsVisible="{Binding PublishedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
           <Border Height="6" Width="320" HorizontalAlignment="Left" CornerRadius="3" Background="{DynamicResource Brush.Chip}" IsVisible="{Binding IsDownloading}" ClipToBounds="True">
             <Border HorizontalAlignment="Left" CornerRadius="3" Background="{DynamicResource Brush.Accent}"
                     Width="{Binding Progress, Converter={x:Static st:UpdateConverters.ProgressWidth}}" IsVisible="{Binding HasDeterminateProgress}" />
           </Border>
           <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Classes="primary" Content="{loc:T updInstall}" Command="{Binding InstallCommand}" IsVisible="{Binding CanInstall}" />
-            <Button Content="{loc:T updCheck}" Command="{Binding CheckCommand}" IsEnabled="{Binding !IsChecking}" />
-            <Button Classes="link" Content="{loc:T updInBrowser}" Command="{Binding OpenReleasesCommand}" />
+            <Button Classes="primary" Content="{loc:T updInstall}" Command="{Binding InstallCommand}" IsVisible="{Binding CanInstall}" AutomationProperties.AutomationId="Updates.Install" />
+            <Button Content="{loc:T updCheck}" Command="{Binding CheckCommand}" IsEnabled="{Binding !IsChecking}" AutomationProperties.AutomationId="Updates.Check" />
+            <Button Classes="link" Content="{loc:T updInBrowser}" Command="{Binding OpenReleasesCommand}" AutomationProperties.AutomationId="Updates.Releases" />
           </StackPanel>
         </StackPanel>
       </Border>
@@ -139,12 +143,13 @@
       <Border Classes="card">
         <StackPanel Spacing="8">
           <TextBlock Classes="micro" Text="{loc:TU setAbout}" />
-          <TextBlock Text="{Binding VersionText}" />
-          <Button Classes="link" Content="{loc:T setReleases}" Command="{Binding OpenReleasesCommand}" HorizontalAlignment="Left" />
+          <TextBlock Text="{Binding VersionText}" AutomationProperties.AutomationId="About.Version" />
+          <Button Classes="link" Content="{loc:T setReleases}" Command="{Binding OpenReleasesCommand}" HorizontalAlignment="Left" AutomationProperties.AutomationId="About.Releases" />
           <TextBlock Classes="muted caption" Text="{loc:T setSources}" Margin="0,6,0,0" />
           <Button Classes="link" Content="{loc:T setSourceTimetable}" Command="{Binding OpenTimetableSourceCommand}" HorizontalAlignment="Left" />
           <Button Classes="link" Content="{loc:T setSourceMaps}" Command="{Binding OpenMapsSourceCommand}" HorizontalAlignment="Left" />
-          <Button Classes="ghost" HorizontalAlignment="Left" Command="{Binding OpenDataFolderCommand}" Margin="0,6,0,0">
+          <Button Classes="ghost" HorizontalAlignment="Left" Command="{Binding OpenDataFolderCommand}" Margin="0,6,0,0"
+                  AutomationProperties.AutomationId="About.DataFolder" AutomationProperties.Name="{loc:T setDataFolder}">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <c:Icon Data="{StaticResource Icon.Folder}" Size="14" />
               <TextBlock Text="{loc:T setDataFolder}" />
