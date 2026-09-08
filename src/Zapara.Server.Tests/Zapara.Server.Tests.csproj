@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Zapara.Contracts\Zapara.Contracts.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Sync\Zapara.Server.Sync.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Communities\Zapara.Server.Communities.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Accounts\Zapara.Server.Accounts.csproj" />
+    <ProjectReference Include="..\Zapara.AdminCli\Zapara.AdminCli.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.30" />
+    <ProjectReference Include="..\Vograph.Timetable\Vograph.Timetable.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Timetable\Zapara.Server.Timetable.csproj" />
+    <ProjectReference Include="..\Zapara.Server\Zapara.Server.csproj" />
+    <ProjectReference Include="..\Zapara.Ingest\Zapara.Ingest.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Fixtures\*.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\accounts\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
