@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Vograph.Core.Models;
 
 public class Override
@@ -8,5 +10,8 @@ public class Override
     public string DisplayName { get; set; } = "";
     public string? Note { get; set; }
     public DateTime CreatedAt { get; set; }
-    // Keep original value for rollback/diff is implied via SubjectRawNormalized key
+    [JsonIgnore] public Guid? EntityId { get; set; }
+    [JsonIgnore] public long Revision { get; set; }
+    [JsonIgnore] public bool Tombstone { get; set; }
+    [JsonIgnore] public DateTimeOffset? CreatedAtUtc { get; set; }
 }

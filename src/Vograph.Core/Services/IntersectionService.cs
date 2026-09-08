@@ -27,7 +27,7 @@ public class IntersectionService
 
         // Need friend groupId resolution via Name -> Id
         var allGroups = _db.GetAllGroups();
-        var groupByName = allGroups.ToDictionary(g => g.Name, g => g.Id);
+        var groupByName = allGroups.GroupBy(g => g.Name).ToDictionary(g => g.Key, g => g.First().Id);
 
         foreach (var friend in friends.Where(f => f.Enabled).Take(5))
         {
@@ -37,6 +37,7 @@ public class IntersectionService
                 if (_db.GetGroup(friend.GroupName) != null) friendGroupId = friend.GroupName;
                 else continue;
             }
+            if (!new TimetableApiCache(_db).CanIntersect(myLesson.GroupId, friendGroupId)) continue;
             var friendLessons = _db.GetLessons(friendGroupId, dow, weekCode);
             foreach (var fl in friendLessons)
             {

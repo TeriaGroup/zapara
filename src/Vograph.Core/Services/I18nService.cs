@@ -2,14 +2,54 @@ namespace Vograph.Core.Services;
 
 public class I18nService
 {
-    private string _lang = "ru";
-    public string Language => _lang;
+    public string Language => "ru";
     public event Action? LanguageChanged;
 
-    private readonly Dictionary<string, Dictionary<string, string>> _dict = new()
+    private readonly Dictionary<string, string> _dict = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["ru"] = new(StringComparer.OrdinalIgnoreCase)
-        {
+            ["accountTitle"] = "Аккаунт",
+            ["accountUnconfigured"] = "Сервер аккаунтов не настроен",
+            ["accountGuest"] = "Гостевой профиль: данные доступны без аккаунта и сети.",
+            ["accountLocal"] = "Локальные данные аккаунта. Синхронизация личных данных пока недоступна.",
+            ["accountIsolation"] = "Данные гостя и каждого аккаунта хранятся отдельно. Автоматического переноса и отправки личных данных нет.",
+            ["accountRecovery"] = "Переключение профиля требует восстановления. Повторите попытку.",
+            ["accountRecover"] = "Восстановить профиль",
+            ["accountTransitionFailed"] = "Профиль не переключён. Завершите текущие операции и повторите попытку.",
+            ["accountReauth"] = "Требуется повторный вход. Локальные данные сохранены.",
+            ["accountOffline"] = "Сервер недоступен. Локальные данные сохранены; повторите попытку позже.",
+            ["accountCreated"] = "Аккаунт создан. Теперь введите пароль и войдите.",
+            ["accountRegistrationUnavailable"] = "Регистрация на этом сервере недоступна. Войдите в существующий аккаунт или продолжайте как гость.",
+            ["accountLogoutLocal"] = "Вы вышли на этом устройстве. Отзыв сессии на сервере не подтверждён этой операцией интерфейса.",
+            ["accountValidation"] = "Логин: 3–32 латинские буквы, цифры, точка, дефис или подчёркивание. Пароль: 12–128 символов. Имя: до 80 символов.",
+            ["accountCancelled"] = "Операция отменена: профиль изменился или приложение закрывается.",
+            ["accountFailed"] = "Операция аккаунта не выполнена. Повторите попытку позже.",
+            ["accountBadLogin"] = "Неверный логин или пароль.",
+            ["accountUsernameTaken"] = "Этот логин уже занят.",
+            ["accountRateLimited"] = "Слишком много попыток. Подождите и повторите позже.",
+            ["accountProfileLoaded"] = "Профиль получен с сервера.",
+            ["accountProfileSaved"] = "Имя профиля сохранено на сервере.",
+            ["accountDevicesLoaded"] = "Список устройств получен с сервера.",
+            ["accountDeviceRevoked"] = "Сессия выбранного устройства отозвана.",
+            ["accountUsername"] = "Логин",
+            ["accountPassword"] = "Пароль",
+            ["accountDisplayName"] = "Отображаемое имя (необязательно)",
+            ["accountLogin"] = "Войти",
+            ["accountRegister"] = "Создать аккаунт",
+            ["accountMode"] = "Вход / регистрация",
+            ["accountRegistration"] = "Регистрация",
+            ["accountLogout"] = "Выйти из аккаунта",
+            ["accountConfirmLogout"] = "Выйти и открыть гостевой профиль? Данные аккаунта сохранятся отдельно.",
+            ["accountCancel"] = "Отмена",
+            ["accountRefresh"] = "Обновить профиль",
+            ["accountSave"] = "Сохранить имя",
+            ["accountDevices"] = "Устройства",
+            ["accountMore"] = "Показать ещё",
+            ["accountRevoke"] = "Отозвать сессию",
+            ["accountCurrentDevice"] = "Это устройство",
+            ["accountRevokeAll"] = "Отозвать все сессии и выйти",
+            ["accountCurrentPassword"] = "Текущий пароль",
+            ["accountNewPassword"] = "Новый пароль",
+            ["accountChangePassword"] = "Изменить пароль и выйти",
             // Header
             ["appTitle"] = "Военмех - расписание и карты",
             ["headerHint"] = "Группа {0} · {1} неделя",
@@ -42,7 +82,6 @@ public class I18nService
             ["notifHint"] = "Текст использует переименованные названия и помечает горящее ДЗ.",
             ["time1"] = "Время 1", ["time2"] = "Время 2", ["saveTimes"] = "Сохранить времена",
             ["sync"] = "СИНХРОНИЗАЦИЯ", ["export"] = "Экспорт", ["import"] = "Импорт", ["refresh"] = "Обновить расписание", ["updated"] = "Обновлено: {0}", ["lastAutoCheck"] = "Автопроверка: {0}",
-            ["language"] = "Язык", ["langRu"] = "Русский", ["langEn"] = "English",
             ["auto"] = "авто", ["invert"] = "инвертировать",
             ["parity"] = "Четность",
             ["group"] = "ГРУППА",
@@ -182,194 +221,21 @@ public class I18nService
             ["updDialogHint"] = "Приложение закроется, распакует обновление поверх себя и запустится снова. Данные не затрагиваются.",
             ["updDownloadFail"] = "Не удалось скачать обновление: {0}", ["updApplyFail"] = "Не удалось запустить установку: {0}",
             ["updBadZip"] = "Скачанный архив повреждён — попробуйте ещё раз",
-        },
-        ["en"] = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["appTitle"] = "Voenmeh - schedule & maps",
-            ["headerHint"] = "Group {0} · {1} week",
-            ["headerSub"] = "Voenmeh timetable · tomorrow by default",
-            ["odd"] = "odd",
-            ["even"] = "even",
-            ["oddShort"] = "odd",
-            ["evenShort"] = "even",
-            ["oddBadge"] = "ODD",
-            ["evenBadge"] = "EVEN",
-            ["mon"] = "Monday", ["tue"] = "Tuesday", ["wed"] = "Wednesday", ["thu"] = "Thursday", ["fri"] = "Friday", ["sat"] = "Saturday", ["sun"] = "Sunday",
-            ["monShort"] = "Mon", ["tueShort"] = "Tue", ["wedShort"] = "Wed", ["thuShort"] = "Thu", ["friShort"] = "Fri", ["satShort"] = "Sat", ["sunShort"] = "Sun",
-            ["yesterday"] = "Yesterday", ["today"] = "Today", ["tomorrow"] = "Tomorrow", ["week"] = "Week",
-            ["noLessons"] = "No lessons",
-            ["noLessonsShort"] = "No lessons",
-            ["colNo"] = "No.", ["colTime"] = "Time", ["colSubject"] = "Subject", ["colTeacher"] = "Teacher", ["colRoom"] = "Room/Building", ["colType"] = "Type",
-            ["settings"] = "SETTINGS",
-            ["myGroup"] = "My group",
-            ["invertParity"] = "Invert week parity",
-            ["invertHint"] = "If university shifted the week, enable inversion.",
-            ["friends"] = "FRIENDS (up to 5)",
-            ["friendsHint"] = "Color — one of 5, icon inside cell.",
-            ["strictness"] = "Intersection strictness",
-            ["strict0"] = "0 — any time", ["strict40"] = "40 — building", ["strict100"] = "100 — room",
-            ["notifications"] = "NOTIFICATIONS",
-            ["notifHint"] = "Text uses renamed titles and marks burning homework.",
-            ["time1"] = "Time 1", ["time2"] = "Time 2", ["saveTimes"] = "Save times",
-            ["sync"] = "SYNC", ["export"] = "Export", ["import"] = "Import", ["refresh"] = "Refresh schedule", ["updated"] = "Updated: {0}", ["lastAutoCheck"] = "Auto-check: {0}",
-            ["language"] = "Language", ["langRu"] = "Русский", ["langEn"] = "English",
-            ["auto"] = "auto", ["invert"] = "invert",
-            ["parity"] = "Parity",
-            ["group"] = "GROUP",
-            ["onlyCurrentWeek"] = "Current week only",
-            ["weekLabel"] = "Week:",
-            ["weekOdd"] = "Odd", ["weekEven"] = "Even",
-            ["emptyWeek"] = "No lessons",
-            ["renameTitle"] = "RENAME", ["original"] = "Original: {0}", ["newName"] = "New name", ["footnote"] = "Footnote", ["scope"] = "Scope", ["global"] = "Global (all occurrences)", ["weekdayOnly"] = "Only this weekday", ["preview"] = "Preview: {0}", ["reset"] = "Reset", ["cancel"] = "Cancel", ["save"] = "Save",
-            ["hwTitle"] = "HOMEWORK", ["hwSubject"] = "Subject: {0}", ["hwText"] = "Task text", ["hwN"] = "In how many occurrences (1..10)", ["hwDue"] = "Due: {0}", ["hwNoDate"] = "Due: — (no lessons)", ["hwStatusHint"] = "Status: far (hidden) → approaching (gray) → burning (bright)",
-            ["notifNoLessons"] = "No lessons today",
-            ["notifBurning"] = "[HW!]",
-            ["room"] = "room",
-            ["semesterOddNote"] = "Note: semester starts with odd week!",
-            ["stale"] = " · stale data",
-            ["ready"] = "Ready",
-            ["loading"] = "Loading...",
-            ["updatedOk"] = "Ready — schedule updated",
-            ["exportOk"] = "Export saved {0} + QR {1}",
-            ["importOk"] = "Import: {0} renames, {1} HW, {2} friends",
-            ["mapTitle"] = "MAP",
-            ["mapNext"] = "Where to go — next lesson",
-            ["mapNoNext"] = "No upcoming lessons",
-            ["mapBuilding"] = "Building",
-            ["mapFloor"] = "Floor",
-            ["mapRoom"] = "Room",
-            ["mapOpen"] = "Open full",
-            ["mapOpenSite"] = "Open on site",
-            ["mapDownload"] = "Download maps",
-            ["mapRemote"] = "Remote — no map needed",
-            ["mapNoRoom"] = "Room not specified",
-            ["mapAll"] = "All maps",
-            ["mapHint"] = "Maps from voenmeh.ru/openmap — GK 1-4, ULK 1-5; cached locally",
-            ["mapWhere"] = "Where: {0}",
-            ["mapWhen"] = "When: {0}",
-            ["mapCacheDir"] = "Cache: {0}",
-            ["mapDownloading"] = "Downloading maps...",
-            ["blockWidth"] = "BLOCK WIDTH",
-            ["blockWidthHint"] = "Drag splitter between schedule and map or move slider. All blocks adjust.",
-            ["blockWidthReset"] = "Reset 300",
-            ["blockWidthWide"] = "Full width",
-            ["summaryTitle"] = "SUMMARY",
-            ["summaryBoth"] = "Both weeks (2 weeks)",
-            ["summaryHint"] = "Summary for all lessons: types, subjects, teachers, rooms",
-            ["teachers"] = "Teachers",
-            ["teachersHint"] = "List of all teachers by subjects for the student — where and when",
-            ["nextPair"] = "Next",
-            ["nextPairHint"] = "Date of next occurrence for this subject",
-            ["weekNum"] = "week {0}",
-            ["autoUpdate"] = "Auto-update from GitHub",
-            ["updTitle"] = "Update",
-            ["updDownloading"] = "Downloading update {0}...",
-            ["updReady"] = "Update {0} downloaded. Restart now to install?",
-            ["updNone"] = "You have the latest version {0}",
-            ["updFail"] = "Failed to check for updates",
-            // ---- Desktop v2 (Avalonia) ----
-            ["navSchedule"] = "Schedule", ["navWeek"] = "Week", ["navSummary"] = "Summary", ["navTools"] = "Tools",
-            ["navTeachers"] = "Teachers", ["navMaps"] = "Maps", ["navFriends"] = "Friends", ["navHomework"] = "Homework", ["navSettings"] = "Settings",
-            ["goToday"] = "Today", ["prevDay"] = "Previous day", ["nextDay"] = "Next day",
-            ["lessons1"] = "{0} lesson", ["lessons2"] = "{0} lessons", ["lessons5"] = "{0} lessons",
-            ["weekOf"] = "week {0}", ["parityWeek"] = "{0} week", ["nextShort"] = "next {0}",
-            ["noLessonsDay"] = "No lessons", ["noLessonsSunday"] = "Sunday — no lessons", ["nextLessonHint"] = "next lesson — {0}, {1}",
-            ["typeLek"] = "lecture", ["typePr"] = "practice", ["typeLab"] = "lab", ["typeKons"] = "consultation",
-            ["typeZach"] = "credit", ["typeEkz"] = "exam", ["typeKurs"] = "course work", ["typePraktika"] = "internship",
-            ["remote"] = "online", ["originalLabel"] = "original: {0}",
-            ["hwLabel"] = "Homework", ["hwBurningTomorrow"] = "due tomorrow", ["hwBurningToday"] = "due today", ["hwOverdue"] = "overdue {0}",
-            ["hwDone"] = "done", ["hwDueOn"] = "due {0}", ["hwInLessons1"] = "in {0} lesson", ["hwInLessons2"] = "in {0} lessons", ["hwInLessons5"] = "in {0} lessons",
-            ["hwMarkDone"] = "Done", ["hwUndo"] = "Reopen", ["hwEdit"] = "Edit", ["hwDelete"] = "Delete", ["hwAdd"] = "Add homework",
-            ["hwDeleteConfirm"] = "Delete homework “{0}”?", ["hwEditTitle"] = "EDIT HOMEWORK",
-            ["renameTip"] = "Rename", ["mapTip"] = "Show on map",
-            ["placeholderTitle"] = "Section under construction", ["placeholderHint"] = "Coming in the next stage", ["loadingTitle"] = "Loading the timetable…",
-            ["themeToggleTip"] = "Toggle theme", ["sidebarToggleTip"] = "Collapse sidebar (Ctrl+B)", ["sidebarExpandTip"] = "Expand sidebar (Ctrl+B)",
-            ["groupPickTitle"] = "Choose group", ["search"] = "Search", ["groupSearchHint"] = "Group number…", ["select"] = "Select",
-            ["confirm"] = "Confirm", ["delete"] = "Delete", ["updatedChip"] = "updated {0}", ["errorTitle"] = "Error",
-            ["bootstrapError"] = "Could not load the timetable", ["bootstrapHint"] = "Check your connection and retry", ["retry"] = "Retry",
-            ["friendAbsent"] = "not nearby", ["inter100"] = "same room", ["inter75"] = "same floor", ["inter50"] = "same building", ["inter25"] = "at the university",
-            ["savedOk"] = "Saved", ["noGroup"] = "No group selected", ["noGroupHint"] = "Click the group card on the left",
-            ["winMinimize"] = "Minimize", ["winMaximize"] = "Maximize", ["winClose"] = "Close", ["winRestore"] = "Restore",
-            ["refreshOk"] = "Timetable updated", ["refreshNone"] = "Timetable is up to date",
-            ["refreshFail"] = "Could not update the timetable: {0}", ["refreshTip"] = "Refresh timetable (F5)",
-            ["offlineMode"] = "the network is off for this run (VOGRAPH_OFFLINE)",
-            ["weekCurrentSuffix"] = " · current", ["weekOpenDayTip"] = "Open this day in the schedule",
-            ["summaryTotal"] = "Lessons total", ["summaryByDay"] = "By day", ["summaryByType"] = "By type",
-            ["summarySubjects"] = "Subjects", ["summaryTeachers"] = "Teachers", ["summaryRooms"] = "Rooms", ["summaryBothShort"] = "Both",
-            ["teachersSearchHint"] = "Surname, department or subject", ["teachersOnlyMine"] = "Only mine", ["teachersCount"] = "{0} of {1}",
-            ["teachersPick"] = "Pick a teacher", ["teachersPickHint"] = "The list on the left: search by surname or subject",
-            ["teachersLoading"] = "Loading the directory…", ["teachersLoadFail"] = "Teacher directory unavailable: {0}",
-            ["teachersNoSource"] = "no cache, no bundled copy, no network", ["teachersMine"] = "mine",
-            ["teachersTeachesMine"] = "Teaches your group", ["teachersNotMine"] = "Does not teach your group",
-            ["mapNextLesson"] = "Next lesson", ["mapLessonPrefix"] = "Lesson: {0}", ["mapPickPlan"] = "Pick a plan", ["mapFloorN"] = "floor {0}",
-            ["mapInMinutes"] = "in {0} min", ["mapInHours"] = "in {0} h", ["mapInDays"] = "in {0} d", ["mapNow"] = "right now",
-            ["mapToNext"] = "To the next lesson", ["mapVc"] = "ВЦ — showing the ГК plan",
-            ["mapDownloadAll"] = "Download fresh plans", ["mapOpenFolder"] = "Open maps folder", ["mapVerify"] = "Check offline cache",
-            ["mapCacheStatus"] = "{0} of {1} plans offline", ["mapDownloaded"] = "Plans downloaded: {0} of {1}", ["mapDownloadPartial"] = "Downloaded {0} of {1} — some plans are unavailable",
-            ["mapFullscreen"] = "Full screen", ["mapExitFullscreen"] = "Close (Esc)", ["mapFit"] = "Fit",
-            ["mapZoomIn"] = "Zoom in", ["mapZoomOut"] = "Zoom out", ["mapReset"] = "100%", ["mapMore"] = "More",
-            ["mapNoImage"] = "Plan not loaded: no network and no bundled copy",
-            ["mapRemoteHint"] = "Press ◉ on a lesson or pick a building and floor",
-            ["friendsSubtitle"] = "Up to five groups: their lessons show up as dots on your cards", ["friendsCount"] = "{0} of {1}", ["friendsAdd"] = "Add a group", ["friendsMax"] = "Five groups at most", ["friendsNames"] = "Friends' names", ["friendsEnabled"] = "Show", ["friendsRemove"] = "Remove", ["friendsRemoveConfirm"] = "Remove group {0} from friends?", ["friendsEmpty"] = "No friends yet", ["friendsEmptyHint"] = "Add a group — its lessons appear as dots on your cards", ["friendsColor"] = "Colour", ["friendAdded"] = "Group {0} added", ["intersections"] = "Intersections", ["strictnessHint"] = "A dot lights up when a friend is, at the same time, no farther than the chosen level", ["alwaysShowAll"] = "Always show all traffic lights", ["alwaysShowAllHint"] = "Friends without an intersection — a grey dot", ["previewTitle"] = "Preview", ["previewNone"] = "No intersections in the next two weeks",
-            ["strictTick25"] = "campus", ["strictTick50"] = "building", ["strictTick75"] = "floor", ["strictTick100"] = "room",
-            ["hwGroupUrgent"] = "Due today", ["hwGroupBurning"] = "Due tomorrow", ["hwGroupApproaching"] = "Soon", ["hwGroupFar"] = "Later", ["hwGroupOverdue"] = "Overdue", ["hwGroupDone"] = "Done",
-            ["hwOpen1"] = "{0} open", ["hwOpen2"] = "{0} open", ["hwOpen5"] = "{0} open", ["hwDoneCount"] = "{0} done",
-            ["hwAddShort"] = "Add", ["hwEmpty"] = "No homework", ["hwEmptyHint"] = "Add one with the button above or via ＋ on a lesson card",
-            ["hwPickSubject"] = "SUBJECT", ["hwPickSubjectHint"] = "Subject name…", ["hwNoSubjects"] = "Your group has no lessons to attach homework to",
-            ["setAppearance"] = "Appearance", ["setTheme"] = "Theme", ["themeSystem"] = "System", ["themeLight"] = "Light", ["themeDark"] = "Dark",
-            ["setCompactSidebar"] = "Compact sidebar", ["setAnimations"] = "Animations", ["setSchedule"] = "Timetable", ["setChange"] = "change",
-            ["setAutoCheckAt"] = "auto-check {0}", ["setNever"] = "not yet", ["setAbout"] = "About", ["setVersion"] = "Version {0}",
-            ["setReleases"] = "Releases page", ["setSources"] = "Data sources", ["setSourceTimetable"] = "Student timetable — voenmeh.ru",
-            ["setSourceMaps"] = "Building plans — voenmeh.ru/openmap", ["setDataFolder"] = "Open data folder",
-            ["setNotifications"] = "Notifications", ["notifEnabled"] = "Show lesson notifications",
-            ["notifTime1Label"] = "Evening — about tomorrow", ["notifTime2Label"] = "Morning — about today",
-            ["notifSave"] = "Save times", ["notifTest"] = "Test notification",
-            ["notifBadTime"] = "Time must be HH:MM", ["notifSaved"] = "Times saved: {0} and {1}",
-            ["setSync"] = "Sync", ["syncExport"] = "Export JSON", ["syncImport"] = "Import JSON",
-            ["syncShowQr"] = "Show QR", ["syncHideQr"] = "Hide QR",
-            ["syncQrHint"] = "Scan it in Android: Settings → Sync",
-            ["syncQrServerHint"] = "Too much data for a QR: it points to the LAN server — turn it on below",
-            ["syncLan"] = "LAN server :8765", ["syncLanAddress"] = "Address: {0}",
-            ["syncLanFail"] = "Could not start the server: {0}",
-            ["syncLanBusy"] = "Port {0} is taken by another program",
-            ["syncExported"] = "Export saved: {0}",
-            // Updates card / sidebar item («updTitle», «autoUpdate» and «updDownloading» above are reused as they are)
-            ["setUpdates"] = "Updates", ["updIdle"] = "Not checked yet", ["updChecking"] = "Checking…",
-            ["updUpToDate"] = "Up to date: {0} · checked {1}", ["updAvailable"] = "{0} is available",
-            ["updDownloaded"] = "{0} downloaded — ready to install", ["updInstall"] = "Install and restart", ["updLater"] = "Later",
-            ["updCheck"] = "Check for updates", ["updInBrowser"] = "In the browser",
-            ["updRateLimited"] = "GitHub throttled requests from your network (quota or VPN). Try later or open the releases page",
-            ["updFailWith"] = "Could not check for updates: {0}", ["updNoReleases"] = "No Windows releases found",
-            ["updUpdatingTo"] = "Updating to {0}…",
-            ["updDialogHint"] = "The app closes, unpacks the update over itself and starts again. Your data is untouched.",
-            ["updDownloadFail"] = "Could not download the update: {0}", ["updApplyFail"] = "Could not start the installer: {0}",
-            ["updBadZip"] = "The downloaded archive is corrupt — try again",
-        }
     };
 
-    public I18nService(string lang = "ru") => SetLanguage(lang);
+    public I18nService(string lang = "ru") { _ = lang; }
 
-    public void SetLanguage(string lang)
-    {
-        lang = (lang ?? "ru").ToLowerInvariant();
-        if (lang != "ru" && lang != "en") lang = "ru";
-        if (_lang == lang) return;
-        _lang = lang;
-        LanguageChanged?.Invoke();
-    }
+    public void SetLanguage(string lang) { _ = lang; _ = LanguageChanged; }
 
     public string T(string key, params object[] args)
     {
-        if (!_dict.TryGetValue(_lang, out var d) || !d.TryGetValue(key, out var v))
-        {
-            // fallback to ru then key
-            if (_dict["ru"].TryGetValue(key, out var v2)) v = v2; else v = key;
-        }
-        if (args.Length > 0) try { return string.Format(v, args); } catch { return v; }
-        return v;
+        if (!_dict.TryGetValue(key, out var v)) v = key;
+        if (args.Length == 0) return v;
+        try { return string.Format(v, args); }
+        catch (FormatException) { return v; }
     }
 
-    public string FormatDate(DateTime d) => _lang == "ru" ? d.ToString("dd.MM.yyyy") : d.ToString("yyyy-MM-dd");
+    public string FormatDate(DateTime d) => d.ToString("dd.MM.yyyy");
     public string FormatDay(DateTime d)
     {
         // returns localized weekday short
