@@ -7,6 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Vograph.Timetable\Vograph.Timetable.csproj" />
+    <ProjectReference Include="..\Zapara.Contracts\Zapara.Contracts.csproj" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
     <PackageReference Include="QRCoder" Version="1.4.3" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
