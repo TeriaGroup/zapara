@@ -1,6 +1,10 @@
 # Vograph: Timetable — Development Prompt
 
+> **Уточнение 2026-09-08:** ниже сохранён исторический план serverless MVP. Пользователь разрешил собственный сервер и реализацию первого локального среза API расписания: модульный монолит ASP.NET Core/.NET 8 + PostgreSQL. Прежний запрет сервера более не действует только в этой части; остальные требования и история сохраняются. Офлайн-гость и локальные данные остаются. Актуальные правила продукта, размещения API и персональных данных в РФ, разрешений на установки/деплой и commit — в `AGENTS.md`; исторический auto-commit не заменяет явного запроса пользователя. Это не утверждение о поставке платформы.
+
 > **Temporary code name:** `Vograph Завтра` / `VOG-ZAVTRA` (replace before release)
+> **Локальные тесты, решение 2026-09-08:** пользователь отдельно разрешил Docker для серверных проверок. Исторический запрет Docker ниже не применяется к этому тестовому окружению; доступ к чужим контейнерам и прод-деплой не разрешены.
+
 > **Location:** `C:\Users\NiLle\Desktop\projects\vograph`
 > **Style reference:** `C:\Users\NiLle\Desktop\projects\char\Charon2\src\Charon.App\Themes\Charon.xaml:7-24` + `MainWindow.xaml:8-10`
 > **Timetable source:** https://voenmeh.ru/obrazovanie/timetables/ (test group `O3313` / anchor `#3313`)
