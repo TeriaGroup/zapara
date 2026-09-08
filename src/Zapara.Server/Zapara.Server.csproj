@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Zapara.Contracts\Zapara.Contracts.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Accounts\Zapara.Server.Accounts.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Sync\Zapara.Server.Sync.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Communities\Zapara.Server.Communities.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Timetable\Zapara.Server.Timetable.csproj" />
+  </ItemGroup>
+</Project>

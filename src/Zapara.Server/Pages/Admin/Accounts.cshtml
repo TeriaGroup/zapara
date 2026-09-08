@@ -1,0 +1,36 @@
+@page
+@model Zapara.Server.Pages.Admin.AccountsModel
+<h1>Аккаунты</h1>
+<p class="hint">Отключение аккаунта отзывает сессии устройств. Нужно подтверждение пароля.</p>
+@if (Model.Error is not null) { <div class="error" role="alert">@Model.Error</div> }
+<form method="post" asp-page-handler="Disable" class="card">
+    <h2>Отключить аккаунт</h2>
+    <label asp-for="UserId">Идентификатор пользователя</label>
+    <input asp-for="UserId" />
+    <label asp-for="CurrentPassword">Подтверждение пароля</label>
+    <input asp-for="CurrentPassword" type="password" autocomplete="current-password" />
+    <button class="danger" type="submit">Отключить</button>
+</form>
+<form method="post" asp-page-handler="Revoke" class="card">
+    <h2>Отозвать сессию</h2>
+    <label asp-for="FamilyId">Семейство сессии</label>
+    <input asp-for="FamilyId" />
+    <label asp-for="CurrentPassword">Подтверждение пароля</label>
+    <input asp-for="CurrentPassword" type="password" autocomplete="current-password" />
+    <button class="danger" type="submit">Отозвать сессию</button>
+</form>
+<div class="card">
+    <table>
+        <thead><tr><th>Имя</th><th>Статус</th><th>Идентификатор</th></tr></thead>
+        <tbody>
+        @foreach (var item in Model.Items)
+        {
+            <tr>
+                <td>@item.Username</td>
+                <td>@item.Status</td>
+                <td><code>@item.UserId.ToString("D")</code></td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

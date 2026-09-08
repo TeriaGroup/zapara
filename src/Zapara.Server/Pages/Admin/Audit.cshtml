@@ -1,0 +1,19 @@
+@page
+@model Zapara.Server.Pages.Admin.AuditModel
+<h1>Журнал действий</h1>
+<div class="card">
+    <table>
+        <thead><tr><th>Время</th><th>Действие</th><th>Объект</th><th>Исход</th></tr></thead>
+        <tbody>
+        @foreach (var item in Model.Items)
+        {
+            <tr>
+                <td>@item.CreatedAt.ToString("u")</td>
+                <td><code>@item.Action</code></td>
+                <td>@item.ObjectType <code>@item.ObjectId</code></td>
+                <td>@item.Outcome</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

@@ -1,0 +1,49 @@
+@page
+@model Zapara.Server.Pages.Admin.CommunitiesModel
+<h1>Сообщества</h1>
+@if (Model.Error is not null) { <div class="error" role="alert">@Model.Error</div> }
+<form method="post" asp-page-handler="Create" class="card">
+    <h2>Создать сообщество</h2>
+    <label asp-for="Name">Название</label>
+    <input asp-for="Name" required />
+    <label asp-for="Description">Описание</label>
+    <textarea asp-for="Description" rows="3"></textarea>
+    <button class="primary" type="submit">Создать</button>
+</form>
+<form method="post" asp-page-handler="Map" class="card">
+    <h2>Привязать группу каталога</h2>
+    <label asp-for="CommunityId">Сообщество</label>
+    <select asp-for="CommunityId">
+        @foreach (var item in Model.Items.DistinctBy(i => i.CommunityId))
+        {
+            <option value="@item.CommunityId.ToString("D")">@item.Name</option>
+        }
+    </select>
+    <div class="row">
+        <div>
+            <label asp-for="GroupId">Код группы</label>
+            <input asp-for="GroupId" required />
+        </div>
+        <div>
+            <label asp-for="GroupName">Имя группы</label>
+            <input asp-for="GroupName" required />
+        </div>
+    </div>
+    <button class="primary" type="submit">Привязать группу</button>
+</form>
+<div class="card">
+    <h2>Список</h2>
+    <table>
+        <thead><tr><th>Название</th><th>Описание</th><th>Группа</th></tr></thead>
+        <tbody>
+        @foreach (var item in Model.Items)
+        {
+            <tr>
+                <td>@item.Name</td>
+                <td>@item.Description</td>
+                <td>@(item.GroupId ?? "—")</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

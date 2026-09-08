@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@(ViewData["Title"] ?? "Админка") — Zapara</title>
+    <link rel="stylesheet" href="~/css/admin.css" />
+</head>
+<body>
+    <a class="skip" href="#main">К содержимому</a>
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        <nav aria-label="Разделы админки">
+            <a asp-page="/Admin/Index">Обзор</a>
+            <a asp-page="/Admin/Communities">Сообщества</a>
+            <a asp-page="/Admin/Staff">Персонал</a>
+            <a asp-page="/Admin/Memberships">Заявки</a>
+            <a asp-page="/Admin/Accounts">Аккаунты</a>
+            <a asp-page="/Admin/Content">Модерация</a>
+            <a asp-page="/Admin/Audit">Журнал</a>
+            <form method="post" asp-page="/Admin/Logout">
+                <button type="submit">Выйти</button>
+            </form>
+        </nav>
+    }
+    <main id="main" class="shell">
+        @RenderBody()
+    </main>
+    <footer>Неофициальное приложение. Не является сервисом БГТУ «Военмех».</footer>
+</body>
+</html>

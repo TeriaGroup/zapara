@@ -1,0 +1,28 @@
+@page
+@model Zapara.Server.Pages.Admin.ContentModel
+<h1>Модерация</h1>
+@if (Model.Error is not null) { <div class="error" role="alert">@Model.Error</div> }
+<div class="card">
+    <table>
+        <thead><tr><th>Тип</th><th>Заголовок</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var item in Model.Items)
+        {
+            <tr>
+                <td>@item.Kind</td>
+                <td>@item.Title</td>
+                <td>
+                    <form method="post">
+                        <input type="hidden" name="Kind" value="@item.Kind" />
+                        <input type="hidden" name="ObjectId" value="@item.ObjectId.ToString("D")" />
+                        <input type="hidden" name="CommunityId" value="@item.CommunityId.ToString("D")" />
+                        <label class="hint">Подтверждение пароля</label>
+                        <input type="password" name="CurrentPassword" autocomplete="current-password" />
+                        <button class="danger" type="submit">Снять</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

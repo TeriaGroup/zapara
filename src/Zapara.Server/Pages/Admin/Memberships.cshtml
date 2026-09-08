@@ -1,0 +1,30 @@
+@page
+@model Zapara.Server.Pages.Admin.MembershipsModel
+<h1>Заявки</h1>
+@if (Model.Error is not null) { <div class="error" role="alert">@Model.Error</div> }
+<div class="card">
+    <table>
+        <thead><tr><th>Пользователь</th><th>Сообщество</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var item in Model.Items)
+        {
+            <tr>
+                <td>@item.Username</td>
+                <td><code>@item.CommunityId.ToString("D")</code></td>
+                <td>
+                    <form method="post" asp-page-handler="Accept" style="display:inline">
+                        <input type="hidden" name="CommunityId" value="@item.CommunityId.ToString("D")" />
+                        <input type="hidden" name="RequestId" value="@item.RequestId.ToString("D")" />
+                        <button class="primary" type="submit">Принять</button>
+                    </form>
+                    <form method="post" asp-page-handler="Reject" style="display:inline">
+                        <input type="hidden" name="CommunityId" value="@item.CommunityId.ToString("D")" />
+                        <input type="hidden" name="RequestId" value="@item.RequestId.ToString("D")" />
+                        <button class="ghost" type="submit">Отклонить</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
