@@ -1,8 +1,19 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Zapara.Contracts/Zapara.Contracts.csproj" />
+    <Project Path="src/Zapara.Server.Accounts/Zapara.Server.Accounts.csproj" />
+    <Project Path="src/Zapara.Server.Sync/Zapara.Server.Sync.csproj" />
+    <Project Path="src/Zapara.Server.Communities/Zapara.Server.Communities.csproj" />
+    <Project Path="src/Zapara.AdminCli/Zapara.AdminCli.csproj" />
     <Project Path="src/Vograph.Core/Vograph.Core.csproj" />
     <Project Path="src/Vograph.Desktop/Vograph.Desktop.csproj" />
     <Project Path="src/Vograph.Desktop.Tests/Vograph.Desktop.Tests.csproj" />
     <Project Path="src/Vograph.Desktop.UiVerify/Vograph.Desktop.UiVerify.csproj" />
+    <Project Path="src/Vograph.Timetable/Vograph.Timetable.csproj" />
+    <Project Path="src/Vograph.Timetable.Tests/Vograph.Timetable.Tests.csproj" />
+    <Project Path="src/Zapara.Server.Timetable/Zapara.Server.Timetable.csproj" />
+    <Project Path="src/Zapara.Server/Zapara.Server.csproj" />
+    <Project Path="src/Zapara.Ingest/Zapara.Ingest.csproj" />
+    <Project Path="src/Zapara.Server.Tests/Zapara.Server.Tests.csproj" />
   </Folder>
 </Solution>
