@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Npgsql" Version="8.0.9" />
+    <ProjectReference Include="..\Zapara.Contracts\Zapara.Contracts.csproj" />
+    <EmbeddedResource Include="Sql\001_accounts.sql" />
+    <EmbeddedResource Include="Sql\002_external_login.sql" />
+    <EmbeddedResource Include="Sql\003_recovery.sql" />
+    <EmbeddedResource Include="Sql\004_lifecycle.sql" />
+  </ItemGroup>
+</Project>
