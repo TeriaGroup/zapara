@@ -19,9 +19,14 @@ dump_raw.py
 # Android build + local
 android/app/build/
 android/.gradle/
+android/.kotlin/
 android/local.properties
 .codegraph/
 /app/
 docs/a4_map.png
 
 .opencode/
+
+# Local working plans for agents (OpenCode, Claude) - not part of the repository
+docs/superpowers/
+AGENTS.md
