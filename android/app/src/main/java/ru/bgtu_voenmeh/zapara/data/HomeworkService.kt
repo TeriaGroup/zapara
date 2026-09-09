@@ -74,6 +74,9 @@ class HomeworkService(
         return dao.getAll().filter { it.subjectRawNormalized == norm }.map { it.toHomework() }
     }
 
+    /** Existing persisted guest homework; callers must use IO. */
+    fun all(): List<Homework> = dao.getAll().map { it.toHomework() }
+
     fun computeDueDate(norm: String, from: LocalDate, n: Int): LocalDate? {
         val c = ctx() ?: return null
         return dueDateIn(lessonsFor, c, norm, from, n)

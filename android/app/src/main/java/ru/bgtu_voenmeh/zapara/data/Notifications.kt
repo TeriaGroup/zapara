@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.Build
 import ru.bgtu_voenmeh.zapara.MainActivity
 import ru.bgtu_voenmeh.zapara.NotificationReceiver
+import ru.bgtu_voenmeh.zapara.R
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -20,7 +21,7 @@ object Notifications {
     const val CHANNEL = "zapara_schedule"
     const val REQ_1 = 1001
     const val REQ_2 = 1002
-    private const val ACTION = "ru.bgtu_voenmeh.zapara.NOTIFY"
+    private const val ACTION = "ru.zapara.app.NOTIFY"
 
     fun isValidTime(t: String): Boolean = parseTime(t) != null
 
@@ -42,7 +43,7 @@ object Notifications {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (nm.getNotificationChannel(CHANNEL) == null) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Расписание", NotificationManager.IMPORTANCE_DEFAULT)
+                NotificationChannel(CHANNEL, ctx.getString(R.string.notification_channel), NotificationManager.IMPORTANCE_DEFAULT)
             )
         }
     }
@@ -97,7 +98,6 @@ object Notifications {
             val s = repo.settings()
             if (!s.notifyEnabled) return
             val gid = s.myGroupId ?: return
-            val ru = s.language != "en"
             val today = LocalDate.now()
             val date = if (time != null && time == s.notifyTime1) today.plusDays(1) else today
             val overrides = OverrideService(repo.db.overrideDao())
@@ -118,18 +118,18 @@ object Notifications {
                 burningMark = { l ->
                     homework.forSubject(l.subjectRaw)
                         .firstOrNull { it.status == "burning" || it.status == "burning_urgent" }
-                        ?.let { if (ru) "[ДЗ!]" else "[HW!]" }
+                        ?.let { appCtx.getString(R.string.notification_homework_mark) }
                 },
                 isOdd = Parity.isOddWeek(date, s.periodStart, s.weekCount, s.parityInvert),
-                dayName = { d -> NotificationText.localDayName(d, ru) },
-                parityName = { odd -> if (ru) (if (odd) "нечетная" else "четная") else (if (odd) "odd" else "even") },
-                noLessonsText = if (ru) "Нет занятий" else "No lessons"
+                dayName = { d -> NotificationText.localDayName(d) },
+                parityName = { odd -> appCtx.getString(if (odd) R.string.notification_odd else R.string.notification_even) },
+                noLessonsText = appCtx.getString(R.string.notification_no_lessons)
             )
             val openApp = PendingIntent.getActivity(
                 appCtx, 0, Intent(appCtx, MainActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            val title = if (ru) "Военмех - расписание и карты" else "Voenmeh - schedule & maps"
+            val title = appCtx.getString(R.string.notification_title)
             val n = android.app.Notification.Builder(appCtx, CHANNEL)
                 .setContentTitle(title)
                 .setContentText(text)

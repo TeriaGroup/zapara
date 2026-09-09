@@ -6,36 +6,64 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.bgtu_voenmeh.zapara.data.db.GroupEntity
 import ru.bgtu_voenmeh.zapara.data.db.LessonEntity
+import ru.bgtu_voenmeh.zapara.data.api.RoomTimetableStore
+import ru.bgtu_voenmeh.zapara.data.api.TimetableStore
+import ru.bgtu_voenmeh.zapara.data.api.overlaySettings
 import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_1_2
 import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_2_3
+import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_3_4
+import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_4_5
 import ru.bgtu_voenmeh.zapara.data.db.SettingsEntity
 import ru.bgtu_voenmeh.zapara.data.db.ZaparaDatabase
+import ru.bgtu_voenmeh.zapara.data.api.TimetableSource
+import ru.bgtu_voenmeh.zapara.data.profiles.ProfileDescriptor
+import ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.LocalDate
 import java.time.LocalTime
 
-// Schedule repository: network fetch -> parse -> Room. A2 scope (no overrides/homework/friends logic yet).
-class ScheduleRepository private constructor(val db: ZaparaDatabase) {
+class ScheduleRepository(
+    val db: ZaparaDatabase,
+    val store: TimetableStore = RoomTimetableStore(db),
+    val work: ProfileWork? = null
+) {
 
     companion object {
         @Volatile
-        private var instance: ScheduleRepository? = null
+        private var attached: ScheduleRepository? = null
 
         /** Test hook: when false, ensureData() never touches network. Default true (production). */
         @Volatile
         var networkEnabled = true
 
+        fun attach(repo: ScheduleRepository) {
+            attached = repo
+        }
+
+        fun detach(repo: ScheduleRepository) {
+            if (attached === repo) attached = null
+        }
+
+        /** Current profile repository. Does not own a singleton database. */
         fun get(context: Context): ScheduleRepository {
-            return instance ?: synchronized(this) {
-                instance ?: ScheduleRepository(
-                    Room.databaseBuilder(
-                        context.applicationContext,
-                        ZaparaDatabase::class.java,
-                        "zapara.db"
-                    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
-                ).also { instance = it }
+            attached?.let { return it }
+            val app = context.applicationContext
+            if (app is ru.bgtu_voenmeh.zapara.ZaparaApplication) return app.container.repo
+            error("Профиль не открыт")
+        }
+
+        fun openDatabase(context: Context, profile: ProfileDescriptor): ZaparaDatabase {
+            val name = profile.databaseName
+            val builder = if (name.contains('/') || name.contains('\\')) {
+                val file = File(context.applicationContext.getDatabasePath("zapara.db").parentFile, name)
+                file.parentFile?.mkdirs()
+                Room.databaseBuilder(context.applicationContext, ZaparaDatabase::class.java, file.absolutePath)
+            } else {
+                Room.databaseBuilder(context.applicationContext, ZaparaDatabase::class.java, name)
             }
+            return builder.addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
         }
     }
 
@@ -51,12 +79,17 @@ class ScheduleRepository private constructor(val db: ZaparaDatabase) {
         val alwaysShowAllTrafficLights: Boolean = false,
         val notifyEnabled: Boolean = true,
         val notifyTime1: String? = "20:00",
-        val notifyTime2: String? = "07:30"
+        val notifyTime2: String? = "07:30",
+        val theme: String = "system",
+        val animations: Boolean = true,
+        val useUniversityXml: Boolean = false
     )
 
     fun settings(): SettingsState {
-        val s = db.settingsDao().get() ?: return SettingsState()
-        return SettingsState(
+        val s = db.settingsDao().get() ?: return overlaySettings(store, SettingsState())
+        return overlaySettings(
+            store,
+            SettingsState(
             myGroupId = s.myGroupId,
             parityInvert = s.parityInvert,
             language = s.language,
@@ -69,31 +102,43 @@ class ScheduleRepository private constructor(val db: ZaparaDatabase) {
             alwaysShowAllTrafficLights = s.alwaysShowAllTrafficLights,
             notifyEnabled = s.notifyEnabled,
             notifyTime1 = s.notifyTime1,
-            notifyTime2 = s.notifyTime2
-        )
-    }
-
-    fun saveSettings(s: SettingsState) {
-        db.settingsDao().save(
-            SettingsEntity(
-                myGroupId = s.myGroupId,
-                parityInvert = s.parityInvert,
-                language = s.language,
-                periodStart = s.periodStart.toString(),
-                weekCount = s.weekCount,
-                periodTitle = s.periodTitle,
-                lastFetchedAt = s.lastFetchedAt,
-                intersectionStrictness = s.intersectionStrictness,
-                alwaysShowAllTrafficLights = s.alwaysShowAllTrafficLights,
-                notifyEnabled = s.notifyEnabled,
-                notifyTime1 = s.notifyTime1,
-                notifyTime2 = s.notifyTime2
+            notifyTime2 = s.notifyTime2,
+            theme = s.theme,
+            animations = s.animations,
+            useUniversityXml = s.useUniversityXml
             )
         )
     }
 
-    fun groups(): List<GroupInfo> =
-        db.groupDao().getAll().map { GroupInfo(it.id, it.name, it.url) }
+    fun saveSettings(s: SettingsState) {
+        val ticket = work?.enter()
+        try {
+            ticket?.throwIfStale()
+            db.settingsDao().save(
+                SettingsEntity(
+                    myGroupId = s.myGroupId,
+                    parityInvert = s.parityInvert,
+                    language = s.language,
+                    periodStart = s.periodStart.toString(),
+                    weekCount = s.weekCount,
+                    periodTitle = s.periodTitle,
+                    lastFetchedAt = s.lastFetchedAt,
+                    intersectionStrictness = s.intersectionStrictness,
+                    alwaysShowAllTrafficLights = s.alwaysShowAllTrafficLights,
+                    notifyEnabled = s.notifyEnabled,
+                    notifyTime1 = s.notifyTime1,
+                    notifyTime2 = s.notifyTime2,
+                    theme = s.theme,
+                    animations = s.animations,
+                    useUniversityXml = s.useUniversityXml
+                )
+            )
+        } finally {
+            ticket?.close()
+        }
+    }
+
+    fun groups(): List<GroupInfo> = store.groups()
 
     fun allForGroup(groupId: String): List<Lesson> =
         db.lessonDao().getAllForGroup(groupId).map { it.toLesson() }
@@ -106,32 +151,40 @@ class ScheduleRepository private constructor(val db: ZaparaDatabase) {
     suspend fun ensureData(): Unit = withContext(Dispatchers.IO) {
         if (db.groupDao().getAll().isEmpty()) {
             if (!networkEnabled) throw IllegalStateException("empty db and network disabled (tests)")
+            TimetableSource.guardXmlRefresh(store, settings())
             refresh()
         }
     }
 
     suspend fun refresh(url: String = GroupParser.DEFAULT_URL): Unit = withContext(Dispatchers.IO) {
-        val xml = fetch(url)
-        val parsed = GroupParser.parse(xml, url)
-        val s = settings()
-        val now = java.time.OffsetDateTime.now().toString()
-        db.runInTransaction {
-            for (g in parsed.groups) {
-                db.groupDao().upsert(GroupEntity(g.id, g.name, g.url))
-            }
-            val byGroup = parsed.lessons.groupBy { it.groupId }
-            for ((gid, list) in byGroup) {
-                db.lessonDao().clearForGroup(gid)
-                db.lessonDao().insertAll(list.map { it.toEntity() })
-            }
-            saveSettings(
-                s.copy(
-                    periodStart = parsed.periodStart,
-                    weekCount = parsed.weekCount,
-                    periodTitle = parsed.periodTitle,
-                    lastFetchedAt = now
+        val ticket = work?.enter()
+        try {
+            ticket?.throwIfStale()
+            TimetableSource.guardXmlRefresh(store, settings())
+            val xml = fetch(url)
+            val parsed = GroupParser.parse(xml, url)
+            val s = settings()
+            val now = java.time.OffsetDateTime.now().toString()
+            db.runInTransaction {
+                for (g in parsed.groups) {
+                    db.groupDao().upsert(GroupEntity(g.id, g.name, g.url))
+                }
+                val byGroup = parsed.lessons.groupBy { it.groupId }
+                for ((gid, list) in byGroup) {
+                    db.lessonDao().clearForGroup(gid)
+                    db.lessonDao().insertAll(list.map { it.toEntity() })
+                }
+                saveSettings(
+                    s.copy(
+                        periodStart = parsed.periodStart,
+                        weekCount = parsed.weekCount,
+                        periodTitle = parsed.periodTitle,
+                        lastFetchedAt = now
+                    )
                 )
-            )
+            }
+        } finally {
+            ticket?.close()
         }
     }
 

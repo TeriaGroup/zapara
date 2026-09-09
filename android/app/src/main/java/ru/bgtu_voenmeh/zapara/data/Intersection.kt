@@ -47,11 +47,4 @@ object Intersection {
         else -> "нет на месте"
     }
 
-    fun scoreToTextEn(score: Int): String = when {
-        score >= 100 -> "same room"
-        score >= 75 -> "same floor"
-        score >= 50 -> "same building"
-        score >= 25 -> "at uni"
-        else -> "absent"
-    }
 }
