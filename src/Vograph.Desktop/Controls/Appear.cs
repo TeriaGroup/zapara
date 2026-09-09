@@ -14,7 +14,8 @@ public enum AppearKind { None, Fade, SlideUp, Cascade }
 
 /// <summary>
 /// Spec §7 «Появление списка» and «Тост»: an attached behaviour that fades a control in when it enters the visual tree.
-/// Cascade: opacity 0→1 and 8px→0 with a 40 ms × index delay for the first eight items — but only while the nearest
+/// Cascade: opacity 0→1 with a 40 ms × index delay for the first eight items (no slide: translating text on
+/// section open reads as shaking) — but only while the nearest
 /// CascadeHost attached less than 400 ms ago, so a reload of an already visible list (a day change, a homework
 /// toggle) does not replay the entrance. SlideUp: 12px→0 + fade (toasts). Every run ends at the control's own opacity
 /// (a past lesson card stays at 0.6) and hands RenderTransform back to the styles.
@@ -83,7 +84,7 @@ public static class Appear
                 var host = control.GetVisualAncestors().OfType<Control>().FirstOrDefault(GetCascadeHost);
                 if (host is null || Environment.TickCount64 - host.GetValue(HostSinceProperty) > CascadeWindowMs) return;
                 CascadeRuns++;
-                Run(control, delay: TimeSpan.FromMilliseconds(40 * index), offsetY: 8, duration: motion.Duration(240));
+                Run(control, delay: TimeSpan.FromMilliseconds(40 * index), offsetY: 0, duration: motion.Duration(240));
                 break;
         }
     }

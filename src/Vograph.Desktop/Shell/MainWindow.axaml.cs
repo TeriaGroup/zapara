@@ -32,13 +32,22 @@ public partial class MainWindow : Window
     /// <summary>The crossfade this window installed on the theme service, kept so OnClosed can tell it from someone
     /// else's: the service holds one delegate, and a second window (a test opening its own shell) overwrites it.</summary>
     private Func<Action, Task>? _themeTransition;
+    private ThemeService? _wiredTheme;
 
     /// <summary>The theme service switches inside a crossfade of this window (spec §7); a window without a shell switches plainly.</summary>
     private void WireTheme()
     {
+        if (_wiredTheme is { } previous && ReferenceEquals(previous.Transition, _themeTransition)) previous.Transition = null;
+        _wiredTheme = null;
         if (DataContext is ShellViewModel vm && vm.App.Theme is { } theme)
         {
-            _themeTransition = apply => ThemeCrossfade.RunAsync(this, RootPanel, ThemeSnapshot, apply, vm.Motion, vm.App.Log);
+            _wiredTheme = theme;
+            _themeTransition = async apply =>
+            {
+                using var operation = vm.App.Work.Enter();
+                if (!operation.IsCurrent) return;
+                await ThemeCrossfade.RunAsync(this, RootPanel, ThemeSnapshot, apply, vm.Motion, vm.App.Log);
+            };
             theme.Transition = _themeTransition;
         }
     }

@@ -39,8 +39,9 @@ public partial class DialogHostView : UserControl
         else _ = CloseAsync(_vm.Motion.Duration(120));
     }
 
-    /// <summary>Spec §6: scale .96→1 + fade over 180 ms, the backdrop fading with it. Focus moves into the host so
-    /// Enter/Escape work at once (deferred so a dialog view's own OnLoaded focus — the search box — wins).</summary>
+    /// <summary>Spec §6: fade over 180 ms, the backdrop fading with it. No scale — a 0.96→1 transform re-rasters
+    /// Inter every frame and reads as shaking text. Focus moves into the host so Enter/Escape work at once
+    /// (deferred so a dialog view's own OnLoaded focus — the search box — wins).</summary>
     private async Task OpenAsync(TimeSpan duration)
     {
         var generation = ++_generation;
@@ -55,15 +56,7 @@ public partial class DialogHostView : UserControl
         {
             await Task.WhenAll(
                 Fade(0, 1, duration).RunAsync(Backdrop),
-                new Animation
-                {
-                    Duration = duration, Easing = MotionSettings.Ease, FillMode = FillMode.Forward,
-                    Children =
-                    {
-                        new KeyFrame { Cue = new Cue(0d), Setters = { new Setter(OpacityProperty, 0d), new Setter(ScaleTransform.ScaleXProperty, 0.96), new Setter(ScaleTransform.ScaleYProperty, 0.96) } },
-                        new KeyFrame { Cue = new Cue(1d), Setters = { new Setter(OpacityProperty, 1d), new Setter(ScaleTransform.ScaleXProperty, 1d), new Setter(ScaleTransform.ScaleYProperty, 1d) } },
-                    }
-                }.RunAsync(Card));
+                Fade(0, 1, duration).RunAsync(Card));
         }
         catch (Exception ex)
         {
