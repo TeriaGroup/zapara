@@ -6,7 +6,7 @@ namespace Vograph.Core.Services;
 public class AutoUpdateService
 {
     private readonly HttpClient _http;
-    private const string Owner = "0NiLle0";
+    private const string Owner = "TeriaGroup";
     private const string Repo = "zapara";
     // tag prefix for windows
     private const string Prefix = "windows-";
@@ -24,15 +24,17 @@ public class AutoUpdateService
     {
         string pfx = channel == "android" ? "android-" : "windows-";
         // fetch all releases, pick latest matching prefix (api/releases/latest may be android)
-        var url = $"https://api.github.com/repos/{Owner}/{Repo}/releases?per_page=20";
+        var url = $"https://api.github.com/repos/{Owner}/{Repo}/releases?per_page=100";
         var resp = await _http.GetAsync(url, ct);
         resp.EnsureSuccessStatusCode();
         var json = await resp.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(json);
+        var wantZip = !string.Equals(channel, "android", StringComparison.OrdinalIgnoreCase);
+        UpdateInfo? best = null;
         foreach (var el in doc.RootElement.EnumerateArray())
         {
             var tag = el.GetProperty("tag_name").GetString() ?? "";
-            if (!tag.StartsWith(pfx, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!TagMatchesChannel(tag, pfx)) continue;
             var html = el.GetProperty("html_url").GetString() ?? $"https://github.com/{Owner}/{Repo}/releases/tag/{tag}";
             var published = el.TryGetProperty("published_at", out var p) ? p.GetString() ?? "" : "";
             string? zip = null;
@@ -41,16 +43,19 @@ public class AutoUpdateService
                 foreach (var a in assets.EnumerateArray())
                 {
                     var name = a.GetProperty("name").GetString() ?? "";
-                    if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".apk", StringComparison.OrdinalIgnoreCase))
-                    {
-                        zip = a.GetProperty("browser_download_url").GetString();
-                        if (name.Contains("ZAPARA", StringComparison.OrdinalIgnoreCase)) break;
-                    }
+                    var ok = wantZip
+                        ? name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+                        : name.EndsWith(".apk", StringComparison.OrdinalIgnoreCase);
+                    if (!ok) continue;
+                    zip = a.GetProperty("browser_download_url").GetString();
+                    if (name.Contains("ZAPARA", StringComparison.OrdinalIgnoreCase)) break;
                 }
             }
-            return new UpdateInfo(tag, html, zip, published);
+            if (zip == null) continue;
+            var cand = new UpdateInfo(tag, html, zip, published);
+            if (best == null || BetterTag(best.Tag, tag, pfx) == tag) best = cand;
         }
-        return null;
+        return best;
     }
 
     public static string CurrentTagWindows => "windows-v2.0.0";
@@ -86,6 +91,19 @@ public class AutoUpdateService
             try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
             throw;
         }
+    }
+
+    public static bool TagMatchesChannel(string tag, string prefix) =>
+        tag.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
+        (tag.Length > 1 && (tag[0] == 'v' || tag[0] == 'V') && char.IsDigit(tag[1]));
+
+    static string BetterTag(string current, string candidate, string prefix)
+    {
+        if (IsNewer(candidate, current)) return candidate;
+        if (IsNewer(current, candidate)) return current;
+        var curPfx = current.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+        var candPfx = candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+        return candPfx && !curPfx ? candidate : current;
     }
 
     public static bool IsNewer(string latestTag, string currentTag)

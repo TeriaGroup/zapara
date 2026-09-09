@@ -12,7 +12,7 @@ import java.net.URL
 
 object AutoUpdate {
     const val CURRENT_TAG = "android-v2.0.0"
-    private const val OWNER = "0NiLle0"
+    private const val OWNER = "TeriaGroup"
     private const val REPO = "zapara"
     private const val PREFS = "zapara"
     private const val KEY_AUTO = "auto_update"
@@ -20,7 +20,7 @@ object AutoUpdate {
     private const val KEY_CHECK_TAG = "update_check_tag"
     private const val KEY_CHECK_APK = "update_check_apk"
     private const val KEY_CHECK_HTML = "update_check_html"
-    const val RELEASES_PAGE = "https://github.com/0NiLle0/zapara/releases/latest"
+    const val RELEASES_PAGE = "https://github.com/TeriaGroup/zapara/releases/latest"
     /** 6h: GitHub allows 60 anon API calls/hour per IP — VPNs share one IP, don't burn it. */
     const val CHECK_TTL_MS = 6 * 3600 * 1000L
 
@@ -75,15 +75,20 @@ object AutoUpdate {
         }
     }
 
-    /** First /releases/tag/<tag> link (newest-first feed) matching the channel prefix. Pure — unit-tested. */
     fun parseFeedTag(xml: String, prefix: String): String? {
         val re = Regex("href=\"[^\"]*/releases/tag/([^\"]+)\"")
+        var best: String? = null
         for (m in re.findAll(xml)) {
             val tag = m.groupValues[1]
-            if (tag.startsWith(prefix, ignoreCase = true)) return tag
+            if (!tagMatchesChannel(tag, prefix)) continue
+            best = betterTag(best, tag, prefix)
         }
-        return null
+        return best
     }
+
+    fun tagMatchesChannel(tag: String, prefix: String): Boolean =
+        tag.startsWith(prefix, ignoreCase = true) ||
+            tag.matches(Regex("""v\d[\d.]*""", RegexOption.IGNORE_CASE))
 
     private fun urlExists(url: String): Boolean {
         var c: HttpURLConnection? = null
@@ -117,7 +122,7 @@ object AutoUpdate {
     fun getLatest(channel: String = "android"): UpdateInfo? {
         val pfx = if (channel == "windows") "windows-" else "android-"
         // Cache-buster: some networks/VPNs serve stale API responses without it.
-        val url = URL("https://api.github.com/repos/$OWNER/$REPO/releases?per_page=20&t=${System.currentTimeMillis()}")
+        val url = URL("https://api.github.com/repos/$OWNER/$REPO/releases?per_page=100&t=${System.currentTimeMillis()}")
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             setRequestProperty("User-Agent", "Zapara-AutoUpdate/1.0")
@@ -129,27 +134,38 @@ object AutoUpdate {
         if (conn.responseCode !in 200..299) throw IOException("GitHub API: HTTP ${conn.responseCode}")
         val json = conn.inputStream.bufferedReader().readText()
         val arr = JSONArray(json)
+        val wantExt = if (channel == "windows") ".zip" else ".apk"
+        var best: UpdateInfo? = null
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             val tag = o.getString("tag_name")
-            if (!tag.startsWith(pfx, ignoreCase = true)) continue
-            val html = o.getString("html_url")
-            val published = o.optString("published_at", "")
+            if (!tagMatchesChannel(tag, pfx)) continue
             var apk: String? = null
             val assets = o.optJSONArray("assets")
             if (assets != null) {
                 for (j in 0 until assets.length()) {
                     val a = assets.getJSONObject(j)
                     val name = a.getString("name")
-                    if (name.endsWith(".apk", ignoreCase = true)) {
+                    if (name.endsWith(wantExt, ignoreCase = true)) {
                         apk = a.getString("browser_download_url")
                         if (name.contains("ZAPARA", ignoreCase = true)) break
                     }
                 }
             }
-            return UpdateInfo(tag, html, apk, published)
+            if (apk == null) continue
+            val cand = UpdateInfo(tag, o.getString("html_url"), apk, o.optString("published_at", ""))
+            if (best == null || betterTag(best.tag, tag, pfx) == tag) best = cand
         }
-        return null
+        return best
+    }
+
+    private fun betterTag(current: String?, candidate: String, prefix: String): String {
+        if (current == null) return candidate
+        if (isNewer(candidate, current)) return candidate
+        if (isNewer(current, candidate)) return current
+        val curPfx = current.startsWith(prefix, ignoreCase = true)
+        val candPfx = candidate.startsWith(prefix, ignoreCase = true)
+        return if (candPfx && !curPfx) candidate else current
     }
 
     class DownloadCancelled : IOException("cancelled")
@@ -231,7 +247,7 @@ object AutoUpdate {
                 val av = a.getOrElse(k){0}; val bv = b.getOrElse(k){0}
                 if (av != bv) return av > bv
             }
-            latest != current
+            false
         } catch (_: Exception) { latest != current }
     }
 }

@@ -37,6 +37,18 @@ class AutoUpdateTest {
     }
 
     @Test
+    fun feedPicksHighestVersionNotFirst() {
+        val messy = """
+            <feed>
+              <entry><link type="text/html" rel="alternate" href="https://github.com/TeriaGroup/zapara/releases/tag/android-v1.2.21"/></entry>
+              <entry><link type="text/html" rel="alternate" href="https://github.com/TeriaGroup/zapara/releases/tag/v2.0.0"/></entry>
+              <entry><link type="text/html" rel="alternate" href="https://github.com/TeriaGroup/zapara/releases/tag/android-v2.0.0"/></entry>
+            </feed>
+        """.trimIndent()
+        assertEquals("android-v2.0.0", AutoUpdate.parseFeedTag(messy, "android-"))
+    }
+
+    @Test
     fun feedNoMatch() {
         assertNull(AutoUpdate.parseFeedTag(feed, "ios-"))
         assertNull(AutoUpdate.parseFeedTag("<feed></feed>", "android-"))
@@ -48,5 +60,7 @@ class AutoUpdateTest {
         assertFalse(AutoUpdate.isNewer("android-v1.2.17", "android-v1.2.17"))
         assertFalse(AutoUpdate.isNewer("android-v1.2.17", "android-v1.2.18"))
         assertFalse(AutoUpdate.isNewer("android-v1.2.9", "android-v1.2.18"))
+        assertFalse(AutoUpdate.isNewer("v2.0.0", "android-v2.0.0"))
+        assertTrue(AutoUpdate.isNewer("v2.0.1", "android-v2.0.0"))
     }
 }
