@@ -3,6 +3,7 @@ package ru.bgtu_voenmeh.zapara.data.db
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
@@ -60,7 +61,10 @@ data class SettingsEntity(
     val alwaysShowAllTrafficLights: Boolean = false,
     val notifyEnabled: Boolean = true,
     val notifyTime1: String? = "20:00", // evening: tomorrow's lessons
-    val notifyTime2: String? = "07:30" // morning: today's lessons
+    val notifyTime2: String? = "07:30", // morning: today's lessons
+    @androidx.room.ColumnInfo(defaultValue = "'system'") val theme: String = "system",
+    @androidx.room.ColumnInfo(defaultValue = "1") val animations: Boolean = true,
+    @androidx.room.ColumnInfo(defaultValue = "0") val useUniversityXml: Boolean = false
 )
 
 @Entity(tableName = "overrides")
@@ -133,6 +137,9 @@ interface FriendDao {
 @Dao
 interface SettingsDao {
     @Query("SELECT * FROM settings WHERE id = 1 LIMIT 1")
+    fun observe(): kotlinx.coroutines.flow.Flow<SettingsEntity?>
+
+    @Query("SELECT * FROM settings WHERE id = 1 LIMIT 1")
     fun get(): SettingsEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -197,10 +204,102 @@ val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
     }
 }
 
+val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE settings ADD COLUMN theme TEXT NOT NULL DEFAULT 'system'")
+        db.execSQL("ALTER TABLE settings ADD COLUMN animations INTEGER NOT NULL DEFAULT 1")
+    }
+}
+
+@Entity(tableName = "api_catalog")
+data class ApiCatalogEntity(
+    @PrimaryKey val groupId: String,
+    val name: String
+)
+
+@Entity(tableName = "api_cache_metadata")
+data class ApiCacheMetadataEntity(
+    @PrimaryKey val groupId: String,
+    val snapshotId: String?,
+    val payload: String
+)
+
+@Dao
+interface ApiCatalogDao {
+    @Query("DELETE FROM api_catalog")
+    fun clear()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun insert(row: ApiCatalogEntity)
+
+    @Query("SELECT * FROM api_catalog")
+    fun getAll(): List<ApiCatalogEntity>
+}
+
+@Dao
+interface ApiCacheMetadataDao {
+    @Query("SELECT * FROM api_cache_metadata WHERE groupId = :groupId LIMIT 1")
+    fun get(groupId: String): ApiCacheMetadataEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsert(row: ApiCacheMetadataEntity)
+
+    @Query("DELETE FROM api_cache_metadata WHERE groupId = :groupId")
+    fun delete(groupId: String)
+}
+
+val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE settings ADD COLUMN useUniversityXml INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("CREATE TABLE IF NOT EXISTS api_catalog (groupId TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY(groupId))")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS api_cache_metadata (groupId TEXT NOT NULL, snapshotId TEXT, payload TEXT NOT NULL, PRIMARY KEY(groupId))"
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS sync_outbox (opId TEXT NOT NULL, entityType TEXT NOT NULL, entityId TEXT NOT NULL, " +
+                "expectedRevision INTEGER NOT NULL, action TEXT NOT NULL, payload BLOB, localRowId INTEGER, status TEXT NOT NULL, " +
+                "createdAtUtc TEXT NOT NULL, syncEpoch TEXT, PRIMARY KEY(opId))"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_sync_outbox_entity ON sync_outbox(entityType, entityId, status)")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS sync_state (id INTEGER PRIMARY KEY NOT NULL, syncEpoch TEXT, afterSequence INTEGER NOT NULL)"
+        )
+        db.execSQL("INSERT OR IGNORE INTO sync_state (id, afterSequence) VALUES (1, 0)")
+    }
+}
+
+@Entity(
+    tableName = "sync_outbox",
+    indices = [Index(value = ["entityType", "entityId", "status"], name = "idx_sync_outbox_entity")]
+)
+data class SyncOutboxEntity(
+    @PrimaryKey val opId: String,
+    val entityType: String,
+    val entityId: String,
+    val expectedRevision: Long,
+    val action: String,
+    val payload: ByteArray? = null,
+    val localRowId: Long? = null,
+    val status: String,
+    val createdAtUtc: String,
+    val syncEpoch: String? = null
+)
+
+@Entity(tableName = "sync_state")
+data class SyncStateEntity(
+    @PrimaryKey val id: Int = 1,
+    val syncEpoch: String? = null,
+    val afterSequence: Long = 0
+)
+
 @Database(
-    entities = [GroupEntity::class, LessonEntity::class, FriendEntity::class, SettingsEntity::class, OverrideEntity::class, HomeworkEntity::class],
-    version = 3,
-    exportSchema = false
+    entities = [
+        GroupEntity::class, LessonEntity::class, FriendEntity::class, SettingsEntity::class,
+        OverrideEntity::class, HomeworkEntity::class, ApiCatalogEntity::class, ApiCacheMetadataEntity::class,
+        SyncOutboxEntity::class, SyncStateEntity::class
+    ],
+    version = 5,
+    exportSchema = true
 )
 abstract class ZaparaDatabase : RoomDatabase() {
     abstract fun groupDao(): GroupDao
@@ -209,4 +308,6 @@ abstract class ZaparaDatabase : RoomDatabase() {
     abstract fun settingsDao(): SettingsDao
     abstract fun overrideDao(): OverrideDao
     abstract fun homeworkDao(): HomeworkDao
+    abstract fun apiCatalogDao(): ApiCatalogDao
+    abstract fun apiCacheMetadataDao(): ApiCacheMetadataDao
 }

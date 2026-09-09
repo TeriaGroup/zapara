@@ -11,21 +11,23 @@ android {
     namespace = "ru.bgtu_voenmeh.zapara"
     compileSdk = 34
 
-    defaultConfig {
-        applicationId = "ru.bgtu_voenmeh.zapara"
-        minSdk = 26
-        targetSdk = 34
-        versionCode = 23
-        versionName = "1.2.20"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-
     // Release key lives OUTSIDE the repo (local.properties, gitignored).
     // Keystore: %USERPROFILE%\.keystores\zapara-release.jks (alias zapara). Back it up!
     val keystoreProps = Properties().apply {
         val f = rootProject.file("local.properties")
         if (f.exists()) f.inputStream().use { load(it) }
+    }
+
+    defaultConfig {
+        applicationId = "ru.zapara.app"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 24
+        versionName = "2.0.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        val apiBase = keystoreProps.getProperty("zapara.apiBaseUrl") ?: ""
+        buildConfigField("String", "API_BASE_URL", "\"${apiBase.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
     }
     signingConfigs {
         create("release") {
@@ -74,6 +76,16 @@ android {
         compose = true
         buildConfig = true
     }
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
+}
+
+ksp { arg("room.schemaLocation", "$projectDir/schemas") }
+
+// Schema generation must finish before AndroidTest assets are snapshotted.
+tasks.configureEach {
+    if (name.matches(Regex("merge.*AndroidTestAssets"))) {
+        dependsOn(name.replace("merge", "ksp").replace("AndroidTestAssets", "Kotlin"))
+    }
 }
 
 dependencies {
@@ -87,6 +99,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("androidx.activity:activity-compose:1.9.2")
+    implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -96,11 +109,14 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.security:security-crypto:1.0.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.room:room-testing:2.6.1")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
