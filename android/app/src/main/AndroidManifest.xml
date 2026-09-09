@@ -13,11 +13,14 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
+        android:name=".ZaparaApplication"
         android:label="Военмех - расписание и карты"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:supportsRtl="true">
         <activity
             android:name=".MainActivity"
@@ -47,6 +50,33 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+        <receiver
+            android:name=".ui.widgets.ScheduleWidgetProvider"
+            android:exported="true"
+            android:label="@string/nav_schedule">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_schedule_info" />
+        </receiver>
+        <receiver
+            android:name=".ui.widgets.HomeworkWidgetProvider"
+            android:exported="true"
+            android:label="@string/nav_homework">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_homework_info" />
+        </receiver>
+        <provider
+            android:name=".ui.widgets.WidgetInitProvider"
+            android:authorities="${applicationId}.widgets"
+            android:exported="false"
+            android:initOrder="100" />
     </application>
 
 </manifest>

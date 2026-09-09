@@ -9,14 +9,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import ru.bgtu_voenmeh.zapara.data.Notifications
-import ru.bgtu_voenmeh.zapara.ui.ScheduleViewModel
-import ru.bgtu_voenmeh.zapara.ui.ScheduleVmFactory
-import ru.bgtu_voenmeh.zapara.ui.ZaparaApp
-import ru.bgtu_voenmeh.zapara.ui.theme.ZaparaTheme
+import ru.bgtu_voenmeh.zapara.ui.shell.ZaparaApp
 
 class MainActivity : ComponentActivity() {
     private val notifPerm = registerForActivityResult(
@@ -25,22 +21,20 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Ask notification permission once (Android 13+); Settings shows the status afterwards.
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
             try { notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS) } catch (_: Exception) {}
         }
-        // (Re)arm daily notification alarms; silent self-update check runs in ViewModel.init.
         lifecycleScope.launch(Dispatchers.IO) {
-            try { Notifications.schedule(applicationContext) } catch (_: Exception) {}
+            try { Notifications.schedule(applicationContext) } catch (e: Exception) {
+                android.util.Log.w("ZaparaMain", "schedule", e)
+            }
         }
         setContent {
-            ZaparaTheme {
-                val vm: ScheduleViewModel = viewModel(factory = ScheduleVmFactory(application))
-                ZaparaApp(vm)
-            }
+            val container = (application as ZaparaApplication).container
+            ZaparaApp(container)
         }
     }
 }
