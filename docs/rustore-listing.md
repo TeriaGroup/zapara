@@ -27,7 +27,7 @@
 ## Служебное
 
 - Категория: Образование. Возраст: 0+.
-- package: `ru.bgtu_voenmeh.zapara`. Подпись: релизный ключ (JKS вне репозитория).
+- package: `ru.zapara.app`. Подпись: релизный ключ (JKS вне репозитория).
 - Сборка для стора: `.\gradlew.bat :app:assembleRustoreRelease`
   (флавор `rustore`: без самообновления и без REQUEST_INSTALL_PACKAGES).
 - Иконка: `docs/dist/icon-512.png` (512×512).
