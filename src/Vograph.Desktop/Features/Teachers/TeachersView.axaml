@@ -36,7 +36,7 @@
       <!-- right: detail -->
       <c:EmptyState Grid.Column="2" IsVisible="{Binding !HasDetail}" Title="{loc:T teachersPick}" Hint="{loc:T teachersPickHint}"
                     Icon="{StaticResource Icon.Teachers}" VerticalAlignment="Center" />
-      <ScrollViewer Grid.Column="2" IsVisible="{Binding HasDetail}">
+      <ScrollViewer Grid.Column="2" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding HasDetail}">
         <ContentControl Content="{Binding Detail}">
           <ContentControl.ContentTemplate>
             <DataTemplate x:DataType="t:TeacherDetailViewModel">

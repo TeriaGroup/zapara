@@ -77,6 +77,8 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     /// <summary>Smart start: today while lessons remain, otherwise tomorrow.</summary>
     public async Task InitializeAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var version = ++_reloadVersion; // a reload already queued behind the gate must not overwrite the smart-start result
         var now = _clock();
         var model = await ComposeAsync(() => _composer.Compose(_composer.InitialOffset(now), now));
@@ -93,6 +95,8 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     /// refresh yet, and a reload would show "today" instead of the smart-start day.</summary>
     public async Task ReloadAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         if (!_loaded) return;
         var version = ++_reloadVersion;
         var offset = DayOffset;
@@ -113,6 +117,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
 
     private void Apply(DayModel model)
     {
+        if (!CanPublish) return;
         var direction = _shownOffset is { } prev ? Math.Sign(model.Offset - prev) : 0;
         _shownOffset = model.Offset;
         Date = model.Date;
@@ -154,6 +159,8 @@ public sealed partial class ScheduleViewModel : ViewModelBase
 
     public async Task RenameAsync(LessonRowViewModel row)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var l = row.Row.Lesson;
         // RunAsync's T is a non-nullable class, and it already returns null for "no result": "no override" lands there too.
         var existing = await RunAsync<Override>(
@@ -181,6 +188,8 @@ public sealed partial class ScheduleViewModel : ViewModelBase
 
     public async Task AddHomeworkAsync(LessonRowViewModel row)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var l = row.Row.Lesson;
         var norm = ParityService.NormalizeSubject(l.SubjectRaw);
         var today = _clock().Date;
@@ -195,6 +204,8 @@ public sealed partial class ScheduleViewModel : ViewModelBase
 
     public async Task EditHomeworkAsync(HomeworkItemViewModel hw)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var existing = await RunAsync<Homework>(() => App.Homework.GetById(hw.Id)!, "homework edit"); // null: gone, or the call failed
         if (existing is null) return;
         var dues = await ComputeDuesAsync(existing.SubjectRawNormalized, existing.CreatedAt);
@@ -214,6 +225,8 @@ public sealed partial class ScheduleViewModel : ViewModelBase
 
     public async Task ToggleDoneAsync(HomeworkItemViewModel hw)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         if (!await RunAsync(() => App.Homework.MarkDone(hw.Id, !hw.IsDone), "homework done")) return;
         await ReloadAsync();
         await RaiseHomeworkAsync();
@@ -221,6 +234,8 @@ public sealed partial class ScheduleViewModel : ViewModelBase
 
     public async Task DeleteHomeworkAsync(HomeworkItemViewModel hw)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var confirm = new ConfirmDialogViewModel(T("hwDelete"), T("hwDeleteConfirm", hw.Text), T("delete"), danger: true);
         if (!await _shell.Dialogs.ShowAsync(confirm)) return;
         if (!await RunAsync(() => App.Homework.Delete(hw.Id), "homework delete")) return;
@@ -234,6 +249,8 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     /// of racing a test's teardown Dispose of the SQLite connection it reads from.</summary>
     private async Task RaiseHomeworkAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         _raising = true;
         try { _shell.RaiseHomeworkChanged(); }
         finally { _raising = false; }

@@ -67,11 +67,13 @@ public sealed partial class SummaryViewModel : ViewModelBase
 
     public async Task ReloadAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var version = ++_version;
         var today = _clock().Date;
         int? parity = _initialized ? SegmentIndex switch { 0 => 1, 1 => 2, _ => 0 } : null;
         var model = await RunAsync(() => _composer.Compose(parity, today), "summary");
-        if (model is null || version != _version) return;
+        if (model is null || version != _version || !operation.IsCurrent) return;
         _initialized = true;
         _suppress = true;
         SegmentIndex = model.Parity switch { 1 => 0, 2 => 1, _ => 2 };

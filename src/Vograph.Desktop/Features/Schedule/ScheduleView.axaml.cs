@@ -46,7 +46,7 @@ public partial class ScheduleView : UserControl
         {
             await new Animation
             {
-                Duration = duration, Easing = MotionSettings.Ease,
+                Duration = duration, Easing = MotionSettings.Ease, FillMode = FillMode.Both,
                 Children =
                 {
                     new KeyFrame { Cue = new Cue(0d), Setters = { new Setter(Visual.OpacityProperty, 0d), new Setter(TranslateTransform.XProperty, 12d * direction) } },

@@ -3,6 +3,7 @@
              xmlns:c="using:Vograph.Desktop.Controls"
              xmlns:loc="using:Vograph.Desktop.Services"
              xmlns:st="using:Vograph.Desktop.Features.Preferences"
+             xmlns:account="using:Vograph.Desktop.Features.Account"
              x:Class="Vograph.Desktop.Features.Preferences.SettingsView"
              x:DataType="st:SettingsViewModel">
   <UserControl.Styles>
@@ -11,9 +12,10 @@
     <!-- Tabular figures in the notification time boxes, same as the .tnum TextBlocks elsewhere. -->
     <Style Selector="TextBox.tnum"><Setter Property="FontFeatures" Value="tnum" /></Style>
   </UserControl.Styles>
-  <ScrollViewer>
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="32,26" Spacing="14" MaxWidth="720" HorizontalAlignment="Left">
       <TextBlock Classes="display" Text="{Binding Title}" />
+      <account:AccountPanelView DataContext="{Binding AccountPanel}" />
 
       <!-- Appearance -->
       <Border Classes="card">
@@ -22,10 +24,6 @@
           <Grid Classes="row" ColumnDefinitions="200,*">
             <TextBlock Text="{loc:T setTheme}" />
             <c:SegmentedControl Name="SettingsTheme" Grid.Column="1" Items="{Binding ThemeItems}" SelectedIndex="{Binding ThemeIndex}" />
-          </Grid>
-          <Grid Classes="row" ColumnDefinitions="200,*">
-            <TextBlock Text="{loc:T language}" />
-            <c:SegmentedControl Name="SettingsLanguage" Grid.Column="1" Items="{Binding LanguageItems}" SelectedIndex="{Binding LanguageIndex}" />
           </Grid>
           <c:Switch Content="{loc:T setCompactSidebar}" IsChecked="{Binding CompactSidebar}" AutomationProperties.AutomationId="Settings.CompactSidebar" />
           <c:Switch Content="{loc:T setAnimations}" IsChecked="{Binding Animations}" AutomationProperties.AutomationId="Settings.Animations" />
@@ -69,12 +67,16 @@
         <StackPanel Spacing="10">
           <TextBlock Classes="micro" Text="{loc:TU setNotifications}" />
           <c:Switch Content="{loc:T notifEnabled}" IsChecked="{Binding NotificationsEnabled}" AutomationProperties.AutomationId="Settings.NotifyEnabled" />
-          <Grid Classes="row" ColumnDefinitions="200,120,24,200,120,*" IsEnabled="{Binding NotificationsEnabled}">
-            <TextBlock Text="{loc:T notifTime1Label}" />
-            <TextBox Grid.Column="1" Text="{Binding NotifyTime1}" Classes="tnum" AutomationProperties.AutomationId="Settings.NotifyTime1" />
-            <TextBlock Grid.Column="3" Text="{loc:T notifTime2Label}" Margin="12,0,0,0" />
-            <TextBox Grid.Column="4" Text="{Binding NotifyTime2}" Classes="tnum" AutomationProperties.AutomationId="Settings.NotifyTime2" />
-          </Grid>
+          <StackPanel Spacing="4" IsEnabled="{Binding NotificationsEnabled}">
+            <Grid Classes="row" ColumnDefinitions="200,*">
+              <TextBlock Text="{loc:T notifTime1Label}" />
+              <TextBox Grid.Column="1" MaxWidth="120" HorizontalAlignment="Left" Text="{Binding NotifyTime1}" Classes="tnum" AutomationProperties.AutomationId="Settings.NotifyTime1" />
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="200,*">
+              <TextBlock Text="{loc:T notifTime2Label}" />
+              <TextBox Grid.Column="1" MaxWidth="120" HorizontalAlignment="Left" Text="{Binding NotifyTime2}" Classes="tnum" AutomationProperties.AutomationId="Settings.NotifyTime2" />
+            </Grid>
+          </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding NotificationsEnabled}">
             <Button Classes="primary" Content="{loc:T notifSave}" Command="{Binding SaveTimesCommand}" AutomationProperties.AutomationId="Settings.SaveTimes" />
             <Button Command="{Binding TestNotificationCommand}"
@@ -89,7 +91,7 @@
       </Border>
 
       <!-- Sync -->
-      <Border Classes="card">
+      <Border Classes="card" IsVisible="{Binding LegacyTransferAvailable}">
         <StackPanel Spacing="10">
           <TextBlock Classes="micro" Text="{loc:TU setSync}" />
           <StackPanel Orientation="Horizontal" Spacing="8">

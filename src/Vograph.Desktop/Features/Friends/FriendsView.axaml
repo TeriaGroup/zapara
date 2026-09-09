@@ -6,7 +6,7 @@
              xmlns:s="using:Vograph.Desktop.Features.Schedule"
              x:Class="Vograph.Desktop.Features.Friends.FriendsView"
              x:DataType="f:FriendsViewModel">
-  <ScrollViewer>
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="32,26" Spacing="14" MaxWidth="880" HorizontalAlignment="Left">
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel Margin="0,0,16,0">
@@ -33,7 +33,7 @@
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="f:FriendItemViewModel">
             <Border Classes="card" c:Appear.Kind="Cascade" c:Appear.Index="{Binding Index}">
-              <Grid ColumnDefinitions="Auto,140,*,Auto,Auto" VerticalAlignment="Center">
+              <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" VerticalAlignment="Center">
                 <!-- colour: a dot that opens the palette (taken colours are hidden) -->
                 <Button Classes="icon" ToolTip.Tip="{loc:T friendsColor}"
                         AutomationProperties.AutomationId="Friend.Color" AutomationProperties.Name="{loc:T friendsColor}">
@@ -54,8 +54,8 @@
                   </Button.Flyout>
                   <c:FriendDot ColorIndex="{Binding ColorIndex}" Fill="Full" Width="14" Height="14" />
                 </Button>
-                <TextBlock Grid.Column="1" Classes="subject" Text="{Binding GroupName}" VerticalAlignment="Center" Margin="10,0" />
-                <TextBox Grid.Column="2" Text="{Binding MemberNames}" PlaceholderText="{loc:T friendsNames}" LostFocus="OnNamesLostFocus" KeyDown="OnNamesKeyDown" Margin="0,0,12,0"
+                <TextBlock Grid.Column="1" Classes="subject" Text="{Binding GroupName}" VerticalAlignment="Center" Margin="10,0" TextTrimming="CharacterEllipsis" MaxWidth="160" />
+                <TextBox Grid.Column="2" MinWidth="0" Text="{Binding MemberNames}" PlaceholderText="{loc:T friendsNames}" LostFocus="OnNamesLostFocus" KeyDown="OnNamesKeyDown" Margin="0,0,12,0"
                          AutomationProperties.AutomationId="Friend.Names" />
                 <c:Switch Grid.Column="3" Content="{loc:T friendsEnabled}" IsChecked="{Binding Enabled}" VerticalAlignment="Center" Margin="0,0,12,0"
                           AutomationProperties.AutomationId="Friend.Enabled" />

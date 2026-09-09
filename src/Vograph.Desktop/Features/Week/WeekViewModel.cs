@@ -58,11 +58,13 @@ public sealed partial class WeekViewModel : ViewModelBase
 
     public async Task ReloadAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var version = ++_version;
         var today = _clock().Date;
         var parity = _initialized ? (ParityIndex == 0 ? 1 : 2) : 0;
         var model = await RunAsync(() => _composer.Compose(parity, today), "week");
-        if (model is null || version != _version) return;
+        if (model is null || version != _version || !operation.IsCurrent) return;
         _initialized = true;
         _suppress = true;
         ParityIndex = model.Parity == 1 ? 0 : 1;

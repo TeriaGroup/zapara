@@ -80,6 +80,8 @@ public sealed partial class FriendsViewModel : ViewModelBase
 
     public async Task LoadAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var version = ++_version;
         var today = _clock().Date;
         var data = await RunAsync(() =>
@@ -88,7 +90,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
             var settings = App.Db.GetSettings();
             return new FriendsData(friends, settings, ComputePreview(friends, settings, today));
         }, "friends");
-        if (data is null || version != _version) return;
+        if (data is null || version != _version || !operation.IsCurrent) return;
         _suppress = true;
         Strictness = Math.Clamp(data.Settings.IntersectionStrictness, 25, 100);
         AlwaysShowAll = data.Settings.AlwaysShowAllTrafficLights;
@@ -138,16 +140,20 @@ public sealed partial class FriendsViewModel : ViewModelBase
     /// view model's _reload, which would otherwise race this method's _version guard and drop its result.</summary>
     public async Task RefreshPreviewAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         if (_pendingSettingsSave is { } pending) await pending;
         var version = ++_version;
         var today = _clock().Date;
         var preview = await RunAsync(() => ComputePreview(App.Db.GetFriends(), App.Db.GetSettings(), today) ?? new PreviewData("", Array.Empty<FriendMark>()), "friends");
-        if (preview is null || version != _version) return;
+        if (preview is null || version != _version || !operation.IsCurrent) return;
         ApplyPreview(preview.Line.Length == 0 ? null : preview);
     }
 
     private async Task SaveSettingsAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var strictness = (int)Math.Round(Strictness);
         var always = AlwaysShowAll;
         var ok = await RunAsync(() =>
@@ -172,6 +178,8 @@ public sealed partial class FriendsViewModel : ViewModelBase
     [RelayCommand(AllowConcurrentExecutions = false)]
     private async Task Add()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         if (!CanAdd) return;
         var taken = Friends.Select(f => f.GroupName).ToHashSet(StringComparer.OrdinalIgnoreCase); // T7 #7: same group number, different case
         var groups = await RunAsync(() =>
@@ -186,6 +194,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
         var color = FriendPalette.Hex[FirstFreeColor()];
         var ok = await RunAsync(() => App.Db.InsertFriend(new FriendGroup { GroupName = name, ColorHex = color, Enabled = true, MemberNames = "" }), "friend add");
         if (!ok) return;
+        await _shell.EnsureApiNeedsAsync();
         await LoadAsync();
         RaiseScheduleChangedQuietly();
         App.Toasts.Ok(T("friendAdded", name));
@@ -200,9 +209,12 @@ public sealed partial class FriendsViewModel : ViewModelBase
 
     public async Task RemoveAsync(FriendItemViewModel item)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var confirm = new ConfirmDialogViewModel(T("friendsRemove"), T("friendsRemoveConfirm", item.GroupName), T("delete"), danger: true);
         if (!await _shell.Dialogs.ShowAsync(confirm)) return;
-        if (!await RunAsync(() => App.Db.DeleteFriend(item.Model.Id), "friend delete")) return;
+        if (!await RunAsync(() => { App.Db.DeleteFriend(item.Model.Id); App.Api.Invalidate(); }, "friend delete")) return;
+        await _shell.EnsureApiNeedsAsync();
         await LoadAsync();
         RaiseScheduleChangedQuietly();
     }
@@ -211,9 +223,13 @@ public sealed partial class FriendsViewModel : ViewModelBase
     /// gated write may swap item.Model, and the edit must not be lost or half-applied.</summary>
     public async Task SaveAsync(FriendItemViewModel item)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var model = item.Model;
         var copy = new FriendGroup { Id = model.Id, GroupName = model.GroupName, ColorHex = model.ColorHex, MemberNames = item.MemberNames, Enabled = item.Enabled };
-        if (!await RunAsync(() => App.Db.UpdateFriend(copy), "friend save")) return;
+        if (!await RunAsync(() => { App.Db.UpdateFriend(copy); App.Api.Invalidate(); }, "friend save")) return;
+        await _shell.EnsureApiNeedsAsync();
+        if (!operation.IsCurrent) return;
         model.MemberNames = copy.MemberNames;
         model.Enabled = copy.Enabled;
         RaiseScheduleChangedQuietly();
@@ -222,6 +238,8 @@ public sealed partial class FriendsViewModel : ViewModelBase
 
     public async Task SetColorAsync(FriendItemViewModel item, int index)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         if (index < 0 || index >= FriendPalette.Hex.Length) return;
         if (Friends.Any(f => !ReferenceEquals(f, item) && f.ColorIndex == index)) return; // taken
         var model = item.Model;

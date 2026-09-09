@@ -50,6 +50,8 @@ public sealed partial class MapsViewModel : ViewModelBase
     /// section follows the next lesson. Called fire-and-forget by the shell, so nothing in here may throw.</summary>
     public override async Task ActivateAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         await RefreshCacheStatusAsync();
         if (_shell.TakePendingMap() is ({ } pending, var lessonName)) await ShowLessonMapAsync(pending, lessonName);
         else if (Mode is MapMode.None or MapMode.NextLesson) await TrackNextAsync();
@@ -99,6 +101,8 @@ public sealed partial class MapsViewModel : ViewModelBase
 
     public async Task TrackNextAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var version = ++_version;
         var now = _clock();
         var data = await RunAsync(() =>
@@ -111,7 +115,7 @@ public sealed partial class MapsViewModel : ViewModelBase
             var name = LessonText.StripType(App.Overrides.GetDisplayName(lesson.SubjectRaw, lesson.DayOfWeek), lesson.TypeRaw);
             return new NextData(lesson, date, map, name, map is { HasMap: true } ? App.Maps.GetCoords(map.Building == "ВЦ" ? "ГК" : map.Building, map.Floor, map.RoomRaw) : null);
         }, "maps");
-        if (data is null || version != _version) return;
+        if (data is null || version != _version || !operation.IsCurrent) return;
         if (data.Lesson is null || data.Map is null)
         {
             Mode = MapMode.None;
@@ -129,10 +133,12 @@ public sealed partial class MapsViewModel : ViewModelBase
     /// <summary>◉ on a lesson: show that lesson's plan (manual-like: tracking stops until «К следующей паре»).</summary>
     public async Task ShowLessonMapAsync(MapInfo map, string? lessonName)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var version = ++_version;
         _lessonName = lessonName; _start = _end = null;
         var coords = map.HasMap ? await RunAsync(() => App.Maps.GetCoords(map.Building == "ВЦ" ? "ГК" : map.Building, map.Floor, map.RoomRaw) ?? new CoordsRect { w = -1 }, "maps") : null;
-        if (version != _version) return;
+        if (version != _version || !operation.IsCurrent) return;
         Mode = MapMode.Lesson;
         await ShowMapAsync(map, coords is { w: > 0 } ? coords : null);
     }
@@ -140,6 +146,8 @@ public sealed partial class MapsViewModel : ViewModelBase
     [RelayCommand]
     private async Task SelectFloor(FloorPill pill)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var version = ++_version;
         var building = Buildings[Math.Clamp(BuildingIndex, 0, 1)];
         var map = await RunAsync(() => App.Maps.GetAllMaps().First(m => m.Building == building && m.Floor == pill.Floor), "maps");
@@ -151,6 +159,8 @@ public sealed partial class MapsViewModel : ViewModelBase
 
     private async Task ShowMapAsync(MapInfo? map, CoordsRect? coords)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         _coords = coords;
         Current = map;
         Note = map is null ? null : NoteFor(map);
@@ -175,6 +185,7 @@ public sealed partial class MapsViewModel : ViewModelBase
             App.Log.Error("maps", ex);
             path = null; // unreadable cache: the same outcome as "no copy anywhere"
         }
+        if (!operation.IsCurrent) return;
         if (path is null)
         {
             SetImage(null);
@@ -190,7 +201,7 @@ public sealed partial class MapsViewModel : ViewModelBase
             ImageError = T("mapNoImage");
             return;
         }
-        if (_detached || !ReferenceEquals(Current, map)) { bmp.Dispose(); return; } // superseded or detached while decoding (T6 #15)
+        if (_detached || !operation.IsCurrent || !ReferenceEquals(Current, map)) { bmp.Dispose(); return; }
         SetImage(bmp);
         if (MapsComposer.Highlight(coords, bmp.PixelSize) is { } r)
         {
@@ -218,9 +229,12 @@ public sealed partial class MapsViewModel : ViewModelBase
     /// so the probe runs off the UI thread; a failing one keeps the last known text instead of taking the section down.</summary>
     private async Task RefreshCacheStatusAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         try
         {
             var (cached, total) = await Task.Run(() => App.MapFiles.CacheStatus());
+            if (!operation.IsCurrent) return;
             CacheStatus = T("mapCacheStatus", cached, total);
         }
         catch (Exception ex)
@@ -232,6 +246,8 @@ public sealed partial class MapsViewModel : ViewModelBase
     [RelayCommand(AllowConcurrentExecutions = false)]
     private async Task DownloadAll()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         IsDownloading = true;
         App.Toasts.Info(T("mapDownloading"));
         try
@@ -266,6 +282,8 @@ public sealed partial class MapsViewModel : ViewModelBase
     [RelayCommand]
     private async Task Verify()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         await RefreshCacheStatusAsync();
         App.Toasts.Info(CacheStatus);
     }

@@ -22,7 +22,7 @@
     </DataTemplate>
   </UserControl.Resources>
 
-  <ScrollViewer>
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="32,26" Spacing="12">
       <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
         <StackPanel Margin="0,0,16,0">

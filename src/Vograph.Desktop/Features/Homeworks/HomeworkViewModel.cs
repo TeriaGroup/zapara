@@ -57,10 +57,12 @@ public sealed partial class HomeworkViewModel : ViewModelBase
 
     public async Task LoadAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var version = ++_version;
         var today = _clock().Date;
         var model = await RunAsync(() => _composer.Compose(today), "homework");
-        if (model is null || version != _version) return;
+        if (model is null || version != _version || !operation.IsCurrent) return;
         HasGroup = model.HasGroup;
         IsLoaded = true;
         Groups.Clear();
@@ -80,6 +82,8 @@ public sealed partial class HomeworkViewModel : ViewModelBase
     [RelayCommand(AllowConcurrentExecutions = false)]
     private async Task Add()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var subjects = await RunAsync(() => _composer.Subjects(), "homework subjects");
         if (subjects is null) return;
         if (subjects.Count == 0)
@@ -102,6 +106,8 @@ public sealed partial class HomeworkViewModel : ViewModelBase
 
     public async Task EditAsync(HomeworkRowViewModel row)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var existing = await RunAsync<Core.Models.Homework>(() => App.Homework.GetById(row.Entry.Homework.Id)!, "homework edit");
         if (existing is null) return;
         var dues = await RunAsync(() => Enumerable.Range(1, 10).Select(n => App.Homework.ComputeDueDate(existing.SubjectRawNormalized, existing.CreatedAt, n)).ToArray(), "homework");
@@ -114,12 +120,16 @@ public sealed partial class HomeworkViewModel : ViewModelBase
 
     public async Task ToggleDoneAsync(HomeworkRowViewModel row)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         if (await RunAsync(() => App.Homework.MarkDone(row.Entry.Homework.Id, !row.IsDone), "homework done"))
             await ChangedAsync();
     }
 
     public async Task DeleteAsync(HomeworkRowViewModel row)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var confirm = new ConfirmDialogViewModel(T("hwDelete"), T("hwDeleteConfirm", row.Text), T("delete"), danger: true);
         if (!await _shell.Dialogs.ShowAsync(confirm)) return;
         if (await RunAsync(() => App.Homework.Delete(row.Entry.Homework.Id), "homework delete"))
@@ -130,6 +140,8 @@ public sealed partial class HomeworkViewModel : ViewModelBase
     /// the very HomeworkChanged we raise) from composing the section a second time (T8 #1).</summary>
     private async Task ChangedAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         await LoadAsync();
         _raising = true;
         try { _shell.RaiseHomeworkChanged(); }

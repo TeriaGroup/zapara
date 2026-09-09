@@ -81,6 +81,8 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
 
     public async Task LoadAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var s = await RunAsync(() => App.Db.GetSettings(), "settings");
         if (s is null) return;
         _suppress = true;
@@ -99,6 +101,8 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
     /// <summary>True when a newer release exists. Never throws.</summary>
     public async Task<bool> CheckAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return false;
         if (IsChecking) return false;
         State = UpdateState.Checking;
         // Every check starts from a clean slate: a release found last time must not stay installable after
@@ -112,16 +116,18 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         AutoUpdateService.UpdateInfo? info;
         try
         {
-            info = await App.UpdateSource.GetLatestAsync();
+            info = await App.UpdateSource.GetLatestAsync(operation.Token);
         }
         catch (Exception ex)
         {
             App.Log.Error("update check", ex);
+            if (!operation.IsCurrent) return false;
             CheckedAt = Stamp();
             HtmlUrl = SettingsViewModel.ReleasesUrl;
             Fail(Friendly(ex, App.Loc));
             return false;
         }
+        if (!operation.IsCurrent) return false;
         CheckedThisSession = true;
         CheckedAt = Stamp();
         if (info is null || string.IsNullOrEmpty(info.ZipUrl))
@@ -147,6 +153,8 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
 
     public async Task<bool> DownloadAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return false;
         if (State != UpdateState.Available || _zipUrl is null || LatestTag is null) return false;
         var zip = Path.Combine(_updatesDir, $"ZAPARA_{SafeTag(LatestTag)}_win-x64.zip");
         if (File.Exists(zip) && new FileInfo(zip).Length > 0)
@@ -168,7 +176,9 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         StatusText = T("updDownloading", LatestTag);
         try
         {
-            await App.UpdateSource.DownloadAsync(_zipUrl, zip, new Progress<double>(p => Progress = p));
+            await App.UpdateSource.DownloadAsync(_zipUrl, zip, new Services.Profiles.ProfileProgress<double>(App.Work, operation,
+                p => Progress = p, ex => App.Log.Error("update progress", ex)), operation.Token);
+            if (!operation.IsCurrent) return false;
             if (!await Task.Run(() => LooksLikeZip(zip)))
             {
                 App.Log.Warn($"update: {zip} is not a release archive, deleting it");
@@ -196,6 +206,8 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
     [RelayCommand(AllowConcurrentExecutions = false)]
     public async Task InstallAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         if (Interlocked.Exchange(ref _installing, 1) == 1) return;
         try
         {
@@ -238,6 +250,8 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
     /// installer are skipped. Without this, a relaunch that can never unpack would toast and shut down forever.</summary>
     public async Task RunStartupFlowAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         await CleanupAsync();
         var s = await RunAsync(() => App.Db.GetSettings(), "settings");
         if (s is null || !s.AutoUpdate) return;

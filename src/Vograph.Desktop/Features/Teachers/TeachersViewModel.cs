@@ -108,12 +108,15 @@ public sealed partial class TeachersViewModel : ViewModelBase
     /// bundled copy, no network) is retried the next time the section is activated instead of sticking forever.</summary>
     private async Task LoadOnceAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         IsLoading = true;
         LoadError = null;
         try
         {
             var have = App.Lecturers.IsLoaded || await Task.Run(() => App.Lecturers.LoadLocalAsync());
             if (!have && AllowNetwork) have = await Task.Run(() => App.Lecturers.RefreshAsync());
+            if (!operation.IsCurrent) return;
             if (!have)
             {
                 LoadError = T("teachersLoadFail", T("teachersNoSource"));
@@ -131,11 +134,15 @@ public sealed partial class TeachersViewModel : ViewModelBase
 
     private async Task RefreshInBackgroundAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         if (await Task.Run(() => App.Lecturers.RefreshAsync())) await RebuildAsync();
     }
 
     private async Task RebuildAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var (lecturers, lessons) = (App.Lecturers.Lecturers, App.Lecturers.Lessons);
         _index = await Task.Run(() => new TeacherIndex(lecturers, lessons)); // 718 lecturers grouped off the UI thread (T4 minor 90)
         await LoadMyGroupAsync();
@@ -145,6 +152,8 @@ public sealed partial class TeachersViewModel : ViewModelBase
 
     private async Task LoadMyGroupAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var index = _index; // captured before the lambda: RunAsync moves the work to a pool thread, and a concurrent RebuildAsync could reassign _index meanwhile
         var data = await RunAsync(() =>
         {
@@ -153,7 +162,7 @@ public sealed partial class TeachersViewModel : ViewModelBase
             var name = id.Length == 0 ? "" : App.Db.GetGroup(id)?.Name ?? "";
             return new MyGroupData(id, name, s.ParityInvert, id.Length == 0 ? new HashSet<string>() : TeacherSearch.MyLecturerIds(App.Db.GetAllLessonsForGroup(id), index.Lecturers));
         }, "teachers");
-        if (data is null) return;
+        if (data is null || !operation.IsCurrent) return;
         _myGroupId = data.Id;
         _myGroupName = data.Name;
         _invert = data.Invert;

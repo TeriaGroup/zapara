@@ -20,9 +20,9 @@
       </Button>
     </Grid>
 
-    <Grid Grid.Row="1" ColumnDefinitions="Auto,12,*,Auto" Margin="0,14,0,10">
+    <WrapPanel Grid.Row="1" ItemSpacing="12" LineSpacing="8" Margin="0,14,0,10">
       <c:SegmentedControl Name="MapsBuilding" Items="{Binding SegmentItems}" SelectedIndex="{Binding BuildingIndex}" VerticalAlignment="Center" />
-      <ItemsControl Grid.Column="2" ItemsSource="{Binding Floors}" VerticalAlignment="Center">
+      <ItemsControl ItemsSource="{Binding Floors}" VerticalAlignment="Center">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="m:FloorPill">
@@ -32,7 +32,7 @@
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
-      <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+      <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
         <Button Classes="icon" Click="OnZoomOut" ToolTip.Tip="{loc:T mapZoomOut}"
                 AutomationProperties.AutomationId="Maps.ZoomOut" AutomationProperties.Name="{loc:T mapZoomOut}"><c:Icon Data="{StaticResource Icon.Minus}" Size="16" /></Button>
         <Button Classes="icon" Click="OnZoomIn" ToolTip.Tip="{loc:T mapZoomIn}"
@@ -57,7 +57,7 @@
           <c:Icon Data="{StaticResource Icon.More}" Size="16" />
         </Button>
       </StackPanel>
-    </Grid>
+    </WrapPanel>
 
     <Border Grid.Row="2" Classes="card" Padding="0" ClipToBounds="True"
             AutomationProperties.AutomationId="Maps.Plan" AutomationProperties.AccessibilityView="Content">

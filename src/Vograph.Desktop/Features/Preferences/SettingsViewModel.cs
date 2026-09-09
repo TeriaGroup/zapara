@@ -31,9 +31,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         _shell = shell;
         _clock = clock ?? (() => DateTime.Now);
         _themeItems = BuildThemeItems();
-        _languageItems = new[] { T("langRu"), T("langEn") };
         _themeIndex = app.Theme is { } t ? (int)t.Choice : (int)app.Prefs.Theme;
-        _languageIndex = app.Loc.Language == "en" ? 1 : 0;
         _compactSidebar = shell.SidebarCollapsed;
         _animations = app.Prefs.Animations;
         _notificationsEnabled = app.Prefs.NotificationsEnabled;
@@ -78,12 +76,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// AllowNetwork is the process-wide gate (false under TestDb), so the check never reaches GitHub in tests.</summary>
     public override async Task ActivateAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         await LoadAsync();
         await Updates.LoadAsync();
         if (App.AllowNetwork && Updates.AutoUpdate && !Updates.CheckedThisSession && !Updates.IsChecking) _ = Updates.CheckAsync();
     }
 
     public string Title => T("navSettings");
+    public Features.Account.AccountPanelViewModel AccountPanel => App.Shared.AccountPanel;
+    public bool LegacyTransferAvailable => App.Profile.IsGuest;
 
     /// <summary>The shell's single update state: the card here and the sidebar item show the same check.</summary>
     public UpdateCheckViewModel Updates => _shell.Updates;
@@ -91,8 +93,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
     // ---- Appearance ----
     [ObservableProperty] private IList<string> _themeItems;
     [ObservableProperty] private int _themeIndex;
-    [ObservableProperty] private IList<string> _languageItems;
-    [ObservableProperty] private int _languageIndex;
     [ObservableProperty] private bool _compactSidebar;
     [ObservableProperty] private bool _animations;
 
@@ -100,18 +100,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     partial void OnThemeIndexChanged(int value)
     {
-        if (_suppress) return;
+        if (_suppress || !CanPublish) return;
         var choice = (ThemeChoice)Math.Clamp(value, 0, 2);
         if (App.Theme is { } theme) theme.Apply(choice);
         else { App.Prefs.Theme = choice; App.Prefs.Save(); }
-    }
-
-    partial void OnLanguageIndexChanged(int value)
-    {
-        if (_suppress) return;
-        var lang = value == 1 ? "en" : "ru";
-        App.Loc.SetLanguage(lang); // relabels every section at once
-        _ = RunAsync(() => { var s = App.Db.GetSettings(); s.Language = lang; App.Db.SaveSettings(s); }, "language");
     }
 
     partial void OnCompactSidebarChanged(bool value)
@@ -121,7 +113,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     partial void OnAnimationsChanged(bool value)
     {
-        if (_suppress) return;
+        if (_suppress || !CanPublish) return;
         App.Prefs.Animations = value;
         App.Prefs.Save();
         App.Motion.Refresh(); // App listens and adds/removes Theme/Motion.axaml
@@ -142,6 +134,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     private async Task SaveInvertAsync(bool value)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var ok = await RunAsync(() =>
         {
             var s = App.Db.GetSettings();
@@ -157,6 +151,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [RelayCommand(AllowConcurrentExecutions = false)]
     private async Task Refresh()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         await _shell.RefreshScheduleAsync(force: true, quiet: false);
         await LoadAsync();
     }
@@ -168,7 +164,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     partial void OnNotificationsEnabledChanged(bool value)
     {
-        if (_suppress) return;
+        if (_suppress || !CanPublish) return;
         App.Prefs.NotificationsEnabled = value;
         App.Prefs.Save();
     }
@@ -176,6 +172,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [RelayCommand(AllowConcurrentExecutions = false)]
     private async Task SaveTimes()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         if (!NotificationScheduler.IsValidTime(NotifyTime1) || !NotificationScheduler.IsValidTime(NotifyTime2))
         {
             App.Toasts.Warn(T("notifBadTime"));
@@ -194,13 +192,15 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private string _qrHint = "";
     [ObservableProperty] private bool _lanSync;
     [ObservableProperty] private string _lanAddress = "";
-    private bool _qrViaServer; // which of the two hints the visible QR earned, so a language switch can redo it
+    private bool _qrViaServer; // which of the two hints the visible QR earned
 
     [RelayCommand(AllowConcurrentExecutions = false)]
     private async Task Export()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent || !App.Profile.IsGuest) return;
         var path = await App.FileDialogs.SaveJsonAsync($"vograph-sync-{_clock().ToString("yyyyMMdd", CultureInfo.InvariantCulture)}.json");
-        if (path is null) return;
+        if (path is null || !operation.IsCurrent) return;
         if (await RunAsync(() => App.Sync.ExportToFile(path), "export"))
             App.Toasts.Ok(T("syncExported", Path.GetFileName(path)));
     }
@@ -210,10 +210,12 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [RelayCommand(AllowConcurrentExecutions = false)]
     private async Task Import()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent || !App.Profile.IsGuest) return;
         var path = await App.FileDialogs.OpenJsonAsync();
-        if (path is null) return;
+        if (path is null || !operation.IsCurrent) return;
         string json;
-        try { json = await File.ReadAllTextAsync(path, Encoding.UTF8); }
+        try { json = await File.ReadAllTextAsync(path, Encoding.UTF8, operation.Token); }
         catch (Exception ex)
         {
             App.Log.Error("import read", ex);
@@ -237,6 +239,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [RelayCommand(AllowConcurrentExecutions = false)]
     private async Task ToggleQr()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent || !App.Profile.IsGuest) return;
         if (QrVisible)
         {
             QrVisible = false;
@@ -254,7 +258,12 @@ public sealed partial class SettingsViewModel : ViewModelBase
             return new QrData(qrPath, content.StartsWith("http", StringComparison.OrdinalIgnoreCase));
         }, "qr");
         if (data is null) return;
-        try { QrImage = await Task.Run(() => new Bitmap(data.Path)); }
+        try
+        {
+            var image = await Task.Run(() => new Bitmap(data.Path));
+            if (!operation.IsCurrent) { image.Dispose(); return; }
+            QrImage = image;
+        }
         catch (Exception ex)
         {
             App.Log.Error("qr image", ex);
@@ -269,6 +278,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
     partial void OnLanSyncChanged(bool value)
     {
         if (_suppress) return;
+        if (!CanPublish || !App.Profile.IsGuest)
+        {
+            Suppressed(() => LanSync = false);
+            return;
+        }
         if (value)
         {
             try
@@ -300,26 +314,29 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// off the UI thread and shown once it is known — the UI thread never waits on a resolver.</summary>
     private async Task ShowLanAddressAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent || !App.Profile.IsGuest) return;
         var address = await App.LanSync.ResolveAddressAsync(); // never throws: falls back to the loopback address
-        if (App.LanSync.IsRunning) LanAddress = T("syncLanAddress", address);
+        if (operation.IsCurrent && App.LanSync.IsRunning) LanAddress = T("syncLanAddress", address);
     }
 
     private sealed record SettingsData(Settings Settings, string? GroupName);
 
     public async Task LoadAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var version = ++_version;
         var data = await RunAsync(() =>
         {
             var s = App.Db.GetSettings();
             return new SettingsData(s, string.IsNullOrEmpty(s.MyGroupId) ? null : App.Db.GetGroup(s.MyGroupId)?.Name);
         }, "settings");
-        if (data is null || version != _version) return;
+        if (data is null || version != _version || !operation.IsCurrent) return;
         _suppress = true;
         GroupName = data.GroupName ?? T("noGroup");
         ParityInvert = data.Settings.ParityInvert;
         ThemeIndex = App.Theme is { } t ? (int)t.Choice : (int)App.Prefs.Theme;
-        LanguageIndex = App.Loc.Language == "en" ? 1 : 0;
         CompactSidebar = _shell.SidebarCollapsed;
         Animations = App.Prefs.Animations;
         NotificationsEnabled = App.Prefs.NotificationsEnabled;
@@ -337,11 +354,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
     }
 
     /// <summary>ISO UTC → «06.09 15:00» local, or «ещё не было». UpdatedText reuses the sidebar group card's
-    /// "updatedChip" template (identical "обновлено {0}" / "updated {0}" text in both languages) instead of a
-    /// second key with the same value; only the argument's own format (date+time here vs. date-only there) differs.</summary>
+    /// "updatedChip" template instead of a second key with the same value; only the argument's own format
+    /// (date+time here vs. date-only there) differs.</summary>
     private string Stamp(string? iso) =>
         DateTime.TryParse(iso, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var at)
-            ? at.ToLocalTime().ToString(App.Loc.Language == "en" ? "MM-dd HH:mm" : "dd.MM HH:mm", CultureInfo.InvariantCulture)
+            ? at.ToLocalTime().ToString("dd.MM HH:mm", CultureInfo.InvariantCulture)
             : T("setNever");
 
     // ---- About ----
@@ -355,7 +372,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
     {
         _suppress = true;
         ThemeItems = BuildThemeItems();
-        LanguageItems = new[] { T("langRu"), T("langEn") };
         _suppress = false;
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(VersionText));
