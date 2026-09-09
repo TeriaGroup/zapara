@@ -1,64 +1,71 @@
 package ru.bgtu_voenmeh.zapara.ui.theme
 
-import androidx.compose.material3.Typography
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.platform.LocalContext
+import ru.bgtu_voenmeh.zapara.ui.AndroidUiCopy
+import ru.bgtu_voenmeh.zapara.ui.LocalUiCopy
 
-// Charon palette 1:1 (see src/Vograph/Themes/Vograph.xaml).
-val Obsidian = Color(0xFF0E1013)
-val Panel = Color(0xFF15181D)
-val PanelAlt = Color(0xFF1B1F26)
-val Marble = Color(0xFFC5CAD3)
-val MarbleDim = Color(0xFF6B7280)
-val Bronze = Color(0xFF6CA5E0)
-val Patina = Color(0xFF98C379)
-val Cinnabar = Color(0xFFE06C75)
-val BorderDim = Color(0xFF3A424D)
+enum class ThemeChoice(val key: String) {
+    System("system"), Light("light"), Dark("dark");
 
-private val DarkColors = darkColorScheme(
-    primary = Bronze,
-    onPrimary = Obsidian,
-    background = Obsidian,
-    onBackground = Marble,
-    surface = Panel,
-    onSurface = Marble,
-    surfaceVariant = PanelAlt,
-    onSurfaceVariant = MarbleDim,
-    error = Cinnabar,
-    onError = Obsidian,
-    outline = BorderDim
-)
-
-private val MonoTypography: Typography
-    get() {
-        val base = Typography()
-        val mono = FontFamily.Monospace
-        return base.copy(
-            displayLarge = base.displayLarge.copy(fontFamily = mono),
-            displayMedium = base.displayMedium.copy(fontFamily = mono),
-            displaySmall = base.displaySmall.copy(fontFamily = mono),
-            headlineLarge = base.headlineLarge.copy(fontFamily = mono),
-            headlineMedium = base.headlineMedium.copy(fontFamily = mono),
-            headlineSmall = base.headlineSmall.copy(fontFamily = mono),
-            titleLarge = base.titleLarge.copy(fontFamily = mono),
-            titleMedium = base.titleMedium.copy(fontFamily = mono),
-            titleSmall = base.titleSmall.copy(fontFamily = mono),
-            bodyLarge = base.bodyLarge.copy(fontFamily = mono),
-            bodyMedium = base.bodyMedium.copy(fontFamily = mono),
-            bodySmall = base.bodySmall.copy(fontFamily = mono),
-            labelLarge = base.labelLarge.copy(fontFamily = mono),
-            labelMedium = base.labelMedium.copy(fontFamily = mono),
-            labelSmall = base.labelSmall.copy(fontFamily = mono)
-        )
+    fun isDark(systemDark: Boolean): Boolean = when (this) {
+        System -> systemDark
+        Light -> false
+        Dark -> true
     }
 
+    companion object {
+        fun fromKey(key: String?): ThemeChoice = entries.firstOrNull { it.key == key } ?: System
+    }
+}
+
+private val LocalColors = staticCompositionLocalOf { DarkColors }
+
+object Zapara {
+    val colors: ZaparaColors @Composable get() = LocalColors.current
+    val motion: MotionSettings @Composable get() = LocalMotion.current
+    val typography get() = ZaparaType
+    val type get() = ZaparaType
+    val space get() = ZaparaSpace
+    val radii get() = ZaparaRadius
+}
+
 @Composable
-fun ZaparaTheme(content: @Composable () -> Unit) {
-    androidx.compose.material3.MaterialTheme(
-        colorScheme = DarkColors,
-        typography = MonoTypography,
-        content = content
+fun ZaparaTheme(
+    choice: ThemeChoice = ThemeChoice.System,
+    motion: MotionSettings = MotionSettings.On,
+    content: @Composable () -> Unit
+) {
+    val colors = if (choice.isDark(isSystemInDarkTheme())) DarkColors else LightColors
+    val effectiveMotion = rememberMotionSettings(motion.enabled)
+    val base = if (colors.isDark) darkColorScheme() else lightColorScheme()
+    val scheme = base.copy(
+        primary = colors.accent, onPrimary = colors.onAccent,
+        primaryContainer = colors.chip, onPrimaryContainer = colors.text1,
+        inversePrimary = colors.onAccent,
+        secondary = colors.text1, onSecondary = colors.onAccent,
+        secondaryContainer = colors.chip, onSecondaryContainer = colors.text1,
+        tertiary = colors.text1, onTertiary = colors.onAccent,
+        tertiaryContainer = colors.chip, onTertiaryContainer = colors.text1,
+        background = colors.canvas, onBackground = colors.text1,
+        surface = colors.surface, onSurface = colors.text1,
+        surfaceVariant = colors.card, onSurfaceVariant = colors.text2,
+        surfaceTint = colors.surface,
+        inverseSurface = colors.text1, inverseOnSurface = colors.canvas,
+        error = colors.bad, onError = colors.onBad,
+        errorContainer = colors.badSoft, onErrorContainer = colors.bad,
+        outline = colors.lineStrong, outlineVariant = colors.line, scrim = colors.backdrop
     )
+    val ctx = LocalContext.current
+    val copy = remember(ctx) { AndroidUiCopy(ctx) }
+    CompositionLocalProvider(LocalColors provides colors, LocalMotion provides effectiveMotion, LocalUiCopy provides copy) {
+        MaterialTheme(colorScheme = scheme, typography = ZaparaTypography, content = content)
+    }
 }
