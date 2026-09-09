@@ -16,7 +16,9 @@ enum class AccountClientFailure {
     InvalidRequest, InvalidCredentials, InvalidSession, UsernameUnavailable, SessionNotFound,
     RateLimited, DbUnavailable, RegistrationUnavailable, NotConfigured, ServerUnavailable,
     InvalidPayload, BodyTooLarge, Transport, Timeout, VaultUnavailable, ReauthenticationRequired,
-    SessionChanged, LockTimeout, InternalError
+    SessionChanged, LockTimeout, InternalError, InvalidExternalProof, ProviderUnavailable,
+    ExportNotFound, RecoveryUnavailable, ExternalAttemptExpired, LastLoginMethod,
+    IdentityUnavailable, PasswordAlreadySet
 }
 
 class AccountClientException(val failure: AccountClientFailure) : Exception("Операция аккаунта не выполнена.")
@@ -39,6 +41,96 @@ data class AccountSession(
 ) {
     override fun toString(): String = "AccountSession { [REDACTED] }"
 }
+
+data class AccountDevice(
+    val familyId: String,
+    val deviceId: String,
+    val deviceName: String,
+    val platform: String,
+    val createdAt: Instant,
+    val lastSeenAt: Instant,
+    val expiresAt: Instant,
+    val isCurrent: Boolean
+)
+
+data class AccountDevicesPage(
+    val devices: List<AccountDevice>,
+    val nextCursor: String?
+)
+
+data class AccountExportJob(
+    val exportId: String,
+    val status: String,
+    val createdAt: Instant,
+    val completedAt: Instant?,
+    val expiresAt: Instant?
+)
+
+data class AccountExportDownload(
+    val bytes: ByteArray,
+    val fileName: String
+) {
+    override fun toString(): String = "AccountExportDownload { ${bytes.size} }"
+}
+
+data class AccountDeleteResponse(
+    val status: String,
+    val remoteWipe: Boolean
+)
+
+data class AccountReauthProof(
+    val proofToken: String,
+    val purpose: String,
+    val expiresAt: Instant
+) {
+    override fun toString(): String = "AccountReauthProof { [REDACTED] }"
+}
+
+data class AccountExternalStartRequest(
+    val purpose: String,
+    val nativeChallenge: String,
+    val nativeChallengeMethod: String,
+    val deviceId: String,
+    val deviceName: String,
+    val platform: String,
+    val returnKind: String,
+    val returnPort: Int? = null,
+    val proofToken: String? = null,
+    val proofPurpose: String? = null
+) {
+    override fun toString(): String = "AccountExternalStartRequest { [REDACTED] }"
+}
+
+data class AccountExternalStart(
+    val transactionId: String,
+    val authorizeUrl: String,
+    val expiresAt: Instant
+) {
+    override fun toString(): String = "AccountExternalStart { [REDACTED] }"
+}
+
+data class AccountExternalExchangeRequest(
+    val transactionId: String,
+    val nativeVerifier: String,
+    val handoffCode: String
+) {
+    override fun toString(): String = "AccountExternalExchangeRequest { [REDACTED] }"
+}
+
+data class AccountExternalExchange(
+    val status: String,
+    val session: AccountSession?,
+    val proof: AccountReauthProof?
+) {
+    override fun toString(): String = "AccountExternalExchange { [REDACTED] }"
+}
+
+data class AccountExternalStatus(val status: String)
+
+data class AccountExternalIdentity(
+    val provider: String,
+    val linkedAt: Instant
+)
 
 enum class AccountRefreshState { Ready, Pending }
 
@@ -169,6 +261,17 @@ object AccountValidation {
 
     fun platform(value: String?): String =
         if (value == "windows" || value == "android") value else throw invalid()
+
+    fun opaque(value: String?, min: Int = 43, max: Int = 128): String {
+        if (value == null || value.length < min || value.length > max) throw invalid()
+        for (c in value) {
+            if (c !in 'A'..'Z' && c !in 'a'..'z' && c !in '0'..'9' && c != '-' && c != '_') throw invalid()
+        }
+        return value
+    }
+
+    fun asciiCursor(value: String): Boolean =
+        value.length == 55 && value.all { it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' || it == '_' || it == '-' }
 
     fun token(value: String?, prefix: String): String {
         if (value == null || value.length != 46 || !value.startsWith(prefix)) throw invalid()

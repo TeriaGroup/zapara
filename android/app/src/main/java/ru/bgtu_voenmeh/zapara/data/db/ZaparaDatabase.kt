@@ -292,6 +292,33 @@ data class SyncStateEntity(
     val afterSequence: Long = 0
 )
 
+@Dao
+interface SyncOutboxDao {
+    @Query("SELECT * FROM sync_outbox ORDER BY createdAtUtc, opId")
+    fun listAll(): List<SyncOutboxEntity>
+
+    @Query("SELECT * FROM sync_outbox WHERE opId = :opId LIMIT 1")
+    fun find(opId: String): SyncOutboxEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsert(row: SyncOutboxEntity)
+
+    @Query("DELETE FROM sync_outbox WHERE opId = :opId")
+    fun delete(opId: String)
+
+    @Query("UPDATE sync_outbox SET syncEpoch = NULL WHERE status = 'pending'")
+    fun clearPendingEpochs()
+}
+
+@Dao
+interface SyncStateDao {
+    @Query("SELECT * FROM sync_state WHERE id = 1 LIMIT 1")
+    fun get(): SyncStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsert(row: SyncStateEntity)
+}
+
 @Database(
     entities = [
         GroupEntity::class, LessonEntity::class, FriendEntity::class, SettingsEntity::class,
@@ -310,4 +337,6 @@ abstract class ZaparaDatabase : RoomDatabase() {
     abstract fun homeworkDao(): HomeworkDao
     abstract fun apiCatalogDao(): ApiCatalogDao
     abstract fun apiCacheMetadataDao(): ApiCacheMetadataDao
+    abstract fun syncOutboxDao(): SyncOutboxDao
+    abstract fun syncStateDao(): SyncStateDao
 }

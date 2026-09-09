@@ -56,7 +56,7 @@ public class AutomationIdsTests : UiTest
     {
         "Win.Minimize", "Win.Maximize", "Win.Close",
         "Shell.SidebarToggle", "Shell.GroupCard", "Shell.ThemeToggle", "Nav.Update",
-        "Nav.Schedule", "Nav.Week", "Nav.Summary", "Nav.Teachers", "Nav.Maps", "Nav.Friends", "Nav.Homework", "Nav.Settings",
+        "Nav.Schedule", "Nav.Week", "Nav.Summary", "Nav.Teachers", "Nav.Maps", "Nav.Friends", "Nav.Homework", "Nav.Community", "Nav.Settings",
         "Schedule.Title", "Schedule.Subtitle", "Schedule.Prev", "Schedule.Next", "Schedule.Today",
         "ScheduleSegment.0", "ScheduleSegment.1", "ScheduleSegment.2",
         "Lesson.Title", "Lesson.Rename", "Lesson.Homework", "Lesson.Map", "Lesson.Hw",
@@ -79,7 +79,7 @@ public class AutomationIdsTests : UiTest
     };
 
     /// <summary>
-    /// One pass over the whole window collecting ids: eight sections, the fullscreen map overlay, the three
+    /// One pass over the whole window collecting ids: nine sections, the fullscreen map overlay, the three
     /// dialogs that between them carry every Dialog.* id, and a toast. IsVisible="False" leaves a control in the
     /// visual tree, so the state-gated entries (Nav.Update, Updates.Install, Teachers.Retry, Dialog.Reset) need
     /// no contrived state; what really needs data is the item templates — lessons, week days, floor pills,
@@ -104,6 +104,7 @@ public class AutomationIdsTests : UiTest
         shell.Register(SectionKey.Maps, () => new Features.Maps.MapsViewModel(db.Services, shell, () => Mon7));
         shell.Register(SectionKey.Friends, () => new Features.Friends.FriendsViewModel(db.Services, shell, () => Mon7));
         shell.Register(SectionKey.Homework, () => new Features.Homeworks.HomeworkViewModel(db.Services, shell, () => Mon7));
+        shell.Register(SectionKey.Community, () => new Features.Communities.CommunitiesViewModel(db.Services));
         shell.Register(SectionKey.Settings, () => new Features.Preferences.SettingsViewModel(db.Services, shell, () => Mon7));
         await shell.StartAsync(allowNetwork: false);
         var window = new MainWindow { DataContext = shell };
@@ -118,6 +119,7 @@ public class AutomationIdsTests : UiTest
             [SectionKey.Maps] = vm => ((Features.Maps.MapsViewModel)vm).Floors.Count > 0,
             [SectionKey.Friends] = vm => ((Features.Friends.FriendsViewModel)vm).Friends.Count == 1,
             [SectionKey.Homework] = vm => ((Features.Homeworks.HomeworkViewModel)vm).Groups.Count > 0,
+            [SectionKey.Community] = vm => ((Features.Communities.CommunitiesViewModel)vm).NeedAccount,
             [SectionKey.Settings] = vm => ((Features.Preferences.SettingsViewModel)vm).GroupName == "А863С",
         };
         var ids = new HashSet<string>();

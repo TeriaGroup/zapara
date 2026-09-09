@@ -5,7 +5,7 @@ public enum AccountClientFailure
     InvalidRequest, InvalidCredentials, InvalidSession, UsernameUnavailable, SessionNotFound,
     RateLimited, DbUnavailable, RegistrationUnavailable, NotConfigured, ServerUnavailable,
     InvalidPayload, BodyTooLarge, Transport, Timeout, VaultUnavailable, ReauthenticationRequired,
-    SessionChanged, LockTimeout, InternalError
+    SessionChanged, LockTimeout, InternalError, InvalidExternalProof, ProviderUnavailable
 }
 
 public sealed class AccountClientException(AccountClientFailure failure, int? status = null,
@@ -26,6 +26,8 @@ public sealed class AccountClientException(AccountClientFailure failure, int? st
         AccountClientFailure.RegistrationUnavailable => "registration_unavailable",
         AccountClientFailure.NotConfigured => "not_configured",
         AccountClientFailure.InternalError => "internal_error",
+        AccountClientFailure.InvalidExternalProof => "invalid_external_proof",
+        AccountClientFailure.ProviderUnavailable => "provider_unavailable",
         _ => "account_operation_failed"
     };
 }

@@ -21,6 +21,7 @@ enum class Section(
     Summary("summary", R.string.nav_summary, R.drawable.ic_summary, "Sections.Summary", false),
     Teachers("teachers", R.string.nav_teachers, R.drawable.ic_teachers, "Sections.Teachers", false),
     Friends("friends", R.string.nav_friends, R.drawable.ic_friends, "Sections.Friends", false),
+    Community("community", R.string.nav_community, R.drawable.ic_community, "Sections.Community", false),
     Settings("settings", R.string.nav_settings, R.drawable.ic_settings, "Sections.Settings", false);
 
     val pattern: String get() = when (this) {

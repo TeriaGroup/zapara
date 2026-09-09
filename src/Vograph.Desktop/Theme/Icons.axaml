@@ -8,6 +8,7 @@
   <StreamGeometry x:Key="Icon.Map">M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z M9 3v15 M15 6v15</StreamGeometry>
   <StreamGeometry x:Key="Icon.Friends">M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12z M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z</StreamGeometry>
   <StreamGeometry x:Key="Icon.Homework">M4 4h12l4 4v12H4z M8 12h8 M8 16h5</StreamGeometry>
+  <StreamGeometry x:Key="Icon.Community">M12 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M8 21v-2a4 4 0 0 1 4-4h0a4 4 0 0 1 4 4v2 M4.5 10a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z M1 20.5v-1A3 3 0 0 1 4 16.5h1.2 M19.5 10a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z M23 20.5v-1a3 3 0 0 0-3-3.5h-1.2</StreamGeometry>
   <StreamGeometry x:Key="Icon.Settings">M21 4h-9 M8 4H3 M21 12h-5 M12 12H3 M21 20h-7 M10 20H3 M12 2v4 M16 10v4 M10 18v4</StreamGeometry>
   <StreamGeometry x:Key="Icon.Sun">M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z M12 1v2 M12 21v2 M4.22 4.22l1.42 1.42 M18.36 18.36l1.42 1.42 M1 12h2 M21 12h2 M4.22 19.78l1.42-1.42 M18.36 5.64l1.42-1.42</StreamGeometry>
   <StreamGeometry x:Key="Icon.Moon">M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z</StreamGeometry>

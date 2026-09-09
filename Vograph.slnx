@@ -15,5 +15,6 @@
     <Project Path="src/Zapara.Server/Zapara.Server.csproj" />
     <Project Path="src/Zapara.Ingest/Zapara.Ingest.csproj" />
     <Project Path="src/Zapara.Server.Tests/Zapara.Server.Tests.csproj" />
+    <Project Path="src/Zapara.Server.Admin.UiTests/Zapara.Server.Admin.UiTests.csproj" />
   </Folder>
 </Solution>

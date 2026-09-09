@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Services.Accounts;
@@ -6,6 +7,7 @@ using Vograph.Desktop.Services;
 using Vograph.Desktop.Services.Accounts;
 using Vograph.Desktop.Services.Profiles;
 using Zapara.Contracts.Accounts;
+using Zapara.Contracts.Accounts.ExternalResponses;
 
 namespace Vograph.Desktop.Features.Account;
 
@@ -27,6 +29,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         this.service = service;
         snapshot = profiles?.Snapshot;
         if (profiles is not null) profiles.Changed += Apply;
+        Identities.CollectionChanged += OnIdentitiesChanged;
         Status = T("accountUnconfigured");
     }
 
@@ -41,15 +44,37 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     [ObservableProperty] private bool busy;
     [ObservableProperty] private bool ready;
     [ObservableProperty] private bool confirmLogout;
+    [ObservableProperty] private bool confirmDelete;
     [ObservableProperty] private bool hasMore;
+    [ObservableProperty] private bool vkAvailable;
+    [ObservableProperty] private bool yandexAvailable;
+    [ObservableProperty] private bool recoveryAvailable;
+    [ObservableProperty] private string proof = "";
+    [ObservableProperty] private ExportJobResponse? exportJob;
+    [ObservableProperty] private byte[]? exportPayload;
+    [ObservableProperty] private string? exportPath;
+    [ObservableProperty] private string? exportFileName;
+    [ObservableProperty] private string? authorizeUrl;
     public ObservableCollection<DeviceResponse> Devices { get; } = [];
+    public ObservableCollection<ExternalIdentityResponse> Identities { get; } = [];
     public bool IsGuest => snapshot?.Profile.IsGuest != false;
     public bool IsAccount => !IsGuest;
     public bool CanAct => Ready && !Busy && !disposed && service is not null && snapshot?.Phase == ProfilePhase.Idle;
     public bool NeedsRecovery => snapshot?.Phase == ProfilePhase.RecoveryRequired;
     public bool ShowLogin => IsGuest || snapshot?.ReauthRequired == true;
+    public bool ShowRecovery => RecoveryAvailable && ShowLogin;
+    public bool ShowVkLogin => VkAvailable && ShowLogin;
+    public bool ShowYandexLogin => YandexAvailable && ShowLogin;
+    public bool ShowVkLink => VkAvailable && IsAccount && Identities.All(i => i.Provider != "vk");
+    public bool ShowYandexLink => YandexAvailable && IsAccount && Identities.All(i => i.Provider != "yandex");
+    public bool CanDownloadExport => ExportJob?.Status == "ready";
     partial void OnBusyChanged(bool value) => OnPropertyChanged(nameof(CanAct));
     partial void OnReadyChanged(bool value) => OnPropertyChanged(nameof(CanAct));
+    partial void OnVkAvailableChanged(bool value) => NotifyExternal();
+    partial void OnYandexAvailableChanged(bool value) => NotifyExternal();
+    partial void OnRecoveryAvailableChanged(bool value) => OnPropertyChanged(nameof(ShowRecovery));
+    partial void OnExportJobChanged(ExportJobResponse? value) => OnPropertyChanged(nameof(CanDownloadExport));
+    private void OnIdentitiesChanged(object? sender, NotifyCollectionChangedEventArgs e) => NotifyExternal();
     partial void OnRegistrationChanged(bool value)
     {
         ClearSecrets();
@@ -69,7 +94,11 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         Ready = true;
         await RunAsync(async () =>
         {
-            RegistrationAvailable = (await service!.CapabilitiesAsync(lifetime.Token)).Registration;
+            var caps = await service!.CapabilitiesAsync(lifetime.Token);
+            RegistrationAvailable = caps.Registration;
+            VkAvailable = caps.Vk;
+            YandexAvailable = caps.Yandex;
+            RecoveryAvailable = caps.Recovery;
         });
     }
 
@@ -78,8 +107,9 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         if (disposed) return;
         if (snapshot?.Identity != value.Identity)
         {
-            Devices.Clear(); cursor = null; HasMore = false; AccountName = ""; DisplayName = "";
-            ClearSecrets(); ConfirmLogout = false;
+            Devices.Clear(); Identities.Clear(); cursor = null; HasMore = false; AccountName = ""; DisplayName = "";
+            ClearSecrets(); ConfirmLogout = false; ConfirmDelete = false;
+            ExportJob = null; ExportPayload = null; ExportPath = null; ExportFileName = null; AuthorizeUrl = null;
         }
         snapshot = value;
         Status = value.Phase == ProfilePhase.RecoveryRequired ? T("accountRecovery")
@@ -87,6 +117,14 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
             : value.Failure is not null ? T("accountTransitionFailed")
             : value.ReauthRequired ? T("accountReauth") : T(value.Profile.IsGuest ? "accountGuest" : "accountLocal");
         foreach (var name in new[] { nameof(IsGuest), nameof(IsAccount), nameof(CanAct), nameof(NeedsRecovery), nameof(ShowLogin) })
+            OnPropertyChanged(name);
+        NotifyExternal();
+    }
+
+    private void NotifyExternal()
+    {
+        foreach (var name in new[] { nameof(ShowRecovery), nameof(ShowVkLogin), nameof(ShowYandexLogin),
+            nameof(ShowVkLink), nameof(ShowYandexLink) })
             OnPropertyChanged(name);
     }
 
@@ -175,20 +213,23 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     {
         AccountClientFailure.InvalidCredentials => "accountBadLogin",
         AccountClientFailure.UsernameUnavailable => "accountUsernameTaken",
-        AccountClientFailure.InvalidSession or AccountClientFailure.ReauthenticationRequired => "accountReauth",
+        AccountClientFailure.InvalidSession or AccountClientFailure.ReauthenticationRequired
+            or AccountClientFailure.InvalidExternalProof => "accountReauth",
         AccountClientFailure.Transport or AccountClientFailure.Timeout => "accountOffline",
-        AccountClientFailure.NotConfigured => "accountUnconfigured",
+        AccountClientFailure.NotConfigured or AccountClientFailure.ProviderUnavailable => "accountUnconfigured",
         AccountClientFailure.RateLimited => "accountRateLimited",
         AccountClientFailure.RegistrationUnavailable => "accountRegistrationUnavailable",
         _ => "accountFailed"
     });
 
-    public void ClearSecrets() { Password = ""; CurrentPassword = ""; NewPassword = ""; }
+    public void ClearSecrets() { Password = ""; CurrentPassword = ""; NewPassword = ""; Proof = ""; }
     public void Dispose()
     {
         if (disposed) return;
         disposed = true;
         if (profiles is not null) profiles.Changed -= Apply;
-        lifetime.Cancel(); ClearSecrets(); Devices.Clear(); lifetime.Dispose();
+        Identities.CollectionChanged -= OnIdentitiesChanged;
+        lifetime.Cancel(); ClearSecrets(); Devices.Clear(); Identities.Clear();
+        ExportPayload = null; lifetime.Dispose();
     }
 }

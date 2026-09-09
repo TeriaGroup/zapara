@@ -13,7 +13,7 @@
         WindowDecorations="None"
         Background="{DynamicResource Brush.Canvas}">
 
-  <!-- Digits must be spelled D1..D8: KeyGesture.Parse reads a bare "1" as the numeric Key value (Key.Cancel). -->
+  <!-- Digits must be spelled D1..D9: KeyGesture.Parse reads a bare "1" as the numeric Key value (Key.Cancel). -->
   <Window.KeyBindings>
     <KeyBinding Gesture="Ctrl+D1" Command="{Binding NavigateCommand}" CommandParameter="Schedule" />
     <KeyBinding Gesture="Ctrl+D2" Command="{Binding NavigateCommand}" CommandParameter="Week" />
@@ -23,6 +23,7 @@
     <KeyBinding Gesture="Ctrl+D6" Command="{Binding NavigateCommand}" CommandParameter="Friends" />
     <KeyBinding Gesture="Ctrl+D7" Command="{Binding NavigateCommand}" CommandParameter="Homework" />
     <KeyBinding Gesture="Ctrl+D8" Command="{Binding NavigateCommand}" CommandParameter="Settings" />
+    <KeyBinding Gesture="Ctrl+D9" Command="{Binding NavigateCommand}" CommandParameter="Community" />
     <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding NavigateCommand}" CommandParameter="Settings" />
     <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleSidebarCommand}" />
     <KeyBinding Gesture="F5" Command="{Binding RefreshScheduleCommand}" />

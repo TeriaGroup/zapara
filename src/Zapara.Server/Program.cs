@@ -1,8 +1,10 @@
+using Npgsql;
 using Zapara.Server.Timetable;
 using Zapara.Server.Accounts;
 using Zapara.Server.Sync;
 using Zapara.Server.Communities;
 using Zapara.Server.Admin;
+using Zapara.Server.Platform;
 
 namespace Zapara.Server;
 
@@ -24,7 +26,7 @@ public class Program
         builder.Services.AddSingleton(provider =>
         {
             var configuration = provider.GetRequiredService<TimetableConfiguration>();
-            return new SnapshotStore(provider.GetRequiredService<Npgsql.NpgsqlDataSource>(), configuration.Schema,
+            return new SnapshotStore(provider.GetRequiredService<NpgsqlDataSource>(), configuration.Schema,
                 provider.GetRequiredService<TimeProvider>(), configuration.CreateDedicatedConnection);
         });
         builder.Services.AddAccounts(builder.Configuration);
@@ -32,6 +34,7 @@ public class Program
         builder.Services.AddSync(builder.Configuration);
         builder.Services.AddCommunities(builder.Configuration);
         builder.Services.AddAdmin(builder.Configuration);
+        builder.Services.AddSingleton(CreatePlatformReady);
         var app = builder.Build();
         app.UseExceptionHandler(handler => handler.Run(context =>
         {
@@ -45,6 +48,52 @@ public class Program
         app.MapCommunities();
         app.MapAdmin();
         app.MapTimetableEndpoints();
+        app.MapGet("/health/platform", (Delegate)((HttpContext context) => PlatformAsync(context)));
         app.Run();
+    }
+
+    private static PlatformReady CreatePlatformReady(IServiceProvider services) =>
+        PlatformReady.FromConfiguration(
+            services.GetRequiredService<IConfiguration>(),
+            ct => ProbeTimetableAsync(services, ct),
+            ct => ProbeNamespaceAsync(services, ct, sp => sp.GetRequiredService<AccountsConfiguration>().Schema),
+            ct => ProbeNamespaceAsync(services, ct, sp => sp.GetRequiredService<SyncConfiguration>().Schema),
+            ct => ProbeNamespaceAsync(services, ct, sp => sp.GetRequiredService<CommunitiesConfiguration>().Schema),
+            ct => ProbeNamespaceAsync(services, ct, sp => sp.GetRequiredService<AdminConfiguration>().Schema));
+
+    private static async Task<IResult> PlatformAsync(HttpContext context) =>
+        PlatformReady.ToResult(await context.RequestServices.GetRequiredService<PlatformReady>()
+            .CheckAsync(context.RequestAborted));
+
+    private static async Task<bool> ProbeTimetableAsync(IServiceProvider services, CancellationToken ct)
+    {
+        try
+        {
+            _ = await services.GetRequiredService<SnapshotStore>().ReadSelectionAsync(null, ct);
+            return true;
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            return false;
+        }
+    }
+
+    private static async Task<bool> ProbeNamespaceAsync(IServiceProvider services, CancellationToken ct,
+        Func<IServiceProvider, string> schema)
+    {
+        try
+        {
+            var name = schema(services);
+            await using var connection = services.GetRequiredService<AccountsDataSource>().CreateConnection();
+            await connection.OpenAsync(ct);
+            await using var command = new NpgsqlCommand(
+                "SELECT EXISTS(SELECT FROM pg_namespace WHERE nspname=@schema)", connection);
+            command.Parameters.AddWithValue("schema", name);
+            return await command.ExecuteScalarAsync(ct) is true;
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            return false;
+        }
     }
 }

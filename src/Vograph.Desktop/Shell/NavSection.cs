@@ -4,7 +4,7 @@ using Vograph.Desktop.Services;
 
 namespace Vograph.Desktop.Shell;
 
-public enum SectionKey { Schedule, Week, Summary, Teachers, Maps, Friends, Homework, Settings }
+public enum SectionKey { Schedule, Week, Summary, Teachers, Maps, Friends, Homework, Community, Settings }
 
 public sealed partial class NavSection : ObservableObject
 {
@@ -24,7 +24,7 @@ public sealed partial class NavSection : ObservableObject
     public IRelayCommand<string> NavigateCommand { get; }
     public string Label => Loc.Current.T(LabelKey);
 
-    /// <summary>«Ctrl+1» … «Ctrl+8» — spec §4.3, shown only inside tooltips.</summary>
+    /// <summary>«Ctrl+1» … «Ctrl+9» — spec §4.3, shown only inside tooltips.</summary>
     public string Hotkey { get; }
     public string AutomationId => "Nav." + KeyName;
 

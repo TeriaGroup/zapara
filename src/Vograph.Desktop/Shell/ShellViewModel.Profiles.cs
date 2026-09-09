@@ -17,6 +17,7 @@ public sealed partial class ShellViewModel
         App.Loc.LanguageChanged += LanguageChanged;
         if (App.Theme is { } theme) theme.Changed += ThemeChanged;
         App.LanSync.Imported += LanImported;
+        if (App.PrivateSync is { } sync) sync.Conflict += OnPrivateSyncConflict;
     }
 
     private void DetachSubscriptions()
@@ -26,6 +27,7 @@ public sealed partial class ShellViewModel
         App.Loc.LanguageChanged -= LanguageChanged;
         if (App.Theme is { } theme) theme.Changed -= ThemeChanged;
         App.LanSync.Imported -= LanImported;
+        if (App.PrivateSync is { } sync) sync.Conflict -= OnPrivateSyncConflict;
     }
 
     private void ThemeChanged() { if (CanPublish && App.Theme is { } theme) IsDark = theme.IsDark; }

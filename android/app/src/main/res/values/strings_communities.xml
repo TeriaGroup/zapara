@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="community_title">Сообщества</string>
+    <string name="community_join">Вступить</string>
+    <string name="community_pending">Заявка на рассмотрении</string>
+    <string name="community_members">Участники</string>
+    <string name="community_staff">Персонал</string>
+    <string name="community_homework">Домашка сообщества</string>
+    <string name="community_announcements">Объявления</string>
+    <string name="community_polls">Опросы</string>
+    <string name="community_vote">Голосовать</string>
+    <string name="community_results">Результаты</string>
+    <string name="community_accept">Принять</string>
+    <string name="community_reject">Отклонить</string>
+    <string name="community_empty">Нет сообществ</string>
+    <string name="community_need_account">Нужен аккаунт</string>
+    <string name="community_forbidden">Нет доступа</string>
+    <string name="nav_community">Сообщества</string>
+</resources>

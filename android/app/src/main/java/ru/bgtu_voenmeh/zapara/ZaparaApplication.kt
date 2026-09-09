@@ -18,6 +18,10 @@ import ru.bgtu_voenmeh.zapara.data.api.ApiRefreshCoordinator
 import ru.bgtu_voenmeh.zapara.data.api.RoomTimetableStore
 import ru.bgtu_voenmeh.zapara.data.api.TimetableSource
 import ru.bgtu_voenmeh.zapara.data.api.UrlConnectionTransport
+import ru.bgtu_voenmeh.zapara.data.communities.CommunityHttpClient
+import ru.bgtu_voenmeh.zapara.data.sync.PrivateSyncCoordinator
+import ru.bgtu_voenmeh.zapara.data.sync.PrivateSyncHttpClient
+import ru.bgtu_voenmeh.zapara.data.sync.RoomSyncOutbox
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileCoordinator
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileDescriptor
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileGraph
@@ -76,16 +80,33 @@ class AndroidProfileHost(val app: Application) : ViewModelStoreOwner {
 
     fun open(descriptor: ProfileDescriptor): AppContainer {
         containers[descriptor.databaseName]?.let { existing ->
-            if (!existing.closed) return existing
+            if (!existing.closed) {
+                existing.attachPrivateSync()
+                return existing
+            }
         }
         val db = ScheduleRepository.openDatabase(app, descriptor)
         val store = RoomTimetableStore(db)
         val work = ProfileWork()
         val repo = ScheduleRepository(db, store, work)
         val api = ApiRefreshCoordinator(store, work, apiBase, transport)
-        val created = AppContainer(app, descriptor, db, repo, work, api)
+        val created = AppContainer(
+            app, descriptor, db, repo, work, api,
+            communities = accountScope?.let { CommunityHttpClient(transport, it) },
+            readAccessToken = { readAccessToken() },
+            syncHttp = if (descriptor.isGuest) null else accountScope?.let { PrivateSyncHttpClient(transport, it.baseUri) }
+        )
+        created.repo.outbox = created.outbox
+        created.attachPrivateSync()
         containers[descriptor.databaseName] = created
         return created
+    }
+
+    private suspend fun readAccessToken(): String? = try {
+        vault.acquire().use { it.read()?.session?.accessToken }
+    } catch (e: Exception) {
+        android.util.Log.w("ZaparaProfile", "token", e)
+        null
     }
 
     suspend fun restore() {
@@ -120,22 +141,37 @@ class AppContainer(
     val db: ru.bgtu_voenmeh.zapara.data.db.ZaparaDatabase,
     val repo: ScheduleRepository,
     val work: ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork,
-    val api: ApiRefreshCoordinator
+    val api: ApiRefreshCoordinator,
+    val communities: CommunityHttpClient? = null,
+    private val readAccessToken: (suspend () -> String?)? = null,
+    private val syncHttp: PrivateSyncHttpClient? = null
 ) {
     val timetable = TimetableSource(api, repo.store) { repo.refresh() }
     var closed: Boolean = false
         private set
+    val outbox = RoomSyncOutbox.from(db, enabled = !profile.isGuest)
+    val privateSync: PrivateSyncCoordinator? =
+        if (profile.isGuest) null else PrivateSyncCoordinator(outbox, work)
     val mapStore by lazy { MapStore(app) }
     val lecturerStore by lazy { LecturerStore(app) }
-    val overrides by lazy { OverrideService(db.overrideDao()) }
+    val overrides by lazy { OverrideService(db.overrideDao(), outbox) }
     val homework by lazy {
         HomeworkService(
             db.homeworkDao(),
             lessonsFor = { gid, dow, parity ->
                 repo.allForGroup(gid).filter { it.dayOfWeek == dow && (it.parity == parity || it.parity == 0) }
             },
-            ctx = { repo.settings().let { SchedCtx(it.myGroupId.orEmpty(), it.periodStart, it.weekCount, it.parityInvert) } }
+            ctx = { repo.settings().let { SchedCtx(it.myGroupId.orEmpty(), it.periodStart, it.weekCount, it.parityInvert) } },
+            outbox = outbox
         )
+    }
+
+    suspend fun accessToken(): String? = readAccessToken?.invoke()
+
+    fun attachPrivateSync() {
+        val http = syncHttp ?: return
+        val token = readAccessToken ?: return
+        privateSync?.attach(http, token)
     }
     val clock: () -> LocalDateTime = { LocalDateTime.now() }
     val copy: ru.bgtu_voenmeh.zapara.ui.UiCopy by lazy { ru.bgtu_voenmeh.zapara.ui.AndroidUiCopy(app) }
@@ -160,6 +196,7 @@ class AppContainer(
     fun close() {
         if (closed) return
         closed = true
+        privateSync?.close()
         api.stop()
         runCatching { db.close() }
     }

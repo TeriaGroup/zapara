@@ -154,3 +154,19 @@
 
 ### Next
 - Auto-advance to Phase A4: offline maps + teacher finder
+
+## Phase A6 — UI 2.0, дизайн-система «Kimi-минимализм» (2026-09-09)
+
+**Status:** DONE — Compose-клиент на монохромных токенах Dark/Light, Inter, нижней навигации (Расписание · Карты · Домашка · Разделы), экранах-разделах и reduce motion; package `ru.zapara.app`, versionName 2.0.0 / versionCode 24; виджеты «Расписание» и «Домашка»
+
+### Verification Checklist
+- [x] Токены / только русский / LocalMotion (`TokensParityTest`, `GuardsTest`, `MotionGuardTest`) — JVM green
+- [x] Разделы Compose 2.0 + bottom nav; Room-миграции без wipe `MIGRATION_1_2`…`MIGRATION_4_5` (схема v5)
+- [x] Виджеты расписания и домашки (JVM composers/job + instrumented clear A→B)
+- [x] `:app:testGithubDebugUnitTest` green в сессии 2026-09-09
+
+### Raw numbers
+- JVM `testGithubDebugUnitTest`: 180 tests, 0 failures, 0 errors (51 suite XML в `android/app/build/test-results/testGithubDebugUnitTest/`, штамп 2026-09-09)
+- Виджеты: 17 JVM widget + Guards в отчёте widgets; instrumented `WidgetRemoteViewsTest` 1/1 на emulator-5554
+- Room schemas: `3.json` / `4.json` / `5.json`; AutoUpdate `CURRENT_TAG = android-v2.0.0`
+- Размеры APK в этой записи не фиксировались

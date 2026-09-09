@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.VisualTree;
 using Vograph.Desktop.Controls;
+using Vograph.Desktop.Features.Communities;
 using Vograph.Desktop.Features.Friends;
 using Vograph.Desktop.Features.Homeworks;
 using Vograph.Desktop.Features.Maps;
@@ -110,6 +111,7 @@ public class ShellLayoutTests : UiTest
         shell.Register(SectionKey.Maps, () => new MapsViewModel(db.Services, shell, () => Mon7));
         shell.Register(SectionKey.Friends, () => new FriendsViewModel(db.Services, shell, () => Mon7));
         shell.Register(SectionKey.Homework, () => new HomeworkViewModel(db.Services, shell, () => Mon7));
+        shell.Register(SectionKey.Community, () => new CommunitiesViewModel(db.Services));
         shell.Register(SectionKey.Settings, () => new SettingsViewModel(db.Services, shell, () => Mon7));
         return shell;
     }
@@ -123,6 +125,7 @@ public class ShellLayoutTests : UiTest
         [SectionKey.Maps] = vm => ((MapsViewModel)vm).Image is not null,
         [SectionKey.Friends] = vm => ((FriendsViewModel)vm).Friends.Count == 1,
         [SectionKey.Homework] = vm => ((HomeworkViewModel)vm).Groups.Count > 0,
+        [SectionKey.Community] = vm => ((CommunitiesViewModel)vm).NeedAccount,
         [SectionKey.Settings] = vm => ((SettingsViewModel)vm).GroupName == "А863С",
     };
 

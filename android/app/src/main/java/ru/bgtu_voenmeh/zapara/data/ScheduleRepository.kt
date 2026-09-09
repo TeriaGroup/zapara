@@ -4,6 +4,9 @@ import android.content.Context
 import androidx.room.Room
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import ru.bgtu_voenmeh.zapara.data.db.FriendDao
+import ru.bgtu_voenmeh.zapara.data.db.FriendEntity
+import ru.bgtu_voenmeh.zapara.data.db.GroupDao
 import ru.bgtu_voenmeh.zapara.data.db.GroupEntity
 import ru.bgtu_voenmeh.zapara.data.db.LessonEntity
 import ru.bgtu_voenmeh.zapara.data.api.RoomTimetableStore
@@ -13,22 +16,49 @@ import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_1_2
 import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_2_3
 import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_3_4
 import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_4_5
+import ru.bgtu_voenmeh.zapara.data.db.SettingsDao
 import ru.bgtu_voenmeh.zapara.data.db.SettingsEntity
 import ru.bgtu_voenmeh.zapara.data.db.ZaparaDatabase
 import ru.bgtu_voenmeh.zapara.data.api.TimetableSource
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileDescriptor
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork
+import ru.bgtu_voenmeh.zapara.data.sync.FriendValue
+import ru.bgtu_voenmeh.zapara.data.sync.RoomSyncOutbox
+import ru.bgtu_voenmeh.zapara.data.sync.SettingsValue
+import ru.bgtu_voenmeh.zapara.data.sync.SyncLocalIdentity
+import ru.bgtu_voenmeh.zapara.data.sync.SyncValidation
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.LocalDate
-import java.time.LocalTime
+import java.util.UUID
 
-class ScheduleRepository(
-    val db: ZaparaDatabase,
-    val store: TimetableStore = RoomTimetableStore(db),
-    val work: ProfileWork? = null
+class ScheduleRepository private constructor(
+    private val dbRef: ZaparaDatabase?,
+    val store: TimetableStore,
+    val work: ProfileWork?,
+    var outbox: RoomSyncOutbox?,
+    private val friendDao: FriendDao,
+    private val settingsDao: SettingsDao,
+    private val groupDao: GroupDao
 ) {
+    val db: ZaparaDatabase get() = dbRef ?: error("Профиль не открыт")
+
+    constructor(
+        db: ZaparaDatabase,
+        store: TimetableStore = RoomTimetableStore(db),
+        work: ProfileWork? = null,
+        outbox: RoomSyncOutbox? = null
+    ) : this(db, store, work, outbox, db.friendDao(), db.settingsDao(), db.groupDao())
+
+    internal constructor(
+        store: TimetableStore,
+        friendDao: FriendDao,
+        settingsDao: SettingsDao,
+        groupDao: GroupDao,
+        outbox: RoomSyncOutbox?,
+        work: ProfileWork? = null
+    ) : this(null, store, work, outbox, friendDao, settingsDao, groupDao)
 
     companion object {
         @Volatile
@@ -65,6 +95,16 @@ class ScheduleRepository(
             }
             return builder.addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
         }
+
+        private val friendPalette = listOf("#F2A33C", "#4CC38A", "#5AA9FF", "#C77DFF", "#FF7A9C")
+
+        internal fun friendPaletteIndex(hex: String?): Int {
+            if (hex.isNullOrBlank()) return 1
+            var h = hex.trim()
+            if (h.length == 9 && h[0] == '#') h = "#" + h.substring(3)
+            val i = friendPalette.indexOfFirst { it.equals(h, ignoreCase = true) }
+            return if (i >= 0) i + 1 else 1
+        }
     }
 
     data class SettingsState(
@@ -86,57 +126,203 @@ class ScheduleRepository(
     )
 
     fun settings(): SettingsState {
-        val s = db.settingsDao().get() ?: return overlaySettings(store, SettingsState())
-        return overlaySettings(
-            store,
-            SettingsState(
-            myGroupId = s.myGroupId,
-            parityInvert = s.parityInvert,
-            language = s.language,
-            periodStart = runCatching { LocalDate.parse(s.periodStart) }.getOrNull()
-                ?: LocalDate.of(2026, 9, 1),
-            weekCount = if (s.weekCount > 0) s.weekCount else 2,
-            periodTitle = s.periodTitle,
-            lastFetchedAt = s.lastFetchedAt,
-            intersectionStrictness = s.intersectionStrictness,
-            alwaysShowAllTrafficLights = s.alwaysShowAllTrafficLights,
-            notifyEnabled = s.notifyEnabled,
-            notifyTime1 = s.notifyTime1,
-            notifyTime2 = s.notifyTime2,
-            theme = s.theme,
-            animations = s.animations,
-            useUniversityXml = s.useUniversityXml
-            )
-        )
+        val s = settingsDao.get() ?: return overlaySettings(store, SettingsState())
+        return overlaySettings(store, entityToState(s))
     }
 
     fun saveSettings(s: SettingsState) {
         val ticket = work?.enter()
         try {
             ticket?.throwIfStale()
-            db.settingsDao().save(
-                SettingsEntity(
-                    myGroupId = s.myGroupId,
-                    parityInvert = s.parityInvert,
-                    language = s.language,
-                    periodStart = s.periodStart.toString(),
-                    weekCount = s.weekCount,
-                    periodTitle = s.periodTitle,
-                    lastFetchedAt = s.lastFetchedAt,
-                    intersectionStrictness = s.intersectionStrictness,
-                    alwaysShowAllTrafficLights = s.alwaysShowAllTrafficLights,
-                    notifyEnabled = s.notifyEnabled,
-                    notifyTime1 = s.notifyTime1,
-                    notifyTime2 = s.notifyTime2,
-                    theme = s.theme,
-                    animations = s.animations,
-                    useUniversityXml = s.useUniversityXml
-                )
-            )
+            val box = outbox
+            if (box?.enabled == true && settingsSyncChanged(s)) {
+                box.inTransaction {
+                    writeSettings(s)
+                    val ident = ensureSettingsIdentity()
+                    box.enqueue(
+                        UUID.randomUUID(),
+                        "settings",
+                        SyncValidation.SETTINGS_ID,
+                        ident.revision,
+                        "upsert",
+                        settingsValue(s),
+                        1
+                    )
+                    0
+                }
+            } else {
+                writeSettings(s)
+            }
         } finally {
             ticket?.close()
         }
     }
+
+    fun friends(): List<FriendEntity> = friendDao.getAll()
+
+    fun insertFriend(friend: FriendEntity): Long {
+        val ticket = work?.enter()
+        try {
+            ticket?.throwIfStale()
+            val box = outbox
+            return if (box?.enabled == true) {
+                box.inTransaction { writeFriend(friend, insert = true, enqueue = true) }
+            } else {
+                writeFriend(friend, insert = true, enqueue = false)
+            }
+        } finally {
+            ticket?.close()
+        }
+    }
+
+    fun updateFriend(friend: FriendEntity) {
+        val ticket = work?.enter()
+        try {
+            ticket?.throwIfStale()
+            val box = outbox
+            if (box?.enabled == true) {
+                box.inTransaction { writeFriend(friend, insert = false, enqueue = true); 0 }
+            } else {
+                writeFriend(friend, insert = false, enqueue = false)
+            }
+        } finally {
+            ticket?.close()
+        }
+    }
+
+    fun deleteFriend(id: Long) {
+        val ticket = work?.enter()
+        try {
+            ticket?.throwIfStale()
+            val box = outbox
+            if (box?.enabled == true) {
+                box.inTransaction { deleteFriendCore(id, enqueue = true); 0 }
+            } else {
+                deleteFriendCore(id, enqueue = false)
+            }
+        } finally {
+            ticket?.close()
+        }
+    }
+
+    private fun writeSettings(s: SettingsState) {
+        settingsDao.save(
+            SettingsEntity(
+                myGroupId = s.myGroupId,
+                parityInvert = s.parityInvert,
+                language = s.language,
+                periodStart = s.periodStart.toString(),
+                weekCount = s.weekCount,
+                periodTitle = s.periodTitle,
+                lastFetchedAt = s.lastFetchedAt,
+                intersectionStrictness = s.intersectionStrictness,
+                alwaysShowAllTrafficLights = s.alwaysShowAllTrafficLights,
+                notifyEnabled = s.notifyEnabled,
+                notifyTime1 = s.notifyTime1,
+                notifyTime2 = s.notifyTime2,
+                theme = s.theme,
+                animations = s.animations,
+                useUniversityXml = s.useUniversityXml
+            )
+        )
+    }
+
+    private fun settingsSyncChanged(s: SettingsState): Boolean {
+        val cur = settingsDao.get()?.let { entityToState(it) } ?: SettingsState()
+        return cur.myGroupId != s.myGroupId ||
+            cur.parityInvert != s.parityInvert ||
+            cur.notifyTime1 != s.notifyTime1 ||
+            cur.notifyTime2 != s.notifyTime2 ||
+            cur.intersectionStrictness != s.intersectionStrictness ||
+            cur.alwaysShowAllTrafficLights != s.alwaysShowAllTrafficLights
+    }
+
+    private fun entityToState(s: SettingsEntity) = SettingsState(
+        myGroupId = s.myGroupId,
+        parityInvert = s.parityInvert,
+        language = s.language,
+        periodStart = runCatching { LocalDate.parse(s.periodStart) }.getOrNull()
+            ?: LocalDate.of(2026, 9, 1),
+        weekCount = if (s.weekCount > 0) s.weekCount else 2,
+        periodTitle = s.periodTitle,
+        lastFetchedAt = s.lastFetchedAt,
+        intersectionStrictness = s.intersectionStrictness,
+        alwaysShowAllTrafficLights = s.alwaysShowAllTrafficLights,
+        notifyEnabled = s.notifyEnabled,
+        notifyTime1 = s.notifyTime1,
+        notifyTime2 = s.notifyTime2,
+        theme = s.theme,
+        animations = s.animations,
+        useUniversityXml = s.useUniversityXml
+    )
+
+    private fun settingsValue(s: SettingsState) = SettingsValue(
+        s.myGroupId,
+        s.parityInvert,
+        s.notifyTime1,
+        s.notifyTime2,
+        s.intersectionStrictness,
+        s.alwaysShowAllTrafficLights
+    )
+
+    private fun ensureSettingsIdentity(): SyncLocalIdentity {
+        val box = outbox!!
+        box.identity("settings", 1)?.let { return it }
+        return box.remember("settings", 1, SyncValidation.SETTINGS_ID, 0, box.nowUtc(), null)
+    }
+
+    private fun writeFriend(friend: FriendEntity, insert: Boolean, enqueue: Boolean): Long {
+        val stored = if (insert) {
+            friendDao.insert(friend)
+        } else {
+            val existing = friendDao.getAll().firstOrNull { it.id == friend.id } ?: return 0
+            friendDao.update(friend.copy(id = existing.id))
+            existing.id
+        }
+        if (enqueue) {
+            val row = friendDao.getAll().first { it.id == stored }
+            val ident = if (insert) {
+                val entityId = UUID.randomUUID()
+                outbox!!.remember("friend", stored, entityId, 0, outbox!!.nowUtc(), null)
+            } else {
+                ensureFriendIdentity(stored)
+            }
+            outbox!!.enqueue(
+                UUID.randomUUID(),
+                "friend",
+                ident.entityId,
+                ident.revision,
+                "upsert",
+                friendValue(row),
+                stored
+            )
+        }
+        return stored
+    }
+
+    private fun deleteFriendCore(id: Long, enqueue: Boolean) {
+        if (!enqueue) {
+            friendDao.delete(id)
+            return
+        }
+        val existing = friendDao.getAll().firstOrNull { it.id == id } ?: return
+        val ident = ensureFriendIdentity(existing.id)
+        friendDao.delete(id)
+        outbox!!.enqueue(UUID.randomUUID(), "friend", ident.entityId, ident.revision, "delete", null, id)
+    }
+
+    private fun ensureFriendIdentity(id: Long): SyncLocalIdentity {
+        outbox!!.identity("friend", id)?.let { return it }
+        return outbox!!.remember("friend", id, UUID.randomUUID(), 0, outbox!!.nowUtc(), null)
+    }
+
+    private fun friendValue(friend: FriendEntity) = FriendValue(
+        groupDao.getAll().firstOrNull { it.name == friend.groupName }?.id,
+        friend.groupName,
+        friend.memberNames,
+        friendPaletteIndex(friend.colorHex),
+        friend.enabled
+    )
 
     fun groups(): List<GroupInfo> = store.groups()
 

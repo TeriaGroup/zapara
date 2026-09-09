@@ -1,13 +1,24 @@
+using System.Net;
+using System.Net.Http.Headers;
 using Avalonia;
+using Avalonia.Automation;
+using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
+using Vograph.Core.Services.Sync;
+using Vograph.Desktop.Controls;
+using Vograph.Desktop.Dialogs;
+using Vograph.Desktop.Features.Communities;
 using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
 using Vograph.Desktop.ViewModels;
 using Xunit;
+using Zapara.Contracts.Sync;
+using static Vograph.Desktop.Tests.AccountClientTestSupport;
 
 namespace Vograph.Desktop.Tests;
 
@@ -45,6 +56,7 @@ public class ShellTests : UiTest
             Assert.IsType<Features.Maps.MapsViewModel>(shell.Section<ViewModelBase>(SectionKey.Maps));
             Assert.IsType<Features.Friends.FriendsViewModel>(shell.Section<ViewModelBase>(SectionKey.Friends));
             Assert.IsType<Features.Homeworks.HomeworkViewModel>(shell.Section<ViewModelBase>(SectionKey.Homework));
+            Assert.IsType<CommunitiesViewModel>(shell.Section<ViewModelBase>(SectionKey.Community));
             Assert.IsType<Features.Preferences.SettingsViewModel>(shell.Section<ViewModelBase>(SectionKey.Settings));
 
             shell.NavigateCommand.Execute("Week");
@@ -83,6 +95,14 @@ public class ShellTests : UiTest
             SetTheme(ThemeVariant.Light, db.Services.Theme);
             Assert.False(shell.IsDark);
             Frames.Capture(window, "shell-light");
+
+            window.KeyPress(Key.D9, RawInputModifiers.Control, PhysicalKey.Digit9, null);
+            Assert.Equal(SectionKey.Community, shell.CurrentKey);
+            var communities = Assert.IsType<CommunitiesViewModel>(shell.Current);
+            await Waits.Until(() => communities.NeedAccount, "guest communities");
+            Pump();
+            Assert.Contains(window.GetVisualDescendants().OfType<EmptyState>(),
+                e => e.IsVisible && e.Title == "Чтобы вступить в сообщество, войдите в аккаунт");
 
             window.KeyPress(Key.D3, RawInputModifiers.Control, PhysicalKey.Digit3, null);
             Assert.Equal(SectionKey.Summary, shell.CurrentKey);
@@ -137,7 +157,112 @@ public class ShellTests : UiTest
             db.Services.Loc.SetLanguage("en");
             Assert.Equal("ru", db.Services.Loc.Language);
             Assert.Equal("Расписание", shell.MainSections[0].Label);
+            Assert.Equal("Сообщества", shell.ToolSections.Single(s => s.Key == SectionKey.Community).Label);
         }
+    }
+
+    [AvaloniaFact]
+    public async Task Guest_Opens_Community_Section_And_Sees_Need_Account()
+    {
+        var (db, shell) = Make();
+        using (db)
+        {
+            var nav = Assert.Single(shell.ToolSections, s => s.Key == SectionKey.Community);
+            Assert.Equal("navCommunity", nav.LabelKey);
+            Assert.Equal("Icon.Community", nav.IconKey);
+            Assert.Equal("Ctrl+9", nav.Hotkey);
+            Assert.Equal("Nav.Community", nav.AutomationId);
+            Assert.Equal("Сообщества", nav.Label);
+            Assert.True(Application.Current!.TryFindResource("Icon.Community", out _));
+
+            shell.NavigateCommand.Execute("Community");
+            var vm = Assert.IsType<CommunitiesViewModel>(shell.Current);
+            await vm.ActivateAsync();
+            Assert.Equal(SectionKey.Community, shell.CurrentKey);
+            Assert.True(nav.IsActive);
+            Assert.True(vm.NeedAccount);
+            Assert.Equal("Чтобы вступить в сообщество, войдите в аккаунт", vm.Status);
+            Assert.Empty(vm.Communities);
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task Private_Sync_Conflict_Shows_Keep_Local_And_Keep_Server()
+    {
+        using var dir = new ProfileTestDirectory();
+        using var app = PrivateSyncOutboxTests.OpenAccount(dir.Root);
+        app.Theme = ThemeService.ForApplication(Application.Current!, app.Prefs);
+        var shell = new ShellViewModel(app);
+        try
+        {
+            var window = new MainWindow { DataContext = shell };
+            window.Show();
+            app.Homework.AddHomework("лек ИСТОРИЯ", "локальный черновик", 1, new DateTime(2026, 9, 5, 12, 0, 0));
+            var pending = Assert.Single(app.Outbox.Pending());
+            var epoch = Guid.Parse("0e0e0e0e-0e0e-4e0e-8e0e-0e0e0e0e0e0e");
+            var now = new DateTimeOffset(2026, 9, 8, 12, 0, 0, TimeSpan.Zero);
+            using var http = new HttpClient(new FakeHttpHandler
+            {
+                Respond = request =>
+                {
+                    if (request.Method == HttpMethod.Get)
+                        return SyncBody(new SyncMetadata(epoch, 9, 0));
+                    var server = new HomeworkValue("лек история", "лек история", "серверная версия", 1, now, null);
+                    var record = new SyncRecord("homework", pending.EntityId, 4, false, now, server);
+                    return SyncBody(new SyncMutationResult(409, "revision_conflict", new SyncMetadata(epoch, 9, 0), record),
+                        HttpStatusCode.Conflict);
+                }
+            });
+            using var client = new PrivateSyncHttpClient(http, new Uri("http://127.0.0.1/outbox-test/"));
+            app.PrivateSync!.Attach(client, _ => Task.FromResult(Token("za_")), background: false);
+            await app.PrivateSync.PushPendingAsync(TestContext.Current.CancellationToken);
+
+            var dlg = await Waits.ForDialogAsync<SyncConflictDialogViewModel>(shell);
+            Assert.False(dlg.IsExpired);
+            Assert.True(dlg.CanChooseVersion);
+            Assert.True(dlg.KeepLocalCommand.CanExecute(null));
+            Assert.True(dlg.KeepServerCommand.CanExecute(null));
+            Assert.Contains(window.GetVisualDescendants().OfType<Button>(),
+                b => AutomationProperties.GetAutomationId(b) == "Dialog.KeepLocal" && b.IsVisible);
+            Assert.Contains(window.GetVisualDescendants().OfType<Button>(),
+                b => AutomationProperties.GetAutomationId(b) == "Dialog.KeepServer" && b.IsVisible);
+            dlg.KeepLocalCommand.Execute(null);
+            Assert.Equal(SyncConflictKind.KeepLocal, dlg.Decision!.Kind);
+            await Waits.Until(() => !shell.Dialogs.HasDialog, "conflict dialog closed");
+            AssertNoBindingErrors();
+        }
+        finally { shell.Stop(); }
+    }
+
+    [AvaloniaFact]
+    public async Task Expired_Conflict_Shows_Expired_Dialog()
+    {
+        using var dir = new ProfileTestDirectory();
+        using var app = PrivateSyncOutboxTests.OpenAccount(dir.Root);
+        var shell = new ShellViewModel(app);
+        try
+        {
+            var conflict = new PrivateSyncConflict("homework",
+                Guid.Parse("11111111-1111-4111-8111-111111111111"), "Снимок синхронизации устарел.");
+            var showing = shell.ShowSyncConflictAsync(conflict);
+            var dlg = await Waits.ForDialogAsync<SyncConflictDialogViewModel>(shell);
+            Assert.True(dlg.IsExpired);
+            Assert.False(dlg.CanChooseVersion);
+            Assert.False(dlg.KeepLocalCommand.CanExecute(null));
+            Assert.False(dlg.KeepServerCommand.CanExecute(null));
+            dlg.ConfirmCommand.Execute(null);
+            await showing;
+            Assert.Equal(SyncConflictKind.Expired410, dlg.Decision!.Kind);
+            Assert.True(dlg.Decision.AbortQueuedMutation);
+        }
+        finally { shell.Stop(); }
+    }
+
+    private static HttpResponseMessage SyncBody<T>(T value, HttpStatusCode status = HttpStatusCode.OK)
+    {
+        var response = new HttpResponseMessage(status) { Content = new ByteArrayContent(SyncJson.Serialize(value)) };
+        response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        return response;
     }
 
     // R37b: an [AvaloniaFact] runs its body on the headless dispatcher thread, so this reproduces the real

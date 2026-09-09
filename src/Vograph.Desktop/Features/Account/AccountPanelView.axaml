@@ -3,6 +3,7 @@
              xmlns:loc="using:Vograph.Desktop.Services"
              xmlns:a="using:Vograph.Desktop.Features.Account"
              xmlns:dto="clr-namespace:Zapara.Contracts.Accounts;assembly=Zapara.Contracts"
+             xmlns:ext="clr-namespace:Zapara.Contracts.Accounts.ExternalResponses;assembly=Zapara.Contracts"
              x:Class="Vograph.Desktop.Features.Account.AccountPanelView"
              x:DataType="a:AccountPanelViewModel">
   <Border Classes="card" AutomationProperties.AutomationId="Account.Card">
@@ -27,6 +28,14 @@
             <Button Classes="primary" Content="{loc:T accountLogin}" Command="{Binding SubmitCommand}" IsVisible="{Binding !Registration}" AutomationProperties.AutomationId="Account.Login" />
             <Button Classes="primary" Content="{loc:T accountRegister}" Command="{Binding SubmitCommand}" IsVisible="{Binding Registration}" AutomationProperties.AutomationId="Account.Register" />
             <Button Content="{loc:T accountMode}" Command="{Binding ToggleRegistrationCommand}" IsVisible="{Binding RegistrationAvailable}" AutomationProperties.AutomationId="Account.Mode" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="{loc:T accountVk}" Command="{Binding StartVkCommand}" IsVisible="{Binding ShowVkLogin}" AutomationProperties.AutomationId="Account.Vk" />
+            <Button Content="{loc:T accountYandex}" Command="{Binding StartYandexCommand}" IsVisible="{Binding ShowYandexLogin}" AutomationProperties.AutomationId="Account.Yandex" />
+          </StackPanel>
+          <StackPanel Spacing="8" IsVisible="{Binding ShowRecovery}">
+            <TextBlock Text="{loc:T accountRecoveryEmail}" TextWrapping="Wrap" />
+            <Button HorizontalAlignment="Left" Content="{loc:T accountResetPassword}" Command="{Binding ResetPasswordCommand}" AutomationProperties.AutomationId="Account.ResetPassword" />
           </StackPanel>
         </StackPanel>
         <StackPanel Spacing="10" IsVisible="{Binding IsAccount}">
@@ -65,6 +74,37 @@
           <TextBlock Text="{loc:T accountNewPassword}" />
           <TextBox Text="{Binding NewPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountNewPassword}" AutomationProperties.AutomationId="Account.NewPassword" />
           <Button HorizontalAlignment="Left" Content="{loc:T accountChangePassword}" Command="{Binding ChangePasswordCommand}" AutomationProperties.AutomationId="Account.ChangePassword" />
+          <TextBlock Text="{loc:T accountProof}" />
+          <TextBox Text="{Binding Proof}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountProof}" AutomationProperties.AutomationId="Account.Proof" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="{loc:T accountExport}" Command="{Binding ExportCommand}" AutomationProperties.AutomationId="Account.Export" />
+            <Button Content="{loc:T accountExportDownload}" Command="{Binding DownloadExportCommand}" IsVisible="{Binding CanDownloadExport}" AutomationProperties.AutomationId="Account.ExportDownload" />
+          </StackPanel>
+          <Button HorizontalAlignment="Left" Content="{loc:T accountDelete}" Command="{Binding RequestDeleteCommand}" AutomationProperties.AutomationId="Account.Delete" />
+          <StackPanel Spacing="10" IsVisible="{Binding ConfirmDelete}">
+            <TextBlock Text="{loc:T accountDeleteConfirm}" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Classes="primary" Content="{loc:T accountDelete}" Command="{Binding DeleteAccountCommand}" AutomationProperties.AutomationId="Account.ConfirmDelete" />
+              <Button Content="{loc:T accountCancel}" Command="{Binding CancelDeleteCommand}" />
+            </StackPanel>
+          </StackPanel>
+          <TextBlock Text="{loc:T accountIdentities}" />
+          <Button HorizontalAlignment="Left" Content="{loc:T accountIdentities}" Command="{Binding LoadIdentitiesCommand}" AutomationProperties.AutomationId="Account.Identities" />
+          <ItemsControl ItemsSource="{Binding Identities}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="ext:ExternalIdentityResponse">
+                <StackPanel Spacing="8" Margin="0,4">
+                  <TextBlock Text="{Binding Provider}" />
+                  <Button HorizontalAlignment="Left" Content="{loc:T accountUnlink}" AutomationProperties.AutomationId="Account.Unlink"
+                          Command="{Binding $parent[a:AccountPanelView].((a:AccountPanelViewModel)DataContext).UnlinkIdentityCommand}" CommandParameter="{Binding}" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="{loc:T accountLink}" Command="{Binding LinkVkCommand}" IsVisible="{Binding ShowVkLink}" AutomationProperties.AutomationId="Account.LinkVk" />
+            <Button Content="{loc:T accountLink}" Command="{Binding LinkYandexCommand}" IsVisible="{Binding ShowYandexLink}" AutomationProperties.AutomationId="Account.LinkYandex" />
+          </StackPanel>
         </StackPanel>
       </StackPanel>
     </StackPanel>

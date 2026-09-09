@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="account_export">Экспорт данных</string>
+    <string name="account_export_download">Скачать экспорт</string>
+    <string name="account_delete">Удалить аккаунт</string>
+    <string name="account_delete_confirm">Удалить аккаунт безвозвратно? Данные на сервере будут стёрты.</string>
+    <string name="account_proof">Подтверждение</string>
+    <string name="account_recovery_email">Почта для восстановления</string>
+    <string name="account_reset">Сбросить пароль</string>
+    <string name="account_vk">ВКонтакте</string>
+    <string name="account_yandex">Яндекс</string>
+    <string name="account_link">Привязать</string>
+    <string name="account_unlink">Отвязать</string>
+    <string name="account_identities">Способы входа</string>
+    <string name="account_devices">Устройства</string>
+    <string name="account_revoke">Отозвать сессию</string>
+    <string name="account_change_password">Изменить пароль</string>
+    <string name="account_current_password">Текущий пароль</string>
+    <string name="account_new_password">Новый пароль</string>
+</resources>

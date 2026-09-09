@@ -21,4 +21,22 @@ class ShellContractTest {
         assertFalse(source.contains("groups.firstOrNull { it.id == \"3313\" }"))
         assertFalse(source.contains("gid.ifEmpty { groups.firstOrNull()"))
     }
+    @Test fun community_route_is_composed_from_app_container() {
+        val app = File(root, "ui/shell/ZaparaApp.kt").readText()
+        assertTrue(app.contains("Section.Community.route"))
+        assertTrue(app.contains("CommunitiesViewModel.factory(container)"))
+        assertTrue(app.contains("CommunitiesSection("))
+        assertTrue(File(root, "ui/communities/CommunitiesViewModel.kt").isFile)
+    }
+    @Test fun room_outbox_is_wired_for_mutations_and_non_guest_push() {
+        val source = File(root, "ZaparaApplication.kt").readText()
+        assertTrue(source.contains("RoomSyncOutbox.from"))
+        assertTrue(source.contains("enabled = !profile.isGuest") || source.contains("enabled=!profile.isGuest"))
+        assertTrue(source.contains("HomeworkService("))
+        assertTrue(source.contains("OverrideService("))
+        assertTrue(source.contains("outbox"))
+        assertTrue(source.contains("PrivateSyncCoordinator"))
+        assertTrue(source.contains("attachPrivateSync") || source.contains(".attach("))
+        assertTrue(File(root, "data/sync/PrivateSyncCoordinator.kt").isFile)
+    }
 }

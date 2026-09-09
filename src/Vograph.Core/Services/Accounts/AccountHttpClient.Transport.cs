@@ -59,6 +59,55 @@ public sealed partial class AccountHttpClient
         }
     }
 
+    private async Task<AccountExportDownload> GetFileAsync(string path, string access, CancellationToken caller)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30), clock);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(caller, timeout.Token);
+        var ct = deadline.Token;
+        byte[]? received = null;
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(Scope.BaseUri, "api/v1/" + path));
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+            if (http.DefaultRequestHeaders.Any()) throw new AccountClientException(AccountClientFailure.InvalidRequest);
+            request.Headers.Accept.Add(new("application/json"));
+            request.Headers.Authorization = new("Bearer", access);
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            var actual = (int)response.StatusCode;
+            received = await ReadAsync(response.Content, actual == 200 ? 65536 : 4096, ct).ConfigureAwait(false);
+            if (actual != 200) throw Error(response, received);
+            if (response.Content.Headers.ContentType?.MediaType != "application/json")
+                throw new AccountClientException(AccountClientFailure.InvalidPayload);
+            var payload = received.ToArray();
+            return new AccountExportDownload(payload, FileName(response));
+        }
+        catch (OperationCanceledException)
+        {
+            if (caller.IsCancellationRequested) throw new OperationCanceledException("Операция отменена.", caller);
+            throw new AccountClientException(AccountClientFailure.Timeout);
+        }
+        catch (HttpRequestException) { throw new AccountClientException(AccountClientFailure.Transport); }
+        catch (IOException) { throw new AccountClientException(AccountClientFailure.Transport); }
+        catch (Exception e) when (e is JsonException or ArgumentException or InvalidOperationException or FormatException)
+        { throw new AccountClientException(AccountClientFailure.InvalidPayload); }
+        finally
+        {
+            request.Headers.Authorization = null;
+            if (received is not null) CryptographicOperations.ZeroMemory(received);
+        }
+    }
+
+    private static string FileName(HttpResponseMessage response)
+    {
+        var disposition = response.Content.Headers.ContentDisposition;
+        var raw = disposition?.FileNameStar ?? disposition?.FileName;
+        if (string.IsNullOrEmpty(raw)) throw new AccountClientException(AccountClientFailure.InvalidPayload);
+        var name = raw.Trim().Trim('"');
+        if (name.Length is 0 or > 128 || name.IndexOfAny(['/', '\\', '\0', ':']) >= 0)
+            throw new AccountClientException(AccountClientFailure.InvalidPayload);
+        return name;
+    }
+
     private static async Task<byte[]> ReadAsync(HttpContent content, int limit, CancellationToken ct)
     {
         if (content.Headers.ContentLength > limit) throw new AccountClientException(AccountClientFailure.BodyTooLarge);
@@ -101,12 +150,14 @@ public sealed partial class AccountHttpClient
             (400 or 413 or 415, "invalid_request") => AccountClientFailure.InvalidRequest,
             (401, "invalid_credentials") => AccountClientFailure.InvalidCredentials,
             (401, "invalid_session") => AccountClientFailure.InvalidSession,
+            (403, "invalid_external_proof") => AccountClientFailure.InvalidExternalProof,
             (409, "username_unavailable") => AccountClientFailure.UsernameUnavailable,
             (404, "session_not_found") => AccountClientFailure.SessionNotFound,
             (404, _) => AccountClientFailure.NotConfigured,
             (429, "rate_limited") => AccountClientFailure.RateLimited,
             (503, "db_unavailable") => AccountClientFailure.DbUnavailable,
             (503, "registration_unavailable") => AccountClientFailure.RegistrationUnavailable,
+            (503, "provider_unavailable") => AccountClientFailure.ProviderUnavailable,
             (500, "internal_error") => AccountClientFailure.InternalError,
             _ => AccountClientFailure.ServerUnavailable
         };

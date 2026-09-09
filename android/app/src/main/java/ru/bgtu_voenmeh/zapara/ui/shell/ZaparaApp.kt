@@ -37,6 +37,8 @@ import androidx.navigation.navArgument
 import ru.bgtu_voenmeh.zapara.AppContainer
 import ru.bgtu_voenmeh.zapara.ZaparaApplication
 import ru.bgtu_voenmeh.zapara.ui.account.AccountViewModel
+import ru.bgtu_voenmeh.zapara.ui.communities.CommunitiesSection
+import ru.bgtu_voenmeh.zapara.ui.communities.CommunitiesViewModel
 import ru.bgtu_voenmeh.zapara.ui.components.ToastHost
 import ru.bgtu_voenmeh.zapara.ui.friends.FriendsSection
 import ru.bgtu_voenmeh.zapara.ui.friends.FriendsViewModel
@@ -195,6 +197,13 @@ private fun ZaparaAppBody(
                                 val vm: FriendsViewModel = viewModel(factory = FriendsViewModel.factory(container))
                                 val s by vm.state.collectAsStateWithLifecycle()
                                 FriendsSection(s, vm::onEvent)
+                                }
+                            }
+                            composable(Section.Community.route) {
+                                ProvideSectionEntry {
+                                val vm: CommunitiesViewModel = viewModel(factory = CommunitiesViewModel.factory(container))
+                                val s by vm.state.collectAsStateWithLifecycle()
+                                CommunitiesSection(s, vm::onEvent)
                                 }
                             }
                             composable(Section.Settings.route) {

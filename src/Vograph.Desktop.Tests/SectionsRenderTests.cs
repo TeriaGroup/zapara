@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Headless.XUnit;
 using Avalonia.Styling;
+using Vograph.Desktop.Features.Communities;
 using Vograph.Desktop.Features.Friends;
 using Vograph.Desktop.Features.Homeworks;
 using Vograph.Desktop.Features.Maps;
@@ -16,7 +17,7 @@ using Xunit;
 
 namespace Vograph.Desktop.Tests;
 
-/// <summary>One pass over all eight sections: both themes render without binding errors; stored en still leaves Russian titles.</summary>
+/// <summary>One pass over all nine sections: both themes render without binding errors; stored en still leaves Russian titles.</summary>
 public class SectionsRenderTests : UiTest
 {
     private static readonly DateTime Mon7 = new(2026, 9, 7, 8, 0, 0);
@@ -40,6 +41,7 @@ public class SectionsRenderTests : UiTest
         shell.Register(SectionKey.Maps, () => new MapsViewModel(db.Services, shell, () => Mon7));
         shell.Register(SectionKey.Friends, () => new FriendsViewModel(db.Services, shell, () => Mon7));
         shell.Register(SectionKey.Homework, () => new HomeworkViewModel(db.Services, shell, () => Mon7));
+        shell.Register(SectionKey.Community, () => new CommunitiesViewModel(db.Services));
         shell.Register(SectionKey.Settings, () => new SettingsViewModel(db.Services, shell, () => Mon7));
         await shell.StartAsync(allowNetwork: false);
         var window = new MainWindow { DataContext = shell };
@@ -54,6 +56,7 @@ public class SectionsRenderTests : UiTest
             [SectionKey.Maps] = vm => ((MapsViewModel)vm).Image is not null,
             [SectionKey.Friends] = vm => ((FriendsViewModel)vm).Friends.Count == 1,
             [SectionKey.Homework] = vm => ((HomeworkViewModel)vm).Groups.Count > 0,
+            [SectionKey.Community] = vm => ((CommunitiesViewModel)vm).NeedAccount,
             [SectionKey.Settings] = vm => ((SettingsViewModel)vm).GroupName == "А863С",
         };
         foreach (var key in Enum.GetValues<SectionKey>())

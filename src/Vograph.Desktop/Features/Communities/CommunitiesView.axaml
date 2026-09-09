@@ -1,0 +1,195 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             xmlns:cm="using:Vograph.Desktop.Features.Communities"
+             x:Class="Vograph.Desktop.Features.Communities.CommunitiesView"
+             x:DataType="cm:CommunitiesViewModel">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="32,26" Spacing="14" MaxWidth="880" HorizontalAlignment="Left">
+      <StackPanel>
+        <TextBlock Classes="display" Text="{Binding Title}" />
+        <TextBlock Classes="muted" Text="{Binding Status}" Margin="0,4,0,0" TextWrapping="Wrap"
+                   AutomationProperties.AutomationId="Community.Status" />
+      </StackPanel>
+
+      <c:EmptyState IsVisible="{Binding NeedAccount}" Title="{loc:T communityNeedAccount}"
+                    Hint="{loc:T accountIsolation}" Icon="{StaticResource Icon.Friends}" Margin="0,24"
+                    AutomationProperties.AutomationId="Community.NeedAccount" />
+      <c:EmptyState IsVisible="{Binding IsEmpty}" Title="{loc:T communityEmpty}"
+                    Icon="{StaticResource Icon.Friends}" Margin="0,24"
+                    AutomationProperties.AutomationId="Community.Empty" />
+      <c:EmptyState IsVisible="{Binding IsForbidden}" Title="{loc:T communityForbidden}"
+                    Icon="{StaticResource Icon.Friends}" Margin="0,24"
+                    AutomationProperties.AutomationId="Community.Forbidden" />
+
+      <ItemsControl ItemsSource="{Binding Communities}" IsVisible="{Binding !NeedAccount}"
+                    AutomationProperties.AutomationId="Community.List">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="cm:CommunityItemViewModel">
+            <Border Classes="card hoverable">
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                <Button Classes="ghost" HorizontalAlignment="Left" HorizontalContentAlignment="Left"
+                        Command="{Binding SelectCommand}" AutomationProperties.AutomationId="Community.Select">
+                  <StackPanel Spacing="4">
+                    <TextBlock Classes="subject" Text="{Binding Name}" />
+                    <TextBlock Classes="muted caption" Text="{Binding Description}" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Button>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+                  <Button Classes="primary" Content="{loc:T communityJoin}" Command="{Binding JoinCommand}"
+                          IsVisible="{Binding CanJoin}" AutomationProperties.AutomationId="Community.Join"
+                          AutomationProperties.Name="{loc:T communityJoin}" />
+                  <TextBlock Classes="muted caption" Text="{loc:T communityPending}" IsVisible="{Binding IsPending}"
+                             VerticalAlignment="Center" AutomationProperties.AutomationId="Community.Pending" />
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <ContentControl Content="{Binding Selected}" IsVisible="{Binding Selected, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <ContentControl.ContentTemplate>
+          <DataTemplate x:DataType="cm:CommunityItemViewModel">
+            <StackPanel Spacing="16">
+              <StackPanel Spacing="8" IsVisible="{Binding IsStaff}">
+                <TextBlock Classes="micro" Text="{loc:T communityMembers}" />
+                <ItemsControl ItemsSource="{Binding JoinRequests}">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="cm:CommunityJoinRequestItemViewModel">
+                      <Border Classes="card">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <TextBlock Classes="muted caption" Text="{loc:T communityPending}" VerticalAlignment="Center" />
+                          <Button Classes="primary" Content="{loc:T communityAccept}" Command="{Binding AcceptCommand}"
+                                  AutomationProperties.AutomationId="Community.Accept"
+                                  AutomationProperties.Name="{loc:T communityAccept}" />
+                          <Button Classes="danger" Content="{loc:T communityReject}" Command="{Binding RejectCommand}"
+                                  AutomationProperties.AutomationId="Community.Reject"
+                                  AutomationProperties.Name="{loc:T communityReject}" />
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <ItemsControl ItemsSource="{Binding Staff}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="cm:CommunityPersonItemViewModel">
+                      <TextBlock Classes="caption" Text="{Binding Role}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+
+              <StackPanel Spacing="8">
+                <TextBlock Classes="micro" Text="{loc:T communityHomework}" />
+                <ItemsControl ItemsSource="{Binding Homework}" AutomationProperties.AutomationId="Community.Homework">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="cm:CommunityHomeworkItemViewModel">
+                      <Border Classes="card">
+                        <Grid ColumnDefinitions="*,Auto">
+                          <StackPanel Spacing="6">
+                            <TextBlock Classes="subject" Text="{Binding Title}" />
+                            <TextBlock Text="{Binding Body}" TextWrapping="Wrap" />
+                            <StackPanel Spacing="6" IsVisible="{Binding CanEdit}">
+                              <TextBox Text="{Binding Title}" />
+                              <TextBox Text="{Binding Body}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48" />
+                              <Button HorizontalAlignment="Left" Content="{loc:T save}" Command="{Binding UpdateCommand}"
+                                      AutomationProperties.AutomationId="Community.UpdateHomework" />
+                            </StackPanel>
+                          </StackPanel>
+                          <c:Switch Grid.Column="1" VerticalAlignment="Top" IsChecked="{Binding Completed, Mode=OneWay}"
+                                    Command="{Binding ToggleCompletionCommand}"
+                                    AutomationProperties.AutomationId="Community.Completion"
+                                    AutomationProperties.Name="{loc:T communityHomework}" />
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <StackPanel Spacing="6" IsVisible="{Binding IsStaff}">
+                  <TextBox Text="{Binding DraftTitle}" PlaceholderText="{loc:T communityHomework}" />
+                  <TextBox Text="{Binding DraftBody}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48" />
+                  <Button Classes="primary" HorizontalAlignment="Left" Content="{loc:T save}"
+                          Command="{Binding PublishHomeworkCommand}"
+                          AutomationProperties.AutomationId="Community.PublishHomework" />
+                </StackPanel>
+              </StackPanel>
+
+              <StackPanel Spacing="8">
+                <TextBlock Classes="micro" Text="{loc:T communityAnnouncements}" />
+                <ItemsControl ItemsSource="{Binding Announcements}" AutomationProperties.AutomationId="Community.Announcements">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="cm:CommunityAnnouncementItemViewModel">
+                      <Border Classes="card">
+                        <StackPanel Spacing="6">
+                          <TextBlock Classes="subject" Text="{Binding Title}" />
+                          <TextBlock Text="{Binding Body}" TextWrapping="Wrap" />
+                          <StackPanel Spacing="6" IsVisible="{Binding CanEdit}">
+                            <TextBox Text="{Binding Title}" />
+                            <TextBox Text="{Binding Body}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48" />
+                            <Button HorizontalAlignment="Left" Content="{loc:T save}" Command="{Binding UpdateCommand}"
+                                    AutomationProperties.AutomationId="Community.UpdateAnnouncement" />
+                          </StackPanel>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <StackPanel Spacing="6" IsVisible="{Binding IsStaff}">
+                  <TextBox Text="{Binding DraftTitle}" PlaceholderText="{loc:T communityAnnouncements}" />
+                  <TextBox Text="{Binding DraftBody}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48" />
+                  <Button Classes="primary" HorizontalAlignment="Left" Content="{loc:T save}"
+                          Command="{Binding PublishAnnouncementCommand}"
+                          AutomationProperties.AutomationId="Community.PublishAnnouncement" />
+                </StackPanel>
+              </StackPanel>
+
+              <StackPanel Spacing="8">
+                <TextBlock Classes="micro" Text="{loc:T communityPolls}" />
+                <ItemsControl ItemsSource="{Binding Polls}" AutomationProperties.AutomationId="Community.Polls">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="cm:CommunityPollItemViewModel">
+                      <Border Classes="card">
+                        <StackPanel Spacing="8">
+                          <TextBlock Classes="subject" Text="{Binding Question}" />
+                          <ItemsControl ItemsSource="{Binding Options}" IsVisible="{Binding !HasResults}">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="cm:CommunityPollOptionItemViewModel">
+                                <Button HorizontalAlignment="Left" Content="{Binding Label}" Command="{Binding VoteCommand}"
+                                        AutomationProperties.AutomationId="Community.Vote"
+                                        AutomationProperties.Name="{loc:T communityVote}" />
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                          <Button HorizontalAlignment="Left" Content="{loc:T communityResults}" Command="{Binding ResultsCommand}"
+                                  AutomationProperties.AutomationId="Community.Results"
+                                  AutomationProperties.Name="{loc:T communityResults}" />
+                          <TextBlock Text="{Binding ResultsText}" IsVisible="{Binding HasResults}" TextWrapping="Wrap" />
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <StackPanel Spacing="6" IsVisible="{Binding IsStaff}">
+                  <TextBox Text="{Binding DraftQuestion}" PlaceholderText="{loc:T communityPolls}" />
+                  <TextBox Text="{Binding DraftOptionA}" />
+                  <TextBox Text="{Binding DraftOptionB}" />
+                  <Button Classes="primary" HorizontalAlignment="Left" Content="{loc:T save}"
+                          Command="{Binding PublishPollCommand}"
+                          AutomationProperties.AutomationId="Community.PublishPoll" />
+                </StackPanel>
+              </StackPanel>
+            </StackPanel>
+          </DataTemplate>
+        </ContentControl.ContentTemplate>
+      </ContentControl>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

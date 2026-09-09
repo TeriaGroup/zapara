@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Text;
 using Avalonia.Input;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Models;
+using Vograph.Core.Services.Sync;
 using Vograph.Desktop.Dialogs;
 using Vograph.Desktop.Domain;
 using Vograph.Desktop.Features.Preferences;
@@ -12,6 +14,7 @@ using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Features.States;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.ViewModels;
+using Zapara.Contracts.Sync;
 using MapInfo = Vograph.Core.Services.MapInfo;
 
 namespace Vograph.Desktop.Shell;
@@ -45,6 +48,7 @@ public sealed partial class ShellViewModel : ViewModelBase
             Make(SectionKey.Maps, "navMaps", "Icon.Map", "Ctrl+5"),
             Make(SectionKey.Friends, "navFriends", "Icon.Friends", "Ctrl+6"),
             Make(SectionKey.Homework, "navHomework", "Icon.Homework", "Ctrl+7"),
+            Make(SectionKey.Community, "navCommunity", "Icon.Community", "Ctrl+9"),
         };
         SettingsSection = Make(SectionKey.Settings, "navSettings", "Icon.Settings", "Ctrl+8");
 
@@ -57,6 +61,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         Register(SectionKey.Maps, () => new Features.Maps.MapsViewModel(App, this));
         Register(SectionKey.Friends, () => new Features.Friends.FriendsViewModel(App, this));
         Register(SectionKey.Homework, () => new Features.Homeworks.HomeworkViewModel(App, this));
+        Register(SectionKey.Community, () => new Features.Communities.CommunitiesViewModel(App));
         Register(SectionKey.Settings, () => new Features.Preferences.SettingsViewModel(App, this));
 
         _sidebarCollapsed = app.Prefs.SidebarCollapsed;
@@ -102,6 +107,70 @@ public sealed partial class ShellViewModel : ViewModelBase
         if (!Updates.IsAvailable || Updates.LatestTag is null) return;
         var dlg = new UpdateDialogViewModel(Updates.LatestTag, Updates.PublishedText);
         if (await Dialogs.ShowAsync(dlg)) await Updates.InstallAsync();
+    }
+
+    /// <summary>409 keep-local / keep-server, or 410 abort. Posted off the coordinator so CoreGate is released first.</summary>
+    internal async Task ShowSyncConflictAsync(PrivateSyncConflict conflict)
+    {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        ArgumentNullException.ThrowIfNull(conflict);
+        var dialog = IsExpiredConflict(conflict)
+            ? SyncConflictDialogViewModel.ForExpired(conflict)
+            : await BuildConflictDialogAsync(conflict);
+        if (!operation.IsCurrent) return;
+        await Dialogs.ShowAsync(dialog);
+    }
+
+    private void OnPrivateSyncConflict(PrivateSyncConflict conflict) =>
+        App.Work.Post(a => Dispatcher.UIThread.Post(a), () => ShowSyncConflictAsync(conflict),
+            ex => App.Log.Error("sync conflict dialog", ex));
+
+    private static bool IsExpiredConflict(PrivateSyncConflict conflict) =>
+        conflict.Diagnostic.Contains("устарел", StringComparison.Ordinal);
+
+    private async Task<SyncConflictDialogViewModel> BuildConflictDialogAsync(PrivateSyncConflict conflict)
+    {
+        var box = await RunAsync(() => new ConflictBox(TryReadConflictPayload(conflict)), "sync conflict");
+        return box?.Payload is { Server: { } server } payload
+            ? SyncConflictDialogViewModel.ForConflict(conflict, payload.Local, server, payload.NewOpId)
+            : SyncConflictDialogViewModel.ForExpired(conflict);
+    }
+
+    private sealed record ConflictBox(ConflictPayload? Payload);
+    private sealed record ConflictPayload(SyncValue? Local, SyncRecord Server, Guid NewOpId);
+
+    private ConflictPayload? TryReadConflictPayload(PrivateSyncConflict conflict)
+    {
+        using var cmd = App.Db.Connection.CreateCommand();
+        cmd.CommandText = "SELECT localPayload, serverPayload FROM sync_draft WHERE entityType=@t AND entityId=@id";
+        cmd.Parameters.AddWithValue("@t", conflict.EntityType);
+        cmd.Parameters.AddWithValue("@id", conflict.EntityId.ToString("D"));
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read()) return null;
+        var localJson = reader.IsDBNull(0) ? null : reader.GetString(0);
+        var serverJson = reader.IsDBNull(1) ? null : reader.GetString(1);
+        if (string.IsNullOrWhiteSpace(serverJson) || serverJson == "{}") return null;
+        try
+        {
+            var server = SyncJson.Parse<SyncRecord>(Encoding.UTF8.GetBytes(serverJson));
+            SyncValue? local = null;
+            if (!string.IsNullOrWhiteSpace(localJson) && localJson != "{}")
+            {
+                var bytes = Encoding.UTF8.GetBytes(localJson);
+                local = conflict.EntityType switch
+                {
+                    "homework" => SyncJson.Parse<HomeworkValue>(bytes),
+                    "completion" => SyncJson.Parse<CompletionValue>(bytes),
+                    "override" => SyncJson.Parse<OverrideValue>(bytes),
+                    "friend" => SyncJson.Parse<FriendValue>(bytes),
+                    "settings" => SyncJson.Parse<SettingsValue>(bytes),
+                    _ => null
+                };
+            }
+            return new ConflictPayload(local, server, Guid.NewGuid());
+        }
+        catch (ArgumentException) { return null; }
     }
 
     [ObservableProperty] private ViewModelBase? _current;
@@ -400,7 +469,7 @@ public sealed partial class ShellViewModel : ViewModelBase
     public void NavigateTo(SectionKey key)
     {
         if (StartupStopped) return;
-        // Ctrl+1…8 are Window.KeyBindings and fire straight into NavigateCommand, over the fullscreen map too
+        // Ctrl+1…9 are Window.KeyBindings and fire straight into NavigateCommand, over the fullscreen map too
         // (HandleShortcut never sees them). Without this the section would be switched invisibly behind the plan.
         Overlay = null;
         Current = GetOrCreate(key);
