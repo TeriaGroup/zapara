@@ -206,14 +206,19 @@ public static class Scenarios
             return ($"зум ×2 (разница {Ui.Difference(fitted, zoomed):0.###}), этаж #{picked} из {floors.Length} перерисовал план, полноэкран открылся и закрылся по Esc, «К следующей паре» вернула слежение", string.Join(", ", zoomShot, floorShot, full));
         });
 
-        Step(report, "Настройки: язык, тест уведомления, анимации", () =>
+        Step(report, "Настройки: язык отсутствует, тест уведомления, анимации", () =>
         {
             ui.Click("Nav.Settings");
-            ui.Click("SettingsLanguage.1");
-            if (!ui.WaitText("Nav.Settings", t => t == "Settings")) throw new Exception($"подписи не переключились на английский: {ui.Dump("Nav.Settings")}");
-            var en = ui.Shot("settings-english");
-            ui.Click("SettingsLanguage.0");
-            if (!ui.WaitText("Nav.Settings", t => t == "Настройки")) throw new Exception($"русские подписи не вернулись: {ui.Dump("Nav.Settings")}");
+            if (ui.TryFind("SettingsLanguage", TimeSpan.FromMilliseconds(200)) is not null)
+                throw new Exception("language selector remains");
+            if (ui.TryFind("SettingsLanguage.0", TimeSpan.FromMilliseconds(200)) is not null)
+                throw new Exception("SettingsLanguage.0 remains");
+            if (ui.TryFind("SettingsLanguage.1", TimeSpan.FromMilliseconds(200)) is not null)
+                throw new Exception("SettingsLanguage.1 remains");
+            var settingsLabel = ui.Text("Nav.Settings");
+            if (settingsLabel != "Настройки") throw new Exception($"chrome not Russian: {ui.Dump("Nav.Settings")}");
+            var refresh = ui.Find("Settings.Refresh").Name;
+            if (refresh != "Обновить расписание") throw new Exception($"refresh chrome not Russian: «{refresh}»");
             ui.Click("Settings.TestNotification");
             if (ui.TryFind("Toast", TimeSpan.FromSeconds(3)) is null) throw new Exception("no toast after «Тест уведомления»");
             var toast = ui.Shot("settings-toast");
@@ -228,7 +233,7 @@ public static class Scenarios
             ui.Toggle("Settings.Animations");
             if (!ui.WaitFor(() => ui.IsOn("Settings.Animations") == on)) throw new Exception($"тумблер анимаций не вернулся в {on}");
             if (!WaitPref(o, "Animations", on)) throw new Exception($"тумблер анимаций не вернул Animations={on} в ui.json: {Pref(o, "Animations")}");
-            return ($"английские подписи и русские обратно, тост уведомления, анимации {on} → {!on} → {on} (и в ui.json тоже)", en + ", " + toast);
+            return ($"селектора языка нет, «Настройки» / «Обновить расписание», тост уведомления, анимации {on} → {!on} → {on} (и в ui.json тоже)", toast);
         });
 
         Step(report, "LAN-импорт меняет расписание на экране", () =>

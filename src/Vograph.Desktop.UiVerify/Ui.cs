@@ -13,7 +13,7 @@ namespace Vograph.Desktop.UiVerify;
 
 /// <summary>Launches ONE Vograph.exe on a scratch data folder and drives it by AutomationId. Only that process (its pid) is
 /// ever closed or killed — the user may have another Vograph running on the real profile.</summary>
-public sealed class Ui : IDisposable
+public sealed partial class Ui : IDisposable
 {
     private readonly Application _app;
     private readonly UIA3Automation _automation = new();
@@ -30,6 +30,13 @@ public sealed class Ui : IDisposable
         var psi = new ProcessStartInfo(o.Exe) { WorkingDirectory = Path.GetDirectoryName(o.Exe)!, UseShellExecute = false };
         psi.Environment["VOGRAPH_DATA_DIR"] = o.Data;
         psi.Environment["VOGRAPH_OFFLINE"] = "1";
+        psi.Environment.Remove("VOGRAPH_API_BASE_URL");
+        psi.Environment.Remove("VOGRAPH_ACCOUNT_BASE_URL");
+        if (o.AccountApi is not null)
+        {
+            if (!File.Exists(Path.Combine(o.Data, Seed.Marker))) throw new InvalidOperationException("Account QA requires scratch marker.");
+            psi.Environment["VOGRAPH_ACCOUNT_BASE_URL"] = o.AccountApi.AbsoluteUri;
+        }
         _app = Application.Launch(psi);
         Pid = _app.ProcessId;
         try
@@ -78,7 +85,7 @@ public sealed class Ui : IDisposable
         var el = Find(automationId);
         if (el.Patterns.Invoke.IsSupported) el.Patterns.Invoke.Pattern.Invoke();
         else MouseClick(el, automationId);
-        Thread.Sleep(350); // let the 180–220 ms transitions finish before the next step reads the screen
+        Thread.Sleep(700); // out 180 + gap 80 + in 180, plus a margin before the next step reads the screen
     }
 
     public void Toggle(string automationId)
@@ -86,7 +93,7 @@ public sealed class Ui : IDisposable
         var el = Find(automationId);
         if (el.Patterns.Toggle.IsSupported) el.Patterns.Toggle.Pattern.Toggle();
         else MouseClick(el, automationId);
-        Thread.Sleep(350);
+        Thread.Sleep(700);
     }
 
     /// <summary>FlaUI's el.Click() moves the real cursor and presses the real button — global input, exactly like
@@ -113,7 +120,7 @@ public sealed class Ui : IDisposable
     {
         if (el.Patterns.Invoke.IsSupported) el.Patterns.Invoke.Pattern.Invoke();
         else MouseClick(el, Safe(() => el.Name));
-        Thread.Sleep(350);
+        Thread.Sleep(700);
     }
 
     /// <summary>On screen at all: an Avalonia control with IsVisible=false leaves the tree, but a scrolled-away
@@ -200,6 +207,14 @@ public sealed class Ui : IDisposable
         RequireOurFocus($"text «{text}»");
         Keyboard.Type(text);
         Thread.Sleep(200);
+    }
+
+    public void SetAccountField(string id, string value)
+    {
+        var field = Find(id);
+        if (field.Properties.ProcessId.Value != Pid) throw new InvalidOperationException("Foreign field refused.");
+        if (!field.Patterns.Value.IsSupported) throw new InvalidOperationException("Account field requires UIA Value pattern.");
+        field.Patterns.Value.Pattern.SetValue(value);
     }
 
     /// <summary>

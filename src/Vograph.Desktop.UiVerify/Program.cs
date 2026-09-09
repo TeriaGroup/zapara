@@ -5,7 +5,7 @@ try { o = Options.Parse(args); }
 catch (Exception ex)
 {
     Console.Error.WriteLine(ex.Message);
-    Console.Error.WriteLine("usage: Vograph.Desktop.UiVerify --exe <Vograph.exe> [--out <dir>] [--data <dir>] [--timeout <sec>] [--keep]");
+    Console.Error.WriteLine("usage: Vograph.Desktop.UiVerify --exe <Vograph.exe> [--out <dir>] [--data <dir>] [--timeout <sec>] [--keep] [--account-api <loopback URL> [--registration-disabled | --logout online|offline]]");
     return 2;
 }
 Directory.CreateDirectory(o.Out);
@@ -34,7 +34,9 @@ catch (Exception ex)
 using (ui)
 {
     Console.WriteLine($"Vograph.exe pid {ui.Pid}, data {o.Data}, out {o.Out}");
-    Scenarios.Run(ui, report, o);
+    if (o.AccountAccessibility) AccessibilityScenario.Run(ui, report, o);
+    else if (o.AccountApi is not null) AccountScenario.Run(ui, report, o);
+    else Scenarios.Run(ui, report, o);
 }
 var logs = Directory.Exists(Path.Combine(o.Data, "logs")) ? Directory.GetFiles(Path.Combine(o.Data, "logs"), "desktop-*.log") : Array.Empty<string>();
 var lines = logs.SelectMany(File.ReadAllLines).ToList();
@@ -50,6 +52,8 @@ if (errors > 0 || transform.Count > 0)
         $"ERROR {errors}, WARN {warnings}, из них transform-предупреждений {transform.Count}{(transform.Count > 0 ? $": {transform[0].Trim()}" : "")}");
 else
     report.Pass("Лог: без ERROR и без «Cannot find the appropriate transform»", $"{lines.Count} строк, ERROR {errors}, WARN {warnings}");
-report.Write(o.Out, o, ui.Pid, $"строк {lines.Count}, ERROR {errors}, WARN {warnings}, transform-предупреждений {transform.Count}\n\n```\n{string.Join('\n', lines.TakeLast(40))}\n```");
+report.Write(o.Out, o, ui.Pid, o.AccountAccessibility
+    ? $"строк {lines.Count}, ERROR {errors}, WARN {warnings}; raw logs omitted for password probe"
+    : $"строк {lines.Count}, ERROR {errors}, WARN {warnings}, transform-предупреждений {transform.Count}\n\n```\n{string.Join('\n', lines.TakeLast(40))}\n```");
 Console.WriteLine($"report: {Path.Combine(o.Out, "report.md")} — FAIL {report.Failures}, ERROR {errors}, WARN {warnings} (transform {transform.Count})");
 return report.Failures == 0 ? 0 : 1;

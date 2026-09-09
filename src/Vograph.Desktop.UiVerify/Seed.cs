@@ -33,6 +33,11 @@ public static class Seed
                 return $"is {label} — the real profile, never a scratch folder";
         }
 
+        // Account profiles live at <data>/profiles/<64-hex>/<uuid>/vograph.db plus WAL/SHM sidecars.
+        // A long --out under the repo evidence tree previously made login fail with SqliteException (MAX_PATH).
+        var accountWal = Path.Combine(full, "profiles", new string('A', 64), Guid.Empty.ToString("D"), "vograph.db-wal");
+        if (accountWal.Length >= 260)
+            return "is too long for an account profile database on this Windows path limit";
         if (!Directory.Exists(full)) return null;
         if (File.Exists(Path.Combine(full, Marker))) return null;
         try
@@ -82,12 +87,15 @@ public static class Seed
         s.MyGroupId = MyGroupId;
         s.NotifyTime1 = "20:00";
         s.NotifyTime2 = "07:30";
+        s.AutoUpdate = false;
+        s.Language = "en"; // stored field kept; runtime chrome is Russian
         services.Db.SaveSettings(s);
         services.Overrides.AddOrUpdate(MathSubject, "global", "Матан", "лекции — в 493");
         services.Homework.AddHomework(MathSubject, "§5, задачи 1–12", 1, createdAt: DateTime.Now.Date.AddDays(-2));
         services.Db.InsertFriend(new FriendGroup { GroupName = "09С31", ColorHex = "#F2A33C", Enabled = true, MemberNames = "Иван" });
         services.Prefs.Theme = ThemeChoice.Dark;
         services.Prefs.Animations = true;
+        services.Prefs.NotificationsEnabled = false;
         services.Prefs.Save();
     }
 }
