@@ -256,17 +256,18 @@ public class MapsTests : UiTest
         Assert.False(vm.IsDownloading);
     }
 
-    /// <summary>T6 #8: the «ВЦ — показан план ГК» note is a localized string and follows the language switch.</summary>
+    /// <summary>T6 #8: the «ВЦ — показан план ГК» note is chrome and stays Russian when stored language is en.</summary>
     [AvaloniaFact]
-    public async Task Vc_Note_Follows_The_Language()
+    public async Task Vc_Note_Stays_Russian_When_Stored_Language_Is_English()
     {
         using var db = TestDb.Create();
         var (_, vm, _, _) = Make(db);
         await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("ВЦ 280;")!, "Матан");
         Assert.Equal("ВЦ — показан план ГК", vm.Note);
         db.Services.Loc.SetLanguage("en");
-        try { Assert.Equal(db.Services.I18n.T("mapVc"), vm.Note); Assert.NotEqual("ВЦ — показан план ГК", vm.Note); }
-        finally { db.Services.Loc.SetLanguage("ru"); }
+        Assert.Equal("ru", db.Services.Loc.Language);
+        Assert.Equal("ВЦ — показан план ГК", vm.Note);
+        Assert.Equal(db.Services.I18n.T("mapVc"), vm.Note);
     }
 
     /// <summary>T6 #15: a plan still decoding when the section is detached must not resurface as an undisposed bitmap.</summary>

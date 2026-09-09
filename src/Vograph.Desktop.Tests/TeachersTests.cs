@@ -281,14 +281,14 @@ public class TeachersTests : UiTest
     }
 
     [Fact]
-    public async Task Language_Switch_Relabels_The_Count()
+    public async Task Stored_English_Still_Keeps_Russian_Count()
     {
         using var db = TestDb.Create();
         var vm = await Make(db);
         Assert.Equal("2 из 3", vm.CountText);
         db.Services.Loc.SetLanguage("en");
-        try { Assert.Equal("2 of 3", vm.CountText); }
-        finally { db.Services.Loc.SetLanguage("ru"); }
+        Assert.Equal("ru", db.Services.Loc.Language);
+        Assert.Equal("2 из 3", vm.CountText);
     }
 
     [Fact]

@@ -129,14 +129,14 @@ public class ShellTests : UiTest
     }
 
     [AvaloniaFact]
-    public void Language_Change_Relabels_Sections()
+    public void Stored_English_Still_Keeps_Russian_Section_Labels()
     {
         var (db, shell) = Make();
         using (db)
         {
             db.Services.Loc.SetLanguage("en");
-            Assert.Equal("Schedule", shell.MainSections[0].Label);
-            db.Services.Loc.SetLanguage("ru");
+            Assert.Equal("ru", db.Services.Loc.Language);
+            Assert.Equal("Расписание", shell.MainSections[0].Label);
         }
     }
 

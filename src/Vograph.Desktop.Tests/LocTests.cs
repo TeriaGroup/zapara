@@ -18,7 +18,21 @@ public class LocTests
     }
 
     [Fact]
-    public void LocString_Updates_On_Language_Change()
+    public void Stored_English_Still_Returns_Russian_Chrome()
+    {
+        var i18n = new I18nService("en");
+        Assert.Equal("ru", i18n.Language);
+        Assert.Equal("Обновить расписание", i18n.T("refresh"));
+        Assert.Equal("Аккаунт", i18n.T("accountTitle"));
+        Assert.Equal("Настройки", i18n.T("navSettings"));
+        i18n.SetLanguage("en");
+        Assert.Equal("ru", i18n.Language);
+        Assert.Equal("Обновить расписание", i18n.T("refresh"));
+        Assert.Equal("07.09.2026", i18n.FormatDate(new DateTime(2026, 9, 7)));
+    }
+
+    [Fact]
+    public void LocString_Stays_Russian_When_Stored_Language_Is_English()
     {
         var loc = new Loc(new I18nService("ru"));
         var s = new LocString(loc, "tomorrow");
@@ -28,12 +42,12 @@ public class LocTests
         Assert.Equal("Завтра", s.Value);
         loc.SetLanguage("en");
 
-        Assert.Equal("Tomorrow", s.Value);
-        Assert.Equal(nameof(LocString.Value), changed);
+        Assert.Equal("Завтра", s.Value);
+        Assert.Null(changed);
     }
 
     [Fact]
-    public void LocString_Is_Cached_Per_Key_And_Follows_Language()
+    public void LocString_Is_Cached_Per_Key_And_Ignores_Stored_English()
     {
         var loc = new Loc(new I18nService("ru"));
         var a = loc.String("today");
@@ -41,7 +55,7 @@ public class LocTests
         Assert.Same(a, loc.String("TODAY")); // keys are case-insensitive in Core
         Assert.Equal("Сегодня", a.Value);
         loc.SetLanguage("en");
-        Assert.Equal("Today", a.Value);
+        Assert.Equal("Сегодня", a.Value);
     }
 
     [Theory]
@@ -60,23 +74,19 @@ public class LocTests
     }
 
     [Fact]
-    public void Plural_English_Has_Two_Forms()
+    public void Plural_Ignores_Stored_English_And_Uses_Russian_Rules()
     {
         var loc = new Loc(new I18nService("en"));
-        Assert.Equal("1 lesson", loc.Plural(1, "lessons1", "lessons2", "lessons5"));
-        Assert.Equal("3 lessons", loc.Plural(3, "lessons1", "lessons2", "lessons5"));
+        Assert.Equal("1 пара", loc.Plural(1, "lessons1", "lessons2", "lessons5"));
+        Assert.Equal("3 пары", loc.Plural(3, "lessons1", "lessons2", "lessons5"));
     }
 
     [Fact]
-    public void Every_New_Key_Exists_In_Both_Languages()
+    public void Every_New_Key_Has_Russian_Value()
     {
-        var ru = new I18nService("ru");
-        var en = new I18nService("en");
+        var storedEn = new I18nService("en");
         foreach (var key in NewKeys)
-        {
-            Assert.NotEqual(key, ru.T(key)); // T returns the key itself when missing
-            Assert.NotEqual(key, en.T(key));
-        }
+            Assert.NotEqual(key, storedEn.T(key)); // T returns the key itself when missing
     }
 
     public static readonly string[] NewKeys =

@@ -67,8 +67,8 @@ public class PolishTests : UiTest
         Assert.Equal("Неделя (Ctrl+2)", week.Tip);
         Assert.Equal("Настройки (Ctrl+8)", shell.SettingsSection.Tip);
         db.Services.Loc.SetLanguage("en");
-        try { Assert.Equal("Week (Ctrl+2)", week.Tip); }
-        finally { db.Services.Loc.SetLanguage("ru"); }
+        Assert.Equal("ru", db.Services.Loc.Language);
+        Assert.Equal("Неделя (Ctrl+2)", week.Tip);
     }
 
     [AvaloniaFact]

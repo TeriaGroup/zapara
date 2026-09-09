@@ -67,7 +67,7 @@ public class AutomationIdsTests : UiTest
         "Maps.Reset", "Maps.Fullscreen", "Maps.More", "Maps.Plan", "MapsFull.Close", "MapsFull.ZoomIn",
         "Friends.Add", "Friend.Color", "Friend.Names", "Friend.Enabled", "Friend.Remove", "Friends.Strictness", "Friends.AlwaysAll",
         "Homework.Add", "Homework.Done", "Homework.Edit", "Homework.Delete",
-        "SettingsTheme.0", "SettingsTheme.1", "SettingsTheme.2", "SettingsLanguage.0", "SettingsLanguage.1",
+        "SettingsTheme.0", "SettingsTheme.1", "SettingsTheme.2", "Account.Card", "Account.Status", "Account.Login",
         "Settings.CompactSidebar", "Settings.Animations", "Settings.ChangeGroup", "Settings.ParityInvert", "Settings.Refresh",
         "Settings.NotifyEnabled", "Settings.NotifyTime1", "Settings.NotifyTime2", "Settings.SaveTimes", "Settings.TestNotification",
         "Settings.Export", "Settings.Import", "Settings.Qr", "Settings.LanSync", "Settings.LanAddress",
@@ -160,6 +160,7 @@ public class AutomationIdsTests : UiTest
         ids.UnionWith(Ids(window));
 
         var missing = Scheme.Except(ids).ToArray();
+        Assert.DoesNotContain(ids, id => id.StartsWith("SettingsLanguage", StringComparison.Ordinal));
         Assert.True(missing.Length == 0, $"{missing.Length} id(s) of the brief's scheme are not in the window: {string.Join(", ", missing)}");
         AssertNoBindingErrors();
     }

@@ -352,8 +352,8 @@ public class MotionTests : UiTest
         // What production actually builds the transition with, and the numbers it hands over.
         Assert.Null(Converters.PageTransition.Convert(false, typeof(IPageTransition), null, CultureInfo.InvariantCulture));
         var made = Assert.IsType<FadeSlide>(Converters.PageTransition.Convert(true, typeof(IPageTransition), null, CultureInfo.InvariantCulture));
-        Assert.Equal(8, made.Offset);                                    // spec §7: the page slides 8 px
         Assert.Equal(TimeSpan.FromMilliseconds(180), made.Duration);
+        Assert.Equal(TimeSpan.FromMilliseconds(80), made.Gap);
 
         // Duration zero is the instant branch: finished before Start even returns, and nothing left pinned on
         // RenderTransform, so a section shown after the switch went off is not drawn 8 px off-centre (T9-R4).
@@ -368,14 +368,84 @@ public class MotionTests : UiTest
         // With a duration there is a real animation: the task is still running when Start returns. No render tick
         // has happened yet, so this is not a timing race — it fails outright for a FadeSlide that snaps instead.
         from.IsVisible = true;
-        var run = made.Start(to, from, forward: false, CancellationToken.None); // 180 ms
+        var run = made.Start(to, from, forward: false, CancellationToken.None); // out 180 + gap 80 + in 180
         Assert.False(run.IsCompleted);
-        Settle(400);
+        Settle(800);
         await run;
         Assert.False(to.IsVisible);
         Assert.True(from.IsVisible);
         Assert.Equal(1, from.Opacity, 3);
-        Assert.Null(from.GetValue(Visual.RenderTransformProperty)); // the ±8 px translate is released (T9-R4)
+        Assert.Null(from.GetValue(Visual.RenderTransformProperty));
+        Assert.Null(to.GetValue(Visual.RenderTransformProperty));
+    }
+
+    /// <summary>
+    /// The pages must not share a frame: outgoing leaves, then a gap, then incoming enters. Showing both at
+    /// once (the old WhenAll crossfade) stacked the two sections for ~180 ms — the artefact on every
+    /// navigation. Incoming stays hidden until Start has finished with the outgoing page.
+    /// </summary>
+    [AvaloniaFact]
+    public async Task FadeSlide_Does_Not_Stack_The_Incoming_Page_On_The_Outgoing_One()
+    {
+        var from = new Border { Width = 50, Height = 50, Opacity = 1 };
+        var to = new Border { Width = 50, Height = 50, IsVisible = false, Opacity = 1 };
+        var window = new Window { Width = 200, Height = 100, Content = new Panel { Children = { from, to } } };
+        window.Show();
+
+        var fade = new FadeSlide();
+        var run = fade.Start(from, to, forward: true, CancellationToken.None);
+        Assert.False(run.IsCompleted);
+        Assert.True(from.IsVisible);
+        Assert.False(to.IsVisible); // the new section waits; it must not paint over the old one
+
+        Settle(800);
+        await run;
+        Assert.Equal(1, to.Opacity, 3);
+        Assert.True(to.IsVisible);
+        Assert.False(from.IsVisible);
+        Assert.Null(from.GetValue(Visual.RenderTransformProperty));
+        Assert.Null(to.GetValue(Visual.RenderTransformProperty));
+        Assert.False(from.IsSet(Visual.OpacityProperty));
+        Assert.False(to.IsSet(Visual.OpacityProperty));
+    }
+
+    /// <summary>
+    /// Incoming (and outgoing) content is text-heavy. A translate re-rasters glyphs every frame and reads as
+    /// shaking. Both pages only fade — no RenderTransform at any sampled frame.
+    /// </summary>
+    [AvaloniaFact]
+    public async Task FadeSlide_Incoming_Fades_Without_A_Translate()
+    {
+        var from = new Border { Width = 50, Height = 50, Opacity = 1 };
+        var to = new Border { Width = 50, Height = 50, IsVisible = false, Opacity = 1 };
+        var window = new Window { Width = 200, Height = 100, Content = new Panel { Children = { from, to } } };
+        window.Show();
+
+        var fade = new FadeSlide { Gap = TimeSpan.Zero };
+        var run = fade.Start(from, to, forward: true, CancellationToken.None);
+        Assert.False(run.IsCompleted);
+        Assert.True(from.IsVisible);
+        Assert.False(to.IsVisible);
+        Assert.Null(from.GetValue(Visual.RenderTransformProperty));
+        Assert.Null(to.GetValue(Visual.RenderTransformProperty));
+
+        var fromX = new List<double>();
+        var toX = new List<double>();
+        for (var waited = 0; waited < 800 && !run.IsCompleted; waited += 20)
+        {
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            Dispatcher.UIThread.RunJobs();
+            fromX.Add(from.RenderTransform?.Value.M31 ?? 0);
+            toX.Add(to.RenderTransform?.Value.M31 ?? 0);
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+        }
+        await run;
+        Assert.True(fromX.TrueForAll(x => Math.Abs(x) < 0.5),
+            $"outgoing must not slide; translateX [{string.Join(", ", fromX.Select(x => x.ToString("0.##", CultureInfo.InvariantCulture)))}]");
+        Assert.True(toX.TrueForAll(x => Math.Abs(x) < 0.5),
+            $"incoming must not slide; translateX [{string.Join(", ", toX.Select(x => x.ToString("0.##", CultureInfo.InvariantCulture)))}]");
+        Assert.Equal(1, to.Opacity, 3);
+        Assert.Null(from.GetValue(Visual.RenderTransformProperty));
         Assert.Null(to.GetValue(Visual.RenderTransformProperty));
     }
 
@@ -547,8 +617,12 @@ public class MotionTests : UiTest
             Assert.True(root.IsVisible);
             Assert.True(shell.Dialogs.HasDialog);
             Assert.True(card.Opacity < 1, "the card starts transparent and fades in");
+            Assert.True(Math.Abs((card.RenderTransform?.Value.M11 ?? 1) - 1) < 0.01
+                        && Math.Abs((card.RenderTransform?.Value.M22 ?? 1) - 1) < 0.01,
+                "dialog open must not scale the card; that re-rasters Inter and reads as shaking text");
             Settle(400);
             Assert.Equal(1.0, card.Opacity, 2);
+            Assert.Null(card.GetValue(Visual.RenderTransformProperty));
 
             dialog.CancelCommand.Execute(null);
             Avalonia.Threading.Dispatcher.UIThread.RunJobs();
@@ -751,16 +825,12 @@ public class MotionTests : UiTest
     }
 
     /// <summary>
-    /// T12-R1: the slide half of the appear cascade, on a control that carries the motion sheet's
-    /// TransformOperationsTransition (Theme/Motion.axaml: `Button`, `Border.card` — the Week day buttons, the
-    /// Summary cards, the lesson cards). Appear used to animate TranslateTransform.Y; Avalonia's transform
-    /// animator answers such a property by putting a TransformGroup of its own on RenderTransform and then
-    /// looking that group back up — and the transition replaces the value in between, so the animator logged
-    /// «Cannot find the appropriate transform» and returned without animating anything. Opacity still faded
-    /// (a separate animator), which is why nobody noticed: the card never moved.
+    /// Section entrance used to slide cards 8 px (and the page 8 px sideways). That re-rasters Inter every
+    /// frame and reads as shaking text. Cascade now only fades; it must not write RenderTransform, including
+    /// on Border.card which carries a TransformOperationsTransition.
     /// </summary>
     [AvaloniaFact]
-    public async Task Cascade_Slides_A_Card_That_Carries_The_Transform_Transition()
+    public async Task Cascade_Fades_Without_Moving_A_Card_That_Carries_The_Transform_Transition()
     {
         var app = (App)Application.Current!;
         using var db = TestDb.Create();
@@ -783,10 +853,6 @@ public class MotionTests : UiTest
             Dispatcher.UIThread.RunJobs();
             Assert.Equal(1, Appear.CascadeRuns);
 
-            // Sampled off the rendered matrix, not off one property's notifications: what the spec asks for is
-            // that the card is drawn below its place and travels up, whatever machinery carries it there. The
-            // card's styled opacity is already 1, so "has it landed?" holds before the run writes anything —
-            // hence a bounded window that exits once the transform has been handed back.
             var seen = new List<double>();
             for (var waited = 0; waited < 2000; waited += 20)
             {
@@ -797,15 +863,8 @@ public class MotionTests : UiTest
                 await Task.Delay(20, TestContext.Current.CancellationToken);
             }
 
-            // The card really travelled (8 px, spec §7 «Появление списка»). Two *different* readings below the
-            // line, not just one: the run pins translateY(8) before the first tick, so «some sample was positive»
-            // holds even for an interpolation that never moved off the pin — which is precisely the regression
-            // this test exists to catch.
-            var moving = seen.Where(y => y > 0.5).ToList();
-            Assert.True(moving.Count >= 2 && moving.Max() - moving.Min() > 0.5,
-                $"the card must slide up into place; translateY only ever read [{string.Join(", ", seen.Select(y => y.ToString("0.##", CultureInfo.InvariantCulture)))}]" +
-                $" and the animator logged [{string.Join(" · ", animations.Lines)}]");
-            // …it came to rest level, opaque, and handed RenderTransform back to the styles (T9-R4)…
+            Assert.True(seen.All(y => y < 0.5),
+                $"cascade must not slide the card; translateY read [{string.Join(", ", seen.Select(y => y.ToString("0.##", CultureInfo.InvariantCulture)))}]");
             Assert.Equal(1.0, card.Opacity, 2);
             Assert.Null(card.GetValue(Visual.RenderTransformProperty));
             // …and the animator never had to guess at a transform it could not find.

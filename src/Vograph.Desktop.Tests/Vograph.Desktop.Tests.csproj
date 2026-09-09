@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <None Include="TestData\**" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="..\Vograph.Desktop.UiVerify\Options.cs" Link="UiVerifyOptions.cs" />
   </ItemGroup>
 
 </Project>

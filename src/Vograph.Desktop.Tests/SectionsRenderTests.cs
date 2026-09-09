@@ -16,7 +16,7 @@ using Xunit;
 
 namespace Vograph.Desktop.Tests;
 
-/// <summary>One pass over all eight sections: both themes render without binding errors and the language switch relabels every title.</summary>
+/// <summary>One pass over all eight sections: both themes render without binding errors; stored en still leaves Russian titles.</summary>
 public class SectionsRenderTests : UiTest
 {
     private static readonly DateTime Mon7 = new(2026, 9, 7, 8, 0, 0);
@@ -71,13 +71,13 @@ public class SectionsRenderTests : UiTest
 
         db.Services.Loc.SetLanguage("en");
         Pump();
-        Assert.Equal(new[] { "Schedule", "Week", "Summary" }, shell.MainSections.Select(s => s.Label));
-        Assert.Equal("Settings", shell.SettingsSection.Label);
-        Assert.Equal("Week", ((WeekViewModel)shell.Section<ViewModelBase>(SectionKey.Week)).Title);
-        Assert.Equal("Teachers", ((TeachersViewModel)shell.Section<ViewModelBase>(SectionKey.Teachers)).Title);
-        Assert.Equal("Homework", ((HomeworkViewModel)shell.Section<ViewModelBase>(SectionKey.Homework)).Title);
-        Assert.Equal("Settings", ((SettingsViewModel)shell.Section<ViewModelBase>(SectionKey.Settings)).Title);
-        db.Services.Loc.SetLanguage("ru");
+        Assert.Equal("ru", db.Services.Loc.Language);
+        Assert.Equal(new[] { "Расписание", "Неделя", "Сводка" }, shell.MainSections.Select(s => s.Label));
+        Assert.Equal("Настройки", shell.SettingsSection.Label);
+        Assert.Equal("Неделя", ((WeekViewModel)shell.Section<ViewModelBase>(SectionKey.Week)).Title);
+        Assert.Equal("Преподаватели", ((TeachersViewModel)shell.Section<ViewModelBase>(SectionKey.Teachers)).Title);
+        Assert.Equal("Домашка", ((HomeworkViewModel)shell.Section<ViewModelBase>(SectionKey.Homework)).Title);
+        Assert.Equal("Настройки", ((SettingsViewModel)shell.Section<ViewModelBase>(SectionKey.Settings)).Title);
         AssertNoBindingErrors();
     }
 }

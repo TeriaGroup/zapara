@@ -25,6 +25,17 @@ public class SettingsTests : UiTest
     }
 
     [Fact]
+    public void Settings_Has_No_Language_Selector()
+    {
+        Assert.Null(typeof(SettingsViewModel).GetProperty("LanguageIndex"));
+        Assert.Null(typeof(SettingsViewModel).GetProperty("LanguageItems"));
+        var axaml = File.ReadAllText(Path.Combine(ResourceKeysTests.RepoRoot(), "src", "Vograph.Desktop", "Features", "Preferences", "SettingsView.axaml"));
+        Assert.DoesNotContain("SettingsLanguage", axaml);
+        Assert.DoesNotContain("LanguageIndex", axaml);
+        Assert.DoesNotContain("LanguageItems", axaml);
+    }
+
+    [Fact]
     public async Task Appearance_Settings_Persist()
     {
         using var db = TestDb.Create();
@@ -32,7 +43,7 @@ public class SettingsTests : UiTest
         var vm = new SettingsViewModel(db.Services, shell, () => Sun6);
         await vm.LoadAsync();
         Assert.Equal(0, vm.ThemeIndex);
-        Assert.Equal(0, vm.LanguageIndex);
+        Assert.Equal("ru", db.Services.Loc.Language);
 
         vm.ThemeIndex = 2; // no ThemeService in a plain unit test: the preference is still written
         Assert.Equal(ThemeChoice.Dark, db.Services.Prefs.Theme);
@@ -46,11 +57,12 @@ public class SettingsTests : UiTest
         shell.SidebarCollapsed = false; // Ctrl+B elsewhere is reflected back
         Assert.False(vm.CompactSidebar);
 
-        vm.LanguageIndex = 1;
-        Assert.Equal("en", db.Services.Loc.Language);
-        Assert.Equal("Schedule", shell.MainSections[0].Label);
-        await Waits.Until(() => db.Services.Db.GetSettings().Language == "en", "language setting saved");
-        db.Services.Loc.SetLanguage("ru");
+        var stored = db.Services.Db.GetSettings();
+        stored.Language = "en";
+        db.Services.Db.SaveSettings(stored);
+        Assert.Equal("ru", db.Services.Loc.Language);
+        Assert.Equal("Расписание", shell.MainSections[0].Label);
+        Assert.Equal("en", db.Services.Db.GetSettings().Language);
     }
 
     [Fact]

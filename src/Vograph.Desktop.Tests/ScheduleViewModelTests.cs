@@ -69,18 +69,19 @@ public class ScheduleViewModelTests
     }
 
     [Fact]
-    public async Task Language_Change_Relabels_Segments_And_Title()
+    public async Task Stored_English_Still_Keeps_Russian_Segments_And_Title()
     {
         using var db = TestDb.Create();
         var vm = Make(db, new DateTime(2026, 9, 7, 8, 0, 0));
         await vm.InitializeAsync();
+        Assert.Equal("Матан", vm.Lessons[0].DisplayName);
 
         db.Services.Loc.SetLanguage("en");
         await vm.ReloadAsync();
 
-        Assert.Equal(new[] { "Yesterday", "Today", "Tomorrow" }, vm.SegmentItems);
-        Assert.Equal("Today", vm.Title);
-        db.Services.Loc.SetLanguage("ru");
-        await vm.ReloadAsync();
+        Assert.Equal("ru", db.Services.Loc.Language);
+        Assert.Equal(new[] { "Вчера", "Сегодня", "Завтра" }, vm.SegmentItems);
+        Assert.Equal("Сегодня", vm.Title);
+        Assert.Equal("Матан", vm.Lessons[0].DisplayName);
     }
 }
