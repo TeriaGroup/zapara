@@ -6,7 +6,7 @@ namespace Vograph.Core.Services;
 public class AutoUpdateService
 {
     private readonly HttpClient _http;
-    private const string Owner = "0NiLle0";
+    private const string Owner = "TeriaGroup";
     private const string Repo = "zapara";
     // tag prefix for windows
     private const string Prefix = "windows-";
@@ -53,7 +53,7 @@ public class AutoUpdateService
         return null;
     }
 
-    public static string CurrentTagWindows => "windows-v1.2.2";
+    public static string CurrentTagWindows => "windows-v1.2.3";
     public static string CurrentTagAndroid => "android-v1.2.1";
 
     /// <summary>Download a release asset with progress (0..1, -1 if size unknown).</summary>

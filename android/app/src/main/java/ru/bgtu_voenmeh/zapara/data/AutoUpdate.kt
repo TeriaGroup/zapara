@@ -11,8 +11,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object AutoUpdate {
-    const val CURRENT_TAG = "android-v1.2.20"
-    private const val OWNER = "0NiLle0"
+    const val CURRENT_TAG = "android-v1.2.21"
+    private const val OWNER = "TeriaGroup"
     private const val REPO = "zapara"
     private const val PREFS = "zapara"
     private const val KEY_AUTO = "auto_update"
@@ -20,7 +20,7 @@ object AutoUpdate {
     private const val KEY_CHECK_TAG = "update_check_tag"
     private const val KEY_CHECK_APK = "update_check_apk"
     private const val KEY_CHECK_HTML = "update_check_html"
-    const val RELEASES_PAGE = "https://github.com/0NiLle0/zapara/releases/latest"
+    const val RELEASES_PAGE = "https://github.com/TeriaGroup/zapara/releases/latest"
     /** 6h: GitHub allows 60 anon API calls/hour per IP — VPNs share one IP, don't burn it. */
     const val CHECK_TTL_MS = 6 * 3600 * 1000L
 

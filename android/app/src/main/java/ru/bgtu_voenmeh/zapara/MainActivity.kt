@@ -13,6 +13,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import ru.bgtu_voenmeh.zapara.data.Notifications
+import ru.bgtu_voenmeh.zapara.data.PublicExport
 import ru.bgtu_voenmeh.zapara.ui.ScheduleViewModel
 import ru.bgtu_voenmeh.zapara.ui.ScheduleVmFactory
 import ru.bgtu_voenmeh.zapara.ui.ZaparaApp
@@ -22,6 +23,15 @@ class MainActivity : ComponentActivity() {
     private val notifPerm = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { /* status is reflected in Settings; re-check happens on next launch */ }
+    private val storagePerm = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                try { PublicExport.ensure(applicationContext) } catch (_: Exception) {}
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,6 +41,12 @@ class MainActivity : ComponentActivity() {
             PackageManager.PERMISSION_GRANTED
         ) {
             try { notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS) } catch (_: Exception) {}
+        }
+        if (Build.VERSION.SDK_INT < 29 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            try { storagePerm.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) } catch (_: Exception) {}
         }
         // (Re)arm daily notification alarms; silent self-update check runs in ViewModel.init.
         lifecycleScope.launch(Dispatchers.IO) {

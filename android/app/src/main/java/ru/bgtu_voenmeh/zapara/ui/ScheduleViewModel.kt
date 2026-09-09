@@ -31,6 +31,7 @@ import ru.bgtu_voenmeh.zapara.data.MapStore
 import ru.bgtu_voenmeh.zapara.data.Notifications
 import ru.bgtu_voenmeh.zapara.data.OverrideService
 import ru.bgtu_voenmeh.zapara.data.Parity
+import ru.bgtu_voenmeh.zapara.data.PublicExport
 import ru.bgtu_voenmeh.zapara.data.SchedCtx
 import ru.bgtu_voenmeh.zapara.data.Schedule
 import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
@@ -135,7 +136,16 @@ class ScheduleViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 android.util.Log.d("ZaparaApp", "init start")
-                withContext(Dispatchers.IO) { repo.ensureData() }
+                withContext(Dispatchers.IO) {
+                    repo.ensureData()
+                    val app = getApplication<Application>()
+                    val cache = PublicExport.scheduleCache(app)
+                    if ((!cache.exists() || cache.length() < 100) && ScheduleRepository.networkEnabled) {
+                        try { repo.refresh() } catch (_: Exception) { PublicExport.ensure(app) }
+                    } else {
+                        PublicExport.ensure(app)
+                    }
+                }
                 val groups = withContext(Dispatchers.IO) { repo.groups() }
                 android.util.Log.d("ZaparaApp", "init groups=${groups.size}")
                 val s = withContext(Dispatchers.IO) { repo.settings() }

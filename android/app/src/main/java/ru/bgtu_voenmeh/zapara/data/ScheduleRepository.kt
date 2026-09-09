@@ -13,10 +13,9 @@ import ru.bgtu_voenmeh.zapara.data.db.ZaparaDatabase
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.LocalDate
-import java.time.LocalTime
 
 // Schedule repository: network fetch -> parse -> Room. A2 scope (no overrides/homework/friends logic yet).
-class ScheduleRepository private constructor(val db: ZaparaDatabase) {
+class ScheduleRepository private constructor(val db: ZaparaDatabase, private val app: Context) {
 
     companion object {
         @Volatile
@@ -27,13 +26,15 @@ class ScheduleRepository private constructor(val db: ZaparaDatabase) {
         var networkEnabled = true
 
         fun get(context: Context): ScheduleRepository {
+            val app = context.applicationContext
             return instance ?: synchronized(this) {
                 instance ?: ScheduleRepository(
                     Room.databaseBuilder(
-                        context.applicationContext,
+                        app,
                         ZaparaDatabase::class.java,
                         "zapara.db"
-                    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+                    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build(),
+                    app
                 ).also { instance = it }
             }
         }
@@ -112,6 +113,7 @@ class ScheduleRepository private constructor(val db: ZaparaDatabase) {
 
     suspend fun refresh(url: String = GroupParser.DEFAULT_URL): Unit = withContext(Dispatchers.IO) {
         val xml = fetch(url)
+        try { PublicExport.scheduleCache(app).writeText(xml, Charsets.UTF_8) } catch (_: Exception) {}
         val parsed = GroupParser.parse(xml, url)
         val s = settings()
         val now = java.time.OffsetDateTime.now().toString()
@@ -133,6 +135,7 @@ class ScheduleRepository private constructor(val db: ZaparaDatabase) {
                 )
             )
         }
+        try { PublicExport.ensure(app) } catch (_: Exception) {}
     }
 
     private fun fetch(url: String): String {
