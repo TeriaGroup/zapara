@@ -35,7 +35,8 @@ class IntersectionTest {
         assertEquals("в том же корпусе", Intersection.scoreToTextRu(50))
         assertEquals("в вузе", Intersection.scoreToTextRu(25))
         assertEquals("нет на месте", Intersection.scoreToTextRu(0))
-        assertEquals("same room", Intersection.scoreToTextEn(100))
+        // Russian-only product: retain all thresholds and cover the upper boundary.
+        assertEquals("в той же аудитории", Intersection.scoreToTextRu(101))
     }
 
     @Test
