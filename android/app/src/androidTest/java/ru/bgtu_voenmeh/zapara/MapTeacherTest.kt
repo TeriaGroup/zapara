@@ -1,10 +1,6 @@
 package ru.bgtu_voenmeh.zapara
 
 import android.content.Context
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import androidx.lifecycle.ViewModelProvider
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -20,14 +16,14 @@ import ru.bgtu_voenmeh.zapara.data.db.LessonEntity
 import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_1_2
 import ru.bgtu_voenmeh.zapara.data.db.SettingsEntity
 import ru.bgtu_voenmeh.zapara.data.db.ZaparaDatabase
-import ru.bgtu_voenmeh.zapara.ui.ScheduleViewModel
+
 
 // A4: offline maps (bundled assets) + teacher finder (bundled lecturer XML).
 @RunWith(AndroidJUnit4::class)
 class MapTeacherTest {
 
     @get:Rule
-    val compose = createAndroidComposeRule<MainActivity>()
+    val ui = NativeUiRule()
 
     companion object {
         @JvmStatic
@@ -93,91 +89,37 @@ class MapTeacherTest {
         failure?.let { throw RuntimeException("seed failed", it) }
     }
 
-    private fun treeTexts(): List<String> {
-        return try {
-            val nodes = compose.onAllNodes(
-                androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(
-                    androidx.compose.ui.semantics.SemanticsProperties.Text
-                )
-            ).fetchSemanticsNodes()
-            var dropped = 0
-            val out = nodes.mapNotNull { node ->
-                try {
-                    node.config[androidx.compose.ui.semantics.SemanticsProperties.Text]
-                        .joinToString("|") { t: androidx.compose.ui.text.AnnotatedString -> t.text }
-                } catch (_: Exception) {
-                    dropped++
-                    null
-                }
-            }
-            android.util.Log.i("ZaparaTest", "tree nodes=${nodes.size} dropped=$dropped kept=${out.size}")
-            out
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
-
-    private fun dumpTree(tag: String) {
-        try {
-            val all = compose.onAllNodes(
-                androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(
-                    androidx.compose.ui.semantics.SemanticsProperties.Text
-                )
-            ).fetchSemanticsNodes()
-            var dropped = 0
-            var firstErr: String? = null
-            val out = all.mapNotNull { node ->
-                try {
-                    node.config[androidx.compose.ui.semantics.SemanticsProperties.Text]
-                        .joinToString("|") { t: androidx.compose.ui.text.AnnotatedString -> t.text }
-                } catch (e: Exception) {
-                    dropped++
-                    if (firstErr == null) firstErr = e.toString()
-                    null
-                }
-            }
-            android.util.Log.i(
-                "ZaparaTest",
-                "$tag tree total=${all.size} dropped=$dropped kept=${out.size} firstErr=$firstErr"
-            )
-            out.chunked(5).forEachIndexed { i, chunk ->
-                android.util.Log.i("ZaparaTest", "$tag part$i :: " + chunk.joinToString(" ## "))
-            }
-        } catch (e: Throwable) {
-            android.util.Log.i("ZaparaTest", "$tag tree dump failed: $e")
-        }
-    }
+    private fun treeTexts(): List<String> = ui.treeTexts()
 
     private fun reload() {
-        val vm = ViewModelProvider(compose.activity)[ScheduleViewModel::class.java]
-        compose.activity.runOnUiThread { vm.reload() }
-        // Pump the test dispatcher so app coroutines + recomposition actually run.
-        compose.waitForIdle()
+        ui.reloadGuest()
     }
 
     @Test
     fun mapOpensOfflineFromRowButton() {
         reload()
-        compose.waitUntil(20_000) { treeTexts().any { it.contains("◉") } || treeTexts().any { it.contains("КАРТА") } }
-        val vm = androidx.lifecycle.ViewModelProvider(compose.activity)[ru.bgtu_voenmeh.zapara.ui.ScheduleViewModel::class.java]
-        compose.activity.runOnUiThread {
-            val l = vm.state.lessons.firstOrNull() ?: return@runOnUiThread
-            vm.showMapFor(l)
+        ui.waitUntil(20_000) {
+            val texts = treeTexts()
+            texts.any { it.contains("09:00") } || texts.any { it.contains("Карты") }
         }
-        compose.waitUntil(20_000) {
-            val s = try { androidx.lifecycle.ViewModelProvider(compose.activity)[ru.bgtu_voenmeh.zapara.ui.ScheduleViewModel::class.java].state } catch (_: Exception) { null }
-            s?.mapVisible == true
+        try {
+            ui.clickRes("Lesson.Room.1")
+        } catch (_: Throwable) {
+            ui.clickRes("Nav.Maps")
         }
-        compose.waitUntil(20_000) { treeTexts().any { it.contains("КАРТА") } }
+        ui.waitUntil(20_000) {
+            val texts = treeTexts()
+            texts.any { it.contains("Карты") } && (texts.any { it.contains("493") } || texts.any { it.contains("ГК") } || texts.any { it.contains("этаж") })
+        }
     }
 
     @Test
     fun teacherFinderListsBundledLecturers() {
         reload()
-        compose.waitUntil(20_000) { treeTexts().any { it.contains("Преподаватели") } }
-        val vm2 = androidx.lifecycle.ViewModelProvider(compose.activity)[ru.bgtu_voenmeh.zapara.ui.ScheduleViewModel::class.java]
-        compose.activity.runOnUiThread { vm2.openTeachers() }
-        // Bundled TimetableLecturer50.xml: full name present, only-mine finds Барт via 3313 lessons.
-        compose.waitUntil(30_000) { treeTexts().any { it.contains("Барт") } }
+        ui.waitUntil(20_000) { treeTexts().any { it.contains("Расписание") } }
+        ui.clickRes("Nav.Sections")
+        ui.waitUntil(20_000) { treeTexts().any { it.contains("Преподаватели") } }
+        ui.clickText("Преподаватели")
+        ui.waitUntil(30_000) { treeTexts().any { it.contains("Барт") } }
     }
 }

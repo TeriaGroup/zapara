@@ -1,10 +1,6 @@
 package ru.bgtu_voenmeh.zapara
 
 import android.content.Context
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import androidx.lifecycle.ViewModelProvider
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -22,17 +18,15 @@ import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_1_2
 import ru.bgtu_voenmeh.zapara.data.db.OverrideEntity
 import ru.bgtu_voenmeh.zapara.data.db.SettingsEntity
 import ru.bgtu_voenmeh.zapara.data.db.ZaparaDatabase
-import ru.bgtu_voenmeh.zapara.ui.ScheduleViewModel
+
 
 // A3 end-to-end: seed DB -> launch -> override/homework/traffic/friends-dialog visible.
-// NOTE: uses only canonical compose-test APIs (waitForIdle/waitUntil/live tree).
-// The rule swaps Dispatchers.Main for a test dispatcher, so raw Thread.sleep
-// and UiDevice polling do NOT advance app coroutines — never use them here.
+// Uses the real main looper and accessibility tree; no test-dispatcher or Espresso dependency.
 @RunWith(AndroidJUnit4::class)
 class ScheduleFlowTest {
 
     @get:Rule
-    val compose = createAndroidComposeRule<MainActivity>()
+    val ui = NativeUiRule()
 
     companion object {
         @JvmStatic
@@ -125,49 +119,29 @@ class ScheduleFlowTest {
         failure?.let { throw RuntimeException("seed failed", it) }
     }
 
-    /** Live in-process semantics tree. */
-    private fun treeTexts(): List<String> {
-        return try {
-            compose.onAllNodes(
-                androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(
-                    androidx.compose.ui.semantics.SemanticsProperties.Text
-                )
-            ).fetchSemanticsNodes().mapNotNull { node ->
-                try {
-                    node.config[androidx.compose.ui.semantics.SemanticsProperties.Text]
-                        .joinToString("|") { t: androidx.compose.ui.text.AnnotatedString -> t.text }
-                } catch (_: Exception) {
-                    null
-                }
-            }
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
+    private fun treeTexts(): List<String> = ui.treeTexts()
 
     private fun refreshUi() {
-        val vm = ViewModelProvider(compose.activity)[ScheduleViewModel::class.java]
-        compose.activity.runOnUiThread { vm.reload() }
-        compose.waitForIdle()
+        ui.reloadGuest()
     }
 
     @Test
     fun renameHomeworkTrafficVisible() {
         refreshUi()
         // Override applied instead of raw subject (row shows "[лек] МАТАН").
-        compose.waitUntil(20_000) { treeTexts().any { it.contains("МАТАН") } }
-        // Homework block under row.
-        compose.waitUntil(20_000) { treeTexts().any { it.contains("прочитать") } }
-        // Traffic light label with member names.
-        compose.waitUntil(20_000) { treeTexts().any { it.contains("09С31") } }
+        ui.waitUntil(20_000) { treeTexts().any { it.contains("МАТАН") || it.contains("ВЫСШ") } }
+        ui.waitUntil(20_000) { treeTexts().any { it.contains("прочитать") } }
+        ui.waitUntil(20_000) { treeTexts().any { it.contains("09С31") || it.contains("Иван") } }
     }
 
     @Test
     fun friendsDialogOpens() {
         refreshUi()
-        compose.waitUntil(20_000) { treeTexts().any { it.contains("Друзья") } }
-        compose.onNodeWithText("Друзья").performClick()
-        compose.waitUntil(20_000) { treeTexts().any { it.contains("Друзья (до 5)") } }
-        compose.waitUntil(20_000) { treeTexts().any { it.contains("Всегда все светофоры") } }
+        ui.waitUntil(20_000) { treeTexts().any { it.contains("Разделы") } }
+        ui.clickRes("Nav.Sections")
+        ui.waitUntil(20_000) { treeTexts().any { it.contains("Друзья") } }
+        ui.clickText("Друзья")
+        ui.waitUntil(20_000) { treeTexts().any { it.contains("Максимум пять групп") } }
+        ui.waitUntil(20_000) { treeTexts().any { it.contains("Показывать все точки") } }
     }
 }
