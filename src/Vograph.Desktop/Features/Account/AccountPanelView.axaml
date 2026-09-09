@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             xmlns:a="using:Vograph.Desktop.Features.Account"
+             xmlns:dto="clr-namespace:Zapara.Contracts.Accounts;assembly=Zapara.Contracts"
+             x:Class="Vograph.Desktop.Features.Account.AccountPanelView"
+             x:DataType="a:AccountPanelViewModel">
+  <Border Classes="card" AutomationProperties.AutomationId="Account.Card">
+    <StackPanel Spacing="10">
+      <TextBlock Classes="subject" Text="{loc:T accountTitle}" />
+      <TextBlock Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.AutomationId="Account.Status" />
+      <TextBlock Classes="caption" Text="{loc:T accountIsolation}" TextWrapping="Wrap" />
+      <Button Content="{loc:T accountRecover}" Command="{Binding RecoverCommand}" IsVisible="{Binding NeedsRecovery}" />
+      <StackPanel Spacing="10" IsEnabled="{Binding CanAct}">
+        <StackPanel Spacing="10" IsVisible="{Binding ShowLogin}">
+          <TextBlock Text="{loc:T accountRegistration}" IsVisible="{Binding Registration}" />
+          <TextBlock Text="{loc:T accountUsername}" />
+          <TextBox Text="{Binding Username}" AutomationProperties.Name="{loc:T accountUsername}" AutomationProperties.AutomationId="Account.Username" />
+          <TextBlock Text="{loc:T accountPassword}" />
+          <TextBox Text="{Binding Password}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountPassword}" AutomationProperties.AutomationId="Account.Password" />
+          <StackPanel Spacing="10" IsVisible="{Binding Registration}">
+            <TextBlock Text="{loc:T accountDisplayName}" />
+            <TextBox Text="{Binding DisplayName}" AutomationProperties.Name="{loc:T accountDisplayName}" />
+          </StackPanel>
+          <TextBlock Classes="caption" Text="{loc:T accountValidation}" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Classes="primary" Content="{loc:T accountLogin}" Command="{Binding SubmitCommand}" IsVisible="{Binding !Registration}" AutomationProperties.AutomationId="Account.Login" />
+            <Button Classes="primary" Content="{loc:T accountRegister}" Command="{Binding SubmitCommand}" IsVisible="{Binding Registration}" AutomationProperties.AutomationId="Account.Register" />
+            <Button Content="{loc:T accountMode}" Command="{Binding ToggleRegistrationCommand}" IsVisible="{Binding RegistrationAvailable}" AutomationProperties.AutomationId="Account.Mode" />
+          </StackPanel>
+        </StackPanel>
+        <StackPanel Spacing="10" IsVisible="{Binding IsAccount}">
+          <TextBlock Text="{Binding AccountName}" Classes="subject" AutomationProperties.AutomationId="Account.Name" />
+          <TextBlock Text="{loc:T accountDisplayName}" />
+          <TextBox Text="{Binding DisplayName}" AutomationProperties.Name="{loc:T accountDisplayName}" AutomationProperties.AutomationId="Account.DisplayName" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="{loc:T accountSave}" Command="{Binding SaveProfileCommand}" AutomationProperties.AutomationId="Account.Save" />
+            <Button Content="{loc:T accountRefresh}" Command="{Binding RefreshProfileCommand}" AutomationProperties.AutomationId="Account.Refresh" />
+            <Button x:Name="LogoutButton" Content="{loc:T accountLogout}" Command="{Binding RequestLogoutCommand}" AutomationProperties.AutomationId="Account.Logout" />
+          </StackPanel>
+          <StackPanel Spacing="10" IsVisible="{Binding ConfirmLogout}">
+            <TextBlock Text="{loc:T accountConfirmLogout}" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Classes="primary" Content="{loc:T accountLogout}" Command="{Binding LogoutCommand}" AutomationProperties.AutomationId="Account.ConfirmLogout" />
+              <Button Content="{loc:T accountCancel}" Command="{Binding CancelLogoutCommand}" Click="OnCancelLogoutClick" />
+            </StackPanel>
+          </StackPanel>
+          <Button HorizontalAlignment="Left" Content="{loc:T accountDevices}" Command="{Binding LoadDevicesCommand}" AutomationProperties.AutomationId="Account.Devices" />
+          <ItemsControl ItemsSource="{Binding Devices}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="dto:DeviceResponse">
+                <StackPanel Spacing="8" Margin="0,4">
+                  <TextBlock Text="{Binding DeviceName}" TextWrapping="Wrap" />
+                  <TextBlock Text="{loc:T accountCurrentDevice}" IsVisible="{Binding IsCurrent}" />
+                  <Button HorizontalAlignment="Left" Content="{loc:T accountRevoke}" AutomationProperties.AutomationId="Account.Revoke"
+                          Command="{Binding $parent[a:AccountPanelView].((a:AccountPanelViewModel)DataContext).RevokeDeviceCommand}" CommandParameter="{Binding}" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <Button HorizontalAlignment="Left" Content="{loc:T accountMore}" Command="{Binding MoreDevicesCommand}" IsVisible="{Binding HasMore}" />
+          <Button HorizontalAlignment="Left" Content="{loc:T accountRevokeAll}" Command="{Binding RevokeAllCommand}" />
+          <TextBlock Text="{loc:T accountCurrentPassword}" />
+          <TextBox Text="{Binding CurrentPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountCurrentPassword}" AutomationProperties.AutomationId="Account.CurrentPassword" />
+          <TextBlock Text="{loc:T accountNewPassword}" />
+          <TextBox Text="{Binding NewPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountNewPassword}" AutomationProperties.AutomationId="Account.NewPassword" />
+          <Button HorizontalAlignment="Left" Content="{loc:T accountChangePassword}" Command="{Binding ChangePasswordCommand}" AutomationProperties.AutomationId="Account.ChangePassword" />
+        </StackPanel>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</UserControl>
