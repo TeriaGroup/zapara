@@ -22,11 +22,11 @@ public sealed partial class ShellViewModel : ViewModelBase
     private readonly Dictionary<SectionKey, Func<ViewModelBase>> _factories = new();
     private readonly Dictionary<SectionKey, ViewModelBase> _sections = new();
 
-    public ShellViewModel(AppServices app) : base(app)
+    public ShellViewModel(AppServices app, bool attach = true) : base(app)
     {
         // One update state for the whole window: the sidebar item, the Settings card and the startup flow share it.
         Updates = new UpdateCheckViewModel(app, () => Clock());
-        Dialogs = new DialogHostViewModel(app.Motion);
+        Dialogs = new DialogHostViewModel(app.Motion, app.Work);
 
         NavigateCommand = new RelayCommand<string>(key =>
         {
@@ -59,25 +59,17 @@ public sealed partial class ShellViewModel : ViewModelBase
         Register(SectionKey.Homework, () => new Features.Homeworks.HomeworkViewModel(App, this));
         Register(SectionKey.Settings, () => new Features.Preferences.SettingsViewModel(App, this));
 
-        SidebarCollapsed = app.Prefs.SidebarCollapsed;
+        _sidebarCollapsed = app.Prefs.SidebarCollapsed;
+        foreach (var section in AllSections) section.IsCompact = _sidebarCollapsed;
         if (app.Theme is { } theme)
         {
             IsDark = theme.IsDark;
-            theme.Changed += () => IsDark = theme.IsDark;
         }
-        app.Loc.LanguageChanged += () =>
-        {
-            foreach (var s in AllSections) s.RefreshLabel();
-            _ = RefreshGroupCardAsync();
-            OnPropertyChanged(nameof(GroupCardTip));
-            OnPropertyChanged(nameof(SidebarToggleTip));
-            OnPropertyChanged(nameof(MaximizeTip));
-        };
         // A phone pushing over the LAN must show up even when Settings was never opened this session, so the
         // shell — not a section — owns this subscription. The event is raised on a pool thread, and the
         // fire-and-forget hop to the UI thread is safe only because NotifyImportedAsync cannot throw: every
         // step of it is a RunAsync (gated, logged, toasted) or a plain event raise.
-        app.LanSync.Imported += () => Dispatcher.UIThread.Post(() => _ = NotifyImportedAsync());
+        if (attach) Attach();
         // Startup only: the shell is built before any background Core call exists, so this is the one
         // synchronous read (same class as the AppServices ctor). Every later refresh goes through RefreshGroupCardAsync.
         ApplyGroupCard(ReadCard());
@@ -105,6 +97,8 @@ public sealed partial class ShellViewModel : ViewModelBase
     [RelayCommand]
     private async Task OpenUpdateDialog()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         if (!Updates.IsAvailable || Updates.LatestTag is null) return;
         var dlg = new UpdateDialogViewModel(Updates.LatestTag, Updates.PublishedText);
         if (await Dialogs.ShowAsync(dlg)) await Updates.InstallAsync();
@@ -178,7 +172,7 @@ public sealed partial class ShellViewModel : ViewModelBase
 
     /// <summary>Pure event invocation: callers that need the badge refreshed await
     /// UpdateHomeworkBadgeAsync themselves, after raising (see RefreshScheduleAsync).</summary>
-    internal void RaiseScheduleChanged() => ScheduleChanged?.Invoke();
+    internal void RaiseScheduleChanged() { if (CanPublish) ScheduleChanged?.Invoke(); }
 
     /// <summary>Injected clock for badge/status computations (tests pin a date).</summary>
     public Func<DateTime> Clock { get; set; } = () => DateTime.Now;
@@ -190,7 +184,7 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// raising (ScheduleViewModel's RaiseHomeworkAsync, HomeworkViewModel.ChangedAsync). A fire-and-forget
     /// call here used to keep running after an awaited caller returned, racing test teardown's Dispose of
     /// the SQLite connection it reads from.</summary>
-    internal void RaiseHomeworkChanged() => HomeworkChanged?.Invoke();
+    internal void RaiseHomeworkChanged() { if (CanPublish) HomeworkChanged?.Invoke(); }
 
     /// <summary>Data arrived from outside the app — a LAN push or the Settings file import. Both land in SQLite
     /// through Core's SyncService, which leaves the homework due dates computed against the *sender's* timetable,
@@ -200,6 +194,9 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// Never throws (RunAsync swallows and reports), which is what makes the ctor's fire-and-forget hop safe.</summary>
     public async Task NotifyImportedAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        if (App.Api.Configured) { App.Api.Invalidate(); await EnsureApiNeedsAsync(); }
         await RunAsync(() => App.Homework.RecomputeAllStatuses(), "import");
         await RefreshGroupCardAsync();
         RaiseScheduleChanged();
@@ -211,9 +208,11 @@ public sealed partial class ShellViewModel : ViewModelBase
 
     public async Task UpdateHomeworkBadgeAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var today = Clock().Date;
         var data = await RunAsync(() => new BadgeData(HomeworkStatus.BadgeCount(App.Homework.GetAll(), today)), "homework badge");
-        if (data is null) return;
+        if (data is null || !operation.IsCurrent) return;
         var section = ToolSections.FirstOrDefault(s => s.Key == SectionKey.Homework);
         if (section is not null) section.Badge = data.Count > 0 ? data.Count.ToString() : null;
     }
@@ -221,6 +220,8 @@ public sealed partial class ShellViewModel : ViewModelBase
     [ObservableProperty] private bool _isRefreshing;
     private bool _staleToastShown;
     private bool _started;
+    private bool _stopped;
+    private bool StartupStopped => _stopped || !CanPublish || (App.Api.Configured && App.Api.LifetimeToken.IsCancellationRequested);
     private DispatcherTimer? _autoCheck;
 
     /// <summary>F5 and «Обновить расписание».</summary>
@@ -231,6 +232,9 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// quiet: startup / 24 h check — only the first failure per session toasts.</summary>
     public async Task<bool> RefreshScheduleAsync(bool force, bool quiet)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return false;
+        if (App.Api.Configured) return await RefreshApiScheduleAsync(quiet);
         // VOGRAPH_OFFLINE=1 promises «no timetable refresh» (App.axaml.cs), and AppServices.AllowNetwork only
         // ever gated the automatic paths: F5 and Settings' «Обновить расписание» went straight out to the
         // network on an offline run, contradicting the switch's own comment (T12-R6). The wording is the
@@ -250,15 +254,17 @@ public sealed partial class ShellViewModel : ViewModelBase
             RefreshCheck check;
             try
             {
-                check = await App.Refresher.CheckAsync(force ? null : settings.LastFetchedAt);
+                check = await App.Refresher.CheckAsync(force ? null : settings.LastFetchedAt, operation.Token);
             }
             catch (Exception ex)
             {
                 App.Log.Error("refresh", ex);
+                if (!operation.IsCurrent) return false;
                 if (!quiet || !_staleToastShown) App.Toasts.Warn(T("refreshFail", ex.Message));
                 _staleToastShown = true;
                 return false;
             }
+            if (!operation.IsCurrent) return false;
             if (check.Modified)
             {
                 var xml = check.Xml!;
@@ -305,9 +311,11 @@ public sealed partial class ShellViewModel : ViewModelBase
 
     internal void StartAutoCheck()
     {
-        if (_autoCheck is not null) return;
+        if (StartupStopped || _autoCheck is not null) return;
         _autoCheck = new DispatcherTimer(TimeSpan.FromHours(1), DispatcherPriority.Background, async (_, _) =>
         {
+            using var operation = App.Work.Enter();
+            if (!operation.IsCurrent) return;
             var s = await RunAsync(() => App.Db.GetSettings(), "settings");
             if (s is not null && ShouldAutoCheck(s, DateTime.UtcNow)) await RefreshScheduleAsync(force: false, quiet: true);
         });
@@ -320,6 +328,10 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// die with them). App calls this from desktop.Exit before AppServices.Dispose; tests call it directly.</summary>
     public void Stop()
     {
+        _stopped = true;
+        DetachSubscriptions();
+        Dialogs.DismissCommand.Execute(null);
+        App.Api.Stop();
         _autoCheck?.Stop();
         _autoCheck = null;
         foreach (var key in _sections.Keys.ToList()) DetachSection(key);
@@ -337,6 +349,7 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// above the overlay), then the fullscreen map — and is therefore also let through from a focused text field.</summary>
     public bool HandleShortcut(Key key)
     {
+        if (!CanPublish) return false;
         if (key == Key.Escape)
         {
             if (Dialogs.HasDialog) { Dialogs.DismissCommand.Execute(null); return true; }
@@ -386,6 +399,7 @@ public sealed partial class ShellViewModel : ViewModelBase
 
     public void NavigateTo(SectionKey key)
     {
+        if (StartupStopped) return;
         // Ctrl+1…8 are Window.KeyBindings and fire straight into NavigateCommand, over the fullscreen map too
         // (HandleShortcut never sees them). Without this the section would be switched invisibly behind the plan.
         Overlay = null;
@@ -404,10 +418,11 @@ public sealed partial class ShellViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void ToggleSidebar() => SidebarCollapsed = !SidebarCollapsed;
+    private void ToggleSidebar() { if (CanPublish) SidebarCollapsed = !SidebarCollapsed; }
 
     partial void OnSidebarCollapsedChanged(bool value)
     {
+        if (!CanPublish) return;
         foreach (var s in AllSections) s.IsCompact = value;
         App.Prefs.SidebarCollapsed = value;
         App.Prefs.Save();
@@ -418,7 +433,7 @@ public sealed partial class ShellViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void ToggleTheme() => App.Theme?.Toggle();
+    private void ToggleTheme() { if (CanPublish) App.Theme?.Toggle(); }
 
     private sealed record StartData(int GroupCount, Settings Settings);
 
@@ -426,24 +441,49 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// runs behind it; the loading state and a gated bootstrap remain only for an empty database.</summary>
     public async Task StartAsync(bool allowNetwork = true)
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        try { await StartCoreAsync(allowNetwork); }
+        catch (OperationCanceledException) when (!operation.IsCurrent || (App.Api.Configured && App.Api.LifetimeToken.IsCancellationRequested)) { return; }
+    }
+
+    private async Task StartCoreAsync(bool allowNetwork)
+    {
+        if (StartupStopped) return;
         // This shell now belongs to a real run whose network policy App has declared, which is what lets the
         // manual refresh above honour the offline switch. A shell built straight into a test and driven against
         // an injected refresher never starts, and has no policy for the switch to speak for.
         _started = true;
-        var data = await RunAsync(() => new StartData(App.Db.GetAllGroups().Count, App.Db.GetSettings()), "startup");
+        var data = App.Api.Configured
+            ? await DataBootstrap.ReadApiCoreAsync(App, () => new StartData(App.Db.GetAllGroups().Count, App.Db.GetSettings()))
+            : await RunAsync(() => new StartData(App.Db.GetAllGroups().Count, App.Db.GetSettings()), "startup");
+        if (StartupStopped) return;
         if (data is null)
         {
             Current = new ErrorStateViewModel(App, null, () => StartAsync(allowNetwork));
             return;
         }
-        if (data.GroupCount == 0)
+        if (App.Api.Configured)
+        {
+            var result = await DataBootstrap.RunApiAsync(App, allowNetwork);
+            if (StartupStopped) return;
+            if (!result.HasData)
+            {
+                Current = new ErrorStateViewModel(App, result.Error, () => StartAsync(allowNetwork));
+                return;
+            }
+            if (result.Stale && result.Error is not null) App.Toasts.Warn(result.Error);
+        }
+        else if (data.GroupCount == 0)
         {
             Current = new LoadingViewModel(App);
             // Network outside the gate, parse + SQLite inside — the same split RefreshScheduleAsync uses. The
             // empty-database bootstrap was the last path that downloaded while holding the gate, so a first
             // launch behind a dead network parked every other Core call behind the HTTP timeout.
             var fetched = allowNetwork ? await DataBootstrap.FetchAsync(App) : default;
+            if (StartupStopped) return;
             var result = await RunAsync(() => DataBootstrap.RunAsync(App, fetched.Xml, fetched.Error), "bootstrap");
+            if (StartupStopped) return;
             if (result is null || !result.HasData)
             {
                 Current = new ErrorStateViewModel(App, result?.Error, () => StartAsync(allowNetwork));
@@ -453,12 +493,17 @@ public sealed partial class ShellViewModel : ViewModelBase
         }
         try
         {
-            await RunAsync(() => App.Homework.RecomputeAllStatuses(), "homework statuses");
+            if (StartupStopped) return;
+            await RunAsync(() => { if (!StartupStopped) App.Homework.RecomputeAllStatuses(); }, "homework statuses");
+            if (StartupStopped) return;
             await RefreshGroupCardAsync();
+            if (StartupStopped) return;
             DetachSection(SectionKey.Schedule); // rebuild against fresh data
             NavigateTo(SectionKey.Schedule);
             await Section<ScheduleViewModel>(SectionKey.Schedule).InitializeAsync();
+            if (StartupStopped) return;
             await UpdateHomeworkBadgeAsync();
+            if (StartupStopped) return;
             if (allowNetwork)
             {
                 if (data.GroupCount > 0 && ShouldAutoCheck(data.Settings, DateTime.UtcNow)) _ = RefreshScheduleAsync(force: false, quiet: true);
@@ -469,6 +514,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         catch (Exception ex)
         {
             App.Log.Error("startup", ex);
+            if (StartupStopped) return;
             Current = new ErrorStateViewModel(App, ex.Message, () => StartAsync(allowNetwork));
         }
     }
@@ -478,6 +524,8 @@ public sealed partial class ShellViewModel : ViewModelBase
     [RelayCommand]
     private async Task OpenGroupPickerAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var data = await RunAsync(() => new PickerData(App.Db.GetAllGroups(), App.Db.GetSettings().MyGroupId), "groups");
         if (data is null) return;
         var dlg = new GroupPickerDialogViewModel(data.Groups, data.CurrentId);
@@ -488,28 +536,40 @@ public sealed partial class ShellViewModel : ViewModelBase
             var s = App.Db.GetSettings();
             s.MyGroupId = chosen.Id;
             App.Db.SaveSettings(s);
-            App.Homework.RecomputeAllStatuses();
+            App.Api.Invalidate();
+            if (!App.Api.Configured) App.Homework.RecomputeAllStatuses();
         }, "group");
         if (!saved) return;
+        if (App.Api.Configured)
+        {
+            await EnsureApiNeedsAsync();
+            await RunAsync(() =>
+            {
+                if (new Vograph.Core.Services.TimetableApiCache(App.Db).Read(chosen.Id) is not null) App.Homework.RecomputeAllStatuses();
+            }, "group homework");
+        }
         await RefreshGroupCardAsync(); // before RaiseGroupChanged: sections read GroupName while they react
         RaiseGroupChanged();
+        await ShowUnavailableApiSelectionAsync();
         await UpdateHomeworkBadgeAsync(); // another group means other lessons, so other due dates
         App.Toasts.Ok(T("savedOk"));
     }
 
-    private sealed record CardData(Settings Settings, Group? Group);
+    private sealed record CardData(Settings Settings, Group? Group, bool SourceStale);
 
     private CardData ReadCard()
     {
         var s = App.Db.GetSettings();
-        return new CardData(s, string.IsNullOrEmpty(s.MyGroupId) ? null : App.Db.GetGroup(s.MyGroupId));
+        return new CardData(s, string.IsNullOrEmpty(s.MyGroupId) ? null : App.Db.GetGroup(s.MyGroupId), App.Api.SourceStale);
     }
 
     /// <summary>Re-reads settings + group under the Core gate, then updates the card.</summary>
     public async Task RefreshGroupCardAsync()
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
         var data = await RunAsync(ReadCard, "group card");
-        if (data is not null) ApplyGroupCard(data);
+        if (data is not null && operation.IsCurrent) ApplyGroupCard(data);
     }
 
     private void ApplyGroupCard(CardData data)
@@ -536,11 +596,11 @@ public sealed partial class ShellViewModel : ViewModelBase
         // LastFetchedAt is stored in UTC and Stale compares against UTC; the default clock is DateTime.Now, so
         // this is the same instant it always was, only sourced from the clock a test can pin.
         var (stale, warn) = GroupCardLogic.Stale(settings.LastFetchedAt, now.ToUniversalTime(), App.Loc);
-        StaleText = stale;
-        StaleWarn = warn;
+        StaleText = data.SourceStale ? "Данные расписания могут быть устаревшими" : stale;
+        StaleWarn = warn || data.SourceStale;
     }
 
     /// <summary>Sealed type: 'internal' rather than 'protected' so later dialogs in this assembly can raise it without CS0628.
     /// Pure event invocation: OpenGroupPickerAsync awaits UpdateHomeworkBadgeAsync itself right after raising.</summary>
-    internal void RaiseGroupChanged() => GroupChanged?.Invoke();
+    internal void RaiseGroupChanged() { if (CanPublish) GroupChanged?.Invoke(); }
 }

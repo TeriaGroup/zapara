@@ -7,6 +7,43 @@ public sealed record BootstrapResult(bool HasData, bool Refreshed, bool Stale, s
 /// <summary>Port of the WPF EnsureDataAsync without hard-coded developer paths.</summary>
 public static class DataBootstrap
 {
+    // API has a separate typed, epoch-checked transaction path. Never supply an Xml override for it.
+    public static async Task<BootstrapResult> RunApiAsync(AppServices app, bool allowNetwork)
+    {
+        using var operation = app.Work.Enter();
+        operation.ThrowIfStale();
+        var token = app.Api.LifetimeToken;
+        token.ThrowIfCancellationRequested();
+        var refreshed = allowNetwork && await app.Api.RefreshAsync(neededOnly: true);
+        return await ReadApiCoreAsync(app, () => new BootstrapResult(app.Api.HasSelectedCache,
+            refreshed, app.Api.SourceStale, app.Api.ConfigurationError ?? app.Api.LastError));
+    }
+
+    // Acquire, read and release on the pool: synchronous UI shutdown must not wait on its own dispatcher.
+    internal static async Task<T> ReadApiCoreAsync<T>(AppServices app, Func<T> read)
+    {
+        using var operation = app.Work.Enter();
+        operation.ThrowIfStale();
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(app.Api.LifetimeToken, operation.Token);
+        var token = linked.Token;
+        return await Task.Run(async () =>
+        {
+            token.ThrowIfCancellationRequested();
+            try { await app.CoreGate.WaitAsync(token).ConfigureAwait(false); }
+            catch (ObjectDisposedException) when (token.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(token);
+            }
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                operation.ThrowIfStale();
+                return read();
+            }
+            finally { app.CoreGate.Release(); }
+        }, token);
+    }
+
     public static bool NeedsRefresh(int groupCount, string? lastFetchedAt, DateTime utcNow)
     {
         if (groupCount == 0) return true;
@@ -18,9 +55,12 @@ public static class DataBootstrap
     /// network comes back as (null, reason) and the run falls through to the bundled snapshot below.</summary>
     public static async Task<(string? Xml, string? Error)> FetchAsync(AppServices app)
     {
+        using var operation = app.Work.Enter();
+        if (!operation.IsCurrent) return default;
+        if (app.Api.Configured) return (null, "Для API используется типизированная загрузка расписания.");
         try
         {
-            return ((await app.Refresher.CheckAsync(null)).Xml, null);
+            return ((await app.Refresher.CheckAsync(null, operation.Token)).Xml, null);
         }
         catch (Exception ex)
         {
@@ -41,6 +81,10 @@ public static class DataBootstrap
     /// <param name="fetchError">Why there is no XML, for the «данные могут быть устаревшими» line.</param>
     public static async Task<BootstrapResult> RunAsync(AppServices app, string? timetableXml = null, string? fetchError = null)
     {
+        using var operation = app.Work.Enter();
+        operation.ThrowIfStale();
+        if (app.Api.Configured)
+            return new(app.Db.GetAllGroups().Count > 0, false, true, app.Api.ConfigurationError ?? fetchError);
         var groups = app.Db.GetAllGroups();
         var settings = app.Db.GetSettings();
         // The shell only bootstraps an empty database, where this is always true — a caller that fetched first

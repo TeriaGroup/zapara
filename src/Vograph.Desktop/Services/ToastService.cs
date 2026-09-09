@@ -31,9 +31,13 @@ public sealed partial class ToastItem : ObservableObject
 public sealed class ToastService
 {
     private readonly Func<TimeSpan, Action, IDisposable> _schedule;
+    private readonly Func<bool> _canPublish;
 
-    public ToastService(Func<TimeSpan, Action, IDisposable>? schedule = null) =>
+    public ToastService(Func<TimeSpan, Action, IDisposable>? schedule = null, Func<bool>? canPublish = null)
+    {
         _schedule = schedule ?? DefaultSchedule;
+        _canPublish = canPublish ?? (() => true);
+    }
 
     /// <summary>
     /// Plain timer: arming must not touch the Avalonia dispatcher (unit tests run without a platform);
@@ -54,6 +58,7 @@ public sealed class ToastService
 
     public void Show(string text, ToastKind kind = ToastKind.Info, int ms = 4000)
     {
+        if (!_canPublish()) return;
         var item = new ToastItem(text, kind, TimeSpan.FromMilliseconds(ms));
         Items.Insert(0, item);
         while (Items.Count > 3) Items.RemoveAt(Items.Count - 1);

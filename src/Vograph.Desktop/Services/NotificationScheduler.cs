@@ -41,8 +41,13 @@ public sealed class NotificationScheduler : IDisposable
 
     public void Start()
     {
-        _timer ??= new System.Threading.Timer(_ => Dispatcher.UIThread.Post(() => _ = TickAsync(_clock())), null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30));
+        if (!_app.Work.IsAccepting) return;
+        using (ExecutionContext.SuppressFlow())
+            _timer ??= new System.Threading.Timer(_ => PostTick(a => Dispatcher.UIThread.Post(a)), null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30));
     }
+
+    public bool IsRunning => _timer is not null;
+    internal void PostTick(Action<Action> post) => _app.Work.Post(post, async () => await TickAsync(_clock()), ex => _app.Log.Error("notification callback", ex));
 
     public void Stop()
     {
@@ -53,6 +58,8 @@ public sealed class NotificationScheduler : IDisposable
     /// <summary>Shows the notification when <paramref name="now"/> matches a configured time (once per minute). Returns the text shown, else null.</summary>
     public async Task<string?> TickAsync(DateTime now)
     {
+        using var operation = _app.Work.Enter();
+        if (!operation.IsCurrent) return null;
         if (!_app.Prefs.NotificationsEnabled) return null;
         var key = now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
         if (key == _lastFired || key == _inFlight) return null; // claimed before the await: a slow build cannot fire twice
@@ -66,7 +73,7 @@ public sealed class NotificationScheduler : IDisposable
                 if (Normalize(s.NotifyTime1) != hm && Normalize(s.NotifyTime2) != hm) return null;
                 return BuildText(s, TargetDate(now, s.NotifyTime1, s.NotifyTime2), now);
             });
-            if (text is null) return null;
+            if (text is null || !operation.IsCurrent) return null;
             _lastFired = key;
             Show(text);
             return text;
@@ -90,10 +97,12 @@ public sealed class NotificationScheduler : IDisposable
     /// <summary>«Тест уведомления»: tomorrow's text right now.</summary>
     public async Task<string?> ShowTestAsync(DateTime now)
     {
+        using var operation = _app.Work.Enter();
+        if (!operation.IsCurrent) return null;
         try
         {
             var text = await GatedAsync(() => BuildText(_app.Db.GetSettings(), now.Date.AddDays(1), now));
-            if (text is not null) Show(text);
+            if (text is not null && operation.IsCurrent) Show(text);
             return text;
         }
         catch (Exception ex)
@@ -147,7 +156,7 @@ public sealed class NotificationScheduler : IDisposable
     private void Show(string text)
     {
         _app.Toasts.Show(text, ToastKind.Info, 15000);
-        _app.Log.Info($"notification: {text}");
+        _app.Log.Info("notification shown");
     }
 
     /// <summary>
@@ -159,13 +168,18 @@ public sealed class NotificationScheduler : IDisposable
     /// two seconds and close the database anyway. Taking the gate, running the work and releasing it all inside
     /// one Task.Run puts the release on the pool, where a blocked UI thread cannot hold it up.
     /// </summary>
-    private Task<T?> GatedAsync<T>(Func<T?> work) where T : class =>
-        Task.Run(async () =>
+    private async Task<T?> GatedAsync<T>(Func<T?> work) where T : class
+    {
+        using var operation = _app.Work.Enter();
+        if (!operation.IsCurrent) return null;
+        try { return await Task.Run(async () =>
         {
-            await _app.CoreGate.WaitAsync().ConfigureAwait(false); // acquired on the pool
-            try { return work(); } // Core is synchronous; this thread is already off the UI
+            await _app.CoreGate.WaitAsync(operation.Token).ConfigureAwait(false); // acquired on the pool
+            try { operation.ThrowIfStale(); return work(); }
             finally { _app.CoreGate.Release(); } // released on the pool — a UI-thread Dispose() can proceed
-        });
+        }); }
+        catch (OperationCanceledException) when (!operation.IsCurrent) { return null; }
+    }
 
     public void Dispose() => Stop();
 }

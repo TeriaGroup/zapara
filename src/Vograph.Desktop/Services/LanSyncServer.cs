@@ -23,6 +23,7 @@ public sealed class LanSyncServer : IDisposable
     private static readonly TimeSpan IoTimeout = TimeSpan.FromSeconds(10);
 
     private readonly AppServices _app;
+    private readonly object _lifecycle = new();
     private readonly bool _localhostOnly;
     private readonly SemaphoreSlim _resolve = new(1, 1);
     private readonly SemaphoreSlim _slots = new(MaxConnections, MaxConnections);
@@ -56,6 +57,8 @@ public sealed class LanSyncServer : IDisposable
     /// server. Resolved once per process under a lock, never throws — a failed lookup falls back to 127.0.0.1.</summary>
     public async Task<string> ResolveHostAsync()
     {
+        using var operation = _app.Work.Enter();
+        if (!operation.IsCurrent || !_app.Profile.IsGuest) return "";
         if (_host is { } cached) return cached;
         await _resolve.WaitAsync();
         try
@@ -79,7 +82,13 @@ public sealed class LanSyncServer : IDisposable
         }
     }
 
-    public async Task<string> ResolveAddressAsync() => $"http://{await ResolveHostAsync()}:{Port}/sync/";
+    public async Task<string> ResolveAddressAsync()
+    {
+        using var operation = _app.Work.Enter();
+        if (!operation.IsCurrent || !_app.Profile.IsGuest) return "";
+        var host = await ResolveHostAsync();
+        return operation.IsCurrent ? $"http://{host}:{Port}/sync/" : "";
+    }
 
     /// <summary>The toast for a failed Start: a port another program owns gets its own message.</summary>
     public string StartFailureText(Exception ex) =>
@@ -88,34 +97,47 @@ public sealed class LanSyncServer : IDisposable
     /// <summary>Throws SocketException when the port cannot be bound; nothing is left listening in that case.</summary>
     public void Start()
     {
-        if (IsRunning) return;
-        var listener = new TcpListener(_localhostOnly ? IPAddress.Loopback : IPAddress.Any, Port);
-        try { listener.Start(); }
-        catch
+        if (!_app.Profile.IsGuest) throw new InvalidOperationException("LAN-синхронизация доступна только гостю.");
+        using var operation = _app.Work.Enter();
+        lock (_lifecycle)
         {
-            listener.Stop();
-            throw;
+            if (!operation.IsCurrent) return;
+            if (IsRunning) return;
+            var listener = new TcpListener(_localhostOnly ? IPAddress.Loopback : IPAddress.Any, Port);
+            try { listener.Start(); }
+            catch
+            {
+                listener.Stop();
+                throw;
+            }
+            Port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            _cts = new CancellationTokenSource();
+            _listener = listener;
+            _app.Log.Info($"lan sync: listening on port {Port}");
+            _ = AcceptLoopAsync(listener, _cts.Token);
         }
-        Port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        _cts = new CancellationTokenSource();
-        _listener = listener;
-        _app.Log.Info($"lan sync: listening on port {Port}");
-        _ = AcceptLoopAsync(listener, _cts.Token);
     }
 
     public void Stop()
     {
-        var listener = _listener;
-        _listener = null;
-        _cts?.Cancel();
-        _cts?.Dispose();
-        _cts = null;
-        try { listener?.Stop(); }
-        catch (SocketException ex) { _app.Log.Warn($"lan sync: {ex.Message}"); }
+        lock (_lifecycle)
+        {
+            var listener = _listener;
+            _listener = null;
+            _cts?.Cancel();
+            _cts?.Dispose();
+            _cts = null;
+            try { listener?.Stop(); }
+            catch (SocketException ex) { _app.Log.Warn($"lan sync: {ex.Message}"); }
+        }
     }
 
     private async Task AcceptLoopAsync(TcpListener listener, CancellationToken ct)
     {
+        using var operation = _app.Work.Enter();
+        if (!operation.IsCurrent || !_app.Profile.IsGuest) return;
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, operation.Token);
+        ct = linked.Token;
         while (!ct.IsCancellationRequested)
         {
             // The slot is taken *before* the accept, so a peer opening more sockets than this server will serve leaves
@@ -143,11 +165,13 @@ public sealed class LanSyncServer : IDisposable
 
     private async Task HandleAsync(TcpClient client, CancellationToken ct)
     {
+        using var operation = _app.Work.Enter();
         try
         {
             using (client)
             {
-                using var io = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                if (!operation.IsCurrent || !_app.Profile.IsGuest) return;
+                using var io = CancellationTokenSource.CreateLinkedTokenSource(ct, operation.Token);
                 io.CancelAfter(IoTimeout);
                 var stream = client.GetStream();
                 var request = await HttpHead.ReadAsync(stream, MaxHeadBytes, io.Token);
@@ -164,7 +188,10 @@ public sealed class LanSyncServer : IDisposable
                 switch (request.Method)
                 {
                     case "GET":
-                        await Respond(stream, 200, await GatedAsync(() => _app.Sync.ExportToJson(), io.Token), io.Token);
+                        var json = await GatedAsync(() => _app.Sync.ExportToJson(), io.Token);
+                        operation.ThrowIfStale();
+                        if (!_app.Profile.IsGuest) return;
+                        await Respond(stream, 200, json, io.Token);
                         return;
                     case "POST":
                         await ImportAsync(stream, request, io.Token);
@@ -191,6 +218,9 @@ public sealed class LanSyncServer : IDisposable
 
     private async Task ImportAsync(NetworkStream stream, HttpHead request, CancellationToken ct)
     {
+        using var operation = _app.Work.Enter();
+        operation.ThrowIfStale();
+        if (!_app.Profile.IsGuest) return;
         // A peer on the LAN is not trusted with the process's memory: no declared length (chunked) means no bound to
         // check, one past the cap is refused before a single body byte is read, and the read stops at the length.
         if (request.Chunked || request.ContentLength is null)
@@ -231,6 +261,7 @@ public sealed class LanSyncServer : IDisposable
             Interlocked.Decrement(ref _pendingImports);
         }
         _app.Log.Info($"lan sync: imported {counts} (overrides/homework/friends)");
+        operation.ThrowIfStale();
         Imported?.Invoke();
         await Respond(stream, 200, "{\"status\":\"ok\"}", ct);
     }
@@ -277,8 +308,10 @@ public sealed class LanSyncServer : IDisposable
     /// is listening on any more. A cancelled wait never acquired the gate, so it must not release it either.</summary>
     private async Task<T> GatedAsync<T>(Func<T> work, CancellationToken ct)
     {
+        using var operation = _app.Work.Enter();
+        operation.ThrowIfStale();
         await _app.CoreGate.WaitAsync(ct);
-        try { return await Task.Run(work); }
+        try { operation.ThrowIfStale(); return await Task.Run(work); }
         finally { _app.CoreGate.Release(); }
     }
 

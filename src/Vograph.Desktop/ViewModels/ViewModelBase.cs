@@ -8,6 +8,7 @@ public abstract partial class ViewModelBase : ObservableObject
     protected ViewModelBase(AppServices app) => App = app;
 
     public AppServices App { get; }
+    protected bool CanPublish => App.Work.CanPublish;
 
     /// <summary>Spec §7: the app-wide «Анимации» + system reduce-motion switch. Views bind it, MotionSettings.Resolve
     /// finds it from any control by walking up to the nearest view model.</summary>
@@ -59,16 +60,20 @@ public abstract partial class ViewModelBase : ObservableObject
     /// </summary>
     private async Task<T?> GatedAsync<T>(Func<Task<T>> run, string context) where T : class
     {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return null;
         IsBusy = true;
         try
         {
-            return await Task.Run(async () =>
+            var result = await Task.Run(async () =>
             {
-                await App.CoreGate.WaitAsync().ConfigureAwait(false); // acquired on the pool
-                try { return await run().ConfigureAwait(false); } // the work (already Task.Run-wrapped by the overloads above)
+                await App.CoreGate.WaitAsync(operation.Token).ConfigureAwait(false); // acquired on the pool
+                try { operation.ThrowIfStale(); return await run().ConfigureAwait(false); }
                 finally { App.CoreGate.Release(); } // released on the pool — a UI-thread Dispose() can proceed
             });
+            return operation.IsCurrent ? result : null;
         }
+        catch (OperationCanceledException) when (!operation.IsCurrent) { return null; }
         catch (ObjectDisposedException ex)
         {
             App.Log.Warn($"{context}: {ex.GetType().Name}: {ex.Message}"); // shutdown raced a queued call
@@ -76,7 +81,8 @@ public abstract partial class ViewModelBase : ObservableObject
         }
         catch (Exception ex)
         {
-            Report(context, ex);
+            if (operation.IsCurrent) Report(context, ex);
+            else App.Log.Error(context, ex);
             return null;
         }
         finally

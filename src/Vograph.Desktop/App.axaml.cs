@@ -6,12 +6,15 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
+using Vograph.Desktop.Services.Profiles;
 
 namespace Vograph.Desktop;
 
 public partial class App : Application
 {
     public AppServices? Services { get; private set; }
+    public ProfileSwitchCoordinator? Profiles { get; private set; }
+    public ProfileRoot? CurrentRoot { get; private set; }
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
@@ -88,36 +91,32 @@ public partial class App : Application
             Logger.Sink = new AvaloniaLogSink(services.Log);
             services.Theme = ThemeService.ForApplication(this, services.Prefs);
             SetMotion(services.Motion.Enabled);
-            services.Motion.PropertyChanged += (_, _) => SetMotion(services.Motion.Enabled);
+            var motion = services.Motion;
+            motion.PropertyChanged += (_, _) => SetMotion(motion.Enabled);
 
             var shell = new ShellViewModel(services);
-            shell.Shutdown = () => desktop.Shutdown(); // the update batch waits for this process to exit
+            CurrentRoot = new(services, shell);
+            shell.Shutdown = () => desktop.TryShutdown(); // the update batch waits for this process to exit
             var window = new MainWindow { DataContext = shell };
             services.Launcher = new AvaloniaLauncher(() => window, services.Log);
             services.FileDialogs = new AvaloniaFileDialogs(() => window);
-            services.NotificationScheduler.Start();
-            if (services.Prefs.LanSync)
+            ConfigureProfiles(window, desktop);
+            window.Opened += async (_, _) =>
             {
                 try
                 {
-                    services.LanSync.Start();
-                    _ = services.LanSync.ResolveAddressAsync(); // warms the address off the UI thread; never throws
+                    await services.Shared.AccountPanel.InitializeAsync();
+                    StartCurrentProfile();
                 }
-                catch (Exception ex)
-                {
-                    services.Log.Error("lan sync start", ex);
-                    // The window is built but not shown yet: the toast waits in the queue and appears with it.
-                    services.Toasts.Error(services.LanSync.StartFailureText(ex));
-                    services.Prefs.LanSync = false;
-                    services.Prefs.Save();
-                }
-            }
-            window.Opened += async (_, _) => await shell.StartAsync(services.AllowNetwork);
+                catch (Exception ex) { Services!.Log.Error("profile startup", ex); }
+            };
             desktop.MainWindow = window;
             desktop.Exit += (_, _) =>
             {
-                shell.Stop();      // timer and section subscriptions first
-                services.Dispose(); // then the gate and SQLite
+                services.Shared.AccountPanel.Dispose();
+                var current = Profiles?.Current ?? CurrentRoot;
+                current?.Shell.Stop();
+                current?.Services.Dispose();
             };
             services.Log.Info("desktop started");
         }

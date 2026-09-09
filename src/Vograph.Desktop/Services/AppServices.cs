@@ -1,15 +1,23 @@
 using Vograph.Core.Models;
 using Vograph.Core.Services;
+using Vograph.Core.Services.Sync;
 using Vograph.Desktop.Features.Maps;
 using Vograph.Desktop.Features.Teachers;
+using Vograph.Desktop.Services.Profiles;
 
 namespace Vograph.Desktop.Services;
 
-/// <summary>Composition root. One instance per process; no DI container on purpose.</summary>
-public sealed class AppServices : IDisposable
+/// <summary>Database-bound graph. Shared holds installation-scoped state across profile transitions.</summary>
+public sealed partial class AppServices : IDisposable
 {
+    public ProfileDescriptor Profile { get; }
+    public SharedProfileRuntime Shared { get; }
+    public ProfileWorkLifetime Work { get; } = new();
+    public bool IsClosed => _disposed;
     public string DataDir { get; }
     public Database Db { get; }
+    public PrivateSyncOutbox Outbox { get; }
+    public PrivateSyncCoordinator? PrivateSync { get; }
     public I18nService I18n { get; }
     public Loc Loc { get; }
     public ParserService Parser { get; }
@@ -31,6 +39,7 @@ public sealed class AppServices : IDisposable
 
     /// <summary>Network half of timetable refreshes; settable so tests script the server with a FakeHttpHandler.</summary>
     public ScheduleRefresher Refresher { get; set; }
+    public ApiRefreshCoordinator Api { get; }
 
     /// <summary>Plan images on disk; settable so tests serve a generated PNG instead of the real maps cache.</summary>
     public IMapFiles MapFiles { get; set; }
@@ -52,47 +61,88 @@ public sealed class AppServices : IDisposable
     public LanSyncServer LanSync { get; set; }
 
     /// <summary>Needs a live Application; assigned by App at startup (or by UI tests). Null in plain unit tests.</summary>
-    public ThemeService? Theme { get; set; }
+    public ThemeService? Theme { get => Shared.Theme; set => Shared.Theme = value; }
 
     /// <summary>Core's SqliteConnection is not thread-safe: every background Core call goes through this gate.</summary>
     public SemaphoreSlim CoreGate { get; } = new(1, 1);
 
     /// <summary>Process-wide network switch; tests set this false. Sections that can reach the network consult it.</summary>
-    public bool AllowNetwork { get; set; } = true;
-
-    private AppServices(string dataDir, Func<bool>? systemAnimations)
+    private bool _allowNetwork = true;
+    public bool AllowNetwork
     {
+        get => _allowNetwork;
+        set { if (_allowNetwork != value) { _allowNetwork = value; Api?.NetworkPolicyChanged(value); } }
+    }
+
+    private readonly string? _apiBaseUrl;
+    private readonly Func<Uri, TimetableApiClient>? _apiFactory;
+    private AppServices(ProfileDescriptor profile, SharedProfileRuntime? shared, Func<bool>? systemAnimations, string? apiBaseUrl, Func<Uri, TimetableApiClient>? apiFactory)
+    {
+        Profile = profile;
+        var dataDir = profile.GlobalDataDir;
         DataDir = dataDir;
         Directory.CreateDirectory(dataDir);
-        Log = new AppLog(Path.Combine(dataDir, "logs"));
-        Db = new Database(Path.Combine(dataDir, "vograph.db"));
-        Parser = new ParserService(Db); // also registers the code-pages encoding provider
-        var settings = Db.GetSettings();
-        I18n = new I18nService(settings.Language ?? "ru");
-        Loc.Init(I18n);
-        Loc = Loc.Current;
-        Schedule = new ScheduleService(Db);
-        Overrides = new OverrideService(Db);
-        Homework = new HomeworkService(Db);
-        Intersections = new IntersectionService(Db);
-        Notifications = new NotificationService(Db, Overrides, Homework, Schedule, I18n);
-        Maps = new MapService(Db, Schedule, Path.Combine(dataDir, "maps"), Path.Combine(AppContext.BaseDirectory, "maps"));
-        MapFiles = new MapFiles(Maps, Log, () => AllowNetwork);
-        Launcher = new NullLauncher(Log); // App swaps in AvaloniaLauncher once the window exists
-        Lecturers = new LecturerStore(new LecturerService(Db, Path.Combine(dataDir, "TimetableLecturer50.xml"), Path.Combine(AppContext.BaseDirectory, "TimetableLecturer50.xml")), Log); // parsed lazily by the Teachers section
-        Sync = new SyncService(Db);
-        AutoUpdate = new AutoUpdateService();
-        UpdateSource = new GitHubUpdateSource(AutoUpdate);
-        Prefs = UiPrefs.Load(Path.Combine(dataDir, "ui.json"), ex => Log.Error("prefs", ex));
-        Motion = new MotionSettings(Prefs, systemAnimations);
-        Refresher = new ScheduleRefresher();
-        Toasts = new ToastService();
-        NotificationScheduler = new NotificationScheduler(this);
-        LanSync = new LanSyncServer(this);
+        Db = new Database(profile.DatabasePath);
+        Outbox = new PrivateSyncOutbox(Db, enabled: !profile.IsGuest);
+        Db.PrivateOutbox = Outbox;
+        try
+        {
+            Parser = new ParserService(Db); // also registers the code-pages encoding provider
+            var settings = Db.GetSettings();
+            Shared = shared ?? new SharedProfileRuntime(dataDir, settings.Language ?? "ru", systemAnimations);
+            Log = Shared.Log;
+            I18n = Shared.I18n;
+            Loc = Shared.Loc;
+            Schedule = new ScheduleService(Db);
+            Overrides = new OverrideService(Db, Outbox);
+            Homework = new HomeworkService(Db, Outbox);
+            Intersections = new IntersectionService(Db);
+            Notifications = new NotificationService(Db, Overrides, Homework, Schedule, I18n);
+            Maps = new MapService(Db, Schedule, Path.Combine(dataDir, "maps"), Path.Combine(AppContext.BaseDirectory, "maps"));
+            MapFiles = new MapFiles(Maps, Log, () => AllowNetwork);
+            Launcher = new NullLauncher(Log); // App swaps in AvaloniaLauncher once the window exists
+            Lecturers = new LecturerStore(new LecturerService(Db, Path.Combine(dataDir, "TimetableLecturer50.xml"), Path.Combine(AppContext.BaseDirectory, "TimetableLecturer50.xml")), Log); // parsed lazily by the Teachers section
+            Sync = new SyncService(Db);
+            AutoUpdate = new AutoUpdateService();
+            UpdateSource = new GitHubUpdateSource(AutoUpdate);
+            Prefs = Shared.Prefs;
+            Motion = Shared.Motion;
+            Refresher = new ScheduleRefresher();
+            Toasts = new ToastService(canPublish: () => Work.CanPublish);
+            NotificationScheduler = new NotificationScheduler(this);
+            LanSync = new LanSyncServer(this);
+            _apiBaseUrl = apiBaseUrl ?? Environment.GetEnvironmentVariable("VOGRAPH_API_BASE_URL");
+            _apiFactory = apiFactory;
+            Api = new ApiRefreshCoordinator(this, _apiBaseUrl, apiFactory);
+            PrivateSync = profile.IsGuest ? null : new PrivateSyncCoordinator(this);
+        }
+        catch
+        {
+            PrivateSync?.Dispose();
+            Api?.Dispose();
+            Refresher?.Dispose();
+            NotificationScheduler?.Dispose();
+            LanSync?.Dispose();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearPool(Db.Connection);
+            Db.Dispose();
+            CoreGate.Dispose();
+            throw;
+        }
     }
 
     /// <param name="systemAnimations">The Windows «reduce motion» reader; tests pin it so frames never animate.</param>
-    public static AppServices Create(string dataDir, Func<bool>? systemAnimations = null) => new(dataDir, systemAnimations);
+    public static AppServices Create(string dataDir, Func<bool>? systemAnimations = null, string? apiBaseUrl = null,
+        Func<Uri, TimetableApiClient>? apiFactory = null) => new(ProfileDescriptor.Guest(dataDir), null, systemAnimations, apiBaseUrl, apiFactory);
+
+    public AppServices CreateProfile(ProfileDescriptor profile)
+    {
+        if (profile.GlobalDataDir != Shared.GlobalDataDir) throw new ArgumentException("Другой каталог установки.");
+        var candidate = new AppServices(profile, Shared, null, _apiBaseUrl, _apiFactory);
+        candidate.AllowNetwork = AllowNetwork;
+        candidate.Launcher = Launcher;
+        candidate.FileDialogs = FileDialogs;
+        return candidate;
+    }
 
     /// <summary>Always re-read: Core services write settings behind our back (refresh, homework).</summary>
     public Settings Settings => Db.GetSettings();
@@ -103,6 +153,8 @@ public sealed class AppServices : IDisposable
     {
         if (_disposed) return; // the bounded Wait below would throw on a second pass
         _disposed = true;
+        PrivateSync?.Dispose();
+        Api.Dispose();
         Refresher.Dispose();
         NotificationScheduler.Dispose();
         LanSync.Dispose();

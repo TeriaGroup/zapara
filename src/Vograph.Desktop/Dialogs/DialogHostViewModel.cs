@@ -10,7 +10,9 @@ namespace Vograph.Desktop.Dialogs;
 /// screen completes as cancelled and the host stays open for its replacement.</summary>
 public sealed partial class DialogHostViewModel : ObservableObject
 {
-    public DialogHostViewModel(MotionSettings? motion = null) => Motion = motion ?? MotionSettings.Off;
+    private readonly Services.Profiles.ProfileWorkLifetime? work;
+    public DialogHostViewModel(MotionSettings? motion = null, Services.Profiles.ProfileWorkLifetime? work = null)
+    { Motion = motion ?? MotionSettings.Off; this.work = work; }
 
     public MotionSettings Motion { get; }
 
@@ -24,10 +26,17 @@ public sealed partial class DialogHostViewModel : ObservableObject
 
     public async Task<bool> ShowAsync(DialogViewModelBase dialog)
     {
+        using var operation = work?.Enter();
+        if (operation is { IsCurrent: false }) return false;
         Current?.Cancel(); // one at a time: the dialog on screen completes as cancelled and hands the host over
         Current = dialog;
         IsOpen = true;
         var result = await dialog.Completion;
+        if (operation is { IsCurrent: false })
+        {
+            if (ReferenceEquals(Current, dialog)) { IsOpen = false; Current = null; }
+            return false;
+        }
         // A dialog shown over this one already owns the host, so closing down from here would fade the newer one
         // out and strand it: IsOpen false gates Escape, Enter and Dismiss, and its own ShowAsync would never return.
         if (!ReferenceEquals(Current, dialog)) return result;

@@ -7,7 +7,7 @@
         WindowStartupLocation="CenterScreen" Background="{DynamicResource Brush.Canvas}">
   <StackPanel Margin="24" Spacing="12">
     <TextBlock Classes="title" Text="Не удалось запустить приложение" />
-    <TextBlock Classes="muted" Text="Could not start the application. The details were written to the log file below." TextWrapping="Wrap" />
+    <TextBlock Classes="muted" Text="Не удалось запустить приложение. Подробности записаны в файл журнала ниже." TextWrapping="Wrap" />
     <Border Classes="card">
       <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
     </Border>
