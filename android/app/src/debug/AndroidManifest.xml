@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name="ru.bgtu_voenmeh.zapara.Api37TestActivity"
+            android:exported="false"
+            android:taskAffinity="${applicationId}.api37test"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar"
+            android:excludeFromRecents="true" />
+    </application>
+</manifest>
