@@ -6,6 +6,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import ru.bgtu_voenmeh.zapara.data.GroupInfo
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork
 import java.time.LocalDate
 
@@ -50,6 +51,22 @@ class TimetableSourceTest {
         assertTrue(source.pull())
         assertEquals(1, xml)
         assertTrue(http.requests.isEmpty())
+    }
+
+    @Test
+    fun ensure_uses_bundled_snapshot_before_network() = runBlocking {
+        var xml = 0
+        val http = FakeHttp { error("no http") }
+        val store = MemoryTimetableStore()
+        val api = ApiRefreshCoordinator(store, ProfileWork(), "https://example.invalid/", http)
+        val source = TimetableSource(api, store, {
+            store.upsertGroup(GroupInfo("1", "A"))
+            true
+        }) { xml++ }
+        source.ensure()
+        assertEquals(0, xml)
+        assertTrue(http.requests.isEmpty())
+        assertEquals("A", store.groups().single().name)
     }
 
     @Test

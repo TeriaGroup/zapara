@@ -86,9 +86,10 @@ class ScheduleViewModel(
         try {
             var ensureError: String? = null
             withContext(Dispatchers.IO) {
-                try { container.timetable.ensure() } catch (e: Exception) {
-                    android.util.Log.w("ZaparaSchedule", "ensureData", e)
-                    ensureError = e.message ?: e.javaClass.simpleName
+                try { container.timetable.ensure() } catch (t: Throwable) {
+                    if (t is CancellationException) throw t
+                    android.util.Log.w("ZaparaSchedule", "ensureData", t)
+                    ensureError = t.message ?: t.javaClass.simpleName
                 }
             }
             val now = container.clock()
@@ -117,9 +118,9 @@ class ScheduleViewModel(
             }
             if (gid.isNotEmpty()) ensureAround(selected)
         } catch (e: CancellationException) { throw e }
-        catch (e: Exception) {
-            android.util.Log.w("ZaparaSchedule", "bootstrap", e)
-            mutable.update { it.copy(loaded = true, error = e.message) }
+        catch (t: Throwable) {
+            android.util.Log.e("ZaparaSchedule", "bootstrap", t)
+            mutable.update { it.copy(loaded = true, error = t.message ?: t.javaClass.simpleName) }
         }
     }
 

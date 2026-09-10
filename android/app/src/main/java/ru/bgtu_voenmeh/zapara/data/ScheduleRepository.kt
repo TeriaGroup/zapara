@@ -2,6 +2,7 @@ package ru.bgtu_voenmeh.zapara.data
 
 import android.content.Context
 import androidx.room.Room
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.bgtu_voenmeh.zapara.data.db.GroupEntity
@@ -156,35 +157,56 @@ class ScheduleRepository(
         }
     }
 
+    suspend fun applyBundled(context: Context): Boolean = withContext(Dispatchers.IO) {
+        val ticket = work?.enter()
+        try {
+            ticket?.throwIfStale()
+            context.assets.open("TimetableGroup50.xml").use { stream ->
+                ingestParsed(GroupParser.parse(stream), "asset:TimetableGroup50.xml")
+            }
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            false
+        } finally {
+            ticket?.close()
+        }
+    }
+
     suspend fun refresh(url: String = GroupParser.DEFAULT_URL): Unit = withContext(Dispatchers.IO) {
         val ticket = work?.enter()
         try {
             ticket?.throwIfStale()
             TimetableSource.guardXmlRefresh(store, settings())
-            val xml = fetch(url)
-            val parsed = GroupParser.parse(xml, url)
-            val s = settings()
-            val now = java.time.OffsetDateTime.now().toString()
-            db.runInTransaction {
-                for (g in parsed.groups) {
-                    db.groupDao().upsert(GroupEntity(g.id, g.name, g.url))
-                }
-                val byGroup = parsed.lessons.groupBy { it.groupId }
-                for ((gid, list) in byGroup) {
-                    db.lessonDao().clearForGroup(gid)
-                    db.lessonDao().insertAll(list.map { it.toEntity() })
-                }
-                saveSettings(
-                    s.copy(
-                        periodStart = parsed.periodStart,
-                        weekCount = parsed.weekCount,
-                        periodTitle = parsed.periodTitle,
-                        lastFetchedAt = now
-                    )
-                )
-            }
+            ingestParsed(GroupParser.parse(fetch(url)), url)
         } finally {
             ticket?.close()
+        }
+    }
+
+    private fun ingestParsed(parsed: ParsedSchedule, url: String) {
+        val s = settings()
+        val now = java.time.OffsetDateTime.now().toString()
+        db.runInTransaction {
+            for (g in parsed.groups) {
+                db.groupDao().upsert(GroupEntity(g.id, g.name, g.url))
+            }
+            val byGroup = parsed.lessons.groupBy { it.groupId }
+            for ((gid, list) in byGroup) {
+                db.lessonDao().clearForGroup(gid)
+                list.map { it.toEntity() }.chunked(200).forEach { chunk ->
+                    db.lessonDao().insertAll(chunk)
+                }
+            }
+            saveSettings(
+                s.copy(
+                    periodStart = parsed.periodStart,
+                    weekCount = parsed.weekCount,
+                    periodTitle = parsed.periodTitle,
+                    lastFetchedAt = now
+                )
+            )
         }
     }
 

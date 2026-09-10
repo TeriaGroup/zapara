@@ -122,7 +122,7 @@ class AppContainer(
     val work: ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork,
     val api: ApiRefreshCoordinator
 ) {
-    val timetable = TimetableSource(api, repo.store) { repo.refresh() }
+    val timetable = TimetableSource(api, repo.store, { repo.applyBundled(app) }) { repo.refresh() }
     var closed: Boolean = false
         private set
     val mapStore by lazy { MapStore(app) }

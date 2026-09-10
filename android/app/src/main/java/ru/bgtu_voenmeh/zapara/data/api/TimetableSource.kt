@@ -5,10 +5,17 @@ import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
 class TimetableSource(
     private val api: ApiRefreshCoordinator,
     private val store: TimetableStore,
+    private val bundled: suspend () -> Boolean = { false },
     private val xmlRefresh: suspend () -> Unit
 ) {
     suspend fun ensure() {
         if (store.groups().isNotEmpty()) return
+        if (ScheduleRepository.networkEnabled) {
+            try {
+                if (bundled()) return
+            } catch (_: Throwable) {
+            }
+        }
         if (!ScheduleRepository.networkEnabled) throw IllegalStateException("empty db and network disabled (tests)")
         if (!pull() && usesJson()) {
             throw IllegalStateException(api.lastError ?: XML_REFUSED)
