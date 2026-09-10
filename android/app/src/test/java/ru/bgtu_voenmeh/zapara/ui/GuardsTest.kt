@@ -66,7 +66,8 @@ class GuardsTest {
             val snake = name.replace(Regex("([a-z])([A-Z])"), "$1_$2").lowercase()
             val vector = File(main,"res/drawable/ic_$snake.xml").readText()
             val geometry = desktop.substringAfter("x:Key=\"Icon.$name\">").substringBefore("</StreamGeometry>")
-            assertTrue(name, vector.contains("android:pathData=\"$geometry\""))
+            val paths = Regex("android:pathData=\"([^\"]+)\"").findAll(vector).joinToString(" ") { it.groupValues[1] }
+            assertEquals(name, geometry, paths)
             listOf("strokeWidth=\"1.75\"","viewportWidth=\"24\"","viewportHeight=\"24\"", "fillColor=\"#00000000\"", "strokeLineCap=\"round\"", "strokeLineJoin=\"round\"").forEach {
                 assertTrue("$name $it", vector.contains(it))
             }

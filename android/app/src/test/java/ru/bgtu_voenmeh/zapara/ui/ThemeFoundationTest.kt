@@ -2,6 +2,8 @@ package ru.bgtu_voenmeh.zapara.ui
 
 import org.junit.Assert.*
 import org.junit.Test
+import androidx.compose.ui.unit.dp
+import ru.bgtu_voenmeh.zapara.ui.theme.ZaparaSpace
 import java.io.File
 
 /** Source guards also run RED before the public types exist. */
@@ -10,6 +12,10 @@ class ThemeFoundationTest {
 
     @Test fun tokens_contract_exists() {
         assertTrue("Task1 Tokens.kt required", File(theme, "Tokens.kt").isFile)
+    }
+
+    @Test fun android_touch_target_minimum_is_48dp() {
+        assertEquals(48.dp, ZaparaSpace.minTouch)
     }
 
     @Test fun theme_choice_contract_exists() {

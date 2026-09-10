@@ -8,7 +8,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.*
 import java.io.File
 
 class TokensParityTest {
-    @Test fun all_colors_match_desktop_argb() {
+    @Test fun colors_match_desktop_except_exact_android_accessibility_tokens() {
         val xml = File("../../src/Vograph.Desktop/Theme/Tokens.axaml").readText()
         for ((name, c) in listOf("Dark" to DarkColors, "Light" to LightColors)) {
             val section = xml.substringAfter("<ResourceDictionary x:Key=\"$name\">").substringBefore("</ResourceDictionary>")
@@ -27,13 +27,19 @@ class TokensParityTest {
             )
             c.friends.forEachIndexed { i, color -> actual["Friend${i+1}"] = color }
             assertEquals(expected.keys, actual.keys)
-            actual.forEach { (key, color: Color) -> assertEquals("$name.$key", expected[key], color.toArgb()) }
+            // DESIGN.md 2026-09-12; actual surface pairs are covered by AccessibilityContrastTest.
+            val androidExceptions = setOf("Text2", "Text3", "FocusRing", "LineStrong")
+            val accessibleArgb = (if (name == "Dark") 0xFFA0A0A0 else 0xFF595959).toInt()
+            actual.forEach { (key, color: Color) ->
+                val required = if (key in androidExceptions) accessibleArgb else expected[key]
+                assertEquals("$name.$key", required, color.toArgb())
+            }
         }
     }
 
     @Test fun geometry_matches_contract() {
         assertEquals(listOf(4f,8f,12f,16f,24f), listOf(ZaparaSpace.xs.value,ZaparaSpace.s.value,ZaparaSpace.m.value,ZaparaSpace.l.value,ZaparaSpace.xl.value))
         assertEquals(listOf(12f,8f,6f,999f,14f,9f,10f), listOf(ZaparaRadius.card.value,ZaparaRadius.control.value,ZaparaRadius.chip.value,ZaparaRadius.pill.value,ZaparaRadius.dialog.value,ZaparaRadius.icon.value,ZaparaRadius.toast.value))
-        assertEquals(44f, ZaparaSpace.minTouch.value)
+        assertEquals(48f, ZaparaSpace.minTouch.value)
     }
 }
