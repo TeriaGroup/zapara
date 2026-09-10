@@ -222,39 +222,37 @@ public class MapService
         if (raw.Contains("ВЦ") || raw.Contains("Вц") || raw.Contains("вц"))
         {
             building = "ВЦ";
-            // room after ВЦ
-            var mVc = Regex.Match(raw, @"ВЦ\s*(\d+)", RegexOptions.IgnoreCase);
-            if (mVc.Success) roomPart = mVc.Groups[1].Value;
-            else roomPart = Regex.Match(raw, @"\d+").Value ?? raw;
+            var mVc = Regex.Match(raw, @"ВЦ\s*(.+)", RegexOptions.IgnoreCase);
+            if (mVc.Success) roomPart = mVc.Groups[1].Value.Trim();
+            else
+            {
+                var stripped = Regex.Replace(raw, @"^ВЦ\s*", "", RegexOptions.IgnoreCase).Trim();
+                roomPart = string.IsNullOrEmpty(stripped) ? raw : stripped;
+            }
         }
         else if (hasStar)
         {
             building = "УЛК";
             // star = УЛК (per user correction 2026-09-01: кабинеты со звездочкой — УЛК)
             roomPart = raw.Replace("*", "").Trim();
-            // if room like "507а" -> digits 507
-            var m = Regex.Match(roomPart, @"\d+");
-            if (m.Success) roomPart = m.Value;
         }
         else
         {
-            // no star, not ВЦ -> ГК (main corpus)
             building = "ГК";
-            var m = Regex.Match(raw, @"\d+");
-            if (m.Success) roomPart = m.Value;
-            else roomPart = raw;
+            roomPart = raw;
         }
 
         // Extract floor from first digit of numeric part
         int floor = 1;
-        var digitMatch = Regex.Match(roomPart, @"\d+");
-        if (digitMatch.Success)
+        if (roomPart.Length > 0 && char.IsDigit(roomPart[0]))
         {
-            var digits = digitMatch.Value;
-            if (digits.Length > 0 && char.IsDigit(digits[0]))
-                floor = int.Parse(digits[0].ToString());
-            if (floor < 1) floor = 1;
-            if (floor > 5) floor = 5;
+            var digitMatch = Regex.Match(roomPart, @"\d+");
+            if (digitMatch.Success)
+            {
+                floor = int.Parse(digitMatch.Value[0].ToString());
+                if (floor < 1) floor = 1;
+                if (floor > 5) floor = 5;
+            }
         }
 
         // Clamp floor to building max
