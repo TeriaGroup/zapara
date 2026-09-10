@@ -118,6 +118,7 @@ public sealed partial class AppServices : IDisposable
         }
         catch
         {
+            Toasts?.Dispose();
             PrivateSync?.Dispose();
             Api?.Dispose();
             Refresher?.Dispose();
@@ -153,6 +154,7 @@ public sealed partial class AppServices : IDisposable
     {
         if (_disposed) return; // the bounded Wait below would throw on a second pass
         _disposed = true;
+        Toasts.Dispose();
         PrivateSync?.Dispose();
         Api.Dispose();
         Refresher.Dispose();

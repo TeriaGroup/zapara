@@ -11,6 +11,7 @@ public sealed partial class AppServices
             throw new InvalidOperationException("Закрытие требует эксклюзивного владения остановленным профилем.");
         if (_disposed) return Task.CompletedTask;
         _disposed = true;
+        Toasts.Dispose();
         PrivateSync?.Dispose();
         Api.Dispose();
         Refresher.Dispose();
