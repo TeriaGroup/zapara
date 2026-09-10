@@ -21,11 +21,14 @@ public partial class MainWindow : Window
             if (DataContext is ShellViewModel vm) vm.IsMaximized = WindowState == WindowState.Maximized;
         };
         AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
+        PositionChanged += (_, _) => RememberNormalBounds();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == WidthProperty || change.Property == HeightProperty || change.Property == WindowStateProperty)
+            RememberNormalBounds();
         if (change.Property == WindowStateProperty && DataContext is ShellViewModel vm) vm.IsMaximized = WindowState == WindowState.Maximized;
     }
 
@@ -33,6 +36,7 @@ public partial class MainWindow : Window
     /// else's: the service holds one delegate, and a second window (a test opening its own shell) overwrites it.</summary>
     private Func<Action, Task>? _themeTransition;
     private ThemeService? _wiredTheme;
+    private WindowBounds? _normalBounds;
 
     /// <summary>The theme service switches inside a crossfade of this window (spec §7); a window without a shell switches plainly.</summary>
     private void WireTheme()
@@ -82,6 +86,12 @@ public partial class MainWindow : Window
 
     private UiPrefs? Prefs => (DataContext as ShellViewModel)?.App.Prefs;
 
+    private void RememberNormalBounds()
+    {
+        if (WindowState != WindowState.Normal) return;
+        _normalBounds = new WindowBounds(Position.X, Position.Y, (int)Width, (int)Height, false);
+    }
+
     private void OnOpened(object? sender, EventArgs e)
     {
         var prefs = Prefs;
@@ -98,11 +108,10 @@ public partial class MainWindow : Window
     {
         var prefs = Prefs;
         if (prefs is null) return;
-        var maximized = WindowState == WindowState.Maximized;
-        // While maximized Position/Width describe the maximized frame; keep the last normal bounds instead.
-        prefs.Window = maximized && prefs.Window is not null
-            ? prefs.Window with { Maximized = true }
-            : new WindowBounds(Position.X, Position.Y, (int)Width, (int)Height, maximized);
+        prefs.Window = WindowBoundsLogic.Capture(
+            _normalBounds,
+            WindowState == WindowState.Maximized,
+            Position.X, Position.Y, (int)Width, (int)Height);
         prefs.Save();
     }
 

@@ -43,4 +43,14 @@ public class WindowBoundsLogicTests
         var saved = new WindowBounds(1800, 1000, 1280, 800, false); // only a corner visible
         Assert.Null(WindowBoundsLogic.Restore(saved, OneScreen, Min));
     }
+
+    [Fact]
+    public void Closing_Maximized_Keeps_Last_Normal_Size()
+    {
+        var normal = new WindowBounds(40, 40, 1280, 800, false);
+        var saved = WindowBoundsLogic.Capture(normal, maximized: true, x: 0, y: 0, width: 1920, height: 1080);
+        Assert.Equal(new WindowBounds(40, 40, 1280, 800, true), saved);
+        var restored = WindowBoundsLogic.Capture(null, maximized: false, x: 10, y: 20, width: 1100, height: 700);
+        Assert.Equal(new WindowBounds(10, 20, 1100, 700, false), restored);
+    }
 }

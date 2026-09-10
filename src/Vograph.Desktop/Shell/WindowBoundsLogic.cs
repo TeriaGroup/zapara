@@ -24,4 +24,9 @@ public static class WindowBoundsLogic
         });
         return visible ? saved with { Width = width, Height = height } : null;
     }
+
+    public static WindowBounds Capture(WindowBounds? lastNormal, bool maximized, int x, int y, int width, int height) =>
+        maximized && lastNormal is not null
+            ? lastNormal with { Maximized = true }
+            : new WindowBounds(x, y, width, height, maximized);
 }
