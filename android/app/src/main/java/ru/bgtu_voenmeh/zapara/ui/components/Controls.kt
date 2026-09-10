@@ -4,8 +4,12 @@ import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -38,6 +42,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import ru.bgtu_voenmeh.zapara.ui.theme.Durations
 import ru.bgtu_voenmeh.zapara.ui.theme.ShineXKey
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
@@ -70,8 +76,8 @@ fun ZChip(
     Row(
         modifier
             .then(if (tag != null) Modifier.testTag(tag) else Modifier)
-            .sizeIn(minHeight = Zapara.space.minTouch)
-            .pressScale(source)
+            .sizeIn(minWidth = if (onClick != null) Zapara.space.minTouch else 0.dp, minHeight = Zapara.space.minTouch)
+            .then(if (onClick != null) Modifier.pressScale(source) else Modifier)
             .clip(shape)
             .background(if (selected) c.accent else c.chip)
             .then(
@@ -90,9 +96,7 @@ fun ZChip(
         Text(
             text,
             style = Zapara.typography.caption,
-            color = if (selected) c.onAccent else c.text1,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            color = if (selected) c.onAccent else c.text1
         )
     }
 }
@@ -100,33 +104,36 @@ fun ZChip(
 @Composable
 fun ZSegmented(items: List<String>, selected: Int, onSelect: (Int) -> Unit, tag: String, modifier: Modifier = Modifier) {
     val c = Zapara.colors
-    Row(
-        modifier
-            .testTag(tag)
-            .height(36.dp)
-            .clip(RoundedCornerShape(Zapara.radii.control))
-            .background(c.chip)
-            .padding(3.dp)
-    ) {
-        items.forEachIndexed { index, label ->
-            val active = index == selected
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .testTag("$tag.$index")
-                    .clip(RoundedCornerShape(Zapara.radii.control))
-                    .background(if (active) c.segThumb else Color.Transparent)
-                    .clickable { onSelect(index) },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    label,
-                    style = if (active) Zapara.typography.bodyStrong else Zapara.typography.caption,
-                    color = if (active) c.text1 else c.text2,
-                    maxLines = 1
-                )
-            }
+    val vertical = LocalDensity.current.fontScale >= 1.5f
+    val container = modifier.testTag(tag).selectableGroup()
+        .clip(RoundedCornerShape(Zapara.radii.control)).background(c.chip).padding(Zapara.space.xs)
+    @Composable fun segment(index: Int, label: String, itemModifier: Modifier) {
+        val active = index == selected
+        val interactions = remember { MutableInteractionSource() }
+        Box(
+            itemModifier
+                .sizeIn(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch)
+                .testTag("$tag.$index")
+                .clip(RoundedCornerShape(Zapara.radii.control))
+                .background(if (active) c.segThumb else Color.Transparent)
+                .selectable(selected = active, role = Role.Tab, interactionSource = interactions,
+                    indication = if (Zapara.motion.enabled) LocalIndication.current else null,
+                    onClick = { onSelect(index) })
+                .padding(Zapara.space.s),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                label,
+                style = if (active) Zapara.typography.bodyStrong else Zapara.typography.caption,
+                color = if (active) c.text1 else c.text2
+            )
+        }
+    }
+    if (vertical) {
+        Column(container) { items.forEachIndexed { index, label -> segment(index, label, Modifier.fillMaxWidth()) } }
+    } else {
+        Row(container.height(IntrinsicSize.Min)) {
+            items.forEachIndexed { index, label -> segment(index, label, Modifier.weight(1f).fillMaxHeight()) }
         }
     }
 }
@@ -154,6 +161,10 @@ fun ZSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, tag: String, m
 @Composable
 fun ZBottomSheet(onDismiss: () -> Unit, tag: String, content: @Composable ColumnScope.() -> Unit) {
     val c = Zapara.colors
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
     BackHandler(onBack = onDismiss)
     Box(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
         Box(
@@ -162,15 +173,25 @@ fun ZBottomSheet(onDismiss: () -> Unit, tag: String, content: @Composable Column
                 .background(c.backdrop)
                 .clickable(onClick = onDismiss)
         )
-        Column(
+        BoxWithConstraints(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(topStart = Zapara.radii.dialog, topEnd = Zapara.radii.dialog))
-                .background(c.surface)
-                .padding(Zapara.space.l)
-                .testTag(tag),
-            content = {
+                .imePadding()
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = maxHeight)
+                    .clip(RoundedCornerShape(topStart = Zapara.radii.dialog, topEnd = Zapara.radii.dialog))
+                    .background(c.surface)
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) {}
+                    .padding(Zapara.space.l)
+                    .testTag(tag)
+            ) {
                 Box(
                     Modifier
                         .align(Alignment.CenterHorizontally)
@@ -181,7 +202,8 @@ fun ZBottomSheet(onDismiss: () -> Unit, tag: String, content: @Composable Column
                 )
                 content()
             }
-        )
+        }
+    }
     }
 }
 
