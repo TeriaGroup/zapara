@@ -44,6 +44,8 @@ public class ScheduleLogicTests
         Assert.Equal(0, SmartStart.InitialOffset(lessons, new TimeSpan(13, 0, 0)));
         Assert.Equal(1, SmartStart.InitialOffset(lessons, new TimeSpan(14, 16, 0)));
         Assert.Equal(1, SmartStart.InitialOffset(Array.Empty<Lesson>(), new TimeSpan(8, 0, 0)));
+        Assert.Equal(2, SmartStart.InitialOffset(lessons, new TimeSpan(16, 0, 0), DayOfWeek.Saturday));
+        Assert.Equal(1, SmartStart.InitialOffset(Array.Empty<Lesson>(), new TimeSpan(12, 0, 0), DayOfWeek.Sunday));
     }
 
     [Theory]

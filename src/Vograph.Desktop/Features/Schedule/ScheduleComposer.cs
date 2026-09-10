@@ -16,7 +16,7 @@ public sealed class ScheduleComposer
     {
         var settings = _app.Settings;
         if (string.IsNullOrEmpty(settings.MyGroupId)) return 0;
-        return SmartStart.InitialOffset(_app.Schedule.GetSchedule(now.Date, settings.MyGroupId), now.TimeOfDay);
+        return SmartStart.InitialOffset(_app.Schedule.GetSchedule(now.Date, settings.MyGroupId), now.TimeOfDay, now.DayOfWeek);
     }
 
     public DayModel Compose(int offset, DateTime now)
