@@ -6,12 +6,13 @@ import org.junit.Test
 
 class PublicExportTest {
     @Test
-    fun planHasMapsCoordsAndLecturers() {
+    fun planHasMapsCoordsLecturersAndGroups() {
         val plan = PublicExport.plan()
-        assertEquals(11, plan.size)
+        assertEquals(12, plan.size)
         assertEquals(9, plan.count { it.name.endsWith(".jpg") })
         assertTrue(plan.any { it.name == "coords.json" && it.sub == "maps" })
         assertTrue(plan.any { it.name == PublicExport.LECTURER_FILE && it.sub == "" })
-        assertEquals(PublicExport.FOLDER, "Военмех")
+        assertTrue(plan.any { it.name == PublicExport.SCHEDULE_FILE && it.sub == "" })
+        assertEquals("военмех", PublicExport.FOLDER)
     }
 }

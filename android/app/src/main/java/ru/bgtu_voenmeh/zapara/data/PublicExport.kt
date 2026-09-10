@@ -9,7 +9,7 @@ import android.provider.MediaStore
 import java.io.File
 
 object PublicExport {
-    const val FOLDER = "Военмех"
+    const val FOLDER = "военмех"
     const val SCHEDULE_FILE = "TimetableGroup50.xml"
     const val LECTURER_FILE = "TimetableLecturer50.xml"
 
@@ -20,22 +20,33 @@ object PublicExport {
             Item("maps/$name", "maps", name, "image/jpeg")
         }
         return maps + Item("maps/coords.json", "maps", "coords.json", "application/json") +
-            Item(LECTURER_FILE, "", LECTURER_FILE, "application/xml")
+            Item(LECTURER_FILE, "", LECTURER_FILE, "application/xml") +
+            Item(SCHEDULE_FILE, "", SCHEDULE_FILE, "application/xml")
     }
 
     fun scheduleCache(ctx: Context): File = File(ctx.filesDir, SCHEDULE_FILE)
 
     fun ensure(ctx: Context) {
         try {
+            val cache = scheduleCache(ctx)
+            if (!cache.exists() || cache.length() < 100) {
+                try {
+                    ctx.assets.open(SCHEDULE_FILE).use { input ->
+                        cache.outputStream().use { input.copyTo(it) }
+                    }
+                } catch (_: Exception) {
+                }
+            }
             for (item in plan()) {
-                val bytes = ctx.assets.open(item.asset).use { it.readBytes() }
-                write(ctx, item.sub, item.name, item.mime, bytes, skipIfExists = true)
+                val bytes = if (item.name == SCHEDULE_FILE && cache.exists() && cache.length() > 100) {
+                    cache.readBytes()
+                } else {
+                    ctx.assets.open(item.asset).use { it.readBytes() }
+                }
+                write(ctx, item.sub, item.name, item.mime, bytes, skipIfExists = item.name != SCHEDULE_FILE)
             }
-            val xml = scheduleCache(ctx)
-            if (xml.exists() && xml.length() > 100) {
-                write(ctx, "", SCHEDULE_FILE, "application/xml", xml.readBytes(), skipIfExists = false)
-            }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.w("ZaparaExport", "ensure", e)
         }
     }
 
@@ -47,10 +58,32 @@ object PublicExport {
         bytes: ByteArray,
         skipIfExists: Boolean
     ) {
+        if (writeExisting(sub, name, bytes, skipIfExists)) return
         if (Build.VERSION.SDK_INT >= 29) {
             writeMedia(ctx, sub, name, mime, bytes, skipIfExists)
         } else {
             writeLegacy(sub, name, bytes, skipIfExists)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun existingFolder(): File? {
+        val root = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val dir = File(root, FOLDER)
+        return if (dir.isDirectory) dir else null
+    }
+
+    private fun writeExisting(sub: String, name: String, bytes: ByteArray, skipIfExists: Boolean): Boolean {
+        val base = existingFolder() ?: return false
+        val dir = if (sub.isEmpty()) base else File(base, sub)
+        if (!dir.exists() && !dir.mkdirs()) return false
+        val f = File(dir, name)
+        if (skipIfExists && f.exists() && f.length() > 100) return true
+        return try {
+            f.writeBytes(bytes)
+            f.exists() && f.length() == bytes.size.toLong()
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -80,7 +113,7 @@ object PublicExport {
         val existing = find(ctx, rel, name)
         if (existing != null) {
             if (skipIfExists) return
-            ctx.contentResolver.openOutputStream(existing, "wt")?.use { it.write(bytes) }
+            ctx.contentResolver.openOutputStream(existing, "w")?.use { it.write(bytes) }
             return
         }
         val values = ContentValues().apply {
@@ -115,7 +148,8 @@ object PublicExport {
             val pathCol = c.getColumnIndexOrThrow(MediaStore.Downloads.RELATIVE_PATH)
             while (c.moveToNext()) {
                 val path = (c.getString(pathCol) ?: "").replace('\\', '/')
-                if (path.trimEnd('/') + "/" == want || path.contains(FOLDER)) {
+                val norm = path.trimEnd('/') + "/"
+                if (norm.equals(want, ignoreCase = true) || path.contains(FOLDER, ignoreCase = true)) {
                     return ContentUris.withAppendedId(
                         MediaStore.Downloads.EXTERNAL_CONTENT_URI,
                         c.getLong(idCol)

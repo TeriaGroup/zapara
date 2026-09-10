@@ -15,8 +15,8 @@ android {
         applicationId = "ru.bgtu_voenmeh.zapara"
         minSdk = 26
         targetSdk = 34
-        versionCode = 24
-        versionName = "1.2.21"
+        versionCode = 25
+        versionName = "1.2.22"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

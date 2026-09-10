@@ -137,14 +137,14 @@ class ScheduleViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 android.util.Log.d("ZaparaApp", "init start")
                 withContext(Dispatchers.IO) {
-                    repo.ensureData()
                     val app = getApplication<Application>()
+                    try { PublicExport.ensure(app) } catch (_: Exception) {}
+                    repo.ensureData()
                     val cache = PublicExport.scheduleCache(app)
                     if ((!cache.exists() || cache.length() < 100) && ScheduleRepository.networkEnabled) {
-                        try { repo.refresh() } catch (_: Exception) { PublicExport.ensure(app) }
-                    } else {
-                        PublicExport.ensure(app)
+                        try { repo.refresh() } catch (_: Exception) {}
                     }
+                    try { PublicExport.ensure(app) } catch (_: Exception) {}
                 }
                 val groups = withContext(Dispatchers.IO) { repo.groups() }
                 android.util.Log.d("ZaparaApp", "init groups=${groups.size}")
