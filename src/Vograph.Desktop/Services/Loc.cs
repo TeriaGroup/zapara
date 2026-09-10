@@ -46,21 +46,14 @@ public sealed class Loc : INotifyPropertyChanged
         }
     }
 
-    /// <summary>Russian: 1 пара / 2 пары / 5 пар; English: one / many.</summary>
+    /// <summary>1 пара / 2 пары / 5 пар.</summary>
     public string Plural(int n, string oneKey, string fewKey, string manyKey)
     {
         string key;
-        if (Language == "en")
-        {
-            key = n == 1 ? oneKey : manyKey;
-        }
-        else
-        {
-            int mod10 = n % 10, mod100 = n % 100;
-            if (mod10 == 1 && mod100 != 11) key = oneKey;
-            else if (mod10 is >= 2 and <= 4 && mod100 is < 12 or > 14) key = fewKey;
-            else key = manyKey;
-        }
+        int mod10 = n % 10, mod100 = n % 100;
+        if (mod10 == 1 && mod100 != 11) key = oneKey;
+        else if (mod10 is >= 2 and <= 4 && mod100 is < 12 or > 14) key = fewKey;
+        else key = manyKey;
         return T(key, n);
     }
 }
