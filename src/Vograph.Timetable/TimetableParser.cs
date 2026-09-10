@@ -38,8 +38,10 @@ public class TimetableParser
         var periodStart = new DateTime(sy, sm, sd);
         var weeksNode = doc.SelectSingleNode("/Timetable/Weeks");
         var weekCount = 2;
-        if (weeksNode?.Attributes?["WeekCount"] != null)
-            int.TryParse(weeksNode.Attributes["WeekCount"]!.Value, out weekCount);
+        if (weeksNode?.Attributes?["WeekCount"] != null
+            && int.TryParse(weeksNode.Attributes["WeekCount"]!.Value, out var parsedWeeks)
+            && parsedWeeks > 0)
+            weekCount = parsedWeeks;
 
         var groups = new List<Group>();
         var lessons = new List<Lesson>();
@@ -137,7 +139,7 @@ public class TimetableParser
                             var m = System.Text.RegularExpressions.Regex.Match(timeRaw, @"(\d{1,2}:\d{2})");
                             if (m.Success) timeStart = m.Groups[1].Value.PadLeft(5, '0'); // ensure 09:00
                             // derive end +95 min
-                            if (!string.IsNullOrEmpty(timeStart) && TimeSpan.TryParse(timeStart, out var ts))
+                            if (!string.IsNullOrEmpty(timeStart) && TimeSpan.TryParse(timeStart, System.Globalization.CultureInfo.InvariantCulture, out var ts))
                             {
                                 var te = ts.Add(TimeSpan.FromMinutes(95));
                                 timeEnd = te.ToString(@"hh\:mm");
@@ -173,10 +175,7 @@ public class TimetableParser
                                 else
                                 {
                                     roomRaw = clean;
-                                    buildingRaw = raw.Contains("*") ? "*" : "";
-                                    // Keep building as "*" or empty? Spec says buildingRaw separate
-                                    // if original had "*", building is main corpus
-                                    if (raw.Contains("*")) buildingRaw = "main";
+                                    buildingRaw = raw.Contains("*") ? "УЛК" : "ГК";
                                 }
                             }
                         }

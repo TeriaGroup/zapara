@@ -25,7 +25,7 @@ public sealed class ParserTests
         Assert.Equal(0, lesson.Id);
         Assert.Equal(("3313", 1, 1, 1, "09:00", "10:35"),
             (lesson.GroupId, lesson.DayOfWeek, lesson.Parity, lesson.Index, lesson.TimeStart, lesson.TimeEnd));
-        Assert.Equal(("лек Математика", "лек математика", "лек", "Иванов И.И.", "493;", "493", ""),
+        Assert.Equal(("лек Математика", "лек математика", "лек", "Иванов И.И.", "493;", "493", "ГК"),
             (lesson.SubjectRaw, lesson.SubjectNormalized, lesson.TypeRaw, lesson.TeacherRaw, lesson.ClassroomRaw, lesson.RoomRaw, lesson.BuildingRaw));
     }
 

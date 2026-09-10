@@ -24,7 +24,7 @@ public sealed class ParserCompatibilityTests
         var lesson = Assert.Single(result.lessons);
         Assert.Equal(("3313", 1, 1, 1, "09:00", "10:35"),
             (lesson.GroupId, lesson.DayOfWeek, lesson.Parity, lesson.Index, lesson.TimeStart, lesson.TimeEnd));
-        Assert.Equal(("лек Математика", "лек математика", "лек", "Иванов И.И.", "493;", "493", ""),
+        Assert.Equal(("лек Математика", "лек математика", "лек", "Иванов И.И.", "493;", "493", "ГК"),
             (lesson.SubjectRaw, lesson.SubjectNormalized, lesson.TypeRaw, lesson.TeacherRaw, lesson.ClassroomRaw, lesson.RoomRaw, lesson.BuildingRaw));
         Assert.DoesNotContain(result.lessons, l => l.GroupId == "9999");
     }
@@ -42,7 +42,7 @@ public sealed class ParserCompatibilityTests
         Assert.Equal("лек ВЫСШ. МАТЕМАТ", result.lessons[0].SubjectRaw);
         Assert.Equal("лек высш. математ", result.lessons[0].SubjectNormalized);
         Assert.Equal("Барт Е.Л.", result.lessons[0].TeacherRaw);
-        Assert.Equal(("563*;", "563", "main", "12:40", "14:15"),
+        Assert.Equal(("563*;", "563", "УЛК", "12:40", "14:15"),
             (result.lessons[1].ClassroomRaw, result.lessons[1].RoomRaw, result.lessons[1].BuildingRaw, result.lessons[1].TimeStart, result.lessons[1].TimeEnd));
         Assert.Equal(("280", "ВЦ"), (result.lessons[5].RoomRaw, result.lessons[5].BuildingRaw));
         Assert.Equal(("дистанционно", ""), (result.lessons[6].RoomRaw, result.lessons[6].BuildingRaw));
