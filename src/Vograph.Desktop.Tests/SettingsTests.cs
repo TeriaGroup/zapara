@@ -36,6 +36,16 @@ public class SettingsTests : UiTest
     }
 
     [Fact]
+    public void Test_Notification_Stays_Enabled_When_Daily_Alarms_Are_Off()
+    {
+        var axaml = File.ReadAllText(Path.Combine(ResourceKeysTests.RepoRoot(), "src", "Vograph.Desktop", "Features", "Preferences", "SettingsView.axaml"));
+        var mark = axaml.IndexOf("Settings.TestNotification", StringComparison.Ordinal);
+        Assert.True(mark > 0);
+        var window = axaml.Substring(Math.Max(0, mark - 400), Math.Min(400, mark));
+        Assert.DoesNotContain("IsEnabled=\"{Binding NotificationsEnabled}\"", window);
+    }
+
+    [Fact]
     public async Task Appearance_Settings_Persist()
     {
         using var db = TestDb.Create();
