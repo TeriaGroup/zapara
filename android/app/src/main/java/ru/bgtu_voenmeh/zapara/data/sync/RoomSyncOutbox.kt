@@ -41,10 +41,13 @@ class RoomSyncOutbox(
 ) {
     var beforeCommit: (() -> Unit)? = null
 
-    var syncEpoch: UUID? = parseUuid(state.get()?.syncEpoch)
-        private set
-    var afterSequence: Long = state.get()?.afterSequence ?: 0L
-        private set
+    // Profile containers are constructed on the UI thread. Read persistent sync state
+    // only when the IO coordinator first needs it, and keep epoch/sequence in one snapshot.
+    private class Cursor(@Volatile var value: SyncStateEntity?)
+    private val cursor by lazy { Cursor(state.get()) }
+
+    val syncEpoch: UUID? get() = parseUuid(cursor.value?.syncEpoch)
+    val afterSequence: Long get() = cursor.value?.afterSequence ?: 0L
 
     fun <T> inTransaction(action: () -> T): T {
         if (!enabled) return action()
@@ -109,9 +112,9 @@ class RoomSyncOutbox(
 
     fun setEpoch(epoch: UUID, afterSequence: Long) {
         val previous = syncEpoch
-        state.upsert(SyncStateEntity(1, epoch.toString(), afterSequence))
-        syncEpoch = epoch
-        this.afterSequence = afterSequence
+        val updated = SyncStateEntity(1, epoch.toString(), afterSequence)
+        state.upsert(updated)
+        cursor.value = updated
         if (previous != epoch) clearRowEpochs()
     }
 
