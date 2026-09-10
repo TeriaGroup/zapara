@@ -3,7 +3,7 @@ using Xunit;
 namespace Vograph.Desktop.Tests;
 
 /// <summary>The offline bundle Core expects next to the exe (and the updater zip ships): nine plans, the room
-/// coordinates and the lecturer timetable. Copied transitively into the test output through the project reference.</summary>
+/// coordinates, the empty campus graph and the lecturer timetable. Copied transitively into the test output through the project reference.</summary>
 public class AssetsTests
 {
     [Fact]
@@ -14,6 +14,7 @@ public class AssetsTests
         Assert.Equal(9, maps.Length);
         Assert.All(maps, f => Assert.True(new FileInfo(f).Length > 50_000, f));
         Assert.True(File.Exists(Path.Combine(root, "maps", "coords.json")));
+        Assert.True(File.Exists(Path.Combine(root, "maps", "campus-graph.json")));
         var lecturers = new FileInfo(Path.Combine(root, "TimetableLecturer50.xml"));
         Assert.True(lecturers.Exists);
         Assert.True(lecturers.Length > 1_000_000, "the lecturer timetable is a ~4 MB XML");
@@ -25,6 +26,7 @@ public class AssetsTests
         var assets = Path.Combine(ResourceKeysTests.RepoRoot(), "src", "Vograph.Desktop", "Assets");
         Assert.Equal(9, Directory.GetFiles(Path.Combine(assets, "maps"), "karta-*.jpg").Length);
         Assert.True(File.Exists(Path.Combine(assets, "maps", "coords.json")));
+        Assert.True(File.Exists(Path.Combine(assets, "maps", "campus-graph.json")));
         Assert.True(File.Exists(Path.Combine(assets, "TimetableLecturer50.xml")));
         Assert.False(Directory.Exists(Path.Combine(ResourceKeysTests.RepoRoot(), "src", "Vograph")), "the WPF client is gone");
     }

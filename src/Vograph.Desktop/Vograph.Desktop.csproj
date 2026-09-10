@@ -32,10 +32,11 @@
     <InternalsVisibleTo Include="Vograph.Desktop.Tests" />
   </ItemGroup>
 
-  <!-- Offline bundle Core reads next to the exe (maps\*.jpg, maps\coords.json, TimetableLecturer50.xml); the updater zip ships the same layout. -->
+  <!-- Offline bundle Core reads next to the exe (maps\*.jpg, maps\coords.json, maps\campus-graph.json, TimetableLecturer50.xml); the updater zip ships the same layout. -->
   <ItemGroup>
     <None Include="Assets\maps\*.jpg" Link="maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Assets\maps\coords.json" Link="maps\coords.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\maps\campus-graph.json" Link="maps\campus-graph.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Assets\TimetableLecturer50.xml" Link="TimetableLecturer50.xml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
