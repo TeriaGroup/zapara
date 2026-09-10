@@ -146,7 +146,7 @@ class AppContainer(
     private val readAccessToken: (suspend () -> String?)? = null,
     private val syncHttp: PrivateSyncHttpClient? = null
 ) {
-    val timetable = TimetableSource(api, repo.store) { repo.refresh() }
+    val timetable = TimetableSource(api, repo.store, { repo.refresh() }) { repo.applyBundled(app) }
     var closed: Boolean = false
         private set
     val outbox = RoomSyncOutbox.from(db, enabled = !profile.isGuest)

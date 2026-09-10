@@ -342,35 +342,55 @@ class ScheduleRepository private constructor(
         }
     }
 
+    suspend fun applyBundled(context: Context): Boolean = withContext(Dispatchers.IO) {
+        val ticket = work?.enter()
+        try {
+            ticket?.throwIfStale()
+            val xml = try {
+                context.assets.open("TimetableGroup50.xml").bufferedReader(Charsets.UTF_8).use { it.readText() }
+            } catch (_: Exception) {
+                return@withContext false
+            }
+            if (xml.length < 100) return@withContext false
+            ingestXml(xml, "asset:TimetableGroup50.xml")
+            true
+        } finally {
+            ticket?.close()
+        }
+    }
+
     suspend fun refresh(url: String = GroupParser.DEFAULT_URL): Unit = withContext(Dispatchers.IO) {
         val ticket = work?.enter()
         try {
             ticket?.throwIfStale()
             TimetableSource.guardXmlRefresh(store, settings())
-            val xml = fetch(url)
-            val parsed = GroupParser.parse(xml, url)
-            val s = settings()
-            val now = java.time.OffsetDateTime.now().toString()
-            db.runInTransaction {
-                for (g in parsed.groups) {
-                    db.groupDao().upsert(GroupEntity(g.id, g.name, g.url))
-                }
-                val byGroup = parsed.lessons.groupBy { it.groupId }
-                for ((gid, list) in byGroup) {
-                    db.lessonDao().clearForGroup(gid)
-                    db.lessonDao().insertAll(list.map { it.toEntity() })
-                }
-                saveSettings(
-                    s.copy(
-                        periodStart = parsed.periodStart,
-                        weekCount = parsed.weekCount,
-                        periodTitle = parsed.periodTitle,
-                        lastFetchedAt = now
-                    )
-                )
-            }
+            ingestXml(fetch(url), url)
         } finally {
             ticket?.close()
+        }
+    }
+
+    private fun ingestXml(xml: String, url: String) {
+        val parsed = GroupParser.parse(xml, url)
+        val s = settings()
+        val now = java.time.OffsetDateTime.now().toString()
+        db.runInTransaction {
+            for (g in parsed.groups) {
+                db.groupDao().upsert(GroupEntity(g.id, g.name, g.url))
+            }
+            val byGroup = parsed.lessons.groupBy { it.groupId }
+            for ((gid, list) in byGroup) {
+                db.lessonDao().clearForGroup(gid)
+                db.lessonDao().insertAll(list.map { it.toEntity() })
+            }
+            saveSettings(
+                s.copy(
+                    periodStart = parsed.periodStart,
+                    weekCount = parsed.weekCount,
+                    periodTitle = parsed.periodTitle,
+                    lastFetchedAt = now
+                )
+            )
         }
     }
 

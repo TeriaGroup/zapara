@@ -43,10 +43,8 @@ class MapStore(private val context: Context) {
         val parsed = mutableMapOf<String, MutableMap<String, CoordsRect>>()
         try {
             val local = File(dir, "coords.json")
-            if (!local.exists() || local.length() < 10) {
-                context.assets.open("maps/coords.json").use { input ->
-                    local.outputStream().use { input.copyTo(it) }
-                }
+            context.assets.open("maps/coords.json").use { input ->
+                local.outputStream().use { input.copyTo(it) }
             }
             val json = JSONObject(local.readText(Charsets.UTF_8))
             val maps = json.optJSONObject("maps") ?: JSONObject()

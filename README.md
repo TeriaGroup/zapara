@@ -15,6 +15,7 @@
 | Версия | Windows | Android |
 | ------ | ------- | ------- |
 | **2.0.0** | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.0.0/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.0.0/ZAPARA_android-debug.apk) |
+| 1.99 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.99/ZAPARA_android-debug.apk) |
 | 1.2.22 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.22/ZAPARA_android-debug.apk) |
 | 1.2.21 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.21/ZAPARA_android-debug.apk) |
 | 1.2.20 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.20/ZAPARA_android-debug.apk) |
