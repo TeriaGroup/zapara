@@ -10,37 +10,37 @@
 - **Windows:** [ZAPARA_win-x64.zip](https://github.com/TeriaGroup/zapara/releases/download/v2.0.0/ZAPARA_win-x64.zip) — распаковать и запустить `Vograph.exe` (.NET 8 Runtime).
 - **Android:** [ZAPARA_android-debug.apk](https://github.com/TeriaGroup/zapara/releases/download/v2.0.0/ZAPARA_android-debug.apk) — ставится сразу (`adb install -r` тоже).
 
-Все версии (сверху новее): [releases](https://github.com/TeriaGroup/zapara/releases)
+Все версии (по возрастанию): [releases](https://github.com/TeriaGroup/zapara/releases)
 
 | Версия | Windows | Android |
 | ------ | ------- | ------- |
-| **2.0.0** | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.0.0/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.0.0/ZAPARA_android-debug.apk) |
-| 1.99.1 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.99.1/ZAPARA_android-debug.apk) |
-| 1.2.22 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.22/ZAPARA_android-debug.apk) |
-| 1.2.21 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.21/ZAPARA_android-debug.apk) |
-| 1.2.20 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.20/ZAPARA_android-debug.apk) |
-| 1.2.19 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.19/ZAPARA_android-debug.apk) |
-| 1.2.18 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.18/ZAPARA_android-debug.apk) |
-| 1.2.17 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.17/ZAPARA_android-debug.apk) |
-| 1.2.16 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.16/ZAPARA_android-debug.apk) |
-| 1.2.15 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.15/ZAPARA_android-debug.apk) |
-| 1.2.14 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.14/ZAPARA_android-debug.apk) |
-| 1.2.13 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.13/ZAPARA_android-debug.apk) |
-| 1.2.12 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.12/ZAPARA_android-debug.apk) |
-| 1.2.11 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.11/ZAPARA_android-debug.apk) |
-| 1.2.10 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.10/ZAPARA_android-debug.apk) |
-| 1.2.9 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.9/ZAPARA_android-debug.apk) |
-| 1.2.8 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.8/ZAPARA_android-debug.apk) |
-| 1.2.7 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.7/ZAPARA_android-debug.apk) |
-| 1.2.6 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.6/ZAPARA_android-debug.apk) |
-| 1.2.5 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.5/ZAPARA_android-debug.apk) |
-| 1.2.4 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.4/ZAPARA_android-debug.apk) |
-| 1.2.3 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v1.2.3/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.3/ZAPARA_android-debug.apk) |
-| 1.2.2 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v1.2.2/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.2/ZAPARA_android-debug.apk) |
-| 1.2.1 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v1.2.1/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.1/ZAPARA_android-debug.apk) |
-| 1.2 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v1.2/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2/ZAPARA_android-debug.apk) |
-| 1.1 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v1.1/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.1/ZAPARA_android-debug.apk) |
 | 1.0 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v1.0/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.0/ZAPARA_android-debug.apk) |
+| 1.1 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v1.1/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.1/ZAPARA_android-debug.apk) |
+| 1.2 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v1.2/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2/ZAPARA_android-debug.apk) |
+| 1.2.1 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v1.2.1/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.1/ZAPARA_android-debug.apk) |
+| 1.2.2 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v1.2.2/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.2/ZAPARA_android-debug.apk) |
+| 1.2.3 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v1.2.3/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.3/ZAPARA_android-debug.apk) |
+| 1.2.4 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.4/ZAPARA_android-debug.apk) |
+| 1.2.5 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.5/ZAPARA_android-debug.apk) |
+| 1.2.6 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.6/ZAPARA_android-debug.apk) |
+| 1.2.7 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.7/ZAPARA_android-debug.apk) |
+| 1.2.8 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.8/ZAPARA_android-debug.apk) |
+| 1.2.9 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.9/ZAPARA_android-debug.apk) |
+| 1.2.10 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.10/ZAPARA_android-debug.apk) |
+| 1.2.11 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.11/ZAPARA_android-debug.apk) |
+| 1.2.12 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.12/ZAPARA_android-debug.apk) |
+| 1.2.13 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.13/ZAPARA_android-debug.apk) |
+| 1.2.14 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.14/ZAPARA_android-debug.apk) |
+| 1.2.15 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.15/ZAPARA_android-debug.apk) |
+| 1.2.16 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.16/ZAPARA_android-debug.apk) |
+| 1.2.17 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.17/ZAPARA_android-debug.apk) |
+| 1.2.18 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.18/ZAPARA_android-debug.apk) |
+| 1.2.19 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.19/ZAPARA_android-debug.apk) |
+| 1.2.20 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.20/ZAPARA_android-debug.apk) |
+| 1.2.21 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.21/ZAPARA_android-debug.apk) |
+| 1.2.22 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.2.22/ZAPARA_android-debug.apk) |
+| 1.99.1 | | [apk](https://github.com/TeriaGroup/zapara/releases/download/v1.99.1/ZAPARA_android-debug.apk) |
+| **2.0.0** | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.0.0/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.0.0/ZAPARA_android-debug.apk) |
 
 ## Развитие платформы
 
