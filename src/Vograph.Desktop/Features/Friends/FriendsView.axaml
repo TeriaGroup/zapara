@@ -83,7 +83,6 @@
               <TextBlock Grid.Column="2" Classes="faint caption" Text="{Binding TickLabels[3]}" HorizontalAlignment="Right" />
             </Grid>
           </StackPanel>
-          <TextBlock Classes="caption" Text="{Binding StrictnessLabel}" />
           <c:Switch Content="{loc:T alwaysShowAll}" IsChecked="{Binding AlwaysShowAll}" AutomationProperties.AutomationId="Friends.AlwaysAll" />
           <TextBlock Classes="faint caption" Text="{loc:T alwaysShowAllHint}" />
           <Border Height="1" Background="{DynamicResource Brush.Line}" />

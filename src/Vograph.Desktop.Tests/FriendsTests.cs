@@ -193,6 +193,8 @@ public class FriendsTests : UiTest
         await vm.RefreshPreviewAsync();
         Assert.Equal(100, db.Services.Db.GetSettings().IntersectionStrictness);
         Assert.Equal("аудитория", vm.StrictnessLabel);
+        var axaml = File.ReadAllText(Path.Combine(ResourceKeysTests.RepoRoot(), "src", "Vograph.Desktop", "Features", "Friends", "FriendsView.axaml"));
+        Assert.DoesNotContain("Text=\"{Binding StrictnessLabel}\"", axaml);
         Assert.Equal(DotFill.Full, vm.PreviewMarks[0].Fill);              // same room still qualifies at 100
     }
 
