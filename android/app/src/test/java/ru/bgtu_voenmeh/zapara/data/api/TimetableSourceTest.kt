@@ -57,6 +57,20 @@ class TimetableSourceTest {
     }
 
     @Test
+    fun ensure_continues_when_bundled_throws() = runBlocking {
+        var xml = 0
+        val http = FakeHttp { call ->
+            jsonReply(if (call.url.substringBefore('?').endsWith("/groups")) catalogJson() else scheduleJson())
+        }
+        val store = MemoryTimetableStore()
+        val api = ApiRefreshCoordinator(store, ProfileWork(), "https://example.invalid/", http)
+        val source = TimetableSource(api, store, { xml++ }) { error("boom") }
+        source.ensure()
+        assertTrue(http.requests.isNotEmpty())
+        assertEquals(0, xml)
+    }
+
+    @Test
     fun university_xml_flag_allows_xml_and_skips_json() = runBlocking {
         var xml = 0
         val http = FakeHttp { jsonReply(catalogJson()) }

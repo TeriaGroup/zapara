@@ -1,6 +1,9 @@
 package ru.bgtu_voenmeh.zapara.data
 
+import java.io.InputStream
+import java.io.InputStreamReader
 import java.io.StringReader
+import java.nio.charset.StandardCharsets
 import java.time.LocalDate
 import java.time.LocalTime
 import javax.xml.parsers.DocumentBuilderFactory
@@ -25,15 +28,21 @@ object GroupParser {
     private val TIME_RE = Regex("""(\d{1,2}:\d{2})""")
     private val DIGITS_RE = Regex("""\d+""")
 
-    fun parse(xml: String, url: String = DEFAULT_URL): ParsedSchedule {
+    fun parse(xml: String, url: String = DEFAULT_URL): ParsedSchedule =
+        parse(InputSource(StringReader(xml)), url)
+
+    fun parse(stream: InputStream, url: String = DEFAULT_URL): ParsedSchedule =
+        parse(InputSource(InputStreamReader(stream, StandardCharsets.UTF_8)), url)
+
+    private fun parse(source: InputSource, url: String): ParsedSchedule {
         val dbf = DocumentBuilderFactory.newInstance()
         dbf.isNamespaceAware = false
-        // Harden against XXE; source has no DOCTYPE.
         try { dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) } catch (_: Exception) {}
-        val doc = dbf.newDocumentBuilder().parse(InputSource(StringReader(xml)))
+        val doc = dbf.newDocumentBuilder().parse(source)
         doc.documentElement.normalize()
 
-        val periodEl = doc.getElementsByTagName("Period").item(0) as Element
+        val periodEl = doc.getElementsByTagName("Period").item(0) as? Element
+            ?: throw IllegalStateException("нет Period")
         val title = periodEl.getAttribute("Title")
         val sy = periodEl.getAttribute("StartYear").toIntOrNull() ?: 2026
         val sm = periodEl.getAttribute("StartMonth").toIntOrNull() ?: 9

@@ -77,6 +77,9 @@ android {
         buildConfig = true
     }
     sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    androidResources {
+        noCompress += "xml"
+    }
 }
 
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }

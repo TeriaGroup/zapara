@@ -10,7 +10,12 @@ class TimetableSource(
 ) {
     suspend fun ensure() {
         if (store.groups().isNotEmpty()) return
-        if (ScheduleRepository.networkEnabled && bundled()) return
+        if (ScheduleRepository.networkEnabled) {
+            try {
+                if (bundled()) return
+            } catch (_: Throwable) {
+            }
+        }
         if (!ScheduleRepository.networkEnabled) throw IllegalStateException("empty db and network disabled (tests)")
         if (!pull() && usesJson()) {
             throw IllegalStateException(api.lastError ?: XML_REFUSED)

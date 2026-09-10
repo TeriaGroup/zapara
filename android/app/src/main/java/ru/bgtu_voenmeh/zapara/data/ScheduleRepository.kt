@@ -2,6 +2,7 @@ package ru.bgtu_voenmeh.zapara.data
 
 import android.content.Context
 import androidx.room.Room
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.bgtu_voenmeh.zapara.data.db.FriendDao
@@ -346,14 +347,15 @@ class ScheduleRepository private constructor(
         val ticket = work?.enter()
         try {
             ticket?.throwIfStale()
-            val xml = try {
-                context.assets.open("TimetableGroup50.xml").bufferedReader(Charsets.UTF_8).use { it.readText() }
-            } catch (_: Exception) {
-                return@withContext false
+            context.assets.open("TimetableGroup50.xml").use { stream ->
+                ingestParsed(GroupParser.parse(stream), "asset:TimetableGroup50.xml")
             }
-            if (xml.length < 100) return@withContext false
-            ingestXml(xml, "asset:TimetableGroup50.xml")
             true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            android.util.Log.e("ZaparaExport", "bundled", t)
+            false
         } finally {
             ticket?.close()
         }
@@ -364,14 +366,13 @@ class ScheduleRepository private constructor(
         try {
             ticket?.throwIfStale()
             TimetableSource.guardXmlRefresh(store, settings())
-            ingestXml(fetch(url), url)
+            ingestParsed(GroupParser.parse(fetch(url)), url)
         } finally {
             ticket?.close()
         }
     }
 
-    private fun ingestXml(xml: String, url: String) {
-        val parsed = GroupParser.parse(xml, url)
+    private fun ingestParsed(parsed: ParsedSchedule, url: String) {
         val s = settings()
         val now = java.time.OffsetDateTime.now().toString()
         db.runInTransaction {
@@ -381,7 +382,9 @@ class ScheduleRepository private constructor(
             val byGroup = parsed.lessons.groupBy { it.groupId }
             for ((gid, list) in byGroup) {
                 db.lessonDao().clearForGroup(gid)
-                db.lessonDao().insertAll(list.map { it.toEntity() })
+                list.map { it.toEntity() }.chunked(200).forEach { chunk ->
+                    db.lessonDao().insertAll(chunk)
+                }
             }
             saveSettings(
                 s.copy(

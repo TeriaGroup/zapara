@@ -39,7 +39,12 @@ class ZaparaApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        host = AndroidProfileHost(this)
+        host = try {
+            AndroidProfileHost(this)
+        } catch (t: Throwable) {
+            android.util.Log.e("ZaparaApp", "host", t)
+            throw t
+        }
     }
 }
 
