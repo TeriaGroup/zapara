@@ -40,7 +40,7 @@ object GroupParser {
         val sd = periodEl.getAttribute("StartDay").toIntOrNull() ?: 1
         val periodStart = LocalDate.of(sy, sm, sd)
         val weeksEl = doc.getElementsByTagName("Weeks").item(0) as? Element
-        val weekCount = weeksEl?.getAttribute("WeekCount")?.toIntOrNull() ?: 2
+        val weekCount = weeksEl?.getAttribute("WeekCount")?.toIntOrNull()?.takeIf { it > 0 } ?: 2
 
         val groups = mutableListOf<GroupInfo>()
         val lessons = mutableListOf<Lesson>()
