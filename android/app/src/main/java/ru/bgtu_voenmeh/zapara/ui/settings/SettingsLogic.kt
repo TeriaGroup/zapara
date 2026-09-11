@@ -7,8 +7,11 @@ import java.time.format.DateTimeParseException
 import java.time.temporal.ChronoUnit
 
 object SettingsLogic {
-    fun updatedLine(lastFetchedAt: String?, now: LocalDateTime, copy: UiCopy): String {
-        val parsed = lastFetchedAt?.let(::parse) ?: return copy.get("settings_never_fetched")
+    fun updatedLine(lastFetchedAt: String?, now: LocalDateTime, copy: UiCopy, hasLocal: Boolean = false): String {
+        val parsed = lastFetchedAt?.let(::parse)
+        if (parsed == null) {
+            return if (hasLocal) copy.get("settings_local_copy") else copy.get("settings_never_fetched")
+        }
         val stamp = "%02d.%02d %02d:%02d".format(parsed.dayOfMonth, parsed.monthValue, parsed.hour, parsed.minute)
         val days = ChronoUnit.DAYS.between(parsed.toLocalDate(), now.toLocalDate())
         val ago = if (days <= 0L) copy.get("settings_today_word")

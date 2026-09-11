@@ -38,12 +38,27 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         when (event) {
             SettingsEvent.ChangeGroup -> { }
             SettingsEvent.Refresh -> refresh()
-            is SettingsEvent.Theme -> save { it.copy(theme = ThemeChoice.entries[event.index.coerceIn(0, 2)].key) }
-            is SettingsEvent.Animations -> save { it.copy(animations = event.enabled) }
-            is SettingsEvent.Notify -> save { current ->
-                current.copy(notifyEnabled = event.enabled).also {
-                    if (event.enabled) Notifications.schedule(container.app) else Notifications.cancel(container.app)
-                }
+            is SettingsEvent.Theme -> {
+                val choice = ThemeChoice.entries[event.index.coerceIn(0, 2)]
+                mutable.update { it.copy(theme = choice) }
+                save(transform = { it.copy(theme = choice.key) })
+            }
+            is SettingsEvent.Animations -> {
+                mutable.update { it.copy(animations = event.enabled) }
+                save(transform = { it.copy(animations = event.enabled) })
+            }
+            is SettingsEvent.Notify -> {
+                mutable.update { it.copy(notifyEnabled = event.enabled) }
+                save(transform = { it.copy(notifyEnabled = event.enabled) }, after = { saved ->
+                    viewModelScope.launch(Dispatchers.IO) {
+                        try {
+                            if (saved.notifyEnabled) Notifications.schedule(container.app)
+                            else Notifications.cancel(container.app)
+                        } catch (e: Exception) {
+                            android.util.Log.w("ZaparaSettings", "notify", e)
+                        }
+                    }
+                })
             }
             is SettingsEvent.Time1 -> {
                 mutable.update { it.copy(time1 = event.value, timeError = SettingsLogic.validateTimes(event.value, it.time2, container.copy)) }
@@ -53,10 +68,16 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 mutable.update { it.copy(time2 = event.value, timeError = SettingsLogic.validateTimes(it.time1, event.value, container.copy)) }
                 persistTimes()
             }
-            SettingsEvent.TestNotification -> viewModelScope.launch(Dispatchers.IO) {
+            SettingsEvent.TestNotification -> viewModelScope.launch {
                 try {
-                    Notifications.ensureChannel(container.app)
-                    Notifications.showForTime(container.app, mutable.value.time1)
+                    if (permissionMissing()) {
+                        container.toasts.show(container.app.getString(R.string.settings_perm_notify), ToastKind.Bad)
+                        return@launch
+                    }
+                    withContext(Dispatchers.IO) {
+                        Notifications.ensureChannel(container.app)
+                        Notifications.showForTime(container.app, mutable.value.time1)
+                    }
                 } catch (e: Exception) {
                     android.util.Log.w("ZaparaSettings", "test notification", e)
                 }
@@ -73,7 +94,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             SettingsEvent.CancelUpdate -> container.update.cancel()
             is SettingsEvent.UseUniversityXml -> {
                 mutable.update { it.copy(useUniversityXml = event.enabled) }
-                save { it.copy(useUniversityXml = event.enabled) }
+                save(transform = { it.copy(useUniversityXml = event.enabled) })
             }
         }
     }
@@ -81,12 +102,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private fun persistTimes() {
         val s = mutable.value
         if (s.timeError != null) return
-        save { it.copy(notifyTime1 = s.time1, notifyTime2 = s.time2) }
-        viewModelScope.launch(Dispatchers.IO) {
-            try { Notifications.schedule(container.app) } catch (e: Exception) {
-                android.util.Log.w("ZaparaSettings", "reschedule", e)
+        save(transform = { it.copy(notifyTime1 = s.time1, notifyTime2 = s.time2) }, after = {
+            viewModelScope.launch(Dispatchers.IO) {
+                try { Notifications.schedule(container.app) } catch (e: Exception) {
+                    android.util.Log.w("ZaparaSettings", "reschedule", e)
+                }
             }
-        }
+        })
     }
 
     private fun refresh() {
@@ -115,12 +137,21 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    private fun save(transform: (ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState) -> ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState) {
+    private fun save(
+        transform: (ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState) -> ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState,
+        after: (ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState) -> Unit = {}
+    ) {
         viewModelScope.launch {
             try {
-                withContext(Dispatchers.IO) {
-                    container.db.runInTransaction { container.repo.saveSettings(transform(container.repo.settings())) }
+                val saved = withContext(Dispatchers.IO) {
+                    var next: ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState? = null
+                    container.db.runInTransaction {
+                        next = transform(container.repo.settings())
+                        container.repo.saveSettings(next!!)
+                    }
+                    next!!
                 }
+                after(saved)
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 android.util.Log.w("ZaparaSettings", "save", e)
@@ -137,7 +168,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 val name = groups.firstOrNull { it.id == prefs.myGroupId }?.name.orEmpty()
                 SettingsUiState(
                     loaded = true, groupName = name,
-                    groupUpdated = SettingsLogic.updatedLine(prefs.lastFetchedAt, now, container.copy),
+                    groupUpdated = SettingsLogic.updatedLine(
+                        prefs.lastFetchedAt, now, container.copy,
+                        hasLocal = !prefs.myGroupId.isNullOrEmpty() &&
+                            container.repo.allForGroup(prefs.myGroupId!!).isNotEmpty()
+                    ),
                     stale = ShellLogic.isStale(prefs.lastFetchedAt, now),
                     refreshing = mutable.value.refreshing,
                     theme = ThemeChoice.fromKey(prefs.theme), animations = prefs.animations,

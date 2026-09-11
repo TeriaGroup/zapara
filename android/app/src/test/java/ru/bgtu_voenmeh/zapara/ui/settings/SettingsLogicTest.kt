@@ -13,6 +13,7 @@ class SettingsLogicTest {
         assertEquals("Обновлено 06.09 14:20 · 2 дня назад", SettingsLogic.updatedLine("2026-09-06T14:20:00", now, XmlCopy))
         assertEquals("Расписание ещё не загружено", SettingsLogic.updatedLine(null, now, XmlCopy))
         assertEquals("Обновлено 08.09 09:15 · сегодня", SettingsLogic.updatedLine("2026-09-08T09:15:00", now, XmlCopy))
+        assertEquals("Пары на устройстве", SettingsLogic.updatedLine(null, now, XmlCopy, hasLocal = true))
     }
 
     @Test fun validate_times() {
