@@ -1,7 +1,21 @@
 package ru.bgtu_voenmeh.zapara.ui.friends
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -40,6 +54,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
     val c = Zapara.colors
@@ -56,7 +71,9 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
                             Text(friend.groupName, style = Zapara.typography.bodyStrong, color = c.text1)
                             Text(friend.members, style = Zapara.typography.caption, color = c.text2)
                         }
-                        ZSwitch(friend.enabled, { onEvent(FriendsEvent.Toggle(friend.index, it)) }, "Friends.Enabled.${friend.index}")
+                        val enabledLabel = stringResource(R.string.friends_enabled_label, friend.groupName)
+                        ZSwitch(friend.enabled, { onEvent(FriendsEvent.Toggle(friend.index, it)) }, "Friends.Enabled.${friend.index}",
+                            Modifier.semantics { contentDescription = enabledLabel })
                     }
                 }
             }
@@ -65,30 +82,42 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
                 ZCard(Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.friends_intersections), style = Zapara.typography.section, color = c.text1)
                     Text(stringResource(R.string.friends_strictness), style = Zapara.typography.body, color = c.text1)
+                    val strictnessLabel = stringResource(R.string.friends_strictness)
                     Slider(
                         value = state.strictness.toFloat(),
                         onValueChange = { onEvent(FriendsEvent.Strictness(it.roundToInt())) },
                         valueRange = 25f..100f,
                         steps = 3,
-                        modifier = Modifier.testTag("Friends.Strictness"),
+                        modifier = Modifier.testTag("Friends.Strictness").semantics { contentDescription = strictnessLabel },
                         colors = SliderDefaults.colors(thumbColor = c.accent, activeTrackColor = c.accent, inactiveTrackColor = c.lineStrong)
                     )
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                        verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                         Text(stringResource(R.string.strict_uni), style = Zapara.typography.caption, color = c.text2)
                         Text(stringResource(R.string.strict_building), style = Zapara.typography.caption, color = c.text2)
                         Text(stringResource(R.string.strict_floor), style = Zapara.typography.caption, color = c.text2)
                         Text(stringResource(R.string.strict_room), style = Zapara.typography.caption, color = c.text2)
                     }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.friends_always_show), style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
-                        ZSwitch(state.alwaysShow, { onEvent(FriendsEvent.AlwaysShow(it)) }, "Friends.AlwaysShow")
+                    if (state.previewLine.isNotBlank()) {
+                        Text(
+                            state.previewLine,
+                            style = Zapara.typography.caption,
+                            color = c.text2,
+                            modifier = Modifier.testTag("Friends.Preview")
+                        )
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        val label = stringResource(R.string.friends_always_show)
+                        Text(label, style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f).clearAndSetSemantics {})
+                        ZSwitch(state.alwaysShow, { onEvent(FriendsEvent.AlwaysShow(it)) }, "Friends.AlwaysShow", Modifier.semantics { contentDescription = label })
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        val label = stringResource(R.string.friends_invert)
                         Column(Modifier.weight(1f)) {
-                            Text(stringResource(R.string.friends_invert), style = Zapara.typography.body, color = c.text1)
+                            Text(label, style = Zapara.typography.body, color = c.text1, modifier = Modifier.clearAndSetSemantics {})
                             Text(stringResource(R.string.friends_invert_hint), style = Zapara.typography.caption, color = c.text2)
                         }
-                        ZSwitch(state.invert, { onEvent(FriendsEvent.Invert(it)) }, "Friends.Invert")
+                        ZSwitch(state.invert, { onEvent(FriendsEvent.Invert(it)) }, "Friends.Invert", Modifier.semantics { contentDescription = label })
                     }
                 }
             }
@@ -114,6 +143,7 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FriendEditorSheet(editor: FriendEditorUi, state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
     val c = Zapara.colors
@@ -132,22 +162,30 @@ private fun FriendEditorSheet(editor: FriendEditorUi, state: FriendsUiState, onE
                 focusedTextColor = c.text1, unfocusedTextColor = c.text1
             )
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        val colorNames = listOf(R.string.friend_color_orange, R.string.friend_color_green,
+            R.string.friend_color_blue, R.string.friend_color_purple, R.string.friend_color_pink)
+        FlowRow(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             repeat(5) { i ->
                 val selected = editor.colorIndex == i
-                FriendDot(
-                    i, size = 24.dp,
-                    modifier = Modifier
+                val label = stringResource(R.string.friend_color_label, stringResource(colorNames[i]))
+                val selection = stringResource(if (selected) R.string.control_selected else R.string.control_not_selected)
+                Box(Modifier.size(Zapara.space.minTouch)
                         .testTag("Editor.Color.$i")
                         .clip(CircleShape)
-                        .then(if (selected) Modifier.border(2.dp, c.text1, CircleShape) else Modifier)
-                        .clickable { onEvent(FriendsEvent.EditorColor(i)) }
-                )
+                        .selectable(selected, role = Role.RadioButton,
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = if (Zapara.motion.enabled) LocalIndication.current else null,
+                            onClick = { onEvent(FriendsEvent.EditorColor(i)) })
+                        .semantics { contentDescription = label; stateDescription = selection },
+                    contentAlignment = Alignment.Center) {
+                    FriendDot(i, size = Zapara.space.xl, modifier =
+                        if (selected) Modifier.border(Zapara.space.hairline * 2, c.text1, CircleShape) else Modifier)
+                }
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+            verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             ZButton(stringResource(R.string.theme_cancel), { onEvent(FriendsEvent.EditorCancel) }, ghost = true, tag = "Editor.Cancel")
-            Spacer(Modifier.weight(1f))
             if (editor.id != null) ZButton(stringResource(R.string.delete), { onEvent(FriendsEvent.AskDelete(editor.id)) }, ghost = true, tag = "Editor.Delete")
             ZButton(stringResource(R.string.theme_save), { onEvent(FriendsEvent.EditorSave) }, enabled = editor.groupName.isNotBlank(), tag = "Editor.Save")
         }

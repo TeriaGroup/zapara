@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.bgtu_voenmeh.zapara.AppContainer
+import ru.bgtu_voenmeh.zapara.data.Friend
 import ru.bgtu_voenmeh.zapara.data.db.FriendEntity
 import ru.bgtu_voenmeh.zapara.ui.AppEvent
 
@@ -114,12 +115,27 @@ class FriendsViewModel(private val container: AppContainer) : ViewModel() {
                 val friends = rows.mapIndexed { i, e ->
                     FriendUi(e.id, i, e.groupName, e.memberNames, e.enabled, FriendPalette.indexOf(e.colorHex))
                 }
+                val groups = container.repo.groups()
+                val friendModels = rows.map { Friend(it.groupName, it.colorHex, it.enabled, it.memberNames) }
+                val preview = FriendsPreview.line(
+                    today = container.clock().toLocalDate(),
+                    myGroupId = prefs.myGroupId.orEmpty(),
+                    friends = friendModels,
+                    strictness = Strictness.nearest(prefs.intersectionStrictness),
+                    periodStart = prefs.periodStart,
+                    weekCount = prefs.weekCount,
+                    invert = prefs.parityInvert,
+                    allForGroup = { container.repo.allForGroup(it) },
+                    resolveId = { name -> groups.firstOrNull { it.name == name }?.id },
+                    copy = container.copy
+                )
                 FriendsUiState(
                     loaded = true, friends = friends, canAdd = friends.size < 5,
                     editor = mutable.value.editor, confirmDelete = mutable.value.confirmDelete,
                     strictness = Strictness.nearest(prefs.intersectionStrictness),
                     alwaysShow = prefs.alwaysShowAllTrafficLights, invert = prefs.parityInvert,
-                    groups = container.repo.groups()
+                    groups = groups,
+                    previewLine = preview
                 )
             }
             mutable.value = snap

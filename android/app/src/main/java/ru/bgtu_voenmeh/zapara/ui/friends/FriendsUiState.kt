@@ -29,7 +29,8 @@ data class FriendsUiState(
     val strictness: Int = 25,
     val alwaysShow: Boolean = false,
     val invert: Boolean = false,
-    val groups: List<GroupInfo> = emptyList()
+    val groups: List<GroupInfo> = emptyList(),
+    val previewLine: String = ""
 )
 
 sealed interface FriendsEvent {
