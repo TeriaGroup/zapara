@@ -18,7 +18,7 @@ object MapResolve {
         ("УЛК" to 5) to "karta-ulk.-5-etazh-2022.jpg"
     )
 
-    private val VC_RE = Regex("""ВЦ\s*(\d+)""", RegexOption.IGNORE_CASE)
+    private val VC_RE = Regex("""ВЦ\s*(.+)""", RegexOption.IGNORE_CASE)
     private val DIGITS_RE = Regex("""\d+""")
 
     fun resolve(classroomRaw: String?): MapInfo? {
@@ -36,18 +36,19 @@ object MapResolve {
         var roomPart = raw
         if (raw.contains("ВЦ", ignoreCase = true)) {
             building = "ВЦ"
-            roomPart = VC_RE.find(raw)?.groupValues?.get(1)
-                ?: DIGITS_RE.find(raw)?.value ?: raw
+            roomPart = VC_RE.find(raw)?.groupValues?.get(1)?.trim()?.ifBlank { null }
+                ?: raw.replace(Regex("""^ВЦ\s*""", RegexOption.IGNORE_CASE), "").trim().ifBlank { raw }
         } else if (hasStar) {
             building = "УЛК" // star = УЛК (user correction 2026-09-01)
-            roomPart = DIGITS_RE.find(raw.replace("*", ""))?.value ?: raw
+            roomPart = raw.replace("*", "").trim()
         } else {
             building = "ГК"
-            roomPart = DIGITS_RE.find(raw)?.value ?: raw
+            roomPart = raw
         }
 
-        var floor = DIGITS_RE.find(roomPart)?.value?.firstOrNull()
-            ?.toString()?.toIntOrNull() ?: 1
+        var floor = if (roomPart.firstOrNull()?.isDigit() == true)
+            DIGITS_RE.find(roomPart)?.value?.firstOrNull()?.toString()?.toIntOrNull() ?: 1
+        else 1
         if (floor < 1) floor = 1
         if (floor > 5) floor = 5
         val mapBuilding = if (building == "ВЦ") "ГК" else building
