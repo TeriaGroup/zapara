@@ -1,6 +1,7 @@
 package ru.bgtu_voenmeh.zapara.ui.maps
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.bgtu_voenmeh.zapara.data.CoordsRect
@@ -60,5 +61,58 @@ class HighlightGeometryTest {
             "Maps.Highlight must align TopStart so Modifier.offset is layout origin, not parent Center",
             chipBlock.contains("Alignment.TopStart")
         )
+    }
+
+    @Test fun from_layout_inverts_a_mapped_room_center() {
+        val centerX = 0.55f
+        val centerY = 0.30f
+        val mapped = HighlightGeometry.mapped(
+            CoordsRect(0.5, 0.25, 0.1, 0.1), 1000f, 800f, 1000f, 800f, 2f, 10f, 20f
+        )
+        val tapX = (mapped.left + mapped.right) / 2f
+        val tapY = (mapped.top + mapped.bottom) / 2f
+        val n = HighlightGeometry.fromLayout(tapX, tapY, 1000f, 800f, 1000f, 800f, 2f, 10f, 20f)!!
+        assertEquals(centerX, n.first, 0.01f)
+        assertEquals(centerY, n.second, 0.01f)
+    }
+
+    @Test fun zoomable_map_forwards_a_long_press_in_plan_coordinates() {
+        val src = File("src/main/java/ru/bgtu_voenmeh/zapara/ui/maps/ZoomableMap.kt").readText()
+        assertTrue(src.contains("onLongPress"))
+        assertTrue(src.contains("fromLayout"))
+        assertTrue(src.contains("onLongPress"))
+        val section = File("src/main/java/ru/bgtu_voenmeh/zapara/ui/maps/MapsSection.kt").readText()
+        assertTrue(section.contains("Maps.Duration") || section.contains("durationLabel"))
+        assertTrue(!section.contains("LazyRow") || section.contains("routeSteps"))
+    }
+
+    @Test fun highlight_chip_moves_off_a_stair_badge() {
+        val mapped = HighlightPx(233f, 1243f, 291f, 1282f)
+        val preferred = HighlightGeometry.chipOffset(mapped, 26f)
+        val stair = HighlightGeometry.ChipBox(250f, 1210f, 81f, 39f)
+        val preferredBox = HighlightGeometry.ChipBox(preferred.first, preferred.second, 58f, 39f)
+        assertTrue(
+            "fixture must collide before dodge",
+            HighlightGeometry.overlaps(preferredBox, stair, 8f)
+        )
+        val dodged = HighlightGeometry.dodge(
+            preferred.first, preferred.second, 58f, 39f, listOf(stair), 996f, 858f, 8f
+        )
+        val box = HighlightGeometry.ChipBox(dodged.first, dodged.second, 58f, 39f)
+        assertFalse(
+            "493 chip must not sit on the stair label",
+            HighlightGeometry.overlaps(box, stair, 8f)
+        )
+        assertTrue(dodged.first >= 0f)
+        assertTrue(dodged.second >= 0f)
+    }
+
+    @Test fun highlight_chip_forwards_long_press() {
+        val src = File("src/main/java/ru/bgtu_voenmeh/zapara/ui/maps/ZoomableMap.kt").readText()
+        val mark = src.indexOf("Maps.Highlight")
+        assertTrue(mark >= 0)
+        val block = src.substring(mark, (mark + 500).coerceAtMost(src.length))
+        assertTrue("long-press on the 493 chip must open PlanPick", block.contains("pointerInput") || block.contains("detectTapGestures"))
+        assertTrue(block.contains("onLongPress"))
     }
 }
