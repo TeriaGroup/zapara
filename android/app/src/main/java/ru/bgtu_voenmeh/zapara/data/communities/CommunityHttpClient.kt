@@ -25,7 +25,7 @@ class CommunityHttpClient(
 ) {
     suspend fun list(accessToken: String, groupId: String? = null): List<Community> {
         val path = if (groupId == null) ""
-        else "?groupId=" + URLEncoder.encode(CommunityValidation.groupId(groupId), StandardCharsets.UTF_8).replace("+", "%20")
+        else "?groupId=" + URLEncoder.encode(CommunityValidation.groupId(groupId), StandardCharsets.UTF_8.name()).replace("+", "%20")
         return read("GET", path, null, accessToken, 200) { it.arr().items.map { row -> community(row.obj()) } }
     }
 

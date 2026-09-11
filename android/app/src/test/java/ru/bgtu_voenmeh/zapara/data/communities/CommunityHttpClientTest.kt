@@ -15,6 +15,28 @@ import java.time.Instant
 
 class CommunityHttpClientTest {
     @Test
+    fun catalog_query_preserves_utf8_spaces_plus_and_slash() = runBlocking {
+        val cases = listOf(
+            "Я" to "%D0%AF",
+            "a b" to "a%20b",
+            "a+b" to "a%2Bb",
+            "a/b" to "a%2Fb",
+            "Я +/" to "%D0%AF%20%2B%2F"
+        )
+        for ((groupId, encoded) in cases) {
+            val http = FakeHttp { call ->
+                assertEquals("GET", call.method)
+                assertEquals("$BASE?groupId=$encoded", call.url)
+                assertNull(call.body)
+                assertEquals("Bearer $ACCESS", call.headers["Authorization"])
+                ok("[]")
+            }
+            assertTrue(client(http).list(ACCESS, groupId).isEmpty())
+            assertEquals(1, http.requests.size)
+        }
+    }
+
+    @Test
     fun catalog_groupId_query_grants_no_membership() = runBlocking {
         val http = FakeHttp { call ->
             assertEquals("GET", call.method)
