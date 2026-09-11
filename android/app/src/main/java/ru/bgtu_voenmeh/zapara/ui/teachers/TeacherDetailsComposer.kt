@@ -17,6 +17,13 @@ data class TeacherRowLesson(
 data class TeacherDayUi(val dow: Int, val title: String, val rows: List<TeacherRowLesson>)
 
 object TeacherDetailsComposer {
+    fun parityLabel(parity: Int, copy: UiCopy): String = copy.get(when (parity) {
+        0 -> "teacher_parity_both"
+        1 -> "teacher_parity_odd"
+        2 -> "teacher_parity_even"
+        else -> "teacher_parity_unknown"
+    })
+
     fun compose(lessons: List<LecturerLesson>, parityFilter: Int, myGroupId: String, copy: UiCopy): List<TeacherDayUi> {
         val filtered = lessons.filter { lesson ->
             when (parityFilter) {

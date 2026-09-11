@@ -11,6 +11,41 @@ import ru.bgtu_voenmeh.zapara.ui.XmlCopy
 class TeacherDetailsComposerTest {
     private val parsed by lazy { LecturerParser.parse(LECTURER_FIXTURE) }
 
+    @Test fun labels_are_explicit_for_known_and_unknown_parity() {
+        val expected = mapOf(0 to "Обе недели", 1 to "Нечётная неделя", 2 to "Чётная неделя",
+            -1 to "Чётность не указана", 3 to "Чётность не указана", Int.MAX_VALUE to "Чётность не указана")
+        expected.forEach { (parity, label) ->
+            assertEquals(label, TeacherDetailsComposer.parityLabel(parity, XmlCopy))
+        }
+    }
+
+    @Test fun actual_composition_preserves_same_pair_different_parity_and_both_records() {
+        val original = parsed.lessons.first().copy(dayOfWeek = 1, timeStart = "09:00")
+        val lessons = listOf(0, 1, 2, -1).map { original.copy(parity = it) }
+        val expected = listOf(listOf(0, 1, 2, -1), listOf(0, 1), listOf(0, 2))
+        expected.forEachIndexed { filter, parities ->
+            val days = TeacherDetailsComposer.compose(lessons, filter, original.groups.first().idGroup, XmlCopy)
+            assertEquals(listOf(1), days.map { it.dow })
+            val rows = days.single().rows
+            assertEquals(parities, rows.map { it.parity })
+            assertEquals(1, rows.map { it.subject }.distinct().size)
+            assertTrue(rows.all { it.time == "09:00" && it.isMyGroup })
+            assertEquals(1, rows.count { it.parity == 0 })
+            assertEquals(parities.map { TeacherDetailsComposer.parityLabel(it, XmlCopy) },
+                rows.map { TeacherDetailsComposer.parityLabel(it.parity, XmlCopy) })
+        }
+    }
+
+    @Test fun unknown_filter_keeps_existing_all_behavior_and_days_remain_sorted() {
+        val original = parsed.lessons.first()
+        val lessons = listOf(original.copy(dayOfWeek = 2, parity = 9), original.copy(dayOfWeek = 1, parity = 0))
+        val days = TeacherDetailsComposer.compose(lessons, 9, "not-my-group", XmlCopy)
+        assertEquals(listOf(1, 2), days.map { it.dow })
+        assertTrue(days.flatMap { it.rows }.none { it.isMyGroup })
+        assertEquals("Чётность не указана", TeacherDetailsComposer.parityLabel(days.last().rows.single().parity, XmlCopy))
+        assertTrue(TeacherDetailsComposer.compose(emptyList(), 0, "", XmlCopy).isEmpty())
+    }
+
     @Test fun compose_keeps_days_with_lessons_and_marks_own_group() {
         val days = TeacherDetailsComposer.compose(parsed.lessons, 0, "3313", XmlCopy)
         assertTrue(days.isNotEmpty())
