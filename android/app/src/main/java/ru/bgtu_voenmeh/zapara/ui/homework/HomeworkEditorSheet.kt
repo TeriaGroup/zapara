@@ -2,6 +2,8 @@ package ru.bgtu_voenmeh.zapara.ui.homework
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,6 +23,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HomeworkEditorSheet(
     state: HomeworkEditorState,
@@ -48,14 +51,14 @@ fun HomeworkEditorSheet(
         )
         Spacer(Modifier.height(Zapara.space.s))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            ZIconButton(R.drawable.ic_minus, stringResource(R.string.hw_due_prefix, ""), onDec, "Editor.Dec")
+            ZIconButton(R.drawable.ic_minus, stringResource(R.string.hw_due_decrease), onDec, "Editor.Dec")
             Text(state.dueText(LocalUiCopy.current), style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f).testTag("Editor.Due"))
-            ZIconButton(R.drawable.ic_plus, stringResource(R.string.add), onInc, "Editor.Inc")
+            ZIconButton(R.drawable.ic_plus, stringResource(R.string.hw_due_increase), onInc, "Editor.Inc")
         }
         Spacer(Modifier.height(Zapara.space.m))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+            verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             ZButton(stringResource(R.string.theme_cancel), onCancel, ghost = true, tag = "Editor.Cancel")
-            Spacer(Modifier.weight(1f))
             ZButton(stringResource(R.string.theme_save), onSave, enabled = state.canSave, tag = "Editor.Save")
         }
     }
