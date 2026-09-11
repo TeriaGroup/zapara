@@ -75,11 +75,20 @@ object Frames {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val gate = CountDownLatch(1)
         instrumentation.runOnMainSync {
-            activity.window.decorView.postOnAnimation {
-                activity.window.decorView.postOnAnimation { gate.countDown() }
+            val root = activity.window.decorView
+            val presented = Runnable {
+                root.postOnAnimation { root.postOnAnimation { gate.countDown() } }
             }
+            // A vsync callback can run before the updated RenderNode was submitted. On API37
+            // this produced blank launch frames and frames containing the PREVIOUS fixture.
+            // Observe a submitted hardware frame before waiting for compositor vsyncs.
+            if (android.os.Build.VERSION.SDK_INT >= 29 && root.isHardwareAccelerated) {
+                root.viewTreeObserver.registerFrameCommitCallback(presented)
+                root.invalidate()
+            } else root.postOnAnimation(presented)
         }
         check(gate.await(5, TimeUnit.SECONDS)) { "Frame gate failed" }
+        instrumentation.uiAutomation.waitForIdle(100, 2000)
     }
 
     fun capture(rule: ComposeContentTestRule, name: String): File {
