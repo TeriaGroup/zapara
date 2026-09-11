@@ -11,6 +11,65 @@ import ru.bgtu_voenmeh.zapara.data.Parity
 import ru.bgtu_voenmeh.zapara.ui.XmlCopy
 
 class SummaryComposerTest {
+    private val fixture = listOf(
+        Lesson(dayOfWeek = 1, parity = 1, typeRaw = "лек", subjectRaw = "Математика", teacherRaw = "Иванов", classroomRaw = "101;"),
+        Lesson(dayOfWeek = 1, parity = 2, typeRaw = "лек", subjectRaw = "Математика", teacherRaw = "Иванов", classroomRaw = "102;"),
+        Lesson(dayOfWeek = 1, parity = 0, typeRaw = "лек", subjectRaw = "Математика", teacherRaw = "Иванов", classroomRaw = "101;"),
+        Lesson(dayOfWeek = 2, parity = 1, typeRaw = "лек", subjectRaw = "Математика", teacherRaw = "Иванов", classroomRaw = "101;")
+    )
+
+    @Test fun all_five_breakdowns_share_filtered_records_without_doubling_both() {
+        listOf(3, 2, 4).forEachIndexed { segment, total ->
+            val tiles = SummaryComposer.tiles(segment, fixture, { _, day -> "Предмет $day" }, XmlCopy)
+            assertEquals(total, tiles.total)
+            assertEquals((1..6).toList(), tiles.byDay.map { it.first })
+            assertEquals(if (segment == 2) 3 else 2, tiles.byDay.first().second)
+            assertEquals(if (segment == 1) 0 else 1, tiles.byDay[1].second)
+            assertEquals(listOf(0, 0, 0, 0), tiles.byDay.drop(2).map { it.second })
+            listOf(tiles.byDay.sumOf { it.second }, tiles.byRoom.sumOf { it.second },
+                tiles.byType.sumOf { it.second }, tiles.bySubject.sumOf { it.second },
+                tiles.byTeacher.sumOf { it.second }).forEach { assertEquals(total, it) }
+            assertEquals(tiles.byRoom.map { it.first }, tiles.rooms)
+            assertEquals(if (segment == 1) listOf("101 ГК" to 1, "102 ГК" to 1)
+                else if (segment == 0) listOf("101 ГК" to 3)
+                else listOf("101 ГК" to 3, "102 ГК" to 1), tiles.byRoom)
+            assertEquals("Предмет 1", tiles.bySubject.first().first)
+        }
+    }
+
+    @Test fun empty_has_six_zero_days_and_no_rooms() {
+        val tiles = SummaryComposer.tiles(2, emptyList(), { _, _ -> "" }, XmlCopy)
+        assertEquals((1..6).map { it to 0 }, tiles.byDay)
+        assertEquals(0, tiles.total)
+        assertTrue(tiles.byRoom.isEmpty())
+        assertTrue(tiles.rooms.isEmpty())
+    }
+
+    @Test fun sunday_is_included_only_in_the_filtered_input() {
+        val lessons = fixture + fixture[0].copy(dayOfWeek = 7, parity = 2)
+        assertEquals((1..6).toList(), SummaryComposer.tiles(0, lessons, { _, _ -> "" }, XmlCopy).byDay.map { it.first })
+        val tiles = SummaryComposer.tiles(1, lessons, { _, _ -> "" }, XmlCopy)
+        assertEquals(7 to 1, tiles.byDay.last())
+        assertEquals(tiles.total, tiles.byDay.sumOf { it.second })
+    }
+
+    @Test fun missing_rooms_do_not_create_building_only_groups_or_change_other_counts() {
+        val lessons = listOf("", "   ", "—", "—;").map { fixture[0].copy(classroomRaw = it) }
+        val tiles = SummaryComposer.tiles(2, lessons, { _, _ -> "" }, XmlCopy)
+        assertEquals(4, tiles.total)
+        assertEquals(4, tiles.bySubject.sumOf { it.second })
+        assertTrue(tiles.byRoom.isEmpty())
+    }
+
+    @Test fun long_and_remote_rooms_keep_existing_formatter_and_sort_order() {
+        val longRoom = "Учебная лаборатория вычислительной техники"
+        val lessons = listOf(fixture[0].copy(roomRaw = longRoom), fixture[0].copy(classroomRaw = "дистанционно"))
+        val tiles = SummaryComposer.tiles(2, lessons, { _, _ -> "" }, XmlCopy)
+        val expected = lessons.map { ru.bgtu_voenmeh.zapara.ui.LessonFormat.roomLabel(it, XmlCopy) to 1 }.sortedBy { it.first }
+        assertEquals(expected, tiles.byRoom)
+        assertEquals(2, tiles.byRoom.sumOf { it.second })
+    }
+
     private val parsed by lazy { GroupParser.parse(GROUP_FIXTURE) }
     private val mine get() = parsed.lessons.filter { it.groupId == "3313" }
     private val mathNorm = Parity.normalizeSubject("лек ВЫСШ. МАТЕМАТ")

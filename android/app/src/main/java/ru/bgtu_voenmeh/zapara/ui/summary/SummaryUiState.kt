@@ -4,7 +4,8 @@ data class SummaryUiState(
     val loaded: Boolean = false,
     val hasGroup: Boolean = false,
     val segment: Int = 2,
-    val tiles: SummaryTiles = SummaryTiles(0, emptyList(), emptyList(), emptyList(), emptyList())
+    val tiles: SummaryTiles = SummaryTiles(total = 0, byType = emptyList(), bySubject = emptyList(),
+        byTeacher = emptyList(), rooms = emptyList(), byDay = emptyList(), byRoom = emptyList())
 )
 
 sealed interface SummaryEvent {
