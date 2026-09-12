@@ -46,4 +46,14 @@ class SmartStartTest {
             SmartStart.initialDate(LocalDateTime.of(2026, 9, 6, 12, 0), emptyList())
         )
     }
+
+    @Test fun saturday_evening_skips_sunday() {
+        assertEquals(
+            LocalDate.of(2026, 9, 7),
+            SmartStart.initialDate(
+                LocalDateTime.of(2026, 9, 5, 16, 0),
+                listOf(lesson("12:40", "14:15"))
+            )
+        )
+    }
 }

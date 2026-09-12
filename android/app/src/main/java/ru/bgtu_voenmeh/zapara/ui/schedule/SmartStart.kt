@@ -12,6 +12,8 @@ object SmartStart {
         if (today.dayOfWeek == DayOfWeek.SUNDAY) return today.plusDays(1)
         val lastEnd = lessonsToday.mapNotNull { runCatching { LocalTime.parse(it.timeEnd) }.getOrNull() }.maxOrNull()
             ?: return today
-        return if (now.toLocalTime().isAfter(lastEnd.plusMinutes(15))) today.plusDays(1) else today
+        var date = if (now.toLocalTime().isAfter(lastEnd.plusMinutes(15))) today.plusDays(1) else today
+        if (date.dayOfWeek == DayOfWeek.SUNDAY) date = date.plusDays(1)
+        return date
     }
 }
