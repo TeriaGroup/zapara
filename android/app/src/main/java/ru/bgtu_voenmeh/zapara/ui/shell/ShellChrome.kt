@@ -19,6 +19,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -44,50 +47,57 @@ data class ShellChrome(
 
 val LocalShellChrome = staticCompositionLocalOf { ShellChrome(null, false, false) {} }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ZTopBar(title: String, actions: @Composable RowScope.() -> Unit = {}) {
+    val container = Modifier.fillMaxWidth().heightIn(min = 56.dp)
+        .background(Zapara.colors.canvas).padding(horizontal = Zapara.space.l)
+    if (LocalDensity.current.fontScale >= 1.5f) {
+        Column(container) {
+            Text(title, style = Zapara.typography.title, color = Zapara.colors.text1,
+                modifier = Modifier.fillMaxWidth().testTag("Top.Title"))
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                Row(verticalAlignment = Alignment.CenterVertically, content = actions)
+                GroupChip()
+            }
+        }
+    } else {
+        Row(container, verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = Zapara.typography.title, color = Zapara.colors.text1,
+                modifier = Modifier.weight(1f).testTag("Top.Title"))
+            actions()
+            GroupChip()
+        }
+    }
+}
+
+@Composable
+private fun GroupChip() {
     val chrome = LocalShellChrome.current
     val c = Zapara.colors
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .background(c.canvas)
-            .padding(horizontal = Zapara.space.l),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            title,
-            style = Zapara.typography.title,
-            color = c.text1,
-            modifier = Modifier.weight(1f).testTag("Top.Title"),
-            maxLines = 1
+    if (chrome.hasGroup && chrome.chip != null) {
+        ZChip(
+            text = chrome.chip,
+            onClick = chrome.onGroupChip,
+            tag = "Top.GroupChip",
+            leading = if (chrome.stale) {
+                {
+                    Box(
+                        Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(c.warn)
+                    )
+                }
+            } else null
         )
-        actions()
-        if (chrome.hasGroup && chrome.chip != null) {
-            ZChip(
-                text = chrome.chip,
-                onClick = chrome.onGroupChip,
-                tag = "Top.GroupChip",
-                leading = if (chrome.stale) {
-                    {
-                        Box(
-                            Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(c.warn)
-                        )
-                    }
-                } else null
-            )
-        } else {
-            ZButton(
-                text = stringResource(R.string.group_pick),
-                onClick = chrome.onGroupChip,
-                ghost = true,
-                modifier = Modifier.testTag("Top.GroupChip")
-            )
-        }
+    } else {
+        ZButton(
+            text = stringResource(R.string.group_pick),
+            onClick = chrome.onGroupChip,
+            ghost = true,
+            modifier = Modifier.testTag("Top.GroupChip")
+        )
     }
 }
 
@@ -110,49 +120,32 @@ fun ZBottomBar(
             .navigationBarsPadding()
     ) {
         HorizontalDivider(color = c.line, thickness = Zapara.space.hairline)
-        BoxWithConstraints(
-            Modifier
-                .fillMaxWidth()
-                .height(64.dp)
-        ) {
-            val cell = maxWidth / 4
-            val target = cell * activeIndex + (cell - 18.dp) / 2
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val columns = if (LocalDensity.current.fontScale >= 1.5f) 2 else 4
+            val cell = maxWidth / columns
+            val target = cell * (activeIndex % columns) + (cell - 18.dp) / 2
             val offsetX by animateDpAsState(targetValue = target, animationSpec = tween(motion.ms(Durations.indicator), easing = ZaparaEase), label = "indicator")
-            Row(Modifier.fillMaxSize()) {
-                Section.bar.forEach { section ->
-                    BarItem(
-                        modifier = Modifier.weight(1f),
-                        iconRes = section.icon,
-                        label = stringResource(section.title),
-                        active = current == section,
-                        badge = if (section == Section.Homework && homeworkBadge > 0) homeworkBadge.toString() else null,
-                        dot = false,
-                        tag = section.tag,
-                        onClick = { onSection(section) }
-                    )
+            Column {
+                (0..3).toList().chunked(columns).forEach { row ->
+                    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                        row.forEach { index ->
+                            val section = Section.bar.getOrNull(index)
+                            BarItem(
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                iconRes = section?.icon ?: R.drawable.ic_menu,
+                                label = stringResource(section?.title ?: R.string.nav_sections),
+                                active = index == activeIndex,
+                                badge = if (section == Section.Homework && homeworkBadge > 0) homeworkBadge.toString() else null,
+                                dot = section == null && updateBadge,
+                                tag = section?.tag ?: "Nav.Sections",
+                                indicatorX = offsetX,
+                                indicatorShift = offsetX - target,
+                                onClick = { if (section != null) onSection(section) else onSections() }
+                            )
+                        }
+                    }
                 }
-                BarItem(
-                    modifier = Modifier.weight(1f),
-                    iconRes = R.drawable.ic_menu,
-                    label = stringResource(R.string.nav_sections),
-                    active = sectionsActive,
-                    badge = null,
-                    dot = updateBadge,
-                    tag = "Nav.Sections",
-                    onClick = onSections
-                )
             }
-            Box(
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(bottom = 8.dp)
-                    .offset(x = offsetX)
-                    .size(width = 18.dp, height = 2.dp)
-                    .clip(RoundedCornerShape(Zapara.radii.pill))
-                    .background(c.text1)
-                    .testTag("Nav.Indicator")
-                    .semantics { set(IndicatorXKey, offsetX.value); stateDescription = offsetX.value.toString(); contentDescription = offsetX.value.toString() }
-            )
         }
     }
 }
@@ -166,56 +159,63 @@ private fun BarItem(
     badge: String?,
     dot: Boolean,
     tag: String,
+    indicatorX: Dp,
+    indicatorShift: Dp,
     onClick: () -> Unit
 ) {
     val c = Zapara.colors
     val source = remember { MutableInteractionSource() }
     TextButton(
         onClick = onClick,
-        modifier = modifier.fillMaxHeight().testTag(tag).pressScale(source),
+        modifier = modifier.heightIn(min = 64.dp).testTag(tag).semantics { selected = active }.pressScale(source),
         interactionSource = source,
         contentPadding = PaddingValues(0.dp)
     ) {
-    Column(
-        Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Box(contentAlignment = Alignment.TopEnd) {
-            Icon(
-                painterResource(iconRes),
-                label,
-                modifier = Modifier.size(22.dp),
-                tint = if (active) c.text1 else c.text3
-            )
-            if (badge != null) {
-                Box(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .size(16.dp)
-                        .clip(CircleShape)
-                        .background(c.bad),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(badge, style = Zapara.typography.caption, color = c.onBad, maxLines = 1)
+        Box(Modifier.fillMaxWidth()) {
+            Column(
+                Modifier.fillMaxWidth().padding(top = Zapara.space.s, bottom = Zapara.space.l),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Box(contentAlignment = Alignment.TopEnd) {
+                    Icon(
+                        painterResource(iconRes),
+                        null,
+                        modifier = Modifier.size(22.dp),
+                        tint = if (active) c.text1 else c.text3
+                    )
+                    if (badge != null) {
+                        Box(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .sizeIn(minWidth = 16.dp, minHeight = 16.dp)
+                                .clip(CircleShape)
+                                .background(c.bad),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(badge, style = Zapara.typography.caption, color = c.onBad, maxLines = 1)
+                        }
+                    } else if (dot) {
+                        Box(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(c.warn)
+                        )
+                    }
                 }
-            } else if (dot) {
-                Box(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(c.warn)
+                Text(
+                    label,
+                    style = Zapara.typography.caption,
+                    color = if (active) c.text1 else c.text3
                 )
+                Spacer(Modifier.height(4.dp))
             }
+            if (active) Box(Modifier.align(Alignment.BottomCenter).padding(bottom = Zapara.space.s)
+                .offset(x = indicatorShift).size(width = 18.dp, height = 2.dp)
+                .clip(RoundedCornerShape(Zapara.radii.pill)).background(c.text1)
+                .testTag("Nav.Indicator").semantics { set(IndicatorXKey, indicatorX.value) })
         }
-        Text(
-            label,
-            style = Zapara.typography.caption,
-            color = if (active) c.text1 else c.text3,
-            maxLines = 1
-        )
-        Spacer(Modifier.height(4.dp))
-    }
     }
 }
