@@ -17,13 +17,18 @@ class ThemeSmokeTest {
     @Test fun light_primitives() = showcase(ThemeChoice.Light, 1f)
     @Test fun dark_large_font() = showcase(ThemeChoice.Dark, 1.3f)
     @Test fun light_large_font() = showcase(ThemeChoice.Light, 1.3f)
+    @Test fun dark_font_150() = showcase(ThemeChoice.Dark, 1.5f)
+    @Test fun light_font_150() = showcase(ThemeChoice.Light, 1.5f)
+    @Test fun dark_font_200() = showcase(ThemeChoice.Dark, 2f)
+    @Test fun light_font_200() = showcase(ThemeChoice.Light, 2f)
 
     private fun showcase(choice: ThemeChoice, scale: Float) {
         // Same palette/type/geometry/presence/click assertions, using public platform input.
-        ThemeNativeCaptureTest().capture(choice, scale)
+        OwnedTestHost.launch().use { host -> NativeShowcaseDriver.capture(host, choice, scale) }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun Showcase(onSave: () -> Unit) {
     Column(Modifier.fillMaxSize().background(Zapara.colors.canvas).verticalScroll(rememberScrollState())
@@ -35,7 +40,7 @@ internal fun Showcase(onSave: () -> Unit) {
             // Text2 on light Card falls below 4.5: use existing Text1 for meaningful caption.
             Text(stringResource(R.string.theme_sample_caption), style = Zapara.typography.caption, color = Zapara.colors.text1)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             ZButton(stringResource(R.string.theme_save), onSave, Modifier.testTag("Theme.Save"))
             ZButton(stringResource(R.string.theme_cancel), {}, ghost = true)
         }
