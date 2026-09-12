@@ -41,7 +41,7 @@ fun SubjectPickerSheet(
         OutlinedTextField(
             value = picker.query, onValueChange = onQuery,
             modifier = Modifier.fillMaxWidth().testTag("Picker.Search"),
-            placeholder = { Text(stringResource(R.string.teachers_search_hint), style = Zapara.typography.caption, color = c.text3) },
+            placeholder = { Text(stringResource(R.string.hw_pick_subject), style = Zapara.typography.caption, color = c.text3) },
             singleLine = true,
             shape = RoundedCornerShape(Zapara.radii.control),
             colors = OutlinedTextFieldDefaults.colors(
