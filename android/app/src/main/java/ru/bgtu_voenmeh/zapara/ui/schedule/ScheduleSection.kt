@@ -53,6 +53,7 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, on
             ScheduleComposer.SchedulePane.LoadFail -> EmptyState(
                 R.drawable.ic_alert,
                 stringResource(R.string.load_fail),
+                hint = state.error,
                 actionText = stringResource(R.string.repeat),
                 onAction = { onEvent(ScheduleEvent.Retry) },
                 tag = "Empty.LoadFail"
@@ -139,7 +140,7 @@ private fun LessonList(page: DayPage, refreshing: Boolean, onEvent: (ScheduleEve
         contentPadding = PaddingValues(Zapara.space.l),
         verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
     ) {
-        itemsIndexed(page.lessons, key = { _, it -> it.index }) { index, lesson ->
+        itemsIndexed(page.lessons, key = { _, it -> "${it.dayOfWeek}:${it.index}:${it.timeStart}:${it.subjectNorm}" }) { index, lesson ->
             LessonCard(
                 lesson,
                 onLongClick = { onEvent(ScheduleEvent.LongPress(lesson)) },
