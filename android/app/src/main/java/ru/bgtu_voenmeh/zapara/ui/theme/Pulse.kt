@@ -1,5 +1,6 @@
 package ru.bgtu_voenmeh.zapara.ui.theme
 
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -30,6 +31,22 @@ fun rememberPulse(active: Boolean, cycleMs: Int, from: Float, to: Float): State<
         )
     } else {
         rememberUpdatedState(to)
+    }
+}
+
+@Composable
+fun rememberMarch(active: Boolean, cycleMs: Int): State<Float> {
+    val motion = Zapara.motion
+    return if (active && motion.enabled) {
+        val transition = rememberInfiniteTransition(label = "march")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(motion.ms(cycleMs), easing = LinearEasing)),
+            label = "march"
+        )
+    } else {
+        rememberUpdatedState(0f)
     }
 }
 
