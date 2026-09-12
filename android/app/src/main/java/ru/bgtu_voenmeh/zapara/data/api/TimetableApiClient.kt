@@ -132,7 +132,7 @@ class TimetableApiClient(
         fun escapeId(id: String): String = when (id) {
             "." -> "%2E"
             ".." -> "%2E%2E"
-            else -> URLEncoder.encode(id, StandardCharsets.UTF_8).replace("+", "%20")
+            else -> URLEncoder.encode(id, StandardCharsets.UTF_8.name()).replace("+", "%20")
         }
 
         fun validateBaseUri(uri: URI): URI {

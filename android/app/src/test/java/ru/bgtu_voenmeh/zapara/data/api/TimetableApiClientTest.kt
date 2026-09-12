@@ -9,6 +9,31 @@ import java.net.URI
 
 class TimetableApiClientTest {
     @Test
+    fun fetch_preserves_utf8_spaces_plus_slash_and_opaque_dot_paths() = runBlocking {
+        val cases = listOf(
+            "Я" to "%D0%AF",
+            "a b" to "a%20b",
+            "a+b" to "a%2Bb",
+            "a/b" to "a%2Fb",
+            "Я +/" to "%D0%AF%20%2B%2F",
+            "." to "%2E",
+            ".." to "%2E%2E"
+        )
+        for ((id, encoded) in cases) {
+            assertEquals(encoded, TimetableApiClient.escapeId(id))
+            val http = FakeHttp { call ->
+                jsonReply(if (call.url.endsWith("/groups")) catalogJson(PIN, id) else scheduleJson(id))
+            }
+            val result = TimetableApiClient(http, URI("https://example.invalid/prefix")).fetch(listOf(id))
+            assertEquals(setOf(id), result.downloaded.keys)
+            assertEquals(listOf(
+                "https://example.invalid/prefix/api/v1/groups",
+                "https://example.invalid/prefix/api/v1/groups/$encoded/timetable?snapshotId=$PIN"
+            ), http.requests.map { it.url })
+        }
+    }
+
+    @Test
     fun fetches_pinned_distinct_groups_including_explicit_empty_and_preserves_raw() = runBlocking {
         val http = FakeHttp { call ->
             jsonReply(if (call.url.endsWith("/groups")) catalogJson() else scheduleJson(if (call.url.contains("/empty/")) "empty" else "a"))
