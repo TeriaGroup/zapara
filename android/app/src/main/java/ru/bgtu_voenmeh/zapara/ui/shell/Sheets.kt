@@ -17,8 +17,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -91,8 +89,6 @@ fun GroupPickerSheet(
 ) {
     val c = Zapara.colors
     var query by remember { mutableStateOf("") }
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocus() }
     val filtered = remember(groups, query) {
         val q = query.trim()
         if (q.isEmpty()) groups else groups.filter { it.name.contains(q, ignoreCase = true) || it.id.contains(q, ignoreCase = true) }
@@ -103,7 +99,7 @@ fun GroupPickerSheet(
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth().testTag("Picker.Search").focusRequester(focus),
+            modifier = Modifier.fillMaxWidth().testTag("Picker.Search"),
             placeholder = { Text(stringResource(R.string.group_search), style = Zapara.typography.caption, color = c.text3) },
             singleLine = true,
             shape = RoundedCornerShape(Zapara.radii.control),
@@ -121,6 +117,15 @@ fun GroupPickerSheet(
             modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 420.dp),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
         ) {
+            if (filtered.isEmpty()) {
+                item {
+                    Text(
+                        if (groups.isEmpty()) stringResource(R.string.group_empty) else stringResource(R.string.group_empty_hint),
+                        style = Zapara.typography.body,
+                        color = c.text2
+                    )
+                }
+            }
             items(filtered, key = { it.id }) { group ->
                 ZCard(
                     Modifier
