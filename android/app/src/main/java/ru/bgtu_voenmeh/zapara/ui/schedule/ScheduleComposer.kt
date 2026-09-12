@@ -17,6 +17,10 @@ object ScheduleComposer {
     const val PAGE_COUNT = 731
     const val TODAY_INDEX = 365
 
+    fun resetsPager(event: ru.bgtu_voenmeh.zapara.ui.AppEvent): Boolean =
+        event is ru.bgtu_voenmeh.zapara.ui.AppEvent.GroupChanged ||
+            event is ru.bgtu_voenmeh.zapara.ui.AppEvent.ScheduleChanged
+
     fun pageIndex(date: LocalDate, today: LocalDate): Int =
         (ChronoUnit.DAYS.between(today, date).toInt() + TODAY_INDEX).coerceIn(0, PAGE_COUNT - 1)
 

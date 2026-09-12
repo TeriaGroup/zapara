@@ -91,4 +91,10 @@ class ScheduleComposerTest {
         assertEquals(today.plusDays(365), ScheduleComposer.dateAt(730, today))
         assertEquals(731, ScheduleComposer.PAGE_COUNT)
     }
+
+    @Test fun personalization_keeps_the_open_day() {
+        assertFalse(ScheduleComposer.resetsPager(ru.bgtu_voenmeh.zapara.ui.AppEvent.PersonalizationChanged))
+        assertTrue(ScheduleComposer.resetsPager(ru.bgtu_voenmeh.zapara.ui.AppEvent.GroupChanged))
+        assertTrue(ScheduleComposer.resetsPager(ru.bgtu_voenmeh.zapara.ui.AppEvent.ScheduleChanged))
+    }
 }
