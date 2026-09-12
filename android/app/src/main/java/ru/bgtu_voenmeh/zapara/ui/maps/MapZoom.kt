@@ -14,4 +14,9 @@ object MapZoom {
 
     fun isButtonZoom(zoom: Float, lastEmitted: Float): Boolean =
         abs(zoom - lastEmitted) > 0.001f
+
+    fun shouldResetView(oldW: Int, oldH: Int, newW: Int, newH: Int): Boolean {
+        if (oldW <= 0 || oldH <= 0 || newW <= 0 || newH <= 0) return false
+        return oldW != newW || oldH != newH
+    }
 }

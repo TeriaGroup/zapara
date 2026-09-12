@@ -25,4 +25,13 @@ class MapZoomTest {
         val gesture = false
         assertEquals(fromButton, MapZoom.shown(gesture, pinched, fromButton), 0.001f)
     }
+
+    @Test fun size_change_after_rotation_resets_pan() {
+        assertFalse(MapZoom.shouldResetView(0, 0, 1080, 800))
+        assertFalse(MapZoom.shouldResetView(1080, 800, 1080, 800))
+        assertTrue(MapZoom.shouldResetView(1800, 400, 1080, 800))
+        assertTrue(MapZoom.shouldResetView(1080, 800, 1800, 400))
+        val src = java.io.File("src/main/java/ru/bgtu_voenmeh/zapara/ui/maps/ZoomableMap.kt").readText()
+        assertTrue(src.contains("shouldResetView"))
+    }
 }
