@@ -27,6 +27,7 @@ fun RenameSheet(ui: RenameUi, onEvent: (ScheduleEvent) -> Unit) {
         Spacer(Modifier.height(Zapara.space.s))
         Field(ui.name, { onEvent(ScheduleEvent.RenameChanged(it, ui.note, ui.scope)) }, "Editor.Text")
         Text(stringResource(R.string.rename_original, ui.original), style = Zapara.typography.caption, color = c.text2)
+        Text(stringResource(R.string.rename_note), style = Zapara.typography.caption, color = c.text2)
         Field(ui.note, { onEvent(ScheduleEvent.RenameChanged(ui.name, it, ui.scope)) }, "Editor.Note")
         ZSegmented(
             listOf(stringResource(R.string.scope_everywhere), stringResource(R.string.scope_day_only, ui.dayName)),
