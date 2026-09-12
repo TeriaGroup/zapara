@@ -27,6 +27,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import ru.bgtu_voenmeh.zapara.ui.components.pressScale
 
 /** Foundation only; shell-specific controls belong to Task2. */
@@ -123,15 +125,17 @@ fun ZIconButton(
     modifier: Modifier = Modifier
 ) {
     val source = remember { MutableInteractionSource() }
+    val accessibleName = contentDescription
     Box(
         modifier
             .testTag(tag)
+            .semantics { this.contentDescription = accessibleName }
             .sizeIn(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch)
             .pressScale(source)
             .clip(RoundedCornerShape(Zapara.radii.icon))
             .clickable(interactionSource = source, indication = if (Zapara.motion.enabled) LocalIndication.current else null, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        ZIcon(icon, contentDescription)
+        ZIcon(icon, null)
     }
 }
