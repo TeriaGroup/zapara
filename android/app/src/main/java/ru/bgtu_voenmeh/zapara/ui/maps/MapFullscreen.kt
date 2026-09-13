@@ -2,13 +2,13 @@ package ru.bgtu_voenmeh.zapara.ui.maps
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import ru.bgtu_voenmeh.zapara.R
@@ -17,18 +17,37 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 
 @Composable
 fun MapFullscreen(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
-    Dialog(
-        onDismissRequest = { onEvent(MapsEvent.Fullscreen(false)) },
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-    ) {
-        BackHandler { onEvent(MapsEvent.Fullscreen(false)) }
-        Box(Modifier.fillMaxSize().background(Zapara.colors.canvas)) {
-            ZoomableMap(state.planFile, state.highlight, state.zoom, { onEvent(MapsEvent.Transform(it)) }, Modifier.fillMaxSize())
-            ZIconButton(
-                R.drawable.ic_x, stringResource(R.string.maps_close),
-                { onEvent(MapsEvent.Fullscreen(false)) }, "Maps.Close",
-                Modifier.align(Alignment.TopEnd).padding(Zapara.space.l)
-            )
+    Dialog(onDismissRequest = { onEvent(MapsEvent.Fullscreen(false)) },
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        BackHandler(enabled = !state.stepsOpen && state.picker == null && state.planPick == null) {
+            onEvent(MapsEvent.Fullscreen(false))
         }
+        BoxWithConstraints(Modifier.fillMaxSize().background(Zapara.colors.canvas).systemBarsPadding()) {
+            val compact = MapsLayout.compact(maxWidth.value.toInt(), maxHeight.value.toInt())
+            val controlsWidth = minOf(MapsLayout.SideChromeWidth.dp, maxWidth / 2)
+            if (compact) {
+                Row(Modifier.fillMaxSize()) {
+                    Column(Modifier.width(controlsWidth)
+                        .fillMaxHeight().verticalScroll(rememberScrollState()).padding(Zapara.space.s),
+                        verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        FullscreenClose(onEvent)
+                        if (!state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = false)
+                    }
+                    MapsPlanPane(state, onEvent, Modifier.weight(1f).fillMaxHeight(), compact = true)
+                }
+            } else {
+                Column(Modifier.fillMaxSize()) {
+                    FullscreenClose(onEvent)
+                    MapsPlanPane(state, onEvent, Modifier.fillMaxWidth().weight(1f))
+                }
+            }
+        }
+        MapsModals(state, onEvent)
     }
+}
+
+@Composable
+private fun FullscreenClose(onEvent: (MapsEvent) -> Unit) {
+    ZIconButton(R.drawable.ic_x, stringResource(R.string.maps_close),
+        { onEvent(MapsEvent.Fullscreen(false)) }, "Maps.Close")
 }
