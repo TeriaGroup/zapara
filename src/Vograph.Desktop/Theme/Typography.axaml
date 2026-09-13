@@ -199,7 +199,7 @@
     <Setter Property="IsVisible" Value="False" />
     <Setter Property="Opacity" Value="0" />
   </Style>
-  <Style Selector="Border.card:pointerover StackPanel.acts">
+  <Style Selector="Border.card:pointerover StackPanel.acts, Border.card:focus-within StackPanel.acts">
     <Setter Property="IsVisible" Value="True" />
     <Setter Property="Opacity" Value="1" />
   </Style>
