@@ -115,30 +115,40 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
     private fun openNew(raw: String) {
         val display = mutable.value.subjectPicker?.subjects?.firstOrNull { it.raw == raw }?.display
             ?: LessonFormat.stripType(raw, "")
-        mutable.update {
-            it.copy(subjectPicker = null, editor = editorState(null, raw, display, "", 1, false))
-        }
+        viewModelScope.launch { showEditor(null, raw, display, "", 1, false, closePicker = true) }
     }
 
     private fun openEdit(id: Long) {
         viewModelScope.launch {
             val item = mutable.value.groups.flatMap { it.items }.firstOrNull { it.id == id } ?: return@launch
-            mutable.update {
-                it.copy(editor = editorState(id, item.subjectRaw.ifBlank { item.subject }, item.subject, item.text, item.n, true))
-            }
+            showEditor(id, item.subjectRaw.ifBlank { item.subject }, item.subject, item.text, item.n, true, closePicker = false)
         }
     }
 
-    private fun editorState(id: Long?, raw: String, display: String, text: String, n: Int, edit: Boolean): HomeworkEditorState {
+    private suspend fun showEditor(
+        id: Long?, raw: String, display: String, text: String, n: Int, edit: Boolean, closePicker: Boolean
+    ) {
+        val dueFor = withContext(Dispatchers.IO) { snapshotDue(raw, id) }
+        mutable.update {
+            it.copy(
+                subjectPicker = if (closePicker) null else it.subjectPicker,
+                editor = HomeworkEditorState(id, raw, display, text, n, edit, dueFor)
+            )
+        }
+    }
+
+    private fun snapshotDue(raw: String, id: Long?): (Int, String) -> LocalDate? {
+        val prefs = container.repo.settings()
+        val gid = prefs.myGroupId.orEmpty()
+        val c = SchedCtx(gid, prefs.periodStart, prefs.weekCount, prefs.parityInvert)
+        val all = container.repo.allForGroup(gid)
+        val today = container.clock().toLocalDate()
         val norm = Parity.normalizeSubject(raw)
-        return HomeworkEditorState(id, raw, display, text, n, edit) { target ->
-            val prefs = container.repo.settings()
-            val gid = prefs.myGroupId.orEmpty()
-            val c = SchedCtx(gid, prefs.periodStart, prefs.weekCount, prefs.parityInvert)
-            val all = container.repo.allForGroup(gid)
+        val existing = id?.let(container.homework::getById)
+        return homeworkEditorDueFor(existing, today) { from, target ->
             container.homework.dueDateIn(
                 { g, dow, parity -> all.filter { it.groupId == g && it.dayOfWeek == dow && (it.parity == parity || it.parity == 0) } },
-                c, norm, LocalDate.now(), target
+                c, existing?.norm ?: norm, from, target
             )
         }
     }
@@ -149,7 +159,10 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 if (editor.id == null) container.homework.addHomework(editor.subjectRaw, editor.text.trim(), editor.n)
-                else container.homework.updateHomework(editor.id, editor.text.trim(), editor.n)
+                else {
+                    val existing = container.homework.getById(editor.id) ?: return@withContext
+                    if (editor.hasChanges(existing)) container.homework.updateHomework(editor.id, editor.text.trim(), editor.n)
+                }
             }
             mutable.update { it.copy(editor = null) }
             container.toasts.show(container.app.getString(R.string.hw_saved), ToastKind.Ok)

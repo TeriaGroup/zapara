@@ -2,9 +2,17 @@ package ru.bgtu_voenmeh.zapara.ui.homework
 
 import ru.bgtu_voenmeh.zapara.ui.LessonFormat
 import ru.bgtu_voenmeh.zapara.ui.UiCopy
+import ru.bgtu_voenmeh.zapara.data.Homework
 import java.time.LocalDate
 
 enum class GroupStatus { Overdue, Burning, Soon, Later, Done }
+
+internal fun homeworkEditorDueFor(
+    existing: Homework?, today: LocalDate, compute: (LocalDate, Int) -> LocalDate?
+): (Int, String) -> LocalDate? = { n, text ->
+    if (existing != null && n == existing.n && text.trim() == existing.text) existing.due
+    else compute(existing?.createdAt ?: today, n)
+}
 
 data class HomeworkItemUi(
     val id: Long,
@@ -14,7 +22,9 @@ data class HomeworkItemUi(
     val status: String,
     val done: Boolean,
     val subjectRaw: String = "",
-    val n: Int = 1
+    val n: Int = 1,
+    val due: LocalDate? = null,
+    val statusLabel: String = ""
 )
 
 data class HomeworkGroupUi(
@@ -62,14 +72,15 @@ data class HomeworkEditorState(
     val text: String,
     val n: Int,
     val isEdit: Boolean,
-    val dueFor: (Int) -> LocalDate?
+    val dueFor: (Int, String) -> LocalDate?
 ) {
     val canSave: Boolean get() = text.trim().isNotEmpty()
+    fun hasChanges(existing: Homework): Boolean = text.trim() != existing.text || n != existing.n
     fun withText(value: String) = copy(text = value)
     fun inc() = copy(n = (n + 1).coerceAtMost(10))
     fun dec() = copy(n = (n - 1).coerceAtLeast(1))
     fun dueText(copy: UiCopy): String {
-        val due = dueFor(n) ?: return copy.get("hw_due_prefix", "—")
+        val due = dueFor(n, text) ?: return copy.get("hw_due_prefix", "—")
         return copy.get("hw_due_prefix", "${LessonFormat.dayMonth(due)} (${LessonFormat.weekdayShort(due, copy)})")
     }
 }

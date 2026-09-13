@@ -107,8 +107,9 @@ class HomeworkService(
         val nth = n.coerceIn(1, 10)
         val createdAt = LocalDate.parse(e.createdAt)
         val due = computeDueDate(e.subjectRawNormalized, createdAt, nth)
-        val status = computeStatus(e.subjectRawNormalized, createdAt, nth, due, false)
-        dao.update(e.copy(text = text, targetNthOccurrence = nth, dueDateComputed = due?.toString(), status = status))
+        val done = e.status == "done"
+        val status = computeStatus(e.subjectRawNormalized, createdAt, nth, due, done)
+        dao.update(e.copy(text = text, targetNthOccurrence = nth, dueDateComputed = due?.toString(), status = status, doneAt = if (done) e.doneAt else null))
         if (enqueue) {
             val ident = ensureHomeworkIdentity(id, createdAt)
             val value = HomeworkValue(

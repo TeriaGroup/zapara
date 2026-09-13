@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,10 +20,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
+import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
 import ru.bgtu_voenmeh.zapara.ui.shell.LocalShellChrome
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
@@ -42,6 +47,7 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
             if (state.hasGroup) ZIconButton(R.drawable.ic_plus, stringResource(R.string.add), { onEvent(HomeworkEvent.Add) }, "Homework.Add")
         }
         when {
+            !state.loaded -> Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
             !state.hasGroup -> EmptyState(R.drawable.ic_homework, stringResource(R.string.empty_no_group), stringResource(R.string.empty_no_group_hint), stringResource(R.string.group_pick), chrome.onGroupChip, "Empty.NoGroup")
             state.groups.isEmpty() -> EmptyState(R.drawable.ic_homework, stringResource(R.string.hw_empty_title), stringResource(R.string.hw_empty_hint), stringResource(R.string.add), { onEvent(HomeworkEvent.Add) }, "Empty.Homework")
             else -> {
@@ -64,11 +70,6 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                     }
                     if (!group.collapsed) {
                         items(group.items, key = { it.id }) { item ->
-                            val dueColor = when (group.status) {
-                                GroupStatus.Overdue -> c.bad
-                                GroupStatus.Burning -> c.warn
-                                else -> c.text2
-                            }
                             val burning = group.status == GroupStatus.Burning && !item.done
                             ZCard(
                                 onClick = { onEvent(HomeworkEvent.Edit(item.id)) },
@@ -83,9 +84,12 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                                         Text(item.subject, style = Zapara.typography.bodyStrong, color = c.text1)
                                         Text(item.text, style = Zapara.typography.body, color = if (item.done) c.text2 else c.text1, textDecoration = if (item.done) TextDecoration.LineThrough else null)
-                                        Text(item.dueLabel, style = Zapara.typography.caption, color = dueColor)
+                                        Text(item.dueLabel, style = Zapara.typography.caption, color = c.text2, modifier = Modifier.fillMaxWidth().testTag("Homework.Due.${item.id}"))
+                                        Text(item.statusLabel, style = Zapara.typography.caption, color = c.text1, modifier = Modifier.fillMaxWidth().testTag("Homework.Status.${item.id}"))
                                     }
-                                    ZSwitch(item.done, { onEvent(HomeworkEvent.ToggleDone(item.id)) }, "Homework.Done.${item.id}")
+                                    val completionLabel = stringResource(R.string.hw_completion_label, item.subject, item.text)
+                                    ZSwitch(item.done, { onEvent(HomeworkEvent.ToggleDone(item.id)) }, "Homework.Done.${item.id}",
+                                        Modifier.semantics { contentDescription = completionLabel })
                                 }
                             }
                         }

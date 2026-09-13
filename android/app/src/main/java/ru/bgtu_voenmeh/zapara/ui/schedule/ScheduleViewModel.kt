@@ -42,7 +42,9 @@ class ScheduleViewModel(
     init {
         viewModelScope.launch { bootstrap() }
         viewModelScope.launch {
-            container.events.events.collect { bootstrap() }
+            container.events.events.collect { event ->
+                if (ScheduleComposer.resetsPager(event)) bootstrap() else refreshPages()
+            }
         }
     }
 
@@ -88,7 +90,12 @@ class ScheduleViewModel(
             withContext(Dispatchers.IO) {
                 try { container.timetable.ensure() } catch (e: Exception) {
                     android.util.Log.w("ZaparaSchedule", "ensureData", e)
-                    ensureError = e.message ?: e.javaClass.simpleName
+                    ensureError = when (e) {
+                        is java.net.UnknownHostException, is java.net.SocketTimeoutException,
+                        is java.net.ConnectException -> container.app.getString(R.string.load_fail_network)
+                        else -> e.message?.takeIf { it.any { ch -> ch in '\u0400'..'\u04FF' } }
+                            ?: container.app.getString(R.string.load_fail_network)
+                    }
                 }
             }
             val now = container.clock()
@@ -123,14 +130,37 @@ class ScheduleViewModel(
         }
     }
 
+    private suspend fun refreshPages() = loadGate.withLock {
+        try {
+            val now = container.clock()
+            val today = now.toLocalDate()
+            val snap = withContext(Dispatchers.IO) {
+                val prefs = container.repo.settings()
+                val gid = prefs.myGroupId.orEmpty()
+                val all = if (gid.isEmpty()) emptyList() else container.repo.allForGroup(gid)
+                Triple(prefs, gid, all)
+            }
+            val (prefs, gid, all) = snap
+            ctx = SchedCtx(gid, prefs.periodStart, prefs.weekCount, prefs.parityInvert)
+            allLessons = all
+            val selected = mutable.value.selected
+            val dates = (mutable.value.pages.keys + selected).distinct()
+            mutable.update { it.copy(hasGroup = gid.isNotEmpty(), today = today, error = null) }
+            dates.forEach { ensurePage(it, force = true) }
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) {
+            android.util.Log.w("ZaparaSchedule", "refreshPages", e)
+        }
+    }
+
     private suspend fun ensureAround(date: LocalDate) {
         ensurePage(date)
         ensurePage(date.minusDays(1))
         ensurePage(date.plusDays(1))
     }
 
-    private suspend fun ensurePage(date: LocalDate) {
-        if (mutable.value.pages[date] != null) return
+    private suspend fun ensurePage(date: LocalDate, force: Boolean = false) {
+        if (!force && mutable.value.pages[date] != null) return
         val c = ctx ?: return
         val now = container.clock()
         val page = withContext(Dispatchers.IO) { compose(date, c, now) }
@@ -201,14 +231,16 @@ class ScheduleViewModel(
     private fun openRename(lesson: LessonUi) {
         viewModelScope.launch {
             val existing = withContext(Dispatchers.IO) {
-                container.overrides.all().any { it.subjectRawNormalized == lesson.subjectNorm }
+                val has = container.overrides.all().any { it.subjectRawNormalized == lesson.subjectNorm }
+                val note = container.overrides.noteByNorm(lesson.subjectNorm, lesson.dayOfWeek)
+                has to note
             }
             mutable.update {
                 it.copy(
                     actionsFor = null,
                     rename = RenameUi(
-                        lesson = lesson, name = lesson.name, note = "",
-                        scope = 0, hasExisting = existing,
+                        lesson = lesson, name = lesson.name, note = existing.second,
+                        scope = 0, hasExisting = existing.first,
                         original = lesson.original ?: lesson.name,
                         dayName = Parity.dayNumberToTitle(lesson.dayOfWeek)
                     )
@@ -263,7 +295,7 @@ class ScheduleViewModel(
                 homeworkEditor = HomeworkEditorState(
                     id = null, subjectRaw = lesson.subjectRaw, subjectDisplay = lesson.name,
                     text = "", n = 1, isEdit = false,
-                    dueFor = { n ->
+                    dueFor = { n, _ ->
                         if (c == null) null
                         else container.homework.dueDateIn(
                             { gid, dow, parity -> allLessons.filter { l -> l.groupId == gid && l.dayOfWeek == dow && (l.parity == parity || l.parity == 0) } },

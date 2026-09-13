@@ -24,23 +24,30 @@ object HomeworkGroups {
         }
     )
 
-    fun dueLabel(hw: Homework, today: LocalDate, copy: UiCopy): String = when {
-        hw.done || hw.status == "done" -> copy.get("hw_done")
-        hw.status == "overdue" -> copy.get("hw_overdue_since", hw.due?.let(LessonFormat::dayMonth) ?: "")
-        else -> hw.due?.let { copy.get("hw_due", LessonFormat.dayMonth(it), LessonFormat.weekdayShort(it, copy)) }
+    fun dueLabel(hw: Homework, today: LocalDate, copy: UiCopy): String =
+        hw.due?.let { copy.get("hw_due", LessonFormat.dayMonth(it), LessonFormat.weekdayShort(it, copy)) }
             ?: copy.get("hw_due_none")
-    }
+
+    fun statusLabel(status: String, done: Boolean, copy: UiCopy): String = copy.get(when {
+        done || status == "done" -> "hw_status_done"
+        status == "overdue" -> "hw_status_overdue"
+        status == "burning_urgent" -> "hw_status_urgent"
+        status == "burning" -> "hw_status_burning"
+        status == "approaching" -> "hw_status_soon"
+        else -> "hw_status_later"
+    })
 
     fun toItem(hw: Homework, subject: String, today: LocalDate, copy: UiCopy, subjectRaw: String = "") = HomeworkItemUi(
         id = hw.id, subject = subject, text = hw.text, dueLabel = dueLabel(hw, today, copy),
-        status = hw.status, done = hw.done, subjectRaw = subjectRaw, n = hw.n
+        status = hw.status, done = hw.done, subjectRaw = subjectRaw, n = hw.n, due = hw.due,
+        statusLabel = statusLabel(hw.status, hw.done, copy)
     )
 
     fun group(items: List<HomeworkItemUi>, copy: UiCopy): List<HomeworkGroupUi> {
         if (items.isEmpty()) return emptyList()
         return GroupStatus.entries.mapNotNull { status ->
             val bucket = items.filter { statusOf(it.status) == status }
-                .sortedWith(compareBy<HomeworkItemUi> { burnRank(it.status) }.thenBy { it.dueLabel })
+                .sortedWith(compareBy<HomeworkItemUi> { burnRank(it.status) }.thenBy { it.due ?: LocalDate.MAX })
             if (bucket.isEmpty()) null
             else HomeworkGroupUi(status, title(status, copy), bucket, collapsed = status == GroupStatus.Done)
         }

@@ -8,6 +8,10 @@ import ru.bgtu_voenmeh.zapara.data.db.HomeworkEntity
 import ru.bgtu_voenmeh.zapara.data.db.OverrideDao
 import ru.bgtu_voenmeh.zapara.data.db.OverrideEntity
 import java.time.LocalDate
+import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEditorState
+import ru.bgtu_voenmeh.zapara.ui.homework.homeworkEditorDueFor
+import ru.bgtu_voenmeh.zapara.ui.LessonFormat
+import ru.bgtu_voenmeh.zapara.ui.XmlCopy
 
 class FakeOverrideDao : OverrideDao {
     val items = mutableListOf<OverrideEntity>()
@@ -32,6 +36,8 @@ class FakeOverrideDao : OverrideDao {
 
 class FakeHomeworkDao : HomeworkDao {
     val items = mutableListOf<HomeworkEntity>()
+    var updateCalls = 0
+        private set
     private var seq = 1L
     override fun getAll(): List<HomeworkEntity> = items.sortedBy { it.dueDateComputed }.toList()
     override fun getById(id: Long): HomeworkEntity? = items.firstOrNull { it.id == id }
@@ -41,6 +47,7 @@ class FakeHomeworkDao : HomeworkDao {
         return id
     }
     override fun update(e: HomeworkEntity) {
+        updateCalls++
         val i = items.indexOfFirst { it.id == e.id }
         if (i >= 0) items[i] = e
     }
@@ -82,6 +89,80 @@ class HomeworkServiceTest {
         ctx = { ctx }
     )
 
+    @Test fun stale_due_text_only_preview_matches_real_save() = checkEditedPreview("2026-09-02")
+
+    @Test fun null_due_text_only_preview_matches_real_save() = checkEditedPreview(null)
+
+    private fun checkEditedPreview(storedDue: String?) {
+        val dao = FakeHomeworkDao()
+        val service = svc(dao)
+        val created = LocalDate.of(2026, 9, 1)
+        val today = LocalDate.of(2026, 9, 12)
+        val id = service.addHomework("лек ВЫСШ. МАТЕМАТ", "§5", 1, created)
+        dao.update(requireNotNull(dao.getById(id)).copy(dueDateComputed = storedDue))
+        val stored = requireNotNull(service.getById(id))
+        fun open(): HomeworkEditorState {
+            val current = requireNotNull(service.getById(id))
+            return HomeworkEditorState(id, current.norm, current.norm, current.text, current.n, true,
+                homeworkEditorDueFor(current, today) { from, n -> service.computeDueDate(current.norm, from, n) })
+        }
+        fun label(due: LocalDate?) = if (due == null) "Срок: —" else
+            "Срок: ${LessonFormat.dayMonth(due)} (${LessonFormat.weekdayShort(due, XmlCopy)})"
+        val copy = XmlCopy
+        val opened = open()
+        val writes = dao.updateCalls
+        val changed = opened.withText("  §6 \n")
+        // Discard the edited state and reopen, just like Cancel: no save path executed.
+        assertEquals(label(stored.due), open().dueText(copy))
+        assertEquals(stored, service.getById(id))
+        assertEquals(writes, dao.updateCalls)
+        for (noop in listOf(opened, opened.withText("  §5 \n"), opened.inc().dec(), changed.withText("§5"), changed.inc().withText("§5").dec())) {
+            assertEquals(label(stored.due), noop.dueText(copy))
+            assertEquals(false, noop.hasChanges(stored))
+            if (noop.hasChanges(stored)) service.updateHomework(id, noop.text.trim(), noop.n)
+        }
+        assertEquals(writes, dao.updateCalls)
+        assertEquals(stored, service.getById(id))
+        assertEquals(LocalDate.of(2026, 9, 7), service.computeDueDate(stored.norm, created, 1))
+        assertEquals(LocalDate.of(2026, 9, 14), service.computeDueDate(stored.norm, today, 1))
+        for (edited in listOf(changed, changed.inc().dec(), opened.inc(), changed.inc(), changed.inc().withText("§5"))) {
+            assertTrue(edited.hasChanges(stored))
+            val preview = edited.dueText(copy)
+            service.updateHomework(id, edited.text.trim(), edited.n)
+            val saved = requireNotNull(service.getById(id))
+            assertEquals(label(saved.due), preview)
+            assertEquals(created, saved.createdAt)
+            assertEquals(stored.norm, saved.norm)
+            assertEquals(edited.text.trim(), saved.text)
+            assertEquals(edited.n, saved.n)
+        }
+    }
+
+    @Test fun new_editor_preview_matches_real_add_from_today() {
+        val service = svc()
+        val today = LocalDate.of(2026, 9, 12)
+        val raw = "лек ВЫСШ. МАТЕМАТ"
+        val norm = Parity.normalizeSubject(raw)
+        val editor = HomeworkEditorState(null, raw, raw, "§6", 1, false,
+            homeworkEditorDueFor(null, today) { from, n -> service.computeDueDate(norm, from, n) })
+        assertEquals("Срок: 14.09 (Пн)", editor.dueText(XmlCopy))
+        val id = service.addHomework(raw, editor.text, editor.n, today)
+        assertEquals(editor.dueFor(editor.n, editor.text), service.getById(id)?.due)
+        assertEquals(today, service.getById(id)?.createdAt)
+    }
+
+    @Test fun unavailable_schedule_text_edit_preview_and_real_save_remain_null() {
+        val service = HomeworkService(FakeHomeworkDao(), { _, _, _ -> emptyList() }, { ctx })
+        val today = LocalDate.of(2026, 9, 12)
+        val id = service.addHomework("лек ВЫСШ. МАТЕМАТ", "§5", 1, today.minusDays(11))
+        val stored = requireNotNull(service.getById(id))
+        val editor = HomeworkEditorState(id, stored.norm, stored.norm, stored.text, stored.n, true,
+            homeworkEditorDueFor(stored, today) { from, n -> service.computeDueDate(stored.norm, from, n) }).withText("§6")
+        assertEquals("Срок: —", editor.dueText(XmlCopy))
+        service.updateHomework(id, editor.text, editor.n)
+        assertEquals(null, service.getById(id)?.due)
+    }
+
     @Test
     fun dueN2() {
         val s = svc()
@@ -117,9 +198,65 @@ class HomeworkServiceTest {
         assertEquals("с. 10 № 5", list[0].text)
         s.markDone(id, true)
         assertEquals("done", dao.getById(id)!!.status)
+        s.updateHomework(id, "с. 10 № 5, правка", 2)
+        val after = dao.getById(id)!!
+        assertEquals("с. 10 № 5, правка", after.text)
+        assertEquals("done", after.status)
         s.markDone(id, false)
         assertTrue(dao.getById(id)!!.status != "done")
         s.delete(id)
         assertTrue(dao.items.isEmpty())
+    }
+
+    @Test fun unchanged_schedule_save_and_completion_preserve_due_and_creation() {
+        val dao = FakeHomeworkDao()
+        val service = svc(dao)
+        val created = LocalDate.of(2026, 9, 1)
+        val id = service.addHomework("лек ВЫСШ. МАТЕМАТ", "§5", 1, created)
+        val original = requireNotNull(service.getById(id))
+        for (done in listOf(true, false)) {
+            service.markDone(id, done)
+            val toggled = requireNotNull(service.getById(id))
+            assertEquals(original.due, toggled.due)
+            assertEquals(created, toggled.createdAt)
+            service.updateHomework(id, original.text, original.n)
+            assertEquals(original.due, service.getById(id)?.due)
+        }
+    }
+
+    @Test fun audit_september_02_vs_14_preview_and_unchanged_save_regression() {
+        val dao = FakeHomeworkDao()
+        val norm = lessons.first().subjectNormalized
+        val daily = HomeworkService(dao, { _, _, _ -> listOf(lessons.first()) }, { ctx })
+        val created = LocalDate.of(2026, 9, 1)
+        val today = LocalDate.of(2026, 9, 12)
+        val id = daily.addHomework(lessons.first().subjectRaw, "§5", 1, created)
+        val original = requireNotNull(daily.getById(id))
+        assertEquals(LocalDate.of(2026, 9, 2), original.due)
+        // The old VM always passed today: reproduce the exact audit discrepancy without Room.
+        assertEquals(LocalDate.of(2026, 9, 14), daily.computeDueDate(norm, today, 1))
+        val preview = homeworkEditorDueFor(original, today) { from, n -> daily.computeDueDate(norm, from, n) }
+        val editor = HomeworkEditorState(id, norm, norm, original.text, 1, true, preview)
+        assertEquals(original.due, editor.dueFor(editor.n, editor.text))
+        if (editor.hasChanges(original)) daily.updateHomework(id, editor.text.trim(), editor.n)
+        assertEquals(original, daily.getById(id))
+    }
+
+    @Test fun stale_cached_due_is_preserved_on_unchanged_editor_but_domain_recalculates_on_real_edit() {
+        val dao = FakeHomeworkDao()
+        val service = svc(dao)
+        val id = service.addHomework("лек ВЫСШ. МАТЕМАТ", "§5", 1, LocalDate.of(2026, 9, 1))
+        val original = requireNotNull(service.getById(id))
+        val row = requireNotNull(dao.getById(id))
+        dao.update(row.copy(dueDateComputed = null, status = "pending"))
+        val pending = requireNotNull(service.getById(id))
+        val editor = HomeworkEditorState(id, pending.norm, pending.norm, pending.text, pending.n, true,
+            homeworkEditorDueFor(pending, LocalDate.of(2026, 9, 12)) { from, n -> service.computeDueDate(pending.norm, from, n) })
+        if (editor.hasChanges(pending)) service.updateHomework(id, editor.text.trim(), editor.n)
+        assertEquals(pending, service.getById(id))
+        assertEquals(null, editor.dueFor(editor.n, editor.text))
+        // Existing domain behavior, NOT fixed here: a real edit recomputes from current schedule.
+        service.updateHomework(id, "§6", pending.n)
+        assertEquals(original.due, service.getById(id)?.due)
     }
 }
