@@ -88,12 +88,13 @@ class ScheduleViewModel(
         try {
             var ensureError: String? = null
             withContext(Dispatchers.IO) {
-                try { container.timetable.ensure() } catch (e: Exception) {
-                    android.util.Log.w("ZaparaSchedule", "ensureData", e)
-                    ensureError = when (e) {
+                try { container.timetable.ensure() } catch (t: Throwable) {
+                    if (t is CancellationException) throw t
+                    android.util.Log.w("ZaparaSchedule", "ensureData", t)
+                    ensureError = when (t) {
                         is java.net.UnknownHostException, is java.net.SocketTimeoutException,
                         is java.net.ConnectException -> container.app.getString(R.string.load_fail_network)
-                        else -> e.message?.takeIf { it.any { ch -> ch in '\u0400'..'\u04FF' } }
+                        else -> t.message?.takeIf { it.any { ch -> ch in '\u0400'..'\u04FF' } }
                             ?: container.app.getString(R.string.load_fail_network)
                     }
                 }
@@ -124,9 +125,11 @@ class ScheduleViewModel(
             }
             if (gid.isNotEmpty()) ensureAround(selected)
         } catch (e: CancellationException) { throw e }
-        catch (e: Exception) {
-            android.util.Log.w("ZaparaSchedule", "bootstrap", e)
-            mutable.update { it.copy(loaded = true, error = e.message) }
+        catch (t: Throwable) {
+            android.util.Log.e("ZaparaSchedule", "bootstrap", t)
+            val message = t.message?.takeIf { it.any { ch -> ch in '\u0400'..'\u04FF' } }
+                ?: container.app.getString(R.string.load_fail)
+            mutable.update { it.copy(loaded = true, error = message) }
         }
     }
 

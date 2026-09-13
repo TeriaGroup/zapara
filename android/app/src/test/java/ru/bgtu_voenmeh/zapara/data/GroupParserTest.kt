@@ -50,4 +50,16 @@ class GroupParserTest {
         assertEquals("", empty.teacherRaw)
         assertEquals("", empty.classroomRaw)
     }
+
+    @Test
+    fun bundledAssetParses() {
+        val file = java.io.File("src/main/assets/TimetableGroup50.xml")
+        org.junit.Assume.assumeTrue(file.isFile)
+        file.inputStream().use { stream ->
+            val parsed = GroupParser.parse(stream)
+            assertTrue(parsed.groups.size > 100)
+            assertTrue(parsed.lessons.size > 1000)
+            assertEquals(LocalDate.of(2026, 9, 1), parsed.periodStart)
+        }
+    }
 }

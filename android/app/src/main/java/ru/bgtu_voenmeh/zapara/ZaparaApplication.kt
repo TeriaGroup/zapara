@@ -39,7 +39,12 @@ class ZaparaApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        host = AndroidProfileHost(this)
+        host = try {
+            AndroidProfileHost(this)
+        } catch (t: Throwable) {
+            android.util.Log.e("ZaparaApp", "host", t)
+            throw t
+        }
     }
 }
 
@@ -146,7 +151,7 @@ class AppContainer(
     private val readAccessToken: (suspend () -> String?)? = null,
     private val syncHttp: PrivateSyncHttpClient? = null
 ) {
-    val timetable = TimetableSource(api, repo.store) { repo.refresh() }
+    val timetable = TimetableSource(api, repo.store, { repo.refresh() }) { repo.applyBundled(app) }
     var closed: Boolean = false
         private set
     val outbox = RoomSyncOutbox.from(db, enabled = !profile.isGuest)

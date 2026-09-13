@@ -1,11 +1,14 @@
 package ru.bgtu_voenmeh.zapara.data.api
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import ru.bgtu_voenmeh.zapara.data.GroupInfo
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork
 import java.time.LocalDate
 
@@ -18,7 +21,7 @@ class TimetableSourceTest {
         }
         val store = MemoryTimetableStore()
         val api = ApiRefreshCoordinator(store, ProfileWork(), "https://example.invalid/", http)
-        val source = TimetableSource(api, store) { xml++ }
+        val source = TimetableSource(api, store, { xml++ })
         source.ensure()
         assertTrue(http.requests.isNotEmpty())
         assertEquals(0, xml)
@@ -40,13 +43,63 @@ class TimetableSourceTest {
     }
 
     @Test
+    fun ensure_uses_bundled_snapshot_before_network() = runBlocking {
+        var xml = 0
+        val http = FakeHttp { error("no http") }
+        val store = MemoryTimetableStore()
+        val api = ApiRefreshCoordinator(store, ProfileWork(), "https://example.invalid/", http)
+        val source = TimetableSource(api, store, { xml++ }) {
+            store.upsertGroup(GroupInfo("1", "A"))
+            true
+        }
+        source.ensure()
+        assertEquals(0, xml)
+        assertTrue(http.requests.isEmpty())
+        assertEquals("A", store.groups().single().name)
+    }
+
+    @Test
+    fun ensure_continues_when_bundled_throws() = runBlocking {
+        var xml = 0
+        val http = FakeHttp { call ->
+            jsonReply(if (call.url.substringBefore('?').endsWith("/groups")) catalogJson() else scheduleJson())
+        }
+        val store = MemoryTimetableStore()
+        val api = ApiRefreshCoordinator(store, ProfileWork(), "https://example.invalid/", http)
+        val source = TimetableSource(api, store, { xml++ }) { error("boom") }
+        source.ensure()
+        assertTrue(http.requests.isNotEmpty())
+        assertEquals(0, xml)
+    }
+
+    @Test
+    fun ensure_propagates_bundled_cancellation_without_network_fallback() = runBlocking {
+        var xml = 0
+        val http = FakeHttp { call ->
+            jsonReply(if (call.url.substringBefore('?').endsWith("/groups")) catalogJson() else scheduleJson())
+        }
+        val store = MemoryTimetableStore()
+        val api = ApiRefreshCoordinator(store, ProfileWork(), "https://example.invalid/", http)
+        val cancelled = CancellationException("fixture cancellation")
+        val source = TimetableSource(api, store, { xml++ }) { throw cancelled }
+        try {
+            source.ensure()
+            fail("Bundled cancellation must propagate")
+        } catch (e: CancellationException) {
+            assertSame(cancelled, e)
+        }
+        assertTrue(http.requests.isEmpty())
+        assertEquals(0, xml)
+    }
+
+    @Test
     fun university_xml_flag_allows_xml_and_skips_json() = runBlocking {
         var xml = 0
         val http = FakeHttp { jsonReply(catalogJson()) }
         val store = MemoryTimetableStore()
         store.saveSettings(store.settings().copy(useUniversityXml = true, myGroupId = "a"))
         val api = ApiRefreshCoordinator(store, ProfileWork(), "https://example.invalid/", http)
-        val source = TimetableSource(api, store) { xml++ }
+        val source = TimetableSource(api, store, { xml++ })
         assertTrue(source.pull())
         assertEquals(1, xml)
         assertTrue(http.requests.isEmpty())
