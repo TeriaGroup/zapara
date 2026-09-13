@@ -126,8 +126,6 @@ INSERT OR IGNORE INTO settings (id, parityInvert, intersectionStrictness, weekCo
         TryAddColumn("settings", "alwaysShowAllTrafficLights", "INTEGER NOT NULL DEFAULT 0");
         TryAddColumn("settings", "autoUpdate", "INTEGER NOT NULL DEFAULT 1");
         PrivateSyncSchema.Ensure(_conn);
-        // Migrate old strictness 50 (old default) to 25 (new default = "в вузе" visible) — buildings are close, red for "в вузе" was confusing
-        try { using var c = _conn.CreateCommand(); c.CommandText = "UPDATE settings SET intersectionStrictness=25 WHERE intersectionStrictness=50"; c.ExecuteNonQuery(); } catch {}
     }
 
     private void TryAddColumn(string table, string column, string definition)
