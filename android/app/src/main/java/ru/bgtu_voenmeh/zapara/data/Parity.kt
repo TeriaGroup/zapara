@@ -2,21 +2,19 @@ package ru.bgtu_voenmeh.zapara.data
 
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
-import kotlin.math.ceil
 
-// Port of Vograph.Core ParityService. Week containing September 1 = week 1 = odd.
 object Parity {
 
-    fun mondayOfWeekContainingStart(periodStart: LocalDate): LocalDate {
-        val dow = periodStart.dayOfWeek.value // Monday=1 .. Sunday=7
-        return periodStart.minusDays((dow - 1).toLong())
+    fun mondayOf(date: LocalDate): LocalDate {
+        val dow = date.dayOfWeek.value
+        return date.minusDays((dow - 1).toLong())
     }
 
+    fun mondayOfWeekContainingStart(periodStart: LocalDate): LocalDate = mondayOf(periodStart)
+
     fun weekNumber(date: LocalDate, periodStart: LocalDate): Int {
-        val monday = mondayOfWeekContainingStart(periodStart)
-        var days = ceil(ChronoUnit.DAYS.between(monday, date).toDouble()).toInt()
-        if (days < 1) days = 1
-        return maxOf(1, ceil(days / 7.0).toInt())
+        val weeks = ChronoUnit.WEEKS.between(mondayOf(periodStart), mondayOf(date)).toInt()
+        return maxOf(1, weeks + 1)
     }
 
     fun weekCode(date: LocalDate, periodStart: LocalDate, weekCount: Int = 2): Int {

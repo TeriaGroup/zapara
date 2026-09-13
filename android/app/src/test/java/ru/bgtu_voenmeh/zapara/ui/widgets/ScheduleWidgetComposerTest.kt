@@ -51,11 +51,10 @@ class ScheduleWidgetComposerTest {
         assertEquals("Расписание", snap.title)
         assertEquals("Гость · А863С", snap.subtitle)
         assertTrue(snap.empty == null)
-        assertEquals(2, snap.rows.size)
+        assertEquals(1, snap.rows.size)
         assertEquals("Матан", snap.rows[0].name)
         assertEquals("09:00 – 10:35 · 493 ГК", snap.rows[0].meta)
         assertFalse(snap.rows[0].isPast)
-        assertEquals("ОСН РОС ГОС", snap.rows[1].name)
         assertTrue(WidgetJobs.accept(snap.identity, guestId))
     }
 

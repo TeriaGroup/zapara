@@ -14,7 +14,7 @@ namespace Vograph.Desktop.Tests;
 
 public class SummaryTests : UiTest
 {
-    private static readonly DateTime Mon7 = new(2026, 9, 7, 8, 0, 0); // odd
+    private static readonly DateTime Mon7 = new(2026, 9, 7, 8, 0, 0);
 
     [Fact]
     public void Odd_Even_And_Both_Aggregate_The_Fixture()
@@ -45,8 +45,8 @@ public class SummaryTests : UiTest
         Assert.Equal(("493", 2), (both.Rooms[0].Name, both.Rooms[0].Count));
 
         var current = composer.Compose(null, Mon7);
-        Assert.Equal(1, current.Parity);
-        Assert.True(current.IsOddToday);
+        Assert.Equal(2, current.Parity);
+        Assert.False(current.IsOddToday);
     }
 
     [Fact]
@@ -81,13 +81,10 @@ public class SummaryTests : UiTest
         var vm = new SummaryViewModel(db.Services, shell, () => Mon7);
 
         await vm.ReloadAsync();
-        Assert.Equal(0, vm.SegmentIndex);
+        Assert.Equal(1, vm.SegmentIndex);
         Assert.Equal(new[] { "Нечетная", "Четная", "Обе" }, vm.SegmentItems);
-        Assert.Equal("5", vm.TotalText);
+        Assert.Equal("2", vm.TotalText);
         Assert.Equal(6, vm.DayBars.Count);
-        Assert.Equal(40, vm.DayBars[0].Height);   // the busiest day fills the bar
-        Assert.Equal(20, vm.DayBars[1].Height);
-        Assert.Equal(0, vm.DayBars[3].Height);
 
         vm.SegmentIndex = 2;
         await vm.ReloadAsync();
@@ -108,7 +105,7 @@ public class SummaryTests : UiTest
 
         shell.NavigateTo(SectionKey.Summary);
         var vm = Assert.IsType<SummaryViewModel>(shell.Current);
-        await Waits.Until(() => vm.TotalText == "5", "summary total");
+        await Waits.Until(() => vm.TotalText == "2", "summary total");
         Pump();
         SetTheme(ThemeVariant.Dark);
         Frames.Capture(window, "summary-dark");

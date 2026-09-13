@@ -20,11 +20,11 @@ public class DomainTests
     }
 
     [Theory]
-    [InlineData("2026-09-07", false, 1, true)]   // Mon 07.09 — odd
-    [InlineData("2026-09-07", true, 2, false)]   // the same day inverted: XML code 2, shown as even
-    [InlineData("2026-09-08", false, 2, false)]  // Tue 08.09 — even
-    [InlineData("2026-09-08", true, 1, true)]
-    [InlineData("2026-09-06", false, 1, true)]   // Sun 06.09 belongs to the Tue..Mon odd week
+        [InlineData("2026-09-07", false, 2, false)]
+        [InlineData("2026-09-07", true, 1, true)]
+        [InlineData("2026-09-08", false, 2, false)]
+        [InlineData("2026-09-08", true, 1, true)]
+        [InlineData("2026-09-06", false, 1, true)]
     public void WeekCode_And_IsOdd_Apply_The_Inversion(string date, bool invert, int code, bool odd)
     {
         var s = new Settings { PeriodStart = "2026-09-01", WeekCount = 2, ParityInvert = invert };

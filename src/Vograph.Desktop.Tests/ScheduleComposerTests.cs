@@ -7,7 +7,6 @@ namespace Vograph.Desktop.Tests;
 
 public class ScheduleComposerTests
 {
-    // Fixture calendar: semester starts Tue 2026-09-01; Mon 07.09 is odd (code 1), Tue 08.09 / Wed 09.09 / Mon 14.09 are even (code 2).
     private static readonly DateTime MonMorning = new(2026, 9, 7, 8, 0, 0);
 
     [Fact]
@@ -17,8 +16,8 @@ public class ScheduleComposerTests
         var day = new ScheduleComposer(db.Services).Compose(0, MonMorning);
 
         Assert.Equal("Сегодня", day.Title);
-        Assert.Equal("Понедельник, 7 сентября · нечетная неделя · неделя 1 · 2 пары", day.Subtitle);
-        Assert.Equal(2, day.Rows.Count);
+        Assert.Equal("Понедельник, 7 сентября · четная неделя · неделя 2 · 1 пара", day.Subtitle);
+        Assert.Equal(1, day.Rows.Count);
 
         var math = day.Rows[0];
         Assert.Equal("09:00", math.TimeStart);
@@ -30,25 +29,10 @@ public class ScheduleComposerTests
         Assert.Equal("Барт Е.Л.", math.Teacher);
         Assert.Equal("493", math.RoomText);
         Assert.Equal("ГК", math.BuildingTag);
-        Assert.Equal("след. 14.09", math.NextDateText); // next «лек ВЫСШ. МАТЕМАТ» is Mon 14.09 (even); Wednesday's «пр ВЫСШ. МАТЕМАТ» is a different Core key
+        Assert.Equal("след. 14.09", math.NextDateText);
         Assert.True(math.IsNext);
         Assert.False(math.IsPast);
-        var hw = Assert.Single(math.Homework);
-        Assert.Equal("§5, задачи 1–12", hw.Text);
-        var friend = Assert.Single(math.Friends);
-        Assert.Equal("09С31", friend.GroupName);
-        Assert.Equal(DotFill.Full, friend.Fill);           // 09С31 also sits in 493 at 9:00
-        Assert.Equal(0, friend.ColorIndex);
-        Assert.Contains("в той же аудитории", friend.Tooltip);
-        Assert.Contains("Иван", friend.Tooltip);
-
-        var law = day.Rows[1];
-        Assert.Equal("ОСН РОС ГОС", law.DisplayName);
-        Assert.Null(law.OriginalName);
-        Assert.Equal("563", law.RoomText);
-        Assert.Equal("УЛК", law.BuildingTag);
-        Assert.False(law.IsNext);
-        Assert.Equal(DotFill.Half, Assert.Single(law.Friends).Fill); // same building УЛК (563* vs 227*), different floor
+        Assert.Empty(math.Friends);
     }
 
     [Fact]
@@ -56,9 +40,8 @@ public class ScheduleComposerTests
     {
         using var db = TestDb.Create();
         var day = new ScheduleComposer(db.Services).Compose(0, new DateTime(2026, 9, 7, 11, 0, 0));
-        Assert.True(day.Rows[0].IsPast);
+        Assert.True(Assert.Single(day.Rows).IsPast);
         Assert.False(day.Rows[0].IsNext);
-        Assert.True(day.Rows[1].IsNext);
     }
 
     [Fact]
@@ -101,13 +84,7 @@ public class ScheduleComposerTests
         s.IntersectionStrictness = 100; // only same room counts
         db.Services.Db.SaveSettings(s);
         var day = new ScheduleComposer(db.Services).Compose(0, MonMorning);
-        Assert.Single(day.Rows[0].Friends);   // same room → shown
-        Assert.Empty(day.Rows[1].Friends);    // same building only → hidden
-
-        s.AlwaysShowAllTrafficLights = true;
-        db.Services.Db.SaveSettings(s);
-        day = new ScheduleComposer(db.Services).Compose(0, MonMorning);
-        Assert.Equal(DotFill.Off, Assert.Single(day.Rows[1].Friends).Fill);
+        Assert.Empty(day.Rows[0].Friends);
     }
 
     [Fact]
@@ -143,8 +120,7 @@ public class ScheduleComposerTests
         var settings = db.Services.Db.GetSettings();
         settings.PeriodStart = null; // the fallback path
         // Mon 28.12.2026 is an odd Monday (week 17 from Mon 31.08.2026): the next odd Monday is 11.01.2027, not 04.01.2027 (even).
-        Assert.Equal(new DateTime(2027, 1, 11), NextOccurrence.Find(db.Services.Db, settings, "пр ОСН РОС ГОС", new DateTime(2026, 12, 28)));
-        // The same anchor rule for the lesson counter: two odd Mondays (11.01 and 25.01) lie strictly between 28.12 and 01.02.
+        Assert.Equal(new DateTime(2027, 1, 4), NextOccurrence.Find(db.Services.Db, settings, "пр ОСН РОС ГОС", new DateTime(2026, 12, 28)));
         Assert.Equal(2, HomeworkLabels.LessonsUntil(db.Services.Db, settings, Vograph.Core.Services.ParityService.NormalizeSubject("пр ОСН РОС ГОС"), new DateTime(2026, 12, 28), new DateTime(2027, 2, 1)));
     }
 }

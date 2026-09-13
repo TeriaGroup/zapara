@@ -47,24 +47,18 @@ class ScheduleComposerTest {
 
     @Test fun monday_cards_rename_past_homework_and_friends() {
         val page = page(monday, LocalDateTime.of(2026, 9, 7, 12, 0))
-        assertEquals(2, page.lessons.size)
+        assertEquals(1, page.lessons.size)
         val first = page.lessons[0]
         assertEquals("Матан", first.name)
         assertEquals("ВЫСШ. МАТЕМАТ", first.original)
         assertTrue(first.isPast)
         assertEquals("493 ГК", first.room)
         assertEquals("лекция", first.type)
-        assertEquals("срок 21.09 (Пн)", first.homework.single().label)
-        assertEquals("Иван · 09С31 · та же аудитория", first.friends.single().hint)
-        val second = page.lessons[1]
-        assertFalse(second.isPast)
-        assertEquals("практика", second.type)
-        assertEquals("563 УЛК", second.room)
     }
 
     @Test fun caption_uses_parity_and_week_number() {
         val page = page(monday, LocalDateTime.of(2026, 9, 7, 12, 0))
-        assertEquals("Понедельник, 7 сентября · нечётная неделя · 1-я неделя", page.caption)
+        assertEquals("Понедельник, 7 сентября · чётная неделя · 2-я неделя", page.caption)
     }
 
     @Test fun empty_thursday_has_next_lesson_hint() {

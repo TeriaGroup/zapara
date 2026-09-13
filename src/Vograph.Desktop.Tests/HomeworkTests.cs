@@ -63,11 +63,12 @@ public class HomeworkTests : UiTest
         Assert.Equal(new[] { "burning", "far", "done" }, model.Groups.Select(g => g.Status));
         Assert.Equal(new[] { "Горит", "Далеко", "Сдано" }, model.Groups.Select(g => g.Title));
         var burning = model.Groups[0].Items;
-        Assert.Equal(new[] { "Матан", "ОСН РОС ГОС" }, burning.Select(i => i.Subject).OrderBy(s => s)); // renamed + stripped
+        Assert.Equal(new[] { "Матан" }, burning.Select(i => i.Subject).OrderBy(s => s).ToArray());
         Assert.All(burning, i => Assert.Equal("горит завтра", i.Label));
-        var far = Assert.Single(model.Groups[1].Items);
-        Assert.Equal(("ИСТОРИЯ", "лек ИСТОРИЯ", history), (far.Subject, far.SubjectRaw, far.Homework.Id));
-        Assert.Equal("срок 16.09", far.Label);
+        var far = model.Groups[1].Items;
+        Assert.Equal(2, far.Count);
+        Assert.Contains(far, i => i.Subject == "ИСТОРИЯ" && i.SubjectRaw == "лек ИСТОРИЯ" && i.Homework.Id == history);
+        Assert.Contains(far, i => i.Subject == "ОСН РОС ГОС" && i.Label == "срок 14.09");
         Assert.Equal("сдано", Assert.Single(model.Groups[2].Items).Label);
 
         var subjects = new HomeworkComposer(db.Services).Subjects();

@@ -2,47 +2,32 @@ namespace Vograph.Core.Services;
 
 public static class ParityService
 {
-    // Spec: week containing September 1 is week 1 = odd. Alternate thereafter.
-    // Studs.js: start = Period StartYear/Month/Day, align to Monday of that week, then weeks = ceil((today - monday)/86400000) /7
+    public static DateTime MondayOf(DateTime date)
+    {
+        var start = date.Date;
+        int dow = (int)start.DayOfWeek;
+        if (dow == 0) dow = 7;
+        return start.AddDays(-(dow - 1));
+    }
+
     public static bool IsOddWeek(DateTime date, DateTime periodStart, int weekCount, bool invert)
     {
-        // Align periodStart to Monday
-        var start = periodStart.Date;
-        int dow = (int)start.DayOfWeek;
-        if (dow == 0) dow = 7; // Sunday 0 -> 7
-        var monday = start.AddDays(-(dow - 1)).Date; // Monday of week containing Sep 1
-
-        var target = date.Date;
-        int days = (int)Math.Ceiling((target - monday).TotalDays);
-        if (days < 1) days = 1;
-        int weekCode = (int)Math.Ceiling(days / 7.0) % weekCount;
-        if (weekCode == 0) weekCode = weekCount;
+        int weekCode = GetWeekCode(date, periodStart, weekCount);
         bool isOdd = weekCode == 1;
         return invert ? !isOdd : isOdd;
     }
 
     public static int GetWeekCode(DateTime date, DateTime periodStart, int weekCount)
     {
-        var start = periodStart.Date;
-        int dow = (int)start.DayOfWeek;
-        if (dow == 0) dow = 7;
-        var monday = start.AddDays(-(dow - 1)).Date;
-        int days = (int)Math.Ceiling((date.Date - monday).TotalDays);
-        if (days < 1) days = 1;
-        int weekCode = (int)Math.Ceiling(days / 7.0) % weekCount;
+        int weekCode = GetWeekNumber(date, periodStart) % weekCount;
         if (weekCode == 0) weekCode = weekCount;
         return weekCode;
     }
 
     public static int GetWeekNumber(DateTime date, DateTime periodStart)
     {
-        var start = periodStart.Date;
-        int dow = (int)start.DayOfWeek;
-        if (dow == 0) dow = 7;
-        var monday = start.AddDays(-(dow - 1)).Date;
-        int days = (int)Math.Ceiling((date.Date - monday).TotalDays);
-        if (days < 1) days = 1;
-        int weekNumber = (int)Math.Ceiling(days / 7.0);
+        int weeks = (int)((MondayOf(date) - MondayOf(periodStart)).TotalDays / 7);
+        int weekNumber = weeks + 1;
         if (weekNumber < 1) weekNumber = 1;
         return weekNumber;
     }

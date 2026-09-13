@@ -16,8 +16,11 @@ class ParityTest {
         val cases = listOf(
             Triple(LocalDate.of(2026, 9, 1), 1 to 1, true),
             Triple(LocalDate.of(2026, 9, 3), 1 to 1, true),
-            Triple(LocalDate.of(2026, 9, 4), 1 to 1, true),
+            Triple(LocalDate.of(2026, 9, 6), 1 to 1, true),
+            Triple(LocalDate.of(2026, 9, 7), 2 to 2, false),
             Triple(LocalDate.of(2026, 9, 8), 2 to 2, false),
+            Triple(LocalDate.of(2026, 9, 13), 2 to 2, false),
+            Triple(LocalDate.of(2026, 9, 14), 3 to 1, true),
             Triple(LocalDate.of(2026, 9, 15), 3 to 1, true)
         )
         for ((date, wnCode, odd) in cases) {
