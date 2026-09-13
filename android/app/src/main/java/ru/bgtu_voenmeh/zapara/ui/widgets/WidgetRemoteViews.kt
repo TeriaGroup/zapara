@@ -107,8 +107,8 @@ object WidgetRemoteViews {
 
     private fun openApp(context: Context, request: Int, section: String): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("zapara.section", section)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(MainActivity.SECTION_EXTRA, section)
         }
         return PendingIntent.getActivity(
             context,

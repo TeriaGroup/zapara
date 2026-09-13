@@ -126,7 +126,11 @@ object Notifications {
                 noLessonsText = appCtx.getString(R.string.notification_no_lessons)
             )
             val openApp = PendingIntent.getActivity(
-                appCtx, 0, Intent(appCtx, MainActivity::class.java),
+                appCtx, 0,
+                Intent(appCtx, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    putExtra(MainActivity.SECTION_EXTRA, "schedule")
+                },
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             val title = appCtx.getString(R.string.notification_title)
@@ -136,6 +140,7 @@ object Notifications {
                 .setStyle(android.app.Notification.BigTextStyle().bigText(text))
                 .setSmallIcon(android.R.drawable.ic_menu_today)
                 .setContentIntent(openApp)
+                .setVisibility(android.app.Notification.VISIBILITY_PRIVATE)
                 .setAutoCancel(true)
                 .build()
             val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

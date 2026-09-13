@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -35,6 +36,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ru.bgtu_voenmeh.zapara.AppContainer
+import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ZaparaApplication
 import ru.bgtu_voenmeh.zapara.ui.account.AccountViewModel
 import ru.bgtu_voenmeh.zapara.ui.communities.CommunitiesSection
@@ -66,7 +68,7 @@ import ru.bgtu_voenmeh.zapara.ui.week.WeekViewModel
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun ZaparaApp(container: AppContainer) {
+fun ZaparaApp(container: AppContainer, startSection: String? = null) {
     val activity = LocalContext.current as ComponentActivity
     val app = activity.application as? ZaparaApplication
     val genFlow = app?.host?.generation ?: remember { MutableStateFlow(0L) }
@@ -74,7 +76,7 @@ fun ZaparaApp(container: AppContainer) {
     key(generation) {
         val live = app?.container ?: container
         val owner = app?.host ?: activity
-        ZaparaAppBody(live, activity, owner, app?.host)
+        ZaparaAppBody(live, activity, owner, app?.host, startSection)
     }
 }
 
@@ -84,7 +86,8 @@ private fun ZaparaAppBody(
     container: AppContainer,
     activity: ComponentActivity,
     owner: androidx.lifecycle.ViewModelStoreOwner,
-    host: ru.bgtu_voenmeh.zapara.AndroidProfileHost?
+    host: ru.bgtu_voenmeh.zapara.AndroidProfileHost?,
+    startSection: String? = null
 ) {
     val shellVm: ShellViewModel = viewModel(owner, factory = ShellViewModel.factory(container))
     val state by shellVm.state.collectAsStateWithLifecycle()
@@ -96,11 +99,14 @@ private fun ZaparaAppBody(
         val nav = rememberNavController()
         val entry by nav.currentBackStackEntryAsState()
         val current = Section.byRoute(entry?.destination?.route) ?: Section.Schedule
+        LaunchedEffect(startSection) {
+            Section.byRoute(startSection)?.let { nav.openSection(it) }
+        }
         val chip = state.groupName?.let { ShellLogic.chip(it, state.odd, container.copy) }
         val chrome = ShellChrome(chip, state.stale, state.hasGroup) {
             shellVm.onEvent(ShellEvent.Overlay(ShellOverlay.GroupPicker))
         }
-        val themeDesc = if (Zapara.colors.isDark) "dark" else "light"
+        val themeDesc = if (Zapara.colors.isDark) stringResource(R.string.theme_dark) else stringResource(R.string.theme_light)
         BackHandler(enabled = state.overlay != ShellOverlay.None || current != Section.Schedule) {
             when {
                 state.overlay != ShellOverlay.None ->
@@ -122,7 +128,10 @@ private fun ZaparaAppBody(
                             sectionsActive = current !in Section.bar || state.overlay == ShellOverlay.Sections,
                             homeworkBadge = state.homeworkBadge,
                             updateBadge = update.hasUpdate,
-                            onSection = { nav.openSection(it) },
+                            onSection = {
+                                shellVm.onEvent(ShellEvent.Overlay(ShellOverlay.None))
+                                nav.openSection(it)
+                            },
                             onSections = { shellVm.onEvent(ShellEvent.Overlay(ShellOverlay.Sections)) }
                         )
                     }
