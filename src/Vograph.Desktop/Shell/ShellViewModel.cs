@@ -658,10 +658,10 @@ public sealed partial class ShellViewModel : ViewModelBase
         var now = Clock();
         var today = now.Date;
         var isOdd = ParityCodes.IsOdd(today, settings);
-        var culture = CultureInfo.GetCultureInfo(App.Loc.Language == "en" ? "en-US" : "ru-RU");
+        var culture = CultureInfo.GetCultureInfo("ru-RU");
         GroupName = group.Name;
         GroupRailLabel = GroupCardLogic.RailLabel(group.Name);
-        GroupSubtitle = $"{T("parityWeek", App.I18n.FormatParity(isOdd))} · {today.ToString(App.Loc.Language == "en" ? "MMM d" : "d MMM", culture)}";
+        GroupSubtitle = $"{T("parityWeek", App.I18n.FormatParity(isOdd))} · {today.ToString("d MMM", culture)}";
         // LastFetchedAt is stored in UTC and Stale compares against UTC; the default clock is DateTime.Now, so
         // this is the same instant it always was, only sourced from the clock a test can pin.
         var (stale, warn) = GroupCardLogic.Stale(settings.LastFetchedAt, now.ToUniversalTime(), App.Loc);
