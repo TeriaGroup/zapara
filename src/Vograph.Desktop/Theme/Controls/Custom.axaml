@@ -63,7 +63,6 @@
     <Style Selector="^:pressed"><Setter Property="RenderTransform" Value="scale(0.98)" /></Style>
     <Style Selector="^:compact"><Setter Property="HorizontalContentAlignment" Value="Center" /><Setter Property="Padding" Value="0,9" /></Style>
     <Style Selector="^:compact /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="IsVisible" Value="False" /></Style>
-    <Style Selector="^:compact /template/ Border#PART_Badge"><Setter Property="IsVisible" Value="False" /></Style>
   </ControlTheme>
 
   <ControlTheme x:Key="{x:Type c:Skeleton}" TargetType="c:Skeleton">
