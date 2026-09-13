@@ -56,6 +56,8 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     }
 
     /// <summary>Week/Teachers hand over a concrete date; the offset change reloads the day.</summary>
+    public override Task ActivateAsync() => ReloadAsync();
+
     public void ShowDate(DateTime date) => DayOffset = (date.Date - _clock().Date).Days;
 
     public ObservableCollection<LessonRowViewModel> Lessons { get; } = new();
