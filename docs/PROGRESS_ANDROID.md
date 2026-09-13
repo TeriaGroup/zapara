@@ -1,5 +1,49 @@
 # PROGRESS_ANDROID — ЗАПАРА (Kotlin + Compose, minSdk 26, branch `android`)
 
+## 2026-09-14 — Локальный checkpoint перед публикацией: Task12 PARTIAL
+
+Task12 и общая приёмка Android UI/maps остаются **PARTIAL**. Последний сохранённый
+контроль API37 после разрешённого перезапуска остановлен по таймауту готовности
+launcher: `boot_completed=1`, но boot animation продолжалась. Приложение после
+этого перезапуска не запускалось; это не доказательство дефекта или пустого экрана
+Zapara. Новых проверок устройства при подготовке коммитов не выполнялось.
+
+В test-only capture harness есть обработчики `maps-no-route`, `primitives`,
+`summary`, `homework`; остальная матрица не реализована и не принята. Homework
+использует данные в памяти и проверяет callback сохранения, а не persistence;
+метаданные явно сохраняют `accepted=false` и `savePersistenceProven=false`.
+Незавершённая фикстура включается как компилируемый checkpoint, не как QA-pass.
+
+Локальная проверка перед коммитами: `testGithubDebugUnitTest` и
+`compileGithubDebugAndroidTestKotlin` завершились успешно. Это не запуск
+инструментальных тестов, не новая визуальная приёмка и не релиз APK. Исторические
+числа lint/device QA ниже относятся только к указанным там прогонам.
+
+## 2026-09-13 — Android UI/maps A+B Task12 — PARTIAL, pending independent review
+
+Task5 принят только source/scoped review (сохранённые495 JVM,2 UI+6 helper API37);
+это не приёмка всего A+B. В новом bounded Task12 пакете на проверенном API37
+`emulator-5554`: свежие495/495 JVM (87 suites), compile и Github/RuStore debug APK,
+Github test APK успешны; lint **упал:4 ошибки,131 warning**. Реально прошли
+изолированные MapsViewModelStateTest5/5, cache6/6, bitmap8/8. Strict Task2:
+4 случая выполнены,3 pass/1 fail (Configuration1.0 вместо1.5), ещё20 pending.
+
+Добавлены только test-only UiMapsCaptureTest/Fixtures, пока реализован no-route.
+Четыре свежих PNG/XML/meta dark/light100 при360dp просмотрены; нижний chrome,
+реальный picker и полная матрица ими не доказаны. Manifest перечисляет все26
+сценариев/темы/масштабы,3414 lower-bound обязательств; реальные ids всех шагов/строк
+ещё требуют развёртки. **0 сценариев принято**. Полная150/200/landscape/tablet,
+реальные9 этажей, migration/upgrade/offline restart/memory20/trace и independent A/B
+остаются открытыми. Destructive legacy connected suite не запускался.
+
+Локальный отчёт с командами, exit codes, тремя SHA256 APK, исключениями и точной
+точкой продолжения: `.superpowers/sdd/2026-09-12-android-ui-maps-plan/task-12-report.md`;
+evidence и checkpoint в соседнем `task-12/`. Установленный Github APK SHA256:
+`90E1BF04610AD9D124E48C237FCF2ACC62BEBD8635DDA8FA7628AD539CF3CD80`.
+Product/Room/schema/assets без правок; install-r без wipe/uninstall, API34/snapshots
+не использовались. Font1.0/night=no/rotation1,0/1080×2424/density420/radios1,1
+восстановлены и сверены. Kotlin LSP недоступен. **Независимое ревью ожидается.**
+
 ## Phase A0 — Recon (2026-09-03)
 
 **Status:** DONE
@@ -170,3 +214,27 @@
 - Виджеты: 17 JVM widget + Guards в отчёте widgets; instrumented `WidgetRemoteViewsTest` 1/1 на emulator-5554
 - Room schemas: `3.json` / `4.json` / `5.json`; AutoUpdate `CURRENT_TAG = android-v2.0.0`
 - Размеры APK в этой записи не фиксировались
+
+## 2026-09-13 — Task12 batch2, PARTIAL: strict harness и API37 blocker
+
+Production после принятого lint-fix не менялся. Добавлен test-only барьер
+Settings→ресурсы процесса→текущий Activity→Compose Density; исходный fontScale
+восстанавливается один раз на bounded class-scope, а не между соседними cases.
+Свежие JVM:497/87 suites,0 failures/errors/skips; lint:0 errors/131 warnings;
+Github app/test APK собраны, новый test APK установлен без wipe.
+
+Runner перечислил ровно24 strict-case: на identity-v2 все24 стартовали,
+23 имеют успешное завершение, `homework_stepper_with_keyboard[Light-2]` завис.
+Три успешных case находятся в batch, который позже прервался по timeout;
+полная class-cleanup приёмка этого batch не заявляется. ActivityManager затем
+сам ответил timeout. Неудачные запуски сохранены; эмулятор не перезапускался.
+Font/radios/rotation/density прочитаны исходными; финальный night/active-run
+readback не завершён. Новые device-тесты после сбоя не запускались.
+
+Primitives capture harness расширен реальными компонентами и состояниями,
+но новых финальных PNG **0**, MapScene overlay после Box **не проверен**.
+Матрица26 сценариев сохранена без сброса: исторические4 кадра,0 сценариев принято.
+Точка продолжения: `phone360-portrait/dark/1.0/primitives/top` после устранения
+API37 blocker и завершения strict-case. Локальный отчёт:
+`.superpowers/sdd/2026-09-12-android-ui-maps-plan/task-12-batch2-report.md`.
+Никакой общей Task12/A+B приёмки; independent review ожидается.
