@@ -82,6 +82,7 @@ public class ParserService
 
             // Group lessons by groupId to clear and reinsert per group
             var lessonsByGroup = lessons.GroupBy(l => l.GroupId);
+            var idsWithLessons = new HashSet<string>(lessonsByGroup.Select(g => g.Key));
             foreach (var grp in lessonsByGroup)
             {
                 _db.ClearScheduleForGroup(grp.Key);
@@ -90,9 +91,11 @@ public class ParserService
                     _db.InsertLesson(lesson);
                 }
             }
-
-            // For groups that existed but now have zero lessons (maybe empty), ensure schedule cleared? Already cleared only if in lessonsByGroup.
-            // If a group had no Days (like just listing), we already upserted but not cleared; leave as is (no schedule).
+            foreach (var g in groups)
+            {
+                if (!idsWithLessons.Contains(g.Id))
+                    _db.ClearScheduleForGroup(g.Id);
+            }
 
             tx.Commit();
         }
