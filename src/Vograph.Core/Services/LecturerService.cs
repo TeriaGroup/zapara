@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text;
 using System.Xml;
 using Vograph.Core.Models;
@@ -143,26 +144,36 @@ public class LecturerService
 
     public void Parse(string xml)
     {
-        var doc = new XmlDocument();
-        doc.LoadXml(xml);
+        using var reader = XmlReader.Create(new StringReader(xml), new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null
+        });
+        var doc = new XmlDocument { XmlResolver = null };
+        doc.Load(reader);
         var dayMap = new Dictionary<string,int>(StringComparer.OrdinalIgnoreCase)
         {
             ["Понедельник"]=1, ["Вторник"]=2, ["Среда"]=3, ["Четверг"]=4, ["Пятница"]=5, ["Суббота"]=6, ["Воскресенье"]=7,
             // also handle garbled due to encoding? but doc should be correct UTF8
         };
 
-        _lecturers.Clear();
-        _lessons.Clear();
+        var lecturers = new List<LecturerInfo>();
+        var lessons = new List<LecturerLesson>();
 
         var lecturerNodes = doc.SelectNodes("/Timetable/Lecturer");
-        if (lecturerNodes == null) return;
+        if (lecturerNodes == null)
+        {
+            _lecturers = lecturers;
+            _lessons = lessons;
+            return;
+        }
         foreach (XmlNode ln in lecturerNodes)
         {
             var id = ln.Attributes?["IdLecturer"]?.Value ?? "";
             var name = ln.Attributes?["LecturerName"]?.Value ?? "";
             var kaf = ln.Attributes?["Kafedra"]?.Value ?? "";
             if (string.IsNullOrEmpty(id)) continue;
-            _lecturers.Add(new LecturerInfo { Id = id, Name = name, Kafedra = kaf });
+            lecturers.Add(new LecturerInfo { Id = id, Name = name, Kafedra = kaf });
 
             var daysNode = ln.SelectSingleNode("Days");
             if (daysNode == null) continue;
@@ -276,13 +287,13 @@ public class LecturerService
                         BuildingRaw = buildingRaw,
                         Groups = groups
                     };
-                    _lessons.Add(ll);
+                    lessons.Add(ll);
                 }
             }
         }
 
-        // Also try to fill ShortName from group XML if available: match via IdLecturer -> ShortName
-        // ShortName mapping can be enriched later via ParserService's group lessons
+        _lecturers = lecturers;
+        _lessons = lessons;
     }
 
     public List<LecturerInfo> Search(string query, bool onlyMyTeachers = false, HashSet<string>? myTeacherIds = null)
