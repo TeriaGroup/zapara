@@ -21,7 +21,7 @@ public partial class MapsView : UserControl
         InitializeComponent();
         HighlightLabel.RenderTransform = _labelAt;
         DataContextChanged += (_, _) => { if (this.IsAttachedToVisualTree()) Hook(DataContext as MapsViewModel); };
-        Zoom.ViewChanged += (_, _) => PositionLabel(); // pan or zoom: the label follows the room it names
+        Zoom.ViewChanged += (_, _) => { PositionLabel(); PositionStairs(); };
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -38,16 +38,25 @@ public partial class MapsView : UserControl
 
     private void Hook(MapsViewModel? vm)
     {
-        if (ReferenceEquals(_vm, vm)) return;
+        if (ReferenceEquals(_vm, vm)) { PositionStairs(); return; }
         if (_vm is not null) _vm.PropertyChanged -= OnVmChanged;
         _vm = vm;
         if (_vm is not null) _vm.PropertyChanged += OnVmChanged;
+        PositionStairs();
     }
 
     private void OnVmChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MapsViewModel.Image)) Zoom.RequestFit();
+        if (e.PropertyName == nameof(MapsViewModel.Image)) { Zoom.RequestFit(); PositionStairs(); }
         if (e.PropertyName is nameof(MapsViewModel.HasHighlight) or nameof(MapsViewModel.HighlightLeft) or nameof(MapsViewModel.HighlightTop)) PositionLabel();
+    }
+
+    private void PositionStairs()
+    {
+        StairMarkers.ImageSize = _vm?.Image?.PixelSize ?? default;
+        StairMarkers.Scale = Zoom.Scale;
+        StairMarkers.OffsetX = Zoom.OffsetX;
+        StairMarkers.OffsetY = Zoom.OffsetY;
     }
 
     /// <summary>Spec §5.5: the room label sits above the highlight but outside the zoom transform, so it keeps

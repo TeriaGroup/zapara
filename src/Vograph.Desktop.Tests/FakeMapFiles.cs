@@ -12,6 +12,7 @@ public sealed class FakeMapFiles : IMapFiles
 {
     private readonly string _dir;
     private readonly HashSet<(string, int)> _cached;
+    private readonly object _pngLock = new();
     private string? _png;
 
     public FakeMapFiles(string dir, params (string Building, int Floor)[] cached)
@@ -66,6 +67,12 @@ public sealed class FakeMapFiles : IMapFiles
     /// <summary>A 200×100 «plan»: light paper with a 20px grid, so a committed frame shows the picture and the
     /// highlight on top of it rather than window chrome alone (the earlier transparent bitmap was invisible).</summary>
     private string Png()
+    {
+        // The main plan and floor-stack thumbnails can request their first file concurrently.
+        lock (_pngLock) return CreatePng();
+    }
+
+    private string CreatePng()
     {
         if (_png is not null) return _png;
         Directory.CreateDirectory(_dir);

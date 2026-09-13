@@ -1,6 +1,8 @@
+using Avalonia;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Vograph.Core.Campus;
 using Vograph.Core.Models;
 using Vograph.Core.Services;
 using Vograph.Desktop.Domain;
@@ -12,6 +14,10 @@ namespace Vograph.Desktop.Features.Maps;
 
 public sealed record FloorPill(int Floor, string Label, bool IsSelected);
 
+public sealed record EntranceItem(string Id, string Label, bool IsSelected);
+
+public sealed record RouteStepItem(string Text, string Building, int Floor, bool IsSelected = false);
+
 public sealed partial class MapsViewModel : ViewModelBase
 {
     private static readonly string[] Buildings = { "ГК", "УЛК" };
@@ -19,18 +25,28 @@ public sealed partial class MapsViewModel : ViewModelBase
     private readonly Func<DateTime> _clock;
     private readonly Action _onChange;
     private int _version;
+    private int _stackVersion;
     private string? _lessonName;
     private DateTime? _start, _end;
     private CoordsRect? _coords;
     private bool _detached;
+    private Route? _route;
+    private readonly CampusGraph _graph;
+    private string? _lastEntranceId;
+    private string? _destRoomKey;
+    private string? _prevRoomKey;
+    private string? _fallbackToastKey;
 
-    public MapsViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null) : base(app)
+    public MapsViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null, CampusGraph? graph = null) : base(app)
     {
         _shell = shell;
         _clock = clock ?? (() => DateTime.Now);
         _segmentItems = Buildings;
         _floors = MapsComposer.Floors("ГК").Select(f => new FloorPill(f, T("mapFloorN", f), false)).ToList();
         _cacheStatus = "";
+        _graph = graph ?? LoadBundledGraph();
+        LoadLastEntrance();
+        RefreshEntrances();
         _onChange = () => { if (IsTracking) _ = TrackNextAsync(); };
         shell.GroupChanged += _onChange;
         shell.ScheduleChanged += _onChange;
@@ -44,6 +60,7 @@ public sealed partial class MapsViewModel : ViewModelBase
         _shell.ScheduleChanged -= _onChange;
         App.Loc.LanguageChanged -= Relabel;
         SetImage(null); // the section is going away: release the decode with it
+        SetStackFloorImages(new Dictionary<int, Bitmap>());
     }
 
     /// <summary>◉ on a lesson hands over a map (and the name the card showed) through the shell; otherwise the
@@ -74,9 +91,33 @@ public sealed partial class MapsViewModel : ViewModelBase
     [ObservableProperty] private string? _note;
     [ObservableProperty] private string _cacheStatus;
     [ObservableProperty] private bool _isDownloading;
+    [ObservableProperty] private IReadOnlyList<RouteStepItem> _routeSteps = [];
+    [ObservableProperty] private IReadOnlyList<EntranceItem> _entrances = [];
+    [ObservableProperty] private IReadOnlyList<Point> _pathPoints = [];
+    [ObservableProperty] private IReadOnlyList<IReadOnlyList<Point>> _pathStrokes = [];
+    [ObservableProperty] private IReadOnlyList<StairMarker> _stairMarkers = [];
+    [ObservableProperty] private bool _hasPath;
+    [ObservableProperty] private bool _showStack;
+    [ObservableProperty] private IReadOnlyDictionary<int, Bitmap> _stackFloorImages = new Dictionary<int, Bitmap>();
     public bool HasNote => !string.IsNullOrEmpty(Note);
     public bool HasMap => Current is { HasMap: true };
     public bool ShowGoToNext => Mode != MapMode.NextLesson;
+    public bool HasRouteSteps => RouteSteps.Count > 0;
+    public bool HasEntrances => Entrances.Count > 0;
+    public bool IsRouteUnmarked => _route is null;
+    public string RouteUnmarked => T("routeUnmarked");
+    public Route? Route => _route;
+    public string ShownBuilding
+    {
+        get
+        {
+            var b = Current?.Building ?? Buildings[Math.Clamp(BuildingIndex, 0, 1)];
+            return b == "ВЦ" ? "ГК" : b;
+        }
+    }
+    public bool ShowPlan => HasMap && !ShowStack;
+    public bool ShowEmpty => !HasMap && !ShowStack;
+    public bool ShowHighlightChrome => HasHighlight && !ShowStack;
 
     partial void OnModeChanged(MapMode value)
     {
@@ -85,16 +126,34 @@ public sealed partial class MapsViewModel : ViewModelBase
     }
 
     partial void OnNoteChanged(string? value) => OnPropertyChanged(nameof(HasNote));
-    partial void OnCurrentChanged(MapInfo? value) => OnPropertyChanged(nameof(HasMap));
+    partial void OnCurrentChanged(MapInfo? value)
+    {
+        OnPropertyChanged(nameof(HasMap));
+        OnPropertyChanged(nameof(ShownBuilding));
+        OnPropertyChanged(nameof(ShowPlan));
+        OnPropertyChanged(nameof(ShowEmpty));
+    }
+    partial void OnHasHighlightChanged(bool value) => OnPropertyChanged(nameof(ShowHighlightChrome));
+    partial void OnShowStackChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowPlan));
+        OnPropertyChanged(nameof(ShowEmpty));
+        OnPropertyChanged(nameof(ShowHighlightChrome));
+        if (value) _ = RefreshStackFloorsAsync();
+    }
+    partial void OnRouteStepsChanged(IReadOnlyList<RouteStepItem> value) => OnPropertyChanged(nameof(HasRouteSteps));
+    partial void OnEntrancesChanged(IReadOnlyList<EntranceItem> value) => OnPropertyChanged(nameof(HasEntrances));
 
     partial void OnBuildingIndexChanged(int value)
     {
         var building = Buildings[Math.Clamp(value, 0, 1)];
         var selected = Current is { } c && (c.Building == "ВЦ" ? "ГК" : c.Building) == building ? c.Floor : 0;
         Floors = MapsComposer.Floors(building).Select(f => new FloorPill(f, T("mapFloorN", f), f == selected)).ToList();
+        OnPropertyChanged(nameof(ShownBuilding));
+        _ = RefreshStackFloorsAsync();
     }
 
-    private sealed record NextData(Lesson? Lesson, DateTime Date, MapInfo? Map, string? Name, CoordsRect? Coords);
+    private sealed record NextData(Lesson? Lesson, DateTime Date, MapInfo? Map, string? Name, CoordsRect? Coords, string? DestRoomKey, string? PrevRoomKey);
 
     [RelayCommand]
     private Task GoToNext() => TrackNextAsync();
@@ -108,18 +167,25 @@ public sealed partial class MapsViewModel : ViewModelBase
         var data = await RunAsync(() =>
         {
             var s = App.Db.GetSettings();
-            if (string.IsNullOrEmpty(s.MyGroupId)) return new NextData(null, now, null, null, null);
+            if (string.IsNullOrEmpty(s.MyGroupId)) return new NextData(null, now, null, null, null, null, null);
             var (lesson, date) = App.Maps.GetNextLesson(s.MyGroupId, now);
-            if (lesson is null) return new NextData(null, now, null, null, null);
+            if (lesson is null) return new NextData(null, now, null, null, null, null, null);
             var map = App.Maps.GetMapForLesson(lesson);
+            if (map is not null) AlignWithGraph(map);
             var name = LessonText.StripType(App.Overrides.GetDisplayName(lesson.SubjectRaw, lesson.DayOfWeek), lesson.TypeRaw);
-            return new NextData(lesson, date, map, name, map is { HasMap: true } ? App.Maps.GetCoords(map.Building == "ВЦ" ? "ГК" : map.Building, map.Floor, map.RoomRaw) : null);
+            var prev = MapsComposer.PreviousLessonToday(App.Schedule.GetSchedule(now.Date, s.MyGroupId), lesson, now, date);
+            return new NextData(
+                lesson, date, map, name,
+                map is { HasMap: true } ? App.Maps.GetCoords(map.Building == "ВЦ" ? "ГК" : map.Building, map.Floor, map.RoomRaw) : null,
+                lesson.ClassroomRaw,
+                prev?.ClassroomRaw);
         }, "maps");
         if (data is null || version != _version || !operation.IsCurrent) return;
         if (data.Lesson is null || data.Map is null)
         {
             Mode = MapMode.None;
             _lessonName = null; _start = _end = null;
+            SetRouteEnds(null, null);
             await ShowMapAsync(null, null);
             return;
         }
@@ -127,6 +193,7 @@ public sealed partial class MapsViewModel : ViewModelBase
         _start = data.Date.Date + (TimeSpan.TryParse(data.Lesson.TimeStart, out var ts) ? ts : TimeSpan.Zero);
         _end = data.Date.Date + (TimeSpan.TryParse(data.Lesson.TimeEnd, out var te) ? te : TimeSpan.Zero);
         Mode = MapMode.NextLesson;
+        SetRouteEnds(data.DestRoomKey, data.PrevRoomKey);
         await ShowMapAsync(data.Map, data.Coords);
     }
 
@@ -136,10 +203,12 @@ public sealed partial class MapsViewModel : ViewModelBase
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
         var version = ++_version;
+        AlignWithGraph(map);
         _lessonName = lessonName; _start = _end = null;
         var coords = map.HasMap ? await RunAsync(() => App.Maps.GetCoords(map.Building == "ВЦ" ? "ГК" : map.Building, map.Floor, map.RoomRaw) ?? new CoordsRect { w = -1 }, "maps") : null;
         if (version != _version || !operation.IsCurrent) return;
         Mode = MapMode.Lesson;
+        SetRouteEnds(map.ClassroomRaw, null);
         await ShowMapAsync(map, coords is { w: > 0 } ? coords : null);
     }
 
@@ -157,6 +226,48 @@ public sealed partial class MapsViewModel : ViewModelBase
         await ShowMapAsync(map, null);
     }
 
+    public void ApplyRoute(Route? route)
+    {
+        _route = route;
+        OnPropertyChanged(nameof(IsRouteUnmarked));
+        OnPropertyChanged(nameof(Route));
+        RefreshRouteSteps();
+        RefreshPath();
+    }
+
+    [RelayCommand]
+    private void ToggleStack() => ShowStack = !ShowStack;
+
+    public void SetRouteEnds(string? destRoomKey, string? previousRoomKey)
+    {
+        _destRoomKey = destRoomKey;
+        _prevRoomKey = previousRoomKey;
+        ComputeRoute();
+    }
+
+    [RelayCommand]
+    private void SelectEntrance(EntranceItem? item)
+    {
+        if (item is null || CampusRouter.ResolveEntrance(_graph, item.Id) is null) return;
+        _lastEntranceId = item.Id;
+        SaveLastEntrance();
+        RefreshEntrances();
+        ComputeRoute();
+    }
+
+    [RelayCommand]
+    private async Task SelectRouteStep(RouteStepItem? step)
+    {
+        if (step is null) return;
+        var index = Array.IndexOf(Buildings, step.Building);
+        if (index < 0) return;
+        BuildingIndex = index;
+        var pill = Floors.FirstOrDefault(f => f.Floor == step.Floor);
+        if (pill is null) return;
+        ShowStack = false;
+        await SelectFloor(pill);
+    }
+
     private async Task ShowMapAsync(MapInfo? map, CoordsRect? coords)
     {
         using var operation = App.Work.Enter();
@@ -171,7 +282,13 @@ public sealed partial class MapsViewModel : ViewModelBase
         else BuildingIndex = index;
         HasHighlight = false;
         ImageError = null;
-        if (map is not { HasMap: true } || map.IsRemote) { SetImage(null); return; }
+        if (map is not { HasMap: true } || map.IsRemote)
+        {
+            SetImage(null);
+            RefreshPath();
+            await RefreshStackFloorsAsync();
+            return;
+        }
 
         string? path;
         try
@@ -190,6 +307,8 @@ public sealed partial class MapsViewModel : ViewModelBase
         {
             SetImage(null);
             ImageError = T("mapNoImage");
+            RefreshPath();
+            await RefreshStackFloorsAsync();
             return;
         }
         Bitmap bmp;
@@ -199,6 +318,8 @@ public sealed partial class MapsViewModel : ViewModelBase
             App.Log.Error("map image", ex);
             SetImage(null);
             ImageError = T("mapNoImage");
+            RefreshPath();
+            await RefreshStackFloorsAsync();
             return;
         }
         if (_detached || !operation.IsCurrent || !ReferenceEquals(Current, map)) { bmp.Dispose(); return; }
@@ -209,7 +330,206 @@ public sealed partial class MapsViewModel : ViewModelBase
             HighlightLabel = MapsComposer.RoomText(map);
             HasHighlight = true;
         }
+        RefreshPath();
+        await RefreshStackFloorsAsync();
         await RefreshCacheStatusAsync();
+    }
+
+    private async Task RefreshStackFloorsAsync()
+    {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        var version = ++_stackVersion;
+        var building = ShownBuilding;
+        Dictionary<int, Bitmap> decoded = [];
+        try
+        {
+            decoded = await Task.Run(() =>
+            {
+                var paths = MapsComposer.FloorRasterPaths(building, App.Maps.GetAllMaps(), m => App.MapFiles.LocalPath(m));
+                Dictionary<int, Bitmap> map = [];
+                foreach (var (floor, path) in paths)
+                {
+                    try
+                    {
+                        var bmp = MapsComposer.DecodeStackThumb(path);
+                        if (bmp is not null) map[floor] = bmp;
+                    }
+                    catch (Exception ex)
+                    {
+                        App.Log.Error("stack thumb", ex);
+                    }
+                }
+                return map;
+            });
+        }
+        catch (Exception ex)
+        {
+            App.Log.Error("stack floors", ex);
+        }
+        if (_detached || !operation.IsCurrent || version != _stackVersion)
+        {
+            foreach (var bmp in decoded.Values) bmp.Dispose();
+            return;
+        }
+        SetStackFloorImages(decoded);
+    }
+
+    private MapInfo AlignWithGraph(MapInfo map)
+    {
+        var node = CampusRouter.ResolveClassroom(_graph, map.ClassroomRaw);
+        if (node is null) return map;
+        map.Floor = node.Floor;
+        map.RoomRaw = node.Room ?? map.RoomRaw;
+        if (map.Building != "ВЦ") map.Building = node.Building;
+        return map;
+    }
+
+    private void SetStackFloorImages(IReadOnlyDictionary<int, Bitmap> fresh)
+    {
+        var old = StackFloorImages;
+        if (ReferenceEquals(old, fresh)) return;
+        StackFloorImages = fresh;
+        foreach (var bmp in old.Values) bmp.Dispose();
+    }
+
+    private void RefreshRouteSteps()
+    {
+        if (_route is null)
+        {
+            RouteSteps = [];
+            return;
+        }
+        var building = ShownBuilding;
+        var floor = Current?.Floor ?? 0;
+        RouteSteps = Vograph.Core.Campus.RouteSteps.FormatWithLocations(_route, App.Loc.I18n)
+            .Select(step => new RouteStepItem(step.Text, step.Building, step.Floor,
+                string.Equals(step.Building, building, StringComparison.Ordinal) && step.Floor == floor)).ToArray();
+    }
+
+    private void RefreshPath()
+    {
+        StairMarkers = Current is { } shown
+            ? MapsComposer.StairMarkers(_route, shown.Building == "ВЦ" ? "ГК" : shown.Building, shown.Floor)
+            : [];
+        IReadOnlyList<Point> points = [];
+        IReadOnlyList<IReadOnlyList<Point>> strokes = [];
+        if (_route is not null && Current is { } map && Image is { } bmp)
+        {
+            var building = map.Building == "ВЦ" ? "ГК" : map.Building;
+            var size = bmp.PixelSize;
+            var built = new List<IReadOnlyList<Point>>();
+            var flat = new List<Point>();
+            foreach (var stroke in MapsComposer.FloorPathStrokes(_route, building, map.Floor))
+            {
+                var px = MapsComposer.PathPixels(stroke, size).ToList();
+                if (px.Count == 0) continue;
+                built.Add(px);
+                flat.AddRange(px);
+            }
+            strokes = built;
+            points = flat;
+        }
+        PathStrokes = strokes;
+        PathPoints = points;
+        HasPath = strokes.Any(s => s.Count >= 2);
+        RefreshRouteSteps();
+    }
+
+    private void ComputeRoute()
+    {
+        if (string.IsNullOrEmpty(_destRoomKey))
+        {
+            ApplyRoute(null);
+            return;
+        }
+        var dest = CampusRouter.ResolveClassroom(_graph, _destRoomKey);
+        var guessed = CampusRouter.ResolveClassroom(_graph, _prevRoomKey)
+            ?? CampusRouter.ResolveEntrance(_graph, _lastEntranceId);
+        var from = MapsComposer.StartFor(_graph, guessed?.Id, dest?.Id) ?? guessed;
+        if (from is null || dest is null)
+        {
+            ApplyRoute(null);
+            NotifyStartFallback(guessed, from);
+            return;
+        }
+        var result = CampusRouter.Find(_graph, from.Id, dest.Id);
+        ApplyRoute(result.Ok ? result.Route : null);
+        NotifyStartFallback(guessed, from);
+    }
+
+    private void NotifyStartFallback(Node? requested, Node? chosen)
+    {
+        var message = MapsComposer.StartFallbackMessage(requested, chosen, App.Loc.I18n);
+        if (message is null)
+        {
+            _fallbackToastKey = null;
+            return;
+        }
+        if (_fallbackToastKey == message) return;
+        _fallbackToastKey = message;
+        App.Toasts.Info(message);
+    }
+
+    private void RefreshEntrances()
+    {
+        var items = new List<EntranceItem>();
+        foreach (var node in CampusRouter.Entrances(_graph))
+        {
+            var label = string.IsNullOrWhiteSpace(node.Label) ? node.Id : node.Label!;
+            items.Add(new EntranceItem(node.Id, label, node.Id == _lastEntranceId));
+        }
+        Entrances = items;
+    }
+
+    private CampusGraph LoadBundledGraph()
+    {
+        try
+        {
+            var path = Path.Combine(App.Maps.BundledDir, "campus-graph.json");
+            if (!File.Exists(path)) return EmptyGraph();
+            return CampusGraph.Load(File.ReadAllText(path));
+        }
+        catch (Exception ex)
+        {
+            App.Log.Error("campus-graph", ex);
+            return EmptyGraph();
+        }
+    }
+
+    private static CampusGraph EmptyGraph() =>
+        CampusGraph.Load("""{"version":1,"buildings":["ГК","УЛК"],"nodes":[],"edges":[]}""");
+
+    private string LastEntrancePath => Path.Combine(App.MapFiles.CacheDir, "last-entrance.txt");
+
+    private void LoadLastEntrance()
+    {
+        try
+        {
+            var path = LastEntrancePath;
+            if (!File.Exists(path)) return;
+            var id = File.ReadAllText(path).Trim();
+            if (CampusRouter.ResolveEntrance(_graph, id) is not null)
+                _lastEntranceId = id;
+        }
+        catch (Exception ex)
+        {
+            App.Log.Error("last-entrance", ex);
+        }
+    }
+
+    private void SaveLastEntrance()
+    {
+        try
+        {
+            var path = LastEntrancePath;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, _lastEntranceId ?? "");
+        }
+        catch (Exception ex)
+        {
+            App.Log.Error("last-entrance", ex);
+        }
     }
 
     private string? NoteFor(MapInfo map) => map.Building == "ВЦ" ? T("mapVc") : string.IsNullOrEmpty(map.Note) ? null : map.Note;
@@ -263,6 +583,7 @@ public sealed partial class MapsViewModel : ViewModelBase
                 if (IsTracking) await TrackNextAsync();
                 else if (Current is { } c) await ShowMapAsync(c, _coords);
             }
+            else await RefreshStackFloorsAsync();
         }
         catch (Exception ex)
         {
@@ -296,9 +617,11 @@ public sealed partial class MapsViewModel : ViewModelBase
     private void Relabel()
     {
         OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(RouteUnmarked));
         Note = Current is { } c ? NoteFor(c) : null;
         ContextLine = MapsComposer.ContextLine(Mode, Current, _lessonName, _start, _end, _clock(), App.Loc);
         OnBuildingIndexChanged(BuildingIndex);
+        RefreshRouteSteps();
         _ = RefreshCacheStatusAsync();
     }
 }

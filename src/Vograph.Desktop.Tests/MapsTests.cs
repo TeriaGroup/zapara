@@ -1,10 +1,12 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
+using Vograph.Core.Campus;
 using Vograph.Core.Services;
 using Vograph.Desktop.Controls;
 using Vograph.Desktop.Features.Maps;
@@ -48,13 +50,230 @@ public class MapsTests : UiTest
         Assert.Equal("Следующая пара · 493 · ГК, 4 этаж · через 1 ч",
             MapsComposer.ContextLine(MapMode.NextLesson, map, null, new DateTime(2026, 9, 7, 9, 0, 0), new DateTime(2026, 9, 7, 10, 35, 0), Mon8, Ru));
         Assert.Equal("Пара: Матан · 493 · ГК, 4 этаж", MapsComposer.ContextLine(MapMode.Lesson, map, "Матан", null, null, Mon8, Ru));
-        Assert.Equal("Выберите план", MapsComposer.ContextLine(MapMode.Manual, map, null, null, null, Mon8, Ru));
+        Assert.Equal("ГК, 4 этаж", MapsComposer.ContextLine(MapMode.Manual, map, null, null, null, Mon8, Ru));
+        Assert.Equal("Выберите план", MapsComposer.ContextLine(MapMode.Manual, null, null, null, null, Mon8, Ru));
         Assert.Equal("Нет предстоящих занятий", MapsComposer.ContextLine(MapMode.None, null, null, null, null, Mon8, Ru));
         Assert.Equal(new[] { 1, 2, 3, 4 }, MapsComposer.Floors("ГК"));
         Assert.Equal(new[] { 1, 2, 3, 4, 5 }, MapsComposer.Floors("УЛК"));
         var rect = MapsComposer.Highlight(new CoordsRect { x = 0.5, y = 0.25, w = 0.1, h = 0.2 }, new PixelSize(1000, 800));
         Assert.Equal(new Rect(500, 200, 100, 160), rect);
         Assert.Null(MapsComposer.Highlight(null, new PixelSize(1000, 800)));
+    }
+
+    [Fact]
+    public void PathPixels_Maps_Unit_Square_To_Image_Pixels()
+    {
+        var pixels = MapsComposer.PathPixels([(0, 0), (1, 1)], new PixelSize(100, 100)).ToList();
+        Assert.Equal([new Point(0, 0), new Point(100, 100)], pixels);
+        Assert.Empty(MapsComposer.PathPixels(null, new PixelSize(100, 100)));
+        Assert.Empty(MapsComposer.PathPixels([], new PixelSize(100, 100)));
+        Assert.Empty(MapsComposer.PathPixels([(0, 0), (1, 1)], new PixelSize(0, 100)));
+        Assert.Empty(MapsComposer.PathPixels([(0, 0), (1, 1)], new PixelSize(100, 0)));
+    }
+
+    [Fact]
+    public void FloorPathPoints_Walks_On_Current_Floor_Only()
+    {
+        var route = CampusRouter.Find(SyntheticLabyrinth.Build(), "lab.room.west.3", "lab.room.east.3").Route!;
+        var f1 = MapsComposer.FloorPathPoints(route, "УЛК", 1);
+        var f2 = MapsComposer.FloorPathPoints(route, "УЛК", 2);
+        var f3 = MapsComposer.FloorPathPoints(route, "УЛК", 3);
+
+        Assert.Contains(f1, p => p is (0.5, 0.5));
+        Assert.DoesNotContain(f3, p => p is (0.5, 0.5));
+        Assert.Contains(f3, p => p is (0.2, 0.2));
+        Assert.DoesNotContain(f1, p => p is (0.2, 0.2));
+        Assert.Empty(f2);
+        Assert.Empty(MapsComposer.FloorPathPoints(null, "УЛК", 1));
+        Assert.Empty(MapsComposer.FloorPathPoints(route, "ГК", 1));
+    }
+
+    [Fact]
+    public void FloorPathPoints_Draws_Building_Link_Not_Stairs()
+    {
+        var route = new Route(10, [
+            new Leg("walk", "ГК", 1, null, null, [new GraphPoint(0.1, 0.1), new GraphPoint(0.2, 0.2)]),
+            new Leg("stair_up", "ГК", 1, "ГК", 2, [new GraphPoint(0.2, 0.2), new GraphPoint(0.2, 0.2)]),
+            new Leg("building_link", "ГК", 1, "ГК", 1, [new GraphPoint(0.9, 0.5), new GraphPoint(0.95, 0.5)]),
+        ], []);
+        Assert.Equal([(0.1, 0.1), (0.2, 0.2), (0.9, 0.5), (0.95, 0.5)], MapsComposer.FloorPathPoints(route, "ГК", 1));
+        Assert.Empty(MapsComposer.FloorPathPoints(route, "ГК", 2));
+        Assert.Empty(MapsComposer.FloorPathPoints(route, "УЛК", 1));
+    }
+
+    [Fact]
+    public void FloorPathStrokes_Keeps_Disconnected_Floor3_Wings()
+    {
+        var route = CampusRouter.Find(SyntheticLabyrinth.Build(), "lab.room.west.3", "lab.room.east.3").Route!;
+        var f3 = MapsComposer.FloorPathStrokes(route, "УЛК", 3);
+        Assert.Equal(2, f3.Count);
+        Assert.Equal([(0.2, 0.2), (0.2, 0.5)], f3[0]);
+        Assert.Equal([(0.8, 0.5), (0.8, 0.2)], f3[1]);
+
+        var f1 = MapsComposer.FloorPathStrokes(route, "УЛК", 1);
+        Assert.Single(f1);
+        Assert.Equal([(0.2, 0.5), (0.5, 0.5), (0.8, 0.5)], f1[0]);
+
+        var size = new PixelSize(100, 100);
+        IReadOnlyList<IReadOnlyList<Point>> Pixels(IReadOnlyList<IReadOnlyList<(double x, double y)>> strokes) =>
+            [.. strokes.Select(s => MapsComposer.PathPixels(s, size).ToList())];
+
+        var geo3 = MapsComposer.PathGeometry(Pixels(f3));
+        Assert.NotNull(geo3);
+        var figures3 = geo3!.Figures!;
+        Assert.Equal(2, figures3.Count);
+        Assert.All(figures3, f => Assert.False(f.IsClosed));
+        Assert.Equal(new Point(20, 20), figures3[0].StartPoint);
+        Assert.Equal(new Point(80, 50), figures3[1].StartPoint);
+        Assert.All(figures3, f =>
+        {
+            var line = Assert.IsType<PolyLineSegment>(Assert.Single(f.Segments!));
+            Assert.Single(line.Points);
+        });
+
+        var geo1 = MapsComposer.PathGeometry(Pixels(f1));
+        Assert.NotNull(geo1);
+        var fig1 = Assert.Single(geo1!.Figures!);
+        Assert.False(fig1.IsClosed);
+        Assert.Equal(new Point(20, 50), fig1.StartPoint);
+        Assert.Equal([new Point(50, 50), new Point(80, 50)], Assert.IsType<PolyLineSegment>(Assert.Single(fig1.Segments!)).Points);
+    }
+
+    [Fact]
+    public void RoutePathLayer_MotionOff_Reveals_The_Full_Path()
+    {
+        var layer = new RoutePathLayer
+        {
+            Strokes = [[new Point(0, 0), new Point(40, 0), new Point(40, 30)]]
+        };
+        var frame = layer.Frame();
+        Assert.True(frame.Complete);
+        Assert.Equal(3, Assert.Single(frame.Revealed).Count);
+        Assert.Equal(new TracePoint(40, 30), frame.Head);
+        Assert.Equal(new TracePoint(0, 0), frame.Start);
+    }
+
+    [Fact]
+    public void RoutePathLayer_Half_Progress_Keeps_Disconnected_Wings_Apart()
+    {
+        var layer = new RoutePathLayer
+        {
+            Strokes = [[new Point(0, 0), new Point(10, 0)], [new Point(20, 0), new Point(30, 0)]]
+        };
+        var frame = layer.Frame(0.5);
+        Assert.False(frame.Complete);
+        Assert.Equal(new TracePoint(10, 0), Assert.Single(frame.Revealed)[^1]);
+        Assert.Equal(new TracePoint(10, 0), frame.Head);
+        Assert.Equal(new TracePoint(30, 0), frame.End);
+    }
+
+    [Fact]
+    public void Maps_And_Fullscreen_Draw_The_Route_Through_RoutePathLayer()
+    {
+        var root = ResourceKeysTests.RepoRoot();
+        foreach (var file in new[] { "MapsView.axaml", "MapFullscreenView.axaml" })
+        {
+            var axaml = File.ReadAllText(Path.Combine(root, "src", "Vograph.Desktop", "Features", "Maps", file));
+            Assert.Contains("RoutePathLayer", axaml);
+            Assert.Contains("x:Name=\"RoutePath\"", axaml);
+            Assert.DoesNotContain("<Path x:Name=\"RoutePath\"", axaml);
+        }
+        var layer = File.ReadAllText(Path.Combine(root, "src", "Vograph.Desktop", "Features", "Maps", "RoutePathLayer.cs"));
+        Assert.Contains("PathTrace.At", layer);
+        Assert.Contains("MotionSettings", layer);
+        Assert.Contains("DashStyle", layer);
+        Assert.DoesNotContain("DispatcherTimer", layer);
+    }
+
+    [Fact]
+    public void ApplyRoute_Null_Leaves_No_Path()
+    {
+        using var db = TestDb.Create();
+        var (_, vm, _, _) = Make(db);
+        vm.ApplyRoute(null);
+        Assert.False(vm.HasPath);
+        Assert.False(vm.HasRouteSteps);
+        Assert.Empty(vm.PathPoints);
+        Assert.False(vm.HasHighlight);
+    }
+
+    [AvaloniaFact]
+    public async Task ApplyRoute_Overlays_Current_Floor_And_Step_Switches_Floor()
+    {
+        using var db = TestDb.Create();
+        var (_, vm, _, _) = Make(db, ("УЛК", 3), ("УЛК", 1));
+        await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("320*;")!, "Физика");
+        Assert.True(vm.HasHighlight);
+        Assert.False(vm.HasPath);
+
+        var route = CampusRouter.Find(SyntheticLabyrinth.Build(), "lab.room.west.3", "lab.room.east.3").Route!;
+        vm.ApplyRoute(route);
+
+        Assert.True(vm.HasHighlight);
+        Assert.Equal("320", vm.HighlightLabel);
+        Assert.True(vm.HasPath);
+        Assert.True(vm.HasRouteSteps);
+        Assert.Contains(vm.RouteSteps, s => s.Text.Contains("коридор", StringComparison.OrdinalIgnoreCase) || s.Text.Contains("Пройдите"));
+        var size = vm.Image!.PixelSize;
+        Assert.Equal(2, vm.PathStrokes.Count);
+        Assert.All(vm.PathStrokes, s => Assert.Equal(2, s.Count));
+        Assert.Equal(MapsComposer.PathPixels(MapsComposer.FloorPathPoints(route, "УЛК", 3), size), vm.PathPoints);
+        Assert.DoesNotContain(vm.PathPoints, p => p.X == 0.5 * size.Width && p.Y == 0.5 * size.Height);
+        Assert.Contains(vm.RouteSteps, s => s.Floor == 3 && s.IsSelected);
+        Assert.DoesNotContain(vm.RouteSteps, s => s.Floor == 1 && s.IsSelected);
+
+        var floor1 = vm.RouteSteps.First(s => s.Floor == 1 && s.Building == "УЛК");
+        vm.ShowStack = true;
+        await vm.SelectRouteStepCommand.ExecuteAsync(floor1);
+        Assert.False(vm.ShowStack);
+        Assert.Equal(("УЛК", 1), (vm.Current!.Building, vm.Current.Floor));
+        Assert.Contains(vm.RouteSteps, s => s.Floor == 1 && s.IsSelected);
+        Assert.DoesNotContain(vm.RouteSteps, s => s.Floor == 3 && s.IsSelected);
+        Assert.Equal(3, Assert.Single(vm.PathStrokes).Count);
+        Assert.Equal(MapsComposer.PathPixels(MapsComposer.FloorPathPoints(route, "УЛК", 1), vm.Image!.PixelSize), vm.PathPoints);
+        Assert.Contains(vm.PathPoints, p => p.X == 0.5 * vm.Image.PixelSize.Width && p.Y == 0.5 * vm.Image.PixelSize.Height);
+
+        vm.ApplyRoute(null);
+        Assert.False(vm.HasPath);
+        Assert.False(vm.HasRouteSteps);
+        Assert.Empty(vm.PathPoints);
+    }
+
+    [AvaloniaFact]
+    public async Task Stair_only_floor_shows_the_same_badges_in_map_and_fullscreen()
+    {
+        using var db = TestDb.Create();
+        var (_, vm, _, _) = Make(db, ("УЛК", 2));
+        await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("226*;")!, "Физика");
+        vm.ApplyRoute(new Route(40, [
+            new Leg("stair_up", "УЛК", 1, "УЛК", 2, [new(.2, .3), new(.3, .4)]),
+            new Leg("stair_up", "УЛК", 2, "УЛК", 3, [new(.3, .4), new(.4, .5)])
+        ], []));
+        Assert.False(vm.HasPath);
+        Assert.Equal("↑ 3", Assert.Single(vm.StairMarkers).Label);
+
+        var normal = new MapsView { DataContext = vm, Width = 500, Height = 450 };
+        var full = new MapFullscreenView { DataContext = new MapFullscreenViewModel(db.Services, vm), Width = 500, Height = 450 };
+        var window = new Window
+        {
+            Width = 1000, Height = 450,
+            Content = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Children = { normal, full } }
+        };
+        try
+        {
+            window.Show();
+            Pump();
+            foreach (var view in new Control[] { normal, full })
+            {
+                var overlay = view.FindControl<StairMarkersOverlay>("StairMarkers")!;
+                Assert.True(overlay.IsVisible);
+                Assert.Same(vm.StairMarkers, overlay.Markers);
+                Assert.Equal(vm.Image!.PixelSize, overlay.ImageSize);
+                Assert.True(overlay.Bounds.Width > 0 && overlay.Bounds.Height > 0);
+            }
+            AssertNoBindingErrors();
+        }
+        finally { window.Close(); }
     }
 
     [AvaloniaFact]
@@ -111,7 +330,7 @@ public class MapsTests : UiTest
         await Waits.Until(() => vm.Current is { Building: "УЛК", Floor: 3 });
         Assert.Equal(MapMode.Manual, vm.Mode);
         Assert.False(vm.IsTracking);
-        Assert.Equal("Выберите план", vm.ContextLine);
+        Assert.Equal("УЛК, 3 этаж", vm.ContextLine);
         Assert.False(vm.HasHighlight);
 
         await vm.GoToNextCommand.ExecuteAsync(null);
