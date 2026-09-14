@@ -26,7 +26,7 @@ class ScheduleTest {
 
     @Test
     fun nextBySubject() {
-        // From Wed 09-02, next "лек высш. математ" = Mon 09-07 (week 2 even)
+        // From Wed 09-02, next Monday with this subject is 07.09 (week 2 even).
         val norm = Parity.normalizeSubject("лек ВЫСШ. МАТЕМАТ")
         val next = Schedule.nextOccurrenceBySubject(all, "3313", norm, LocalDate.of(2026, 9, 2), ps)
         assertEquals(LocalDate.of(2026, 9, 7), next)
