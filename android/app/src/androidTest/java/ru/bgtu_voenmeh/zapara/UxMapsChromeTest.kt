@@ -174,6 +174,19 @@ class UxMapsChromeTest {
         }
     }
 
+    @Test fun portrait_route_card_is_not_clipped_by_the_plan_at_200() {
+        show(scale = 2f)
+        val route = rule.onNodeWithTag("Maps.Route").assertIsDisplayed()
+        val visible = route.fetchSemanticsNode().boundsInRoot
+        val full = route.getUnclippedBoundsInRoot()
+        assertEquals("Maps.Route clipped height", (full.bottom - full.top).value * density, visible.height, 1f)
+        rule.onNodeWithTag("Maps.From").assertIsDisplayed()
+        rule.onNodeWithTag("Maps.To").assertIsDisplayed()
+        val viewport = rule.onNodeWithTag("UxMaps.Viewport").fetchSemanticsNode().boundsInRoot
+        assertTrue("Route card is cut by the plan", visible.bottom <= viewport.bottom)
+        assertTrue("Plan lost its minimum height", viewport.height - visible.height + 1f >= 160f * density)
+    }
+
     @Test fun short_landscape_200_percent_preserves_160dp_map_and_fallback_actions() {
         show(scale = 2f, short = true)
         val viewport = rule.onNodeWithTag("UxMaps.Viewport").fetchSemanticsNode().boundsInRoot

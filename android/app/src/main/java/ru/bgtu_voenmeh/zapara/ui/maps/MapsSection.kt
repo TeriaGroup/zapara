@@ -42,7 +42,7 @@ fun MapsSection(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = MapsLayout.compact(maxWidth.value.roundToInt(), maxHeight.value.roundToInt())
         val collapsed = MapsLayout.collapsed(maxWidth.value.roundToInt(), maxHeight.value.roundToInt(), androidx.compose.ui.platform.LocalDensity.current.fontScale)
-        val chromeHeight = maxHeight * MapsLayout.ChromeFraction
+        val chromeMax = MapsLayout.chromeMaxDp(maxHeight.value.roundToInt()).dp
         val controlsWidth = minOf(MapsLayout.SideChromeWidth.dp, maxWidth / 2)
         Column(Modifier.fillMaxSize()) {
             if (!compact) ZTopBar(stringResource(R.string.nav_maps)) {
@@ -62,7 +62,7 @@ fun MapsSection(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
                     MapsPlanPane(state, onEvent, Modifier.weight(1f).fillMaxHeight().padding(end = Zapara.space.l), compact = true, sideSteps = true)
                 }
             } else {
-                MapsChrome(state, onEvent, Modifier.heightIn(max = chromeHeight).verticalScroll(rememberScrollState()).padding(horizontal = Zapara.space.l), compact = collapsed)
+                MapsChrome(state, onEvent, Modifier.heightIn(max = chromeMax).verticalScroll(rememberScrollState()).padding(horizontal = Zapara.space.l), compact = collapsed)
                 MapsPlanPane(
                     state, onEvent,
                     Modifier
