@@ -19,7 +19,7 @@ class ScheduleComposerTest {
     private val parsed by lazy { GroupParser.parse(GROUP_FIXTURE) }
     private val all get() = parsed.lessons
     private val ctx = SchedCtx("3313", LocalDate.of(2026, 9, 1), 2, false)
-    private val monday = LocalDate.of(2026, 9, 7)
+    private val monday = LocalDate.of(2026, 9, 14)
     private val mathNorm = Parity.normalizeSubject("лек ВЫСШ. МАТЕМАТ")
 
     private fun page(date: LocalDate, now: LocalDateTime) = ScheduleComposer.page(
@@ -46,7 +46,7 @@ class ScheduleComposerTest {
     )
 
     @Test fun monday_cards_rename_past_homework_and_friends() {
-        val page = page(monday, LocalDateTime.of(2026, 9, 7, 12, 0))
+        val page = page(monday, LocalDateTime.of(2026, 9, 14, 12, 0))
         assertEquals(2, page.lessons.size)
         val first = page.lessons[0]
         assertEquals("Матан", first.name)
@@ -63,8 +63,8 @@ class ScheduleComposerTest {
     }
 
     @Test fun caption_uses_parity_and_week_number() {
-        val page = page(monday, LocalDateTime.of(2026, 9, 7, 12, 0))
-        assertEquals("Понедельник, 7 сентября · нечётная неделя · 1-я неделя", page.caption)
+        val page = page(monday, LocalDateTime.of(2026, 9, 14, 12, 0))
+        assertEquals("Понедельник, 14 сентября · нечётная неделя · 3-я неделя", page.caption)
     }
 
     @Test fun empty_thursday_has_next_lesson_hint() {
