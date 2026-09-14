@@ -8,14 +8,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.constrainHeight
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
@@ -53,10 +54,29 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
                             Text(stringResource(R.string.week_no_lessons), style = Zapara.typography.caption, color = c.text2)
                         } else {
                             day.rows.forEach { row ->
-                                Row(Modifier.fillMaxWidth()) {
-                                    Text(row.time, style = Zapara.typography.caption, color = c.text2, modifier = Modifier.width(44.dp))
-                                    Text(row.name, style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
+                                val spacing = Zapara.space.s
+                                Layout(modifier = Modifier.fillMaxWidth(), content = {
+                                    Text(row.time, style = Zapara.typography.caption, color = c.text2, softWrap = false)
+                                    Text(row.name, style = Zapara.typography.body, color = c.text1)
                                     Text(row.room, style = Zapara.typography.caption, color = c.text2)
+                                }) { measurables, constraints ->
+                                    val gap = spacing.roundToPx()
+                                    val timeWidth = measurables[0].maxIntrinsicWidth(Constraints.Infinity)
+                                    val roomWidth = measurables[2].maxIntrinsicWidth(Constraints.Infinity)
+                                    val subjectWidth = measurables[1].minIntrinsicWidth(Constraints.Infinity)
+                                    val stacked = timeWidth.toLong() + roomWidth + subjectWidth + gap * 2 > constraints.maxWidth
+                                    val loose = constraints.copy(minWidth = 0, minHeight = 0)
+                                    val time = measurables[0].measure(loose)
+                                    val room = measurables[2].measure(loose)
+                                    val nameWidth = if (stacked) constraints.maxWidth else constraints.maxWidth - time.width - room.width - gap * 2
+                                    val name = measurables[1].measure(loose.copy(minWidth = nameWidth, maxWidth = nameWidth))
+                                    val height = constraints.constrainHeight(if (stacked) time.height + name.height + room.height + gap * 2 else maxOf(time.height, name.height, room.height))
+                                    layout(constraints.maxWidth, height) {
+                                        time.placeRelative(0, 0)
+                                        name.placeRelative(if (stacked) 0 else time.width + gap, if (stacked) time.height + gap else 0)
+                                        room.placeRelative(if (stacked) 0 else constraints.maxWidth - room.width,
+                                            if (stacked) time.height + name.height + gap * 2 else 0)
+                                    }
                                 }
                             }
                         }

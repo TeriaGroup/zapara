@@ -19,8 +19,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.FriendDot
@@ -60,19 +63,36 @@ fun LessonCard(
         lesson.nextDate?.let { Text(stringResource(R.string.next_short, it), style = Zapara.typography.caption, color = c.text3) }
         hw.forEach { row ->
             val burning = !row.done && (row.status == "burning" || row.status == "burning_urgent")
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                if (burning) {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(c.warn).breath(true))
-                }
+            val spacing = Zapara.space.s
+            Layout(modifier = Modifier.fillMaxWidth(), content = {
                 Text(
                     row.text,
                     style = Zapara.typography.body,
                     color = if (row.done) c.text2 else c.text1,
-                    textDecoration = if (row.done) TextDecoration.LineThrough else null,
-                    modifier = Modifier.weight(1f)
+                    textDecoration = if (row.done) TextDecoration.LineThrough else null
                 )
-                ZChip(row.label, selected = row.status == "burning" || row.status == "burning_urgent")
-                ZSwitch(row.done, { onToggleDone(row.id) }, "Homework.Done.${row.id}")
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                    if (burning) {
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(c.warn).breath(true))
+                    }
+                    ZChip(row.label, selected = row.status == "burning" || row.status == "burning_urgent")
+                    ZSwitch(row.done, { onToggleDone(row.id) }, "Homework.Done.${row.id}")
+                }
+            }) { measurables, constraints ->
+                val gap = spacing.roundToPx()
+                val actionWidth = measurables[1].maxIntrinsicWidth(Constraints.Infinity)
+                // Reserve the longest word, not a fraction of the row, before placing actions beside text.
+                val stacked = measurables[0].minIntrinsicWidth(Constraints.Infinity).toLong() + gap + actionWidth > constraints.maxWidth
+                val loose = constraints.copy(minWidth = 0, minHeight = 0)
+                val textWidth = if (stacked) constraints.maxWidth else constraints.maxWidth - actionWidth - gap
+                val text = measurables[0].measure(loose.copy(minWidth = textWidth, maxWidth = textWidth))
+                val actions = measurables[1].measure(loose)
+                val height = constraints.constrainHeight(if (stacked) text.height + gap + actions.height else maxOf(text.height, actions.height))
+                layout(constraints.maxWidth, height) {
+                    text.placeRelative(0, if (stacked) 0 else (height - text.height) / 2)
+                    actions.placeRelative(if (stacked) 0 else textWidth + gap,
+                        if (stacked) text.height + gap else (height - actions.height) / 2)
+                }
             }
         }
         if (lesson.friends.isNotEmpty()) {
