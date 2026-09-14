@@ -47,7 +47,7 @@ class ScheduleWidgetComposerTest {
     )
 
     @Test fun guest_monday_shows_local_lessons_in_russian() {
-        val snap = build(now = LocalDateTime.of(2026, 9, 7, 10, 0))
+        val snap = build(now = LocalDateTime.of(2026, 9, 14, 10, 0))
         assertEquals("Расписание", snap.title)
         assertEquals("Гость · А863С", snap.subtitle)
         assertTrue(snap.empty == null)
