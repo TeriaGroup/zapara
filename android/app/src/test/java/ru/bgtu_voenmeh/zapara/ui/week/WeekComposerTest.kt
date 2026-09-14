@@ -19,8 +19,8 @@ class WeekComposerTest {
     @Test fun odd_week_six_days_and_lesson_counts() {
         val days = WeekComposer.compose(1, parsed.lessons, { norm, _ -> if (norm == mathNorm) "Матан" else "" }, ctx, today, XmlCopy)
         assertEquals(6, days.size)
-        // 2026-09-14 is XML-even (week 2); next user-odd Monday is 21.09 (week 3).
-        assertEquals("Понедельник · 21.09", days[0].title)
+        // From Tue 08.09 (week 2 even), the next odd Monday is 14.09 (week 3).
+        assertEquals("Понедельник · 14.09", days[0].title)
         assertEquals(2, days[0].rows.size)
         assertEquals(0, days.first { it.dow == 4 }.rows.size)
     }
@@ -35,6 +35,6 @@ class WeekComposerTest {
 
     @Test fun inverted_odd_lands_on_xml_even_dates() {
         val inverted = ctx.copy(invert = true)
-        assertEquals(LocalDate.of(2026, 9, 14), WeekComposer.nearestDate(1, 1, inverted, today))
+        assertEquals(LocalDate.of(2026, 9, 21), WeekComposer.nearestDate(1, 1, inverted, today))
     }
 }
