@@ -1,5 +1,6 @@
 package ru.bgtu_voenmeh.zapara.ui.maps
 
+import java.io.File
 import org.junit.Assert.*
 import org.junit.Test
 import ru.bgtu_voenmeh.zapara.data.campus.GraphPoint
@@ -19,5 +20,13 @@ class RouteOverlayTest {
         assertTrue(routeOverlayPoints(segment.copy(points = listOf(GraphPoint(Double.NaN, 0.0))), floor, fit).isEmpty())
         assertTrue(routeOverlayPoints(segment.copy(problems = setOf(RouteProblem.InvalidGeometry)), floor, fit).isEmpty())
         assertEquals(2, routeOverlayPoints(segment.copy(problems = setOf(RouteProblem.MissingMap)), floor, fit).size)
+    }
+
+    @Test fun on_map_numbers_cancel_font_scale_and_use_compact_padding() {
+        val source = File("src/main/java/ru/bgtu_voenmeh/zapara/ui/maps/RouteMapOverlay.kt").readText()
+        assertTrue(source.contains("fun compactMapNumberStyle()"))
+        assertTrue(source.contains("(11f / scale).sp"))
+        assertTrue(source.contains("padding(RouteOverlayStyle.numberPadding)"))
+        assertTrue(source.contains("val numberPadding = 2.dp"))
     }
 }

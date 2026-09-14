@@ -15,12 +15,15 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import kotlin.math.roundToInt
@@ -33,6 +36,7 @@ internal object RouteOverlayStyle {
     val arrowSpacing = 48.dp
     val marker = 24.dp
     val padding = 4.dp
+    val numberPadding = 2.dp
     val connector = 1.dp
 }
 
@@ -129,10 +133,10 @@ fun RouteMapOverlay(presentation: RoutePresentation, floor: FloorKey, activeStep
                 Text(label, style = Zapara.typography.caption, color = c.text1,
                     modifier = Modifier.testTag("Maps.Marker.${group.first().kind}")
                         .background(c.card, RoundedCornerShape(Zapara.radii.chip)).padding(RouteOverlayStyle.padding))
-                Text("${index + 1}", style = Zapara.typography.caption, color = c.text1,
+                Text("${index + 1}", style = compactMapNumberStyle(), color = c.text1,
                     modifier = Modifier.testTag("Maps.MarkerNumber.$index")
                         .clearAndSetSemantics { contentDescription = label }
-                        .background(c.card, RoundedCornerShape(Zapara.radii.chip)).padding(RouteOverlayStyle.padding))
+                        .background(c.card, RoundedCornerShape(Zapara.radii.chip)).padding(RouteOverlayStyle.numberPadding))
             }
         }) { measurables, constraints ->
             val measured = measurables.map { child -> child.measure(Constraints(maxWidth =
@@ -169,6 +173,13 @@ fun RouteMapOverlay(presentation: RoutePresentation, floor: FloorKey, activeStep
             }
         }
     }
+}
+
+@Composable
+private fun compactMapNumberStyle(): TextStyle {
+    val scale = LocalDensity.current.fontScale.coerceAtLeast(0.01f)
+    // Keep on-map digits near the 24dp marker; the legend still uses scaled captions.
+    return Zapara.typography.caption.copy(fontSize = (11f / scale).sp, lineHeight = (12f / scale).sp)
 }
 
 @Composable
