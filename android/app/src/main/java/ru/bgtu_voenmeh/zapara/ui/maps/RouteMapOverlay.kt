@@ -145,6 +145,7 @@ fun RouteMapOverlay(presentation: RoutePresentation, floor: FloorKey, activeStep
                 HighlightGeometry.ChipBox(p.x - markerSize / 2, p.y - markerSize / 2, markerSize, markerSize)
             }
             val viewport = visibleBounds ?: HighlightGeometry.ChipBox(0f, 0f, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
+            val raster = HighlightGeometry.ChipBox(fitted.originX, fitted.originY, fitted.drawnW, fitted.drawnH)
             val positions = groups.mapIndexed { index, group ->
                 val marker = group.first()
                 val x = fitted.originX + marker.point.x.toFloat() * fitted.drawnW
@@ -152,8 +153,12 @@ fun RouteMapOverlay(presentation: RoutePresentation, floor: FloorKey, activeStep
                 listOf(index * 2, index * 2 + 1).firstNotNullOfOrNull { childIndex ->
                     val child = measured[childIndex]
                     if (measurables[childIndex].minIntrinsicWidth(Constraints.Infinity) > child.width) null
-                    else RouteLabelPlacement.place(x, y, child.width.toFloat(), child.height.toFloat(), occupied, viewport, gap)
-                        ?.let { childIndex to it }
+                    else {
+                        // Full captions stay off the plan; compact numbers may sit near markers.
+                        val blocked = if (childIndex % 2 == 0) occupied + raster else occupied
+                        RouteLabelPlacement.place(x, y, child.width.toFloat(), child.height.toFloat(), blocked, viewport, gap)
+                            ?.let { childIndex to it }
+                    }
                 }?.also { occupied += it.second }
             }
             links = positions.mapIndexedNotNull { index, placed -> placed?.let {

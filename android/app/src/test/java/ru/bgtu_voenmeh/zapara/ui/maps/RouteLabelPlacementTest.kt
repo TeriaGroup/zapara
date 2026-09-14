@@ -40,6 +40,23 @@ class RouteLabelPlacementTest {
             ChipBox(0f, 0f, 320f, 120f), 4f))
     }
 
+    @Test fun large_captions_stay_off_filled_raster_while_compact_numbers_can_sit_near_markers() {
+        val raster = ChipBox(0f, 0f, 320f, 200f)
+        val viewport = ChipBox(0f, 0f, 320f, 200f)
+        assertNull(RouteLabelPlacement.place(40f, 40f, 160f, 80f, listOf(raster), viewport, 4f))
+        val compact = requireNotNull(RouteLabelPlacement.place(40f, 40f, 24f, 24f, emptyList(), viewport, 4f))
+        assertTrue(compact.x >= 0f && compact.y >= 0f)
+        assertTrue(compact.x + compact.w <= viewport.w && compact.y + compact.h <= viewport.h)
+    }
+
+    @Test fun large_captions_use_letterbox_not_the_plan() {
+        val raster = ChipBox(0f, 20f, 320f, 160f)
+        val viewport = ChipBox(0f, 0f, 320f, 200f)
+        val box = requireNotNull(RouteLabelPlacement.place(40f, 40f, 120f, 16f, listOf(raster), viewport, 4f))
+        assertFalse(HighlightGeometry.overlaps(box, raster, 4f))
+        assertTrue(box.y + box.h <= raster.y || box.y >= raster.y + raster.h)
+    }
+
     @Test fun fractional_inverse_zoom_viewport_is_checked_after_rounding() {
         val bounds = ChipBox(18.4f, -10.7f, 92.3f, 80.8f)
         val box = requireNotNull(RouteLabelPlacement.place(110f, 69f, 30f, 20f, emptyList(), bounds, 4f))
