@@ -225,6 +225,8 @@ internal object NativeShowcaseDriver {
                     CompositionLocalProvider(LocalDensity provides Density(density.density, scale)) {
                         ZaparaTheme(choice, MotionSettings.Off) {
                             val c = Zapara.colors
+                            assertEquals(scale, LocalDensity.current.fontScale, 0f)
+                            android.util.Log.i("ThemeSmokeScale", "choice=$choice requested=$scale actual=${LocalDensity.current.fontScale}")
                             assertEquals(Inter, Zapara.typography.body.fontFamily)
                             assertEquals(22.sp, Zapara.typography.title.fontSize)
                             assertEquals(FontWeight.Medium, Zapara.typography.section.fontWeight)
@@ -273,15 +275,23 @@ internal object NativeShowcaseDriver {
             assertFalse(disabled.isEnabled)
             for (i in 1..27) {
                 var icon = device.findObject(By.desc("Иконка $i"))
-                while (icon == null || icon!!.visibleBounds.isEmpty) {
+                while (icon == null || icon!!.visibleBounds.isEmpty || !iconBoxVisible(activity, i, density)) {
                     host.remainingMillis()
                     val scroll = requireNotNull(device.findObject(By.scrollable(true))) { "Missing scroll region for icon $i" }
                     val more = scroll.scroll(Direction.DOWN, 0.4f)
                     icon = device.findObject(By.desc("Иконка $i"))
-                    if (!more && (icon == null || icon!!.visibleBounds.isEmpty)) fail("Icon $i absent at end of scroll region")
+                    if (!more && (icon == null || icon!!.visibleBounds.isEmpty || !iconBoxVisible(activity, i, density))) {
+                        try { icon = refreshEndIcon(host, device, i, "theme-native-$variant$suffix-end") }
+                        catch (failure: Throwable) {
+                            try { captureScrollFailure(activity, device, "theme-bottom-$variant$suffix") }
+                            catch (captureError: Throwable) { failure.addSuppressed(captureError) }
+                            throw failure
+                        }
+                    }
                 }
                 assertNotNull("Icon $i not visible after scrolling", icon)
                 assertFalse(requireNotNull(icon).visibleBounds.isEmpty)
+                assertTrue("Icon $i full 48dp box inside physical content", iconBoxVisible(activity, i, density))
             }
             val file = Frames.capture(activity, "theme-native-$variant$suffix")
             assertTrue(file.length() > 1000)
@@ -291,6 +301,72 @@ internal object NativeShowcaseDriver {
         }
     }
 
+    internal fun refreshEndIcon(host: OwnedTestHost, device: UiDevice, index: Int, frame: String): androidx.test.uiautomator.UiObject2 {
+        // A terminal scroll event can precede accessibility exposure of the final row.
+        Frames.capture(host.activity, frame)
+        var icon: androidx.test.uiautomator.UiObject2? = null
+        host.await("Icon $index absent at end of scroll region", 1000) {
+            icon = device.findObject(By.desc("Иконка $index"))
+            icon?.visibleBounds?.isEmpty == false && iconBoxVisible(host.activity, index, host.activity.resources.displayMetrics.density)
+        }
+        return requireNotNull(icon)
+    }
+
+    private fun iconBoxVisible(activity: ComponentActivity, index: Int, density: Float): Boolean {
+        var visible = false
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val viewport = android.graphics.Rect()
+            assertTrue(activity.findViewById<android.view.View>(android.R.id.content).getGlobalVisibleRect(viewport))
+            var checked = false
+            fun visit(view: android.view.View) {
+                if (view is ViewRootForTest) {
+                    val nodes = view.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false)
+                    val box = nodes.single { it.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.TestTag) { null } == "Theme.Icon.${index - 1}" }
+                    val bounds = box.boundsInWindow
+                    visible = bounds.width >= 48 * density - 1 && bounds.height >= 48 * density - 1 &&
+                        bounds.left >= viewport.left && bounds.top >= viewport.top && bounds.right <= viewport.right && bounds.bottom <= viewport.bottom
+                    val image = nodes.single { it.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription) { null } == listOf("Иконка $index") }
+                    assertEquals(androidx.compose.ui.semantics.Role.Image, image.config[androidx.compose.ui.semantics.SemanticsProperties.Role])
+                    checked = true
+                }
+                if (view is android.view.ViewGroup) repeat(view.childCount) { visit(view.getChildAt(it)) }
+            }
+            visit(activity.window.decorView)
+            assertTrue("Icon $index geometry evidence missing", checked)
+        }
+        return visible
+    }
+
+    private fun captureScrollFailure(activity: ComponentActivity, device: UiDevice, name: String) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val dir = requireNotNull(activity.getExternalFilesDir("frames"))
+        val errors = mutableListOf<Throwable>()
+        fun attempt(block: () -> Unit) { try { block() } catch (error: Throwable) { errors.add(error) } }
+        fun bounds(phase: String) {
+            val lines = mutableListOf("phase=$phase time=${android.os.SystemClock.elapsedRealtime()} title=${activity.title}")
+            instrumentation.runOnMainSync {
+                val root = activity.window.decorView
+                lines.add("focus=${root.hasWindowFocus()} size=${root.width}x${root.height} insets=${root.rootWindowInsets} font=${activity.resources.configuration.fontScale}")
+                fun visit(view: android.view.View) {
+                    if (view is ViewRootForTest) view.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false).forEach { node ->
+                        val range = node.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange) { null }
+                        lines.add("id=${node.id} bounds=${node.boundsInWindow} size=${node.size} range=${range?.value?.invoke()}/${range?.maxValue?.invoke()} config=${node.config}")
+                    }
+                    if (view is android.view.ViewGroup) repeat(view.childCount) { visit(view.getChildAt(it)) }
+                }
+                visit(root)
+            }
+            for (i in 26..27) lines.add("lookup$i=${device.findObject(By.desc("Иконка $i"))?.visibleBounds}")
+            java.io.File(dir, "$name-$phase.txt").writeText(lines.joinToString("\n"))
+        }
+        attempt { bounds("before") }
+        attempt { check(device.takeScreenshot(java.io.File(dir, "$name-raw.png"))) }
+        attempt { device.dumpWindowHierarchy(java.io.File(dir, "$name-before.xml")) }
+        attempt { Frames.capture(activity, "$name-settled") }
+        attempt { bounds("settled") }
+        attempt { device.dumpWindowHierarchy(java.io.File(dir, "$name-settled.xml")) }
+        if (errors.isNotEmpty()) throw errors.first().also { first -> errors.drop(1).forEach(first::addSuppressed) }
+    }
 }
 
 private fun observeMotionChanges() {
