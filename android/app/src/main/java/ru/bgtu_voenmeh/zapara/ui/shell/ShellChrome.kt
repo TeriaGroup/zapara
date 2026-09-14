@@ -17,9 +17,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.res.stringResource
@@ -47,26 +53,49 @@ data class ShellChrome(
 
 val LocalShellChrome = staticCompositionLocalOf { ShellChrome(null, false, false) {} }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ZTopBar(title: String, actions: @Composable RowScope.() -> Unit = {}) {
     val container = Modifier.fillMaxWidth().heightIn(min = 56.dp)
         .background(Zapara.colors.canvas).padding(horizontal = Zapara.space.l)
-    if (LocalDensity.current.fontScale >= 1.5f) {
-        Column(container) {
+    val spacing = Zapara.space.s
+    Layout(
+        modifier = container,
+        content = {
             Text(title, style = Zapara.typography.title, color = Zapara.colors.text1,
-                modifier = Modifier.fillMaxWidth().testTag("Top.Title"))
-            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                Row(verticalAlignment = Alignment.CenterVertically, content = actions)
-                GroupChip()
-            }
+                modifier = Modifier.testTag("Top.Title"))
+            Row(verticalAlignment = Alignment.CenterVertically, content = actions)
+            Box { GroupChip() }
         }
-    } else {
-        Row(container, verticalAlignment = Alignment.CenterVertically) {
-            Text(title, style = Zapara.typography.title, color = Zapara.colors.text1,
-                modifier = Modifier.weight(1f).testTag("Top.Title"))
-            actions()
-            GroupChip()
+    ) { measurables, constraints ->
+        val gap = spacing.roundToPx()
+        val widths = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity) }
+        val actionGap = if (widths[1] > 0) gap else 0
+        val controlsWidth = widths[1].toLong() + actionGap + widths[2]
+        val stacked = widths[0].toLong() + gap + controlsWidth > constraints.maxWidth
+        val controlsStacked = controlsWidth > constraints.maxWidth
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val titleWidth = if (stacked) constraints.maxWidth else
+            constraints.maxWidth - controlsWidth.toInt() - gap
+        val heading = measurables[0].measure(loose.copy(minWidth = titleWidth, maxWidth = titleWidth))
+        val action = measurables[1].measure(loose.copy(maxWidth = widths[1].coerceAtMost(constraints.maxWidth)))
+        val group = measurables[2].measure(loose.copy(maxWidth = widths[2].coerceAtMost(constraints.maxWidth)))
+        val controlsHeight = if (controlsStacked) action.height + actionGap + group.height else
+            maxOf(action.height, group.height)
+        val contentHeight = if (stacked) heading.height + gap + controlsHeight else
+            maxOf(heading.height, controlsHeight)
+        val height = constraints.constrainHeight(contentHeight)
+        layout(constraints.maxWidth, height) {
+            if (!stacked) {
+                heading.placeRelative(0, (height - heading.height) / 2)
+                action.placeRelative(titleWidth + gap, (height - action.height) / 2)
+                group.placeRelative(titleWidth + gap + action.width + actionGap, (height - group.height) / 2)
+            } else {
+                heading.placeRelative(0, 0)
+                val controlsY = heading.height + gap
+                action.placeRelative(0, controlsY + if (controlsStacked) 0 else (controlsHeight - action.height) / 2)
+                group.placeRelative(if (controlsStacked) 0 else action.width + actionGap,
+                    controlsY + if (controlsStacked) action.height + actionGap else (controlsHeight - group.height) / 2)
+            }
         }
     }
 }
@@ -113,6 +142,9 @@ fun ZBottomBar(
     val c = Zapara.colors
     val motion = Zapara.motion
     val activeIndex = if (sectionsActive) 3 else Section.bar.indexOf(current).coerceAtLeast(0)
+    val labels = Section.bar.map { stringResource(it.title) } + stringResource(R.string.nav_sections)
+    val textMeasurer = rememberTextMeasurer()
+    val short = LocalConfiguration.current.screenHeightDp < 560
     Column(
         Modifier
             .fillMaxWidth()
@@ -121,7 +153,12 @@ fun ZBottomBar(
     ) {
         HorizontalDivider(color = c.line, thickness = Zapara.space.hairline)
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val columns = if (LocalDensity.current.fontScale >= 1.5f) 2 else 4
+            val density = LocalDensity.current
+            val labelWidths = labels.map { textMeasurer.measure(AnnotatedString(it), Zapara.typography.caption).size.width }
+            val inlineWidths = labelWidths.map { with(density) { it.toDp() } + 22.dp + Zapara.space.s + Zapara.space.l }
+            val inline = short && maxWidth > LocalConfiguration.current.screenHeightDp.dp &&
+                inlineWidths.maxOrNull()!! <= maxWidth / 4
+            val columns = if (!inline && density.fontScale >= 1.5f) 2 else 4
             val cell = maxWidth / columns
             val target = cell * (activeIndex % columns) + (cell - 18.dp) / 2
             val offsetX by animateDpAsState(targetValue = target, animationSpec = tween(motion.ms(Durations.indicator), easing = ZaparaEase), label = "indicator")
@@ -140,6 +177,7 @@ fun ZBottomBar(
                                 tag = section?.tag ?: "Nav.Sections",
                                 indicatorX = offsetX,
                                 indicatorShift = offsetX - target,
+                                inline = inline,
                                 onClick = { if (section != null) onSection(section) else onSections() }
                             )
                         }
@@ -161,6 +199,7 @@ private fun BarItem(
     tag: String,
     indicatorX: Dp,
     indicatorShift: Dp,
+    inline: Boolean,
     onClick: () -> Unit
 ) {
     val c = Zapara.colors
@@ -172,11 +211,7 @@ private fun BarItem(
         contentPadding = PaddingValues(0.dp)
     ) {
         Box(Modifier.fillMaxWidth()) {
-            Column(
-                Modifier.fillMaxWidth().padding(top = Zapara.space.s, bottom = Zapara.space.l),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
+            @Composable fun itemContent() {
                 Box(contentAlignment = Alignment.TopEnd) {
                     Icon(
                         painterResource(iconRes),
@@ -210,6 +245,13 @@ private fun BarItem(
                     style = Zapara.typography.caption,
                     color = if (active) c.text1 else c.text3
                 )
+            }
+            if (inline) Row(Modifier.fillMaxWidth().padding(top = Zapara.space.s, bottom = Zapara.space.l),
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically) { itemContent() }
+            else Column(Modifier.fillMaxWidth().padding(top = Zapara.space.s, bottom = Zapara.space.l),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                itemContent()
                 Spacer(Modifier.height(4.dp))
             }
             if (active) Box(Modifier.align(Alignment.BottomCenter).padding(bottom = Zapara.space.s)
