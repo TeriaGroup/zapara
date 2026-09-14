@@ -18,6 +18,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -32,6 +35,37 @@ import ru.bgtu_voenmeh.zapara.ui.account.AccountUiState
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
+
+@Composable
+private fun GroupActions(refreshing: Boolean, onChangeGroup: () -> Unit, onRefresh: () -> Unit) {
+    val spacing = Zapara.space.s
+    Layout(
+        modifier = Modifier.fillMaxWidth(),
+        content = {
+            ZButton(stringResource(R.string.ux_settings_change), onChangeGroup, ghost = true, tag = "Settings.GroupChange")
+            ZButton(stringResource(R.string.ux_settings_refresh), onRefresh, enabled = !refreshing, tag = "Settings.Refresh")
+        }
+    ) { measurables, constraints ->
+        val gap = spacing.roundToPx()
+        // Intrinsics include the actual font, full label, button padding and touch minimum.
+        val widths = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity) }
+        val stacked = widths.sumOf { it.toLong() } + gap > constraints.maxWidth
+        val buttons = measurables.mapIndexed { index, measurable ->
+            val width = if (stacked) constraints.maxWidth else widths[index]
+            measurable.measure(constraints.copy(minWidth = width, maxWidth = width, minHeight = 0))
+        }
+        val height = if (stacked) buttons.sumOf { it.height } + gap else buttons.maxOf { it.height }
+        layout(constraints.maxWidth, constraints.constrainHeight(height)) {
+            if (stacked) {
+                buttons[0].placeRelative(0, 0)
+                buttons[1].placeRelative(0, buttons[0].height + gap)
+            } else {
+                buttons[0].placeRelative(0, (height - buttons[0].height) / 2)
+                buttons[1].placeRelative(buttons[0].width + gap, (height - buttons[1].height) / 2)
+            }
+        }
+    }
+}
 
 @Composable
 fun SettingsSection(
@@ -53,10 +87,7 @@ fun SettingsSection(
                     Text(stringResource(R.string.settings_group), style = Zapara.typography.caption, color = c.text2)
                     Text(state.groupName.ifBlank { stringResource(R.string.group_pick) }, style = Zapara.typography.section, color = c.text1)
                     Text(state.groupUpdated, style = Zapara.typography.caption, color = if (state.stale) c.warn else c.text2)
-                    Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                        ZButton(stringResource(R.string.settings_change), onChangeGroup, ghost = true, tag = "Settings.GroupChange")
-                        ZButton(stringResource(R.string.settings_refresh), { onEvent(SettingsEvent.Refresh) }, enabled = !state.refreshing, tag = "Settings.Refresh")
-                    }
+                    GroupActions(state.refreshing, onChangeGroup) { onEvent(SettingsEvent.Refresh) }
                 }
             }
             if (state.apiConfigured) item {
