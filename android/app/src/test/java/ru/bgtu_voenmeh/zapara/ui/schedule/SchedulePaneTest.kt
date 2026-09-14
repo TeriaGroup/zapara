@@ -1,7 +1,10 @@
 package ru.bgtu_voenmeh.zapara.ui.schedule
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.time.LocalDate
 
 class SchedulePaneTest {
@@ -24,5 +27,12 @@ class SchedulePaneTest {
             pages = mapOf(today to page), error = "network"
         )
         assertEquals(ScheduleComposer.SchedulePane.Day, ScheduleComposer.pane(cached))
+    }
+
+    @Test fun date_cells_wrap_two_line_metrics_instead_of_a_fixed_56dp_box() {
+        val source = File("src/main/java/ru/bgtu_voenmeh/zapara/ui/schedule/DateStrip.kt").readText()
+        assertFalse(source.contains("size(44.dp, 56.dp)"))
+        assertTrue(source.contains("defaultMinSize(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch)"))
+        assertTrue(source.contains("padding(horizontal = Zapara.space.s, vertical = Zapara.space.s)"))
     }
 }

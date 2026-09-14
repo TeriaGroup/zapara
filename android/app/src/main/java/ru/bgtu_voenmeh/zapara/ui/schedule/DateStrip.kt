@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -43,13 +45,14 @@ fun DateStrip(selected: LocalDate, today: LocalDate, onPick: (LocalDate) -> Unit
             val on = date == selected
             Column(
                 Modifier
-                    .size(44.dp, 56.dp)
+                    .defaultMinSize(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch)
                     .clip(RoundedCornerShape(Zapara.radii.control))
                     .background(if (on) c.accent else c.chip)
                     .clickable { onPick(date) }
+                    .padding(horizontal = Zapara.space.s, vertical = Zapara.space.s)
                     .testTag("Schedule.Date.${date.format(DateTimeFormatter.BASIC_ISO_DATE)}"),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs, Alignment.CenterVertically)
             ) {
                 Text(stringResource(weekdayRes(date.dayOfWeek.value)), style = Zapara.typography.caption, color = if (on) c.onAccent else c.text2)
                 Text("${date.dayOfMonth}", style = Zapara.typography.bodyStrong, color = if (on) c.onAccent else c.text1)
