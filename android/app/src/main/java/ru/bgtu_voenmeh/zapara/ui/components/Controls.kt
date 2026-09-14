@@ -4,6 +4,8 @@ import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,6 +24,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import android.view.WindowManager
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -159,12 +165,17 @@ fun ZSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, tag: String, m
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun ZBottomSheet(onDismiss: () -> Unit, tag: String, content: @Composable ColumnScope.() -> Unit) {
+fun ZBottomSheet(onDismiss: () -> Unit, tag: String, scrollable: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
     val c = Zapara.colors
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
+    val window = (LocalView.current.parent as DialogWindowProvider).window
+    SideEffect {
+        window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+    }
     BackHandler(onBack = onDismiss)
     Box(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
         Box(
@@ -177,6 +188,7 @@ fun ZBottomSheet(onDismiss: () -> Unit, tag: String, content: @Composable Column
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .systemBarsPadding()
                 .imePadding()
         ) {
             Column(
@@ -200,7 +212,9 @@ fun ZBottomSheet(onDismiss: () -> Unit, tag: String, content: @Composable Column
                         .clip(RoundedCornerShape(Zapara.radii.pill))
                         .background(c.lineStrong)
                 )
-                content()
+                if (scrollable) {
+                    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), content = content)
+                } else content()
             }
         }
     }
