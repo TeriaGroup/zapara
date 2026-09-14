@@ -13,14 +13,15 @@ namespace Vograph.Desktop.Tests;
 
 public class WeekTests : UiTest
 {
-    private static readonly DateTime Mon7 = new(2026, 9, 7, 8, 0, 0);   // odd week (Tue 01.09 .. Mon 07.09)
-    private static readonly DateTime Wed9 = new(2026, 9, 9, 12, 0, 0);  // even week
+    private static readonly DateTime Mon7 = new(2026, 9, 7, 8, 0, 0);    // week 2 even (Mon 07.09 .. Sun 13.09)
+    private static readonly DateTime Mon14 = new(2026, 9, 14, 8, 0, 0);  // week 3 odd
+    private static readonly DateTime Wed9 = new(2026, 9, 9, 12, 0, 0);   // week 2 even
 
     [Fact]
-    public void Odd_Week_Rows_And_Nearest_Dates_Follow_The_Tue_To_Mon_Cycle()
+    public void Odd_Week_Rows_And_Nearest_Dates_Follow_Monday_Sunday_Weeks()
     {
         using var db = TestDb.Create();
-        var model = new WeekComposer(db.Services).Compose(1, Mon7);
+        var model = new WeekComposer(db.Services).Compose(1, Mon14);
 
         Assert.True(model.HasGroup);
         Assert.Equal(1, model.Parity);
@@ -28,8 +29,7 @@ public class WeekTests : UiTest
         Assert.Equal(6, model.Days.Count);
         Assert.Equal(new[] { 2, 1, 1, 0, 0, 1 }, model.Days.Select(d => d.Rows.Count));
         Assert.Equal(5, model.Total);
-        // Monday is today; the other odd days lie in the NEXT odd week because weeks run Tue..Mon.
-        Assert.Equal(new[] { "07.09", "15.09", "16.09", "17.09", "18.09", "19.09" }, model.Days.Select(d => d.Date.ToString("dd.MM")));
+        Assert.Equal(new[] { "14.09", "15.09", "16.09", "17.09", "18.09", "19.09" }, model.Days.Select(d => d.Date.ToString("dd.MM")));
         Assert.True(model.Days[0].IsToday);
         Assert.All(model.Days.Skip(1), d => Assert.False(d.IsToday));
         Assert.Equal("Понедельник", model.Days[0].Title);
@@ -48,7 +48,7 @@ public class WeekTests : UiTest
 
         var even = composer.Compose(2, Mon7);
         Assert.Equal(new[] { 1, 0, 1, 0, 0, 0 }, even.Days.Select(d => d.Rows.Count));
-        Assert.Equal(new[] { "14.09", "08.09", "09.09", "10.09", "11.09", "12.09" }, even.Days.Select(d => d.Date.ToString("dd.MM")));
+        Assert.Equal(new[] { "07.09", "08.09", "09.09", "10.09", "11.09", "12.09" }, even.Days.Select(d => d.Date.ToString("dd.MM")));
         Assert.Equal("ВЦ 280 ГК", even.Days[2].Rows[0].Room);
 
         var current = composer.Compose(0, Wed9); // 0 = whatever week today is
@@ -61,7 +61,7 @@ public class WeekTests : UiTest
         db.Services.Db.SaveSettings(s);
         var inverted = composer.Compose(1, Mon7); // "odd" as the user sees it now maps to the XML even week
         Assert.Equal(new[] { 1, 0, 1, 0, 0, 0 }, inverted.Days.Select(d => d.Rows.Count));
-        Assert.False(inverted.IsOddToday);
+        Assert.True(inverted.IsOddToday);
     }
 
     [Fact]
@@ -85,10 +85,10 @@ public class WeekTests : UiTest
         s.ParityInvert = true;
         db.Services.Db.SaveSettings(s);
         var inverted = new WeekComposer(db.Services).Compose(1, Mon7);
-        Assert.False(inverted.IsOddToday);
-        // Mon 07.09 is XML-odd → the user's «odd» Monday is 14.09; Tue 08.09 .. Sat 12.09 are XML-even → they are this week.
-        Assert.Equal(new[] { "14.09", "08.09", "09.09", "10.09", "11.09", "12.09" }, inverted.Days.Select(d => d.Date.ToString("dd.MM")));
-        Assert.All(inverted.Days, d => Assert.False(d.IsToday));
+        Assert.True(inverted.IsOddToday);
+        // Mon 07.09 is XML-even → with invert the user sees it as odd, so this week is Mon 07 .. Sat 12.
+        Assert.Equal(new[] { "07.09", "08.09", "09.09", "10.09", "11.09", "12.09" }, inverted.Days.Select(d => d.Date.ToString("dd.MM")));
+        Assert.True(inverted.Days[0].IsToday);
     }
 
     [Fact]
@@ -109,10 +109,10 @@ public class WeekTests : UiTest
     public void Sunday_Is_Never_Today_In_The_Grid()
     {
         using var db = TestDb.Create();
-        var sunday = new DateTime(2026, 9, 6, 12, 0, 0); // odd week (Tue 01.09 .. Mon 07.09)
+        var sunday = new DateTime(2026, 9, 6, 12, 0, 0); // week 1 odd (Mon 31.08 .. Sun 06.09)
         var model = new WeekComposer(db.Services).Compose(0, sunday);
         Assert.Equal(1, model.Parity);
-        Assert.Equal("07.09", model.Days[0].Date.ToString("dd.MM")); // the coming Monday of the same odd week
+        Assert.Equal("14.09", model.Days[0].Date.ToString("dd.MM")); // next odd Monday after this Sunday
         Assert.All(model.Days, d => Assert.False(d.IsToday));
     }
 
@@ -143,8 +143,8 @@ public class WeekTests : UiTest
         using var db = TestDb.Create();
         db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
         var shell = new ShellViewModel(db.Services);
-        shell.Register(SectionKey.Schedule, () => new ScheduleViewModel(db.Services, shell, () => Mon7));
-        shell.Register(SectionKey.Week, () => new WeekViewModel(db.Services, shell, () => Mon7));
+        shell.Register(SectionKey.Schedule, () => new ScheduleViewModel(db.Services, shell, () => Mon14));
+        shell.Register(SectionKey.Week, () => new WeekViewModel(db.Services, shell, () => Mon14));
         await shell.StartAsync(allowNetwork: false);
         var window = new MainWindow { DataContext = shell };
         window.Show();
@@ -165,7 +165,7 @@ public class WeekTests : UiTest
         var schedule = Assert.IsType<ScheduleViewModel>(shell.Current);
         await Waits.Until(() => schedule.Date == new DateTime(2026, 9, 16), "schedule date after day click");
         Assert.Equal(new DateTime(2026, 9, 16), schedule.Date);
-        Assert.Equal(9, schedule.DayOffset);
+        Assert.Equal(2, schedule.DayOffset);
 
         AssertNoBindingErrors();
     }
