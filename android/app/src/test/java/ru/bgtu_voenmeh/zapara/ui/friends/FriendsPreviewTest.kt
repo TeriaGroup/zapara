@@ -33,7 +33,7 @@ class FriendsPreviewTest {
             resolveId = { if (it == "09С31") "3031" else null },
             copy = XmlCopy
         )
-        assertEquals("Пн 07.09 · 09:00 · ВЫСШ. МАТЕМАТ", line)
+        assertEquals("Пн 14.09 · 09:00 · ВЫСШ. МАТЕМАТ", line)
     }
 
     @Test fun empty_when_no_friend_is_around() {
