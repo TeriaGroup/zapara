@@ -34,7 +34,12 @@ fun HomeworkEditorSheet(
     onCancel: () -> Unit
 ) {
     val c = Zapara.colors
-    ZBottomSheet(onCancel, "Sheet.Homework") {
+    val countLabel = when (state.n) {
+        1 -> R.string.ux_homework_due_one
+        in 2..4 -> R.string.ux_homework_due_few
+        else -> R.string.ux_homework_due_many
+    }
+    ZBottomSheet(onCancel, "Sheet.Homework", scrollable = true) {
         Text(state.subjectDisplay, style = Zapara.typography.section, color = c.text1)
         Spacer(Modifier.height(Zapara.space.s))
         OutlinedTextField(
@@ -52,9 +57,13 @@ fun HomeworkEditorSheet(
         Spacer(Modifier.height(Zapara.space.s))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             ZIconButton(R.drawable.ic_minus, stringResource(R.string.hw_due_decrease), onDec, "Editor.Dec")
-            Text(state.dueText(LocalUiCopy.current), style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f).testTag("Editor.Due"))
+            Text(stringResource(countLabel, state.n),
+                style = Zapara.typography.caption, color = c.text1,
+                modifier = Modifier.weight(1f).testTag("Editor.Count"))
             ZIconButton(R.drawable.ic_plus, stringResource(R.string.hw_due_increase), onInc, "Editor.Inc")
         }
+        Text(state.dueText(LocalUiCopy.current), style = Zapara.typography.body, color = c.text1,
+            modifier = Modifier.fillMaxWidth().testTag("Editor.Due"))
         Spacer(Modifier.height(Zapara.space.m))
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {

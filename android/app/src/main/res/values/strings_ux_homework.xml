@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ux_homework_due_one">Через %1$d занятие</string>
+    <string name="ux_homework_due_few">Через %1$d занятия</string>
+    <string name="ux_homework_due_many">Через %1$d занятий</string>
+    <string name="ux_homework_edit_label">Редактировать: %1$s, %2$s</string>
+</resources>

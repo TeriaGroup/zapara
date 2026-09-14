@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.TextLayoutResult
@@ -144,6 +145,114 @@ class HomeworkSectionTest {
         rule.onNodeWithTag("Editor.Due", true).assertTextEquals("Срок: —")
         noOverflow("Editor.Due")
         captureSettledEditor("task3-fix-null-reverted-light-200-v2")
+    }
+
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    @Test fun due_count_has_russian_units_clamps_and_preserves_date_preview() {
+        val stored = homework(7, "overdue")
+        var editor by mutableStateOf(HomeworkEditorState(stored.id, stored.norm, "Высшая математика",
+            stored.text, 1, true, homeworkEditorDueFor(stored, today) { from, n -> from.plusDays(n.toLong()) }))
+        var increments = 0
+        var decrements = 0
+        show(ThemeChoice.Dark) {
+            HomeworkEditorSheet(editor, { editor = editor.withText(it) },
+                { increments++; editor = editor.inc() }, { decrements++; editor = editor.dec() }, {}, {})
+        }
+        fun dialogText(tag: String): SemanticsNodeInteraction {
+            val matcher = hasTestTag(tag) and hasAnyAncestor(hasTestTag("Sheet.Homework"))
+            // Compose idleness does not establish platform Dialog window focus.
+            rule.waitUntil(timeoutMillis = 5_000) {
+                val node = rule.onAllNodes(matcher, true).fetchSemanticsNodes().singleOrNull()
+                rule.runOnIdle {
+                    val view = (node?.root as? ViewRootForTest)?.view
+                    view != null && view.isAttachedToWindow && view.hasWindowFocus() &&
+                        view.rootView !== rule.activity.window.decorView.rootView &&
+                        ownsContext(rule.activity, view.context)
+                }
+            }
+            // Re-query after readiness; never reuse a snapshot from a polling iteration.
+            return rule.onNode(matcher, true).assertIsDisplayed()
+        }
+        fun count(n: Int) {
+            val unit = when (n) { 1 -> "занятие"; in 2..4 -> "занятия"; else -> "занятий" }
+            // Intentional new visible-caption contract, not an existing production tag.
+            val node = dialogText("Editor.Count")
+                .assertTextEquals("Через $n $unit").assertIsDisplayed().fetchSemanticsNode()
+            rule.runOnIdle {
+                assertEquals(n, editor.n)
+                val snapshot = RenderedTextEvidence.capture(node)
+                RenderedTextEvidence.verify(snapshot, 2f)
+                assertTrue("Count caption must not shrink below caption token", snapshot.raw.layoutInput.style.fontSize.value >= 12f)
+            }
+        }
+        count(1)
+        rule.onNodeWithTag("Editor.Due", true).assertTextEquals("Срок: 11.09 (Пт)")
+        listOf("Editor.Inc", "Editor.Dec").forEach { tag ->
+            val bounds = rule.onNodeWithTag(tag).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val px = rule.density.density * 48
+            assertTrue("$tag actual 48dp bounds", bounds.width + 0.5f >= px && bounds.height + 0.5f >= px)
+        }
+        rule.onNodeWithTag("Editor.Inc").assertContentDescriptionEquals("Увеличить число занятий до срока")
+        rule.onNodeWithTag("Editor.Dec").assertContentDescriptionEquals("Уменьшить число занятий до срока")
+        rule.onNodeWithTag("Editor.Dec").performClick()
+        count(1)
+        rule.runOnIdle { assertEquals(1, decrements) }
+        (2..10).forEach { n ->
+            rule.onNodeWithTag("Editor.Inc").performClick()
+            count(n)
+            val expected = "Срок: ${String.format(java.util.Locale.ROOT, "%02d", n + 1)}.09"
+            rule.onNodeWithTag("Editor.Due", true).assertTextContains(expected, substring = true)
+            val node = dialogText("Editor.Due").fetchSemanticsNode()
+            rule.runOnIdle { RenderedTextEvidence.check(node, 2f) }
+        }
+        rule.onNodeWithTag("Editor.Inc").performClick()
+        count(10)
+        rule.runOnIdle { assertEquals(10, increments) }
+        repeat(9) { rule.onNodeWithTag("Editor.Dec").performClick() }
+        count(1)
+        rule.onNodeWithTag("Editor.Due", true).assertTextEquals("Срок: 11.09 (Пт)")
+        rule.runOnIdle { assertEquals(10, decrements); assertEquals(due, stored.due) }
+    }
+
+    @Test fun explicit_edit_opens_correct_row_once_without_toggling_done() {
+        val rows = listOf(homework(7, "overdue"), homework(8, "overdue").copy(text = "Второе задание"))
+        val events = mutableListOf<HomeworkEvent>()
+        var editor by mutableStateOf<HomeworkEditorState?>(null)
+        var completed by mutableStateOf(false)
+        show(ThemeChoice.Dark) {
+            val items = rows.map { row -> HomeworkGroups.toItem(row.copy(done = row.id == 8L && completed),
+                if (row.id == 7L) "Матан" else "История", today, copy) }
+            HomeworkSection(HomeworkUiState(true, true, HomeworkGroups.group(items, copy), editor)) { event ->
+                events += event
+                when (event) {
+                    is HomeworkEvent.Edit -> {
+                        val row = rows.single { it.id == event.id }
+                        editor = HomeworkEditorState(row.id, row.norm, if (row.id == 7L) "Матан" else "История",
+                            row.text, row.n, true, homeworkEditorDueFor(row, today) { from, n -> from.plusDays(n.toLong()) })
+                    }
+                    is HomeworkEvent.ToggleDone -> { assertEquals(8L, event.id); completed = !completed }
+                    HomeworkEvent.Cancel -> editor = null
+                    else -> Unit
+                }
+            }
+        }
+        // Intentional new discoverable icon/action; the pre-existing card tap is not enough.
+        val edit = rule.onNodeWithTag("Homework.Edit.8").performScrollTo().assertIsDisplayed()
+            .assertContentDescriptionEquals("Редактировать: История, Второе задание")
+        val bounds = edit.fetchSemanticsNode().boundsInRoot
+        assertTrue("Edit actual 48dp target", bounds.width + 0.5f >= 48 * rule.density.density &&
+            bounds.height + 0.5f >= 48 * rule.density.density)
+        edit.performClick()
+        rule.onNodeWithTag("Editor.Text").assertTextContains("Второе задание")
+        rule.onNode(hasText("История") and hasAnyAncestor(hasTestTag("Sheet.Homework")),
+            useUnmergedTree = true).assertIsDisplayed()
+        rule.runOnIdle { assertEquals(listOf(HomeworkEvent.Edit(8)), events); assertFalse(completed); assertEquals(8L, editor?.id) }
+        rule.onNodeWithTag("Editor.Cancel").performClick()
+        rule.onNodeWithTag("Homework.Done.8").performScrollTo().performClick().assertIsOn()
+        rule.runOnIdle {
+            assertNull(editor)
+            assertEquals(listOf(HomeworkEvent.Edit(8), HomeworkEvent.Cancel, HomeworkEvent.ToggleDone(8)), events)
+        }
     }
 
     private fun captureSettledEditor(name: String) {

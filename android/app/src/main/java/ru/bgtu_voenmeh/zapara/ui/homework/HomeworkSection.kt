@@ -87,6 +87,12 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                                         Text(item.dueLabel, style = Zapara.typography.caption, color = c.text2, modifier = Modifier.fillMaxWidth().testTag("Homework.Due.${item.id}"))
                                         Text(item.statusLabel, style = Zapara.typography.caption, color = c.text1, modifier = Modifier.fillMaxWidth().testTag("Homework.Status.${item.id}"))
                                     }
+                                }
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.End) {
+                                    ZIconButton(R.drawable.ic_pencil,
+                                        stringResource(R.string.ux_homework_edit_label, item.subject, item.text),
+                                        { onEvent(HomeworkEvent.Edit(item.id)) }, "Homework.Edit.${item.id}")
                                     val completionLabel = stringResource(R.string.hw_completion_label, item.subject, item.text)
                                     ZSwitch(item.done, { onEvent(HomeworkEvent.ToggleDone(item.id)) }, "Homework.Done.${item.id}",
                                         Modifier.semantics { contentDescription = completionLabel })
