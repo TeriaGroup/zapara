@@ -141,6 +141,33 @@ class RouteRound1Test {
         }
     }
 
+    @Test fun compact_map_numbers_stay_within_marker_size_at_200() {
+        var density = 1f
+        val points = listOf(GraphPoint(.2, .2), GraphPoint(.8, .8))
+        val presentation = RoutePresentation(emptyList(),
+            listOf(RouteSegment(0, floor, RoutePartKind.Walk, points)),
+            listOf(RouteMarker(RouteMarkerKind.Start, floor, points[0]),
+                RouteMarker(RouteMarkerKind.Destination, floor, points[1])), false, emptySet())
+        rule.setContent { ZaparaTheme(ThemeChoice.Light, MotionSettings.Off) {
+            density = LocalDensity.current.density
+            CompositionLocalProvider(LocalDensity provides Density(density, 2f)) {
+                Box(Modifier.size(320.dp, 240.dp).testTag("map")) {
+                    RouteMapOverlay(presentation, floor, null, FittedImage(0f, 0f, 320 * density, 240 * density))
+                }
+            }
+        } }
+        val maxPx = 24 * density + 1f
+        var seen = 0
+        for (tag in listOf("Maps.MarkerNumber.0", "Maps.MarkerNumber.1")) {
+            if (!rule.onNodeWithTag(tag).isDisplayed()) continue
+            val box = rule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+            assertTrue("$tag height ${box.height} exceeds marker", box.height <= maxPx)
+            assertTrue("$tag width ${box.width} exceeds marker", box.width <= maxPx)
+            seen++
+        }
+        assertTrue("Compact map numbers must be placed", seen > 0)
+    }
+
     @Test fun problems_survive_normal_fullscreen_and_sheet_without_duplicate_messages() {
         var state by mutableStateOf(MapsUiState(presentation = RoutePresentation(emptyList(), emptyList(), emptyList(), false,
             setOf(RouteProblem.UnsupportedLeg, RouteProblem.InvalidGeometry))))
