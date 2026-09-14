@@ -17,6 +17,9 @@ class MapsLayoutTest {
             assertTrue(MapsLayout.collapsed(width, 320, scale))
         }
         assertTrue(MapsLayout.ChromeFraction + MapsLayout.StepsFraction < 1f)
+        assertEquals(640, MapsLayout.chromeMaxDp(800))
+        assertEquals(0, MapsLayout.chromeMaxDp(100))
+        assertEquals(0, MapsLayout.chromeMaxDp(160))
     }
 
     @Test fun opaque_zoom_bar_is_shared_outside_raster_and_keeps_all_controls() {
@@ -36,7 +39,7 @@ class MapsLayoutTest {
         assertTrue(fullscreen.contains("Modifier.weight(1f).fillMaxHeight(), compact = true"))
         assertFalse(fullscreen.contains("ZoomableMap("))
         assertTrue(section.contains("heightIn(max = stepHeight).verticalScroll"))
-        assertTrue(section.contains("heightIn(max = chromeHeight).verticalScroll"))
+        assertTrue(section.contains("heightIn(max = chromeMax).verticalScroll"))
     }
 
     @Test fun new_path_uses_presentation_and_one_common_image_layer() {

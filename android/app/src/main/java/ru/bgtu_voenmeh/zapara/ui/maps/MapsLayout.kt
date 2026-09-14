@@ -12,4 +12,6 @@ object MapsLayout {
 
     fun compact(widthDp: Int, heightDp: Int): Boolean =
         heightDp < ShortHeightDp && widthDp > heightDp
+
+    fun chromeMaxDp(heightDp: Int): Int = (heightDp - MinPlanHeight).coerceAtLeast(0)
 }
