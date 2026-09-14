@@ -28,10 +28,18 @@ fun RouteStepBar(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifier: Mod
                     style = Zapara.typography.bodyStrong, color = Zapara.colors.text1,
                     modifier = Modifier.padding(vertical = Zapara.space.s).testTag("Maps.ActiveStep"))
             }
+            RoutePlanReturn(state, onEvent)
+            if (state.routeLoading) Text(stringResource(R.string.maps_route_loading), color = Zapara.colors.text1)
+            if (!state.remote) state.routeFailure?.let {
+                Text(it, style = Zapara.typography.body, color = Zapara.colors.text1)
+                ZButton(stringResource(R.string.maps_retry), { onEvent(MapsEvent.RetryMaps) }, tag = "Maps.RouteRetry")
+            }
+            if (step != null) RouteStepProblems(step, state.decodeFailedFloors)
             if (presentation?.arrived == true) Text(stringResource(R.string.maps_arrived), color = Zapara.colors.text1)
             RouteMarkerLegend(state)
             return@Column
         }
+        RoutePlanReturn(state, onEvent)
         if (state.routeLoading) Text(stringResource(R.string.maps_route_loading), color = Zapara.colors.text1)
         if (!state.remote) state.routeFailure?.let {
             Text(it, style = Zapara.typography.body, color = Zapara.colors.text1)
@@ -41,7 +49,8 @@ fun RouteStepBar(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifier: Mod
         if (step != null) {
             Column(Modifier.testTag("Maps.ActiveStep")) {
                 Text(stringResource(R.string.maps_step_count, index + 1, steps.size), style = Zapara.typography.bodyStrong, color = Zapara.colors.text1)
-                RouteStepDescription(step, state.decodeFailedFloors)
+                Text(routeStepText(step), style = Zapara.typography.body, color = Zapara.colors.text1)
+                RouteStepProblems(step, state.decodeFailedFloors)
             }
             val selected = RouteNavigation.select(state, step.id)
             if (selected.building != state.building || selected.floor != state.floor) {
@@ -67,9 +76,22 @@ internal fun RouteStepDescription(step: RouteStep, unavailable: Set<FloorKey> = 
     Text(routeStepText(step), style = Zapara.typography.body, color = Zapara.colors.text1)
     Text(stringResource(R.string.maps_step_context, step.from.building, step.from.floor, step.to.building, step.to.floor),
         style = Zapara.typography.caption, color = Zapara.colors.text2)
+    RouteStepProblems(step, unavailable)
+}
+
+@Composable
+private fun RouteStepProblems(step: RouteStep, unavailable: Set<FloorKey>) {
     val problems = if (step.from in unavailable || step.to in unavailable) step.problems + RouteProblem.MissingMap else step.problems
     routeProblemResources(problems).forEach { resource ->
         Text(stringResource(resource), style = Zapara.typography.body, color = Zapara.colors.text1)
+    }
+}
+
+@Composable
+private fun RoutePlanReturn(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
+    if (state.showStack) {
+        ZButton(stringResource(R.string.ux_maps_return_to_plan, state.building, state.floor),
+            { onEvent(MapsEvent.ToggleStack) }, ghost = true, tag = "Maps.ReturnToPlan")
     }
 }
 
