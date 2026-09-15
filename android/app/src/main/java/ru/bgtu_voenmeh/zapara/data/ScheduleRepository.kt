@@ -45,6 +45,7 @@ class ScheduleRepository private constructor(
     private val groupDao: GroupDao
 ) {
     val db: ZaparaDatabase get() = dbRef ?: error("Профиль не открыт")
+    var voenmeh: VoenmehScheduleClient = VoenmehScheduleClient()
 
     constructor(
         db: ZaparaDatabase,
@@ -370,23 +371,50 @@ class ScheduleRepository private constructor(
         try {
             ticket?.throwIfStale()
             TimetableSource.guardXmlRefresh(store, settings())
-            ingestParsed(GroupParser.parse(fetch(url)), url)
+            val parsed = try {
+                voenmeh.fetchSchedule(neededGroupNames())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                GroupParser.parse(fetch(url))
+            }
+            ingestParsed(parsed, parsed.groups.firstOrNull()?.url ?: url)
         } finally {
             ticket?.close()
         }
+    }
+
+    private fun neededGroupNames(): List<String> {
+        val s = settings()
+        val names = linkedSetOf<String>()
+        val selected = groupDao.getAll().firstOrNull { it.id == s.myGroupId }
+        when {
+            selected != null && selected.name.isNotBlank() -> names += selected.name
+            !s.myGroupId.isNullOrBlank() -> names += s.myGroupId!!
+        }
+        for (friend in friendDao.getAll()) {
+            if (friend.enabled && friend.groupName.isNotBlank()) names += friend.groupName
+        }
+        return names.toList()
     }
 
     private fun ingestParsed(parsed: ParsedSchedule, url: String) {
         val s = settings()
         val now = java.time.OffsetDateTime.now().toString()
         db.runInTransaction {
+            val existing = db.groupDao().getAll().associateBy { it.name }
+            val idByIncoming = parsed.groups.associate { g ->
+                g.id to (existing[g.name]?.id ?: g.id)
+            }
             for (g in parsed.groups) {
-                db.groupDao().upsert(GroupEntity(g.id, g.name, g.url))
+                val id = idByIncoming.getValue(g.id)
+                db.groupDao().upsert(GroupEntity(id, g.name, g.url.ifBlank { url }))
             }
             val byGroup = parsed.lessons.groupBy { it.groupId }
             for ((gid, list) in byGroup) {
-                db.lessonDao().clearForGroup(gid)
-                list.map { it.toEntity() }.chunked(200).forEach { chunk ->
+                val storedId = idByIncoming[gid] ?: gid
+                db.lessonDao().clearForGroup(storedId)
+                list.map { it.copy(groupId = storedId).toEntity() }.chunked(200).forEach { chunk ->
                     db.lessonDao().insertAll(chunk)
                 }
             }

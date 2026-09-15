@@ -113,29 +113,7 @@ object GroupParser {
                         } catch (_: Exception) {}
                     }
 
-                    var roomRaw = ""
-                    var buildingRaw = ""
-                    val raw = classroomRaw.trim().trimEnd(';').trim()
-                    if (raw.isNotEmpty()) {
-                        if (raw.equals("дистанционно", ignoreCase = true)) {
-                            roomRaw = raw
-                        } else {
-                            val clean = raw.replace("*", "").trim()
-                            val parts = clean.split(Regex("[ \t]+")).filter { it.isNotEmpty() }
-                            if (parts.size >= 2 && parts[0].any { it.isLetter() }) {
-                                buildingRaw = parts[0]
-                                roomRaw = parts.drop(1).joinToString(" ").trimEnd(';')
-                            } else {
-                                roomRaw = clean
-                                buildingRaw = when {
-                                    raw.contains("ВЦ", ignoreCase = true) -> "ВЦ"
-                                    raw.contains("*") -> "УЛК" // star = УЛК (user correction 2026-09-01)
-                                    else -> "ГК"
-                                }
-                            }
-                            if (buildingRaw == "main") buildingRaw = "ГК"
-                        }
-                    }
+                    val place = placeOf(classroomRaw)
 
                     val idx = (indexPerParity[parity] ?: 0) + 1
                     indexPerParity[parity] = idx
@@ -146,7 +124,7 @@ object GroupParser {
                             subjectRaw = discRaw,
                             subjectNormalized = Parity.normalizeSubject(discRaw),
                             teacherRaw = teachers.joinToString("; "),
-                            roomRaw = roomRaw, buildingRaw = buildingRaw,
+                            roomRaw = place.first, buildingRaw = place.second,
                             typeRaw = typeRaw, classroomRaw = classroomRaw
                         )
                     )
@@ -161,5 +139,28 @@ object GroupParser {
         // Direct child only (avoid nested matches).
         if (n.parentNode != parent) return ""
         return n.textContent?.trim().orEmpty()
+    }
+
+    internal fun placeOf(classroomRaw: String): Pair<String, String> {
+        val raw = classroomRaw.trim().trimEnd(';').trim()
+        if (raw.isEmpty()) return "" to ""
+        if (raw.equals("дистанционно", ignoreCase = true)) return raw to ""
+        val clean = raw.replace("*", "").trim()
+        val parts = clean.split(Regex("[ \t]+")).filter { it.isNotEmpty() }
+        var buildingRaw: String
+        val roomRaw: String
+        if (parts.size >= 2 && parts[0].any { it.isLetter() }) {
+            buildingRaw = parts[0]
+            roomRaw = parts.drop(1).joinToString(" ").trimEnd(';')
+        } else {
+            roomRaw = clean
+            buildingRaw = when {
+                raw.contains("ВЦ", ignoreCase = true) -> "ВЦ"
+                raw.contains("*") -> "УЛК"
+                else -> "ГК"
+            }
+        }
+        if (buildingRaw == "main") buildingRaw = "ГК"
+        return roomRaw to buildingRaw
     }
 }
