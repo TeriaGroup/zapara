@@ -30,6 +30,8 @@
 - package: `ru.zapara.app`. Подпись: релизный ключ (JKS вне репозитория).
 - Сборка для стора: `.\gradlew.bat :app:assembleRustoreRelease`
   (флавор `rustore`: без самообновления и без REQUEST_INSTALL_PACKAGES).
+  Тот же versionName/versionCode, что у GitHub-релиза; rustore-APK в GitHub
+  не выкладывают.
 - Иконка: `docs/dist/icon-512.png` (512×512).
 - Разрешения и зачем:
   - INTERNET — загрузка расписания с voenmeh.ru;
