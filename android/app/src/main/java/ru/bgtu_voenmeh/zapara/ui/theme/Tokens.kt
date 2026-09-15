@@ -48,6 +48,18 @@ val LightColors = ZaparaColors(
     friends = listOf(Color(0xFFD9861B), Color(0xFF2FA36B), Color(0xFF2B7FD9), Color(0xFF9B51E0), Color(0xFFE0527A))
 )
 
+object TypeInks {
+    fun of(kind: ru.bgtu_voenmeh.zapara.data.LessonTypeKind, dark: Boolean): Color = when (kind) {
+        ru.bgtu_voenmeh.zapara.data.LessonTypeKind.Lecture -> if (dark) Color(0xFF5AA9FF) else Color(0xFF2B7FD9)
+        ru.bgtu_voenmeh.zapara.data.LessonTypeKind.Practice -> if (dark) Color(0xFF4CC38A) else Color(0xFF2FA36B)
+        ru.bgtu_voenmeh.zapara.data.LessonTypeKind.Lab -> if (dark) Color(0xFFF2A33C) else Color(0xFFD9861B)
+        ru.bgtu_voenmeh.zapara.data.LessonTypeKind.Consult -> if (dark) Color(0xFFC77DFF) else Color(0xFF9B51E0)
+        ru.bgtu_voenmeh.zapara.data.LessonTypeKind.Credit -> if (dark) Color(0xFF5EEAD4) else Color(0xFF0F766E)
+        ru.bgtu_voenmeh.zapara.data.LessonTypeKind.Exam -> if (dark) Color(0xFFEF5B6B) else Color(0xFFD7404F)
+        ru.bgtu_voenmeh.zapara.data.LessonTypeKind.Course -> if (dark) Color(0xFFFF7A9C) else Color(0xFFE0527A)
+    }
+}
+
 object ZaparaSpace {
     val xs = 4.dp; val s = 8.dp; val m = 12.dp; val l = 16.dp; val xl = 24.dp
     val minTouch = 48.dp

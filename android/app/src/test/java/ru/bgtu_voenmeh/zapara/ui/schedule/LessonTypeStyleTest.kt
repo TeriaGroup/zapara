@@ -3,33 +3,41 @@ package ru.bgtu_voenmeh.zapara.ui.schedule
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
+import ru.bgtu_voenmeh.zapara.R
+import ru.bgtu_voenmeh.zapara.data.LessonTypeKind
 
 class LessonTypeStyleTest {
     @Test fun known_types_have_distinct_chip_labels_and_inks() {
         val kinds = listOf(
-            "лекция" to LessonTypeStyle.Kind.Lecture,
-            "лек" to LessonTypeStyle.Kind.Lecture,
-            "практика" to LessonTypeStyle.Kind.Practice,
-            "пр" to LessonTypeStyle.Kind.Practice,
-            "лабораторная" to LessonTypeStyle.Kind.Lab,
-            "лаб" to LessonTypeStyle.Kind.Lab,
-            "консультация" to LessonTypeStyle.Kind.Consult,
-            "конс" to LessonTypeStyle.Kind.Consult,
-            "зачёт" to LessonTypeStyle.Kind.Credit,
-            "зач" to LessonTypeStyle.Kind.Credit,
-            "экзамен" to LessonTypeStyle.Kind.Exam,
-            "экз" to LessonTypeStyle.Kind.Exam,
-            "курсовая" to LessonTypeStyle.Kind.Course,
-            "курс" to LessonTypeStyle.Kind.Course
+            "лекция" to LessonTypeKind.Lecture,
+            "лек" to LessonTypeKind.Lecture,
+            "практика" to LessonTypeKind.Practice,
+            "пр" to LessonTypeKind.Practice,
+            "лабораторная" to LessonTypeKind.Lab,
+            "лаб" to LessonTypeKind.Lab,
+            "консультация" to LessonTypeKind.Consult,
+            "конс" to LessonTypeKind.Consult,
+            "зачёт" to LessonTypeKind.Credit,
+            "зач" to LessonTypeKind.Credit,
+            "экзамен" to LessonTypeKind.Exam,
+            "экз" to LessonTypeKind.Exam,
+            "курсовая" to LessonTypeKind.Course,
+            "курс" to LessonTypeKind.Course
         )
         kinds.forEach { (raw, kind) -> assertEquals(raw, kind, LessonTypeStyle.kind(raw)) }
         assertNull(LessonTypeStyle.kind(""))
         assertNull(LessonTypeStyle.kind("семинар"))
-        val labels = LessonTypeStyle.Kind.entries.map { LessonTypeStyle.chipLabel(it) }
-        assertEquals(setOf("Лекция", "Практика", "Лаба", "Консульт.", "Зачёт", "Экзамен", "Курсовая"), labels.toSet())
+        val labels = LessonTypeKind.entries.map { LessonTypeStyle.labelRes(it) }
+        assertEquals(
+            setOf(
+                R.string.type_chip_lecture, R.string.type_chip_practice, R.string.type_chip_lab,
+                R.string.type_chip_consult, R.string.type_chip_credit, R.string.type_chip_exam, R.string.type_chip_course
+            ),
+            labels.toSet()
+        )
         assertEquals(labels.size, labels.distinct().size)
-        val dark = LessonTypeStyle.Kind.entries.map { LessonTypeStyle.ink(it, dark = true) }
-        val light = LessonTypeStyle.Kind.entries.map { LessonTypeStyle.ink(it, dark = false) }
+        val dark = LessonTypeKind.entries.map { LessonTypeStyle.ink(it, dark = true) }
+        val light = LessonTypeKind.entries.map { LessonTypeStyle.ink(it, dark = false) }
         assertEquals(dark.size, dark.distinct().size)
         assertEquals(light.size, light.distinct().size)
     }

@@ -49,7 +49,6 @@ fun DateStrip(selected: LocalDate, today: LocalDate, onPick: (LocalDate) -> Unit
         }
     }
     val c = Zapara.colors
-    val colorMs = Zapara.motion.ms(Durations.indicator)
     LazyRow(
         state = list,
         modifier = Modifier.testTag("Schedule.DateStrip"),
@@ -58,9 +57,9 @@ fun DateStrip(selected: LocalDate, today: LocalDate, onPick: (LocalDate) -> Unit
     ) {
         items(dates, key = { it }) { date ->
             val on = date == selected
-            val bg by animateColorAsState(if (on) c.accent else c.chip, tween(colorMs, easing = ZaparaEase), label = "dateChip")
-            val label by animateColorAsState(if (on) c.onAccent else c.text2, tween(colorMs, easing = ZaparaEase), label = "dateLabel")
-            val day by animateColorAsState(if (on) c.onAccent else c.text1, tween(colorMs, easing = ZaparaEase), label = "dateDay")
+            val bg by animateColorAsState(if (on) c.accent else c.chip, tween(Zapara.motion.ms(Durations.indicator), easing = ZaparaEase), label = "dateChip")
+            val label by animateColorAsState(if (on) c.onAccent else c.text2, tween(Zapara.motion.ms(Durations.indicator), easing = ZaparaEase), label = "dateLabel")
+            val day by animateColorAsState(if (on) c.onAccent else c.text1, tween(Zapara.motion.ms(Durations.indicator), easing = ZaparaEase), label = "dateDay")
             Column(
                 Modifier
                     .defaultMinSize(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch)

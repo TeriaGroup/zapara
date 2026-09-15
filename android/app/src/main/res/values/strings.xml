@@ -205,6 +205,13 @@
     <string name="type_credit">зачёт</string>
     <string name="type_exam">экзамен</string>
     <string name="type_course">курсовая</string>
+    <string name="type_chip_lecture">Лекция</string>
+    <string name="type_chip_practice">Практика</string>
+    <string name="type_chip_lab">Лаба</string>
+    <string name="type_chip_consult">Консульт.</string>
+    <string name="type_chip_credit">Зачёт</string>
+    <string name="type_chip_exam">Экзамен</string>
+    <string name="type_chip_course">Курсовая</string>
     <string name="remote_room">дистанционно</string>
     <string name="parity_week_odd">нечётная неделя</string>
     <string name="parity_week_even">чётная неделя</string>
