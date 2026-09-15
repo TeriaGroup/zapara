@@ -48,8 +48,8 @@ object LecturerParser {
                     ?.getElementsByTagName("Lesson") ?: continue
                 for (li in 0 until lessonNodes.length) {
                     val le = lessonNodes.item(li) as? Element ?: continue
-                    val parity = textOf(le, "WeekCode").toIntOrNull() ?: 0
                     val timeRaw = textOf(le, "Time")
+                    val parity = Parity.parseXmlParity(textOf(le, "WeekCode"), timeRaw)
                     val discRaw = textOf(le, "Discipline")
                     val classroomRaw = textOf(le, "Classroom")
                     if (dayNum == 0) dayNum = Parity.dayTitleToNumber(textOf(le, "DayTitle"))

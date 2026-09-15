@@ -75,8 +75,8 @@ object GroupParser {
                 val indexPerParity = mutableMapOf<Int, Int>()
                 for (li in 0 until lessonNodes.length) {
                     val ln = lessonNodes.item(li) as? Element ?: continue
-                    val parity = textOf(ln, "WeekCode").toIntOrNull() ?: 0
                     val timeRaw = textOf(ln, "Time")
+                    val parity = Parity.parseXmlParity(textOf(ln, "WeekCode"), timeRaw)
                     val discRaw = textOf(ln, "Discipline")
                     val classroomRaw = textOf(ln, "Classroom")
 

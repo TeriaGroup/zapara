@@ -52,6 +52,23 @@ class GroupParserTest {
     }
 
     @Test
+    fun timeSuffixFillsMissingWeekCode() {
+        val xml = """<Timetable>
+  <Period Title="t" StartYear="2026" StartMonth="9" StartDay="1" />
+  <Weeks WeekCount="2" />
+  <Group Number="А863С" IdGroup="3313">
+    <Days><Day Title="Понедельник"><GroupLessons>
+      <Lesson><WeekCode></WeekCode><Time>9:00 Нечетная</Time><Discipline>лек А</Discipline><Lecturers /><Classroom>1;</Classroom></Lesson>
+      <Lesson><WeekCode>0</WeekCode><Time>10:50 Четная</Time><Discipline>лек Б</Discipline><Lecturers /><Classroom>1;</Classroom></Lesson>
+      <Lesson><WeekCode>1</WeekCode><Time>12:40 Четная</Time><Discipline>лек В</Discipline><Lecturers /><Classroom>1;</Classroom></Lesson>
+    </GroupLessons></Day></Days>
+  </Group>
+</Timetable>"""
+        val lessons = GroupParser.parse(xml).lessons
+        assertEquals(listOf(1, 2, 1), lessons.map { it.parity })
+    }
+
+    @Test
     fun bundledAssetParses() {
         val file = java.io.File("src/main/assets/TimetableGroup50.xml")
         org.junit.Assume.assumeTrue(file.isFile)
