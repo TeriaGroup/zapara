@@ -24,6 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
@@ -40,9 +42,11 @@ import kotlin.math.roundToInt
 @Composable
 fun MapsSection(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
         val compact = MapsLayout.compact(maxWidth.value.roundToInt(), maxHeight.value.roundToInt())
-        val collapsed = MapsLayout.collapsed(maxWidth.value.roundToInt(), maxHeight.value.roundToInt(), androidx.compose.ui.platform.LocalDensity.current.fontScale)
-        val chromeMax = MapsLayout.chromeMaxDp(maxHeight.value.roundToInt()).dp
+        val collapsed = MapsLayout.collapsed(maxWidth.value.roundToInt(), maxHeight.value.roundToInt(), fontScale)
+        val compactSteps = MapsLayout.compactSteps(maxWidth.value.roundToInt(), maxHeight.value.roundToInt(), fontScale)
+        val chromeMax = MapsLayout.chromeMaxDp(maxHeight.value.roundToInt(), fontScale).dp
         val controlsWidth = minOf(MapsLayout.SideChromeWidth.dp, maxWidth / 2)
         Column(Modifier.fillMaxSize()) {
             if (!compact) ZTopBar(stringResource(R.string.nav_maps)) {
@@ -57,19 +61,20 @@ fun MapsSection(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
                             .fillMaxHeight()
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = Zapara.space.l),
-                        compact = collapsed, sidePane = true
+                        compact = collapsed, sidePane = true, compactSteps = compactSteps
                     )
                     MapsPlanPane(state, onEvent, Modifier.weight(1f).fillMaxHeight().padding(end = Zapara.space.l), compact = true, sideSteps = true)
                 }
             } else {
-                MapsChrome(state, onEvent, Modifier.heightIn(max = chromeMax).verticalScroll(rememberScrollState()).padding(horizontal = Zapara.space.l), compact = collapsed)
+                MapsChrome(state, onEvent, Modifier.heightIn(max = chromeMax).verticalScroll(rememberScrollState()).padding(horizontal = Zapara.space.l), compact = collapsed, compactSteps = compactSteps)
                 MapsPlanPane(
                     state, onEvent,
                     Modifier
                         .fillMaxWidth()
                         .weight(1f)
                         .heightIn(min = MapsLayout.MinPlanHeight.dp)
-                        .padding(horizontal = Zapara.space.l)
+                        .padding(horizontal = Zapara.space.l),
+                    compactSteps = compactSteps
                 )
             }
         }
@@ -98,7 +103,7 @@ internal fun MapsModals(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifier: Modifier = Modifier, compact: Boolean = false, sidePane: Boolean = false) {
+private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifier: Modifier = Modifier, compact: Boolean = false, sidePane: Boolean = false, compactSteps: Boolean = false) {
     val c = Zapara.colors
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         if (sidePane) {
@@ -106,40 +111,26 @@ private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifie
                 Text(stringResource(R.string.nav_maps), style = Zapara.typography.section, color = c.text1, modifier = Modifier.weight(1f))
                 ZIconButton(R.drawable.ic_map_pin, stringResource(R.string.maps_to_next), { onEvent(MapsEvent.ToNext) }, "Maps.ToNext")
             }
-            MapsStepChrome(state, onEvent)
+            MapsStepChrome(state, onEvent, compactSteps)
             if (!state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = true)
         }
         // Keep the complete selector rows at the scroll origin, not behind the route card.
         if (!compact) MapsFloorControls(state, onEvent)
         ZCard(Modifier.fillMaxWidth(), tag = "Maps.Route") {
-            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                Column(if (compact) Modifier.fillMaxWidth() else Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-                    RouteEnd(
-                        stringResource(R.string.maps_from),
-                        state.fromLabel,
-                        stringResource(R.string.maps_from_hint),
-                        { onEvent(MapsEvent.OpenFrom) },
-                        "Maps.From"
-                    )
-                    RouteEnd(
-                        stringResource(R.string.maps_to),
-                        state.toLabel,
-                        stringResource(R.string.maps_to_hint),
-                        { onEvent(MapsEvent.OpenTo) },
-                        "Maps.To"
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-                    if (state.canSwap) {
-                        ZChip(stringResource(R.string.maps_swap), onClick = { onEvent(MapsEvent.SwapEnds) }, tag = "Maps.Swap")
-                    }
-                    if (state.durationLabel.isNotBlank()) {
-                        Text(
-                            state.durationLabel,
-                            style = Zapara.typography.caption,
-                            color = c.text2,
-                            modifier = Modifier.testTag("Maps.Duration")
-                        )
+            Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                if (compact) {
+                    RouteEnd(stringResource(R.string.maps_from), state.fromLabel, stringResource(R.string.maps_from_hint), { onEvent(MapsEvent.OpenFrom) }, "Maps.From")
+                    RouteEnd(stringResource(R.string.maps_to), state.toLabel, stringResource(R.string.maps_to_hint), { onEvent(MapsEvent.OpenTo) }, "Maps.To")
+                    RouteMeta(state, onEvent)
+                } else {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) {
+                            RouteEnd(stringResource(R.string.maps_from), state.fromLabel, stringResource(R.string.maps_from_hint), { onEvent(MapsEvent.OpenFrom) }, "Maps.From")
+                        }
+                        Box(Modifier.weight(1f)) {
+                            RouteEnd(stringResource(R.string.maps_to), state.toLabel, stringResource(R.string.maps_to_hint), { onEvent(MapsEvent.OpenTo) }, "Maps.To")
+                        }
+                        RouteMeta(state, onEvent)
                     }
                 }
             }
@@ -154,8 +145,11 @@ private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifie
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun MapsFloorControls(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-        Text(stringResource(R.string.maps_plan_selection), style = Zapara.typography.caption, color = Zapara.colors.text2)
+    val planSelection = stringResource(R.string.maps_plan_selection)
+    Column(
+        Modifier.semantics { contentDescription = planSelection },
+        verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
+    ) {
         ZSegmented(state.buildings, state.buildings.indexOf(state.building).coerceAtLeast(0), { onEvent(MapsEvent.PickBuilding(it)) }, "Maps.Building")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             state.floors.forEach { n ->
@@ -167,7 +161,7 @@ internal fun MapsFloorControls(state: MapsUiState, onEvent: (MapsEvent) -> Unit)
 }
 
 @Composable
-internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifier: Modifier = Modifier, compact: Boolean = false, sideSteps: Boolean = false) {
+internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifier: Modifier = Modifier, compact: Boolean = false, sideSteps: Boolean = false, compactSteps: Boolean = false) {
     BoxWithConstraints(modifier) {
         val stepHeight = maxHeight * MapsLayout.StepsFraction
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
@@ -207,8 +201,16 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
             }
         }
         }
-        if (!sideSteps) Column(Modifier.fillMaxWidth().heightIn(max = stepHeight).verticalScroll(rememberScrollState())) {
-            MapsStepChrome(state, onEvent)
+        if (!sideSteps) {
+            val minStep = if (state.presentation != null) Zapara.space.minTouch else 0.dp
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = minStep, max = maxOf(stepHeight, minStep))
+                    .verticalScroll(rememberScrollState())
+            ) {
+                MapsStepChrome(state, onEvent, compactSteps)
+            }
         }
         if (!compact && !state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = !state.fullscreen)
         }
@@ -216,12 +218,12 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
 }
 
 @Composable
-private fun MapsStepChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
+private fun MapsStepChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, compactSteps: Boolean = false) {
             if (!state.remote && state.roomUnmarked) {
                 Text(stringResource(R.string.maps_room_unmarked), style = Zapara.typography.caption, color = Zapara.colors.text2,
                     modifier = Modifier.testTag("Maps.RouteUnmarked"))
             }
-            RouteStepBar(state, onEvent)
+            RouteStepBar(state, onEvent, compact = compactSteps)
             RouteRoomAction(state, onEvent)
 }
 
@@ -236,6 +238,19 @@ internal fun MapsZoomRow(onEvent: (MapsEvent) -> Unit, showFullscreen: Boolean) 
             if (showFullscreen) {
                 ZIconButton(R.drawable.ic_fullscreen, stringResource(R.string.maps_fullscreen), { onEvent(MapsEvent.Fullscreen(true)) }, "Maps.Fullscreen")
             }
+        }
+    }
+}
+
+@Composable
+private fun RouteMeta(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        if (state.durationLabel.isNotBlank()) {
+            Text(state.durationLabel, style = Zapara.typography.caption, color = Zapara.colors.text2,
+                modifier = Modifier.testTag("Maps.Duration"))
+        }
+        if (state.canSwap) {
+            ZChip(stringResource(R.string.maps_swap), onClick = { onEvent(MapsEvent.SwapEnds) }, tag = "Maps.Swap")
         }
     }
 }

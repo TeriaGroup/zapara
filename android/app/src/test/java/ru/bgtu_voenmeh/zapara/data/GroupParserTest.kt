@@ -69,6 +69,26 @@ class GroupParserTest {
     }
 
     @Test
+    fun html_landing_page_is_refused_before_xml_parse() {
+        val html = """<!doctype html>
+<html lang="ru"><head><title>ВОЕНМЕХ</title></head><body><div id="app"></div></body></html>"""
+        val err = try {
+            GroupParser.parse(html)
+            null
+        } catch (t: Throwable) { t.message.orEmpty() }
+        assertEquals(TimetablePayload.NOT_XML, err)
+        assertEquals(TimetablePayload.NOT_XML, try {
+            TimetablePayload.requireXml(html, "text/html; charset=utf-8")
+            "ok"
+        } catch (t: Throwable) { t.message })
+        val xml = """<?xml version="1.0"?><Timetable>
+  <Period Title="t" StartYear="2026" StartMonth="9" StartDay="1"/>
+  <Weeks WeekCount="2"/>
+</Timetable>"""
+        assertEquals(xml, TimetablePayload.requireXml(xml, "application/xml"))
+    }
+
+    @Test
     fun bundledAssetParses() {
         val file = java.io.File("src/main/assets/TimetableGroup50.xml")
         org.junit.Assume.assumeTrue(file.isFile)

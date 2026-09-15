@@ -26,7 +26,8 @@ data class ScheduleWidgetSnapshot(
     val empty: String?,
     val rows: List<ScheduleWidgetRow>,
     val cleared: Boolean = false,
-    val isDark: Boolean = false
+    val isDark: Boolean = false,
+    val nextRefreshAt: java.time.LocalDateTime? = null
 )
 
 data class HomeworkWidgetRow(
@@ -57,6 +58,16 @@ internal fun widgetSubtitle(identity: WidgetJobIdentity, groupName: String?, cop
 
 object ScheduleWidgetComposer {
     const val MAX_ROWS = 4
+    const val CHROME_DP = 56
+    const val ROW_DP = 40
+
+    fun rowsForHeightDp(heightDp: Int): Int =
+        ((heightDp - CHROME_DP) / ROW_DP).coerceIn(1, MAX_ROWS)
+
+    internal fun stillOn(lesson: Lesson, now: LocalTime): Boolean {
+        val end = runCatching { LocalTime.parse(lesson.timeEnd) }.getOrNull() ?: return true
+        return end.isAfter(now)
+    }
 
     fun cleared(identity: WidgetJobIdentity, copy: UiCopy, isDark: Boolean = false) = fromSchedule(
         identity = identity,
@@ -79,7 +90,8 @@ object ScheduleWidgetComposer {
         displayName: (Lesson) -> String,
         copy: UiCopy,
         cleared: Boolean = false,
-        isDark: Boolean = false
+        isDark: Boolean = false,
+        capacity: Int = MAX_ROWS
     ): ScheduleWidgetSnapshot {
         val title = copy.get("nav_schedule")
         if (cleared) {
@@ -98,18 +110,26 @@ object ScheduleWidgetComposer {
         val lessons = if (date == today) todayLessons else Schedule.lessonsForDate(
             allLessons, gid, date, settings.periodStart, settings.weekCount, settings.parityInvert
         )
-        val rows = lessons.take(MAX_ROWS).map { lesson ->
+        val clock = now.toLocalTime()
+        val remaining = if (date == today) lessons.filter { stillOn(it, clock) } else lessons
+        val cap = capacity.coerceIn(1, MAX_ROWS)
+        val rows = remaining.take(cap).map { lesson ->
             val shown = displayName(lesson).ifBlank { LessonFormat.stripType(lesson.subjectRaw, lesson.typeRaw) }
             val room = LessonFormat.roomLabel(lesson, copy)
             val end = runCatching { LocalTime.parse(lesson.timeEnd) }.getOrNull()
             ScheduleWidgetRow(
                 name = shown,
                 meta = "${lesson.timeStart} – ${lesson.timeEnd} · $room",
-                isPast = date == today && end != null && end.isBefore(now.toLocalTime())
+                isPast = date == today && end != null && !end.isAfter(clock)
             )
         }
+        val nextRefreshAt = if (date == today) {
+            remaining.firstOrNull()?.let { runCatching { LocalTime.parse(it.timeEnd) }.getOrNull() }
+                ?.takeIf { it.isAfter(clock) }
+                ?.let { date.atTime(it) }
+        } else null
         val empty = if (rows.isEmpty()) copy.get("no_lessons_day") else null
-        return ScheduleWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark)
+        return ScheduleWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark, nextRefreshAt)
     }
 }
 

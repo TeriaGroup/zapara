@@ -29,7 +29,7 @@ object GroupParser {
     private val DIGITS_RE = Regex("""\d+""")
 
     fun parse(xml: String, url: String = DEFAULT_URL): ParsedSchedule =
-        parse(InputSource(StringReader(xml)), url)
+        parse(InputSource(StringReader(TimetablePayload.requireXml(xml))), url)
 
     fun parse(stream: InputStream, url: String = DEFAULT_URL): ParsedSchedule =
         parse(InputSource(InputStreamReader(stream, StandardCharsets.UTF_8)), url)

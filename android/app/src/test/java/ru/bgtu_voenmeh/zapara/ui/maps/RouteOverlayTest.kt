@@ -29,4 +29,13 @@ class RouteOverlayTest {
         assertTrue(source.contains("padding(RouteOverlayStyle.numberPadding)"))
         assertTrue(source.contains("val numberPadding = 2.dp"))
     }
+
+    @Test fun markers_are_hollow_symbols_without_opaque_fills() {
+        val source = File("src/main/java/ru/bgtu_voenmeh/zapara/ui/maps/RouteMapOverlay.kt").readText()
+        assertFalse(source.contains("drawRect(c.onMapInk, size = size)"))
+        assertFalse(source.contains(".background(c.card, RoundedCornerShape(Zapara.radii.chip))"))
+        assertTrue(source.contains("background(c.mapInk"))
+        assertTrue(source.contains("color = c.onMapInk"))
+        assertFalse(source.contains("\"\${index + 1}. \${routeMarkerText(group)}\""))
+    }
 }

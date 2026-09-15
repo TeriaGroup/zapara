@@ -17,9 +17,15 @@ class MapsLayoutTest {
             assertTrue(MapsLayout.collapsed(width, 320, scale))
         }
         assertTrue(MapsLayout.ChromeFraction + MapsLayout.StepsFraction < 1f)
-        assertEquals(640, MapsLayout.chromeMaxDp(800))
+        assertEquals(200, MapsLayout.chromeMaxDp(800))
+        assertEquals(250, MapsLayout.chromeMaxDp(1000))
+        assertEquals(40, MapsLayout.chromeMaxDp(200))
+        assertEquals(640, MapsLayout.chromeMaxDp(800, 2f))
         assertEquals(0, MapsLayout.chromeMaxDp(100))
         assertEquals(0, MapsLayout.chromeMaxDp(160))
+        assertTrue(MapsLayout.compactSteps(411, 923))
+        assertTrue(MapsLayout.compactSteps(923, 411))
+        assertFalse(MapsLayout.compactSteps(923, 700))
     }
 
     @Test fun opaque_zoom_bar_is_shared_outside_raster_and_keeps_all_controls() {
@@ -38,8 +44,11 @@ class MapsLayoutTest {
         assertTrue(fullscreen.contains("MapsZoomRow(onEvent, showFullscreen = false)"))
         assertTrue(fullscreen.contains("Modifier.weight(1f).fillMaxHeight(), compact = true"))
         assertFalse(fullscreen.contains("ZoomableMap("))
-        assertTrue(section.contains("heightIn(max = stepHeight).verticalScroll"))
+        assertTrue(section.contains("heightIn(min = minStep, max = maxOf(stepHeight, minStep))"))
         assertTrue(section.contains("heightIn(max = chromeMax).verticalScroll"))
+        assertTrue(section.contains("MapsLayout.chromeMaxDp(maxHeight.value.roundToInt(), fontScale)"))
+        assertTrue(section.contains("MapsLayout.compactSteps("))
+        assertTrue(source("RouteStepBar").contains("compact: Boolean"))
     }
 
     @Test fun new_path_uses_presentation_and_one_common_image_layer() {

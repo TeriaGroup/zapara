@@ -6,10 +6,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.bgtu_voenmeh.zapara.data.GROUP_FIXTURE
 import ru.bgtu_voenmeh.zapara.data.GroupParser
+import ru.bgtu_voenmeh.zapara.data.Lesson
 import ru.bgtu_voenmeh.zapara.data.Parity
 import ru.bgtu_voenmeh.zapara.data.Schedule
 import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileDescriptor
+import ru.bgtu_voenmeh.zapara.ui.LessonFormat
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -45,6 +47,43 @@ class ScheduleWidgetComposerTest {
         copy = WidgetCopy,
         cleared = cleared
     )
+
+    @Test fun rows_for_height_fit_small_and_tall_widgets() {
+        assertEquals(1, ScheduleWidgetComposer.rowsForHeightDp(80))
+        assertEquals(2, ScheduleWidgetComposer.rowsForHeightDp(160))
+        assertEquals(4, ScheduleWidgetComposer.rowsForHeightDp(280))
+        assertEquals(ScheduleWidgetComposer.MAX_ROWS, ScheduleWidgetComposer.rowsForHeightDp(400))
+    }
+
+    @Test fun small_widget_slides_to_later_pairs_after_the_visible_ones_end() {
+        val day = LocalDate.of(2026, 9, 15)
+        val lessons = (1..4).map { i ->
+            val starts = listOf("09:00", "10:50", "12:40", "14:55")
+            val ends = listOf("10:35", "12:25", "14:15", "16:30")
+            val names = listOf("пр ИН. ЯЗ.", "пр ОСН РОС ГОС", "лек ВВЕД В СПЕЦ", "пр ВЫСШ. МАТЕМАТ")
+            Lesson(
+                groupId = "3313", dayOfWeek = 2, parity = 0, index = i,
+                timeStart = starts[i - 1], timeEnd = ends[i - 1],
+                subjectRaw = names[i - 1], subjectNormalized = Parity.normalizeSubject(names[i - 1]),
+                typeRaw = names[i - 1].substringBefore(" "), roomRaw = "100", buildingRaw = "УЛК", classroomRaw = "100;"
+            )
+        }
+        fun at(hour: Int, minute: Int, capacity: Int = 2) = ScheduleWidgetComposer.fromSchedule(
+            identity = guestId,
+            settings = settings,
+            allLessons = lessons,
+            now = LocalDateTime.of(day.year, day.month, day.dayOfMonth, hour, minute),
+            groupName = "Н162С",
+            displayName = { LessonFormat.stripType(it.subjectRaw, it.typeRaw) },
+            copy = WidgetCopy,
+            capacity = capacity
+        )
+        assertEquals(listOf("ИН. ЯЗ.", "ОСН РОС ГОС"), at(9, 0).rows.map { it.name })
+        assertEquals(listOf("ВВЕД В СПЕЦ", "ВЫСШ. МАТЕМАТ"), at(12, 30).rows.map { it.name })
+        assertEquals(listOf("ВЫСШ. МАТЕМАТ"), at(16, 0).rows.map { it.name })
+        assertEquals(LocalDateTime.of(day, java.time.LocalTime.of(10, 35)), at(9, 0).nextRefreshAt)
+        assertEquals(LocalDateTime.of(day, java.time.LocalTime.of(14, 15)), at(12, 30).nextRefreshAt)
+    }
 
     @Test fun guest_monday_shows_local_lessons_in_russian() {
         val snap = build(now = LocalDateTime.of(2026, 9, 14, 10, 0))

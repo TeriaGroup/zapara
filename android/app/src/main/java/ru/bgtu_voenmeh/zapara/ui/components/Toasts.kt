@@ -36,7 +36,9 @@ class ToastCenter {
 
     fun show(text: String, kind: ToastKind = ToastKind.Plain, action: ToastAction? = null) {
         mutable.update { current ->
-            (current + Toast(nextId++, text, kind, action)).takeLast(3)
+            val last = current.lastOrNull()
+            if (last != null && last.text == text && last.kind == kind) current
+            else (current + Toast(nextId++, text, kind, action)).takeLast(3)
         }
     }
 

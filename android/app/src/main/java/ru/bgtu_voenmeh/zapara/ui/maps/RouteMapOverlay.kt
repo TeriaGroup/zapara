@@ -101,19 +101,29 @@ fun RouteMapOverlay(presentation: RoutePresentation, floor: FloorKey, activeStep
                 // Keep the symbol centre on the graph coordinate, independently of label placement.
                 translate(x - markerSize / 2, y - markerSize / 2) {
                     val size = Size(markerSize, markerSize)
-                    drawRect(c.onMapInk, size = size)
                     val pad = RouteOverlayStyle.padding.toPx()
                     val stroke = Stroke(RouteOverlayStyle.stroke.toPx(), cap = StrokeCap.Round)
+                    val outline = Stroke(RouteOverlayStyle.outline.toPx(), cap = StrokeCap.Round)
                     when (marker.kind) {
-                        RouteMarkerKind.Start -> drawCircle(c.mapInk, (size.minDimension - pad * 2) / 2,
-                            center = Offset(markerSize / 2, markerSize / 2), style = stroke)
-                        RouteMarkerKind.Destination -> drawRect(c.mapInk, Offset(pad, pad), Size(size.width - 2 * pad, size.height - 2 * pad), style = stroke)
+                        RouteMarkerKind.Start -> {
+                            val center = Offset(markerSize / 2, markerSize / 2)
+                            val radius = (size.minDimension - pad * 2) / 2
+                            drawCircle(c.onMapInk, radius, center, style = outline)
+                            drawCircle(c.mapInk, radius, center, style = stroke)
+                        }
+                        RouteMarkerKind.Destination -> {
+                            val origin = Offset(pad, pad)
+                            val box = Size(size.width - 2 * pad, size.height - 2 * pad)
+                            drawRect(c.onMapInk, origin, box, style = outline)
+                            drawRect(c.mapInk, origin, box, style = stroke)
+                        }
                         RouteMarkerKind.StairDeparture, RouteMarkerKind.StairArrival -> {
                             val path = Path().apply {
                                 moveTo(pad, size.height - pad); lineTo(size.width / 2, size.height - pad)
                                 lineTo(size.width / 2, size.height / 2); lineTo(size.width - pad, size.height / 2)
                                 lineTo(size.width - pad, pad)
                             }
+                            drawPath(path, c.onMapInk, style = outline)
                             drawPath(path, c.mapInk, style = stroke)
                         }
                         RouteMarkerKind.LinkDeparture, RouteMarkerKind.LinkArrival -> {
@@ -121,6 +131,7 @@ fun RouteMapOverlay(presentation: RoutePresentation, floor: FloorKey, activeStep
                                 moveTo(pad, size.height / 2); lineTo(size.width - pad, size.height / 2)
                                 moveTo(size.width / 2, pad); lineTo(size.width - pad, size.height / 2); lineTo(size.width / 2, size.height - pad)
                             }
+                            drawPath(path, c.onMapInk, style = outline)
                             drawPath(path, c.mapInk, style = stroke)
                         }
                     }
@@ -129,14 +140,11 @@ fun RouteMapOverlay(presentation: RoutePresentation, floor: FloorKey, activeStep
         }
         Layout(modifier = Modifier.fillMaxSize(), content = {
             groups.forEachIndexed { index, group ->
-                val label = "${index + 1}. ${routeMarkerText(group)}"
-                Text(label, style = Zapara.typography.caption, color = c.text1,
-                    modifier = Modifier.testTag("Maps.Marker.${group.first().kind}")
-                        .background(c.card, RoundedCornerShape(Zapara.radii.chip)).padding(RouteOverlayStyle.padding))
-                Text("${index + 1}", style = compactMapNumberStyle(), color = c.text1,
+                val label = routeMarkerText(group).let { text -> "${index + 1}. $text" }
+                Text("${index + 1}", style = compactMapNumberStyle(), color = c.onMapInk,
                     modifier = Modifier.testTag("Maps.MarkerNumber.$index")
                         .clearAndSetSemantics { contentDescription = label }
-                        .background(c.card, RoundedCornerShape(Zapara.radii.chip)).padding(RouteOverlayStyle.numberPadding))
+                        .background(c.mapInk, RoundedCornerShape(Zapara.radii.chip)).padding(RouteOverlayStyle.numberPadding))
             }
         }) { measurables, constraints ->
             val measured = measurables.map { child -> child.measure(Constraints(maxWidth =
@@ -149,21 +157,15 @@ fun RouteMapOverlay(presentation: RoutePresentation, floor: FloorKey, activeStep
                 HighlightGeometry.ChipBox(p.x - markerSize / 2, p.y - markerSize / 2, markerSize, markerSize)
             }
             val viewport = visibleBounds ?: HighlightGeometry.ChipBox(0f, 0f, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
-            val raster = HighlightGeometry.ChipBox(fitted.originX, fitted.originY, fitted.drawnW, fitted.drawnH)
             val positions = groups.mapIndexed { index, group ->
                 val marker = group.first()
                 val x = fitted.originX + marker.point.x.toFloat() * fitted.drawnW
                 val y = fitted.originY + marker.point.y.toFloat() * fitted.drawnH + markerSize / 2 + gap
-                listOf(index * 2, index * 2 + 1).firstNotNullOfOrNull { childIndex ->
-                    val child = measured[childIndex]
-                    if (measurables[childIndex].minIntrinsicWidth(Constraints.Infinity) > child.width) null
-                    else {
-                        // Full captions stay off the plan; compact numbers may sit near markers.
-                        val blocked = if (childIndex % 2 == 0) occupied + raster else occupied
-                        RouteLabelPlacement.place(x, y, child.width.toFloat(), child.height.toFloat(), blocked, viewport, gap)
-                            ?.let { childIndex to it }
-                    }
-                }?.also { occupied += it.second }
+                val child = measured.getOrNull(index) ?: return@mapIndexed null
+                if (measurables[index].minIntrinsicWidth(Constraints.Infinity) > child.width) null
+                else RouteLabelPlacement.place(x, y, child.width.toFloat(), child.height.toFloat(), occupied, viewport, gap)
+                    ?.also { occupied += it }
+                    ?.let { index to it }
             }
             links = positions.mapIndexedNotNull { index, placed -> placed?.let {
                 PathGeometry.onLayout(groups[index].first().point.x.toFloat(), groups[index].first().point.y.toFloat(), fitted) to it.second

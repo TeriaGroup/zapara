@@ -3,6 +3,8 @@ package ru.bgtu_voenmeh.zapara.ui.week
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +23,7 @@ import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
+import ru.bgtu_voenmeh.zapara.ui.schedule.LessonTypeChip
 import ru.bgtu_voenmeh.zapara.ui.shell.LocalShellChrome
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
@@ -28,6 +31,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
 import java.time.LocalDate
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (LocalDate) -> Unit) {
     val chrome = LocalShellChrome.current
@@ -53,11 +57,19 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
                         if (day.rows.isEmpty()) {
                             Text(stringResource(R.string.week_no_lessons), style = Zapara.typography.caption, color = c.text2)
                         } else {
-                            day.rows.forEach { row ->
+                            day.rows.forEachIndexed { rowIndex, row ->
                                 val spacing = Zapara.space.s
                                 Layout(modifier = Modifier.fillMaxWidth(), content = {
                                     Text(row.time, style = Zapara.typography.caption, color = c.text2, softWrap = false)
-                                    Text(row.name, style = Zapara.typography.body, color = c.text1)
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+                                        verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)
+                                    ) {
+                                        Text(row.name, style = Zapara.typography.body, color = c.text1)
+                                        if (row.type.isNotBlank()) {
+                                            LessonTypeChip(row.type, "Week.Type.${day.dow}.$rowIndex")
+                                        }
+                                    }
                                     Text(row.room, style = Zapara.typography.caption, color = c.text2)
                                 }) { measurables, constraints ->
                                     val gap = spacing.roundToPx()

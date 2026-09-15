@@ -22,7 +22,16 @@ class WeekComposerTest {
         // From Tue 08.09 (week 2 even), the next odd Monday is 14.09 (week 3).
         assertEquals("Понедельник · 14.09", days[0].title)
         assertEquals(2, days[0].rows.size)
+        assertEquals("лекция", days[0].rows[0].type)
+        assertEquals("практика", days[0].rows[1].type)
         assertEquals(0, days.first { it.dow == 4 }.rows.size)
+    }
+
+    @Test fun week_rows_keep_a_colored_type_mark_next_to_the_subject() {
+        val section = java.io.File("src/main/java/ru/bgtu_voenmeh/zapara/ui/week/WeekSection.kt").readText()
+        assertTrue(section.contains("LessonTypeChip"))
+        assertTrue(section.contains("row.type"))
+        assertTrue(section.contains("Week.Type."))
     }
 
     @Test fun nearest_current_tuesday_is_today() {

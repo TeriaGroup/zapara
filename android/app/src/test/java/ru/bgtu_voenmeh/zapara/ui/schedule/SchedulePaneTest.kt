@@ -35,4 +35,14 @@ class SchedulePaneTest {
         assertTrue(source.contains("defaultMinSize(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch)"))
         assertTrue(source.contains("padding(horizontal = Zapara.space.s, vertical = Zapara.space.s)"))
     }
+
+    @Test fun date_strip_slides_to_the_selected_day_instead_of_jumping() {
+        val source = File("src/main/java/ru/bgtu_voenmeh/zapara/ui/schedule/DateStrip.kt").readText()
+        assertTrue(source.contains("animateScrollToItem"))
+        assertTrue(source.contains("remember(today)"))
+        assertFalse(source.contains("remember(selected)"))
+        assertFalse(source.contains("scrollToItem(30)"))
+        val section = File("src/main/java/ru/bgtu_voenmeh/zapara/ui/schedule/ScheduleSection.kt").readText()
+        assertTrue(section.contains("pager.animateScrollToPage"))
+    }
 }

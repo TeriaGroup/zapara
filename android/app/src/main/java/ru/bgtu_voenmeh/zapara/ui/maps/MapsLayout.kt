@@ -13,5 +13,12 @@ object MapsLayout {
     fun compact(widthDp: Int, heightDp: Int): Boolean =
         heightDp < ShortHeightDp && widthDp > heightDp
 
-    fun chromeMaxDp(heightDp: Int): Int = (heightDp - MinPlanHeight).coerceAtLeast(0)
+    fun compactSteps(widthDp: Int, heightDp: Int, fontScale: Float = 1f): Boolean =
+        collapsed(widthDp, heightDp, fontScale) || widthDp <= heightDp
+
+    fun chromeMaxDp(heightDp: Int, fontScale: Float = 1f): Int {
+        val room = (heightDp - MinPlanHeight).coerceAtLeast(0)
+        if (fontScale >= 1.5f) return room
+        return minOf(room, (heightDp * ChromeFraction).toInt())
+    }
 }

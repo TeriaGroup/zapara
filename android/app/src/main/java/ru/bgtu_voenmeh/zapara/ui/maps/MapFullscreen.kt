@@ -24,6 +24,7 @@ fun MapFullscreen(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
         }
         BoxWithConstraints(Modifier.fillMaxSize().background(Zapara.colors.canvas).systemBarsPadding()) {
             val compact = MapsLayout.compact(maxWidth.value.toInt(), maxHeight.value.toInt())
+            val compactSteps = MapsLayout.compactSteps(maxWidth.value.toInt(), maxHeight.value.toInt())
             val controlsWidth = minOf(MapsLayout.SideChromeWidth.dp, maxWidth / 2)
             if (compact) {
                 Row(Modifier.fillMaxSize()) {
@@ -33,12 +34,12 @@ fun MapFullscreen(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
                         FullscreenClose(onEvent)
                         if (!state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = false)
                     }
-                    MapsPlanPane(state, onEvent, Modifier.weight(1f).fillMaxHeight(), compact = true)
+                    MapsPlanPane(state, onEvent, Modifier.weight(1f).fillMaxHeight(), compact = true, compactSteps = compactSteps)
                 }
             } else {
                 Column(Modifier.fillMaxSize()) {
                     FullscreenClose(onEvent)
-                    MapsPlanPane(state, onEvent, Modifier.fillMaxWidth().weight(1f))
+                    MapsPlanPane(state, onEvent, Modifier.fillMaxWidth().weight(1f), compactSteps = compactSteps)
                 }
             }
         }

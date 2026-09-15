@@ -208,6 +208,7 @@ class ScheduleViewModel(
 
     private fun refresh() {
         viewModelScope.launch {
+            if (mutable.value.refreshing) return@launch
             if (!mutable.value.hasGroup) {
                 container.toasts.show(container.app.getString(R.string.pick_group_first), ToastKind.Bad)
                 return@launch

@@ -12,15 +12,15 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun RouteStepBar(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifier: Modifier = Modifier) {
+fun RouteStepBar(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifier: Modifier = Modifier,
+    compact: Boolean? = null) {
     val presentation = state.presentation
     val steps = presentation?.steps.orEmpty()
     val index = steps.indexOfFirst { it.id == state.activeStepId }
     val step = steps.getOrNull(index)
-    val collapsed = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f ||
-        androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < MapsLayout.ShortHeightDp
+    val collapsed = compact ?: (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f ||
+        androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < MapsLayout.ShortHeightDp)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-        RoutePresentationProblems(state)
         if (collapsed) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 ZButton(stringResource(R.string.maps_all_steps), { onEvent(MapsEvent.OpenRouteSteps) }, tag = "Maps.AllSteps")
@@ -29,6 +29,7 @@ fun RouteStepBar(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifier: Mod
                     modifier = Modifier.padding(vertical = Zapara.space.s).testTag("Maps.ActiveStep"))
             }
             RoutePlanReturn(state, onEvent)
+            RoutePresentationProblems(state)
             if (state.routeLoading) Text(stringResource(R.string.maps_route_loading), color = Zapara.colors.text1)
             if (!state.remote) state.routeFailure?.let {
                 Text(it, style = Zapara.typography.body, color = Zapara.colors.text1)
@@ -39,6 +40,7 @@ fun RouteStepBar(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifier: Mod
             RouteMarkerLegend(state)
             return@Column
         }
+        RoutePresentationProblems(state)
         RoutePlanReturn(state, onEvent)
         if (state.routeLoading) Text(stringResource(R.string.maps_route_loading), color = Zapara.colors.text1)
         if (!state.remote) state.routeFailure?.let {

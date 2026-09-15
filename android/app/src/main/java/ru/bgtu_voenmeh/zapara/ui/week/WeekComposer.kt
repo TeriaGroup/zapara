@@ -8,7 +8,7 @@ import ru.bgtu_voenmeh.zapara.ui.LessonFormat
 import ru.bgtu_voenmeh.zapara.ui.UiCopy
 import java.time.LocalDate
 
-data class WeekRowUi(val time: String, val name: String, val room: String)
+data class WeekRowUi(val time: String, val name: String, val room: String, val type: String = "")
 data class WeekDayUi(val dow: Int, val title: String, val date: LocalDate, val rows: List<WeekRowUi>, val isToday: Boolean)
 
 object WeekComposer {
@@ -36,7 +36,7 @@ object WeekComposer {
             val shown = displayName(lesson.subjectNormalized, lesson.dayOfWeek).ifBlank {
                 LessonFormat.stripType(lesson.subjectRaw, lesson.typeRaw)
             }
-            WeekRowUi(lesson.timeStart, shown, LessonFormat.roomLabel(lesson, copy))
+            WeekRowUi(lesson.timeStart, shown, LessonFormat.roomLabel(lesson, copy), LessonFormat.typeLabel(lesson.typeRaw, copy))
         }
         WeekDayUi(
             dow = dow,

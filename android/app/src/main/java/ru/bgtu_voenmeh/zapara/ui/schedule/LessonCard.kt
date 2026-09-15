@@ -51,8 +51,20 @@ fun LessonCard(
         onLongClick = onLongClick,
         tag = "Lesson.Card.${lesson.index}"
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("${lesson.timeStart} – ${lesson.timeEnd} · ${lesson.type}", style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f))
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)
+        ) {
+            Text(
+                "${lesson.timeStart} – ${lesson.timeEnd}",
+                style = Zapara.typography.caption,
+                color = c.text2,
+                modifier = Modifier.weight(1f)
+            )
+            if (lesson.type.isNotBlank()) {
+                LessonTypeChip(lesson.type, "Lesson.Type.${lesson.index}")
+            }
             if (lesson.room.isNotBlank() && !lesson.remote) {
                 ZChip(lesson.room, onClick = onRoom, tag = "Lesson.Room.${lesson.index}")
             }

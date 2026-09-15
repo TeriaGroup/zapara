@@ -67,7 +67,11 @@ object WidgetRemoteViews {
         val mgr = AppWidgetManager.getInstance(context)
         val ids = mgr.getAppWidgetIds(ComponentName(context, ScheduleWidgetProvider::class.java))
         if (ids.isEmpty()) return
-        mgr.updateAppWidget(ids, schedule(context, snapshot))
+        ids.forEach { id ->
+            val height = mgr.getAppWidgetOptions(id).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 160)
+            val cap = ScheduleWidgetComposer.rowsForHeightDp(if (height > 0) height else 160)
+            mgr.updateAppWidget(id, schedule(context, snapshot.copy(rows = snapshot.rows.take(cap))))
+        }
     }
 
     fun pushHomework(context: Context, snapshot: HomeworkWidgetSnapshot) {

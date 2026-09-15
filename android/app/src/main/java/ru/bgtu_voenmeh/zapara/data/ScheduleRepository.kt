@@ -407,7 +407,8 @@ class ScheduleRepository private constructor(
             if (conn.responseCode != HttpURLConnection.HTTP_OK) {
                 throw IllegalStateException("HTTP ${conn.responseCode}")
             }
-            return conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+            val body = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+            return TimetablePayload.requireXml(body, conn.contentType)
         } finally {
             conn.disconnect()
         }
