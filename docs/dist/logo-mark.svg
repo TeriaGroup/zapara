@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" fill="none" role="img" aria-label="Запара">
+  <rect x="24.89" y="31.64" width="54.00" height="46.41" rx="9.28"
+        stroke="#F3EEE5" stroke-width="7.59" stroke-linejoin="round"/>
+  <rect x="35.86" y="24.89" width="8.86" height="12.23" rx="4.43" fill="#F3EEE5"/>
+  <rect x="57.38" y="24.89" width="8.86" height="12.23" rx="4.43" fill="#F3EEE5"/>
+  <path fill="#F3EEE5" fill-rule="evenodd"
+        d="M79.08 63.50A15.19 15.19 0 1 0 52.54 63.50L65.81 87.33Z M61.17 56.11a4.64 4.64 0 1 0 9.28 0a4.64 4.64 0 1 0-9.28 0"/>
+</svg>

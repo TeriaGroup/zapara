@@ -1,26 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Off-white calendar + pin on the Charon tile. 108dp grid, art inside the 72dp safe zone. -->
+<!-- Cream calendar + pin. Master: docs/dist/logo.svg -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-
-    <!-- calendar outline -->
     <path
-        android:fillColor="#F2EDE4"
-        android:fillType="evenOdd"
-        android:pathData="M32,36 h36 a10,10 0 0 1 10,10 v28 a10,10 0 0 1 -10,10 h-36 a10,10 0 0 1 -10,-10 v-28 a10,10 0 0 1 10,-10 z M40,44 h20 a4,4 0 0 1 4,4 v20 a4,4 0 0 1 -4,4 h-20 a4,4 0 0 1 -4,-4 v-20 a4,4 0 0 1 4,-4 z" />
-    <!-- binder tabs -->
-    <path
-        android:fillColor="#F2EDE4"
-        android:pathData="M40,28 h8 a4,4 0 0 1 4,4 v8 h-16 v-8 a4,4 0 0 1 4,-4 z" />
-    <path
-        android:fillColor="#F2EDE4"
-        android:pathData="M56,28 h8 a4,4 0 0 1 4,4 v8 h-16 v-8 a4,4 0 0 1 4,-4 z" />
-    <!-- pin -->
-    <path
-        android:fillColor="#F2EDE4"
-        android:fillType="evenOdd"
-        android:pathData="M72,52 m-15,0 a15,15 0 1,0 30,0 a15,15 0 1,0 -30,0 M61,64 L83,64 L72,88 Z M72,52 m-6.5,0 a6.5,6.5 0 1,0 13,0 a6.5,6.5 0 1,0 -13,0" />
+        android:pathData="M34.17,31.64 h35.44 a9.28,9.28 0 0 1 9.28,9.28 v27.84 a9.28,9.28 0 0 1 -9.28,9.28 h-35.44 a9.28,9.28 0 0 1 -9.28,-9.28 v-27.84 a9.28,9.28 0 0 1 9.28,-9.28 z"
+        android:fillColor="#00000000"
+        android:strokeWidth="7.59"
+        android:strokeColor="#F3EEE5"
+        android:strokeLineJoin="round" />
+    <path android:fillColor="#F3EEE5" android:pathData="M40.29,24.89 h0.00 a4.43,4.43 0 0 1 4.43,4.43 v3.38 a4.43,4.43 0 0 1 -4.43,4.43 h-0.00 a4.43,4.43 0 0 1 -4.43,-4.43 v-3.38 a4.43,4.43 0 0 1 4.43,-4.43 z" />
+    <path android:fillColor="#F3EEE5" android:pathData="M61.80,24.89 h0.00 a4.43,4.43 0 0 1 4.43,4.43 v3.38 a4.43,4.43 0 0 1 -4.43,4.43 h-0.00 a4.43,4.43 0 0 1 -4.43,-4.43 v-3.38 a4.43,4.43 0 0 1 4.43,-4.43 z" />
+    <path android:fillColor="#F3EEE5" android:fillType="evenOdd" android:pathData="M79.08,63.50A15.19,15.19 0 1 0 52.54,63.50L65.81,87.33Z M61.17,56.11a4.64,4.64 0 1 0 9.28,0a4.64,4.64 0 1 0-9.28,0" />
 </vector>
