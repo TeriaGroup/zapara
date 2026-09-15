@@ -18,7 +18,7 @@ public class UpdateTests : UiTest
 {
     private static readonly DateTime Sun6 = new(2026, 9, 6, 15, 0, 0);
     private static readonly Loc Ru = new(new I18nService("ru"));
-    private static AutoUpdateService.UpdateInfo Newer => new("windows-v2.1.0", "https://github.com/0NiLle0/zapara/releases/tag/windows-v2.1.0", "https://example.test/ZAPARA_windows-v2.1.0_win-x64.zip", "2026-09-05T10:00:00Z");
+    private static AutoUpdateService.UpdateInfo Newer => new("windows-v2.2.0", "https://github.com/0NiLle0/zapara/releases/tag/windows-v2.2.0", "https://example.test/ZAPARA_windows-v2.2.0_win-x64.zip", "2026-09-05T10:00:00Z");
 
     private static (UpdateCheckViewModel Vm, FakeUpdateSource Source, List<string> Installed) Make(TestDb db)
     {
@@ -38,11 +38,11 @@ public class UpdateTests : UiTest
     [Fact]
     public void Batch_Waits_For_Exit_Unpacks_And_Restarts()
     {
-        var bat = UpdateRunner.BuildBatch(@"C:\Apps\Vograph", @"C:\Users\x\AppData\Local\Vograph\updates\ZAPARA_windows-v2.1.0_win-x64.zip");
+        var bat = UpdateRunner.BuildBatch(@"C:\Apps\Vograph", @"C:\Users\x\AppData\Local\Vograph\updates\ZAPARA_windows-v2.2.0_win-x64.zip");
         Assert.StartsWith("@echo off", bat);
         Assert.Contains("chcp 65001", bat);
         Assert.Contains("tasklist /FI \"IMAGENAME eq Vograph.exe\"", bat);
-        Assert.Contains("Expand-Archive -LiteralPath 'C:\\Users\\x\\AppData\\Local\\Vograph\\updates\\ZAPARA_windows-v2.1.0_win-x64.zip'", bat);
+        Assert.Contains("Expand-Archive -LiteralPath 'C:\\Users\\x\\AppData\\Local\\Vograph\\updates\\ZAPARA_windows-v2.2.0_win-x64.zip'", bat);
         Assert.Contains("start \"\" \"C:\\Apps\\Vograph\\Vograph.exe\"", bat);
         Assert.Contains("del \"%~f0\"", bat);
     }
@@ -62,10 +62,10 @@ public class UpdateTests : UiTest
         var (vm, source, _) = Make(db);
         Assert.Equal(UpdateState.Idle, vm.State);
 
-        source.Latest = new AutoUpdateService.UpdateInfo("windows-v2.0.0", "u", "z", "2026-09-01T00:00:00Z");
+        source.Latest = new AutoUpdateService.UpdateInfo("windows-v2.1.0", "u", "z", "2026-09-01T00:00:00Z");
         Assert.False(await vm.CheckAsync());
         Assert.Equal(UpdateState.UpToDate, vm.State);
-        Assert.Contains("windows-v2.0.0", vm.StatusText);
+        Assert.Contains("windows-v2.1.0", vm.StatusText);
         Assert.Contains("15:00", vm.CheckedAt);
         Assert.True(vm.CheckedThisSession);
 
@@ -76,11 +76,11 @@ public class UpdateTests : UiTest
         source.Latest = Newer;
         Assert.True(await vm.CheckAsync());
         Assert.Equal(UpdateState.Available, vm.State);
-        Assert.Equal("windows-v2.1.0", vm.LatestTag);
+        Assert.Equal("windows-v2.2.0", vm.LatestTag);
         Assert.Equal("05.09.2026", vm.PublishedText);
         Assert.True(vm.IsAvailable);
         Assert.Equal("1", vm.BadgeText);
-        Assert.Equal("Доступна windows-v2.1.0", vm.StatusText);
+        Assert.Equal("Доступна windows-v2.2.0", vm.StatusText);
 
         source.Latest = null;
         Assert.False(await vm.CheckAsync());
@@ -104,7 +104,7 @@ public class UpdateTests : UiTest
 
         await vm.InstallCommand.ExecuteAsync(null); // Available -> download -> Ready -> install
         Assert.Single(source.Downloads);
-        Assert.Single(installed, p => p.EndsWith("ZAPARA_windows-v2.1.0_win-x64.zip") && File.Exists(p));
+        Assert.Single(installed, p => p.EndsWith("ZAPARA_windows-v2.2.0_win-x64.zip") && File.Exists(p));
         Assert.Equal(UpdateState.Ready, vm.State);
         await Waits.Until(() => vm.Progress == 1.0); // Progress<T>.Report posts its callback asynchronously
         Assert.Equal(1.0, vm.Progress);
@@ -129,7 +129,7 @@ public class UpdateTests : UiTest
         await vm.RunStartupFlowAsync();
         Assert.Equal(1, source.Checks);
         Assert.Single(installed);
-        Assert.Contains(db.Services.Toasts.Items, t => t.Text == "Обновляюсь до windows-v2.1.0…");
+        Assert.Contains(db.Services.Toasts.Items, t => t.Text == "Обновляюсь до windows-v2.2.0…");
         Assert.DoesNotContain(db.Services.Toasts.Items, t => t.Kind == ToastKind.Bad);
     }
 
@@ -154,7 +154,7 @@ public class UpdateTests : UiTest
         };
         await vm1.RunStartupFlowAsync();
         Assert.Single(installed);
-        Assert.Single(db.Services.Toasts.Items, t => t.Text == "Обновляюсь до windows-v2.1.0…");
+        Assert.Single(db.Services.Toasts.Items, t => t.Text == "Обновляюсь до windows-v2.2.0…");
 
         var vm2 = new UpdateCheckViewModel(db.Services, () => Sun6, updatesDir) // the app relaunched: a fresh VM
         {
@@ -164,7 +164,7 @@ public class UpdateTests : UiTest
         };
         await vm2.RunStartupFlowAsync();
         Assert.Single(installed); // the installer is not called a second time
-        Assert.Single(db.Services.Toasts.Items, t => t.Text == "Обновляюсь до windows-v2.1.0…"); // no second toast
+        Assert.Single(db.Services.Toasts.Items, t => t.Text == "Обновляюсь до windows-v2.2.0…"); // no second toast
         Assert.True(vm2.IsAvailable); // still the visible route: sidebar item, badge, Settings card
     }
 
@@ -299,7 +299,7 @@ public class UpdateTests : UiTest
         var (vm, source, _) = Make(db);
         source.Latest = Newer;
         Assert.True(await vm.CheckAsync());
-        Assert.Equal("windows-v2.1.0", vm.LatestTag);
+        Assert.Equal("windows-v2.2.0", vm.LatestTag);
 
         source.Latest = new AutoUpdateService.UpdateInfo("windows-v2.0.0", "u", "z", "2026-09-01T00:00:00Z");
         Assert.False(await vm.CheckAsync());
@@ -316,15 +316,15 @@ public class UpdateTests : UiTest
         using var db = TestDb.Create();
         var (vm, _, _) = Make(db);
         Directory.CreateDirectory(vm.UpdatesDir);
-        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.0.0_win-x64.zip"), new byte[10]);      // this very version: installed
-        File.WriteAllText(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.0.0_win-x64.zip.attempted"), "x");
+        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.0_win-x64.zip"), new byte[10]);      // this very version: installed
+        File.WriteAllText(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.0_win-x64.zip.attempted"), "x");
         File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v1.2.2_win-x64.zip"), new byte[10]);      // older
-        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.0.0_win-x64.zip.part"), new byte[10]); // a torn download
-        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.0_win-x64.zip"), new byte[10]);      // newer: keep
+        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.0_win-x64.zip.part"), new byte[10]); // a torn download
+        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.2.0_win-x64.zip"), new byte[10]);      // newer: keep
 
         await vm.CleanupAsync();
 
-        Assert.Equal(new[] { "ZAPARA_windows-v2.1.0_win-x64.zip" }, Directory.GetFiles(vm.UpdatesDir).Select(Path.GetFileName));
+        Assert.Equal(new[] { "ZAPARA_windows-v2.2.0_win-x64.zip" }, Directory.GetFiles(vm.UpdatesDir).Select(Path.GetFileName));
     }
 
     [Fact]
