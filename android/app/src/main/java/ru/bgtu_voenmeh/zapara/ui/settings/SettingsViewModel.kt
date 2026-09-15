@@ -83,15 +83,15 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 }
             }
             SettingsEvent.OpenNotificationSettings, SettingsEvent.OpenExactAlarmSettings, SettingsEvent.OpenReleases -> { }
-            is SettingsEvent.AutoUpdate -> {
+            is SettingsEvent.AutoUpdate -> if (BuildConfig.SELF_UPDATE) {
                 AutoUpdate.setAutoUpdateEnabled(container.app, event.enabled)
                 container.update.setAuto(event.enabled)
                 mutable.update { it.copy(autoUpdate = event.enabled) }
             }
-            SettingsEvent.CheckUpdate -> container.update.check(manual = true)
-            SettingsEvent.DownloadUpdate -> container.update.download()
-            SettingsEvent.InstallUpdate -> container.update.install()
-            SettingsEvent.CancelUpdate -> container.update.cancel()
+            SettingsEvent.CheckUpdate -> if (BuildConfig.SELF_UPDATE) container.update.check(manual = true)
+            SettingsEvent.DownloadUpdate -> if (BuildConfig.SELF_UPDATE) container.update.download()
+            SettingsEvent.InstallUpdate -> if (BuildConfig.SELF_UPDATE) container.update.install()
+            SettingsEvent.CancelUpdate -> if (BuildConfig.SELF_UPDATE) container.update.cancel()
             is SettingsEvent.UseUniversityXml -> {
                 mutable.update { it.copy(useUniversityXml = event.enabled) }
                 save(transform = { it.copy(useUniversityXml = event.enabled) })

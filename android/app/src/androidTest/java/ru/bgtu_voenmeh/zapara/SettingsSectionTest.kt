@@ -89,4 +89,45 @@ class SettingsSectionTest {
             Frames.capture(activity, "settings-about-dark")
         }
     }
+
+    @Test fun rustore_build_points_to_github_without_self_update_controls() {
+        val state = SettingsUiState(
+            loaded = true, groupName = "А863С", groupUpdated = "Обновлено 08.09 12:00 · сегодня",
+            theme = ThemeChoice.Dark, version = "2.1.0", selfUpdate = false
+        )
+        val ins = InstrumentationRegistry.getInstrumentation()
+        val ready = CountDownLatch(1)
+        ActivityScenario.launch(ComponentActivity::class.java).use { scenario ->
+            scenario.onActivity { host ->
+                host.setContent {
+                    ZaparaTheme(ThemeChoice.Dark) {
+                        CompositionLocalProvider(LocalShellChrome provides ShellChrome("А863С · нечёт.", false, true) {}) {
+                            Box(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                                SettingsSection(state, {}, UpdateUiState(), {})
+                            }
+                        }
+                    }
+                }
+                ready.countDown()
+            }
+            assertTrue(ready.await(10, TimeUnit.SECONDS))
+            ins.waitForIdleSync()
+            val device = UiDevice.getInstance(ins)
+            val pkg = installedPackage
+            fun shown(res: String): Boolean = device.hasObject(By.res(res).pkg(pkg))
+            if (!device.wait(Until.hasObject(By.res("Settings.RustoreGithub").pkg(pkg)), 3_000)) {
+                repeat(4) {
+                    if (shown("Settings.RustoreGithub")) return@repeat
+                    device.swipe(device.displayWidth / 2, device.displayHeight * 3 / 4, device.displayWidth / 2, device.displayHeight / 4, 20)
+                    device.waitForIdle(800)
+                }
+            }
+            assertTrue(device.wait(Until.hasObject(By.res("Settings.RustoreGithub").pkg(pkg)), 5_000))
+            assertTrue(shown("Settings.RustoreUpdates"))
+            assertTrue(device.hasObject(By.textContains("GitHub").pkg(pkg)))
+            assertTrue(device.hasObject(By.textContains("RuStore").pkg(pkg)))
+            assertTrue(device.findObjects(By.res("Settings.UpdCheck").pkg(pkg)).isEmpty())
+            assertTrue(device.findObjects(By.res("Settings.UpdDownload").pkg(pkg)).isEmpty())
+        }
+    }
 }

@@ -139,7 +139,7 @@ fun SettingsSection(
             }
             item {
                 if (state.selfUpdate) UpdatesCard(state, updates, onEvent)
-                else ZCard(Modifier.fillMaxWidth()) { Text(stringResource(R.string.settings_rustore), style = Zapara.typography.body, color = c.text1) }
+                else RustoreUpdatesCard()
             }
             item { AboutCard(state.version) }
         }
@@ -161,6 +161,20 @@ private fun TimeField(value: String, label: String, tag: String, onChange: (Stri
             focusedTextColor = c.text1, unfocusedTextColor = c.text1
         )
     )
+}
+
+@Composable
+private fun RustoreUpdatesCard() {
+    val ctx = LocalContext.current
+    val c = Zapara.colors
+    ZCard(Modifier.fillMaxWidth().testTag("Settings.RustoreUpdates")) {
+        Text(stringResource(R.string.settings_updates), style = Zapara.typography.section, color = c.text1)
+        Text(stringResource(R.string.settings_rustore), style = Zapara.typography.body, color = c.text1)
+        Text(stringResource(R.string.settings_rustore_early), style = Zapara.typography.body, color = c.text1)
+        ZButton(stringResource(R.string.settings_rustore_github), {
+            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AutoUpdate.RELEASES_PAGE)))
+        }, ghost = true, tag = "Settings.RustoreGithub")
+    }
 }
 
 @Composable

@@ -181,7 +181,9 @@
     <string name="settings_upd_check">Проверить</string>
     <string name="settings_upd_download">Скачать</string>
     <string name="settings_upd_install">Установить</string>
-    <string name="settings_rustore">Обновления через RuStore</string>
+    <string name="settings_rustore">Стабильные обновления приходят через RuStore. Эту сборку нельзя обновлять с GitHub — так устроены правила магазина.</string>
+    <string name="settings_rustore_early">Ранние версии и последние сборки можно найти на нашем GitHub, чтобы всегда быть в курсе.</string>
+    <string name="settings_rustore_github">Открыть GitHub</string>
     <string name="settings_about_title">Расписание БГТУ «Военмех»</string>
     <string name="settings_version">Версия %1$s</string>
     <string name="settings_unofficial">Неофициальное приложение для студентов БГТУ «Военмех». Не связано с администрацией вуза.</string>
