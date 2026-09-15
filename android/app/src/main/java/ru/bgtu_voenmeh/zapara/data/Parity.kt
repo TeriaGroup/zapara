@@ -56,4 +56,16 @@ object Parity {
         7 -> "Воскресенье"
         else -> ""
     }
+
+    // WeekCode 1/2 wins. Empty/0/invalid falls back to Time ("9:00 Нечетная").
+    fun parseXmlParity(weekCode: String?, timeRaw: String?): Int {
+        val fromCode = weekCode?.trim()?.toIntOrNull()
+        if (fromCode != null && fromCode in 1..2) return fromCode
+        val t = (timeRaw ?: "").lowercase().replace('ё', 'е')
+        return when {
+            "нечетн" in t -> 1
+            "четн" in t -> 2
+            else -> 0
+        }
+    }
 }

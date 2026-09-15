@@ -53,4 +53,20 @@ class ParityTest {
         assertEquals(0, Parity.dayTitleToNumber("???"))
         assertEquals("Среда", Parity.dayNumberToTitle(3))
     }
+
+    @Test
+    fun parseXmlParityWeekCodeWins() {
+        assertEquals(1, Parity.parseXmlParity("1", "9:00 Четная"))
+        assertEquals(2, Parity.parseXmlParity("2", "9:00 Нечетная"))
+    }
+
+    @Test
+    fun parseXmlParityFallsBackToTime() {
+        assertEquals(1, Parity.parseXmlParity("0", "9:00 Нечетная"))
+        assertEquals(1, Parity.parseXmlParity("", "10:50 Нечётная"))
+        assertEquals(2, Parity.parseXmlParity(null, "9:00 Четная"))
+        assertEquals(2, Parity.parseXmlParity("5", "12:40 Чётная"))
+        assertEquals(0, Parity.parseXmlParity("0", "9:00 Обе недели"))
+        assertEquals(0, Parity.parseXmlParity("", "9:00"))
+    }
 }
