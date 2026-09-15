@@ -64,6 +64,39 @@ public sealed class ParserTests
         Assert.DoesNotContain(result.lessons, l => l.GroupId == empty.Id);
     }
 
+    [Theory]
+    [InlineData("1", "9:00 Четная", 1)]
+    [InlineData("2", "9:00 Нечетная", 2)]
+    [InlineData("0", "9:00 Нечетная", 1)]
+    [InlineData("", "10:50 Нечётная", 1)]
+    [InlineData(null, "9:00 Четная", 2)]
+    [InlineData("5", "12:40 Чётная", 2)]
+    [InlineData("0", "9:00 Обе недели", 0)]
+    [InlineData("", "9:00", 0)]
+    public void ParseXmlParity_WeekCode_wins_else_Time_suffix(string? weekCode, string? timeRaw, int expected)
+        => Assert.Equal(expected, ParityService.ParseXmlParity(weekCode, timeRaw));
+
+    [Fact]
+    public void Time_suffix_fills_missing_WeekCode()
+    {
+        var xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <Timetable>
+              <Period Title="t" StartYear="2026" StartMonth="9" StartDay="1" />
+              <Weeks WeekCount="2" />
+              <Group Number="А863С" IdGroup="3313">
+                <Days><Day Title="Понедельник"><GroupLessons>
+                  <Lesson><WeekCode></WeekCode><Time>9:00 Нечетная</Time><Discipline>лек А</Discipline><Lecturers /><Classroom>1;</Classroom></Lesson>
+                  <Lesson><WeekCode>0</WeekCode><Time>10:50 Четная</Time><Discipline>лек Б</Discipline><Lecturers /><Classroom>1;</Classroom></Lesson>
+                  <Lesson><WeekCode>1</WeekCode><Time>12:40 Четная</Time><Discipline>лек В</Discipline><Lecturers /><Classroom>1;</Classroom></Lesson>
+                </GroupLessons></Day></Days>
+              </Group>
+            </Timetable>
+            """;
+        var lessons = new TimetableParser().Parse(xml).lessons;
+        Assert.Equal(new[] { 1, 2, 1 }, lessons.Select(l => l.Parity));
+    }
+
     [Fact]
     public void Pure_assembly_owns_models_and_parity_without_native_dependencies()
     {

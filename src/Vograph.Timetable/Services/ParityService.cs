@@ -63,4 +63,14 @@ public static class ParityService
         7 => "Воскресенье",
         _ => ""
     };
+
+    // WeekCode 1/2 wins. Empty/0/invalid falls back to Time ("9:00 Нечетная").
+    public static int ParseXmlParity(string? weekCode, string? timeRaw)
+    {
+        if (int.TryParse(weekCode?.Trim(), out var fromCode) && fromCode is 1 or 2) return fromCode;
+        var t = (timeRaw ?? "").Trim().ToLowerInvariant().Replace('ё', 'е');
+        if (t.Contains("нечетн")) return 1;
+        if (t.Contains("четн")) return 2;
+        return 0;
+    }
 }

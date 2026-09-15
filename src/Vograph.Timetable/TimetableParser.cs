@@ -85,11 +85,9 @@ public class TimetableParser
                     var indexPerParity = new Dictionary<int, int>();
                     foreach (XmlNode ln in lessonNodes)
                     {
-                        var wcStr = ln.SelectSingleNode("WeekCode")?.InnerText?.Trim() ?? "0";
-                        int.TryParse(wcStr, out var parity);
-                        if (parity < 0 || parity > 2) parity = 0;
-
+                        var wcStr = ln.SelectSingleNode("WeekCode")?.InnerText?.Trim() ?? "";
                         var timeRaw = ln.SelectSingleNode("Time")?.InnerText?.Trim() ?? "";
+                        var parity = ParityService.ParseXmlParity(wcStr, timeRaw);
                         var discRaw = ln.SelectSingleNode("Discipline")?.InnerText?.Trim() ?? "";
                         var classroomRaw = ln.SelectSingleNode("Classroom")?.InnerText?.Trim() ?? "";
 
