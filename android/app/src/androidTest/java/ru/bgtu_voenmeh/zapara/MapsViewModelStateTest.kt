@@ -72,6 +72,7 @@ class MapsViewModelStateTest {
                     val store = RoomTimetableStore(db)
                     val work = ProfileWork()
                     val repo = ScheduleRepository(db, store, work)
+                    repo.saveSettings(repo.settings().copy(mapsAlpha = true))
                     val api = ApiRefreshCoordinator(store, work, null, UrlConnectionTransport())
                     AppContainer(app, ProfileDescriptor.guest(), db, repo, work, api).also {
                         it.mapStore.saveLastEntrance("ulk.entrance.main")

@@ -28,7 +28,7 @@ class UxMapsChromeTest {
         Leg("walk", "ГК", 2, null, null, listOf(GraphPoint(.6, .3), GraphPoint(.8, .3)))))
     private val presentation = RoutePresentationBuilder.build(route, null, null,
         (1..2).associate { FloorKey("ГК", it) to RasterSize(100, 100) })
-    private var state by mutableStateOf(MapsUiState(loaded = true, route = route,
+    private var state by mutableStateOf(MapsUiState(alphaMaps = true, loaded = true, route = route,
         presentation = presentation, activeStepId = presentation.steps.first().id,
         fromLabel = "Вход ГК", toLabel = "493 · ГК", canSwap = true, durationLabel = "около 3 мин"))
     private val events = mutableListOf<MapsEvent>()

@@ -56,6 +56,7 @@ class MapRasterIntegrationTest {
                 val store = RoomTimetableStore(db)
                 val work = ProfileWork()
                 val repo = ScheduleRepository(db, store, work)
+                repo.saveSettings(repo.settings().copy(mapsAlpha = true))
                 AppContainer(app, ProfileDescriptor.guest(), db, repo, work,
                     ApiRefreshCoordinator(store, work, null, UrlConnectionTransport()))
             }

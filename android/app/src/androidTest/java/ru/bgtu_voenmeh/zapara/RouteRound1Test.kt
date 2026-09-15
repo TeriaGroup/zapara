@@ -169,7 +169,7 @@ class RouteRound1Test {
     }
 
     @Test fun problems_survive_normal_fullscreen_and_sheet_without_duplicate_messages() {
-        var state by mutableStateOf(MapsUiState(presentation = RoutePresentation(emptyList(), emptyList(), emptyList(), false,
+        var state by mutableStateOf(MapsUiState(alphaMaps = true, presentation = RoutePresentation(emptyList(), emptyList(), emptyList(), false,
             setOf(RouteProblem.UnsupportedLeg, RouteProblem.InvalidGeometry))))
         rule.setContent { ZaparaTheme(ThemeChoice.Light, MotionSettings.Off) {
             val density = LocalDensity.current

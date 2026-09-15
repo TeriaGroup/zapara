@@ -189,6 +189,10 @@
     <string name="settings_unofficial">Неофициальное приложение для студентов БГТУ «Военмех». Не связано с администрацией вуза.</string>
     <string name="settings_releases">Страница релизов</string>
     <string name="settings_licenses">Шрифт Inter (OFL 1.1) · иконки Lucide (ISC)</string>
+    <string name="settings_maps">Карты</string>
+    <string name="settings_maps_routes">Маршруты и 3D-карта</string>
+    <string name="settings_maps_alpha">Альфа</string>
+    <string name="settings_maps_alpha_hint">Построение маршрута по корпусам и объёмная схема этажей. Функция в ранней версии.</string>
     <string name="repeat">Повторить</string>
     <string name="load_fail">Не удалось загрузить расписание</string>
     <string name="load_fail_network">Нет сети. Проверьте соединение и повторите.</string>

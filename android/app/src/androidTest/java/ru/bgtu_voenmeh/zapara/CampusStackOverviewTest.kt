@@ -80,7 +80,7 @@ class CampusStackOverviewTest {
 
     private fun integrated(fullscreen: Boolean) {
         var state by mutableStateOf(MapsUiState(building = "УЛК", floor = 2, floors = listOf(1, 2, 3, 4, 5),
-            loaded = true, showStack = true, fullscreen = fullscreen, route = route,
+            loaded = true, showStack = true, alphaMaps = true, fullscreen = fullscreen, route = route,
             presentation = presentation, activeStepId = presentation.steps.first().id))
         val events = mutableListOf<MapsEvent>()
         fun event(value: MapsEvent) {

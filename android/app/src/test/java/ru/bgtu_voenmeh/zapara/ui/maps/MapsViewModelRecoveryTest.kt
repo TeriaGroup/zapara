@@ -67,7 +67,7 @@ class MapsViewModelRecoveryTest {
         override fun graph() = graph
         override fun readLastEntrance() = entrance.id
         override fun rememberEntrance(graph: CampusGraph, id: String) = id
-        override fun settings() = ScheduleRepository.SettingsState(myGroupId = "test")
+        override fun settings() = ScheduleRepository.SettingsState(myGroupId = "test", mapsAlpha = true)
         override fun allForGroup(id: String) = listOf(Lesson(groupId = id, dayOfWeek = 1,
             timeStart = "09:00", timeEnd = "10:30", classroomRaw = "564*"))
         override fun coords() = mapOf("УЛК 5" to mapOf("564" to rect))

@@ -17,6 +17,7 @@ import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_1_2
 import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_2_3
 import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_3_4
 import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_4_5
+import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_5_6
 import ru.bgtu_voenmeh.zapara.data.db.SettingsDao
 import ru.bgtu_voenmeh.zapara.data.db.SettingsEntity
 import ru.bgtu_voenmeh.zapara.data.db.ZaparaDatabase
@@ -94,7 +95,7 @@ class ScheduleRepository private constructor(
             } else {
                 Room.databaseBuilder(context.applicationContext, ZaparaDatabase::class.java, name)
             }
-            return builder.addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+            return builder.addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
         }
 
         private val friendPalette = listOf("#F2A33C", "#4CC38A", "#5AA9FF", "#C77DFF", "#FF7A9C")
@@ -123,7 +124,8 @@ class ScheduleRepository private constructor(
         val notifyTime2: String? = "07:30",
         val theme: String = "system",
         val animations: Boolean = true,
-        val useUniversityXml: Boolean = false
+        val useUniversityXml: Boolean = false,
+        val mapsAlpha: Boolean = false
     )
 
     fun settings(): SettingsState {
@@ -223,7 +225,8 @@ class ScheduleRepository private constructor(
                 notifyTime2 = s.notifyTime2,
                 theme = s.theme,
                 animations = s.animations,
-                useUniversityXml = s.useUniversityXml
+                useUniversityXml = s.useUniversityXml,
+                mapsAlpha = s.mapsAlpha
             )
         )
     }
@@ -254,7 +257,8 @@ class ScheduleRepository private constructor(
         notifyTime2 = s.notifyTime2,
         theme = s.theme,
         animations = s.animations,
-        useUniversityXml = s.useUniversityXml
+        useUniversityXml = s.useUniversityXml,
+        mapsAlpha = s.mapsAlpha
     )
 
     private fun settingsValue(s: SettingsState) = SettingsValue(

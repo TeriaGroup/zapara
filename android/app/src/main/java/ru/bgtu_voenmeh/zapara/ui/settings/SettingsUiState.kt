@@ -20,7 +20,8 @@ data class SettingsUiState(
     val version: String = "",
     val autoUpdate: Boolean = true,
     val apiConfigured: Boolean = false,
-    val useUniversityXml: Boolean = false
+    val useUniversityXml: Boolean = false,
+    val mapsAlpha: Boolean = false
 )
 
 sealed interface SettingsEvent {
@@ -41,4 +42,5 @@ sealed interface SettingsEvent {
     data object InstallUpdate : SettingsEvent
     data object CancelUpdate : SettingsEvent
     data class UseUniversityXml(val enabled: Boolean) : SettingsEvent
+    data class MapsAlpha(val enabled: Boolean) : SettingsEvent
 }

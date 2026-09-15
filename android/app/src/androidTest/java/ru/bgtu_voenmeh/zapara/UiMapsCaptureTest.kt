@@ -76,14 +76,13 @@ class UiMapsCaptureTest {
                             capture(host, fixture, scenario, themeName, scaleText, state, action, homework = homework)
                         }
                     } else {
-                    rule.onNodeWithTag("Maps.From").assertExists().assertHasClickAction()
+                    rule.onNodeWithTag("Maps.From").assertDoesNotExist()
+                    rule.onNodeWithTag("Maps.ToNext").assertDoesNotExist()
+                    rule.onNodeWithTag("Maps.Stack").assertDoesNotExist()
                     rule.onNodeWithTag("Maps.StepNext").assertDoesNotExist()
                     rule.onNodeWithTag("Maps.MapUnavailable").assertDoesNotExist()
                     assertNull(fixture.current.route)
                     capture(host, fixture, scenario, themeName, scaleText, "normal")
-                    rule.onNodeWithTag("Maps.From").performScrollTo().performClick()
-                    rule.runOnIdle { assertNotNull(fixture.current.picker); assertNull(fixture.current.route) }
-                    capture(host, fixture, scenario, themeName, scaleText, "picker")
                     }
                 }
             }

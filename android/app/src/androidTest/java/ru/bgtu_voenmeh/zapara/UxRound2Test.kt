@@ -38,7 +38,7 @@ class UxRound2Test {
         Leg("walk", "ГК", 4, null, null, listOf(GraphPoint(.8, .3), GraphPoint(.9, .3)))))
     private val presentation = RoutePresentationBuilder.build(route, null, null,
         (1..4).associate { FloorKey("ГК", it) to RasterSize(100, 100) })
-    private var state by mutableStateOf(MapsUiState(loaded = true, route = route,
+    private var state by mutableStateOf(MapsUiState(alphaMaps = true, loaded = true, route = route,
         presentation = presentation, activeStepId = presentation.steps.first().id,
         fromLabel = "Вход ГК", toLabel = "493 · ГК"))
 

@@ -32,7 +32,7 @@ class MapsStepSelectionTest {
         Leg("walk", "УЛК", 2, null, null, listOf(a, b))))
     private val presentation = RoutePresentationBuilder.build(route, null, null,
         listOf(FloorKey("ГК", 1), FloorKey("ГК", 2), FloorKey("УЛК", 2)).associateWith { RasterSize(100, 100) })
-    private var state by mutableStateOf(MapsUiState(loaded = true, route = route,
+    private var state by mutableStateOf(MapsUiState(alphaMaps = true, loaded = true, route = route,
         presentation = presentation, activeStepId = presentation.steps.first().id))
 
     private fun event(event: MapsEvent) {

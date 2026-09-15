@@ -50,7 +50,9 @@ fun MapsSection(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
         val controlsWidth = minOf(MapsLayout.SideChromeWidth.dp, maxWidth / 2)
         Column(Modifier.fillMaxSize()) {
             if (!compact) ZTopBar(stringResource(R.string.nav_maps)) {
-                ZIconButton(R.drawable.ic_map_pin, stringResource(R.string.maps_to_next), { onEvent(MapsEvent.ToNext) }, "Maps.ToNext")
+                if (state.alphaMaps) {
+                    ZIconButton(R.drawable.ic_map_pin, stringResource(R.string.maps_to_next), { onEvent(MapsEvent.ToNext) }, "Maps.ToNext")
+                }
             }
             if (compact) {
                 Row(Modifier.weight(1f).fillMaxWidth()) {
@@ -84,6 +86,7 @@ fun MapsSection(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
 
 @Composable
 internal fun MapsModals(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
+    if (!state.alphaMaps) return
     if (state.stepsOpen) RouteStepsSheet(state, onEvent)
     state.picker?.let { RoutePickerSheet(it, onEvent) }
     state.planPick?.let { pick ->
@@ -109,14 +112,16 @@ private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifie
         if (sidePane) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.nav_maps), style = Zapara.typography.section, color = c.text1, modifier = Modifier.weight(1f))
-                ZIconButton(R.drawable.ic_map_pin, stringResource(R.string.maps_to_next), { onEvent(MapsEvent.ToNext) }, "Maps.ToNext")
+                if (state.alphaMaps) {
+                    ZIconButton(R.drawable.ic_map_pin, stringResource(R.string.maps_to_next), { onEvent(MapsEvent.ToNext) }, "Maps.ToNext")
+                }
             }
-            MapsStepChrome(state, onEvent, compactSteps)
+            if (state.alphaMaps) MapsStepChrome(state, onEvent, compactSteps)
             if (!state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = true)
         }
         // Keep the complete selector rows at the scroll origin, not behind the route card.
         if (!compact) MapsFloorControls(state, onEvent)
-        ZCard(Modifier.fillMaxWidth(), tag = "Maps.Route") {
+        if (state.alphaMaps) ZCard(Modifier.fillMaxWidth(), tag = "Maps.Route") {
             Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                 if (compact) {
                     RouteEnd(stringResource(R.string.maps_from), state.fromLabel, stringResource(R.string.maps_from_hint), { onEvent(MapsEvent.OpenFrom) }, "Maps.From")
@@ -155,7 +160,9 @@ internal fun MapsFloorControls(state: MapsUiState, onEvent: (MapsEvent) -> Unit)
             state.floors.forEach { n ->
                 ZChip("$n", selected = n == state.floor, onClick = { onEvent(MapsEvent.PickFloor(n)) }, tag = "Maps.Floor.$n")
             }
-            ZChip(stringResource(R.string.maps_stack), selected = state.showStack, onClick = { onEvent(MapsEvent.ToggleStack) }, tag = "Maps.Stack")
+            if (state.alphaMaps) {
+                ZChip(stringResource(R.string.maps_stack), selected = state.showStack, onClick = { onEvent(MapsEvent.ToggleStack) }, tag = "Maps.Stack")
+            }
         }
     }
 }
@@ -174,7 +181,7 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
                     stringResource(R.string.maps_remote_hint),
                     tag = "Empty.Remote"
                 )
-                state.showStack -> CampusStack(state.route, state.building, state.floors, state.floorFiles,
+                state.alphaMaps && state.showStack -> CampusStack(state.route, state.building, state.floors, state.floorFiles,
                     rasterRevision = state.stackRasterRevision, presentation = state.presentation, activeFloor = state.floor,
                     onFloorSelect = { floor ->
                         onEvent(MapsEvent.PickFloor(floor))
@@ -191,17 +198,20 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
                 else -> androidx.compose.runtime.key(state.building, state.floor, state.planFile, state.stackRasterRevision) {
                     ZoomableMap(
                     state.planFile, state.highlight, state.zoom, { onEvent(MapsEvent.Transform(it)) },
-                    path = state.path, stairMarkers = state.stairMarkers, fitGeneration = state.fitGeneration,
+                    path = if (state.alphaMaps) state.path else emptyList(),
+                    stairMarkers = if (state.alphaMaps) state.stairMarkers else emptyList(),
+                    fitGeneration = state.fitGeneration,
                     onLongPress = { nx, ny -> onEvent(MapsEvent.PlanPress(nx, ny)) },
-                    presentation = state.presentation, floorKey = FloorKey(state.building, state.floor),
-                    activeStepId = state.activeStepId,
+                    presentation = if (state.alphaMaps) state.presentation else null,
+                    floorKey = FloorKey(state.building, state.floor),
+                    activeStepId = if (state.alphaMaps) state.activeStepId else null,
                     onMapUnavailable = { onEvent(MapsEvent.MapDecodeFailed(FloorKey(state.building, state.floor))) }
                 )
                 }
             }
         }
         }
-        if (!sideSteps) {
+        if (!sideSteps && state.alphaMaps) {
             val minStep = if (state.presentation != null) Zapara.space.minTouch else 0.dp
             Column(
                 Modifier

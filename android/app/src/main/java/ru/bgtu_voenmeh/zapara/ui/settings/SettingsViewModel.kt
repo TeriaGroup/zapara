@@ -96,6 +96,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 mutable.update { it.copy(useUniversityXml = event.enabled) }
                 save(transform = { it.copy(useUniversityXml = event.enabled) })
             }
+            is SettingsEvent.MapsAlpha -> {
+                mutable.update { it.copy(mapsAlpha = event.enabled) }
+                save(transform = { it.copy(mapsAlpha = event.enabled) }, after = {
+                    container.events.emit(AppEvent.PersonalizationChanged)
+                })
+            }
         }
     }
 
@@ -186,7 +192,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     version = BuildConfig.VERSION_NAME,
                     autoUpdate = AutoUpdate.isAutoUpdateEnabled(container.app),
                     apiConfigured = container.api.configured,
-                    useUniversityXml = prefs.useUniversityXml
+                    useUniversityXml = prefs.useUniversityXml,
+                    mapsAlpha = prefs.mapsAlpha
                 )
             }
             mutable.value = snap

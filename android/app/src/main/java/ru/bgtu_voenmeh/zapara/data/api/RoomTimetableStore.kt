@@ -41,7 +41,8 @@ class RoomTimetableStore(private val db: ZaparaDatabase) : TimetableStore {
                 notifyTime2 = state.notifyTime2,
                 theme = state.theme,
                 animations = state.animations,
-                useUniversityXml = state.useUniversityXml
+                useUniversityXml = state.useUniversityXml,
+                mapsAlpha = state.mapsAlpha
             )
         )
     }
@@ -117,7 +118,8 @@ class RoomTimetableStore(private val db: ZaparaDatabase) : TimetableStore {
             notifyTime2 = s.notifyTime2,
             theme = s.theme,
             animations = s.animations,
-            useUniversityXml = s.useUniversityXml
+            useUniversityXml = s.useUniversityXml,
+            mapsAlpha = s.mapsAlpha
         )
     }
 

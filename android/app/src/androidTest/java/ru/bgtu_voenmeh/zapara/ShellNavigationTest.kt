@@ -15,6 +15,10 @@ import ru.bgtu_voenmeh.zapara.data.db.GroupEntity
 import ru.bgtu_voenmeh.zapara.data.db.HomeworkEntity
 import ru.bgtu_voenmeh.zapara.data.db.LessonEntity
 import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_1_2
+import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_2_3
+import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_3_4
+import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_4_5
+import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_5_6
 import ru.bgtu_voenmeh.zapara.data.db.SettingsEntity
 import ru.bgtu_voenmeh.zapara.data.db.ZaparaDatabase
 
@@ -69,7 +73,7 @@ class ShellNavigationTest {
             try {
                 val ctx: Context = ApplicationProvider.getApplicationContext()
                 val db = Room.databaseBuilder(ctx, ZaparaDatabase::class.java, "zapara.db")
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                 try { seed(db) } finally { db.close() }
             } catch (e: Throwable) { failure = e }

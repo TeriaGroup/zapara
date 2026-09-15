@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.data.AutoUpdate
+import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
 import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
@@ -111,6 +112,19 @@ fun SettingsSection(
                         Text(stringResource(R.string.theme_animations), style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
                         ZSwitch(state.animations, { onEvent(SettingsEvent.Animations(it)) }, "Settings.Animations")
                     }
+                }
+            }
+            item {
+                ZCard(Modifier.fillMaxWidth().testTag("Settings.Maps")) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        Text(stringResource(R.string.settings_maps), style = Zapara.typography.section, color = c.text1, modifier = Modifier.weight(1f))
+                        ZChip(stringResource(R.string.settings_maps_alpha), selected = true, tag = "Settings.MapsAlphaBadge")
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.settings_maps_routes), style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
+                        ZSwitch(state.mapsAlpha, { onEvent(SettingsEvent.MapsAlpha(it)) }, "Settings.MapsAlpha")
+                    }
+                    Text(stringResource(R.string.settings_maps_alpha_hint), style = Zapara.typography.caption, color = c.text2)
                 }
             }
             item {

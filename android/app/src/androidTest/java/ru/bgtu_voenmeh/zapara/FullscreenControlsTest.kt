@@ -34,7 +34,7 @@ class FullscreenControlsTest {
     private val presentation = built.copy(endpoints = listOf(RouteMarker(RouteMarkerKind.Start, floor, GraphPoint(.2, .3))) + built.endpoints)
     private var raster: File? = null
     @After fun cleanup() { raster?.delete() }
-    private var state by mutableStateOf(MapsUiState(fullscreen = true, route = route,
+    private var state by mutableStateOf(MapsUiState(alphaMaps = true, fullscreen = true, route = route,
         presentation = presentation, activeStepId = presentation.steps.first().id,
         highlight = HighlightUi(CoordsRect(.2, .3, .1, .2), "101 · ГК")))
     private var density = 1f

@@ -64,7 +64,8 @@ data class SettingsEntity(
     val notifyTime2: String? = "07:30", // morning: today's lessons
     @androidx.room.ColumnInfo(defaultValue = "'system'") val theme: String = "system",
     @androidx.room.ColumnInfo(defaultValue = "1") val animations: Boolean = true,
-    @androidx.room.ColumnInfo(defaultValue = "0") val useUniversityXml: Boolean = false
+    @androidx.room.ColumnInfo(defaultValue = "0") val useUniversityXml: Boolean = false,
+    @androidx.room.ColumnInfo(defaultValue = "0") val mapsAlpha: Boolean = false
 )
 
 @Entity(tableName = "overrides")
@@ -268,6 +269,12 @@ val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
     }
 }
 
+val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE settings ADD COLUMN mapsAlpha INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
 @Entity(
     tableName = "sync_outbox",
     indices = [Index(value = ["entityType", "entityId", "status"], name = "idx_sync_outbox_entity")]
@@ -325,7 +332,7 @@ interface SyncStateDao {
         OverrideEntity::class, HomeworkEntity::class, ApiCatalogEntity::class, ApiCacheMetadataEntity::class,
         SyncOutboxEntity::class, SyncStateEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class ZaparaDatabase : RoomDatabase() {

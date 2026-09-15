@@ -75,7 +75,28 @@ data class MapsUiState(
     val routeFailure: String? = null,
     val rasterCatalog: Map<FloorKey, FloorRaster> = emptyMap(),
     val decodeFailedFloors: Set<FloorKey> = emptySet(),
-    val roomUnmarked: Boolean = false
+    val roomUnmarked: Boolean = false,
+    val alphaMaps: Boolean = false
+)
+
+fun MapsUiState.withoutRouting(): MapsUiState = copy(
+    alphaMaps = false,
+    showStack = false,
+    stepsOpen = false,
+    picker = null,
+    planPick = null,
+    route = null,
+    presentation = null,
+    path = emptyList(),
+    stairMarkers = emptyList(),
+    routeSteps = emptyList(),
+    fromLabel = "",
+    toLabel = "",
+    durationLabel = "",
+    canSwap = false,
+    activeStepId = null,
+    routeLoading = false,
+    routeFailure = null
 )
 
 sealed interface MapsEvent {

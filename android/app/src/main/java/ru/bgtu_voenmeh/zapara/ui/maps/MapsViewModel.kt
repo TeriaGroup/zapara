@@ -48,10 +48,20 @@ class MapsViewModel internal constructor(
 
     init {
         launchMap {
+            syncAlpha()
             ensureGraph()
-            if (!roomArg.isNullOrBlank()) showRoom(roomArg) else toNext()
+            if (!roomArg.isNullOrBlank()) showRoom(roomArg)
+            else if (routingOn()) toNext()
+            else browsePlan()
         }
-        viewModelScope.launch { container.events.collect { refreshContext() } }
+        viewModelScope.launch {
+            container.events.collect {
+                launchMap {
+                    syncAlpha()
+                    if (routingOn()) refreshContext()
+                }
+            }
+        }
     }
 
     fun onEvent(event: MapsEvent) {
@@ -59,30 +69,30 @@ class MapsViewModel internal constructor(
             is MapsEvent.PickBuilding -> pickBuilding(event.index)
             is MapsEvent.PickFloor -> pickFloor(event.n)
             is MapsEvent.ShowRoom -> launchMap { showRoom(event.classroomRaw) }
-            MapsEvent.ToNext -> launchMap { toNext() }
+            MapsEvent.ToNext -> if (routingOn()) launchMap { toNext() }
             MapsEvent.ZoomIn -> mutable.update { it.copy(zoom = (it.zoom * 1.25f).coerceIn(0.4f, 4f)) }
             MapsEvent.ZoomOut -> mutable.update { it.copy(zoom = (it.zoom / 1.25f).coerceIn(0.4f, 4f)) }
             MapsEvent.Fit -> mutable.update { it.copy(zoom = 1f, fitGeneration = it.fitGeneration + 1) }
             is MapsEvent.Fullscreen -> mutable.update { it.copy(fullscreen = event.on) }
             is MapsEvent.Transform -> mutable.update { it.copy(zoom = event.zoom.coerceIn(0.4f, 4f)) }
-            is MapsEvent.PickEntrance -> launchMap { pickEntrance(event.id) }
-            is MapsEvent.PickRouteStep -> mutable.value.presentation?.steps?.firstOrNull {
+            is MapsEvent.PickEntrance -> if (routingOn()) launchMap { pickEntrance(event.id) }
+            is MapsEvent.PickRouteStep -> if (routingOn()) mutable.value.presentation?.steps?.firstOrNull {
                 it.from.building == event.building && it.from.floor == event.floor
             }?.let { selectStep(it.id) }
-            is MapsEvent.SelectRouteStep -> selectStep(event.id)
-            MapsEvent.PreviousRouteStep -> moveStep(-1)
-            MapsEvent.NextRouteStep -> moveStep(1)
-            MapsEvent.OpenRouteSteps -> mutable.update { it.copy(stepsOpen = true, picker = null, planPick = null) }
+            is MapsEvent.SelectRouteStep -> if (routingOn()) selectStep(event.id)
+            MapsEvent.PreviousRouteStep -> if (routingOn()) moveStep(-1)
+            MapsEvent.NextRouteStep -> if (routingOn()) moveStep(1)
+            MapsEvent.OpenRouteSteps -> if (routingOn()) mutable.update { it.copy(stepsOpen = true, picker = null, planPick = null) }
             MapsEvent.CloseRouteSteps -> mutable.update { it.copy(stepsOpen = false) }
             MapsEvent.RetryMaps -> launchMap { retryMaps() }
             is MapsEvent.MapDecodeFailed -> mutable.update { it.mapDecodeFailed(event.floor) }
-            MapsEvent.ToggleStack -> mutable.update { it.copy(showStack = !it.showStack) }
-            MapsEvent.OpenFrom -> openPicker(RouteField.From)
-            MapsEvent.OpenTo -> openPicker(RouteField.To)
+            MapsEvent.ToggleStack -> if (routingOn()) mutable.update { it.copy(showStack = !it.showStack) }
+            MapsEvent.OpenFrom -> if (routingOn()) openPicker(RouteField.From)
+            MapsEvent.OpenTo -> if (routingOn()) openPicker(RouteField.To)
             is MapsEvent.QueryPlaces -> refreshPicker { it.copy(query = event.value) }
             is MapsEvent.PickPlace -> launchMap { pickPlace(event.id) }
             MapsEvent.ClosePicker -> mutable.update { it.copy(picker = null) }
-            MapsEvent.SwapEnds -> launchMap { swapEnds() }
+            MapsEvent.SwapEnds -> if (routingOn()) launchMap { swapEnds() }
             is MapsEvent.FilterPickerBuilding -> refreshPicker { picker ->
                 picker.copy(
                     building = event.building,
@@ -91,7 +101,7 @@ class MapsViewModel internal constructor(
             }
             is MapsEvent.FilterPickerFloor -> refreshPicker { it.copy(floor = event.floor) }
             is MapsEvent.PlanPress -> onPlanPress(event.nx, event.ny)
-            is MapsEvent.PlanPickAs -> launchMap { pickPlanAs(event.field) }
+            is MapsEvent.PlanPickAs -> if (routingOn()) launchMap { pickPlanAs(event.field) }
             MapsEvent.ClosePlanPick -> mutable.update { it.copy(planPick = null) }
         }
     }
@@ -108,7 +118,47 @@ class MapsViewModel internal constructor(
         graphLoaded = true
     }
 
+    private fun routingOn() = mutable.value.alphaMaps
+
+    private suspend fun syncAlpha() {
+        val on = withContext(ioDispatcher) { container.settings().mapsAlpha }
+        if (on == mutable.value.alphaMaps) return
+        if (!on) {
+            fromId = null
+            toId = null
+            destRoomKey = null
+            prevRoomKey = null
+            routeResult = null
+            mutable.update { it.withoutRouting() }
+        } else {
+            mutable.update { it.copy(alphaMaps = true) }
+        }
+    }
+
+    private suspend fun browsePlan() {
+        ensureGraph()
+        val building = mutable.value.building.ifBlank { "ГК" }
+        val floor = mutable.value.floors.firstOrNull() ?: 1
+        applyPlan(building, floor, MapMode.None, "", null, followRoute = false)
+    }
+
     private suspend fun showRoom(classroomRaw: String) {
+        if (!routingOn()) {
+            ensureGraph()
+            val info = MapResolve.resolve(classroomRaw)
+            if (info == null || info.isRemote) {
+                browsePlan()
+                return
+            }
+            destRoomKey = info.classroomRaw
+            fromId = null
+            toId = null
+            val plan = MapsComposer.shownPlan(info.building, info.floor, info.roomRaw, CampusRouter.resolveClassroom(graph, classroomRaw))
+            applyPlan(plan.building, plan.floor, MapMode.Lesson,
+                container.copy.get("maps_room_on_floor", plan.roomRaw.ifBlank { classroomRaw }, plan.floor, plan.building),
+                plan.roomRaw, info.note, info.building == "ВЦ", followRoute = false)
+            return
+        }
         ensureGraph()
         val info = MapResolve.resolve(classroomRaw)
         if (info == null) { toNext(); return }
@@ -283,6 +333,21 @@ class MapsViewModel internal constructor(
 
     private fun onPlanPress(nx: Double, ny: Double) {
         val hit = MapsComposer.hitRoom(nx, ny, floorRooms) ?: return
+        if (!routingOn()) {
+            launchMap {
+                val building = mutable.value.building
+                val floor = mutable.value.floor
+                val coords = withContext(ioDispatcher) { container.findCoords(building, floor, hit.room) }
+                mutable.update {
+                    it.copy(
+                        highlight = coords?.let { rect -> HighlightUi(rect, hit.room) },
+                        planPick = null,
+                        roomUnmarked = coords == null
+                    )
+                }
+            }
+            return
+        }
         mutable.update { it.copy(planPick = PlanPickUi(hit.id, hit.room), stepsOpen = false, picker = null) }
     }
 
