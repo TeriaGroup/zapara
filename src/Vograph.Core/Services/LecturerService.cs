@@ -188,9 +188,9 @@ public class LecturerService
                 if (lessonNodes == null) continue;
                 foreach (XmlNode lnode in lessonNodes)
                 {
-                    var wcStr = lnode.SelectSingleNode("WeekCode")?.InnerText?.Trim() ?? "0";
-                    int.TryParse(wcStr, out var parity);
+                    var wcStr = lnode.SelectSingleNode("WeekCode")?.InnerText?.Trim() ?? "";
                     var timeRaw = lnode.SelectSingleNode("Time")?.InnerText?.Trim() ?? "";
+                    var parity = ParityService.ParseXmlParity(wcStr, timeRaw);
                     var discRaw = lnode.SelectSingleNode("Discipline")?.InnerText?.Trim() ?? "";
                     var classroomRaw = lnode.SelectSingleNode("Classroom")?.InnerText?.Trim() ?? "";
 
