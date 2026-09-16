@@ -27,37 +27,17 @@ class LecturerStore(private val context: Context) {
             ?.sortedWith(compareBy({ it.dayOfWeek }, { it.parity }, { it.timeStart }))
             .orEmpty()
 
-    /** Ids + short names of teachers leading [groupId] (matches Windows GetMyTeacherIds). */
-    fun myTeacherIds(groupLessons: List<Lesson>): Set<String> {
-        val shorts = groupLessons
-            .flatMap { it.teacherRaw.split(";") }
-            .map { it.trim() }.filter { it.isNotEmpty() && it != "—" }
-        val ids = mutableSetOf<String>()
-        val lecturers = lecturers()
-        for (short in shorts) {
-            val lastName = short.split(" ").firstOrNull()?.trimEnd('.').orEmpty()
-            for (lect in lecturers) {
-                if (lastName.isNotEmpty() && lect.name.contains(lastName, ignoreCase = true)) {
-                    ids.add(lect.id)
-                    ids.add(lect.name)
-                    break
-                }
-            }
-            ids.add(short)
-        }
-        return ids
-    }
+    /** Ids + names of teachers leading the group, matched by last name and initials. */
+    fun myTeacherIds(
+        groupLessons: List<Lesson>,
+        myGroupId: String? = null,
+        myGroupName: String? = null
+    ): Set<String> = TeacherMatch.myIds(groupLessons, lecturers(), { lessonsFor(it) }, myGroupId, myGroupName)
 
     fun search(query: String, onlyMy: Boolean, myIds: Set<String>): List<LecturerInfo> {
         var list = lecturers().asSequence()
         if (onlyMy) {
-            list = list.filter { l ->
-                l.id in myIds || l.name in myIds ||
-                    myIds.any { id ->
-                        val last = id.split(" ").firstOrNull()?.trimEnd('.').orEmpty()
-                        last.isNotEmpty() && l.name.contains(last, ignoreCase = true)
-                    }
-            }
+            list = list.filter { TeacherMatch.inMineList(it, myIds) }
         }
         val q = query.trim().lowercase()
         if (q.isNotEmpty()) {

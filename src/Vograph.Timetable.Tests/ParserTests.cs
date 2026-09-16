@@ -44,6 +44,14 @@ public sealed class ParserTests
         Assert.Equal("лек Математика", Assert.Single(new TimetableParser().Parse(decoded).lessons).SubjectRaw);
     }
 
+    [Fact]
+    public void Html_shell_is_not_a_timetable()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            new TimetableParser().Parse("<!DOCTYPE html><html><body>spa</body></html>"));
+        Assert.Equal(TimetableParser.NotTimetable, ex.Message);
+    }
+
     [Theory]
     [InlineData("<!DOCTYPE Timetable>")]
     [InlineData("<!DOCTYPE Timetable [<!ENTITY title 'entity'>]>")]

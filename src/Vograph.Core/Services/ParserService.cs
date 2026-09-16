@@ -29,7 +29,9 @@ public class ParserService
     public async Task<(string xml, string raw)> FetchXmlAsync(string url = DefaultUrl, HttpClient? client = null)
     {
         var bytes = await (client ?? Http).GetByteArrayAsync(url);
-        return (DecodeXml(bytes), Convert.ToBase64String(bytes)); // raw as base64 for storage if needed
+        var xml = DecodeXml(bytes);
+        if (TimetableParser.IsHtml(xml)) throw new InvalidOperationException(TimetableParser.NotTimetable);
+        return (xml, Convert.ToBase64String(bytes)); // raw as base64 for storage if needed
     }
 
     /// <summary>voenmeh.ru serves the XML as UTF-16LE with a BOM; archives came as UTF-8 with and without one.

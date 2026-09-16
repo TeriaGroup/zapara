@@ -46,6 +46,12 @@ class TeacherDetailsComposerTest {
         assertTrue(TeacherDetailsComposer.compose(emptyList(), 0, "", XmlCopy).isEmpty())
     }
 
+    @Test fun my_group_badge_matches_group_number_when_id_is_the_name() {
+        val lesson = parsed.lessons.first().copy(groups = listOf(ru.bgtu_voenmeh.zapara.data.GroupRef("3313", "А863С")))
+        val days = TeacherDetailsComposer.compose(listOf(lesson), 0, "А863С", XmlCopy)
+        assertTrue(days.flatMap { it.rows }.all { it.isMyGroup })
+    }
+
     @Test fun compose_keeps_days_with_lessons_and_marks_own_group() {
         val days = TeacherDetailsComposer.compose(parsed.lessons, 0, "3313", XmlCopy)
         assertTrue(days.isNotEmpty())

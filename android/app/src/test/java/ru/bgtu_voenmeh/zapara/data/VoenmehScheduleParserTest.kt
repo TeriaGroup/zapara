@@ -110,6 +110,32 @@ class VoenmehScheduleParserTest {
         assertEquals(2, sport.parity)
         assertEquals("", sport.classroomRaw)
         assertEquals("", sport.teacherRaw)
+        assertEquals("", sport.buildingRaw)
+        assertEquals("—", ru.bgtu_voenmeh.zapara.ui.LessonFormat.roomLabel(sport, ru.bgtu_voenmeh.zapara.ui.XmlCopy))
+    }
+
+    @Test fun spring_period_uses_the_second_year() {
+        val meta = VoenmehScheduleParser.parseMeta(
+            """{"has_data":true,"period":"ВЕСЕННИЙ СЕМЕСТР 2025/2026 уч. г.","groups":["А863С"]}"""
+        )
+        assertEquals(LocalDate.of(2026, 2, 9), meta.periodStart)
+    }
+
+    @Test fun lessons_are_numbered_by_time_within_day_and_parity() {
+        val shuffled = """
+            {"lessons":[
+              {"day":1,"time":"10:50","week":"odd","kind":"пр","subject":"ФК","teachers":[],"rooms":[]},
+              {"day":1,"time":"12:40","week":"odd","kind":"пр","subject":"ОСН","teachers":[],"rooms":["563*"]},
+              {"day":1,"time":"9:00","week":"odd","kind":"лек","subject":"МАТ.","teachers":[],"rooms":["493"]},
+              {"day":3,"time":"9:00","week":"odd","kind":"лек","subject":"ИСТОРИЯ","teachers":[],"rooms":[]}
+            ]}
+        """.trimIndent()
+        val lessons = VoenmehScheduleParser.parseLessons(shuffled, "А863С")
+        val monday = lessons.filter { it.dayOfWeek == 1 && it.parity == 1 }.sortedBy { it.index }
+        assertEquals(listOf("09:00", "10:50", "12:40"), monday.map { it.timeStart })
+        assertEquals(listOf(1, 2, 3), monday.map { it.index })
+        val wednesday = lessons.single { it.dayOfWeek == 3 }
+        assertEquals(1, wednesday.index)
     }
 
     @Test fun assemble_keeps_empty_groups_and_uses_name_as_id() {

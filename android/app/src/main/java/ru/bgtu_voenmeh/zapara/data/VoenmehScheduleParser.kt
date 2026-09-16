@@ -27,8 +27,7 @@ object VoenmehScheduleParser {
     fun parseLessons(json: String, groupId: String): List<Lesson> {
         val obj = payloadObject(json)
         val rows = (obj.fields["lessons"] as? JsonValue.Arr)?.items.orEmpty()
-        val indexPerParity = mutableMapOf<Int, Int>()
-        val lessons = ArrayList<Lesson>(rows.size)
+        val parsed = ArrayList<Lesson>(rows.size)
         for (item in rows) {
             val row = try { item.obj() } catch (_: JsonFail) { continue }
             val day = int(row, "day")
@@ -54,14 +53,12 @@ object VoenmehScheduleParser {
             val rooms = strings(row.fields["rooms"])
             val classroomRaw = if (rooms.isEmpty()) "" else rooms.joinToString("; ").let { if (it.endsWith(";")) it else "$it;" }
             val place = GroupParser.placeOf(classroomRaw)
-            val idx = (indexPerParity[parity] ?: 0) + 1
-            indexPerParity[parity] = idx
-            lessons.add(
+            parsed.add(
                 Lesson(
                     groupId = groupId,
                     dayOfWeek = day,
                     parity = parity,
-                    index = idx,
+                    index = 0,
                     timeStart = timeStart,
                     timeEnd = timeEnd,
                     subjectRaw = discRaw,
@@ -74,7 +71,16 @@ object VoenmehScheduleParser {
                 )
             )
         }
-        return lessons
+        return numberByTime(parsed)
+    }
+
+    internal fun numberByTime(lessons: List<Lesson>): List<Lesson> {
+        val out = ArrayList<Lesson>(lessons.size)
+        for (group in lessons.groupBy { it.dayOfWeek to it.parity }.values) {
+            val ordered = group.sortedWith(compareBy({ it.timeStart }, { it.subjectRaw }))
+            ordered.forEachIndexed { i, lesson -> out += lesson.copy(index = i + 1) }
+        }
+        return out
     }
 
     fun assemble(meta: VoenmehScheduleMeta, loaded: List<Pair<String, List<Lesson>>>): ParsedSchedule {
@@ -89,8 +95,8 @@ object VoenmehScheduleParser {
 
     internal fun periodStart(title: String): LocalDate {
         val years = Regex("""(20\d{2})""").findAll(title).map { it.groupValues[1].toInt() }.toList()
-        val year = years.firstOrNull() ?: 2026
         val spring = title.contains("весен", ignoreCase = true)
+        val year = if (spring) years.lastOrNull() ?: 2026 else years.firstOrNull() ?: 2026
         return if (spring) LocalDate.of(year, 2, 9) else LocalDate.of(year, 9, 1)
     }
 

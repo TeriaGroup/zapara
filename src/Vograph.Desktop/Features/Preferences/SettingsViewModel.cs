@@ -14,7 +14,7 @@ namespace Vograph.Desktop.Features.Preferences;
 
 public sealed partial class SettingsViewModel : ViewModelBase
 {
-    public const string ReleasesUrl = "https://github.com/0NiLle0/zapara/releases";
+    public const string ReleasesUrl = "https://github.com/TeriaGroup/zapara/releases";
     public const string TimetableSourceUrl = "https://voenmeh.ru/obrazovanie/timetables/";
     public const string MapsSourceUrl = "https://voenmeh.ru/openmap/";
 

@@ -20,6 +20,17 @@ class ScheduleTest {
     }
 
     @Test
+    fun dayLessonsFollowTimeEvenIfIndexIsScrambled() {
+        val scrambled = listOf(
+            Lesson(groupId = "3313", dayOfWeek = 3, parity = 1, index = 12, timeStart = "09:00", subjectRaw = "ИСТОРИЯ"),
+            Lesson(groupId = "3313", dayOfWeek = 3, parity = 1, index = 9, timeStart = "10:50", subjectRaw = "ФК"),
+            Lesson(groupId = "3313", dayOfWeek = 3, parity = 1, index = 10, timeStart = "12:40", subjectRaw = "ФИЗИКА")
+        )
+        val shown = Schedule.lessonsForDate(scrambled, "3313", LocalDate.of(2026, 9, 2), ps)
+        assertEquals(listOf("09:00", "10:50", "12:40"), shown.map { it.timeStart })
+    }
+
+    @Test
     fun sundayEmpty() {
         assertTrue(Schedule.lessonsForDate(all, "3313", LocalDate.of(2026, 9, 6), ps).isEmpty())
     }

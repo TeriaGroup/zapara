@@ -58,7 +58,9 @@ class TeachersViewModel(private val container: AppContainer) : ViewModel() {
             val snap = withContext(Dispatchers.IO) {
                 val prefs = container.repo.settings()
                 val gid = prefs.myGroupId.orEmpty()
-                val myIds = if (gid.isEmpty()) emptySet() else container.lecturerStore.myTeacherIds(container.repo.allForGroup(gid))
+                val gname = container.repo.groups().firstOrNull { it.id == gid }?.name
+                val myIds = if (gid.isEmpty()) emptySet() else
+                    container.lecturerStore.myTeacherIds(container.repo.allForGroup(gid), gid, gname)
                 val found = container.lecturerStore.search(mutable.value.query, mutable.value.onlyMine, myIds)
                 val rows = found.map { lect ->
                     val subjects = container.lecturerStore.lessonsFor(lect.id)

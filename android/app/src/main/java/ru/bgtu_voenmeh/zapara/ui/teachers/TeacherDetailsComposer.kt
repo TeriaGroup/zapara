@@ -42,7 +42,7 @@ object TeacherDetailsComposer {
                         subject = LessonFormat.stripType(lesson.disciplineRaw.ifBlank { lesson.subjectRaw }, lesson.typeRaw),
                         groups = lesson.groups.joinToString(", ") { it.number },
                         room = LessonFormat.roomLabel(lesson.roomRaw, lesson.buildingRaw, lesson.classroomRaw, copy),
-                        isMyGroup = lesson.groups.any { it.idGroup == myGroupId },
+                        isMyGroup = lesson.groups.any { it.idGroup == myGroupId || it.number == myGroupId },
                         parity = lesson.parity
                     )
                 }

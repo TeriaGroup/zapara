@@ -15,21 +15,13 @@ class VoenmehScheduleClient(
 ) {
     suspend fun fetchSchedule(groupNames: Collection<String> = emptyList()): ParsedSchedule = coroutineScope {
         val meta = VoenmehScheduleParser.parseMeta(get(META_URL))
-        val fetchList = if (groupNames.isEmpty()) {
-            meta.groups
-        } else {
-            groupNames.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-        }
+        val fetchList = groupNames.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
         val slots = Semaphore(6)
         val loaded = fetchList.map { name ->
             async {
                 slots.withPermit {
                     val url = "$LESSONS_URL?name=${encode(name)}&type=group"
-                    name to try {
-                        VoenmehScheduleParser.parseLessons(get(url), name)
-                    } catch (_: Exception) {
-                        emptyList()
-                    }
+                    name to VoenmehScheduleParser.parseLessons(get(url), name)
                 }
             }
         }.awaitAll()

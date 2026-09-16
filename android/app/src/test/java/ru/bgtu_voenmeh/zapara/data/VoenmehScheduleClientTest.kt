@@ -16,7 +16,7 @@ class VoenmehScheduleClientTest {
                 else -> error(url)
             }
         }
-        val parsed = client.fetchSchedule()
+        val parsed = client.fetchSchedule(listOf("А863С"))
         assertEquals(1, parsed.groups.size)
         assertEquals("А863С", parsed.groups.single().name)
         assertEquals("09:00", parsed.lessons.single().timeStart)
@@ -44,18 +44,30 @@ class VoenmehScheduleClientTest {
         assertTrue(http.none { it.contains(VoenmehScheduleClient.encode("09С33")) })
     }
 
-    @Test fun skips_a_group_when_lessons_are_html() = runBlocking {
+    @Test fun catalog_only_when_no_group_names() = runBlocking {
+        val http = mutableListOf<String>()
+        val client = VoenmehScheduleClient { url ->
+            http += url
+            """{"has_data":true,"period":"ОСЕННИЙ СЕМЕСТР 2026/2027 уч. г.","groups":["А863С","09С33"]}"""
+        }
+        val parsed = client.fetchSchedule()
+        assertEquals(2, parsed.groups.size)
+        assertTrue(parsed.lessons.isEmpty())
+        assertTrue(http.none { it.contains("/api/schedule/lessons") })
+    }
+
+    @Test fun needed_group_html_fails_the_refresh() = runBlocking {
         val client = VoenmehScheduleClient { url ->
             when {
                 url.endsWith("/meta") ->
-                    """{"has_data":true,"period":"ОСЕННИЙ СЕМЕСТР 2026/2027 уч. г.","groups":["А863С","09С33"]}"""
-                url.contains(VoenmehScheduleClient.encode("А863С")) ->
-                    """{"name":"А863С","lessons":[{"day":1,"time":"9:00","week":"odd","kind":"лек","subject":"МАТ.","teachers":[],"rooms":["493"]}]}"""
+                    """{"has_data":true,"period":"ОСЕННИЙ СЕМЕСТР 2026/2027 уч. г.","groups":["А863С"]}"""
                 else -> "<!doctype html><html></html>"
             }
         }
-        val parsed = client.fetchSchedule()
-        assertEquals(1, parsed.lessons.size)
-        assertEquals("А863С", parsed.lessons.single().groupId)
+        val err = try {
+            client.fetchSchedule(listOf("А863С"))
+            "ok"
+        } catch (t: Throwable) { t.message.orEmpty() }
+        assertTrue(err.contains("расписани") || err == TimetablePayload.NOT_XML)
     }
 }

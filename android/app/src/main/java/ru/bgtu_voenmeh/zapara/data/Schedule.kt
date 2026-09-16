@@ -20,7 +20,7 @@ object Schedule {
         var code = Parity.weekCode(date, periodStart, weekCount)
         if (invert) code = if (code == 1) 2 else 1
         return all.filter { it.groupId == groupId && it.dayOfWeek == dow && (it.parity == code || it.parity == 0) }
-            .sortedWith(compareBy({ it.index }, { it.timeStart }))
+            .sortedWith(compareBy({ it.timeStart }, { it.index }))
     }
 
     /**

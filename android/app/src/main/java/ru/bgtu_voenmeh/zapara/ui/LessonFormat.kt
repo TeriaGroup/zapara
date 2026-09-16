@@ -41,6 +41,7 @@ object LessonFormat {
 
     fun roomLabel(roomRaw: String, buildingRaw: String, classroomRaw: String, copy: UiCopy): String {
         if (isRemote(classroomRaw) || roomRaw.contains("дистанционно", ignoreCase = true)) return copy.get("remote_room")
+        if (roomRaw.isBlank() && classroomRaw.trim().trimEnd(';').isBlank()) return "—"
         val building = when {
             buildingRaw.isNotBlank() -> buildingRaw
             classroomRaw.contains("*") -> "УЛК"

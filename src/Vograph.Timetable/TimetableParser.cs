@@ -19,8 +19,20 @@ public class TimetableParser
         return utf8.Contains('\0') ? Encoding.Unicode.GetString(bytes) : utf8;
     }
 
+    public const string NotTimetable =
+        "сайт университета отдал страницу вместо файла расписания. Показано последнее сохранённое";
+
+    public static bool IsHtml(string text)
+    {
+        var trimmed = text.TrimStart('\uFEFF', ' ', '\n', '\r', '\t');
+        var head = trimmed.Length <= 64 ? trimmed : trimmed[..64];
+        return head.StartsWith("<!DOCTYPE html", StringComparison.OrdinalIgnoreCase)
+            || head.StartsWith("<html", StringComparison.OrdinalIgnoreCase);
+    }
+
     public (List<Group> groups, List<Lesson> lessons, DateTime periodStart, int weekCount, string periodTitle) Parse(string xml)
     {
+        if (IsHtml(xml)) throw new InvalidOperationException(NotTimetable);
         var doc = new XmlDocument { XmlResolver = null };
         using var text = new StringReader(xml);
         using var reader = XmlReader.Create(text, new XmlReaderSettings

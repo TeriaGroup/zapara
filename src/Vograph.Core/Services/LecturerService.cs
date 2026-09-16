@@ -2,6 +2,7 @@ using System.IO;
 using System.Text;
 using System.Xml;
 using Vograph.Core.Models;
+using Vograph.Timetable;
 
 namespace Vograph.Core.Services;
 
@@ -74,6 +75,7 @@ public class LecturerService
         {
             var bytes = await http.GetByteArrayAsync(url);
             var xml = ParserService.DecodeXml(bytes);
+            if (TimetableParser.IsHtml(xml)) throw new InvalidOperationException(TimetableParser.NotTimetable);
             try { Directory.CreateDirectory(Path.GetDirectoryName(CachePath)!); await File.WriteAllTextAsync(CachePath, xml, Encoding.UTF8); } catch {}
             return (xml, false);
         }
