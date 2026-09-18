@@ -65,10 +65,11 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, on
             Text(page?.caption ?: "", style = Zapara.typography.caption, color = Zapara.colors.text2, modifier = Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s).testTag("Schedule.Caption"))
             val pager = rememberPagerState(initialPage = ScheduleComposer.pageIndex(state.selected, state.today)) { ScheduleComposer.PAGE_COUNT }
             val motionOn = Zapara.motion.enabled
-            LaunchedEffect(pager.settledPage, state.today) {
+            LaunchedEffect(pager.settledPage) {
                 val date = ScheduleComposer.dateAt(pager.settledPage, state.today)
                 if (date != state.selected) onEvent(ScheduleEvent.Select(date))
             }
+            LaunchedEffect(Unit) { onEvent(ScheduleEvent.SyncClock) }
             LaunchedEffect(state.selected, state.today) {
                 val idx = ScheduleComposer.pageIndex(state.selected, state.today)
                 if (pager.currentPage != idx) {

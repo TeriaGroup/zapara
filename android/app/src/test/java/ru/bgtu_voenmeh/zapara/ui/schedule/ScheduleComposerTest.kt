@@ -62,6 +62,14 @@ class ScheduleComposerTest {
         assertEquals("563 УЛК", second.room)
     }
 
+    @Test fun syncToday_follows_the_clock_not_a_stale_session_date() {
+        val seventeen = LocalDate.of(2026, 9, 17)
+        val eighteen = LocalDate.of(2026, 9, 18)
+        assertEquals(eighteen to eighteen, ScheduleComposer.syncToday(eighteen, seventeen, seventeen))
+        assertEquals(eighteen to LocalDate.of(2026, 9, 19), ScheduleComposer.syncToday(eighteen, seventeen, LocalDate.of(2026, 9, 19)))
+        assertEquals(eighteen to eighteen, ScheduleComposer.syncToday(eighteen, eighteen, eighteen))
+    }
+
     @Test fun caption_uses_parity_and_week_number() {
         val page = page(monday, LocalDateTime.of(2026, 9, 14, 12, 0))
         assertEquals("Понедельник, 14 сентября · нечётная неделя · 3-я неделя", page.caption)

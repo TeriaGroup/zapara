@@ -74,7 +74,8 @@ fun ZChip(
     selected: Boolean = false,
     onClick: (() -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
-    tag: String? = null
+    tag: String? = null,
+    textStyle: TextStyle = Zapara.typography.caption
 ) {
     val c = Zapara.colors
     val source = remember { MutableInteractionSource() }
@@ -96,12 +97,12 @@ fun ZChip(
             )
             .padding(horizontal = Zapara.space.s, vertical = Zapara.space.xs),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)
+        horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs, Alignment.CenterHorizontally)
     ) {
         if (leading != null) leading()
         Text(
             text,
-            style = Zapara.typography.caption,
+            style = textStyle,
             color = if (selected) c.onAccent else c.text1
         )
     }

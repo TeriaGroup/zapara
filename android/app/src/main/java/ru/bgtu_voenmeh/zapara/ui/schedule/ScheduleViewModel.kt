@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -42,6 +43,12 @@ class ScheduleViewModel(
     init {
         viewModelScope.launch { bootstrap() }
         viewModelScope.launch {
+            while (true) {
+                delay(60_000)
+                syncClock()
+            }
+        }
+        viewModelScope.launch {
             container.events.events.collect { event ->
                 if (ScheduleComposer.resetsPager(event)) bootstrap() else refreshPages()
             }
@@ -57,10 +64,11 @@ class ScheduleViewModel(
             }
             ScheduleEvent.Retry -> viewModelScope.launch { bootstrap() }
             ScheduleEvent.Today -> viewModelScope.launch {
-                val today = mutable.value.today
-                mutable.update { it.copy(selected = today) }
+                val today = container.clock().toLocalDate()
+                mutable.update { it.copy(today = today, selected = today) }
                 ensureAround(today)
             }
+            ScheduleEvent.SyncClock -> syncClock()
             ScheduleEvent.Refresh -> refresh()
             is ScheduleEvent.LongPress -> mutable.update { it.copy(actionsFor = event.lesson) }
             ScheduleEvent.CloseActions -> mutable.update { it.copy(actionsFor = null) }
@@ -146,14 +154,23 @@ class ScheduleViewModel(
             val (prefs, gid, all) = snap
             ctx = SchedCtx(gid, prefs.periodStart, prefs.weekCount, prefs.parityInvert)
             allLessons = all
-            val selected = mutable.value.selected
-            val dates = (mutable.value.pages.keys + selected).distinct()
-            mutable.update { it.copy(hasGroup = gid.isNotEmpty(), today = today, error = null) }
+            val rolled = ScheduleComposer.syncToday(today, mutable.value.today, mutable.value.selected)
+            val dates = (mutable.value.pages.keys + rolled.second).distinct()
+            mutable.update { it.copy(hasGroup = gid.isNotEmpty(), today = rolled.first, selected = rolled.second, error = null) }
             dates.forEach { ensurePage(it, force = true) }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             android.util.Log.w("ZaparaSchedule", "refreshPages", e)
         }
+    }
+
+    private fun syncClock() {
+        val clockToday = container.clock().toLocalDate()
+        val cur = mutable.value
+        val (today, selected) = ScheduleComposer.syncToday(clockToday, cur.today, cur.selected)
+        if (today == cur.today && selected == cur.selected) return
+        mutable.update { it.copy(today = today, selected = selected) }
+        if (selected != cur.selected) viewModelScope.launch { ensureAround(selected) }
     }
 
     private suspend fun ensureAround(date: LocalDate) {
@@ -174,13 +191,15 @@ class ScheduleViewModel(
         val prefs = container.repo.settings()
         val friends = container.db.friendDao().getAll().map { Friend(it.groupName, it.colorHex, it.enabled, it.memberNames) }
         val groups = container.repo.groups().associate { it.name to it.id }
+        val myName = groups.entries.firstOrNull { it.value == c.groupId }?.key ?: c.groupId
         return ScheduleComposer.page(
             date, allLessons, c, now,
             displayName = { norm, dow -> container.overrides.displayNameByNorm(norm, dow) },
             homeworkFor = { norm -> container.homework.forSubjectByNorm(norm) },
             friendsFor = { lesson ->
+                val enabled = friends.filter { it.enabled && !it.groupName.equals(myName, ignoreCase = true) }
                 val hits = IntersectionService.intersections(
-                    my = lesson, date = date, friends = friends.filter { it.enabled },
+                    my = lesson, date = date, friends = enabled,
                     strictness = prefs.intersectionStrictness,
                     periodStart = c.periodStart, weekCount = c.weekCount, invert = c.invert,
                     lessonsFor = { fid, dow, parity ->
@@ -189,7 +208,7 @@ class ScheduleViewModel(
                     resolveId = { name -> groups[name] }
                 )
                 val byGroup = hits.associateBy { it.friendGroupName }
-                val source = if (prefs.alwaysShowAllTrafficLights) friends.filter { it.enabled } else friends.filter { it.enabled && byGroup.containsKey(it.groupName) }
+                val source = if (prefs.alwaysShowAllTrafficLights) enabled else enabled.filter { byGroup.containsKey(it.groupName) }
                 source.map { f ->
                     val hit = byGroup[f.groupName]
                     FriendDotUi(
@@ -197,8 +216,7 @@ class ScheduleViewModel(
                         groupName = f.groupName,
                         members = f.memberNames,
                         score = hit?.score ?: -1,
-                        hint = if (hit != null) LessonFormat.friendHint(f.memberNames, f.groupName, hit.score, container.copy)
-                        else container.copy.get("friend_hint", f.memberNames.ifBlank { f.groupName }, f.groupName, "")
+                        hint = LessonFormat.friendHint(f.memberNames, f.groupName, hit?.score ?: -1, container.copy)
                     )
                 }
             },

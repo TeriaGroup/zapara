@@ -75,6 +75,7 @@ sealed interface ScheduleEvent {
     data class Need(val date: LocalDate) : ScheduleEvent
     data class Select(val date: LocalDate) : ScheduleEvent
     data object Today : ScheduleEvent
+    data object SyncClock : ScheduleEvent
     data object Retry : ScheduleEvent
     data object Refresh : ScheduleEvent
     data class LongPress(val lesson: LessonUi) : ScheduleEvent

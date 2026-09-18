@@ -1,6 +1,7 @@
 package ru.bgtu_voenmeh.zapara.ui.schedule
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
@@ -24,10 +25,15 @@ fun LessonActionsSheet(
     onDismiss: () -> Unit
 ) {
     ZBottomSheet(onDismiss, "Lesson.Actions") {
-        Text(lesson.name, style = Zapara.typography.section, color = Zapara.colors.text1)
-        ActionRow(R.drawable.ic_pencil, stringResource(R.string.action_rename), "Actions.Rename", onRename)
-        ActionRow(R.drawable.ic_plus, stringResource(R.string.action_homework), "Actions.Homework", onHomework)
-        if (!lesson.remote) ActionRow(R.drawable.ic_map_pin, stringResource(R.string.action_map), "Actions.Map", onMap)
+        Column(
+            Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(Zapara.space.m)
+        ) {
+            Text(lesson.name, style = Zapara.typography.section, color = Zapara.colors.text1)
+            ActionRow(R.drawable.ic_pencil, stringResource(R.string.action_rename), "Actions.Rename", onRename)
+            ActionRow(R.drawable.ic_plus, stringResource(R.string.action_homework), "Actions.Homework", onHomework)
+            if (!lesson.remote) ActionRow(R.drawable.ic_map_pin, stringResource(R.string.action_map), "Actions.Map", onMap)
+        }
     }
 }
 

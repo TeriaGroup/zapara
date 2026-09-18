@@ -37,6 +37,8 @@ class MapsAlphaTest {
         assertTrue(maps.contains("if (state.alphaMaps)"))
         val floors = maps.substring(maps.indexOf("internal fun MapsFloorControls"))
         assertTrue(floors.contains("state.alphaMaps"))
+        assertTrue(floors.contains("Zapara.space.l"))
+        assertTrue(floors.contains("bodyStrong"))
         val strings = File("src/main/res/values/strings.xml").readText()
         assertTrue(Regex("""<string name="settings_maps_alpha">Альфа</string>""").containsMatchIn(strings))
         assertTrue(strings.contains("name=\"settings_maps_alpha_hint\""))

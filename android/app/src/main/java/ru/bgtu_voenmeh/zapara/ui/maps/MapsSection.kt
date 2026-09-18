@@ -156,9 +156,15 @@ internal fun MapsFloorControls(state: MapsUiState, onEvent: (MapsEvent) -> Unit)
         verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
     ) {
         ZSegmented(state.buildings, state.buildings.indexOf(state.building).coerceAtLeast(0), { onEvent(MapsEvent.PickBuilding(it)) }, "Maps.Building")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             state.floors.forEach { n ->
-                ZChip("$n", selected = n == state.floor, onClick = { onEvent(MapsEvent.PickFloor(n)) }, tag = "Maps.Floor.$n")
+                ZChip(
+                    "$n",
+                    selected = n == state.floor,
+                    onClick = { onEvent(MapsEvent.PickFloor(n)) },
+                    tag = "Maps.Floor.$n",
+                    textStyle = Zapara.typography.bodyStrong
+                )
             }
             if (state.alphaMaps) {
                 ZChip(stringResource(R.string.maps_stack), selected = state.showStack, onClick = { onEvent(MapsEvent.ToggleStack) }, tag = "Maps.Stack")

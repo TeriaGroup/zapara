@@ -82,8 +82,18 @@ object LessonFormat {
     }
 
     fun friendHint(members: String, group: String, score: Int, copy: UiCopy): String {
-        val scoreText = if (score >= 100) copy.get("friend_same_room") else Intersection.scoreToTextRu(score)
-        val who = members.ifBlank { group }
-        return copy.get("friend_hint", who, group, scoreText)
+        val scoreText = when {
+            score < 0 -> ""
+            score >= 100 -> copy.get("friend_same_room")
+            else -> Intersection.scoreToTextRu(score)
+        }
+        val who = members.trim()
+        val parts = buildList {
+            if (who.isNotEmpty() && !who.equals(group, ignoreCase = true)) add(who)
+            if (group.isNotBlank()) add(group)
+            if (scoreText.isNotBlank()) add(scoreText)
+        }
+        return if (parts.size == 3) copy.get("friend_hint", parts[0], parts[1], parts[2])
+        else parts.joinToString(" · ")
     }
 }

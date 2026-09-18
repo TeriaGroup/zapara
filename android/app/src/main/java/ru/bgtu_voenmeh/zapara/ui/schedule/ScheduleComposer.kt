@@ -27,6 +27,12 @@ object ScheduleComposer {
     fun dateAt(index: Int, today: LocalDate): LocalDate =
         today.plusDays((index - TODAY_INDEX).toLong())
 
+    /** Roll the stored «today» to the clock. If the user was sitting on the old today, follow the new one. */
+    fun syncToday(clockToday: LocalDate, stateToday: LocalDate, selected: LocalDate): Pair<LocalDate, LocalDate> {
+        val nextSelected = if (selected == stateToday) clockToday else selected
+        return clockToday to nextSelected
+    }
+
     enum class SchedulePane { Loading, NoGroup, LoadFail, Day }
 
     fun pane(state: ScheduleUiState): SchedulePane = when {
