@@ -13,7 +13,8 @@ namespace Vograph.Desktop.Tests;
 
 public class ScheduleDialogsTests : UiTest
 {
-    private static readonly DateTime Mon8 = new(2026, 9, 7, 8, 0, 0);
+    // Week containing 1 Sep 2026 is odd; Mon 07.09 is even (one pair), Mon 14.09 is odd (math + law).
+    private static readonly DateTime Mon8 = new(2026, 9, 14, 8, 0, 0);
 
     private static async Task<(ShellViewModel Shell, ScheduleViewModel Vm)> Make(TestDb db)
     {
@@ -115,7 +116,7 @@ public class ScheduleDialogsTests : UiTest
         var s = db.Services.Db.GetSettings();
         s.MyGroupId = "";                       // first run: no group yet
         db.Services.Db.SaveSettings(s);
-        var sunday = new DateTime(2026, 9, 6, 12, 0, 0);
+        var sunday = new DateTime(2026, 9, 13, 12, 0, 0);
         var shell = new ShellViewModel(db.Services);
         var vm = new ScheduleViewModel(db.Services, shell, () => sunday);
         shell.Register(SectionKey.Schedule, () => vm);
@@ -134,7 +135,7 @@ public class ScheduleDialogsTests : UiTest
         await Waits.Until(() => !vm.IsEmpty, "schedule after picking a group");
 
         Assert.Equal(1, vm.DayOffset);                      // Sunday → smart start lands on Monday, not on the empty Sunday
-        Assert.Equal(new DateTime(2026, 9, 7), vm.Date);
+        Assert.Equal(new DateTime(2026, 9, 14), vm.Date);
         Assert.Equal(2, vm.SegmentIndex);
         Assert.True(vm.ShowGoToday);
         Assert.Equal(2, vm.Lessons.Count);
@@ -154,10 +155,10 @@ public class ScheduleDialogsTests : UiTest
         var dlg = await Waits.ForDialogAsync<HomeworkDialogViewModel>(shell);
         Assert.False(dlg.IsEdit);
         Assert.False(dlg.ConfirmCommand.CanExecute(null));
-        Assert.Equal("Срок: 21.09 (Пн)", dlg.DueText);   // ОСН РОС ГОС is Monday/odd only: 07.09 → next is 21.09
+        Assert.Equal("Срок: 28.09 (Пн)", dlg.DueText);   // ОСН РОС ГОС is Monday/odd only: 14.09 → next is 28.09
         dlg.IncCommand.Execute(null);
         Assert.Equal(2, dlg.Nth);
-        Assert.Equal("Срок: 05.10 (Пн)", dlg.DueText);
+        Assert.Equal("Срок: 12.10 (Пн)", dlg.DueText);
         dlg.DecCommand.Execute(null);
         dlg.Text = "прочитать главу 2";
         Assert.True(dlg.ConfirmCommand.CanExecute(null));
@@ -166,8 +167,8 @@ public class ScheduleDialogsTests : UiTest
         law = vm.Lessons[1];
         var hw = Assert.Single(law.Homework);
         Assert.Equal("прочитать главу 2", hw.Text);
-        Assert.Equal(new DateTime(2026, 9, 21), hw.Item.Due);
-        Assert.Equal("срок 21.09", hw.Label); // status/label now come from the section's own clock (Mon 07.09), no ОСН РОС ГОС in between
+        Assert.Equal(new DateTime(2026, 9, 28), hw.Item.Due);
+        Assert.Equal("срок 28.09", hw.Label); // status/label now come from the section's own clock (Mon 14.09), no ОСН РОС ГОС in between
         Assert.False(hw.IsDone);
 
         // edit
@@ -236,7 +237,7 @@ public class ScheduleDialogsTests : UiTest
         using var db = TestDb.Create();
         db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
         var shell = new ShellViewModel(db.Services);
-        var afterFirstLesson = new DateTime(2026, 9, 7, 12, 0, 0); // Mon 07.09, after the 09:00-10:35 math lecture ends
+        var afterFirstLesson = new DateTime(2026, 9, 14, 12, 0, 0); // Mon 14.09 odd, after the 09:00-10:35 math lecture ends
         var vm = new ScheduleViewModel(db.Services, shell, () => afterFirstLesson);
         shell.Register(SectionKey.Schedule, () => vm);
         shell.NavigateTo(SectionKey.Schedule);

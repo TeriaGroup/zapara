@@ -36,7 +36,7 @@ public sealed class HomeworkComposer
                 : 0;
             var status = HomeworkStatus.Compute(h, today, until);
             var label = HomeworkLabels.Label(status == "pending" ? "far" : status, h.DueDateComputed, until, loc);
-            var (display, raw) = names.TryGetValue(h.SubjectRawNormalized, out var n) ? n : (OrphanDisplay(h.SubjectRawNormalized), h.SubjectRawNormalized);
+            var (display, raw) = FindSubject(names, h.SubjectRawNormalized);
             entries.Add(new HomeworkEntry(h, display, raw, status == "pending" ? "far" : status, h.DueDateComputed, label));
         }
         var groups = entries
@@ -85,5 +85,13 @@ public sealed class HomeworkComposer
             map[key] = (LessonText.StripType(_app.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw), l.SubjectRaw);
         }
         return map;
+    }
+
+    private static (string Display, string Raw) FindSubject(Dictionary<string, (string Display, string Raw)> names, string key)
+    {
+        if (names.TryGetValue(key, out var n)) return n;
+        foreach (var kv in names)
+            if (ParityService.SameSubject(kv.Key, key)) return kv.Value;
+        return (OrphanDisplay(key), key);
     }
 }

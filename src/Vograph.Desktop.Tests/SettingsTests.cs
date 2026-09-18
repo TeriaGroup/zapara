@@ -100,13 +100,12 @@ public class SettingsTests : UiTest
         await Waits.Until(() => changed == 1, "schedule changed raised");
     }
 
-    /// <summary>«Обновить расписание» forces a full download (no HEAD), so the fake answers the GET with the fixture XML.</summary>
+    /// <summary>«Обновить расписание» forces a full JSON download (no skip on updated_at).</summary>
     [Fact]
     public async Task Refresh_Delegates_To_The_Shell()
     {
         using var db = TestDb.Create();
-        var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-timetable.xml"));
-        var handler = new FakeHttpHandler { Respond = _ => FakeHttpHandler.Bytes(System.Text.Encoding.UTF8.GetBytes(xml)) };
+        var handler = VoenmehHttp.Handler();
         db.Services.Refresher = new ScheduleRefresher(handler);
         var shell = new ShellViewModel(db.Services);
         var vm = new SettingsViewModel(db.Services, shell, () => Sun6);
@@ -114,7 +113,9 @@ public class SettingsTests : UiTest
 
         await vm.RefreshCommand.ExecuteAsync(null);
 
-        Assert.Equal(HttpMethod.Get, Assert.Single(handler.Requests).Method); // force: straight to the download
+        Assert.All(handler.Requests, r => Assert.Equal(HttpMethod.Get, r.Method));
+        Assert.Contains(handler.Requests, r => r.RequestUri!.AbsolutePath.EndsWith("/meta", StringComparison.Ordinal));
+        Assert.Contains(handler.Requests, r => r.RequestUri!.AbsolutePath.Contains("/lessons", StringComparison.Ordinal));
         Assert.Contains(db.Services.Toasts.Items, t => t.Text == "Расписание обновлено");
         Assert.False(vm.IsRefreshing);
         Assert.False(shell.IsRefreshing);

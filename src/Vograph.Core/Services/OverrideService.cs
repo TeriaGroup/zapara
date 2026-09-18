@@ -18,9 +18,9 @@ public class OverrideService
         var norm = ParityService.NormalizeSubject(subjectRaw);
         var overrides = _db.GetOverrides();
         // global overrides weekday
-        var global = overrides.FirstOrDefault(o => o.SubjectRawNormalized == norm && o.Scope == "global");
+        var global = overrides.FirstOrDefault(o => ParityService.SameSubject(o.SubjectRawNormalized, norm) && o.Scope == "global");
         if (global != null) return global.DisplayName;
-        var weekday = overrides.FirstOrDefault(o => o.SubjectRawNormalized == norm && o.Scope == $"weekday:{dayOfWeek}");
+        var weekday = overrides.FirstOrDefault(o => ParityService.SameSubject(o.SubjectRawNormalized, norm) && o.Scope == $"weekday:{dayOfWeek}");
         if (weekday != null) return weekday.DisplayName;
         return subjectRaw;
     }
@@ -122,9 +122,9 @@ public class OverrideService
     {
         var norm = ParityService.NormalizeSubject(subjectRaw);
         var overrides = _db.GetOverrides();
-        var global = overrides.FirstOrDefault(o => o.SubjectRawNormalized == norm && o.Scope == "global");
+        var global = overrides.FirstOrDefault(o => ParityService.SameSubject(o.SubjectRawNormalized, norm) && o.Scope == "global");
         if (global != null) return global.Note;
-        var weekday = overrides.FirstOrDefault(o => o.SubjectRawNormalized == norm && o.Scope == $"weekday:{dayOfWeek}");
+        var weekday = overrides.FirstOrDefault(o => ParityService.SameSubject(o.SubjectRawNormalized, norm) && o.Scope == $"weekday:{dayOfWeek}");
         return weekday?.Note;
     }
 }

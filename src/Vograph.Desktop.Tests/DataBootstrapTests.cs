@@ -35,7 +35,7 @@ public class DataBootstrapTests
         var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));
         using var services = AppServices.Create(dir);
 
-        var result = await DataBootstrap.RunAsync(services, timetableXml: null, fetchError: "offline");
+        var result = await DataBootstrap.RunAsync(services, fetchError: "offline");
 
         Assert.False(result.HasData);
         Assert.True(result.Stale);
@@ -50,10 +50,10 @@ public class DataBootstrapTests
         using var db = TestDb.Create();
         db.Services.Refresher = new ScheduleRefresher(new FakeHttpHandler { Respond = _ => throw new HttpRequestException("offline") });
 
-        var (xml, error) = await DataBootstrap.FetchAsync(db.Services);
+        var fetch = await DataBootstrap.FetchAsync(db.Services);
 
-        Assert.Null(xml);
-        Assert.Equal("offline", error);
+        Assert.Null(fetch.Parsed);
+        Assert.Equal("offline", fetch.Error);
         Assert.Equal(1, db.Services.CoreGate.CurrentCount); // the fetch never touches the gate
     }
 

@@ -36,6 +36,25 @@ public static class ParityService
         return s;
     }
 
+    /// <summary>Letters and digits of <see cref="NormalizeSubject"/> — XML «лек ВЫСШ. МАТЕМАТ» and JSON «лек ВЫСШ. МАТ.» share a prefix.</summary>
+    public static string SubjectMatchKey(string? raw)
+    {
+        var n = NormalizeSubject(raw ?? "");
+        if (n.Length == 0) return "";
+        var chars = n.Where(char.IsLetterOrDigit).ToArray();
+        return chars.Length == 0 ? "" : new string(chars);
+    }
+
+    public static bool SameSubject(string? a, string? b)
+    {
+        var x = SubjectMatchKey(a);
+        var y = SubjectMatchKey(b);
+        if (x.Length == 0 || y.Length == 0) return false;
+        if (x == y) return true;
+        var n = Math.Min(x.Length, y.Length);
+        return n >= 8 && (x.StartsWith(y, StringComparison.Ordinal) || y.StartsWith(x, StringComparison.Ordinal));
+    }
+
     public static int DayTitleToNumber(string title)
     {
         var t = title.Trim().ToLowerInvariant();

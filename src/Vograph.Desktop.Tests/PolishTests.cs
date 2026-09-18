@@ -122,7 +122,7 @@ public class PolishTests : UiTest
         using var db = TestDb.Create();
         db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
         var shell = new ShellViewModel(db.Services);
-        var vm = new ScheduleViewModel(db.Services, shell, () => new DateTime(2026, 9, 7, 8, 0, 0));
+        var vm = new ScheduleViewModel(db.Services, shell, () => new DateTime(2026, 9, 14, 8, 0, 0));
         shell.Register(SectionKey.Schedule, () => vm);
         shell.NavigateTo(SectionKey.Schedule);
         await vm.InitializeAsync();

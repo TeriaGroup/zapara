@@ -15,7 +15,7 @@ public static class NextOccurrence
         {
             var date = fromDate.Date.AddDays(offset);
             if (date.DayOfWeek == DayOfWeek.Sunday) continue;
-            if (db.GetLessons(settings.MyGroupId, (int)date.DayOfWeek, ParityCodes.WeekCode(date, settings, period)).Any(l => ParityService.NormalizeSubject(l.SubjectRaw) == norm))
+            if (db.GetLessons(settings.MyGroupId, (int)date.DayOfWeek, ParityCodes.WeekCode(date, settings, period)).Any(l => ParityService.SameSubject(l.SubjectNormalized, norm)))
                 return date;
         }
         return null;

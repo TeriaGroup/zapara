@@ -106,6 +106,15 @@ public sealed class ParserTests
     }
 
     [Fact]
+    public void SameSubject_matches_xml_and_json_spellings()
+    {
+        Assert.True(ParityService.SameSubject("лек ВЫСШ. МАТЕМАТ", "лек ВЫСШ. МАТ."));
+        Assert.True(ParityService.SameSubject("пр ОСН РОС ГОС", "пр ОСН.РОС.ГОС"));
+        Assert.False(ParityService.SameSubject("лек ВЫСШ. МАТЕМАТ", "пр ВЫСШ. МАТ."));
+        Assert.False(ParityService.SameSubject("лек ФИЗИКА", "лек ФИЛОСОФИЯ"));
+    }
+
+    [Fact]
     public void Pure_assembly_owns_models_and_parity_without_native_dependencies()
     {
         var assembly = typeof(TimetableParser).Assembly;

@@ -146,7 +146,7 @@ public sealed class NotificationScheduler : IDisposable
         var normalized = ParityService.NormalizeSubject(subjectRaw);
         foreach (var hw in homework)
         {
-            if (hw.SubjectRawNormalized != normalized || hw.Status == "done" || hw.DueDateComputed is not { } due) continue;
+            if (!ParityService.SameSubject(hw.SubjectRawNormalized, normalized) || hw.Status == "done" || hw.DueDateComputed is not { } due) continue;
             var lessonsBefore = HomeworkLabels.LessonsUntil(_app.Db, settings, hw.SubjectRawNormalized, now.Date, due);
             if (HomeworkStatus.Compute(hw, now.Date, lessonsBefore) is "burning" or "burning_urgent") return true;
         }

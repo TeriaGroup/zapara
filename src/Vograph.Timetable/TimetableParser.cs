@@ -156,39 +156,7 @@ public class TimetableParser
                             }
                         }
 
-                        // Parse room/building
-                        string roomRaw = "";
-                        string buildingRaw = "";
-                        if (!string.IsNullOrWhiteSpace(classroomRaw))
-                        {
-                            var raw = classroomRaw.Trim().TrimEnd(';').Trim();
-                            // split first token if building prefix like "ВЦ 282"
-                            // If raw contains letters and digits, separate
-                            // Simple: if raw contains space, building = before space, room = after
-                            // Also handle "дистанционно"
-                            if (raw.Equals("дистанционно", StringComparison.OrdinalIgnoreCase))
-                            {
-                                roomRaw = raw;
-                                buildingRaw = "";
-                            }
-                            else
-                            {
-                                // remove * indicator
-                                var clean = raw.Replace("*", "").Trim();
-                                // check for building codes
-                                var parts = clean.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                                if (parts.Length >= 2 && parts[0].Any(char.IsLetter))
-                                {
-                                    buildingRaw = parts[0];
-                                    roomRaw = string.Join(" ", parts.Skip(1)).TrimEnd(';');
-                                }
-                                else
-                                {
-                                    roomRaw = clean;
-                                    buildingRaw = raw.Contains("*") ? "УЛК" : "ГК";
-                                }
-                            }
-                        }
+                        var (roomRaw, buildingRaw) = PlaceOf(classroomRaw);
 
                         if (!indexPerParity.ContainsKey(parity)) indexPerParity[parity] = 0;
                         indexPerParity[parity]++;
@@ -217,6 +185,30 @@ public class TimetableParser
         }
 
         return (groups, lessons, periodStart, weekCount, title);
+    }
+
+    public static (string Room, string Building) PlaceOf(string classroomRaw)
+    {
+        var raw = classroomRaw.Trim().TrimEnd(';').Trim();
+        if (raw.Length == 0) return ("", "");
+        if (raw.Equals("дистанционно", StringComparison.OrdinalIgnoreCase)) return (raw, "");
+        var clean = raw.Replace("*", "").Trim();
+        var parts = clean.Split((char[]?)[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+        string buildingRaw;
+        string roomRaw;
+        if (parts.Length >= 2 && parts[0].Any(char.IsLetter))
+        {
+            buildingRaw = parts[0];
+            roomRaw = string.Join(" ", parts.Skip(1)).TrimEnd(';');
+        }
+        else
+        {
+            roomRaw = clean;
+            buildingRaw = raw.Contains("ВЦ", StringComparison.OrdinalIgnoreCase) ? "ВЦ"
+                : raw.Contains('*') ? "УЛК" : "ГК";
+        }
+        if (buildingRaw.Equals("main", StringComparison.OrdinalIgnoreCase)) buildingRaw = "ГК";
+        return (roomRaw, buildingRaw);
     }
 
 }

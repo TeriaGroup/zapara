@@ -15,7 +15,7 @@ namespace Vograph.Desktop.Tests;
 /// <summary>The ids UiVerify drives must exist in the rendered window; this is the headless half of that contract.</summary>
 public class AutomationIdsTests : UiTest
 {
-    private static readonly DateTime Mon7 = new(2026, 9, 7, 8, 0, 0);
+    private static readonly DateTime Mon7 = new(2026, 9, 14, 8, 0, 0); // odd Monday: two pairs
 
     private static HashSet<string> Ids(Window window) =>
         window.GetVisualDescendants().OfType<Control>().Select(AutomationProperties.GetAutomationId).Where(id => !string.IsNullOrEmpty(id)).ToHashSet()!;

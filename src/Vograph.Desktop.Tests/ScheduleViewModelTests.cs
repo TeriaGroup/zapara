@@ -18,7 +18,7 @@ public class ScheduleViewModelTests
     public async Task Initialize_Applies_Smart_Start_And_Segment()
     {
         using var db = TestDb.Create();
-        var vm = Make(db, new DateTime(2026, 9, 7, 8, 0, 0));
+        var vm = Make(db, new DateTime(2026, 9, 14, 8, 0, 0));
 
         await vm.InitializeAsync();
 

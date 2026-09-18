@@ -14,7 +14,7 @@ namespace Vograph.Desktop.Tests;
 
 public class SummaryTests : UiTest
 {
-    private static readonly DateTime Mon7 = new(2026, 9, 7, 8, 0, 0); // odd
+    private static readonly DateTime Mon7 = new(2026, 9, 14, 8, 0, 0); // odd (week containing 1 Sep is week 1; 07.09 is even)
 
     [Fact]
     public void Odd_Even_And_Both_Aggregate_The_Fixture()

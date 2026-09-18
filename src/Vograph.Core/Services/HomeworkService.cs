@@ -168,7 +168,7 @@ VALUES (@s,@t,@ca,@n,@due,@st,@u,0,0,@utc,@leg); SELECT last_insert_rowid();";
     public List<Homework> GetForSubject(string subjectRaw)
     {
         var norm = ParityService.NormalizeSubject(subjectRaw);
-        return GetAll().Where(h => h.SubjectRawNormalized == norm).ToList();
+        return GetAll().Where(h => ParityService.SameSubject(h.SubjectRawNormalized, norm)).ToList();
     }
 
     public void MarkDone(long id, bool done)
@@ -319,8 +319,7 @@ ON CONFLICT(entityUuid) DO UPDATE SET done=excluded.done, doneAtUtc=excluded.don
             var lessons = _db.GetLessons(groupId, dow, weekCode);
             foreach (var l in lessons)
             {
-                var norm = ParityService.NormalizeSubject(l.SubjectRaw);
-                if (norm == subjectNormalized)
+                if (ParityService.SameSubject(l.SubjectNormalized, subjectNormalized))
                 {
                     found++;
                     if (found == nth)
@@ -363,7 +362,7 @@ ON CONFLICT(entityUuid) DO UPDATE SET done=excluded.done, doneAtUtc=excluded.don
             var lessons = _db.GetLessons(groupId, dow, wc);
             foreach (var l in lessons)
             {
-                if (ParityService.NormalizeSubject(l.SubjectRaw) == hw.SubjectRawNormalized) lessonsBefore++;
+                if (ParityService.SameSubject(l.SubjectNormalized, hw.SubjectRawNormalized)) lessonsBefore++;
             }
         }
 

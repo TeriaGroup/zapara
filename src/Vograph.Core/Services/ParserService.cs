@@ -29,14 +29,19 @@ public class ParserService
     public async Task<(string xml, string raw)> FetchXmlAsync(string url = DefaultUrl, HttpClient? client = null)
     {
         var bytes = await (client ?? Http).GetByteArrayAsync(url);
-        var xml = DecodeXml(bytes);
-        if (TimetableParser.IsHtml(xml)) throw new InvalidOperationException(TimetableParser.NotTimetable);
+        var xml = RequireTimetable(DecodeXml(bytes));
         return (xml, Convert.ToBase64String(bytes)); // raw as base64 for storage if needed
     }
 
     /// <summary>voenmeh.ru serves the XML as UTF-16LE with a BOM; archives came as UTF-8 with and without one.
     /// The single decoder for timetables, lecturers and the desktop refresher.</summary>
     public static string DecodeXml(byte[] bytes) => TimetableParser.DecodeXml(bytes);
+
+    public static string RequireTimetable(string xml)
+    {
+        if (TimetableParser.IsHtml(xml)) throw new InvalidOperationException(TimetableParser.NotTimetable);
+        return xml;
+    }
 
     public (List<Group> groups, List<Lesson> lessons, DateTime periodStart, int weekCount, string periodTitle) Parse(string xml)
         => new TimetableParser().Parse(xml);
@@ -107,15 +112,91 @@ public class ParserService
             throw;
         }
 
-        // Recompute homework due dates after schedule change (per spec: recompute on every cache update, never delete overrides/homework)
+        RecomputeHomework();
+        return (periodStart, weekCount, periodTitle);
+    }
+
+    /// <summary>Selected group plus enabled friends — live JSON fetches these names only, never the whole catalog.</summary>
+    public static List<string> NeededGroupNames(Database db)
+    {
+        var s = db.GetSettings();
+        var names = new List<string>();
+        var selected = string.IsNullOrEmpty(s.MyGroupId) ? null : db.GetGroup(s.MyGroupId);
+        if (selected is { Name.Length: > 0 }) names.Add(selected.Name);
+        else if (!string.IsNullOrWhiteSpace(s.MyGroupId)) names.Add(s.MyGroupId);
+        foreach (var friend in db.GetFriends())
+            if (friend.Enabled && !string.IsNullOrWhiteSpace(friend.GroupName)) names.Add(friend.GroupName);
+        return names.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>Ingest the live Voenmeh JSON snapshot. Incoming group ids are names; keep existing SQLite ids by name
+    /// so homework, overrides and MyGroupId=3313 survive. Lessons are replaced only for groups that were fetched —
+    /// a catalog-only payload must not wipe last-good pairs.</summary>
+    public (DateTime periodStart, int weekCount, string periodTitle) RefreshParsed(ParsedSchedule parsed)
+    {
+        using var tx = _db.Connection.BeginTransaction();
         try
         {
-            var hwService = new HomeworkService(_db);
-            hwService.RecomputeAllStatuses();
+            var settings = _db.GetSettings();
+            settings.PeriodTitle = parsed.PeriodTitle;
+            settings.PeriodStart = parsed.PeriodStart.ToString("yyyy-MM-dd");
+            settings.WeekCount = parsed.WeekCount;
+            settings.LastFetchedAt = DateTime.UtcNow.ToString("o");
+            _db.SaveSettings(settings);
+
+            var existingByName = _db.GetAllGroups()
+                .GroupBy(g => g.Name, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+            var idByIncoming = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var g in parsed.Groups)
+                idByIncoming[g.Id] = existingByName.TryGetValue(g.Name, out var kept) ? kept.Id : g.Id;
+
+            var now = DateTime.UtcNow;
+            foreach (var g in parsed.Groups)
+            {
+                _db.UpsertGroup(new Group
+                {
+                    Id = idByIncoming[g.Id],
+                    Name = g.Name,
+                    Url = string.IsNullOrWhiteSpace(g.Url) ? VoenmehScheduleClient.Origin : g.Url,
+                    LastFetchedAt = now
+                });
+            }
+
+            var lessonsByIncoming = parsed.Lessons.GroupBy(l => l.GroupId, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+            foreach (var name in parsed.FetchedGroupNames ?? Array.Empty<string>())
+            {
+                var storedId = idByIncoming.TryGetValue(name, out var id) ? id
+                    : existingByName.TryGetValue(name, out var kept) ? kept.Id : name;
+                _db.ClearScheduleForGroup(storedId);
+                if (!lessonsByIncoming.TryGetValue(name, out var list)) continue;
+                foreach (var lesson in list.OrderBy(l => l.DayOfWeek).ThenBy(l => l.Parity).ThenBy(l => l.Index))
+                {
+                    lesson.GroupId = storedId;
+                    _db.InsertLesson(lesson);
+                }
+            }
+
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+
+        RecomputeHomework();
+        return (parsed.PeriodStart, parsed.WeekCount, parsed.PeriodTitle);
+    }
+
+    private void RecomputeHomework()
+    {
+        try
+        {
+            new HomeworkService(_db).RecomputeAllStatuses();
         }
         catch { }
-
-        return (periodStart, weekCount, periodTitle);
     }
 
     public async Task<string> FetchAndCacheRawAsync(string destPath, string url = DefaultUrl)

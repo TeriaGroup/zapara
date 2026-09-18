@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 
 namespace Vograph.Desktop.Tests;
 
@@ -20,4 +21,7 @@ public sealed class FakeHttpHandler : HttpMessageHandler
         if (lastModified is { } lm) resp.Content.Headers.LastModified = lm;
         return resp;
     }
+
+    public static HttpResponseMessage Text(string body, HttpStatusCode code = HttpStatusCode.OK)
+        => Bytes(Encoding.UTF8.GetBytes(body), code);
 }

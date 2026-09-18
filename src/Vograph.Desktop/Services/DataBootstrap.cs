@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vograph.Timetable;
 
 namespace Vograph.Desktop.Services;
 
@@ -51,21 +52,24 @@ public static class DataBootstrap
         return (utcNow - last.ToUniversalTime()).TotalDays > 3;
     }
 
+    public readonly record struct BootstrapFetch(ParsedSchedule? Parsed, string? Error);
+
     /// <summary>The network half of a first start, run BEFORE the caller takes the Core gate. Never throws: a dead
-    /// network comes back as (null, reason) and the run falls through to the bundled snapshot below.</summary>
-    public static async Task<(string? Xml, string? Error)> FetchAsync(AppServices app)
+    /// network comes back as (null, reason) and the run falls through to the bundled snapshot below. Catalog only —
+    /// pair rows are fetched after the user picks a group.</summary>
+    public static async Task<BootstrapFetch> FetchAsync(AppServices app)
     {
         using var operation = app.Work.Enter();
         if (!operation.IsCurrent) return default;
-        if (app.Api.Configured) return (null, "Для API используется типизированная загрузка расписания.");
+        if (app.Api.Configured) return new(null, "Для API используется типизированная загрузка расписания.");
         try
         {
-            return ((await app.Refresher.CheckAsync(null, operation.Token)).Xml, null);
+            return new((await app.Refresher.CheckAsync(Array.Empty<string>(), null, operation.Token)).Parsed, null);
         }
         catch (Exception ex)
         {
             app.Log.Error("bootstrap fetch", ex);
-            return (null, ex.Message);
+            return new(null, ex.Message);
         }
     }
 
@@ -75,11 +79,11 @@ public static class DataBootstrap
     /// last path in the app that held the gate across an HTTP request: on the one launch where there is nothing to
     /// show yet, every other Core call (and AppServices.Dispose, at two seconds) queued behind the 60 s timeout.
     /// Now the caller fetches first with <see cref="FetchAsync"/> and hands the result in, exactly as
-    /// ScheduleRefresher + Parser.RefreshAsync(xmlOverride) already do for every later refresh.
+    /// ScheduleRefresher + Parser.RefreshParsed already do for every later refresh.
     /// </summary>
-    /// <param name="timetableXml">What the caller fetched outside the gate, or null (offline, or the fetch failed).</param>
-    /// <param name="fetchError">Why there is no XML, for the «данные могут быть устаревшими» line.</param>
-    public static async Task<BootstrapResult> RunAsync(AppServices app, string? timetableXml = null, string? fetchError = null)
+    /// <param name="parsed">What the caller fetched outside the gate, or null (offline, or the fetch failed).</param>
+    /// <param name="fetchError">Why there is no snapshot, for the «данные могут быть устаревшими» line.</param>
+    public static async Task<BootstrapResult> RunAsync(AppServices app, ParsedSchedule? parsed = null, string? fetchError = null)
     {
         using var operation = app.Work.Enter();
         operation.ThrowIfStale();
@@ -93,11 +97,11 @@ public static class DataBootstrap
             return new BootstrapResult(HasData: true, Refreshed: false, Stale: false, Error: null);
 
         var error = fetchError;
-        if (timetableXml is not null)
+        if (parsed is not null)
         {
             try
             {
-                await app.Parser.RefreshAsync(xmlOverride: timetableXml);
+                app.Parser.RefreshParsed(parsed);
                 return new BootstrapResult(true, true, false, null);
             }
             catch (Exception ex)

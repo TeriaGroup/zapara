@@ -23,7 +23,7 @@ public class FriendsTests : UiTest
     {
         using var db = TestDb.Create();
         var lesson = db.Services.Db.GetLessons("3313", 1, 1).Single(l => l.TimeStart == "09:00");
-        var marks = FriendMarks.Compute(db.Services.Intersections, lesson, new DateTime(2026, 9, 7), db.Services.Db.GetFriends(), db.Services.Db.GetSettings(), db.Services.Loc);
+        var marks = FriendMarks.Compute(db.Services.Intersections, lesson, new DateTime(2026, 9, 14), db.Services.Db.GetFriends(), db.Services.Db.GetSettings(), db.Services.Loc);
         var m = Assert.Single(marks);
         Assert.Equal(("09С31", 0, DotFill.Full), (m.GroupName, m.ColorIndex, m.Fill)); // physics in 493 at the same time
         Assert.Contains("Иван", m.Tooltip);
@@ -179,7 +179,7 @@ public class FriendsTests : UiTest
         Assert.Equal(25, vm.Strictness);
         Assert.Equal(new[] { "в вузе", "корпус", "этаж", "аудитория" }, vm.TickLabels);
         Assert.True(vm.HasPreview);
-        Assert.StartsWith("Пн 07.09 · 09:00 · Матан", vm.PreviewLine);   // the nearest lesson with a friend around
+        Assert.StartsWith("Пн 14.09 · 09:00 · Матан", vm.PreviewLine);   // nearest odd Monday: friend sits in 493 too
         Assert.Single(vm.PreviewMarks);                                   // the absent friend is hidden
         Assert.Equal(DotFill.Full, vm.PreviewMarks[0].Fill);
 

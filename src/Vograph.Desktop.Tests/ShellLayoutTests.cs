@@ -22,7 +22,7 @@ namespace Vograph.Desktop.Tests;
 /// <summary>Section host: chrome stays put while pages swap, and at the 960×600 minimum nothing runs off the content column.</summary>
 public class ShellLayoutTests : UiTest
 {
-    private static readonly DateTime Mon7 = new(2026, 9, 7, 8, 0, 0);
+    private static readonly DateTime Mon7 = new(2026, 9, 14, 8, 0, 0); // odd Monday: two pairs
 
     [AvaloniaFact]
     public async Task Sections_Do_Not_Overflow_The_Host_At_Min_Window()

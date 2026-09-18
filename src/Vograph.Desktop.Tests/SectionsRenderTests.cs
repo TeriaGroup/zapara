@@ -20,7 +20,7 @@ namespace Vograph.Desktop.Tests;
 /// <summary>One pass over all nine sections: both themes render without binding errors; stored en still leaves Russian titles.</summary>
 public class SectionsRenderTests : UiTest
 {
-    private static readonly DateTime Mon7 = new(2026, 9, 7, 8, 0, 0);
+    private static readonly DateTime Mon7 = new(2026, 9, 14, 8, 0, 0); // odd Monday: two pairs
 
     [AvaloniaFact]
     public async Task All_Sections_Render_In_Both_Themes_And_Relabel_On_Language_Change()

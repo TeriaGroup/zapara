@@ -51,7 +51,7 @@ public class HomeworkTests : UiTest
         using var db = TestDb.Create();
         var hw = db.Services.Homework;
         var created = new DateTime(2026, 9, 5, 12, 0, 0);
-        hw.AddHomework("пр ОСН РОС ГОС", "конспект", 1, created);   // Mon 07.09 → burning on Sunday
+        hw.AddHomework("пр ОСН РОС ГОС", "конспект", 1, created);   // odd Monday 14.09 → far on Sunday 06.09
         var history = hw.AddHomework("лек ИСТОРИЯ", "глава 1", 1, created); // odd Wednesday → 16.09 → far
         var doneId = hw.AddHomework("лек ФК И СПОРТ", "справка", 1, created);
         hw.MarkDone(doneId, true);
@@ -63,11 +63,12 @@ public class HomeworkTests : UiTest
         Assert.Equal(new[] { "burning", "far", "done" }, model.Groups.Select(g => g.Status));
         Assert.Equal(new[] { "Горит", "Далеко", "Сдано" }, model.Groups.Select(g => g.Title));
         var burning = model.Groups[0].Items;
-        Assert.Equal(new[] { "Матан", "ОСН РОС ГОС" }, burning.Select(i => i.Subject).OrderBy(s => s)); // renamed + stripped
+        Assert.Equal(new[] { "Матан" }, burning.Select(i => i.Subject).ToArray()); // fixture math is due Mon 07.09 (even)
         Assert.All(burning, i => Assert.Equal("горит завтра", i.Label));
-        var far = Assert.Single(model.Groups[1].Items);
-        Assert.Equal(("ИСТОРИЯ", "лек ИСТОРИЯ", history), (far.Subject, far.SubjectRaw, far.Homework.Id));
-        Assert.Equal("срок 16.09", far.Label);
+        var far = model.Groups[1].Items.OrderBy(i => i.Subject).ToList();
+        Assert.Equal(new[] { "ИСТОРИЯ", "ОСН РОС ГОС" }, far.Select(i => i.Subject));
+        Assert.Equal(("ИСТОРИЯ", "лек ИСТОРИЯ", history), (far[0].Subject, far[0].SubjectRaw, far[0].Homework.Id));
+        Assert.Equal("срок 16.09", far[0].Label);
         Assert.Equal("сдано", Assert.Single(model.Groups[2].Items).Label);
 
         var subjects = new HomeworkComposer(db.Services).Subjects();

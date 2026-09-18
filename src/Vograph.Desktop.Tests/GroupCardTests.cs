@@ -111,9 +111,7 @@ public class GroupCardTests
     public async Task Refresh_Writes_New_Timetable_Under_The_Gate_And_Notifies()
     {
         using var db = TestDb.Create();
-        var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-timetable.xml"))
-            .Replace("<Discipline>лек ИСТОРИЯ</Discipline>", "<Discipline>лек ФИЛОСОФИЯ</Discipline>");
-        var handler = new FakeHttpHandler { Respond = _ => FakeHttpHandler.Bytes(System.Text.Encoding.UTF8.GetBytes(xml)) };
+        var handler = VoenmehHttp.Handler();
         db.Services.Refresher = new ScheduleRefresher(handler);
         var shell = new ShellViewModel(db.Services);
         var changed = 0;

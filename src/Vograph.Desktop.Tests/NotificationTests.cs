@@ -36,10 +36,9 @@ public class NotificationTests
         var scheduler = new NotificationScheduler(db.Services);
 
         Assert.Null(await scheduler.TickAsync(new DateTime(2026, 9, 6, 19, 59, 0)));
-        var text = await scheduler.TickAsync(new DateTime(2026, 9, 6, 20, 0, 10)); // Sunday evening → Monday (odd): Матан, ОСН РОС ГОС
+        var text = await scheduler.TickAsync(new DateTime(2026, 9, 6, 20, 0, 10)); // Sunday evening → Monday 07.09 (even): only Матан
         Assert.NotNull(text);
         Assert.Contains("Матан", text);
-        Assert.Contains("ОСН РОС ГОС", text);
         Assert.Contains("[ДЗ!]", text); // the fixture homework is due Monday — burning for the injected clock
         Assert.Null(await scheduler.TickAsync(new DateTime(2026, 9, 6, 20, 0, 40))); // same minute: no repeat
         Assert.Single(db.Services.Toasts.Items, t => t.Text == text);

@@ -1,45 +1,68 @@
 using System.Globalization;
 using System.Net;
-using System.Text;
-using Vograph.Core.Services;
+using Vograph.Timetable;
 
 namespace Vograph.Desktop.Services;
 
-public sealed record RefreshCheck(bool Modified, string? Xml);
+public sealed record RefreshCheck(bool Modified, ParsedSchedule? Parsed);
 
 /// <summary>
-/// Network half of a timetable refresh: HEAD with If-Modified-Since, then GET + decode. Never touches
-/// SQLite — the caller hands the XML to Parser.RefreshAsync(xmlOverride) under the Core gate. Replaces
-/// Core's former AutoRefreshService, whose writer ran outside the gate.
+/// Network half of a live timetable refresh: GET /api/schedule/meta, then lessons for the named groups.
+/// Never touches SQLite — the caller hands the snapshot to Parser.RefreshParsed under the Core gate.
+/// The university XML URL is a SPA shell now; bundled XML still goes through Parser.RefreshAsync(xmlOverride).
 /// </summary>
 public sealed class ScheduleRefresher : IDisposable
 {
     private readonly HttpClient _http;
-    private readonly string _url;
 
-    public ScheduleRefresher(HttpMessageHandler? handler = null, string url = ParserService.DefaultUrl)
+    public ScheduleRefresher(HttpMessageHandler? handler = null, string? url = null)
     {
-        _url = url;
+        _ = url;
         _http = handler is null ? new HttpClient() : new HttpClient(handler);
         _http.Timeout = TimeSpan.FromSeconds(30);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Vograph/2.0");
+        _http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
     }
 
+    public Task<RefreshCheck> CheckAsync(string? lastFetchedAtIso, CancellationToken ct = default)
+        => CheckAsync(Array.Empty<string>(), lastFetchedAtIso, ct);
+
+    /// <param name="groupNames">Empty: catalog only (meta, no /lessons). Selected group + friends on F5.</param>
     /// <param name="lastFetchedAtIso">Settings.LastFetchedAt (ISO 8601); null forces a full download.</param>
-    public async Task<RefreshCheck> CheckAsync(string? lastFetchedAtIso, CancellationToken ct = default)
+    public async Task<RefreshCheck> CheckAsync(IReadOnlyList<string> groupNames, string? lastFetchedAtIso, CancellationToken ct = default)
     {
-        if (DateTime.TryParse(lastFetchedAtIso, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var since))
+        var metaJson = await GetJsonAsync(VoenmehScheduleClient.MetaUrl, ct).ConfigureAwait(false);
+        var meta = VoenmehScheduleParser.ParseMeta(metaJson);
+        if (lastFetchedAtIso is not null
+            && TryUtc(lastFetchedAtIso, out var since)
+            && TryUtc(meta.UpdatedAt, out var updated)
+            && updated <= since)
+            return new RefreshCheck(false, null);
+
+        var client = new VoenmehScheduleClient(GetJsonAsync);
+        var parsed = await client.FetchAsync(groupNames, meta, ct).ConfigureAwait(false);
+        return new RefreshCheck(true, parsed);
+    }
+
+    private async Task<string> GetJsonAsync(string url, CancellationToken ct)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseContentRead, ct).ConfigureAwait(false);
+        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (resp.StatusCode == HttpStatusCode.NotFound) return """{"lessons":[]}""";
+        if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"HTTP {(int)resp.StatusCode}");
+        return body;
+    }
+
+    private static bool TryUtc(string? iso, out DateTime utc)
+    {
+        if (DateTimeOffset.TryParse(iso, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dto))
         {
-            using var head = new HttpRequestMessage(HttpMethod.Head, _url);
-            var sinceUtc = new DateTimeOffset(since.ToUniversalTime());
-            head.Headers.IfModifiedSince = sinceUtc;
-            using var resp = await _http.SendAsync(head, ct);
-            if (resp.StatusCode == HttpStatusCode.NotModified) return new RefreshCheck(false, null);
-            if (resp.IsSuccessStatusCode && resp.Content.Headers.LastModified is { } lm && lm <= sinceUtc) return new RefreshCheck(false, null);
-            // 200 without a usable Last-Modified (a server ignoring the header): download and let the parser decide.
+            utc = dto.UtcDateTime;
+            return true;
         }
-        var bytes = await _http.GetByteArrayAsync(_url, ct);
-        return new RefreshCheck(true, ParserService.DecodeXml(bytes));
+        utc = default;
+        return false;
     }
 
     public void Dispose() => _http.Dispose();

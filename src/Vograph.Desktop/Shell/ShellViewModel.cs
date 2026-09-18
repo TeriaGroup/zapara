@@ -6,6 +6,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Models;
+using Vograph.Core.Services;
 using Vograph.Core.Services.Sync;
 using Vograph.Desktop.Dialogs;
 using Vograph.Desktop.Domain;
@@ -297,7 +298,7 @@ public sealed partial class ShellViewModel : ViewModelBase
     [RelayCommand(AllowConcurrentExecutions = false)]
     private Task RefreshSchedule() => RefreshScheduleAsync(force: true, quiet: false);
 
-    /// <summary>Network outside the gate (Refresher), parse + SQLite inside (Parser.RefreshAsync(xmlOverride)).
+    /// <summary>Network outside the gate (Refresher JSON), parse + SQLite inside (Parser.RefreshParsed).
     /// quiet: startup / 24 h check — only the first failure per session toasts.</summary>
     public async Task<bool> RefreshScheduleAsync(bool force, bool quiet)
     {
@@ -318,12 +319,12 @@ public sealed partial class ShellViewModel : ViewModelBase
         IsRefreshing = true;
         try
         {
-            var settings = await RunAsync(() => App.Db.GetSettings(), "settings");
-            if (settings is null) return false;
+            var snapshot = await RunAsync(() => new RefreshSnapshot(App.Db.GetSettings(), ParserService.NeededGroupNames(App.Db)), "settings");
+            if (snapshot is null) return false;
             RefreshCheck check;
             try
             {
-                check = await App.Refresher.CheckAsync(force ? null : settings.LastFetchedAt, operation.Token);
+                check = await App.Refresher.CheckAsync(snapshot.GroupNames, force ? null : snapshot.Settings.LastFetchedAt, operation.Token);
             }
             catch (Exception ex)
             {
@@ -334,16 +335,13 @@ public sealed partial class ShellViewModel : ViewModelBase
                 return false;
             }
             if (!operation.IsCurrent) return false;
-            if (check.Modified)
+            if (check.Modified && check.Parsed is { } parsed)
             {
-                var xml = check.Xml!;
-                // Block-bodied async lambda: Parser.RefreshAsync returns Task<ValueTuple>, which would bind to the
-                // Func<T> overload (T = the Task itself) and leave the SQLite write running past the gate release.
-                // The successful fetch is also the last check: without the stamp the hourly tick could issue one
-                // more HEAD within the same day (T1 #4).
-                if (!await RunAsync(async () =>
+                // Block-bodied lambda: keep the SQLite write inside the gate. The successful fetch is also the
+                // last check: without the stamp the hourly tick could issue one more GET within the same day (T1 #4).
+                if (!await RunAsync(() =>
                 {
-                    await App.Parser.RefreshAsync(xmlOverride: xml);
+                    App.Parser.RefreshParsed(parsed);
                     var s = App.Db.GetSettings();
                     s.LastAutoCheckAt = DateTime.UtcNow.ToString("o");
                     App.Db.SaveSettings(s);
@@ -551,7 +549,7 @@ public sealed partial class ShellViewModel : ViewModelBase
             // launch behind a dead network parked every other Core call behind the HTTP timeout.
             var fetched = allowNetwork ? await DataBootstrap.FetchAsync(App) : default;
             if (StartupStopped) return;
-            var result = await RunAsync(() => DataBootstrap.RunAsync(App, fetched.Xml, fetched.Error), "bootstrap");
+            var result = await RunAsync(() => DataBootstrap.RunAsync(App, fetched.Parsed, fetched.Error), "bootstrap");
             if (StartupStopped) return;
             if (result is null || !result.HasData)
             {
@@ -588,7 +586,9 @@ public sealed partial class ShellViewModel : ViewModelBase
         }
     }
 
+    private sealed record RefreshSnapshot(Settings Settings, List<string> GroupNames);
     private sealed record PickerData(List<Group> Groups, string? CurrentId);
+    private sealed record LessonCount(int Count);
 
     [RelayCommand]
     private async Task OpenGroupPickerAsync()
@@ -614,8 +614,13 @@ public sealed partial class ShellViewModel : ViewModelBase
             await EnsureApiNeedsAsync();
             await RunAsync(() =>
             {
-                if (new Vograph.Core.Services.TimetableApiCache(App.Db).Read(chosen.Id) is not null) App.Homework.RecomputeAllStatuses();
+                if (new TimetableApiCache(App.Db).Read(chosen.Id) is not null) App.Homework.RecomputeAllStatuses();
             }, "group homework");
+        }
+        else if (App.AllowNetwork)
+        {
+            var need = await RunAsync(() => new LessonCount(App.Db.GetAllLessonsForGroup(chosen.Id).Count), "lessons");
+            if (need is { Count: 0 }) await RefreshScheduleAsync(force: true, quiet: true);
         }
         await RefreshGroupCardAsync(); // before RaiseGroupChanged: sections read GroupName while they react
         RaiseGroupChanged();

@@ -352,15 +352,13 @@ public class ShellTests : UiTest
             settings.AutoUpdate = false; // keep the silent startup flow out of this test
             services.Db.SaveSettings(settings);
             services.UpdateSource = new FakeUpdateSource();
-            var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-timetable.xml"));
             var gateWhileFetching = -1;
-            var handler = new FakeHttpHandler
+            var handler = VoenmehHttp.Handler();
+            var inner = handler.Respond;
+            handler.Respond = r =>
             {
-                Respond = _ =>
-                {
-                    gateWhileFetching = services.CoreGate.CurrentCount;
-                    return FakeHttpHandler.Bytes(System.Text.Encoding.UTF8.GetBytes(xml));
-                }
+                gateWhileFetching = services.CoreGate.CurrentCount;
+                return inner(r);
             };
             services.Refresher = new ScheduleRefresher(handler);
             var shell = new ShellViewModel(services);
