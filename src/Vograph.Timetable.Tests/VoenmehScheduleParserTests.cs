@@ -103,6 +103,9 @@ public sealed class VoenmehScheduleParserTests
         var ex = Assert.Throws<InvalidOperationException>(() =>
             VoenmehScheduleParser.ParseMeta("<!doctype html><html></html>"));
         Assert.Equal(TimetableParser.NotTimetable, ex.Message);
+        var hummingbird = Assert.Throws<InvalidOperationException>(() =>
+            VoenmehScheduleParser.ParseMeta("<!-- This page is cached --><!DOCTYPE html><html></html>"));
+        Assert.Equal(TimetableParser.NotTimetable, hummingbird.Message);
     }
 
     [Fact]

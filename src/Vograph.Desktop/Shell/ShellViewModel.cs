@@ -298,7 +298,7 @@ public sealed partial class ShellViewModel : ViewModelBase
     [RelayCommand(AllowConcurrentExecutions = false)]
     private Task RefreshSchedule() => RefreshScheduleAsync(force: true, quiet: false);
 
-    /// <summary>Network outside the gate (Refresher JSON), parse + SQLite inside (Parser.RefreshParsed).
+    /// <summary>Network outside the gate (JSON, then university XML if JSON is HTML), parse + SQLite inside.
     /// quiet: startup / 24 h check — only the first failure per session toasts.</summary>
     public async Task<bool> RefreshScheduleAsync(bool force, bool quiet)
     {
@@ -335,13 +335,14 @@ public sealed partial class ShellViewModel : ViewModelBase
                 return false;
             }
             if (!operation.IsCurrent) return false;
-            if (check.Modified && check.Parsed is { } parsed)
+            if (check.Modified && (check.Parsed is not null || check.Xml is not null))
             {
                 // Block-bodied lambda: keep the SQLite write inside the gate. The successful fetch is also the
                 // last check: without the stamp the hourly tick could issue one more GET within the same day (T1 #4).
-                if (!await RunAsync(() =>
+                if (!await RunAsync(async () =>
                 {
-                    App.Parser.RefreshParsed(parsed);
+                    if (check.Parsed is { } parsed) App.Parser.RefreshParsed(parsed);
+                    else await App.Parser.RefreshAsync(xmlOverride: check.Xml).ConfigureAwait(false);
                     var s = App.Db.GetSettings();
                     s.LastAutoCheckAt = DateTime.UtcNow.ToString("o");
                     App.Db.SaveSettings(s);
@@ -549,7 +550,7 @@ public sealed partial class ShellViewModel : ViewModelBase
             // launch behind a dead network parked every other Core call behind the HTTP timeout.
             var fetched = allowNetwork ? await DataBootstrap.FetchAsync(App) : default;
             if (StartupStopped) return;
-            var result = await RunAsync(() => DataBootstrap.RunAsync(App, fetched.Parsed, fetched.Error), "bootstrap");
+            var result = await RunAsync(() => DataBootstrap.RunAsync(App, fetched.Parsed, fetched.Error, fetched.Xml), "bootstrap");
             if (StartupStopped) return;
             if (result is null || !result.HasData)
             {

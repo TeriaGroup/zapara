@@ -400,6 +400,9 @@ class ScheduleRepository private constructor(
 
     private fun ingestParsed(parsed: ParsedSchedule, url: String) {
         val s = settings()
+        if (TimetablePayload.isOlderPeriod(parsed.periodStart, s.periodStart, s.lastFetchedAt)) {
+            throw IllegalStateException(TimetablePayload.OLDER)
+        }
         val now = java.time.OffsetDateTime.now().toString()
         db.runInTransaction {
             val existing = db.groupDao().getAll().associateBy { it.name }
@@ -433,14 +436,15 @@ class ScheduleRepository private constructor(
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
             conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) Zapara/1.0")
+            conn.setRequestProperty("Accept", "application/xml")
             conn.connectTimeout = 20_000
             conn.readTimeout = 30_000
             conn.connect()
             if (conn.responseCode != HttpURLConnection.HTTP_OK) {
                 throw IllegalStateException("HTTP ${conn.responseCode}")
             }
-            val body = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-            return TimetablePayload.requireXml(body, conn.contentType)
+            val bytes = conn.inputStream.readBytes()
+            return TimetablePayload.requireXml(TimetablePayload.decodeXml(bytes), conn.contentType)
         } finally {
             conn.disconnect()
         }

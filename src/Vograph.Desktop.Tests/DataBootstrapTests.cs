@@ -42,6 +42,45 @@ public class DataBootstrapTests
         Assert.Equal("offline", result.Error); // the reason the caller's fetch gave, carried through to the error state
     }
 
+    [Fact]
+    public async Task Fetch_Html_json_falls_back_to_xml()
+    {
+        using var db = TestDb.Create();
+        var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-timetable.xml"));
+        db.Services.Refresher = new ScheduleRefresher(new FakeHttpHandler
+        {
+            Respond = r =>
+            {
+                var uri = r.RequestUri ?? throw new InvalidOperationException("missing uri");
+                if (uri.AbsoluteUri.Contains("TimetableGroup50.xml", StringComparison.Ordinal))
+                    return FakeHttpHandler.Text(xml);
+                return FakeHttpHandler.Text(VoenmehHttp.CachedHtml);
+            }
+        });
+
+        var fetch = await DataBootstrap.FetchAsync(db.Services);
+
+        Assert.Null(fetch.Parsed);
+        Assert.Null(fetch.Error);
+        Assert.Contains("<Timetable>", fetch.Xml, StringComparison.Ordinal);
+        Assert.Equal(1, db.Services.CoreGate.CurrentCount);
+    }
+
+    [Fact]
+    public async Task Empty_db_ingests_xml_fallback()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));
+        using var services = AppServices.Create(dir);
+        var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-timetable.xml"));
+
+        var result = await DataBootstrap.RunAsync(services, timetableXml: xml);
+
+        Assert.True(result.HasData);
+        Assert.True(result.Refreshed);
+        Assert.False(result.Stale);
+        Assert.Contains(services.Db.GetAllGroups(), g => g.Name == "А863С");
+    }
+
     /// <summary>A fetch that failed outside the gate never throws into the caller — it comes back as the reason,
     /// which is what the bootstrap then reports.</summary>
     [Fact]

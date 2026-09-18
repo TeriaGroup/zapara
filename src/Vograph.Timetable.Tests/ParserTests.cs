@@ -52,6 +52,28 @@ public sealed class ParserTests
         Assert.Equal(TimetableParser.NotTimetable, ex.Message);
     }
 
+    [Fact]
+    public void Hummingbird_html_comment_is_not_a_timetable()
+    {
+        const string html = "<!-- This page is cached by the Hummingbird Performance plugin --><!DOCTYPE html><html></html>";
+        Assert.True(TimetableParser.IsHtml(html));
+        var ex = Assert.Throws<InvalidOperationException>(() => new TimetableParser().Parse(html));
+        Assert.Equal(TimetableParser.NotTimetable, ex.Message);
+    }
+
+    [Theory]
+    [InlineData(null, "2026-09-01", "2025-09-01", false)]
+    [InlineData("", "2026-09-01", "2025-09-01", false)]
+    [InlineData("2026-09-10T12:00:00Z", "2026-09-01", "2025-09-01", true)]
+    [InlineData("2026-09-10T12:00:00Z", "2026-09-01", "2026-09-01", false)]
+    [InlineData("2026-09-10T12:00:00Z", "2025-09-01", "2026-09-01", false)]
+    public void IsOlderPeriod_only_rejects_older_incoming_when_last_good_exists(
+        string? lastFetchedAt, string storedIso, string incomingIso, bool expected)
+    {
+        var incoming = DateTime.Parse(incomingIso, System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal(expected, TimetableParser.IsOlderPeriod(incoming, storedIso, lastFetchedAt));
+    }
+
     [Theory]
     [InlineData("<!DOCTYPE Timetable>")]
     [InlineData("<!DOCTYPE Timetable [<!ENTITY title 'entity'>]>")]

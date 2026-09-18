@@ -61,6 +61,50 @@ public class VoenmehRefreshTests
     }
 
     [Fact]
+    public void RefreshParsed_rejects_older_period_when_last_good_exists()
+    {
+        using var db = TestDb.Create();
+        var older = new ParsedSchedule(
+            db.Services.Db.GetAllGroups(),
+            Array.Empty<Vograph.Core.Models.Lesson>(),
+            new DateTime(2025, 9, 1),
+            2,
+            "ОСЕННИЙ СЕМЕСТР 2025/2026 уч. г.",
+            FetchedGroupNames: new[] { "А863С" });
+
+        var ex = Assert.Throws<InvalidOperationException>(() => db.Services.Parser.RefreshParsed(older));
+
+        Assert.Equal(TimetableParser.OlderTimetable, ex.Message);
+        Assert.Equal("2026-09-01", db.Services.Db.GetSettings().PeriodStart);
+        Assert.Contains(db.Services.Db.GetAllLessonsForGroup("3313"), l => l.SubjectRaw.Contains("ВЫСШ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RefreshAsync_rejects_older_xml_when_last_good_exists()
+    {
+        using var db = TestDb.Create();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => db.Services.Parser.RefreshAsync(xmlOverride: VoenmehHttp.OlderXml));
+
+        Assert.Equal(TimetableParser.OlderTimetable, ex.Message);
+        Assert.Equal("2026-09-01", db.Services.Db.GetSettings().PeriodStart);
+        Assert.Contains(db.Services.Db.GetAllLessonsForGroup("3313"), l => l.SubjectRaw.Contains("ВЫСШ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RefreshAsync_accepts_xml_when_nothing_has_been_fetched_yet()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));
+        using var services = AppServices.Create(dir);
+
+        await services.Parser.RefreshAsync(xmlOverride: VoenmehHttp.OlderXml);
+
+        Assert.Equal("2025-09-01", services.Db.GetSettings().PeriodStart);
+        Assert.Equal("Н151С", Assert.Single(services.Db.GetAllGroups()).Name);
+    }
+
+    [Fact]
     public async Task Picking_a_group_without_lessons_fetches_it()
     {
         var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));

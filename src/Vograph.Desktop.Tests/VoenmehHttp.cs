@@ -18,6 +18,22 @@ internal static class VoenmehHttp
         {"lessons":[{"day":1,"time":"9:00","week":"odd","kind":"лек","subject":"ВЫСШ. МАТ.","teachers":["Барт Е.Л."],"rooms":["493"]}]}
         """;
 
+    public const string CachedHtml =
+        "<!-- This page is cached by the Hummingbird Performance plugin --><!DOCTYPE html><html></html>";
+
+    public const string OlderXml = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <Timetable>
+          <Period Title="ОСЕННИЙ СЕМЕСТР 2025/2026 уч. г." StartYear="2025" StartMonth="9" StartDay="1" />
+          <Weeks WeekCount="2" />
+          <Group Number="Н151С" IdGroup="1111">
+            <Days><Day Title="Понедельник"><GroupLessons>
+              <Lesson><WeekCode>1</WeekCode><Time>9:00 Нечетная</Time><Discipline>лек СТАРАЯ</Discipline><Lecturers /><Classroom>1;</Classroom></Lesson>
+            </GroupLessons></Day></Days>
+          </Group>
+        </Timetable>
+        """;
+
     public static FakeHttpHandler Handler(string meta = Meta, string? a863 = PhilosophyLessons, string empty = """{"lessons":[]}""")
         => new()
         {

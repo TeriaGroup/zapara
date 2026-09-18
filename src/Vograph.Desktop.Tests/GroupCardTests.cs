@@ -132,6 +132,54 @@ public class GroupCardTests
     }
 
     [Fact]
+    public async Task Refresh_Html_json_ingests_university_xml()
+    {
+        using var db = TestDb.Create();
+        var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-timetable.xml"));
+        db.Services.Refresher = new ScheduleRefresher(new FakeHttpHandler
+        {
+            Respond = r =>
+            {
+                var uri = r.RequestUri ?? throw new InvalidOperationException("missing uri");
+                if (uri.AbsoluteUri.Contains("TimetableGroup50.xml", StringComparison.Ordinal))
+                    return FakeHttpHandler.Text(xml);
+                return FakeHttpHandler.Text(VoenmehHttp.CachedHtml);
+            }
+        });
+        var shell = new ShellViewModel(db.Services);
+
+        var ok = await shell.RefreshScheduleAsync(force: true, quiet: false);
+
+        Assert.True(ok);
+        Assert.Single(db.Services.Toasts.Items, t => t.Text == "Расписание обновлено");
+        Assert.Contains(db.Services.Db.GetAllLessonsForGroup("3313"), l => l.SubjectRaw.Contains("ВЫСШ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Refresh_rejects_older_xml_and_keeps_last_good()
+    {
+        using var db = TestDb.Create();
+        db.Services.Refresher = new ScheduleRefresher(new FakeHttpHandler
+        {
+            Respond = r =>
+            {
+                var uri = r.RequestUri ?? throw new InvalidOperationException("missing uri");
+                if (uri.AbsoluteUri.Contains("TimetableGroup50.xml", StringComparison.Ordinal))
+                    return FakeHttpHandler.Text(VoenmehHttp.OlderXml);
+                return FakeHttpHandler.Text(VoenmehHttp.CachedHtml);
+            }
+        });
+        var shell = new ShellViewModel(db.Services);
+
+        var ok = await shell.RefreshScheduleAsync(force: true, quiet: false);
+
+        Assert.False(ok);
+        Assert.Contains(db.Services.Toasts.Items, t => t.Text.Contains("более старое", StringComparison.Ordinal));
+        Assert.Equal("2026-09-01", db.Services.Db.GetSettings().PeriodStart);
+        Assert.Contains(db.Services.Db.GetAllLessonsForGroup("3313"), l => l.SubjectRaw.Contains("ВЫСШ", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Refresh_Failure_Toasts_Once_When_Quiet()
     {
         using var db = TestDb.Create();

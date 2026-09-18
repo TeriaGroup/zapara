@@ -60,6 +60,9 @@ public class ParserService
         }
 
         var (groups, lessons, periodStart, weekCount, periodTitle) = Parse(xml);
+        var existing = _db.GetSettings();
+        if (TimetableParser.IsOlderPeriod(periodStart, existing.PeriodStart, existing.LastFetchedAt))
+            throw new InvalidOperationException(TimetableParser.OlderTimetable);
 
         // Preserve overrides/homework (do not delete them) — only refresh schedule_cache and groups
         // Use transaction: clear schedule_cache per group, upsert groups, insert lessons
@@ -134,6 +137,10 @@ public class ParserService
     /// a catalog-only payload must not wipe last-good pairs.</summary>
     public (DateTime periodStart, int weekCount, string periodTitle) RefreshParsed(ParsedSchedule parsed)
     {
+        var existing = _db.GetSettings();
+        if (TimetableParser.IsOlderPeriod(parsed.PeriodStart, existing.PeriodStart, existing.LastFetchedAt))
+            throw new InvalidOperationException(TimetableParser.OlderTimetable);
+
         using var tx = _db.Connection.BeginTransaction();
         try
         {

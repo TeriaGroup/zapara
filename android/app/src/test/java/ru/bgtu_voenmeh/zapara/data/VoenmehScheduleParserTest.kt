@@ -155,5 +155,10 @@ class VoenmehScheduleParserTest {
             "ok"
         } catch (t: Throwable) { t.message.orEmpty() }
         assertTrue(err.contains("расписани") || err == TimetablePayload.NOT_XML)
+        val hummingbird = try {
+            VoenmehScheduleParser.parseMeta("<!-- This page is cached --><!DOCTYPE html><html></html>")
+            "ok"
+        } catch (t: Throwable) { t.message.orEmpty() }
+        assertEquals(TimetablePayload.NOT_XML, hummingbird)
     }
 }

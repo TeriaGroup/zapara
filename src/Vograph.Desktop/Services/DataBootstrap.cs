@@ -52,7 +52,7 @@ public static class DataBootstrap
         return (utcNow - last.ToUniversalTime()).TotalDays > 3;
     }
 
-    public readonly record struct BootstrapFetch(ParsedSchedule? Parsed, string? Error);
+    public readonly record struct BootstrapFetch(ParsedSchedule? Parsed, string? Error, string? Xml = null);
 
     /// <summary>The network half of a first start, run BEFORE the caller takes the Core gate. Never throws: a dead
     /// network comes back as (null, reason) and the run falls through to the bundled snapshot below. Catalog only —
@@ -64,7 +64,8 @@ public static class DataBootstrap
         if (app.Api.Configured) return new(null, "Для API используется типизированная загрузка расписания.");
         try
         {
-            return new((await app.Refresher.CheckAsync(Array.Empty<string>(), null, operation.Token)).Parsed, null);
+            var check = await app.Refresher.CheckAsync(Array.Empty<string>(), null, operation.Token);
+            return new(check.Parsed, null, check.Xml);
         }
         catch (Exception ex)
         {
@@ -83,7 +84,7 @@ public static class DataBootstrap
     /// </summary>
     /// <param name="parsed">What the caller fetched outside the gate, or null (offline, or the fetch failed).</param>
     /// <param name="fetchError">Why there is no snapshot, for the «данные могут быть устаревшими» line.</param>
-    public static async Task<BootstrapResult> RunAsync(AppServices app, ParsedSchedule? parsed = null, string? fetchError = null)
+    public static async Task<BootstrapResult> RunAsync(AppServices app, ParsedSchedule? parsed = null, string? fetchError = null, string? timetableXml = null)
     {
         using var operation = app.Work.Enter();
         operation.ThrowIfStale();
@@ -108,6 +109,19 @@ public static class DataBootstrap
             {
                 error ??= ex.Message;
                 app.Log.Error("bootstrap refresh", ex);
+            }
+        }
+        if (timetableXml is not null)
+        {
+            try
+            {
+                await app.Parser.RefreshAsync(xmlOverride: timetableXml);
+                return new BootstrapResult(true, true, false, null);
+            }
+            catch (Exception ex)
+            {
+                error ??= ex.Message;
+                app.Log.Error("bootstrap xml", ex);
             }
         }
 

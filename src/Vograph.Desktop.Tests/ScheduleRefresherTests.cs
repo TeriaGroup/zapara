@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using Vograph.Desktop.Services;
 using Vograph.Timetable;
 using Xunit;
@@ -67,6 +68,36 @@ public class ScheduleRefresherTests
         using var refresher = new ScheduleRefresher(handler);
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => refresher.CheckAsync(null, TestContext.Current.CancellationToken));
         Assert.Equal(TimetableParser.NotTimetable, ex.Message);
+    }
+
+    [Fact]
+    public async Task Html_meta_falls_back_to_university_xml()
+    {
+        var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-timetable.xml"));
+        var utf16 = Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes(xml)).ToArray();
+        var handler = new FakeHttpHandler
+        {
+            Respond = r =>
+            {
+                var uri = r.RequestUri ?? throw new InvalidOperationException("missing uri");
+                if (uri.AbsolutePath.Contains("/api/schedule", StringComparison.Ordinal))
+                    return FakeHttpHandler.Text(VoenmehHttp.CachedHtml);
+                if (uri.AbsoluteUri.Contains("TimetableGroup50.xml", StringComparison.Ordinal))
+                    return FakeHttpHandler.Bytes(utf16);
+                throw new InvalidOperationException(uri.ToString());
+            }
+        };
+        using var refresher = new ScheduleRefresher(handler);
+
+        var check = await refresher.CheckAsync(new[] { "А863С" }, null, TestContext.Current.CancellationToken);
+
+        Assert.True(check.Modified);
+        Assert.Null(check.Parsed);
+        Assert.Contains("<Timetable>", check.Xml, StringComparison.Ordinal);
+        Assert.Contains("А863С", check.Xml, StringComparison.Ordinal);
+        Assert.Contains(handler.Requests, r => r.RequestUri!.AbsolutePath.EndsWith("/meta", StringComparison.Ordinal));
+        Assert.Contains(handler.Requests, r => r.RequestUri!.AbsoluteUri.Contains("TimetableGroup50.xml", StringComparison.Ordinal));
+        Assert.DoesNotContain(handler.Requests, r => r.RequestUri!.AbsolutePath.Contains("/lessons", StringComparison.Ordinal));
     }
 
     [Fact]

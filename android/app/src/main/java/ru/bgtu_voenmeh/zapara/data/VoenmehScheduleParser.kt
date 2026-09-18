@@ -120,7 +120,9 @@ object VoenmehScheduleParser {
 
     private fun payloadObject(json: String): JsonValue.Obj {
         val trimmed = json.trimStart('\uFEFF', ' ', '\n', '\r', '\t')
-        if (trimmed.startsWith("<")) throw IllegalStateException(TimetablePayload.NOT_XML)
+        if (trimmed.startsWith("<") || trimmed.startsWith("<!--")) {
+            throw IllegalStateException(TimetablePayload.NOT_XML)
+        }
         return try {
             StrictJson.parse(trimmed).obj()
         } catch (_: JsonFail) {

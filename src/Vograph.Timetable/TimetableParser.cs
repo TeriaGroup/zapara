@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Xml;
 using Vograph.Core.Models;
@@ -22,12 +23,25 @@ public class TimetableParser
     public const string NotTimetable =
         "сайт университета отдал страницу вместо файла расписания. Показано последнее сохранённое";
 
+    public const string OlderTimetable =
+        "сайт университета отдал более старое расписание. Показано последнее сохранённое";
+
     public static bool IsHtml(string text)
     {
         var trimmed = text.TrimStart('\uFEFF', ' ', '\n', '\r', '\t');
         var head = trimmed.Length <= 64 ? trimmed : trimmed[..64];
         return head.StartsWith("<!DOCTYPE html", StringComparison.OrdinalIgnoreCase)
-            || head.StartsWith("<html", StringComparison.OrdinalIgnoreCase);
+            || head.StartsWith("<html", StringComparison.OrdinalIgnoreCase)
+            || head.StartsWith("<!--", StringComparison.Ordinal);
+    }
+
+    public static bool IsOlderPeriod(DateTime incoming, string? storedIso, string? lastFetchedAt)
+    {
+        if (string.IsNullOrWhiteSpace(lastFetchedAt)) return false;
+        if (!DateTime.TryParse(storedIso, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var stored)
+            && !DateTime.TryParse(storedIso, out stored))
+            return false;
+        return incoming.Date < stored.Date;
     }
 
     public (List<Group> groups, List<Lesson> lessons, DateTime periodStart, int weekCount, string periodTitle) Parse(string xml)

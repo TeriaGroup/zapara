@@ -86,6 +86,11 @@ class GroupParserTest {
   <Weeks WeekCount="2"/>
 </Timetable>"""
         assertEquals(xml, TimetablePayload.requireXml(xml, "application/xml"))
+        val hummingbird = "<!-- This page is cached by the Hummingbird Performance plugin --><!DOCTYPE html><html></html>"
+        assertEquals(TimetablePayload.NOT_XML, try {
+            TimetablePayload.requireXml(hummingbird)
+            "ok"
+        } catch (t: Throwable) { t.message })
     }
 
     @Test
