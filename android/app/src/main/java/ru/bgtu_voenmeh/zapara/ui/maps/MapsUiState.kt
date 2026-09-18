@@ -103,6 +103,7 @@ sealed interface MapsEvent {
     data class PickBuilding(val index: Int) : MapsEvent
     data class PickFloor(val n: Int) : MapsEvent
     data class ShowRoom(val classroomRaw: String) : MapsEvent
+    data object Browse : MapsEvent
     data object ToNext : MapsEvent
     data object ZoomIn : MapsEvent
     data object ZoomOut : MapsEvent

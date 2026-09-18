@@ -5,17 +5,24 @@ import ru.bgtu_voenmeh.zapara.data.AutoUpdate
 import java.io.File
 
 class GitHubUpdateSource(private val ctx: Context) : UpdateSource {
+    @Volatile private var cancelled = false
+
     override suspend fun latest(): UpdateInfo? {
         val info = AutoUpdate.getLatestSmart("android") ?: return null
         return UpdateInfo(info.tag, info.htmlUrl, info.apkUrl, info.publishedAt)
     }
 
     override suspend fun download(url: String, tag: String, onProgress: (Long, Long) -> Unit): File {
+        cancelled = false
         val dest = AutoUpdate.apkFileFor(ctx, tag)
         if (!dest.exists()) {
-            AutoUpdate.downloadAsset(url, dest, onProgress) { false }
+            AutoUpdate.downloadAsset(url, dest, onProgress) { cancelled }
         }
         return dest
+    }
+
+    override fun cancelDownload() {
+        cancelled = true
     }
 
     override fun install(file: File) {

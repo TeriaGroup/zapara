@@ -108,13 +108,10 @@ class MapStore(private val context: Context) {
         coordsCache?.let { return@synchronized it }
         val parsed = mutableMapOf<String, MutableMap<String, CoordsRect>>()
         try {
-            val local = File(dir, "coords.json")
-            try { AtomicFile(local).openRead().close() } catch (_: Exception) { }
-            if (!local.exists()) {
-                refreshBundledIfNeeded("coords.json") { file ->
-                    try { json(file); true } catch (_: Exception) { false }
-                } ?: return@synchronized emptyMap()
-            }
+            val local = refreshBundledIfNeeded("coords.json") { file ->
+                try { json(file); true } catch (_: Exception) { false }
+            } ?: File(dir, "coords.json")
+            if (!local.exists()) return@synchronized emptyMap()
             val json = json(local)
             val maps = json.optJSONObject("maps") ?: JSONObject()
             for (key in maps.keys()) {

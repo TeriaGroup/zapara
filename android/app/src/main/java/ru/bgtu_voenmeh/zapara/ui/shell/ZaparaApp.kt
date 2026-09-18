@@ -169,7 +169,10 @@ private fun ZaparaAppBody(
                                 val room = dest.arguments?.getString("room")
                                 val vm: MapsViewModel = viewModel(factory = MapsViewModel.factory(container, room))
                                 val s by vm.state.collectAsStateWithLifecycle()
-                                LaunchedEffect(room) { if (!room.isNullOrBlank()) vm.onEvent(ru.bgtu_voenmeh.zapara.ui.maps.MapsEvent.ShowRoom(room)) }
+                                LaunchedEffect(room) {
+                                    if (!room.isNullOrBlank()) vm.onEvent(ru.bgtu_voenmeh.zapara.ui.maps.MapsEvent.ShowRoom(room))
+                                    else vm.onEvent(ru.bgtu_voenmeh.zapara.ui.maps.MapsEvent.Browse)
+                                }
                                 MapsSection(s, vm::onEvent)
                                 }
                             }

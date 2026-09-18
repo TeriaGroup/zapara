@@ -42,7 +42,7 @@ object Schedule {
             val date = from.plusDays(offset.toLong())
             if (date.dayOfWeek == DayOfWeek.SUNDAY) continue
             val dayLessons = lessonsForDate(all, groupId, date, periodStart, weekCount, invert)
-            if (dayLessons.any { it.subjectNormalized == norm }) return date
+            if (dayLessons.any { Parity.sameSubject(it.subjectNormalized, norm) }) return date
         }
         return null
     }

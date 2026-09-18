@@ -3,6 +3,7 @@ package ru.bgtu_voenmeh.zapara.ui.widgets
 import ru.bgtu_voenmeh.zapara.AppContainer
 import ru.bgtu_voenmeh.zapara.data.Homework
 import ru.bgtu_voenmeh.zapara.data.Lesson
+import ru.bgtu_voenmeh.zapara.data.Parity
 import ru.bgtu_voenmeh.zapara.data.Schedule
 import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
 import ru.bgtu_voenmeh.zapara.ui.LessonFormat
@@ -123,11 +124,15 @@ object ScheduleWidgetComposer {
                 isPast = date == today && end != null && !end.isAfter(clock)
             )
         }
-        val nextRefreshAt = if (date == today) {
+        val pairEnd = if (date == today) {
             remaining.firstOrNull()?.let { runCatching { LocalTime.parse(it.timeEnd) }.getOrNull() }
                 ?.takeIf { it.isAfter(clock) }
-                ?.let { date.atTime(it) }
+                ?.let { today.atTime(it) }
         } else null
+        val lastEnd = todayLessons.mapNotNull { runCatching { LocalTime.parse(it.timeEnd) }.getOrNull() }.maxOrNull()
+        val smartJump = lastEnd?.plusMinutes(15)?.takeIf { it.isAfter(clock) }?.let { today.atTime(it) }
+        val midnight = today.plusDays(1).atStartOfDay()
+        val nextRefreshAt = listOfNotNull(pairEnd, smartJump, midnight).minOrNull()
         val empty = if (rows.isEmpty()) copy.get("no_lessons_day") else null
         return ScheduleWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark, nextRefreshAt)
     }
@@ -175,7 +180,7 @@ object HomeworkWidgetComposer {
             .sortedWith(compareBy({ rank(it.status) }, { it.due ?: LocalDate.MAX }, { it.id }))
             .take(MAX_ROWS)
             .map { hw ->
-                val lesson = lessons.firstOrNull { it.subjectNormalized == hw.norm }
+                val lesson = lessons.firstOrNull { Parity.sameSubject(it.subjectNormalized, hw.norm) }
                 val subject = displayName(hw.norm).ifBlank {
                     lesson?.let { LessonFormat.stripType(it.subjectRaw, it.typeRaw) } ?: hw.norm
                 }
@@ -238,7 +243,7 @@ object WidgetSnapshots {
             today = container.clock().toLocalDate(),
             groupName = groupName,
             displayName = { norm ->
-                val lesson = lessons.firstOrNull { it.subjectNormalized == norm }
+                val lesson = lessons.firstOrNull { Parity.sameSubject(it.subjectNormalized, norm) }
                 if (lesson != null) container.overrides.displayNameByNorm(norm, lesson.dayOfWeek) else ""
             },
             copy = container.copy,

@@ -35,6 +35,18 @@ object Parity {
             .split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ")
     }
 
+    fun subjectMatchKey(raw: String?): String =
+        normalizeSubject(raw).replace(Regex("[^\\p{L}\\p{N}]+"), "")
+
+    fun sameSubject(a: String?, b: String?): Boolean {
+        val x = subjectMatchKey(a)
+        val y = subjectMatchKey(b)
+        if (x.isEmpty() || y.isEmpty()) return false
+        if (x == y) return true
+        val n = minOf(x.length, y.length)
+        return n >= 8 && (x.startsWith(y) || y.startsWith(x))
+    }
+
     fun dayTitleToNumber(title: String?): Int = when (title?.trim()?.lowercase()) {
         "понедельник" -> 1
         "вторник" -> 2

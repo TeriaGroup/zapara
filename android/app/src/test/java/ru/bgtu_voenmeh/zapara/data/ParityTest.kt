@@ -47,6 +47,14 @@ class ParityTest {
     }
 
     @Test
+    fun sameSubject_matches_xml_and_json_spellings() {
+        assertTrue(Parity.sameSubject("лек ВЫСШ. МАТЕМАТ", "лек ВЫСШ. МАТ."))
+        assertTrue(Parity.sameSubject("пр ОСН РОС ГОС", "пр ОСН.РОС.ГОС"))
+        assertFalse(Parity.sameSubject("лек ВЫСШ. МАТЕМАТ", "пр ВЫСШ. МАТ."))
+        assertFalse(Parity.sameSubject("лек ФИЗИКА", "лек ФИЛОСОФИЯ"))
+    }
+
+    @Test
     fun dayMapping() {
         assertEquals(1, Parity.dayTitleToNumber("Понедельник"))
         assertEquals(6, Parity.dayTitleToNumber("Суббота"))

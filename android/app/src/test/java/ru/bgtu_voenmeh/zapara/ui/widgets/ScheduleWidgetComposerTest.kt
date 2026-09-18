@@ -96,6 +96,7 @@ class ScheduleWidgetComposerTest {
         assertFalse(snap.rows[0].isPast)
         assertEquals("ОСН РОС ГОС", snap.rows[1].name)
         assertTrue(WidgetJobs.accept(snap.identity, guestId))
+        assertEquals(LocalDateTime.of(2026, 9, 14, 10, 35), snap.nextRefreshAt)
     }
 
     @Test fun after_last_lesson_smart_start_moves_to_tuesday() {
@@ -104,6 +105,7 @@ class ScheduleWidgetComposerTest {
         assertTrue(snap.rows[0].name.contains("ФК"))
         assertTrue(snap.rows.none { it.name == "Матан" })
         assertTrue(snap.subtitle.contains("А863С"))
+        assertEquals(LocalDateTime.of(2026, 9, 15, 0, 0), snap.nextRefreshAt)
     }
 
     @Test fun no_group_uses_empty_copy_and_keeps_identity() {

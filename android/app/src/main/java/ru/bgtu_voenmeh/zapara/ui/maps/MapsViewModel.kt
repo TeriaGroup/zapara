@@ -69,6 +69,7 @@ class MapsViewModel internal constructor(
             is MapsEvent.PickBuilding -> pickBuilding(event.index)
             is MapsEvent.PickFloor -> pickFloor(event.n)
             is MapsEvent.ShowRoom -> launchMap { showRoom(event.classroomRaw) }
+            MapsEvent.Browse -> launchMap { openBrowse() }
             MapsEvent.ToNext -> if (routingOn()) launchMap { toNext() }
             MapsEvent.ZoomIn -> mutable.update { it.copy(zoom = (it.zoom * 1.25f).coerceIn(0.4f, 4f)) }
             MapsEvent.ZoomOut -> mutable.update { it.copy(zoom = (it.zoom / 1.25f).coerceIn(0.4f, 4f)) }
@@ -135,7 +136,16 @@ class MapsViewModel internal constructor(
         }
     }
 
+    private suspend fun openBrowse() {
+        destRoomKey = null
+        prevRoomKey = null
+        toId = null
+        if (routingOn()) toNext() else browsePlan()
+    }
+
     private suspend fun browsePlan() {
+        destRoomKey = null
+        toId = null
         ensureGraph()
         val building = mutable.value.building.ifBlank { "ГК" }
         val floor = mutable.value.floors.firstOrNull() ?: 1
@@ -270,7 +280,7 @@ class MapsViewModel internal constructor(
                 highlight = coords?.let { rect -> HighlightUi(rect, room.orEmpty()) },
                 roomUnmarked = !room.isNullOrBlank() && coords == null,
                 contextLine = line, mode = mode, note = note?.ifBlank { null },
-                remoteNote = if (vc || MapResolve.resolve(destRoomKey)?.building == "ВЦ") container.copy.get("maps_vc_note") else null
+                remoteNote = if (vc) container.copy.get("maps_vc_note") else null
             ).withRoute(shown).copy(rasterCatalog = catalog)
         }
     }

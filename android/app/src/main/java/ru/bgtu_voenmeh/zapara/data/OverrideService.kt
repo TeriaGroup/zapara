@@ -80,7 +80,7 @@ class OverrideService(
     }
 
     fun displayNameByNorm(norm: String, dayOfWeek: Int): String {
-        val all = dao.getAll().filter { it.subjectRawNormalized == norm }
+        val all = dao.getAll().filter { Parity.sameSubject(it.subjectRawNormalized, norm) }
         all.firstOrNull { it.scope == "global" }?.let { return it.displayName }
         all.firstOrNull { it.scope == "weekday:$dayOfWeek" }?.let { return it.displayName }
         return ""
@@ -91,7 +91,7 @@ class OverrideService(
     }
 
     fun noteByNorm(norm: String, dayOfWeek: Int): String {
-        val all = dao.getAll().filter { it.subjectRawNormalized == norm }
+        val all = dao.getAll().filter { Parity.sameSubject(it.subjectRawNormalized, norm) }
         val ov = all.firstOrNull { it.scope == "global" }
             ?: all.firstOrNull { it.scope == "weekday:$dayOfWeek" }
         return ov?.note.orEmpty()

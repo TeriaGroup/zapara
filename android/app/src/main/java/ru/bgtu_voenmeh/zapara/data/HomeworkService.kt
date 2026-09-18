@@ -195,7 +195,7 @@ class HomeworkService(
     }
 
     fun forSubjectByNorm(norm: String): List<Homework> {
-        return dao.getAll().filter { it.subjectRawNormalized == norm }.map { it.toHomework() }
+        return dao.getAll().filter { Parity.sameSubject(it.subjectRawNormalized, norm) }.map { it.toHomework() }
     }
 
     /** Existing persisted guest homework; callers must use IO. */
@@ -226,7 +226,7 @@ class HomeworkService(
             if (c.invert) code = if (code == 1) 2 else 1
             val dayLessons = lessons(c.groupId, dow, code)
             for (l in dayLessons) {
-                if (l.subjectNormalized == norm) {
+                if (Parity.sameSubject(l.subjectNormalized, norm)) {
                     found++
                     if (found == n) return date
                     break // one count per day (mirrors Windows)
@@ -252,7 +252,7 @@ class HomeworkService(
                 val dow = d.dayOfWeek.value
                 var code = Parity.weekCode(d, c.periodStart, c.weekCount)
                 if (c.invert) code = if (code == 1) 2 else 1
-                before += lessonsFor(c.groupId, dow, code).count { it.subjectNormalized == norm }
+                before += lessonsFor(c.groupId, dow, code).count { Parity.sameSubject(it.subjectNormalized, norm) }
             }
             d = d.plusDays(1)
         }

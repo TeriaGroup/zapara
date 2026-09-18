@@ -66,6 +66,20 @@ class MapCacheCompatibilityTest {
         assertTrue(context.map(name).parentFile!!.listFiles()!!.none { it.name.endsWith(".pending") })
     }
 
+    @Test fun coords_follow_app_version_like_rasters() = MapTestContext().use { context ->
+        val local = context.map("coords.json")
+        local.writeText("""{"maps":{"ГК 1":{"1":{"x":0,"y":0,"w":1,"h":1}}}}""")
+        context.getSharedPreferences("zapara_maps", 0).edit().putInt("asset-version:coords.json", 1).commit()
+        val store = MapStore(context)
+        val coords = store.coords()
+        assertTrue(coords.isNotEmpty())
+        assertEquals(BuildConfig.VERSION_CODE,
+            context.getSharedPreferences("zapara_maps", 0).getInt("asset-version:coords.json", 0))
+        val bundled = context.assets.open("maps/coords.json").bufferedReader().readText()
+        assertEquals(org.json.JSONObject(bundled).getJSONObject("maps").length(),
+            org.json.JSONObject(local.readText()).getJSONObject("maps").length())
+    }
+
     @Test fun coords_install_is_valid_and_cached_override_survives_later_damage() = MapTestContext().use { context ->
         val store = MapStore(context)
         val coords = store.coords()

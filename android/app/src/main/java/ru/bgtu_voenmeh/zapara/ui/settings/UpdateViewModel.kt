@@ -1,5 +1,6 @@
 package ru.bgtu_voenmeh.zapara.ui.settings
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -9,6 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import ru.bgtu_voenmeh.zapara.data.AutoUpdate
 import java.io.File
 import java.time.LocalTime
 
@@ -94,9 +96,18 @@ class UpdateViewModel(
                     val p = if (total > 0) done.toFloat() / total else -1f
                     mutable.update { it.copy(progress = p, doneBytes = done, totalBytes = total, log = copy.get("upd_log_dl")) }
                 }
+                if (cancelled) return@launch
                 mutable.update { it.copy(downloading = false, progress = 1f, readyFile = file.absolutePath, log = copy.get("upd_log_done")) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: AutoUpdate.DownloadCancelled) {
+                mutable.update { it.copy(downloading = false, log = copy.get("upd_log_cancel")) }
             } catch (e: Exception) {
-                mutable.update { it.copy(downloading = false, error = copy.get("upd_err_dl", e.message ?: e.javaClass.simpleName), log = copy.get("upd_log_dl_fail")) }
+                if (cancelled) {
+                    mutable.update { it.copy(downloading = false, log = copy.get("upd_log_cancel")) }
+                } else {
+                    mutable.update { it.copy(downloading = false, error = copy.get("upd_err_dl", e.message ?: e.javaClass.simpleName), log = copy.get("upd_log_dl_fail")) }
+                }
             }
         }
     }
@@ -109,6 +120,7 @@ class UpdateViewModel(
 
     fun cancel() {
         cancelled = true
+        source.cancelDownload()
         downloadJob?.cancel()
         mutable.update { it.copy(downloading = false, log = copy.get("upd_log_cancel")) }
     }

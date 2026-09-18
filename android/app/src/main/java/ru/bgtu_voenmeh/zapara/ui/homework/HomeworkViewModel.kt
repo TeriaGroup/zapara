@@ -77,7 +77,7 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                 if (gid.isEmpty()) return@withContext false to emptyList<HomeworkGroupUi>()
                 val lessons = container.repo.allForGroup(gid)
                 val items = container.homework.all().map { hw ->
-                    val lesson = lessons.firstOrNull { it.subjectNormalized == hw.norm }
+                    val lesson = lessons.firstOrNull { Parity.sameSubject(it.subjectNormalized, hw.norm) }
                     val subject = if (lesson != null) {
                         container.overrides.displayNameByNorm(hw.norm, lesson.dayOfWeek).ifBlank {
                             LessonFormat.stripType(lesson.subjectRaw, lesson.typeRaw)
