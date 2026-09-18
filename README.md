@@ -5,10 +5,10 @@
 
 ## Скачать
 
-Актуальная версия **2.1.5** — [страница релиза](https://github.com/TeriaGroup/zapara/releases/tag/v2.1.5):
+Актуальная версия **2.1.6** — [страница релиза](https://github.com/TeriaGroup/zapara/releases/tag/v2.1.6):
 
-- **Windows:** [ZAPARA_win-x64.zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.5/ZAPARA_win-x64.zip) — распаковать и запустить `Vograph.exe` (.NET 8 Runtime).
-- **Android:** [ZAPARA_android-debug.apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.5/ZAPARA_android-debug.apk) — ставится сразу (`adb install -r` тоже).
+- **Windows:** [ZAPARA_win-x64.zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.6/ZAPARA_win-x64.zip) — распаковать и запустить `Vograph.exe` (.NET 8 Runtime).
+- **Android:** [ZAPARA_android-debug.apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.6/ZAPARA_android-debug.apk) — ставится сразу (`adb install -r` тоже).
 
 Все версии (по возрастанию): [releases](https://github.com/TeriaGroup/zapara/releases)
 
@@ -47,7 +47,8 @@
 | 2.1.2 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.2/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.2/ZAPARA_android-debug.apk) |
 | 2.1.3 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.3/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.3/ZAPARA_android-debug.apk) |
 | 2.1.4 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.4/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.4/ZAPARA_android-debug.apk) |
-| **2.1.5** | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.5/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.5/ZAPARA_android-debug.apk) |
+| 2.1.5 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.5/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.5/ZAPARA_android-debug.apk) |
+| **2.1.6** | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.6/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.6/ZAPARA_android-debug.apk) |
 
 ## Развитие платформы
 
@@ -66,7 +67,7 @@ Read-only маршруты: `/health/live`, `/health/ready`, `/api/v1/status`, `
 ## Приложения
 
 - **Windows** — Avalonia 12, .NET 8, две темы (тёмная/светлая), интерфейс только на русском, самообновление с проверкой архива, синхронизация по локальной сети без прав администратора.
-- **Android** — Kotlin + Compose 2.0 (дизайн-система, тёмная и светлая темы), нижняя навигация, пакет `ru.zapara.app`, версия 2.1.5, интерфейс только на русском, Android 8.0+.
+- **Android** — Kotlin + Compose 2.0 (дизайн-система, тёмная и светлая темы), нижняя навигация, пакет `ru.zapara.app`, версия 2.1.6, интерфейс только на русском, Android 8.0+.
 
 ## Что умеет
 
