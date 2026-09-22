@@ -20,7 +20,7 @@ export function subgroupIndex(lessons: Lesson[]): Index {
     for (const [id, label] of cluster.labels) if (!builder.options.has(id)) builder.options.set(id, label);
     for (const lesson of cluster.lessons) {
       const key = lessonKey(lesson);
-      const ids = cluster.same ? teacherNames(lesson.teacherRaw).map(teacherKey) : [slotOptionId(lesson)];
+      const ids = cluster.assignment?.get(key) ?? (cluster.same ? teacherNames(lesson.teacherRaw).map(teacherKey) : [slotOptionId(lesson)]);
       const previous = membership.get(key);
       const joined = cluster.lessons.length === 1 && previous?.joined !== false;
       membership.set(key, { streamId: cluster.streamId, optionIds: ids, joined: joined && cluster.lessons.length === 1 });
@@ -67,8 +67,10 @@ function keep(lesson: Lesson, index: Index, choices: Record<string, string>): bo
   return member.optionIds.includes(choice);
 }
 
+type Cluster = { streamId: string; title: string; same: boolean; lessons: Lesson[]; labels: Map<string, string>; assignment?: Map<string, string[]> };
+
 function clusters(lessons: Lesson[]) {
-  const found: { streamId: string; title: string; same: boolean; lessons: Lesson[]; labels: Map<string, string> }[] = [];
+  const found: Cluster[] = [];
   const seen = new Set<string>();
   const slots = new Map<string, Lesson[]>();
   for (const lesson of lessons) {
@@ -79,8 +81,23 @@ function clusters(lessons: Lesson[]) {
   }
   for (const [slot, rows] of slots) {
     const [day, time] = slot.split("|");
-    for (const week of weekCodes(rows)) {
-      const active = rows.filter(lesson => lesson.parity === 0 || lesson.parity === week);
+    const handled = new Set<string>();
+    const bySubject = new Map<string, Lesson[]>();
+    for (const lesson of rows) {
+      const subject = subjectKey(lesson);
+      const group = bySubject.get(subject) || [];
+      group.push(lesson);
+      bySubject.set(subject, group);
+    }
+    for (const group of bySubject.values()) {
+      const paired = pairCluster(group);
+      if (!paired) continue;
+      found.push(paired);
+      for (const lesson of group) handled.add(lessonKey(lesson));
+    }
+    const rest = rows.filter(lesson => !handled.has(lessonKey(lesson)));
+    for (const week of weekCodes(rest)) {
+      const active = rest.filter(lesson => lesson.parity === 0 || lesson.parity === week);
       const names = new Map<string, string>();
       for (const lesson of [...active].sort((a, b) => a.index - b.index || subjectKey(a).localeCompare(subjectKey(b)))) {
         for (const name of teacherNames(lesson.teacherRaw)) {
@@ -136,6 +153,43 @@ function timeKey(raw: string): string {
   const match = /(\d{1,2}):(\d{2})/.exec(raw || "");
   if (!match) return (raw || "").trim();
   return `${match[1].padStart(2, "0")}:${match[2]}`;
+}
+
+function pairCluster(rows: Lesson[]): Cluster | null {
+  if (rows.length < 3 || rows.some(lesson => lesson.parity < 0 || lesson.parity > 2) || !subjectKey(rows[0])) return null;
+  const info = new Map<string, { label: string; weeks: Set<number> }>();
+  for (const lesson of rows) {
+    const weeks = lesson.parity === 0 ? [1, 2] : [lesson.parity];
+    for (const name of teacherNames(lesson.teacherRaw)) {
+      const id = teacherKey(name);
+      if (!id) continue;
+      const current = info.get(id) || { label: name.trim(), weeks: new Set<number>() };
+      for (const week of weeks) current.weeks.add(week);
+      info.set(id, current);
+    }
+  }
+  const odd = [...info].filter(([, value]) => value.weeks.has(1)).map(([id]) => id);
+  const even = [...info].filter(([, value]) => value.weeks.has(2)).map(([id]) => id);
+  const stable = odd.filter(id => even.includes(id));
+  const oddOnly = odd.filter(id => !even.includes(id));
+  const evenOnly = even.filter(id => !odd.includes(id));
+  if (stable.length === 0 || oddOnly.length !== 1 || evenOnly.length !== 1) return null;
+  const oddKey = oddOnly[0];
+  const evenKey = evenOnly[0];
+  const pairId = `w:${oddKey}+${evenKey}`;
+  const labels = new Map<string, string>();
+  for (const id of [...stable].sort()) labels.set(id, info.get(id)!.label);
+  labels.set(pairId, `${info.get(oddKey)!.label} · нечётная / ${info.get(evenKey)!.label} · чётная`);
+  const streamId = `s:${subjectKey(rows[0])}:` + [...stable, oddKey, evenKey].sort().join("+");
+  const assignment = new Map<string, string[]>();
+  for (const lesson of rows) {
+    const keys = new Set(teacherNames(lesson.teacherRaw).map(teacherKey));
+    const ids = [...keys].filter(id => stable.includes(id));
+    if (keys.has(oddKey) || keys.has(evenKey)) ids.push(pairId);
+    assignment.set(lessonKey(lesson), ids);
+  }
+  const title = [...rows].sort((a, b) => a.dayOfWeek - b.dayOfWeek || timeKey(a.timeStart).localeCompare(timeKey(b.timeStart)) || a.index - b.index)[0].subjectRaw;
+  return { streamId, title, same: true, lessons: rows, labels, assignment };
 }
 
 function weekCodes(rows: Lesson[]): number[] {

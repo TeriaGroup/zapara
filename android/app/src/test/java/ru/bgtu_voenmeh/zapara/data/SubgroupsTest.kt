@@ -73,6 +73,21 @@ class SubgroupsTest {
         assertEquals(listOf(odd), Subgroups.visible(listOf(always, odd), chosen))
     }
 
+    @Test fun a_weekly_teacher_and_an_alternating_pair_are_two_subgroups() {
+        val always = lesson(1, "09:00", "Иванов И.И.", parity = 0, room = "101;")
+        val odd = lesson(1, "09:00", "Петров П.П.", parity = 1, index = 2, room = "202;")
+        val even = lesson(1, "09:00", "Сидоров С.С.", parity = 2, index = 3, room = "303;")
+        val thursday = lesson(4, "09:00", "Иванов И.И.", parity = 0, room = "101;")
+        val thursdayOdd = lesson(4, "09:00", "Петров П.П.", parity = 1, index = 2, room = "202;")
+        val thursdayEven = lesson(4, "09:00", "Сидоров С.С.", parity = 2, index = 3, room = "303;")
+        val all = listOf(always, odd, even, thursday, thursdayOdd, thursdayEven)
+        val stream = Subgroups.index(all).streams.single()
+        assertEquals(listOf("иванов и и", "w:петров п п+сидоров с с"), stream.options.map { it.id })
+        assertEquals("Петров П.П. · нечётная / Сидоров С.С. · чётная", stream.options[1].label)
+        assertEquals(listOf(always, thursday), Subgroups.visible(all, mapOf(stream.id to "иванов и и")))
+        assertEquals(listOf(odd, even, thursdayOdd, thursdayEven), Subgroups.visible(all, mapOf(stream.id to stream.options[1].id)))
+    }
+
     @Test fun a_shared_lecture_stays_when_only_the_practice_splits() {
         val lecture = lesson(1, "09:00", "Сидоров С.С.", subject = "лек ФИЗИКА", norm = "физика", room = "1;")
         val labA = lesson(1, "12:40", "Иванов И.И.", subject = "лаб ФИЗИКА", norm = "физика", index = 2, room = "2;")

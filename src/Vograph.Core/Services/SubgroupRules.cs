@@ -7,6 +7,8 @@ namespace Vograph.Core.Services;
 /// <summary>
 /// A split is two or more teachers present in the same week at one bell.
 /// Odd and even lessons at that bell are not a split: they never meet.
+/// One weekly teacher plus one odd-week partner and one even-week partner is
+/// two subgroups: the weekly teacher, and the pair that alternates.
 /// </summary>
 public static class SubgroupRules
 {
@@ -45,9 +47,11 @@ public static class SubgroupRules
             foreach (var lesson in cluster.Lessons)
             {
                 var key = LessonKey(lesson);
-                var ids = cluster.SameSubject
-                    ? TeacherNames(lesson.TeacherRaw).Select(TeacherKey).ToHashSet(StringComparer.Ordinal)
-                    : new HashSet<string>(StringComparer.Ordinal) { SlotOptionId(lesson) };
+                var ids = cluster.Assignment is { } assigned && assigned.TryGetValue(key, out var mapped)
+                    ? mapped
+                    : cluster.SameSubject
+                        ? TeacherNames(lesson.TeacherRaw).Select(TeacherKey).ToHashSet(StringComparer.Ordinal)
+                        : new HashSet<string>(StringComparer.Ordinal) { SlotOptionId(lesson) };
                 membership.TryGetValue(key, out var previous);
                 var joined = cluster.Lessons.Count == 1 && previous?.Joined != false;
                 membership[key] = new Member(cluster.StreamId, ids, joined && cluster.Lessons.Count == 1);
@@ -110,7 +114,7 @@ public static class SubgroupRules
         public Stream ToStream() => new(Id, Title, Options.Select(pair => new Option(pair.Key, pair.Value)).ToList(), Joined && SameSubject);
     }
 
-    private sealed record Cluster(string StreamId, string Title, bool SameSubject, List<Lesson> Lessons, Dictionary<string, string> OptionLabels);
+    private sealed record Cluster(string StreamId, string Title, bool SameSubject, List<Lesson> Lessons, Dictionary<string, string> OptionLabels, Dictionary<string, HashSet<string>>? Assignment = null);
 
     private static List<Cluster> Clusters(IReadOnlyList<Lesson> lessons)
     {
@@ -118,9 +122,18 @@ public static class SubgroupRules
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var slot in lessons.GroupBy(lesson => (lesson.DayOfWeek, TimeKey(lesson.TimeStart))))
         {
-            foreach (var week in WeekCodes(slot))
+            var handled = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var group in slot.GroupBy(SubjectKey))
             {
-                var active = slot.Where(lesson => lesson.Parity == 0 || lesson.Parity == week).ToList();
+                var paired = PairCluster(group.ToList());
+                if (paired is null) continue;
+                found.Add(paired);
+                foreach (var lesson in group) handled.Add(LessonKey(lesson));
+            }
+            var rest = slot.Where(lesson => !handled.Contains(LessonKey(lesson))).ToList();
+            foreach (var week in WeekCodes(rest))
+            {
+                var active = rest.Where(lesson => lesson.Parity == 0 || lesson.Parity == week).ToList();
                 var names = new Dictionary<string, string>(StringComparer.Ordinal);
                 foreach (var lesson in active.OrderBy(item => item.Index).ThenBy(item => SubjectKey(item), StringComparer.Ordinal))
                 {
@@ -186,6 +199,47 @@ public static class SubgroupRules
         var match = Regex.Match(raw, @"(\d{1,2}):(\d{2})");
         if (!match.Success) return raw.Trim();
         return int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture).ToString("00", CultureInfo.InvariantCulture) + ":" + match.Groups[2].Value;
+    }
+
+    private static Cluster? PairCluster(List<Lesson> rows)
+    {
+        if (rows.Count < 3 || rows.Any(lesson => lesson.Parity is < 0 or > 2) || SubjectKey(rows[0]).Length == 0) return null;
+        var info = new Dictionary<string, (string Label, HashSet<int> Weeks)>(StringComparer.Ordinal);
+        foreach (var lesson in rows)
+        {
+            var weeks = lesson.Parity == 0 ? new[] { 1, 2 } : new[] { lesson.Parity };
+            foreach (var name in TeacherNames(lesson.TeacherRaw))
+            {
+                var id = TeacherKey(name);
+                if (id.Length == 0) continue;
+                if (!info.TryGetValue(id, out var current)) info[id] = current = (name.Trim(), new HashSet<int>());
+                foreach (var week in weeks) current.Weeks.Add(week);
+            }
+        }
+        var odd = info.Where(pair => pair.Value.Weeks.Contains(1)).Select(pair => pair.Key).ToHashSet(StringComparer.Ordinal);
+        var even = info.Where(pair => pair.Value.Weeks.Contains(2)).Select(pair => pair.Key).ToHashSet(StringComparer.Ordinal);
+        var stable = odd.Where(even.Contains).ToList();
+        var oddOnly = odd.Where(id => !even.Contains(id)).ToList();
+        var evenOnly = even.Where(id => !odd.Contains(id)).ToList();
+        if (stable.Count == 0 || oddOnly.Count != 1 || evenOnly.Count != 1) return null;
+        var oddKey = oddOnly[0];
+        var evenKey = evenOnly[0];
+        var pairId = "w:" + oddKey + "+" + evenKey;
+        var labels = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var id in stable.OrderBy(id => id, StringComparer.Ordinal)) labels[id] = info[id].Label;
+        labels[pairId] = info[oddKey].Label + " · нечётная / " + info[evenKey].Label + " · чётная";
+        var everyone = stable.Append(oddKey).Append(evenKey).OrderBy(id => id, StringComparer.Ordinal);
+        var streamId = "s:" + SubjectKey(rows[0]) + ":" + string.Join("+", everyone);
+        var assignment = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var lesson in rows)
+        {
+            var keys = TeacherNames(lesson.TeacherRaw).Select(TeacherKey).ToHashSet(StringComparer.Ordinal);
+            var ids = keys.Where(stable.Contains).ToHashSet(StringComparer.Ordinal);
+            if (keys.Contains(oddKey) || keys.Contains(evenKey)) ids.Add(pairId);
+            assignment[LessonKey(lesson)] = ids;
+        }
+        var title = rows.OrderBy(item => item.DayOfWeek).ThenBy(item => TimeKey(item.TimeStart), StringComparer.Ordinal).ThenBy(item => item.Index).First().SubjectRaw;
+        return new Cluster(streamId, title, true, rows, labels, assignment);
     }
 
     private static HashSet<int> WeekCodes(IEnumerable<Lesson> rows)
