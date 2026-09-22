@@ -46,6 +46,7 @@ class TimerWidgetComposerTest {
         hour: Int,
         minute: Int,
         second: Int = 0,
+        nano: Int = 0,
         lessons: List<Lesson> = bells(),
         prefs: ScheduleRepository.SettingsState = settings,
         whenDay: LocalDate = day,
@@ -54,7 +55,7 @@ class TimerWidgetComposerTest {
         identity = guestId,
         settings = prefs,
         allLessons = lessons,
-        now = LocalDateTime.of(whenDay.year, whenDay.month, whenDay.dayOfMonth, hour, minute, second),
+        now = LocalDateTime.of(whenDay.year, whenDay.month, whenDay.dayOfMonth, hour, minute, second, nano),
         displayName = { LessonFormat.stripType(it.subjectRaw, it.typeRaw) },
         copy = WidgetCopy,
         cleared = cleared
@@ -166,6 +167,15 @@ class TimerWidgetComposerTest {
     @Test fun widgets_reboot_at_the_next_local_midnight() {
         assertEquals(LocalDateTime.of(2026, 9, 23, 0, 0), nextWidgetReboot(LocalDateTime.of(2026, 9, 22, 12, 26)))
         assertEquals(LocalDateTime.of(2026, 9, 24, 0, 0), nextWidgetReboot(LocalDateTime.of(2026, 9, 23, 0, 0)))
+    }
+
+    @Test fun the_last_partial_second_keeps_one_second_and_the_ring() {
+        val snap = at(10, 34, 59, nano = 400_000_000)
+        assertEquals(TimerPhaseKind.Lesson, snap.kind)
+        assertEquals("00:01", snap.timeText)
+        assertTrue(snap.fraction > 0f)
+        assertTrue(snap.fraction < 0.001f)
+        assertEquals(LocalDateTime.of(day, java.time.LocalTime.of(10, 35)), snap.endsAt)
     }
 
     @Test fun digits_stop_at_zero() {

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
+import ru.bgtu_voenmeh.zapara.data.HomeworkDue
 import ru.bgtu_voenmeh.zapara.data.HomeworkFileStore
 import ru.bgtu_voenmeh.zapara.data.HomeworkService
 import ru.bgtu_voenmeh.zapara.data.Lesson
@@ -193,7 +194,7 @@ class AppContainer(
         HomeworkService(
             db.homeworkDao(),
             lessonsFor = { gid, dow, parity ->
-                repo.allForGroup(gid).filter { it.dayOfWeek == dow && (it.parity == parity || it.parity == 0) }
+                HomeworkDue.lessonsOnChosenDay(repo.allForGroup(gid), subgroupChoices(gid), dow, parity)
             },
             ctx = { repo.settings().let { SchedCtx(it.myGroupId.orEmpty(), it.periodStart, it.weekCount, it.parityInvert) } },
             outbox = outbox

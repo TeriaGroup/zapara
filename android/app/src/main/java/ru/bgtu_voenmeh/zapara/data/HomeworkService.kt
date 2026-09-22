@@ -20,6 +20,42 @@ data class SchedCtx(
     val invert: Boolean
 )
 
+object HomeworkDue {
+    fun lessonsOnChosenDay(
+        all: List<Lesson>,
+        choices: Map<String, String>,
+        dow: Int,
+        parity: Int
+    ): List<Lesson> = Subgroups.visible(all, choices)
+        .filter { it.dayOfWeek == dow && (it.parity == parity || it.parity == 0) }
+
+    fun date(
+        lessons: (groupId: String, dow: Int, parity: Int) -> List<Lesson>,
+        c: SchedCtx,
+        norm: String,
+        from: LocalDate,
+        n: Int
+    ): LocalDate? {
+        var found = 0
+        for (offset in 1..120) {
+            val date = from.plusDays(offset.toLong())
+            if (date.dayOfWeek == DayOfWeek.SUNDAY) continue
+            val dow = date.dayOfWeek.value
+            var code = Parity.weekCode(date, c.periodStart, c.weekCount)
+            if (c.invert) code = if (code == 1) 2 else 1
+            val dayLessons = lessons(c.groupId, dow, code)
+            for (l in dayLessons) {
+                if (Parity.sameSubject(l.subjectNormalized, norm)) {
+                    found++
+                    if (found == n) return date
+                    break
+                }
+            }
+        }
+        return null
+    }
+}
+
 data class Homework(
     val id: Long,
     val norm: String,
@@ -215,25 +251,7 @@ class HomeworkService(
         norm: String,
         from: LocalDate,
         n: Int
-    ): LocalDate? {
-        var found = 0
-        for (offset in 1..120) {
-            val date = from.plusDays(offset.toLong())
-            if (date.dayOfWeek == DayOfWeek.SUNDAY) continue
-            val dow = date.dayOfWeek.value
-            var code = Parity.weekCode(date, c.periodStart, c.weekCount)
-            if (c.invert) code = if (code == 1) 2 else 1
-            val dayLessons = lessons(c.groupId, dow, code)
-            for (l in dayLessons) {
-                if (Parity.sameSubject(l.subjectNormalized, norm)) {
-                    found++
-                    if (found == n) return date
-                    break // one count per day
-                }
-            }
-        }
-        return null
-    }
+    ): LocalDate? = HomeworkDue.date(lessons, c, norm, from, n)
 
     fun computeStatus(norm: String, createdAt: LocalDate, n: Int, due: LocalDate?, done: Boolean, today: LocalDate = LocalDate.now()): String {
         if (done) return "done"

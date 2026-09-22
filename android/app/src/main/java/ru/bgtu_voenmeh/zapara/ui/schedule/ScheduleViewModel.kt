@@ -371,10 +371,20 @@ class ScheduleViewModel(
                     draft = java.util.UUID.randomUUID().toString(),
                     dueFor = { n, _ ->
                         if (c == null) null
-                        else container.homework.dueDateIn(
-                            { gid, dow, parity -> allLessons.filter { l -> l.groupId == gid && l.dayOfWeek == dow && (l.parity == parity || l.parity == 0) } },
-                            c, lesson.subjectNorm, container.clock().toLocalDate(), n
-                        )
+                        else {
+                            val choices = container.subgroupChoices(c.groupId)
+                            container.homework.dueDateIn(
+                                { gid, dow, parity ->
+                                    ru.bgtu_voenmeh.zapara.data.HomeworkDue.lessonsOnChosenDay(
+                                        allLessons.filter { l -> l.groupId == gid },
+                                        if (gid == c.groupId) choices else emptyMap(),
+                                        dow,
+                                        parity
+                                    )
+                                },
+                                c, lesson.subjectNorm, container.clock().toLocalDate(), n
+                            )
+                        }
                     }
                 )
             )

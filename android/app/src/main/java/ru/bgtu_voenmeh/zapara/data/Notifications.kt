@@ -98,21 +98,22 @@ object Notifications {
             if (!s.notifyEnabled) return
             val gid = s.myGroupId ?: return
             val today = LocalDate.now()
-            val date = if (time != null && time == s.notifyTime1) today.plusDays(1) else today
+            val clock = notificationClock(today, time, s.notifyTime1)
+            val date = clock.content
             val overrides = OverrideService(repo.db.overrideDao())
-            val homework = HomeworkService(
-                repo.db.homeworkDao(),
-                lessonsFor = { g, dow, parity ->
-                    repo.allForGroup(g).filter { it.dayOfWeek == dow && (it.parity == parity || it.parity == 0) }
-                },
-                ctx = { SchedCtx(s.myGroupId.orEmpty(), s.periodStart, s.weekCount, s.parityInvert) }
-            )
-            try { homework.recomputeAll(date) } catch (_: Exception) {}
-            val raw = repo.allForGroup(gid)
             val profileKey = (appCtx.applicationContext as? ru.bgtu_voenmeh.zapara.ZaparaApplication)
                 ?.container?.profile?.databaseName
                 ?: ru.bgtu_voenmeh.zapara.data.profiles.ProfileDescriptor.GUEST_DB
             val choices = ru.bgtu_voenmeh.zapara.data.SubgroupStore(appCtx).read(profileKey, gid)
+            val homework = HomeworkService(
+                repo.db.homeworkDao(),
+                lessonsFor = { g, dow, parity ->
+                    HomeworkDue.lessonsOnChosenDay(repo.allForGroup(g), if (g == gid) choices else emptyMap(), dow, parity)
+                },
+                ctx = { SchedCtx(s.myGroupId.orEmpty(), s.periodStart, s.weekCount, s.parityInvert) }
+            )
+            try { homework.recomputeAll(clock.homework) } catch (_: Exception) {}
+            val raw = repo.allForGroup(gid)
             val lessons = Schedule.lessonsForDate(
                 ru.bgtu_voenmeh.zapara.data.Subgroups.visible(raw, choices),
                 gid, date, s.periodStart, s.weekCount, s.parityInvert

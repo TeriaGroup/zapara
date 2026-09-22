@@ -146,6 +146,34 @@ class ScheduleWidgetComposerTest {
         assertEquals(guestId, snap.identity)
     }
 
+    @Test fun grace_after_the_last_pair_does_not_say_the_day_is_empty() {
+        val day = LocalDate.of(2026, 9, 8)
+        val lessons = listOf(
+            Lesson(
+                groupId = "3313", dayOfWeek = 2, parity = 0, index = 1,
+                timeStart = "09:00", timeEnd = "10:35", subjectRaw = "пр ИН. ЯЗ.",
+                subjectNormalized = "ин. яз.", typeRaw = "пр", roomRaw = "100", buildingRaw = "УЛК", classroomRaw = "100;"
+            ),
+            Lesson(
+                groupId = "3313", dayOfWeek = 2, parity = 0, index = 2,
+                timeStart = "12:40", timeEnd = "14:15", subjectRaw = "лек ВВЕД В СПЕЦ",
+                subjectNormalized = "введ в спец", typeRaw = "лек", roomRaw = "200", buildingRaw = "ГК", classroomRaw = "200;"
+            )
+        )
+        val snap = ScheduleWidgetComposer.fromSchedule(
+            identity = guestId,
+            settings = settings,
+            allLessons = lessons,
+            now = LocalDateTime.of(2026, 9, 8, 14, 20),
+            groupName = "Н162С",
+            displayName = { LessonFormat.stripType(it.subjectRaw, it.typeRaw) },
+            copy = WidgetCopy
+        )
+        assertTrue(snap.rows.isEmpty())
+        assertEquals("Пары закончились", snap.empty)
+        assertEquals(LocalDateTime.of(day, java.time.LocalTime.of(14, 30)), snap.nextRefreshAt)
+    }
+
     @Test fun empty_day_says_no_lessons() {
         val snap = build(now = LocalDateTime.of(2026, 9, 10, 12, 0))
         assertTrue(snap.rows.isEmpty())

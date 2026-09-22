@@ -59,8 +59,8 @@ object ScheduleComposer {
         val weekNumber = Parity.weekNumber(date, ctx.periodStart)
         val caption = LessonFormat.caption(date, odd, weekNumber, copy)
         val subgroupIndex = Subgroups.index(allLessons)
-        val lessons = Schedule.lessonsForDate(allLessons, ctx.groupId, date, ctx.periodStart, ctx.weekCount, ctx.invert)
-            .filter { Subgroups.keep(it, subgroupIndex, choices) }
+        val visible = Subgroups.visible(allLessons, choices)
+        val lessons = Schedule.lessonsForDate(visible, ctx.groupId, date, ctx.periodStart, ctx.weekCount, ctx.invert)
         val isToday = date == now.toLocalDate()
         val nowTime = now.toLocalTime()
         val rows = lessons.map { lesson ->
@@ -70,7 +70,7 @@ object ScheduleComposer {
             val original = LessonFormat.stripType(lesson.subjectRaw, lesson.typeRaw)
             val end = runCatching { LocalTime.parse(lesson.timeEnd) }.getOrNull()
             val next = Schedule.nextOccurrenceBySubject(
-                allLessons, ctx.groupId, lesson.subjectNormalized, date,
+                visible, ctx.groupId, lesson.subjectNormalized, date,
                 ctx.periodStart, ctx.weekCount, ctx.invert
             )
             LessonUi(

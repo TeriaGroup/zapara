@@ -190,9 +190,10 @@ object TimerWidgetComposer {
         now: LocalDateTime,
         isDark: Boolean
     ): TimerWidgetSnapshot {
-        val secondsLeft = Duration.between(now, end).seconds.coerceAtLeast(0)
-        val total = Duration.between(start, end).seconds
-        val fraction = if (total <= 0 || secondsLeft <= 0) 0f else (secondsLeft.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+        val millisLeft = Duration.between(now, end).toMillis().coerceAtLeast(0)
+        val secondsLeft = if (millisLeft <= 0L) 0L else (millisLeft + 999L) / 1000L
+        val totalMillis = Duration.between(start, end).toMillis()
+        val fraction = if (totalMillis <= 0L || millisLeft <= 0L) 0f else (millisLeft.toFloat() / totalMillis.toFloat()).coerceIn(0f, 1f)
         val nextMinute = now.withSecond(0).withNano(0).plusMinutes(1)
         val refresh = if (!end.isAfter(nextMinute)) end else nextMinute
         return TimerWidgetSnapshot(

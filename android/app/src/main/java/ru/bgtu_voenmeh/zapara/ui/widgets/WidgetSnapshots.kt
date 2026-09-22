@@ -148,7 +148,11 @@ object ScheduleWidgetComposer {
         val smartJump = lastEnd?.plusMinutes(15)?.takeIf { it.isAfter(clock) }?.let { today.atTime(it) }
         val midnight = today.plusDays(1).atStartOfDay()
         val nextRefreshAt = listOfNotNull(pairEnd, smartJump, midnight).minOrNull()
-        val empty = if (rows.isEmpty()) copy.get("no_lessons_day") else null
+        val empty = when {
+            rows.isNotEmpty() -> null
+            date == today && lessons.isNotEmpty() -> copy.get("widget_timer_done")
+            else -> copy.get("no_lessons_day")
+        }
         return ScheduleWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark, nextRefreshAt, toss)
     }
 

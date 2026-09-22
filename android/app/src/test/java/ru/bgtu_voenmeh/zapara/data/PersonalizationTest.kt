@@ -260,3 +260,51 @@ class HomeworkServiceTest {
         assertEquals(original.due, service.getById(id)?.due)
     }
 }
+
+class ChosenHomeworkTest {
+    private fun lesson(teacher: String, parity: Int, index: Int) = Lesson(
+        groupId = "3313",
+        dayOfWeek = 1,
+        parity = parity,
+        index = index,
+        timeStart = "09:00",
+        timeEnd = "10:35",
+        subjectRaw = "пр ИН. ЯЗ.",
+        subjectNormalized = "ин. яз.",
+        teacherRaw = teacher,
+        classroomRaw = if (index == 1) "101;" else "202;"
+    )
+
+    @Test fun chosen_subgroup_skips_the_other_teachers_monday() {
+        val ivanov = lesson("Иванов И.И.", 0, 1)
+        val petrov = lesson("Петров П.П.", 1, 2)
+        val all = listOf(ivanov, petrov)
+        val stream = Subgroups.index(all).streams.single()
+        val choices = mapOf(stream.id to "петров п п")
+        val ctx = SchedCtx("3313", LocalDate.of(2026, 9, 1), 2, false)
+        val due = HomeworkDue.date(
+            { _, dow, parity -> HomeworkDue.lessonsOnChosenDay(all, choices, dow, parity) },
+            ctx,
+            "ин. яз.",
+            LocalDate.of(2026, 9, 6),
+            1
+        )
+        assertEquals(LocalDate.of(2026, 9, 14), due)
+    }
+
+    @Test fun evening_alarm_keeps_homework_on_the_wall_clock_day() {
+        val today = LocalDate.of(2026, 9, 14)
+        val clock = notificationClock(today, "20:00", "20:00")
+        assertEquals(LocalDate.of(2026, 9, 15), clock.content)
+        assertEquals(today, clock.homework)
+        val morning = notificationClock(today, "07:30", "20:00")
+        assertEquals(today, morning.content)
+        assertEquals(today, morning.homework)
+        val service = HomeworkService(FakeHomeworkDao(), { _, _, _ -> emptyList() }, {
+            SchedCtx("3313", LocalDate.of(2026, 9, 1), 2, false)
+        })
+        val norm = "лек высш. математ"
+        assertEquals("burning_urgent", service.computeStatus(norm, LocalDate.of(2026, 9, 1), 1, today, false, clock.homework))
+        assertEquals("overdue", service.computeStatus(norm, LocalDate.of(2026, 9, 1), 1, today, false, clock.content))
+    }
+}

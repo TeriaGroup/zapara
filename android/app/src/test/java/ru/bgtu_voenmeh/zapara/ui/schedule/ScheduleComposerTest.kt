@@ -8,9 +8,11 @@ import org.junit.Test
 import ru.bgtu_voenmeh.zapara.data.GROUP_FIXTURE
 import ru.bgtu_voenmeh.zapara.data.GroupParser
 import ru.bgtu_voenmeh.zapara.data.Homework
+import ru.bgtu_voenmeh.zapara.data.Lesson
 import ru.bgtu_voenmeh.zapara.data.Parity
 import ru.bgtu_voenmeh.zapara.data.SchedCtx
 import ru.bgtu_voenmeh.zapara.data.Schedule
+import ru.bgtu_voenmeh.zapara.data.Subgroups
 import ru.bgtu_voenmeh.zapara.ui.XmlCopy
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -84,6 +86,35 @@ class ScheduleComposerTest {
             LocalDate.of(2026, 9, 14),
             Schedule.nextOccurrenceBySubject(all, "3313", mathNorm, LocalDate.of(2026, 9, 10), ctx.periodStart, ctx.weekCount, ctx.invert)
         )
+    }
+
+    @Test fun next_class_skips_the_subgroup_that_was_not_chosen() {
+        val ivanov = Lesson(
+            groupId = "3313", dayOfWeek = 1, parity = 0, index = 1,
+            timeStart = "09:00", timeEnd = "10:35", subjectRaw = "пр ИН. ЯЗ.", subjectNormalized = "ин. яз.",
+            teacherRaw = "Иванов И.И.", classroomRaw = "101;"
+        )
+        val petrov = Lesson(
+            groupId = "3313", dayOfWeek = 1, parity = 1, index = 2,
+            timeStart = "09:00", timeEnd = "10:35", subjectRaw = "пр ИН. ЯЗ.", subjectNormalized = "ин. яз.",
+            teacherRaw = "Петров П.П.", classroomRaw = "202;"
+        )
+        val all = listOf(ivanov, petrov)
+        val choice = mapOf(Subgroups.index(all).streams.single().id to "петров п п")
+        val page = ScheduleComposer.page(
+            date = monday,
+            allLessons = all,
+            ctx = ctx,
+            now = LocalDateTime.of(2026, 9, 14, 10, 0),
+            displayName = { _, _ -> "" },
+            homeworkFor = { emptyList() },
+            friendsFor = { emptyList() },
+            copy = XmlCopy,
+            choices = choice
+        )
+        assertEquals(1, page.lessons.size)
+        assertEquals("Петров П.П.", page.lessons.single().teacher)
+        assertEquals("28.09", page.lessons.single().nextDate)
     }
 
     @Test fun sunday_is_marked_without_hint() {
