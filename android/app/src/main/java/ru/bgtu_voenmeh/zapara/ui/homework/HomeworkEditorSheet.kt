@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -36,7 +38,8 @@ fun HomeworkEditorSheet(
     onSave: () -> Unit,
     onCancel: () -> Unit,
     onPick: (String, Uri) -> Unit = { _, _ -> },
-    onRemove: (String) -> Unit = {}
+    onRemove: (String) -> Unit = {},
+    onShare: (Boolean) -> Unit = {}
 ) {
     val photo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onPick("photo", uri)
@@ -94,6 +97,27 @@ fun HomeworkEditorSheet(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 Text(file.name, style = Zapara.typography.caption, color = c.text1, modifier = Modifier.weight(1f))
                 ZButton(stringResource(R.string.hw_attach_remove), { onRemove(file.id) }, ghost = true, tag = "Editor.Remove.${file.id}")
+            }
+        }
+        if (!state.isEdit) {
+            Spacer(Modifier.height(Zapara.space.s))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                Checkbox(
+                    checked = state.share,
+                    onCheckedChange = onShare,
+                    modifier = Modifier.testTag("Editor.Share"),
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = c.text1,
+                        uncheckedColor = c.text3,
+                        checkmarkColor = c.canvas,
+                    ),
+                )
+                Text(
+                    "Дублировать всей группе — одна и та же домашка появится у всех участников",
+                    style = Zapara.typography.body,
+                    color = c.text1,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
         Spacer(Modifier.height(Zapara.space.m))

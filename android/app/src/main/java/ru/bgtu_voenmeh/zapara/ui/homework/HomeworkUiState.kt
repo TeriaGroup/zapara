@@ -58,6 +58,7 @@ sealed interface HomeworkEvent {
     data class PickSubject(val raw: String) : HomeworkEvent
     data object ClosePicker : HomeworkEvent
     data class EditorText(val text: String) : HomeworkEvent
+    data class EditorShare(val on: Boolean) : HomeworkEvent
     data object Inc : HomeworkEvent
     data object Dec : HomeworkEvent
     data object Save : HomeworkEvent
@@ -81,7 +82,8 @@ data class HomeworkEditorState(
     val dueFor: (Int, String) -> LocalDate?,
     val files: List<HomeworkStoredFile> = emptyList(),
     val draft: String = "",
-    val removed: Set<String> = emptySet()
+    val removed: Set<String> = emptySet(),
+    val share: Boolean = false
 ) {
     val canSave: Boolean get() = text.trim().isNotEmpty()
     fun hasChanges(existing: Homework): Boolean = text.trim() != existing.text || n != existing.n

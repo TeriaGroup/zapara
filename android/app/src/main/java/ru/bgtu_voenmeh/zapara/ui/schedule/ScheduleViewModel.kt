@@ -30,6 +30,7 @@ import ru.bgtu_voenmeh.zapara.ui.components.ToastKind
 import ru.bgtu_voenmeh.zapara.ui.homework.fileMessage
 import ru.bgtu_voenmeh.zapara.ui.friends.FriendPalette
 import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEditorState
+import ru.bgtu_voenmeh.zapara.ui.homework.shareSavedHomework
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -89,6 +90,9 @@ class ScheduleViewModel(
             is ScheduleEvent.AddHomework -> openHomework(event.lesson)
             is ScheduleEvent.HomeworkEditorText -> mutable.update { s ->
                 s.copy(homeworkEditor = s.homeworkEditor?.withText(event.text))
+            }
+            is ScheduleEvent.HomeworkEditorShare -> mutable.update { s ->
+                s.copy(homeworkEditor = s.homeworkEditor?.copy(share = event.on))
             }
             ScheduleEvent.HomeworkEditorInc -> mutable.update { s -> s.copy(homeworkEditor = s.homeworkEditor?.inc()) }
             ScheduleEvent.HomeworkEditorDec -> mutable.update { s -> s.copy(homeworkEditor = s.homeworkEditor?.dec()) }
@@ -399,17 +403,20 @@ class ScheduleViewModel(
         mutable.update { it.copy(homeworkEditor = null) }
         viewModelScope.launch {
             try {
-                writes.withLock {
+                val outcome = writes.withLock {
                     withContext(Dispatchers.IO) {
-                        val id = if (editor.id == null) container.homework.addHomework(editor.subjectRaw, editor.text.trim(), editor.n)
-                        else {
-                            container.homework.updateHomework(editor.id, editor.text.trim(), editor.n)
-                            editor.id
+                        shareSavedHomework(container, editor) {
+                            val id = if (editor.id == null) container.homework.addHomework(editor.subjectRaw, editor.text.trim(), editor.n)
+                            else {
+                                container.homework.updateHomework(editor.id, editor.text.trim(), editor.n)
+                                editor.id
+                            }
+                            if (editor.draft.isNotEmpty()) container.homeworkFiles.commit(editor.draft, id, editor.removed)
                         }
-                        if (editor.draft.isNotEmpty()) container.homeworkFiles.commit(editor.draft, id, editor.removed)
                     }
                 }
-                container.toasts.show(container.app.getString(R.string.hw_saved), ToastKind.Ok)
+                val note = outcome.note.ifBlank { container.app.getString(R.string.hw_saved) }
+                container.toasts.show(note, ToastKind.Ok)
                 container.events.emit(AppEvent.PersonalizationChanged)
             } catch (e: CancellationException) {
                 mutable.update { cur -> if (cur.homeworkEditor == null) cur.copy(homeworkEditor = editor) else cur }

@@ -85,6 +85,17 @@ class CommunityHttpClient(
         return read("POST", "/$id/homework", homeworkBody(title, body, expectedRevision), accessToken, 201) { homework(it.obj()) }
     }
 
+    suspend fun shareHomework(
+        accessToken: String,
+        communityId: String,
+        title: String,
+        body: String,
+        expectedRevision: Long
+    ): CommunityHomework {
+        val id = CommunityValidation.id(communityId)
+        return read("POST", "/$id/homework/share", homeworkBody(title, body, expectedRevision), accessToken, 201) { homework(it.obj()) }
+    }
+
     suspend fun getHomework(accessToken: String, communityId: String, homeworkId: String): CommunityHomework {
         val id = CommunityValidation.id(communityId)
         val hid = CommunityValidation.id(homeworkId)

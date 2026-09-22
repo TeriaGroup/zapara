@@ -58,6 +58,7 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
             is HomeworkEvent.PickSubject -> openNew(event.raw)
             HomeworkEvent.ClosePicker -> mutable.update { it.copy(subjectPicker = null) }
             is HomeworkEvent.EditorText -> mutable.update { s -> s.copy(editor = s.editor?.withText(event.text)) }
+            is HomeworkEvent.EditorShare -> mutable.update { s -> s.copy(editor = s.editor?.copy(share = event.on)) }
             HomeworkEvent.Inc -> mutable.update { s -> s.copy(editor = s.editor?.inc()) }
             HomeworkEvent.Dec -> mutable.update { s -> s.copy(editor = s.editor?.dec()) }
             HomeworkEvent.Save -> save()
@@ -196,19 +197,24 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
         mutable.update { it.copy(editor = null) }
         viewModelScope.launch {
             try {
-                writes.withLock {
+                val outcome = writes.withLock {
                     withContext(Dispatchers.IO) {
-                        val id = if (editor.id == null) {
-                            container.homework.addHomework(editor.subjectRaw, editor.text.trim(), editor.n)
-                        } else {
-                            val existing = container.homework.getById(editor.id) ?: return@withContext
-                            if (editor.hasChanges(existing)) container.homework.updateHomework(editor.id, editor.text.trim(), editor.n)
-                            editor.id
+                        shareSavedHomework(container, editor) {
+                            if (editor.id == null) {
+                                val id = container.homework.addHomework(editor.subjectRaw, editor.text.trim(), editor.n)
+                                if (editor.draft.isNotEmpty()) container.homeworkFiles.commit(editor.draft, id, editor.removed)
+                            } else {
+                                val existing = container.homework.getById(editor.id)
+                                if (existing != null) {
+                                    if (editor.hasChanges(existing)) container.homework.updateHomework(editor.id, editor.text.trim(), editor.n)
+                                    if (editor.draft.isNotEmpty()) container.homeworkFiles.commit(editor.draft, editor.id, editor.removed)
+                                }
+                            }
                         }
-                        if (editor.draft.isNotEmpty()) container.homeworkFiles.commit(editor.draft, id, editor.removed)
                     }
                 }
-                container.toasts.show(container.app.getString(R.string.hw_saved), ToastKind.Ok)
+                val note = outcome.note.ifBlank { container.app.getString(R.string.hw_saved) }
+                container.toasts.show(note, ToastKind.Ok)
                 container.events.emit(AppEvent.PersonalizationChanged)
             } catch (e: CancellationException) {
                 mutable.update { cur -> if (cur.editor == null) cur.copy(editor = editor) else cur }

@@ -99,6 +99,7 @@ sealed interface ScheduleEvent {
     data class ToggleDone(val id: Long) : ScheduleEvent
     data class AddHomework(val lesson: LessonUi) : ScheduleEvent
     data class HomeworkEditorText(val text: String) : ScheduleEvent
+    data class HomeworkEditorShare(val on: Boolean) : ScheduleEvent
     data object HomeworkEditorInc : ScheduleEvent
     data object HomeworkEditorDec : ScheduleEvent
     data object HomeworkEditorSave : ScheduleEvent

@@ -189,6 +189,16 @@ class CommunityHttpClientTest {
     }
 
     @Test
+    fun member_share_posts_the_share_route() = runBlocking {
+        val http = FakeHttp { call ->
+            assertEquals("POST /$CID/homework/share", suffix(call))
+            assertEquals("""{"title":"ДЗ","body":"Текст","expectedRevision":0}""", text(call))
+            created(homeworkJson(HID_A, "ДЗ", "Текст", 1))
+        }
+        assertEquals(1, client(http).shareHomework(ACCESS, CID, "ДЗ", "Текст", 0).revision)
+    }
+
+    @Test
     fun member_publish_is_forbidden_and_vote_conflicts_are_typed() = runBlocking {
         var votes = 0
         val http = FakeHttp { call ->
