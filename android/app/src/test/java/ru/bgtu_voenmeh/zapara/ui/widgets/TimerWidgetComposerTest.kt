@@ -163,6 +163,14 @@ class TimerWidgetComposerTest {
         )
     }
 
+    @Test fun digits_stop_at_zero() {
+        assertEquals("00:00", timerDigitText(0))
+        assertEquals("00:00", timerDigitText(-79_000))
+        assertEquals("00:01", timerDigitText(1))
+        assertEquals("01:19", timerDigitText(79_000))
+        assertTrue(!timerDigitText(-1).contains("-"))
+    }
+
     @Test fun the_visible_tick_is_one_second_and_does_not_use_the_idle_quota() {
         assertEquals(1_000L, timerPulseDelayMs(interactive = true, exactAlarms = true, untilBellMs = 30_000))
         assertEquals(400L, timerPulseDelayMs(interactive = true, exactAlarms = true, untilBellMs = 400))

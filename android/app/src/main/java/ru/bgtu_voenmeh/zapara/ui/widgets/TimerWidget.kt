@@ -39,6 +39,11 @@ internal fun earlierRefresh(left: LocalDateTime?, right: LocalDateTime?): LocalD
 // The visible tick must not use setExactAndAllowWhileIdle. That quota is about
 // once a minute per app, so a per-minute widget alarm was pushing the bell late
 // and the launcher chronometer kept counting past zero.
+internal fun timerDigitText(remainingMs: Long): String {
+    if (remainingMs <= 0L) return "00:00"
+    return TimerWidgetComposer.clockText((remainingMs + 999L) / 1000L)
+}
+
 internal fun timerPulseDelayMs(interactive: Boolean, exactAlarms: Boolean, untilBellMs: Long): Long? {
     if (!exactAlarms || untilBellMs <= 0L) return null
     val delay = if (interactive) 1_000L else 60_000L

@@ -38,5 +38,6 @@ class TimerWidgetProvider : AppWidgetProvider() {
     companion object {
         const val ACTION_PULSE = "ru.zapara.app.WIDGET_TIMER_PULSE"
         const val PULSE = 4105
+        const val BELL = 4106
     }
 }

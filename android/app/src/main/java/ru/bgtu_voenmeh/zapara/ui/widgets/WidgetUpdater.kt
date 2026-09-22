@@ -30,6 +30,7 @@ object WidgetUpdater {
     private val gate = Any()
     private var bound = false
     private var screenWatch: BroadcastReceiver? = null
+    private var armedBell: Long = Long.MIN_VALUE
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val main = Handler(Looper.getMainLooper())
     private val restoreLock = Mutex()
@@ -224,7 +225,46 @@ object WidgetUpdater {
     private fun followTimer(context: Context, timer: TimerWidgetSnapshot?) {
         val end = timer?.endsAt
         val counting = timer != null && !timer.cleared && end != null && end.isAfter(LocalDateTime.now()) && timerPlaced(context)
-        schedulePulse(context, if (counting) end else null)
+        val phaseEnd = if (counting) end else null
+        schedulePulse(context, phaseEnd)
+        scheduleBell(context, phaseEnd)
+    }
+
+    private fun scheduleBell(context: Context, end: LocalDateTime?) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, TimerWidgetProvider::class.java).setAction(TimerWidgetProvider.ACTION_PULSE)
+        val pending = PendingIntent.getBroadcast(
+            context,
+            TimerWidgetProvider.BELL,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val millis = end?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli() ?: Long.MIN_VALUE
+        if (millis == armedBell && millis > System.currentTimeMillis()) return
+        am.cancel(pending)
+        armedBell = Long.MIN_VALUE
+        if (end == null || millis <= System.currentTimeMillis()) return
+        val show = PendingIntent.getActivity(
+            context,
+            4107,
+            Intent(context, ru.bgtu_voenmeh.zapara.MainActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            ),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        try {
+            if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, millis, pending)
+            } else {
+                // Not the once-a-minute idle quota. The status-bar clock is the trade for a bell that is not deferred.
+                am.setAlarmClock(AlarmManager.AlarmClockInfo(millis, show), pending)
+            }
+            armedBell = millis
+        } catch (e: SecurityException) {
+            Log.w("ZaparaWidget", "bell", e)
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, millis, pending)
+            armedBell = millis
+        }
     }
 
     private fun schedulePulse(context: Context, end: LocalDateTime?) {
@@ -244,7 +284,7 @@ object WidgetUpdater {
         val delay = timerPulseDelayMs(interactive, exact, bell - System.currentTimeMillis()) ?: return
         try {
             // RTC, not RTC_WAKEUP: the screen-off tick must not wake the phone.
-            // The phase boundary still wakes through scheduleAdvance.
+            // The phase boundary wakes through scheduleBell.
             am.setExact(AlarmManager.RTC, System.currentTimeMillis() + delay, pending)
         } catch (e: SecurityException) {
             Log.w("ZaparaWidget", "pulse", e)

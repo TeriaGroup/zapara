@@ -5,7 +5,6 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.os.SystemClock
 import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
@@ -166,7 +165,7 @@ object WidgetRemoteViews {
             val dp = if (width > 0) width else 110
             val face = timerFace(snapshot, dp)
             if (timerFaces[id] == face) {
-                mgr.partiallyUpdateAppWidget(id, ring(context, snapshot, dp))
+                mgr.partiallyUpdateAppWidget(id, moving(context, snapshot, dp))
             } else {
                 mgr.updateAppWidget(id, timer(context, snapshot, dp))
                 timerFaces[id] = face
@@ -184,6 +183,12 @@ object WidgetRemoteViews {
         val arc = if (snapshot.kind == TimerPhaseKind.Break) colors.warn else colors.ok
         val fraction = if (snapshot.cleared || snapshot.endsAt?.isAfter(LocalDateTime.now()) != true) 0f else snapshot.fraction
         views.setImageViewBitmap(R.id.widget_timer_ring, TimerRing.bitmap(context, widthDp, fraction, colors.text3, arc))
+        return views
+    }
+
+    private fun moving(context: Context, snapshot: TimerWidgetSnapshot, widthDp: Int): RemoteViews {
+        val views = ring(context, snapshot, widthDp)
+        bindClock(views, snapshot, WidgetPalette.of(context, snapshot.isDark), widthDp)
         return views
     }
 
@@ -218,33 +223,21 @@ object WidgetRemoteViews {
     private fun bindClock(views: RemoteViews, snapshot: TimerWidgetSnapshot, colors: WidgetPalette, widthDp: Int) {
         val end = snapshot.endsAt
         if (end == null || snapshot.cleared) {
-            views.setChronometer(R.id.widget_timer_time, SystemClock.elapsedRealtime(), null, false)
-            views.setChronometerCountDown(R.id.widget_timer_time, false)
             views.setTextViewText(R.id.widget_timer_time, "")
             views.setViewVisibility(R.id.widget_timer_time, View.GONE)
             return
         }
-        val remainingMs = Duration.between(LocalDateTime.now(), end).toMillis()
-        if (remainingMs <= 0L) {
-            views.setChronometer(R.id.widget_timer_time, SystemClock.elapsedRealtime(), null, false)
-            views.setChronometerCountDown(R.id.widget_timer_time, false)
-            views.setTextViewText(R.id.widget_timer_time, "00:00")
-            views.setViewVisibility(R.id.widget_timer_time, View.VISIBLE)
-            views.setTextColor(R.id.widget_timer_time, colors.text1)
-            return
-        }
+        val label = timerDigitText(Duration.between(LocalDateTime.now(), end).toMillis())
         val base = when {
             widthDp >= 180 -> 30f
             widthDp >= 140 -> 26f
             else -> 22f
         }
-        val timeSp = if (snapshot.timeText.length > 5) base * 0.75f else base
+        val timeSp = if (label.length > 5) base * 0.75f else base
         views.setViewVisibility(R.id.widget_timer_time, View.VISIBLE)
         views.setTextViewTextSize(R.id.widget_timer_time, TypedValue.COMPLEX_UNIT_SP, timeSp)
         views.setTextColor(R.id.widget_timer_time, colors.text1)
-        views.setTextViewText(R.id.widget_timer_time, snapshot.timeText)
-        views.setChronometer(R.id.widget_timer_time, SystemClock.elapsedRealtime() + remainingMs, null, true)
-        views.setChronometerCountDown(R.id.widget_timer_time, true)
+        views.setTextViewText(R.id.widget_timer_time, label)
     }
 
     private fun bindLine(views: RemoteViews, id: Int, text: String, color: Int) {
