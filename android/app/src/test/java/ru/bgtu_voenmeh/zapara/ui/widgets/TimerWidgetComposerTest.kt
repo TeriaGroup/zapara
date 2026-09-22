@@ -176,8 +176,8 @@ class TimerWidgetComposerTest {
         assertTrue(!timerDigitText(-1).contains("-"))
     }
 
-    @Test fun the_visible_tick_is_one_second_and_does_not_use_the_idle_quota() {
-        assertEquals(1_000L, timerPulseDelayMs(interactive = true, exactAlarms = true, untilBellMs = 30_000))
+    @Test fun the_visible_tick_is_half_a_second_and_does_not_use_the_idle_quota() {
+        assertEquals(500L, timerPulseDelayMs(interactive = true, exactAlarms = true, untilBellMs = 30_000))
         assertEquals(400L, timerPulseDelayMs(interactive = true, exactAlarms = true, untilBellMs = 400))
         assertEquals(15_000L, timerPulseDelayMs(interactive = false, exactAlarms = true, untilBellMs = 90 * 60_000))
         assertEquals(10_000L, timerPulseDelayMs(interactive = false, exactAlarms = true, untilBellMs = 10_000))

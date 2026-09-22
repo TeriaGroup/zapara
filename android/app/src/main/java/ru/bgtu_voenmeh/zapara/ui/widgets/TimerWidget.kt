@@ -46,7 +46,7 @@ internal fun timerDigitText(remainingMs: Long): String {
 
 internal fun timerPulseDelayMs(interactive: Boolean, exactAlarms: Boolean, untilBellMs: Long): Long? {
     if (!exactAlarms || untilBellMs <= 0L) return null
-    val delay = if (interactive) 1_000L else 15_000L
+    val delay = if (interactive) 500L else 15_000L
     return minOf(delay, untilBellMs)
 }
 
