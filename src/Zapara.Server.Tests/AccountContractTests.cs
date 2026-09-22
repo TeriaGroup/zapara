@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Xunit;
 using Zapara.Contracts.Accounts;
+using Zapara.Contracts.Accounts.ExternalRequests;
 
 namespace Zapara.Server.Tests;
 
@@ -73,6 +74,22 @@ public sealed class AccountContractTests
             Assert.DoesNotContain(session.RefreshToken, value.ToString());
             Assert.DoesNotContain(session.AccessToken, value.ToString());
         }
+    }
+
+    [Fact]
+    public void ShortReauthAndFirstPasswordAreRejectedAsInvalidInput()
+    {
+        Assert.Throws<ArgumentException>(() => new PasswordProofRequest("short", "export"));
+        Assert.Throws<ArgumentException>(() => new FirstPasswordRequest("short", new string('A', 43)));
+        var proof = new PasswordProofRequest(new string('x', 12), "export");
+        Assert.Equal(new string('x', 12), proof.CurrentPassword);
+        Assert.Equal("export", proof.Purpose);
+        Assert.Contains("REDACTED", proof.ToString());
+        Assert.DoesNotContain("xxxxxxxxxxxx", proof.ToString());
+        var json = "{\"currentPassword\":\"short\",\"purpose\":\"export\"}";
+        var read = Record.Exception(() => JsonSerializer.Deserialize<PasswordProofRequest>(json, Json));
+        Assert.NotNull(read);
+        Assert.True(read is ArgumentException or JsonException);
     }
 
     [Fact]
