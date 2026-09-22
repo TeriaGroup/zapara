@@ -20,9 +20,9 @@
         </Button>
       </StackPanel>
       <StackPanel Spacing="8" IsVisible="{Binding HasOpenDocument}">
-        <TextBlock Classes="subject" Text="{Binding OpenDocument.Title}" TextWrapping="Wrap" />
+        <TextBlock Classes="subject" Text="{Binding OpenTitle}" TextWrapping="Wrap" />
         <ScrollViewer MaxHeight="360" HorizontalScrollBarVisibility="Disabled">
-          <TextBlock Text="{Binding OpenDocument.Body}" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding OpenBody}" TextWrapping="Wrap" />
         </ScrollViewer>
         <Button HorizontalAlignment="Left" Content="Закрыть" Command="{Binding CloseDocumentCommand}" AutomationProperties.AutomationId="Legal.Close" />
       </StackPanel>

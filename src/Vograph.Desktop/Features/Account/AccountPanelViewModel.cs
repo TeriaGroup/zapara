@@ -67,7 +67,14 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     [ObservableProperty] private string? authorizeUrl;
     [ObservableProperty] private LegalText? openDocument;
     public bool HasOpenDocument => OpenDocument is not null;
-    partial void OnOpenDocumentChanged(LegalText? value) => OnPropertyChanged(nameof(HasOpenDocument));
+    public string OpenTitle => OpenDocument?.Title ?? "";
+    public string OpenBody => OpenDocument?.Body ?? "";
+    partial void OnOpenDocumentChanged(LegalText? value)
+    {
+        OnPropertyChanged(nameof(HasOpenDocument));
+        OnPropertyChanged(nameof(OpenTitle));
+        OnPropertyChanged(nameof(OpenBody));
+    }
     public ObservableCollection<DeviceResponse> Devices { get; } = [];
     public ObservableCollection<ExternalIdentityResponse> Identities { get; } = [];
     public bool IsGuest => snapshot?.Profile.IsGuest != false;
