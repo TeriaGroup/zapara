@@ -67,20 +67,9 @@ public static class AdminRegistration
     {
         if (!AdminConfiguration.IsEnabled(app.Configuration)) return app;
         app.UseStaticFiles();
-        app.Use(async (context, next) =>
-        {
-            if (context.Request.Path.StartsWithSegments("/Admin"))
-            {
-                context.Response.Headers.CacheControl = "no-store";
-                context.Response.Headers["Referrer-Policy"] = "no-referrer";
-                context.Response.Headers["X-Content-Type-Options"] = "nosniff";
-                context.Response.Headers["Content-Security-Policy"] =
-                    "default-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
-            }
-            await next();
-        });
         app.UseAntiforgery();
-        app.MapRazorPages();
+        app.Map("/Admin", () => Results.NotFound());
+        app.Map("/Admin/{**rest}", () => Results.NotFound());
         return app;
     }
 }

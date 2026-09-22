@@ -92,8 +92,7 @@ internal static class AccountEndpoints
 
     private static async Task<IResult> Register(HttpContext context)
     {
-        var environment = context.RequestServices.GetRequiredService<IHostEnvironment>();
-        if (!AccountCapabilities.RegistrationEnabled(context.RequestServices.GetRequiredService<IConfiguration>(), environment))
+        if (!AccountCapabilities.RegistrationEnabled(context.RequestServices))
             return AccountErrors.Problem(503, "registration_unavailable");
         var body = await AccountBodyReader.Read<RegisterRequest>(context);
         return Json(await Service(context).RegisterAsync(body, context.RequestAborted), 201);

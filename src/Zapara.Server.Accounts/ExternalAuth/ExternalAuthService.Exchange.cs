@@ -47,10 +47,13 @@ public sealed partial class ExternalAuthService
             !CryptographicOperations.FixedTimeEquals(row.HandoffHash, ExternalSecrets.Hash(request.HandoffCode))) throw ExternalAuthException.Invalid();
     }
 
-    private static bool RegistrationOpen(IConfiguration configuration, IHostEnvironment environment)
+    private bool RegistrationOpen(AccountRepository db)
     {
-        var raw = configuration["Accounts:RegistrationEnabled"];
-        if (raw is null) return environment.IsDevelopment() || environment.IsEnvironment("Testing");
+        if (hostConfiguration is not null &&
+            OperatorSettings.TryReadRegistration(db.Connection, OperatorSettings.Schema(hostConfiguration), out var stored))
+            return stored;
+        var raw = hostConfiguration?["Accounts:RegistrationEnabled"];
+        if (raw is null) return hostEnvironment?.IsDevelopment() == true || hostEnvironment?.IsEnvironment("Testing") == true;
         return bool.TryParse(raw, out var enabled) && enabled;
     }
 
@@ -70,7 +73,7 @@ public sealed partial class ExternalAuthService
         var owner = await IdentityOwner(db, row.Provider, row.Subject!, ct);
         AccountRow user;
         if (owner is not null) user = await db.UserAsync(owner, locked: true) ?? throw ExternalAuthException.Invalid();
-        else if (hostConfiguration is not null && hostEnvironment is not null && !RegistrationOpen(hostConfiguration, hostEnvironment))
+        else if (hostConfiguration is not null && hostEnvironment is not null && !RegistrationOpen(db))
             throw ExternalAuthException.Invalid();
         else
         {
