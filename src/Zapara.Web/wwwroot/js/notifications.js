@@ -37,7 +37,7 @@ function keyBytes(value) {
 export async function subscribe(publicKey) {
     const state = basics();
     if (!state.supported) throw new Error('Этот браузер не поддерживает уведомления приложения.');
-    if (state.ios && !state.installed) throw new Error('Сначала добавьте Запару на экран Домой и откройте её оттуда.');
+    if (state.ios && !state.installed) throw new Error('Сначала добавьте «Расписание военмех» на экран Домой и откройте его оттуда.');
     const key = keyBytes(publicKey);
     const permission = state.permission === 'default' ? await Notification.requestPermission() : state.permission;
     if (permission !== 'granted') throw new Error('Разрешение на уведомления не получено. Проверьте настройки браузера.');

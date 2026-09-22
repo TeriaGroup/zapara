@@ -1,39 +1,41 @@
-import { NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { Provider, useApp } from "./store";
 import { CommunityPage, FriendsPage, GroupPage, HomeworkPage, MapsPage, SchedulePage, SettingsPage, SummaryPage, TeachersPage, WeekPage } from "./pages";
+import { Icon, IconName } from "./icons";
 
-const items = [
-  ["schedule", "Расписание"],
-  ["week", "Неделя"],
-  ["summary", "Сводка"],
-  ["teachers", "Преподаватели"],
-  ["maps", "Карты"],
-  ["friends", "Друзья"],
-  ["homework", "Домашка"],
-  ["community", "Сообщество"],
-  ["group", "Группа"],
-  ["settings", "Настройки"]
-] as const;
+const items: [string, string, IconName][] = [
+  ["schedule", "Расписание", "calendar"],
+  ["week", "Неделя", "week"],
+  ["summary", "Сводка", "summary"],
+  ["teachers", "Преподаватели", "teachers"],
+  ["maps", "Карты", "map"],
+  ["friends", "Друзья", "friends"],
+  ["homework", "Домашка", "homework"],
+  ["community", "Сообщество", "community"],
+  ["group", "Группа", "users"],
+  ["settings", "Настройки", "settings"]
+];
 
 function Shell() {
   const app = useApp();
   const location = useLocation();
+  const navigate = useNavigate();
   const [menu, setMenu] = useState(false);
   const group = app.catalog?.groups.find(item => item.id === app.groupId);
   const bar = new Set(["/schedule", "/maps", "/homework", "/"]);
   return (
     <div className="app">
       <aside className="sidebar">
-        <NavLink to="/schedule" className="brand">ЗАПАРА</NavLink>
+        <NavLink to="/schedule" className="brand">Расписание военмех</NavLink>
         <p className="caption">Расписание и карты Военмеха</p>
-        <button className="group-card" onClick={() => location.pathname !== "/settings" && (window.location.hash = "")} type="button">
-          <span>Моя группа</span>
+        <button className="group-card" onClick={() => navigate("/settings")} type="button">
+          <span className="with-ico"><Icon name="users" size={16} /> Моя группа</span>
           <strong>{group?.name || "Не выбрана"}</strong>
           <span>{app.session?.authenticated ? "Аккаунт" : "На этом устройстве"}</span>
         </button>
         <nav className="nav">
-          {items.map(([path, title]) => <NavLink key={path} to={"/" + path} className={({ isActive }) => "nav-btn" + (isActive ? " active" : "")}>{title}</NavLink>)}
+          {items.map(([path, title, icon]) => <NavLink key={path} to={"/" + path} className={({ isActive }) => "nav-btn" + (isActive ? " active" : "")}><Icon name={icon} size={18} />{title}</NavLink>)}
         </nav>
         <div className="side-foot">
           <div>{app.session?.authenticated ? app.session.user?.displayName || app.session.user?.username : "Гостевой режим"}</div>
@@ -42,10 +44,11 @@ function Shell() {
       </aside>
       <div className="main">
         <header className="topbar">
-          <NavLink to="/schedule" className="brand">ЗАПАРА</NavLink>
-          <NavLink to="/settings" className="chip">{group?.name || "Группа"}</NavLink>
+          <NavLink to="/schedule" className="brand">Расписание военмех</NavLink>
+          <NavLink to="/settings" className="chip top-group">{group?.name || "Выбрать группу"}</NavLink>
         </header>
         {app.notice && <div className="page" style={{ paddingBottom: 0 }}><div className="banner" role="status">{app.notice}</div></div>}
+        <div className="stage" key={location.pathname}>
         <Routes>
           <Route path="/" element={<SchedulePage />} />
           <Route path="/schedule" element={<SchedulePage />} />
@@ -59,11 +62,12 @@ function Shell() {
           <Route path="/group" element={<GroupPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
+        </div>
         <nav className="bottom">
-          <NavLink to="/schedule" className={({ isActive }) => isActive || location.pathname === "/" ? "active" : ""}>Расписание</NavLink>
-          <NavLink to="/maps" className={({ isActive }) => isActive ? "active" : ""}>Карты</NavLink>
-          <NavLink to="/homework" className={({ isActive }) => isActive ? "active" : ""}>Домашка</NavLink>
-          <button type="button" className={bar.has(location.pathname) ? "" : "active"} onClick={() => setMenu(true)}>Разделы</button>
+          <NavLink to="/schedule" className={({ isActive }) => isActive || location.pathname === "/" ? "active" : ""}><Icon name="calendar" />Расписание</NavLink>
+          <NavLink to="/maps" className={({ isActive }) => isActive ? "active" : ""}><Icon name="map" />Карты</NavLink>
+          <NavLink to="/homework" className={({ isActive }) => isActive ? "active" : ""}><Icon name="homework" />Домашка</NavLink>
+          <button type="button" className={bar.has(location.pathname) ? "" : "active"} onClick={() => setMenu(true)}><Icon name="menu" />Разделы</button>
         </nav>
       </div>
       {menu && (
@@ -71,8 +75,8 @@ function Shell() {
           <div className="card" onClick={event => event.stopPropagation()}>
             <h2>Разделы</h2>
             <div className="tiles">
-              {items.filter(([path]) => !["schedule", "maps", "homework"].includes(path)).map(([path, title]) => (
-                <NavLink key={path} to={"/" + path} className="tile" onClick={() => setMenu(false)}>{title}</NavLink>
+              {items.filter(([path]) => !["schedule", "maps", "homework"].includes(path)).map(([path, title, icon]) => (
+                <NavLink key={path} to={"/" + path} className="tile" onClick={() => setMenu(false)}><Icon name={icon} />{title}</NavLink>
               ))}
             </div>
           </div>

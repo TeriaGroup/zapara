@@ -3,23 +3,25 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>@(ViewData["Title"] ?? "Админка") — Zapara</title>
+    <title>@(ViewData["Title"] ?? "Админка") — Расписание военмех</title>
     <link rel="stylesheet" href="~/css/admin.css" />
 </head>
 <body>
     <a class="skip" href="#main">К содержимому</a>
     @if (User.Identity?.IsAuthenticated == true)
     {
-        <nav aria-label="Разделы админки">
-            <a asp-page="/Admin/Index">Обзор</a>
-            <a asp-page="/Admin/Communities">Сообщества</a>
-            <a asp-page="/Admin/Staff">Персонал</a>
-            <a asp-page="/Admin/Memberships">Заявки</a>
-            <a asp-page="/Admin/Accounts">Аккаунты</a>
-            <a asp-page="/Admin/Content">Модерация</a>
-            <a asp-page="/Admin/Audit">Журнал</a>
+        var page = ViewContext.RouteData.Values["page"]?.ToString() ?? "";
+        string Here(string name) => page.EndsWith("/" + name, StringComparison.OrdinalIgnoreCase) ? "nav-btn active" : "nav-btn";
+        <nav class="admin-nav" aria-label="Разделы админки">
+            <a class="@Here("Index")" asp-page="/Admin/Index">Обзор</a>
+            <a class="@Here("Communities")" asp-page="/Admin/Communities">Сообщества</a>
+            <a class="@Here("Staff")" asp-page="/Admin/Staff">Персонал</a>
+            <a class="@Here("Memberships")" asp-page="/Admin/Memberships">Заявки</a>
+            <a class="@Here("Accounts")" asp-page="/Admin/Accounts">Аккаунты</a>
+            <a class="@Here("Content")" asp-page="/Admin/Content">Модерация</a>
+            <a class="@Here("Audit")" asp-page="/Admin/Audit">Журнал</a>
             <form method="post" asp-page="/Admin/Logout">
-                <button type="submit">Выйти</button>
+                <button class="nav-btn" type="submit">Выйти</button>
             </form>
         </nav>
     }

@@ -1,7 +1,7 @@
 {
   "id": "/app/",
-  "name": "Запара — расписание и карты Военмеха",
-  "short_name": "Запара",
+  "name": "Расписание военмех",
+  "short_name": "Расписание военмех",
   "lang": "ru",
   "start_url": "/app/schedule",
   "scope": "/app/",

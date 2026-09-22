@@ -85,7 +85,7 @@ async function send<T>(method: string, url: string, body?: unknown, empty = fals
 }
 
 export function login(username: string, password: string) {
-  return send<Session>("POST", "/web-api/auth/login", { username, password, deviceName: "Браузер Zapara" });
+  return send<Session>("POST", "/web-api/auth/login", { username, password, deviceName: "Браузер «Расписание военмех»" });
 }
 
 export function register(username: string, password: string, displayName: string) {
@@ -94,6 +94,21 @@ export function register(username: string, password: string, displayName: string
 
 export function logout() {
   return send<void>("POST", "/web-api/auth/logout", undefined, true);
+}
+
+function providerAddress(provider: "vk" | "yandex", target: string) {
+  const url = new URL(target);
+  const host = provider === "vk" ? "id.vk.ru" : "oauth.yandex.ru";
+  if (url.protocol !== "https:" || url.hostname !== host || (url.port !== "" && url.port !== "443")
+    || url.pathname !== "/authorize" || url.username !== "" || url.password !== "" || url.hash !== "") {
+    throw new Error("bad-authorize");
+  }
+  return url.href;
+}
+
+export async function startExternal(provider: "vk" | "yandex") {
+  const started = await send<{ authorizeUrl: string }>("POST", "/web-api/auth/external/" + provider + "/start", { purpose: "login" });
+  window.location.assign(providerAddress(provider, started.authorizeUrl));
 }
 
 export function groupHomework(id: string) {

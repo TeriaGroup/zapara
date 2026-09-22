@@ -124,6 +124,6 @@ export function Provider({ children }: { children: ReactNode }) {
 
 export function useApp() {
   const value = useContext(Ctx);
-  if (!value) throw new Error("Контекст Запары не найден");
+  if (!value) throw new Error("Контекст «Расписание военмех» не найден");
   return value;
 }

@@ -2,12 +2,11 @@
 @model Zapara.Server.Pages.Admin.IndexModel
 <h1>Администрирование</h1>
 <p class="hint">Создание сообществ, персонал, заявки, аккаунты, модерация и журнал. Права проверяет сервер.</p>
-<div class="card">
-    <h2>Разделы</h2>
-    <p><a asp-page="/Admin/Communities">Сообщества</a></p>
-    <p><a asp-page="/Admin/Staff">Персонал</a></p>
-    <p><a asp-page="/Admin/Memberships">Заявки</a></p>
-    <p><a asp-page="/Admin/Accounts">Аккаунты</a></p>
-    <p><a asp-page="/Admin/Content">Модерация</a></p>
-    <p><a asp-page="/Admin/Audit">Журнал</a></p>
+<div class="admin-grid">
+    <a class="admin-tile" asp-page="/Admin/Communities"><strong>Сообщества</strong><span>Создать и привязать учебную группу</span></a>
+    <a class="admin-tile" asp-page="/Admin/Staff"><strong>Персонал</strong><span>Назначить старосту или куратора</span></a>
+    <a class="admin-tile" asp-page="/Admin/Memberships"><strong>Заявки</strong><span>Принять или отклонить вступление</span></a>
+    <a class="admin-tile" asp-page="/Admin/Accounts"><strong>Аккаунты</strong><span>Отключить человека или сессию</span></a>
+    <a class="admin-tile" asp-page="/Admin/Content"><strong>Модерация</strong><span>Снять публикацию сообщества</span></a>
+    <a class="admin-tile" asp-page="/Admin/Audit"><strong>Журнал</strong><span>Кто что изменил</span></a>
 </div>

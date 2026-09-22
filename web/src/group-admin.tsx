@@ -43,7 +43,7 @@ export function GroupAdmin({ communityId, classmates, desk, onChange, onReload, 
   return (
     <section className="card stack">
       <h2>Управление группой</h2>
-      <p className="muted">Роли и возможности действуют только внутри Запары и не подтверждены университетом. Старосту и куратора назначает администрация приложения. Возможности роли включает староста или общее голосование.</p>
+      <p className="muted">Роли и возможности действуют только внутри «Расписание военмех» и не подтверждены университетом. Старосту и куратора назначает администрация приложения. Возможности роли включает староста или общее голосование.</p>
       {can("roles") && <form className="row" onSubmit={create}>
         <input value={name} onChange={event => setName(event.target.value)} placeholder="Название роли" aria-label="Название роли" maxLength={32} />
         <button className="btn primary" type="submit" disabled={name.trim().length < 2}>Создать роль</button>

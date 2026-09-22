@@ -21,7 +21,7 @@ export type Session = {
   user: SessionUser | null;
   familyId?: string | null;
   csrfToken: string;
-  capabilities: { registration: boolean };
+  capabilities: { password?: boolean; vk?: boolean; yandex?: boolean; registration: boolean; recovery?: boolean };
 };
 
 export type Community = { communityId: string; name: string; description: string; revision: number; role: string | null };

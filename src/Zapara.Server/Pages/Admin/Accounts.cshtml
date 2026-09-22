@@ -20,7 +20,7 @@
     <button class="danger" type="submit">Отозвать сессию</button>
 </form>
 <div class="card">
-    <table>
+    <table class="cards">
         <thead><tr><th>Имя</th><th>Статус</th><th>Идентификатор</th></tr></thead>
         <tbody>
         @foreach (var item in Model.Items)
@@ -28,7 +28,7 @@
             <tr>
                 <td>@item.Username</td>
                 <td>@item.Status</td>
-                <td><code>@item.UserId.ToString("D")</code></td>
+                <td><code>@item.UserId.ToString("D")</code><button class="ghost" type="button" onclick="document.getElementById('UserId').value='@item.UserId.ToString("D")'">Подставить в отключение</button></td>
             </tr>
         }
         </tbody>

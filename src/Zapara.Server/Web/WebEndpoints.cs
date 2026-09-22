@@ -43,7 +43,7 @@ internal static partial class WebEndpoints
                 await Store(c).DeleteAsync(c);
             }
             var session = await Service(c).LoginAsync(new(request.Username, request.Password,
-                new DeviceInput(Guid.NewGuid(), request.DeviceName ?? "Браузер Zapara", "web")), c.RequestAborted);
+                new DeviceInput(Guid.NewGuid(), request.DeviceName ?? "Браузер «Расписание военмех»", "web")), c.RequestAborted);
             return await CompleteLogin(c, session);
         }, authenticated: false, rate: "account-login");
         Route(group, "POST", "/auth/logout", async c =>

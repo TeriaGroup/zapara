@@ -31,7 +31,7 @@
     <string name="group_open">Открыть группу</string>
     <string name="group_people">Состав</string>
     <string name="group_list">К списку групп</string>
-    <string name="group_disclaimer">Роли старосты и куратора действуют только внутри Запары и не подтверждены университетом.</string>
+    <string name="group_disclaimer">Роли старосты и куратора действуют только внутри «Расписание военмех» и не подтверждены университетом.</string>
     <string name="group_role_headman">Староста</string>
     <string name="group_role_curator">Куратор</string>
     <string name="group_role_member">Участник</string>

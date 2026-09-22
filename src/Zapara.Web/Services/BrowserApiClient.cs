@@ -74,7 +74,7 @@ public sealed partial class BrowserApiClient(HttpClient http, BrowserStorage sto
         try
         {
             marker = await BeginOwnedTransitionAsync("transition", ct);
-            var bytes = await SendBytesAsync(HttpMethod.Post, "auth/login", new { username, password, deviceName = deviceName ?? "Браузер Запары" }, Session, ct);
+            var bytes = await SendBytesAsync(HttpMethod.Post, "auth/login", new { username, password, deviceName = deviceName ?? "Браузер «Расписание военмех»" }, Session, ct);
             var session = Parse<BrowserSession>(bytes);
             if (!session.Authenticated || session.User is null || session.FamilyId is null || session.FamilyId == Guid.Empty || session.CsrfToken is not { Length: 43 }) throw Failure(502, "invalid_response");
             await storage.WriteAsync("preferences", "pendingLogout", false);

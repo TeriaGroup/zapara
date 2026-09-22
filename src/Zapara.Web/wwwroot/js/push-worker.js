@@ -1,7 +1,7 @@
 // Imported by the published /app/ service worker.
 self.addEventListener('push', event => {
     // The transport payload is deliberately not rendered: no account or study data on a lock screen.
-    event.waitUntil(self.registration.showNotification('Запара', {
+    event.waitUntil(self.registration.showNotification('Расписание военмех', {
         body: 'Откройте приложение, чтобы проверить расписание и задания.',
         icon: '/app/icons/icon-512.png', tag: 'zapara-reminder',
         data: { url: '/app/' }

@@ -59,7 +59,7 @@ public sealed class MailKitRecoveryTransport : IRecoverySmtpTransport
             if (configuration.Username is not null)
                 await client.AuthenticateAsync(configuration.Username, configuration.Password!, deadline.Token);
             var message = new MimeMessage();
-            message.From.Add(new MailboxAddress("Запара", configuration.From));
+            message.From.Add(new MailboxAddress("Расписание военмех", configuration.From));
             message.To.Add(MailboxAddress.Parse(mail.Recipient));
             message.Subject = mail.Subject;
             message.Body = new TextPart("plain") { Text = mail.Body };
@@ -74,15 +74,15 @@ public sealed class MailKitRecoveryTransport : IRecoverySmtpTransport
 public sealed class SmtpRecoveryDelivery(SmtpRecoveryConfiguration configuration, IRecoverySmtpTransport transport) : IProductionRecoveryDelivery
 {
     public Task SendVerificationAsync(Guid userId, string email, string token, CancellationToken ct)
-        => Send(email, token, "Подтверждение почты Запара", "Код подтверждения почты", "30 минут", ct);
+        => Send(email, token, "Подтверждение почты — Расписание военмех", "Код подтверждения почты", "30 минут", ct);
     public Task SendResetAsync(string email, string token, CancellationToken ct)
-        => Send(email, token, "Восстановление доступа Запара", "Код восстановления доступа", "15 минут", ct);
+        => Send(email, token, "Восстановление доступа — Расписание военмех", "Код восстановления доступа", "15 минут", ct);
     private Task Send(string email, string token, string subject, string action, string lifetime, CancellationToken ct)
     {
         var address = AccountValidation.Email(email);
         _ = RecoveryTokens.Hash(token);
         return transport.SendAsync(configuration, new(address, subject,
-            $"{action}:\n\n{token}\n\nВведите этот код в приложении Запара. Он действует {lifetime} и используется один раз.\nЕсли вы не запрашивали действие, проигнорируйте письмо."), ct);
+            $"{action}:\n\n{token}\n\nВведите этот код в приложении «Расписание военмех». Он действует {lifetime} и используется один раз.\nЕсли вы не запрашивали действие, проигнорируйте письмо."), ct);
     }
     public override string ToString() => "SmtpRecoveryDelivery { [REDACTED] }";
 }

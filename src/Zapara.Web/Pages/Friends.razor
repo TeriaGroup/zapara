@@ -3,7 +3,7 @@
 @using Zapara.Contracts.Sync
 @inject WebAppState State
 @inject BrowserDraftService Drafts
-<PageTitle>Друзья — Запара</PageTitle>
+<PageTitle>Друзья — Расписание военмех</PageTitle>
 @{ var pageScope = Drafts.CaptureScope(); var displayedSettings = State.Settings; var settingsRecord = State.Values<SettingsValue>("settings").FirstOrDefault(); }
 <section class="page personal-page">
     <div class="page-heading"><div><h1>Друзья</h1><p class="muted">Кто рядом на следующей паре</p></div><button class="button primary" disabled="@(FriendsList.Count >= 5 || !State.Ready || !Drafts.CanEdit)" @onclick="() => New(pageScope)"><Icon Name="plus" />Добавить группу</button></div>

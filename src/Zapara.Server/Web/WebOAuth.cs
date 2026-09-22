@@ -22,7 +22,7 @@ public sealed partial class WebOAuth(AccountsDataSource source, AccountsConfigur
         var verifier = WebConfiguration.Random();
         var started = await external.StartBrowserAsync(provider, new(request.Purpose,
             WebEncoders.Base64UrlEncode(WebConfiguration.Hash(verifier)), "S256",
-            new(Guid.NewGuid(), "Браузер Zapara", "web"), new("web"), request.ProofToken, request.ProofPurpose), access, context.RequestAborted);
+            new(Guid.NewGuid(), "Браузер «Расписание военмех»", "web"), new("web"), request.ProofToken, request.ProofPurpose), access, context.RequestAborted);
         await using var connection = source.CreateConnection();
         await connection.OpenAsync(context.RequestAborted);
         await using var command = new NpgsqlCommand($"INSERT INTO {schema}.web_oauth_flows(transaction_id,browser_hash,protected_verifier,expires_at) VALUES(@id,@browser,@verifier,@expires)", connection);

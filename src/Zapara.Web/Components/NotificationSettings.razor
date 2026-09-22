@@ -3,19 +3,19 @@
 @inject WebAppState State
 <section class="card stack" aria-labelledby="notification-settings-title">
     <div class="row"><h2 id="notification-settings-title">Уведомления</h2><span class="chip">@(Notifications.Enabled ? "Включены" : "Выключены")</span></div>
-    <p class="muted">Нейтральное напоминание открыть Запару. Содержимое заданий и данные аккаунта не показываются на экране блокировки.</p>
+    <p class="muted">Нейтральное напоминание открыть «Расписание военмех». Содержимое заданий и данные аккаунта не показываются на экране блокировки.</p>
     @if (!Notifications.Ready && Notifications.Busy) { <p role="status" class="muted">Проверяем доступность уведомлений…</p> }
     @if (!Notifications.Authenticated) { <p class="muted">Для серверных напоминаний войдите в аккаунт. Расписание и карты остаются доступны гостю.</p> }
     @if (Notifications.Ready && !Notifications.Capabilities.Available) { <p role="status" class="muted">Отправка уведомлений на сервере пока не настроена.</p> }
     @if (Notifications.Browser.Ios && !Notifications.Browser.Installed)
     {
-        <div class="stack"><h3>Уведомления на iPhone и iPad</h3><p class="muted">В Safari откройте меню «Поделиться», выберите «На экран Домой» и добавьте Запару. Затем откройте её с экрана Домой и нажмите «Включить уведомления».</p></div>
+        <div class="stack"><h3>Уведомления на iPhone и iPad</h3><p class="muted">В Safari откройте меню «Поделиться», выберите «На экран Домой» и добавьте «Расписание военмех». Затем откройте её с экрана Домой и нажмите «Включить уведомления».</p></div>
     }
     else if (Notifications.Ready && !Notifications.Browser.Supported)
     {
         <p class="muted">@(Notifications.Browser.Secure ? "Этот браузер не предоставляет уведомления для приложения." : "Уведомления доступны при открытии приложения по защищённому адресу HTTPS.")</p>
     }
-    @if (Notifications.Browser.Permission == "denied") { <p class="muted">Уведомления запрещены в настройках браузера. Разрешите их для Запары, затем нажмите «Проверить доступность».</p> }
+    @if (Notifications.Browser.Permission == "denied") { <p class="muted">Уведомления запрещены в настройках браузера. Разрешите их для «Расписание военмех», затем нажмите «Проверить доступность».</p> }
     @if (Notifications.Ready && Notifications.Browser.Supported && !Notifications.Browser.Registered) { <p class="muted">Дождитесь первой загрузки приложения, затем нажмите «Проверить доступность».</p> }
     <p class="caption muted">Время напоминаний: @TimesText · @Notifications.Browser.TimeZone. Времена берутся из настроек вашего аккаунта.</p>
     <div class="toolbar">

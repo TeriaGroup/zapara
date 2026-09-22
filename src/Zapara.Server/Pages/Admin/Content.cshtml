@@ -3,7 +3,7 @@
 <h1>Модерация</h1>
 @if (Model.Error is not null) { <div class="error" role="alert">@Model.Error</div> }
 <div class="card">
-    <table>
+    <table class="cards">
         <thead><tr><th>Тип</th><th>Заголовок</th><th></th></tr></thead>
         <tbody>
         @foreach (var item in Model.Items)

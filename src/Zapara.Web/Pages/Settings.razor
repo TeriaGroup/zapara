@@ -3,7 +3,7 @@
 @implements IDisposable
 @inject WebAppState State
 @inject BrowserApiClient Api
-<PageTitle>Настройки — Запара</PageTitle>
+<PageTitle>Настройки — Расписание военмех</PageTitle>
 @{ var shownSettings = CaptureSettings(); }
 <section class="page settings-page">
     <div class="page-heading"><div><h1>Настройки</h1><p class="muted">Приложение, данные и ваш аккаунт</p></div></div>
@@ -39,7 +39,7 @@
         <NotificationSettings />
         <TransferSettings />
         <section class="card stack" aria-labelledby="about-title">
-            <h2 id="about-title">О Запаре</h2>
+            <h2 id="about-title">О «Расписание военмех»</h2>
             <p>Неофициальное приложение для студентов БГТУ «Военмех». Приложение и роли в сообществах не означают одобрения университетом.</p>
             <p class="caption muted">Веб-версия · @Version</p>
             <p class="muted">Гостевой режим работает без аккаунта. После первой загрузки оболочки, расписания и карт сохранённые данные доступны офлайн. Браузер может удалить их при очистке сайта или нехватке места — сохраняйте JSON-копию важных записей.</p>

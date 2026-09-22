@@ -7,6 +7,7 @@ import { visibleLessons } from "./subgroups";
 import { CardView } from "./share";
 import { Sticker, stickerPack, stickerTitle } from "./stickers";
 import { useApp } from "./store";
+import { Icon } from "./icons";
 import type { SocialFriend, SocialHome, SocialMessage } from "./types";
 
 function personName(username: string, displayName: string | null) {
@@ -127,8 +128,8 @@ export function PeoplePanel() {
           ))}
         </div>
       )}
-      <div className="grid-2">
-        <div className="people">
+      <div className={"grid-2 split" + (active ? " focus" : "")}>
+        <div className="people split-list">
           {(home?.friends || []).map(friend => (
             <button className="person" key={friend.userId} type="button" onClick={() => setActive(friend)}>
               <span><b>{personName(friend.username, friend.displayName)}</b><div className="muted">{friend.lastBody || "Нет сообщений"}</div></span>
@@ -137,7 +138,7 @@ export function PeoplePanel() {
           ))}
           {home && home.friends.length === 0 && <div className="empty">Пока никого нет. Добавьте человека по коду.</div>}
         </div>
-        {active ? <Chat friend={active} self={app.session.user?.userId || ""} onError={setError} /> : <section className="card chat"><h2>Чат</h2><p className="muted">Выберите человека слева.</p></section>}
+        {active ? <section className="split-detail"><button className="btn back-only" type="button" onClick={() => setActive(null)}>К списку</button><Chat friend={active} self={app.session.user?.userId || ""} onError={setError} /></section> : <section className="card chat split-detail"><h2>Чат</h2><p className="muted">Выберите человека в списке.</p></section>}
       </div>
     </div>
   );
@@ -582,7 +583,7 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
               )}
               <div className="meta">
                 <span className="muted">{when(message.createdAt)}{message.editedAt && !message.deleted ? " · изменено" : ""}{mine && message.read ? " · прочитано" : ""}</span>
-                {!message.deleted && <button className="tool" type="button" aria-label="Действия" onClick={() => { setReactFor(null); setOpenMenu(openMenu === message.messageId ? null : message.messageId); }}>⋯</button>}
+                {!message.deleted && <button className="tool" type="button" aria-label="Действия" onClick={() => { setReactFor(null); setOpenMenu(openMenu === message.messageId ? null : message.messageId); }}><Icon name="more" size={16} /></button>}
               </div>
               {message.reactions.length > 0 && (
                 <div className="react-chips">
@@ -633,14 +634,14 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
             </div>
           )}
           <form className="compose" onSubmit={event => void submit(event)}>
-            {!editing && <button className="btn tool" type="button" aria-label="Вложения" onClick={() => setPanel(panel === "attach" ? null : "attach")}>+</button>}
-            {!editing && <button className={"btn tool" + (panel === "emoji" ? " primary" : "")} type="button" aria-label="Смайлы" onClick={() => setPanel(panel === "emoji" ? null : "emoji")}>☺</button>}
+            {!editing && <button className="btn tool" type="button" aria-label="Вложения" onClick={() => setPanel(panel === "attach" ? null : "attach")}><Icon name="plus" size={18} /></button>}
+            {!editing && <button className={"btn tool" + (panel === "emoji" ? " primary" : "")} type="button" aria-label="Смайлы" onClick={() => setPanel(panel === "emoji" ? null : "emoji")}><Icon name="smile" size={18} /></button>}
             <input ref={inputRef} value={draft} onChange={event => setDraft(event.target.value)} placeholder={editing ? "Новый текст" : "Сообщение"} aria-label="Сообщение" maxLength={2000} />
             {draft.trim() || editing
               ? <button className="btn primary" type="submit" disabled={sending || !draft.trim()}>{editing ? "Сохранить" : "Отправить"}</button>
               : <>
-                  <button className="btn tool" type="button" aria-label="Кружок" disabled={sending} onClick={() => void startCircle()}>●</button>
-                  <button className="btn primary tool" type="button" aria-label="Голосовое" disabled={sending} onClick={() => { setPanel(null); void toggleVoice(); }}>🎤</button>
+                  <button className="btn tool" type="button" aria-label="Кружок" disabled={sending} onClick={() => void startCircle()}><Icon name="circle" size={18} /></button>
+                  <button className="btn primary tool" type="button" aria-label="Голосовое" disabled={sending} onClick={() => { setPanel(null); void toggleVoice(); }}><Icon name="mic" size={18} /></button>
                 </>}
           </form>
           {panel === "attach" && (

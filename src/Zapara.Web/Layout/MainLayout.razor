@@ -10,7 +10,7 @@
 <a class="skip-link" href="#content">Перейти к содержимому</a>
 <div class="app-shell">
     <aside class="sidebar">
-        <a href="schedule" class="brand">ЗАПАРА</a>
+        <a href="schedule" class="brand">Расписание военмех</a>
         <p class="sidebar-caption">Расписание и карты Военмеха</p>
         <button class="group-card" @onclick="OpenGroups"><span class="micro">МОЯ ГРУППА</span><strong>@State.GroupName</strong><span class="muted">@(State.IsGuest ? "На этом устройстве" : "Мой аккаунт")</span></button>
         <nav aria-label="Разделы приложения">
@@ -19,7 +19,7 @@
         <div class="sidebar-footer"><span class="status-dot"></span><span>@(State.IsGuest ? "Гостевой режим" : "Аккаунт")</span><p>Неофициальное приложение<br />БГТУ «Военмех»</p></div>
     </aside>
     <div class="main-column">
-        <header class="mobile-header"><span class="brand">ЗАПАРА</span><button class="chip" @onclick="OpenGroups">@State.GroupName</button></header>
+        <header class="mobile-header"><span class="brand">Расписание военмех</span><button class="chip" @onclick="OpenGroups">@State.GroupName</button></header>
         <header class="desktop-header"><span>@State.PeriodTitle</span><div class="toolbar"><span class="muted">@(State.FromBundle ? "Встроенный снимок" : "Расписание")</span><button class="icon-button" aria-label="Обновить расписание" disabled="@State.Refreshing" @onclick="State.RefreshAsync"><Icon Name="refresh" Class="@(State.Refreshing ? "spin" : "")" /></button></div></header>
         <main id="content" tabindex="-1">
             @if (State.Error is not null) { <div class="notice error" role="alert"><span>@State.Error</span><button class="icon-button" aria-label="Закрыть сообщение" @onclick="State.DismissError"><Icon Name="close" /></button></div> }

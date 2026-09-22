@@ -204,7 +204,7 @@ function ChangeForm({ communityId, classmates, roles, onDone, onError }: {
   return (
     <form className="card stack" onSubmit={event => void submit(event)}>
       <h2>Изменение группы</h2>
-      <p className="muted">Общее голосование. Варианты всегда «Принять» и «Отклонить». Старосту и куратора так назначить нельзя. Решение действует только внутри Запары.</p>
+      <p className="muted">Общее голосование. Варианты всегда «Принять» и «Отклонить». Старосту и куратора так назначить нельзя. Решение действует только внутри «Расписание военмех».</p>
       <label className="field">Что меняем
         <select aria-label="Вид изменения" value={kind} onChange={event => setKind(event.target.value)}>
           <option value="power">Возможность роли</option>

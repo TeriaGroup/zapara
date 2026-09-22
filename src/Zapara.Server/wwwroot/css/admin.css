@@ -27,14 +27,14 @@
   --card-hover: #1c1c1c;
   --chip: #222222;
   --line: #262626;
-  --line-strong: #333333;
+  --line-strong: #a0a0a0;
   --text1: #f2f2f2;
-  --text2: #8b8b8b;
-  --text3: #5c5c5c;
+  --text2: #a0a0a0;
+  --text3: #a0a0a0;
   --accent: #f2f2f2;
   --on-accent: #0d0d0d;
   --selection: rgba(255, 255, 255, 0.08);
-  --focus: rgba(255, 255, 255, 0.35);
+  --focus: #a0a0a0;
   --ok: #4cc38a;
   --warn: #f2a33c;
   --bad: #ef5b6b;
@@ -52,14 +52,14 @@
     --card-hover: #efefef;
     --chip: #ebebeb;
     --line: #e5e5e5;
-    --line-strong: #d4d4d4;
+    --line-strong: #595959;
     --text1: #111111;
-    --text2: #767676;
-    --text3: #a3a3a3;
+    --text2: #595959;
+    --text3: #595959;
     --accent: #111111;
     --on-accent: #ffffff;
     --selection: rgba(0, 0, 0, 0.05);
-    --focus: rgba(0, 0, 0, 0.25);
+    --focus: #595959;
     --ok: #2fa36b;
     --warn: #d9861b;
     --bad: #d7404f;
@@ -192,7 +192,56 @@ footer {
   margin: 0 auto;
 }
 code { font-family: inherit; color: var(--text2); }
+.admin-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 8px;
+}
+.admin-nav .nav-btn, .admin-nav button.nav-btn {
+  flex: none;
+  background: var(--chip);
+  color: var(--text1);
+  border: 1px solid var(--line-strong);
+  text-decoration: none;
+}
+.admin-nav .nav-btn.active {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+.admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.admin-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 96px;
+  padding: 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  color: var(--text1);
+  text-decoration: none;
+}
+.admin-tile span { color: var(--text2); font-size: 13px; }
+button.primary, button.ghost, button.danger, .primary { width: auto; }
 @media (max-width: 720px) {
-  .shell, nav, footer { padding-left: 16px; padding-right: 16px; }
-  nav { gap: 4px; }
+  .shell, footer { padding-left: 16px; padding-right: 16px; }
+  .shell { padding-bottom: 28px; }
+  nav.admin-nav { padding: 10px 12px; }
+  .admin-grid { grid-template-columns: 1fr; }
+  button.primary, button.ghost, button.danger, .primary { width: 100%; }
+  table.cards thead { display: none; }
+  table.cards, table.cards tbody, table.cards tr, table.cards td { display: block; width: 100%; }
+  table.cards tr {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    margin: 0 0 10px;
+    padding: 10px 12px;
+    background: var(--chip);
+  }
+  table.cards td { border: 0; padding: 4px 0; }
+  table.cards form { display: flex; flex-direction: column; gap: 8px; }
 }

@@ -14,7 +14,7 @@ function open() {
             resolve(db);
         };
         request.onerror = () => { opening = undefined; reject(new Error('Не удалось открыть хранилище устройства.')); };
-        request.onblocked = () => { opening = undefined; reject(new Error('Закройте другие вкладки Запары для обновления хранилища.')); };
+        request.onblocked = () => { opening = undefined; reject(new Error('Закройте другие вкладки «Расписание военмех» для обновления хранилища.')); };
     });
 }
 export async function dropHeavyLocalCopies() {

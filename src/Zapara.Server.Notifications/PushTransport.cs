@@ -13,7 +13,7 @@ public interface IPushTransport
 
 public sealed class PushTransport : IPushTransport, IDisposable
 {
-    public const string NeutralPayload = "{\"title\":\"Запара\",\"body\":\"Откройте приложение, чтобы проверить расписание и задания.\",\"url\":\"/app/\",\"tag\":\"zapara-reminder\"}";
+    public const string NeutralPayload = "{\"title\":\"Расписание военмех\",\"body\":\"Откройте приложение, чтобы проверить расписание и задания.\",\"url\":\"/app/\",\"tag\":\"zapara-reminder\"}";
     private readonly HttpClient http;
     private readonly VapidAuthentication authentication;
     private readonly PushServiceClient client;

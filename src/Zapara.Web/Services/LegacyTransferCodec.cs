@@ -24,7 +24,7 @@ public static partial class LegacyTransferCodec
             Unique(document.RootElement);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("Version", out var version) || !version.TryGetInt32(out var number) || number != 1)
-                throw Invalid("Нужен файл переноса Запары версии 1.");
+                throw Invalid("Нужен файл переноса «Расписание военмех» версии 1.");
             foreach (var name in new[] { "ExportedAt", "Overrides", "Homework", "Friends", "Settings" })
                 if (!root.TryGetProperty(name, out _)) throw Invalid("В файле отсутствуют обязательные разделы.");
             var payload = root.Deserialize<LegacyTransferPayload>(Json) ?? throw Invalid();

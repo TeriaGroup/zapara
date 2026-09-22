@@ -3,7 +3,7 @@
 @using Zapara.Contracts.Sync
 @inject WebAppState State
 @inject BrowserDraftService Drafts
-<PageTitle>Домашка — Запара</PageTitle>
+<PageTitle>Домашка — Расписание военмех</PageTitle>
 @{ var pageScope = Drafts.CaptureScope(); }
 <section class="page personal-page">
     <div class="page-heading"><div><h1>Домашка</h1><p class="muted">Задания и сроки по вашему расписанию</p></div><button class="button primary" disabled="@(!State.Ready || !Drafts.CanEdit)" @onclick="() => New(scope: pageScope)"><Icon Name="plus" />Добавить</button></div>

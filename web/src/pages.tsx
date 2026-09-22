@@ -1,4 +1,6 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useSwipe } from "./swipe";
 import * as api from "./api";
 import { addDays, dayTitle, isoDay, lessonsOn, longDate, sameSubject, score, weekday } from "./parity";
 import { subgroupIndex, subgroupMark, visibleLessons } from "./subgroups";
@@ -10,23 +12,50 @@ import { GroupTopics } from "./topics";
 import { GroupAdmin, titlesOf } from "./group-admin";
 import { PeoplePanel } from "./people";
 import { ShareMenu } from "./share";
+import { Icon } from "./icons";
 import type { BallotBoard, ChatMessage, Community, Conversation, FriendItem, GroupDesk, GroupHome, GroupHomeworkCopy, GroupTopic, HomeworkFile, Lesson, MapPlan, Teacher, TeacherLesson } from "./types";
 
 function Head({ title, text, children }: { title: string; text?: string; children?: ReactNode }) {
   return (
     <div className="page-head">
       <div><h1>{title}</h1>{text && <p className="sub">{text}</p>}</div>
-      <div className="row">{children}</div>
+      <div className="row controls">{children}</div>
     </div>
   );
+}
+
+function lessonKind(type: string) {
+  const value = type.trim().toLowerCase();
+  if (value === "лек" || value === "лекция") return "lecture";
+  if (value === "пр" || value === "практика") return "practice";
+  if (value === "лаб" || value === "лабораторная" || value === "лабораторная работа") return "lab";
+  if (value === "конс" || value === "консультация") return "consult";
+  if (value === "зач" || value === "зачёт" || value === "зачет") return "credit";
+  if (value === "экз" || value === "экзамен") return "exam";
+  if (value === "курс" || value === "курсовая") return "course";
+  return "";
+}
+
+const typeLabels: Record<string, string> = {
+  lecture: "Лекция", practice: "Практика", lab: "Лаба", consult: "Консульт.",
+  credit: "Зачёт", exam: "Экзамен", course: "Курсовая"
+};
+
+function TypeChip({ type }: { type: string }) {
+  const kind = lessonKind(type);
+  return <span className={"type" + (kind ? " " + kind : "")}><i />{kind ? typeLabels[kind] : type}</span>;
 }
 
 function LessonCard({ lesson, mark, share, subgroup, onPick }: { lesson: Lesson; mark?: string; share?: string | null; subgroup?: ReturnType<typeof subgroupMark>; onPick?: (streamId: string, optionId: string) => void }) {
   return (
     <article className="lesson">
-      <div className="time">{lesson.timeStart}<br />{lesson.timeEnd}</div>
+      <div className="lesson-top">
+        <span className="time">{lesson.timeStart} – {lesson.timeEnd}</span>
+        {lesson.typeRaw && <TypeChip type={lesson.typeRaw} />}
+        <span className="chip">{lesson.roomRaw || lesson.classroomRaw || "—"}</span>
+      </div>
       <div>
-        <strong>{lesson.subjectRaw}</strong>
+        <strong className="subject">{lesson.subjectRaw}</strong>
         <div className="muted">{lesson.teacherRaw}</div>
         {subgroup?.showChooser && (
           <div className="row" style={{ marginTop: 8 }}>
@@ -37,12 +66,10 @@ function LessonCard({ lesson, mark, share, subgroup, onPick }: { lesson: Lesson;
           </div>
         )}
         <div className="row" style={{ marginTop: 6 }}>
-          {lesson.typeRaw && <span className="chip">{lesson.typeRaw}</span>}
           {mark && <span className="chip">{mark}</span>}
           <ShareMenu card={share ?? null} />
         </div>
       </div>
-      <span className="chip">{lesson.roomRaw || lesson.classroomRaw || "—"}</span>
     </article>
   );
 }
@@ -58,13 +85,14 @@ export function SchedulePage() {
   const dayCard = scheduleCard(groupName, app.date, period ? longDate(app.date, period.start, period.weekCount, app.invert) : dayTitle(app.date), lessons);
   const today = new Date();
   const strip = Array.from({ length: 7 }, (_, index) => addDays(addDays(app.date, -((weekday(app.date) + 6) % 7)), index));
+  const swipe = useSwipe(() => app.setDate(addDays(app.date, 1)), () => app.setDate(addDays(app.date, -1)));
   return (
     <section className="page">
       <Head title={dayTitle(app.date, today)} text={period ? longDate(app.date, period.start, period.weekCount, app.invert) : "Загружаем расписание"}>
-        <button className="icon-btn" type="button" aria-label="Предыдущий день" onClick={() => app.setDate(addDays(app.date, -1))}>←</button>
+        <button className="icon-btn" type="button" aria-label="Предыдущий день" onClick={() => app.setDate(addDays(app.date, -1))}><Icon name="left" /></button>
         <button className="btn" type="button" onClick={() => app.setDate(new Date())}>Сегодня</button>
-        <button className="icon-btn" type="button" aria-label="Следующий день" onClick={() => app.setDate(addDays(app.date, 1))}>→</button>
-        <button className="btn" type="button" onClick={app.refresh} disabled={app.loading}>Обновить</button>
+        <button className="icon-btn" type="button" aria-label="Следующий день" onClick={() => app.setDate(addDays(app.date, 1))}><Icon name="right" /></button>
+        <button className="btn" type="button" onClick={app.refresh} disabled={app.loading}><Icon name="refresh" size={16} />Обновить</button>
         <ShareMenu card={dayCard} label="День в чат" />
       </Head>
       <div className="dates">
@@ -75,8 +103,14 @@ export function SchedulePage() {
           </button>
         ))}
       </div>
-      <div className="stack">
-        {lessons.length === 0 && <div className="empty">{app.groupId ? "В этот день пар нет" : "Выберите группу в настройках"}</div>}
+      <p className="swipe-hint">Смахните влево или вправо, чтобы сменить день</p>
+      <div className="stack swipe" {...swipe}>
+        {lessons.length === 0 && (
+          <div className="card empty">
+            <p>{app.groupId ? "В этот день пар нет" : "Группа ещё не выбрана. Расписание, карты и домашка останутся на этом устройстве."}</p>
+            {!app.groupId && <Link className="btn primary" to="/settings">Выбрать группу</Link>}
+          </div>
+        )}
         {lessons.map(lesson => {
           const friend = app.friends.find(item => item.enabled && api.readCache().lessons[item.groupName]);
           const cached = friend ? api.readCache().lessons[friend.groupName] : undefined;
@@ -92,21 +126,25 @@ export function SchedulePage() {
 
 export function WeekPage() {
   const app = useApp();
+  const navigate = useNavigate();
   const period = app.catalog?.period;
   const shown = useMemo(() => visibleLessons(app.lessons, app.subgroups[app.groupId] || {}), [app.lessons, app.subgroups, app.groupId]);
   const monday = addDays(app.date, -((weekday(app.date) + 6) % 7));
   const days = Array.from({ length: 6 }, (_, index) => addDays(monday, index));
+  const swipe = useSwipe(() => app.setDate(addDays(app.date, 7)), () => app.setDate(addDays(app.date, -7)));
   return (
     <section className="page">
       <Head title="Неделя" text={period?.title}>
-        <button className="icon-btn" type="button" aria-label="Предыдущая неделя" onClick={() => app.setDate(addDays(app.date, -7))}>←</button>
+        <button className="icon-btn" type="button" aria-label="Предыдущая неделя" onClick={() => app.setDate(addDays(app.date, -7))}><Icon name="left" /></button>
         <button className="btn" type="button" onClick={() => app.setDate(new Date())}>Сегодня</button>
-        <button className="icon-btn" type="button" aria-label="Следующая неделя" onClick={() => app.setDate(addDays(app.date, 7))}>→</button>
+        <button className="icon-btn" type="button" aria-label="Следующая неделя" onClick={() => app.setDate(addDays(app.date, 7))}><Icon name="right" /></button>
       </Head>
-      <div className="week">
+      <p className="swipe-hint">Смахните, чтобы сменить неделю</p>
+      <div className="week swipe" {...swipe}>
         {days.map(date => (
           <article className="card" key={isoDay(date)}>
             <h2>{dayTitle(date)} <span className="muted">{date.getDate()}</span></h2>
+            <button className="btn" type="button" onClick={() => { app.setDate(date); navigate("/schedule"); }}>Открыть день</button>
             <div className="stack">
               {period && lessonsOn(shown, date, period.start, period.weekCount, app.invert).map(lesson => (
                 <div key={lesson.timeStart + lesson.subjectRaw + (lesson.teacherRaw || "")}><b>{lesson.timeStart}</b> {lesson.subjectRaw}<div className="muted">{lesson.roomRaw}</div></div>
@@ -134,9 +172,9 @@ export function SummaryPage() {
   return (
     <section className="page">
       <Head title="Сводка" text="Сколько пар каждого вида в загруженной группе" />
-      <div className="stack">
-        {counts.map(([name, count]) => <article className="card" key={name}><b>{count}</b> · {name}</article>)}
-        {counts.length === 0 && <div className="empty">Сначала выберите группу</div>}
+      <div className="stats">
+        {counts.map(([name, count]) => <article className="card stat" key={name}><b>{count}</b><span>{name}</span></article>)}
+        {counts.length === 0 && <div className="card empty"><p>Сначала выберите группу в настройках.</p><Link className="btn primary" to="/settings">Выбрать группу</Link></div>}
       </div>
     </section>
   );
@@ -160,11 +198,13 @@ export function TeachersPage() {
     <section className="page">
       <Head title="Преподаватели" text={error || "Поиск по имени и кафедре"} />
       <input className="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Фамилия" aria-label="Поиск преподавателя" />
-      <div className="grid-2" style={{ marginTop: 14 }}>
-        <div className="people">
+      <div className={"grid-2 split" + (current ? " focus" : "")} style={{ marginTop: 14 }}>
+        <div className="people split-list">
           {shown.map(teacher => <button className="person" key={teacher.id} type="button" onClick={() => void open(teacher)}><span><b>{teacher.name}</b><div className="muted">{teacher.kafedra}</div></span></button>)}
+          {shown.length === 0 && <div className="empty">Никого не нашлось</div>}
         </div>
-        <article className="card">
+        <article className="card split-detail">
+          <button className="btn back-only" type="button" onClick={() => { setCurrent(null); setLessons([]); }}>К списку</button>
           <h2>{current?.name || "Выберите преподавателя"}</h2>
           <div className="stack">
             {lessons.slice(0, 24).map((lesson, index) => (
@@ -193,18 +233,27 @@ export function MapsPage() {
     }).catch(() => setError("Карты не загрузились"));
   }, []);
   const buildings = [...new Set(plans.map(item => item.building))];
+  const floors = plans.filter(item => item.building === plan?.building).sort((a, b) => a.floor - b.floor);
+  const floorAt = floors.findIndex(item => item.id === plan?.id);
+  const swipe = useSwipe(
+    () => { if (floorAt >= 0 && floorAt < floors.length - 1) setPlan(floors[floorAt + 1]); },
+    () => { if (floorAt > 0) setPlan(floors[floorAt - 1]); },
+  );
   return (
     <section className="page">
       <Head title="Карты" text={error || "Планы Военмеха · ГК и УЛК"}>
         <ShareMenu card={plan ? placeCard(plan.building, String(plan.floor), "", `${plan.building}, ${plan.floor} этаж`) : null} label="Этаж в чат" />
       </Head>
-      <div className="row" style={{ marginBottom: 12 }}>
+      <div className="map-tools">
         {buildings.map(building => <button key={building} className={"btn" + (plan?.building === building ? " primary" : "")} type="button" onClick={() => setPlan(plans.find(item => item.building === building) || null)}>{building}</button>)}
-        {plans.filter(item => item.building === plan?.building).map(item => (
-          <button key={item.id} className={"btn" + (item.id === plan?.id ? " primary" : "")} type="button" onClick={() => setPlan(item)}>{item.floor}</button>
+        {floors.map(item => (
+          <button key={item.id} className={"btn" + (item.id === plan?.id ? " primary" : "")} type="button" onClick={() => setPlan(item)}>{item.floor} этаж</button>
         ))}
+        <button className="btn" type="button" disabled={floorAt <= 0} onClick={() => floorAt > 0 && setPlan(floors[floorAt - 1])}><Icon name="down" size={16} />Ниже</button>
+        <button className="btn" type="button" disabled={floorAt < 0 || floorAt >= floors.length - 1} onClick={() => floorAt >= 0 && floorAt < floors.length - 1 && setPlan(floors[floorAt + 1])}><Icon name="up" size={16} />Выше</button>
       </div>
-      <div className="map-frame">{plan ? <img src={plan.url} alt={`${plan.building}, ${plan.floor} этаж`} /> : <span className="muted">Нет плана</span>}</div>
+      <p className="swipe-hint">Смахните по плану, чтобы сменить этаж</p>
+      <div className="map-frame swipe" {...swipe}>{plan ? <img src={plan.url} alt={`${plan.building}, ${plan.floor} этаж`} /> : <span className="muted">Нет плана</span>}</div>
     </section>
   );
 }
@@ -424,10 +473,10 @@ export function CommunityPage() {
     if (!app.session?.authenticated) return;
     api.communities(app.groupId).then(setList).catch(() => setError("Сообщества не открылись"));
   }, [app.session, app.groupId]);
-  if (!app.session?.authenticated) return <section className="page"><div className="empty"><h1>Сообщество</h1><p>Войдите в аккаунт в настройках.</p></div></section>;
+  if (!app.session?.authenticated) return <section className="page"><div className="card empty"><h1>Сообщество</h1><p>Войдите в аккаунт, чтобы видеть сообщества своей группы.</p><Link className="btn primary" to="/settings">Открыть настройки</Link></div></section>;
   return (
     <section className="page">
-      <Head title="Сообщество" text={error || "Роли старосты и куратора действуют только внутри Запары и не подтверждены университетом."} />
+      <Head title="Сообщество" text={error || "Роли старосты и куратора действуют только внутри «Расписание военмех» и не подтверждены университетом."} />
       <div className="stack">
         {list.map(item => (
           <article className="card" key={item.communityId}>
@@ -456,6 +505,7 @@ export function GroupPage() {
   const [log, setLog] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
+  const [focusChat, setFocusChat] = useState(false);
   useEffect(() => {
     if (!app.session?.authenticated) return;
     let stop = false;
@@ -509,7 +559,7 @@ export function GroupPage() {
     }
     catch { setDraft(body); setError("Сообщение не отправилось"); }
   }
-  if (!app.session?.authenticated) return <section className="page"><div className="empty"><h1>Группа</h1><p>Войдите в аккаунт, чтобы открыть группу, разделы чата и голосования.</p></div></section>;
+  if (!app.session?.authenticated) return <section className="page"><div className="card empty"><h1>Группа</h1><p>Войдите в аккаунт, чтобы открыть группу, разделы чата и голосования.</p><Link className="btn primary" to="/settings">Открыть настройки</Link></div></section>;
   return (
     <section className="page">
       <Head title="Группа" text={home ? `${home.name}${home.groupName ? " · " + home.groupName : ""}` : error || "Одногруппники и чат"} />
@@ -517,18 +567,19 @@ export function GroupPage() {
       {home && board && <BallotBoardView communityId={home.communityId} board={board} classmates={home.classmates} roles={desk?.roles ?? []} onChange={setBoard} onError={setError} />}
       {home && !board && votesOff && <p className="muted">Голосования сейчас не открылись. Чат группы на месте.</p>}
       {home && (
-        <div className="grid-2">
-          <div className="people">
-            <button className="person" type="button" onClick={() => { setChat(home.groupChat); setThread("list"); }}><span><b>Чат группы</b><div className="muted">Разделы и общий поток</div></span>{home.groupChat.unread > 0 && <span className="chip">{home.groupChat.unread}</span>}</button>
+        <div className={"grid-2 split" + (focusChat ? " focus" : "")}>
+          <div className="people split-list">
+            <button className="person" type="button" onClick={() => { setChat(home.groupChat); setThread("list"); setFocusChat(true); }}><span><b>Чат группы</b><div className="muted">Разделы и общий поток</div></span>{home.groupChat.unread > 0 && <span className="chip">{home.groupChat.unread}</span>}</button>
             {home.classmates.map(person => (
-              <button className="person" key={person.userId} type="button" disabled={person.self} onClick={() => { if (!home || person.self) return; void api.openDirect(home.communityId, person.userId).then(setChat).catch(() => setError("Личный чат не открылся")); }}>
+              <button className="person" key={person.userId} type="button" disabled={person.self} onClick={() => { if (!home || person.self) return; setFocusChat(true); void api.openDirect(home.communityId, person.userId).then(setChat).catch(() => setError("Личный чат не открылся")); }}>
                 <span><b>{person.displayName || person.username}</b><div className="muted">@{person.username}</div></span>
                 <span className="row">{[person.role === "headman" ? "Староста" : person.role === "curator" ? "Куратор" : "Участник", ...titlesOf(desk, person.userId)].map(title => <span className="chip" key={title}>{title}</span>)}</span>
               </button>
             ))}
-            {home.directs.map(item => <button className="person" key={item.conversationId} type="button" onClick={() => setChat(item)}><span><b>{item.title}</b><div className="muted">{item.lastBody}</div></span></button>)}
+            {home.directs.map(item => <button className="person" key={item.conversationId} type="button" onClick={() => { setChat(item); setFocusChat(true); }}><span><b>{item.title}</b><div className="muted">{item.lastBody}</div></span></button>)}
           </div>
-          <section className="card chat">
+          <section className="card chat split-detail">
+            <button className="btn back-only" type="button" onClick={() => setFocusChat(false)}>К списку</button>
             {chat?.kind === "group" && thread === "list" && <GroupTopics communityId={home.communityId} onOpen={setThread} onError={setError} />}
             {(chat?.kind !== "group" || thread !== "list") && <>
             <div className="row">
@@ -563,6 +614,20 @@ export function SettingsPage() {
   const [display, setDisplay] = useState("");
   const [mode, setMode] = useState<"login" | "register">("login");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const yandex = app.session?.capabilities.yandex === true;
+  const vk = app.session?.capabilities.vk === true;
+  async function external(provider: "vk" | "yandex") {
+    if (busy) return;
+    setError("");
+    setBusy(true);
+    try {
+      await api.startExternal(provider);
+    } catch {
+      setError(provider === "yandex" ? "Не удалось начать вход через Яндекс ID" : "Не удалось начать вход через VK ID");
+      setBusy(false);
+    }
+  }
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
@@ -583,9 +648,11 @@ export function SettingsPage() {
           <h2>Группа</h2>
           <label className="field">Моя группа
             <select value={app.groupId} onChange={event => app.setGroupId(event.target.value)} aria-label="Моя группа">
+              <option value="">Не выбрана</option>
               {(app.catalog?.groups || []).map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
             </select>
           </label>
+          {(app.catalog?.groups || []).length === 0 && <p className="muted">Список групп появится, когда расписание откроется. Пока можно пользоваться сохранённой копией.</p>}
           <div className="row" style={{ marginTop: 12 }}>
             <span>Инвертировать чётность</span>
             <button className={"switch" + (app.invert ? " on" : "")} type="button" aria-label="Инвертировать чётность" onClick={() => app.setInvert(!app.invert)}><i /></button>
@@ -594,8 +661,8 @@ export function SettingsPage() {
         <article className="card">
           <h2>Оформление</h2>
           <div className="seg">
-            <button type="button" className={app.theme === "light" ? "active" : ""} onClick={() => app.setTheme("light")}>Светлая</button>
-            <button type="button" className={app.theme === "dark" ? "active" : ""} onClick={() => app.setTheme("dark")}>Тёмная</button>
+            <button type="button" className={app.theme === "light" ? "active" : ""} onClick={() => app.setTheme("light")}><Icon name="sun" size={16} />Светлая</button>
+            <button type="button" className={app.theme === "dark" ? "active" : ""} onClick={() => app.setTheme("dark")}><Icon name="moon" size={16} />Тёмная</button>
           </div>
         </article>
         <article className="card">
@@ -608,6 +675,12 @@ export function SettingsPage() {
           ) : (
             <form className="stack" onSubmit={event => void submit(event)}>
               <p className="muted">Гостевой профиль: расписание доступно без аккаунта и сети, если копия уже сохранена.</p>
+              {(yandex || vk) && (
+                <div className="providers">
+                  {yandex && <button className="btn" type="button" disabled={busy} onClick={() => void external("yandex")}>Войти с Яндекс ID</button>}
+                  {vk && <button className="btn" type="button" disabled={busy} onClick={() => void external("vk")}>Войти с VK ID</button>}
+                </div>
+              )}
               <div className="seg">
                 <button type="button" className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Вход</button>
                 <button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")} disabled={!app.session?.capabilities.registration}>Регистрация</button>

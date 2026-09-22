@@ -53,7 +53,7 @@ export function GroupTopics({ communityId, onOpen, onError }: {
 
   return (
     <div className="topics">
-      <p className="muted">Разделы группы, как темы в переписке. Общий поток остаётся наверху. Всё это только внутри Запары.</p>
+      <p className="muted">Разделы группы, как темы в переписке. Общий поток остаётся наверху. Всё это только внутри «Расписание военмех».</p>
       <form className="stack" onSubmit={create}>
         <div className="row" aria-label="Значок раздела">
           {icons.map(item => <button key={item} className={"btn" + (icon === item ? " primary" : "")} type="button" onClick={() => setIcon(item)} aria-label={item}>{item}</button>)}

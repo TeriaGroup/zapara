@@ -2,7 +2,7 @@
 @model Zapara.Server.Pages.Admin.AuditModel
 <h1>Журнал действий</h1>
 <div class="card">
-    <table>
+    <table class="cards">
         <thead><tr><th>Время</th><th>Действие</th><th>Объект</th><th>Исход</th></tr></thead>
         <tbody>
         @foreach (var item in Model.Items)
