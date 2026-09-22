@@ -26,7 +26,6 @@ public sealed partial class AppServices : IDisposable
     public HomeworkService Homework { get; }
     public HomeworkFileStore HomeworkFiles { get; }
     public IntersectionService Intersections { get; }
-    public NotificationService Notifications { get; }
     public MapService Maps { get; }
     public SyncService Sync { get; }
     public AutoUpdateService AutoUpdate { get; }
@@ -99,7 +98,6 @@ public sealed partial class AppServices : IDisposable
             Homework = new HomeworkService(Db, Outbox);
         HomeworkFiles = new HomeworkFileStore(Path.Combine(dataDir, "homework-files"));
             Intersections = new IntersectionService(Db);
-            Notifications = new NotificationService(Db, Overrides, Homework, Schedule, I18n);
             Maps = new MapService(Db, Schedule, Path.Combine(dataDir, "maps"), Path.Combine(AppContext.BaseDirectory, "maps"));
             MapFiles = new MapFiles(Maps, Log, () => AllowNetwork);
             Launcher = new NullLauncher(Log); // App swaps in AvaloniaLauncher once the window exists

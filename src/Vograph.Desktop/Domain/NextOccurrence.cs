@@ -8,16 +8,15 @@ public static class NextOccurrence
 {
     public static DateTime? Find(Database db, Settings settings, string subjectRaw, DateTime fromDate, int maxDays = 60)
     {
+        if (string.IsNullOrEmpty(settings.MyGroupId)) return null;
+        return Find(db.GetAllLessonsForGroup(settings.MyGroupId), db.GetSubgroupChoices(settings.MyGroupId), settings, subjectRaw, fromDate, maxDays);
+    }
+
+    public static DateTime? Find(IReadOnlyList<Lesson> lessons, IReadOnlyDictionary<string, string> choices, Settings settings, string subjectRaw, DateTime fromDate, int maxDays = 60)
+    {
         var norm = ParityService.NormalizeSubject(subjectRaw);
         if (norm.Length == 0 || string.IsNullOrEmpty(settings.MyGroupId)) return null;
         var period = ParityCodes.Period(settings, fromDate);
-        for (var offset = 1; offset <= maxDays; offset++)
-        {
-            var date = fromDate.Date.AddDays(offset);
-            if (date.DayOfWeek == DayOfWeek.Sunday) continue;
-            if (db.GetLessons(settings.MyGroupId, (int)date.DayOfWeek, ParityCodes.WeekCode(date, settings, period)).Any(l => ParityService.SameSubject(l.SubjectNormalized, norm)))
-                return date;
-        }
-        return null;
+        return HomeworkCalendar.NextDate(lessons, choices, period.PeriodStart, period.WeekCount, settings.ParityInvert, norm, fromDate, maxDays);
     }
 }

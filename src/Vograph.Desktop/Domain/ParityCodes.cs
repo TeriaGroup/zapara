@@ -31,5 +31,19 @@ public static class ParityCodes
     /// <summary>User-facing parity → XML code. Identical unless the user inverted parity; an involution, so ToUser is the same map.</summary>
     public static int ToXml(int parity, bool invert) => invert ? (parity == 1 ? 2 : 1) : parity;
 
-    public static int ToUser(int xmlParity, bool invert) => ToXml(xmlParity, invert);
+    public static int ToUser(int xmlParity, bool invert) => xmlParity == 0 ? 0 : ToXml(xmlParity, invert);
+
+    /// <summary>Both-weeks rows stay on the odd and even tabs. Invert swaps 1 and 2 only.</summary>
+    public static bool OnUserWeek(int parityIndex, int xmlParity, bool invert)
+    {
+        if (parityIndex == 0) return true;
+        var user = ToUser(xmlParity, invert);
+        return user == 0 || user == parityIndex;
+    }
+
+    public static string WeekLabelKey(int xmlParity, bool invert)
+    {
+        var user = ToUser(xmlParity, invert);
+        return user == 1 ? "oddShort" : user == 2 ? "evenShort" : "summaryBothShort";
+    }
 }

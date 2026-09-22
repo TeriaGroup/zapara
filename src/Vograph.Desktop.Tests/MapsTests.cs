@@ -39,6 +39,7 @@ public class MapsTests : UiTest
     [InlineData("2026-09-07T09:30", "2026-09-07T09:00", "2026-09-07T10:35", "идёт сейчас")]
     [InlineData("2026-09-06T14:00", "2026-09-07T09:00", "2026-09-07T10:35", "через 19 ч")]
     [InlineData("2026-09-05T08:00", "2026-09-07T09:00", "2026-09-07T10:35", "через 2 дн.")]
+    [InlineData("2026-09-07T10:35", "2026-09-07T09:00", "2026-09-07T10:35", "")]
     public void Until_Formats_Minutes_Hours_Days(string now, string start, string end, string expected) =>
         Assert.Equal(expected, MapsComposer.Until(DateTime.Parse(now), DateTime.Parse(start), DateTime.Parse(end), Ru));
 

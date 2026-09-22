@@ -10,14 +10,13 @@ public static class HomeworkLabels
     public static int LessonsUntil(Database db, Settings settings, string subjectNormalized, DateTime today, DateTime due)
     {
         if (string.IsNullOrEmpty(settings.MyGroupId)) return 0;
-        var count = 0;
+        return LessonsUntil(db.GetAllLessonsForGroup(settings.MyGroupId), db.GetSubgroupChoices(settings.MyGroupId), settings, subjectNormalized, today, due);
+    }
+
+    public static int LessonsUntil(IReadOnlyList<Lesson> lessons, IReadOnlyDictionary<string, string> choices, Settings settings, string subjectNormalized, DateTime today, DateTime due)
+    {
         var period = ParityCodes.Period(settings, today);
-        for (var d = today.Date.AddDays(1); d < due.Date; d = d.AddDays(1))
-        {
-            if (d.DayOfWeek == DayOfWeek.Sunday) continue;
-            count += db.GetLessons(settings.MyGroupId, (int)d.DayOfWeek, ParityCodes.WeekCode(d, settings, period)).Count(l => ParityService.SameSubject(l.SubjectNormalized, subjectNormalized));
-        }
-        return count;
+        return HomeworkCalendar.MeetingsBetween(lessons, choices, period.PeriodStart, period.WeekCount, settings.ParityInvert, subjectNormalized, today, due);
     }
 
     public static string Label(string status, DateTime? due, int lessonsUntil, Loc loc)

@@ -28,9 +28,15 @@ public sealed class SummaryComposer
             return new SummaryModel(p, isOddToday, false, 0, Array.Empty<CountItem>(), Array.Empty<CountItem>(), Array.Empty<CountItem>(), Array.Empty<CountItem>(), Array.Empty<CountItem>());
 
         var all = _app.Db.GetAllLessonsForGroup(settings.MyGroupId);
-        var xmlParity = ParityCodes.ToXml(p, settings.ParityInvert); // cache keeps XML week codes
-        var lessons = p == 0 ? all : all.Where(l => l.Parity == xmlParity).ToList();
+        var lessons = ForUserParity(all, p, settings.ParityInvert);
         return Build(p, isOddToday, lessons, l => LessonText.StripType(_app.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw), _app.Loc);
+    }
+
+    public static List<Lesson> ForUserParity(IReadOnlyList<Lesson> all, int userParity, bool invert)
+    {
+        if (userParity == 0) return all.ToList();
+        var xmlParity = ParityCodes.ToXml(userParity, invert);
+        return all.Where(lesson => lesson.Parity == 0 || lesson.Parity == xmlParity).ToList();
     }
 
     public static SummaryModel Build(int parity, bool isOddToday, IReadOnlyList<Lesson> lessons, Func<Lesson, string> displayName, Loc loc)

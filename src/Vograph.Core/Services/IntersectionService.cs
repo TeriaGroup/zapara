@@ -107,13 +107,4 @@ public class IntersectionService
         if (int.TryParse(digits[0].ToString(), out var f) && f >= 1 && f <= 9) return f;
         return 0;
     }
-
-    public static string ScoreToText(int score) => score switch
-    {
-        100 => "в той же аудитории",
-        75 => "на том же этаже",
-        50 => "в том же корпусе",
-        25 => "в вузе",
-        _ => "нет на месте"
-    };
 }

@@ -114,7 +114,7 @@ public sealed class NotificationScheduler : IDisposable
     }
 
     /// <summary>
-    /// Core's NotificationService.BuildNotificationText layout, rebuilt here because its «[ДЗ!]» marker reads the
+    /// The toast layout. Its «[ДЗ!]» marker reads the
     /// status Core persisted with the real clock. Everything else — day name, parity, numbering, display names —
     /// is Core's; only the marker is recomputed against <paramref name="now"/>. Runs inside the gate.
     /// </summary>

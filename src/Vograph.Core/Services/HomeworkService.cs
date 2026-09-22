@@ -305,30 +305,15 @@ ON CONFLICT(entityUuid) DO UPDATE SET done=excluded.done, doneAtUtc=excluded.don
         DateTime periodStart = DateTime.TryParse(settings.PeriodStart, out var ps) ? ps : new DateTime(DateTime.Now.Year, 9, 1);
         int weekCount = settings.WeekCount > 0 ? settings.WeekCount : 2;
 
-        int found = 0;
-        for (int offset = 1; offset <= 120; offset++)
-        {
-            var date = from.Date.AddDays(offset);
-            if (date.DayOfWeek == DayOfWeek.Sunday) continue;
-            int dow = (int)date.DayOfWeek; if (dow == 0) dow = 7;
-            int weekCode = ParityService.GetWeekCode(date, periodStart, weekCount);
-            if (settings.ParityInvert) weekCode = weekCode == 1 ? 2 : 1;
-
-            var lessons = _db.GetLessons(groupId, dow, weekCode);
-            foreach (var l in lessons)
-            {
-                if (ParityService.SameSubject(l.SubjectNormalized, subjectNormalized))
-                {
-                    found++;
-                    if (found == nth)
-                    {
-                        return date;
-                    }
-                    break; // one occurrence per day, even if the subject meets twice
-                }
-            }
-        }
-        return null;
+        return HomeworkCalendar.DueDate(
+            _db.GetAllLessonsForGroup(groupId),
+            _db.GetSubgroupChoices(groupId),
+            periodStart,
+            weekCount,
+            settings.ParityInvert,
+            subjectNormalized,
+            from,
+            nth);
     }
 
     public string ComputeStatus(Homework hw)
@@ -344,21 +329,16 @@ ON CONFLICT(entityUuid) DO UPDATE SET done=excluded.done, doneAtUtc=excluded.don
         DateTime periodStart = DateTime.TryParse(settings.PeriodStart, out var ps) ? ps : new DateTime(DateTime.Now.Year, 9, 1);
         int weekCount = settings.WeekCount > 0 ? settings.WeekCount : 2;
 
-        int lessonsBefore = 0;
-        for (int offset = 1; offset <= 120; offset++)
-        {
-            var d = today.AddDays(offset);
-            if (d >= due) break;
-            int dow = (int)d.DayOfWeek; if (dow == 0) dow = 7;
-            if (dow == 7) continue;
-            int wc = ParityService.GetWeekCode(d, periodStart, weekCount);
-            if (settings.ParityInvert) wc = wc == 1 ? 2 : 1;
-            var lessons = _db.GetLessons(groupId, dow, wc);
-            foreach (var l in lessons)
-            {
-                if (ParityService.SameSubject(l.SubjectNormalized, hw.SubjectRawNormalized)) lessonsBefore++;
-            }
-        }
+        var lessonsBefore = HomeworkCalendar.MeetingsBetween(
+            _db.GetAllLessonsForGroup(groupId),
+            _db.GetSubgroupChoices(groupId),
+            periodStart,
+            weekCount,
+            settings.ParityInvert,
+            hw.SubjectRawNormalized,
+            today,
+            due,
+            120);
 
         if (daysDiff < 0) return "overdue";
         if (daysDiff == 0) return "burning_urgent";

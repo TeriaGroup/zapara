@@ -126,7 +126,8 @@ public static class MapsComposer
     /// <summary>«через 25 мин» / «через 18 ч» / «через 2 дн.» / «идёт сейчас».</summary>
     public static string Until(DateTime now, DateTime start, DateTime end, Loc loc)
     {
-        if (now >= start && now < end) return loc.T("mapNow");
+        if (now >= end) return "";
+        if (now >= start) return loc.T("mapNow");
         var span = start - now;
         if (span.TotalMinutes < 60) return loc.T("mapInMinutes", Math.Max(1, (int)Math.Round(span.TotalMinutes)));
         if (span.TotalHours < 48) return loc.T("mapInHours", (int)Math.Round(span.TotalHours));
@@ -142,7 +143,7 @@ public static class MapsComposer
         }
         var where = map is null ? "" : $" · {RoomText(map)} · {Place(map, loc)}";
         if (mode == MapMode.Lesson) return loc.T("mapLessonPrefix", lessonName ?? RoomText(map!)) + where;
-        var when = start is { } s && end is { } e ? $" · {Until(now, s, e, loc)}" : "";
+        var when = start is { } s && end is { } e && now < e ? $" · {Until(now, s, e, loc)}" : "";
         return loc.T("mapNextLesson") + where + when;
     }
 

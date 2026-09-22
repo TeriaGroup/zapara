@@ -241,25 +241,25 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
         {
             var rows = _lessons
                 .Where(l => l.DayOfWeek == dow)
+                .Where(l => ParityCodes.OnUserWeek(ParityIndex, l.Parity, _invert))
                 .Select(l => (Lesson: l, UserParity: ParityCodes.ToUser(l.Parity, _invert)))
-                .Where(x => ParityIndex == 0 || x.UserParity == ParityIndex)
                 .OrderBy(x => TimeSpan.TryParse(x.Lesson.TimeStart, out var t) ? t : TimeSpan.Zero)
                 .ThenBy(x => x.UserParity)
-                .Select(x => Row(x.Lesson, x.UserParity, loc))
+                .Select(x => Row(x.Lesson, loc))
                 .ToList();
             days.Add(new TeacherDay(loc.T(DayNames.Key(dow)), dow == todayDow, rows));
         }
         return days;
     }
 
-    private TeacherRow Row(LecturerLesson l, int userParity, Loc loc)
+    private TeacherRow Row(LecturerLesson l, Loc loc)
     {
         var groups = l.Groups.Select(g => g.Number).Where(n => n.Length > 0).ToList();
         var groupsText = string.Join(", ", groups.Take(4)) + (groups.Count > 4 ? $" +{groups.Count - 4}" : "");
         var mine = l.Groups.Any(g => g.IdGroup == _myGroupId || (_myGroupName.Length > 0 && g.Number == _myGroupName));
         var room = string.IsNullOrWhiteSpace(l.ClassroomRaw) ? "—" : LessonText.CleanRoom(l.ClassroomRaw);
         return new TeacherRow(l.TimeStart, l.TimeEnd, LessonText.StripType(l.DisciplineRaw, l.TypeRaw), DayTitles.TypeLabel(l.TypeRaw, loc),
-            room, groupsText, loc.T(userParity == 1 ? "oddShort" : "evenShort"), mine);
+            room, groupsText, loc.T(ParityCodes.WeekLabelKey(l.Parity, _invert)), mine);
     }
 }
 

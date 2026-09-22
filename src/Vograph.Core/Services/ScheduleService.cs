@@ -37,23 +37,4 @@ public class ScheduleService
         var choices = _db.GetSubgroupChoices(groupId);
         return day.Where(lesson => SubgroupRules.Keep(lesson, index, choices)).ToList();
     }
-
-    public List<Lesson> GetScheduleForDayAndParity(string groupId, int dayOfWeek, int parity)
-    {
-        return _db.GetLessons(groupId, dayOfWeek, parity);
-    }
-
-    public List<Lesson> GetWeekView(string groupId, int parity, bool invert = false)
-    {
-        var settings = _db.GetSettings();
-        if (invert || settings.ParityInvert)
-            parity = parity == 1 ? 2 : 1;
-
-        var result = new List<Lesson>();
-        for (int d = 1; d <= 6; d++)
-        {
-            result.AddRange(_db.GetLessons(groupId, d, parity));
-        }
-        return result;
-    }
 }
