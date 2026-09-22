@@ -26,12 +26,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import ru.bgtu_voenmeh.zapara.ui.components.pressScale
 
-/** Foundation only; shell-specific controls belong to Task2. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ZCard(
@@ -106,7 +106,7 @@ fun ZButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, en
         contentColor = if (!enabled) c.onAccent.copy(alpha = 0.45f) else if (ghost) c.text1 else c.onAccent
     ) {
         Box(Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s), contentAlignment = Alignment.Center) {
-            Text(text, style = Zapara.typography.bodyStrong)
+            Text(text, style = Zapara.typography.bodyStrong, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

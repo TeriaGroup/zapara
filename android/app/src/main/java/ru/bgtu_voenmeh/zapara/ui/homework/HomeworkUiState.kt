@@ -1,8 +1,10 @@
 package ru.bgtu_voenmeh.zapara.ui.homework
 
+import android.net.Uri
 import ru.bgtu_voenmeh.zapara.ui.LessonFormat
 import ru.bgtu_voenmeh.zapara.ui.UiCopy
 import ru.bgtu_voenmeh.zapara.data.Homework
+import ru.bgtu_voenmeh.zapara.data.HomeworkStoredFile
 import java.time.LocalDate
 
 enum class GroupStatus { Overdue, Burning, Soon, Later, Done }
@@ -24,7 +26,8 @@ data class HomeworkItemUi(
     val subjectRaw: String = "",
     val n: Int = 1,
     val due: LocalDate? = null,
-    val statusLabel: String = ""
+    val statusLabel: String = "",
+    val files: List<HomeworkStoredFile> = emptyList()
 )
 
 data class HomeworkGroupUi(
@@ -34,7 +37,7 @@ data class HomeworkGroupUi(
     val collapsed: Boolean
 )
 
-data class SubjectUi(val raw: String, val norm: String, val display: String)
+data class SubjectUi(val raw: String, val norm: String, val display: String, val type: String = "")
 
 data class SubjectPickerUi(val subjects: List<SubjectUi>, val query: String = "")
 
@@ -63,6 +66,9 @@ sealed interface HomeworkEvent {
     data object ConfirmDelete : HomeworkEvent
     data object CancelDelete : HomeworkEvent
     data class ToggleGroup(val status: GroupStatus) : HomeworkEvent
+    data class Attach(val kind: String, val uri: Uri) : HomeworkEvent
+    data class RemoveFile(val id: String) : HomeworkEvent
+    data class OpenFile(val homeworkId: Long, val fileId: String) : HomeworkEvent
 }
 
 data class HomeworkEditorState(
@@ -72,7 +78,10 @@ data class HomeworkEditorState(
     val text: String,
     val n: Int,
     val isEdit: Boolean,
-    val dueFor: (Int, String) -> LocalDate?
+    val dueFor: (Int, String) -> LocalDate?,
+    val files: List<HomeworkStoredFile> = emptyList(),
+    val draft: String = "",
+    val removed: Set<String> = emptySet()
 ) {
     val canSave: Boolean get() = text.trim().isNotEmpty()
     fun hasChanges(existing: Homework): Boolean = text.trim() != existing.text || n != existing.n

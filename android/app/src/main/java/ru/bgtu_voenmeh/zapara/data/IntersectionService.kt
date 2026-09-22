@@ -3,7 +3,6 @@ package ru.bgtu_voenmeh.zapara.data
 import java.time.DayOfWeek
 import java.time.LocalDate
 
-// Port of Vograph.Core IntersectionService.
 object IntersectionService {
 
     fun intersections(

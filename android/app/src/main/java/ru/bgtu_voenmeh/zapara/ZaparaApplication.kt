@@ -3,13 +3,18 @@ package ru.bgtu_voenmeh.zapara
 import android.app.Application
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import ru.bgtu_voenmeh.zapara.data.HomeworkFileStore
 import ru.bgtu_voenmeh.zapara.data.HomeworkService
+import ru.bgtu_voenmeh.zapara.data.Lesson
 import ru.bgtu_voenmeh.zapara.data.OverrideService
 import ru.bgtu_voenmeh.zapara.data.SchedCtx
+import ru.bgtu_voenmeh.zapara.data.SubgroupStore
+import ru.bgtu_voenmeh.zapara.data.Subgroups
 import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountHttpClient
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountSessionManager
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountServerScope
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountSessionVault
 import ru.bgtu_voenmeh.zapara.data.accounts.KeystoreAccountSessionVault
@@ -61,6 +66,7 @@ class AndroidProfileHost(val app: Application) : ViewModelStoreOwner {
     val vault: AccountSessionVault = accountScope?.let { KeystoreAccountSessionVault(app, it.key) }
         ?: MemoryAccountSessionVault("0".repeat(64))
     val accounts: AccountHttpClient? = accountScope?.let { AccountHttpClient(transport, it) }
+    val sessions: AccountSessionManager? = accounts?.let { AccountSessionManager(it, vault) }
     private val containers = HashMap<String, AppContainer>()
     val generation = MutableStateFlow(0L)
     val coordinator: ProfileCoordinator
@@ -94,11 +100,11 @@ class AndroidProfileHost(val app: Application) : ViewModelStoreOwner {
         val store = RoomTimetableStore(db)
         val work = ProfileWork()
         val repo = ScheduleRepository(db, store, work)
-        val api = ApiRefreshCoordinator(store, work, apiBase, transport)
+        val api = ApiRefreshCoordinator(store, work, apiBase, transport, repo::saveSettings)
         val created = AppContainer(
             app, descriptor, db, repo, work, api,
             communities = accountScope?.let { CommunityHttpClient(transport, it) },
-            readAccessToken = { readAccessToken() },
+            readAccessToken = { readAccessToken(descriptor) },
             syncHttp = if (descriptor.isGuest) null else accountScope?.let { PrivateSyncHttpClient(transport, it.baseUri) }
         )
         created.repo.outbox = created.outbox
@@ -107,8 +113,17 @@ class AndroidProfileHost(val app: Application) : ViewModelStoreOwner {
         return created
     }
 
-    private suspend fun readAccessToken(): String? = try {
-        vault.acquire().use { it.read()?.session?.accessToken }
+    private suspend fun readAccessToken(descriptor: ProfileDescriptor): String? = try {
+        val manager = sessions
+        if (manager != null && !descriptor.isGuest) {
+            val current = vault.acquire().use { it.read() }
+            if (current != null && current.serverKey == descriptor.serverKey && current.userId == descriptor.userId) {
+                manager.validSession()
+            }
+        }
+        vault.acquire().use { ru.bgtu_voenmeh.zapara.data.sync.scopedSyncAccessToken(descriptor, it.read()) }
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         android.util.Log.w("ZaparaProfile", "token", e)
         null
@@ -156,9 +171,23 @@ class AppContainer(
         private set
     val outbox = RoomSyncOutbox.from(db, enabled = !profile.isGuest)
     val privateSync: PrivateSyncCoordinator? =
-        if (profile.isGuest) null else PrivateSyncCoordinator(outbox, work)
+        if (profile.isGuest) null else PrivateSyncCoordinator(outbox, work) {
+            homework.recomputeAll()
+            notifyDataChanged()
+        }
     val mapStore by lazy { MapStore(app) }
     val lecturerStore by lazy { LecturerStore(app) }
+    val subgroups by lazy { SubgroupStore(app) }
+    val homeworkFiles by lazy { HomeworkFileStore(HomeworkFileStore.root(app.filesDir, profile.databaseName)) }
+
+    fun subgroupChoices(groupId: String): Map<String, String> =
+        if (groupId.isEmpty()) emptyMap() else subgroups.read(profile.databaseName, groupId)
+
+    fun ownLessons(): List<Lesson> {
+        val gid = repo.settings().myGroupId.orEmpty()
+        if (gid.isEmpty()) return emptyList()
+        return Subgroups.visible(repo.allForGroup(gid), subgroupChoices(gid))
+    }
     val overrides by lazy { OverrideService(db.overrideDao(), outbox) }
     val homework by lazy {
         HomeworkService(

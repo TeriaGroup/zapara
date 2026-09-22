@@ -6,7 +6,6 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
 
-// Port of Vograph.Core LecturerService.Parse (lecturer XML).
 data class ParsedLecturerSchedule(
     val lecturers: List<LecturerInfo>,
     val lessons: List<LecturerLesson>
@@ -59,7 +58,7 @@ object LecturerParser {
                     var subjectRaw = discRaw
                     if (discRaw.isNotBlank()) {
                         val parts = discRaw.trim().split(Regex("\\s+"), limit = 2)
-                        if (parts.size == 2 && parts[0].lowercase() in TYPE_TOKENS) {
+                        if (parts.size == 2 && parts[0].lowercase(java.util.Locale.ROOT) in TYPE_TOKENS) {
                             typeRaw = parts[0]
                             subjectRaw = parts[1]
                         }

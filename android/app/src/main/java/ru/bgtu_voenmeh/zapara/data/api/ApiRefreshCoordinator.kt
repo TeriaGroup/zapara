@@ -4,13 +4,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork
+import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
 import java.net.URI
 
 class ApiRefreshCoordinator(
     private val store: TimetableStore,
     private val work: ProfileWork,
     baseUrl: String?,
-    transport: HttpExchange
+    transport: HttpExchange,
+    private val saveSettings: (ScheduleRepository.SettingsState) -> Unit = store::saveSettings
 ) {
     private val client: TimetableApiClient?
     private val sourceBase: String
@@ -58,17 +60,21 @@ class ApiRefreshCoordinator(
             return refreshLock.withLock {
                 ticket.throwIfStale()
                 val cache = TimetableApiCache(store)
-                val selected = store.settings().myGroupId
+                val before = store.settings()
+                val selected = before.myGroupId
+                val selectedName = store.storedGroups().firstOrNull { it.id == selected }?.name
                 val friendNames = store.friends().filter { it.enabled }.map { it.groupName }
                 var ids = linkedSetOf<String>()
                 if (selected != null) ids.add(selected)
                 val known = store.groups().associateBy { it.name }
-                var unresolved = false
+                val requirements = mutableListOf<TimetableGroupRequest>()
+                if (selected != null) requirements.add(TimetableGroupRequest(selected, selectedName))
                 for (name in friendNames) {
                     val id = known[name]?.id
-                    if (id.isNullOrEmpty()) unresolved = true else ids.add(id)
+                    if (!id.isNullOrEmpty()) ids.add(id)
+                    requirements.add(TimetableGroupRequest(id, name))
                 }
-                if (neededOnly && cache.read("")?.sourceBase == sourceBase && ids.isNotEmpty() &&
+                if (neededOnly && requirements.all { it.id != null } && cache.read("")?.sourceBase == sourceBase && ids.isNotEmpty() &&
                     ids.all { id ->
                         val m = cache.read(id)
                         m?.source == "api" && m.sourceBase == sourceBase &&
@@ -76,18 +82,7 @@ class ApiRefreshCoordinator(
                     }
                 ) return@withLock false
                 val snapshot = try {
-                    val fetchIds = if (unresolved) emptyList() else ids.toList()
-                    var result = http.fetch(fetchIds)
-                    if (unresolved && selected != null) {
-                        val byName = result.groups.associateBy { it.name }
-                        val resolved = linkedSetOf(selected)
-                        for (name in friendNames) {
-                            val g = byName[name] ?: throw TimetableApiException(TimetableApiFailure.UnknownRequiredGroup)
-                            resolved.add(g.id)
-                        }
-                        result = http.fetch(resolved.toList())
-                    }
-                    result
+                    http.fetchResolved(requirements)
                 } catch (e: TimetableApiException) {
                     ticket.throwIfStale()
                     lastFailure = e.failure
@@ -95,7 +90,11 @@ class ApiRefreshCoordinator(
                 }
                 ticket.throwIfStale()
                 if (stopped) return@withLock false
-                cache.apply(snapshot, sourceBase)
+                if (store.settings().useUniversityXml || store.settings().myGroupId != selected || store.friends().filter { it.enabled }.map { it.groupName } != friendNames)
+                    return@withLock false
+                val resolvedSelected = selected?.let { TimetableGroupRequest(it, selectedName).resolve(snapshot.groups).id }
+                try { cache.apply(snapshot, sourceBase, resolvedSelected, saveSettings, before) }
+                catch (_: StaleTimetableSelection) { return@withLock false }
                 lastError = null
                 lastFailure = null
                 true

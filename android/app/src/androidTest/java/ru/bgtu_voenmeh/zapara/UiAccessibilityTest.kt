@@ -6,7 +6,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.semantics
@@ -19,8 +18,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
 import androidx.compose.ui.platform.ViewRootForTest
 import org.junit.After
-import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.*
 import org.junit.Rule
@@ -234,7 +231,7 @@ class UiAccessibilityTest(private val theme: ThemeChoice, private val scale: Flo
         var decrements = 0
         content {
             var text by remember { mutableStateOf("") }
-                HomeworkEditorSheet(HomeworkEditorState(null, "Математика", "Математика", text, 1, false) { _, _ -> null },
+                HomeworkEditorSheet(HomeworkEditorState(null, "Математика", "Математика", text, 1, false, dueFor = { _, _ -> null }),
                 { text = it }, { increments++ }, { decrements++ }, {}, {})
         }
         rule.onNodeWithTag("Editor.Text").performClick().performTextInput("Решить задачу")

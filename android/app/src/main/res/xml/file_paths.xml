@@ -2,4 +2,5 @@
 <!-- FileProvider paths for self-update APKs (cache/updates/*.apk). -->
 <paths>
     <cache-path name="updates" path="updates/" />
+    <files-path name="homework" path="homework-files/" />
 </paths>

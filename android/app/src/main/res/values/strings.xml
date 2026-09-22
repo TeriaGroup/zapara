@@ -44,6 +44,8 @@
     <string name="toast_group">Группа: %1$s</string>
     <string name="today">Сегодня</string>
     <string name="no_lessons_day">Пар нет</string>
+    <string name="subgroup_pick">Выберите подгруппу</string>
+    <string name="subgroup_yours">Ваша подгруппа</string>
     <string name="no_lessons_sunday">Воскресенье — пар нет</string>
     <string name="next_lesson_hint">следующая пара — %1$s, %2$s</string>
     <string name="refresh_ok">Расписание обновлено</string>
@@ -83,6 +85,13 @@
     <string name="hw_editor_hint">Что сделать</string>
     <string name="hw_due_prefix">Срок: %1$s</string>
     <string name="hw_saved">Домашка сохранена</string>
+    <string name="hw_attach_photo">Фото</string>
+    <string name="hw_attach_document">Документ</string>
+    <string name="hw_attach_remove">Убрать</string>
+    <string name="hw_attach_open">Открыть %1$s</string>
+    <string name="hw_attach_big">Файл слишком большой</string>
+    <string name="hw_attach_bad">Такой файл приложить нельзя</string>
+    <string name="hw_attach_full">Можно приложить не больше шести файлов</string>
     <string name="hw_delete_title">Удалить домашку?</string>
     <string name="subject_picker_title">Предмет</string>
     <string name="add">Добавить</string>

@@ -6,7 +6,6 @@ import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.ui.theme.ZaparaSpace
 import java.io.File
 
-/** Source guards also run RED before the public types exist. */
 class ThemeFoundationTest {
     private val theme = File("src/main/java/ru/bgtu_voenmeh/zapara/ui/theme")
 

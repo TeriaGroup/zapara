@@ -4,7 +4,6 @@ import ru.bgtu_voenmeh.zapara.data.Friend
 import ru.bgtu_voenmeh.zapara.data.GroupInfo
 import ru.bgtu_voenmeh.zapara.data.Lesson
 import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
-import java.time.LocalDate
 
 interface TimetableStore {
     var useApiCatalog: Boolean
@@ -60,7 +59,7 @@ class MemoryTimetableStore : TimetableStore {
     override fun settings(): ScheduleRepository.SettingsState = overlaySettings(this, settingsState)
 
     override fun saveSettings(state: ScheduleRepository.SettingsState) {
-        settingsState = state
+        settingsState = state.copy(lastFetchedAt = preserveLastFetchedAt(settingsState.lastFetchedAt, state.lastFetchedAt))
     }
 
     override fun groups(): List<GroupInfo> {
@@ -134,6 +133,10 @@ class MemoryTimetableStore : TimetableStore {
         val friends: List<Friend>
     )
 }
+
+/** A null read from the API overlay must not erase a stamp the database already has. */
+fun preserveLastFetchedAt(stored: String?, incoming: String?): String? =
+    if (incoming.isNullOrBlank() && !stored.isNullOrBlank()) stored else incoming
 
 fun overlaySettings(store: TimetableStore, raw: ScheduleRepository.SettingsState): ScheduleRepository.SettingsState {
     if (raw.useUniversityXml) return raw

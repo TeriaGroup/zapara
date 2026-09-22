@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -115,7 +114,9 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, on
             onInc = { onEvent(ScheduleEvent.HomeworkEditorInc) },
             onDec = { onEvent(ScheduleEvent.HomeworkEditorDec) },
             onSave = { onEvent(ScheduleEvent.HomeworkEditorSave) },
-            onCancel = { onEvent(ScheduleEvent.HomeworkEditorCancel) }
+            onCancel = { onEvent(ScheduleEvent.HomeworkEditorCancel) },
+            onPick = { kind, uri -> onEvent(ScheduleEvent.HomeworkAttach(kind, uri)) },
+            onRemove = { onEvent(ScheduleEvent.HomeworkRemoveFile(it)) }
         )
     }
 }
@@ -141,12 +142,13 @@ private fun LessonList(page: DayPage, refreshing: Boolean, onEvent: (ScheduleEve
         contentPadding = PaddingValues(Zapara.space.l),
         verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
     ) {
-        itemsIndexed(page.lessons, key = { _, it -> "${it.dayOfWeek}:${it.index}:${it.timeStart}:${it.subjectNorm}" }) { index, lesson ->
+        itemsIndexed(page.lessons, key = { _, it -> "${it.dayOfWeek}:${it.index}:${it.timeStart}:${it.subjectNorm}:${it.teacher}" }) { index, lesson ->
             LessonCard(
                 lesson,
                 onLongClick = { onEvent(ScheduleEvent.LongPress(lesson)) },
                 onRoom = { onOpenMap(lesson.classroomRaw) },
                 onToggleDone = { onEvent(ScheduleEvent.ToggleDone(it)) },
+                onSubgroup = { stream, option -> onEvent(ScheduleEvent.PickSubgroup(stream, option)) },
                 modifier = Modifier.appear(index)
             )
         }

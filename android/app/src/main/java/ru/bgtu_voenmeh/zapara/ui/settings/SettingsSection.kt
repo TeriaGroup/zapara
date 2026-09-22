@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
@@ -83,6 +84,16 @@ fun SettingsSection(
         ZTopBar(stringResource(R.string.nav_settings))
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             item { AccountCard(account, onAccount) }
+            if (state.syncConflicts.isNotEmpty() || state.syncError != null) item {
+                ZCard(Modifier.fillMaxWidth().testTag("Sync.Conflicts")) {
+                    Text(stringResource(R.string.sync_conflict_title), style = Zapara.typography.section, color = c.text1)
+                    Text(stringResource(R.string.sync_conflict_body), style = Zapara.typography.body, color = c.text2)
+                    state.syncError?.let { Text(it, style = Zapara.typography.body, color = c.bad) }
+                }
+            }
+            items(state.syncConflicts, key = { "conflict:${it.operation.opId}" }) { conflict ->
+                SyncConflictCard(conflict, state.syncBusy) { keepLocal -> onEvent(SettingsEvent.ResolveSync(conflict, keepLocal)) }
+            }
             item {
                 ZCard(Modifier.fillMaxWidth().testTag("Settings.Group")) {
                     Text(stringResource(R.string.settings_group), style = Zapara.typography.caption, color = c.text2)
@@ -129,9 +140,8 @@ fun SettingsSection(
             }
             item {
                 ZCard(Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.settings_notify), style = Zapara.typography.section, color = c.text1)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.settings_notify), style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
+                        Text(stringResource(R.string.settings_notify), style = Zapara.typography.section, color = c.text1, modifier = Modifier.weight(1f))
                         ZSwitch(state.notifyEnabled, { onEvent(SettingsEvent.Notify(it)) }, "Settings.Notify")
                     }
                     TimeField(state.time1, stringResource(R.string.settings_time_evening), "Settings.Time1") { onEvent(SettingsEvent.Time1(it)) }

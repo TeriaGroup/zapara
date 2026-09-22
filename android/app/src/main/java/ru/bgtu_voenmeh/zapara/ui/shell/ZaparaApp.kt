@@ -41,6 +41,8 @@ import ru.bgtu_voenmeh.zapara.ZaparaApplication
 import ru.bgtu_voenmeh.zapara.ui.account.AccountViewModel
 import ru.bgtu_voenmeh.zapara.ui.communities.CommunitiesSection
 import ru.bgtu_voenmeh.zapara.ui.communities.CommunitiesViewModel
+import ru.bgtu_voenmeh.zapara.ui.groups.GroupSection
+import ru.bgtu_voenmeh.zapara.ui.groups.GroupViewModel
 import ru.bgtu_voenmeh.zapara.ui.components.ToastHost
 import ru.bgtu_voenmeh.zapara.ui.friends.FriendsSection
 import ru.bgtu_voenmeh.zapara.ui.friends.FriendsViewModel
@@ -216,6 +218,13 @@ private fun ZaparaAppBody(
                                 val vm: CommunitiesViewModel = viewModel(factory = CommunitiesViewModel.factory(container))
                                 val s by vm.state.collectAsStateWithLifecycle()
                                 CommunitiesSection(s, vm::onEvent)
+                                }
+                            }
+                            composable(Section.Group.route) {
+                                ProvideSectionEntry {
+                                val vm: GroupViewModel = viewModel(factory = GroupViewModel.factory(container))
+                                val s by vm.state.collectAsStateWithLifecycle()
+                                GroupSection(s, vm::onEvent)
                                 }
                             }
                             composable(Section.Settings.route) {

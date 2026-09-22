@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- A1: only network-state perms needed later by auto-refresh/sync. Camera/alarms land with their phases. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -73,6 +72,17 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_homework_info" />
+        </receiver>
+        <receiver
+            android:name=".ui.widgets.TimerWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_timer_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_timer_info" />
         </receiver>
         <provider
             android:name=".ui.widgets.WidgetInitProvider"

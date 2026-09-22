@@ -18,6 +18,7 @@ import ru.bgtu_voenmeh.zapara.data.SchedCtx
 class WeekViewModel(private val container: AppContainer) : ViewModel() {
     private val mutable = MutableStateFlow(WeekUiState())
     val state: StateFlow<WeekUiState> = mutable.asStateFlow()
+    private var reloadTicket = 0
 
     init {
         viewModelScope.launch { reload() }
@@ -32,15 +33,17 @@ class WeekViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private suspend fun reload(parityOverride: Int? = null) {
+        val ticket = ++reloadTicket
+        val requested = parityOverride ?: mutable.value.parity.takeIf { mutable.value.loaded }
         try {
             val snap = withContext(Dispatchers.IO) {
                 val prefs = container.repo.settings()
                 val gid = prefs.myGroupId.orEmpty()
                 val today = container.clock().toLocalDate()
                 val current = if (Parity.isOddWeek(today, prefs.periodStart, prefs.weekCount, prefs.parityInvert)) 1 else 2
-                val parity = parityOverride ?: mutable.value.parity.takeIf { mutable.value.loaded } ?: current
+                val parity = requested ?: current
                 val ctx = SchedCtx(gid, prefs.periodStart, prefs.weekCount, prefs.parityInvert)
-                val lessons = if (gid.isEmpty()) emptyList() else container.repo.allForGroup(gid)
+                val lessons = if (gid.isEmpty()) emptyList() else container.ownLessons()
                 val days = if (gid.isEmpty()) emptyList() else WeekComposer.compose(
                     parity, lessons,
                     { norm, dow -> container.overrides.displayNameByNorm(norm, dow) },
@@ -48,6 +51,7 @@ class WeekViewModel(private val container: AppContainer) : ViewModel() {
                 )
                 WeekUiState(true, gid.isNotEmpty(), parity, current, days)
             }
+            if (ticket != reloadTicket) return
             mutable.value = snap
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {

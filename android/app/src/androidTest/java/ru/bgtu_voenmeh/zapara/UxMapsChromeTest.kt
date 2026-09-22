@@ -19,7 +19,7 @@ import ru.bgtu_voenmeh.zapara.data.campus.*
 import ru.bgtu_voenmeh.zapara.ui.maps.*
 import ru.bgtu_voenmeh.zapara.ui.theme.*
 
-/** Tests-first UX packet. No orientation, system setting, database or raster writes. */
+/** No orientation, system setting, database or raster writes. */
 class UxMapsChromeTest {
     @get:Rule val rule = createComposeRule()
     private val route = Route(120, listOf(

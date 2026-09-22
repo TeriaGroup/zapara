@@ -32,7 +32,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.appear
 fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) -> Unit) {
     val selected = state.selected
     if (state.pane == CommunityPane.Detail && selected != null) {
-        CommunityDetail(selected, onEvent)
+        CommunityDetail(selected, state.failed, onEvent)
         return
     }
     val c = Zapara.colors
@@ -46,17 +46,25 @@ fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) ->
             )
             CommunityPane.Empty -> EmptyState(
                 R.drawable.ic_community,
-                stringResource(R.string.community_empty),
-                tag = "Empty.Communities"
+                stringResource(if (state.failed) R.string.community_failed else R.string.community_empty),
+                tag = if (state.failed) "Empty.CommunityFailed" else "Empty.Communities"
             )
             CommunityPane.Forbidden -> EmptyState(
                 R.drawable.ic_community,
                 stringResource(R.string.community_forbidden),
                 tag = "Empty.Forbidden"
             )
-            CommunityPane.Catalog, CommunityPane.Detail -> {
+            CommunityPane.Catalog, CommunityPane.Detail -> Column(Modifier.fillMaxSize()) {
+                if (state.failed) {
+                    Text(
+                        stringResource(R.string.community_failed),
+                        color = c.bad,
+                        style = Zapara.typography.caption,
+                        modifier = Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s).testTag("Community.Error")
+                    )
+                }
                 LazyColumn(
-                    Modifier.fillMaxSize(),
+                    Modifier.weight(1f).fillMaxWidth(),
                     contentPadding = PaddingValues(Zapara.space.l),
                     verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
                 ) {
@@ -96,13 +104,21 @@ fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) ->
 }
 
 @Composable
-private fun CommunityDetail(selected: CommunityDetailUi, onEvent: (CommunitiesEvent) -> Unit) {
+private fun CommunityDetail(selected: CommunityDetailUi, failed: Boolean, onEvent: (CommunitiesEvent) -> Unit) {
     val c = Zapara.colors
     BackHandler { onEvent(CommunitiesEvent.Back) }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.s), verticalAlignment = Alignment.CenterVertically) {
             ZIconButton(R.drawable.ic_chevron_left, stringResource(R.string.community_title), { onEvent(CommunitiesEvent.Back) }, "Community.Back")
             Text(selected.name, style = Zapara.typography.title, color = c.text1, modifier = Modifier.weight(1f))
+        }
+        if (failed) {
+            Text(
+                stringResource(R.string.community_failed),
+                color = c.bad,
+                style = Zapara.typography.caption,
+                modifier = Modifier.padding(horizontal = Zapara.space.l).testTag("Community.Error")
+            )
         }
         LazyColumn(
             Modifier.fillMaxSize(),

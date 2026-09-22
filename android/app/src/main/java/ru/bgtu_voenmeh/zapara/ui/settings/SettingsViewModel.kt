@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import ru.bgtu_voenmeh.zapara.AppContainer
 import ru.bgtu_voenmeh.zapara.BuildConfig
@@ -28,6 +30,8 @@ import ru.bgtu_voenmeh.zapara.ui.theme.ThemeChoice
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val mutable = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = mutable.asStateFlow()
+    private val saves = Mutex()
+    private var reloadTicket = 0
 
     init {
         viewModelScope.launch { reload() }
@@ -36,6 +40,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun onEvent(event: SettingsEvent) {
         when (event) {
+            is SettingsEvent.ResolveSync -> resolveSync(event)
             SettingsEvent.ChangeGroup -> { }
             SettingsEvent.Refresh -> refresh()
             is SettingsEvent.Theme -> {
@@ -105,6 +110,28 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    private fun resolveSync(event: SettingsEvent.ResolveSync) {
+        if (mutable.value.syncBusy) return
+        mutable.update { it.copy(syncBusy = true, syncError = null) }
+        viewModelScope.launch {
+            try {
+                val changed = withContext(Dispatchers.IO) { container.privateSync?.resolve(event.conflict, event.keepLocal) == true }
+                if (!changed) mutable.update { it.copy(syncError = container.app.getString(R.string.sync_choice_changed)) }
+                reload()
+                if (changed) viewModelScope.launch(Dispatchers.IO) {
+                    try { container.privateSync?.sync() }
+                    catch (e: CancellationException) { throw e }
+                    catch (e: Exception) { android.util.Log.w("ZaparaSync", "sync after choice", e) }
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                mutable.update { it.copy(syncError = container.app.getString(R.string.sync_choice_failed)) }
+            } finally {
+                mutable.update { it.copy(syncBusy = false) }
+            }
+        }
+    }
+
     private fun persistTimes() {
         val s = mutable.value
         if (s.timeError != null) return
@@ -118,13 +145,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun refresh() {
+        if (mutable.value.refreshing) return
+        if (mutable.value.groupName.isEmpty()) {
+            container.toasts.show(container.app.getString(R.string.pick_group_first), ToastKind.Bad)
+            return
+        }
+        mutable.update { it.copy(refreshing = true) }
         viewModelScope.launch {
-            if (mutable.value.refreshing) return@launch
-            if (mutable.value.groupName.isEmpty()) {
-                container.toasts.show(container.app.getString(R.string.pick_group_first), ToastKind.Bad)
-                return@launch
-            }
-            mutable.update { it.copy(refreshing = true) }
             try {
                 withContext(Dispatchers.IO) {
                     if (!container.timetable.pull()) {
@@ -150,13 +177,15 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     ) {
         viewModelScope.launch {
             try {
-                val saved = withContext(Dispatchers.IO) {
-                    var next: ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState? = null
-                    container.db.runInTransaction {
-                        next = transform(container.repo.settings())
-                        container.repo.saveSettings(next!!)
+                val saved = saves.withLock {
+                    withContext(Dispatchers.IO) {
+                        var next: ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState? = null
+                        container.db.runInTransaction {
+                            next = transform(container.repo.settings())
+                            container.repo.saveSettings(next!!)
+                        }
+                        next!!
                     }
-                    next!!
                 }
                 after(saved)
             } catch (e: CancellationException) { throw e }
@@ -167,6 +196,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private suspend fun reload() {
+        val ticket = ++reloadTicket
         try {
             val now = container.clock()
             val snap = withContext(Dispatchers.IO) {
@@ -185,7 +215,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     theme = ThemeChoice.fromKey(prefs.theme), animations = prefs.animations,
                     notifyEnabled = prefs.notifyEnabled,
                     time1 = prefs.notifyTime1 ?: "20:00", time2 = prefs.notifyTime2 ?: "07:30",
-                    timeError = mutable.value.timeError,
+                    timeError = null,
                     permissionMissing = permissionMissing(),
                     exactAlarmMissing = !canExact(),
                     selfUpdate = BuildConfig.SELF_UPDATE,
@@ -193,10 +223,24 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     autoUpdate = AutoUpdate.isAutoUpdateEnabled(container.app),
                     apiConfigured = container.api.configured,
                     useUniversityXml = prefs.useUniversityXml,
-                    mapsAlpha = prefs.mapsAlpha
+                    mapsAlpha = prefs.mapsAlpha,
+                    syncConflicts = if (container.profile.isGuest) emptyList() else container.outbox.inbox.conflicts(),
+                    syncBusy = false,
+                    syncError = null
                 )
             }
-            mutable.value = snap
+            if (ticket != reloadTicket) return
+            mutable.update { cur ->
+                val editingTimes = cur.timeError != null
+                snap.copy(
+                    refreshing = cur.refreshing,
+                    syncBusy = cur.syncBusy,
+                    syncError = cur.syncError,
+                    time1 = if (editingTimes) cur.time1 else snap.time1,
+                    time2 = if (editingTimes) cur.time2 else snap.time2,
+                    timeError = if (editingTimes) cur.timeError else snap.timeError
+                )
+            }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             android.util.Log.w("ZaparaSettings", "reload", e)

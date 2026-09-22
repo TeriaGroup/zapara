@@ -4,7 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-// Lecturer schedule from bundled assets (offline-first). Network refresh lands in A5.
+// Lecturer schedule from bundled assets (offline-first).
 class LecturerStore(private val context: Context) {
 
     @Volatile
@@ -17,8 +17,6 @@ class LecturerStore(private val context: Context) {
             LecturerParser.parse(xml).also { data = it }
         }
     }
-
-    fun isLoaded(): Boolean = data != null
 
     fun lecturers(): List<LecturerInfo> = data?.lecturers.orEmpty()
 

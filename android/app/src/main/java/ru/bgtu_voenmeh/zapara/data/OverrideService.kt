@@ -9,7 +9,7 @@ import ru.bgtu_voenmeh.zapara.data.sync.SyncValidation
 import java.time.LocalDate
 import java.util.UUID
 
-// Port of Vograph.Core OverrideService. Global scope wins over weekday scope.
+// Global scope wins over weekday scope.
 class OverrideService(
     private val dao: OverrideDao,
     private val outbox: RoomSyncOutbox? = null

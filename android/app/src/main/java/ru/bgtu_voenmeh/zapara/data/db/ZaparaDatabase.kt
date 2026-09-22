@@ -11,8 +11,6 @@ import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Update
 
-// Room schema mirrors Windows Database.cs (v2: overrides/homework/strictness/alwaysShow).
-
 @Entity(tableName = "groups")
 data class GroupEntity(
     @PrimaryKey val id: String,
@@ -109,12 +107,6 @@ interface LessonDao {
 
     @Query("DELETE FROM schedule_cache WHERE groupId = :groupId")
     fun clearForGroup(groupId: String)
-
-    @Query(
-        "SELECT * FROM schedule_cache WHERE groupId = :groupId AND dayOfWeek = :dow " +
-            "AND (parity = :parity OR parity = 0) ORDER BY idx, timeStart"
-    )
-    fun getLessons(groupId: String, dow: Int, parity: Int): List<LessonEntity>
 
     @Query("SELECT * FROM schedule_cache WHERE groupId = :groupId ORDER BY dayOfWeek, parity, idx")
     fun getAllForGroup(groupId: String): List<LessonEntity>

@@ -4,7 +4,7 @@ import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
 
-// Pure port of NotificationService.BuildNotificationText (no Android deps).
+// No Android dependencies: JVM unit tests call this directly.
 object NotificationText {
 
     fun build(

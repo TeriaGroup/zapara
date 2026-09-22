@@ -7,13 +7,13 @@ import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.shell.Section
 
 class SectionTest {
-    @Test fun three_in_the_bar_six_in_the_sheet() {
+    @Test fun three_in_the_bar_and_the_rest_in_the_sheet() {
         assertEquals(listOf(Section.Schedule, Section.Maps, Section.Homework), Section.bar)
         assertEquals(
-            listOf(Section.Week, Section.Summary, Section.Teachers, Section.Friends, Section.Community, Section.Settings),
+            listOf(Section.Week, Section.Summary, Section.Teachers, Section.Friends, Section.Community, Section.Group, Section.Settings),
             Section.sheet
         )
-        assertEquals(9, Section.entries.size)
+        assertEquals(10, Section.entries.size)
     }
 
     @Test fun community_is_sheet_not_bar() {

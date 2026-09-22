@@ -24,7 +24,6 @@ import ru.bgtu_voenmeh.zapara.data.db.SettingsEntity
 import ru.bgtu_voenmeh.zapara.data.db.ZaparaDatabase
 
 
-// A3 end-to-end: seed DB -> launch -> override/homework/traffic/friends-dialog visible.
 // Uses the real main looper and accessibility tree; no test-dispatcher or Espresso dependency.
 @RunWith(AndroidJUnit4::class)
 class ScheduleFlowTest {

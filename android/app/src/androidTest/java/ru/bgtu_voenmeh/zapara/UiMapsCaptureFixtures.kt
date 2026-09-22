@@ -29,7 +29,7 @@ import ru.bgtu_voenmeh.zapara.ui.summary.SummaryEvent
 import ru.bgtu_voenmeh.zapara.ui.summary.SummaryUiState
 import ru.bgtu_voenmeh.zapara.ui.homework.*
 
-/** Incremental Task12 fixture. Unsupported matrix cells FAIL, never render a substitute. */
+/** Unsupported matrix cells FAIL, never render a substitute. */
 internal class UiMapsCaptureFixtures : AutoCloseable {
     private val context = MapTestContext()
     private val catalog = runBlocking(Dispatchers.IO) {

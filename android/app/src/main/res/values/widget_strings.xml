@@ -3,4 +3,12 @@
     <string name="widget_schedule_description">Ближайшие пары текущей группы</string>
     <string name="widget_homework_description">Домашние задания текущей группы</string>
     <string name="widget_guest">Гость</string>
+    <string name="widget_timer_label">Таймер</string>
+    <string name="widget_timer_description">Время до конца текущей пары или перемены</string>
+    <string name="widget_timer_lesson">Пара</string>
+    <string name="widget_timer_break">Перемена</string>
+    <string name="widget_timer_idle">Сейчас нет пары</string>
+    <string name="widget_timer_done">Пары закончились</string>
+    <string name="widget_timer_next">Далее · %1$s · %2$s</string>
+    <string name="widget_timer_at">в %1$s</string>
 </resources>

@@ -15,7 +15,6 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 
-// Daily schedule notifications (port of Windows NotificationService: 2 user times).
 // Time1 (evening) -> tomorrow's lessons, time2 (morning) -> today's lessons.
 object Notifications {
     const val CHANNEL = "zapara_schedule"
@@ -109,7 +108,15 @@ object Notifications {
                 ctx = { SchedCtx(s.myGroupId.orEmpty(), s.periodStart, s.weekCount, s.parityInvert) }
             )
             try { homework.recomputeAll(date) } catch (_: Exception) {}
-            val lessons = repo.lessonsFor(gid, date)
+            val raw = repo.allForGroup(gid)
+            val profileKey = (appCtx.applicationContext as? ru.bgtu_voenmeh.zapara.ZaparaApplication)
+                ?.container?.profile?.databaseName
+                ?: ru.bgtu_voenmeh.zapara.data.profiles.ProfileDescriptor.GUEST_DB
+            val choices = ru.bgtu_voenmeh.zapara.data.SubgroupStore(appCtx).read(profileKey, gid)
+            val lessons = Schedule.lessonsForDate(
+                ru.bgtu_voenmeh.zapara.data.Subgroups.visible(raw, choices),
+                gid, date, s.periodStart, s.weekCount, s.parityInvert
+            )
             val text = NotificationText.build(
                 date = date,
                 groupId = gid,

@@ -8,6 +8,7 @@ import ru.bgtu_voenmeh.zapara.data.CoordsRect
 import ru.bgtu_voenmeh.zapara.data.Lesson
 import ru.bgtu_voenmeh.zapara.data.MapResolve
 import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
+import ru.bgtu_voenmeh.zapara.data.Subgroups
 import ru.bgtu_voenmeh.zapara.data.campus.CampusGraph
 import ru.bgtu_voenmeh.zapara.ui.UiCopy
 import ru.bgtu_voenmeh.zapara.ui.components.ToastKind
@@ -37,7 +38,11 @@ internal class ContainerMapsData(private val container: AppContainer) : MapsData
     override fun readLastEntrance() = container.mapStore.readLastEntrance()
     override fun rememberEntrance(graph: CampusGraph, id: String) = container.mapStore.rememberEntrance(graph, id)
     override fun settings() = container.repo.settings()
-    override fun allForGroup(id: String) = container.repo.allForGroup(id)
+    override fun allForGroup(id: String): List<Lesson> {
+        val rows = container.repo.allForGroup(id)
+        val mine = container.repo.settings().myGroupId
+        return if (id.isNotEmpty() && id == mine) Subgroups.visible(rows, container.subgroupChoices(id)) else rows
+    }
     override fun coords() = container.mapStore.coords()
     override fun findCoords(building: String, floor: Int, room: String) = container.mapStore.findCoords(building, floor, room)
     override suspend fun catalog(ioDispatcher: CoroutineDispatcher) =

@@ -62,7 +62,7 @@ class HomeworkEditorStateTest {
     @Test fun unchanged_editor_does_not_request_domain_update() {
         val today = LocalDate.of(2026, 9, 12)
         val homework = Homework(7, "матан", "§5", today.minusDays(11), 1, null, "pending", false)
-        val editor = HomeworkEditorState(7, "матан", "Матан", "§5", 1, true) { _, _ -> today }
+        val editor = HomeworkEditorState(7, "матан", "Матан", "§5", 1, true, dueFor = { _, _ -> today })
         assertFalse(editor.hasChanges(homework))
         assertFalse(editor.inc().dec().hasChanges(homework))
         assertTrue(editor.inc().hasChanges(homework))

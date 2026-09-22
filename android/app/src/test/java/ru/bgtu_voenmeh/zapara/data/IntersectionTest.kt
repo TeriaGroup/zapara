@@ -2,7 +2,6 @@ package ru.bgtu_voenmeh.zapara.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -26,6 +25,10 @@ class IntersectionTest {
         assertEquals(50, Intersection.scoreOf("326", "УЛК", "450", "УЛК"))
         // same time only = in uni (NOT red)
         assertEquals(25, Intersection.scoreOf("326", "УЛК", "324", "ГК"))
+        // the same number in two buildings is not one room
+        assertEquals(25, Intersection.scoreOf("326", "УЛК", "326", "ГК"))
+        // ВЦ is inside ГК
+        assertEquals(100, Intersection.scoreOf("326", "ВЦ", "326", "ГК"))
     }
 
     @Test

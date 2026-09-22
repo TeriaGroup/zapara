@@ -37,7 +37,6 @@ import ru.bgtu_voenmeh.zapara.ui.theme.MotionSettings
 import ru.bgtu_voenmeh.zapara.ui.theme.ThemeChoice
 import ru.bgtu_voenmeh.zapara.ui.theme.ZaparaTheme
 
-/** Actual VM -> state -> each existing screen -> native thumbnail producer. Device execution pending. */
 class MapRasterIntegrationTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 

@@ -34,6 +34,10 @@ internal object SyncJson {
 
     fun serialize(record: SyncRecord): ByteArray = writeRecord(record).toByteArray(Charsets.UTF_8)
 
+    fun serialize(manifest: SyncResyncManifest): ByteArray = writeManifest(manifest).toByteArray(Charsets.UTF_8)
+
+    fun record(bytes: ByteArray): SyncRecord = readRecord(root(bytes, SyncValidation.RECORD_BYTES))
+
     fun serialize(page: SyncChangesPage): ByteArray = obj {
         raw("metadata", writeMetadata(page.metadata))
         num("afterSequence", page.afterSequence)

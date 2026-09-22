@@ -1,11 +1,8 @@
 package ru.bgtu_voenmeh.zapara.data
 
-// Port of Vograph.Core MapService.Resolve (building/floor only; coords.json
-// loading lives in the repository layer in A2 — here pure lookup helpers).
+// Building/floor lookup only. This file does not load coords.json.
 
 object MapResolve {
-    const val BASE_URL = "https://voenmeh.ru/wp-content/uploads/2024/09/"
-
     val MAP_FILES: Map<Pair<String, Int>, String> = mapOf(
         ("ГК" to 1) to "karta-glavnyj-korpus-1-etazh-2022.jpg",
         ("ГК" to 2) to "karta-glavnyj-korpus-2-etazh-2022.jpg",
@@ -82,7 +79,7 @@ object MapResolve {
         )
     }
 
-    /** Normalized room key for coords.json lookup (mirrors MapService.GetCoords). */
+    /** Normalized room key for coords.json lookup. */
     fun roomKey(roomRaw: String?): String =
         roomRaw?.trim()?.trimEnd(';')?.replace("*", "")?.trim()?.lowercase().orEmpty()
 

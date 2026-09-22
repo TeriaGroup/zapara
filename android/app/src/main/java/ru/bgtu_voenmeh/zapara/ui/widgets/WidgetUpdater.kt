@@ -2,6 +2,8 @@ package ru.bgtu_voenmeh.zapara.ui.widgets
 
 import android.app.AlarmManager
 import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -27,11 +29,6 @@ object WidgetUpdater {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val main = Handler(Looper.getMainLooper())
     private val restoreLock = Mutex()
-
-    fun bindIfNeeded(context: Context) {
-        val app = context.applicationContext as? ZaparaApplication ?: return
-        bind(app)
-    }
 
     fun bind(app: ZaparaApplication) {
         synchronized(gate) {
@@ -82,7 +79,8 @@ object WidgetUpdater {
             apply(
                 app,
                 ScheduleWidgetComposer.cleared(identity, copy, dark),
-                HomeworkWidgetComposer.cleared(identity, copy, dark)
+                HomeworkWidgetComposer.cleared(identity, copy, dark),
+                TimerWidgetComposer.cleared(identity, copy, dark)
             )
         }
         container.work.enter().use { ticket ->
@@ -99,29 +97,47 @@ object WidgetUpdater {
                 Log.w("ZaparaWidget", "homework", e)
                 return
             }
+            val timer = try {
+                WidgetSnapshots.timer(container, identity, false, night)
+            } catch (e: Exception) {
+                Log.w("ZaparaWidget", "timer", e)
+                null
+            }
             val current = WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value)
             if (!WidgetJobs.canApply(ticket, identity, current)) return
-            apply(app, schedule, homework)
+            apply(app, schedule, homework, timer)
         }
     }
 
     private fun apply(
         app: ZaparaApplication,
         schedule: ScheduleWidgetSnapshot,
-        homework: HomeworkWidgetSnapshot
+        homework: HomeworkWidgetSnapshot,
+        timer: TimerWidgetSnapshot?
     ) {
         main.post {
             val current = WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value)
             if (!WidgetJobs.accept(schedule.identity, current)) return@post
             if (!WidgetJobs.accept(homework.identity, current)) return@post
+            if (timer != null && !WidgetJobs.accept(timer.identity, current)) return@post
             try {
                 WidgetRemoteViews.pushSchedule(app, schedule)
                 WidgetRemoteViews.pushHomework(app, homework)
-                scheduleAdvance(app, schedule.nextRefreshAt)
+                if (timer != null) WidgetRemoteViews.pushTimer(app, timer)
+                val timerAt = if (timer != null && timerPlaced(app)) timer.nextRefreshAt else null
+                scheduleAdvance(app, earlierRefresh(schedule.nextRefreshAt, timerAt))
             } catch (e: Exception) {
                 Log.w("ZaparaWidget", "apply", e)
             }
         }
+    }
+
+    private fun timerPlaced(context: Context): Boolean = try {
+        val ids = AppWidgetManager.getInstance(context)
+            .getAppWidgetIds(ComponentName(context, TimerWidgetProvider::class.java))
+        ids.isNotEmpty()
+    } catch (_: Exception) {
+        false
     }
 
     private fun scheduleAdvance(context: Context, at: LocalDateTime?) {
@@ -135,8 +151,8 @@ object WidgetUpdater {
         )
         am.cancel(pending)
         if (at == null) return
-        val millis = at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        if (millis <= System.currentTimeMillis()) return
+        val due = at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val millis = if (due <= System.currentTimeMillis()) System.currentTimeMillis() + 1_000 else due
         if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
             am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, millis, pending)
         } else {

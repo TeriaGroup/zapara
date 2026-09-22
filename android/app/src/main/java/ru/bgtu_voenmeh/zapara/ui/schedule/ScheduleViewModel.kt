@@ -1,5 +1,6 @@
 package ru.bgtu_voenmeh.zapara.ui.schedule
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -17,6 +18,7 @@ import kotlinx.coroutines.withContext
 import ru.bgtu_voenmeh.zapara.AppContainer
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.data.Friend
+import ru.bgtu_voenmeh.zapara.data.HomeworkFileException
 import ru.bgtu_voenmeh.zapara.data.IntersectionService
 import ru.bgtu_voenmeh.zapara.data.Lesson
 import ru.bgtu_voenmeh.zapara.data.Parity
@@ -25,6 +27,7 @@ import ru.bgtu_voenmeh.zapara.data.Schedule
 import ru.bgtu_voenmeh.zapara.ui.AppEvent
 import ru.bgtu_voenmeh.zapara.ui.LessonFormat
 import ru.bgtu_voenmeh.zapara.ui.components.ToastKind
+import ru.bgtu_voenmeh.zapara.ui.homework.fileMessage
 import ru.bgtu_voenmeh.zapara.ui.friends.FriendPalette
 import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEditorState
 import java.time.LocalDate
@@ -39,6 +42,9 @@ class ScheduleViewModel(
     private var ctx: SchedCtx? = null
     private var allLessons: List<Lesson> = emptyList()
     private val loadGate = Mutex()
+    private val writes = Mutex()
+    private var savingHomework = false
+    private var savingRename = false
 
     init {
         viewModelScope.launch { bootstrap() }
@@ -87,8 +93,11 @@ class ScheduleViewModel(
             ScheduleEvent.HomeworkEditorInc -> mutable.update { s -> s.copy(homeworkEditor = s.homeworkEditor?.inc()) }
             ScheduleEvent.HomeworkEditorDec -> mutable.update { s -> s.copy(homeworkEditor = s.homeworkEditor?.dec()) }
             ScheduleEvent.HomeworkEditorSave -> saveHomework()
-            ScheduleEvent.HomeworkEditorCancel -> mutable.update { it.copy(homeworkEditor = null) }
+            ScheduleEvent.HomeworkEditorCancel -> cancelHomework()
+            is ScheduleEvent.HomeworkAttach -> attachHomework(event.kind, event.uri)
+            is ScheduleEvent.HomeworkRemoveFile -> removeHomeworkFile(event.id)
             is ScheduleEvent.OpenMap -> { }
+            is ScheduleEvent.PickSubgroup -> pickSubgroup(event.streamId, event.optionId)
         }
     }
 
@@ -126,7 +135,8 @@ class ScheduleViewModel(
             ctx = SchedCtx(gid, prefs.periodStart, prefs.weekCount, prefs.parityInvert)
             allLessons = all
             val parsedArg = initialDateArg?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-            val selected = parsedArg ?: SmartStart.initialDate(now, Schedule.lessonsForDate(all, gid, today, prefs.periodStart, prefs.weekCount, prefs.parityInvert))
+            val visible = ru.bgtu_voenmeh.zapara.data.Subgroups.visible(all, container.subgroupChoices(gid))
+            val selected = parsedArg ?: SmartStart.initialDate(now, Schedule.lessonsForDate(visible, gid, today, prefs.periodStart, prefs.weekCount, prefs.parityInvert))
             mutable.update { it.copy(loaded = true, hasGroup = gid.isNotEmpty(), today = today, selected = selected, pages = emptyMap(), error = null) }
             if (ensureError != null && gid.isNotEmpty()) {
                 container.toasts.show(container.app.getString(R.string.refresh_fail, ensureError), ToastKind.Bad)
@@ -220,18 +230,29 @@ class ScheduleViewModel(
                     )
                 }
             },
-            copy = container.copy
+            copy = container.copy,
+            choices = container.subgroupChoices(c.groupId)
         )
     }
 
-    private fun refresh() {
+    private fun pickSubgroup(streamId: String, optionId: String) {
+        val gid = ctx?.groupId?.takeIf { it.isNotEmpty() } ?: return
         viewModelScope.launch {
-            if (mutable.value.refreshing) return@launch
-            if (!mutable.value.hasGroup) {
-                container.toasts.show(container.app.getString(R.string.pick_group_first), ToastKind.Bad)
-                return@launch
+            withContext(Dispatchers.IO) {
+                container.subgroups.select(container.profile.databaseName, gid, streamId, optionId)
             }
-            mutable.update { it.copy(refreshing = true) }
+            container.events.emit(AppEvent.SubgroupChanged)
+        }
+    }
+
+    private fun refresh() {
+        if (mutable.value.refreshing) return
+        if (!mutable.value.hasGroup) {
+            container.toasts.show(container.app.getString(R.string.pick_group_first), ToastKind.Bad)
+            return
+        }
+        mutable.update { it.copy(refreshing = true) }
+        viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {
                     if (!container.timetable.pull()) {
@@ -272,38 +293,68 @@ class ScheduleViewModel(
     }
 
     private fun saveRename() {
+        if (savingRename) return
         val ui = mutable.value.rename ?: return
+        savingRename = true
+        mutable.update { it.copy(rename = null) }
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                container.overrides.addOrUpdate(
-                    ui.lesson.subjectRaw,
-                    if (ui.scope == 0) "global" else "weekday:${ui.lesson.dayOfWeek}",
-                    ui.name.trim(),
-                    ui.note.trim().ifBlank { null }
-                )
+            try {
+                writes.withLock {
+                    withContext(Dispatchers.IO) {
+                        container.overrides.addOrUpdate(
+                            ui.lesson.subjectRaw,
+                            if (ui.scope == 0) "global" else "weekday:${ui.lesson.dayOfWeek}",
+                            ui.name.trim(),
+                            ui.note.trim().ifBlank { null }
+                        )
+                    }
+                }
+                container.events.emit(AppEvent.PersonalizationChanged)
+            } catch (e: CancellationException) {
+                mutable.update { cur -> if (cur.rename == null) cur.copy(rename = ui) else cur }
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("ZaparaSchedule", "rename", e)
+                mutable.update { cur -> if (cur.rename == null) cur.copy(rename = ui) else cur }
+            } finally {
+                savingRename = false
             }
-            mutable.update { it.copy(rename = null) }
-            container.events.emit(AppEvent.PersonalizationChanged)
         }
     }
 
     private fun resetRename() {
+        if (savingRename) return
         val ui = mutable.value.rename ?: return
+        savingRename = true
+        mutable.update { it.copy(rename = null) }
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                container.overrides.all().filter { it.subjectRawNormalized == ui.lesson.subjectNorm }
-                    .forEach { container.overrides.remove(it.id) }
+            try {
+                writes.withLock {
+                    withContext(Dispatchers.IO) {
+                        container.overrides.all().filter { it.subjectRawNormalized == ui.lesson.subjectNorm }
+                            .forEach { container.overrides.remove(it.id) }
+                    }
+                }
+                container.events.emit(AppEvent.PersonalizationChanged)
+            } catch (e: CancellationException) {
+                mutable.update { cur -> if (cur.rename == null) cur.copy(rename = ui) else cur }
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("ZaparaSchedule", "rename reset", e)
+                mutable.update { cur -> if (cur.rename == null) cur.copy(rename = ui) else cur }
+            } finally {
+                savingRename = false
             }
-            mutable.update { it.copy(rename = null) }
-            container.events.emit(AppEvent.PersonalizationChanged)
         }
     }
 
     private fun toggleDone(id: Long) {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                val hw = container.homework.all().firstOrNull { it.id == id } ?: return@withContext
-                container.homework.markDone(id, !hw.done)
+            writes.withLock {
+                withContext(Dispatchers.IO) {
+                    val hw = container.homework.all().firstOrNull { it.id == id } ?: return@withContext
+                    container.homework.markDone(id, !hw.done)
+                }
             }
             container.events.emit(AppEvent.PersonalizationChanged)
         }
@@ -317,11 +368,12 @@ class ScheduleViewModel(
                 homeworkEditor = HomeworkEditorState(
                     id = null, subjectRaw = lesson.subjectRaw, subjectDisplay = lesson.name,
                     text = "", n = 1, isEdit = false,
+                    draft = java.util.UUID.randomUUID().toString(),
                     dueFor = { n, _ ->
                         if (c == null) null
                         else container.homework.dueDateIn(
                             { gid, dow, parity -> allLessons.filter { l -> l.groupId == gid && l.dayOfWeek == dow && (l.parity == parity || l.parity == 0) } },
-                            c, lesson.subjectNorm, LocalDate.now(), n
+                            c, lesson.subjectNorm, container.clock().toLocalDate(), n
                         )
                     }
                 )
@@ -330,16 +382,80 @@ class ScheduleViewModel(
     }
 
     private fun saveHomework() {
+        if (savingHomework) return
         val editor = mutable.value.homeworkEditor ?: return
         if (!editor.canSave) return
+        savingHomework = true
+        mutable.update { it.copy(homeworkEditor = null) }
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                if (editor.id == null) container.homework.addHomework(editor.subjectRaw, editor.text.trim(), editor.n)
-                else container.homework.updateHomework(editor.id, editor.text.trim(), editor.n)
+            try {
+                writes.withLock {
+                    withContext(Dispatchers.IO) {
+                        val id = if (editor.id == null) container.homework.addHomework(editor.subjectRaw, editor.text.trim(), editor.n)
+                        else {
+                            container.homework.updateHomework(editor.id, editor.text.trim(), editor.n)
+                            editor.id
+                        }
+                        if (editor.draft.isNotEmpty()) container.homeworkFiles.commit(editor.draft, id, editor.removed)
+                    }
+                }
+                container.toasts.show(container.app.getString(R.string.hw_saved), ToastKind.Ok)
+                container.events.emit(AppEvent.PersonalizationChanged)
+            } catch (e: CancellationException) {
+                mutable.update { cur -> if (cur.homeworkEditor == null) cur.copy(homeworkEditor = editor) else cur }
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("ZaparaSchedule", "homework", e)
+                mutable.update { cur -> if (cur.homeworkEditor == null) cur.copy(homeworkEditor = editor) else cur }
+            } finally {
+                savingHomework = false
             }
-            mutable.update { it.copy(homeworkEditor = null) }
-            container.toasts.show(container.app.getString(R.string.hw_saved), ToastKind.Ok)
-            container.events.emit(AppEvent.PersonalizationChanged)
+        }
+    }
+
+    private fun cancelHomework() {
+        val editor = mutable.value.homeworkEditor
+        mutable.update { it.copy(homeworkEditor = null) }
+        if (editor != null && editor.draft.isNotEmpty()) {
+            viewModelScope.launch(Dispatchers.IO) { container.homeworkFiles.discard(editor.draft) }
+        }
+    }
+
+    private fun attachHomework(kind: String, uri: Uri) {
+        val editor = mutable.value.homeworkEditor ?: return
+        if (editor.draft.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                val saved = withContext(Dispatchers.IO) {
+                    container.homeworkFiles.importUri(container.app, uri, editor.draft, kind, editor.files.count { !it.staged })
+                }
+                mutable.update { state ->
+                    val current = state.homeworkEditor?.takeIf { it.draft == editor.draft } ?: return@update state
+                    state.copy(homeworkEditor = current.copy(files = current.files + saved))
+                }
+            } catch (e: HomeworkFileException) {
+                container.toasts.show(container.app.getString(fileMessage(e.code)), ToastKind.Bad)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("ZaparaSchedule", "attach", e)
+                container.toasts.show(container.app.getString(R.string.hw_attach_bad), ToastKind.Bad)
+            }
+        }
+    }
+
+    private fun removeHomeworkFile(id: String) {
+        val editor = mutable.value.homeworkEditor ?: return
+        val file = editor.files.firstOrNull { it.id == id } ?: return
+        mutable.update { state ->
+            val current = state.homeworkEditor ?: return@update state
+            state.copy(homeworkEditor = current.copy(
+                files = current.files.filter { it.id != id },
+                removed = current.removed + id
+            ))
+        }
+        if (file.staged && editor.draft.isNotEmpty()) {
+            viewModelScope.launch(Dispatchers.IO) { container.homeworkFiles.discardFile(editor.draft, id) }
         }
     }
 

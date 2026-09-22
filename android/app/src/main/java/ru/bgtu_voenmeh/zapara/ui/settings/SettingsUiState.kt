@@ -21,7 +21,10 @@ data class SettingsUiState(
     val autoUpdate: Boolean = true,
     val apiConfigured: Boolean = false,
     val useUniversityXml: Boolean = false,
-    val mapsAlpha: Boolean = false
+    val mapsAlpha: Boolean = false,
+    val syncConflicts: List<ru.bgtu_voenmeh.zapara.data.sync.SyncConflict> = emptyList(),
+    val syncBusy: Boolean = false,
+    val syncError: String? = null
 )
 
 sealed interface SettingsEvent {
@@ -43,4 +46,5 @@ sealed interface SettingsEvent {
     data object CancelUpdate : SettingsEvent
     data class UseUniversityXml(val enabled: Boolean) : SettingsEvent
     data class MapsAlpha(val enabled: Boolean) : SettingsEvent
+    data class ResolveSync(val conflict: ru.bgtu_voenmeh.zapara.data.sync.SyncConflict, val keepLocal: Boolean) : SettingsEvent
 }

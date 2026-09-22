@@ -16,6 +16,7 @@ import ru.bgtu_voenmeh.zapara.AppContainer
 class SummaryViewModel(private val container: AppContainer) : ViewModel() {
     private val mutable = MutableStateFlow(SummaryUiState())
     val state: StateFlow<SummaryUiState> = mutable.asStateFlow()
+    private var reloadTicket = 0
 
     init {
         viewModelScope.launch { reload() }
@@ -32,17 +33,20 @@ class SummaryViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private suspend fun reload() {
+        val ticket = ++reloadTicket
+        val segment = mutable.value.segment
         try {
             val snap = withContext(Dispatchers.IO) {
                 val prefs = container.repo.settings()
                 val gid = prefs.myGroupId.orEmpty()
-                val lessons = if (gid.isEmpty()) emptyList() else container.repo.allForGroup(gid)
-                val tiles = SummaryComposer.tiles(mutable.value.segment, lessons, { norm, dow ->
+                val lessons = if (gid.isEmpty()) emptyList() else container.ownLessons()
+                val tiles = SummaryComposer.tiles(segment, lessons, { norm, dow ->
                     container.overrides.displayNameByNorm(norm, dow)
                 }, container.copy)
-                mutable.value.copy(loaded = true, hasGroup = gid.isNotEmpty(), tiles = tiles)
+                gid.isNotEmpty() to tiles
             }
-            mutable.value = snap
+            if (ticket != reloadTicket) return
+            mutable.update { it.copy(loaded = true, hasGroup = snap.first, tiles = snap.second) }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             android.util.Log.w("ZaparaSummary", "reload", e)

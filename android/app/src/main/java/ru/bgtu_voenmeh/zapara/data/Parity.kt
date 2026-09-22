@@ -2,6 +2,7 @@ package ru.bgtu_voenmeh.zapara.data
 
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
+import java.util.Locale
 
 // Week containing 1 September is week 1 = odd. Later weeks are Mon–Sun, odd then even.
 object Parity {
@@ -31,8 +32,10 @@ object Parity {
 
     fun normalizeSubject(raw: String?): String {
         if (raw.isNullOrBlank()) return ""
-        return raw.trim().lowercase().replace('ё', 'е')
-            .split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ")
+        // Match the server and Windows normalizer: invariant case, ASCII whitespace only.
+        // Locale-dependent lowercase or Unicode \\s would reject a valid timetable body.
+        return raw.trim().lowercase(Locale.ROOT).replace('ё', 'е')
+            .split(' ', '\t', '\r', '\n').filter { it.isNotEmpty() }.joinToString(" ")
     }
 
     fun subjectMatchKey(raw: String?): String =

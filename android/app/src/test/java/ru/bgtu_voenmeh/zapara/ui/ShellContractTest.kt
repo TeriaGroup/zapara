@@ -27,6 +27,10 @@ class ShellContractTest {
         assertTrue(app.contains("CommunitiesViewModel.factory(container)"))
         assertTrue(app.contains("CommunitiesSection("))
         assertTrue(File(root, "ui/communities/CommunitiesViewModel.kt").isFile)
+        assertTrue(app.contains("Section.Group.route"))
+        assertTrue(app.contains("GroupViewModel.factory(container)"))
+        assertTrue(app.contains("GroupSection("))
+        assertTrue(File(root, "ui/groups/GroupViewModel.kt").isFile)
     }
     @Test fun room_outbox_is_wired_for_mutations_and_non_guest_push() {
         val source = File(root, "ZaparaApplication.kt").readText()

@@ -9,9 +9,11 @@ import ru.bgtu_voenmeh.zapara.data.api.JsonFail
 import ru.bgtu_voenmeh.zapara.data.api.JsonValue
 import ru.bgtu_voenmeh.zapara.data.api.StrictJson
 import ru.bgtu_voenmeh.zapara.data.api.arr
+import ru.bgtu_voenmeh.zapara.data.api.array
 import ru.bgtu_voenmeh.zapara.data.api.bool
 import ru.bgtu_voenmeh.zapara.data.api.field
 import ru.bgtu_voenmeh.zapara.data.api.int
+import ru.bgtu_voenmeh.zapara.data.api.nullableText
 import ru.bgtu_voenmeh.zapara.data.api.obj
 import ru.bgtu_voenmeh.zapara.data.api.text
 import java.io.IOException
@@ -23,6 +25,7 @@ class CommunityHttpClient(
     private val transport: HttpExchange,
     val scope: AccountServerScope
 ) {
+    @Volatile private var legacyRoutes = false
     suspend fun list(accessToken: String, groupId: String? = null): List<Community> {
         val path = if (groupId == null) ""
         else "?groupId=" + URLEncoder.encode(CommunityValidation.groupId(groupId), StandardCharsets.UTF_8.name()).replace("+", "%20")
@@ -191,6 +194,38 @@ class CommunityHttpClient(
         return read("POST", "/$id/polls/$pid/votes", """{"optionId":${q(oid)}}""", accessToken, 201) { readVote(it.obj()) }
     }
 
+    suspend fun groupHome(accessToken: String, communityId: String): GroupHome {
+        val id = CommunityValidation.id(communityId)
+        return read("GET", "/$id/home", null, accessToken, 200) { groupHome(it.obj()) }
+    }
+
+    suspend fun openDirect(accessToken: String, communityId: String, userId: String): Conversation {
+        val community = CommunityValidation.id(communityId)
+        val peer = CommunityValidation.id(userId)
+        return read("POST", "/direct", """{"communityId":${q(community)},"userId":${q(peer)}}""", accessToken, 201) { conversation(it.obj()) }
+    }
+
+    suspend fun messages(accessToken: String, conversationId: String, before: String? = null, after: String? = null): ChatPage {
+        val id = CommunityValidation.id(conversationId)
+        val query = when {
+            before != null -> "?before=" + CommunityValidation.id(before)
+            after != null -> "?after=" + CommunityValidation.id(after)
+            else -> ""
+        }
+        return read("GET", "/conversations/$id/messages$query", null, accessToken, 200) { page(it.obj()) }
+    }
+
+    suspend fun sendMessage(accessToken: String, conversationId: String, body: String): ChatMessage {
+        val id = CommunityValidation.id(conversationId)
+        val text = CommunityValidation.message(body)
+        return read("POST", "/conversations/$id/messages", """{"body":${q(text)}}""", accessToken, 201) { message(it.obj()) }
+    }
+
+    suspend fun markRead(accessToken: String, conversationId: String): Conversation {
+        val id = CommunityValidation.id(conversationId)
+        return read("POST", "/conversations/$id/read", null, accessToken, 200) { conversation(it.obj()) }
+    }
+
     suspend fun results(accessToken: String, communityId: String, pollId: String): PollResults {
         val id = CommunityValidation.id(communityId)
         val pid = CommunityValidation.id(pollId)
@@ -221,9 +256,13 @@ class CommunityHttpClient(
             headers["Content-Type"] = "application/json"
         }
         val reply = try {
-            transport.exchange(
-                HttpCall(method, scope.baseUri.toString() + "api/v1/communities" + path, headers, bytes, CommunityValidation.RequestBytes)
-            )
+            val version = if (legacyRoutes) 1 else 2
+            val first = transport.exchange(HttpCall(method, scope.baseUri.toString() + "api/v$version/communities" + path, headers, bytes, CommunityValidation.RequestBytes))
+            val code = if (first.status == 404) runCatching { StrictJson.parse(first.body, 16).obj().text("code", 64) }.getOrNull() else null
+            if (version == 2 && first.status == 404 && code != "not_found") {
+                legacyRoutes = true
+                transport.exchange(HttpCall(method, scope.baseUri.toString() + "api/v1/communities" + path, headers, bytes, CommunityValidation.RequestBytes))
+            } else first
         } catch (_: HttpBodyTooLargeException) {
             throw CommunityClientException(CommunityClientFailure.BodyTooLarge)
         } catch (_: IOException) {
@@ -273,6 +312,71 @@ class CommunityHttpClient(
             }
         }
         return CommunityClientException(failure)
+    }
+
+    private fun groupHome(obj: JsonValue.Obj): GroupHome {
+        obj.requireKeys("communityId", "name", "groupName", "groupChat", "classmates", "directs")
+        val classmates = obj.array("classmates", 500).items.map { classmate(it.obj()) }
+        val directs = obj.array("directs", 500).items.map { conversation(it.obj()) }
+        return GroupHome(
+            CommunityValidation.id(obj.text("communityId", 36)),
+            CommunityValidation.name(obj.text("name", 80)),
+            obj.nullableText("groupName", 80)?.let { CommunityValidation.name(it) },
+            conversation(obj.field("groupChat").obj()),
+            classmates,
+            directs
+        )
+    }
+
+    private fun classmate(obj: JsonValue.Obj): Classmate {
+        obj.requireKeys("userId", "username", "displayName", "role", "self")
+        return Classmate(
+            CommunityValidation.id(obj.text("userId", 36)),
+            obj.text("username", 32, nonempty = true),
+            obj.nullableText("displayName", 80),
+            CommunityValidation.role(obj.text("role", 16)),
+            obj.bool("self")
+        )
+    }
+
+    private fun conversation(obj: JsonValue.Obj): Conversation {
+        obj.requireKeys("conversationId", "kind", "communityId", "title", "peerUserId", "lastBody", "lastAt", "unread")
+        val kind = obj.text("kind", 16)
+        if (kind != "direct" && kind != "group") throw JsonFail()
+        val peer = obj.nullableText("peerUserId", 36)?.let { CommunityValidation.id(it) }
+        if ((kind == "group") != (peer == null)) throw JsonFail()
+        val unread = obj.int("unread")
+        if (unread < 0) throw JsonFail()
+        val lastBody = obj.nullableText("lastBody", 2000)
+        val lastAt = if (obj.field("lastAt") is JsonValue.Null) null else CommunityUtc.parse(obj.text("lastAt", 40))
+        if ((lastBody == null) != (lastAt == null)) throw JsonFail()
+        return Conversation(
+            CommunityValidation.id(obj.text("conversationId", 36)),
+            kind,
+            CommunityValidation.id(obj.text("communityId", 36)),
+            obj.text("title", 80, nonempty = true),
+            peer,
+            lastBody,
+            lastAt,
+            unread
+        )
+    }
+
+    private fun message(obj: JsonValue.Obj): ChatMessage {
+        obj.requireKeys("messageId", "conversationId", "senderId", "senderName", "body", "createdAt")
+        return ChatMessage(
+            CommunityValidation.id(obj.text("messageId", 36)),
+            CommunityValidation.id(obj.text("conversationId", 36)),
+            CommunityValidation.id(obj.text("senderId", 36)),
+            obj.text("senderName", 80, nonempty = true),
+            CommunityValidation.message(obj.text("body", 4000)),
+            CommunityUtc.parse(obj.text("createdAt", 40))
+        )
+    }
+
+    private fun page(obj: JsonValue.Obj): ChatPage {
+        obj.requireKeys("messages", "hasMore")
+        return ChatPage(obj.array("messages", 51).items.map { message(it.obj()) }, obj.bool("hasMore"))
     }
 
     private fun community(obj: JsonValue.Obj): Community {

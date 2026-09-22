@@ -13,6 +13,7 @@ import ru.bgtu_voenmeh.zapara.data.db.LessonEntity
 import ru.bgtu_voenmeh.zapara.data.api.RoomTimetableStore
 import ru.bgtu_voenmeh.zapara.data.api.TimetableStore
 import ru.bgtu_voenmeh.zapara.data.api.overlaySettings
+import ru.bgtu_voenmeh.zapara.data.api.preserveLastFetchedAt
 import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_1_2
 import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_2_3
 import ru.bgtu_voenmeh.zapara.data.db.MIGRATION_3_4
@@ -210,6 +211,7 @@ class ScheduleRepository private constructor(
     }
 
     private fun writeSettings(s: SettingsState) {
+        val lastFetchedAt = preserveLastFetchedAt(settingsDao.get()?.lastFetchedAt, s.lastFetchedAt)
         settingsDao.save(
             SettingsEntity(
                 myGroupId = s.myGroupId,
@@ -218,7 +220,7 @@ class ScheduleRepository private constructor(
                 periodStart = s.periodStart.toString(),
                 weekCount = s.weekCount,
                 periodTitle = s.periodTitle,
-                lastFetchedAt = s.lastFetchedAt,
+                lastFetchedAt = lastFetchedAt,
                 intersectionStrictness = s.intersectionStrictness,
                 alwaysShowAllTrafficLights = s.alwaysShowAllTrafficLights,
                 notifyEnabled = s.notifyEnabled,

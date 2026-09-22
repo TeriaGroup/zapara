@@ -10,15 +10,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import ru.bgtu_voenmeh.zapara.AppContainer
 import ru.bgtu_voenmeh.zapara.data.Friend
-import ru.bgtu_voenmeh.zapara.data.db.FriendEntity
 import ru.bgtu_voenmeh.zapara.ui.AppEvent
 
 class FriendsViewModel(private val container: AppContainer) : ViewModel() {
+    private val edits = FriendEditorActions(container.repo)
     private val mutable = MutableStateFlow(FriendsUiState())
     val state: StateFlow<FriendsUiState> = mutable.asStateFlow()
+    private val writes = Mutex()
+    private var saving = false
+    private var reloadTicket = 0
 
     init {
         viewModelScope.launch { reload() }
@@ -49,38 +54,45 @@ class FriendsViewModel(private val container: AppContainer) : ViewModel() {
             FriendsEvent.EditorCancel -> mutable.update { it.copy(editor = null) }
             is FriendsEvent.Toggle -> viewModelScope.launch {
                 val id = mutable.value.friends.getOrNull(event.index)?.id ?: return@launch
-                withContext(Dispatchers.IO) {
-                    val e = container.db.friendDao().getAll().firstOrNull { it.id == id } ?: return@withContext
-                    container.db.friendDao().update(e.copy(enabled = event.enabled))
+                writes.withLock {
+                    withContext(Dispatchers.IO) { edits.toggle(id, event.enabled) }
                 }
                 container.events.emit(AppEvent.PersonalizationChanged)
             }
             is FriendsEvent.AskDelete -> mutable.update { it.copy(confirmDelete = event.id) }
-            FriendsEvent.ConfirmDelete -> viewModelScope.launch {
-                val id = mutable.value.confirmDelete ?: return@launch
-                withContext(Dispatchers.IO) { container.db.friendDao().delete(id) }
+            FriendsEvent.ConfirmDelete -> {
+                val id = mutable.value.confirmDelete ?: return
                 mutable.update { it.copy(confirmDelete = null, editor = null) }
-                container.events.emit(AppEvent.PersonalizationChanged)
+                viewModelScope.launch {
+                    writes.withLock { withContext(Dispatchers.IO) { edits.delete(id) } }
+                    container.events.emit(AppEvent.PersonalizationChanged)
+                }
             }
             FriendsEvent.CancelDelete -> mutable.update { it.copy(confirmDelete = null) }
             is FriendsEvent.Strictness -> viewModelScope.launch {
-                withContext(Dispatchers.IO) {
-                    val s = container.repo.settings()
-                    container.repo.saveSettings(s.copy(intersectionStrictness = Strictness.nearest(event.value)))
+                writes.withLock {
+                    withContext(Dispatchers.IO) {
+                        val s = container.repo.settings()
+                        container.repo.saveSettings(s.copy(intersectionStrictness = Strictness.nearest(event.value)))
+                    }
                 }
                 container.events.emit(AppEvent.PersonalizationChanged)
             }
             is FriendsEvent.AlwaysShow -> viewModelScope.launch {
-                withContext(Dispatchers.IO) {
-                    val s = container.repo.settings()
-                    container.repo.saveSettings(s.copy(alwaysShowAllTrafficLights = event.value))
+                writes.withLock {
+                    withContext(Dispatchers.IO) {
+                        val s = container.repo.settings()
+                        container.repo.saveSettings(s.copy(alwaysShowAllTrafficLights = event.value))
+                    }
                 }
                 container.events.emit(AppEvent.PersonalizationChanged)
             }
             is FriendsEvent.Invert -> viewModelScope.launch {
-                withContext(Dispatchers.IO) {
-                    val s = container.repo.settings()
-                    container.repo.saveSettings(s.copy(parityInvert = event.value))
+                writes.withLock {
+                    withContext(Dispatchers.IO) {
+                        val s = container.repo.settings()
+                        container.repo.saveSettings(s.copy(parityInvert = event.value))
+                    }
                 }
                 container.events.emit(AppEvent.ScheduleChanged)
             }
@@ -88,26 +100,34 @@ class FriendsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun saveEditor() {
+        if (saving) return
         val editor = mutable.value.editor ?: return
         if (editor.groupName.isBlank()) return
+        saving = true
+        mutable.update { it.copy(editor = null) }
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                val hex = FriendPalette.keys[editor.colorIndex.coerceIn(0, 4)]
-                if (editor.id == null) {
-                    container.db.friendDao().insert(
-                        FriendEntity(groupName = editor.groupName, colorHex = hex, enabled = true, memberNames = editor.members)
-                    )
-                } else {
-                    val e = container.db.friendDao().getAll().firstOrNull { it.id == editor.id } ?: return@withContext
-                    container.db.friendDao().update(e.copy(groupName = editor.groupName, colorHex = hex, memberNames = editor.members))
+            try {
+                writes.withLock {
+                    withContext(Dispatchers.IO) {
+                        val hex = FriendPalette.keys[editor.colorIndex.coerceIn(0, 4)]
+                        edits.save(editor.id, editor.groupName, editor.members, hex)
+                    }
                 }
+                container.events.emit(AppEvent.PersonalizationChanged)
+            } catch (e: CancellationException) {
+                mutable.update { cur -> if (cur.editor == null) cur.copy(editor = editor) else cur }
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("ZaparaFriends", "save", e)
+                mutable.update { cur -> if (cur.editor == null) cur.copy(editor = editor) else cur }
+            } finally {
+                saving = false
             }
-            mutable.update { it.copy(editor = null) }
-            container.events.emit(AppEvent.PersonalizationChanged)
         }
     }
 
     private suspend fun reload() {
+        val ticket = ++reloadTicket
         try {
             val snap = withContext(Dispatchers.IO) {
                 val prefs = container.repo.settings()
@@ -125,20 +145,23 @@ class FriendsViewModel(private val container: AppContainer) : ViewModel() {
                     periodStart = prefs.periodStart,
                     weekCount = prefs.weekCount,
                     invert = prefs.parityInvert,
-                    allForGroup = { container.repo.allForGroup(it) },
+                    allForGroup = { id ->
+                        val rows = container.repo.allForGroup(id)
+                        if (id == prefs.myGroupId) ru.bgtu_voenmeh.zapara.data.Subgroups.visible(rows, container.subgroupChoices(id)) else rows
+                    },
                     resolveId = { name -> groups.firstOrNull { it.name == name }?.id },
                     copy = container.copy
                 )
                 FriendsUiState(
                     loaded = true, friends = friends, canAdd = friends.size < 5,
-                    editor = mutable.value.editor, confirmDelete = mutable.value.confirmDelete,
                     strictness = Strictness.nearest(prefs.intersectionStrictness),
                     alwaysShow = prefs.alwaysShowAllTrafficLights, invert = prefs.parityInvert,
                     groups = groups,
                     previewLine = preview
                 )
             }
-            mutable.value = snap
+            if (ticket != reloadTicket) return
+            mutable.update { cur -> snap.copy(editor = cur.editor, confirmDelete = cur.confirmDelete) }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             android.util.Log.w("ZaparaFriends", "reload", e)

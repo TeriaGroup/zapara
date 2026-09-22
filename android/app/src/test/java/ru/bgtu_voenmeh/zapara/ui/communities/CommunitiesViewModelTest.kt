@@ -136,7 +136,7 @@ private val ACCESS: String = run {
     val encoded = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32) { 1 })
     "za_$encoded"
 }
-private const val BASE = "https://example.invalid/root/api/v1/communities"
+private const val BASE = "https://example.invalid/root/api/v2/communities"
 private const val CID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 private const val HID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 private const val RID = "11111111-1111-4111-8111-111111111111"

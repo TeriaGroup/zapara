@@ -3,7 +3,8 @@ package ru.bgtu_voenmeh.zapara.ui.communities
 data class CommunitiesUiState(
     val pane: CommunityPane = CommunityPane.Guest,
     val communities: List<CommunityListItemUi> = emptyList(),
-    val selected: CommunityDetailUi? = null
+    val selected: CommunityDetailUi? = null,
+    val failed: Boolean = false
 )
 
 sealed interface CommunitiesEvent {

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_timer_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg_light"
+    android:orientation="vertical"
+    android:padding="8dp"
+    android:contentDescription="@string/widget_timer_description">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:minHeight="72dp">
+
+        <ImageView
+            android:id="@+id/widget_timer_ring"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="fitCenter"
+            android:src="@drawable/widget_timer_ring" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp">
+
+            <Chronometer
+                android:id="@+id/widget_timer_time"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/inter_medium"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:textColor="@color/widget_text1"
+                android:textSize="22sp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/widget_timer_phase"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:fontFamily="@font/inter_medium"
+                android:gravity="center"
+                android:maxLines="2"
+                android:text="@string/widget_timer_idle"
+                android:textColor="@color/widget_text2"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/widget_timer_subject"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:ellipsize="end"
+        android:fontFamily="@font/inter_regular"
+        android:gravity="center"
+        android:maxLines="2"
+        android:textColor="@color/widget_text1"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/widget_timer_detail"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:fontFamily="@font/inter_regular"
+        android:gravity="center"
+        android:maxLines="1"
+        android:textColor="@color/widget_text2"
+        android:textSize="12sp"
+        android:visibility="gone" />
+</LinearLayout>

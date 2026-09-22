@@ -11,8 +11,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.util.UUID
 
-// Port of Vograph.Core HomeworkService. Statuses:
-// far (hidden) / approaching (gray) / burning (due tomorrow) /
+// Statuses: far (hidden) / approaching (gray) / burning (due tomorrow) /
 // burning_urgent (due today) / overdue / done.
 data class SchedCtx(
     val groupId: String,
@@ -229,7 +228,7 @@ class HomeworkService(
                 if (Parity.sameSubject(l.subjectNormalized, norm)) {
                     found++
                     if (found == n) return date
-                    break // one count per day (mirrors Windows)
+                    break // one count per day
                 }
             }
         }

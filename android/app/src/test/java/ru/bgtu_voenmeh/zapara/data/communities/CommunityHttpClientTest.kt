@@ -15,6 +15,31 @@ import java.time.Instant
 
 class CommunityHttpClientTest {
     @Test
+    fun unsupported_v2_falls_back_once_but_typed_errors_do_not_retry() = runBlocking {
+        val http = FakeHttp { call ->
+            if (call.url.contains("/api/v2/")) HttpReply(404, byteArrayOf()) else ok("[]")
+        }
+        val api = client(http)
+        api.list(ACCESS)
+        api.list(ACCESS)
+        assertEquals(listOf("$BASE", BASE.replace("/v2/", "/v1/"), BASE.replace("/v2/", "/v1/")), http.requests.map { it.url })
+        for ((status, code) in listOf(401 to "invalid_session", 403 to "forbidden", 404 to "not_found", 503 to "db_unavailable")) {
+            val rejected = FakeHttp { problem(status, code) }
+            try { client(rejected).list(ACCESS); fail() } catch (_: CommunityClientException) { }
+            assertEquals(1, rejected.requests.size)
+        }
+    }
+
+    @Test
+    fun v2_preserves_multiline_body_but_titles_stay_single_line() = runBlocking {
+        val http = FakeHttp { ok(homeworkJson(HID_A, "Задание", "Первый\\n\\tВторой")) }
+        assertEquals("Первый\n\tВторой", client(http).getHomework(ACCESS, CID, HID_A).body)
+        assertEquals("Первый\n\tВторой", CommunityValidation.body("Первый\r\n\tВторой"))
+        try { CommunityValidation.title("Тема\nдва"); fail() } catch (_: IllegalArgumentException) { }
+        try { CommunityValidation.body("Текст\u0001"); fail() } catch (_: IllegalArgumentException) { }
+    }
+
+    @Test
     fun catalog_query_preserves_utf8_spaces_plus_and_slash() = runBlocking {
         val cases = listOf(
             "Я" to "%D0%AF",
@@ -258,6 +283,39 @@ class CommunityHttpClientTest {
         assertEquals(1, http.requests.size)
     }
 
+    @Test
+    fun group_home_direct_and_messages_keep_their_routes() = runBlocking {
+        val chat = OID1
+        val http = FakeHttp { call ->
+            when (suffix(call)) {
+                "GET /$CID/home" -> ok(homeJson(chat))
+                "POST /direct" -> {
+                    assertEquals("""{"communityId":"$CID","userId":"$UID"}""", text(call))
+                    created(conversationJson(chat, "direct", UID, "лично", 1))
+                }
+                "GET /conversations/$chat/messages?after=$HID_A" -> ok("""{"messages":[${messageJson(HID_A, chat)}],"hasMore":false}""")
+                "POST /conversations/$chat/messages" -> created(messageJson(HID_B, chat))
+                "POST /conversations/$chat/read" -> {
+                    assertNull(call.body)
+                    ok(conversationJson(chat, "direct", UID, null, 0))
+                }
+                else -> throw AssertionError(suffix(call))
+            }
+        }
+        val api = client(http)
+        val home = api.groupHome(ACCESS, CID)
+        assertEquals("О3313", home.groupName)
+        assertEquals("curator", home.classmates[0].role)
+        assertEquals(1, home.groupChat.unread)
+        val direct = api.openDirect(ACCESS, CID, UID)
+        assertEquals(UID, direct.peerUserId)
+        val page = api.messages(ACCESS, chat, after = HID_A)
+        assertEquals(HID_A, page.messages.single().messageId)
+        assertFalse(page.hasMore)
+        assertEquals("привет", api.sendMessage(ACCESS, chat, "привет").body)
+        assertEquals(0, api.markRead(ACCESS, chat).unread)
+    }
+
     private suspend fun expect(failure: CommunityClientFailure, block: suspend () -> Unit) {
         try {
             block()
@@ -274,7 +332,7 @@ private val ACCESS: String = run {
     val encoded = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32) { 1 })
     "za_$encoded"
 }
-private const val BASE = "https://example.invalid/root/api/v1/communities"
+private const val BASE = "https://example.invalid/root/api/v2/communities"
 private const val CID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 private const val HID_A = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 private const val HID_B = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
@@ -300,6 +358,15 @@ private fun problem(status: Int, code: String) =
 private fun arr(vararg items: String) = items.joinToString(",", "[", "]")
 private fun communityJson(role: String?, id: String = CID) =
     """{"communityId":"$id","name":"Группа О3313","description":"","revision":1,"role":${if (role == null) "null" else "\"$role\""}}"""
+private fun conversationJson(id: String, kind: String, peer: String?, last: String?, unread: Int): String {
+    val peerJson = if (peer == null) "null" else "\"$peer\""
+    val body = if (last == null) "null" else "\"$last\""
+    val at = if (last == null) "null" else "\"$AT\""
+    return """{"conversationId":"$id","kind":"$kind","communityId":"$CID","title":"О3313","peerUserId":$peerJson,"lastBody":$body,"lastAt":$at,"unread":$unread}"""
+}
+private fun messageJson(id: String, conversation: String) =
+    """{"messageId":"$id","conversationId":"$conversation","senderId":"$UID","senderName":"Староста","body":"привет","createdAt":"$AT"}"""
+private fun homeJson(chat: String) = """{"communityId":"$CID","name":"О3313","groupName":"О3313","groupChat":${conversationJson(chat, "group", null, "привет", 1)},"classmates":[{"userId":"$STAFF","username":"curator","displayName":"Куратор","role":"curator","self":false},{"userId":"$UID","username":"member","displayName":null,"role":"member","self":true}],"directs":[]}"""
 private fun joinJson(status: String, requestId: String = RID, userId: String = UID) =
     """{"requestId":"$requestId","communityId":"$CID","userId":"$userId","status":"$status","createdAt":"$AT"}"""
 private fun memberJson(role: String, userId: String = UID) = """{"userId":"$userId","role":"$role"}"""

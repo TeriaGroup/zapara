@@ -2,7 +2,6 @@ package ru.bgtu_voenmeh.zapara.data
 
 import java.time.LocalTime
 
-// Port of Vograph.Core IntersectionService scoring.
 object Intersection {
 
     fun timesOverlap(startA: String?, endA: String?, startB: String?, endB: String?): Boolean {
@@ -27,10 +26,12 @@ object Intersection {
      * 25 same time = "in uni" (buildings adjacent, NOT red) / 0 handled by caller as dimmed-off.
      */
     fun scoreOf(myRoom: String?, myBuilding: String?, frRoom: String?, frBuilding: String?): Int {
+        val mine = canonBuilding(myBuilding)
+        val friend = canonBuilding(frBuilding)
+        val sameBuilding = mine != null && friend != null && mine.equals(friend, ignoreCase = true)
+        val buildingsConflict = mine != null && friend != null && !sameBuilding
         val sameRoom = !myRoom.isNullOrBlank() && !frRoom.isNullOrBlank() &&
-            myRoom.trim().equals(frRoom.trim(), ignoreCase = true)
-        val sameBuilding = !myBuilding.isNullOrBlank() && !frBuilding.isNullOrBlank() &&
-            myBuilding.trim().equals(frBuilding.trim(), ignoreCase = true)
+            myRoom.trim().equals(frRoom.trim(), ignoreCase = true) && !buildingsConflict
         if (sameRoom) return 100
         val fMy = floorOf(myRoom)
         val fFr = floorOf(frRoom)
@@ -45,6 +46,15 @@ object Intersection {
         score >= 50 -> "в том же корпусе"
         score >= 25 -> "в вузе"
         else -> "нет на месте"
+    }
+
+    /** ВЦ is the computer centre inside ГК. The same room number in УЛК and ГК is two rooms. */
+    private fun canonBuilding(building: String?): String? {
+        if (building.isNullOrBlank()) return null
+        val t = building.trim()
+        if (t.equals("ВЦ", ignoreCase = true) || t.equals("ГК", ignoreCase = true) || t.equals("main", ignoreCase = true)) return "ГК"
+        if (t.equals("УЛК", ignoreCase = true)) return "УЛК"
+        return t
     }
 
 }

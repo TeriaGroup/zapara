@@ -12,7 +12,7 @@ class ParityTest {
 
     @Test
     fun probeDatesMatchWindowsRecon() {
-        // (date, weekNumber, code, isOdd) — mirrors A0 probe.py
+        // (date, weekNumber, code, isOdd)
         val cases = listOf(
             Triple(LocalDate.of(2026, 8, 31), 1 to 1, true),
             Triple(LocalDate.of(2026, 9, 1), 1 to 1, true),

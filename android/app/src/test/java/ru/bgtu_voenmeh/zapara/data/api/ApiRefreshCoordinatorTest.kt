@@ -81,11 +81,11 @@ class ApiRefreshCoordinatorTest {
     @Test
     fun friend_groups_are_fetched_with_selected() = runBlocking {
         val http = FakeHttp { call ->
-            jsonReply(
+            jsonReply((
                 if (call.url.substringBefore('?').endsWith("/groups")) catalogJson(PIN, "a", "b")
                 else if (call.url.contains("/b/")) scheduleJson("b")
                 else scheduleJson("a")
-            )
+            ).replace("\"id\":\"a\",\"name\":\"ТЕСТ-ГРУППА\"", "\"id\":\"a\",\"name\":\"МОЯ-ГРУППА\""))
         }
         val store = MemoryTimetableStore()
         store.saveSettings(store.settings().copy(myGroupId = "a"))
@@ -93,6 +93,7 @@ class ApiRefreshCoordinatorTest {
         val api = ApiRefreshCoordinator(store, ProfileWork(), "https://example.invalid/", http)
         assertTrue(api.refresh())
         assertNotNull(store.readMetadata("a"))
+        assertNotNull(store.readMetadata("b"))
         val paths = http.requests.map { URI(it.url).rawPath }
         assertTrue(paths.any { it.endsWith("/groups") })
         assertTrue(http.requests.any { it.url.contains("timetable") })

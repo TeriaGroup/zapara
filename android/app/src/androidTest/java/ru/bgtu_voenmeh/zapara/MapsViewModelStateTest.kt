@@ -29,7 +29,6 @@ import ru.bgtu_voenmeh.zapara.data.profiles.ProfileDescriptor
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork
 import ru.bgtu_voenmeh.zapara.ui.maps.*
 
-/** Compiled offline; execution requires the separately approved device/restoration gate. */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
 class MapsViewModelStateTest {

@@ -1,6 +1,5 @@
 package ru.bgtu_voenmeh.zapara.data.api
 
-import ru.bgtu_voenmeh.zapara.data.GroupInfo
 import ru.bgtu_voenmeh.zapara.data.Lesson
 import java.time.LocalDate
 
@@ -26,9 +25,7 @@ data class TimetableApiRefresh(
     val abandoned: Boolean
 )
 
-data class TimetableApiGroup(val id: String, val name: String, val lessonCount: Int) {
-    fun toGroup() = GroupInfo(id, name, "")
-}
+data class TimetableApiGroup(val id: String, val name: String, val lessonCount: Int)
 
 data class TimetableApiLesson(
     val dayOfWeek: Int,

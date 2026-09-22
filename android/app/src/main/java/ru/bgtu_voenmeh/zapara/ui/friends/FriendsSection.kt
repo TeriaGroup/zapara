@@ -4,7 +4,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.remember
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -20,10 +19,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -44,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.FriendDot
 import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
+import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
 import ru.bgtu_voenmeh.zapara.ui.shell.GroupPickerSheet
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
@@ -77,10 +75,10 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
                     }
                 }
             }
-            item { Text(stringResource(R.string.friends_max), style = Zapara.typography.caption, color = c.text2) }
             item {
                 ZCard(Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.friends_intersections), style = Zapara.typography.section, color = c.text1)
+                    Text(stringResource(R.string.friends_max), style = Zapara.typography.caption, color = c.text2)
                     Text(stringResource(R.string.friends_strictness), style = Zapara.typography.body, color = c.text1)
                     val strictnessLabel = stringResource(R.string.friends_strictness)
                     Slider(
@@ -91,12 +89,23 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
                         modifier = Modifier.testTag("Friends.Strictness").semantics { contentDescription = strictnessLabel },
                         colors = SliderDefaults.colors(thumbColor = c.accent, activeTrackColor = c.accent, inactiveTrackColor = c.lineStrong)
                     )
+                    val active = Strictness.nearest(state.strictness)
+                    val steps = listOf(
+                        25 to R.string.strict_uni,
+                        50 to R.string.strict_building,
+                        75 to R.string.strict_floor,
+                        100 to R.string.strict_room
+                    )
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                         verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-                        Text(stringResource(R.string.strict_uni), style = Zapara.typography.caption, color = c.text2)
-                        Text(stringResource(R.string.strict_building), style = Zapara.typography.caption, color = c.text2)
-                        Text(stringResource(R.string.strict_floor), style = Zapara.typography.caption, color = c.text2)
-                        Text(stringResource(R.string.strict_room), style = Zapara.typography.caption, color = c.text2)
+                        steps.forEach { (value, label) ->
+                            ZChip(
+                                stringResource(label),
+                                selected = value == active,
+                                onClick = { onEvent(FriendsEvent.Strictness(value)) },
+                                tag = "Friends.Strict.$value"
+                            )
+                        }
                     }
                     if (state.previewLine.isNotBlank()) {
                         Text(

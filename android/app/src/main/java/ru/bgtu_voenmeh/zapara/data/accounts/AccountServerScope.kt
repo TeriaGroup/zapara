@@ -3,7 +3,6 @@ package ru.bgtu_voenmeh.zapara.data.accounts
 import ru.bgtu_voenmeh.zapara.data.api.TimetableApiClient
 import java.net.URI
 import java.security.MessageDigest
-import java.util.Locale
 
 class AccountServerScope private constructor(val baseUri: URI, val key: String) {
     override fun toString(): String = "AccountServerScope"

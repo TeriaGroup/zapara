@@ -1,5 +1,6 @@
 package ru.bgtu_voenmeh.zapara.ui.schedule
 
+import android.net.Uri
 import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEditorState
 import java.time.LocalDate
 
@@ -19,6 +20,15 @@ data class FriendDotUi(
     val hint: String
 )
 
+data class SubgroupOptionUi(val id: String, val label: String)
+
+data class SubgroupMarkUi(
+    val streamId: String,
+    val options: List<SubgroupOptionUi>,
+    val chosenId: String?,
+    val showChooser: Boolean
+)
+
 data class LessonUi(
     val index: Int,
     val timeStart: String,
@@ -36,7 +46,8 @@ data class LessonUi(
     val subjectRaw: String,
     val subjectNorm: String,
     val remote: Boolean = false,
-    val dayOfWeek: Int = 0
+    val dayOfWeek: Int = 0,
+    val subgroup: SubgroupMarkUi? = null
 )
 
 data class DayPage(
@@ -92,5 +103,8 @@ sealed interface ScheduleEvent {
     data object HomeworkEditorDec : ScheduleEvent
     data object HomeworkEditorSave : ScheduleEvent
     data object HomeworkEditorCancel : ScheduleEvent
+    data class HomeworkAttach(val kind: String, val uri: Uri) : ScheduleEvent
+    data class HomeworkRemoveFile(val id: String) : ScheduleEvent
     data class OpenMap(val lesson: LessonUi) : ScheduleEvent
+    data class PickSubgroup(val streamId: String, val optionId: String) : ScheduleEvent
 }

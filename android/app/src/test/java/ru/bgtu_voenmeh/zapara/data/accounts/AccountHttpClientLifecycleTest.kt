@@ -23,10 +23,24 @@ class AccountHttpClientLifecycleTest {
     private val expires = "2026-10-08T00:00:00Z"
 
     @Test
+    fun logout_posts_empty_body() = runBlocking {
+        val access = testToken("za_", 1)
+        val http = FakeHttp {
+            HttpReply(204, ByteArray(0))
+        }
+        httpClient(http).logout(access)
+        val call = http.requests.single()
+        assertEquals("POST", call.method)
+        assertEquals(root + "api/v1/auth/logout", call.url)
+        assertEquals("Bearer $access", call.headers["Authorization"])
+        assertNull(call.body)
+    }
+
+    @Test
     fun devices_revoke_and_password_use_exact_paths_and_bearer() = runBlocking {
         val access = testToken("za_", 1)
         val http = FakeHttp { call ->
-            when (call.method to call.url.removePrefix(root + "api/v1/")) {
+            when (call.method to call.url.removePrefix(root + if (call.method == "GET") "api/v2/" else "api/v1/")) {
                 "GET" to "account/devices?limit=20" -> {
                     assertEquals("Bearer $access", call.headers["Authorization"])
                     assertNull(call.body)
@@ -92,6 +106,28 @@ class AccountHttpClientLifecycleTest {
             assertEquals(AccountClientFailure.InvalidRequest, e.failure)
         }
         assertEquals(0, http.requests.size)
+    }
+
+    @Test
+    fun modern_devices_accept_browser_and_old_server_falls_back_only_on_missing_route() = runBlocking {
+        val access = testToken("za_", 1)
+        val modern = FakeHttp { call ->
+            assertEquals(root + "api/v2/account/devices?limit=20", call.url)
+            json("""{"devices":[{"familyId":"$family","deviceId":"$device","deviceName":"Browser","platform":"web","createdAt":"$created","lastSeenAt":"$seen","expiresAt":"$expires","isCurrent":false}],"nextCursor":null}""")
+        }
+        assertEquals("web", httpClient(modern).listDevices(access).devices.single().platform)
+        val legacy = FakeHttp { call ->
+            if (call.url.contains("/api/v2/")) HttpReply(404, ByteArray(0))
+            else json("""{"devices":[],"nextCursor":null}""")
+        }
+        val oldClient = httpClient(legacy)
+        oldClient.listDevices(access)
+        oldClient.listDevices(access)
+        assertEquals(listOf(root + "api/v2/account/devices?limit=20", root + "api/v1/account/devices?limit=20", root + "api/v1/account/devices?limit=20"), legacy.requests.map { it.url })
+        val unavailable = FakeHttp { json("""{"status":503,"code":"db_unavailable"}""", 503) }
+        try { httpClient(unavailable).listDevices(access); fail() }
+        catch (error: AccountClientException) { assertEquals(AccountClientFailure.DbUnavailable, error.failure) }
+        assertEquals(1, unavailable.requests.size)
     }
 
     @Test

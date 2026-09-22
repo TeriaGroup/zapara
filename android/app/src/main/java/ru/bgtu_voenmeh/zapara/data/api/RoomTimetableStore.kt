@@ -25,6 +25,7 @@ class RoomTimetableStore(private val db: ZaparaDatabase) : TimetableStore {
     }
 
     override fun saveSettings(state: ScheduleRepository.SettingsState) {
+        val lastFetchedAt = preserveLastFetchedAt(db.settingsDao().get()?.lastFetchedAt, state.lastFetchedAt)
         db.settingsDao().save(
             SettingsEntity(
                 myGroupId = state.myGroupId,
@@ -33,7 +34,7 @@ class RoomTimetableStore(private val db: ZaparaDatabase) : TimetableStore {
                 periodStart = state.periodStart.toString(),
                 weekCount = state.weekCount,
                 periodTitle = state.periodTitle,
-                lastFetchedAt = state.lastFetchedAt,
+                lastFetchedAt = lastFetchedAt,
                 intersectionStrictness = state.intersectionStrictness,
                 alwaysShowAllTrafficLights = state.alwaysShowAllTrafficLights,
                 notifyEnabled = state.notifyEnabled,

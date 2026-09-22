@@ -10,8 +10,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
 
-// Port of Vograph.Core ParserService (student XML). DOM-based so it runs
-// in JVM unit tests and on device (same approach as Windows XmlDocument).
+// DOM-based so it runs in JVM unit tests and on device (same approach as Windows XmlDocument).
 data class ParsedSchedule(
     val groups: List<GroupInfo>,
     val lessons: List<Lesson>,
@@ -91,16 +90,12 @@ object GroupParser {
                     }
 
                     var typeRaw = ""
-                    var subjectOnly = discRaw
                     if (discRaw.isNotBlank()) {
                         val parts = discRaw.trim().split(Regex("\\s+"), limit = 2)
                         if (parts.size == 2 && parts[0].lowercase() in TYPE_TOKENS) {
                             typeRaw = parts[0]
-                            subjectOnly = parts[1]
                         }
                     }
-                    @Suppress("UNUSED_VARIABLE")
-                    val ignoredSubjectOnly = subjectOnly
 
                     var timeStart = ""
                     var timeEnd = ""

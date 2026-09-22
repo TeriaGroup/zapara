@@ -118,7 +118,8 @@ object CommunitiesComposer {
         if (snapshot.failure == CommunityClientFailure.Forbidden) {
             return CommunitiesUiState(CommunityPane.Forbidden)
         }
-        if (snapshot.communities.isEmpty()) return CommunitiesUiState(CommunityPane.Empty)
+        val failed = snapshot.failure != null
+        if (snapshot.communities.isEmpty()) return CommunitiesUiState(CommunityPane.Empty, failed = failed)
         val rows = snapshot.communities.map { community ->
             val join = snapshot.ownJoin[community.communityId]
             val member = isMember(community.role)
@@ -135,12 +136,13 @@ object CommunitiesComposer {
         val selected = snapshot.communities.firstOrNull { it.communityId == snapshot.selectedId }
         val role = selected?.role
         if (selected == null || !isMember(role)) {
-            return CommunitiesUiState(CommunityPane.Catalog, rows)
+            return CommunitiesUiState(CommunityPane.Catalog, rows, failed = failed)
         }
         val staff = isStaff(role)
         return CommunitiesUiState(
             pane = CommunityPane.Detail,
             communities = rows,
+            failed = failed,
             selected = CommunityDetailUi(
                 communityId = selected.communityId,
                 name = selected.name,

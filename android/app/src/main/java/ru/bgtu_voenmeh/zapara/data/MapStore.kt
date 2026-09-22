@@ -11,7 +11,7 @@ import ru.bgtu_voenmeh.zapara.data.campus.CampusRouter
 import java.io.File
 import java.security.MessageDigest
 
-// Offline maps: bundled assets -> filesDir/maps cache. Mirrors MapService caching.
+// Offline maps: bundled assets -> filesDir/maps cache.
 class MapStore(private val context: Context) {
 
     companion object {

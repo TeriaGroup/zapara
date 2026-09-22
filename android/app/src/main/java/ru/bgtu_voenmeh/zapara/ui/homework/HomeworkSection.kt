@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +29,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
+import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
 import ru.bgtu_voenmeh.zapara.ui.shell.LocalShellChrome
@@ -38,6 +41,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
 import ru.bgtu_voenmeh.zapara.ui.theme.breath
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
     val chrome = LocalShellChrome.current
@@ -84,6 +88,13 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                                         Text(item.subject, style = Zapara.typography.bodyStrong, color = c.text1)
                                         Text(item.text, style = Zapara.typography.body, color = if (item.done) c.text2 else c.text1, textDecoration = if (item.done) TextDecoration.LineThrough else null)
+                                        if (item.files.isNotEmpty()) {
+                                            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                                                item.files.forEach { file ->
+                                                    ZChip(file.name, onClick = { onEvent(HomeworkEvent.OpenFile(item.id, file.id)) }, tag = "Homework.File.${item.id}.${file.id}")
+                                                }
+                                            }
+                                        }
                                         Text(item.dueLabel, style = Zapara.typography.caption, color = c.text2, modifier = Modifier.fillMaxWidth().testTag("Homework.Due.${item.id}"))
                                         Text(item.statusLabel, style = Zapara.typography.caption, color = c.text1, modifier = Modifier.fillMaxWidth().testTag("Homework.Status.${item.id}"))
                                     }
@@ -109,7 +120,16 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
         SubjectPickerSheet(it, { onEvent(HomeworkEvent.Query(it)) }, { onEvent(HomeworkEvent.PickSubject(it)) }, { onEvent(HomeworkEvent.ClosePicker) })
     }
     state.editor?.let { editor ->
-        HomeworkEditorSheet(editor, { onEvent(HomeworkEvent.EditorText(it)) }, { onEvent(HomeworkEvent.Inc) }, { onEvent(HomeworkEvent.Dec) }, { onEvent(HomeworkEvent.Save) }, { onEvent(HomeworkEvent.Cancel) })
+        HomeworkEditorSheet(
+            editor,
+            { onEvent(HomeworkEvent.EditorText(it)) },
+            { onEvent(HomeworkEvent.Inc) },
+            { onEvent(HomeworkEvent.Dec) },
+            { onEvent(HomeworkEvent.Save) },
+            { onEvent(HomeworkEvent.Cancel) },
+            { kind, uri -> onEvent(HomeworkEvent.Attach(kind, uri)) },
+            { onEvent(HomeworkEvent.RemoveFile(it)) }
+        )
     }
     state.confirmDelete?.let {
         AlertDialog(

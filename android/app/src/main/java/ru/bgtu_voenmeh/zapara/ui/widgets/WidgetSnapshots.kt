@@ -215,7 +215,7 @@ object WidgetSnapshots {
         if (cleared) return ScheduleWidgetComposer.cleared(identity, container.copy, dark)
         val gid = settings.myGroupId.orEmpty()
         val groupName = container.repo.groups().firstOrNull { it.id == gid }?.name
-        val lessons = if (gid.isEmpty()) emptyList() else container.repo.allForGroup(gid)
+        val lessons = if (gid.isEmpty()) emptyList() else container.ownLessons()
         return ScheduleWidgetComposer.fromSchedule(
             identity = identity,
             settings = settings,
@@ -246,6 +246,23 @@ object WidgetSnapshots {
                 val lesson = lessons.firstOrNull { Parity.sameSubject(it.subjectNormalized, norm) }
                 if (lesson != null) container.overrides.displayNameByNorm(norm, lesson.dayOfWeek) else ""
             },
+            copy = container.copy,
+            isDark = dark
+        )
+    }
+
+    fun timer(container: AppContainer, identity: WidgetJobIdentity, cleared: Boolean, systemNight: Boolean): TimerWidgetSnapshot {
+        val settings = container.repo.settings()
+        val dark = WidgetTheme.isDark(settings.theme, systemNight)
+        if (cleared) return TimerWidgetComposer.cleared(identity, container.copy, dark)
+        val gid = settings.myGroupId.orEmpty()
+        val lessons = if (gid.isEmpty()) emptyList() else container.ownLessons()
+        return TimerWidgetComposer.fromTimer(
+            identity = identity,
+            settings = settings,
+            allLessons = lessons,
+            now = container.clock(),
+            displayName = { lesson -> container.overrides.displayNameByNorm(lesson.subjectNormalized, lesson.dayOfWeek) },
             copy = container.copy,
             isDark = dark
         )

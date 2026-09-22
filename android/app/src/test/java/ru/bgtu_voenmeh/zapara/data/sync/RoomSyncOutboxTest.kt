@@ -24,6 +24,51 @@ import java.util.UUID
 
 class RoomSyncOutboxTest {
     @Test
+    fun receiving_does_not_deadlock_a_settings_write_already_inside_room_transaction() {
+        val database = java.util.concurrent.locks.ReentrantLock()
+        val outerEntered = java.util.concurrent.CountDownLatch(1)
+        val receiverAttempted = java.util.concurrent.CountDownLatch(1)
+        val executor = java.util.concurrent.Executors.newFixedThreadPool(2)
+        val box = RoomSyncOutbox(true, MemorySyncOutboxCommands(), transactor = { action ->
+            receiverAttempted.countDown()
+            database.lockInterruptibly()
+            try { action() } finally { database.unlock() }
+        })
+        val settings = executor.submit {
+            database.lockInterruptibly()
+            try {
+                outerEntered.countDown()
+                check(receiverAttempted.await(2, java.util.concurrent.TimeUnit.SECONDS))
+                box.inTransaction { box.enqueue(OP, "homework", ENTITY, 0, "upsert", homeworkValue(), 1) }
+            } finally { database.unlock() }
+        }
+        check(outerEntered.await(2, java.util.concurrent.TimeUnit.SECONDS))
+        val receiver = executor.submit { box.inTransaction { box.setEpoch(EPOCH, 2) } }
+        try {
+            settings.get(2, java.util.concurrent.TimeUnit.SECONDS)
+            receiver.get(2, java.util.concurrent.TimeUnit.SECONDS)
+            assertEquals(2L, box.afterSequence)
+            assertEquals(1, box.pending().size)
+        } finally {
+            receiver.cancel(true)
+            settings.cancel(true)
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun failed_transaction_does_not_publish_cursor_in_memory() {
+        val h = Harness()
+        h.outbox.setEpoch(EPOCH, 3)
+        h.outbox.beforeCommit = { throw IllegalStateException("disk full") }
+        try {
+            h.outbox.inTransaction { h.outbox.setEpoch(EPOCH, 8) }
+            fail()
+        } catch (_: IllegalStateException) { }
+        assertEquals(3L, h.outbox.afterSequence)
+    }
+
+    @Test
     fun guest_homework_mutations_leave_outbox_empty() {
         val h = Harness(enabled = false)
         h.homework.addHomework("лек ИСТОРИЯ", "глава 1", 1, CREATED_DATE)

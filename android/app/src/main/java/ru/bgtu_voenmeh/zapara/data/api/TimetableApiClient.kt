@@ -20,12 +20,24 @@ class TimetableApiClient(
 ) {
     private val base: URI = validateBaseUri(baseUri)
 
-    suspend fun fetch(requiredGroupIds: Iterable<String>): TimetableApiSnapshot {
+    suspend fun fetch(requiredGroupIds: Iterable<String>): TimetableApiSnapshot = fetchCore(requiredGroupIds, null)
+
+    suspend fun fetchResolved(requirements: List<TimetableGroupRequest>): TimetableApiSnapshot = fetchCore(emptyList(), requirements.toList())
+
+    private suspend fun fetchCore(requiredGroupIds: Iterable<String>, requirements: List<TimetableGroupRequest>?): TimetableApiSnapshot {
         val ids = sortedSetOf<String>()
         for (id in requiredGroupIds) {
             TimetableApiJson.require(TimetableApiJson.validId(id))
             ids.add(id)
             TimetableApiJson.require(ids.size <= 5000)
+        }
+        if (requirements != null) {
+            TimetableApiJson.require(requirements.size <= 5000)
+            for (request in requirements) TimetableApiJson.require(
+                (request.id == null || TimetableApiJson.validId(request.id)) &&
+                    (request.name == null || request.name.length <= 128 && request.name.none { it.isISOControl() }) &&
+                    (request.id != null || !request.name.isNullOrBlank())
+            )
         }
         try {
             return withTimeout(30_000) {
@@ -34,8 +46,9 @@ class TimetableApiClient(
                     val catalog = TimetableApiJson.catalog(get("api/v1/groups", false))
                     val byId = catalog.groups.associateBy { it.id }
                     if (ids.any { it !in byId }) throw TimetableApiException(TimetableApiFailure.UnknownRequiredGroup)
+                    val wanted = requirements?.map { it.resolve(catalog.groups) }?.distinctBy { it.id } ?: ids.map { byId.getValue(it) }
                     try {
-                        val downloaded = download(catalog, ids.map { byId.getValue(it) })
+                        val downloaded = download(catalog, wanted)
                         return@withTimeout catalog.copy(downloaded = downloaded)
                     } catch (e: TimetableApiException) {
                         if (e.failure == TimetableApiFailure.SnapshotUnavailable && attempt == 0) {

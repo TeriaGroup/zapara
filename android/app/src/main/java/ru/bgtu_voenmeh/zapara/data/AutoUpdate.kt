@@ -21,8 +21,6 @@ object AutoUpdate {
     private const val KEY_CHECK_APK = "update_check_apk"
     private const val KEY_CHECK_HTML = "update_check_html"
     const val RELEASES_PAGE = "https://github.com/TeriaGroup/zapara/releases/latest"
-    /** 6h: GitHub allows 60 anon API calls/hour per IP — VPNs share one IP, don't burn it. */
-    const val CHECK_TTL_MS = 6 * 3600 * 1000L
 
     data class CachedCheck(val at: Long, val tag: String?, val apkUrl: String?, val htmlUrl: String?)
 

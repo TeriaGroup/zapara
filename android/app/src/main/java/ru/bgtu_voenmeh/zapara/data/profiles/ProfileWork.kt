@@ -2,9 +2,6 @@ package ru.bgtu_voenmeh.zapara.data.profiles
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeoutOrNull
 
 class ProfileWork {
@@ -14,8 +11,6 @@ class ProfileWork {
     private var generation = 0L
     private var idle = completed()
     private var closed = false
-
-    val currentGeneration: Long get() = synchronized(gate) { generation }
 
     fun enter(): Ticket {
         synchronized(gate) {
@@ -71,7 +66,6 @@ class ProfileWork {
         internal val admitted: Boolean
     ) : AutoCloseable {
         internal var released = false
-        val token: Job? = null
         val isCurrent: Boolean get() = owner.current(this)
         fun throwIfStale() {
             if (!isCurrent) throw CancellationException("stale profile")

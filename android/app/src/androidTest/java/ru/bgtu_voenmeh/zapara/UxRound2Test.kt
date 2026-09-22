@@ -9,7 +9,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -124,7 +123,7 @@ class UxRound2Test {
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     @Test fun homework_system200_ime_surface_stays_below_statusbar() {
         nativeScale(2f)
-        var editor by mutableStateOf(HomeworkEditorState(null, "матан", "Высшая математика", "Прочитать главу", 1, false) { _, _ -> null })
+        var editor by mutableStateOf(HomeworkEditorState(null, "матан", "Высшая математика", "Прочитать главу", 1, false, dueFor = { _, _ -> null }))
         var open by mutableStateOf(true)
         rule.runOnUiThread { rule.activity.enableEdgeToEdge() }
         rule.setContent { ZaparaTheme(ThemeChoice.Light, MotionSettings.Off) {

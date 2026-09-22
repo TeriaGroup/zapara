@@ -5,10 +5,14 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 import ru.bgtu_voenmeh.zapara.MainActivity
 import ru.bgtu_voenmeh.zapara.R
+import java.time.Duration
+import java.time.LocalDateTime
 
 object WidgetRemoteViews {
     private val scheduleRows = listOf(
@@ -63,6 +67,37 @@ object WidgetRemoteViews {
         return views
     }
 
+    fun timer(context: Context, snapshot: TimerWidgetSnapshot, widthDp: Int = 110): RemoteViews {
+        val views = RemoteViews(context.packageName, R.layout.widget_timer)
+        val colors = WidgetPalette.of(context, snapshot.isDark)
+        views.setInt(R.id.widget_timer_root, "setBackgroundResource", colors.background)
+        val arc = if (snapshot.kind == TimerPhaseKind.Break) colors.warn else colors.ok
+        val fraction = if (snapshot.cleared) 0f else snapshot.fraction
+        views.setImageViewBitmap(
+            R.id.widget_timer_ring,
+            TimerRing.bitmap(context, widthDp, fraction, colors.text3, arc)
+        )
+        bindClock(views, snapshot, colors, widthDp)
+        val phaseColor = when (snapshot.kind) {
+            TimerPhaseKind.Lesson -> colors.ok
+            TimerPhaseKind.Break -> colors.warn
+            else -> colors.text2
+        }
+        bindLine(views, R.id.widget_timer_phase, snapshot.phaseText, phaseColor)
+        bindLine(views, R.id.widget_timer_subject, snapshot.subject, colors.text1)
+        bindLine(views, R.id.widget_timer_detail, snapshot.detail, colors.text2)
+        val spoken = listOf(snapshot.phaseText, snapshot.timeText, snapshot.subject, snapshot.detail)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString(", ")
+        views.setContentDescription(
+            R.id.widget_timer_root,
+            spoken.ifEmpty { context.getString(R.string.widget_timer_label) }
+        )
+        views.setOnClickPendingIntent(R.id.widget_timer_root, openApp(context, 4104, "schedule"))
+        return views
+    }
+
     fun pushSchedule(context: Context, snapshot: ScheduleWidgetSnapshot) {
         val mgr = AppWidgetManager.getInstance(context)
         val ids = mgr.getAppWidgetIds(ComponentName(context, ScheduleWidgetProvider::class.java))
@@ -79,6 +114,16 @@ object WidgetRemoteViews {
         val ids = mgr.getAppWidgetIds(ComponentName(context, HomeworkWidgetProvider::class.java))
         if (ids.isEmpty()) return
         mgr.updateAppWidget(ids, homework(context, snapshot))
+    }
+
+    fun pushTimer(context: Context, snapshot: TimerWidgetSnapshot) {
+        val mgr = AppWidgetManager.getInstance(context)
+        val ids = mgr.getAppWidgetIds(ComponentName(context, TimerWidgetProvider::class.java))
+        if (ids.isEmpty()) return
+        ids.forEach { id ->
+            val width = mgr.getAppWidgetOptions(id).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 110)
+            mgr.updateAppWidget(id, timer(context, snapshot, if (width > 0) width else 110))
+        }
     }
 
     private fun paintChrome(
@@ -107,6 +152,37 @@ object WidgetRemoteViews {
             views.setViewVisibility(emptyId, View.VISIBLE)
             views.setTextColor(emptyId, colors.text2)
         }
+    }
+
+    private fun bindClock(views: RemoteViews, snapshot: TimerWidgetSnapshot, colors: WidgetPalette, widthDp: Int) {
+        val end = snapshot.endsAt
+        if (end == null || snapshot.cleared || !end.isAfter(LocalDateTime.now())) {
+            views.setChronometer(R.id.widget_timer_time, SystemClock.elapsedRealtime(), null, false)
+            views.setChronometerCountDown(R.id.widget_timer_time, false)
+            views.setTextViewText(R.id.widget_timer_time, "")
+            views.setViewVisibility(R.id.widget_timer_time, View.GONE)
+            return
+        }
+        val remainingMs = Duration.between(LocalDateTime.now(), end).toMillis().coerceAtLeast(0)
+        val base = when {
+            widthDp >= 180 -> 30f
+            widthDp >= 140 -> 26f
+            else -> 22f
+        }
+        val timeSp = if (snapshot.timeText.length > 5) base * 0.75f else base
+        views.setViewVisibility(R.id.widget_timer_time, View.VISIBLE)
+        views.setTextViewTextSize(R.id.widget_timer_time, TypedValue.COMPLEX_UNIT_SP, timeSp)
+        views.setTextColor(R.id.widget_timer_time, colors.text1)
+        views.setTextViewText(R.id.widget_timer_time, snapshot.timeText)
+        views.setChronometer(R.id.widget_timer_time, SystemClock.elapsedRealtime() + remainingMs, null, true)
+        views.setChronometerCountDown(R.id.widget_timer_time, true)
+    }
+
+    private fun bindLine(views: RemoteViews, id: Int, text: String, color: Int) {
+        val shown = text.trim()
+        views.setTextViewText(id, shown)
+        views.setViewVisibility(id, if (shown.isEmpty()) View.GONE else View.VISIBLE)
+        if (shown.isNotEmpty()) views.setTextColor(id, color)
     }
 
     private fun openApp(context: Context, request: Int, section: String): PendingIntent {

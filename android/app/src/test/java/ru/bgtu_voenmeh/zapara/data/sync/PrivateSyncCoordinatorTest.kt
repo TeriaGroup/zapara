@@ -11,6 +11,61 @@ import java.util.UUID
 
 class PrivateSyncCoordinatorTest {
     @Test
+    fun deleting_a_new_row_during_its_upload_still_sends_server_delete_after_ack() = runBlocking {
+        val h = Harness()
+        h.outbox.enqueue(OP, "homework", ENTITY, 0, "upsert", homeworkValue(), 1)
+        h.outbox.setEpoch(EPOCH, 0)
+        val deleteOp = UUID.randomUUID()
+        val http = FakeHttp {
+            h.outbox.enqueue(deleteOp, "homework", ENTITY, 0, "delete", null, 1)
+            jsonReply(200, mutationResultJson(200, "applied", metadataJson(current = 1),
+                String(SyncJson.serialize(homeworkRecord()))))
+        }
+        h.coordinator.attach(client(http), { ACCESS }, false)
+        h.coordinator.pushPending()
+        assertEquals(deleteOp, h.outbox.pending().single().opId)
+        assertEquals("delete", h.outbox.pending().single().action)
+        assertEquals(1L, h.outbox.pending().single().expectedRevision)
+    }
+
+    @Test
+    fun edit_during_mutation_retains_new_operation_and_rebases_ack_revision() = runBlocking {
+        val h = Harness()
+        h.outbox.enqueue(OP, "homework", ENTITY, 0, "upsert", homeworkValue("sent"), 1)
+        h.outbox.setEpoch(EPOCH, 0)
+        val nextOp = UUID.randomUUID()
+        val http = FakeHttp {
+            h.outbox.enqueue(nextOp, "homework", ENTITY, 0, "upsert", homeworkValue("edited"), 1)
+            jsonReply(200, mutationResultJson(200, "applied", metadataJson(current = 1),
+                String(SyncJson.serialize(homeworkRecord(value = homeworkValue("sent"))))))
+        }
+        h.coordinator.attach(client(http), { ACCESS }, false)
+        h.coordinator.pushPending()
+        assertNull(h.outbox.find(OP))
+        val pending = h.outbox.pending().single()
+        assertEquals(nextOp, pending.opId)
+        assertEquals(1L, pending.expectedRevision)
+        assertEquals("edited", (h.outbox.payloadValue(pending) as HomeworkValue).text)
+    }
+
+    @Test
+    fun revision_conflict_preserves_local_operation_and_stops_retries() = runBlocking {
+        val h = Harness()
+        h.outbox.enqueue(OP, "homework", ENTITY, 1, "upsert", homeworkValue("local"), 1)
+        h.outbox.setEpoch(EPOCH, 0)
+        val http = FakeHttp {
+            jsonReply(409, mutationResultJson(409, "revision_conflict", metadataJson(EPOCH, 2, 0),
+                String(SyncJson.serialize(homeworkRecord(revision = 2, value = homeworkValue("server"))))))
+        }
+        h.coordinator.attach(client(http), { ACCESS }, background = false)
+        h.coordinator.pushPending()
+        assertEquals("conflict", h.outbox.find(OP)!!.status)
+        assertEquals("local", (h.outbox.payloadValue(h.outbox.find(OP)!!) as HomeworkValue).text)
+        h.coordinator.pushPending()
+        assertEquals(1, http.requests.size)
+    }
+
+    @Test
     fun unattached_push_leaves_pending() = runBlocking {
         val h = Harness()
         h.outbox.enqueue(OP, "homework", ENTITY, 0, "upsert", homeworkValue(), 1)

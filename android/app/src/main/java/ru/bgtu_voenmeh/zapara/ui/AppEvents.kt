@@ -8,6 +8,7 @@ sealed interface AppEvent {
     data object ScheduleChanged : AppEvent
     data object PersonalizationChanged : AppEvent
     data object GroupChanged : AppEvent
+    data object SubgroupChanged : AppEvent
 }
 
 class AppEvents {

@@ -34,39 +34,59 @@ class RoomSyncStateCommands(private val dao: SyncStateDao) : SyncStateCommands {
 
 class RoomSyncOutbox(
     val enabled: Boolean,
-    private val commands: SyncOutboxCommands,
+    internal val commands: SyncOutboxCommands,
     private val state: SyncStateCommands = MemorySyncStateCommands(),
     private val transactor: (() -> Any?) -> Any? = { it() },
-    val clock: Clock = Clock.systemUTC()
+    val clock: Clock = Clock.systemUTC(),
+    projection: SyncRecordProjection? = null
 ) {
     var beforeCommit: (() -> Unit)? = null
+    private val transactionGate = Any()
+    private var transactionDepth = 0
+    val inbox = RoomSyncInbox(this, projection)
 
     // Profile containers are constructed on the UI thread. Read persistent sync state
     // only when the IO coordinator first needs it, and keep epoch/sequence in one snapshot.
     private class Cursor(@Volatile var value: SyncStateEntity?)
     private val cursor by lazy { Cursor(state.get()) }
 
-    val syncEpoch: UUID? get() = parseUuid(cursor.value?.syncEpoch)
-    val afterSequence: Long get() = cursor.value?.afterSequence ?: 0L
+    val syncEpoch: UUID? get() = synchronized(transactionGate) { parseUuid(cursor.value?.syncEpoch) }
+    val afterSequence: Long get() = synchronized(transactionGate) { cursor.value?.afterSequence ?: 0L }
 
     fun <T> inTransaction(action: () -> T): T {
         if (!enabled) return action()
-        @Suppress("UNCHECKED_CAST")
-        return transactor {
-            val result = action()
-            beforeCommit?.invoke()
-            result
-        } as T
+        var previous: SyncStateEntity? = null
+        var entered = false
+        try {
+            // Room is always acquired first: some repository callers already own a Room
+            // transaction when entering the outbox. Reversing that order deadlocks them.
+            @Suppress("UNCHECKED_CAST")
+            return transactor {
+                synchronized(transactionGate) {
+                    previous = cursor.value
+                    entered = true
+                    transactionDepth++
+                    try {
+                        val result = action()
+                        if (transactionDepth == 1) beforeCommit?.invoke()
+                        result
+                    } finally { transactionDepth-- }
+                }
+            } as T
+        } catch (t: Throwable) {
+            if (entered) synchronized(transactionGate) { cursor.value = previous }
+            throw t
+        }
     }
 
     fun pending(): List<PrivateSyncOutboxEntry> =
         commands.pending()
-            .filter { it.status != IDENTITY_STATUS }
+            .filter { it.status == "pending" || it.status == "conflict" }
             .map { it.toEntry() }
             .sortedWith(compareBy({ it.createdAtUtc }, { it.opId }))
 
     fun find(opId: UUID): PrivateSyncOutboxEntry? =
-        commands.find(opId.toString())?.takeUnless { it.status == IDENTITY_STATUS }?.toEntry()
+        commands.find(opId.toString())?.takeIf { it.status == "pending" || it.status == "conflict" }?.toEntry()
 
     fun payloadValue(row: PrivateSyncOutboxEntry): SyncValue? {
         val stored = commands.find(row.opId.toString())?.payload ?: return null
@@ -111,11 +131,13 @@ class RoomSyncOutbox(
     fun nowUtc(): Instant = Instant.now(clock).truncatedTo(ChronoUnit.SECONDS)
 
     fun setEpoch(epoch: UUID, afterSequence: Long) {
-        val previous = syncEpoch
-        val updated = SyncStateEntity(1, epoch.toString(), afterSequence)
-        state.upsert(updated)
-        cursor.value = updated
-        if (previous != epoch) clearRowEpochs()
+        inTransaction {
+            val previous = syncEpoch
+            val updated = SyncStateEntity(1, epoch.toString(), afterSequence)
+            state.upsert(updated)
+            if (previous != epoch) clearRowEpochs()
+            cursor.value = updated
+        }
     }
 
     fun clearRowEpochs() {
@@ -124,7 +146,10 @@ class RoomSyncOutbox(
 
     /** 410 `sync_reset`: drop stamped epochs so remaining ops are not restamped with the expired epoch. */
     fun abortExpiredEpoch() {
-        clearRowEpochs()
+        inTransaction {
+            clearRowEpochs()
+            inbox.requireSnapshot()
+        }
     }
 
     fun abortIfReset(state: PrivateSyncState): Boolean {
@@ -157,15 +182,20 @@ class RoomSyncOutbox(
             return
         }
         var revision = expectedRevision
-        for (row in pending().filter { it.entityType == entityType && it.entityId == entityId && it.status == "pending" }) {
-            if (action == "delete" && row.expectedRevision == 0L && row.action == "upsert") {
+        val preceding = pending().filter { it.entityType == entityType && it.entityId == entityId && it.status == "pending" }
+        val hasSubmitted = preceding.any { it.syncEpoch != null }
+        for (row in preceding) {
+            // Submitted operations retain their opId and payload until a definitive receipt.
+            // A timeout does not establish whether the server committed the mutation.
+            if (row.syncEpoch != null) { revision = row.expectedRevision; continue }
+            if (!hasSubmitted && action == "delete" && row.expectedRevision == 0L && row.action == "upsert") {
                 deleteOp(row.opId)
                 return
             }
             revision = row.expectedRevision
             deleteOp(row.opId)
         }
-        if (action == "delete" && revision == 0L) return
+        if (action == "delete" && revision == 0L && !hasSubmitted) return
         val payload = value?.let { SyncJson.valueUtf8(it) }
         commands.upsert(
             SyncOutboxEntity(
@@ -236,18 +266,35 @@ class RoomSyncOutbox(
     }
 
     fun applyAck(row: PrivateSyncOutboxEntry, record: SyncRecord) {
-        deleteOp(row.opId)
-        val localId = row.localRowId ?: return
-        val prev = identity(row.entityType, localId)
-        remember(
-            row.entityType,
-            localId,
-            record.entityId,
-            record.revision,
-            prev?.createdAtUtc ?: Instant.now(clock).truncatedTo(ChronoUnit.SECONDS),
-            prev?.legacyCreatedLocalDate
-        )
+        inTransaction {
+            deleteOp(row.opId)
+            // A local edit can replace the submitted operation while the request is in flight.
+            // Keep that edit and rebase it on the acknowledged revision.
+            commands.pending().filter {
+                it.status == "pending" && it.entityType == row.entityType &&
+                    it.entityId == row.entityId.toString() && it.expectedRevision == row.expectedRevision
+            }.forEach { commands.upsert(it.copy(expectedRevision = record.revision, syncEpoch = null)) }
+            inbox.rememberServer(record)
+            row.localRowId?.let { localId ->
+                val prev = identity(row.entityType, localId)
+                remember(row.entityType, localId, record.entityId, record.revision,
+                    prev?.createdAtUtc ?: nowUtc(), prev?.legacyCreatedLocalDate)
+            }
+        }
     }
+
+    fun markConflict(row: PrivateSyncOutboxEntry, outcome: SyncMutationResult?) = inTransaction {
+        commands.pending().filter {
+            it.entityType == row.entityType && it.entityId == row.entityId.toString() &&
+                (it.status == "pending" || it.status == "conflict")
+        }.forEach { commands.upsert(it.copy(status = "conflict")) }
+        if (outcome?.serverRecord != null) inbox.rememberServer(outcome.serverRecord)
+        else inbox.forgetServer(row.entityType, row.entityId)
+    }
+
+    internal fun localRow(entityType: String, entityId: UUID): Long? = commands.pending().firstOrNull {
+        it.status == IDENTITY_STATUS && it.entityType == entityType && it.entityId == entityId.toString()
+    }?.localRowId
 
     private fun stampEpoch(opId: UUID, epoch: UUID): UUID {
         val current = commands.find(opId.toString()) ?: return epoch
@@ -284,7 +331,8 @@ class RoomSyncOutbox(
                 commands = RoomSyncOutboxCommands(db.syncOutboxDao()),
                 state = RoomSyncStateCommands(db.syncStateDao()),
                 transactor = { action -> db.runInTransaction(Callable { action() }) },
-                clock = clock
+                clock = clock,
+                projection = RoomSyncProjection(db.homeworkDao(), db.overrideDao(), db.friendDao(), db.settingsDao())
             )
 
         private fun parseUuid(value: String?): UUID? =

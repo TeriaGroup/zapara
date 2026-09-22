@@ -1,9 +1,7 @@
 package ru.bgtu_voenmeh.zapara.data.accounts
 
 import ru.bgtu_voenmeh.zapara.data.api.JsonFail
-import ru.bgtu_voenmeh.zapara.data.api.JsonValue
 import ru.bgtu_voenmeh.zapara.data.api.StrictJson
-import ru.bgtu_voenmeh.zapara.data.api.bool
 import ru.bgtu_voenmeh.zapara.data.api.field
 import ru.bgtu_voenmeh.zapara.data.api.int
 import ru.bgtu_voenmeh.zapara.data.api.nullableText
@@ -260,7 +258,7 @@ object AccountValidation {
     }
 
     fun platform(value: String?): String =
-        if (value == "windows" || value == "android") value else throw invalid()
+        if (value == "windows" || value == "android" || value == "web") value else throw invalid()
 
     fun opaque(value: String?, min: Int = 43, max: Int = 128): String {
         if (value == null || value.length < min || value.length > max) throw invalid()

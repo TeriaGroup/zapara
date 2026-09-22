@@ -22,6 +22,45 @@ data class Community(
     val role: String?
 )
 
+data class Classmate(
+    val userId: String,
+    val username: String,
+    val displayName: String?,
+    val role: String,
+    val self: Boolean
+)
+
+data class Conversation(
+    val conversationId: String,
+    val kind: String,
+    val communityId: String,
+    val title: String,
+    val peerUserId: String?,
+    val lastBody: String?,
+    val lastAt: Instant?,
+    val unread: Int
+)
+
+data class GroupHome(
+    val communityId: String,
+    val name: String,
+    val groupName: String?,
+    val groupChat: Conversation,
+    val classmates: List<Classmate>,
+    val directs: List<Conversation>
+)
+
+data class ChatMessage(
+    val messageId: String,
+    val conversationId: String,
+    val senderId: String,
+    val senderName: String,
+    val body: String,
+    val createdAt: Instant
+)
+
+data class ChatPage(val messages: List<ChatMessage>, val hasMore: Boolean)
+
 data class JoinRequest(
     val requestId: String,
     val communityId: String,
@@ -122,7 +161,13 @@ object CommunityValidation {
 
     fun title(value: String?): String = text(value, 200)
 
-    fun body(value: String?): String = text(value, 8000)
+    fun body(value: String?): String = text(value?.replace("\r\n", "\n"), 8000, allowFormatting = true)
+
+    fun message(value: String?): String {
+        val text = text(value?.replace("\r\n", "\n"), 2000, allowFormatting = true)
+        if (text.isBlank()) throw invalid()
+        return text
+    }
 
     fun question(value: String?): String = text(value, 400)
 
@@ -138,13 +183,14 @@ object CommunityValidation {
         }
     }
 
-    fun text(value: String?, maximum: Int, allowEmpty: Boolean = false): String {
+    fun text(value: String?, maximum: Int, allowEmpty: Boolean = false, allowFormatting: Boolean = false): String {
         if (value == null || value.length > maximum * 2) throw invalid()
         var count = 0
         var i = 0
         while (i < value.length) {
             val cp = value.codePointAt(i)
-            if (cp == 0 || cp in 0xD800..0xDFFF || Character.getType(cp) == Character.CONTROL.toInt()) throw invalid()
+            if (cp == 0 || cp in 0xD800..0xDFFF ||
+                (Character.getType(cp) == Character.CONTROL.toInt() && !(allowFormatting && (cp == 9 || cp == 10)))) throw invalid()
             count++
             i += Character.charCount(cp)
         }

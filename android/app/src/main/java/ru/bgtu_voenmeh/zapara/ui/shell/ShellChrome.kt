@@ -29,9 +29,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip

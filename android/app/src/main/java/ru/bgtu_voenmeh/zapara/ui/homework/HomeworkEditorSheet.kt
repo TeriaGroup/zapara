@@ -1,5 +1,8 @@
 package ru.bgtu_voenmeh.zapara.ui.homework
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.FlowRow
@@ -31,8 +34,16 @@ fun HomeworkEditorSheet(
     onInc: () -> Unit,
     onDec: () -> Unit,
     onSave: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onPick: (String, Uri) -> Unit = { _, _ -> },
+    onRemove: (String) -> Unit = {}
 ) {
+    val photo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onPick("photo", uri)
+    }
+    val document = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onPick("document", uri)
+    }
     val c = Zapara.colors
     val countLabel = when (state.n) {
         1 -> R.string.ux_homework_due_one
@@ -64,6 +75,27 @@ fun HomeworkEditorSheet(
         }
         Text(state.dueText(LocalUiCopy.current), style = Zapara.typography.body, color = c.text1,
             modifier = Modifier.fillMaxWidth().testTag("Editor.Due"))
+        Spacer(Modifier.height(Zapara.space.s))
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+            verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            ZButton(stringResource(R.string.hw_attach_photo), { photo.launch(arrayOf("image/jpeg", "image/png", "image/webp", "image/gif")) }, ghost = true, tag = "Editor.Photo")
+            ZButton(stringResource(R.string.hw_attach_document), {
+                document.launch(arrayOf(
+                    "application/pdf", "text/plain", "text/csv", "application/rtf",
+                    "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    "application/vnd.oasis.opendocument.text", "application/vnd.oasis.opendocument.spreadsheet",
+                    "application/vnd.oasis.opendocument.presentation", "application/zip"
+                ))
+            }, ghost = true, tag = "Editor.Document")
+        }
+        state.files.forEach { file ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                Text(file.name, style = Zapara.typography.caption, color = c.text1, modifier = Modifier.weight(1f))
+                ZButton(stringResource(R.string.hw_attach_remove), { onRemove(file.id) }, ghost = true, tag = "Editor.Remove.${file.id}")
+            }
+        }
         Spacer(Modifier.height(Zapara.space.m))
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {

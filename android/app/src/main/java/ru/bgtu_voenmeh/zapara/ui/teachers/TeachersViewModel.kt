@@ -17,6 +17,7 @@ import ru.bgtu_voenmeh.zapara.ui.LessonFormat
 class TeachersViewModel(private val container: AppContainer) : ViewModel() {
     private val mutable = MutableStateFlow(TeachersUiState())
     val state: StateFlow<TeachersUiState> = mutable.asStateFlow()
+    private var searchTicket = 0
 
     init {
         viewModelScope.launch { load() }
@@ -54,23 +55,27 @@ class TeachersViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private suspend fun search() {
+        val ticket = ++searchTicket
+        val query = mutable.value.query
+        val onlyMine = mutable.value.onlyMine
         try {
             val snap = withContext(Dispatchers.IO) {
                 val prefs = container.repo.settings()
                 val gid = prefs.myGroupId.orEmpty()
                 val gname = container.repo.groups().firstOrNull { it.id == gid }?.name
                 val myIds = if (gid.isEmpty()) emptySet() else
-                    container.lecturerStore.myTeacherIds(container.repo.allForGroup(gid), gid, gname)
-                val found = container.lecturerStore.search(mutable.value.query, mutable.value.onlyMine, myIds)
+                    container.lecturerStore.myTeacherIds(container.ownLessons(), gid, gname)
+                val found = container.lecturerStore.search(query, onlyMine, myIds)
                 val rows = found.map { lect ->
                     val subjects = container.lecturerStore.lessonsFor(lect.id)
                         .map { LessonFormat.stripType(it.disciplineRaw.ifBlank { it.subjectRaw }, it.typeRaw) }
                         .distinct().take(4).joinToString(" · ")
                     TeacherRowUi(lect.id, lect.name, subjects, lect.id in myIds || lect.name in myIds)
                 }
-                mutable.value.copy(loaded = true, list = rows, total = container.lecturerStore.lecturers().size, myIds = myIds)
+                rows to (container.lecturerStore.lecturers().size to myIds)
             }
-            mutable.value = snap
+            if (ticket != searchTicket) return
+            mutable.update { it.copy(loaded = true, list = snap.first, total = snap.second.first, myIds = snap.second.second) }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             android.util.Log.w("ZaparaTeachers", "search", e)

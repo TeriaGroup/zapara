@@ -3,7 +3,6 @@ package ru.bgtu_voenmeh.zapara.data
 import java.time.DayOfWeek
 import java.time.LocalDate
 
-// Pure schedule helpers (DB-backed repositories land in A2).
 object Schedule {
 
     /** Lessons for [groupId] on [date] filtered by computed parity. */
@@ -23,10 +22,7 @@ object Schedule {
             .sortedWith(compareBy({ it.timeStart }, { it.index }))
     }
 
-    /**
-     * Next date AFTER [from] with a lesson whose normalized subject == [norm].
-     * Mirrors GetNextPairDateText (scan date+1..+60, skip Sunday).
-     */
+    /** Day after [from], through +60, skipping Sunday. */
     fun nextOccurrenceBySubject(
         all: List<Lesson>,
         groupId: String,
@@ -47,7 +43,7 @@ object Schedule {
         return null
     }
 
-    /** Same scan but matching teacher short name (mirrors GetNextTeacherDateText). */
+    /** Same +60 Sunday-skipping scan, matching the teacher short name. */
     fun nextOccurrenceByTeacher(
         all: List<Lesson>,
         groupId: String,

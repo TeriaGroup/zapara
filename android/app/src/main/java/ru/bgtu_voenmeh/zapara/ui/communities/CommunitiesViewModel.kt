@@ -41,7 +41,9 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
     val state: StateFlow<CommunitiesUiState> = mutable.asStateFlow()
     private var snapshot = CommunitySnapshot(guest = runtime.guest)
     private val pending = LinkedHashMap<String, JoinRequest>()
+    private val busy = HashSet<String>()
     private var round = 0
+    private var openTicket = 0
 
     init {
         viewModelScope.launch { load() }
@@ -50,42 +52,45 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
     fun onEvent(event: CommunitiesEvent) {
         when (event) {
             is CommunitiesEvent.Open -> viewModelScope.launch { open(event.communityId) }
-            CommunitiesEvent.Back -> publish(
-                snapshot.copy(
-                    selectedId = null,
-                    members = emptyList(),
-                    staff = emptyList(),
-                    joinRequests = emptyList(),
-                    homework = emptyList(),
-                    completions = emptyMap(),
-                    announcements = emptyList(),
-                    polls = emptyList(),
-                    votes = emptyMap(),
-                    results = emptyMap()
+            CommunitiesEvent.Back -> {
+                openTicket++
+                succeed(
+                    snapshot.copy(
+                        selectedId = null,
+                        members = emptyList(),
+                        staff = emptyList(),
+                        joinRequests = emptyList(),
+                        homework = emptyList(),
+                        completions = emptyMap(),
+                        announcements = emptyList(),
+                        polls = emptyList(),
+                        votes = emptyMap(),
+                        results = emptyMap()
+                    )
                 )
-            )
-            is CommunitiesEvent.Join -> viewModelScope.launch { join(event.communityId) }
-            is CommunitiesEvent.AcceptJoin -> viewModelScope.launch {
+            }
+            is CommunitiesEvent.Join -> launchOnce("join:${event.communityId}") { join(event.communityId) }
+            is CommunitiesEvent.AcceptJoin -> launchOnce("resolve:${event.requestId}") {
                 mutate { api, token ->
                     api.acceptJoin(token, event.communityId, event.requestId)
-                    publish(snapshot.copy(joinRequests = snapshot.joinRequests.filterNot { it.requestId == event.requestId }))
+                    succeed(snapshot.copy(joinRequests = snapshot.joinRequests.filterNot { it.requestId == event.requestId }))
                 }
             }
-            is CommunitiesEvent.RejectJoin -> viewModelScope.launch {
+            is CommunitiesEvent.RejectJoin -> launchOnce("resolve:${event.requestId}") {
                 mutate { api, token ->
                     api.rejectJoin(token, event.communityId, event.requestId)
-                    publish(snapshot.copy(joinRequests = snapshot.joinRequests.filterNot { it.requestId == event.requestId }))
+                    succeed(snapshot.copy(joinRequests = snapshot.joinRequests.filterNot { it.requestId == event.requestId }))
                 }
             }
-            is CommunitiesEvent.ToggleCompletion -> viewModelScope.launch {
+            is CommunitiesEvent.ToggleCompletion -> launchOnce("completion:${event.homeworkId}") {
                 mutate { api, token ->
                     val done = api.upsertCompletion(
                         token, event.communityId, event.homeworkId, event.completed, event.expectedRevision
                     )
-                    publish(snapshot.copy(completions = snapshot.completions + (event.homeworkId to done)))
+                    succeed(snapshot.copy(completions = snapshot.completions + (event.homeworkId to done)))
                 }
             }
-            is CommunitiesEvent.Vote -> viewModelScope.launch { vote(event.communityId, event.pollId, event.optionId) }
+            is CommunitiesEvent.Vote -> launchOnce("vote:${event.pollId}") { vote(event.communityId, event.pollId, event.optionId) }
             is CommunitiesEvent.ShowResults -> viewModelScope.launch { showResults(event.communityId, event.pollId) }
         }
     }
@@ -120,14 +125,21 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
             if (ticket == round) applyFailure(e)
         } catch (e: Exception) {
             android.util.Log.w("ZaparaCommunities", "load", e)
+            if (ticket == round) publish(snapshot.copy(failure = CommunityClientFailure.Transport))
         }
     }
 
     private suspend fun open(communityId: String) {
         val community = snapshot.communities.firstOrNull { it.communityId == communityId } ?: return
         if (!isMember(community.role)) return
-        publish(snapshot.copy(selectedId = communityId))
-        mutate { api, token ->
+        val ticket = ++openTicket
+        val api = runtime.client ?: return
+        val token = runtime.accessToken()
+        if (token.isNullOrEmpty()) {
+            publish(CommunitySnapshot(guest = true))
+            return
+        }
+        try {
             val homework = api.listHomework(token, communityId)
             val completions = HashMap<String, HomeworkCompletion>()
             for (item in homework) {
@@ -139,7 +151,8 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
             val announcements = api.listAnnouncements(token, communityId)
             val polls = api.listPolls(token, communityId)
             val staff = isStaff(community.role)
-            publish(
+            if (ticket != openTicket) return
+            succeed(
                 snapshot.copy(
                     selectedId = communityId,
                     homework = homework,
@@ -151,6 +164,13 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
                     joinRequests = if (staff) api.listJoinRequests(token, communityId) else emptyList()
                 )
             )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: CommunityClientException) {
+            if (ticket == openTicket) applyFailure(e)
+        } catch (e: Exception) {
+            android.util.Log.w("ZaparaCommunities", "open", e)
+            if (ticket == openTicket) publish(snapshot.copy(failure = CommunityClientFailure.Transport))
         }
     }
 
@@ -179,6 +199,7 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
             throw e
         } catch (e: Exception) {
             android.util.Log.w("ZaparaCommunities", "join", e)
+            publish(snapshot.copy(failure = CommunityClientFailure.Transport))
         }
     }
 
@@ -191,7 +212,7 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
         }
         try {
             val vote = api.vote(token, communityId, pollId, optionId)
-            publish(snapshot.copy(votes = snapshot.votes + (pollId to vote)))
+            succeed(snapshot.copy(votes = snapshot.votes + (pollId to vote)))
         } catch (e: CommunityClientException) {
             if (e.failure == CommunityClientFailure.AlreadyVoted || e.failure == CommunityClientFailure.PollClosed) {
                 showResults(communityId, pollId)
@@ -202,13 +223,14 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
             throw e
         } catch (e: Exception) {
             android.util.Log.w("ZaparaCommunities", "vote", e)
+            publish(snapshot.copy(failure = CommunityClientFailure.Transport))
         }
     }
 
     private suspend fun showResults(communityId: String, pollId: String) {
         mutate { api, token ->
             val results = api.results(token, communityId, pollId)
-            publish(snapshot.copy(results = snapshot.results + (pollId to results)))
+            succeed(snapshot.copy(results = snapshot.results + (pollId to results)))
         }
     }
 
@@ -227,6 +249,7 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
             applyFailure(e)
         } catch (e: Exception) {
             android.util.Log.w("ZaparaCommunities", "mutate", e)
+            publish(snapshot.copy(failure = CommunityClientFailure.Transport))
         }
     }
 
@@ -235,11 +258,24 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
         publish(snapshot.copy(guest = false, failure = null, ownJoin = pending.toMap()))
     }
 
+    private fun launchOnce(key: String, block: suspend () -> Unit) {
+        if (!busy.add(key)) return
+        viewModelScope.launch {
+            try {
+                block()
+            } finally {
+                busy.remove(key)
+            }
+        }
+    }
+
+    private fun succeed(next: CommunitySnapshot) = publish(next.copy(failure = null))
+
     private fun applyFailure(error: CommunityClientException) {
         when (error.failure) {
             CommunityClientFailure.Forbidden -> publish(CommunitySnapshot(guest = false, failure = error.failure))
             CommunityClientFailure.InvalidSession -> publish(CommunitySnapshot(guest = true))
-            else -> android.util.Log.w("ZaparaCommunities", error.failure.name)
+            else -> publish(snapshot.copy(failure = error.failure))
         }
     }
 

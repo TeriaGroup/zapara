@@ -10,7 +10,6 @@ import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.semantics.getAllSemanticsNodes
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.toArgb
@@ -115,7 +114,7 @@ class ThemeNativeCaptureTest {
                 host.setContent {
                     ZaparaTheme(choice, MotionSettings.Off) {
                         var text by remember { mutableStateOf("") }
-                HomeworkEditorSheet(HomeworkEditorState(null, "Математика", "Математика", text, 1, false) { _, _ -> null },
+                HomeworkEditorSheet(HomeworkEditorState(null, "Математика", "Математика", text, 1, false, dueFor = { _, _ -> null }),
                             { text = it }, { increments.incrementAndGet() }, { decrements.incrementAndGet() }, {}, {})
                     }
                 }

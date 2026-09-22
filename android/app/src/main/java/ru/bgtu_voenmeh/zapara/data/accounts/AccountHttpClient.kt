@@ -22,6 +22,7 @@ class AccountHttpClient(
     private val transport: HttpExchange,
     val scope: AccountServerScope
 ) {
+    private var devicesApiVersion = 2
     data class Capabilities(val registration: Boolean)
 
     suspend fun capabilities(): Capabilities {
@@ -52,7 +53,12 @@ class AccountHttpClient(
     }
 
     suspend fun logout(accessToken: String) {
-        send("POST", "auth/logout", "{}", accessToken, 204)
+        send("POST", "auth/logout", null, accessToken, 204)
+    }
+
+    suspend fun refresh(refreshToken: String): AccountSession {
+        val token = AccountValidation.token(refreshToken, "zr_")
+        return session(send("POST", "auth/refresh", "{\"refreshToken\":${q(token)}}", null, 200).obj())
     }
 
     suspend fun me(accessToken: String): AccountUser {
@@ -69,7 +75,13 @@ class AccountHttpClient(
             if (cursor != null) append("&cursor=").append(URLEncoder.encode(cursor, Charsets.UTF_8.name()))
         }
         return readPayload {
-            val root = send("GET", path, null, accessToken, 200).obj()
+            val root = try {
+                send("GET", path, null, accessToken, 200, devicesApiVersion).obj()
+            } catch (error: AccountClientException) {
+                if (devicesApiVersion != 2 || error.failure != AccountClientFailure.NotConfigured) throw error
+                devicesApiVersion = 1
+                send("GET", path, null, accessToken, 200).obj()
+            }
             val items = root.array("devices", 100).items.map { device(it.obj()) }
             if (items.map { it.familyId }.toSet().size != items.size) throw JsonFail()
             val next = root.nullableText("nextCursor", 55)
@@ -202,8 +214,8 @@ class AccountHttpClient(
         send("DELETE", "account/identities/${requireProvider(provider)}", proofBody(proofToken), accessToken, 204)
     }
 
-    private suspend fun send(method: String, path: String, body: String?, access: String?, expected: Int): JsonValue {
-        val reply = exchange(method, path, body, access, JSON_MAX)
+    private suspend fun send(method: String, path: String, body: String?, access: String?, expected: Int, apiVersion: Int = 1): JsonValue {
+        val reply = exchange(method, path, body, access, JSON_MAX, apiVersion)
         if (reply.status != expected) throw mapError(reply.status, reply.body)
         if (expected == 204) return JsonValue.Null
         return try {
@@ -218,7 +230,8 @@ class AccountHttpClient(
         path: String,
         body: String?,
         access: String?,
-        maxBytes: Int
+        maxBytes: Int,
+        apiVersion: Int = 1
     ): HttpReply {
         val headers = linkedMapOf("Accept" to "application/json")
         if (access != null) headers["Authorization"] = "Bearer ${AccountValidation.token(access, "za_")}"
@@ -226,7 +239,7 @@ class AccountHttpClient(
         if (bytes != null && bytes.size > JSON_REQUEST_MAX) throw AccountClientException(AccountClientFailure.InvalidRequest)
         val reply = try {
             transport.exchange(
-                HttpCall(method, scope.baseUri.toString() + "api/v1/" + path, headers, bytes, maxBytes = maxBytes)
+                HttpCall(method, scope.baseUri.toString() + "api/v$apiVersion/" + path, headers, bytes, maxBytes = maxBytes)
             )
         } catch (_: ru.bgtu_voenmeh.zapara.data.api.HttpBodyTooLargeException) {
             throw AccountClientException(AccountClientFailure.BodyTooLarge)
@@ -320,6 +333,7 @@ class AccountHttpClient(
     private fun startBody(request: AccountExternalStartRequest): String {
         if (request.nativeChallengeMethod != "S256") throw AccountClientException(AccountClientFailure.InvalidRequest)
         val platform = AccountValidation.platform(request.platform)
+        if (platform != "android" && platform != "windows") throw AccountClientException(AccountClientFailure.InvalidRequest)
         if (request.returnKind != platform) throw AccountClientException(AccountClientFailure.InvalidRequest)
         if (platform == "android" && request.returnPort != null) throw AccountClientException(AccountClientFailure.InvalidRequest)
         if (platform == "windows" && (request.returnPort == null || request.returnPort !in 1024..65535)) {

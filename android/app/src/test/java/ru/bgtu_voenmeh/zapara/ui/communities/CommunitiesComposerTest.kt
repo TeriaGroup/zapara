@@ -37,6 +37,28 @@ class CommunitiesComposerTest {
     }
 
     @Test
+    fun transport_failure_is_not_an_empty_catalog() {
+        val state = CommunitiesComposer.compose(
+            snapshot(guest = false, failure = CommunityClientFailure.Transport)
+        )
+        assertEquals(CommunityPane.Empty, state.pane)
+        assertTrue(state.failed)
+        assertNull(state.selected)
+        val kept = CommunitiesComposer.compose(
+            snapshot(
+                guest = false,
+                failure = CommunityClientFailure.Transport,
+                communities = listOf(community("member")),
+                selectedId = CID,
+                homework = listOf(homework(HID_A, "Задание А"))
+            )
+        )
+        assertEquals(CommunityPane.Detail, kept.pane)
+        assertTrue(kept.failed)
+        assertEquals("Задание А", kept.selected!!.homework.single().title)
+    }
+
+    @Test
     fun signed_in_empty_catalog_is_empty_pane() {
         val state = CommunitiesComposer.compose(snapshot(guest = false))
         assertEquals(CommunityPane.Empty, state.pane)

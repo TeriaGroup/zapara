@@ -26,7 +26,7 @@ android {
         versionName = "2.1.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        val apiBase = keystoreProps.getProperty("zapara.apiBaseUrl") ?: ""
+        val apiBase = keystoreProps.getProperty("zapara.apiBaseUrl") ?: "https://voen.teriahost.ru"
         buildConfigField("String", "API_BASE_URL", "\"${apiBase.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
     }
     signingConfigs {
@@ -108,7 +108,6 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
 
-    // Room persistence (entities/DAO compile in A1, repositories land in A2)
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")

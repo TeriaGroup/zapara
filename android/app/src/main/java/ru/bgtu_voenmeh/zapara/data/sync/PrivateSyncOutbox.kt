@@ -26,7 +26,6 @@ data class PrivateSyncDraft(
     val serverPayload: String
 )
 
-/** Room-shaped commands a later task can implement against [SyncOutboxEntity]. */
 interface SyncOutboxCommands {
     fun pending(): List<SyncOutboxEntity>
     fun find(opId: String): SyncOutboxEntity?

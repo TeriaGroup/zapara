@@ -2,14 +2,25 @@ package ru.bgtu_voenmeh.zapara.data.sync
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
 import ru.bgtu_voenmeh.zapara.data.api.MemoryTimetableStore
+import ru.bgtu_voenmeh.zapara.data.api.ApiRefreshCoordinator
+import ru.bgtu_voenmeh.zapara.data.api.TimetableStore
+import ru.bgtu_voenmeh.zapara.data.api.FakeHttp
+import ru.bgtu_voenmeh.zapara.data.api.PIN
+import ru.bgtu_voenmeh.zapara.data.api.catalogJson
+import ru.bgtu_voenmeh.zapara.data.api.scheduleJson
+import ru.bgtu_voenmeh.zapara.data.api.jsonReply
+import ru.bgtu_voenmeh.zapara.data.GroupInfo
+import ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork
 import ru.bgtu_voenmeh.zapara.data.db.FriendDao
 import ru.bgtu_voenmeh.zapara.data.db.FriendEntity
 import ru.bgtu_voenmeh.zapara.data.db.GroupDao
@@ -21,6 +32,47 @@ import java.time.ZoneOffset
 import java.util.UUID
 
 class FriendSettingsOutboxTest {
+    @Test
+    fun timetable_identity_adoption_enqueues_the_remapped_group_through_the_account_repository() = runBlocking {
+        val h = FriendSettingsHarness()
+        h.repo.saveSettings(h.repo.settings().copy(myGroupId = "42"))
+        val backing = h.repo.store as MemoryTimetableStore
+        backing.upsertGroup(GroupInfo("42", "О3313"))
+        val store = object : TimetableStore by backing {
+            override fun settings(): ScheduleRepository.SettingsState = h.repo.settings()
+        }
+        val http = FakeHttp { call ->
+            jsonReply((if (call.url.substringBefore('?').endsWith("/groups")) catalogJson(PIN, "О3313") else scheduleJson("О3313"))
+                .replace("ТЕСТ-ГРУППА", "О3313"))
+        }
+        val api = ApiRefreshCoordinator(store, ProfileWork(), "https://example.invalid/", http, h.repo::saveSettings)
+        assertTrue(api.refresh())
+        assertEquals("О3313", h.repo.settings().myGroupId)
+        val value = h.outbox.payloadValue(h.outbox.pending().single()) as SettingsValue
+        assertEquals("О3313", value.selectedGroupId)
+        assertTrue(backing.allLessons("О3313").isNotEmpty())
+    }
+    @Test
+    fun friend_editor_save_toggle_and_delete_enqueue_the_same_account_entity() {
+        val h = FriendSettingsHarness()
+        val actions = ru.bgtu_voenmeh.zapara.ui.friends.FriendEditorActions(h.repo)
+        actions.save(null, "Е452Б", "Иван", "#4CC38A")
+        val id = h.repo.friends().single().id
+        val first = h.outbox.pending().single()
+        val value = h.outbox.payloadValue(first) as FriendValue
+        h.outbox.applyAck(first, SyncRecord("friend", first.entityId, 1, false, NOW, value))
+        actions.toggle(id, false)
+        assertFalse((h.outbox.payloadValue(h.outbox.pending().single()) as FriendValue).enabled)
+        actions.save(id, "Е452Б", "Иван, Мария", "#4CC38A")
+        assertEquals("Иван, Мария", (h.outbox.payloadValue(h.outbox.pending().single()) as FriendValue).memberNames)
+        actions.delete(id)
+        val deletion = h.outbox.pending().single()
+        assertEquals("delete", deletion.action)
+        assertEquals(first.entityId, deletion.entityId)
+        assertEquals(1L, deletion.expectedRevision)
+        assertTrue(h.repo.friends().isEmpty())
+    }
+
     @Test
     fun guest_friend_and_settings_leave_outbox_empty() {
         val h = FriendSettingsHarness(enabled = false)
@@ -77,6 +129,19 @@ class FriendSettingsOutboxTest {
         assertEquals("delete", deleted.action)
         assertEquals(1L, deleted.expectedRevision)
         assertEquals(updated.entityId, deleted.entityId)
+    }
+
+    @Test
+    fun settings_round_trip_keeps_last_good_fetch_stamp_when_api_overlay_hides_it() {
+        val h = FriendSettingsHarness()
+        h.repo.store.useApiCatalog = true
+        h.repo.saveSettings(h.repo.settings().copy(myGroupId = "42", lastFetchedAt = "2026-09-01T00:00:00Z"))
+        assertNull(h.repo.settings().lastFetchedAt)
+        h.repo.saveSettings(h.repo.settings().copy(parityInvert = true))
+        assertTrue(h.repo.settings().parityInvert)
+        assertEquals("2026-09-01T00:00:00Z", h.settings.row!!.lastFetchedAt)
+        h.repo.saveSettings(h.repo.settings().copy(useUniversityXml = true))
+        assertEquals("2026-09-01T00:00:00Z", h.repo.settings().lastFetchedAt)
     }
 
     @Test

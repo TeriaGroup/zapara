@@ -1,6 +1,7 @@
 package ru.bgtu_voenmeh.zapara.ui.homework
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -13,6 +14,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -20,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.HighlightText
 import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
+import ru.bgtu_voenmeh.zapara.ui.schedule.LessonTypeChip
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 
@@ -34,6 +37,9 @@ fun SubjectPickerSheet(
     val filtered = remember(picker.subjects, picker.query) {
         val q = picker.query.trim()
         if (q.isEmpty()) picker.subjects else picker.subjects.filter { it.display.contains(q, true) || it.raw.contains(q, true) }
+    }
+    val ambiguous = remember(filtered) {
+        filtered.groupingBy { it.display }.eachCount().filterValues { it > 1 }.keys
     }
     ZBottomSheet(onDismiss, "Sheet.Subject") {
         Text(stringResource(R.string.subject_picker_title), style = Zapara.typography.section, color = c.text1)
@@ -54,7 +60,14 @@ fun SubjectPickerSheet(
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             items(filtered, key = { it.norm }) { subject ->
                 ZCard(onClick = { onPick(subject.raw) }, tag = "Picker.Row.${subject.norm}", modifier = Modifier.fillMaxWidth()) {
-                    HighlightText(subject.display, picker.query, Zapara.typography.bodyStrong)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)
+                    ) {
+                        HighlightText(subject.display, picker.query, Zapara.typography.bodyStrong, Modifier.weight(1f))
+                        if (subject.display in ambiguous) LessonTypeChip(subject.type, "Picker.Type.${subject.norm}")
+                    }
                 }
             }
         }

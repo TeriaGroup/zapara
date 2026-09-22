@@ -53,10 +53,11 @@ class UpdateViewModel(
 
     fun check(manual: Boolean) {
         if (mutable.value.checking || mutable.value.downloading) return
+        mutable.update { it.copy(checking = true, error = null, upToDate = false, hasUpdate = false, log = copy.get("upd_log_request")) }
         scope.launch {
-            mutable.update { it.copy(checking = true, error = null, upToDate = false, hasUpdate = false, log = copy.get("upd_log_request")) }
             try {
                 val cached = source.cached()
+                // 6h: GitHub allows 60 anon API calls/hour per IP — VPNs share one IP, don't burn it.
                 val info = if (!manual && cached.tag != null && System.currentTimeMillis() - cached.at < 6 * 3600_000L) {
                     UpdateInfo(cached.tag, cached.htmlUrl.orEmpty(), cached.apkUrl, "")
                 } else {
@@ -75,6 +76,9 @@ class UpdateViewModel(
                 } else {
                     mutable.update { it.copy(checking = false, upToDate = true, hasUpdate = false, tag = info.tag, log = copy.get("upd_log_none"), checkedAt = at) }
                 }
+            } catch (e: CancellationException) {
+                mutable.update { it.copy(checking = false) }
+                throw e
             } catch (e: Exception) {
                 val raw = e.message ?: e.javaClass.simpleName
                 val friendly = if ("403" in raw) copy.get("upd_err_403") else copy.get("upd_err", raw)
@@ -88,9 +92,9 @@ class UpdateViewModel(
         val url = mutable.value.apkUrl ?: return
         if (tag.isEmpty() || mutable.value.downloading) return
         cancelled = false
+        mutable.update { it.copy(downloading = true, progress = -1f, error = null, log = copy.get("upd_log_connect")) }
         downloadJob?.cancel()
         downloadJob = scope.launch {
-            mutable.update { it.copy(downloading = true, progress = -1f, error = null, log = copy.get("upd_log_connect")) }
             try {
                 val file = source.download(url, tag) { done, total ->
                     val p = if (total > 0) done.toFloat() / total else -1f

@@ -22,7 +22,6 @@ import ru.bgtu_voenmeh.zapara.data.db.SettingsEntity
 import ru.bgtu_voenmeh.zapara.data.db.ZaparaDatabase
 
 
-// A4: offline maps (bundled assets) + teacher finder (bundled lecturer XML).
 @RunWith(AndroidJUnit4::class)
 class MapTeacherTest {
 

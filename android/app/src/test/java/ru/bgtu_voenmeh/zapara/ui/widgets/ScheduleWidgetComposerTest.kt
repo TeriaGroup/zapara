@@ -8,7 +8,6 @@ import ru.bgtu_voenmeh.zapara.data.GROUP_FIXTURE
 import ru.bgtu_voenmeh.zapara.data.GroupParser
 import ru.bgtu_voenmeh.zapara.data.Lesson
 import ru.bgtu_voenmeh.zapara.data.Parity
-import ru.bgtu_voenmeh.zapara.data.Schedule
 import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileDescriptor
 import ru.bgtu_voenmeh.zapara.ui.LessonFormat

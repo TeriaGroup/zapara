@@ -19,6 +19,7 @@ import ru.bgtu_voenmeh.zapara.data.accounts.AccountClientFailure
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountExternalStartRequest
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountHttpClient
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountSession
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountSessionManager
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountSessionVault
 import ru.bgtu_voenmeh.zapara.data.api.HttpExchange
 import ru.bgtu_voenmeh.zapara.data.api.UrlConnectionTransport
@@ -35,7 +36,8 @@ internal class AccountRuntime(
     val writeExport: (ByteArray, String) -> Unit,
     val capabilitiesTransport: HttpExchange?,
     val scopeBase: String?,
-    val serverKey: String?
+    val serverKey: String?,
+    val sessions: AccountSessionManager? = null
 ) {
     companion object {
         fun from(host: AndroidProfileHost) = AccountRuntime(
@@ -65,7 +67,8 @@ internal class AccountRuntime(
             },
             capabilitiesTransport = UrlConnectionTransport(),
             scopeBase = host.accountScope?.baseUri?.toString(),
-            serverKey = host.accountScope?.key
+            serverKey = host.accountScope?.key,
+            sessions = host.sessions
         )
     }
 }
@@ -97,11 +100,19 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                         readUiCapabilities(runtime.capabilitiesTransport, runtime.scopeBase)
                     else -> AccountUiCapabilities(runtime.client?.capabilities()?.registration == true)
                 }
-                val entry = runtime.vault.acquire().use { it.read() }
                 val guest = runtime.isGuest()
-                val identities = if (!guest && runtime.client != null && entry != null) {
+                val session = if (guest) null else try {
+                    requireSession()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+                val identities = if (session != null && runtime.client != null) {
                     try {
-                        runtime.client.identities(entry.session.accessToken).map { AccountIdentityRow(it.provider) }
+                        runtime.client.identities(session.accessToken).map { AccountIdentityRow(it.provider) }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (_: Exception) {
                         emptyList()
                     }
@@ -110,7 +121,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                     it.applyCaps(caps).copy(
                         ready = true,
                         guest = guest,
-                        accountName = if (guest) "" else (entry?.session?.user?.username ?: it.accountName),
+                        accountName = if (guest) "" else (session?.user?.username ?: ""),
                         identities = identities,
                         status = statusText(guest)
                     )
@@ -326,9 +337,11 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
         }
     }
 
-    private suspend fun requireSession(): AccountSession =
-        runtime.vault.acquire().use { it.read()?.session }
+    private suspend fun requireSession(): AccountSession {
+        runtime.sessions?.let { return it.validSession() }
+        return runtime.vault.acquire().use { it.read()?.session }
             ?: throw AccountClientException(AccountClientFailure.ReauthenticationRequired)
+    }
 
     private fun leave(from: AccountUiState, ok: Boolean): AccountUiState {
         exportId = null

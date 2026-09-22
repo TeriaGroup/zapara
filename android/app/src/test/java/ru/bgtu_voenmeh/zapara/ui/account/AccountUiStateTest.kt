@@ -10,11 +10,13 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountHttpClient
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountSessionManager
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountServerScope
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountSession
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountUser
@@ -149,6 +151,7 @@ class AccountUiStateTest {
                 "GET auth/capabilities" -> capsJson()
                 "GET account/identities" -> json("[]")
                 "GET account/devices?limit=20" -> {
+                    assertTrue(call.url.contains("/api/v2/account/devices?"))
                     assertEquals("Bearer $access", call.headers["Authorization"])
                     json(devicesJson())
                 }
@@ -318,6 +321,65 @@ class AccountUiStateTest {
         assertTrue(http.requests.none { it.url.contains("id.vk") || it.url.contains("oauth.yandex") })
     }
 
+    @Test
+    fun expired_access_is_refreshed_before_account_calls() = runTest {
+        val old = testToken("za_", 1)
+        val next = testToken("za_", 9)
+        val nextRefresh = testToken("zr_", 9)
+        val current = session(old)
+        val clock = Instant.parse(seen)
+        val vault = MemoryAccountSessionVault(scope().key)
+        kotlinx.coroutines.runBlocking {
+            vault.acquire().use { it.write(AccountVaultEntry.ready(scope().key, current)) }
+        }
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson()
+                "POST auth/refresh" -> {
+                    assertNull(call.headers["Authorization"])
+                    assertEquals("""{"refreshToken":"${current.refreshToken}"}""", String(call.body!!))
+                    json(
+                        """{"user":{"userId":"$family","username":"Test.User","displayName":null,"createdAt":"$created"},
+                        |"familyId":"$family","accessToken":"$next","refreshToken":"$nextRefresh","tokenType":"Bearer",
+                        |"accessExpiresAt":"${clock.plusSeconds(900)}","refreshExpiresAt":"$expires"}""".trimMargin()
+                    )
+                }
+                "GET account/identities" -> {
+                    assertEquals("Bearer $next", call.headers["Authorization"])
+                    json("[]")
+                }
+                "GET account/devices?limit=20" -> {
+                    assertEquals("Bearer $next", call.headers["Authorization"])
+                    json(devicesJson())
+                }
+                else -> error(route(call))
+            }
+        }
+        val sessions = AccountSessionManager(AccountHttpClient(http, scope()), vault) { clock }
+        val vm = AccountViewModel(
+            AccountRuntime(
+                client = AccountHttpClient(http, scope()),
+                vault = vault,
+                strings = ::copy,
+                deviceId = { device },
+                isGuest = { false },
+                commitSession = { _, _ -> true },
+                logout = { _ -> true },
+                openUrl = {},
+                writeExport = { _, _ -> },
+                capabilitiesTransport = http,
+                scopeBase = "https://example.invalid/root/",
+                serverKey = scope().key,
+                sessions = sessions
+            )
+        )
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.LoadDevices)
+        advanceUntilIdle()
+        assertEquals(1, http.requests.count { route(it) == "POST auth/refresh" })
+        assertEquals(1, vm.state.value.devices.count { it.current })
+    }
+
     private fun signedIn(
         http: FakeHttp,
         access: String,
@@ -381,7 +443,7 @@ class AccountUiStateTest {
 
     private fun scope() = AccountServerScope.parse("https://example.invalid/root")
 
-    private fun route(call: HttpCall) = call.method + " " + call.url.substringAfter("/api/v1/")
+    private fun route(call: HttpCall) = call.method + " " + call.url.substringAfter("/api/v1/").substringAfter("/api/v2/")
 
     private fun json(body: String, status: Int = 200) = HttpReply(status, body.toByteArray(), "application/json")
 

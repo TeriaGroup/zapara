@@ -1,6 +1,5 @@
 package ru.bgtu_voenmeh.zapara.data.api
 
-import ru.bgtu_voenmeh.zapara.data.GroupInfo
 import java.time.LocalDate
 
 class TimetableApiCache(private val store: TimetableStore) {
@@ -15,10 +14,15 @@ class TimetableApiCache(private val store: TimetableStore) {
             mine.meta?.stale == false && other.meta?.stale == false
     }
 
-    fun apply(snapshot: TimetableApiSnapshot, sourceBase: String = "") {
+    fun apply(snapshot: TimetableApiSnapshot, sourceBase: String = "", selectedGroupId: String? = null,
+              saveSettings: (ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState) -> Unit = store::saveSettings,
+              expectedSettings: ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState? = null) {
         validate(snapshot)
+        if (selectedGroupId != null && selectedGroupId !in snapshot.downloaded) throw TimetableApiException(TimetableApiFailure.InvalidPayload)
         store.runInTransaction {
             val settings = store.settings()
+            if (expectedSettings != null && (settings.myGroupId != expectedSettings.myGroupId || settings.useUniversityXml != expectedSettings.useUniversityXml))
+                throw StaleTimetableSelection()
             val firstAdoption = read("") == null
             val oldPeriod = TimetableApiPeriod(
                 settings.periodStart,
@@ -49,6 +53,7 @@ class TimetableApiCache(private val store: TimetableStore) {
                     CacheMetadata(snapshot.period, downloaded.meta, downloaded.meta.fetchedAt, "api", sourceBase)
                 )
             }
+            if (selectedGroupId != null && selectedGroupId != settings.myGroupId) saveSettings(settings.copy(myGroupId = selectedGroupId))
         }
     }
 
@@ -72,7 +77,7 @@ class TimetableApiCache(private val store: TimetableStore) {
     }
 }
 
-fun defaultPeriodStart(): LocalDate = LocalDate.of(2026, 9, 1)
+internal class StaleTimetableSelection : RuntimeException("Выбор расписания изменился во время обновления.")
 
 internal fun CacheMetadata.encode(): String = buildString {
     append('{')

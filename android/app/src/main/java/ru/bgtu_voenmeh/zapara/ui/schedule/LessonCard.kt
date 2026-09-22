@@ -4,7 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
@@ -33,12 +34,14 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.breath
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LessonCard(
     lesson: LessonUi,
     onLongClick: () -> Unit,
     onRoom: () -> Unit,
     onToggleDone: (Long) -> Unit,
+    onSubgroup: (String, String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val c = Zapara.colors
@@ -72,6 +75,23 @@ fun LessonCard(
         Text(lesson.name, style = Zapara.typography.section, color = c.text1)
         lesson.original?.let { Text(it, style = Zapara.typography.caption, color = c.text3) }
         Text(lesson.teacher, style = Zapara.typography.caption, color = c.text2)
+        lesson.subgroup?.takeIf { it.showChooser }?.let { mark ->
+            Text(
+                stringResource(if (mark.chosenId == null) R.string.subgroup_pick else R.string.subgroup_yours),
+                style = Zapara.typography.caption,
+                color = c.text2
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                mark.options.forEach { option ->
+                    ZChip(
+                        option.label,
+                        selected = option.id == mark.chosenId,
+                        onClick = { onSubgroup(mark.streamId, option.id) },
+                        tag = "Lesson.Subgroup.${lesson.index}.${option.id}"
+                    )
+                }
+            }
+        }
         lesson.nextDate?.let { Text(stringResource(R.string.next_short, it), style = Zapara.typography.caption, color = c.text3) }
         hw.forEach { row ->
             val burning = !row.done && (row.status == "burning" || row.status == "burning_urgent")

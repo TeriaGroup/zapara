@@ -5,6 +5,7 @@ import ru.bgtu_voenmeh.zapara.data.Lesson
 import ru.bgtu_voenmeh.zapara.data.Parity
 import ru.bgtu_voenmeh.zapara.data.SchedCtx
 import ru.bgtu_voenmeh.zapara.data.Schedule
+import ru.bgtu_voenmeh.zapara.data.Subgroups
 import ru.bgtu_voenmeh.zapara.ui.LessonFormat
 import ru.bgtu_voenmeh.zapara.ui.UiCopy
 import java.time.DayOfWeek
@@ -50,13 +51,16 @@ object ScheduleComposer {
         displayName: (norm: String, dow: Int) -> String,
         homeworkFor: (norm: String) -> List<Homework>,
         friendsFor: (Lesson) -> List<FriendDotUi>,
-        copy: UiCopy
+        copy: UiCopy,
+        choices: Map<String, String> = emptyMap()
     ): DayPage {
         val isSunday = date.dayOfWeek == DayOfWeek.SUNDAY
         val odd = Parity.isOddWeek(date, ctx.periodStart, ctx.weekCount, ctx.invert)
         val weekNumber = Parity.weekNumber(date, ctx.periodStart)
         val caption = LessonFormat.caption(date, odd, weekNumber, copy)
+        val subgroupIndex = Subgroups.index(allLessons)
         val lessons = Schedule.lessonsForDate(allLessons, ctx.groupId, date, ctx.periodStart, ctx.weekCount, ctx.invert)
+            .filter { Subgroups.keep(it, subgroupIndex, choices) }
         val isToday = date == now.toLocalDate()
         val nowTime = now.toLocalTime()
         val rows = lessons.map { lesson ->
@@ -88,10 +92,18 @@ object ScheduleComposer {
                 subjectRaw = lesson.subjectRaw,
                 subjectNorm = lesson.subjectNormalized,
                 remote = LessonFormat.isRemote(lesson.classroomRaw),
-                dayOfWeek = lesson.dayOfWeek
+                dayOfWeek = lesson.dayOfWeek,
+                subgroup = Subgroups.mark(lesson, lessons, subgroupIndex, choices)?.let { mark ->
+                    SubgroupMarkUi(
+                        mark.streamId,
+                        mark.options.map { SubgroupOptionUi(it.id, it.label) },
+                        mark.chosenId,
+                        mark.showChooser
+                    )
+                }
             )
         }
-        val hint = if (!isSunday && rows.isEmpty()) nextHint(date, allLessons, ctx, displayName, copy) else null
+        val hint = if (!isSunday && rows.isEmpty()) nextHint(date, allLessons, ctx, displayName, copy, choices) else null
         return DayPage(date, isToday, caption, rows, hint, isSunday)
     }
 
@@ -100,12 +112,15 @@ object ScheduleComposer {
         all: List<Lesson>,
         ctx: SchedCtx,
         displayName: (String, Int) -> String,
-        copy: UiCopy
+        copy: UiCopy,
+        choices: Map<String, String> = emptyMap()
     ): String? {
+        val subgroupIndex = Subgroups.index(all)
         for (offset in 1..60) {
             val date = from.plusDays(offset.toLong())
             if (date.dayOfWeek == DayOfWeek.SUNDAY) continue
             val day = Schedule.lessonsForDate(all, ctx.groupId, date, ctx.periodStart, ctx.weekCount, ctx.invert)
+                .filter { Subgroups.keep(it, subgroupIndex, choices) }
             val lesson = day.firstOrNull() ?: continue
             val name = displayName(lesson.subjectNormalized, lesson.dayOfWeek).ifBlank {
                 LessonFormat.stripType(lesson.subjectRaw, lesson.typeRaw)
