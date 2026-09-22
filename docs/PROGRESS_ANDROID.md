@@ -1,5 +1,7 @@
 # PROGRESS_ANDROID — ЗАПАРА (Kotlin + Compose, minSdk 26, branch `android`)
 
+Журнал старых фаз. Сегодняшняя картина продукта — `../STATUS.md` от корня `docs`, то есть `docs/STATUS.md`.
+
 ## 2026-09-14 — Локальный checkpoint перед публикацией: Task12 PARTIAL
 
 Task12 и общая приёмка Android UI/maps остаются **PARTIAL**. Последний сохранённый

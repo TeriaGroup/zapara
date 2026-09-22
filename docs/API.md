@@ -1,5 +1,8 @@
 ﻿# Vograph — Timetable API Recon (Phase 0)
 
+Это осмотр XML сайта вуза от 2026-09-01, не API Запары.
+Текущее состояние продукта: `docs/STATUS.md`.
+
 **Date:** 2026-09-01  
 **Source:** https://voenmeh.ru/obrazovanie/timetables/  
 **Reference anchor:** `#3313` → `IdGroup=3313` (current semester: group **А863С**, see §7 note)

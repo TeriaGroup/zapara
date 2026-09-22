@@ -1,9 +1,15 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Zapara.Web/Zapara.Web.csproj" />
+    <Project Path="src/Zapara.Web.Tests/Zapara.Web.Tests.csproj" />
+    <Project Path="src/Zapara.Client.Domain/Zapara.Client.Domain.csproj" />
+    <Project Path="src/Zapara.Client.Domain.Tests/Zapara.Client.Domain.Tests.csproj" />
+    <Project Path="src/Zapara.Server.Notifications/Zapara.Server.Notifications.csproj" />
     <Project Path="src/Zapara.Contracts/Zapara.Contracts.csproj" />
     <Project Path="src/Zapara.Server.Accounts/Zapara.Server.Accounts.csproj" />
     <Project Path="src/Zapara.Server.Sync/Zapara.Server.Sync.csproj" />
     <Project Path="src/Zapara.Server.Communities/Zapara.Server.Communities.csproj" />
+    <Project Path="src/Zapara.Server.Social/Zapara.Server.Social.csproj" />
     <Project Path="src/Zapara.AdminCli/Zapara.AdminCli.csproj" />
     <Project Path="src/Vograph.Core/Vograph.Core.csproj" />
     <Project Path="src/Vograph.Desktop/Vograph.Desktop.csproj" />
