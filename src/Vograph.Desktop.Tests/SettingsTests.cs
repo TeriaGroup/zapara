@@ -18,8 +18,8 @@ public class SettingsTests : UiTest
     [Fact]
     public void Version_Tag_Comes_From_The_Assembly()
     {
-        Assert.Equal("windows-v2.1.13", AppVersion.Tag);
-        Assert.Equal("2.1.13", AppVersion.Short);
+        Assert.Equal("windows-v2.1.14", AppVersion.Tag);
+        Assert.Equal("2.1.14", AppVersion.Short);
         Assert.True(Vograph.Core.Services.AutoUpdateService.IsNewer("windows-v2.2.0", AppVersion.Tag));
         Assert.False(Vograph.Core.Services.AutoUpdateService.IsNewer("windows-v1.2.2", AppVersion.Tag)); // never "update" to the WPF release
     }
@@ -131,7 +131,7 @@ public class SettingsTests : UiTest
         var shell = new ShellViewModel(db.Services);
         var vm = new SettingsViewModel(db.Services, shell, () => Sun6);
 
-        Assert.Equal("Версия windows-v2.1.13", vm.VersionText);
+        Assert.Equal("Версия windows-v2.1.14", vm.VersionText);
         await vm.OpenReleasesCommand.ExecuteAsync(null);
         await vm.OpenTimetableSourceCommand.ExecuteAsync(null);
         await vm.OpenMapsSourceCommand.ExecuteAsync(null);
