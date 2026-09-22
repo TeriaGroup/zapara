@@ -1,15 +1,15 @@
 # Военмех - расписание и карты
 
 Расписание БГТУ «Военмех»: пары, карты корпусов, друзья, домашка и уведомления.
-Windows и Android 2.1.11 работают офлайн без обязательного аккаунта.
+Windows и Android 2.1.12 работают офлайн без обязательного аккаунта.
 Браузерная оболочка публично открыта. Что уже на сайте, а что только в исходниках на 2026-09-22: [`docs/STATUS.md`](docs/STATUS.md).
 
 ## Скачать
 
-Актуальная версия **2.1.11** — [страница релиза](https://github.com/TeriaGroup/zapara/releases/tag/v2.1.11):
+Актуальная версия **2.1.12** — [страница релиза](https://github.com/TeriaGroup/zapara/releases/tag/v2.1.12):
 
-- **Windows:** [ZAPARA_win-x64.zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.11/ZAPARA_win-x64.zip) — распаковать и запустить `Vograph.exe` (.NET 8 Runtime).
-- **Android:** [ZAPARA_android-debug.apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.11/ZAPARA_android-debug.apk) — ставится сразу (`adb install -r` тоже).
+- **Windows:** [ZAPARA_win-x64.zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.12/ZAPARA_win-x64.zip) — распаковать и запустить `Vograph.exe` (.NET 8 Runtime).
+- **Android:** [ZAPARA_android-debug.apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.12/ZAPARA_android-debug.apk) — ставится сразу (`adb install -r` тоже).
 
 Все версии (по возрастанию): [releases](https://github.com/TeriaGroup/zapara/releases)
 
@@ -54,7 +54,8 @@ Windows и Android 2.1.11 работают офлайн без обязател�
 | 2.1.8 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.8/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.8/ZAPARA_android-debug.apk) |
 | 2.1.9 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.9/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.9/ZAPARA_android-debug.apk) |
 | 2.1.10 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.10/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.10/ZAPARA_android-debug.apk) |
-| **2.1.11** | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.11/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.11/ZAPARA_android-debug.apk) |
+| 2.1.11 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.11/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.11/ZAPARA_android-debug.apk) |
+| **2.1.12** | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.12/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.12/ZAPARA_android-debug.apk) |
 
 ## Развитие платформы
 
@@ -142,11 +143,11 @@ HTTP localhost — только для локальной разработки. 
 ## Приложения
 
 - **Windows** — Avalonia 12, .NET 8, две темы (тёмная/светлая), интерфейс только на русском, самообновление с проверкой архива, синхронизация по локальной сети без прав администратора.
-- **Android** — Kotlin + Compose 2.0 (дизайн-система, тёмная и светлая темы), нижняя навигация, пакет `ru.zapara.app`, версия 2.1.11, интерфейс только на русском, Android 8.0+.
+- **Android** — Kotlin + Compose 2.0 (дизайн-система, тёмная и светлая темы), нижняя навигация, пакет `ru.zapara.app`, версия 2.1.12, интерфейс только на русском, Android 8.0+.
 
 ## Что умеет
 
-Список ниже — выпущенные Windows и Android 2.1.11. Браузер и то, что ещё не выложено на сайт, описаны в [`docs/STATUS.md`](docs/STATUS.md).
+Список ниже — выпущенные Windows и Android 2.1.12. Браузер и то, что ещё не выложено на сайт, описаны в [`docs/STATUS.md`](docs/STATUS.md).
 
 - **Расписание: Вчера / Сегодня / Завтра / Неделя / Сводка.** Умный старт: если сегодняшние пары еще не прошли — открывается сегодня, иначе завтра.
 - **Четность.** Неделя с 1 сентября = неделя 1 = нечетная. Есть ручная инверсия, если вуз сдвинул неделю.
