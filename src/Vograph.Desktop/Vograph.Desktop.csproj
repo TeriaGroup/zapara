@@ -38,6 +38,12 @@
     <None Include="Assets\maps\coords.json" Link="maps\coords.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Assets\maps\campus-graph.json" Link="maps\campus-graph.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Assets\TimetableLecturer50.xml" Link="TimetableLecturer50.xml" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="..\..\legal\user-agreement.txt">
+      <LogicalName>legal.user-agreement.txt</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\legal\privacy-policy.txt">
+      <LogicalName>legal.privacy-policy.txt</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

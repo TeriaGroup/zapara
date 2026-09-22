@@ -9,6 +9,23 @@
   <Border Classes="card" AutomationProperties.AutomationId="Account.Card">
     <StackPanel Spacing="10">
       <TextBlock Classes="subject" Text="{loc:T accountTitle}" />
+      <StackPanel Spacing="8">
+        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                Command="{Binding OpenAgreementCommand}" AutomationProperties.AutomationId="Legal.Agreement">
+          <TextBlock Text="Пользовательское соглашение" TextWrapping="Wrap" />
+        </Button>
+        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                Command="{Binding OpenPolicyCommand}" AutomationProperties.AutomationId="Legal.Policy">
+          <TextBlock Text="Политика обработки персональных данных" TextWrapping="Wrap" />
+        </Button>
+      </StackPanel>
+      <StackPanel Spacing="8" IsVisible="{Binding HasOpenDocument}">
+        <TextBlock Classes="subject" Text="{Binding OpenDocument.Title}" TextWrapping="Wrap" />
+        <ScrollViewer MaxHeight="360" HorizontalScrollBarVisibility="Disabled">
+          <TextBlock Text="{Binding OpenDocument.Body}" TextWrapping="Wrap" />
+        </ScrollViewer>
+        <Button HorizontalAlignment="Left" Content="Закрыть" Command="{Binding CloseDocumentCommand}" AutomationProperties.AutomationId="Legal.Close" />
+      </StackPanel>
       <TextBlock Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.AutomationId="Account.Status" />
       <TextBlock Classes="caption" Text="{loc:T accountIsolation}" TextWrapping="Wrap" />
       <Button Content="{loc:T accountRecover}" Command="{Binding RecoverCommand}" IsVisible="{Binding NeedsRecovery}" />

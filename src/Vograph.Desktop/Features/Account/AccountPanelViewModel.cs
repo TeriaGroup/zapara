@@ -3,6 +3,7 @@ using System.Collections.Specialized;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Services.Accounts;
+using Vograph.Desktop.Legal;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Services.Accounts;
 using Vograph.Desktop.Services.Profiles;
@@ -22,6 +23,15 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     private string? cursor;
     [ObservableProperty] private bool registrationAvailable;
     private string T(string key) => Loc.Current.T(key);
+
+    [RelayCommand]
+    private void OpenAgreement() => OpenDocument = LegalDocuments.Agreement;
+
+    [RelayCommand]
+    private void OpenPolicy() => OpenDocument = LegalDocuments.Policy;
+
+    [RelayCommand]
+    private void CloseDocument() => OpenDocument = null;
 
     public AccountPanelViewModel(ProfileSwitchCoordinator? profiles = null, AccountUiService? service = null)
     {
@@ -55,6 +65,9 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     [ObservableProperty] private string? exportPath;
     [ObservableProperty] private string? exportFileName;
     [ObservableProperty] private string? authorizeUrl;
+    [ObservableProperty] private LegalText? openDocument;
+    public bool HasOpenDocument => OpenDocument is not null;
+    partial void OnOpenDocumentChanged(LegalText? value) => OnPropertyChanged(nameof(HasOpenDocument));
     public ObservableCollection<DeviceResponse> Devices { get; } = [];
     public ObservableCollection<ExternalIdentityResponse> Identities { get; } = [];
     public bool IsGuest => snapshot?.Profile.IsGuest != false;
