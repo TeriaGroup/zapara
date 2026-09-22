@@ -1,6 +1,9 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using Xunit;
+using Zapara.Contracts.Accounts;
 using Zapara.Server.Accounts;
 using Zapara.Server.Admin;
 using Zapara.Server.Communities;
@@ -107,6 +110,44 @@ public sealed class OperatorPanelStoreTests
         }
         await host.Send("POST", "/auth/login", 401, body, code: "invalid_credentials");
         Mark("PANEL_LOGIN=blocked");
+    }
+
+    [Fact]
+    public async Task Panel_password_change_rejects_outstanding_reset()
+    {
+        var username = Environment.GetEnvironmentVariable("ZAPARA_PANEL_USERNAME");
+        var password = Environment.GetEnvironmentVariable("ZAPARA_PANEL_PASSWORD");
+        var token = Environment.GetEnvironmentVariable("ZAPARA_PANEL_RESET_TOKEN");
+        await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);
+        var overrides = new Dictionary<string, string?>();
+        if (!string.IsNullOrWhiteSpace(username)) overrides["Accounts:Schema"] = "accounts";
+        await using var host = new AccountApiTestHost(db, overrides: overrides);
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password) || string.IsNullOrWhiteSpace(token))
+        {
+            await host.Send("POST", "/auth/password-reset/confirm", 400, raw: "{}", code: "invalid_request");
+            Mark("RESET_CONFIRM=unknown");
+            return;
+        }
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        await using (var connection = new NpgsqlConnection(Dsn))
+        {
+            await connection.OpenAsync(Ct);
+            await using var command = new NpgsqlCommand(
+                "SELECT consumed_at IS NOT NULL FROM accounts.password_reset_tokens WHERE token_hash=@hash", connection);
+            command.Parameters.Add(new NpgsqlParameter("hash", NpgsqlTypes.NpgsqlDbType.Bytea) { Value = hash });
+            var consumed = await command.ExecuteScalarAsync(Ct);
+            Assert.True(consumed is true);
+        }
+        await host.Send("POST", "/auth/password-reset/confirm", 400,
+            new PasswordResetConfirmRequest(token, "Reset-must-not-apply-1"), code: "invalid_request");
+        Mark("RESET_CONFIRM=rejected");
+        await host.Send("POST", "/auth/login", 200, new
+        {
+            username,
+            password,
+            device = new { deviceId = Guid.NewGuid(), deviceName = "Панель", platform = "windows" }
+        });
+        Mark("PANEL_PASSWORD=kept");
     }
 
     private static void Mark(string line)
