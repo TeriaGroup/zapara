@@ -1,6 +1,7 @@
 package ru.bgtu_voenmeh.zapara.ui.account
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -163,12 +164,14 @@ internal suspend fun readUiCapabilities(transport: HttpExchange, baseUri: String
 }
 
 @Composable
-fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit) {
+fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLegal: (String) -> Unit = {}) {
     val c = Zapara.colors
     ZCard(Modifier.fillMaxWidth().testTag("Account.Card")) {
         Text(stringResource(R.string.account_title), style = Zapara.typography.section, color = c.text1)
         Text(state.status, style = Zapara.typography.body, color = c.text1, modifier = Modifier.testTag("Account.Status"))
         Text(stringResource(R.string.account_isolation), style = Zapara.typography.caption, color = c.text2)
+        LegalLink("Пользовательское соглашение", "Legal.Agreement") { onOpenLegal("agreement") }
+        LegalLink("Политика обработки персональных данных", "Legal.Policy") { onOpenLegal("policy") }
         if (!state.configured || !state.ready) return@ZCard
         if (state.guest) {
             AccountField(state.username, stringResource(R.string.account_username), "Account.Username") {
@@ -282,6 +285,16 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
             ZButton(stringResource(R.string.account_cancel), { onEvent(AccountEvent.CancelDelete) }, ghost = true, tag = "Account.CancelDelete")
         }
     }
+}
+
+@Composable
+private fun LegalLink(title: String, tag: String, onClick: () -> Unit) {
+    Text(
+        title,
+        style = Zapara.typography.body,
+        color = Zapara.colors.text1,
+        modifier = Modifier.fillMaxWidth().testTag(tag).clickable(onClick = onClick)
+    )
 }
 
 @Composable

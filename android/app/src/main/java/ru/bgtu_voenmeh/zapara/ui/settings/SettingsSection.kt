@@ -17,6 +17,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
@@ -32,6 +36,7 @@ import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
 import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.account.AccountCard
+import ru.bgtu_voenmeh.zapara.ui.legal.LegalDocumentPage
 import ru.bgtu_voenmeh.zapara.ui.account.AccountEvent
 import ru.bgtu_voenmeh.zapara.ui.account.AccountUiState
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
@@ -80,10 +85,15 @@ fun SettingsSection(
 ) {
     val ctx = LocalContext.current
     val c = Zapara.colors
+    var legalId by remember { mutableStateOf<String?>(null) }
+    if (legalId != null) {
+        LegalDocumentPage(legalId!!, onClose = { legalId = null })
+        return
+    }
     Column(Modifier.fillMaxSize()) {
         ZTopBar(stringResource(R.string.nav_settings))
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            item { AccountCard(account, onAccount) }
+            item { AccountCard(account, onAccount) { legalId = it } }
             if (state.syncConflicts.isNotEmpty() || state.syncError != null) item {
                 ZCard(Modifier.fillMaxWidth().testTag("Sync.Conflicts")) {
                     Text(stringResource(R.string.sync_conflict_title), style = Zapara.typography.section, color = c.text1)

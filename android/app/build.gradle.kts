@@ -77,6 +77,7 @@ android {
         buildConfig = true
     }
     sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    sourceSets.getByName("main").assets.srcDir("$rootDir/../legal")
     androidResources {
         noCompress += "xml"
     }
