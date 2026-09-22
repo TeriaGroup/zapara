@@ -1,7 +1,7 @@
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { Provider, useApp } from "./store";
-import { CommunityPage, FriendsPage, GroupPage, HomeworkPage, MapsPage, SchedulePage, SettingsPage, SummaryPage, TeachersPage, WeekPage } from "./pages";
+import { CommunityPage, FriendsPage, GroupPage, HomeworkPage, LegalPage, MapsPage, SchedulePage, SettingsPage, SummaryPage, TeachersPage, WeekPage } from "./pages";
 import { Icon, IconName } from "./icons";
 
 const items: [string, string, IconName][] = [
@@ -61,6 +61,8 @@ function Shell() {
           <Route path="/community" element={<CommunityPage />} />
           <Route path="/group" element={<GroupPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/legal/agreement" element={<LegalPage id="agreement" />} />
+          <Route path="/legal/policy" element={<LegalPage id="policy" />} />
         </Routes>
         </div>
         <nav className="bottom">

@@ -7,6 +7,7 @@ import { completeGroupCopy, saveEditorHomework } from "./groupHomework";
 import { addDays, dayTitle, friendRoomMark, isoDay, lessonsOn, longDate, sameSubject, teacherLessonLabel, weekday } from "./parity";
 import { subgroupIndex, subgroupMark, visibleLessons } from "./subgroups";
 import { HOMEWORK_FILE_LIMIT, checkHomeworkFile, compressHomeworkPhoto, deleteHomeworkBlob, putHomeworkBlob, readHomeworkBlob } from "./homework-files";
+import { legalDocument, type LegalId } from "./legal";
 import { useApp } from "./store";
 import { homeworkCard, lessonCard, lessonFrom, placeCard, scheduleCard } from "./cards";
 import { BallotBoardView } from "./ballots";
@@ -633,6 +634,26 @@ export function GroupPage() {
   );
 }
 
+function LegalLinks() {
+  return (
+    <nav className="stack legal-links" aria-label="Документы">
+      <Link className="btn" to="/legal/agreement">Пользовательское соглашение</Link>
+      <Link className="btn" to="/legal/policy">Политика обработки персональных данных</Link>
+    </nav>
+  );
+}
+
+export function LegalPage({ id }: { id: LegalId }) {
+  const doc = legalDocument(id);
+  return (
+    <section className="page legal">
+      <h1>{doc.title}</h1>
+      {doc.body.split(/\n\n+/).map(paragraph => <p key={paragraph}>{paragraph}</p>)}
+      <p><Link to="/settings">К настройкам</Link></p>
+    </section>
+  );
+}
+
 export function SettingsPage() {
   const app = useApp();
   const [username, setUsername] = useState("");
@@ -694,9 +715,12 @@ export function SettingsPage() {
         <article className="card">
           <h2>Аккаунт</h2>
           {app.session?.authenticated ? (
-            <div className="row">
-              <span>{app.session.user?.displayName || app.session.user?.username}</span>
-              <button className="btn" type="button" onClick={() => void api.logout().then(() => app.refreshSession())}>Выйти</button>
+            <div className="stack">
+              <div className="row">
+                <span>{app.session.user?.displayName || app.session.user?.username}</span>
+                <button className="btn" type="button" onClick={() => void api.logout().then(() => app.refreshSession())}>Выйти</button>
+              </div>
+              <LegalLinks />
             </div>
           ) : (
             <form className="stack" onSubmit={event => void submit(event)}>
@@ -715,6 +739,7 @@ export function SettingsPage() {
               <label className="field">Пароль<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" /></label>
               {mode === "register" && <label className="field">Имя<input value={display} onChange={event => setDisplay(event.target.value)} /></label>}
               {error && <div className="banner">{error}</div>}
+              <LegalLinks />
               <button className="btn primary" type="submit">{mode === "login" ? "Войти" : "Создать аккаунт"}</button>
             </form>
           )}
