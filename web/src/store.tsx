@@ -1,6 +1,7 @@
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "./api";
-import { smartDate } from "./parity";
+import { resolveStoredGroup } from "./groupChoice";
+import { openingDate } from "./parity";
 import type { FriendItem, GroupsPayload, HomeworkItem, Lesson, Session, TimetablePayload } from "./types";
 
 type State = {
@@ -41,7 +42,8 @@ function readList<T>(key: string): T[] {
 export function Provider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<"light" | "dark">((document.documentElement.dataset.theme as "light" | "dark") || "dark");
   const [invert, setInvertState] = useState(localStorage.getItem(invertKey) === "1");
-  const [groupId, setGroupState] = useState(localStorage.getItem(groupKey) || "");
+  const [groupId, setGroupState] = useState(() => localStorage.getItem(groupKey) ?? "");
+  const groupReady = useRef(localStorage.getItem(groupKey) !== null);
   const [catalog, setCatalog] = useState<GroupsPayload | null>(api.readCache().groups ?? null);
   const [bundle, setBundle] = useState<TimetablePayload | null>(groupId ? api.readCache().lessons[groupId] ?? null : null);
   const [notice, setNotice] = useState("");
@@ -50,14 +52,21 @@ export function Provider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [homework, setHomework] = useState<HomeworkItem[]>(() => readList(homeworkKey));
   const [friends, setFriends] = useState<FriendItem[]>(() => readList(friendsKey));
-  const [date, setDate] = useState(() => smartDate());
+  const [date, setDateState] = useState(() => openingDate(new Date(), []));
+  const dateMoved = useRef(false);
+  const setDate = (value: Date) => { dateMoved.current = true; setDateState(value); };
   const [subgroups, setSubgroups] = useState<Record<string, Record<string, string>>>(() => {
     try { return JSON.parse(localStorage.getItem(subgroupKey) || "{}"); } catch { return {}; }
   });
 
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("zapara.theme", theme); }, [theme]);
   useEffect(() => { localStorage.setItem(invertKey, invert ? "1" : "0"); }, [invert]);
-  useEffect(() => { if (groupId) localStorage.setItem(groupKey, groupId); }, [groupId]);
+  useEffect(() => { if (groupReady.current) localStorage.setItem(groupKey, groupId); }, [groupId]);
+  const chooseGroup = (id: string) => {
+    groupReady.current = true;
+    localStorage.setItem(groupKey, id);
+    setGroupState(id);
+  };
   useEffect(() => { localStorage.setItem(homeworkKey, JSON.stringify(homework)); }, [homework]);
   useEffect(() => { localStorage.setItem(friendsKey, JSON.stringify(friends)); }, [friends]);
   useEffect(() => { localStorage.setItem(subgroupKey, JSON.stringify(subgroups)); }, [subgroups]);
@@ -71,7 +80,13 @@ export function Provider({ children }: { children: ReactNode }) {
       const cache = api.readCache();
       cache.groups = payload;
       api.writeCache(cache);
-      setGroupState(current => current && payload.groups.some(group => group.id === current) ? current : payload.groups[0]?.id || "");
+      setGroupState(() => {
+        if (groupReady.current) return resolveStoredGroup(localStorage.getItem(groupKey), payload.groups);
+        const next = resolveStoredGroup(null, payload.groups);
+        groupReady.current = true;
+        localStorage.setItem(groupKey, next);
+        return next;
+      });
       setNotice(payload.meta.stale ? "Расписание может быть устаревшим. Показана сохранённая копия." : "");
     }).catch(() => {
       if (stop) return;
@@ -99,10 +114,15 @@ export function Provider({ children }: { children: ReactNode }) {
   }, [groupId, tick]);
 
   useEffect(() => { void api.session().then(setSession).catch(() => setSession(null)); }, []);
+  useEffect(() => {
+    if (dateMoved.current) return;
+    const period = bundle?.period;
+    setDateState(openingDate(new Date(), bundle?.lessons || [], subgroups[groupId] || {}, period ? { start: period.start, weekCount: period.weekCount, invert } : undefined));
+  }, [bundle, subgroups, groupId, invert]);
 
   const value = useMemo<State>(() => ({
     theme, setTheme: setThemeState, invert, setInvert: setInvertState,
-    groupId, setGroupId: setGroupState, catalog, lessons: bundle?.lessons || [],
+    groupId, setGroupId: chooseGroup, catalog, lessons: bundle?.lessons || [],
     notice, loading, refresh: () => setTick(n => n + 1),
     session, refreshSession: async () => setSession(await api.session()),
     homework, saveHomework: item => setHomework(list => {

@@ -2,7 +2,8 @@ import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSwipe } from "./swipe";
 import * as api from "./api";
-import { addDays, dayTitle, isoDay, lessonsOn, longDate, sameSubject, score, weekday } from "./parity";
+import { followGroupCommunity, openGroupFace } from "./groupChoice";
+import { addDays, dayTitle, friendRoomMark, isoDay, lessonsOn, longDate, sameSubject, teacherLessonLabel, weekday } from "./parity";
 import { subgroupIndex, subgroupMark, visibleLessons } from "./subgroups";
 import { HOMEWORK_FILE_LIMIT, checkHomeworkFile, compressHomeworkPhoto, deleteHomeworkBlob, putHomeworkBlob, readHomeworkBlob } from "./homework-files";
 import { useApp } from "./store";
@@ -112,12 +113,11 @@ export function SchedulePage() {
           </div>
         )}
         {lessons.map(lesson => {
-          const friend = app.friends.find(item => item.enabled && api.readCache().lessons[item.groupName]);
-          const cached = friend ? api.readCache().lessons[friend.groupName] : undefined;
-          const hit = cached && period ? lessonsOn(cached.lessons, app.date, period.start, period.weekCount, app.invert)
-            .map(other => score(lesson.roomRaw, lesson.buildingRaw, other.roomRaw, other.buildingRaw))
-            .find(value => value >= 50) : undefined;
-          return <LessonCard key={lesson.index + lesson.timeStart + lesson.subjectRaw + (lesson.teacherRaw || "")} lesson={lesson} mark={hit === 100 ? "друг в аудитории" : hit ? "друг рядом" : undefined} share={lessonFrom(groupName, app.date, lesson)} subgroup={subgroupMark(lesson, lessons, index, choices)} onPick={app.pickSubgroup} />;
+          const friends = app.friends.filter(item => item.enabled).map(item => {
+            const cached = api.readCache().lessons[item.groupName];
+            return { enabled: true, lessons: cached && period ? lessonsOn(cached.lessons, app.date, period.start, period.weekCount, app.invert) : [] };
+          });
+          return <LessonCard key={lesson.index + lesson.timeStart + lesson.subjectRaw + (lesson.teacherRaw || "")} lesson={lesson} mark={friendRoomMark(lesson, friends)} share={lessonFrom(groupName, app.date, lesson)} subgroup={subgroupMark(lesson, lessons, index, choices)} onPick={app.pickSubgroup} />;
         })}
       </div>
     </section>
@@ -207,9 +207,9 @@ export function TeachersPage() {
           <button className="btn back-only" type="button" onClick={() => { setCurrent(null); setLessons([]); }}>К списку</button>
           <h2>{current?.name || "Выберите преподавателя"}</h2>
           <div className="stack">
-            {lessons.slice(0, 24).map((lesson, index) => (
-              <div key={index} className="row" style={{ justifyContent: "space-between" }}>
-                <div><b>{lesson.timeStart}</b> {lesson.disciplineRaw || lesson.subjectRaw}<div className="muted">{lesson.classroomRaw}</div></div>
+            {[...lessons].sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.parity - b.parity || a.timeStart.localeCompare(b.timeStart) || (a.subjectRaw || "").localeCompare(b.subjectRaw || "")).map((lesson, index) => (
+              <div key={`${lesson.dayOfWeek}-${lesson.parity}-${lesson.timeStart}-${index}`} className="row" style={{ justifyContent: "space-between" }}>
+                <div><b>{teacherLessonLabel(lesson)}</b> {lesson.disciplineRaw || lesson.subjectRaw}<div className="muted">{lesson.classroomRaw}</div></div>
                 <ShareMenu card={lessonCard(current?.name || "Преподаватель", "", { time: `${lesson.timeStart}–${lesson.timeEnd || ""}`, subject: lesson.disciplineRaw || lesson.subjectRaw, place: lesson.classroomRaw, teacher: current?.name })} />
               </div>
             ))}
@@ -340,17 +340,20 @@ export function HomeworkPage() {
   const [note, setNote] = useState("");
   const subjects = [...new Set(app.lessons.map(lesson => lesson.subjectRaw))];
   useEffect(() => {
-    if (!app.session?.authenticated) { setCommunityId(""); setCopies([]); return; }
     let stop = false;
-    api.communities().then(async list => {
-      const mine = list.find(item => item.role);
-      if (!mine || stop) { if (!stop) setCommunityId(""); return; }
-      setCommunityId(mine.communityId);
-      const loaded = await api.groupHomework(mine.communityId);
-      if (!stop) setCopies(loaded);
-    }).catch(() => { if (!stop) setNote("Общая домашка не открылась"); });
+    void followGroupCommunity(
+      { authenticated: !!app.session?.authenticated, groupId: app.groupId },
+      groupId => api.communities(groupId),
+      state => {
+        if (stop) return;
+        setCommunityId(state.communityId);
+        if (!state.communityId) setCopies([]);
+        if (state.failed) setNote("Общая домашка не открылась");
+        else if (state.communityId) void api.groupHomework(state.communityId).then(loaded => { if (!stop) setCopies(loaded); });
+      },
+    );
     return () => { stop = true; };
-  }, [app.session]);
+  }, [app.session, app.groupId]);
   function addPending(list: FileList | null, kind: "photo" | "document") {
     const file = list?.[0];
     if (!file) return;
@@ -507,19 +510,31 @@ export function GroupPage() {
   const [error, setError] = useState("");
   const [focusChat, setFocusChat] = useState(false);
   useEffect(() => {
-    if (!app.session?.authenticated) return;
     let stop = false;
-    api.communities().then(async list => {
-      const mine = list.find(item => item.role);
-      if (!mine || stop) { setError(mine ? "" : "Вы ещё не в группе"); return; }
-      const loaded = await api.groupHome(mine.communityId);
-      if (stop) return;
-      setHome(loaded);
-      setChat(loaded.groupChat);
-      api.groupDesk(mine.communityId).then(office => { if (!stop) setDesk(office); }).catch(() => { if (!stop) setDesk(null); });
-    }).catch(() => setError("Не удалось загрузить группу"));
+    const drop = () => {
+      setHome(null);
+      setChat(null);
+      setDesk(null);
+      setBoard(null);
+      setLog([]);
+    };
+    void openGroupFace(
+      { authenticated: !!app.session?.authenticated, groupId: app.groupId },
+      groupId => api.communities(groupId),
+      face => {
+        if (stop) return;
+        setError(face.error);
+        if (!face.communityId) { drop(); return; }
+        void api.groupHome(face.communityId).then(loaded => {
+          if (stop) return;
+          setHome(loaded);
+          setChat(loaded.groupChat);
+          void api.groupDesk(face.communityId).then(office => { if (!stop) setDesk(office); }).catch(() => { if (!stop) setDesk(null); });
+        }).catch(() => { if (!stop) { drop(); setError("Не удалось загрузить группу"); } });
+      },
+    );
     return () => { stop = true; };
-  }, [app.session]);
+  }, [app.session, app.groupId]);
   useEffect(() => { setThread("list"); setDraft(""); }, [chat?.conversationId]);
   useEffect(() => {
     if (!chat) return;

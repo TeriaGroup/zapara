@@ -1,3 +1,4 @@
+import { visibleLessons } from "./subgroups.ts";
 import type { Lesson } from "./types";
 
 export function parseDay(iso: string): Date {
@@ -48,9 +49,72 @@ export function lessonsOn(lessons: Lesson[], date: Date, periodStart: string, we
     .sort((a, b) => a.timeStart.localeCompare(b.timeStart) || a.index - b.index);
 }
 
-export function smartDate(now = new Date()): Date {
+export type SmartLesson = { dayOfWeek: number; timeEnd: string; parity?: number };
+export type SmartPeriod = { start: string; weekCount: number; invert?: boolean };
+
+export function smartDate(now = new Date(), lessons: SmartLesson[] = [], period?: SmartPeriod): Date {
   const day = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return now.getHours() >= 18 ? addDays(day, 1) : day;
+  if (weekday(day) === 7) return addDays(day, 1);
+  const parity = period ? parityOf(day, period.start, period.weekCount, !!period.invert) : null;
+  const ends = lessons
+    .filter(lesson => lesson.dayOfWeek === weekday(day) && (parity == null || (lesson.parity ?? 0) === 0 || lesson.parity === parity))
+    .map(lesson => minutesOf(lesson.timeEnd))
+    .filter((value): value is number => value != null);
+  let next = day;
+  if (ends.length > 0) {
+    const jump = Math.max(...ends) + 15;
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    if (nowMin > jump) next = addDays(day, 1);
+  }
+  return weekday(next) === 7 ? addDays(next, 1) : next;
+}
+
+export function openingDate(now: Date, lessons: Lesson[], choices: Record<string, string> = {}, period?: SmartPeriod): Date {
+  return smartDate(now, visibleLessons(lessons, choices), period);
+}
+
+export function timesOverlap(startA: string, endA: string, startB: string, endB: string): boolean {
+  const left = minutesOf(startA);
+  const right = minutesOf(startB);
+  if (left == null || right == null) return false;
+  const leftEnd = minutesOf(endA) ?? left + 95;
+  const rightEnd = minutesOf(endB) ?? right + 95;
+  return left < rightEnd && right < leftEnd;
+}
+
+export function friendRoomMark(
+  lesson: { timeStart: string; timeEnd: string; roomRaw: string | null; buildingRaw: string | null },
+  friends: { enabled: boolean; lessons: { timeStart: string; timeEnd: string; roomRaw: string | null; buildingRaw: string | null }[] }[],
+): "друг в аудитории" | "друг рядом" | undefined {
+  let best = 0;
+  for (const friend of friends) {
+    if (!friend.enabled) continue;
+    for (const other of friend.lessons) {
+      if (!timesOverlap(lesson.timeStart, lesson.timeEnd, other.timeStart, other.timeEnd)) continue;
+      const value = score(lesson.roomRaw, lesson.buildingRaw, other.roomRaw, other.buildingRaw);
+      if (value > best) best = value;
+    }
+  }
+  if (best >= 100) return "друг в аудитории";
+  if (best >= 50) return "друг рядом";
+  return undefined;
+}
+
+const shortDays = ["", "пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+
+export function teacherLessonLabel(lesson: { dayOfWeek: number; parity: number; timeStart: string }): string {
+  const day = shortDays[lesson.dayOfWeek] || "";
+  const week = lesson.parity === 0 ? "каждую неделю" : lesson.parity === 1 ? "нечётная" : lesson.parity === 2 ? "чётная" : "";
+  return [day, week, lesson.timeStart].filter(Boolean).join(" · ");
+}
+
+function minutesOf(text: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(text.trim());
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return null;
+  return hour * 60 + minute;
 }
 
 const days = ["", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"];
