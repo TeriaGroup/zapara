@@ -151,6 +151,10 @@ object WidgetRemoteViews {
 
     private val timerFaces = HashMap<Int, String>()
 
+    fun dropTimerFaces() {
+        timerFaces.clear()
+    }
+
     fun pushTimer(context: Context, snapshot: TimerWidgetSnapshot) {
         val mgr = AppWidgetManager.getInstance(context)
         val ids = mgr.getAppWidgetIds(ComponentName(context, TimerWidgetProvider::class.java))

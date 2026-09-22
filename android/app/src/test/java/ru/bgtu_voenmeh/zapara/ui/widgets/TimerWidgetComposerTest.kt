@@ -163,6 +163,11 @@ class TimerWidgetComposerTest {
         )
     }
 
+    @Test fun widgets_reboot_at_the_next_local_midnight() {
+        assertEquals(LocalDateTime.of(2026, 9, 23, 0, 0), nextWidgetReboot(LocalDateTime.of(2026, 9, 22, 12, 26)))
+        assertEquals(LocalDateTime.of(2026, 9, 24, 0, 0), nextWidgetReboot(LocalDateTime.of(2026, 9, 23, 0, 0)))
+    }
+
     @Test fun digits_stop_at_zero() {
         assertEquals("00:00", timerDigitText(0))
         assertEquals("00:00", timerDigitText(-79_000))
@@ -174,10 +179,13 @@ class TimerWidgetComposerTest {
     @Test fun the_visible_tick_is_one_second_and_does_not_use_the_idle_quota() {
         assertEquals(1_000L, timerPulseDelayMs(interactive = true, exactAlarms = true, untilBellMs = 30_000))
         assertEquals(400L, timerPulseDelayMs(interactive = true, exactAlarms = true, untilBellMs = 400))
-        assertEquals(60_000L, timerPulseDelayMs(interactive = false, exactAlarms = true, untilBellMs = 90 * 60_000))
-        assertEquals(20_000L, timerPulseDelayMs(interactive = false, exactAlarms = true, untilBellMs = 20_000))
+        assertEquals(15_000L, timerPulseDelayMs(interactive = false, exactAlarms = true, untilBellMs = 90 * 60_000))
+        assertEquals(10_000L, timerPulseDelayMs(interactive = false, exactAlarms = true, untilBellMs = 10_000))
         assertNull(timerPulseDelayMs(interactive = true, exactAlarms = false, untilBellMs = 30_000))
         assertNull(timerPulseDelayMs(interactive = true, exactAlarms = true, untilBellMs = 0))
+        assertEquals(15_000L, widgetHeartbeatMs(interactive = true, exactAlarms = true))
+        assertEquals(30_000L, widgetHeartbeatMs(interactive = false, exactAlarms = true))
+        assertNull(widgetHeartbeatMs(interactive = true, exactAlarms = false))
     }
 
     @Test fun partial_minute_rounds_the_face_and_wakes_at_the_bell() {

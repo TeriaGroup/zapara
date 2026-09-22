@@ -6,6 +6,7 @@ import android.content.Intent
 import android.util.Log
 import kotlinx.coroutines.runBlocking
 import ru.bgtu_voenmeh.zapara.data.Notifications
+import ru.bgtu_voenmeh.zapara.ui.widgets.WidgetUpdater
 
 class NotificationReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -31,6 +32,7 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 restoreHost(context)
                 Notifications.schedule(context.applicationContext)
+                WidgetUpdater.reboot(context.applicationContext)
             } catch (e: Exception) {
                 Log.w("ZaparaNotify", "boot", e)
             } finally {

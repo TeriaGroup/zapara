@@ -46,14 +46,22 @@ internal fun timerDigitText(remainingMs: Long): String {
 
 internal fun timerPulseDelayMs(interactive: Boolean, exactAlarms: Boolean, untilBellMs: Long): Long? {
     if (!exactAlarms || untilBellMs <= 0L) return null
-    val delay = if (interactive) 1_000L else 60_000L
+    val delay = if (interactive) 1_000L else 15_000L
     return minOf(delay, untilBellMs)
+}
+
+internal fun widgetHeartbeatMs(interactive: Boolean, exactAlarms: Boolean): Long? {
+    if (!exactAlarms) return null
+    return if (interactive) 15_000L else 30_000L
 }
 
 // While a countdown is running, wake at its end. The composer's next minute
 // must not become another idle alarm: that quota was deferring the bell.
 // Waiting for the first pair has no end, so the composer's refresh (the start)
 // stays the wake.
+internal fun nextWidgetReboot(now: LocalDateTime): LocalDateTime =
+    now.toLocalDate().plusDays(1).atStartOfDay()
+
 internal fun widgetWakeAt(
     scheduleAt: LocalDateTime?,
     phaseEndsAt: LocalDateTime?,

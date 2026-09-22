@@ -61,6 +61,30 @@ object WidgetUpdater {
         }
     }
 
+    fun beat(context: Context) {
+        val app = context.applicationContext as? ZaparaApplication ?: return
+        bind(app)
+        scheduleHeartbeat(app)
+        scope.launch {
+            if (app.host.container.closed) return@launch
+            push(app, app.host.generation.value, clearFirst = false)
+        }
+    }
+
+    fun reboot(context: Context) {
+        val app = context.applicationContext as? ZaparaApplication ?: return
+        bind(app)
+        scheduleDaily(app)
+        scope.launch {
+            restoreIfGuest(app)
+            main.post {
+                armedBell = Long.MIN_VALUE
+                WidgetRemoteViews.dropTimerFaces()
+            }
+            push(app, app.host.generation.value, clearFirst = false)
+        }
+    }
+
     fun pulse(context: Context) {
         val app = context.applicationContext as? ZaparaApplication ?: return
         bind(app)
@@ -146,6 +170,8 @@ object WidgetUpdater {
         timer: TimerWidgetSnapshot?
     ) {
         main.post {
+            scheduleDaily(app)
+            scheduleHeartbeat(app)
             val current = WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value)
             if (!WidgetJobs.accept(schedule.identity, current)) return@post
             if (!WidgetJobs.accept(homework.identity, current)) return@post
@@ -289,6 +315,58 @@ object WidgetUpdater {
         } catch (e: SecurityException) {
             Log.w("ZaparaWidget", "pulse", e)
         }
+    }
+
+    private fun scheduleHeartbeat(context: Context) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ScheduleWidgetProvider::class.java).setAction(ScheduleWidgetProvider.ACTION_HEARTBEAT)
+        val pending = PendingIntent.getBroadcast(
+            context,
+            ScheduleWidgetProvider.HEARTBEAT,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        am.cancel(pending)
+        if (!anyWidget(context)) return
+        val exact = Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()
+        val interactive = (context.getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
+        val delay = widgetHeartbeatMs(interactive, exact) ?: return
+        try {
+            am.setExact(AlarmManager.RTC, System.currentTimeMillis() + delay, pending)
+        } catch (e: SecurityException) {
+            Log.w("ZaparaWidget", "heartbeat", e)
+        }
+    }
+
+    private fun scheduleDaily(context: Context) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ScheduleWidgetProvider::class.java).setAction(ScheduleWidgetProvider.ACTION_REBOOT)
+        val pending = PendingIntent.getBroadcast(
+            context,
+            ScheduleWidgetProvider.DAILY,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        am.cancel(pending)
+        if (!anyWidget(context)) return
+        val due = nextWidgetReboot(LocalDateTime.now()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val millis = if (due <= System.currentTimeMillis()) System.currentTimeMillis() + 60_000 else due
+        if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, millis, pending)
+        } else {
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, millis, pending)
+        }
+    }
+
+    private fun anyWidget(context: Context): Boolean = try {
+        val mgr = AppWidgetManager.getInstance(context)
+        listOf(
+            TimerWidgetProvider::class.java,
+            ScheduleWidgetProvider::class.java,
+            HomeworkWidgetProvider::class.java
+        ).any { mgr.getAppWidgetIds(ComponentName(context, it)).isNotEmpty() }
+    } catch (_: Exception) {
+        false
     }
 
     private fun scheduleAdvance(context: Context, at: LocalDateTime?) {
