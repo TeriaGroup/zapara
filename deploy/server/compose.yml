@@ -88,9 +88,68 @@ services:
     restart: unless-stopped
     mem_limit: 80m
 
+  # Inbound mail only. Submission and IMAP stay on the compose network for webmail.
+  maddy:
+    image: foxcpp/maddy:0.7.1
+    <<: *log
+    hostname: mail.voen.teriahost.ru
+    environment:
+      MADDY_HOSTNAME: mail.voen.teriahost.ru
+      MADDY_DOMAIN: voen.teriahost.ru
+    volumes:
+      - maddy_data:/data
+      - maddy_certs:/data/tls
+    ports:
+      - "25:25"
+    networks:
+      default:
+        aliases:
+          - mail.voen.teriahost.ru
+    restart: unless-stopped
+    mem_limit: 96m
+    memswap_limit: 96m
+
+  certsync:
+    image: caddy:2-alpine
+    <<: *log
+    user: "0:0"
+    entrypoint: ["/bin/sh", "/sync.sh"]
+    volumes:
+      - ./mail/sync-certs.sh:/sync.sh:ro
+      - caddy_data:/caddy:ro
+      - maddy_certs:/certs
+    depends_on:
+      - caddy
+    restart: unless-stopped
+    mem_limit: 24m
+    memswap_limit: 24m
+
+  webmail:
+    image: roundcube/roundcubemail:1.6.x-apache
+    <<: *log
+    environment:
+      ROUNDCUBEMAIL_DB_TYPE: sqlite
+      ROUNDCUBEMAIL_SKIN: elastic
+      ROUNDCUBEMAIL_DEFAULT_HOST: ssl://mail.voen.teriahost.ru
+      ROUNDCUBEMAIL_SMTP_SERVER: tls://mail.voen.teriahost.ru
+      ROUNDCUBEMAIL_SMTP_PORT: "587"
+    volumes:
+      - ./mail/roundcube/zz-local.inc.php:/var/roundcube/config/zz-local.inc.php:ro
+      - webmail_db:/var/roundcube/db
+    depends_on:
+      - maddy
+    expose:
+      - "80"
+    restart: unless-stopped
+    mem_limit: 192m
+    memswap_limit: 192m
+
 volumes:
   pgdata:
   keys:
   media:
   caddy_data:
   caddy_config:
+  maddy_data:
+  maddy_certs:
+  webmail_db:
