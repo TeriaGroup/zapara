@@ -10,12 +10,12 @@ public sealed class SourceDocument
 {
     private readonly byte[] bytes;
 
-    private SourceDocument(byte[] bytes, SourceKind kind, DateTimeOffset fetchedAt, DateTimeOffset? modifiedAt)
+    private SourceDocument(byte[] bytes, SourceKind kind, DateTimeOffset fetchedAt, DateTimeOffset? modifiedAt, bool json = false)
     {
         this.bytes = bytes;
-        DecodedXml = TimetableParser.DecodeXml(bytes);
+        DecodedXml = json ? "" : TimetableParser.DecodeXml(bytes);
         SourceKind = kind;
-        SourceUrl = kind == SourceKind.Http ? TimetableParser.DefaultUrl : null;
+        SourceUrl = kind == SourceKind.Http ? json ? VoenmehScheduleClient.MetaUrl : TimetableParser.DefaultUrl : null;
         SourceSha256 = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         FetchedAtUtc = fetchedAt.ToUniversalTime();
         SourceModifiedAt = modifiedAt?.ToUniversalTime();
@@ -28,6 +28,9 @@ public sealed class SourceDocument
     public string SourceSha256 { get; }
     public DateTimeOffset FetchedAtUtc { get; }
     public DateTimeOffset? SourceModifiedAt { get; }
+
+    internal static SourceDocument FromJsonArchive(byte[] bytes, TimeProvider clock, DateTimeOffset? modifiedAt)
+        => new(bytes.ToArray(), SourceKind.Http, clock.GetUtcNow(), modifiedAt, json: true);
 
     public static SourceDocument Create(ReadOnlySpan<byte> bytes, SourceKind kind, TimeProvider timeProvider,
         DateTimeOffset? sourceModifiedAt = null)

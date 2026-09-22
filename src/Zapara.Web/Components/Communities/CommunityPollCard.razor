@@ -1,0 +1,30 @@
+@using Zapara.Contracts.Communities
+<article class="card community-poll">
+    <header class="community-content-heading"><h3>@Poll.Question</h3><span class="community-status">@(Poll.DeadlineAt <= DateTimeOffset.UtcNow ? "Завершён" : "Открыт")</span></header>
+    <p class="caption muted">До @Poll.DeadlineAt.ToOffset(TimeSpan.FromHours(3)).ToString("d MMMM, HH:mm") МСК</p>
+    @if (OwnVote is not null) { <p class="community-success">Ваш голос принят</p> }
+    <fieldset class="community-poll-options"><legend class="community-sr-only">Варианты ответа: @Poll.Question</legend>
+        @foreach (var option in Poll.Options.OrderBy(o => o.Ordinal))
+        {
+            <label class="community-poll-option @(OwnVote?.OptionId == option.OptionId ? "voted" : "")"><input type="radio" name="@("poll-" + Poll.PollId)" checked="@(OwnVote?.OptionId == option.OptionId || (OwnVote is null && selected == option.OptionId))" disabled="@(!CanVote || Busy)" @onchange="() => selected = option.OptionId" /><span>@option.Label@if (OwnVote?.OptionId == option.OptionId) { <span class="caption"> · ваш выбор</span> }</span></label>
+        }
+    </fieldset>
+    <div class="community-card-actions"><button class="button primary" disabled="@(!CanVote || Busy || selected is null)" @onclick="Vote">Отправить голос</button><button class="button" disabled="@Busy" @onclick="() => OnResults.InvokeAsync()">Результаты</button></div>
+    @if (CanVote) { <p class="caption muted">После отправки изменить голос нельзя.</p> }
+    @if (Results is not null)
+    {
+        <div class="community-results" aria-label="Результаты голосования"><p class="caption muted">Всего голосов: @Results.TotalVotes</p>@foreach (var option in Results.Options) { <div><div class="row"><span>@option.Label</span><strong>@option.Votes</strong></div><div class="community-result-bar" aria-hidden="true"><span style="@("width:" + Percent(option.Votes) + "%")"></span></div></div> }</div>
+    }
+</article>
+@code {
+    [Parameter, EditorRequired] public PollResponse Poll { get; set; } = null!;
+    [Parameter] public VoteResponse? OwnVote { get; set; }
+    [Parameter] public PollResultsResponse? Results { get; set; }
+    [Parameter] public bool CanVote { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback<Guid> OnVote { get; set; }
+    [Parameter] public EventCallback OnResults { get; set; }
+    private Guid? selected;
+    private Task Vote() => selected is { } id && CanVote && !Busy ? OnVote.InvokeAsync(id) : Task.CompletedTask;
+    private string Percent(int value) => (100d * value / Math.Max(1, Results?.TotalVotes ?? 0)).ToString("0.##", CultureInfo.InvariantCulture);
+}

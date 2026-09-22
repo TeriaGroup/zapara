@@ -130,6 +130,7 @@ public sealed partial class AccountService
                 UPDATE {schema}.password_credentials SET password_hash=@p1,changed_at=@p2,failed_count=0,
                 failure_window_started_at=NULL,locked_until=NULL WHERE user_id=@p0
                 """, user.User.UserId, hash, db.Now);
+            await db.ExecuteAsync($"UPDATE {schema}.recovery_email_tokens SET consumed_at=@p0 WHERE user_id=@p1 AND consumed_at IS NULL", db.Now, user.User.UserId);
             await db.RevokeAsync(user.User.UserId, null, "password_change");
             await db.AuditAsync(user.User.UserId, family.Id, "password_change");
             await db.CommitAsync(tx);

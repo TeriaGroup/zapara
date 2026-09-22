@@ -1,0 +1,164 @@
+@page "/homework"
+@implements IDisposable
+@using Zapara.Contracts.Sync
+@inject WebAppState State
+@inject BrowserDraftService Drafts
+<PageTitle>Домашка — Запара</PageTitle>
+@{ var pageScope = Drafts.CaptureScope(); }
+<section class="page personal-page">
+    <div class="page-heading"><div><h1>Домашка</h1><p class="muted">Задания и сроки по вашему расписанию</p></div><button class="button primary" disabled="@(!State.Ready || !Drafts.CanEdit)" @onclick="() => New(scope: pageScope)"><Icon Name="plus" />Добавить</button></div>
+    <div class="personal-filters"><div class="segmented" aria-label="Фильтр заданий"><button class="@(filter == 0 ? "active" : "")" @onclick="() => filter = 0">Активные</button><button class="@(filter == 1 ? "active" : "")" @onclick="() => filter = 1">Выполненные</button><button class="@(filter == 2 ? "active" : "")" @onclick="() => filter = 2">Все</button></div><label class="check-row"><input type="checkbox" @bind="showFar" />Показать далёкие</label></div>
+    @if (!Rows.Any()) { <div class="empty-state"><Icon Name="homework" /><h2>@(filter == 1 ? "Пока нет выполненных заданий" : "Здесь пока нет заданий")</h2><p>Добавьте домашку к предмету — срок рассчитается по расписанию.</p></div> }
+    else
+    {
+        <div class="stack">@foreach (var row in Rows)
+        {
+            var rowScope = Drafts.CaptureScope();
+            var completion = State.Values<CompletionValue>("completion").FirstOrDefault(c => c.Id == row.Item.Id);
+            <article class="homework-card card @row.Status">
+                <button class="completion-toggle @(row.Done ? "done" : "")" disabled="@(!Drafts.CanEdit)" aria-label="@(row.Done ? "Вернуть в активные" : "Отметить выполненным")" aria-pressed="@row.Done" @onclick="() => Toggle(row, completion, rowScope)">@if (row.Done) { <Icon Name="check" /> }</button>
+                <div class="homework-content"><div class="homework-top"><h2>@Title(row.Item.Value.SubjectRaw)</h2><span class="status-chip @row.Status">@StatusText(row.Status)</span></div><p class="homework-text">@row.Item.Value.Text</p><p class="caption muted">@(row.Due?.ToString("d MMMM, dddd") ?? "Срок определится по расписанию") · через @row.Item.Value.TargetNthOccurrence @OccurrenceWord(row.Item.Value.TargetNthOccurrence)</p></div>
+                <div class="homework-actions"><button class="icon-button" disabled="@(!Drafts.CanEdit)" aria-label="Редактировать задание" @onclick="() => Edit(row.Item, rowScope)"><Icon Name="edit" /></button><button class="icon-button" disabled="@(!Drafts.CanEdit)" aria-label="Удалить задание" @onclick="() => AskDelete(row.Item, rowScope)"><Icon Name="trash" /></button></div>
+            </article>
+        }</div>
+    }
+</section>
+@if (editor)
+{
+    var formVersion = openVersion;
+    <Modal Title="@(editingId is null ? "Новое задание" : "Редактирование задания")" OnClose="() => CancelEditor(formVersion)">
+        @if (opening) { <p role="status">Открываем черновик…</p> }
+        @if (restored) { <p class="caption muted" role="status">Черновик восстановлен.</p> }
+        @if (editingId is null)
+        { <label class="field">Предмет<select disabled="@(opening || saving || committed)" @bind:get="subject" @bind:set="value => ChangeDraft(formVersion, () => subject = value)"><option value="">Выберите предмет</option>@if (subject.Length > 0 && !Subjects.Contains(subject)) { <option value="@subject">@OptionTitle(subject) · из черновика</option> }@foreach (var s in Subjects) { <option value="@s">@OptionTitle(s)</option> }</select></label> }
+        else { <h3>@Title(subject)</h3> }
+        @if (Subjects.Count == 0 && editingId is null) { <p class="muted">Для выбора предмета сначала выберите группу с загруженным расписанием.</p> }
+        <label class="field">Что задано<textarea disabled="@(opening || saving || committed)" @bind:get="text" @bind:set="value => ChangeDraft(formVersion, () => text = value)" @bind:event="oninput" maxlength="4000" autofocus placeholder="Упражнения, задача или заметка"></textarea></label>
+        <label class="field">Сдать через<select disabled="@(opening || saving || committed)" @bind:get="nth" @bind:set="value => ChangeDraft(formVersion, () => nth = value)">@for (var n = 1; n <= 10; n++) { <option value="@n">@n @OccurrenceWord(n)</option> }</select></label>
+        <p class="caption muted">@(PreviewDue is { } due ? "Срок: " + due.ToString("d MMMM, dddd") : "Дата появится, когда в расписании найдётся следующее занятие.")</p>
+        @if (formError is not null) { <p role="alert" class="form-error">@formError</p> }
+        @if (stale)
+        {
+            var shown = comparison;
+            <div class="card stack" role="alert"><p>Запись изменилась после открытия черновика. Ваш текст сохранён отдельно.</p>@if (shown is not null) { <p class="caption muted">Сейчас сохранено: @Title(shown.Value.SubjectRaw) · через @shown.Value.TargetNthOccurrence @OccurrenceWord(shown.Value.TargetNthOccurrence)</p><p class="homework-text">@shown.Value.Text</p><button class="button" disabled="@(saving || committed)" @onclick="() => KeepDraft(shown, formVersion)">Продолжить с моим текстом</button> } else { <p>Задание удалено. Можно сохранить ваш текст как новое задание.</p><button class="button" disabled="@(saving || committed)" @onclick="() => Save(formVersion, true)">Сохранить как новое</button> }</div>
+        }
+        <div class="form-actions"><button class="button" disabled="@saving" @onclick="() => CancelEditor(formVersion)">@(committed ? "Закрыть" : "Отмена")</button><button class="button primary" disabled="@(opening || saving || committed || draft is null || stale || !Drafts.IsCurrent(draft))" @onclick="() => Save(formVersion)">Сохранить</button></div>
+    </Modal>
+}
+@if (deleteId is not null)
+{
+    var shownDelete = deleteOriginal; var shownScope = deleteScope;
+    <Modal Title="Удалить задание?" OnClose="() => CancelDelete(shownScope)"><p>Задание и его отметка выполнения будут удалены из этого профиля.</p><div class="form-actions"><button class="button" @onclick="() => CancelDelete(shownScope)">Отмена</button><button class="button danger" @onclick="() => Delete(shownDelete, shownScope)">Удалить</button></div></Modal>
+}
+@code {
+    [SupplyParameterFromQuery(Name = "subject")] public string? RequestedSubject { get; set; }
+    private string? handledSubject, formError;
+    private int filter, nth = 1;
+    private bool showFar, editor, opening, saving, restored, stale, committed;
+    private Guid? editingId, deleteId;
+    private string subject = "", text = "";
+    private HomeworkValue? original;
+    private DraftLease? draft;
+    private DraftScope? deleteScope;
+    private EntityValue<HomeworkValue>? deleteOriginal, comparison;
+    private int openVersion;
+    private sealed record Row(EntityValue<HomeworkValue> Item, DateTime? Due, bool Done, string Status);
+    private IReadOnlyList<string> Subjects => State.Schedule?.Lessons.Where(l => l.GroupId == State.GroupId).Select(l => l.SubjectRaw).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.Create(CultureInfo.GetCultureInfo("ru-RU"), true)).ToArray() ?? [];
+    private IEnumerable<Row> Rows => State.Values<HomeworkValue>("homework").Select(item =>
+    {
+        var done = State.Values<CompletionValue>("completion").Any(c => c.Id == item.Id && c.Value.Done);
+        var due = State.Schedule is { } snapshot ? HomeworkRules.DueDate(snapshot, State.GroupId, item.Value, TimeZoneInfo.Local, State.Settings.ParityInvert) : null;
+        var status = State.Schedule is { } s ? HomeworkRules.Status(s, State.GroupId, item.Value.SubjectRaw, due, done, DateTime.Today, State.Settings.ParityInvert) : done ? "done" : "pending";
+        return new Row(item, due, done, status);
+    }).Where(r => (filter == 2 || (filter == 1 ? r.Done : !r.Done)) && (showFar || filter == 2 || r.Status != "far")).OrderBy(r => r.Done).ThenBy(r => r.Due ?? DateTime.MaxValue);
+    private DateTime CreatedDate => original?.LegacyCreatedLocalDate?.ToDateTime(TimeOnly.MinValue) ?? original?.CreatedAtUtc.ToLocalTime().Date ?? DateTime.Today;
+    private DateTime? PreviewDue => State.Schedule is { } s ? HomeworkRules.DueDate(s, State.GroupId, subject, CreatedDate, nth, State.Settings.ParityInvert) : null;
+    protected override void OnInitialized() { State.Changed += Changed; Drafts.ScopeChanged += ScopeChanged; }
+    protected override async Task OnParametersSetAsync() { if (RequestedSubject is not null && RequestedSubject != handledSubject) { handledSubject = RequestedSubject; await New(RequestedSubject); } }
+    private EntityValue<HomeworkValue>? CurrentOriginal => (editingId ?? draft?.TargetId) is { } id ? State.Values<HomeworkValue>("homework").FirstOrDefault(h => h.Id == id) : null;
+    private void Changed()
+    {
+        if (draft is not null && !Drafts.IsCurrent(draft)) HideEditor();
+        else if (editor && draft is not null && !saving && BrowserDraftService.IsStale(draft, CurrentOriginal?.Revision, CurrentOriginal?.Value)) { stale = true; comparison = CurrentOriginal; }
+        if (deleteScope is not null && !Drafts.IsCurrent(deleteScope)) { deleteId = null; deleteScope = null; deleteOriginal = null; }
+        _ = InvokeAsync(StateHasChanged);
+    }
+    private void ScopeChanged() { HideEditor(); deleteId = null; deleteScope = null; deleteOriginal = null; _ = InvokeAsync(StateHasChanged); }
+    private Task New(string selectedSubject = "", DraftScope? scope = null) => scope is not null && !Drafts.IsCurrent(scope) ? Task.CompletedTask : OpenEditor(null, selectedSubject);
+    private Task Edit(EntityValue<HomeworkValue> item, DraftScope scope) => !Drafts.IsCurrent(scope) ? Task.CompletedTask : OpenEditor(item, item.Value.SubjectRaw);
+    private async Task OpenEditor(EntityValue<HomeworkValue>? item, string selectedSubject)
+    {
+        var version = ++openVersion;
+        editingId = item?.Id; original = item?.Value; subject = selectedSubject; text = item?.Value.Text ?? ""; nth = item?.Value.TargetNthOccurrence ?? 1;
+        formError = null; draft = null; stale = restored = saving = committed = false; editor = opening = true;
+        try
+        {
+            var opened = await Drafts.OpenHomeworkAsync(item?.Id.ToString("D") ?? "new", item?.Revision, item?.Value, new(subject, text, nth, original));
+            if (version != openVersion || !Drafts.IsCurrent(opened.Lease)) return;
+            draft = opened.Lease; (subject, text, nth, original) = opened.Value; restored = opened.Restored; stale = opened.Stale; comparison = item;
+            if (editingId is null && CurrentOriginal is { } alreadySaved) { editingId = alreadySaved.Id; comparison = alreadySaved; stale = true; }
+        }
+        catch (Exception e) { if (version == openVersion) formError = e is BrowserApiException ? e.Message : "Не удалось открыть черновик. Проверьте хранилище браузера."; }
+        finally { if (version == openVersion) opening = false; }
+    }
+    private void HideEditor() { openVersion++; editor = opening = saving = restored = stale = committed = false; draft = null; original = null; subject = text = ""; formError = null; comparison = null; }
+    private async Task PersistDraft()
+    {
+        var lease = draft;
+        if (lease is null || opening || saving || !Drafts.IsCurrent(lease)) return;
+        try { await Drafts.UpdateAsync(lease, new HomeworkDraft(subject, text, nth, original)); }
+        catch (Exception) { if (ReferenceEquals(draft, lease)) formError = "Черновик пока не сохранён. Проверьте свободное место и не закрывайте страницу."; }
+    }
+    private Task ChangeDraft(int version, Action change) { if (version != openVersion || !editor || opening || saving || committed || !Drafts.IsCurrent(draft)) return Task.CompletedTask; change(); return PersistDraft(); }
+    private async Task CancelEditor(int version)
+    {
+        if (version != openVersion || saving) return;
+        var lease = draft;
+        try { if (lease is not null && Drafts.IsCurrent(lease)) await Drafts.ClearAsync(lease); if (ReferenceEquals(draft, lease)) HideEditor(); }
+        catch (Exception) { formError = "Не удалось удалить черновик. Попробуйте отменить ещё раз."; }
+    }
+    private async Task KeepDraft(EntityValue<HomeworkValue> shown, int version)
+    {
+        if (version != openVersion || draft is null || !Drafts.IsCurrent(draft)) return;
+        var current = CurrentOriginal;
+        if (BrowserDraftService.Baseline(current?.Revision, current?.Value) != BrowserDraftService.Baseline(shown.Revision, shown.Value)) { comparison = current; formError = "Запись снова изменилась. Сравните обновлённые данные."; return; }
+        draft = Drafts.Rebase(draft, shown.Revision, shown.Value); original = shown.Value; subject = shown.Value.SubjectRaw; stale = false; formError = null;
+        await PersistDraft();
+    }
+    private async Task Save(int version, bool copy = false)
+    {
+        if (version != openVersion) return;
+        var lease = draft;
+        if (lease is null || saving || opening || committed || !Drafts.IsCurrent(lease) || (stale && !copy)) return;
+        if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(text)) { formError = "Выберите предмет и напишите задание."; return; }
+        if (!copy && BrowserDraftService.IsStale(lease, CurrentOriginal?.Revision, CurrentOriginal?.Value)) { stale = true; comparison = CurrentOriginal; return; }
+        saving = true;
+        try
+        {
+            await Drafts.FlushAsync(); Drafts.RequireCurrent(lease.Scope);
+            var basis = copy ? null : original;
+            var value = new HomeworkValue(subject, SyncValidation.NormalizeSubject(subject), text.Trim(), nth, basis?.CreatedAtUtc ?? DateTimeOffset.UtcNow, basis is null ? DateOnly.FromDateTime(DateTime.Today) : basis.LegacyCreatedLocalDate);
+            await State.PutEditorAsync(lease.Scope.Owner, lease.Scope.Generation, "homework", copy ? Guid.NewGuid() : lease.TargetId, value, basis, copy ? null : lease.Baseline.Revision);
+            if (ReferenceEquals(draft, lease)) committed = true;
+            await Drafts.ClearAsync(lease);
+            if (ReferenceEquals(draft, lease)) HideEditor();
+        }
+        catch (BrowserApiException e) { if (ReferenceEquals(draft, lease)) { formError = e.Message; if (e.Code == "editor_changed") { stale = true; comparison = CurrentOriginal; } } }
+        catch (Exception) { if (ReferenceEquals(draft, lease)) formError = committed ? "Задание сохранено, но не удалось убрать черновик. Нажмите «Отмена», чтобы закрыть его; повторно отправлять не нужно." : "Задание не сохранено. Проверьте свободное место и повторите попытку."; }
+        finally { if (ReferenceEquals(draft, lease)) saving = false; }
+    }
+    private async Task Toggle(Row row, EntityValue<CompletionValue>? completion, DraftScope scope) { try { Drafts.RequireCurrent(scope); await State.PutEditorAsync(scope.Owner, scope.Generation, "completion", row.Item.Id, new CompletionValue(!row.Done, row.Done ? null : DateTimeOffset.UtcNow), completion?.Value, completion?.Revision); } catch (Exception) { if (Drafts.IsCurrent(scope)) State.SetError("Не удалось изменить отметку. Обновите задание и попробуйте снова."); } }
+    private void AskDelete(EntityValue<HomeworkValue> item, DraftScope scope) { if (!Drafts.IsCurrent(scope)) return; deleteId = item.Id; deleteOriginal = item; deleteScope = scope; }
+    private void CancelDelete(DraftScope? scope) { if (scope == deleteScope) { deleteId = null; deleteScope = null; deleteOriginal = null; } }
+    private async Task Delete(EntityValue<HomeworkValue>? before, DraftScope? scope) { if (scope is null || before is null || scope != deleteScope || before.Id != deleteId) return; var id = before.Id; try { Drafts.RequireCurrent(scope); await State.PutEditorManyAsync(scope.Owner, scope.Generation, [new("completion", id, null), new("homework", id, null)], "homework", id, before.Value, before.Revision); if (deleteScope == scope) CancelDelete(scope); } catch (Exception) { if (Drafts.IsCurrent(scope)) State.SetError("Не удалось удалить задание. Оно могло измениться — проверьте данные."); } }
+    private string Title(string raw) => State.DisplayName(new Lesson { SubjectRaw = raw, TypeRaw = EditorSubjectTitles.TypeOf(raw, State.Schedule?.Lessons ?? [], State.GroupId) });
+    private string OptionTitle(string raw) => SubjectOptionTitle(raw, Title(raw), State.Schedule?.Lessons ?? [], State.GroupId);
+    public static string SubjectOptionTitle(string raw, string title, IEnumerable<Lesson> lessons, string groupId)
+    {
+        var kind = EditorSubjectTitles.TypeOf(raw, lessons, groupId);
+        return string.IsNullOrWhiteSpace(kind) ? title : title + " · " + kind;
+    }
+    private static string OccurrenceWord(int n) => n == 1 ? "занятие" : n is >= 2 and <= 4 ? "занятия" : "занятий";
+    public static string StatusText(string status) => status switch { "done" => "Выполнено", "overdue" => "Просрочено", "burning_urgent" => "На сегодня", "burning" => "На завтра", "approaching" => "Скоро", "far" => "Далеко", _ => "Без срока" };
+    public void Dispose() { openVersion++; State.Changed -= Changed; Drafts.ScopeChanged -= ScopeChanged; }
+}

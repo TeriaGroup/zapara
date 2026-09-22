@@ -9,14 +9,14 @@ public sealed class RecoveryMigrationTests(ITestOutputHelper output)
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Default_target_installs_v4_and_keeps_recovery_tables()
+    public async Task Default_target_installs_latest_and_keeps_recovery_tables()
     {
         await using var db = await AccountsPostgresFixture.CreateAsync(output.WriteLine, true);
-        Assert.Equal(4, await db.ScalarAsync<int>($"SELECT max(version) FROM {db.QuotedSchema}.schema_migrations"));
+        Assert.Equal(6, await db.ScalarAsync<int>($"SELECT max(version) FROM {db.QuotedSchema}.schema_migrations"));
         Assert.Equal(3L, await db.ScalarAsync<long>($"SELECT count(*) FROM pg_tables WHERE schemaname='{db.Schema}' AND tablename IN ('recovery_addresses','recovery_email_tokens','password_reset_tokens')"));
         Assert.Equal(AccountsMigrations.RecoveryChecksum, await db.ScalarAsync<string>($"SELECT checksum FROM {db.QuotedSchema}.schema_migrations WHERE version=3"));
-        Assert.Equal(AccountsSchemaShape.LifecycleFingerprint, await db.FingerprintAsync());
-        output.WriteLine($"SQL recovery checksum={AccountsMigrations.RecoveryChecksum} shape={AccountsSchemaShape.LifecycleFingerprint}");
+        Assert.Equal(AccountsSchemaShape.PushFingerprint, await db.FingerprintAsync());
+        output.WriteLine($"SQL recovery checksum={AccountsMigrations.RecoveryChecksum} shape={AccountsSchemaShape.PushFingerprint}");
     }
 
     [Theory]

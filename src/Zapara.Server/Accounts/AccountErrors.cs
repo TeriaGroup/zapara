@@ -12,6 +12,7 @@ internal static class AccountErrors
         AccountFailure.InvalidRequest => 400,
         AccountFailure.RateLimited => 429,
         AccountFailure.DbUnavailable => 503,
+        AccountFailure.RecoveryUnavailable => 503,
         AccountFailure.ExportNotFound => 404,
         _ => 500
     }, exception.Code);

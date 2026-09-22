@@ -1,0 +1,109 @@
+@using Vograph.Core.Campus
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+<div class="map-viewer" @ref="viewer">
+    <div class="map-viewer-bar">
+        <span class="map-plan-title">@Plan.Building · @Plan.Floor этаж</span>
+        <div class="map-zoom-controls">
+            <button class="icon-button" aria-label="Уменьшить карту" @onclick="() => Zoom(.8)"><Icon Name="minus" /></button>
+            <output class="map-zoom-value" aria-label="Масштаб карты">@zoomPercent%</output>
+            <button class="icon-button" aria-label="Увеличить карту" @onclick="() => Zoom(1.25)"><Icon Name="plus" /></button>
+            <button class="button" @onclick="Reset">Сбросить</button>
+            <button class="icon-button" aria-label="На весь экран или закрыть полноэкранный режим" @onclick="Fullscreen"><Icon Name="fullscreen" /></button>
+        </div>
+    </div>
+    <div class="map-canvas" @ref="canvas" tabindex="0" role="group" aria-label="@($"План {Plan.Building}, {Plan.Floor} этаж. Перетаскивание и масштабирование; плюс, минус и стрелки на клавиатуре.")">
+        <div class="map-plane">
+            <img class="map-image" src="@Plan.Image" alt="@($"План корпуса {Plan.Building}, {Plan.Floor} этаж")" draggable="false" @onerror="() => imageError = true" @onload="() => imageError = false" />
+            <svg class="map-route-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+                <defs><marker id="@arrowId" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L7 3.5 L0 7" fill="none" stroke="#161616" stroke-width="1.5" /></marker></defs>
+                @if (Route is not null)
+                {
+                    @foreach (var leg in MapGeometry.Strokes(Route, Plan))
+                    {
+                        var active = ActiveStep is not null && ActiveStep.Legs.Any(i => ReferenceEquals(Route.Legs[i], leg));
+                        <polyline points="@Points(leg)" class="map-path-outline" vector-effect="non-scaling-stroke" />
+                        <polyline points="@Points(leg)" class="map-path @(active ? "map-path-active" : "")" vector-effect="non-scaling-stroke" marker-mid="@($"url(#{arrowId})")" marker-end="@($"url(#{arrowId})")" />
+                    }
+                }
+                @if (Highlight is not null && Highlight.Plan == Plan)
+                {
+                    <rect x="@N(Highlight.X * 1000)" y="@N(Highlight.Y * 1000)" width="@N(Highlight.Width * 1000)" height="@N(Highlight.Height * 1000)" class="map-room-highlight" vector-effect="non-scaling-stroke" />
+                }
+            </svg>
+            @foreach (var room in Marks.Where(m => m.Plan == Plan))
+            {
+                <button class="map-room-target" style="@RectStyle(room)" aria-label="@($"Аудитория {room.Room}, {Plan.Building}, {Plan.Floor} этаж")" title="@($"Аудитория {room.Room}")" @onclick="() => SelectRoom(room)"></button>
+            }
+            @if (Route is not null)
+            {
+                @foreach (var marker in MapGeometry.Markers(Route).Where(m => m.Plan == Plan))
+                {
+                    <button class="map-pin map-transition-pin" style="@PointStyle(marker.X, marker.Y)" aria-label="@($"Шаг {marker.Step + 1}: {marker.Label}")" @onclick="() => OnStep.InvokeAsync(marker.Step)">@marker.Label</button>
+                }
+            }
+            @if (From is not null && From.Building == Plan.Building && From.Floor == Plan.Floor)
+            { <span class="map-pin map-origin-pin" style="@PointStyle(From.X, From.Y)" title="Начало маршрута">А</span> }
+            @if (To is not null && To.Building == Plan.Building && To.Floor == Plan.Floor)
+            { <span class="map-pin map-destination-pin" style="@PointStyle(To.X, To.Y)" title="Конец маршрута">Б</span> }
+            @if (Selection is not null && Highlight is null && To is null && Selection.Building == Plan.Building && Selection.Floor == Plan.Floor)
+            { <span class="map-pin" style="@PointStyle(Selection.X, Selection.Y)">@Selection.Room</span> }
+        </div>
+        @if (imageError) { <div class="map-image-error" role="alert">План не загружен. Подключитесь к сети, чтобы сохранить его для офлайна.<button class="button" @onclick="RetryImage">Повторить</button></div> }
+    </div>
+    <p class="map-gesture-hint">Перетаскивайте план · увеличивайте двумя пальцами или кнопками</p>
+</div>
+@code {
+    [Parameter, EditorRequired] public MapFloor Plan { get; set; } = new("ГК", 1);
+    [Parameter] public IReadOnlyList<RoomMark> Marks { get; set; } = [];
+    [Parameter] public RoomMark? Highlight { get; set; }
+    [Parameter] public Route? Route { get; set; }
+    [Parameter] public Node? From { get; set; }
+    [Parameter] public Node? To { get; set; }
+    [Parameter] public Node? Selection { get; set; }
+    [Parameter] public MapRouteStep? ActiveStep { get; set; }
+    [Parameter] public EventCallback<RoomMark> OnRoom { get; set; }
+    [Parameter] public EventCallback<int> OnStep { get; set; }
+    private ElementReference canvas, viewer;
+    private IJSObjectReference? module;
+    private DotNetObjectReference<MapViewport>? reference;
+    private string? previousPlan;
+    private bool imageError, disposed;
+    private int zoomPercent = 100;
+    private readonly string arrowId = "map-arrow-" + Guid.NewGuid().ToString("N");
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/maps.js");
+            if (disposed) { await module.DisposeAsync(); return; }
+            reference = DotNetObjectReference.Create(this);
+            await module.InvokeVoidAsync("attach", canvas, reference);
+        }
+        if (module is not null && previousPlan != Plan.Key)
+        {
+            previousPlan = Plan.Key; imageError = false;
+            await module.InvokeVoidAsync("reset", canvas);
+        }
+    }
+    [JSInvokable] public Task ZoomChanged(double value) { zoomPercent = (int)Math.Round(value * 100); return InvokeAsync(StateHasChanged); }
+    private async Task Zoom(double factor) { if (module is not null) await module.InvokeVoidAsync("zoom", canvas, factor); }
+    private async Task Reset() { if (module is not null) await module.InvokeVoidAsync("reset", canvas); }
+    public Task FitAsync() => Reset();
+    private async Task Fullscreen() { if (module is not null) await module.InvokeVoidAsync("fullscreen", viewer, canvas); }
+    private async Task RetryImage() { if (module is not null) await module.InvokeVoidAsync("retry", canvas); }
+    private async Task SelectRoom(RoomMark mark) { if (module is not null) await module.InvokeVoidAsync("leaveFullscreen", canvas); await OnRoom.InvokeAsync(mark); }
+    private static string N(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+    private static string Points(Leg leg) => string.Join(" ", leg.Points.Select(p => N(p.X * 1000) + "," + N(p.Y * 1000)));
+    private static string PointStyle(double x, double y) => $"left:{N(x * 100)}%;top:{N(y * 100)}%";
+    private static string RectStyle(RoomMark r) => $"left:{N(r.X * 100)}%;top:{N(r.Y * 100)}%;width:{N(r.Width * 100)}%;height:{N(r.Height * 100)}%";
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true;
+        if (module is not null)
+        {
+            try { await module.InvokeVoidAsync("dispose", canvas); await module.DisposeAsync(); } catch (JSDisconnectedException) { }
+        }
+        reference?.Dispose();
+    }
+}

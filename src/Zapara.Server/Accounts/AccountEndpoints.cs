@@ -28,6 +28,7 @@ internal static class AccountEndpoints
             return Json(await Service(context).UpdateProfileAsync(Bearer(context), body, context.RequestAborted));
         });
         Route(group, "GET", "/account/devices", Devices);
+        Route(app.MapGroup("/api/v2").WithMetadata(new AccountEndpoint()), "GET", "/account/devices", context => Devices(context, true));
         Route(group, "DELETE", "/account/devices/{familyId}", async context =>
         {
             var raw = context.Request.RouteValues["familyId"] as string;
@@ -92,13 +93,15 @@ internal static class AccountEndpoints
     private static async Task<IResult> Register(HttpContext context)
     {
         var environment = context.RequestServices.GetRequiredService<IHostEnvironment>();
-        if (!environment.IsDevelopment() && !environment.IsEnvironment("Testing"))
+        if (!AccountCapabilities.RegistrationEnabled(context.RequestServices.GetRequiredService<IConfiguration>(), environment))
             return AccountErrors.Problem(503, "registration_unavailable");
         var body = await AccountBodyReader.Read<RegisterRequest>(context);
         return Json(await Service(context).RegisterAsync(body, context.RequestAborted), 201);
     }
 
-    private static async Task<IResult> Devices(HttpContext context)
+    private static Task<IResult> Devices(HttpContext context) => Devices(context, false);
+
+    private static async Task<IResult> Devices(HttpContext context, bool includeWeb)
     {
         var query = context.Request.Query;
         if (query.Keys.Any(key => key is not ("limit" or "cursor"))) throw new AccountBodyException();
@@ -108,7 +111,7 @@ internal static class AccountEndpoints
             throw new AccountBodyException();
         var cursor = query["cursor"];
         if (cursor.Count > 1 || (cursor.Count == 1 && cursor[0]?.Length != 55)) throw new AccountBodyException();
-        return Json(await Service(context).ListDevicesAsync(Bearer(context), limit, cursor.Count == 0 ? null : cursor[0], context.RequestAborted));
+        return Json(await Service(context).ListDevicesAsync(Bearer(context), limit, cursor.Count == 0 ? null : cursor[0], context.RequestAborted, includeWeb));
     }
 
     private static async Task<IResult> Empty(HttpContext context, Func<AccountService, Task> operation)

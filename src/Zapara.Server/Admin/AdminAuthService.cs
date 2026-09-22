@@ -154,8 +154,53 @@ public sealed class AdminAuthService(AccountsDataSource dataSource, AdminConfigu
         if (!await reader.ReadAsync(ct) || reader.GetString(0) != "active" || reader.GetInt64(1) != expectedVersion)
             throw AdminException.Reauth();
         var hash = reader.GetString(2);
+        await reader.DisposeAsync();
+        await using var tx = await connection.BeginTransactionAsync(ct);
+        int failures;
+        DateTimeOffset? window;
+        DateTimeOffset? lockedUntil;
+        await using (var locked = new NpgsqlCommand($"""
+            SELECT c.failed_count,c.failure_window_started_at,c.locked_until
+            FROM {configuration.Accounts.QuotedSchema}.password_credentials c
+            WHERE c.user_id=@id FOR UPDATE
+            """, connection, tx))
+        {
+            locked.Parameters.AddWithValue("id", userId);
+            await using var row = await locked.ExecuteReaderAsync(ct);
+            if (!await row.ReadAsync(ct)) throw AdminException.Reauth();
+            failures = row.GetInt32(0);
+            window = row.IsDBNull(1) ? null : row.GetFieldValue<DateTimeOffset>(1);
+            lockedUntil = row.IsDBNull(2) ? null : row.GetFieldValue<DateTimeOffset>(2);
+        }
+        var now = clock.GetUtcNow();
+        if (lockedUntil > now) throw AdminException.Reauth();
         if (hasher.VerifyHashedPassword(new(userId), hash, password) == PasswordVerificationResult.Failed)
+        {
+            var reset = window is null || now >= window.Value.AddMinutes(15);
+            var count = reset ? 1 : Math.Min(5, failures + 1);
+            var started = reset ? now : window!.Value;
+            await using var fail = new NpgsqlCommand($"""
+                UPDATE {configuration.Accounts.QuotedSchema}.password_credentials
+                SET failed_count=@count,failure_window_started_at=@window,locked_until=CASE WHEN @count>=5 THEN @until ELSE NULL END
+                WHERE user_id=@id
+                """, connection, tx);
+            fail.Parameters.AddWithValue("count", count);
+            fail.Parameters.AddWithValue("window", started);
+            fail.Parameters.AddWithValue("until", now.AddMinutes(15));
+            fail.Parameters.AddWithValue("id", userId);
+            await fail.ExecuteNonQueryAsync(ct);
+            await tx.CommitAsync(ct);
             throw AdminException.Reauth();
+        }
+        await using (var clear = new NpgsqlCommand($"""
+            UPDATE {configuration.Accounts.QuotedSchema}.password_credentials
+            SET failed_count=0,failure_window_started_at=NULL,locked_until=NULL WHERE user_id=@id
+            """, connection, tx))
+        {
+            clear.Parameters.AddWithValue("id", userId);
+            await clear.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
     }
 
     private async Task Audit(NpgsqlConnection connection, NpgsqlTransaction tx, Guid? actor, string action, string objectType,

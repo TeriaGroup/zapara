@@ -6,10 +6,21 @@ namespace Zapara.Server.Communities;
 
 public sealed class CommunitiesConfiguration
 {
-    private CommunitiesConfiguration(string schema, AccountsConfiguration accounts) => (Schema, Accounts) = (schema, accounts);
+    private CommunitiesConfiguration(string schema, AccountsConfiguration accounts)
+    {
+        Schema = schema;
+        Accounts = accounts;
+        MessagesSchema = MessagesName(schema);
+        if (MessagesSchema.Length > 63 || MessagesSchema == accounts.Schema || MessagesSchema == schema)
+            throw new ArgumentException("Недопустимый Communities:Schema.");
+    }
     public string Schema { get; }
     public string QuotedSchema => $"\"{Schema}\"";
+    public string MessagesSchema { get; }
+    public string QuotedMessages => $"\"{MessagesSchema}\"";
     public AccountsConfiguration Accounts { get; }
+    public static string MessagesName(string communitiesSchema)
+        => communitiesSchema == "communities" ? "messages" : communitiesSchema + "_msg";
     public static bool IsEnabled(IConfiguration configuration)
     {
         var raw = configuration["Communities:Enabled"];
@@ -26,7 +37,7 @@ public sealed class CommunitiesConfiguration
         var schema = configuration["Communities:Schema"];
         if (schema is null || !Regex.IsMatch(schema, @"\A[a-z][a-z0-9_]{0,62}\z", RegexOptions.CultureInvariant) ||
             schema == accounts.Schema || schema == configuration["Timetable:Schema"] ||
-            schema is "public" or "information_schema" || schema.StartsWith("pg_", StringComparison.Ordinal))
+            schema is "public" or "information_schema" or "messages" || schema.StartsWith("pg_", StringComparison.Ordinal))
             throw new ArgumentException("Недопустимый Communities:Schema.");
         return new(schema, accounts);
     }

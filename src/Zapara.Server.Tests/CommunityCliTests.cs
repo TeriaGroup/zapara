@@ -13,7 +13,7 @@ public sealed class CommunityCliTests
         Assert.Equal(0, success.ExitCode);
         Assert.Contains("communities.db-migrate", success.Output);
         Assert.Contains("committed", success.Output);
-        Assert.Equal(1L, await db.Accounts.ScalarAsync<long>($"SELECT count(*) FROM {db.QuotedSchema}.schema_migrations"));
+        Assert.Equal(2L, await db.Accounts.ScalarAsync<long>($"SELECT count(*) FROM {db.QuotedSchema}.schema_migrations"));
         Assert.Equal(0, (await Run(db, false, "communities", "db-migrate")).ExitCode);
         Assert.Equal(2, (await Run(db, false, "communities", "db-migrate", "extra")).ExitCode);
         var failure = await Run(db, true, "communities", "db-migrate");
@@ -27,6 +27,8 @@ public sealed class CommunityCliTests
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../.."));
         var dll = Path.Combine(root, "src", "Zapara.AdminCli", "bin", "Debug", "net8.0", "Zapara.AdminCli.dll");
+        var artifactDll = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../Zapara.AdminCli/debug/Zapara.AdminCli.dll"));
+        if (File.Exists(artifactDll)) dll = artifactDll;
         var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET8") ?? throw new InvalidOperationException("Private runtime required"))
         {
             UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true

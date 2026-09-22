@@ -1,0 +1,20 @@
+{
+  "id": "/app/",
+  "name": "Запара — расписание и карты Военмеха",
+  "short_name": "Запара",
+  "lang": "ru",
+  "start_url": "/app/schedule",
+  "scope": "/app/",
+  "display": "standalone",
+  "background_color": "#0d0d0d",
+  "theme_color": "#111111",
+  "icons": [
+    { "src": "icons/zapara.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Расписание", "url": "/app/schedule" },
+    { "name": "Домашка", "url": "/app/homework" },
+    { "name": "Карты", "url": "/app/maps" }
+  ]
+}

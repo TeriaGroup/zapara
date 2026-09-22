@@ -1,0 +1,96 @@
+x-log: &log
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    <<: *log
+    environment:
+      POSTGRES_USER: zapara
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: zapara
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=40", "-c", "log_statement=none"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zapara -d zapara"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    mem_limit: 280m
+
+  migrate:
+    build: .
+    <<: *log
+    env_file: .env
+    profiles: ["ops"]
+    user: "0:0"
+    entrypoint: ["/opt/zapara/migrate.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  seed:
+    build: .
+    <<: *log
+    env_file: .env
+    profiles: ["ops"]
+    user: "0:0"
+    entrypoint: ["/opt/zapara/seed.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  server:
+    build: .
+    <<: *log
+    env_file: .env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      Social__MediaRoot: /var/lib/zapara/media
+    user: "0:0"
+    volumes:
+      - keys:/var/lib/zapara/keys
+      - media:/var/lib/zapara/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8080"
+    restart: unless-stopped
+    mem_limit: 420m
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  caddy:
+    image: caddy:2-alpine
+    <<: *log
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server
+    restart: unless-stopped
+    mem_limit: 80m
+
+volumes:
+  pgdata:
+  keys:
+  media:
+  caddy_data:
+  caddy_config:

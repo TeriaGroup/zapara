@@ -14,11 +14,7 @@ internal static class ExternalAuthEndpoints
         var group = app.MapGroup("/api/v1").WithMetadata(new AccountEndpoint(), new ExternalEndpoint());
         Route(group, "GET", "/auth/capabilities", c =>
         {
-            var environment = c.RequestServices.GetRequiredService<IHostEnvironment>();
-            var recovery = !environment.IsProduction() && c.RequestServices.GetService<IRecoveryDelivery>() is TestingRecoverySink;
-            return Task.FromResult(Json(new AuthCapabilitiesResponse(true,
-                Registry(c).IsConfigured("vk"), Registry(c).IsConfigured("yandex"),
-                environment.IsDevelopment() || environment.IsEnvironment("Testing"), recovery)));
+            return Task.FromResult(Json(AccountCapabilities.Read(c.RequestServices)));
         });
         Route(group, "POST", "/auth/external/{provider}/start", async c =>
         {
@@ -60,6 +56,11 @@ internal static class ExternalAuthEndpoints
         if (query.Any(p => p.Value.Count != 1) ||
             query.Keys.Any(k => k is not ("state" or "code" or "device_id" or "error" or "error_description"))) throw new AccountBodyException();
         string? Value(string key) => query.TryGetValue(key, out var value) ? value.ToString() : null;
+        if (c.RequestServices.GetService<Zapara.Server.Web.WebOAuth>() is { } web)
+        {
+            var browserResult = await web.TryCallbackAsync(c, provider);
+            if (browserResult is not null) return browserResult;
+        }
         var destination = await Service(c).CallbackAsync(provider, new Uri(c.Request.GetEncodedUrl()), Value("state")!,
             Value("code"), Value("device_id"), query.ContainsKey("error"), c.RequestAborted);
         c.Response.Headers.Location = destination.AbsoluteUri;
@@ -80,6 +81,7 @@ internal static class ExternalAuthEndpoints
             catch (AccountBodyException e) { return callback ? Page(e.Status) : Error(e.Status, "invalid_request"); }
             catch (AccountServiceException e) { return callback ? Page(503) : AccountErrors.From(e); }
             catch (ArgumentException) { return callback ? Page(403) : Error(403, "invalid_external_proof"); }
+            catch (Zapara.Server.Web.WebRequestException e) { return callback ? Page(e.Status) : Error(e.Status, e.Code); }
         })).RequireRateLimiting(rate);
         if (authenticated) endpoint.RequireAuthorization("AccountUser"); else endpoint.AllowAnonymous();
     }

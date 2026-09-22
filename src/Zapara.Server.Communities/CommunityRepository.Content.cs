@@ -17,6 +17,39 @@ internal sealed partial class CommunityRepository
         await AuditAsync(communityId, "homework_published", "shared_homework", id);
         return new(id, communityId, request.Title, request.Body, 1, Now, Now);
     }
+    internal async Task<HomeworkResponse> ShareHomeworkAsync(Guid communityId, HomeworkUpsert request)
+    {
+        await RequireMemberAsync(communityId);
+        if (request.ExpectedRevision != 0) throw CommunityServiceException.Conflict("revision_conflict");
+        if (await ScalarAsync($"SELECT count(*)::int FROM {Schema}.shared_homework WHERE community_id=@p0", communityId) >= 40)
+            throw CommunityServiceException.InvalidRequest();
+        var body = string.Join(' ', request.Body.Split(new[] { ' ', '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries));
+        if (body.Length is < 1 or > 8000) throw CommunityServiceException.InvalidRequest();
+        var id = Guid.NewGuid();
+        await ExecuteAsync($"""
+            INSERT INTO {Schema}.shared_homework(homework_id,community_id,title,body,revision,created_by,created_at,updated_at)
+            VALUES(@p0,@p1,@p2,@p3,1,@p4,@p5,@p5)
+            """, id, communityId, request.Title, body, UserId, Now);
+        await AuditAsync(communityId, "homework_published", "shared_homework", id);
+        return new(id, communityId, request.Title, body, 1, Now, Now);
+    }
+    internal async Task<IReadOnlyList<GroupHomeworkCopyResponse>> ListHomeworkCopiesAsync(Guid communityId)
+    {
+        await RequireMemberAsync(communityId);
+        var list = new List<GroupHomeworkCopyResponse>();
+        await using var command = Command($"""
+            SELECT h.homework_id, h.title, h.body, h.revision,
+                   COALESCE(c.completed, false), COALESCE(c.revision, 0)
+            FROM {Schema}.shared_homework h
+            LEFT JOIN {Schema}.shared_homework_completion c ON c.homework_id=h.homework_id AND c.user_id=@p1
+            WHERE h.community_id=@p0
+            ORDER BY h.created_at DESC, h.homework_id
+            """, communityId, UserId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetInt64(3), reader.GetBoolean(4), reader.GetInt64(5)));
+        return list;
+    }
     internal async Task<HomeworkResponse> UpdateHomeworkAsync(Guid communityId, Guid homeworkId, HomeworkUpsert request)
     {
         await RequireStaffAsync(communityId);
@@ -219,6 +252,15 @@ internal sealed partial class CommunityRepository
         while (await reader.ReadAsync(ct)) list.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetInt32(2)));
         return list;
     }
+    internal async Task<OwnVoteResponse> GetOwnVoteAsync(Guid communityId, Guid pollId)
+    {
+        await RequireMemberAsync(communityId);
+        _ = await LoadPollAsync(communityId, pollId, false);
+        await using var command = Command($"SELECT option_id,created_at FROM {Schema}.votes WHERE poll_id=@p0 AND user_id=@p1", pollId, UserId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        return new(await reader.ReadAsync(ct) ? new(pollId, reader.GetGuid(0), reader.GetFieldValue<DateTimeOffset>(1)) : null);
+    }
+
     internal async Task<VoteResponse> VoteAsync(Guid communityId, Guid pollId, VoteRequest request)
     {
         await RequireMemberAsync(communityId);

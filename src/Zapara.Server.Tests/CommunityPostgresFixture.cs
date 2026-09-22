@@ -93,6 +93,7 @@ public sealed class CommunityPostgresFixture : IAsyncDisposable
     {
         try
         {
+            await Accounts.ExecuteAsync($"DROP SCHEMA IF EXISTS \"{Configuration.MessagesSchema}\" CASCADE");
             await Accounts.ExecuteAsync($"DROP SCHEMA IF EXISTS {QuotedSchema} CASCADE");
             var count = await Accounts.ScalarAsync<long>($"SELECT count(*) FROM pg_namespace WHERE nspname='{Schema}'");
             Console.WriteLine($"TEARDOWN {Schema} remaining={count}");

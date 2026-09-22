@@ -13,6 +13,19 @@ public class InputTests
     internal static SourceDocument Source(string xml) => SourceDocument.Create(Encoding.UTF8.GetBytes(xml), SourceKind.File, TimeProvider.System);
     internal static TimetableInput Input => new(TimeProvider.System);
 
+    [Fact]
+    public void Accepts_parent_day_without_redundant_lesson_day_title_as_in_native_bundle()
+    {
+        var document = XDocument.Parse(Xml);
+        document.Descendants("DayTitle").Remove();
+
+        var snapshot = Input.Validate(Source(document.ToString()));
+
+        Assert.Single(snapshot.Lessons);
+        Assert.Equal(1, snapshot.Lessons[0].Value.DayOfWeek);
+        Assert.Equal("лек Математика", snapshot.Lessons[0].Value.SubjectRaw);
+    }
+
     [Theory]
     [InlineData("valid-a.xml", 2)]
     [InlineData("valid-b.xml", 1)]
@@ -31,7 +44,7 @@ public class InputTests
 
     public static IEnumerable<object[]> InvalidCases()
     {
-        foreach (var node in new[] { "Period", "Weeks", "DayTitle", "WeekCode", "Time", "Discipline" })
+        foreach (var node in new[] { "Period", "Weeks", "WeekCode", "Time", "Discipline" })
             yield return Case("missing " + node, d => d.Descendants(node).First().Remove());
         foreach (var attribute in new[] { "StartYear", "StartMonth", "StartDay", "Title" })
             yield return Case("missing period " + attribute, d => d.Root!.Element("Period")!.Attribute(attribute)!.Remove());

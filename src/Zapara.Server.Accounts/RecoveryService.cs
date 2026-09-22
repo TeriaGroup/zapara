@@ -17,7 +17,7 @@ public sealed class RecoveryService(
     private readonly string schema = configuration.QuotedSchema;
     private readonly AccountPasswordWork passwords = passwords ?? new();
     private readonly IRecoveryDelivery? channel =
-        (environment.IsDevelopment() || environment.IsEnvironment("Testing")) && delivery is not UnconfiguredRecoveryDelivery
+        (delivery is IProductionRecoveryDelivery || environment.IsDevelopment() || environment.IsEnvironment("Testing")) && delivery is not UnconfiguredRecoveryDelivery
             ? delivery : null;
 
     public bool RecoveryEnabled => channel is not null;
@@ -36,6 +36,10 @@ public sealed class RecoveryService(
             var (user, family) = await db.AuthorizeAsync(access);
             await CheckProof(db, proof, user, family, ct);
             await db.ExecuteAsync($"UPDATE {schema}.reauth_proofs SET consumed_at=@p0 WHERE proof_hash=@p1", db.Now, proof);
+            await db.ExecuteAsync($"""
+                UPDATE {schema}.recovery_email_tokens SET consumed_at=@p0
+                WHERE user_id=@p1 AND consumed_at IS NULL
+                """, db.Now, user.User.UserId);
             await db.ExecuteAsync($"""
                 INSERT INTO {schema}.recovery_email_tokens(token_hash,user_id,email,expires_at)
                 VALUES(@p0,@p1,@p2,@p3)
@@ -107,6 +111,10 @@ public sealed class RecoveryService(
                 return true;
             }
             await db.ExecuteAsync($"""
+                UPDATE {schema}.password_reset_tokens SET consumed_at=@p0
+                WHERE user_id=@p1 AND consumed_at IS NULL
+                """, db.Now, current.User.UserId);
+            await db.ExecuteAsync($"""
                 INSERT INTO {schema}.password_reset_tokens(token_hash,user_id,expires_at) VALUES(@p0,@p1,@p2)
                 """, hash, current.User.UserId, db.Now.AddMinutes(15));
             await db.CommitAsync(tx);
@@ -129,19 +137,25 @@ public sealed class RecoveryService(
         {
             await using var tx = await db.BeginAsync();
             Guid userId;
-            await using (var command = db.Command($"""
-                SELECT user_id,expires_at,consumed_at FROM {schema}.password_reset_tokens
-                WHERE token_hash=@p0 FOR UPDATE
-                """, hash))
-            await using (var reader = await command.ExecuteReaderAsync(ct))
+            await using (var peek = db.Command($"SELECT user_id FROM {schema}.password_reset_tokens WHERE token_hash=@p0", hash))
             {
-                if (!await reader.ReadAsync(ct) || !reader.IsDBNull(2) || reader.GetFieldValue<DateTimeOffset>(1) <= db.Now)
+                if (await peek.ExecuteScalarAsync(ct) is not Guid id)
                     throw new AccountServiceException(AccountFailure.InvalidRequest);
-                userId = reader.GetGuid(0);
+                userId = id;
             }
+            // User before token: two confirms must not lock different tokens and then wait on the user.
             if (await db.UserAsync(userId, locked: true) is null)
                 throw new AccountServiceException(AccountFailure.InvalidRequest);
             await db.ExecuteAsync($"SELECT family_id FROM {schema}.session_families WHERE user_id=@p0 ORDER BY family_id FOR UPDATE", userId);
+            await using (var command = db.Command($"""
+                SELECT expires_at,consumed_at FROM {schema}.password_reset_tokens
+                WHERE token_hash=@p0 AND user_id=@p1 FOR UPDATE
+                """, hash, userId))
+            await using (var reader = await command.ExecuteReaderAsync(ct))
+            {
+                if (!await reader.ReadAsync(ct) || !reader.IsDBNull(1) || reader.GetFieldValue<DateTimeOffset>(0) <= db.Now)
+                    throw new AccountServiceException(AccountFailure.InvalidRequest);
+            }
             if (await db.CredentialAsync(userId, true) is null)
                 throw new AccountServiceException(AccountFailure.InvalidRequest);
             var password = passwords.Hash(userId, request.NewPassword, ct);
@@ -150,7 +164,16 @@ public sealed class RecoveryService(
                 UPDATE {schema}.password_credentials SET password_hash=@p1,changed_at=@p2,failed_count=0,
                 failure_window_started_at=NULL,locked_until=NULL WHERE user_id=@p0
                 """, userId, password, db.Now);
+            await using (var consume = db.Command($"""
+                UPDATE {schema}.password_reset_tokens SET consumed_at=@p0
+                WHERE token_hash=@p1 AND user_id=@p2 AND consumed_at IS NULL
+                """, db.Now, hash, userId))
+            {
+                if (await consume.ExecuteNonQueryAsync(ct) != 1)
+                    throw new AccountServiceException(AccountFailure.InvalidRequest);
+            }
             await db.ExecuteAsync($"UPDATE {schema}.password_reset_tokens SET consumed_at=@p0 WHERE user_id=@p1 AND consumed_at IS NULL", db.Now, userId);
+            await db.ExecuteAsync($"UPDATE {schema}.recovery_email_tokens SET consumed_at=@p0 WHERE user_id=@p1 AND consumed_at IS NULL", db.Now, userId);
             await db.RevokeAsync(userId, null, "password_change");
             await db.AuditAsync(userId, null, "password_reset");
             await db.CommitAsync(tx);

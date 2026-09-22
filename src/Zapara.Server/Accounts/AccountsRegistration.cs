@@ -21,9 +21,12 @@ public static class AccountsRegistration
         });
         services.AddSingleton<AccountPasswordWork>();
         services.AddSingleton<AccountService>();
+        services.AddSingleton<IRecoverySmtpTransport, MailKitRecoveryTransport>();
         services.AddSingleton<IRecoveryDelivery>(provider =>
         {
             var environment = provider.GetRequiredService<IHostEnvironment>();
+            var smtp = SmtpRecoveryConfiguration.Read(provider.GetRequiredService<IConfiguration>());
+            if (smtp is not null) return new SmtpRecoveryDelivery(smtp, provider.GetRequiredService<IRecoverySmtpTransport>());
             return environment.IsDevelopment() || environment.IsEnvironment("Testing")
                 ? new TestingRecoverySink()
                 : UnconfiguredRecoveryDelivery.Instance;

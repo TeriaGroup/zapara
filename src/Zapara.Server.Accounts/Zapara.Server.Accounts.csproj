@@ -8,10 +8,13 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Npgsql" Version="8.0.9" />
+    <PackageReference Include="MailKit" Version="4.18.0" />
     <ProjectReference Include="..\Zapara.Contracts\Zapara.Contracts.csproj" />
     <EmbeddedResource Include="Sql\001_accounts.sql" />
     <EmbeddedResource Include="Sql\002_external_login.sql" />
     <EmbeddedResource Include="Sql\003_recovery.sql" />
     <EmbeddedResource Include="Sql\004_lifecycle.sql" />
+    <EmbeddedResource Include="Sql\005_web_sessions.sql" />
+    <EmbeddedResource Include="Sql\006_web_push.sql" />
   </ItemGroup>
 </Project>

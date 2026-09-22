@@ -24,6 +24,8 @@ public static class CommunitiesRegistration
         });
         services.AddSingleton<IAccountUnitOfWork>(provider => provider.GetRequiredService<AccountService>());
         services.AddSingleton<CommunityService>();
+        services.AddHostedService<MessengerSchemaService>();
+        services.AddHostedService<SystemBallotService>();
         services.AddSingleton<IAccountLifecycleParticipant, CommunityLifecycleParticipant>();
         return services;
     }

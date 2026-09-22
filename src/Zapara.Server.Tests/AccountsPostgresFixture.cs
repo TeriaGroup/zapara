@@ -36,7 +36,7 @@ public sealed class AccountsPostgresFixture : IAsyncDisposable
             throw new InvalidOperationException("Only approved local fixture database is allowed.");
     }
 
-    public static async Task<AccountsPostgresFixture> CreateAsync(Action<string> receipt, bool initialize = false, int targetVersion = 4)
+    public static async Task<AccountsPostgresFixture> CreateAsync(Action<string> receipt, bool initialize = false, int targetVersion = 6)
     {
         var db = new AccountsPostgresFixture(receipt);
         try

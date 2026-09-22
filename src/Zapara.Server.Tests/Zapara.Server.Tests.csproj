@@ -20,6 +20,8 @@
     <ProjectReference Include="..\Vograph.Timetable\Vograph.Timetable.csproj" />
     <ProjectReference Include="..\Zapara.Server.Timetable\Zapara.Server.Timetable.csproj" />
     <ProjectReference Include="..\Zapara.Server\Zapara.Server.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Social\Zapara.Server.Social.csproj" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
     <ProjectReference Include="..\Zapara.Ingest\Zapara.Ingest.csproj" />
   </ItemGroup>
   <ItemGroup>

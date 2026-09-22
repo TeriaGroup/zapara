@@ -56,7 +56,7 @@ public sealed class OAuthUpgradeTests
             Assert.Equal(session.User.UserId, (await accounts.AuthenticateAsync(session.AccessToken, Ct)).User.UserId);
             Assert.Equal(200, (await service.MutateAsync(session.AccessToken, request, Ct)).Status);
             Assert.Equal(1, (await service.MetadataAsync(session.AccessToken, Ct)).CurrentSequence);
-            Assert.Equal(4, await db.ScalarAsync<int>($"SELECT max(version) FROM {db.QuotedSchema}.schema_migrations"));
+            Assert.Equal(6, await db.ScalarAsync<int>($"SELECT max(version) FROM {db.QuotedSchema}.schema_migrations"));
         }
         finally
         {
@@ -70,7 +70,7 @@ public sealed class OAuthUpgradeTests
     [InlineData("ALTER TABLE __SCHEMA__.oauth_transactions DROP CONSTRAINT oauth_transactions_native_challenge_check")]
     [InlineData("DELETE FROM __SCHEMA__.schema_migrations WHERE version=2")]
     [InlineData("UPDATE __SCHEMA__.schema_migrations SET checksum='corrupted' WHERE version=2")]
-    [InlineData("INSERT INTO __SCHEMA__.schema_migrations VALUES(5,'future',CURRENT_TIMESTAMP)")]
+    [InlineData("INSERT INTO __SCHEMA__.schema_migrations VALUES(7,'future',CURRENT_TIMESTAMP)")]
     public async Task Latest_schema_drift_and_history_are_rejected_without_repair(string sql)
     {
         await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);

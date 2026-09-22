@@ -90,12 +90,12 @@ public sealed class LifecycleMigrationTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public async Task Default_ensure_installs_v4()
+    public async Task Default_ensure_installs_latest_with_lifecycle_tables()
     {
         await using var db = await AccountsPostgresFixture.CreateAsync(output.WriteLine);
         await db.Migrations.EnsureAsync(Ct);
-        Assert.Equal(4, await db.ScalarAsync<int>($"SELECT max(version) FROM {db.QuotedSchema}.schema_migrations"));
-        Assert.Equal(AccountsSchemaShape.LifecycleFingerprint, await db.FingerprintAsync());
+        Assert.Equal(6, await db.ScalarAsync<int>($"SELECT max(version) FROM {db.QuotedSchema}.schema_migrations"));
+        Assert.Equal(AccountsSchemaShape.PushFingerprint, await db.FingerprintAsync());
         Assert.Equal(3L, await db.ScalarAsync<long>($"SELECT count(*) FROM pg_tables WHERE schemaname='{db.Schema}' AND tablename IN ('export_jobs','deletion_jobs','deletion_manifests')"));
     }
 }

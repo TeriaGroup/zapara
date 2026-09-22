@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Zapara.Contracts.Accounts;
 using Zapara.Contracts.Accounts.ExternalRequests;
 using Zapara.Contracts.Accounts.ExternalResponses;
@@ -45,6 +47,13 @@ public sealed partial class ExternalAuthService
             !CryptographicOperations.FixedTimeEquals(row.HandoffHash, ExternalSecrets.Hash(request.HandoffCode))) throw ExternalAuthException.Invalid();
     }
 
+    private static bool RegistrationOpen(IConfiguration configuration, IHostEnvironment environment)
+    {
+        var raw = configuration["Accounts:RegistrationEnabled"];
+        if (raw is null) return environment.IsDevelopment() || environment.IsEnvironment("Testing");
+        return bool.TryParse(raw, out var enabled) && enabled;
+    }
+
     private Task IdentityLock(AccountRepository db, string provider, string subject)
         => db.ExecuteAsync("SELECT pg_advisory_xact_lock(@p0)", BinaryPrimitives.ReadInt64BigEndian(
             ExternalSecrets.Hash(schema + "\nidentity\n" + provider + "\n" + subject)));
@@ -61,6 +70,8 @@ public sealed partial class ExternalAuthService
         var owner = await IdentityOwner(db, row.Provider, row.Subject!, ct);
         AccountRow user;
         if (owner is not null) user = await db.UserAsync(owner, locked: true) ?? throw ExternalAuthException.Invalid();
+        else if (hostConfiguration is not null && hostEnvironment is not null && !RegistrationOpen(hostConfiguration, hostEnvironment))
+            throw ExternalAuthException.Invalid();
         else
         {
             var id = Guid.NewGuid();

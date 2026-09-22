@@ -7,13 +7,17 @@ namespace Zapara.Server.Accounts;
 internal static class AccountsSchemaShape
 {
     // PostgreSQL 16 catalog receipt, excluding OIDs, owners, data, and schema name.
-    internal const string ExpectedFingerprint = "162d102cb494d8f357510ecbf5b187e6ed2ba278fdae0c75b289103ef4d16edd";
+    // Native pretty deparsing keeps Boolean precedence/literals while removing AND
+    // grouping differences introduced by pg_dump/pg_restore. Migration SQL is unchanged.
+    internal const string ExpectedFingerprint = "48b87b1c78c73ce20f806e347fe9872cd3e4aa19b1e90329c4da497a8aebfd0a";
 
-    internal const string ExternalFingerprint = "1114fe37d56ed7d96ed43746bfada049756f69803149b21263863b6bfa282804";
+    internal const string ExternalFingerprint = "03822733af666d21ffbfd3dcd50adeb0a1bd552547fb43e93fabaea4ed4441b2";
 
-    internal const string RecoveryFingerprint = "5988e7f88eada2dd324bc721d00d028ecb58ae30b4c1ec82ca30f5f92ebb9887";
+    internal const string RecoveryFingerprint = "c85622246eefea39f2d870999e1b3a67d7871050b7a2ec36409d9ed9a34402a7";
 
-    internal const string LifecycleFingerprint = "281c696405ffbef85a4f29353a8f95918100eea376b11f3a99922cecabb8daa8";
+    internal const string LifecycleFingerprint = "45e2f35d493e4ca86f5f225953fcee99db4990d3596e407a281d48f477adac98";
+    internal const string WebFingerprint = "c76e954c44b11d1a01749c896790f995e8774f990d8a8cbb9d22f2dde04dc08e";
+    internal const string PushFingerprint = "21c496f50e0bc3fe75b690080572dc0b7aa1b3319cb6f5d0fc227f46aa31c608";
 
     internal static async Task VerifyAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string schema, CancellationToken ct, int version = 1)
     {
@@ -24,6 +28,8 @@ internal static class AccountsSchemaShape
             2 => ExternalFingerprint,
             3 => RecoveryFingerprint,
             4 => LifecycleFingerprint,
+            5 => WebFingerprint,
+            6 => PushFingerprint,
             _ => throw AccountsMigrations.InvalidSchema()
         };
         if (fingerprint != expected) throw AccountsMigrations.InvalidSchema();
@@ -51,7 +57,7 @@ internal static class AccountsSchemaShape
                 LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
                 WHERE n.nspname=@schema AND a.attnum>0 AND NOT a.attisdropped AND c.relkind='r'
               UNION ALL
-              SELECT 'constraint|'||c.relname||'|'||k.conname||'|'||pg_get_constraintdef(k.oid)||'|'||k.convalidated
+              SELECT 'constraint|'||c.relname||'|'||k.conname||'|'||pg_get_constraintdef(k.oid,true)||'|'||k.convalidated
                 FROM pg_constraint k JOIN pg_class c ON c.oid=k.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=@schema
               UNION ALL
               SELECT 'index|'||c.relname||'|'||pg_get_indexdef(i.indexrelid)||'|'||i.indisvalid

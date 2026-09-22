@@ -5,6 +5,19 @@ namespace Zapara.Server.Communities;
 
 internal sealed partial class CommunityRepository
 {
+    internal async Task<OwnJoinRequestResponse> GetOwnJoinRequestAsync(Guid communityId)
+    {
+        await LockCommunityAsync(communityId);
+        await using var command = Command($"""
+            SELECT request_id,community_id,user_id,status,created_at
+            FROM {Schema}.join_requests WHERE community_id=@p0 AND user_id=@p1
+            ORDER BY (status='pending') DESC,created_at DESC,request_id DESC LIMIT 1
+            """, communityId, UserId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        return new(await reader.ReadAsync(ct) ? new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2),
+            reader.GetString(3), reader.GetFieldValue<DateTimeOffset>(4)) : null);
+    }
+
     internal async Task<JoinRequestResponse> RequestJoinAsync(Guid communityId)
     {
         await LockCommunityAsync(communityId);
@@ -46,7 +59,7 @@ internal sealed partial class CommunityRepository
         => ResolveJoinAsync(communityId, requestId, accepted: false);
     private async Task<JoinRequestResponse> ResolveJoinAsync(Guid communityId, Guid requestId, bool accepted)
     {
-        await RequireStaffAsync(communityId);
+        await RequireJoinPowerAsync(communityId);
         Guid userId;
         DateTimeOffset createdAt;
         await using (var command = Command($"""

@@ -18,7 +18,7 @@ public sealed class OAuthMigrationTests(ITestOutputHelper output)
     public async Task Latest_accounts_migration_installs_external_login_tables()
     {
         await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);
-        Assert.Equal(4, await db.ScalarAsync<int>($"SELECT max(version) FROM {db.QuotedSchema}.schema_migrations"));
+        Assert.Equal(6, await db.ScalarAsync<int>($"SELECT max(version) FROM {db.QuotedSchema}.schema_migrations"));
         Assert.Equal(3L, await db.ScalarAsync<long>($"SELECT count(*) FROM pg_tables WHERE schemaname='{db.Schema}' AND tablename IN ('external_identities','oauth_transactions','reauth_proofs')"));
     }
 }

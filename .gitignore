@@ -21,11 +21,14 @@ android/app/build/
 android/.gradle/
 android/.kotlin/
 android/local.properties
+web/node_modules/
 .codegraph/
 /app/
 docs/a4_map.png
 
 .opencode/
+.playwright-mcp/
+.debug-journal.md
 
 # Local working plans for agents (OpenCode, Claude) - not part of the repository
 docs/superpowers/

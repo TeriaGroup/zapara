@@ -70,18 +70,17 @@ public sealed class PlatformReady
     public async Task<PlatformReadyReport> CheckAsync(CancellationToken cancellationToken = default)
     {
         var modules = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var (name, probe) in new (string Name, Func<CancellationToken, Task<string>> Probe)[]
+        var probes = new (string Name, Func<CancellationToken, Task<string>> Probe)[]
                  {
                      ("timetable", timetable),
                      ("accounts", accounts),
                      ("sync", sync),
                      ("communities", communities),
                      ("admin", admin)
-                 })
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            modules[name] = Normalize(await probe(cancellationToken));
-        }
+                 };
+        cancellationToken.ThrowIfCancellationRequested();
+        var values = await Task.WhenAll(probes.Select(async probe => Normalize(await probe.Probe(cancellationToken))));
+        for (var index = 0; index < probes.Length; index++) modules[probes[index].Name] = values[index];
 
         return new PlatformReadyReport(new ReadOnlyDictionary<string, string>(modules));
     }

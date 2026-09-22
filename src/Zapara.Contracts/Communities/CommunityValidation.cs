@@ -18,7 +18,13 @@ public static class CommunityValidation
     public static string Name(string? value) => Text(value, 80);
     public static string Description(string? value) => value is null ? "" : Text(value, 2000, true);
     public static string Title(string? value) => Text(value, 200);
-    public static string Body(string? value) => Text(value, 8000);
+    public static string Body(string? value) => Text(value?.Replace("\r\n", "\n", StringComparison.Ordinal), 8000, allowFormatting: true);
+    public static string Message(string? value)
+    {
+        var text = Text(value?.Replace("\r\n", "\n", StringComparison.Ordinal), 2000, allowFormatting: true);
+        if (string.IsNullOrWhiteSpace(text)) throw Invalid();
+        return text;
+    }
     public static string Question(string? value) => Text(value, 400);
     public static string Option(string? value) => Text(value, 80);
     public static IReadOnlyList<string> Options(IReadOnlyList<string>? values)
@@ -33,7 +39,7 @@ public static class CommunityValidation
         }
         return Array.AsReadOnly(options);
     }
-    public static string Text(string? value, int maximum, bool allowEmpty = false)
+    public static string Text(string? value, int maximum, bool allowEmpty = false, bool allowFormatting = false)
     {
         if (value is null || value.Length > maximum * 2) throw Invalid();
         var remaining = value.AsSpan();
@@ -41,7 +47,7 @@ public static class CommunityValidation
         while (!remaining.IsEmpty)
         {
             if (Rune.DecodeFromUtf16(remaining, out var rune, out var consumed) != OperationStatus.Done ||
-                rune.Value == 0 || Rune.IsControl(rune)) throw Invalid();
+                rune.Value == 0 || (Rune.IsControl(rune) && !(allowFormatting && rune.Value is 9 or 10))) throw Invalid();
             remaining = remaining[consumed..];
             count++;
         }

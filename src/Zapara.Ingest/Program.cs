@@ -41,16 +41,19 @@ public static class Program
                 await store.EnsureSchemaAsync(ct);
                 return CliOutput.Write(new IngestResult(0));
             }
-            var result = args[1] == "--fetch"
-                ? await service.IngestFetchResultAsync(http, ct)
-                : await service.IngestFileResultAsync(args[2], ct);
+            var result = args[1] switch
+            {
+                "--refresh" => await service.IngestRefreshResultAsync(http, TimeProvider.System, ct),
+                "--fetch" => await service.IngestFetchResultAsync(http, ct),
+                _ => await service.IngestFileResultAsync(args[2], ct)
+            };
             return CliOutput.Write(result);
         }
         catch (StoreException error) { return CliOutput.Write(IngestResult.Failed(error.FailureCode, error.AttemptId)); }
         catch (OperationCanceledException) { return CliOutput.Write(IngestResult.Failed(FailureCode.Cancelled)); }
     }
 
-    private static bool ValidArguments(string[] args) => args is ["db-init"] or ["ingest", "--fetch"]
+    private static bool ValidArguments(string[] args) => args is ["db-init"] or ["ingest", "--fetch"] or ["ingest", "--refresh"]
         || args is ["ingest", "--file", var path] && !string.IsNullOrWhiteSpace(path)
             && !path.StartsWith("--", StringComparison.Ordinal);
 

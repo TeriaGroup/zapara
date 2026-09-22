@@ -7,10 +7,24 @@ namespace Zapara.Server.Accounts;
 
 public sealed class AccountsMigrations(AccountsDataSource dataSource, AccountsConfiguration configuration)
 {
+    public const int CurrentVersion = 6;
+
+    /// <summary>Read-only runtime readiness: historical but valid migration targets are not the current platform.</summary>
+    public static async Task VerifyCurrentPreparedSchemaAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
+        string schema, CancellationToken ct = default)
+    {
+        await VerifyPreparedSchemaAsync(connection, transaction, schema, ct);
+        var quoted = new NpgsqlCommandBuilder().QuoteIdentifier(schema);
+        await using var command = new NpgsqlCommand($"SELECT max(version) FROM {quoted}.schema_migrations", connection, transaction);
+        if (await command.ExecuteScalarAsync(ct) is not int version || version != CurrentVersion) throw InvalidSchema();
+    }
+
     public static string BaselineChecksum => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(BaselineSql()))).ToLowerInvariant();
     public static string ExternalChecksum => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(MigrationSql(2)))).ToLowerInvariant();
     public static string RecoveryChecksum => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(MigrationSql(3)))).ToLowerInvariant();
     public static string LifecycleChecksum => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(MigrationSql(4)))).ToLowerInvariant();
+    public static string WebChecksum => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(MigrationSql(5)))).ToLowerInvariant();
+    public static string PushChecksum => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(MigrationSql(6)))).ToLowerInvariant();
 
     public static async Task VerifyPreparedSchemaAsync(NpgsqlConnection connection,
         NpgsqlTransaction transaction, string schema, CancellationToken ct = default)
@@ -25,6 +39,8 @@ public sealed class AccountsMigrations(AccountsDataSource dataSource, AccountsCo
             AccountsSchemaShape.ExternalFingerprint => 2,
             AccountsSchemaShape.RecoveryFingerprint => 3,
             AccountsSchemaShape.LifecycleFingerprint => 4,
+            AccountsSchemaShape.WebFingerprint => 5,
+            AccountsSchemaShape.PushFingerprint => 6,
             _ => throw InvalidSchema()
         };
         var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(schema);
@@ -43,8 +59,18 @@ public sealed class AccountsMigrations(AccountsDataSource dataSource, AccountsCo
                 version = 3;
                 if (await reader.ReadAsync(ct))
                 {
-                    if (reader.GetInt32(0) != 4 || reader.GetString(1) != LifecycleChecksum || await reader.ReadAsync(ct)) throw InvalidSchema();
+                    if (reader.GetInt32(0) != 4 || reader.GetString(1) != LifecycleChecksum) throw InvalidSchema();
                     version = 4;
+                    if (await reader.ReadAsync(ct))
+                    {
+                        if (reader.GetInt32(0) != 5 || reader.GetString(1) != WebChecksum) throw InvalidSchema();
+                        version = 5;
+                        if (await reader.ReadAsync(ct))
+                        {
+                            if (reader.GetInt32(0) != 6 || reader.GetString(1) != PushChecksum || await reader.ReadAsync(ct)) throw InvalidSchema();
+                            version = 6;
+                        }
+                    }
                 }
             }
         }
@@ -52,9 +78,9 @@ public sealed class AccountsMigrations(AccountsDataSource dataSource, AccountsCo
         if (version != shapeVersion) throw InvalidSchema();
     }
 
-    public async Task EnsureAsync(CancellationToken ct = default, int targetVersion = 4)
+    public async Task EnsureAsync(CancellationToken ct = default, int targetVersion = CurrentVersion)
     {
-        if (targetVersion is not (1 or 2 or 3 or 4)) throw new ArgumentOutOfRangeException(nameof(targetVersion));
+        if (targetVersion is not (1 or 2 or 3 or 4 or 5 or 6)) throw new ArgumentOutOfRangeException(nameof(targetVersion));
         await using var connection = dataSource.CreateMigrationConnection();
         await connection.OpenAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, ct);
@@ -116,6 +142,26 @@ public sealed class AccountsMigrations(AccountsDataSource dataSource, AccountsCo
             record.Parameters.AddWithValue("checksum", LifecycleChecksum);
             await record.ExecuteNonQueryAsync(ct);
             await VerifyPreparedSchemaAsync(connection, transaction, configuration.Schema, ct);
+            version = 4;
+        }
+        if (version == 4 && targetVersion >= 5)
+        {
+            await using var migration = new NpgsqlCommand(MigrationSql(5).Replace("__SCHEMA__", configuration.QuotedSchema, StringComparison.Ordinal), connection, transaction);
+            await migration.ExecuteNonQueryAsync(ct);
+            await using var record = new NpgsqlCommand($"INSERT INTO {configuration.QuotedSchema}.schema_migrations VALUES (5,@checksum,CURRENT_TIMESTAMP)", connection, transaction);
+            record.Parameters.AddWithValue("checksum", WebChecksum);
+            await record.ExecuteNonQueryAsync(ct);
+            await VerifyPreparedSchemaAsync(connection, transaction, configuration.Schema, ct);
+            version = 5;
+        }
+        if (version == 5 && targetVersion >= 6)
+        {
+            await using var migration = new NpgsqlCommand(MigrationSql(6).Replace("__SCHEMA__", configuration.QuotedSchema, StringComparison.Ordinal), connection, transaction);
+            await migration.ExecuteNonQueryAsync(ct);
+            await using var record = new NpgsqlCommand($"INSERT INTO {configuration.QuotedSchema}.schema_migrations VALUES (6,@checksum,CURRENT_TIMESTAMP)", connection, transaction);
+            record.Parameters.AddWithValue("checksum", PushChecksum);
+            await record.ExecuteNonQueryAsync(ct);
+            await VerifyPreparedSchemaAsync(connection, transaction, configuration.Schema, ct);
         }
         await transaction.CommitAsync(ct);
     }
@@ -130,6 +176,8 @@ public sealed class AccountsMigrations(AccountsDataSource dataSource, AccountsCo
             2 => "Zapara.Server.Accounts.Sql.002_external_login.sql",
             3 => "Zapara.Server.Accounts.Sql.003_recovery.sql",
             4 => "Zapara.Server.Accounts.Sql.004_lifecycle.sql",
+            5 => "Zapara.Server.Accounts.Sql.005_web_sessions.sql",
+            6 => "Zapara.Server.Accounts.Sql.006_web_push.sql",
             _ => throw new ArgumentOutOfRangeException(nameof(version))
         };
         using var stream = typeof(AccountsMigrations).Assembly.GetManifestResourceStream(name)

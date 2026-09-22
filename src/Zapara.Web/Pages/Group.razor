@@ -1,0 +1,279 @@
+@page "/group"
+@using Zapara.Contracts.Communities
+@implements IDisposable
+@inject BrowserApiClient Api
+@inject BrowserCommunityService Communities
+@inject WebAppState State
+@inject IJSRuntime Js
+<PageTitle>Группа — Запара</PageTitle>
+<section class="page community-page">
+    <div class="page-heading"><div><h1>Группа</h1><p class="muted">Одногруппники, роли и чаты</p></div></div>
+    <p class="community-disclaimer">Роли старосты и куратора действуют только внутри Запары и не подтверждены университетом.</p>
+    @if (!Api.Session.Authenticated)
+    {
+        <div class="empty-state"><Icon Name="chat" /><h2>Группа открывается с аккаунтом</h2><p>Войдите, вступите в сообщество своей учебной группы. Появится общий чат и список одногруппников.</p><a class="button primary" href="settings">Перейти к аккаунту</a></div>
+    }
+    else if (home is null)
+    {
+        @if (error is not null) { <p class="community-message error" role="alert">@error</p> }
+        @if (loading) { <div class="skeleton-card" role="status">Загружаем группы…</div> }
+        else if (mine.Length == 0) { <div class="empty-state"><Icon Name="community" /><h2>Вы ещё не в группе</h2><p>Найдите сообщество своей учебной группы и дождитесь, пока староста или куратор примет заявку.</p><a class="button" href="community">К сообществам</a></div> }
+        else
+        {
+            <div class="community-list">@foreach (var item in mine)
+            {
+                <article class="card community-list-card"><header class="community-content-heading"><h2>@item.Name</h2><span class="community-status">@Role(item.Role)</span></header><button class="button primary" @onclick="() => OpenHome(item.CommunityId)">Открыть группу</button></article>
+            }</div>
+        }
+    }
+    else
+    {
+        <header class="community-detail-heading">
+            <button class="icon-button outlined" aria-label="К списку групп" @onclick="Back"><Icon Name="left" /></button>
+            <div><h2>@(home.GroupName ?? home.Name)</h2><span class="community-status role-@RoleKey(MyRole)">@Role(MyRole)</span></div>
+            @if (mine.Length > 1)
+            {
+                <label class="field group-switcher"><span class="caption">Другая группа</span><select @bind="picked" @bind:after="SwitchCommunity"><option value="">Выберите</option>@foreach (var item in mine) { <option value="@item.CommunityId">@item.Name</option> }</select></label>
+            }
+        </header>
+        <div class="group-switch" aria-label="Список и чат">
+            <button class="@(showPeople ? "active" : "")" aria-pressed="@showPeople" @onclick="() => showPeople = true"><span>Одногруппники</span></button>
+            <button class="@(!showPeople ? "active" : "")" aria-pressed="@(!showPeople)" @onclick="() => showPeople = false"><span>@(directTitle ?? "Чат группы")</span>@if (OpenUnread > 0) { <span class="chat-unread">@OpenUnread</span> }</button>
+        </div>
+        <div class="group-layout @(showPeople ? "show-people" : "show-chat")">
+            <section class="card group-roster">
+                <h3>Одногруппники · @home.Classmates.Count</h3>
+                <button class="group-person @(directTitle is null ? "active" : "")" @onclick="BackToGroup">
+                    <span class="group-person-copy"><strong>Чат группы</strong>@if (home.GroupChat.LastBody is not null) { <span class="caption muted">@home.GroupChat.LastBody</span> }</span>
+                    @if (home.GroupChat.Unread > 0) { <span class="chat-unread">@home.GroupChat.Unread</span> }
+                </button>
+                @foreach (var person in home.Classmates)
+                {
+                    <button class="group-person @(person.Self ? "self" : "")" disabled="@person.Self" @onclick="() => OpenDirect(person)">
+                        <span class="group-person-copy"><strong>@(person.DisplayName ?? person.Username)</strong><span class="caption muted">@@@person.Username</span></span>
+                        <span class="community-status role-@RoleKey(person.Role)">@Role(person.Role)</span>
+                    </button>
+                }
+                @if (home.Directs.Count > 0)
+                {
+                    <h3 class="community-updated">Личные чаты</h3>
+                    @foreach (var chat in home.Directs)
+                    {
+                        <button class="group-person @(conversationId == chat.ConversationId ? "active" : "")" @onclick="() => OpenConversation(chat.ConversationId, chat.Title, false)">
+                            <span class="group-person-copy"><strong>@chat.Title</strong>@if (chat.LastBody is not null) { <span class="caption muted">@chat.LastBody</span> }</span>
+                            @if (chat.Unread > 0) { <span class="chat-unread">@chat.Unread</span> } else { <Icon Name="chat" /> }
+                        </button>
+                    }
+                }
+            </section>
+            <section class="card group-chat">
+                <h3>@(directTitle ?? "Чат группы")</h3>
+                @if (directTitle is not null) { <button class="button chat-back" @onclick="BackToGroup">К чату группы</button> }
+                @if (hasMore) { <button class="button chat-older" disabled="@busy" @onclick="LoadOlder">Раньше</button> }
+                <div class="chat-log" @ref="log">
+                    @if (messages.Count == 0) { <p class="community-empty">Пока нет сообщений. Напишите первое.</p> }
+                    @foreach (var message in messages)
+                    {
+                        <article class="chat-bubble @(message.SenderId == me ? "mine" : "")">@if (message.SenderId != me) { <strong>@message.SenderName</strong> }<p class="community-body">@message.Body</p><span class="caption muted">@message.CreatedAt.ToLocalTime().ToString("dd.MM HH:mm")</span></article>
+                    }
+                </div>
+                <form class="chat-compose" @onsubmit="Send" @onsubmit:preventDefault>
+                    <input @bind="draft" @bind:event="oninput" maxlength="2000" placeholder="Сообщение" aria-label="Сообщение" />
+                    <button class="button primary" type="submit" disabled="@(busy || string.IsNullOrWhiteSpace(draft))">Отправить</button>
+                </form>
+                @if (error is not null) { <p class="community-inline-error" role="alert">@error</p> }
+            </section>
+        </div>
+    }
+</section>
+@code {
+    private CommunityResponse[] mine = [];
+    private GroupHomeResponse? home;
+    private List<ChatMessageResponse> messages = [];
+    private Guid? conversationId;
+    private string? directTitle;
+    private string draft = "";
+    private string picked = "";
+    private string? error;
+    private bool loading, busy, hasMore, showPeople, stick;
+    private int chatGeneration;
+    private Guid me;
+    private ElementReference log;
+    private IJSObjectReference? chat;
+    private PeriodicTimer? timer;
+    private CancellationTokenSource? loop;
+    private string? MyRole => home?.Classmates.FirstOrDefault(person => person.Self)?.Role;
+    private int OpenUnread => directTitle is null ? home?.GroupChat.Unread ?? 0 : home?.Directs.FirstOrDefault(chat => chat.ConversationId == conversationId)?.Unread ?? 0;
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Api.Session.Authenticated) return;
+        me = Api.Session.User?.UserId ?? Guid.Empty;
+        await Communities.LoadAsync(State.GroupId);
+        mine = Communities.Communities.Where(item => item.Role is not null).ToArray();
+        var groupName = State.Groups.FirstOrDefault(group => group.Id == State.GroupId)?.Name;
+        var preferred = mine.FirstOrDefault(item => item.Name == groupName || item.Name == "Группа " + groupName) ?? (mine.Length == 1 ? mine[0] : null);
+        if (preferred is not null) await OpenHome(preferred.CommunityId);
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!stick) return;
+        stick = false;
+        try
+        {
+            chat ??= await Js.InvokeAsync<IJSObjectReference>("import", "./js/chat.js");
+            await chat.InvokeVoidAsync("tail", log);
+        }
+        catch (InvalidOperationException) { }
+        catch (JSException) { }
+    }
+    private async Task OpenHome(Guid communityId)
+    {
+        error = null; loading = true; showPeople = false;
+        try
+        {
+            home = await Api.GetAsync<GroupHomeResponse>("communities/" + communityId + "/home");
+            directTitle = null;
+            await OpenConversation(home.GroupChat.ConversationId, null, true);
+        }
+        catch (BrowserApiException exception) { error = exception.Message; home = null; }
+        finally { loading = false; }
+    }
+    private async Task SwitchCommunity()
+    {
+        if (Guid.TryParse(picked, out var id)) await OpenHome(id);
+        picked = "";
+    }
+    private async Task OpenDirect(ClassmateResponse person)
+    {
+        if (home is null || person.Self) return;
+        error = null; busy = true; showPeople = false;
+        try
+        {
+            var conversation = await Api.SendAsync<ConversationResponse>(HttpMethod.Post, "communities/direct", new OpenDirectRequest(home.CommunityId, person.UserId));
+            await OpenConversation(conversation.ConversationId, person.DisplayName ?? person.Username, false);
+            home = await Api.GetAsync<GroupHomeResponse>("communities/" + home.CommunityId + "/home");
+        }
+        catch (BrowserApiException exception) { error = exception.Message; }
+        finally { busy = false; }
+    }
+    private async Task OpenConversation(Guid id, string? title, bool group)
+    {
+        var generation = ++chatGeneration;
+        busy = false;
+        conversationId = id;
+        directTitle = group ? null : title;
+        messages = [];
+        hasMore = false;
+        error = null;
+        try
+        {
+            await LoadLatest(generation, id);
+            if (!SameChat(generation, id)) return;
+            try { await Api.SendAsync<ConversationResponse>(HttpMethod.Post, "communities/conversations/" + id.ToString("D") + "/read"); }
+            catch (BrowserApiException exception) { if (SameChat(generation, id)) error = exception.Message; }
+            if (SameChat(generation, id)) RestartLoop(generation, id);
+        }
+        catch (BrowserApiException exception) { if (SameChat(generation, id)) error = exception.Message; }
+    }
+    private async Task BackToGroup()
+    {
+        if (home is null) return;
+        showPeople = false;
+        await OpenConversation(home.GroupChat.ConversationId, null, true);
+    }
+    private void Back() { chatGeneration++; StopLoop(); home = null; messages = []; conversationId = null; directTitle = null; error = null; }
+    private bool SameChat(int generation, Guid id) => generation == chatGeneration && conversationId == id;
+    private async Task LoadLatest(int generation, Guid id)
+    {
+        var page = await Api.GetAsync<ChatPageResponse>("communities/conversations/" + id.ToString("D") + "/messages");
+        if (!SameChat(generation, id)) return;
+        messages = page.Messages.Where(item => item.ConversationId == id).ToList();
+        hasMore = page.HasMore;
+        stick = true;
+    }
+    private async Task LoadOlder()
+    {
+        if (conversationId is not { } id || messages.Count == 0) return;
+        var generation = chatGeneration;
+        var cursor = messages[0].MessageId;
+        busy = true; error = null;
+        try
+        {
+            var page = await Api.GetAsync<ChatPageResponse>("communities/conversations/" + id.ToString("D") + "/messages?before=" + cursor.ToString("D"));
+            if (!SameChat(generation, id) || messages.Count == 0 || messages[0].MessageId != cursor) return;
+            hasMore = page.HasMore;
+            var seen = messages.Select(item => item.MessageId).ToHashSet();
+            messages.InsertRange(0, page.Messages.Where(item => item.ConversationId == id && seen.Add(item.MessageId)));
+        }
+        catch (BrowserApiException exception) { if (SameChat(generation, id)) error = exception.Message; }
+        finally { if (generation == chatGeneration) busy = false; }
+    }
+    private async Task Pull(int generation, Guid id)
+    {
+        var cursor = messages.Count == 0 || !SameChat(generation, id) ? (Guid?)null : messages[^1].MessageId;
+        if (!SameChat(generation, id)) return;
+        var path = "communities/conversations/" + id.ToString("D") + "/messages" + (cursor is null ? "" : "?after=" + cursor.Value.ToString("D"));
+        var page = await Api.GetAsync<ChatPageResponse>(path);
+        if (!SameChat(generation, id)) return;
+        if (messages.Count == 0)
+        {
+            messages = page.Messages.Where(item => item.ConversationId == id).ToList();
+            hasMore = page.HasMore;
+            stick = messages.Count > 0;
+            return;
+        }
+        var seen = messages.Select(item => item.MessageId).ToHashSet();
+        var added = false;
+        foreach (var item in page.Messages)
+            if (item.ConversationId == id && seen.Add(item.MessageId)) { messages.Add(item); added = true; }
+        if (!added) return;
+        messages.Sort((left, right) =>
+        {
+            var byTime = left.CreatedAt.CompareTo(right.CreatedAt);
+            return byTime != 0 ? byTime : left.MessageId.CompareTo(right.MessageId);
+        });
+        stick = true;
+    }
+    private async Task Send()
+    {
+        if (conversationId is not { } id || string.IsNullOrWhiteSpace(draft)) return;
+        var generation = chatGeneration;
+        busy = true; error = null;
+        try
+        {
+            var message = await Api.SendAsync<ChatMessageResponse>(HttpMethod.Post, "communities/conversations/" + id.ToString("D") + "/messages", new SendMessageRequest(draft.Trim()));
+            if (!SameChat(generation, id)) return;
+            draft = "";
+            if (message.ConversationId == id && messages.All(item => item.MessageId != message.MessageId)) messages.Add(message);
+            stick = true;
+        }
+        catch (BrowserApiException exception) { if (SameChat(generation, id)) error = exception.Message; }
+        finally { if (SameChat(generation, id)) busy = false; }
+    }
+    private void RestartLoop(int generation, Guid id)
+    {
+        StopLoop();
+        loop = new();
+        var token = loop.Token;
+        timer = new(TimeSpan.FromSeconds(4));
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (await timer.WaitForNextTickAsync(token))
+                {
+                    await Pull(generation, id);
+                    if (!SameChat(generation, id)) return;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (BrowserApiException exception) { if (SameChat(generation, id)) { error = exception.Message; await InvokeAsync(StateHasChanged); } }
+            catch (ObjectDisposedException) { }
+        });
+    }
+    private void StopLoop() { loop?.Cancel(); timer?.Dispose(); loop = null; timer = null; }
+    private static string Role(string? role) => role switch { "headman" => "Староста", "curator" => "Куратор", "member" => "Участник", _ => "Участник" };
+    private static string RoleKey(string? role) => role is "headman" or "curator" or "member" ? role : "member";
+    public void Dispose() { chatGeneration++; StopLoop(); chat?.DisposeAsync(); }
+}

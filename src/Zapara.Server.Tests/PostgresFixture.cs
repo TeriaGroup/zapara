@@ -31,7 +31,6 @@ public sealed class PostgresFixture : IAsyncDisposable
     }
 
     public SnapshotStore NewStore() => new(DataSource, Schema, Clock, Configuration.CreateDedicatedConnection);
-    public SnapshotStore CreateStore(TimeProvider timeProvider) => new(DataSource, Schema, timeProvider, Configuration.CreateDedicatedConnection);
     public static string FixturePath(string name) => Path.Combine(AppContext.BaseDirectory, "Fixtures", name);
 
     public static async Task<PostgresFixture> CreateAsync(Action<string>? receipt = null, bool initialize = true,

@@ -140,13 +140,13 @@ public sealed class AccountsMigrationTests(ITestOutputHelper output)
         var success = await RunCliAsync(db, false, "accounts", "db-migrate");
         Assert.Equal(0, success.ExitCode);
         Assert.Contains("committed", success.Output);
-        Assert.Equal(4, await db.ScalarAsync<long>($"SELECT count(*) FROM {db.QuotedSchema}.schema_migrations"));
+        Assert.Equal(6, await db.ScalarAsync<long>($"SELECT count(*) FROM {db.QuotedSchema}.schema_migrations"));
         Assert.Equal(0, (await RunCliAsync(db, false, "accounts", "db-migrate")).ExitCode);
         Assert.Equal(2, (await RunCliAsync(db, true, "accounts", "bad-command")).ExitCode);
         var unavailable = await RunCliAsync(db, true, "accounts", "db-migrate");
         Assert.Equal(5, unavailable.ExitCode);
         Assert.DoesNotContain("CANARY", unavailable.Output);
-        output.WriteLine($"CLI migrate exit={success.ExitCode} SQL latest=4 invalid_args=2 unavailable=5");
+        output.WriteLine($"CLI migrate exit={success.ExitCode} SQL latest=6 invalid_args=2 unavailable=5");
     }
 
     private static async Task<(int ExitCode, string Output)> RunCliAsync(AccountsPostgresFixture db, bool missing, params string[] args)

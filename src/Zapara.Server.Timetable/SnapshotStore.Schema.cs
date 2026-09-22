@@ -33,7 +33,20 @@ public sealed partial class SnapshotStore
                 command.Parameters.Clear();
                 await command.ExecuteNonQueryAsync(ct);
             }
-            await VerifySchemaAsync(connection, transaction, ct);
+            command.CommandText = $"SELECT version FROM {quotedSchema}.schema_version";
+            var version = (int)(await command.ExecuteScalarAsync(ct) ?? throw SchemaRejected());
+            if (version is not (1 or 2)) throw SchemaRejected();
+            await VerifySchemaAsync(connection, transaction, version, ct);
+            if (version == 1)
+            {
+                using var stream = typeof(SnapshotStore).Assembly.GetManifestResourceStream("Zapara.Server.Timetable.Sql.002_json_source.sql")!;
+                using var reader = new StreamReader(stream);
+                command.CommandText = (await reader.ReadToEndAsync(ct)).Replace("{{schema}}", quotedSchema)
+                    .Replace("{{xml_url}}", "'" + TimetableParser.DefaultUrl.Replace("'", "''") + "'")
+                    .Replace("{{json_url}}", "'" + VoenmehScheduleClient.MetaUrl.Replace("'", "''") + "'");
+                await command.ExecuteNonQueryAsync(ct);
+                await VerifySchemaAsync(connection, transaction, 2, ct);
+            }
             await transaction.CommitAsync(ct);
         }
         catch (Exception error) when (IsDatabaseError(error)) { throw SchemaRejected(); }
@@ -41,7 +54,7 @@ public sealed partial class SnapshotStore
 
     private static StoreException SchemaRejected() => new(FailureCode.DbUnavailable);
 
-    private async Task VerifySchemaAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, CancellationToken ct)
+    private async Task VerifySchemaAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, int version, CancellationToken ct)
     {
         // Exact column/identity shape and named validated constraints prevent silently resetting a partial/foreign baseline.
         await using var command = new NpgsqlCommand("""
@@ -71,10 +84,10 @@ public sealed partial class SnapshotStore
             """;
         await using (var reader = await command.ExecuteReaderAsync(ct))
             while (await reader.ReadAsync(ct))
-                if (!ExpectedDefinitions.TryGetValue(reader.GetString(0), out var definition) || reader.GetString(1) != definition)
+                if (!Definitions(version).TryGetValue(reader.GetString(0), out var definition) || reader.GetString(1) != definition)
                     throw SchemaRejected();
         command.CommandText = $"""
-            SELECT (SELECT count(*)=1 AND min(version)=1 FROM {quotedSchema}.schema_version)
+            SELECT (SELECT count(*)=1 AND min(version)={version} FROM {quotedSchema}.schema_version)
                 AND (SELECT count(*)=1 AND bool_and(singleton) FROM {quotedSchema}.state)
                 AND (SELECT count(*)=2 FROM pg_constraint WHERE connamespace=@schema::regnamespace AND contype='f'
                     AND ((conrelid='{quotedSchema}.snapshots'::regclass AND confrelid='{quotedSchema}.refresh_attempts'::regclass)
@@ -97,6 +110,17 @@ public sealed partial class SnapshotStore
         "snapshots:published_at:timestamp with time zone:true:", "snapshots:source_modified_at:timestamp with time zone:false:",
         "state:singleton:boolean:true:", "state:current_snapshot_id:uuid:false:"
     ];
+
+    private static IReadOnlyDictionary<string, string> Definitions(int version)
+    {
+        if (version == 1) return ExpectedDefinitions;
+        return new Dictionary<string, string>(ExpectedDefinitions)
+        {
+            ["schema_version_one"] = "CHECK ((version = 2))",
+            ["snapshot_provenance"] = "CHECK ((((source_kind = 'file'::text) AND (source_url IS NULL) AND (source_modified_at IS NULL)) OR ((source_kind = 'http'::text) AND (source_url IS NOT NULL) AND (source_url = ANY (ARRAY['"
+                + TimetableParser.DefaultUrl.Replace("'", "''") + "'::text, '" + VoenmehScheduleClient.MetaUrl.Replace("'", "''") + "'::text])))))"
+        };
+    }
 
     private static readonly string[] ExpectedConstraints =
     [

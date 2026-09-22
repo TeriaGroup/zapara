@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\Vograph.Desktop\Features\Teachers\TeacherSearch.cs" Link="Lecturers\TeacherSearch.cs" />
+    <Compile Include="..\Vograph.Core\Campus\*.cs" Exclude="..\Vograph.Core\Campus\RouteSteps.cs;..\Vograph.Core\Campus\SyntheticLabyrinth.cs" Link="Campus\%(Filename)%(Extension)" />
+    <ProjectReference Include="..\Vograph.Timetable\Vograph.Timetable.csproj" />
+    <ProjectReference Include="..\Zapara.Contracts\Zapara.Contracts.csproj" />
+  </ItemGroup>
+</Project>

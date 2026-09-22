@@ -1,0 +1,82 @@
+@page "/settings"
+@using Zapara.Contracts.Sync
+@implements IDisposable
+@inject WebAppState State
+@inject BrowserApiClient Api
+<PageTitle>Настройки — Запара</PageTitle>
+@{ var shownSettings = CaptureSettings(); }
+<section class="page settings-page">
+    <div class="page-heading"><div><h1>Настройки</h1><p class="muted">Приложение, данные и ваш аккаунт</p></div></div>
+    <div class="settings-grid">
+        <AccountPanel />
+        <section class="card stack" aria-labelledby="appearance-title">
+            <h2 id="appearance-title">Внешний вид</h2>
+            <label class="field"><span>Тема</span><select value="@State.Preferences.Theme" @onchange="Theme"><option value="system">Как на устройстве</option><option value="light">Светлая</option><option value="dark">Тёмная</option></select></label>
+            <label class="setting-toggle"><span>Плавные анимации<small class="muted">Настройка уменьшения движения на устройстве имеет приоритет.</small></span><input type="checkbox" checked="@State.Preferences.Animations" @onchange="Animations" /></label>
+            <label class="setting-toggle"><span>Экспериментальные карты<small class="muted">Дополнительные режимы и обзор этажей; разметка может быть неполной.</small></span><input type="checkbox" checked="@State.Preferences.AlphaMaps" @onchange="Alpha" /></label>
+        </section>
+        <section class="card stack" aria-labelledby="schedule-settings-title">
+            <h2 id="schedule-settings-title">Расписание</h2>
+            <button class="group-card" @onclick="() => groupOpen = true"><span class="micro">МОЯ ГРУППА</span><strong>@State.GroupName</strong><span class="muted">Изменить группу</span></button>
+            <label class="setting-toggle"><span>Инверсия чётности<small class="muted">Поменять чётную и нечётную недели местами.</small></span><input type="checkbox" checked="@State.Settings.ParityInvert" @onchange="args => Parity(args, shownSettings)" /></label>
+            <p class="caption muted">@State.PeriodTitle<br />@(State.FromBundle ? "Встроенный снимок приложения" : State.Schedule?.FetchedAt is { } fetched ? "Загружено " + fetched.ToLocalTime().ToString("dd.MM.yyyy HH:mm") : "Расписание ещё не загружено")</p>
+            <div><button class="button" disabled="@State.Refreshing" @onclick="State.RefreshAsync">@(State.Refreshing ? "Обновляем…" : "Обновить расписание")</button></div>
+        </section>
+        <section class="card stack" aria-labelledby="sync-settings-title">
+            <h2 id="sync-settings-title">Синхронизация</h2>
+            <p>@(State.IsGuest ? "Гостевые записи хранятся только в этом браузере." : "Домашка, друзья, названия предметов и общие настройки принадлежат вашему аккаунту.")</p>
+            <p class="caption muted">Неотправленных изменений: @State.Profile.Outbox.Count · Конфликтов: @State.Conflicts.Count</p>
+            @if (State.Profile.LastSyncedAt is { } synced) { <p class="caption muted">Последняя синхронизация: @synced.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</p> }
+            @if (State.SyncMessage is not null) { <p role="status" class="muted">@State.SyncMessage</p> }
+            <div><button class="button" disabled="@(!State.Authenticated || State.Syncing || Api.Transitioning)" @onclick="Sync">@(State.Syncing ? "Синхронизируем…" : "Синхронизировать сейчас")</button></div>
+            <SyncConflicts />
+        </section>
+        <section class="card stack" aria-labelledby="reminder-times-title">
+            <h2 id="reminder-times-title">Время напоминаний</h2>
+            <p class="muted">Два времени в часовом поясе устройства. Очистите поле, чтобы отключить соответствующее напоминание. Эти значения синхронизируются с Android и ПК.</p>
+            <div class="form-grid"><label class="field"><span>Первое напоминание</span><input type="time" value="@State.Settings.NotifyTime1" @onchange="args => FirstTime(args, shownSettings)" /></label><label class="field"><span>Второе напоминание</span><input type="time" value="@State.Settings.NotifyTime2" @onchange="args => SecondTime(args, shownSettings)" /></label></div>
+        </section>
+        <NotificationSettings />
+        <TransferSettings />
+        <section class="card stack" aria-labelledby="about-title">
+            <h2 id="about-title">О Запаре</h2>
+            <p>Неофициальное приложение для студентов БГТУ «Военмех». Приложение и роли в сообществах не означают одобрения университетом.</p>
+            <p class="caption muted">Веб-версия · @Version</p>
+            <p class="muted">Гостевой режим работает без аккаунта. После первой загрузки оболочки, расписания и карт сохранённые данные доступны офлайн. Браузер может удалить их при очистке сайта или нехватке места — сохраняйте JSON-копию важных записей.</p>
+            @if (!State.StorageAvailable) { <p role="alert">Хранилище недоступно: изменения не сохраняются. Разрешите хранение данных для этого сайта.</p> }
+        </section>
+    </div>
+</section>
+@if (groupOpen) { <GroupPicker OnClose="() => groupOpen = false" /> }
+@code {
+    private bool groupOpen;
+    private static string Version => typeof(Settings).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
+    protected override void OnInitialized() => State.Changed += Changed;
+    private void Changed() => _ = InvokeAsync(StateHasChanged);
+    private async Task Run(Func<Task> action)
+    {
+        try { await action(); }
+        catch (ArgumentException) { State.SetError("Проверьте значения настроек и повторите действие."); }
+        catch (Exception e) when (e is InvalidOperationException or JSException or BrowserApiException) { State.SetError(e.Message); }
+    }
+    private Task Theme(ChangeEventArgs args) => Run(() => State.SetAppearanceAsync(args.Value?.ToString() ?? "system", State.Preferences.Animations));
+    private Task Animations(ChangeEventArgs args) => Run(() => State.SetAppearanceAsync(State.Preferences.Theme, args.Value is true));
+    private Task Alpha(ChangeEventArgs args) => Run(() => State.SetAlphaMapsAsync(args.Value is true));
+    private sealed record SettingsEdit(string Owner, long Generation, SettingsValue Value, long? Revision);
+    private SettingsEdit CaptureSettings() => new(State.ProfileKey, State.Generation, State.Settings,
+        State.Profile.Records.GetValueOrDefault(ProfileValues.Key("settings", SyncValidation.SettingsId))?.Revision);
+    private Task Parity(ChangeEventArgs args, SettingsEdit shown) => Save(shown, parity: args.Value is true);
+    private Task FirstTime(ChangeEventArgs args, SettingsEdit shown) => Save(shown, first: args.Value?.ToString(), changeFirst: true);
+    private Task SecondTime(ChangeEventArgs args, SettingsEdit shown) => Save(shown, second: args.Value?.ToString(), changeSecond: true);
+    private Task Sync() => State.SynchronizeAsync();
+    private Task Save(SettingsEdit shown, bool? parity = null, string? first = null, string? second = null, bool changeFirst = false, bool changeSecond = false) => Run(() =>
+    {
+        var old = shown.Value;
+        var value = new SettingsValue(old.SelectedGroupId, parity ?? old.ParityInvert,
+            changeFirst ? string.IsNullOrWhiteSpace(first) ? null : first : old.NotifyTime1,
+            changeSecond ? string.IsNullOrWhiteSpace(second) ? null : second : old.NotifyTime2, old.Strictness, old.AlwaysShow);
+        return State.PutEditorAsync(shown.Owner, shown.Generation, "settings", SyncValidation.SettingsId,
+            value, shown.Revision is null ? null : old, shown.Revision);
+    });
+    public void Dispose() => State.Changed -= Changed;
+}

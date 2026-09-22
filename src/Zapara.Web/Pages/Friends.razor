@@ -1,0 +1,120 @@
+@page "/friends"
+@implements IDisposable
+@using Zapara.Contracts.Sync
+@inject WebAppState State
+@inject BrowserDraftService Drafts
+<PageTitle>Друзья — Запара</PageTitle>
+@{ var pageScope = Drafts.CaptureScope(); var displayedSettings = State.Settings; var settingsRecord = State.Values<SettingsValue>("settings").FirstOrDefault(); }
+<section class="page personal-page">
+    <div class="page-heading"><div><h1>Друзья</h1><p class="muted">Кто рядом на следующей паре</p></div><button class="button primary" disabled="@(FriendsList.Count >= 5 || !State.Ready || !Drafts.CanEdit)" @onclick="() => New(pageScope)"><Icon Name="plus" />Добавить группу</button></div>
+    <div class="card stack"><label class="row" style="min-height:48px;cursor:pointer"><span>Всегда показывать все группы</span><input type="checkbox" style="min-height:0" disabled="@(!Drafts.CanEdit)" checked="@displayedSettings.AlwaysShow" @onchange="e => AlwaysShow(e, displayedSettings, settingsRecord, pageScope)" /></label><label class="row" style="min-height:48px">Показывать совпадения<select style="min-height:48px" disabled="@(!Drafts.CanEdit)" value="@(displayedSettings.Strictness == 0 ? 25 : displayedSettings.Strictness)" @onchange="e => Strictness(e, displayedSettings, settingsRecord, pageScope)"><option value="25">В вузе</option><option value="50">В том же корпусе</option><option value="75">На том же этаже</option><option value="100">В той же аудитории</option></select></label></div>
+    <div class="stack personal-list">
+        @foreach (var friend in FriendsList)
+        {
+            <article class="card friend-card"><span class="friend-dot" style="@("--friend-color:var(--friend" + friend.Value.PaletteIndex + ")")"></span><div class="friend-content"><h2>@friend.Value.GroupName</h2><p class="muted">@friend.Value.MemberNames</p><p class="caption">@Presence(friend.Value)</p></div><div class="toolbar"><label class="check-row" style="min-width:48px;min-height:48px;justify-content:center;cursor:pointer"><input type="checkbox" style="min-height:0" disabled="@(!Drafts.CanEdit)" checked="@friend.Value.Enabled" aria-label="@("Показывать группу " + friend.Value.GroupName)" @onchange="e => Toggle(friend, (bool)e.Value!, pageScope)" /></label><button class="icon-button" disabled="@(!Drafts.CanEdit)" aria-label="Редактировать друга" @onclick="() => Edit(friend, pageScope)"><Icon Name="edit" /></button><button class="icon-button" disabled="@(!Drafts.CanEdit)" aria-label="Удалить друга" @onclick="() => AskDelete(friend, pageScope)"><Icon Name="trash" /></button></div></article>
+        }
+        @if (FriendsList.Count == 0) { <div class="empty-state"><Icon Name="friends" /><h2>Добавьте группы друзей</h2><p>Можно сохранить до пяти групп и видеть, совпадают ли ваши аудитории, этажи и корпуса.</p></div> }
+    </div>
+</section>
+@if (editor)
+{
+    var formVersion = openVersion;
+    <Modal Title="@(editingId is null ? "Добавить друзей" : "Редактировать друзей")" OnClose="() => CancelEditor(formVersion)">
+        @if (opening) { <p role="status">Открываем черновик…</p> }@if (restored) { <p class="caption muted" role="status">Черновик восстановлен.</p> }
+        <label class="field">Поиск группы<input disabled="@(opening || saving || committed)" @bind:get="query" @bind:set="value => ChangeDraft(formVersion, () => query = value)" @bind:event="oninput" placeholder="Начните вводить название" /></label>
+        <label class="field">Группа<select disabled="@(opening || saving || committed)" @bind:get="groupId" @bind:set="value => ChangeDraft(formVersion, () => groupId = value)"><option value="">@(original is not null && groupId.Length == 0 ? original.GroupName + " · сохранённая группа" : "Выберите группу")</option>@if (groupId.Length > 0 && State.Groups.All(g => g.Id != groupId || !g.Name.Contains(query, StringComparison.OrdinalIgnoreCase))) { <option value="@groupId">@draftGroupName · выбранная группа</option> }@foreach (var group in State.Groups.Where(g => g.Name.Contains(query, StringComparison.OrdinalIgnoreCase))) { <option value="@group.Id">@group.Name</option> }</select></label>
+        <label class="field">Имена друзей<input disabled="@(opening || saving || committed)" @bind:get="names" @bind:set="value => ChangeDraft(formVersion, () => names = value)" @bind:event="oninput" maxlength="4000" placeholder="Например, Саша и Маша" /></label>
+        <label class="field">Цвет<select disabled="@(opening || saving || committed)" @bind:get="palette" @bind:set="value => ChangeDraft(formVersion, () => palette = value)"><option value="1">Оранжевый</option><option value="2">Зелёный</option><option value="3">Синий</option><option value="4">Фиолетовый</option><option value="5">Розовый</option></select></label>
+        @if (error is not null) { <p class="form-error" role="alert">@error</p> }
+        @if (stale) { var shown = comparison; <div class="card stack" role="alert"><p>Группа друзей изменилась после открытия черновика.</p>@if (shown is not null) { <p>Сейчас сохранено: @shown.Value.GroupName · @shown.Value.MemberNames</p><p class="caption muted">@(shown.Value.Enabled ? "Показывается" : "Скрыта")</p><button class="button" disabled="@(saving || committed)" @onclick="() => KeepDraft(shown, formVersion)">Продолжить с моим вариантом</button> } else { <p>Группа удалена. Ваш черновик можно сохранить как новую группу.</p><button class="button" disabled="@(saving || committed || FriendsList.Count >= 5)" @onclick="() => Save(formVersion, true)">Сохранить как новую</button> }</div> }
+        <div class="form-actions"><button class="button" disabled="@saving" @onclick="() => CancelEditor(formVersion)">@(committed ? "Закрыть" : "Отмена")</button><button class="button primary" disabled="@(opening || saving || committed || stale || draft is null || !Drafts.IsCurrent(draft))" @onclick="() => Save(formVersion)">Сохранить</button></div>
+    </Modal>
+}
+@if (deleteId is not null) { var shownDelete = deleteOriginal; var shownScope = deleteScope; <Modal Title="Удалить группу друзей?" OnClose="() => CancelDelete(shownScope)"><p>Расписание вашей группы останется без изменений.</p><div class="form-actions"><button class="button" @onclick="() => CancelDelete(shownScope)">Отмена</button><button class="button danger" @onclick="() => Delete(shownDelete, shownScope)">Удалить</button></div></Modal> }
+@code {
+    private bool editor, opening, saving, committed, restored, stale;
+    private Guid? editingId, deleteId;
+    private string query = "", groupId = "", names = "", draftGroupName = "";
+    private string? error;
+    private int palette = 1;
+    private int openVersion;
+    private FriendValue? original;
+    private DraftLease? draft;
+    private DraftScope? deleteScope;
+    private EntityValue<FriendValue>? comparison, deleteOriginal;
+    private IReadOnlyList<EntityValue<FriendValue>> FriendsList => State.Values<FriendValue>("friend").OrderBy(f => f.Value.PaletteIndex).ToArray();
+    protected override void OnInitialized() { State.Changed += Changed; Drafts.ScopeChanged += ScopeChanged; }
+    private EntityValue<FriendValue>? CurrentOriginal => (editingId ?? draft?.TargetId) is { } id ? FriendsList.FirstOrDefault(f => f.Id == id) : null;
+    private void Changed() { if (draft is not null && !Drafts.IsCurrent(draft)) HideEditor(); else if (editor && draft is not null && !saving && BrowserDraftService.IsStale(draft, CurrentOriginal?.Revision, CurrentOriginal?.Value)) { stale = true; comparison = CurrentOriginal; } if (deleteScope is not null && !Drafts.IsCurrent(deleteScope)) CancelDelete(deleteScope); _ = InvokeAsync(StateHasChanged); }
+    private void ScopeChanged() { HideEditor(); CancelDelete(deleteScope); _ = InvokeAsync(StateHasChanged); }
+    private Task New(DraftScope scope) => Drafts.IsCurrent(scope) ? OpenEditor(null) : Task.CompletedTask;
+    private Task Edit(EntityValue<FriendValue> friend, DraftScope scope) => Drafts.IsCurrent(scope) ? OpenEditor(friend) : Task.CompletedTask;
+    private async Task OpenEditor(EntityValue<FriendValue>? item)
+    {
+        var version = ++openVersion; editingId = item?.Id; original = item?.Value;
+        groupId = item is null ? "" : State.ResolveGroupId(item.Value.GroupId, item.Value.GroupName); draftGroupName = item?.Value.GroupName ?? ""; names = item?.Value.MemberNames ?? ""; query = "";
+        palette = item?.Value.PaletteIndex ?? Enumerable.Range(1, 5).FirstOrDefault(i => FriendsList.All(f => f.Value.PaletteIndex != i), 1);
+        draft = null; error = null; stale = restored = committed = saving = false; editor = opening = true;
+        try
+        {
+            var opened = await Drafts.OpenFriendAsync(item?.Id.ToString("D") ?? "new", item?.Revision, item?.Value, new(query, groupId, draftGroupName, names, palette, original));
+            if (version != openVersion || !Drafts.IsCurrent(opened.Lease)) return;
+            draft = opened.Lease; (query, groupId, draftGroupName, names, palette, original) = opened.Value; restored = opened.Restored; stale = opened.Stale; comparison = item;
+            if (editingId is null && CurrentOriginal is { } alreadySaved) { editingId = alreadySaved.Id; comparison = alreadySaved; stale = true; }
+        }
+        catch (Exception e) { if (version == openVersion) error = e is BrowserApiException ? e.Message : "Не удалось открыть черновик. Проверьте хранилище браузера."; }
+        finally { if (version == openVersion) opening = false; }
+    }
+    private void HideEditor() { openVersion++; editor = opening = saving = committed = restored = stale = false; draft = null; original = null; query = groupId = names = draftGroupName = ""; error = null; comparison = null; }
+    private Task ChangeDraft(int version, Action change) { if (version != openVersion || !editor || opening || saving || committed || !Drafts.IsCurrent(draft)) return Task.CompletedTask; change(); return PersistDraft(); }
+    private async Task PersistDraft()
+    {
+        var lease = draft; if (lease is null || !Drafts.IsCurrent(lease)) return;
+        draftGroupName = State.Groups.FirstOrDefault(g => g.Id == groupId)?.Name ?? draftGroupName;
+        try { await Drafts.UpdateAsync(lease, new FriendDraft(query, groupId, draftGroupName, names, palette, original)); }
+        catch (Exception) { if (ReferenceEquals(draft, lease)) error = "Черновик пока не сохранён. Проверьте свободное место и не закрывайте страницу."; }
+    }
+    private async Task CancelEditor(int version) { if (version != openVersion || saving) return; var lease = draft; try { if (lease is not null && Drafts.IsCurrent(lease)) await Drafts.ClearAsync(lease); if (ReferenceEquals(draft, lease)) HideEditor(); } catch (Exception) { error = "Не удалось удалить черновик. Попробуйте отменить ещё раз."; } }
+    private async Task KeepDraft(EntityValue<FriendValue> shown, int version) { if (version != openVersion || draft is null || !Drafts.IsCurrent(draft)) return; var current = CurrentOriginal; if (BrowserDraftService.Baseline(current?.Revision, current?.Value) != BrowserDraftService.Baseline(shown.Revision, shown.Value)) { comparison = current; error = "Группа снова изменилась. Сравните обновлённые данные."; return; } draft = Drafts.Rebase(draft, shown.Revision, shown.Value); original = shown.Value; stale = false; error = null; await PersistDraft(); }
+    private async Task Save(int version, bool copy = false)
+    {
+        var lease = draft; if (version != openVersion || lease is null || !Drafts.IsCurrent(lease) || saving || opening || committed || (stale && !copy)) return;
+        var group = State.Groups.FirstOrDefault(g => g.Id == groupId);
+        if (group is null && original is null) { error = "Выберите группу из расписания."; return; }
+        if ((editingId is null || copy) && FriendsList.Count >= 5) { error = "Можно добавить не больше пяти групп."; return; }
+        if (!copy && BrowserDraftService.IsStale(lease, CurrentOriginal?.Revision, CurrentOriginal?.Value)) { stale = true; comparison = CurrentOriginal; return; }
+        saving = true;
+        try
+        {
+            await Drafts.FlushAsync(); Drafts.RequireCurrent(lease.Scope);
+            var value = new FriendValue(group?.Id ?? original?.GroupId, group?.Name ?? original!.GroupName, names.Trim(), palette, copy ? true : original?.Enabled ?? true);
+            await State.PutEditorAsync(lease.Scope.Owner, lease.Scope.Generation, "friend", copy ? Guid.NewGuid() : lease.TargetId, value, copy ? null : original, copy ? null : lease.Baseline.Revision);
+            if (ReferenceEquals(draft, lease)) committed = true;
+            await Drafts.ClearAsync(lease); if (ReferenceEquals(draft, lease)) HideEditor();
+            if (Drafts.IsCurrent(lease.Scope) && !State.FromBundle) await State.RefreshAsync();
+        }
+        catch (BrowserApiException e) { if (ReferenceEquals(draft, lease)) { error = e.Message; if (e.Code == "editor_changed") { stale = true; comparison = CurrentOriginal; } } }
+        catch (Exception) { if (ReferenceEquals(draft, lease)) error = committed ? "Группа сохранена, но черновик не удалось убрать. Нажмите «Закрыть»; повторно отправлять не нужно." : "Не удалось сохранить друзей. Проверьте хранилище браузера."; }
+        finally { if (ReferenceEquals(draft, lease)) saving = false; }
+    }
+    private async Task Toggle(EntityValue<FriendValue> friend, bool enabled, DraftScope scope) { var f = friend.Value; try { Drafts.RequireCurrent(scope); await State.PutEditorAsync(scope.Owner, scope.Generation, "friend", friend.Id, new FriendValue(f.GroupId, f.GroupName, f.MemberNames, f.PaletteIndex, enabled), f, friend.Revision); } catch (Exception) { if (Drafts.IsCurrent(scope)) State.SetError("Настройки друга изменились или не сохранились. Проверьте данные."); } }
+    private void AskDelete(EntityValue<FriendValue> item, DraftScope scope) { if (!Drafts.IsCurrent(scope)) return; deleteId = item.Id; deleteScope = scope; deleteOriginal = item; }
+    private void CancelDelete(DraftScope? scope) { if (scope == deleteScope) { deleteId = null; deleteScope = null; deleteOriginal = null; } }
+    private async Task Delete(EntityValue<FriendValue>? before, DraftScope? scope) { if (scope is null || before is null || scope != deleteScope || before.Id != deleteId) return; try { Drafts.RequireCurrent(scope); await State.PutEditorAsync(scope.Owner, scope.Generation, "friend", before.Id, null, before.Value, before.Revision); if (deleteScope == scope) CancelDelete(scope); } catch (Exception) { if (Drafts.IsCurrent(scope)) State.SetError("Не удалось удалить группу друзей. Она могла измениться — проверьте данные."); } }
+    private Task AlwaysShow(ChangeEventArgs e, SettingsValue shown, EntityValue<SettingsValue>? before, DraftScope scope) => SaveSettings(new(shown.SelectedGroupId, shown.ParityInvert, shown.NotifyTime1, shown.NotifyTime2, shown.Strictness, (bool)e.Value!), before, scope);
+    private Task Strictness(ChangeEventArgs e, SettingsValue shown, EntityValue<SettingsValue>? before, DraftScope scope) => int.TryParse(e.Value?.ToString(), out var strictness) ? SaveSettings(new(shown.SelectedGroupId, shown.ParityInvert, shown.NotifyTime1, shown.NotifyTime2, strictness, shown.AlwaysShow), before, scope) : Task.CompletedTask;
+    private async Task SaveSettings(SettingsValue value, EntityValue<SettingsValue>? before, DraftScope scope) { try { Drafts.RequireCurrent(scope); await State.PutEditorAsync(scope.Owner, scope.Generation, "settings", SyncValidation.SettingsId, value, before?.Value, before?.Revision); } catch (Exception) { if (Drafts.IsCurrent(scope)) State.SetError("Настройки изменились или не сохранились. Проверьте данные и повторите действие."); } }
+    private string Presence(FriendValue friend)
+    {
+        if (!friend.Enabled) return "Не показывается";
+        if (State.Schedule is not { } s || string.IsNullOrEmpty(State.GroupId)) return "Выберите свою группу";
+        var date = ScheduleRules.SmartStart(s, State.GroupId, DateTime.Now, State.Settings.ParityInvert);
+        var lesson = ScheduleRules.ForDate(s, State.GroupId, date, State.Settings.ParityInvert).FirstOrDefault(l => date > DateTime.Today || TimeSpan.TryParse(l.TimeEnd, out var end) && end > DateTime.Now.TimeOfDay);
+        if (lesson is null) return "Нет следующей пары";
+        var id = State.ResolveGroupId(friend.GroupId, friend.GroupName);
+        var view = new FriendValue(id, friend.GroupName, friend.MemberNames, friend.PaletteIndex, friend.Enabled);
+        var presence = FriendRules.ForLesson(s, lesson, date, [new(view, State.HasGroupData(id) ? s : null)], State.Settings.Strictness, true, State.Settings.ParityInvert).Single();
+        return presence.HasCompatibleSchedule ? presence.Label : "Расписание друзей пока не загружено";
+    }
+    public void Dispose() { openVersion++; State.Changed -= Changed; Drafts.ScopeChanged -= ScopeChanged; }
+}

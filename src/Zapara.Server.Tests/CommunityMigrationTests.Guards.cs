@@ -23,7 +23,7 @@ public sealed partial class CommunityMigrationTests
         await db.Accounts.ExecuteAsync(scenario switch
         {
             "checksum" => $"UPDATE {s}.schema_migrations SET checksum=repeat('0',64)",
-            "future" => $"INSERT INTO {s}.schema_migrations VALUES(2,repeat('0',64),now())",
+            "future" => $"INSERT INTO {s}.schema_migrations VALUES(3,repeat('0',64),now())",
             "historyMissing" => $"DELETE FROM {s}.schema_migrations",
             "column" => $"ALTER TABLE {s}.communities ALTER COLUMN name DROP NOT NULL",
             "index" => $"DROP INDEX {s}.join_requests_pending",

@@ -5,6 +5,14 @@ namespace Zapara.Server.Accounts;
 public sealed partial class AccountService
 {
     public Task<SessionResponse> RefreshAsync(string refreshToken, CancellationToken ct = default)
+        => RefreshCoreAsync(refreshToken, null, null, ct);
+
+    public Task<SessionResponse> RefreshBrowserSessionAsync(string refreshToken, byte[] sessionHash,
+        Func<SessionResponse, string> protect, CancellationToken ct = default)
+        => RefreshCoreAsync(refreshToken, sessionHash, protect, ct);
+
+    private Task<SessionResponse> RefreshCoreAsync(string refreshToken, byte[]? browserHash,
+        Func<SessionResponse, string>? protect, CancellationToken ct)
     {
         var hash = AccountTokens.Hash(refreshToken, "zr_");
         return DatabaseAsync(async db =>
@@ -28,6 +36,12 @@ public sealed partial class AccountService
                 UPDATE {schema}.refresh_tokens SET replacement_hash=@p0 WHERE token_hash=@p1;
                 UPDATE {schema}.session_families SET last_seen_at=@p2 WHERE family_id=@p3
                 """, AccountTokens.Hash(session.RefreshToken, "zr_"), hash, db.Now, family.Id);
+            if (browserHash is not null)
+            {
+                await using var persist = db.Command($"UPDATE {schema}.web_sessions SET protected_tokens=@p0 WHERE session_hash=@p1 AND family_id=@p2",
+                    protect!(session), browserHash, family.Id);
+                if (await persist.ExecuteNonQueryAsync(ct) != 1) throw AccountRepository.InvalidSession();
+            }
             await db.CommitAsync(tx);
             return session;
         }, ct);

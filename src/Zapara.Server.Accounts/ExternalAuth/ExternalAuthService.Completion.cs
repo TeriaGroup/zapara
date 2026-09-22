@@ -7,8 +7,16 @@ namespace Zapara.Server.Accounts;
 
 public sealed partial class ExternalAuthService
 {
-    public async Task<Uri> CallbackAsync(string provider, Uri callbackUri, string state, string? code,
+    public Task<Uri> CallbackAsync(string provider, Uri callbackUri, string state, string? code,
         string? deviceId = null, bool providerError = false, CancellationToken ct = default)
+        => CallbackCoreAsync(provider, callbackUri, state, code, deviceId, providerError, null, ct);
+
+    public Task<Uri> CallbackBrowserAsync(string provider, Uri callbackUri, string state, string? code,
+        byte[] browserHash, string? deviceId = null, bool providerError = false, CancellationToken ct = default)
+        => CallbackCoreAsync(provider, callbackUri, state, code, deviceId, providerError, browserHash, ct);
+
+    private async Task<Uri> CallbackCoreAsync(string provider, Uri callbackUri, string state, string? code,
+        string? deviceId, bool providerError, byte[]? browserHash, CancellationToken ct)
     {
         providers.VerifyUri(provider, callbackUri);
         ExternalSecrets.Token(state, 43, 43);
@@ -18,8 +26,9 @@ public sealed partial class ExternalAuthService
             await using var command = db.Command($"""
                 UPDATE {schema}.oauth_transactions SET status='callbackClaimed'
                 WHERE state_hash=@p0 AND provider=@p1 AND owner_id=@p2 AND status='pending' AND expires_at>@p3
+                {(browserHash is null ? "AND return_kind<>'web'" : $"AND return_kind='web' AND EXISTS (SELECT 1 FROM {schema}.web_oauth_flows w WHERE w.transaction_id=oauth_transactions.transaction_id AND w.browser_hash=@p4 AND w.expires_at>@p3)")}
                 RETURNING transaction_id
-                """, ExternalSecrets.Hash(state), provider, secrets.Owner, db.Now);
+                """, browserHash is null ? [ExternalSecrets.Hash(state), provider, secrets.Owner, db.Now] : [ExternalSecrets.Hash(state), provider, secrets.Owner, db.Now, browserHash]);
             return await command.ExecuteScalarAsync(ct) is Guid value ? value : throw ExternalAuthException.Gone();
         }, ct);
         try
@@ -40,7 +49,8 @@ public sealed partial class ExternalAuthService
                     handoff_hash=@p2,handoff_expires_at=@p3 WHERE transaction_id=@p4
                     """, identity.Subject, identity.DisplayName, ExternalSecrets.Hash(handoff), expires, id);
                 await db.CommitAsync(tx);
-                var destination = row.ReturnKind == "windows" ? $"http://127.0.0.1:{row.ReturnPort}/zapara/oauth/callback" : "zapara://auth/external";
+                var destination = row.ReturnKind == "windows" ? $"http://127.0.0.1:{row.ReturnPort}/zapara/oauth/callback"
+                    : row.ReturnKind == "web" ? "https://web.invalid/internal-completion" : "zapara://auth/external";
                 return new Uri(QueryHelpers.AddQueryString(destination, new Dictionary<string, string?>
                     { ["transactionId"] = id.ToString("D"), ["handoffCode"] = handoff }));
             }, ct);

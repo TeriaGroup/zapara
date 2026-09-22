@@ -34,7 +34,7 @@ public static class AccountValidation
     }
 
     public static Guid Id(Guid value) => value != Guid.Empty ? value : throw Invalid();
-    public static string Platform(string? value) => value is "windows" or "android" ? value : throw Invalid();
+    public static string Platform(string? value) => value is "windows" or "android" or "web" ? value : throw Invalid();
     public static DateTimeOffset Utc(DateTimeOffset value)
         => value != default && value.Offset == TimeSpan.Zero ? value : throw Invalid();
 

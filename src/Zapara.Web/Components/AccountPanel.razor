@@ -1,0 +1,173 @@
+@using Zapara.Contracts.Accounts
+@using Zapara.Web.Components.Accounts
+@implements IDisposable
+<section class="card stack account-panel" aria-labelledby="account-panel-title">
+    <div class="row"><div><h2 id="account-panel-title">Аккаунт</h2><p class="muted">@AccountLabel</p></div><span class="chip">@(Api.Session.Authenticated ? "Вход выполнен" : State.IsGuest ? "Гость" : "Сохранённый профиль")</span></div>
+    @if (!Api.Session.Authenticated)
+    {
+        <p class="muted">Расписание, карты и личные записи доступны без аккаунта. Вход связывает данные ваших устройств; перенос гостевых записей выбирается отдельно.</p>
+        @if (!Api.Available) { <p role="status" class="muted">Сервер сейчас недоступен. Сохранённые данные остаются на устройстве.</p> }
+        <div class="toolbar">
+            @if (Api.Session.Capabilities.Password) { <button class="button primary" disabled="@busy" @onclick='() => OpenAsync("login")'>Войти</button> }
+            @if (Api.Session.Capabilities.Registration) { <button class="button" disabled="@busy" @onclick='() => OpenAsync("register")'>Создать аккаунт</button> }
+            @if (Api.Session.Capabilities.Vk) { <button class="button" disabled="@busy" @onclick='() => ProviderLogin("vk")'>Войти через VK ID</button> }
+            @if (Api.Session.Capabilities.Yandex) { <button class="button" disabled="@busy" @onclick='() => ProviderLogin("yandex")'>Войти через Яндекс ID</button> }
+            <button class="button" disabled="@busy" @onclick="Reconnect">Проверить подключение</button>
+        </div>
+        @if (Api.Session.Capabilities.Password) { <div><button class="text-button" disabled="@busy" @onclick='() => OpenAsync("reset")'>Забыли пароль?</button></div> }
+        @if (Api.Available && !Api.Session.Capabilities.Password && !Api.Session.Capabilities.Vk && !Api.Session.Capabilities.Yandex)
+        { <p class="muted">Вход на этом сервере пока не настроен.</p> }
+    }
+    else
+    {
+        <div class="account-menu">
+            <button class="button" disabled="@busy" @onclick='() => OpenAsync("profile")'>Профиль</button>
+            <button class="button" disabled="@busy" @onclick='() => OpenAsync("methods")'>Способы входа</button>
+            <button class="button" disabled="@busy" @onclick='() => OpenAsync("devices")'>Устройства и сессии</button>
+            <button class="button" disabled="@busy" @onclick='() => OpenAsync("email")'>Почта восстановления</button>
+            <button class="button" disabled="@busy" @onclick='() => OpenAsync("export")'>Скачать данные аккаунта</button>
+            <button class="button" disabled="@busy" @onclick='() => OpenAsync("logout")'>Выйти на этом устройстве</button>
+        </div>
+        <div><button class="text-button account-danger-text" disabled="@busy" @onclick='() => OpenAsync("delete")'>Удалить аккаунт</button></div>
+        <div><button class="text-button" disabled="@busy" @onclick="Reconnect">Обновить состояние аккаунта</button></div>
+    }
+    @if (status is not null) { <p role="status" class="account-success">@status</p> }
+    @if (error is not null && dialog is null) { <p role="alert" class="account-error">@error</p> }
+    @if (pendingOAuth) { <div class="toolbar"><button class="button" disabled="@busy" @onclick="ResumeOAuth">Проверить результат подтверждения</button><button class="button" disabled="@busy" @onclick="CancelOAuth">Отменить вход</button></div> }
+</section>
+
+@if (dialog is not null)
+{
+    <Modal Title="@Title" OnClose="Close" Class="account-sheet">
+        @if (error is not null) { <p role="alert" class="account-error">@error</p> }
+        @if (status is not null) { <p role="status" class="account-success">@status</p> }
+        @if (busy) { <p role="status" class="muted">Выполняем действие…</p> }
+        @switch (dialog)
+        {
+            case "login":
+            case "register":
+                <form class="stack" @onsubmit="SubmitLogin" @onsubmit:preventDefault>
+                    <fieldset disabled="@busy" class="stack account-fields">
+                        <label class="field"><span>Имя пользователя</span><input autocomplete="username" autocapitalize="none" spellcheck="false" @bind="username" @bind:event="oninput" minlength="3" maxlength="32" pattern="[A-Za-z0-9_.\-]{3,32}" required /><span class="caption muted">3–32 латинские буквы, цифры, точка, дефис или подчёркивание.</span></label>
+                        @if (dialog == "register") { <label class="field"><span>Отображаемое имя · необязательно</span><input autocomplete="nickname" @bind="displayName" @bind:event="oninput" maxlength="160" /></label> }
+                        <label class="field"><span>Пароль</span><input type="password" autocomplete="@(dialog == "register" ? "new-password" : "current-password")" @bind="password" @bind:event="oninput" minlength="12" maxlength="256" required /><span class="caption muted">От 12 до 128 символов.</span></label>
+                        @if (dialog == "register") { <label class="field"><span>Повторите пароль</span><input type="password" autocomplete="new-password" @bind="passwordAgain" @bind:event="oninput" maxlength="256" required /></label> }
+                        <div class="form-actions"><button type="button" class="button" @onclick="Close">Отмена</button><button class="button primary" type="submit">@(dialog == "register" ? "Создать аккаунт и войти" : "Войти")</button></div>
+                    </fieldset>
+                </form>
+                break;
+            case "profile":
+                <form class="stack" @onsubmit="SaveProfile" @onsubmit:preventDefault>
+                    <p class="muted">Имя пользователя: <strong>@Api.Session.User?.Username</strong></p>
+                    <label class="field"><span>Отображаемое имя</span><input autocomplete="nickname" @bind="displayName" @bind:event="oninput" maxlength="160" disabled="@busy" /><span class="caption muted">Пустое поле уберёт отображаемое имя.</span></label>
+                    <div class="form-actions"><button type="submit" class="button primary" disabled="@busy">Сохранить имя</button></div>
+                </form>
+                break;
+            case "methods":
+                <div class="stack">
+                    <div class="account-item"><div><h3>Пароль</h3><p class="muted">@(Accounts.HasPassword ? "Вход по имени пользователя и паролю включён." : "Пароль ещё не задан.")</p></div><button class="button" disabled="@busy" @onclick='() => OpenAsync(Accounts.HasPassword ? "change-password" : "set-password")'>@(Accounts.HasPassword ? "Изменить пароль" : "Задать пароль")</button></div>
+                    @foreach (var providerName in new[] { "vk", "yandex" })
+                    {
+                        var provider = providerName; var linked = Accounts.Identities.Any(identity => identity.Provider == provider);
+                        <div class="account-item"><div><h3>@ProviderLabel(provider)</h3><p class="muted">@(linked ? "Подключён к вашему аккаунту." : ProviderConfigured(provider) ? "Можно подключить для входа." : "Способ входа пока не настроен на сервере.")</p></div>
+                            @if (linked) { <button class="button" disabled="@(busy || (Accounts.Me?.AuthenticationMethods.Count ?? 0) < 2)" @onclick='() => ProviderAction("unlink", provider)'>Отключить</button> }
+                            else if (ProviderConfigured(provider)) { <button class="button" disabled="@busy" @onclick='() => ProviderAction("link", provider)'>Подключить</button> }
+                        </div>
+                    }
+                    @if ((Accounts.Me?.AuthenticationMethods.Count ?? 0) < 2) { <p class="caption muted">Последний способ входа нельзя отключить. Сначала добавьте другой.</p> }
+                </div>
+                break;
+            case "change-password":
+            case "set-password":
+                <form class="stack" @onsubmit="SavePassword" @onsubmit:preventDefault>
+                    @if (dialog == "change-password") { <label class="field"><span>Текущий пароль</span><input type="password" autocomplete="current-password" @bind="currentPassword" @bind:event="oninput" maxlength="256" disabled="@busy" required /></label> }
+                    else { <AccountProof Purpose="set_password" Disabled="@busy" OnReady="ProofReady" /> }
+                    <label class="field"><span>Новый пароль</span><input type="password" autocomplete="new-password" @bind="newPassword" @bind:event="oninput" minlength="12" maxlength="256" disabled="@busy" required /></label>
+                    <label class="field"><span>Повторите новый пароль</span><input type="password" autocomplete="new-password" @bind="passwordAgain" @bind:event="oninput" maxlength="256" disabled="@busy" required /></label>
+                    <p class="muted">После сохранения пароля сессии на всех устройствах завершатся. Войдите с новым паролем.</p>
+                    <div class="form-actions"><button class="button primary" type="submit" disabled="@(busy || (dialog == "set-password" && !Accounts.HasProof("set_password")))">Сохранить пароль</button></div>
+                </form>
+                break;
+            case "link":
+            case "unlink":
+                <div class="stack"><p class="muted">@(dialog == "link" ? "После подтверждения откроется страница провайдера. Выберите аккаунт, который хотите подключить." : "Этот способ входа будет отключён. Другие способы останутся доступны.")</p><AccountProof Purpose="@ProofPurpose" Disabled="@busy" OnReady="ProofReady" />
+                    <div class="form-actions"><button class="button primary" disabled="@(busy || !Accounts.HasProof(ProofPurpose))" @onclick="CompleteProviderAction">@(dialog == "link" ? "Перейти к " + ProviderLabel(selectedProvider) : "Отключить " + ProviderLabel(selectedProvider))</button></div></div>
+                break;
+            case "email":
+                <div class="stack">
+                    @if (Api.Session.Capabilities.Recovery)
+                    {
+                        <form class="stack" @onsubmit="SendRecoveryEmail" @onsubmit:preventDefault>
+                            <p class="muted">Подтверждённая почта нужна только для восстановления доступа. Начало проверки не заменяет прежний адрес.</p>
+                            <label class="field"><span>Почта восстановления</span><input type="email" autocomplete="email" @bind="email" @bind:event="oninput" maxlength="254" disabled="@busy" required /></label>
+                            <AccountProof Purpose="set_recovery_email" Disabled="@busy" OnReady="ProofReady" />
+                            <div><button class="button primary" type="submit" disabled="@(busy || !Accounts.HasProof("set_recovery_email"))">Отправить код на почту</button></div>
+                        </form>
+                    }
+                    else { <p class="muted">Отправка писем восстановления пока не настроена. Уже полученный код можно подтвердить ниже.</p> }
+                    <form class="stack account-divider" @onsubmit="ConfirmEmail" @onsubmit:preventDefault>
+                        <label class="field"><span>Код подтверждения из письма</span><input autocomplete="one-time-code" autocapitalize="none" spellcheck="false" @bind="verificationCode" @bind:event="oninput" maxlength="64" disabled="@busy" required /></label>
+                        <div><button class="button" type="submit" disabled="@(busy || verificationCode.Trim().Length == 0)">Подтвердить почту</button></div>
+                    </form>
+                </div>
+                break;
+            case "reset":
+                <div class="stack">
+                    <form class="stack" @onsubmit="RequestReset" @onsubmit:preventDefault>
+                        <label class="field"><span>Имя пользователя</span><input autocomplete="username" autocapitalize="none" @bind="username" @bind:event="oninput" maxlength="32" disabled="@busy" required /></label>
+                        <p class="muted">Если у аккаунта есть подтверждённая почта, на неё можно получить одноразовый код.</p>
+                        @if (!Api.Session.Capabilities.Recovery) { <p class="muted">Отправка новых кодов пока недоступна на сервере.</p> }
+                        <div><button type="submit" class="button" disabled="@(busy || !Api.Session.Capabilities.Recovery)">Получить код восстановления</button></div>
+                    </form>
+                    <form class="stack account-divider" @onsubmit="ConfirmReset" @onsubmit:preventDefault>
+                        <h3>Код уже получен</h3><label class="field"><span>Код из письма</span><input autocomplete="one-time-code" autocapitalize="none" spellcheck="false" @bind="resetCode" @bind:event="oninput" maxlength="64" disabled="@busy" required /></label>
+                        <label class="field"><span>Новый пароль</span><input type="password" autocomplete="new-password" @bind="newPassword" @bind:event="oninput" minlength="12" maxlength="256" disabled="@busy" required /></label>
+                        <label class="field"><span>Повторите новый пароль</span><input type="password" autocomplete="new-password" @bind="passwordAgain" @bind:event="oninput" maxlength="256" disabled="@busy" required /></label>
+                        <p class="caption muted">Все прежние сессии завершатся. После восстановления войдите с новым паролем.</p>
+                        <div><button class="button primary" type="submit" disabled="@busy">Восстановить доступ</button></div>
+                    </form>
+                </div>
+                break;
+            case "devices":
+                <div class="stack"><p class="muted">Активные сессии Android, Windows и браузеров. Отзыв прекращает доступ выбранной сессии к серверу.</p>
+                    @foreach (var device in Accounts.Devices)
+                    {
+                        var item = device;
+                        <div class="account-item"><div><h3>@item.DeviceName @if (item.IsCurrent) { <span class="chip">Это устройство</span> }</h3><p class="muted">@PlatformLabel(item.Platform) · @item.LastSeenAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</p></div><button class="button" disabled="@busy" @onclick="() => SelectDevice(item)">Завершить сессию</button></div>
+                    }
+                    @if (!busy && Accounts.Devices.Count == 0) { <p class="muted">Активные устройства не найдены.</p> }
+                    @if (Accounts.NextCursor is not null) { <button class="button" disabled="@busy" @onclick="MoreDevices">Показать ещё</button> }
+                    <div class="toolbar"><button class="button" disabled="@busy" @onclick="ReloadDevices">Обновить список</button><button class="button danger" disabled="@busy" @onclick='() => OpenAsync("revoke-all")'>Завершить все сессии</button></div>
+                </div>
+                break;
+            case "revoke-device":
+                <p>Завершить сессию «@selectedDevice?.DeviceName»?</p><p class="muted">@(selectedDevice?.IsCurrent == true ? "Вы выйдете из аккаунта в этом браузере." : "На этом устройстве потребуется войти заново. Локальные данные не стираются.")</p><div class="form-actions"><button class="button" disabled="@busy" @onclick='() => OpenAsync("devices")'>Отмена</button><button class="button danger" disabled="@busy" @onclick="RevokeDevice">Завершить сессию</button></div>
+                break;
+            case "revoke-all":
+                <p>Завершить все сессии, включая этот браузер?</p><p class="muted">Локальные записи на устройствах не стираются. Для синхронизации понадобится новый вход.</p><div class="form-actions"><button class="button" disabled="@busy" @onclick="Close">Отмена</button><button class="button danger" disabled="@busy" @onclick="RevokeAll">Завершить все сессии</button></div>
+                break;
+            case "logout":
+                <p>Выйти из аккаунта на этом устройстве?</p><p class="muted">Браузерные уведомления отключатся. Откроется гостевой профиль; данные других устройств останутся без изменений.</p><div class="form-actions"><button class="button" disabled="@busy" @onclick="Close">Остаться</button><button class="button primary" disabled="@busy" @onclick="Logout">Выйти</button></div>
+                break;
+            case "export":
+                <div class="stack"><p class="muted">Сервер подготовит копию данных вашего аккаунта в JSON. Пароли и токены в экспорт не входят.</p>
+                    @if (Accounts.Export is null) { <AccountProof Purpose="export" Disabled="@busy" OnReady="ProofReady" /><div><button class="button primary" disabled="@(busy || !Accounts.HasProof("export"))" @onclick="CreateExport">Подготовить копию</button></div> }
+                    else
+                    {
+                        <p role="status">@ExportStatus</p>
+                        @if (Accounts.Export.Status == "ready") { <p class="caption muted">Копия доступна до @Accounts.Export.ExpiresAt?.ToLocalTime().ToString("dd.MM.yyyy HH:mm"). Храните скачанный файл в безопасном месте.</p><button class="button primary" disabled="@busy" @onclick="DownloadExport">Скачать JSON</button> }
+                        else { <button class="button" disabled="@busy" @onclick="PollExport">Обновить статус</button> }
+                        <div><button class="text-button" disabled="@busy" @onclick="NewExport">Подготовить новую копию</button></div>
+                    }
+                </div>
+                break;
+            case "delete":
+                <div class="stack"><p class="account-danger-text">Аккаунт и его серверные данные будут удалены. Отменить удаление нельзя.</p><p class="muted">Локальные копии на других устройствах автоматически не стираются. При необходимости сначала скачайте данные аккаунта.</p><AccountProof Purpose="delete_account" Disabled="@busy" OnReady="ProofReady" />
+                    <label class="field"><span>Для подтверждения введите имя пользователя: @Api.Session.User?.Username</span><input autocomplete="off" autocapitalize="none" @bind="confirmationText" @bind:event="oninput" disabled="@busy" /></label>
+                    <label class="account-check"><input type="checkbox" @bind="deleteAcknowledged" disabled="@busy" /><span>Понимаю, что аккаунт и серверные данные будут удалены без возможности отмены.</span></label>
+                    <div class="form-actions"><button class="button" disabled="@busy" @onclick="Close">Отмена</button><button class="button danger" disabled="@(!CanDelete)" @onclick="DeleteAccount">Удалить аккаунт навсегда</button></div>
+                </div>
+                break;
+        }
+    </Modal>
+}

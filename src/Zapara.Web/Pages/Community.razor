@@ -1,0 +1,141 @@
+@page "/community"
+@using Zapara.Contracts.Communities
+@using Zapara.Web.Components.Communities
+@implements IDisposable
+@inject BrowserApiClient Api
+@inject BrowserCommunityService Service
+@inject WebAppState State
+@inject NavigationManager Navigation
+<PageTitle>Сообщество — Запара</PageTitle>
+<NavigationLock ConfirmExternalNavigation="@(editor is not null)" OnBeforeInternalNavigation="BeforeNavigate" />
+
+<section class="page community-page">
+    <div class="page-heading"><div><h1>Сообщество</h1><p class="muted">Объявления, общие задания и опросы</p></div>@if (Service.CanRead) { <button class="button" disabled="@(Service.Loading || Service.Busy)" @onclick="Refresh"><Icon Name="refresh" Class="@(Service.Loading ? "spin" : "")" />Обновить</button> }</div>
+    <p class="community-disclaimer">Неофициальное сообщество. Роли старосты и куратора действуют только внутри приложения и не подтверждены университетом.</p>
+    @if (!Service.CanRead)
+    {
+        <div class="empty-state"><Icon Name="community" /><h2>Сообщество доступно с аккаунтом</h2><p>Войдите, чтобы вступать в сообщества, читать объявления и участвовать в опросах. Гостевое расписание и карты работают без аккаунта.</p><a class="button primary" href="settings">Перейти к аккаунту</a></div>
+    }
+    else
+    {
+        var familyKey = Api.Session.FamilyId ?? Guid.Empty;
+        @if (Service.Error is not null || pageError is not null) { <div class="community-message error" role="alert">@(pageError ?? Service.Error)@if (Service.RequiresRefresh) { <button class="button" disabled="@(Service.Busy || Service.Loading)" @onclick="Refresh">Обновить данные</button> }</div> }
+        @if (Service.Notice is not null) { <p class="community-message" role="status">@Service.Notice</p> }
+        @if (Service.IsCached) { <p class="community-message" role="status">@(Service.CachedAt is { } cachedAt ? "Сохранённая копия · " + Stamp(cachedAt) : "Нет подтверждённого подключения") · только чтение. Голосование и изменения доступны после подключения.</p> }
+        @if (Service.Selected is not { } community)
+        {
+            <div class="community-discovery"><label class="field"><span>Найти по учебной группе</span><select @bind="groupFilter" @bind:after="ReloadList" disabled="@(Service.IsCached || Service.Loading || Service.Busy)"><option value="">Только мои сообщества</option>@foreach (var group in State.Groups) { <option value="@group.Id">@group.Name</option> }</select></label><label class="field"><span>Поиск среди найденных</span><input type="search" placeholder="Название сообщества" @bind="query" @bind:event="oninput" /></label></div>
+            @if (Service.Loading) { <div class="skeleton-card" role="status">Загружаем сообщества…</div> }
+            else if (VisibleCommunities.Length == 0) { <div class="empty-state"><Icon Name="community" /><h2>Пока нет сообществ</h2><p>@(query.Length > 0 ? "Попробуйте другое название." : "Выберите учебную группу. Здесь также появятся сообщества, в которых вы участвуете.")</p></div> }
+            <div class="community-list">@foreach (var item in VisibleCommunities)
+            {
+                <article class="card community-list-card"><header class="community-content-heading"><h2>@item.Name</h2><span class="community-status">@Role(item.Role)</span></header><p class="community-body muted">@item.Description</p>
+                    @if (Service.OwnRequests.TryGetValue(item.CommunityId, out var request) && request is not null) { <p class="caption community-request-status">@JoinStatus(request.Status)</p> }
+                    <div class="community-card-actions"><button class="button @(item.Role is null ? "" : "primary")" disabled="@Service.Busy" @onclick="() => Open(item.CommunityId)">@(item.Role is null ? "Подробнее" : "Открыть")</button>@if (item.Role is null) { <button class="button primary" disabled="@(!Service.CanJoin || Pending(item.CommunityId))" @onclick="() => Service.JoinAsync(item.CommunityId, familyKey)">@(Pending(item.CommunityId) ? "Заявка отправлена" : "Подать заявку")</button> }</div>
+                </article>
+            }</div>
+        }
+        else
+        {
+            <header class="community-detail-heading"><button class="icon-button outlined" aria-label="Назад к сообществам" disabled="@Service.Busy" @onclick="Back"><Icon Name="left" /></button><div><h2>@community.Name</h2><span class="community-status">@Role(community.Role)</span></div></header><p class="community-body muted">@community.Description</p>
+            @if (Service.Loading) { <div class="skeleton-card" role="status">Обновляем данные и права доступа…</div> }
+            @if (!Service.IsMember)
+            {
+                <div class="community-join card"><h3>Вступление в сообщество</h3>@if (Service.OwnRequests.TryGetValue(community.CommunityId, out var request) && request is not null) { <p>@JoinStatus(request.Status)</p> }<p class="muted">Общие задания, объявления и опросы видны участникам после одобрения заявки.</p><button class="button primary" disabled="@(!Service.CanJoin || Pending(community.CommunityId))" @onclick="() => Service.JoinAsync(community.CommunityId, familyKey)">@(Pending(community.CommunityId) ? "Ожидаем решения" : "Подать заявку")</button></div>
+            }
+            else
+            {
+                <nav class="community-tabs" aria-label="Разделы сообщества">@foreach (var item in Tabs) { <button class="@(tab == item.Key ? "active" : "")" aria-pressed="@(tab == item.Key)" @onclick="() => tab = item.Key">@item.Label@if (item.Key == "requests" && Service.JoinRequests.Count > 0) { <span class="community-count">@Service.JoinRequests.Count</span> }</button> }</nav>
+                @if (tab == "announcements")
+                {
+                    <div class="community-section-heading"><h3>Объявления</h3>@if (Service.IsStaff) { <button class="button primary" disabled="@(!Service.CanPublish)" @onclick="() => EditAnnouncement(null, familyKey)"><Icon Name="plus" />Объявление</button> }</div>
+                    @if (Service.Announcements.Count == 0 && !Service.Loading) { <p class="community-empty">Объявлений пока нет.</p> }
+                    <div class="stack">@foreach (var item in Service.Announcements.OrderByDescending(a => a.CreatedAt)) { <article class="card"><header class="community-content-heading"><h3>@item.Title</h3>@if (Service.IsStaff) { <button class="icon-button" aria-label="@("Редактировать объявление «" + item.Title + "»")" disabled="@(!Service.CanPublish)" @onclick="() => EditAnnouncement(item, familyKey)"><Icon Name="edit" /></button> }</header><p class="community-body">@item.Body</p><p class="caption muted community-updated">@Stamp(item.UpdatedAt)</p></article> }</div>
+                }
+                else if (tab == "homework")
+                {
+                    <div class="community-section-heading"><h3>Общие задания</h3>@if (Service.IsStaff) { <button class="button primary" disabled="@(!Service.CanPublish)" @onclick="() => EditHomework(null, familyKey)"><Icon Name="plus" />Задание</button> }</div><p class="caption muted community-section-hint">Отметка выполнения принадлежит только вам.</p>
+                    @if (Service.Homework.Count == 0 && !Service.Loading) { <p class="community-empty">Общих заданий пока нет.</p> }
+                    <div class="stack">@foreach (var item in Service.Homework.OrderByDescending(h => h.CreatedAt))
+                    {
+                        var completed = Service.Completions.GetValueOrDefault(item.HomeworkId)?.Completed == true;
+                        <article class="card community-homework @(completed ? "completed" : "")"><header class="community-content-heading"><h3>@item.Title</h3>@if (Service.IsStaff) { <button class="icon-button" aria-label="@("Редактировать задание «" + item.Title + "»")" disabled="@(!Service.CanPublish)" @onclick="() => EditHomework(item, familyKey)"><Icon Name="edit" /></button> }</header><p class="community-body">@item.Body</p><div class="community-card-actions"><button class="button @(completed ? "community-done" : "")" disabled="@(!Service.CanWrite || !Service.Completions.ContainsKey(item.HomeworkId))" @onclick="() => Service.CompleteAsync(community.CommunityId, familyKey, item, !completed)"><Icon Name="check" />@(completed ? "Выполнено · отменить" : "Отметить выполненным")</button><span class="caption muted">@Stamp(item.UpdatedAt)</span></div></article>
+                    }</div>
+                }
+                else if (tab == "polls")
+                {
+                    <div class="community-section-heading"><h3>Опросы</h3>@if (Service.IsStaff) { <button class="button primary" disabled="@(!Service.CanPublish)" @onclick="() => EditPoll(familyKey)"><Icon Name="plus" />Опрос</button> }</div>
+                    @if (Service.Polls.Count == 0 && !Service.Loading) { <p class="community-empty">Опросов пока нет.</p> }
+                    <div class="stack">@foreach (var poll in Service.Polls.OrderByDescending(p => p.DeadlineAt)) { <CommunityPollCard @key="poll.PollId" Poll="poll" OwnVote="Service.OwnVotes.GetValueOrDefault(poll.PollId)" Results="Service.Results.GetValueOrDefault(poll.PollId)" CanVote="Service.CanVote(poll)" Busy="Service.Busy" OnVote="option => Vote(community.CommunityId, familyKey, poll, option)" OnResults="() => Service.LoadResultsAsync(community.CommunityId, poll.PollId)" /> }</div>
+                }
+                else if (tab == "members")
+                {
+                    <div class="community-member-columns"><section class="card"><h3>Организаторы</h3>@if (Service.Staff.Count == 0) { <p class="community-empty">Нет назначенных организаторов.</p> }@foreach (var member in Service.Staff) { <div class="community-member"><span title="@member.UserId">@Person(member.UserId)</span><span class="community-status">@Role(member.Role)</span></div> }</section><section class="card"><h3>Участники · @Service.Members.Count</h3>@foreach (var member in Service.Members) { <div class="community-member"><span title="@member.UserId">@Person(member.UserId)</span><span class="caption muted">@Role(member.Role)</span></div> }</section></div>
+                }
+                else if (tab == "requests" && Service.IsStaff)
+                {
+                    <div class="community-section-heading"><h3>Заявки на вступление</h3><span class="caption muted">@Service.JoinRequests.Count</span></div>
+                    @if (Service.JoinRequests.Count == 0) { <p class="community-empty">Нет заявок, ожидающих решения.</p> }
+                    <div class="stack">@foreach (var request in Service.JoinRequests) { <article class="card"><h3 title="@request.UserId">@Person(request.UserId)</h3><p class="caption muted">@Stamp(request.CreatedAt)</p><div class="community-card-actions"><button class="button primary" disabled="@(!Service.CanPublish)" @onclick="() => Service.ResolveJoinAsync(community.CommunityId, request.RequestId, true, familyKey)">Принять</button><button class="button danger" disabled="@(!Service.CanPublish)" @onclick="() => Service.ResolveJoinAsync(community.CommunityId, request.RequestId, false, familyKey)">Отклонить</button></div></article> }</div>
+                }
+            }
+        }
+    }
+</section>
+@if (editor is "homework" or "announcement")
+{
+    <CommunityContentEditor @key="editorKey" Title="@(editor == "homework" ? (editingHomework is null ? "Новое задание" : "Редактировать задание") : (editingAnnouncement is null ? "Новое объявление" : "Редактировать объявление"))" InitialTitle="@(editingHomework?.Title ?? editingAnnouncement?.Title ?? "")" InitialBody="@(editingHomework?.Body ?? editingAnnouncement?.Body ?? "")" Busy="Service.Busy" Allowed="@(Service.CanPublish && editorFamily == Api.Session.FamilyId)" Error="@Service.Error" OnClose="CloseEditor" OnSave="SaveContent" />
+}
+else if (editor == "poll") { <CommunityPollEditor @key="editorKey" Busy="Service.Busy" Allowed="@(Service.CanPublish && editorFamily == Api.Session.FamilyId)" Error="@Service.Error" OnClose="CloseEditor" OnSave="SavePoll" /> }
+@if (pendingNavigation is not null)
+{
+    <Modal Title="Покинуть редактирование?" OnClose="() => pendingNavigation = null"><p>Несохранённый текст останется только в этом окне. При переходе он будет потерян.</p><div class="form-actions"><button class="button" @onclick="() => pendingNavigation = null">Остаться</button><button class="button danger" @onclick="LeaveEditor">Перейти без сохранения</button></div></Modal>
+}
+
+@code {
+    private string groupFilter = "", query = "", tab = "announcements";
+    private string? editor, pageError, pendingNavigation;
+    private Guid editorFamily, editorCommunity, editorKey;
+    private Guid? displayedFamily;
+    private HomeworkResponse? editingHomework;
+    private AnnouncementResponse? editingAnnouncement;
+    private bool disposed, reloadOnStable;
+    private long displayedGeneration;
+    private readonly CancellationTokenSource lifetime = new();
+    private CommunityResponse[] VisibleCommunities => Service.Communities.Where(c => query.Length == 0 || c.Name.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase) || c.Description.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray();
+    private IEnumerable<(string Key, string Label)> Tabs => Service.IsStaff ? [("announcements", "Объявления"), ("homework", "Задания"), ("polls", "Опросы"), ("members", "Участники"), ("requests", "Заявки")] : [("announcements", "Объявления"), ("homework", "Задания"), ("polls", "Опросы"), ("members", "Участники")];
+    protected override async Task OnInitializedAsync()
+    {
+        State.Changed += Changed; Service.Changed += Changed; Api.SessionChanged += SessionChanged; Api.TransitionChanged += TransitionChanged;
+        displayedFamily = Api.Session.FamilyId; displayedGeneration = State.Generation; groupFilter = State.GroupId;
+        try { if (!Api.Available) await Api.RefreshSessionAsync(lifetime.Token); }
+        catch (BrowserApiException e) { pageError = e.Message; }
+        await Service.LoadAsync(groupFilter); reloadOnStable = false;
+        _ = Tick();
+    }
+    private async Task Tick() { using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30)); try { while (await timer.WaitForNextTickAsync(lifetime.Token)) await InvokeAsync(StateHasChanged); } catch (OperationCanceledException) { } }
+    private Task SessionChanged(BrowserSession session) { displayedFamily = session.FamilyId; CloseEditor(); query = ""; tab = "announcements"; reloadOnStable = true; return disposed ? Task.CompletedTask : InvokeAsync(StateHasChanged); }
+    private void TransitionChanged() { if (Api.Transitioning) CloseEditor(); else reloadOnStable = true; if (!disposed) _ = InvokeAsync(StateHasChanged); }
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (reloadOnStable && !Api.Transitioning && !Service.Loading && !Service.Busy) { reloadOnStable = false; await ReloadList(); } }
+    private void Changed() { if (displayedFamily != Api.Session.FamilyId || displayedGeneration != State.Generation || Service.IsCached || Api.Transitioning) CloseEditor(); displayedGeneration = State.Generation; if (tab == "requests" && !Service.IsStaff) tab = "announcements"; if (!disposed) _ = InvokeAsync(StateHasChanged); }
+    private Task ReloadList() { pageError = null; return Service.LoadAsync(groupFilter); }
+    private async Task Refresh() { pageError = null; var id = Service.Selected?.CommunityId; var owner = State.ProfileKey; try { if (!Api.Available || !Api.Session.Authenticated) await Api.RefreshSessionAsync(lifetime.Token); } catch (BrowserApiException e) { pageError = e.Message; } if (id is { } value && owner == State.ProfileKey) await Service.OpenAsync(value); else await ReloadList(); }
+    private async Task Open(Guid id) { tab = "announcements"; await Service.OpenAsync(id); }
+    private void Back() { Service.Close(); tab = "announcements"; }
+    private bool Pending(Guid id) => Service.OwnRequests.GetValueOrDefault(id)?.Status == "pending";
+    private string Person(Guid id) => id == Api.Session.User?.UserId ? "Вы" : "Участник " + id.ToString("N")[..8];
+    private static string Role(string? role) => role switch { "headman" => "Староста", "curator" => "Куратор", "member" => "Участник", _ => "Нет участия" };
+    private static string JoinStatus(string status) => status switch { "pending" => "Заявка ожидает решения", "accepted" => "Последняя заявка одобрена", "rejected" => "Заявка отклонена. Можно подать новую.", _ => "" };
+    private static string Stamp(DateTimeOffset value) => value.ToOffset(TimeSpan.FromHours(3)).ToString("d MMMM yyyy, HH:mm") + " МСК";
+    private void BeginEditor(string kind, Guid family) { editor = kind; editorFamily = family; editorCommunity = Service.Selected!.CommunityId; editorKey = Guid.NewGuid(); }
+    private void EditHomework(HomeworkResponse? value, Guid family) { if (!Service.CanPublish || family != Api.Session.FamilyId) return; editingHomework = value; editingAnnouncement = null; BeginEditor("homework", family); }
+    private void EditAnnouncement(AnnouncementResponse? value, Guid family) { if (!Service.CanPublish || family != Api.Session.FamilyId) return; editingHomework = null; editingAnnouncement = value; BeginEditor("announcement", family); }
+    private void EditPoll(Guid family) { if (!Service.CanPublish || family != Api.Session.FamilyId) return; editingHomework = null; editingAnnouncement = null; BeginEditor("poll", family); }
+    private void CloseEditor() { editor = null; editingHomework = null; editingAnnouncement = null; pendingNavigation = null; }
+    private Task BeforeNavigate(LocationChangingContext context) { if (editor is not null) { context.PreventNavigation(); pendingNavigation = context.TargetLocation; StateHasChanged(); } return Task.CompletedTask; }
+    private void LeaveEditor() { var target = pendingNavigation; pendingNavigation = null; CloseEditor(); if (target is not null) Navigation.NavigateTo(target); }
+    private async Task SaveContent(CommunityContentDraft draft) { var saved = editor == "homework" ? await Service.SaveHomeworkAsync(editorCommunity, editorFamily, draft.Title, draft.Body, editingHomework) : await Service.SaveAnnouncementAsync(editorCommunity, editorFamily, draft.Title, draft.Body, editingAnnouncement); if (saved) CloseEditor(); }
+    private async Task SavePoll(CommunityPollDraft draft) { if (await Service.PublishPollAsync(editorCommunity, editorFamily, draft.Question, draft.Deadline, draft.Options)) CloseEditor(); }
+    private async Task Vote(Guid community, Guid family, PollResponse poll, Guid option) { if (await Service.VoteAsync(community, family, poll, option)) await Service.LoadResultsAsync(community, poll.PollId); }
+    public void Dispose() { disposed = true; State.Changed -= Changed; Service.Changed -= Changed; Api.SessionChanged -= SessionChanged; Api.TransitionChanged -= TransitionChanged; lifetime.Cancel(); lifetime.Dispose(); }
+}

@@ -43,6 +43,10 @@ public sealed class AdminService(AccountsDataSource dataSource, AdminConfigurati
         {
             throw e.SqlState == PostgresErrorCodes.UniqueViolation ? AdminException.Conflict("conflict") : AdminException.NotFound();
         }
+        catch (PostgresException e) when (e.SqlState is PostgresErrorCodes.CheckViolation or PostgresErrorCodes.NotNullViolation)
+        {
+            throw AdminException.Invalid();
+        }
         catch (Exception ex) when (ex is NpgsqlException or TimeoutException)
         {
             throw AdminException.Unavailable();
@@ -134,6 +138,8 @@ public sealed class AdminWork(NpgsqlConnection connection, NpgsqlTransaction tx,
         communityId = CommunityValidation.Id(communityId);
         targetUserId = CommunityValidation.Id(targetUserId);
         role = CommunityValidation.StaffRole(role);
+        await using (var user = Command($"SELECT status FROM {Acc}.users WHERE user_id=@p0 FOR UPDATE", targetUserId))
+            if (await user.ExecuteScalarAsync(ct) as string != "active") throw AdminException.NotFound();
         await LockCommunityAsync(communityId);
         await Exec($"""
             INSERT INTO {Com}.memberships AS m(community_id,user_id,role,status,created_at,revoked_at)
@@ -219,21 +225,6 @@ public sealed class AdminWork(NpgsqlConnection connection, NpgsqlTransaction tx,
         return list;
     }
 
-    public async Task<IReadOnlyList<AdminFamilyRow>> ListFamiliesAsync(Guid targetUserId)
-    {
-        targetUserId = CommunityValidation.Id(targetUserId);
-        var list = new List<AdminFamilyRow>();
-        await using var command = Command($"""
-            SELECT family_id,device_name,platform,last_seen_at,revoked_at IS NOT NULL
-            FROM {Acc}.session_families WHERE user_id=@p0 ORDER BY last_seen_at DESC
-            """, targetUserId);
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
-            list.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2),
-                reader.GetFieldValue<DateTimeOffset>(3), reader.GetBoolean(4)));
-        return list;
-    }
-
     public async Task DisableAccountAsync(Guid targetUserId)
     {
         targetUserId = CommunityValidation.Id(targetUserId);
@@ -244,6 +235,8 @@ public sealed class AdminWork(NpgsqlConnection connection, NpgsqlTransaction tx,
             if (status is null) throw AdminException.NotFound();
         }
         await Exec($"UPDATE {Acc}.users SET status='disabled' WHERE user_id=@p0", targetUserId);
+        await Exec($"UPDATE {Acc}.recovery_email_tokens SET consumed_at=@p0 WHERE user_id=@p1 AND consumed_at IS NULL", now, targetUserId);
+        await Exec($"UPDATE {Acc}.password_reset_tokens SET consumed_at=@p0 WHERE user_id=@p1 AND consumed_at IS NULL", now, targetUserId);
         await Exec($"""
             UPDATE {Acc}.session_families SET revoked_at=@p0,revocation_reason='disabled'
             WHERE user_id=@p1 AND revoked_at IS NULL
@@ -255,19 +248,20 @@ public sealed class AdminWork(NpgsqlConnection connection, NpgsqlTransaction tx,
     public async Task RevokeFamilyAsync(Guid familyId)
     {
         familyId = CommunityValidation.Id(familyId);
-        Guid owner;
-        await using (var command = Command($"SELECT user_id FROM {Acc}.session_families WHERE family_id=@p0 FOR UPDATE", familyId))
+        await using (var command = Command($"""
+            SELECT revoked_at IS NOT NULL FROM {Acc}.session_families WHERE family_id=@p0 FOR UPDATE
+            """, familyId))
+        await using (var reader = await command.ExecuteReaderAsync(ct))
         {
-            var raw = await command.ExecuteScalarAsync(ct);
-            if (raw is null or DBNull) throw AdminException.NotFound();
-            owner = (Guid)raw;
+            if (!await reader.ReadAsync(ct)) throw AdminException.NotFound();
+            if (reader.GetBoolean(0)) throw AdminException.Conflict("revision_conflict");
         }
-        await Exec($"""
+        var revoked = await Exec($"""
             UPDATE {Acc}.session_families SET revoked_at=@p0,revocation_reason='revoke'
             WHERE family_id=@p1 AND revoked_at IS NULL
             """, now, familyId);
+        if (revoked != 1) throw AdminException.Conflict("revision_conflict");
         await Audit("session_revoked", "session_family", familyId.ToString("D"));
-        _ = owner;
     }
 
     public async Task<IReadOnlyList<AdminContentRow>> ListContentAsync()

@@ -1,0 +1,91 @@
+@page "/summary"
+@implements IDisposable
+@inject WebAppState State
+@inject BrowserApiClient Api
+@inject BrowserCatalogViewState View
+<PageTitle>Сводка — Запара</PageTitle>
+@{ var shownScope = viewScope; }
+
+<section class="page catalog-page summary-page">
+    <div class="page-heading"><div><h1>Сводка</h1><p class="muted">Нагрузка, предметы и аудитории</p></div><button class="button catalog-group" @onclick="() => showGroups = true"><Icon Name="calendar" />@State.GroupName</button></div>
+    <div class="catalog-controls"><div class="segmented" role="group" aria-label="Неделя для сводки">
+        @foreach (var item in Parities) { <button class="@(parity == item.Code ? "active" : "")" aria-pressed="@(parity == item.Code)" @onclick="() => Change(shownScope, () => parity = item.Code)">@item.Title</button> }
+    </div><p class="caption muted">@(parity == 0 ? "Общие пары учтены один раз" : "Включая пары каждую неделю")</p></div>
+    @if (!State.Ready) { <div class="skeleton-card" role="status">Считаем сводку…</div> }
+    else if (State.GroupId.Length == 0) { <div class="empty-state"><Icon Name="summary" /><h2>Сначала выберите группу</h2><p>Узнайте, какие дни загружены и где проходят занятия.</p><button class="button primary" @onclick="() => showGroups = true">Выбрать группу</button></div> }
+    else if (State.Schedule is null) { <div class="empty-state"><Icon Name="summary" /><h2>Нет расписания для сводки</h2><button class="button" disabled="@State.Refreshing" @onclick="State.RefreshAsync">Обновить расписание</button></div> }
+    else
+    {
+        var summary = CurrentSummary;
+        <div class="summary-filters">
+            <label class="field"><span>День</span><select aria-label="День для сводки" value="@day" @onchange="e => Change(shownScope, () => day = int.TryParse(e.Value?.ToString(), out var value) ? value : 0)"><option value="0">Все дни</option>@for (var d = 1; d <= 6; d++) { <option value="@d">@ParityService.DayNumberToTitle(d)</option> }</select></label>
+            <label class="field"><span>Вид занятия</span><select aria-label="Вид занятия для сводки" value="@kind" @onchange="e => Change(shownScope, () => kind = e.Value?.ToString() ?? string.Empty)"><option value="">Все виды</option>@foreach (var type in Kinds) { <option value="@type">@TypeLabel(type)</option> }</select></label>
+            <label class="field summary-query"><span>Предмет, преподаватель или аудитория</span><input type="search" placeholder="Найти в сводке" value="@query" @oninput="e => Change(shownScope, () => query = e.Value?.ToString() ?? string.Empty)" /></label>
+            @if (HasFilters) { <button class="button" @onclick="() => Change(shownScope, Reset)">Сбросить</button> }
+        </div>
+        <div class="summary-metrics" aria-label="Итоги сводки">
+            <div class="summary-metric"><strong>@summary.Total</strong><span>пар в расписании</span></div>
+            <div class="summary-metric"><strong>@summary.Subjects.Count</strong><span>предметов</span></div>
+            <div class="summary-metric"><strong>@summary.Teachers.Count</strong><span>преподавателей</span></div>
+            <div class="summary-metric"><strong>@summary.Rooms.Count</strong><span>аудиторий</span></div>
+        </div>
+        @if (summary.Total == 0) { <div class="empty-state"><Icon Name="search" /><h2>Занятия не найдены</h2><p>@(HasFilters ? "Попробуйте другие фильтры или очистите поиск." : "В этой части расписания пока нет занятий.")</p>@if (HasFilters) { <button class="button" @onclick="() => Change(shownScope, Reset)">Сбросить фильтры</button> }</div> }
+        else
+        {
+            <div class="summary-breakdowns">
+                @foreach (var section in Sections(summary))
+                {
+                    <section class="card summary-breakdown"><header class="catalog-section-heading"><h2>@section.Title</h2><span class="caption muted">Пар</span></header>
+                        @if (section.Items.Count == 0) { <p class="muted">Нет данных</p> }
+                        <ul>@foreach (var item in section.Items)
+                        {
+                            <li><div class="summary-count-label"><a href="@BrowserCatalogNavigation.SummaryTarget(section.Key, item.Name)">@item.Name</a><strong>@item.Count</strong></div><div class="summary-bar" aria-hidden="true"><span style="@("width:" + Percent(item.Count, section.Items) + "%")"></span></div></li>
+                        }</ul>
+                    </section>
+                }
+            </div>
+        }
+    }
+</section>
+@if (showGroups) { <GroupPicker OnClose="() => showGroups = false" /> }
+
+@code {
+    private static readonly (int Code, string Title)[] Parities = [(0, "Обе недели"), (1, "Нечётная"), (2, "Чётная")];
+    private int parity, day;
+    private string kind = "", query = "";
+    private bool showGroups;
+    private CatalogViewScope viewScope = new("", -1, "");
+    private bool HasFilters => day != 0 || kind.Length > 0 || query.Length > 0;
+    private IEnumerable<string> Kinds => State.Schedule is not { } snapshot ? [] : snapshot.Lessons.Where(l => l.GroupId == State.GroupId).Select(l => l.TypeRaw).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(TypeLabel);
+    private ScheduleSummary CurrentSummary
+    {
+        get
+        {
+            var snapshot = State.Schedule!;
+            var needle = query.Trim();
+            var filtered = snapshot.Lessons.Where(l => (day == 0 || l.DayOfWeek == day) && (kind.Length == 0 || l.TypeRaw.Equals(kind, StringComparison.OrdinalIgnoreCase)) &&
+                (needle.Length == 0 || State.DisplayName(l).Contains(needle, StringComparison.OrdinalIgnoreCase) || l.SubjectRaw.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+                    l.TeacherRaw.Contains(needle, StringComparison.OrdinalIgnoreCase) || l.ClassroomRaw.Contains(needle, StringComparison.OrdinalIgnoreCase))).ToArray();
+            return SummaryRules.Compose(snapshot with { Lessons = filtered }, State.GroupId, parity, State.Settings.ParityInvert, State.DisplayName);
+        }
+    }
+    private static IEnumerable<(string Key, string Title, IReadOnlyList<CountItem> Items)> Sections(ScheduleSummary s) => [("day", "По дням", s.ByDay), ("type", "Виды занятий", s.ByType), ("subject", "Предметы", s.Subjects), ("teacher", "Преподаватели", s.Teachers), ("room", "Аудитории", s.Rooms)];
+    private static string Percent(int count, IReadOnlyList<CountItem> items) => (100.0 * count / Math.Max(1, items.Max(i => i.Count))).ToString("0.##", CultureInfo.InvariantCulture);
+    private static string TypeLabel(string type) => type.Trim().ToLowerInvariant() switch { "лек" => "Лекция", "пр" or "практика" => "Практика", "лаб" => "Лабораторная", "конс" => "Консультация", "зач" => "Зачёт", "экз" => "Экзамен", "курс" => "Курсовая", "" => "Не указан", _ => type };
+    private void Reset() { day = 0; kind = query = ""; }
+    protected override void OnInitialized() { State.Changed += Changed; Restore(); }
+    private void Restore()
+    {
+        var current = new CatalogViewScope(State.ProfileKey, State.Generation, State.GroupId);
+        if (current == viewScope) return;
+        viewScope = View.Activate(current.Owner, current.Generation, current.Group);
+        var value = View.Summary(viewScope); parity = value.Parity; day = value.Day; kind = value.Kind; query = value.Query; showGroups = false;
+    }
+    private void Change(CatalogViewScope scope, Action action)
+    {
+        if (Api.Transitioning || scope != new CatalogViewScope(State.ProfileKey, State.Generation, State.GroupId)) return;
+        action(); View.Save(scope, new SummaryView(parity, day, kind, query));
+    }
+    private void Changed() { Restore(); _ = InvokeAsync(StateHasChanged); }
+    public void Dispose() => State.Changed -= Changed;
+}

@@ -1,0 +1,115 @@
+@inherits LayoutComponentBase
+@implements IAsyncDisposable
+@inject WebAppState State
+@inject NavigationManager Navigation
+@inject BrowserApiClient Api
+@inject BrowserAccountService Accounts
+@inject BrowserNotifications Notifications
+@inject IJSRuntime Js
+<div data-private-session inert="@Api.Transitioning">
+<a class="skip-link" href="#content">Перейти к содержимому</a>
+<div class="app-shell">
+    <aside class="sidebar">
+        <a href="schedule" class="brand">ЗАПАРА</a>
+        <p class="sidebar-caption">Расписание и карты Военмеха</p>
+        <button class="group-card" @onclick="OpenGroups"><span class="micro">МОЯ ГРУППА</span><strong>@State.GroupName</strong><span class="muted">@(State.IsGuest ? "На этом устройстве" : "Мой аккаунт")</span></button>
+        <nav aria-label="Разделы приложения">
+            @foreach (var item in Items) { <NavLink href="@item.Route" class="nav-item" Match="NavLinkMatch.Prefix"><Icon Name="@item.Icon" /><span>@item.Title</span></NavLink> }
+        </nav>
+        <div class="sidebar-footer"><span class="status-dot"></span><span>@(State.IsGuest ? "Гостевой режим" : "Аккаунт")</span><p>Неофициальное приложение<br />БГТУ «Военмех»</p></div>
+    </aside>
+    <div class="main-column">
+        <header class="mobile-header"><span class="brand">ЗАПАРА</span><button class="chip" @onclick="OpenGroups">@State.GroupName</button></header>
+        <header class="desktop-header"><span>@State.PeriodTitle</span><div class="toolbar"><span class="muted">@(State.FromBundle ? "Встроенный снимок" : "Расписание")</span><button class="icon-button" aria-label="Обновить расписание" disabled="@State.Refreshing" @onclick="State.RefreshAsync"><Icon Name="refresh" Class="@(State.Refreshing ? "spin" : "")" /></button></div></header>
+        <main id="content" tabindex="-1">
+            @if (State.Error is not null) { <div class="notice error" role="alert"><span>@State.Error</span><button class="icon-button" aria-label="Закрыть сообщение" @onclick="State.DismissError"><Icon Name="close" /></button></div> }
+            @if (State.Notice is not null) { <div class="notice"><span>@State.Notice</span><button class="text-button" disabled="@State.Refreshing" @onclick="State.RefreshAsync">Обновить</button></div> }
+            @if (State.Ready) { @Body } else { <div class="page"><div class="skeleton-card" role="status">Открываем сохранённые данные…</div></div> }
+        </main>
+    </div>
+    <nav class="bottom-nav" aria-label="Основные разделы">
+        @foreach (var item in Items.Where(i => i.Route is "schedule" or "maps" or "homework"))
+        { <NavLink href="@item.Route"><Icon Name="@item.Icon" /><span>@item.Title</span></NavLink> }
+        <button class="@(sectionsOpen ? "active" : "")" @onclick="() => sectionsOpen = true"><Icon Name="menu" /><span>Разделы</span></button>
+    </nav>
+</div>
+@if (groupOpen) { <GroupPicker OnClose="() => groupOpen = false" /> }
+@if (sectionsOpen)
+{
+    <Modal Title="Разделы" OnClose="() => sectionsOpen = false">
+            <div class="section-grid">@foreach (var item in Items.Where(i => i.Route is not ("schedule" or "maps" or "homework")))
+            { <a href="@item.Route" class="section-tile" @onclick="() => sectionsOpen = false"><Icon Name="@item.Icon" /><span>@item.Title</span></a> }</div>
+    </Modal>
+}
+</div>
+@if (Api.Transitioning)
+{
+    <div class="session-mask" role="status" aria-live="polite"><section class="card stack">
+        <h1>Проверяем аккаунт</h1><p>Личные данные временно скрыты, пока подтверждается сессия браузера.</p>
+        @if (Api.TransitionError is { } error) { <p class="muted">@error</p> }
+        @if (transitionError is not null) { <p role="alert">@transitionError</p> }
+        <button class="button" disabled="@transitionBusy" @onclick="RetrySession">Повторить проверку</button>
+        @if (Api.ExternalTransitionPending) { <button class="button" disabled="@transitionBusy" @onclick="CancelExternal">Отменить вход у провайдера</button> }
+    </section></div>
+}
+@code {
+    private bool groupOpen, sectionsOpen;
+    private bool disposed, transitionBusy, notificationsPending;
+    private string? transitionError;
+    private Guid? notificationFamily;
+    public sealed record Section(string Route, string Title, string Icon);
+    public static readonly Section[] Items = [new("schedule", "Расписание", "calendar"), new("week", "Неделя", "week"), new("summary", "Сводка", "summary"), new("teachers", "Преподаватели", "teachers"), new("maps", "Карты", "map"), new("friends", "Друзья", "friends"), new("homework", "Домашка", "homework"), new("community", "Сообщество", "community"), new("group", "Группа", "chat"), new("settings", "Настройки", "settings")];
+    protected override async Task OnInitializedAsync()
+    {
+        State.Changed += OnChanged; Api.TransitionChanged += TransitionChanged;
+        Navigation.LocationChanged += LocationChanged;
+        await Api.InitializeBrowserCoordinationAsync();
+        await State.InitializeAsync();
+        notificationFamily = Api.Session.FamilyId;
+        Api.SessionChanged += SessionChanged;
+        await Notifications.InitializeAsync();
+        await State.StartRuntimeAsync(Js);
+    }
+    private Task SessionChanged(BrowserSession session)
+    {
+        if (notificationFamily == session.FamilyId) return Task.CompletedTask;
+        notificationFamily = session.FamilyId;
+        notificationsPending = true;
+        return Task.CompletedTask;
+    }
+    private void TransitionChanged()
+    {
+        if (disposed) return;
+        State.Notify();
+        if (!Api.Transitioning) State.WakeRuntime();
+        if (!Api.Transitioning && notificationsPending)
+        {
+            notificationsPending = false;
+            _ = InvokeAsync(() => Notifications.SessionChangedAsync());
+        }
+    }
+    private void OnChanged() { if (!disposed) _ = InvokeAsync(StateHasChanged); }
+    private Task RetrySession() => CheckSession(false);
+    private Task CancelExternal() => CheckSession(true);
+    private async Task CheckSession(bool cancel)
+    {
+        if (transitionBusy) return;
+        transitionBusy = true; transitionError = null;
+        try
+        {
+            if (cancel) await Accounts.CancelOAuthAsync();
+            else if (Api.ExternalTransitionPending) await Accounts.ResumeOAuthAsync();
+            else await Api.RefreshSessionAsync();
+        }
+        catch (Exception e) when (e is BrowserApiException or JSException or InvalidOperationException) { transitionError = e.Message; }
+        finally { transitionBusy = false; }
+    }
+    private void OpenGroups() { sectionsOpen = false; groupOpen = true; }
+    private void LocationChanged(object? sender, LocationChangedEventArgs args) { groupOpen = sectionsOpen = false; }
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true; State.Changed -= OnChanged; Api.TransitionChanged -= TransitionChanged;
+        Api.SessionChanged -= SessionChanged; Navigation.LocationChanged -= LocationChanged;
+        await State.StopRuntimeAsync();
+    }
+}

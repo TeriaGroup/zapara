@@ -1,6 +1,6 @@
 namespace Zapara.Server.Accounts;
 
-public enum AccountFailure { InvalidCredentials, InvalidSession, UsernameUnavailable, SessionNotFound, InvalidRequest, RateLimited, DbUnavailable, ExportNotFound }
+public enum AccountFailure { InvalidCredentials, InvalidSession, UsernameUnavailable, SessionNotFound, InvalidRequest, RateLimited, DbUnavailable, ExportNotFound, RecoveryUnavailable }
 
 public sealed class AccountServiceException : Exception
 {
@@ -16,6 +16,7 @@ public sealed class AccountServiceException : Exception
         AccountFailure.RateLimited => "rate_limited",
         AccountFailure.DbUnavailable => "db_unavailable",
         AccountFailure.ExportNotFound => "export_not_found",
+        AccountFailure.RecoveryUnavailable => "recovery_unavailable",
         _ => "internal_error"
     };
 }

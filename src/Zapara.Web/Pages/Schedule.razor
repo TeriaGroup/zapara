@@ -1,0 +1,112 @@
+@page "/"
+@page "/schedule"
+@implements IDisposable
+@using Zapara.Contracts.Sync
+@inject WebAppState State
+@inject BrowserScheduleViewState View
+@inject BrowserApiClient Api
+@inject NavigationManager Navigation
+<PageTitle>Расписание — Запара</PageTitle>
+@{ var shownScope = CurrentScope; var shownDate = date; var lessons = Lessons; var timings = BrowserSchedulePresentation.Timings(lessons, date, now); }
+<section class="page schedule-page">
+    <div class="page-heading"><div><h1>@Heading</h1><p class="muted">@Subtitle</p></div><div class="toolbar">
+        <button class="icon-button outlined" disabled="@(date <= BrowserScheduleViewState.MinimumDate || Api.Transitioning)" aria-label="Предыдущий день" @onclick="() => Choose(shownDate.AddDays(-1), shownScope)"><Icon Name="left" /></button>
+        <button class="button" disabled="@Api.Transitioning" @onclick="() => Choose(DateTime.Today, shownScope)">Сегодня</button>
+        <button class="icon-button outlined" disabled="@(date >= BrowserScheduleViewState.MaximumDate || Api.Transitioning)" aria-label="Следующий день" @onclick="() => Choose(shownDate.AddDays(1), shownScope)"><Icon Name="right" /></button>
+    </div></div>
+    <div class="schedule-date-tools"><label class="schedule-date-picker"><Icon Name="calendar" /><span>Выбрать дату</span><input type="date" value="@DateValue" min="1900-01-01" max="2100-12-31" disabled="@Api.Transitioning" @onchange="e => PickDate(e, shownScope)" /></label></div>
+    @if (dateError is not null) { <p class="form-error" role="alert">@dateError</p> }
+    <div class="date-strip" aria-label="Выбор дня">@foreach (var day in Dates)
+    { <button class="date-cell @(day == date ? "selected" : "")" disabled="@Api.Transitioning" aria-label="@day.ToString("d MMMM, dddd")" aria-pressed="@(day == date)" @onclick="() => Choose(day, shownScope)"><span>@day.ToString("ddd")</span><strong>@day.Day</strong><span class="date-mark @(day == now.Date ? "today" : "")"></span></button> }</div>
+    @if (!State.Ready) { <div class="skeleton-card" role="status">Загружаем расписание…</div> }
+    else if (string.IsNullOrEmpty(State.GroupId)) { <div class="empty-state"><Icon Name="calendar" /><h2>Выберите свою группу</h2><p>Расписание и карты будут доступны без аккаунта.</p><button class="button primary" disabled="@Api.Transitioning" @onclick="() => OpenGroups(shownScope)">Выбрать группу</button></div> }
+    else if (!State.HasGroupData(State.GroupId)) { <div class="empty-state"><Icon Name="calendar" /><h2>Расписание группы ещё не загружено</h2><p>Подключитесь к серверу, чтобы сохранить его на устройстве.</p><button class="button" disabled="@(State.Refreshing || Api.Transitioning)" @onclick="State.RefreshAsync">Загрузить расписание</button></div> }
+    else
+    {
+        <div class="schedule-freshness"><span>@Freshness</span><button class="button" disabled="@(State.Refreshing || Api.Transitioning)" @onclick="State.RefreshAsync">@(State.Refreshing ? "Обновляем…" : "Обновить")</button></div>
+        @if (lessons.Count == 0) { <div class="empty-state"><Icon Name="calendar" /><h2>На этот день пар нет</h2><p>Можно отдохнуть или посмотреть расписание на другой день.</p></div> }
+        else
+        {
+            <div class="lesson-list">@for (var index = 0; index < lessons.Count; index++)
+            {
+                var lesson = lessons[index]; var timing = timings[index]; var homework = HomeworkFor(lesson); var friends = FriendsFor(lesson);
+                <article class="lesson-card @("lesson-" + timing)">
+                    <div class="lesson-time"><strong>@lesson.TimeStart</strong><span>@lesson.TimeEnd</span><span class="lesson-index">@lesson.Index пара</span></div>
+                    <div class="lesson-content">
+                        <div class="schedule-lesson-heading"><span class="lesson-type @TypeClass(lesson.TypeRaw)">@lesson.TypeRaw</span>@if (timing.Length > 0) { <span class="schedule-timing @timing">@TimingText(timing)</span> }</div>
+                        <h2>@State.DisplayName(lesson)</h2><p class="muted">@(string.IsNullOrWhiteSpace(lesson.TeacherRaw) ? "Преподаватель не указан" : lesson.TeacherRaw)</p>
+                        @if (!string.IsNullOrWhiteSpace(State.LessonNote(lesson))) { <p class="lesson-note">@State.LessonNote(lesson)</p> }
+                        <div class="lesson-meta"><a class="room-chip" href="@("maps?room=" + Uri.EscapeDataString(lesson.ClassroomRaw))"><Icon Name="pin" />@(string.IsNullOrWhiteSpace(lesson.ClassroomRaw) ? "Аудитория не указана" : lesson.ClassroomRaw.TrimEnd(';'))</a><span class="caption muted">След. @Next(lesson)</span></div>
+                        @if (friends.Count > 0)
+                        {
+                            <div class="schedule-friends" aria-label="Друзья на этой паре">@foreach (var friend in friends)
+                            { <a class="schedule-friend @(friend.Present ? "present" : "absent")" href="friends" style="@("--friend-color:var(--friend" + friend.Friend.PaletteIndex + ")")"><span class="schedule-friend-dot" aria-hidden="true"></span><span><strong>@friend.Friend.GroupName</strong> · @friend.Friend.MemberNames<br /><span class="caption">@(friend.HasCompatibleSchedule ? friend.Label : "Расписание друзей не загружено")</span></span></a> }</div>
+                        }
+                        @if (homework.Count > 0)
+                        {
+                            <div class="schedule-homework" aria-label="Задания по предмету">@foreach (var task in homework)
+                            { <a href="homework" class="schedule-homework-item @task.Status"><Icon Name="homework" /><span><span class="schedule-homework-text">@task.Text</span><span class="caption">@Homework.StatusText(task.Status)@(task.Due is { } due ? " · " + due.ToString("d MMMM") : "")</span></span></a> }</div>
+                        }
+                    </div>
+                    <button class="icon-button" disabled="@Api.Transitioning" aria-label="@("Действия: " + State.DisplayName(lesson))" @onclick="() => OpenLesson(lesson, shownScope)"><Icon Name="more" /></button>
+                </article>
+            }</div>
+        }
+    }
+</section>
+@if (showGroups) { <GroupPicker OnClose="() => showGroups = false" /> }
+@if (selected is not null) { <LessonActions Lesson="selected" OnClose="() => selected = null" /> }
+@code {
+    [SupplyParameterFromQuery(Name = "date")] public string? RequestedDate { get; set; }
+    private DateTime date = DateTime.Today, now = DateTime.Now;
+    private bool showGroups, parametersSeen;
+    private Lesson? selected;
+    private string? handledQuery, pendingQuery, pendingQueryOwner, dateError;
+    private ScheduleScope? activeScope;
+    private sealed record ScheduleScope(string Owner, long Generation, string GroupId);
+    private ScheduleScope CurrentScope => new(State.ProfileKey, State.Generation, State.GroupId);
+    private bool IsCurrent(ScheduleScope scope) => scope == CurrentScope && !Api.Transitioning;
+    private string DateValue => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    private string Heading => date == now.Date ? "Сегодня" : date == now.Date.AddDays(1) ? "Завтра" : date == now.Date.AddDays(-1) ? "Вчера" : date.ToString("dddd");
+    private string Subtitle => date.ToString("d MMMM, dddd") + (State.Schedule is { } s ? $" · {(ScheduleRules.WeekCode(s, date, State.Settings.ParityInvert) == 1 ? "Нечётная" : "Чётная")} неделя" : "");
+    private string Freshness => State.FromBundle ? "Расписание из офлайн-пакета" : State.Schedule?.FetchedAt is { } at ? "Сохранено " + at.ToLocalTime().ToString("d MMMM, HH:mm") : "Сохранённое расписание";
+    private IReadOnlyList<Lesson> Lessons => State.Schedule is { } s && State.HasGroupData(State.GroupId) ? ScheduleRules.ForDate(s, State.GroupId, date, State.Settings.ParityInvert) : [];
+    private IEnumerable<DateTime> Dates => Enumerable.Range(-3, 7).Select(offset => date.AddDays(offset)).Where(day => day >= BrowserScheduleViewState.MinimumDate && day <= BrowserScheduleViewState.MaximumDate);
+    protected override void OnInitialized() { State.Changed += Changed; Api.TransitionChanged += TransitionChanged; }
+    protected override void OnParametersSet()
+    {
+        if (!parametersSeen || RequestedDate != handledQuery) { parametersSeen = true; handledQuery = RequestedDate; pendingQuery = RequestedDate; pendingQueryOwner = State.ProfileKey; dateError = null; }
+        ApplyState();
+    }
+    private void ApplyState()
+    {
+        now = DateTime.Now;
+        var scope = CurrentScope;
+        if (scope != activeScope) { selected = null; showGroups = false; dateError = null; activeScope = scope; }
+        if (pendingQueryOwner != scope.Owner) pendingQuery = null;
+        var query = pendingQuery;
+        if (query is not null && !BrowserScheduleViewState.TryDate(query, out _)) { dateError = "Не удалось прочитать дату. Выберите день в календаре."; pendingQuery = null; }
+        date = View.Open(scope.Owner, scope.GroupId, State.Ready && State.HasGroupData(scope.GroupId) ? State.Schedule : null, now, State.Settings.ParityInvert, query);
+        if (State.Ready && scope.GroupId.Length > 0) pendingQuery = null;
+    }
+    private void Changed() { ApplyState(); _ = InvokeAsync(StateHasChanged); }
+    private void TransitionChanged() { selected = null; showGroups = false; ApplyState(); _ = InvokeAsync(StateHasChanged); }
+    private void Choose(DateTime value, ScheduleScope scope)
+    {
+        if (!IsCurrent(scope)) return;
+        dateError = null; date = BrowserScheduleViewState.Clamp(value); pendingQuery = null; selected = null;
+        View.Select(scope.Owner, scope.GroupId, date);
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("date", DateValue), replace: true);
+    }
+    private void PickDate(ChangeEventArgs e, ScheduleScope scope) { if (!IsCurrent(scope)) return; if (BrowserScheduleViewState.TryDate(e.Value?.ToString(), out var value)) Choose(value, scope); else dateError = "Выберите дату от 1900 до 2100 года."; }
+    private void OpenGroups(ScheduleScope scope) { if (IsCurrent(scope)) { selected = null; showGroups = true; } }
+    private void OpenLesson(Lesson lesson, ScheduleScope scope) { if (IsCurrent(scope) && Lessons.Contains(lesson)) { showGroups = false; selected = lesson; } }
+    private IReadOnlyList<ScheduleHomeworkIndicator> HomeworkFor(Lesson lesson) => State.Schedule is { } s ? BrowserSchedulePresentation.Homework(s, State.GroupId, lesson, now.Date, State.Values<HomeworkValue>("homework"), State.Values<CompletionValue>("completion"), State.Settings.ParityInvert) : [];
+    private IReadOnlyList<FriendPresence> FriendsFor(Lesson lesson) => State.Schedule is { } s ? BrowserSchedulePresentation.Friends(s, lesson, date,
+        State.Values<FriendValue>("friend").Select(f => { var value = f.Value; return new FriendValue(State.ResolveGroupId(value.GroupId, value.GroupName), value.GroupName, value.MemberNames, value.PaletteIndex, value.Enabled); }),
+        State.HasGroupData, State.Settings.Strictness, State.Settings.AlwaysShow, State.Settings.ParityInvert) : [];
+    private string Next(Lesson lesson) => State.Schedule is { } s ? ScheduleRules.NextOccurrence(s, State.GroupId, lesson.SubjectRaw, date, invert: State.Settings.ParityInvert)?.ToString("dd.MM") ?? "—" : "—";
+    private static string TimingText(string timing) => timing switch { "current" => "Сейчас", "next" => "Следующая", "past" => "Завершена", _ => "" };
+    public static string TypeClass(string kind) => kind.ToLowerInvariant() switch { "лек" => "lecture", "пр" => "practice", "лаб" => "lab", _ => "" };
+    public void Dispose() { State.Changed -= Changed; Api.TransitionChanged -= TransitionChanged; }
+}

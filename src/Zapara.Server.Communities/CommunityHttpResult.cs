@@ -6,7 +6,7 @@ namespace Zapara.Server.Communities;
 
 internal static class CommunityHttpResult
 {
-    internal static IResult Json<T>(T value, int status = 200) => new FrozenJson(CommunityJson.Serialize(value), status, "application/json; charset=utf-8");
+    internal static IResult Json<T>(T value, int status = 200) => new TypedJson<T>(value, status);
     internal static IResult Problem(int status, string code)
     {
         var title = status switch
@@ -26,12 +26,33 @@ internal static class CommunityHttpResult
     internal static IResult From(AccountServiceException exception) => Problem(exception.Failure switch
     {
         AccountFailure.InvalidCredentials or AccountFailure.InvalidSession => 401,
+        AccountFailure.UsernameUnavailable => 409,
+        AccountFailure.SessionNotFound or AccountFailure.ExportNotFound => 404,
         AccountFailure.InvalidRequest => 400,
         AccountFailure.RateLimited => 429,
-        AccountFailure.DbUnavailable => 503,
+        AccountFailure.DbUnavailable or AccountFailure.RecoveryUnavailable => 503,
         _ => 500
     }, exception.Code);
 
+    // Version 1 readers reject control characters in Body. Presentation changes only;
+    // stored content and modern/native-v2/browser responses retain the original paragraphs.
+    private static object? Legacy(object? value) => value switch
+    {
+        HomeworkResponse h => new HomeworkResponse(h.HomeworkId, h.CommunityId, h.Title, SingleLine(h.Body), h.Revision, h.CreatedAt, h.UpdatedAt),
+        AnnouncementResponse a => new AnnouncementResponse(a.AnnouncementId, a.CommunityId, a.Title, SingleLine(a.Body), a.Revision, a.CreatedAt, a.UpdatedAt),
+        IEnumerable<HomeworkResponse> homework => homework.Select(h => Legacy(h)).ToArray(),
+        IEnumerable<AnnouncementResponse> announcements => announcements.Select(a => Legacy(a)).ToArray(),
+        _ => value
+    };
+    private static string SingleLine(string body) => body.Replace('\n', ' ').Replace('\r', ' ').Replace('\t', ' ');
+    private sealed class TypedJson<T>(T value, int status) : IResult
+    {
+        public Task ExecuteAsync(HttpContext context)
+        {
+            object? shown = context.Request.Path.StartsWithSegments("/api/v1/communities") ? Legacy(value) : value;
+            return new FrozenJson(CommunityJson.Serialize(shown), status, "application/json; charset=utf-8").ExecuteAsync(context);
+        }
+    }
     private sealed class FrozenJson(byte[] body, int status, string contentType) : IResult
     {
         public async Task ExecuteAsync(HttpContext context)

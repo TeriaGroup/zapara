@@ -1,0 +1,70 @@
+@implements IDisposable
+@inject BrowserNotifications Notifications
+@inject WebAppState State
+<section class="card stack" aria-labelledby="notification-settings-title">
+    <div class="row"><h2 id="notification-settings-title">Уведомления</h2><span class="chip">@(Notifications.Enabled ? "Включены" : "Выключены")</span></div>
+    <p class="muted">Нейтральное напоминание открыть Запару. Содержимое заданий и данные аккаунта не показываются на экране блокировки.</p>
+    @if (!Notifications.Ready && Notifications.Busy) { <p role="status" class="muted">Проверяем доступность уведомлений…</p> }
+    @if (!Notifications.Authenticated) { <p class="muted">Для серверных напоминаний войдите в аккаунт. Расписание и карты остаются доступны гостю.</p> }
+    @if (Notifications.Ready && !Notifications.Capabilities.Available) { <p role="status" class="muted">Отправка уведомлений на сервере пока не настроена.</p> }
+    @if (Notifications.Browser.Ios && !Notifications.Browser.Installed)
+    {
+        <div class="stack"><h3>Уведомления на iPhone и iPad</h3><p class="muted">В Safari откройте меню «Поделиться», выберите «На экран Домой» и добавьте Запару. Затем откройте её с экрана Домой и нажмите «Включить уведомления».</p></div>
+    }
+    else if (Notifications.Ready && !Notifications.Browser.Supported)
+    {
+        <p class="muted">@(Notifications.Browser.Secure ? "Этот браузер не предоставляет уведомления для приложения." : "Уведомления доступны при открытии приложения по защищённому адресу HTTPS.")</p>
+    }
+    @if (Notifications.Browser.Permission == "denied") { <p class="muted">Уведомления запрещены в настройках браузера. Разрешите их для Запары, затем нажмите «Проверить доступность».</p> }
+    @if (Notifications.Ready && Notifications.Browser.Supported && !Notifications.Browser.Registered) { <p class="muted">Дождитесь первой загрузки приложения, затем нажмите «Проверить доступность».</p> }
+    <p class="caption muted">Время напоминаний: @TimesText · @Notifications.Browser.TimeZone. Времена берутся из настроек вашего аккаунта.</p>
+    <div class="toolbar">
+        @if (Notifications.Enabled)
+        {
+            <button class="button" disabled="@Notifications.Busy" @onclick="() => Notifications.DisableAsync()">Отключить уведомления</button>
+            <button class="button" disabled="@(Notifications.Busy || !Notifications.Capabilities.Available)" @onclick="() => Notifications.TestAsync()">Проверить уведомление</button>
+        }
+        else
+        {
+            <button class="button primary" disabled="@(!CanEnable)" @onclick="() => Notifications.EnableAsync()">Включить уведомления</button>
+            @if (Notifications.Browser.Subscribed) { <button class="button" disabled="@Notifications.Busy" @onclick="() => Notifications.DisableAsync()">Отключить в браузере</button> }
+        }
+        <button class="button" disabled="@Notifications.Busy" @onclick="() => Notifications.RefreshAsync()">Проверить доступность</button>
+    </div>
+</section>
+<section class="card stack" aria-labelledby="pwa-settings-title">
+    <div class="row"><h2 id="pwa-settings-title">Приложение на устройстве</h2><span class="chip">@(Notifications.Browser.Installed ? "Открыто как приложение" : "Открыто в браузере")</span></div>
+    <p class="muted">После первой загрузки сохранённые расписание и карты доступны офлайн. Для новых данных и операций аккаунта нужно подключение.</p>
+    @if (Notifications.Browser.UpdateAvailable)
+    {
+        <p role="status">Новая версия готова. Перед обновлением дождёмся сохранения изменений на устройстве. Неотправленные изменения останутся в очереди.</p>
+        <button class="button primary" disabled="@(Notifications.Busy || !State.StorageAvailable)" @onclick="ActivateUpdate">Обновить и перезагрузить</button>
+    }
+    <div><button class="button" disabled="@Notifications.Busy" @onclick="() => Notifications.CheckUpdateAsync()">Проверить обновление</button></div>
+</section>
+@if (Notifications.Error is not null) { <div class="card" role="alert">@Notifications.Error</div> }
+@if (Notifications.Message is not null) { <div class="card muted" role="status">@Notifications.Message</div> }
+@if (saveError is not null) { <div class="card" role="alert">@saveError</div> }
+@code {
+    [Parameter] public EventCallback BeforeUpdate { get; set; }
+    private bool disposed;
+    private string? saveError;
+    private bool CanEnable => Notifications.Ready && !Notifications.Busy && Notifications.Authenticated && Notifications.Capabilities.Available
+        && Notifications.Browser.Supported && Notifications.Browser.Registered && Notifications.Browser.Permission != "denied"
+        && (!Notifications.Browser.Ios || Notifications.Browser.Installed);
+    private string TimesText => string.Join(" и ", new[] { State.Settings.NotifyTime1, State.Settings.NotifyTime2 }.Where(value => !string.IsNullOrEmpty(value))) is { Length: > 0 } text ? text : "оба напоминания отключены";
+    protected override async Task OnInitializedAsync()
+    {
+        Notifications.Changed += Changed; State.Changed += Changed;
+        await Notifications.InitializeAsync();
+    }
+    private void Changed() { if (!disposed) _ = InvokeAsync(StateHasChanged); }
+    private async Task ActivateUpdate()
+    {
+        saveError = null;
+        try { await BeforeUpdate.InvokeAsync(); await Notifications.ActivateUpdateAsync(); }
+        catch (Exception error) when (error is InvalidOperationException or JSException or HttpRequestException or BrowserApiException)
+        { saveError = "Изменения не удалось сохранить. Обновление отложено; проверьте данные и повторите попытку."; }
+    }
+    public void Dispose() { disposed = true; Notifications.Changed -= Changed; State.Changed -= Changed; }
+}

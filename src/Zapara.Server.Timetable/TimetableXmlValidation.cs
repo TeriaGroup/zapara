@@ -123,7 +123,10 @@ internal static class TimetableXmlValidation
     private static void ValidateLesson(XElement lesson, string day)
     {
         Require(lesson.Elements().GroupBy(element => element.Name).All(group => group.Count() == 1));
-        Require(string.Equals(Field(lesson, "DayTitle"), day, StringComparison.OrdinalIgnoreCase));
+        // Current university/native snapshots derive the day from their Day parent;
+        // older exports redundantly repeat it in each lesson. A present value must agree.
+        if (lesson.Element("DayTitle") is not null)
+            Require(string.Equals(Field(lesson, "DayTitle"), day, StringComparison.OrdinalIgnoreCase));
         var parity = Integer(Field(lesson, "WeekCode"));
         Require(parity is >= 0 and <= 2);
         ValidateTime(Field(lesson, "Time"), parity);

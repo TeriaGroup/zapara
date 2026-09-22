@@ -3,12 +3,15 @@ using Zapara.Contracts.Accounts.ExternalResponses;
 using Zapara.Server.Accounts.ExternalProviders;
 using Zapara.Contracts.Accounts;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Npgsql;
 
 namespace Zapara.Server.Accounts;
 
 public sealed partial class ExternalAuthService(AccountsDataSource dataSource, AccountsConfiguration configuration,
-    TimeProvider clock, ExternalProviderRegistry providers, AccountPasswordWork? passwords = null)
+    TimeProvider clock, ExternalProviderRegistry providers, AccountPasswordWork? passwords = null,
+    IConfiguration? hostConfiguration = null, IHostEnvironment? hostEnvironment = null)
 {
     private readonly string schema = configuration.QuotedSchema;
     private readonly ExternalSecrets secrets = new(clock);
@@ -27,11 +30,19 @@ public sealed partial class ExternalAuthService(AccountsDataSource dataSource, A
         { throw new AccountServiceException(AccountFailure.DbUnavailable); }
     }
 
-    public async Task<ExternalStartResponse> StartAsync(string provider, ExternalStartRequest request,
+    public Task<ExternalStartResponse> StartAsync(string provider, ExternalStartRequest request,
         string? accessToken = null, CancellationToken ct = default)
+        => StartCoreAsync(provider, request, accessToken, false, ct);
+
+    public Task<ExternalStartResponse> StartBrowserAsync(string provider, ExternalStartRequest request,
+        string? accessToken = null, CancellationToken ct = default)
+        => StartCoreAsync(provider, request, accessToken, true, ct);
+
+    private async Task<ExternalStartResponse> StartCoreAsync(string provider, ExternalStartRequest request,
+        string? accessToken, bool browser, CancellationToken ct)
     {
         var adapter = providers.Get(provider);
-        ValidateStart(request);
+        ValidateStart(request, browser);
         var challenge = ExternalSecrets.Challenge(request.NativeChallenge);
         var id = Guid.NewGuid();
         var state = ExternalSecrets.Random();
@@ -74,13 +85,15 @@ public sealed partial class ExternalAuthService(AccountsDataSource dataSource, A
         catch { secrets.Remove(id); throw; }
     }
 
-    private static void ValidateStart(ExternalStartRequest request)
+    private static void ValidateStart(ExternalStartRequest request, bool browser)
     {
         if (request is null || request.Device is null || request.NativeReturn is null ||
             request.NativeChallengeMethod != "S256" || request.Purpose is not ("login" or "link" or "reauth")) throw ExternalAuthException.Invalid();
         if (request.NativeReturn.Kind != request.Device.Platform || request.NativeReturn.Kind switch
             { "windows" => request.NativeReturn.Port is < 1024 or > 65535 or null,
-              "android" => request.NativeReturn.Port is not null, _ => true }) throw ExternalAuthException.Invalid();
+              "android" => request.NativeReturn.Port is not null,
+              "web" => !browser || request.NativeReturn.Port is not null, _ => true }) throw ExternalAuthException.Invalid();
+        if (browser && request.Device.Platform != "web") throw ExternalAuthException.Invalid();
         if (request.Purpose == "reauth") ValidateScope(request.ProofPurpose);
         else if (request.ProofPurpose is not null) throw ExternalAuthException.Invalid();
         if (request.Purpose != "link" && request.ProofToken is not null) throw ExternalAuthException.Invalid();

@@ -9,8 +9,20 @@ namespace Zapara.Server.Communities;
 public sealed class CommunitiesMigrations(AccountsDataSource dataSource, CommunitiesConfiguration configuration)
 {
     public static string BaselineChecksum => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Baseline()))).ToLowerInvariant();
-    public async Task EnsureAsync(CancellationToken ct = default)
+    public static string MultilineChecksum => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Script("002_multiline_bodies.sql")))).ToLowerInvariant();
+
+    public async Task VerifyCurrentPreparedSchemaAsync(NpgsqlConnection connection, NpgsqlTransaction tx, CancellationToken ct = default)
     {
+        await CommunitiesSchemaShape.VerifyAsync(connection, tx, configuration, ct, 2);
+        await using var history = new NpgsqlCommand($"SELECT version,checksum FROM {configuration.QuotedSchema}.schema_migrations ORDER BY version", connection, tx);
+        await using var reader = await history.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct) || reader.GetInt32(0) != 1 || reader.GetString(1) != BaselineChecksum
+            || !await reader.ReadAsync(ct) || reader.GetInt32(0) != 2 || reader.GetString(1) != MultilineChecksum
+            || await reader.ReadAsync(ct)) throw Invalid();
+    }
+    public async Task EnsureAsync(CancellationToken ct = default, int targetVersion = 2)
+    {
+        if (targetVersion is < 1 or > 2) throw Invalid();
         await using var connection = dataSource.CreateMigrationConnection();
         using (var runtime = dataSource.CreateConnection())
         {
@@ -51,11 +63,28 @@ public sealed class CommunitiesMigrations(AccountsDataSource dataSource, Communi
             history.Parameters.AddWithValue("checksum", BaselineChecksum);
             await history.ExecuteNonQueryAsync(ct);
         }
-        await CommunitiesSchemaShape.VerifyAsync(connection, tx, configuration, ct);
+        var existingShape = await CommunitiesSchemaShape.FingerprintAsync(connection, tx, configuration, ct);
+        if (existingShape != CommunitiesSchemaShape.BaselineExpected && existingShape != CommunitiesSchemaShape.Expected) throw Invalid();
+        var version = 1;
         await using (var history = new NpgsqlCommand($"SELECT version,checksum FROM {configuration.QuotedSchema}.schema_migrations ORDER BY version", connection, tx))
         {
             await using var reader = await history.ExecuteReaderAsync(ct);
-            if (!await reader.ReadAsync(ct) || reader.GetInt32(0) != 1 || reader.GetString(1) != BaselineChecksum || await reader.ReadAsync(ct)) throw Invalid();
+            if (!await reader.ReadAsync(ct) || reader.GetInt32(0) != 1 || reader.GetString(1) != BaselineChecksum) throw Invalid();
+            if (await reader.ReadAsync(ct))
+            {
+                if (reader.GetInt32(0) != 2 || reader.GetString(1) != MultilineChecksum || await reader.ReadAsync(ct)) throw Invalid();
+                version = 2;
+            }
+        }
+        if (version > targetVersion) throw Invalid();
+        await CommunitiesSchemaShape.VerifyAsync(connection, tx, configuration, ct, version);
+        if (version == 1 && targetVersion == 2)
+        {
+            await Execute(Script("002_multiline_bodies.sql").Replace("__COM__", configuration.QuotedSchema, StringComparison.Ordinal), connection, tx, ct);
+            await using var history = new NpgsqlCommand($"INSERT INTO {configuration.QuotedSchema}.schema_migrations VALUES (2,@checksum,CURRENT_TIMESTAMP)", connection, tx);
+            history.Parameters.AddWithValue("checksum", MultilineChecksum);
+            await history.ExecuteNonQueryAsync(ct);
+            await CommunitiesSchemaShape.VerifyAsync(connection, tx, configuration, ct, 2);
         }
         ct.ThrowIfCancellationRequested();
         await tx.CommitAsync(ct);
@@ -65,9 +94,10 @@ public sealed class CommunitiesMigrations(AccountsDataSource dataSource, Communi
         await using var command = new NpgsqlCommand(sql, connection, tx);
         await command.ExecuteNonQueryAsync(ct);
     }
-    private static string Baseline()
+    private static string Baseline() => Script("001_communities.sql");
+    private static string Script(string name)
     {
-        using var stream = typeof(CommunitiesMigrations).Assembly.GetManifestResourceStream("Zapara.Server.Communities.Sql.001_communities.sql")
+        using var stream = typeof(CommunitiesMigrations).Assembly.GetManifestResourceStream("Zapara.Server.Communities.Sql." + name)
             ?? throw Invalid();
         using var reader = new StreamReader(stream, Encoding.UTF8);
         return reader.ReadToEnd().Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');

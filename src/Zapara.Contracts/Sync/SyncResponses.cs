@@ -16,7 +16,6 @@ public sealed record SyncMetadata
     [JsonRequired, JsonInclude] public long MinAfterSequence { get; private init; }
 }
 
-/// <summary>Frozen domain outcomes; transport and receipt execution are deferred.</summary>
 public sealed record SyncMutationResult
 {
     [JsonConstructor]

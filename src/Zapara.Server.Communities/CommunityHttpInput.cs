@@ -11,6 +11,11 @@ internal static class CommunityHttpInput
         if (context.Request.Query.Any(pair => !allowed.Contains(pair.Key, StringComparer.Ordinal) || pair.Value.Count != 1))
             throw new CommunityInputException();
     }
+    internal static Guid? Cursor(HttpContext context, string key)
+    {
+        if (!context.Request.Query.TryGetValue(key, out var raw)) return null;
+        return Id(raw.ToString());
+    }
     internal static Guid Id(object? raw)
     {
         var text = raw as string;

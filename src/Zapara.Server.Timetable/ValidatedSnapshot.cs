@@ -4,7 +4,7 @@ using Vograph.Core.Models;
 
 namespace Zapara.Server.Timetable;
 
-// This projection does not validate XML. Only the future input validator establishes validity.
+// This projection does not validate XML.
 public sealed class ValidatedSnapshot
 {
     public ValidatedSnapshot(PeriodDto period, IEnumerable<GroupDto> groups,

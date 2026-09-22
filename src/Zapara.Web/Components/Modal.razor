@@ -1,0 +1,29 @@
+@implements IAsyncDisposable
+@inject IJSRuntime Js
+<div class="modal-backdrop" @onclick="Close">
+    <section @ref="element" class="sheet @Class" role="dialog" aria-modal="true" aria-labelledby="@titleId" tabindex="-1" @onclick:stopPropagation="true" @onkeydown="KeyDown">
+        <header class="sheet-header"><h2 id="@titleId">@Title</h2><button class="icon-button" aria-label="Закрыть окно" @onclick="Close"><Icon Name="close" /></button></header>
+        @ChildContent
+    </section>
+</div>
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    private ElementReference element;
+    private IJSObjectReference? module;
+    private readonly string titleId = "dialog-" + Guid.NewGuid().ToString("N");
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) { module = await Js.InvokeAsync<IJSObjectReference>("import", "./js/dialogs.js"); await module.InvokeVoidAsync("open", element); }
+    }
+    private Task Close() => OnClose.InvokeAsync();
+    private async Task KeyDown(KeyboardEventArgs args) { if (args.Key == "Escape") await Close(); }
+    public async ValueTask DisposeAsync()
+    {
+        if (module is null) return;
+        try { await module.InvokeVoidAsync("close", element); } catch (JSDisconnectedException) { }
+        await module.DisposeAsync();
+    }
+}

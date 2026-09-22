@@ -51,14 +51,19 @@ public sealed class AdminMigrations(AccountsDataSource dataSource, AdminConfigur
             history.Parameters.AddWithValue("checksum", BaselineChecksum);
             await history.ExecuteNonQueryAsync(ct);
         }
+        await VerifyCurrentPreparedSchemaAsync(connection, tx, ct);
+        ct.ThrowIfCancellationRequested();
+        await tx.CommitAsync(ct);
+    }
+
+    public async Task VerifyCurrentPreparedSchemaAsync(NpgsqlConnection connection, NpgsqlTransaction tx, CancellationToken ct = default)
+    {
         await AdminSchemaShape.VerifyAsync(connection, tx, configuration, ct);
         await using (var history = new NpgsqlCommand($"SELECT version,checksum FROM {configuration.QuotedSchema}.schema_migrations ORDER BY version", connection, tx))
         {
             await using var reader = await history.ExecuteReaderAsync(ct);
             if (!await reader.ReadAsync(ct) || reader.GetInt32(0) != 1 || reader.GetString(1) != BaselineChecksum || await reader.ReadAsync(ct)) throw Invalid();
         }
-        ct.ThrowIfCancellationRequested();
-        await tx.CommitAsync(ct);
     }
 
     private static async Task Execute(string sql, NpgsqlConnection connection, NpgsqlTransaction tx, CancellationToken ct)

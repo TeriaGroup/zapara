@@ -23,6 +23,12 @@
           "Microsoft.TestPlatform.TestHost": "18.8.1"
         }
       },
+      "SixLabors.ImageSharp": {
+        "type": "Direct",
+        "requested": "[3.1.11, )",
+        "resolved": "3.1.11",
+        "contentHash": "JfPLyigLthuE50yi6tMt7Amrenr/fA31t2CvJyhy/kQmfulIBAqo5T/YFUSRHtuYPXRSaUHygFeh6Qd933EoSw=="
+      },
       "xunit.runner.visualstudio": {
         "type": "Direct",
         "requested": "[3.1.5, )",
@@ -38,6 +44,33 @@
           "xunit.v3.mtp-v1": "[3.2.2]"
         }
       },
+      "BouncyCastle.Cryptography": {
+        "type": "Transitive",
+        "resolved": "2.7.0",
+        "contentHash": "U+12df8UEWHgBi04YVf/Lgi2dy3SItlIYvHjjEVa/BngCQIzDCDRBk50DDByCfDvSbe5pRNFr3b7UrVK2kMcLw=="
+      },
+      "Lib.Net.Http.EncryptedContentEncoding": {
+        "type": "Transitive",
+        "resolved": "2.1.1",
+        "contentHash": "n+CuGyBCZ9zLT3p39sab1bSL2FRCoXHXUM/T7jXwZlibOE+mASOqXcKD9LzNjH+VZTdA0mn02EdBww06DzD9IA=="
+      },
+      "Lib.Net.Http.WebPush": {
+        "type": "Transitive",
+        "resolved": "3.3.1",
+        "contentHash": "5ByiHRcY3lF/4LA7ZbgzBEUmX6oYlPTS1NzXEom3uvT7wFHeZ8Q9DOQcPG6awFqS8yGUuyTvxrHyBzTOwe8Fpg==",
+        "dependencies": {
+          "Lib.Net.Http.EncryptedContentEncoding": "2.1.1"
+        }
+      },
+      "MailKit": {
+        "type": "Transitive",
+        "resolved": "4.18.0",
+        "contentHash": "Sk+n5f4uVKiQKECOCPcFcYtYpIt9rcli7dDboSkWM2TBbTYE7EpfudL+e5a6TFp9eMHOzNYOydzZh0b+zFGK4A==",
+        "dependencies": {
+          "MimeKit": "4.18.0",
+          "System.Formats.Asn1": "10.0.0"
+        }
+      },
       "Microsoft.ApplicationInsights": {
         "type": "Transitive",
         "resolved": "2.23.0",
@@ -45,6 +78,11 @@
         "dependencies": {
           "System.Diagnostics.DiagnosticSource": "5.0.0"
         }
+      },
+      "Microsoft.AspNetCore.Components.WebAssembly.Server": {
+        "type": "Transitive",
+        "resolved": "8.0.30",
+        "contentHash": "TxXH9wFgq3ul0UxMYuL03HWiLsN/c+wEmcMfhB2zxMhYIvgqP5bRgmrbwgxFg1e3f+YJwwhH7i3unNH+pbOsHg=="
       },
       "Microsoft.AspNetCore.TestHost": {
         "type": "Transitive",
@@ -58,6 +96,14 @@
         "type": "Transitive",
         "resolved": "6.0.0",
         "contentHash": "UcSjPsst+DfAdJGVDsu346FX0ci0ah+lw3WRtn18NUwEqRt70HaOQ7lI72vy3+1LxtqI3T5GWwV39rQSrCzAeg=="
+      },
+      "Microsoft.Bcl.Cryptography": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "2iilO1H+fkDBOsfYbFO57N1ElPsbWxNXyAekEtZ7b0sPrfm1akvLj+Wr7DzZy0fcEGUrez2jSyqAn4sTxDsgbg==",
+        "dependencies": {
+          "System.Formats.Asn1": "10.0.0"
+        }
       },
       "Microsoft.CodeCoverage": {
         "type": "Transitive",
@@ -407,6 +453,15 @@
           "System.Security.Principal.Windows": "5.0.0"
         }
       },
+      "MimeKit": {
+        "type": "Transitive",
+        "resolved": "4.18.0",
+        "contentHash": "foq2guy0YL0l0WuHrW4CuYicooXDpXlTOG1kuzlw9VcWfZpaf6zu3nX2kV3n6VKTrMy24vQJgE2TepszntVd3A==",
+        "dependencies": {
+          "BouncyCastle.Cryptography": "2.7.0",
+          "System.Security.Cryptography.Pkcs": "10.0.0"
+        }
+      },
       "Npgsql": {
         "type": "Transitive",
         "resolved": "8.0.9",
@@ -430,6 +485,11 @@
         "resolved": "8.0.1",
         "contentHash": "n1ZP7NM2Gkn/MgD8+eOT5MulMj6wfeQMNS2Pizvq5GHCZfjlFMXV2irQlQmJhwA2VABC57M0auudO89Iu2uRLg=="
       },
+      "System.Formats.Asn1": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "0QCZNYeRswlUVyo9N3hXrt5X9dqqRup53loU4K4JatdoYPhXHLrK9PwRtg5vP0Sr9QbdCOKk2luEdip/kV5Sig=="
+      },
       "System.IO.Pipelines": {
         "type": "Transitive",
         "resolved": "8.0.0",
@@ -450,6 +510,15 @@
         "dependencies": {
           "Microsoft.NETCore.Platforms": "5.0.0",
           "System.Security.Principal.Windows": "5.0.0"
+        }
+      },
+      "System.Security.Cryptography.Pkcs": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "UPWqLSygJlFerRi9XNIuM0a1VC8gHUIufyP24xQ0sc+XimqUAEcjpOz9DhKpyDjH+5B/wO3RpC0KpkEeDj/ddg==",
+        "dependencies": {
+          "Microsoft.Bcl.Cryptography": "10.0.0",
+          "System.Formats.Asn1": "10.0.0"
         }
       },
       "System.Security.Principal.Windows": {
@@ -536,6 +605,13 @@
           "Zapara.Server.Sync": "[1.0.0, )"
         }
       },
+      "zapara.client.domain": {
+        "type": "Project",
+        "dependencies": {
+          "Vograph.Timetable": "[1.0.0, )",
+          "Zapara.Contracts": "[1.0.0, )"
+        }
+      },
       "zapara.contracts": {
         "type": "Project"
       },
@@ -549,9 +625,13 @@
       "zapara.server": {
         "type": "Project",
         "dependencies": {
+          "Microsoft.AspNetCore.Components.WebAssembly.Server": "[8.0.30, )",
+          "Zapara.Client.Domain": "[1.0.0, )",
           "Zapara.Contracts": "[1.0.0, )",
           "Zapara.Server.Accounts": "[1.0.0, )",
           "Zapara.Server.Communities": "[1.0.0, )",
+          "Zapara.Server.Notifications": "[1.0.0, )",
+          "Zapara.Server.Social": "[1.0.0, )",
           "Zapara.Server.Sync": "[1.0.0, )",
           "Zapara.Server.Timetable": "[1.0.0, )"
         }
@@ -559,6 +639,7 @@
       "zapara.server.accounts": {
         "type": "Project",
         "dependencies": {
+          "MailKit": "[4.18.0, )",
           "Npgsql": "[8.0.9, )",
           "Zapara.Contracts": "[1.0.0, )"
         }
@@ -566,6 +647,22 @@
       "zapara.server.communities": {
         "type": "Project",
         "dependencies": {
+          "Zapara.Contracts": "[1.0.0, )",
+          "Zapara.Server.Accounts": "[1.0.0, )"
+        }
+      },
+      "zapara.server.notifications": {
+        "type": "Project",
+        "dependencies": {
+          "Lib.Net.Http.WebPush": "[3.3.1, )",
+          "Zapara.Server.Accounts": "[1.0.0, )",
+          "Zapara.Server.Sync": "[1.0.0, )"
+        }
+      },
+      "zapara.server.social": {
+        "type": "Project",
+        "dependencies": {
+          "SixLabors.ImageSharp": "[3.1.11, )",
           "Zapara.Contracts": "[1.0.0, )",
           "Zapara.Server.Accounts": "[1.0.0, )"
         }

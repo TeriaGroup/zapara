@@ -1,0 +1,59 @@
+@implements IDisposable
+@inject BrowserAccountService Accounts
+@inject BrowserApiClient Api
+<section class="account-proof stack" aria-label="Подтверждение входа">
+    @if (Accounts.HasProof(Purpose))
+    {
+        <p class="account-success" role="status">Вход подтверждён. Можно продолжить.</p>
+    }
+    else
+    {
+        <p class="muted">Для этого действия подтвердите, что это ваш аккаунт.</p>
+        @if (Accounts.HasPassword)
+        {
+            <label class="field"><span>Текущий пароль</span><input type="password" autocomplete="current-password" @bind="password" @bind:event="oninput" maxlength="256" disabled="@(Disabled || busy)" /></label>
+            <div><button type="button" class="button" disabled="@(Disabled || busy || password.Length == 0)" @onclick="ConfirmPassword">Подтвердить пароль</button></div>
+        }
+        <div class="toolbar">
+            @foreach (var provider in Accounts.Identities.Where(identity => Configured(identity.Provider)))
+            {
+                var name = provider.Provider;
+                <button type="button" class="button" disabled="@(Disabled || busy)" @onclick="() => ConfirmProvider(name)">Подтвердить через @Label(name)</button>
+            }
+        </div>
+        @if (!Accounts.HasPassword && !Accounts.Identities.Any(identity => Configured(identity.Provider)))
+        { <p class="muted">Нет доступного способа подтверждения. Проверьте соединение и настройки входа.</p> }
+    }
+    @if (error is not null) { <p class="account-error" role="alert">@error</p> }
+</section>
+@code {
+    [Parameter, EditorRequired] public string Purpose { get; set; } = "";
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback OnReady { get; set; }
+    private readonly CancellationTokenSource lifetime = new();
+    private string password = "";
+    private string? error;
+    private bool busy;
+    private Guid? boundFamily;
+    protected override void OnInitialized() => boundFamily = Api.Session.FamilyId;
+    private bool Configured(string provider) => provider == "vk" ? Api.Session.Capabilities.Vk : Api.Session.Capabilities.Yandex;
+    private static string Label(string provider) => provider == "vk" ? "VK ID" : "Яндекс ID";
+    private Task ConfirmPassword() => Run(async () => { await Accounts.PasswordProofAsync(password, Purpose, lifetime.Token); await OnReady.InvokeAsync(); });
+    private Task ConfirmProvider(string provider) => Run(() => Accounts.StartOAuthAsync(provider, "reauth", Purpose, lifetime.Token));
+    private async Task Run(Func<Task> operation)
+    {
+        if (busy) return;
+        busy = true; error = null;
+        try
+        {
+            if (!Api.Session.Authenticated || Api.Session.FamilyId != boundFamily) throw new BrowserApiException(409, "account_changed", "Аккаунт изменился.");
+            await operation();
+        }
+        catch (OperationCanceledException) { }
+        catch (BrowserApiException exception) { error = AccountPanel.ErrorText(exception); }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or JSException)
+        { error = "Не удалось подтвердить вход. Проверьте пароль и подключение."; }
+        finally { password = ""; busy = false; }
+    }
+    public void Dispose() { lifetime.Cancel(); lifetime.Dispose(); password = ""; }
+}

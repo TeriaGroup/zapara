@@ -2,6 +2,17 @@ namespace Zapara.Server.Timetable;
 
 public sealed class IngestService(SnapshotStore store, TimetableInput input)
 {
+    public Task<IngestResult> IngestRefreshResultAsync(HttpClient client, TimeProvider clock, CancellationToken ct = default)
+        => IngestValidatedAsync(async token =>
+        {
+            try { return await new JsonTimetableInput(clock).FetchAsync(client, token); }
+            catch (TimetableInputException)
+            {
+                token.ThrowIfCancellationRequested();
+                return input.Validate(await input.FetchFixedAsync(client, token));
+            }
+        }, ct);
+
     public async Task<int> IngestFileAsync(string path, CancellationToken ct = default)
         => (await IngestFileResultAsync(path, ct)).ExitCode;
 
@@ -15,6 +26,9 @@ public sealed class IngestService(SnapshotStore store, TimetableInput input)
         => IngestAsync(token => input.FetchFixedAsync(client, token), ct);
 
     private async Task<IngestResult> IngestAsync(Func<CancellationToken, Task<SourceDocument>> read, CancellationToken ct)
+        => await IngestValidatedAsync(async token => input.Validate(await read(token)), ct);
+
+    private async Task<IngestResult> IngestValidatedAsync(Func<CancellationToken, Task<ValidatedSnapshot>> read, CancellationToken ct)
     {
         IngestResult? result = null;
         try
@@ -37,14 +51,12 @@ public sealed class IngestService(SnapshotStore store, TimetableInput input)
     }
 
     private async Task<IngestResult> PublishUnderLeaseAsync(RefreshLease lease,
-        Func<CancellationToken, Task<SourceDocument>> read, CancellationToken ct)
+        Func<CancellationToken, Task<ValidatedSnapshot>> read, CancellationToken ct)
     {
         FailureCode failure;
         try
         {
-            var source = await read(ct);
-            ct.ThrowIfCancellationRequested();
-            var snapshot = input.Validate(source);
+            var snapshot = await read(ct);
             ct.ThrowIfCancellationRequested();
             var id = await store.PublishAsync(lease, snapshot, ct);
             return new IngestResult(0, lease.AttemptId, id, new(snapshot.Groups.Length, snapshot.Lessons.Length));

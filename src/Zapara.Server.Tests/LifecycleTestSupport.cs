@@ -100,6 +100,7 @@ internal sealed class LifecycleHarness : IAsyncDisposable
         }
         if (communitiesSchema is not null)
         {
+            await accounts.ExecuteAsync($"DROP SCHEMA IF EXISTS \"{CommunitiesConfiguration.MessagesName(communitiesSchema)}\" CASCADE");
             await accounts.ExecuteAsync($"DROP SCHEMA IF EXISTS \"{communitiesSchema}\" CASCADE");
             Assert.Equal(0L, await accounts.ScalarAsync<long>($"SELECT count(*) FROM pg_namespace WHERE nspname='{communitiesSchema}'"));
         }

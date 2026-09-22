@@ -1,0 +1,138 @@
+@page "/teachers"
+@implements IDisposable
+@inject WebAppState State
+@inject BrowserLecturerStore Store
+@inject BrowserApiClient Api
+@inject BrowserCatalogViewState View
+<PageTitle>Преподаватели — Запара</PageTitle>
+@{ var shownScope = viewScope; }
+
+<section class="page catalog-page teachers-page">
+    <div class="page-heading"><div><h1>Преподаватели</h1><p class="muted">Поиск и расписание на всю неделю</p></div><button class="button" disabled="@(Store.Loading || Store.Refreshing)" @onclick="Refresh"><Icon Name="refresh" Class="@(Store.Refreshing ? "spin" : "")" />Обновить</button></div>
+    @if (Store.FreshnessNotice is not null) { <p class="caption muted" role="status">@Store.FreshnessNotice</p> }
+    @if (Store.Notice is not null) { <p class="catalog-notice" role="status">@Store.Notice</p> }
+    @if (Store.Error is not null) { <div class="catalog-notice catalog-error" role="alert">@Store.Error<button class="button" disabled="@Store.Refreshing" @onclick="Refresh">Повторить</button></div> }
+    @if (Store.Loading && Store.Lecturers.Count == 0) { <div class="skeleton-card" role="status">Загружаем справочник преподавателей…</div> }
+    else
+    {
+        var myIds = Store.MyTeacherIds(OwnLessons);
+        var matches = Store.Search(query, onlyMine, OwnLessons);
+        var teacher = Store.Lecturers.FirstOrDefault(l => l.Id == selectedId);
+        <div class="teacher-browser @(selectedId is not null ? "has-selection" : "")">
+            <section class="teacher-directory" aria-label="Справочник преподавателей">
+                <label class="search-field"><Icon Name="search" /><input type="search" aria-label="Поиск преподавателя по имени, кафедре или предмету" placeholder="Фамилия, кафедра или предмет" value="@query" @oninput="e => Change(shownScope, () => SearchChanged(e))" /></label>
+                <label class="catalog-check"><input type="checkbox" checked="@onlyMine" disabled="@(State.GroupId.Length == 0)" @onchange="e => Change(shownScope, () => MineChanged(e))" /><span>Только мои преподаватели</span></label>
+                @if (State.GroupId.Length == 0) { <button class="catalog-group-hint" @onclick="() => showGroups = true">Выберите группу, чтобы увидеть своих преподавателей</button> }
+                <p class="caption muted teacher-count" role="status">Найдено: @matches.Count</p>
+                @if (matches.Count == 0 && !Store.Loading) { <div class="empty-state teacher-empty"><Icon Name="search" /><h2>Никого не нашли</h2><p>@(onlyMine ? "Попробуйте отключить фильтр или изменить запрос." : "Попробуйте другую фамилию, кафедру или название предмета.")</p>@if (query.Length > 0 || onlyMine) { <button class="button" @onclick="() => Change(shownScope, ResetSearch)">Сбросить поиск</button> }</div> }
+                <div class="teacher-list">@foreach (var item in matches.Take(visibleCount))
+                {
+                    <button class="teacher-list-item @(selectedId == item.Id ? "selected" : "")" aria-pressed="@(selectedId == item.Id)" @onclick="() => Open(item.Id, shownScope)">
+                        <span class="teacher-avatar" aria-hidden="true">@Initials(item.Name)</span><span class="teacher-list-copy"><strong>@item.Name</strong>@if (item.Kafedra.Length > 0) { <span>@item.Kafedra</span> }@if (myIds.Contains(item.Id)) { <span class="teacher-mine-label">Ведёт у моей группы</span> }</span><Icon Name="right" />
+                    </button>
+                }</div>
+                @if (matches.Count > visibleCount) { <button class="button teacher-more" @onclick="() => Change(shownScope, () => visibleCount += 80)">Показать ещё (@(matches.Count - visibleCount))</button> }
+            </section>
+            <section class="teacher-detail" aria-label="Расписание выбранного преподавателя" aria-busy="@detailLoading">
+                @if (selectedId is null) { <div class="empty-state teacher-prompt"><Icon Name="teachers" /><h2>Выберите преподавателя</h2><p>Покажем занятия, аудитории и группы на обе недели.</p></div> }
+                else if (teacher is null) { <button class="button" @onclick="() => Change(shownScope, Close)"><Icon Name="left" />К списку</button><div class="empty-state"><h2>Преподаватель не найден</h2><p>Справочник обновился. Выберите преподавателя из списка.</p></div> }
+                else
+                {
+                    <header class="teacher-detail-heading"><button class="icon-button outlined" aria-label="Вернуться к списку преподавателей" @onclick="() => Change(shownScope, Close)"><Icon Name="left" /></button><div><h2 tabindex="-1" @ref="detailTitle">@teacher.Name</h2>@if (teacher.Kafedra.Length > 0) { <p class="muted">@teacher.Kafedra</p> }<p class="caption @(myIds.Contains(teacher.Id) ? "teacher-mine-label" : "muted")">@(State.GroupId.Length == 0 ? "Ваша группа ещё не выбрана" : myIds.Contains(teacher.Id) ? "Ведёт у моей группы" : "Не ведёт у выбранной группы")</p></div></header>
+                    <div class="catalog-controls"><div class="segmented" role="group" aria-label="Неделя преподавателя">@foreach (var item in Parities) { <button class="@(parity == item.Code ? "active" : "")" aria-pressed="@(parity == item.Code)" @onclick="() => Change(shownScope, () => parity = item.Code)">@item.Title</button> }</div>@if (detailLoading) { <span class="caption muted" role="status">Проверяем обновления…</span> }</div>
+                    @if (Store.DetailNotice(teacher.Id) is { } notice) { <div class="catalog-notice"><span>@notice</span><button class="button" disabled="@detailLoading" @onclick="() => Open(teacher.Id, shownScope)">Повторить</button></div> }
+                    var lessons = Store.LessonsOf(teacher.Id, parity, State.Settings.ParityInvert);
+                    @foreach (var dow in Enumerable.Range(1, 6))
+                    {
+                        var dayLessons = lessons.Where(l => l.DayOfWeek == dow).ToArray();
+                        <section class="teacher-day"><header class="catalog-section-heading"><h3>@ParityService.DayNumberToTitle(dow)</h3>@if (IsToday(dow)) { <span class="catalog-badge">Сегодня</span> }</header>
+                            @if (dayLessons.Length == 0) { <p class="teacher-no-lessons">Занятий нет</p> }
+                            @foreach (var lesson in dayLessons)
+                            {
+                                var mine = lesson.Groups.Any(IsMyGroup);
+                                <article class="teacher-lesson @(mine ? "with-my-group" : "")"><div class="week-time"><strong>@lesson.TimeStart</strong><span>@lesson.TimeEnd</span></div><div class="teacher-lesson-copy"><div class="teacher-lesson-tags"><span class="lesson-type @Schedule.TypeClass(lesson.TypeRaw)">@lesson.TypeRaw</span><span class="caption muted">@ParityTitle(lesson.Parity)</span></div><h3>@LessonTitle(lesson)</h3>
+                                    <div class="teacher-group-list">@foreach (var group in lesson.Groups) { <span class="teacher-group @(IsMyGroup(group) ? "mine" : "")">@(group.Number.Length > 0 ? group.Number : group.IdGroup)@if (IsMyGroup(group)) { <span class="caption"> · моя группа</span> }</span> }@if (lesson.Groups.Count == 0) { <span class="caption muted">Группы не указаны</span> }</div>
+                                    @if (!string.IsNullOrWhiteSpace(lesson.ClassroomRaw)) { <a class="catalog-room" href="@("maps?room=" + Uri.EscapeDataString(lesson.ClassroomRaw))"><Icon Name="pin" />@lesson.ClassroomRaw.TrimEnd(';', ' ')</a> }
+                                </div></article>
+                            }
+                        </section>
+                    }
+                }
+            </section>
+        </div>
+    }
+</section>
+@if (showGroups) { <GroupPicker OnClose="() => showGroups = false" /> }
+
+@code {
+    private static readonly (int Code, string Title)[] Parities = [(0, "Обе недели"), (1, "Нечётная"), (2, "Чётная")];
+    private string query = "";
+    private string? selectedId;
+    private bool onlyMine, showGroups, detailLoading, disposed, focusDetail;
+    private int visibleCount = 80, parity;
+    private CancellationTokenSource? detailRequest;
+    private ElementReference detailTitle;
+    private CatalogViewScope viewScope = new("", -1, "");
+    [Parameter, SupplyParameterFromQuery(Name="query")] public string? RequestedQuery { get; set; }
+    private string? appliedQuery;
+    private bool initialDetail;
+    private IEnumerable<Lesson> OwnLessons => State.Schedule?.Lessons.Where(l => l.GroupId == State.GroupId) ?? [];
+    protected override async Task OnInitializedAsync() { State.Changed += Changed; Store.Changed += Changed; Restore(); await Store.InitializeAsync(); }
+    protected override async Task OnParametersSetAsync()
+    {
+        Restore();
+        if (!Current(viewScope) || Store.Loading) return;
+        if (RequestedQuery is not null && RequestedQuery != appliedQuery && Store.Lecturers.Count > 0)
+        {
+            appliedQuery = RequestedQuery;
+            Change(viewScope, () => { query = RequestedQuery[..Math.Min(1024, RequestedQuery.Length)]; onlyMine = false; selectedId = null; visibleCount = 80; });
+            var matches = Store.Search(query, false, []);
+            initialDetail = true;
+            if (matches.Count == 1) await Open(matches[0].Id, viewScope);
+        }
+        if (!initialDetail && selectedId is { } saved) { initialDetail = true; await Open(saved, viewScope); }
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!focusDetail || selectedId is null || Store.Lecturers.All(teacher => teacher.Id != selectedId) || detailTitle.Id.Length == 0) return;
+        focusDetail = false;
+        try { await detailTitle.FocusAsync(); }
+        catch (InvalidOperationException) { }
+    }
+    private void Changed() { if (!disposed) { Restore(); _ = InvokeAsync(async () => { await OnParametersSetAsync(); StateHasChanged(); }); } }
+    private void SearchChanged(ChangeEventArgs e) { query = e.Value?.ToString() ?? ""; visibleCount = 80; }
+    private void MineChanged(ChangeEventArgs e) { onlyMine = e.Value is true; visibleCount = 80; }
+    private void ResetSearch() { query = ""; onlyMine = false; visibleCount = 80; }
+    private async Task Refresh() { var scope = viewScope; var id = selectedId; await Store.RefreshAsync(); if (id is not null && Current(scope)) await Open(id, scope); }
+    private Task Open(string id) => Open(id, viewScope);
+    private async Task Open(string id, CatalogViewScope scope)
+    {
+        if (!Current(scope) || Store.Lecturers.All(teacher => teacher.Id != id)) return;
+        detailRequest?.Cancel(); detailRequest?.Dispose();
+        var request = detailRequest = new();
+        selectedId = id; detailLoading = true; focusDetail = true; initialDetail = true;
+        Save(scope);
+        try { await Store.LoadLessonsAsync(id, request.Token); }
+        catch (OperationCanceledException) when (request.IsCancellationRequested) { }
+        finally { if (detailRequest == request && Current(scope)) detailLoading = false; }
+    }
+    private void Close() { detailRequest?.Cancel(); selectedId = null; detailLoading = false; focusDetail = false; }
+    private bool Current(CatalogViewScope scope) => !Api.Transitioning && scope == new CatalogViewScope(State.ProfileKey, State.Generation, State.GroupId);
+    private void Save(CatalogViewScope scope) => View.Save(scope, new TeacherView(query, onlyMine, selectedId, parity, visibleCount));
+    private void Change(CatalogViewScope scope, Action action) { if (!Current(scope)) return; action(); Save(scope); }
+    private void Restore()
+    {
+        var current = new CatalogViewScope(State.ProfileKey, State.Generation, State.GroupId);
+        if (current == viewScope) return;
+        detailRequest?.Cancel();
+        viewScope = View.Activate(current.Owner, current.Generation, current.Group);
+        var value = View.Teachers(viewScope); query = value.Query; onlyMine = value.OnlyMine; selectedId = value.SelectedId; parity = value.Parity; visibleCount = value.VisibleCount;
+        detailLoading = showGroups = focusDetail = false;
+    }
+    private bool IsMyGroup(GroupRef group) => State.GroupId.Length > 0 && (group.IdGroup == State.GroupId || group.Number.Equals(State.GroupName, StringComparison.OrdinalIgnoreCase));
+    private bool IsToday(int dow) => dow == (int)State.Today.DayOfWeek && (parity == 0 || State.Schedule is { } snapshot && ScheduleRules.WeekCode(snapshot, State.Today, State.Settings.ParityInvert) == parity);
+    private string ParityTitle(int code) { if (code == 0) return "Каждую неделю"; if (State.Settings.ParityInvert) code = code == 1 ? 2 : 1; return code == 1 ? "Нечётная" : "Чётная"; }
+    private string LessonTitle(LecturerLesson lesson) => State.DisplayName(new Lesson { SubjectRaw = lesson.DisciplineRaw.Length > 0 ? lesson.DisciplineRaw : lesson.SubjectRaw, TypeRaw = lesson.TypeRaw, DayOfWeek = lesson.DayOfWeek });
+    private static string Initials(string name) => string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => part[0]));
+    public void Dispose() { disposed = true; State.Changed -= Changed; Store.Changed -= Changed; detailRequest?.Cancel(); detailRequest?.Dispose(); }
+}

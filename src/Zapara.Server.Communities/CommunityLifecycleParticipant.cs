@@ -72,6 +72,26 @@ internal sealed class CommunityLifecycleParticipant(CommunitiesConfiguration con
                     ["revision"] = reader.GetInt64(2)
                 });
         }
+        if (await MessagesTableAsync(context, "chat_messages", ct))
+        {
+            await using var command = context.Command($"""
+                SELECT m.message_id, c.community_id, m.body, m.created_at
+                FROM {configuration.QuotedMessages}.chat_messages m
+                JOIN {configuration.QuotedMessages}.conversations c ON c.conversation_id=m.conversation_id
+                WHERE m.sender_id=@p0
+                ORDER BY m.message_no
+                """, context.UserId);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                context.Export.Contributions.Add(new JsonObject
+                {
+                    ["type"] = "message",
+                    ["id"] = AccountExportDocument.Id(reader.GetGuid(0)),
+                    ["communityId"] = AccountExportDocument.Id(reader.GetGuid(1)),
+                    ["body"] = reader.GetString(2),
+                    ["createdAt"] = AccountExportDocument.Utc(reader.GetFieldValue<DateTimeOffset>(3))
+                });
+        }
         await using (var command = context.Command($"""
             SELECT poll_id,option_id,created_at FROM {schema}.votes WHERE user_id=@p0 ORDER BY poll_id
             """, context.UserId))
@@ -89,6 +109,10 @@ internal sealed class CommunityLifecycleParticipant(CommunitiesConfiguration con
 
     public async Task DeleteOwnedDataAsync(AccountLifecycleContext context, CancellationToken ct)
     {
+        if (await MessagesTableAsync(context, "chat_messages", ct))
+            await context.ExecuteAsync($"DELETE FROM {configuration.QuotedMessages}.chat_messages WHERE sender_id=@p0", context.UserId);
+        if (await MessagesTableAsync(context, "conversation_members", ct))
+            await context.ExecuteAsync($"DELETE FROM {configuration.QuotedMessages}.conversation_members WHERE user_id=@p0", context.UserId);
         var user = context.UserId;
         await context.ExecuteAsync($"DELETE FROM {schema}.votes WHERE user_id=@p0", user);
         await context.ExecuteAsync($"DELETE FROM {schema}.shared_homework_completion WHERE user_id=@p0", user);
@@ -99,6 +123,12 @@ internal sealed class CommunityLifecycleParticipant(CommunitiesConfiguration con
         await context.ExecuteAsync($"UPDATE {schema}.shared_homework SET created_by=NULL WHERE created_by=@p0", user);
         await context.ExecuteAsync($"UPDATE {schema}.announcements SET created_by=NULL WHERE created_by=@p0", user);
         await context.ExecuteAsync($"UPDATE {schema}.polls SET created_by=NULL WHERE created_by=@p0", user);
+    }
+
+    private async Task<bool> MessagesTableAsync(AccountLifecycleContext context, string table, CancellationToken ct)
+    {
+        await using var command = context.Command("SELECT to_regclass(@p0) IS NOT NULL", configuration.MessagesSchema + "." + table);
+        return await command.ExecuteScalarAsync(ct) is true;
     }
 
     private static JsonObject Contribution(string type, Npgsql.NpgsqlDataReader reader) => new()

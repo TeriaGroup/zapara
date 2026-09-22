@@ -1,0 +1,181 @@
+@page "/maps"
+@using Vograph.Core.Campus
+@using Zapara.Web.Components.Maps
+@implements IDisposable
+@inject WebAppState State
+@inject HttpClient Http
+@inject BrowserStorage Storage
+<PageTitle>Карты — Запара</PageTitle>
+<section class="page map-page">
+    <div class="page-heading"><div><h1>Карты</h1><p class="muted">Планы Военмеха · ГК и УЛК</p></div><button class="button" @onclick="GoToNext" disabled="@(State.GroupId.Length == 0)"><Icon Name="pin" />К следующей паре</button></div>
+    <div class="map-tools">
+        <div class="segmented" aria-label="Корпус">@foreach (var b in new[] { "ГК", "УЛК" }) { <button class="@(plan.Building == b ? "active" : "")" aria-pressed="@(plan.Building == b)" @onclick="() => ChangePlan(new(b, 1))">@b</button> }</div>
+        <div class="map-floors" aria-label="Этаж">@foreach (var p in MapFloor.All.Where(p => p.Building == plan.Building)) { <button class="button @(p == plan ? "primary" : "")" aria-label="@($"{p.Floor} этаж {p.Building}")" aria-pressed="@(p == plan)" @onclick="() => ChangePlan(p)">@p.Floor</button> }</div>
+        <form class="map-search" @onsubmit="FindRoom" @onsubmit:preventDefault="true"><input @bind="query" placeholder="493 или 320*" aria-label="Поиск аудитории" maxlength="80" /><button class="icon-button outlined" type="submit" aria-label="Найти аудиторию"><Icon Name="search" /></button></form>
+    </div>
+    <div class="map-alpha-row"><label class="map-toggle"><input type="checkbox" checked="@State.Preferences.AlphaMaps" @onchange="ToggleAlpha" />Маршруты по кампусу <span class="map-alpha-chip">АЛЬФА</span></label><span class="caption muted">Экспериментальная разметка, сверяйтесь с указателями.</span></div>
+    @if (!string.IsNullOrEmpty(message)) { <div class="map-message" role="status">@message</div> }
+    @if (!string.IsNullOrEmpty(error)) { <div class="map-message map-message-error" role="alert">@error <button class="text-button" @onclick="Load">Повторить загрузку карт</button></div> }
+    @if (loading) { <div class="skeleton-card" role="status">Загружаем планы и координаты…</div> }
+    else if (graph is not null)
+    {
+        @if (State.Preferences.AlphaMaps)
+        {
+            <div class="map-route-controls">
+                <button class="map-point-button" @onclick='() => picker = "from"'><span class="map-letter">А</span><span><small>Откуда</small><strong>@PlaceLabel(from)</strong></span></button>
+                <button class="icon-button outlined" aria-label="Поменять начало и конец маршрута" @onclick="Swap">⇄</button>
+                <button class="map-point-button" @onclick='() => picker = "to"'><span class="map-letter map-letter-end">Б</span><span><small>Куда</small><strong>@PlaceLabel(to)</strong></span></button>
+                <button class="button primary" disabled="@(from is null || to is null)" @onclick="BuildRoute">Построить</button>
+                @if (route is not null) { <button class="text-button" @onclick="ResetRoute">Сбросить маршрут</button> }
+            </div>
+        }
+        @if (remote) { <div class="map-remote card"><Icon Name="map" /><h2>Занятие дистанционно</h2><p class="muted">Карта и маршрут для этой пары не нужны.</p><button class="button" @onclick="() => remote = false">Открыть планы</button></div> }
+        else
+        {
+            <div class="map-content-grid">
+                <div class="map-plan-column">
+                    @if (showStack && State.Preferences.AlphaMaps && route is not null)
+                    {
+                        <div class="map-stack" aria-label="Этажи маршрута">
+                            @foreach (var p in RouteFloors)
+                            {
+                                <button class="map-stack-card @(p == plan ? "map-stack-current" : "")" @onclick="async () => { showStack = false; await ChangePlan(p); }"><span>@p.Building · @p.Floor этаж</span><div class="map-stack-raster"><img src="@p.Image" alt="@($"Обзор {p.Key} этаж")" /><svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">@foreach (var leg in MapGeometry.Strokes(route, p)) { <polyline points="@Polyline(leg)" class="map-path-outline" vector-effect="non-scaling-stroke" /><polyline points="@Polyline(leg)" class="map-path" vector-effect="non-scaling-stroke" /> }</svg></div></button>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <MapViewport @ref="viewport" Plan="plan" Marks="marks" Highlight="highlight" Selection="selection" Route="@(State.Preferences.AlphaMaps ? route : null)" From="@(State.Preferences.AlphaMaps ? from : null)" To="@(State.Preferences.AlphaMaps ? to : null)" ActiveStep="ActiveStep" OnRoom="PickRoom" OnStep="SelectStep" />
+                    }
+                    @if (State.Preferences.AlphaMaps && route is not null)
+                    {
+                        <div class="map-route-footer"><span>@(route.Seconds == 0 ? "Вы уже у цели" : $"≈ {Math.Max(1, (int)Math.Ceiling(route.Seconds / 60d))} мин пешком")</span><button class="button" aria-pressed="@showStack" @onclick="() => showStack = !showStack">@(showStack ? "Один этаж" : "Обзор этажей")</button></div>
+                    }
+                </div>
+                @if (State.Preferences.AlphaMaps && route is not null && steps.Count > 0)
+                {
+                    <aside class="map-step-panel" aria-label="Шаги маршрута"><div class="map-step-heading"><h2>Маршрут</h2><span class="muted">@(stepIndex + 1) / @steps.Count</span></div><div class="map-step-nav"><button class="icon-button outlined" disabled="@(stepIndex <= 0)" aria-label="Предыдущий шаг" @onclick="() => SelectStep(stepIndex - 1)"><Icon Name="left" /></button><p aria-live="polite">@ActiveStep?.Text</p><button class="icon-button outlined" disabled="@(stepIndex >= steps.Count - 1)" aria-label="Следующий шаг" @onclick="() => SelectStep(stepIndex + 1)"><Icon Name="right" /></button></div>
+                    @if (ActiveStep is { } active && active.From != active.To) { <button class="button map-transition-button" @onclick="() => ChangePlan(plan == active.From ? active.To : active.From)">@(plan == active.From ? $"Показать {active.To.Key} этаж" : $"Показать {active.From.Key} этаж")</button> }
+                    <ol class="map-step-list">@foreach (var step in steps) { <li><button class="@(step.Index == stepIndex ? "map-step-active" : "")" aria-current="@(step.Index == stepIndex ? "step" : null)" @onclick="() => SelectStep(step.Index)"><span>@(step.Index + 1)</span>@step.Text</button></li> }</ol></aside>
+                }
+            </div>
+        }
+    }
+</section>
+@if (picker is not null && graph is not null) { <MapPlacePicker Graph="graph" Title="@(picker == "from" ? "Откуда идём" : "Куда идём")" OnSelect="ChoosePlace" OnClose="() => picker = null" /> }
+@if (pickedRoom is not null)
+{
+    <Modal Title="@($"Аудитория {pickedRoom.Room}")" OnClose="() => pickedRoom = null"><p class="muted">@pickedRoom.Plan.Building · @pickedRoom.Plan.Floor этаж</p>
+        @if (State.Preferences.AlphaMaps && PickedNode is not null) { <div class="form-actions"><button class="button" @onclick="() => UsePicked(true)">Отсюда</button><button class="button primary" @onclick="() => UsePicked(false)">Сюда</button></div> }
+        else { <p class="muted">@(State.Preferences.AlphaMaps ? "Эта аудитория пока не включена в граф маршрутов." : "Для построения пути включите маршруты по кампусу.")</p> }
+    </Modal>
+}
+@code {
+    [SupplyParameterFromQuery(Name = "room")] public string? RoomQuery { get; set; }
+    private CampusGraph? graph;
+    private IReadOnlyList<RoomMark> marks = [];
+    private MapFloor plan = new("ГК", 1);
+    private RoomMark? highlight, pickedRoom;
+    private Node? from, to, selection;
+    private Route? route;
+    private IReadOnlyList<MapRouteStep> steps = [];
+    private MapViewport? viewport;
+    private string query = "", message = "", error = "";
+    private string? picker, appliedQuery;
+    private bool loading = true, remote, showStack, disposed;
+    private int stepIndex;
+    private MapRouteStep? ActiveStep => stepIndex >= 0 && stepIndex < steps.Count ? steps[stepIndex] : null;
+    private Node? PickedNode => pickedRoom is null ? null : graph?.Nodes.FirstOrDefault(n => n.Kind == "room" && n.Building == pickedRoom.Plan.Building && n.Floor == pickedRoom.Plan.Floor && n.Room == pickedRoom.Room);
+    private IEnumerable<MapFloor> RouteFloors => steps.SelectMany(s => new[] { s.From, s.To }).Distinct();
+    protected override async Task OnInitializedAsync() { State.Changed += Changed; await Load(); }
+    protected override async Task OnParametersSetAsync() { if (graph is not null && RoomQuery is not null && RoomQuery != appliedQuery) { appliedQuery = RoomQuery; query = RoomQuery; await FindRoom(); } }
+    private void Changed() { if (!disposed) _ = InvokeAsync(StateHasChanged); }
+    private async Task Load()
+    {
+        loading = true; error = "";
+        try
+        {
+            var graphTask = Http.GetStringAsync("maps/campus-graph.json"); var coordsTask = Http.GetStringAsync("maps/coords.json");
+            await Task.WhenAll(graphTask, coordsTask);
+            graph = CampusGraph.Load(await graphTask); marks = MapGeometry.ParseCoordinates(await coordsTask);
+            try
+            {
+                var saved = await Storage.ReadAsync<MapPageMemory>("preferences", "maps-view");
+                if (saved is not null)
+                {
+                    plan = MapFloor.All.FirstOrDefault(p => p.Key == saved.Plan) ?? plan;
+                    from = graph.Nodes.FirstOrDefault(n => n.Id == saved.From); to = graph.Nodes.FirstOrDefault(n => n.Id == saved.To);
+                    if (saved.HasRoute && from is not null && to is not null)
+                    {
+                        route = CampusRouter.Find(graph, from.Id, to.Id).Route; steps = route is null ? [] : MapGeometry.Steps(route);
+                        stepIndex = Math.Clamp(saved.Step, 0, Math.Max(0, steps.Count - 1));
+                    }
+                }
+            }
+            catch (Exception e) when (e is JSException or System.Text.Json.JsonException) { message = "Вид карты не удалось восстановить из хранилища."; }
+            from ??= CampusRouter.Entrances(graph).FirstOrDefault(n => n.Building == plan.Building);
+            if (RoomQuery is not null) { query = RoomQuery; appliedQuery = RoomQuery; await FindRoom(); }
+        }
+        catch (Exception e) when (e is HttpRequestException or CampusGraphException or InvalidDataException or System.Text.Json.JsonException or TaskCanceledException)
+        { error = "Не удалось загрузить пакет карт. Сохранённые планы требуют первоначальной загрузки с сетью."; }
+        finally { loading = false; }
+    }
+    private async Task FindRoom()
+    {
+        if (graph is null) return;
+        var found = MapGeometry.Resolve(graph, marks, query);
+        ClearRoute(); highlight = found.Highlight; remote = found.Problem == "remote";
+        message = found.Problem switch { "remote" => "Занятие дистанционно — карта не требуется.", "ambiguous" => "Указано несколько аудиторий. Найдите одну из них отдельно.", "unknown" => "Аудитория не распознана. Укажите номер, например 493 или 320*.", "unmarked" => $"Аудитория {found.Room} пока не размечена. Показан план этажа без отметки.", _ => $"Аудитория {found.Room} · {found.Plan?.Key} этаж" };
+        if (found.Plan is not null) await ChangePlan(found.Plan);
+        to = found.Node; selection = found.Node;
+        if (found.Node is not null && from?.Id == found.Node.Id) from = CampusRouter.Entrances(graph).FirstOrDefault(n => n.Building == found.Node.Building);
+        await SaveView();
+    }
+    private async Task ChangePlan(MapFloor value) { plan = value; remote = false; if (viewport is not null) await viewport.FitAsync(); await SaveView(); }
+    private async Task ToggleAlpha(ChangeEventArgs e)
+    {
+        try { await State.SetAlphaMapsAsync(e.Value is true); if (!State.Preferences.AlphaMaps) { showStack = false; picker = null; } }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException) { message = "Не удалось сохранить настройку маршрутов. Проверьте доступность хранилища."; }
+    }
+    private async Task ChoosePlace(Node node) { if (picker == "from") from = node; else to = node; selection = node; highlight = marks.FirstOrDefault(m => m.Plan.Building == node.Building && m.Plan.Floor == node.Floor && m.Room == node.Room); picker = null; ClearRoute(); await ChangePlan(new(node.Building, node.Floor)); }
+    private Task PickRoom(RoomMark mark) { pickedRoom = mark; highlight = mark; return Task.CompletedTask; }
+    private async Task UsePicked(bool origin) { if (PickedNode is not { } node) return; if (origin) from = node; else to = node; pickedRoom = null; ClearRoute(); await SaveView(); }
+    private async Task Swap() { (from, to) = (to, from); ClearRoute(); if (from is not null && to is not null) await BuildRoute(); await SaveView(); }
+    private async Task BuildRoute()
+    {
+        if (graph is null || from is null || to is null) return;
+        var result = CampusRouter.Find(graph, from.Id, to.Id);
+        route = result.Route; steps = route is null ? [] : MapGeometry.Steps(route); stepIndex = 0; showStack = false;
+        message = result.Failure switch { "unknown_place" => "Точка не найдена в графе кампуса.", "unreachable" => "Между выбранными точками нет размеченного пути.", _ => route?.Seconds == 0 ? "Начало и конец совпадают — вы у цели." : "Маршрут построен по экспериментальному графу кампуса." };
+        if (route is not null) await ChangePlan(new(from.Building, from.Floor));
+    }
+    private void ClearRoute() { route = null; steps = []; stepIndex = 0; showStack = false; }
+    private async Task ResetRoute() { ClearRoute(); message = "Маршрут сброшен."; await SaveView(); }
+    private async Task SelectStep(int index) { if (index < 0 || index >= steps.Count) return; stepIndex = index; showStack = false; await ChangePlan(steps[index].From); }
+    private async Task GoToNext()
+    {
+        if (State.Schedule is not { } snapshot) { message = "Расписание ещё не загружено."; return; }
+        var now = DateTime.Now;
+        for (var offset = 0; offset < 14; offset++)
+        {
+            var date = now.Date.AddDays(offset);
+            var lesson = ScheduleRules.ForDate(snapshot, State.GroupId, date, State.Settings.ParityInvert)
+                .FirstOrDefault(l => offset > 0 || TimeSpan.TryParse(l.TimeEnd, out var end) && end > now.TimeOfDay);
+            if (lesson is null) continue;
+            query = lesson.ClassroomRaw;
+            await FindRoom();
+            message = $"{date:dd.MM} · {lesson.TimeStart} · {State.DisplayName(lesson)}. " + message;
+            return;
+        }
+        message = "В ближайшие две недели пар не найдено.";
+    }
+    private async Task SaveView()
+    {
+        try { await Storage.WriteAsync("preferences", "maps-view", new MapPageMemory(plan.Key, from?.Id, to?.Id, route is not null, stepIndex)); }
+        catch (JSException) { message = "Карта открыта, но сохранить выбранный вид не удалось."; }
+    }
+    private static string PlaceLabel(Node? node) => node is null ? "Выбрать точку" : $"{MapPlacePicker.Label(node)} · {node.Building}";
+    private static string Polyline(Leg leg) => string.Join(" ", leg.Points.Select(p => (p.X * 1000).ToString("0.###", CultureInfo.InvariantCulture) + "," + (p.Y * 1000).ToString("0.###", CultureInfo.InvariantCulture)));
+    public void Dispose() { disposed = true; State.Changed -= Changed; }
+    public sealed record MapPageMemory(string Plan, string? From, string? To, bool HasRoute = false, int Step = 0);
+}

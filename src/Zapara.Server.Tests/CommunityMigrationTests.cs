@@ -14,9 +14,9 @@ public sealed partial class CommunityMigrationTests
         var before = await db.Accounts.FingerprintAsync();
         await Task.WhenAll(db.Migrations.EnsureAsync(Ct), db.Migrations.EnsureAsync(Ct));
         Assert.Equal(13L, await db.Accounts.ScalarAsync<long>($"SELECT count(*) FROM pg_tables WHERE schemaname='{db.Schema}'"));
-        Assert.Equal(CommunitiesMigrations.BaselineChecksum, await db.Accounts.ScalarAsync<string>($"SELECT checksum FROM {db.QuotedSchema}.schema_migrations"));
+        Assert.Equal(CommunitiesMigrations.BaselineChecksum, await db.Accounts.ScalarAsync<string>($"SELECT checksum FROM {db.QuotedSchema}.schema_migrations WHERE version=1"));
         await db.Migrations.EnsureAsync(Ct);
-        Assert.Equal(1L, await db.Accounts.ScalarAsync<long>($"SELECT count(*) FROM {db.QuotedSchema}.schema_migrations"));
+        Assert.Equal(2L, await db.Accounts.ScalarAsync<long>($"SELECT count(*) FROM {db.QuotedSchema}.schema_migrations"));
         Assert.Equal(before, await db.Accounts.FingerprintAsync());
         Assert.Equal(2L, await db.Accounts.ScalarAsync<long>($"SELECT count(*) FROM {db.Accounts.QuotedSchema}.schema_migrations"));
         await using var connection = db.Accounts.DataSource.CreateConnection();
