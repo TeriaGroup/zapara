@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useSwipe } from "./swipe";
 import * as api from "./api";
 import { followGroupCommunity, openGroupFace } from "./groupChoice";
+import { completeGroupCopy, saveEditorHomework } from "./groupHomework";
 import { addDays, dayTitle, friendRoomMark, isoDay, lessonsOn, longDate, sameSubject, teacherLessonLabel, weekday } from "./parity";
 import { subgroupIndex, subgroupMark, visibleLessons } from "./subgroups";
 import { HOMEWORK_FILE_LIMIT, checkHomeworkFile, compressHomeworkPhoto, deleteHomeworkBlob, putHomeworkBlob, readHomeworkBlob } from "./homework-files";
@@ -392,24 +393,34 @@ export function HomeworkPage() {
       setNote(code === "big" ? "Файл слишком большой" : code === "full" ? "Можно приложить не больше шести файлов" : "Такой файл приложить нельзя");
       return;
     }
-    app.saveHomework({ id: crypto.randomUUID(), subject: title, text: body, done: false, created: new Date().toISOString(), files });
+    const outcome = await saveEditorHomework(
+      { subject: title, text: body, share, isNew: true },
+      !!app.session?.authenticated,
+      communityId,
+      (subject, text) => { app.saveHomework({ id: crypto.randomUUID(), subject, text, done: false, created: new Date().toISOString(), files }); },
+      async (subject, text) => { await api.shareHomework(communityId, subject, text); },
+    );
     setText("");
     setPending([]);
-    if (!share) { setNote(""); return; }
-    if (!app.session?.authenticated) { setNote("Войдите в аккаунт, чтобы отправить домашку группе."); return; }
-    if (!communityId) { setNote("Вы ещё не в группе. Домашка сохранена только на этом устройстве."); return; }
-    try {
-      await api.shareHomework(communityId, title, body);
-      setCopies(await api.groupHomework(communityId));
-      setNote("Домашка продублирована всей группе.");
-    }
-    catch { setNote("На устройстве сохранено. Группе отправить не получилось."); }
+    setNote(outcome.note);
+    if (outcome.sent) setCopies(await api.groupHomework(communityId));
   }
   async function toggleCopy(item: GroupHomeworkCopy) {
     if (!communityId) return;
+    const actor = app.session?.user?.userId ?? "";
+    if (!actor) return;
+    const next = completeGroupCopy(
+      app.homework.map(row => ({ id: row.id, done: row.done })),
+      copies.map(row => ({ homeworkId: row.homeworkId, memberId: actor, completed: row.completed })),
+      actor,
+      item.homeworkId,
+      !item.completed,
+    );
+    if (next.local.some((row, index) => row.done !== app.homework[index]?.done)) return;
     try {
-      const saved = await api.completeHomework(communityId, item.homeworkId, !item.completed, item.completionRevision);
-      setCopies(list => list.map(row => row.homeworkId === item.homeworkId ? { ...row, completed: saved.completed, completionRevision: saved.revision } : row));
+      const saved = await api.completeHomework(communityId, item.homeworkId, next.copies.find(row => row.homeworkId === item.homeworkId)?.completed ?? !item.completed, item.completionRevision);
+      const completed = next.copies.find(row => row.homeworkId === item.homeworkId && row.memberId === actor)?.completed ?? saved.completed;
+      setCopies(list => list.map(row => row.homeworkId === item.homeworkId ? { ...row, completed, completionRevision: saved.revision } : row));
     }
     catch { setNote("Отметку у общей домашки сохранить не получилось"); }
   }

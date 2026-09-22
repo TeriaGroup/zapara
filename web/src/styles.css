@@ -197,7 +197,8 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .ballot-days { width: auto; }
 .ballot-bar { height: 6px; border-radius: 99px; background: var(--chip); overflow: hidden; }
 .ballot-bar > span { display: block; height: 100%; background: var(--ok); }
-.check { display: flex; gap: 10px; align-items: flex-start; color: var(--text); }
+.check { display: flex; gap: 10px; align-items: flex-start; color: var(--text); max-width: 100%; }
+.check span { min-width: 0; }
 .check input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--ok); flex: none; }
 .map-frame { background: var(--chip); border-radius: 12px; min-height: 360px; display: grid; place-items: center; overflow: hidden; }
 .map-frame img { width: 100%; height: auto; display: block; }
