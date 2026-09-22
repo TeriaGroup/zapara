@@ -1,8 +1,11 @@
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.VisualTree;
+using Vograph.Core.Services.Communities;
 using Vograph.Desktop.Controls;
 using Vograph.Desktop.Features.Communities;
+using Vograph.Desktop.Features.Groups;
+using Vograph.Desktop.Shell;
 using Xunit;
 using Zapara.Contracts.Communities;
 using static Vograph.Desktop.Tests.AccountClientTestSupport;
@@ -12,6 +15,45 @@ namespace Vograph.Desktop.Tests;
 
 public sealed class CommunitiesUiTests : UiTest
 {
+    [Fact]
+    public async Task Section_built_before_sign_in_uses_the_session_and_selected_group_on_the_next_open()
+    {
+        using var db = TestDb.Create(seedPersonalization: false);
+        var shell = new ShellViewModel(db.Services);
+        try
+        {
+            var communities = shell.Section<CommunitiesViewModel>(SectionKey.Community);
+            var group = shell.Section<GroupViewModel>(SectionKey.Group);
+            await communities.ActivateAsync();
+            await group.ActivateAsync();
+            Assert.True(communities.NeedAccount);
+            Assert.True(group.NeedAccount);
+
+            var paths = new List<string>();
+            using var handler = new AccountClientHandler
+            {
+                Send = (request, _) =>
+                {
+                    paths.Add(request.RequestUri!.PathAndQuery);
+                    return Task.FromResult(Payload(Array.Empty<CommunityResponse>()));
+                }
+            };
+            using var http = new HttpClient(handler);
+            using var client = new CommunityHttpClient(http, Root);
+            db.Services.UseCommunities(client, _ => Task.FromResult<string?>(Access));
+            await communities.ActivateAsync();
+            await group.ActivateAsync();
+
+            Assert.False(communities.NeedAccount);
+            Assert.False(group.NeedAccount);
+            Assert.True(communities.IsEmpty);
+            var name = db.Services.Db.GetGroup(TestDb.MyGroupId)!.Name;
+            Assert.Contains(paths, path => path.Contains("groupId=" + Uri.EscapeDataString(name), StringComparison.Ordinal));
+            Assert.Contains(paths, path => !path.Contains("groupId=", StringComparison.Ordinal));
+        }
+        finally { shell.Stop(); }
+    }
+
     [Fact]
     public async Task Guest_shows_need_account_and_never_touches_the_network()
     {

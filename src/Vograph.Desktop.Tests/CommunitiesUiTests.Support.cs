@@ -57,7 +57,7 @@ internal sealed class CommunitiesUiHarness : IDisposable
     {
         var method = request.Method.Method;
         var uri = request.RequestUri!;
-        var marker = "/api/v1/communities";
+        var marker = "/api/v2/communities";
         var at = uri.AbsolutePath.IndexOf(marker, StringComparison.Ordinal);
         var rest = at < 0 ? uri.AbsolutePath : uri.AbsolutePath[(at + marker.Length)..];
         Requests.Add((method, rest + uri.Query));

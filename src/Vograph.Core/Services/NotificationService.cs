@@ -25,7 +25,6 @@ public class NotificationService
         var settings = _db.GetSettings();
         if (string.IsNullOrEmpty(settings.MyGroupId)) return _i18n.T("noLessons");
         var groupId = settings.MyGroupId!;
-        // Determine parity for date
         DateTime periodStart = DateTime.TryParse(settings.PeriodStart, out var ps) ? ps : new DateTime(DateTime.Now.Year, 9, 1);
         int wc = settings.WeekCount > 0 ? settings.WeekCount : 2;
         bool isOdd = ParityService.IsOddWeek(date, periodStart, wc, settings.ParityInvert);

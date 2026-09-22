@@ -35,6 +35,21 @@
           </ItemsControl>
         </WrapPanel>
         <TextBlock Classes="muted caption" Text="{Binding TeacherLine}" Margin="0,3,0,0" TextWrapping="Wrap" />
+        <StackPanel IsVisible="{Binding HasSubgroup}" Margin="0,8,0,0" Spacing="6">
+          <TextBlock Classes="muted caption" Text="{Binding SubgroupPrompt}" TextWrapping="Wrap" />
+          <ItemsControl ItemsSource="{Binding SubgroupOptions}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="s:SubgroupOptionViewModel">
+                <Button Classes="pill" Margin="0,0,6,0" Content="{Binding Label}"
+                        Command="{Binding $parent[s:LessonRowViewModel].PickSubgroupCommand}"
+                        CommandParameter="{Binding Id}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
         <TextBlock Classes="muted caption" FontStyle="Italic" Text="{Binding Note}" IsVisible="{Binding HasNote}" Margin="0,2,0,0" TextWrapping="Wrap" />
 
         <ItemsControl ItemsSource="{Binding Homework}" Margin="0,8,0,0" IsVisible="{Binding HasHomework}">

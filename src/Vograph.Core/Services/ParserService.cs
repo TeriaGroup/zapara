@@ -30,7 +30,7 @@ public class ParserService
     {
         var bytes = await (client ?? Http).GetByteArrayAsync(url);
         var xml = RequireTimetable(DecodeXml(bytes));
-        return (xml, Convert.ToBase64String(bytes)); // raw as base64 for storage if needed
+        return (xml, Convert.ToBase64String(bytes));
     }
 
     /// <summary>voenmeh.ru serves the XML as UTF-16LE with a BOM; archives came as UTF-8 with and without one.
@@ -65,11 +65,9 @@ public class ParserService
             throw new InvalidOperationException(TimetableParser.OlderTimetable);
 
         // Preserve overrides/homework (do not delete them) — only refresh schedule_cache and groups
-        // Use transaction: clear schedule_cache per group, upsert groups, insert lessons
         using var tx = _db.Connection.BeginTransaction();
         try
         {
-            // Save period info to settings
             var settings = _db.GetSettings();
             settings.PeriodTitle = periodTitle;
             settings.PeriodStart = periodStart.ToString("yyyy-MM-dd");
@@ -77,20 +75,13 @@ public class ParserService
             settings.LastFetchedAt = DateTime.UtcNow.ToString("o");
             _db.SaveSettings(settings);
 
-            // Upsert groups first
             foreach (var g in groups)
             {
                 g.LastFetchedAt = DateTime.UtcNow;
                 g.Url = url;
-                // keep rawXml for groups with schedule
-                if (lessons.Any(l => l.GroupId == g.Id))
-                {
-                    // store raw group xml snippet? Not needed
-                }
                 _db.UpsertGroup(g);
             }
 
-            // Group lessons by groupId to clear and reinsert per group
             var lessonsByGroup = lessons.GroupBy(l => l.GroupId);
             var idsWithLessons = new HashSet<string>(lessonsByGroup.Select(g => g.Key));
             foreach (var grp in lessonsByGroup)
@@ -176,8 +167,14 @@ public class ParserService
             {
                 var storedId = idByIncoming.TryGetValue(name, out var id) ? id
                     : existingByName.TryGetValue(name, out var kept) ? kept.Id : name;
+                var listed = idByIncoming.ContainsKey(name);
+                var delivered = lessonsByIncoming.ContainsKey(name) || lessonsByIncoming.ContainsKey(storedId);
+                // A name that was requested but is neither in this catalog nor in the lesson rows
+                // did not deliver a timetable. Clearing it would drop last-good pairs.
+                if (!listed && !delivered) continue;
                 _db.ClearScheduleForGroup(storedId);
-                if (!lessonsByIncoming.TryGetValue(name, out var list)) continue;
+                if (!lessonsByIncoming.TryGetValue(name, out var list)
+                    && !lessonsByIncoming.TryGetValue(storedId, out list)) continue;
                 foreach (var lesson in list.OrderBy(l => l.DayOfWeek).ThenBy(l => l.Parity).ThenBy(l => l.Index))
                 {
                     lesson.GroupId = storedId;

@@ -35,5 +35,8 @@ public static class Converters
     /// <summary>The ≡ button sits at the right of the expanded sidebar and centred on the rail.</summary>
     public static readonly IValueConverter RailAlignment = new FuncValueConverter<bool, HorizontalAlignment>(collapsed => collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Right);
 
+    /// <summary>Group chat: own messages sit on the right, the rest on the left. Same card, not a second theme.</summary>
+    public static readonly IValueConverter ChatAlign = new FuncValueConverter<bool, HorizontalAlignment>(mine => mine ? HorizontalAlignment.Right : HorizontalAlignment.Left);
+
     private static Geometry? Resource(string key) => Application.Current?.TryFindResource(key, out var value) == true ? value as Geometry : null;
 }

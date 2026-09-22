@@ -22,7 +22,7 @@ public sealed class PrivateSyncDraft
     public Guid? OpId { get; init; }
 }
 
-public sealed class PrivateSyncOutbox
+public sealed partial class PrivateSyncOutbox
 {
     private readonly SqliteConnection conn;
     public PrivateSyncOutbox(Database db, bool enabled)
@@ -36,7 +36,7 @@ public sealed class PrivateSyncOutbox
     public Action? BeforeCommit { get; set; }
     public event Action? Changed;
 
-    public T InTransaction<T>(Func<T> action)
+    public T InTransaction<T>(Func<T> action, Action? validateCommit = null)
     {
         ArgumentNullException.ThrowIfNull(action);
         if (!Enabled) return action();
@@ -46,6 +46,7 @@ public sealed class PrivateSyncOutbox
         {
             var result = action();
             BeforeCommit?.Invoke();
+            validateCommit?.Invoke();
             Exec($"RELEASE {name}");
             Changed?.Invoke();
             return result;
@@ -304,25 +305,7 @@ ON CONFLICT(entityType, entityId) DO UPDATE SET opId=excluded.opId, localPayload
 
     public void ApplyLive(SyncRecord record)
     {
-        if (record.Tombstone)
-        {
-            TombstoneLocal(record.EntityType, record.EntityId, record.Revision);
-            return;
-        }
-        // Identity-only revision bump when a live row already exists; value merge is the caller's job.
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = record.EntityType switch
-        {
-            "homework" => "UPDATE homework SET revision=@r, tombstone=0 WHERE entityUuid=@id",
-            "override" => "UPDATE overrides SET revision=@r, tombstone=0 WHERE entityUuid=@id",
-            "friend" => "UPDATE friends SET revision=@r, tombstone=0 WHERE entityUuid=@id",
-            "completion" => "UPDATE homework_completion SET revision=@r, tombstone=0 WHERE entityUuid=@id",
-            "settings" => "UPDATE settings SET revision=@r, tombstone=0 WHERE id=1",
-            _ => "SELECT 1"
-        };
-        cmd.Parameters.AddWithValue("@r", record.Revision);
-        cmd.Parameters.AddWithValue("@id", record.EntityId.ToString("D"));
-        cmd.ExecuteNonQuery();
+        InTransaction(() => { Project(record); return 0; });
     }
 
     public void Alias(string entityType, long? localId, Guid entityId)

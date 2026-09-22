@@ -75,7 +75,7 @@ public partial class App : Application
             try
             {
                 dataDir = AppPaths.DataDir;
-                services = AppServices.Create(dataDir, MotionSettings.ReadSystemSetting);
+                services = AppServices.Create(dataDir, MotionSettings.ReadSystemSetting, ZaparaServer.TimetableBaseUrl() ?? "");
             }
             catch (Exception ex)
             {

@@ -126,6 +126,7 @@ public class ShellLayoutTests : UiTest
         [SectionKey.Friends] = vm => ((FriendsViewModel)vm).Friends.Count == 1,
         [SectionKey.Homework] = vm => ((HomeworkViewModel)vm).Groups.Count > 0,
         [SectionKey.Community] = vm => ((CommunitiesViewModel)vm).NeedAccount,
+        [SectionKey.Group] = vm => ((Vograph.Desktop.Features.Groups.GroupViewModel)vm).NeedAccount,
         [SectionKey.Settings] = vm => ((SettingsViewModel)vm).GroupName == "А863С",
     };
 

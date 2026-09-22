@@ -305,12 +305,10 @@ ON CONFLICT(entityUuid) DO UPDATE SET done=excluded.done, doneAtUtc=excluded.don
         DateTime periodStart = DateTime.TryParse(settings.PeriodStart, out var ps) ? ps : new DateTime(DateTime.Now.Year, 9, 1);
         int weekCount = settings.WeekCount > 0 ? settings.WeekCount : 2;
 
-        // Scan forward up to 120 days
         int found = 0;
         for (int offset = 1; offset <= 120; offset++)
         {
             var date = from.Date.AddDays(offset);
-            // Skip Sunday
             if (date.DayOfWeek == DayOfWeek.Sunday) continue;
             int dow = (int)date.DayOfWeek; if (dow == 0) dow = 7;
             int weekCode = ParityService.GetWeekCode(date, periodStart, weekCount);
@@ -326,9 +324,7 @@ ON CONFLICT(entityUuid) DO UPDATE SET done=excluded.done, doneAtUtc=excluded.don
                     {
                         return date;
                     }
-                    break; // count only once per day? Prompt says count occurrences of same subject, not lessons? If subject appears twice same day, count twice? For MVP count per day occurrence (once per lesson). But to avoid double counting same day, we break after first match per day.
-                    // However spec says "N-th next Lesson where subjectRawNormalized matches" so if two lessons same subject same day, count each?
-                    // We'll count each lesson individually, so not break? But simpler break per day avoids double.
+                    break; // one occurrence per day, even if the subject meets twice
                 }
             }
         }
@@ -342,14 +338,12 @@ ON CONFLICT(entityUuid) DO UPDATE SET done=excluded.done, doneAtUtc=excluded.don
         var today = DateTime.Today;
         var due = hw.DueDateComputed.Value.Date;
         int daysDiff = (due - today).Days;
-        // Need to count lessons before due
         var settings = _db.GetSettings();
         if (string.IsNullOrEmpty(settings.MyGroupId)) return "pending";
         var groupId = settings.MyGroupId!;
         DateTime periodStart = DateTime.TryParse(settings.PeriodStart, out var ps) ? ps : new DateTime(DateTime.Now.Year, 9, 1);
         int weekCount = settings.WeekCount > 0 ? settings.WeekCount : 2;
 
-        // Count occurrences before due
         int lessonsBefore = 0;
         for (int offset = 1; offset <= 120; offset++)
         {
@@ -366,12 +360,11 @@ ON CONFLICT(entityUuid) DO UPDATE SET done=excluded.done, doneAtUtc=excluded.don
             }
         }
 
-        // Also check if due lesson exists today/tomorrow
         if (daysDiff < 0) return "overdue";
-        if (daysDiff == 0) return "burning_urgent"; // burns very brightly in morning
-        if (daysDiff == 1) return "burning"; // due tomorrow
-        if (lessonsBefore == 1) return "approaching"; // 1 lesson before due -> gray
-        if (lessonsBefore == 0 && daysDiff <= 3) return "approaching"; // heuristic
+        if (daysDiff == 0) return "burning_urgent";
+        if (daysDiff == 1) return "burning";
+        if (lessonsBefore == 1) return "approaching";
+        if (lessonsBefore == 0 && daysDiff <= 3) return "approaching";
         return "far";
     }
 
@@ -383,7 +376,6 @@ ON CONFLICT(entityUuid) DO UPDATE SET done=excluded.done, doneAtUtc=excluded.don
             if (hw.Status == "done") continue;
             var newDue = ComputeDueDate(hw.SubjectRawNormalized, hw.CreatedAt, hw.TargetNthOccurrence);
             var newStatus = hw.DueDateComputed != newDue ? ComputeStatus(new Homework { SubjectRawNormalized = hw.SubjectRawNormalized, CreatedAt = hw.CreatedAt, TargetNthOccurrence = hw.TargetNthOccurrence, DueDateComputed = newDue, Status = "pending" }) : ComputeStatus(hw);
-            // If due changed, update
             if (newDue != hw.DueDateComputed || newStatus != hw.Status)
             {
                 hw.DueDateComputed = newDue;
@@ -397,7 +389,6 @@ ON CONFLICT(entityUuid) DO UPDATE SET done=excluded.done, doneAtUtc=excluded.don
             }
             else
             {
-                // just status
                 hw.Status = ComputeStatus(hw);
                 using var cmd2 = _db.Connection.CreateCommand();
                 cmd2.CommandText = "UPDATE homework SET status=@st WHERE id=@id";

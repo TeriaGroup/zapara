@@ -5,7 +5,9 @@ namespace Vograph.Desktop.Tests;
 
 internal sealed class ProfileTestDirectory : IDisposable
 {
-    public string Root { get; } = Path.Combine(Path.GetTempPath(), "zapara-profile-test-" + Guid.NewGuid().ToString("N"));
+    // The session scratchpad can already have a long path. Leave room for the
+    // 64-character server key and user UUID before SQLite adds journal/WAL suffixes.
+    public string Root { get; } = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
     public ProfileTestDirectory() => Directory.CreateDirectory(Root);
     public void Dispose()
     {

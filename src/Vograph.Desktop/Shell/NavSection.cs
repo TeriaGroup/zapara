@@ -4,7 +4,7 @@ using Vograph.Desktop.Services;
 
 namespace Vograph.Desktop.Shell;
 
-public enum SectionKey { Schedule, Week, Summary, Teachers, Maps, Friends, Homework, Community, Settings }
+public enum SectionKey { Schedule, Week, Summary, Teachers, Maps, Friends, Homework, Community, Settings, Group }
 
 public sealed partial class NavSection : ObservableObject
 {

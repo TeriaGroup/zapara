@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\Zapara.Client.Domain\Lecturers\*.cs" Link="Lecturers\%(Filename)%(Extension)" />
     <ProjectReference Include="..\Vograph.Timetable\Vograph.Timetable.csproj" />
     <ProjectReference Include="..\Zapara.Contracts\Zapara.Contracts.csproj" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />

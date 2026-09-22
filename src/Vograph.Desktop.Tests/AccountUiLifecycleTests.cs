@@ -249,7 +249,7 @@ public sealed class AccountUiLifecycleTests
                 "/api/v1/auth/register" => Json(User, HttpStatusCode.Created),
                 "/api/v1/auth/login" => Json(new SessionResponse(User, FamilyId, Token("za_"), Token("zr_"),
                     "Bearer", DateTimeOffset.UtcNow.AddMinutes(15), DateTimeOffset.UtcNow.AddDays(30))),
-                "/api/v1/account/devices" => Json(new DevicesResponse([new DeviceResponse(FamilyId, DeviceId,
+                "/api/v2/account/devices" => Json(new DevicesResponse([new DeviceResponse(FamilyId, DeviceId,
                     "Windows", "windows", Now, Now, Now.AddDays(30), true)], null)),
                 "/api/v1/account/identities" => Json(Array.Empty<ExternalIdentityResponse>()),
                 _ => new HttpResponseMessage(HttpStatusCode.NoContent)

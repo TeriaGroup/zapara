@@ -47,7 +47,7 @@ public sealed partial class CommunityClientTests
         {
             var e = expected.Dequeue();
             Assert.Equal(e.Method, request.Method.Method);
-            Assert.Equal("https://example.invalid/root/api/v1/communities" + e.Path, request.RequestUri!.AbsoluteUri);
+            Assert.Equal("https://example.invalid/root/api/v2/communities" + e.Path, request.RequestUri!.AbsoluteUri);
             Assert.Equal("Bearer " + Access, request.Headers.Authorization?.ToString());
             Assert.Null(http.DefaultRequestHeaders.Authorization);
             Assert.Single(request.Headers.Accept, h => h.MediaType == "application/json");
@@ -96,14 +96,14 @@ public sealed partial class CommunityClientTests
         handler.Send = (request, _) =>
         {
             Assert.Equal(HttpMethod.Get, request.Method);
-            Assert.Equal("https://example.invalid/root/api/v1/communities?groupId=O3313", request.RequestUri!.AbsoluteUri);
+            Assert.Equal("https://example.invalid/root/api/v2/communities?groupId=O3313", request.RequestUri!.AbsoluteUri);
             return Task.FromResult(Payload(new[] { Catalog }));
         };
         var catalog = Assert.Single(await client.ListAsync(Access, "O3313", Ct));
         Assert.Null(catalog.Role);
         handler.Send = (request, _) =>
         {
-            Assert.Equal("https://example.invalid/root/api/v1/communities", request.RequestUri!.AbsoluteUri);
+            Assert.Equal("https://example.invalid/root/api/v2/communities", request.RequestUri!.AbsoluteUri);
             Assert.Equal("", request.RequestUri.Query);
             return Task.FromResult(Payload(Array.Empty<CommunityResponse>()));
         };

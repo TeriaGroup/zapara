@@ -8,14 +8,14 @@ namespace Vograph.Core.Services.Accounts;
 
 public sealed partial class AccountHttpClient
 {
-    private async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, string? access, int status, CancellationToken caller)
+    private async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, string? access, int status, CancellationToken caller, int apiVersion = 1)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30), clock);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(caller, timeout.Token);
         var ct = deadline.Token;
         byte[]? sent = null;
         byte[]? received = null;
-        using var request = new HttpRequestMessage(method, new Uri(Scope.BaseUri, "api/v1/" + path));
+        using var request = new HttpRequestMessage(method, new Uri(Scope.BaseUri, $"api/v{apiVersion}/" + path));
         try
         {
             ct.ThrowIfCancellationRequested();

@@ -50,6 +50,7 @@ public sealed partial class ShellViewModel : ViewModelBase
             Make(SectionKey.Friends, "navFriends", "Icon.Friends", "Ctrl+6"),
             Make(SectionKey.Homework, "navHomework", "Icon.Homework", "Ctrl+7"),
             Make(SectionKey.Community, "navCommunity", "Icon.Community", "Ctrl+9"),
+            Make(SectionKey.Group, "navGroup", "Icon.Chat", "Ctrl+0"),
         };
         SettingsSection = Make(SectionKey.Settings, "navSettings", "Icon.Settings", "Ctrl+8");
 
@@ -62,7 +63,8 @@ public sealed partial class ShellViewModel : ViewModelBase
         Register(SectionKey.Maps, () => new Features.Maps.MapsViewModel(App, this));
         Register(SectionKey.Friends, () => new Features.Friends.FriendsViewModel(App, this));
         Register(SectionKey.Homework, () => new Features.Homeworks.HomeworkViewModel(App, this));
-        Register(SectionKey.Community, () => new Features.Communities.CommunitiesViewModel(App));
+        Register(SectionKey.Community, () => new Features.Communities.CommunitiesViewModel(App, App.Communities, App.CommunityAccess));
+        Register(SectionKey.Group, () => new Features.Groups.GroupViewModel(App));
         Register(SectionKey.Settings, () => new Features.Preferences.SettingsViewModel(App, this));
 
         _sidebarCollapsed = app.Prefs.SidebarCollapsed;
@@ -111,21 +113,64 @@ public sealed partial class ShellViewModel : ViewModelBase
     }
 
     /// <summary>409 keep-local / keep-server, or 410 abort. Posted off the coordinator so CoreGate is released first.</summary>
-    internal async Task ShowSyncConflictAsync(PrivateSyncConflict conflict)
+    internal async Task<bool> ShowSyncConflictAsync(PrivateSyncConflict conflict)
     {
         using var operation = App.Work.Enter();
-        if (!operation.IsCurrent) return;
+        if (!operation.IsCurrent || Dialogs.IsOpen) return false;
         ArgumentNullException.ThrowIfNull(conflict);
         var dialog = IsExpiredConflict(conflict)
             ? SyncConflictDialogViewModel.ForExpired(conflict)
             : await BuildConflictDialogAsync(conflict);
-        if (!operation.IsCurrent) return;
-        await Dialogs.ShowAsync(dialog);
+        if (!operation.IsCurrent || Dialogs.IsOpen) return false;
+        var confirmed = await Dialogs.ShowAsync(dialog);
+        if (!confirmed || !operation.IsCurrent || dialog.Decision is not { } decision || App.PrivateSync is null)
+            return false;
+        // 410 is an abort, not a version pick. ResolveConflict refuses Expired410, so apply it here or the confirm is dropped.
+        if (decision.Kind == SyncConflictKind.Expired410)
+        {
+            var aborted = await RunAsync(() =>
+            {
+                App.Outbox.InTransaction(() =>
+                {
+                    DeleteQueued(decision.EntityType, decision.EntityId);
+                    return 0;
+                });
+                return Done.Instance;
+            }, "sync abort");
+            return aborted is not null && operation.IsCurrent;
+        }
+        // Read the epoch at apply time. A snapshot taken before the dialog goes null on a failed read and drops the choice.
+        var epoch = await RunAsync(() => new SyncEpochBox(App.Outbox.SyncEpoch), "sync epoch");
+        if (!operation.IsCurrent || epoch?.Epoch is not { } currentEpoch) return false;
+        var resolved = await App.PrivateSync.ResolveAsync(decision, currentEpoch, operation.Token);
+        if (!resolved && operation.IsCurrent)
+            App.Toasts.Show("Конфликт изменился. Откройте актуальные версии ещё раз.", ToastKind.Warn);
+        return resolved;
+    }
+
+    private sealed record SyncEpochBox(Guid? Epoch);
+    private sealed class Done { public static readonly Done Instance = new(); }
+
+    private void DeleteQueued(string entityType, Guid entityId)
+    {
+        using (var cmd = App.Db.Connection.CreateCommand())
+        {
+            cmd.CommandText = "DELETE FROM sync_outbox WHERE entityType=@t AND entityId=@id";
+            cmd.Parameters.AddWithValue("@t", entityType);
+            cmd.Parameters.AddWithValue("@id", entityId.ToString("D"));
+            cmd.ExecuteNonQuery();
+        }
+        using (var cmd = App.Db.Connection.CreateCommand())
+        {
+            cmd.CommandText = "DELETE FROM sync_draft WHERE entityType=@t AND entityId=@id";
+            cmd.Parameters.AddWithValue("@t", entityType);
+            cmd.Parameters.AddWithValue("@id", entityId.ToString("D"));
+            cmd.ExecuteNonQuery();
+        }
     }
 
     private void OnPrivateSyncConflict(PrivateSyncConflict conflict) =>
-        App.Work.Post(a => Dispatcher.UIThread.Post(a), () => ShowSyncConflictAsync(conflict),
-            ex => App.Log.Error("sync conflict dialog", ex));
+        QueueSyncConflictRefresh();
 
     private static bool IsExpiredConflict(PrivateSyncConflict conflict) =>
         conflict.Diagnostic.Contains("устарел", StringComparison.Ordinal);
@@ -676,6 +721,19 @@ public sealed partial class ShellViewModel : ViewModelBase
     }
 
     /// <summary>Sealed type: 'internal' rather than 'protected' so later dialogs in this assembly can raise it without CS0628.
-    /// Pure event invocation: OpenGroupPickerAsync awaits UpdateHomeworkBadgeAsync itself right after raising.</summary>
-    internal void RaiseGroupChanged() { if (CanPublish) GroupChanged?.Invoke(); }
+    /// OpenGroupPickerAsync awaits UpdateHomeworkBadgeAsync itself right after raising. A visible group or
+    /// community section reloads so it follows the new group and a session attached after it was created.</summary>
+    internal void RaiseGroupChanged()
+    {
+        if (!CanPublish) return;
+        GroupChanged?.Invoke();
+        ReloadAccountSections();
+    }
+
+    /// <summary>Group and community view models may have been created while the session client was still null.</summary>
+    internal void ReloadAccountSections()
+    {
+        if (CanPublish && Current is Features.Communities.CommunitiesViewModel or Features.Groups.GroupViewModel)
+            _ = Current.ActivateAsync();
+    }
 }

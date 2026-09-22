@@ -41,7 +41,6 @@ public class SyncService
         var json = ExportToJson();
         Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
         File.WriteAllText(path, json, Encoding.UTF8);
-        // Update lastSyncAt
         var s = _db.GetSettings();
         s.LastSyncAt = DateTime.UtcNow;
         _db.SaveSettings(s);
@@ -60,7 +59,6 @@ public class SyncService
             var match = existingOv.FirstOrDefault(x => x.SubjectRawNormalized == ov.SubjectRawNormalized && x.Scope == ov.Scope);
             if (match != null)
             {
-                // compare CreatedAt: last wins
                 if (ov.CreatedAt > match.CreatedAt)
                 {
                     using var cmd = _db.Connection.CreateCommand();
@@ -80,17 +78,15 @@ public class SyncService
             }
         }
 
-        // Merge homework by id? But ids may collide across devices; merge by subjectNormalized+text+createdAt
+        // Ids collide across devices; a matching subject, text, and createdAt is a duplicate and is skipped.
         var existingHw = new HomeworkService(_db).GetAll();
         foreach (var hw in payload.Homework)
         {
             var match = existingHw.FirstOrDefault(x => x.SubjectRawNormalized == hw.SubjectRawNormalized && x.Text == hw.Text && x.CreatedAt == hw.CreatedAt);
             if (match != null)
             {
-                // lastWriteWins based on CreatedAt? For MVP, skip duplicate
                 continue;
             }
-            // Insert with new id
             using var cmd = _db.Connection.CreateCommand();
             cmd.CommandText = @"INSERT INTO homework (subjectRawNormalized, text, createdAt, targetNthOccurrence, dueDateComputed, status, doneAt)
 VALUES (@s,@t,@ca,@n,@due,@st,@da)";
@@ -105,39 +101,39 @@ VALUES (@s,@t,@ca,@n,@due,@st,@da)";
             h++;
         }
 
-        // Merge friends by groupName
         var existingFr = _db.GetFriends();
         foreach (var fr in payload.Friends)
         {
             if (existingFr.Any(x => x.GroupName == fr.GroupName)) continue;
             if (existingFr.Count >= 5) break;
-            _db.InsertFriend(new FriendGroup { GroupName = fr.GroupName, ColorHex = fr.ColorHex, Enabled = fr.Enabled });
+            var added = new FriendGroup
+            {
+                GroupName = fr.GroupName,
+                ColorHex = fr.ColorHex,
+                Enabled = fr.Enabled,
+                MemberNames = fr.MemberNames ?? ""
+            };
+            _db.InsertFriend(added);
+            existingFr.Add(added);
             f++;
         }
 
-        // Merge settings lastSyncWins? Keep myGroupId if not set, else lastWriteWins by ExportedAt
-        // For MVP, if payload.Settings.MyGroupId not null and current is null, adopt
         var curSettings = _db.GetSettings();
         if (string.IsNullOrEmpty(curSettings.MyGroupId) && !string.IsNullOrEmpty(payload.Settings.MyGroupId))
         {
             curSettings.MyGroupId = payload.Settings.MyGroupId;
         }
-        // Merge notify times and strictness if payload newer? Use ExportedAt > LastSyncAt
-        // Language: keep receiver's choice per doc (do not overwrite) — documented in docs/API.md §9
-        // If you want to sync language, uncomment next line: curSettings.Language = payload.Settings.Language;
+        // Language stays the receiver's choice; do not overwrite it.
         if (payload.ExportedAt > (curSettings.LastSyncAt ?? DateTime.MinValue))
         {
             if (!string.IsNullOrEmpty(payload.Settings.NotifyTime1)) curSettings.NotifyTime1 = payload.Settings.NotifyTime1;
             if (!string.IsNullOrEmpty(payload.Settings.NotifyTime2)) curSettings.NotifyTime2 = payload.Settings.NotifyTime2;
             curSettings.IntersectionStrictness = payload.Settings.IntersectionStrictness;
             curSettings.ParityInvert = payload.Settings.ParityInvert;
-            // language sync is optional; we preserve receiver's choice, but also support lastWriteWins if needed:
-            // if (!string.IsNullOrEmpty(payload.Settings.Language)) curSettings.Language = payload.Settings.Language;
         }
         curSettings.LastSyncAt = DateTime.UtcNow;
         _db.SaveSettings(curSettings);
 
-        // Recompute homework statuses after import
         try { new HomeworkService(_db).RecomputeAllStatuses(); } catch { }
 
         return (o, h, f);

@@ -17,7 +17,16 @@ public sealed partial class ShellViewModel
         App.Loc.LanguageChanged += LanguageChanged;
         if (App.Theme is { } theme) theme.Changed += ThemeChanged;
         App.LanSync.Imported += LanImported;
-        if (App.PrivateSync is { } sync) sync.Conflict += OnPrivateSyncConflict;
+        if (App.PrivateSync is { } sync)
+        {
+            sync.Conflict += OnPrivateSyncConflict;
+            sync.Applied += PrivateSyncApplied;
+            sync.ConflictsChanged += QueueSyncConflictRefresh;
+            Dialogs.PropertyChanged += ConflictDialogStateChanged;
+            // Attach is already on the profile's UI dispatch. Starting the owned read
+            // here avoids a second queued lease that can stall profile drain.
+            _ = RefreshSyncConflictsAsync();
+        }
     }
 
     private void DetachSubscriptions()
@@ -27,7 +36,13 @@ public sealed partial class ShellViewModel
         App.Loc.LanguageChanged -= LanguageChanged;
         if (App.Theme is { } theme) theme.Changed -= ThemeChanged;
         App.LanSync.Imported -= LanImported;
-        if (App.PrivateSync is { } sync) sync.Conflict -= OnPrivateSyncConflict;
+        if (App.PrivateSync is { } sync)
+        {
+            sync.Conflict -= OnPrivateSyncConflict;
+            sync.Applied -= PrivateSyncApplied;
+            sync.ConflictsChanged -= QueueSyncConflictRefresh;
+            Dialogs.PropertyChanged -= ConflictDialogStateChanged;
+        }
     }
 
     private void ThemeChanged() { if (CanPublish && App.Theme is { } theme) IsDark = theme.IsDark; }
@@ -42,6 +57,8 @@ public sealed partial class ShellViewModel
     }
     private void LanImported() => App.Work.Post(a => Dispatcher.UIThread.Post(a), NotifyImportedAsync,
         ex => App.Log.Error("lan import publication", ex));
+    private void PrivateSyncApplied() => App.Work.Post(a => Dispatcher.UIThread.Post(a), NotifyImportedAsync,
+        ex => App.Log.Error("private sync publication", ex));
 
     public void SuspendProducers()
     {
@@ -51,6 +68,9 @@ public sealed partial class ShellViewModel
         resumeNotifications = App.NotificationScheduler.IsRunning;
         resumeLan = App.LanSync.IsRunning;
         App.Work.Suspend();
+        ++conflictReadVersion;
+        SyncConflictCount = 0;
+        ResolveSyncConflictsCommand.NotifyCanExecuteChanged();
         _autoCheck?.Stop();
         _autoCheck = null;
         App.NotificationScheduler.Stop();
@@ -63,6 +83,8 @@ public sealed partial class ShellViewModel
         if (!suspended || _stopped) return;
         suspended = false;
         App.Work.Resume();
+        if (App.PrivateSync is not null) _ = RefreshSyncConflictsAsync();
+        ResolveSyncConflictsCommand.NotifyCanExecuteChanged();
         if (resumeAuto) StartAutoCheck();
         if (resumeNotifications) App.NotificationScheduler.Start();
         if (resumeLan && App.Profile.IsGuest) App.LanSync.Start();

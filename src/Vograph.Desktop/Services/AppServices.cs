@@ -24,6 +24,7 @@ public sealed partial class AppServices : IDisposable
     public ScheduleService Schedule { get; }
     public OverrideService Overrides { get; }
     public HomeworkService Homework { get; }
+    public HomeworkFileStore HomeworkFiles { get; }
     public IntersectionService Intersections { get; }
     public NotificationService Notifications { get; }
     public MapService Maps { get; }
@@ -96,6 +97,7 @@ public sealed partial class AppServices : IDisposable
             Schedule = new ScheduleService(Db);
             Overrides = new OverrideService(Db, Outbox);
             Homework = new HomeworkService(Db, Outbox);
+        HomeworkFiles = new HomeworkFileStore(Path.Combine(dataDir, "homework-files"));
             Intersections = new IntersectionService(Db);
             Notifications = new NotificationService(Db, Overrides, Homework, Schedule, I18n);
             Maps = new MapService(Db, Schedule, Path.Combine(dataDir, "maps"), Path.Combine(AppContext.BaseDirectory, "maps"));
@@ -111,7 +113,9 @@ public sealed partial class AppServices : IDisposable
             Toasts = new ToastService(canPublish: () => Work.CanPublish);
             NotificationScheduler = new NotificationScheduler(this);
             LanSync = new LanSyncServer(this);
-            _apiBaseUrl = apiBaseUrl ?? Environment.GetEnvironmentVariable("VOGRAPH_API_BASE_URL");
+            _apiBaseUrl = apiBaseUrl is null
+                ? Environment.GetEnvironmentVariable("VOGRAPH_API_BASE_URL")
+                : string.IsNullOrWhiteSpace(apiBaseUrl) ? null : apiBaseUrl;
             _apiFactory = apiFactory;
             Api = new ApiRefreshCoordinator(this, _apiBaseUrl, apiFactory);
             PrivateSync = profile.IsGuest ? null : new PrivateSyncCoordinator(this);

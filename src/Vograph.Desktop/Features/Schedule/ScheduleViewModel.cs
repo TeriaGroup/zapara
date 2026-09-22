@@ -159,6 +159,20 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     /// <summary>The card's own name travels with the map (renamed, type stripped), so the Maps header names the lesson.</summary>
     public void ShowMap(LessonRowViewModel row) => _shell.ShowMap(row.Row.Map, row.DisplayName);
 
+    public async Task PickSubgroupAsync(string streamId, string optionId)
+    {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        var groupId = App.Settings.MyGroupId;
+        if (string.IsNullOrEmpty(groupId)) return;
+        await RunAsync(() =>
+        {
+            App.Db.ToggleSubgroupChoice(groupId, streamId, optionId);
+            return "";
+        }, "subgroup");
+        await ReloadAsync();
+    }
+
     public async Task RenameAsync(LessonRowViewModel row)
     {
         using var operation = App.Work.Enter();
@@ -198,8 +212,15 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         var dues = await ComputeDuesAsync(norm, today);
         if (dues is null) return;
         var dlg = new HomeworkDialogViewModel(row.DisplayName, nth => dues[Math.Clamp(nth, 1, 10) - 1]);
-        if (!await _shell.Dialogs.ShowAsync(dlg)) return;
-        if (!await RunAsync(() => App.Homework.AddHomework(l.SubjectRaw, dlg.Text.Trim(), dlg.Nth, createdAt: today), "homework add")) return;
+        dlg.Bind(App);
+        if (!await _shell.Dialogs.ShowAsync(dlg)) { App.HomeworkFiles.Discard(dlg.DraftId); return; }
+        long id = 0;
+        if (!await RunAsync(() => { id = App.Homework.AddHomework(l.SubjectRaw, dlg.Text.Trim(), dlg.Nth, createdAt: today); }, "homework add"))
+        {
+            App.HomeworkFiles.Discard(dlg.DraftId);
+            return;
+        }
+        await RunAsync(() => { App.HomeworkFiles.Commit(dlg.DraftId, id, dlg.Removed); }, "homework files");
         await ReloadAsync();
         await RaiseHomeworkAsync();
     }
@@ -214,8 +235,20 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         if (dues is null) return;
         var dlg = new HomeworkDialogViewModel(hw.Row.DisplayName, nth => dues[Math.Clamp(nth, 1, 10) - 1],
             existing.Text, existing.TargetNthOccurrence);
-        if (!await _shell.Dialogs.ShowAsync(dlg)) return;
-        if (!await RunAsync(() => App.Homework.UpdateHomework(hw.Id, dlg.Text.Trim(), dlg.Nth), "homework edit")) return;
+        var stored = await RunAsync(() => App.HomeworkFiles.List(existing.Id).ToList(), "homework files");
+        if (stored is not null)
+            foreach (var file in stored) dlg.Files.Add(new HomeworkAttachment(file.Id, file.Kind, file.Name, false));
+        dlg.Bind(App);
+        if (!await _shell.Dialogs.ShowAsync(dlg)) { App.HomeworkFiles.Discard(dlg.DraftId); return; }
+        if (!await RunAsync(() =>
+            {
+                App.Homework.UpdateHomework(hw.Id, dlg.Text.Trim(), dlg.Nth);
+                App.HomeworkFiles.Commit(dlg.DraftId, existing.Id, dlg.Removed);
+            }, "homework edit"))
+        {
+            App.HomeworkFiles.Discard(dlg.DraftId);
+            return;
+        }
         await ReloadAsync();
         await RaiseHomeworkAsync();
     }
@@ -240,7 +273,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         if (!operation.IsCurrent) return;
         var confirm = new ConfirmDialogViewModel(T("hwDelete"), T("hwDeleteConfirm", hw.Text), T("delete"), danger: true);
         if (!await _shell.Dialogs.ShowAsync(confirm)) return;
-        if (!await RunAsync(() => App.Homework.Delete(hw.Id), "homework delete")) return;
+        if (!await RunAsync(() => { App.Homework.Delete(hw.Id); App.HomeworkFiles.DeleteHomework(hw.Id); }, "homework delete")) return;
         await ReloadAsync();
         await RaiseHomeworkAsync();
     }

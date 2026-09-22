@@ -16,4 +16,5 @@ public sealed class FakeFileDialogs : IFileDialogs
     }
 
     public Task<string?> OpenJsonAsync() => Task.FromResult(OpenPath);
+    public Task<string?> OpenHomeworkAsync(bool photo) => Task.FromResult(OpenPath);
 }

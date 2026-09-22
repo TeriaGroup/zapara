@@ -68,20 +68,24 @@ public sealed class ApiRefreshCoordinator : IDisposable
         }
     }
 
-    private sealed record Needs(long Epoch, string? Selected, string[] Friends, string[] Ids);
+    private sealed record Needs(long Epoch, string? Selected, string? SelectedName, string[] Friends, string[] Ids, TimetableGroupRequest[] Requests);
     private Needs Capture()
     {
         var selected = _app.Db.GetSettings().MyGroupId;
         var friends = _app.Db.GetFriends().Where(f => f.Enabled).OrderBy(f => f.Id).ToArray();
+        var selectedName = selected is null ? null : _app.Db.GetGroup(selected)?.Name;
         var ids = selected is null ? [] : new[] { selected }.Concat(friends.Select(f =>
             _app.Db.GetAllGroups().FirstOrDefault(g => g.Name == f.GroupName)?.Id ?? "")).Distinct(StringComparer.Ordinal).Order().ToArray();
-        return new(Interlocked.Read(ref _epoch), selected, friends.Select(f => $"{f.Id}:{f.GroupName}").ToArray(), ids);
+        var requests = selected is null ? [] : new[] { new TimetableGroupRequest(selected, selectedName) }.Concat(friends.Select(f =>
+            new TimetableGroupRequest(_app.Db.GetAllGroups().FirstOrDefault(g => g.Name == f.GroupName)?.Id, f.GroupName))).ToArray();
+        return new(Interlocked.Read(ref _epoch), selected, selectedName, friends.Select(f => $"{f.Id}:{f.GroupName}").ToArray(), ids, requests);
     }
 
     private bool Matches(Needs needs)
     {
         var now = Capture();
-        return now.Epoch == needs.Epoch && now.Selected == needs.Selected && now.Friends.SequenceEqual(needs.Friends) && now.Ids.SequenceEqual(needs.Ids);
+        return now.Epoch == needs.Epoch && now.Selected == needs.Selected && now.SelectedName == needs.SelectedName
+            && now.Friends.SequenceEqual(needs.Friends) && now.Ids.SequenceEqual(needs.Ids);
     }
 
     public async Task<bool> RefreshAsync(bool neededOnly = false, CancellationToken ct = default)
@@ -113,21 +117,12 @@ public sealed class ApiRefreshCoordinator : IDisposable
                 }
                 finally { _app.CoreGate.Release(); }
 
-                // Resolve previously unknown friend names from a catalog without committing partial work.
+                // Resolve every selected/friend identity within the same catalog that supplies the pinned lessons.
                 TimetableApiSnapshot snapshot;
                 try
                 {
-                    var ids = needs.Ids;
                     if (!NetworkAllowed) return false;
-                    if (ids.Contains(""))
-                    {
-                        var catalog = await _client.FetchAsync([], token).ConfigureAwait(false);
-                        ids = new[] { needs.Selected! }.Concat(needs.Friends.Select(f =>
-                            catalog.Groups.FirstOrDefault(g => g.Name == f[(f.IndexOf(':') + 1)..])?.Id
-                            ?? throw new TimetableApiException(TimetableApiFailure.UnknownRequiredGroup))).Distinct().ToArray();
-                    }
-                    if (!NetworkAllowed) return false;
-                    snapshot = await _client.FetchAsync(ids, token).ConfigureAwait(false);
+                    snapshot = await _client.FetchResolvedAsync(needs.Requests, token).ConfigureAwait(false);
                 }
                 catch (TimetableApiException ex)
                 {
@@ -148,10 +143,11 @@ public sealed class ApiRefreshCoordinator : IDisposable
                     operation.ThrowIfStale();
                     if (!NetworkAllowed) return false;
                     if (!Matches(needs)) { neededOnly = false; continue; }
-                    new TimetableApiCache(_app.Db).Apply(snapshot, _sourceBase);
+                    var resolvedSelected = needs.Selected is null ? null : new TimetableGroupRequest(needs.Selected, needs.SelectedName).Resolve(snapshot.Groups).Id;
+                    new TimetableApiCache(_app.Db).Apply(snapshot, _sourceBase, resolvedSelected);
                     LastError = null;
                     LastFailure = null;
-                    if (needs.Selected is not null && snapshot.DownloadedGroups.ContainsKey(needs.Selected))
+                    if (resolvedSelected is not null && snapshot.DownloadedGroups.ContainsKey(resolvedSelected))
                     {
                         try { _app.Homework.RecomputeAllStatuses(); }
                         catch (Exception) { _app.Log.Warn("api refresh: derived homework recompute failed; raw cache committed"); }

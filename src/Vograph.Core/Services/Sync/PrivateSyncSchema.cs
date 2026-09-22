@@ -51,6 +51,18 @@ internal static class PrivateSyncSchema
                     revision INTEGER NOT NULL DEFAULT 0,
                     tombstone INTEGER NOT NULL DEFAULT 0
                 );
+                CREATE TABLE IF NOT EXISTS sync_inbox (
+                    id INTEGER PRIMARY KEY CHECK(id=1), manifest BLOB, afterOrdinal INTEGER NOT NULL DEFAULT 0, readyEpoch TEXT
+                );
+                INSERT OR IGNORE INTO sync_inbox(id) VALUES(1);
+                CREATE TABLE IF NOT EXISTS sync_stage (
+                    entityType TEXT NOT NULL, entityId TEXT NOT NULL, ordinal INTEGER NOT NULL UNIQUE, record BLOB NOT NULL,
+                    PRIMARY KEY(entityType,entityId)
+                );
+                CREATE TABLE IF NOT EXISTS sync_remote (
+                    entityType TEXT NOT NULL, entityId TEXT NOT NULL, record BLOB NOT NULL,
+                    PRIMARY KEY(entityType,entityId)
+                );
                 """;
             cmd.ExecuteNonQuery();
         }

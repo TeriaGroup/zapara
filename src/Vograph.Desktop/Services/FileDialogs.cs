@@ -8,6 +8,7 @@ public interface IFileDialogs
 {
     Task<string?> SaveJsonAsync(string suggestedName);
     Task<string?> OpenJsonAsync();
+    Task<string?> OpenHomeworkAsync(bool photo);
 }
 
 /// <summary>Default slot before App installs the real pickers: every dialog reads as "cancelled".</summary>
@@ -15,6 +16,7 @@ public sealed class NullFileDialogs : IFileDialogs
 {
     public Task<string?> SaveJsonAsync(string suggestedName) => Task.FromResult<string?>(null);
     public Task<string?> OpenJsonAsync() => Task.FromResult<string?>(null);
+    public Task<string?> OpenHomeworkAsync(bool photo) => Task.FromResult<string?>(null);
 }
 
 public sealed class AvaloniaFileDialogs : IFileDialogs
@@ -41,6 +43,16 @@ public sealed class AvaloniaFileDialogs : IFileDialogs
     {
         if (_topLevel() is not { } tl) return null;
         var files = await tl.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { AllowMultiple = false, FileTypeFilter = new[] { Json } });
+        return files.Count == 0 ? null : files[0].TryGetLocalPath();
+    }
+
+    public async Task<string?> OpenHomeworkAsync(bool photo)
+    {
+        if (_topLevel() is not { } tl) return null;
+        var kind = photo
+            ? new FilePickerFileType("image") { Patterns = new[] { "*.jpg", "*.jpeg", "*.png", "*.webp", "*.gif" } }
+            : new FilePickerFileType("document") { Patterns = new[] { "*.pdf", "*.txt", "*.csv", "*.rtf", "*.doc", "*.docx", "*.xls", "*.xlsx", "*.ppt", "*.pptx", "*.odt", "*.ods", "*.odp", "*.zip" } };
+        var files = await tl.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { AllowMultiple = false, FileTypeFilter = new[] { kind } });
         return files.Count == 0 ? null : files[0].TryGetLocalPath();
     }
 }

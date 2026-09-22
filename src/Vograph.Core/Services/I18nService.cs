@@ -177,20 +177,37 @@ public class I18nService
             ["updReady"] = "Обновление {0} скачано. Перезапустить сейчас для установки?",
             ["updNone"] = "У вас последняя версия {0}",
             ["updFail"] = "Не удалось проверить обновление",
-            // Weekday names for API parity (already above)
             // ---- Desktop v2 (Avalonia) ----
             ["navSchedule"] = "Расписание", ["navWeek"] = "Неделя", ["navSummary"] = "Сводка", ["navTools"] = "Инструменты",
-            ["navTeachers"] = "Преподаватели", ["navMaps"] = "Карты", ["navFriends"] = "Друзья", ["navHomework"] = "Домашка", ["navCommunity"] = "Сообщества", ["navSettings"] = "Настройки",
+            ["navTeachers"] = "Преподаватели", ["navMaps"] = "Карты", ["navFriends"] = "Друзья", ["navHomework"] = "Домашка", ["navCommunity"] = "Сообщества", ["navGroup"] = "Группа", ["navSettings"] = "Настройки",
+            ["groupTitle"] = "Группа",
+            ["groupNeedAccount"] = "Войдите в аккаунт, чтобы открыть группу.",
+            ["groupEmpty"] = "Вы ещё не в группе.",
+            ["groupDisclaimer"] = "Роли старосты и куратора действуют только внутри Запары и не подтверждены университетом.",
+            ["groupOpen"] = "Открыть группу",
+            ["groupChat"] = "Чат группы",
+            ["groupDirects"] = "Личные чаты",
+            ["groupBack"] = "К чату группы",
+            ["groupList"] = "К списку групп",
+            ["groupOlder"] = "Раньше",
+            ["groupSend"] = "Отправить",
+            ["groupMessage"] = "Сообщение",
+            ["groupRoster"] = "Одногруппники",
+            ["groupFailed"] = "Не удалось обновить чат. Повторите попытку.",
+            ["groupRoleHeadman"] = "Староста", ["groupRoleCurator"] = "Куратор", ["groupRoleMember"] = "Участник",
             ["goToday"] = "К сегодня", ["prevDay"] = "Предыдущий день", ["nextDay"] = "Следующий день",
             ["lessons1"] = "{0} пара", ["lessons2"] = "{0} пары", ["lessons5"] = "{0} пар",
             ["weekOf"] = "неделя {0}", ["parityWeek"] = "{0} неделя", ["nextShort"] = "след. {0}",
             ["noLessonsDay"] = "Пар нет", ["noLessonsSunday"] = "Воскресенье — пар нет", ["nextLessonHint"] = "следующая пара — {0}, {1}",
+            ["subgroupPick"] = "Выберите подгруппу", ["subgroupYours"] = "Ваша подгруппа",
             ["typeLek"] = "лекция", ["typePr"] = "практика", ["typeLab"] = "лабораторная", ["typeKons"] = "консультация",
             ["typeZach"] = "зачёт", ["typeEkz"] = "экзамен", ["typeKurs"] = "курсовая", ["typePraktika"] = "практика",
             ["remote"] = "дистанционно", ["originalLabel"] = "оригинал: {0}",
             ["hwLabel"] = "Домашка", ["hwBurningTomorrow"] = "горит завтра", ["hwBurningToday"] = "горит сегодня", ["hwOverdue"] = "просрочено {0}",
             ["hwDone"] = "сдано", ["hwDueOn"] = "срок {0}", ["hwInLessons1"] = "через {0} пару", ["hwInLessons2"] = "через {0} пары", ["hwInLessons5"] = "через {0} пар",
             ["hwMarkDone"] = "Сдано", ["hwUndo"] = "Вернуть", ["hwEdit"] = "Изменить", ["hwDelete"] = "Удалить", ["hwAdd"] = "Добавить домашку",
+            ["hwPhoto"] = "Фото", ["hwDocument"] = "Документ", ["hwFileRemove"] = "Убрать",
+            ["hwFileBig"] = "Файл слишком большой", ["hwFileBad"] = "Такой файл приложить нельзя", ["hwFileFull"] = "Можно приложить не больше шести файлов",
             ["hwDeleteConfirm"] = "Удалить домашку «{0}»?", ["hwEditTitle"] = "ИЗМЕНИТЬ ДОМАШКУ",
             ["renameTip"] = "Переименовать", ["mapTip"] = "Показать на карте",
             ["placeholderTitle"] = "Раздел в разработке", ["placeholderHint"] = "Появится на следующем этапе", ["loadingTitle"] = "Загружаю расписание…",
@@ -281,7 +298,6 @@ public class I18nService
     public string FormatDate(DateTime d) => d.ToString("dd.MM.yyyy");
     public string FormatDay(DateTime d)
     {
-        // returns localized weekday short
         var dow = (int)d.DayOfWeek;
         string key = dow switch { 0 => "sunShort", 1 => "monShort", 2 => "tueShort", 3 => "wedShort", 4 => "thuShort", 5 => "friShort", 6 => "satShort", _ => "monShort" };
         return T(key);

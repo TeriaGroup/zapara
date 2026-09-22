@@ -8,8 +8,6 @@ public class AutoUpdateService
     private readonly HttpClient _http;
     private const string Owner = "TeriaGroup";
     private const string Repo = "zapara";
-    // tag prefix for windows
-    private const string Prefix = "windows-";
 
     public AutoUpdateService()
     {
@@ -108,7 +106,6 @@ public class AutoUpdateService
 
     public static bool IsNewer(string latestTag, string currentTag)
     {
-        // simple semver compare after prefix: v1.0, v1.1 etc
         static string ver(string t) => t.Contains("-v") ? t[(t.IndexOf("-v")+2)..] : t.Contains("-") ? t[(t.IndexOf("-")+1)..] : t;
         try
         {

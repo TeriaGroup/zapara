@@ -10,6 +10,7 @@
       <StackPanel>
         <TextBlock Classes="display" Text="{Binding Title}" />
         <TextBlock Classes="muted" Text="{Binding Status}" Margin="0,4,0,0" TextWrapping="Wrap"
+                   IsVisible="{Binding !NeedAccount}"
                    AutomationProperties.AutomationId="Community.Status" />
       </StackPanel>
 

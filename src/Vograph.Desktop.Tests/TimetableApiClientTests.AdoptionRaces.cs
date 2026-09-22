@@ -84,7 +84,12 @@ public partial class TimetableApiClientTests
         {
             if (fail && failure == "503") return Text("{}", System.Net.HttpStatusCode.ServiceUnavailable);
             if (fail && failure == "bad") return Text("{}");
-            if (fail && failure == "missing") return Json(Catalog(Pin, "empty"));
+            if (fail && failure == "missing")
+            {
+                var missing = Catalog(Pin, "empty");
+                missing["groups"]![0]!["name"] = "Другая группа";
+                return Json(missing);
+            }
             return Json(r.RequestUri!.AbsolutePath.EndsWith("/groups") ? Catalog() : Schedule());
         }};
         using var http = new HttpClient(handler);

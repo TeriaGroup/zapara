@@ -17,7 +17,7 @@ public sealed class PrivateSyncConflict
     public string Diagnostic { get; }
 }
 
-public sealed class PrivateSyncCoordinator : IDisposable
+public sealed partial class PrivateSyncCoordinator : IDisposable
 {
     private readonly AppServices app;
     private PrivateSyncHttpClient? client;
@@ -33,6 +33,8 @@ public sealed class PrivateSyncCoordinator : IDisposable
     }
 
     public event Action<PrivateSyncConflict>? Conflict;
+    public event Action? Applied;
+    private readonly SemaphoreSlim syncGate = new(1, 1);
     public int AppliedCallbacks { get; private set; }
     public int IgnoredCallbacks { get; private set; }
     public bool IsAttached => client is not null && access is not null;
@@ -66,21 +68,26 @@ public sealed class PrivateSyncCoordinator : IDisposable
         using var work = app.Work.Enter();
         if (!work.IsCurrent || client is null || access is null) return;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, work.Token);
+        var entered = false;
         try
         {
+            await syncGate.WaitAsync(linked.Token).ConfigureAwait(false);
+            entered = true;
             await PushBodyAsync(work, linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             IgnoredCallbacks++;
         }
+        finally { if (entered) syncGate.Release(); }
     }
 
     private async Task PushBodyAsync(Profiles.ProfileWorkLifetime.Work work, CancellationToken token)
     {
         List<PrivateSyncOutboxEntry> pending;
         await app.CoreGate.WaitAsync(token).ConfigureAwait(false);
-        try { pending = app.Outbox.Pending().Where(p => p.Status == "pending").ToList(); }
+        try { pending = app.Outbox.Pending().Where(p => p.Status == "pending")
+            .OrderBy(p => p.EntityType == "completion" && p.Action == "upsert" ? 1 : 0).ToList(); }
         finally { app.CoreGate.Release(); }
         if (pending.Count == 0) return;
 
@@ -109,81 +116,17 @@ public sealed class PrivateSyncCoordinator : IDisposable
                     IgnoredCallbacks++;
                     return;
                 }
-                ApplyPush(row, result);
+                app.Outbox.InTransaction(() => { ApplyPush(row, result); return 0; },
+                    () => { token.ThrowIfCancellationRequested(); work.ThrowIfStale(); });
                 if (result.State == PrivateSyncState.ResetRequired) return;
             }
             finally { app.CoreGate.Release(); }
         }
     }
 
-    public async Task PullAsync(CancellationToken ct = default)
-    {
-        using var work = app.Work.Enter();
-        if (!work.IsCurrent || client is null || access is null) return;
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, work.Token);
-        var epoch = await EnsureEpochAsync(work, linked.Token).ConfigureAwait(false);
-        if (epoch is null) return;
-        string token;
-        try { token = await access(linked.Token).ConfigureAwait(false); }
-        catch (OperationCanceledException) when (!work.IsCurrent) { IgnoredCallbacks++; return; }
-
-        long after;
-        await app.CoreGate.WaitAsync(linked.Token).ConfigureAwait(false);
-        try { after = app.Outbox.AfterSequence; }
-        finally { app.CoreGate.Release(); }
-
-        var page = await client.ChangesAsync(token, epoch.Value, after, ct: linked.Token).ConfigureAwait(false);
-        if (!work.IsCurrent) { IgnoredCallbacks++; return; }
-        if (page.State == PrivateSyncState.ResetRequired)
-        {
-            await ResyncAsync(work, token, linked.Token).ConfigureAwait(false);
-            return;
-        }
-        if (page.State != PrivateSyncState.Success || page.Value is null) return;
-        await app.CoreGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-        try
-        {
-            if (!work.IsCurrent) { IgnoredCallbacks++; return; }
-            foreach (var change in page.Value.Changes) ApplyRecord(change.Record);
-            app.Outbox.SetEpoch(page.Value.Metadata.SyncEpoch, page.Value.NextAfterSequence);
-        }
-        finally { app.CoreGate.Release(); }
-    }
-
-    private async Task ResyncAsync(Profiles.ProfileWorkLifetime.Work work, string token, CancellationToken ct)
-    {
-        var manifest = await client!.BeginResyncAsync(token, ct).ConfigureAwait(false);
-        if (!work.IsCurrent) { IgnoredCallbacks++; return; }
-        if (manifest.State != PrivateSyncState.Success || manifest.Value is null) return;
-        var header = manifest.Value;
-        long after = 0;
-        bool more;
-        do
-        {
-            var page = await client.ReadResyncPageAsync(token, header, after, ct: ct).ConfigureAwait(false);
-            if (!work.IsCurrent) { IgnoredCallbacks++; return; }
-            if (page.State != PrivateSyncState.Success || page.Value is null) return;
-            await app.CoreGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-            try
-            {
-                if (!work.IsCurrent) { IgnoredCallbacks++; return; }
-                foreach (var item in page.Value.Items) ApplyRecord(item.Record);
-            }
-            finally { app.CoreGate.Release(); }
-            after = page.Value.NextAfterOrdinal;
-            more = page.Value.HasMore;
-        } while (more);
-        await app.CoreGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
-        try
-        {
-            if (!work.IsCurrent) { IgnoredCallbacks++; return; }
-            app.Outbox.SetEpoch(header.SyncEpoch, header.HighWater);
-        }
-        finally { app.CoreGate.Release(); }
-    }
-
     private void ApplyPush(PrivateSyncOutboxEntry row, PrivateSyncResult<SyncMutationResult> result)
     {
+        if (app.Outbox.Find(row.OpId) is null) return;
         switch (result.State)
         {
             case PrivateSyncState.Success when result.Value?.ServerRecord is { } record:
@@ -201,12 +144,6 @@ public sealed class PrivateSyncCoordinator : IDisposable
                 IgnoredCallbacks++;
                 break;
         }
-    }
-
-    private void ApplyRecord(SyncRecord record)
-    {
-        if (app.Outbox.HasPendingOrDraft(record.EntityType, record.EntityId)) return;
-        app.Outbox.ApplyLive(record);
     }
 
     private async Task<Guid?> EnsureEpochAsync(Profiles.ProfileWorkLifetime.Work work, CancellationToken ct)
@@ -240,8 +177,12 @@ public sealed class PrivateSyncCoordinator : IDisposable
         {
             try
             {
-                await PushPendingAsync(ct).ConfigureAwait(false);
                 await PullAsync(ct).ConfigureAwait(false);
+                bool ready;
+                await app.CoreGate.WaitAsync(ct).ConfigureAwait(false);
+                try { ready = app.Outbox.SnapshotReady; }
+                finally { app.CoreGate.Release(); }
+                if (ready) await PushPendingAsync(ct).ConfigureAwait(false);
                 await Task.Delay(TimeSpan.FromSeconds(30), ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }

@@ -42,13 +42,14 @@
                       <DataTemplate x:DataType="w:WeekRow">
                         <Grid ColumnDefinitions="48,*,Auto">
                           <TextBlock Classes="tnum" Text="{Binding Time}" FontWeight="Medium" VerticalAlignment="Center" />
-                          <WrapPanel Grid.Column="1" Margin="8,0" VerticalAlignment="Center">
+                          <!-- The name must be measured with the column width. A WrapPanel gives it infinite width and it slides under the room. -->
+                          <StackPanel Grid.Column="1" Margin="8,0" VerticalAlignment="Center" Spacing="3">
                             <TextBlock Text="{Binding Name}" TextWrapping="Wrap" />
-                            <Border Classes="chip type" Margin="6,0,0,0" VerticalAlignment="Center"
+                            <Border Classes="chip type" HorizontalAlignment="Left"
                                     IsVisible="{Binding TypeLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                               <TextBlock Text="{Binding TypeLabel}" />
                             </Border>
-                          </WrapPanel>
+                          </StackPanel>
                           <Border Grid.Column="2" Classes="chip" VerticalAlignment="Center">
                             <TextBlock Classes="tnum" Text="{Binding Room}" />
                           </Border>

@@ -7,12 +7,10 @@ namespace Vograph.Core.Services;
 
 public class Database : IDisposable
 {
-    private readonly string _dbPath;
     private readonly SqliteConnection _conn;
 
     public Database(string dbPath)
     {
-        _dbPath = dbPath;
         var dir = Path.GetDirectoryName(dbPath);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             Directory.CreateDirectory(dir);
@@ -114,7 +112,6 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 INSERT OR IGNORE INTO settings (id, parityInvert, intersectionStrictness, weekCount, language) VALUES (1, 0, 25, 2, 'ru');
 -- migrations for existing DBs (v2 -> v3)
--- add columns if missing (no error if exists, use try via separate statements executed below)
 ";
         using var cmd = _conn.CreateCommand();
         cmd.CommandText = sql;
@@ -126,6 +123,16 @@ INSERT OR IGNORE INTO settings (id, parityInvert, intersectionStrictness, weekCo
         TryAddColumn("settings", "alwaysShowAllTrafficLights", "INTEGER NOT NULL DEFAULT 0");
         TryAddColumn("settings", "autoUpdate", "INTEGER NOT NULL DEFAULT 1");
         PrivateSyncSchema.Ensure(_conn);
+        using var subgroups = _conn.CreateCommand();
+        subgroups.CommandText = """
+            CREATE TABLE IF NOT EXISTS subgroup_choices (
+                groupId TEXT NOT NULL,
+                streamId TEXT NOT NULL,
+                optionId TEXT NOT NULL,
+                PRIMARY KEY (groupId, streamId)
+            );
+            """;
+        subgroups.ExecuteNonQuery();
     }
 
     private void TryAddColumn(string table, string column, string definition)
@@ -387,6 +394,40 @@ VALUES (@gid,@dow,@par,@idx,@ts,@te,@sub,@norm,@teach,@room,@build,@type,@cls,@r
             });
         }
         return list;
+    }
+
+    public Dictionary<string, string> GetSubgroupChoices(string groupId)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "SELECT streamId, optionId FROM subgroup_choices WHERE groupId=@g";
+        cmd.Parameters.AddWithValue("@g", groupId);
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read()) map[reader.GetString(0)] = reader.GetString(1);
+        return map;
+    }
+
+    public void ToggleSubgroupChoice(string groupId, string streamId, string optionId)
+    {
+        var current = GetSubgroupChoices(groupId);
+        using var cmd = _conn.CreateCommand();
+        if (current.TryGetValue(streamId, out var existing) && existing == optionId)
+        {
+            cmd.CommandText = "DELETE FROM subgroup_choices WHERE groupId=@g AND streamId=@s";
+            cmd.Parameters.AddWithValue("@g", groupId);
+            cmd.Parameters.AddWithValue("@s", streamId);
+        }
+        else
+        {
+            cmd.CommandText = """
+                INSERT INTO subgroup_choices (groupId, streamId, optionId) VALUES (@g, @s, @o)
+                ON CONFLICT(groupId, streamId) DO UPDATE SET optionId = excluded.optionId
+                """;
+            cmd.Parameters.AddWithValue("@g", groupId);
+            cmd.Parameters.AddWithValue("@s", streamId);
+            cmd.Parameters.AddWithValue("@o", optionId);
+        }
+        cmd.ExecuteNonQuery();
     }
 
     public long InsertOverride(Override o)

@@ -36,12 +36,13 @@
           </Button>
         </StackPanel>
 
+        <Button Classes="icon" DockPanel.Dock="Top" Command="{Binding ToggleSidebarCommand}" ToolTip.Tip="{Binding SidebarToggleTip}" Margin="0,0,0,8"
+                HorizontalAlignment="{Binding SidebarCollapsed, Converter={x:Static loc:Converters.RailAlignment}}"
+                AutomationProperties.AutomationId="Shell.SidebarToggle" AutomationProperties.Name="{Binding SidebarToggleTip}">
+          <c:Icon Data="{StaticResource Icon.Menu}" Size="16" />
+        </Button>
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Background="Transparent">
         <StackPanel Spacing="2">
-          <Button Classes="icon" Command="{Binding ToggleSidebarCommand}" ToolTip.Tip="{Binding SidebarToggleTip}" Margin="0,0,0,8"
-                  HorizontalAlignment="{Binding SidebarCollapsed, Converter={x:Static loc:Converters.RailAlignment}}"
-                  AutomationProperties.AutomationId="Shell.SidebarToggle" AutomationProperties.Name="{Binding SidebarToggleTip}">
-            <c:Icon Data="{StaticResource Icon.Menu}" Size="16" />
-          </Button>
           <Button Classes="ghost" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                   Command="{Binding OpenGroupPickerCommand}" Margin="0,0,0,12" ToolTip.Tip="{Binding GroupCardTip}"
                   AutomationProperties.AutomationId="Shell.GroupCard" AutomationProperties.Name="{Binding GroupName}">
@@ -50,8 +51,8 @@
                 <TextBlock Text="{Binding GroupName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
                 <TextBlock Text="{Binding GroupRailLabel}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" IsVisible="{Binding SidebarCollapsed}" />
                 <TextBlock Classes="muted" Text="{Binding GroupSubtitle}" FontSize="11.5" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
-                <Border Classes="chip stale" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Left" IsVisible="{Binding ShowStaleChip}">
-                  <TextBlock Text="{Binding StaleText}" />
+                <Border Classes="chip stale" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Stretch" Padding="8,5" IsVisible="{Binding ShowStaleChip}">
+                  <TextBlock Text="{Binding StaleText}" TextWrapping="Wrap" />
                 </Border>
                 <Ellipse Classes="staledot" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Center" IsVisible="{Binding ShowStaleDot}" />
               </StackPanel>
@@ -69,6 +70,7 @@
             <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
           </ItemsControl>
         </StackPanel>
+        </ScrollViewer>
 
       </DockPanel>
       <!-- One indicator for the whole sidebar; SidebarView.axaml.cs places it over the active NavItem. -->

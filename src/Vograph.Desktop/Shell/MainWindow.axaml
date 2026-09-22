@@ -24,6 +24,7 @@
     <KeyBinding Gesture="Ctrl+D7" Command="{Binding NavigateCommand}" CommandParameter="Homework" />
     <KeyBinding Gesture="Ctrl+D8" Command="{Binding NavigateCommand}" CommandParameter="Settings" />
     <KeyBinding Gesture="Ctrl+D9" Command="{Binding NavigateCommand}" CommandParameter="Community" />
+    <KeyBinding Gesture="Ctrl+D0" Command="{Binding NavigateCommand}" CommandParameter="Group" />
     <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding NavigateCommand}" CommandParameter="Settings" />
     <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleSidebarCommand}" />
     <KeyBinding Gesture="F5" Command="{Binding RefreshScheduleCommand}" />
@@ -68,9 +69,14 @@
 
       <shell:SidebarView Grid.Row="1" Grid.Column="0" />
 
-      <TransitioningContentControl x:Name="Host" Grid.Row="1" Grid.Column="1" Content="{Binding Current}"
+      <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="Auto,*">
+        <Button Grid.Row="0" Content="{Binding SyncConflictSummary}" Command="{Binding ResolveSyncConflictsCommand}"
+                IsVisible="{Binding HasSyncConflicts}" HorizontalAlignment="Stretch" Margin="24,12,24,0"
+                AutomationProperties.AutomationId="Sync.ResolveConflicts" />
+      <TransitioningContentControl x:Name="Host" Grid.Row="1" Content="{Binding Current}"
                                    ClipToBounds="True"
                                    PageTransition="{Binding Motion.Enabled, Converter={x:Static loc:Converters.PageTransition}}" />
+      </Grid>
     </Grid>
 
     <ContentControl Content="{Binding Overlay}" IsVisible="{Binding HasOverlay}" />

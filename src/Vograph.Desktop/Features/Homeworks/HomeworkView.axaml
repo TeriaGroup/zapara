@@ -46,6 +46,14 @@
                         <StackPanel Spacing="4">
                           <TextBlock Classes="subject hwtext" Text="{Binding Subject}" />
                           <TextBlock Classes="hwtext" Text="{Binding Text}" TextWrapping="Wrap" />
+                          <ItemsControl ItemsSource="{Binding Files}" IsVisible="{Binding HasFiles}">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="h:HomeworkFileLink">
+                                <Button Classes="pill" Margin="0,0,6,0" Content="{Binding Name}" Command="{Binding $parent[h:HomeworkRowViewModel].OpenFileCommand}" CommandParameter="{Binding Id}" />
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
                           <Border Classes="chip" HorizontalAlignment="Left" Classes.approaching="{Binding IsApproaching}" Classes.burning="{Binding IsBurning}"
                                   Classes.urgent="{Binding IsUrgent}" Classes.overdue="{Binding IsOverdue}" Classes.done="{Binding IsDone}" Classes.far="{Binding IsFar}">
                             <TextBlock Text="{Binding Label}" />

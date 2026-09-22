@@ -99,9 +99,16 @@ public sealed partial class HomeworkViewModel : ViewModelBase
         var dues = await RunAsync(() => Enumerable.Range(1, 10).Select(n => App.Homework.ComputeDueDate(norm, today, n)).ToArray(), "homework");
         if (dues is null) return;
         var dlg = new HomeworkDialogViewModel(subject.Display, nth => dues[Math.Clamp(nth, 1, 10) - 1]);
-        if (!await _shell.Dialogs.ShowAsync(dlg)) return;
-        if (await RunAsync(() => App.Homework.AddHomework(subject.SubjectRaw, dlg.Text.Trim(), dlg.Nth, createdAt: today), "homework add"))
-            await ChangedAsync();
+        dlg.Bind(App);
+        if (!await _shell.Dialogs.ShowAsync(dlg)) { App.HomeworkFiles.Discard(dlg.DraftId); return; }
+        long id = 0;
+        if (!await RunAsync(() => { id = App.Homework.AddHomework(subject.SubjectRaw, dlg.Text.Trim(), dlg.Nth, createdAt: today); }, "homework add"))
+        {
+            App.HomeworkFiles.Discard(dlg.DraftId);
+            return;
+        }
+        await RunAsync(() => { App.HomeworkFiles.Commit(dlg.DraftId, id, dlg.Removed); }, "homework files");
+        await ChangedAsync();
     }
 
     public async Task EditAsync(HomeworkRowViewModel row)
@@ -113,9 +120,18 @@ public sealed partial class HomeworkViewModel : ViewModelBase
         var dues = await RunAsync(() => Enumerable.Range(1, 10).Select(n => App.Homework.ComputeDueDate(existing.SubjectRawNormalized, existing.CreatedAt, n)).ToArray(), "homework");
         if (dues is null) return;
         var dlg = new HomeworkDialogViewModel(row.Subject, nth => dues[Math.Clamp(nth, 1, 10) - 1], existing.Text, existing.TargetNthOccurrence);
-        if (!await _shell.Dialogs.ShowAsync(dlg)) return;
-        if (await RunAsync(() => App.Homework.UpdateHomework(existing.Id, dlg.Text.Trim(), dlg.Nth), "homework edit"))
+        var stored = await RunAsync(() => App.HomeworkFiles.List(existing.Id).ToList(), "homework files");
+        if (stored is not null)
+            foreach (var file in stored) dlg.Files.Add(new HomeworkAttachment(file.Id, file.Kind, file.Name, false));
+        dlg.Bind(App);
+        if (!await _shell.Dialogs.ShowAsync(dlg)) { App.HomeworkFiles.Discard(dlg.DraftId); return; }
+        if (await RunAsync(() =>
+            {
+                App.Homework.UpdateHomework(existing.Id, dlg.Text.Trim(), dlg.Nth);
+                App.HomeworkFiles.Commit(dlg.DraftId, existing.Id, dlg.Removed);
+            }, "homework edit"))
             await ChangedAsync();
+        else App.HomeworkFiles.Discard(dlg.DraftId);
     }
 
     public async Task ToggleDoneAsync(HomeworkRowViewModel row)
@@ -132,7 +148,11 @@ public sealed partial class HomeworkViewModel : ViewModelBase
         if (!operation.IsCurrent) return;
         var confirm = new ConfirmDialogViewModel(T("hwDelete"), T("hwDeleteConfirm", row.Text), T("delete"), danger: true);
         if (!await _shell.Dialogs.ShowAsync(confirm)) return;
-        if (await RunAsync(() => App.Homework.Delete(row.Entry.Homework.Id), "homework delete"))
+        if (await RunAsync(() =>
+            {
+                App.Homework.Delete(row.Entry.Homework.Id);
+                App.HomeworkFiles.DeleteHomework(row.Entry.Homework.Id);
+            }, "homework delete"))
             await ChangedAsync();
     }
 
@@ -189,6 +209,8 @@ public sealed partial class HomeworkRowViewModel : ObservableObject
         Entry = entry;
         _owner = owner;
         Index = index;
+        Files = owner.App.HomeworkFiles.List(entry.Homework.Id)
+            .Select(file => new HomeworkFileLink(file.Id, file.Name)).ToList();
     }
 
     public HomeworkEntry Entry { get; }
@@ -204,8 +226,20 @@ public sealed partial class HomeworkRowViewModel : ObservableObject
     public bool IsOverdue => Entry.Status == "overdue";
     public bool IsFar => Entry.Status == "far";
     public string DoneLabel => Loc.Current.T(IsDone ? "hwUndo" : "hwMarkDone");
+    public IReadOnlyList<HomeworkFileLink> Files { get; }
+    public bool HasFiles => Files.Count > 0;
+
+    [RelayCommand] private void OpenFile(string id)
+    {
+        var path = _owner.App.HomeworkFiles.PathOf(Entry.Homework.Id, id);
+        if (path is null) return;
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true }); }
+        catch (System.ComponentModel.Win32Exception) { _owner.App.Toasts.Info(_owner.App.Loc.T("hwFileBad")); }
+    }
 
     [RelayCommand] private Task ToggleDone() => _owner.ToggleDoneAsync(this);
     [RelayCommand] private Task Edit() => _owner.EditAsync(this);
     [RelayCommand] private Task Delete() => _owner.DeleteAsync(this);
 }
+
+public sealed record HomeworkFileLink(string Id, string Name);

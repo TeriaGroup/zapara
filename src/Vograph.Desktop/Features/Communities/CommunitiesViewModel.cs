@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Vograph.Core.Services.Accounts;
 using Vograph.Core.Services.Communities;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.ViewModels;
@@ -12,6 +13,9 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
     private readonly CommunityHttpClient? client;
     private readonly Func<CancellationToken, Task<string?>>? accessToken;
     private readonly Func<string?>? groupId;
+    // A section built before sign-in captured null. Read the live graph on each load; do not keep that null.
+    private CommunityHttpClient? Api => client ?? App.Communities;
+    private Func<CancellationToken, Task<string?>>? Access => accessToken ?? App.CommunityAccess;
     private readonly HashSet<Guid> pending = [];
     private readonly Action relabel;
     private int version;
@@ -22,7 +26,7 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
         this.client = client;
         this.accessToken = accessToken;
         this.groupId = groupId;
-        NeedAccount = client is null || accessToken is null;
+        NeedAccount = Api is null || Access is null;
         if (NeedAccount) Status = T("communityNeedAccount");
         relabel = Relabel;
         app.Loc.LanguageChanged += relabel;
@@ -47,7 +51,7 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
         var round = ++version;
-        if (client is null || accessToken is null)
+        if (Api is null || Access is null)
         {
             ShowNeedAccount();
             return;
@@ -55,7 +59,7 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
         IsBusy = true;
         try
         {
-            var token = await accessToken(operation.Token);
+            var token = await Access(operation.Token);
             if (!operation.IsCurrent || round != version) return;
             if (string.IsNullOrEmpty(token))
             {
@@ -63,11 +67,22 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
                 return;
             }
             NeedAccount = false;
-            var memberships = await client.ListAsync(token, ct: operation.Token);
+            var memberships = await Api.ListAsync(token, ct: operation.Token);
             IReadOnlyList<CommunityResponse> catalog = [];
             var group = groupId?.Invoke();
+            // No explicit catalog key: the signed-in user's selected group is the catalog, not only current memberships.
+            if (groupId is null)
+            {
+                var named = await RunAsync(() =>
+                {
+                    var id = App.Db.GetSettings().MyGroupId;
+                    return string.IsNullOrEmpty(id) ? "" : App.Db.GetGroup(id)?.Name ?? "";
+                }, "community group");
+                if (!operation.IsCurrent || round != version) return;
+                group = string.IsNullOrWhiteSpace(named) ? null : named;
+            }
             if (!string.IsNullOrWhiteSpace(group))
-                catalog = await client.ListAsync(token, group, operation.Token);
+                catalog = await Api.ListAsync(token, group, operation.Token);
             if (!operation.IsCurrent || round != version) return;
             var rows = Merge(memberships, catalog);
             Communities.Clear();
@@ -88,6 +103,11 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
                 Selected = null;
                 IsEmpty = false;
             }
+        }
+        catch (AccountClientException ex) when (operation.IsCurrent && round == version)
+        {
+            if (IsSessionFailure(ex)) ShowNeedAccount();
+            else Status = ex.Message;
         }
         catch (OperationCanceledException) { }
         finally { if (round == version) IsBusy = false; }
@@ -126,14 +146,14 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
     internal async Task JoinAsync(CommunityItemViewModel item)
     {
         using var operation = App.Work.Enter();
-        if (!operation.IsCurrent || client is null || accessToken is null || !item.CanJoin) return;
+        if (!operation.IsCurrent || Api is null || Access is null || !item.CanJoin) return;
         IsBusy = true;
         try
         {
-            var token = await accessToken(operation.Token);
+            var token = await Access(operation.Token);
             if (!operation.IsCurrent) return;
             if (string.IsNullOrEmpty(token)) { ShowNeedAccount(); return; }
-            var result = await client.RequestJoinAsync(token, item.CommunityId, operation.Token);
+            var result = await Api.RequestJoinAsync(token, item.CommunityId, operation.Token);
             if (!operation.IsCurrent) return;
             if (result.Status == "pending") MarkPending(item);
         }
@@ -149,6 +169,12 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
         catch (CommunityClientException ex)
         {
             if (operation.IsCurrent) ApplyFailure(ex);
+        }
+        catch (AccountClientException ex)
+        {
+            if (!operation.IsCurrent) return;
+            if (IsSessionFailure(ex)) ShowNeedAccount();
+            else Status = ex.Message;
         }
         catch (OperationCanceledException) { }
         finally { IsBusy = false; }
@@ -241,15 +267,15 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
     private async Task<bool> ExecuteAsync(Func<CommunityHttpClient, string, CancellationToken, Task> action)
     {
         using var operation = App.Work.Enter();
-        if (!operation.IsCurrent || client is null || accessToken is null) return false;
+        if (!operation.IsCurrent || Api is null || Access is null) return false;
         LastFailure = null;
         IsBusy = true;
         try
         {
-            var token = await accessToken(operation.Token);
+            var token = await Access(operation.Token);
             if (!operation.IsCurrent) return false;
             if (string.IsNullOrEmpty(token)) { ShowNeedAccount(); return false; }
-            await action(client, token, operation.Token);
+            await action(Api, token, operation.Token);
             return operation.IsCurrent;
         }
         catch (CommunityClientException ex)
@@ -260,7 +286,20 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
                 ApplyFailure(ex);
             return false;
         }
-        catch (ArgumentException) { return false; }
+        catch (AccountClientException ex)
+        {
+            if (operation.IsCurrent)
+            {
+                if (IsSessionFailure(ex)) ShowNeedAccount();
+                else Status = ex.Message;
+            }
+            return false;
+        }
+        catch (ArgumentException ex)
+        {
+            if (operation.IsCurrent) Status = ex.Message;
+            return false;
+        }
         catch (OperationCanceledException) { return false; }
         finally { IsBusy = false; }
     }
@@ -272,6 +311,9 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
         IsForbidden = false;
         Status = T("communityPending");
     }
+
+    private static bool IsSessionFailure(AccountClientException ex) => ex.Failure is AccountClientFailure.InvalidSession
+        or AccountClientFailure.ReauthenticationRequired or AccountClientFailure.SessionChanged;
 
     private void ShowNeedAccount()
     {

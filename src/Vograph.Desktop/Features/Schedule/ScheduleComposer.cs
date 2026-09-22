@@ -34,6 +34,9 @@ public sealed class ScheduleComposer
         var isOdd = ParityCodes.IsOdd(date, settings, period);
         var weekNumber = ParityService.GetWeekNumber(date, period.PeriodStart);
 
+        var allLessons = _app.Db.GetAllLessonsForGroup(groupId);
+        var choices = _app.Db.GetSubgroupChoices(groupId);
+        var subgroups = SubgroupRules.Build(allLessons);
         var lessons = _app.Schedule.GetSchedule(date, groupId).OrderBy(l => ParseTime(l.TimeStart)).ToList();
         var subtitle = DayTitles.Subtitle(date, isOdd, weekNumber, lessons.Count, loc);
 
@@ -90,10 +93,14 @@ public sealed class ScheduleComposer
                 IsNext: isNext,
                 Friends: FriendMarks.Compute(_app.Intersections, l, date, friends, settings, loc),
                 Homework: homework,
-                Map: map));
+                Map: map,
+                Subgroup: ToSubgroup(SubgroupRules.MarkOf(l, lessons, subgroups, choices))));
         }
         return new DayModel(date, offset, title, subtitle, rows, null, null);
     }
+
+    private static SubgroupChoice? ToSubgroup(SubgroupRules.Mark? mark) =>
+        mark is null ? null : new SubgroupChoice(mark.StreamId, mark.Options, mark.ChosenId, mark.ShowChooser);
 
     private static TimeSpan ParseTime(string s) => TimeSpan.TryParse(s, out var t) ? t : TimeSpan.Zero;
 

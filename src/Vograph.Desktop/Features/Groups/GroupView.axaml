@@ -1,0 +1,168 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             xmlns:g="using:Vograph.Desktop.Features.Groups"
+             x:Class="Vograph.Desktop.Features.Groups.GroupView"
+             x:DataType="g:GroupViewModel">
+  <Grid Margin="32,26" RowDefinitions="Auto,*" MaxWidth="880" HorizontalAlignment="Stretch">
+    <StackPanel Spacing="4">
+      <TextBlock Classes="display" Text="{Binding Title}" />
+      <TextBlock Classes="muted" Text="{Binding Status}" TextWrapping="Wrap"
+                 IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      <TextBlock Classes="muted caption" Text="{loc:T groupDisclaimer}" Margin="0,6,0,0" TextWrapping="Wrap" />
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="1" Margin="0,18,0,0" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding !HasHome}">
+      <StackPanel Spacing="14">
+        <c:EmptyState IsVisible="{Binding NeedAccount}" Title="{loc:T groupNeedAccount}" Hint="{loc:T accountIsolation}"
+                      Icon="{StaticResource Icon.Chat}" Margin="0,28,0,0"
+                      AutomationProperties.AutomationId="Group.NeedAccount" />
+        <c:EmptyState IsVisible="{Binding IsEmpty}" Title="{loc:T groupEmpty}"
+                      Icon="{StaticResource Icon.Chat}" Margin="0,28,0,0"
+                      AutomationProperties.AutomationId="Group.Empty" />
+        <ItemsControl ItemsSource="{Binding Communities}" IsVisible="{Binding ShowList}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="g:GroupCommunityRow">
+              <Border Classes="card">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <TextBlock Classes="subject" Text="{Binding Name}" TextWrapping="Wrap" />
+                    <TextBlock Classes="muted caption" Text="{Binding Role}" />
+                  </StackPanel>
+                  <Button Grid.Column="1" Classes="primary" Content="{loc:T groupOpen}" Command="{Binding OpenCommand}"
+                          VerticalAlignment="Center" AutomationProperties.AutomationId="Group.Open" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- Roster and the open chat share one row: the list scrolls inside its card, the composer stays put. -->
+    <Grid Grid.Row="1" Margin="0,18,0,0" ColumnDefinitions="300,16,*" IsVisible="{Binding HasHome}">
+      <Border Classes="card" Padding="8,10" ClipToBounds="True">
+        <DockPanel LastChildFill="True">
+          <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="6,2,6,10">
+            <Button Classes="ghost" Content="{loc:T groupList}" Command="{Binding BackCommand}"
+                    HorizontalAlignment="Left" Padding="4,2" />
+            <TextBlock Classes="subject" Text="{Binding HomeTitle}" TextWrapping="Wrap" />
+          </StackPanel>
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="12">
+              <StackPanel Spacing="2">
+                <TextBlock Classes="micro" Text="{loc:T groupRoster}" Margin="8,0,8,4" />
+                <ItemsControl ItemsSource="{Binding People}">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="g:GroupPersonRow">
+                      <Panel>
+                        <Button Classes="ghost" Padding="8,7" CornerRadius="8" HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Stretch" Command="{Binding OpenCommand}" IsVisible="{Binding !Self}">
+                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <StackPanel Spacing="1">
+                              <TextBlock Text="{Binding Name}" FontWeight="Medium" TextWrapping="Wrap" />
+                              <TextBlock Classes="muted caption" Text="{Binding Detail}" TextWrapping="Wrap"
+                                         IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                              <TextBlock Classes="muted caption" Text="{Binding Role}" VerticalAlignment="Center"
+                                         IsVisible="{Binding Role, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                              <Border Classes="badge" VerticalAlignment="Center"
+                                      IsVisible="{Binding Unread, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                <TextBlock Text="{Binding Unread}" />
+                              </Border>
+                            </StackPanel>
+                          </Grid>
+                        </Button>
+                        <Border Padding="8,7" IsVisible="{Binding Self}" IsHitTestVisible="False">
+                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <StackPanel Spacing="1">
+                              <TextBlock Text="{Binding Name}" FontWeight="Medium" TextWrapping="Wrap" />
+                              <TextBlock Classes="muted caption" Text="{Binding Detail}" TextWrapping="Wrap"
+                                         IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Classes="muted caption" Text="{Binding Role}" VerticalAlignment="Center" />
+                          </Grid>
+                        </Border>
+                      </Panel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+              <StackPanel Spacing="2" IsVisible="{Binding HasDirects}">
+                <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="8,2,8,6" />
+                <TextBlock Classes="micro" Text="{loc:T groupDirects}" Margin="8,0,8,4" />
+                <ItemsControl ItemsSource="{Binding Directs}">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="g:GroupPersonRow">
+                      <Button Classes="ghost" Padding="8,7" CornerRadius="8" HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Stretch" Command="{Binding OpenCommand}">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                          <StackPanel Spacing="1">
+                            <TextBlock Text="{Binding Name}" FontWeight="Medium" TextWrapping="Wrap" />
+                            <TextBlock Classes="muted caption" Text="{Binding Detail}" TextWrapping="Wrap"
+                                       IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                          </StackPanel>
+                          <Border Grid.Column="1" Classes="badge" VerticalAlignment="Center"
+                                  IsVisible="{Binding Unread, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                            <TextBlock Text="{Binding Unread}" />
+                          </Border>
+                        </Grid>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+
+      <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
+        <DockPanel LastChildFill="True">
+          <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,0,0,1" Padding="14,12">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBlock Classes="subject" Text="{Binding ChatTitle}" VerticalAlignment="Center" TextWrapping="Wrap" />
+              <Button Grid.Column="1" Classes="ghost" Content="{loc:T groupBack}" Command="{Binding BackToGroupCommand}"
+                      Padding="8,4" VerticalAlignment="Center" IsVisible="{Binding IsDirect}" />
+            </Grid>
+          </Border>
+          <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBox Text="{Binding Draft}" PlaceholderText="{loc:T groupMessage}" MaxLength="2000" MinWidth="0"
+                       TextWrapping="Wrap" VerticalAlignment="Center" />
+              <Button Grid.Column="1" Classes="primary" Content="{loc:T groupSend}" Command="{Binding SendCommand}"
+                      VerticalAlignment="Center" AutomationProperties.AutomationId="Group.Send" />
+            </Grid>
+          </Border>
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="12,10,12,8">
+              <Button Classes="ghost" Content="{loc:T groupOlder}" Command="{Binding LoadOlderCommand}"
+                      HorizontalAlignment="Center" Padding="8,4" Margin="0,0,0,8" IsVisible="{Binding HasMore}" />
+              <ItemsControl ItemsSource="{Binding Messages}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="g:GroupMessageRow">
+                    <Border Background="{DynamicResource Brush.Chip}" CornerRadius="10" Padding="12,8" Margin="0,0,0,8" MaxWidth="440"
+                            HorizontalAlignment="{Binding Mine, Converter={x:Static loc:Converters.ChatAlign}}">
+                      <StackPanel Spacing="2">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                          <TextBlock Classes="caption" Text="{Binding Author}" TextTrimming="CharacterEllipsis" IsVisible="{Binding !Mine}" />
+                          <TextBlock Grid.Column="1" Classes="muted caption" Text="{Binding When}" />
+                        </Grid>
+                        <TextBlock Text="{Binding Body}" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

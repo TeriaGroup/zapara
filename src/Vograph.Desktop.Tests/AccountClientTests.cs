@@ -33,7 +33,8 @@ public partial class AccountClientTests
         {
             var e = expected.Dequeue();
             Assert.Equal(e.Method, request.Method.Method);
-            Assert.Equal("https://example.invalid/root/api/v1/" + e.Path, request.RequestUri!.AbsoluteUri);
+            var version = e.Method == "GET" && e.Path.StartsWith("account/devices?", StringComparison.Ordinal) ? 2 : 1;
+            Assert.Equal($"https://example.invalid/root/api/v{version}/" + e.Path, request.RequestUri!.AbsoluteUri);
             Assert.Equal(e.Auth ? "Bearer " + Token("za_") : null, request.Headers.Authorization?.ToString());
             Assert.Null(http.DefaultRequestHeaders.Authorization);
             Assert.Single(request.Headers.Accept, h => h.MediaType == "application/json");

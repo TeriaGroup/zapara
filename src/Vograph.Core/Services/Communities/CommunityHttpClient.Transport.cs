@@ -8,14 +8,26 @@ namespace Vograph.Core.Services.Communities;
 
 public sealed partial class CommunityHttpClient
 {
+    private volatile bool legacyRoutes;
     private async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, string access, int status, CancellationToken caller)
+    {
+        if (legacyRoutes) return await SendVersionAsync<T>(method, path, body, access, status, caller, 1).ConfigureAwait(false);
+        try { return await SendVersionAsync<T>(method, path, body, access, status, caller, 2).ConfigureAwait(false); }
+        catch (CommunityClientException e) when (e.Status == 404 && e.Failure == CommunityClientFailure.ServerUnavailable)
+        {
+            // A typed not_found belongs to a supported endpoint and must not trigger replay.
+            legacyRoutes = true;
+            return await SendVersionAsync<T>(method, path, body, access, status, caller, 1).ConfigureAwait(false);
+        }
+    }
+    private async Task<T> SendVersionAsync<T>(HttpMethod method, string path, object? body, string access, int status, CancellationToken caller, int version)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30), clock);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(caller, timeout.Token);
         var ct = deadline.Token;
         byte[]? sent = null;
         byte[]? received = null;
-        using var request = new HttpRequestMessage(method, new Uri(Scope.BaseUri, "api/v1/communities" + path));
+        using var request = new HttpRequestMessage(method, new Uri(Scope.BaseUri, $"api/v{version}/communities" + path));
         try
         {
             ct.ThrowIfCancellationRequested();

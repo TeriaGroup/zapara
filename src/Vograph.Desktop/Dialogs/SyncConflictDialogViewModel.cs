@@ -57,9 +57,12 @@ public sealed partial class SyncConflictDialogViewModel : DialogViewModelBase
     public string KeepServerText { get; }
     public bool IsExpired { get; }
     public bool CanChooseVersion => !IsExpired;
+    public bool CanKeepLocal => CanChooseVersion && !(serverRecord is { EntityType: "settings", Tombstone: true });
+    public string LocalVersion => Describe(localValue);
+    public string ServerVersion => serverRecord?.Tombstone == true ? "Запись удалена" : Describe(serverRecord?.Value);
     public SyncConflictDecision? Decision { get; private set; }
 
-    [RelayCommand(CanExecute = nameof(CanChooseVersion))]
+    [RelayCommand(CanExecute = nameof(CanKeepLocal))]
     private void KeepLocal()
     {
         Decision = SyncConflictDecision.KeepLocal(Conflict.EntityType, Conflict.EntityId, localValue, serverRecord!, newOpId);
@@ -87,4 +90,14 @@ public sealed partial class SyncConflictDialogViewModel : DialogViewModelBase
         if (IsExpired && Decision is null)
             Decision = SyncConflictDecision.Expired410(Conflict.EntityType, Conflict.EntityId);
     }
+
+    private static string Describe(SyncValue? value) => value switch
+    {
+        HomeworkValue v => $"{v.SubjectRaw}\n{v.Text}\nК занятию: {v.TargetNthOccurrence}",
+        CompletionValue v => v.Done ? "Задание выполнено" : "Задание не выполнено",
+        OverrideValue v => $"{v.SubjectRaw}\n{v.DisplayName}\n{v.Note}",
+        FriendValue v => $"{v.GroupName}\n{v.MemberNames}\n{(v.Enabled ? "Включена" : "Выключена")}",
+        SettingsValue v => $"Группа: {v.SelectedGroupId ?? "не выбрана"}\nУведомления: {v.NotifyTime1 ?? "выключено"}, {v.NotifyTime2 ?? "выключено"}\nСтрогость: {v.Strictness}",
+        _ => "Запись удалена"
+    };
 }

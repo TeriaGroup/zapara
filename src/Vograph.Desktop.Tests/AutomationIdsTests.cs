@@ -120,6 +120,7 @@ public class AutomationIdsTests : UiTest
             [SectionKey.Friends] = vm => ((Features.Friends.FriendsViewModel)vm).Friends.Count == 1,
             [SectionKey.Homework] = vm => ((Features.Homeworks.HomeworkViewModel)vm).Groups.Count > 0,
             [SectionKey.Community] = vm => ((Features.Communities.CommunitiesViewModel)vm).NeedAccount,
+            [SectionKey.Group] = vm => ((Features.Groups.GroupViewModel)vm).NeedAccount,
             [SectionKey.Settings] = vm => ((Features.Preferences.SettingsViewModel)vm).GroupName == "А863С",
         };
         var ids = new HashSet<string>();

@@ -24,6 +24,20 @@
         <TextBlock Classes="muted caption" Text="{Binding DueText}" VerticalAlignment="Center" />
       </StackPanel>
     </StackPanel>
+    <StackPanel Orientation="Horizontal" Spacing="8">
+      <Button Content="{loc:T hwPhoto}" Command="{Binding AddPhotoCommand}" AutomationProperties.AutomationId="Dialog.Photo" />
+      <Button Content="{loc:T hwDocument}" Command="{Binding AddDocumentCommand}" AutomationProperties.AutomationId="Dialog.Document" />
+    </StackPanel>
+    <ItemsControl ItemsSource="{Binding Files}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="d:HomeworkAttachment">
+          <Grid ColumnDefinitions="*,Auto" Margin="0,2,0,0">
+            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Content="{loc:T hwFileRemove}" Command="{Binding $parent[d:HomeworkDialogViewModel].RemoveFileCommand}" CommandParameter="{Binding}" />
+          </Grid>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,6,0,0">
       <Button Content="{loc:T cancel}" Command="{Binding CancelCommand}" AutomationProperties.AutomationId="Dialog.Cancel" />
       <Button Classes="primary" Content="{loc:T save}" Command="{Binding ConfirmCommand}" AutomationProperties.AutomationId="Dialog.Confirm" />

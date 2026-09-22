@@ -18,6 +18,14 @@ public sealed partial class LessonRowViewModel : ObservableObject
         Index = index;
         Friends = row.Friends.Select(f => new FriendMarkViewModel(f)).ToList();
         Homework = new ObservableCollection<HomeworkItemViewModel>(row.Homework.Select(h => new HomeworkItemViewModel(h, this)));
+        var mark = row.Subgroup;
+        SubgroupOptions = mark is { ShowChooser: true }
+            ? mark.Options.Select(option => new SubgroupOptionViewModel(option.Id, option.Label, option.Id == mark.ChosenId)).ToList()
+            : Array.Empty<SubgroupOptionViewModel>();
+        var chosen = mark?.Options.FirstOrDefault(option => option.Id == mark.ChosenId)?.Label;
+        SubgroupPrompt = mark is null
+            ? ""
+            : chosen is null ? Loc.Current.T("subgroupPick") : Loc.Current.T("subgroupYours") + " · " + chosen;
     }
 
     public LessonRow Row { get; }
@@ -45,12 +53,32 @@ public sealed partial class LessonRowViewModel : ObservableObject
     public ObservableCollection<HomeworkItemViewModel> Homework { get; }
     public bool HasHomework => Homework.Count > 0;
     public bool CanShowMap => Row.Map is { HasMap: true } && !Row.IsRemote;
+    public bool HasSubgroup => Row.Subgroup is { ShowChooser: true };
+    public string SubgroupPrompt { get; }
+    public IReadOnlyList<SubgroupOptionViewModel> SubgroupOptions { get; }
+
+    [RelayCommand]
+    private Task PickSubgroup(string optionId) => _owner.PickSubgroupAsync(Row.Subgroup!.StreamId, optionId);
 
     [RelayCommand]
     private void ShowMap() => _owner.ShowMap(this);
 
     [RelayCommand] private Task Rename() => _owner.RenameAsync(this);
     [RelayCommand] private Task AddHomework() => _owner.AddHomeworkAsync(this);
+}
+
+public sealed class SubgroupOptionViewModel
+{
+    public SubgroupOptionViewModel(string id, string label, bool chosen)
+    {
+        Id = id;
+        Label = label;
+        IsChosen = chosen;
+    }
+
+    public string Id { get; }
+    public string Label { get; }
+    public bool IsChosen { get; }
 }
 
 public sealed class FriendMarkViewModel

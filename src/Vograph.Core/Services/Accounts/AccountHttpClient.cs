@@ -10,6 +10,7 @@ public sealed partial class AccountHttpClient : IDisposable
     private readonly HttpClient http;
     private readonly TimeProvider clock;
     private bool ownsHttp;
+    private int devicesApiVersion = 2;
     public AccountServerScope Scope { get; }
 
     public AccountHttpClient(HttpClient http, Uri baseUri, TimeProvider? clock = null)
@@ -44,12 +45,18 @@ public sealed partial class AccountHttpClient : IDisposable
         => SendAsync<MeResponse>(HttpMethod.Get, "account/me", null, Access(accessToken), 200, ct);
     public Task<UserResponse> UpdateProfileAsync(string accessToken, UpdateProfileRequest request, CancellationToken ct = default)
         => SendAsync<UserResponse>(HttpMethod.Patch, "account/me", Required(request), Access(accessToken), 200, ct);
-    public Task<DevicesResponse> ListDevicesAsync(string accessToken, int limit = 20, string? cursor = null, CancellationToken ct = default)
+    public async Task<DevicesResponse> ListDevicesAsync(string accessToken, int limit = 20, string? cursor = null, CancellationToken ct = default)
     {
         if (limit is < 1 or > 100 || !AccountResponseReader.ValidCursor(cursor))
             throw new AccountClientException(AccountClientFailure.InvalidRequest);
-        return SendAsync<DevicesResponse>(HttpMethod.Get, "account/devices?limit=" + limit.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            + (cursor is null ? "" : "&cursor=" + Uri.EscapeDataString(cursor)), null, Access(accessToken), 200, ct);
+        var path = "account/devices?limit=" + limit.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + (cursor is null ? "" : "&cursor=" + Uri.EscapeDataString(cursor));
+        try { return await SendAsync<DevicesResponse>(HttpMethod.Get, path, null, Access(accessToken), 200, ct, devicesApiVersion); }
+        catch (AccountClientException e) when (devicesApiVersion == 2 && e.Status == 404 && e.Failure == AccountClientFailure.NotConfigured)
+        {
+            devicesApiVersion = 1;
+            return await SendAsync<DevicesResponse>(HttpMethod.Get, path, null, Access(accessToken), 200, ct);
+        }
     }
     public Task RevokeSessionAsync(string accessToken, Guid familyId, CancellationToken ct = default)
         => SendAsync<object>(HttpMethod.Delete, $"account/devices/{AccountValidation.Id(familyId):D}", null, Access(accessToken), 204, ct);

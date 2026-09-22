@@ -34,8 +34,17 @@ public sealed class TimetableApiClient : IDisposable
         return new TimetableApiClient(http, validated) { _ownsHttp = true };
     }
 
-    public async Task<TimetableApiSnapshot> FetchAsync(IEnumerable<string> requiredGroupIds,
-        CancellationToken cancellationToken = default)
+    public Task<TimetableApiSnapshot> FetchAsync(IEnumerable<string> requiredGroupIds, CancellationToken cancellationToken = default)
+        => FetchCoreAsync(requiredGroupIds, null, cancellationToken);
+
+    public Task<TimetableApiSnapshot> FetchResolvedAsync(IReadOnlyList<TimetableGroupRequest> requirements, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(requirements);
+        return FetchCoreAsync([], requirements.ToArray(), cancellationToken);
+    }
+
+    private async Task<TimetableApiSnapshot> FetchCoreAsync(IEnumerable<string> requiredGroupIds,
+        IReadOnlyList<TimetableGroupRequest>? requirements, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(requiredGroupIds);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -51,6 +60,14 @@ public sealed class TimetableApiClient : IDisposable
                 ids.Add(id);
                 TimetableApiJson.Require(ids.Count <= 5000);
             }
+            if (requirements is not null)
+            {
+                TimetableApiJson.Require(requirements.Count <= 5000);
+                foreach (var request in requirements)
+                    TimetableApiJson.Require(request is not null && (request.Id is null || TimetableApiJson.ValidId(request.Id))
+                        && (request.Name is null || request.Name.Length <= 128 && !request.Name.Any(char.IsControl))
+                        && (request.Id is not null || !string.IsNullOrWhiteSpace(request.Name)));
+            }
             for (var attempt = 0; ; attempt++)
             {
                 // Catalog failures themselves never qualify for the pinned-generation retry.
@@ -59,9 +76,11 @@ public sealed class TimetableApiClient : IDisposable
                 var byId = catalog.Groups.ToDictionary(g => g.Id, StringComparer.Ordinal);
                 if (ids.Any(id => !byId.ContainsKey(id)))
                     throw new TimetableApiException(TimetableApiFailure.UnknownRequiredGroup);
+                var wanted = requirements is null ? ids.Select(id => byId[id]).ToArray()
+                    : requirements.Select(request => request.Resolve(catalog.Groups)).DistinctBy(group => group.Id).ToArray();
                 try
                 {
-                    var downloaded = await DownloadAsync(catalog, ids.Select(id => byId[id]), ct).ConfigureAwait(false);
+                    var downloaded = await DownloadAsync(catalog, wanted, ct).ConfigureAwait(false);
                     ct.ThrowIfCancellationRequested();
                     return catalog with { DownloadedGroups = downloaded };
                 }

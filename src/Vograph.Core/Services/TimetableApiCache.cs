@@ -35,9 +35,11 @@ public sealed class TimetableApiCache(Database db)
             mine.Meta?.Stale == false && other.Meta?.Stale == false;
     }
 
-    public void Apply(TimetableApiSnapshot snapshot, string sourceBase = "")
+    public void Apply(TimetableApiSnapshot snapshot, string sourceBase = "", string? selectedGroupId = null)
     {
         Validate(snapshot);
+        if (selectedGroupId is not null && !snapshot.DownloadedGroups.ContainsKey(selectedGroupId))
+            throw new TimetableApiException(TimetableApiFailure.InvalidPayload);
         using var tx = db.Connection.BeginTransaction();
         // Capture old legacy periods before any later settings save can copy the selected API period.
         var settings = db.GetSettings();
@@ -71,6 +73,12 @@ public sealed class TimetableApiCache(Database db)
             db.ClearScheduleForGroup(id);
             foreach (var lesson in downloaded.Lessons) db.InsertLesson(lesson.ToLesson(id));
             Write(id, new(snapshot.Period, downloaded.Meta, downloaded.Meta.FetchedAt.ToString("o"), "api", sourceBase), tx);
+        }
+        if (selectedGroupId is not null && selectedGroupId != settings.MyGroupId)
+        {
+            settings.MyGroupId = selectedGroupId;
+            // SaveSettings joins the SQLite transaction via its outbox savepoint for account profiles.
+            db.SaveSettings(settings);
         }
         Execute("UPDATE settings SET lastAutoCheckAt=@at WHERE id=1", tx, ("@at", DateTime.UtcNow.ToString("o")));
         tx.Commit();

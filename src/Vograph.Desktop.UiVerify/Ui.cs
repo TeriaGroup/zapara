@@ -30,8 +30,8 @@ public sealed partial class Ui : IDisposable
         var psi = new ProcessStartInfo(o.Exe) { WorkingDirectory = Path.GetDirectoryName(o.Exe)!, UseShellExecute = false };
         psi.Environment["VOGRAPH_DATA_DIR"] = o.Data;
         psi.Environment["VOGRAPH_OFFLINE"] = "1";
-        psi.Environment.Remove("VOGRAPH_API_BASE_URL");
-        psi.Environment.Remove("VOGRAPH_ACCOUNT_BASE_URL");
+        psi.Environment["VOGRAPH_API_BASE_URL"] = "";
+        psi.Environment["VOGRAPH_ACCOUNT_BASE_URL"] = "";
         if (o.AccountApi is not null)
         {
             if (!File.Exists(Path.Combine(o.Data, Seed.Marker))) throw new InvalidOperationException("Account QA requires scratch marker.");

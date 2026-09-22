@@ -8,14 +8,13 @@
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
     <StackPanel MaxWidth="760" Margin="32,26" Spacing="10">
 
-      <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,8" MinWidth="0">
-        <!-- The right margin keeps the subtitle off the arrows; it wraps rather than being cut
-             when the "go to today" pill widens the control cluster. -->
-        <StackPanel Margin="0,0,16,0">
-          <TextBlock Classes="display" Text="{Binding Title}" TextTrimming="CharacterEllipsis" AutomationProperties.AutomationId="Schedule.Title" />
-          <TextBlock Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" TextWrapping="Wrap" AutomationProperties.AutomationId="Schedule.Subtitle" />
-        </StackPanel>
-        <WrapPanel Grid.Column="1" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Bottom" HorizontalAlignment="Right">
+      <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="0,0,0,8" MinWidth="0">
+        <!-- Subtitle is its own row so the day controls cannot squeeze "4 пары" onto a leftover line. -->
+        <TextBlock Grid.Row="0" Classes="display" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                   Margin="0,0,16,0" AutomationProperties.AutomationId="Schedule.Title" />
+        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" TextWrapping="Wrap"
+                   AutomationProperties.AutomationId="Schedule.Subtitle" />
+        <WrapPanel Grid.Row="0" Grid.Column="1" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center" HorizontalAlignment="Right">
           <Button Classes="round" Command="{Binding PrevDayCommand}" ToolTip.Tip="{loc:T prevDay}"
                   AutomationProperties.AutomationId="Schedule.Prev" AutomationProperties.Name="{loc:T prevDay}">
             <c:Icon Data="{StaticResource Icon.ChevronLeft}" />

@@ -9,13 +9,11 @@ public class IntersectionService
 
     public record IntersectionResult(string FriendGroupName, string FriendColor, string Teacher, string Room, int Score, bool MatchesThreshold);
 
-    // For each myLesson on selected day, find friend intersections
     public List<IntersectionResult> GetIntersections(Lesson myLesson, DateTime date, List<FriendGroup> friends, int strictness)
     {
         var results = new List<IntersectionResult>();
         if (friends.Count == 0) return results;
 
-        // Determine parity for date
         var settings = _db.GetSettings();
         DateTime periodStart = DateTime.TryParse(settings.PeriodStart, out var ps) ? ps : new DateTime(DateTime.Now.Year, 9, 1);
         int weekCount = settings.WeekCount > 0 ? settings.WeekCount : 2;
@@ -25,7 +23,6 @@ public class IntersectionService
         int dow = (int)date.DayOfWeek; if (dow == 0) dow = 7;
         if (dow == 7) return results;
 
-        // Need friend groupId resolution via Name -> Id
         var allGroups = _db.GetAllGroups();
         var groupByName = allGroups.GroupBy(g => g.Name).ToDictionary(g => g.Key, g => g.First().Id);
 
@@ -33,7 +30,7 @@ public class IntersectionService
         {
             if (!groupByName.TryGetValue(friend.GroupName, out var friendGroupId))
             {
-                // Try by Id if friend stored Id instead of Name? fallback try direct
+                // GroupName may already be a stored group id.
                 if (_db.GetGroup(friend.GroupName) != null) friendGroupId = friend.GroupName;
                 else continue;
             }
@@ -43,18 +40,23 @@ public class IntersectionService
             {
                 if (!TimesOverlap(myLesson.TimeStart, myLesson.TimeEnd, fl.TimeStart, fl.TimeEnd)) continue;
                 int score = 0;
-                // New gradations per user (2026-09-01): нет на месте (no overlap handled as empty), в вузе, в том же корпусе, на том же этаже, в той же аудитории
-                bool sameRoom = !string.IsNullOrWhiteSpace(myLesson.RoomRaw) && !string.IsNullOrWhiteSpace(fl.RoomRaw) && myLesson.RoomRaw.Trim().Equals(fl.RoomRaw.Trim(), StringComparison.OrdinalIgnoreCase);
-                bool sameBuilding = !string.IsNullOrWhiteSpace(myLesson.BuildingRaw) && !string.IsNullOrWhiteSpace(fl.BuildingRaw) && myLesson.BuildingRaw.Trim().Equals(fl.BuildingRaw.Trim(), StringComparison.OrdinalIgnoreCase);
+                // 100 room, 75 building+floor, 50 building, 25 campus. ВЦ sits inside ГК.
+                // The same room number in УЛК and ГК is two rooms; a star is what distinguishes them.
+                bool sameRoomNumber = SameText(myLesson.RoomRaw, fl.RoomRaw);
+                var myBuilding = CanonBuilding(myLesson.BuildingRaw);
+                var friendBuilding = CanonBuilding(fl.BuildingRaw);
+                bool sameBuilding = myBuilding is not null && friendBuilding is not null
+                    && myBuilding.Equals(friendBuilding, StringComparison.OrdinalIgnoreCase);
+                bool buildingsConflict = myBuilding is not null && friendBuilding is not null && !sameBuilding;
+                bool sameRoom = sameRoomNumber && !buildingsConflict;
                 int floorMy = GetFloor(myLesson.RoomRaw);
                 int floorFr = GetFloor(fl.RoomRaw);
                 bool sameFloor = sameBuilding && floorMy != 0 && floorFr != 0 && floorMy == floorFr;
-                if (sameRoom) score = 100; // в той же аудитории
-                else if (sameFloor) score = 75; // на том же этаже
-                else if (sameBuilding) score = 50; // в том же корпусе
-                else score = 25; // в вузе (корпуса в упор, не красный) — same time, different building
+                if (sameRoom) score = 100;
+                else if (sameFloor) score = 75;
+                else if (sameBuilding) score = 50;
+                else score = 25;
 
-                // threshold check
                 bool matches = score >= strictness;
                 // For threshold 0, any time overlap counts (score 0 >=0 true)
                 // For threshold 100, only sameRoom (100) counts
@@ -77,6 +79,23 @@ public class IntersectionService
         TimeSpan eB = TimeSpan.TryParse(endB, out var eb) ? eb : sB.Add(TimeSpan.FromMinutes(95));
         return sA < eB && sB < eA;
     }
+
+    /// <summary>ВЦ is the computer centre inside ГК, not a third campus building. «main» is the English alias of ГК.</summary>
+    private static string? CanonBuilding(string? building)
+    {
+        if (string.IsNullOrWhiteSpace(building)) return null;
+        var t = building.Trim();
+        if (t.Equals("ВЦ", StringComparison.OrdinalIgnoreCase)
+            || t.Equals("ГК", StringComparison.OrdinalIgnoreCase)
+            || t.Equals("main", StringComparison.OrdinalIgnoreCase))
+            return "ГК";
+        if (t.Equals("УЛК", StringComparison.OrdinalIgnoreCase)) return "УЛК";
+        return t;
+    }
+
+    private static bool SameText(string? a, string? b) =>
+        !string.IsNullOrWhiteSpace(a) && !string.IsNullOrWhiteSpace(b)
+        && a.Trim().Equals(b.Trim(), StringComparison.OrdinalIgnoreCase);
 
     private static int GetFloor(string? roomRaw)
     {

@@ -8,6 +8,8 @@ public sealed record FriendMark(string GroupName, string MemberNames, int ColorI
 
 public sealed record HomeworkItem(long Id, string Text, string Status, DateTime? Due, string Label, bool IsDone);
 
+public sealed record SubgroupChoice(string StreamId, IReadOnlyList<SubgroupRules.Option> Options, string? ChosenId, bool ShowChooser);
+
 public sealed record LessonRow(
     Lesson Lesson,
     string TimeStart,
@@ -25,6 +27,7 @@ public sealed record LessonRow(
     bool IsNext,
     IReadOnlyList<FriendMark> Friends,
     IReadOnlyList<HomeworkItem> Homework,
-    MapInfo? Map);
+    MapInfo? Map,
+    SubgroupChoice? Subgroup = null);
 
 public sealed record DayModel(DateTime Date, int Offset, string Title, string Subtitle, IReadOnlyList<LessonRow> Rows, string? EmptyTitle, string? EmptyHint);

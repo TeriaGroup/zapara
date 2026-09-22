@@ -166,9 +166,9 @@ public sealed partial class AccountUiFlowTests
         Assert.Equal(devices.Select(d => d.FamilyId), f.Vm.Devices.Select(d => d.FamilyId));
         Assert.False(f.Vm.HasMore);
         Assert.Equal(pagesToBoundary + 1, queries.Count);
-        Assert.Equal("/api/v1/account/devices?limit=10", queries[0]);
+        Assert.Equal("/api/v2/account/devices?limit=10", queries[0]);
         for (var page = 1; page < queries.Count; page++)
-            Assert.Equal("/api/v1/account/devices?limit=10&cursor=" + new string((char)('a' + page), 55), queries[page]);
+            Assert.Equal("/api/v2/account/devices?limit=10&cursor=" + new string((char)('a' + page), 55), queries[page]);
 
         await f.Vm.MoreDevicesCommand.ExecuteAsync(null);
         Assert.Equal(pagesToBoundary + 1, queries.Count);
@@ -211,7 +211,7 @@ public sealed partial class AccountUiFlowTests
                 "/api/v1/auth/register" => Json(User, HttpStatusCode.Created),
                 "/api/v1/auth/login" => Json(new SessionResponse(User, FamilyId, Token("za_"), Token("zr_"),
                     "Bearer", DateTimeOffset.UtcNow.AddMinutes(15), DateTimeOffset.UtcNow.AddDays(30))),
-                "/api/v1/account/devices" => Json(new DevicesResponse([new DeviceResponse(FamilyId, DeviceId,
+                "/api/v2/account/devices" => Json(new DevicesResponse([new DeviceResponse(FamilyId, DeviceId,
                     "Windows", "windows", Now, Now, Now.AddDays(30), true)], null)),
                 _ => new HttpResponseMessage(HttpStatusCode.NoContent)
             });

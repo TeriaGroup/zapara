@@ -92,6 +92,21 @@ public sealed partial class CommunityHttpClient : IDisposable
     public Task<PollResultsResponse> ResultsAsync(string accessToken, Guid communityId, Guid pollId, CancellationToken ct = default)
         => SendAsync<PollResultsResponse>(HttpMethod.Get, "/" + Id(communityId) + "/polls/" + Id(pollId) + "/results",
             null, Access(accessToken), 200, ct);
+    public Task<GroupHomeResponse> GroupHomeAsync(string accessToken, Guid communityId, CancellationToken ct = default)
+        => SendAsync<GroupHomeResponse>(HttpMethod.Get, "/" + Id(communityId) + "/home", null, Access(accessToken), 200, ct);
+    public Task<ConversationResponse> OpenDirectAsync(string accessToken, OpenDirectRequest request, CancellationToken ct = default)
+        => SendAsync<ConversationResponse>(HttpMethod.Post, "/direct", Required(request), Access(accessToken), 201, ct);
+    public Task<ChatPageResponse> MessagesAsync(string accessToken, Guid conversationId, Guid? before = null, Guid? after = null, CancellationToken ct = default)
+    {
+        var path = "/conversations/" + Id(conversationId) + "/messages";
+        if (before is Guid older) path += "?before=" + Id(older);
+        else if (after is Guid newer) path += "?after=" + Id(newer);
+        return SendAsync<ChatPageResponse>(HttpMethod.Get, path, null, Access(accessToken), 200, ct);
+    }
+    public Task<ChatMessageResponse> SendMessageAsync(string accessToken, Guid conversationId, SendMessageRequest request, CancellationToken ct = default)
+        => SendAsync<ChatMessageResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/messages", Required(request), Access(accessToken), 201, ct);
+    public Task<ConversationResponse> MarkReadAsync(string accessToken, Guid conversationId, CancellationToken ct = default)
+        => SendAsync<ConversationResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/read", null, Access(accessToken), 200, ct);
 
     private async Task<IReadOnlyList<T>> SendList<T>(HttpMethod method, string path, object? body, string access, int status, CancellationToken ct)
         => await SendAsync<T[]>(method, path, body, access, status, ct).ConfigureAwait(false);

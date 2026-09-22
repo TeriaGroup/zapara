@@ -57,6 +57,7 @@ public class ShellTests : UiTest
             Assert.IsType<Features.Friends.FriendsViewModel>(shell.Section<ViewModelBase>(SectionKey.Friends));
             Assert.IsType<Features.Homeworks.HomeworkViewModel>(shell.Section<ViewModelBase>(SectionKey.Homework));
             Assert.IsType<CommunitiesViewModel>(shell.Section<ViewModelBase>(SectionKey.Community));
+            Assert.IsType<Features.Groups.GroupViewModel>(shell.Section<ViewModelBase>(SectionKey.Group));
             Assert.IsType<Features.Preferences.SettingsViewModel>(shell.Section<ViewModelBase>(SectionKey.Settings));
 
             shell.NavigateCommand.Execute("Week");
@@ -217,6 +218,11 @@ public class ShellTests : UiTest
             app.PrivateSync!.Attach(client, _ => Task.FromResult(Token("za_")), background: false);
             await app.PrivateSync.PushPendingAsync(TestContext.Current.CancellationToken);
 
+            // Discovery is persistent and non-modal: only an explicit click starts the queue.
+            await Waits.Until(() => shell.HasSyncConflicts, "durable conflict entry");
+            Assert.False(shell.Dialogs.IsOpen);
+            Click(window, window.GetVisualDescendants().OfType<Button>().Single(b =>
+                AutomationProperties.GetAutomationId(b) == "Sync.ResolveConflicts"));
             var dlg = await Waits.ForDialogAsync<SyncConflictDialogViewModel>(shell);
             Assert.False(dlg.IsExpired);
             Assert.True(dlg.CanChooseVersion);

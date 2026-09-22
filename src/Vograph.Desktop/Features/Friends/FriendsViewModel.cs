@@ -135,9 +135,8 @@ public sealed partial class FriendsViewModel : ViewModelBase
         PreviewMarks = p is null ? Array.Empty<FriendMarkViewModel>() : p.Marks.Select(m => new FriendMarkViewModel(m)).ToList();
     }
 
-    /// <summary>Called explicitly after Strictness/AlwaysShowAll change (and by Save/SetColor). Awaits any
-    /// settings write still in flight first — that write's own RaiseScheduleChanged loops back into this
-    /// view model's _reload, which would otherwise race this method's _version guard and drop its result.</summary>
+    /// <summary>Called explicitly after Strictness/AlwaysShowAll change (and by Save/SetColor). Awaits the
+    /// settings write and its owned reload before starting another preview read.</summary>
     public async Task RefreshPreviewAsync()
     {
         using var operation = App.Work.Enter();
@@ -164,7 +163,10 @@ public sealed partial class FriendsViewModel : ViewModelBase
             App.Db.SaveSettings(s);
         }, "friends settings");
         if (!ok) return;
-        _shell.RaiseScheduleChanged();
+        // Own this reload instead of launching it through our fire-and-forget event handler.
+        // Awaiters of the settings change must not return while that SQLite read is still queued.
+        await LoadAsync();
+        RaiseScheduleChangedQuietly();
     }
 
     /// <summary>Tell the schedule cards without reloading ourselves: callers here have just reloaded (T7 #6).</summary>

@@ -1,5 +1,7 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Vograph.Core.Services;
 using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 
@@ -24,6 +26,12 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
 
     public bool IsEdit { get; }
     public string SubjectLine { get; }
+    public string DraftId { get; } = Guid.NewGuid().ToString("N");
+    public ObservableCollection<HomeworkAttachment> Files { get; } = new();
+    public HashSet<string> Removed { get; } = new(StringComparer.Ordinal);
+    public Func<bool, Task<HomeworkAttachment?>>? Import { get; set; }
+    public Action<string>? DiscardStaged { get; set; }
+    public Action? OnTooMany { get; set; }
 
     [ObservableProperty] private string _text = "";
     [ObservableProperty] private int _nth = 1;
@@ -37,6 +45,29 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
     [RelayCommand] private void Inc() => Nth = Math.Min(10, Nth + 1);
     [RelayCommand] private void Dec() => Nth = Math.Max(1, Nth - 1);
 
+    [RelayCommand] private Task AddPhoto() => ImportOne(true);
+    [RelayCommand] private Task AddDocument() => ImportOne(false);
+
+    [RelayCommand]
+    private void RemoveFile(HomeworkAttachment file)
+    {
+        if (file.Staged) DiscardStaged?.Invoke(file.Id);
+        else Removed.Add(file.Id);
+        Files.Remove(file);
+    }
+
+    private async Task ImportOne(bool photo)
+    {
+        if (Import is null) return;
+        if (Files.Count >= HomeworkFileRules.MaxFiles)
+        {
+            OnTooMany?.Invoke();
+            return;
+        }
+        var file = await Import(photo);
+        if (file is not null) Files.Add(file);
+    }
+
     private void UpdateDue()
     {
         var loc = Loc.Current;
@@ -44,5 +75,32 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
         DueText = due is null
             ? loc.T("hwNoDate")
             : loc.T("hwDue", $"{DayTitles.ShortDate(due.Value, loc)} ({loc.I18n.FormatDay(due.Value)})");
+    }
+}
+
+public sealed record HomeworkAttachment(string Id, string Kind, string Name, bool Staged);
+
+public static class HomeworkFilePrompt
+{
+    public static void Bind(this HomeworkDialogViewModel dialog, AppServices app)
+    {
+        dialog.DiscardStaged = id => app.HomeworkFiles.DiscardFile(dialog.DraftId, id);
+        dialog.OnTooMany = () => app.Toasts.Info(app.Loc.T("hwFileFull"));
+        dialog.Import = async photo =>
+        {
+            var path = await app.FileDialogs.OpenHomeworkAsync(photo);
+            if (path is null) return null;
+            try
+            {
+                var kept = dialog.Files.Count(file => !file.Staged);
+                var stored = await Task.Run(() => app.HomeworkFiles.Stage(dialog.DraftId, path, photo, kept));
+                return new HomeworkAttachment(stored.Id, stored.Kind, stored.Name, true);
+            }
+            catch (HomeworkFileException ex)
+            {
+                app.Toasts.Info(app.Loc.T(ex.Code switch { "big" => "hwFileBig", "full" => "hwFileFull", _ => "hwFileBad" }));
+                return null;
+            }
+        };
     }
 }
