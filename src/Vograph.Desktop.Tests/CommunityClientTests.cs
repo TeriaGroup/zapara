@@ -30,6 +30,7 @@ public sealed partial class CommunityClientTests
             ("GET", $"/{CommunityId:D}/staff", null, Staff, HttpStatusCode.OK),
             ("GET", $"/{CommunityId:D}/homework", null, new[] { Homework }, HttpStatusCode.OK),
             ("POST", $"/{CommunityId:D}/homework", HomeworkWrite, Homework, HttpStatusCode.Created),
+            ("POST", $"/{CommunityId:D}/homework/share", HomeworkWrite, Homework, HttpStatusCode.Created),
             ("GET", $"/{CommunityId:D}/homework/{HomeworkId:D}", null, Homework, HttpStatusCode.OK),
             ("PUT", $"/{CommunityId:D}/homework/{HomeworkId:D}", HomeworkWrite, Homework, HttpStatusCode.OK),
             ("GET", $"/{CommunityId:D}/homework/{HomeworkId:D}/completion", null, Completion, HttpStatusCode.OK),
@@ -71,6 +72,7 @@ public sealed partial class CommunityClientTests
         Equal(Staff, (await client.ListStaffAsync(Access, CommunityId, Ct)).ToArray());
         Equal(Homework, Assert.Single(await client.ListHomeworkAsync(Access, CommunityId, Ct)));
         Equal(Homework, await client.PublishHomeworkAsync(Access, CommunityId, HomeworkWrite, Ct));
+        Equal(Homework, await client.ShareHomeworkAsync(Access, CommunityId, HomeworkWrite, Ct));
         Equal(Homework, await client.GetHomeworkAsync(Access, CommunityId, HomeworkId, Ct));
         Equal(Homework, await client.UpdateHomeworkAsync(Access, CommunityId, HomeworkId, HomeworkWrite, Ct));
         Equal(Completion, await client.GetCompletionAsync(Access, CommunityId, HomeworkId, Ct));

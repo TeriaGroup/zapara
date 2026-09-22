@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Services;
+using Vograph.Core.Services.Communities;
+using Zapara.Contracts.Communities;
 using Vograph.Desktop.Dialogs;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
@@ -102,12 +104,55 @@ public sealed partial class HomeworkViewModel : ViewModelBase
         dlg.Bind(App);
         if (!await _shell.Dialogs.ShowAsync(dlg)) { App.HomeworkFiles.Discard(dlg.DraftId); return; }
         long id = 0;
-        if (!await RunAsync(() => { id = App.Homework.AddHomework(subject.SubjectRaw, dlg.Text.Trim(), dlg.Nth, createdAt: today); }, "homework add"))
+        var signedIn = false;
+        var communityId = "";
+        string? token = null;
+        if (dlg.Share && !dlg.IsEdit && App.Communities is not null && App.CommunityAccess is not null)
+        {
+            try
+            {
+                token = await App.CommunityAccess(CancellationToken.None);
+                signedIn = !string.IsNullOrWhiteSpace(token);
+                if (signedIn)
+                {
+                    var groupId = await RunAsync(() => App.Db.GetSettings().MyGroupId ?? "", "homework group");
+                    if (!string.IsNullOrEmpty(groupId))
+                    {
+                        var list = await App.Communities.ListAsync(token!, groupId);
+                        communityId = list.FirstOrDefault(item => !string.IsNullOrEmpty(item.Role))?.CommunityId.ToString("D") ?? "";
+                    }
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception)
+            {
+                communityId = "";
+            }
+        }
+        HomeworkShareOutcome outcome;
+        try
+        {
+            outcome = await GroupHomework.SaveEditorAsync(
+                new(subject.SubjectRaw, dlg.Text.Trim(), dlg.Share, !dlg.IsEdit),
+                signedIn,
+                communityId,
+                async (savedSubject, savedText) =>
+                {
+                    var added = await RunAsync(() => { id = App.Homework.AddHomework(savedSubject, savedText, dlg.Nth, createdAt: today); }, "homework add");
+                    if (!added) throw new LocalHomeworkNotStoredException();
+                    await RunAsync(() => { App.HomeworkFiles.Commit(dlg.DraftId, id, dlg.Removed); }, "homework files");
+                },
+                async (savedSubject, savedText) =>
+                {
+                    await App.Communities!.ShareHomeworkAsync(token!, Guid.Parse(communityId), new HomeworkUpsert(savedSubject, savedText, 0));
+                });
+        }
+        catch (LocalHomeworkNotStoredException)
         {
             App.HomeworkFiles.Discard(dlg.DraftId);
             return;
         }
-        await RunAsync(() => { App.HomeworkFiles.Commit(dlg.DraftId, id, dlg.Removed); }, "homework files");
+        if (!string.IsNullOrEmpty(outcome.Note)) App.Toasts.Info(outcome.Note);
         await ChangedAsync();
     }
 

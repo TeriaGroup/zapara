@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Models;
 using Vograph.Core.Services;
 using Vograph.Desktop.Dialogs;
+using Vograph.Desktop.Features.Homeworks;
 using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
@@ -215,12 +216,25 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         dlg.Bind(App);
         if (!await _shell.Dialogs.ShowAsync(dlg)) { App.HomeworkFiles.Discard(dlg.DraftId); return; }
         long id = 0;
-        if (!await RunAsync(() => { id = App.Homework.AddHomework(l.SubjectRaw, dlg.Text.Trim(), dlg.Nth, createdAt: today); }, "homework add"))
+        HomeworkShareOutcome outcome;
+        try
+        {
+            outcome = await HomeworkShare.SaveNewAsync(
+                App, l.SubjectRaw, dlg.Text, dlg.Share && !dlg.IsEdit,
+                () => RunAsync(() => App.Db.GetSettings().MyGroupId ?? "", "homework group"),
+                async (_, body) =>
+                {
+                    var added = await RunAsync(() => { id = App.Homework.AddHomework(l.SubjectRaw, body, dlg.Nth, createdAt: today); }, "homework add");
+                    if (!added) throw new LocalHomeworkNotStoredException();
+                    await RunAsync(() => { App.HomeworkFiles.Commit(dlg.DraftId, id, dlg.Removed); }, "homework files");
+                });
+        }
+        catch (LocalHomeworkNotStoredException)
         {
             App.HomeworkFiles.Discard(dlg.DraftId);
             return;
         }
-        await RunAsync(() => { App.HomeworkFiles.Commit(dlg.DraftId, id, dlg.Removed); }, "homework files");
+        if (!string.IsNullOrEmpty(outcome.Note)) App.Toasts.Info(outcome.Note);
         await ReloadAsync();
         await RaiseHomeworkAsync();
     }

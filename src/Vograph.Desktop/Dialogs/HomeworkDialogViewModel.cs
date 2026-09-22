@@ -25,6 +25,7 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
     }
 
     public bool IsEdit { get; }
+    public bool ShowShare => !IsEdit;
     public string SubjectLine { get; }
     public string DraftId { get; } = Guid.NewGuid().ToString("N");
     public ObservableCollection<HomeworkAttachment> Files { get; } = new();
@@ -33,6 +34,7 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
     public Action<string>? DiscardStaged { get; set; }
     public Action? OnTooMany { get; set; }
 
+    [ObservableProperty] private bool _share;
     [ObservableProperty] private string _text = "";
     [ObservableProperty] private int _nth = 1;
     [ObservableProperty] private string _dueText = "";

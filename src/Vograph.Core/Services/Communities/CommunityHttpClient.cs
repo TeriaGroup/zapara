@@ -64,6 +64,8 @@ public sealed partial class CommunityHttpClient : IDisposable
         => SendList<HomeworkResponse>(HttpMethod.Get, "/" + Id(communityId) + "/homework", null, Access(accessToken), 200, ct);
     public Task<HomeworkResponse> PublishHomeworkAsync(string accessToken, Guid communityId, HomeworkUpsert request, CancellationToken ct = default)
         => SendAsync<HomeworkResponse>(HttpMethod.Post, "/" + Id(communityId) + "/homework", Required(request), Access(accessToken), 201, ct);
+    public Task<HomeworkResponse> ShareHomeworkAsync(string accessToken, Guid communityId, HomeworkUpsert request, CancellationToken ct = default)
+        => SendAsync<HomeworkResponse>(HttpMethod.Post, "/" + Id(communityId) + "/homework/share", Required(request), Access(accessToken), 201, ct);
     public Task<HomeworkResponse> GetHomeworkAsync(string accessToken, Guid communityId, Guid homeworkId, CancellationToken ct = default)
         => SendAsync<HomeworkResponse>(HttpMethod.Get, "/" + Id(communityId) + "/homework/" + Id(homeworkId), null, Access(accessToken), 200, ct);
     public Task<HomeworkResponse> UpdateHomeworkAsync(string accessToken, Guid communityId, Guid homeworkId, HomeworkUpsert request, CancellationToken ct = default)
