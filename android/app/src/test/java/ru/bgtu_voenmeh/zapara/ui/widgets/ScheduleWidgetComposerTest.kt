@@ -82,6 +82,35 @@ class ScheduleWidgetComposerTest {
         assertEquals(listOf("ВЫСШ. МАТЕМАТ"), at(16, 0).rows.map { it.name })
         assertEquals(LocalDateTime.of(day, java.time.LocalTime.of(10, 35)), at(9, 0).nextRefreshAt)
         assertEquals(LocalDateTime.of(day, java.time.LocalTime.of(14, 15)), at(12, 30).nextRefreshAt)
+        assertEquals(listOf(1, 2), at(9, 0).rows.map { it.number })
+        assertEquals(listOf(3, 4), at(12, 30).rows.map { it.number })
+        assertTrue(at(9, 0).toss == null)
+        val bell = at(10, 35)
+        assertEquals(listOf(2, 3), bell.rows.map { it.number })
+        assertEquals(1, bell.toss?.number)
+        assertEquals("ИН. ЯЗ.", bell.toss?.name)
+        assertTrue(at(10, 36).toss?.number == 1)
+        assertTrue(at(10, 38).toss == null)
+    }
+
+    @Test fun the_paper_toss_needs_room_and_a_row_that_was_on_screen() {
+        assertFalse(scheduleTossFits(179, 220))
+        assertFalse(scheduleTossFits(240, 149))
+        assertTrue(scheduleTossFits(180, 150))
+        assertTrue(scheduleTossFits(280, 210))
+        val key = ScheduleWidgetRow("ИН. ЯЗ.", "09:00 – 10:35 · 100 УЛК", true, 1).faceKey()
+        assertTrue(shouldTossSchedule(true, 1f, "guest:db", setOf(key), "guest:db", key))
+        assertFalse(shouldTossSchedule(false, 1f, "guest:db", setOf(key), "guest:db", key))
+        assertFalse(shouldTossSchedule(true, 0f, "guest:db", setOf(key), "guest:db", key))
+        assertFalse(shouldTossSchedule(true, 1f, "other:db", setOf(key), "guest:db", key))
+        assertFalse(shouldTossSchedule(true, 1f, "guest:db", emptySet(), "guest:db", key))
+        val start = tossPose(0f, schedulePaperStartY(200))
+        val mid = tossPose(0.55f, schedulePaperStartY(200))
+        val end = tossPose(1f, schedulePaperStartY(200))
+        assertTrue(start.cx < 0.55f && start.paper > 0.95f && start.scale > 0.9f)
+        assertTrue(mid.crumple > 0.2f && mid.cy < start.cy)
+        assertTrue(end.cx > 0.75f && end.paper < 0.02f && end.bin < 0.02f)
+        assertTrue(scheduleEase(0f) < 0.02f && scheduleEase(1f) > 0.98f)
     }
 
     @Test fun guest_monday_shows_local_lessons_in_russian() {

@@ -10,6 +10,7 @@ import ru.bgtu_voenmeh.zapara.ui.LessonFormat
 import ru.bgtu_voenmeh.zapara.ui.UiCopy
 import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkGroups
 import ru.bgtu_voenmeh.zapara.ui.schedule.SmartStart
+import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -17,8 +18,11 @@ import java.time.LocalTime
 data class ScheduleWidgetRow(
     val name: String,
     val meta: String,
-    val isPast: Boolean
-)
+    val isPast: Boolean,
+    val number: Int = 0
+) {
+    fun faceKey(): String = "$number\u001f$name\u001f$meta"
+}
 
 data class ScheduleWidgetSnapshot(
     val identity: WidgetJobIdentity,
@@ -28,7 +32,8 @@ data class ScheduleWidgetSnapshot(
     val rows: List<ScheduleWidgetRow>,
     val cleared: Boolean = false,
     val isDark: Boolean = false,
-    val nextRefreshAt: java.time.LocalDateTime? = null
+    val nextRefreshAt: java.time.LocalDateTime? = null,
+    val toss: ScheduleWidgetRow? = null
 )
 
 data class HomeworkWidgetRow(
@@ -112,18 +117,28 @@ object ScheduleWidgetComposer {
             allLessons, gid, date, settings.periodStart, settings.weekCount, settings.parityInvert
         )
         val clock = now.toLocalTime()
+        val slots = lessons.map { it.timeStart }.filter { it.length >= 4 }.distinct().sorted()
+        fun numberOf(start: String): Int {
+            val at = slots.indexOf(start)
+            return if (at < 0) 0 else at + 1
+        }
+        fun row(lesson: Lesson, past: Boolean): ScheduleWidgetRow {
+            val shown = displayName(lesson).ifBlank { LessonFormat.stripType(lesson.subjectRaw, lesson.typeRaw) }
+            val room = LessonFormat.roomLabel(lesson, copy)
+            return ScheduleWidgetRow(
+                name = shown,
+                meta = "${lesson.timeStart} – ${lesson.timeEnd} · $room",
+                isPast = past,
+                number = numberOf(lesson.timeStart)
+            )
+        }
         val remaining = if (date == today) lessons.filter { stillOn(it, clock) } else lessons
         val cap = capacity.coerceIn(1, MAX_ROWS)
         val rows = remaining.take(cap).map { lesson ->
-            val shown = displayName(lesson).ifBlank { LessonFormat.stripType(lesson.subjectRaw, lesson.typeRaw) }
-            val room = LessonFormat.roomLabel(lesson, copy)
             val end = runCatching { LocalTime.parse(lesson.timeEnd) }.getOrNull()
-            ScheduleWidgetRow(
-                name = shown,
-                meta = "${lesson.timeStart} – ${lesson.timeEnd} · $room",
-                isPast = date == today && end != null && !end.isAfter(clock)
-            )
+            row(lesson, past = date == today && end != null && !end.isAfter(clock))
         }
+        val toss = if (date == today) justEnded(lessons, today, now, ::row) else null
         val pairEnd = if (date == today) {
             remaining.firstOrNull()?.let { runCatching { LocalTime.parse(it.timeEnd) }.getOrNull() }
                 ?.takeIf { it.isAfter(clock) }
@@ -134,7 +149,25 @@ object ScheduleWidgetComposer {
         val midnight = today.plusDays(1).atStartOfDay()
         val nextRefreshAt = listOfNotNull(pairEnd, smartJump, midnight).minOrNull()
         val empty = if (rows.isEmpty()) copy.get("no_lessons_day") else null
-        return ScheduleWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark, nextRefreshAt)
+        return ScheduleWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark, nextRefreshAt, toss)
+    }
+
+    private fun justEnded(
+        lessons: List<Lesson>,
+        today: java.time.LocalDate,
+        now: LocalDateTime,
+        row: (Lesson, Boolean) -> ScheduleWidgetRow
+    ): ScheduleWidgetRow? {
+        val clock = now.toLocalTime()
+        val ended = lessons.mapNotNull { lesson ->
+            val end = runCatching { LocalTime.parse(lesson.timeEnd) }.getOrNull() ?: return@mapNotNull null
+            if (end.isAfter(clock)) return@mapNotNull null
+            val ago = Duration.between(today.atTime(end), now)
+            if (ago.isNegative || ago > Duration.ofMinutes(2)) return@mapNotNull null
+            lesson to end
+        }
+        val lesson = ended.maxWithOrNull(compareBy({ it.second }, { -it.first.index }))?.first ?: return null
+        return row(lesson, true)
     }
 }
 

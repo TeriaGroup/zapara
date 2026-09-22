@@ -15,11 +15,13 @@ import java.time.Duration
 import java.time.LocalDateTime
 
 object WidgetRemoteViews {
+    private data class ScheduleSlot(val row: Int, val name: Int, val meta: Int, val number: Int)
+
     private val scheduleRows = listOf(
-        Triple(R.id.widget_schedule_row1, R.id.widget_schedule_name1, R.id.widget_schedule_meta1),
-        Triple(R.id.widget_schedule_row2, R.id.widget_schedule_name2, R.id.widget_schedule_meta2),
-        Triple(R.id.widget_schedule_row3, R.id.widget_schedule_name3, R.id.widget_schedule_meta3),
-        Triple(R.id.widget_schedule_row4, R.id.widget_schedule_name4, R.id.widget_schedule_meta4)
+        ScheduleSlot(R.id.widget_schedule_row1, R.id.widget_schedule_name1, R.id.widget_schedule_meta1, R.id.widget_schedule_num1),
+        ScheduleSlot(R.id.widget_schedule_row2, R.id.widget_schedule_name2, R.id.widget_schedule_meta2, R.id.widget_schedule_num2),
+        ScheduleSlot(R.id.widget_schedule_row3, R.id.widget_schedule_name3, R.id.widget_schedule_meta3, R.id.widget_schedule_num3),
+        ScheduleSlot(R.id.widget_schedule_row4, R.id.widget_schedule_name4, R.id.widget_schedule_meta4, R.id.widget_schedule_num4)
     )
     private val homeworkRows = listOf(
         Triple(R.id.widget_homework_row1, R.id.widget_homework_subject1, R.id.widget_homework_detail1),
@@ -32,19 +34,26 @@ object WidgetRemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_schedule)
         val colors = WidgetPalette.of(context, snapshot.isDark)
         paintChrome(views, R.id.widget_schedule_root, R.id.widget_schedule_title, R.id.widget_schedule_subtitle, R.id.widget_schedule_empty, snapshot.title, snapshot.subtitle, snapshot.empty, snapshot.cleared, colors)
-        scheduleRows.forEachIndexed { index, ids ->
+        views.setContentDescription(R.id.widget_schedule_root, snapshot.title.ifBlank { context.getString(R.string.nav_schedule) })
+        views.setViewVisibility(R.id.widget_schedule_toss, View.GONE)
+        scheduleRows.forEachIndexed { index, slot ->
             val row = snapshot.rows.getOrNull(index)
             val bind = WidgetRowBind.of(row)
-            views.setTextViewText(ids.second, bind.primary)
-            views.setTextViewText(ids.third, bind.secondary)
-            views.setViewVisibility(ids.first, if (bind.visible) View.VISIBLE else View.GONE)
+            views.setTextViewText(slot.name, bind.primary)
+            views.setTextViewText(slot.meta, bind.secondary)
+            views.setTextViewText(slot.number, if (row != null && row.number > 0) row.number.toString() else "")
+            views.setViewVisibility(slot.row, if (bind.visible) View.VISIBLE else View.GONE)
             if (bind.visible && row != null) {
                 val ink = if (row.isPast) colors.text3 else colors.text1
-                views.setTextColor(ids.second, ink)
-                views.setTextColor(ids.third, colors.text2)
+                views.setTextColor(slot.name, ink)
+                views.setTextColor(slot.meta, colors.text2)
+                views.setTextColor(slot.number, colors.text2)
             }
         }
-        views.setOnClickPendingIntent(R.id.widget_schedule_root, openApp(context, 4101, "schedule"))
+        val open = openApp(context, 4101, "schedule")
+        views.setOnClickPendingIntent(R.id.widget_schedule_root, open)
+        views.setOnClickPendingIntent(R.id.widget_schedule_body, open)
+        views.setOnClickPendingIntent(R.id.widget_schedule_toss, open)
         return views
     }
 
@@ -102,10 +111,35 @@ object WidgetRemoteViews {
         val mgr = AppWidgetManager.getInstance(context)
         val ids = mgr.getAppWidgetIds(ComponentName(context, ScheduleWidgetProvider::class.java))
         if (ids.isEmpty()) return
+        val profile = "${snapshot.identity.profileId}:${snapshot.identity.databaseName}"
+        val scale = runCatching {
+            android.provider.Settings.Global.getFloat(
+                context.contentResolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            )
+        }.getOrDefault(1f)
         ids.forEach { id ->
-            val height = mgr.getAppWidgetOptions(id).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 160)
-            val cap = ScheduleWidgetComposer.rowsForHeightDp(if (height > 0) height else 160)
-            mgr.updateAppWidget(id, schedule(context, snapshot.copy(rows = snapshot.rows.take(cap))))
+            ScheduleTossPlayer.cancel(id)
+            val opts = mgr.getAppWidgetOptions(id)
+            val height = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 160).let { if (it > 0) it else 160 }
+            val width = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 180).let { if (it > 0) it else 180 }
+            val cap = ScheduleWidgetComposer.rowsForHeightDp(height)
+            val rows = snapshot.rows.take(cap)
+            mgr.updateAppWidget(id, schedule(context, snapshot.copy(rows = rows)))
+            if (snapshot.cleared) return@forEach
+            val saved = ScheduleWidgetMemory.read(context, id)
+            val toss = snapshot.toss
+            val play = shouldTossSchedule(
+                scheduleTossFits(width, height),
+                scale,
+                saved?.first,
+                saved?.second ?: emptySet(),
+                profile,
+                toss?.faceKey()
+            )
+            ScheduleWidgetMemory.write(context, id, profile, rows.map { it.faceKey() })
+            if (play && toss != null) ScheduleTossPlayer.play(context, id, toss, width, height)
         }
     }
 
@@ -116,14 +150,41 @@ object WidgetRemoteViews {
         mgr.updateAppWidget(ids, homework(context, snapshot))
     }
 
+    private val timerFaces = HashMap<Int, String>()
+
     fun pushTimer(context: Context, snapshot: TimerWidgetSnapshot) {
         val mgr = AppWidgetManager.getInstance(context)
         val ids = mgr.getAppWidgetIds(ComponentName(context, TimerWidgetProvider::class.java))
-        if (ids.isEmpty()) return
+        if (ids.isEmpty()) {
+            timerFaces.clear()
+            return
+        }
+        val live = ids.toSet()
+        timerFaces.keys.retainAll(live)
         ids.forEach { id ->
             val width = mgr.getAppWidgetOptions(id).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 110)
-            mgr.updateAppWidget(id, timer(context, snapshot, if (width > 0) width else 110))
+            val dp = if (width > 0) width else 110
+            val face = timerFace(snapshot, dp)
+            if (timerFaces[id] == face) {
+                mgr.partiallyUpdateAppWidget(id, ring(context, snapshot, dp))
+            } else {
+                mgr.updateAppWidget(id, timer(context, snapshot, dp))
+                timerFaces[id] = face
+            }
         }
+    }
+
+    private fun timerFace(snapshot: TimerWidgetSnapshot, widthDp: Int): String =
+        listOf(snapshot.kind, snapshot.endsAt, snapshot.phaseText, snapshot.subject, snapshot.detail, snapshot.cleared, snapshot.isDark, widthDp)
+            .joinToString("|")
+
+    private fun ring(context: Context, snapshot: TimerWidgetSnapshot, widthDp: Int): RemoteViews {
+        val views = RemoteViews(context.packageName, R.layout.widget_timer)
+        val colors = WidgetPalette.of(context, snapshot.isDark)
+        val arc = if (snapshot.kind == TimerPhaseKind.Break) colors.warn else colors.ok
+        val fraction = if (snapshot.cleared || snapshot.endsAt?.isAfter(LocalDateTime.now()) != true) 0f else snapshot.fraction
+        views.setImageViewBitmap(R.id.widget_timer_ring, TimerRing.bitmap(context, widthDp, fraction, colors.text3, arc))
+        return views
     }
 
     private fun paintChrome(
@@ -156,14 +217,22 @@ object WidgetRemoteViews {
 
     private fun bindClock(views: RemoteViews, snapshot: TimerWidgetSnapshot, colors: WidgetPalette, widthDp: Int) {
         val end = snapshot.endsAt
-        if (end == null || snapshot.cleared || !end.isAfter(LocalDateTime.now())) {
+        if (end == null || snapshot.cleared) {
             views.setChronometer(R.id.widget_timer_time, SystemClock.elapsedRealtime(), null, false)
             views.setChronometerCountDown(R.id.widget_timer_time, false)
             views.setTextViewText(R.id.widget_timer_time, "")
             views.setViewVisibility(R.id.widget_timer_time, View.GONE)
             return
         }
-        val remainingMs = Duration.between(LocalDateTime.now(), end).toMillis().coerceAtLeast(0)
+        val remainingMs = Duration.between(LocalDateTime.now(), end).toMillis()
+        if (remainingMs <= 0L) {
+            views.setChronometer(R.id.widget_timer_time, SystemClock.elapsedRealtime(), null, false)
+            views.setChronometerCountDown(R.id.widget_timer_time, false)
+            views.setTextViewText(R.id.widget_timer_time, "00:00")
+            views.setViewVisibility(R.id.widget_timer_time, View.VISIBLE)
+            views.setTextColor(R.id.widget_timer_time, colors.text1)
+            return
+        }
         val base = when {
             widthDp >= 180 -> 30f
             widthDp >= 140 -> 26f

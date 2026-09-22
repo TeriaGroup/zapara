@@ -3,8 +3,17 @@ package ru.bgtu_voenmeh.zapara.ui.widgets
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.content.Intent
 
 class TimerWidgetProvider : AppWidgetProvider() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == ACTION_PULSE) {
+            WidgetUpdater.pulse(context)
+            return
+        }
+        super.onReceive(context, intent)
+    }
+
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         WidgetUpdater.refresh(context)
     }
@@ -24,5 +33,10 @@ class TimerWidgetProvider : AppWidgetProvider() {
         newOptions: android.os.Bundle
     ) {
         WidgetUpdater.refresh(context)
+    }
+
+    companion object {
+        const val ACTION_PULSE = "ru.zapara.app.WIDGET_TIMER_PULSE"
+        const val PULSE = 4105
     }
 }

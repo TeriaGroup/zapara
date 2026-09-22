@@ -36,6 +36,30 @@ data class TimerWidgetSnapshot(
 internal fun earlierRefresh(left: LocalDateTime?, right: LocalDateTime?): LocalDateTime? =
     listOfNotNull(left, right).minOrNull()
 
+// The visible tick must not use setExactAndAllowWhileIdle. That quota is about
+// once a minute per app, so a per-minute widget alarm was pushing the bell late
+// and the launcher chronometer kept counting past zero.
+internal fun timerPulseDelayMs(interactive: Boolean, exactAlarms: Boolean, untilBellMs: Long): Long? {
+    if (!exactAlarms || untilBellMs <= 0L) return null
+    val delay = if (interactive) 1_000L else 60_000L
+    return minOf(delay, untilBellMs)
+}
+
+// While a countdown is running, wake at its end. The composer's next minute
+// must not become another idle alarm: that quota was deferring the bell.
+// Waiting for the first pair has no end, so the composer's refresh (the start)
+// stays the wake.
+internal fun widgetWakeAt(
+    scheduleAt: LocalDateTime?,
+    phaseEndsAt: LocalDateTime?,
+    phaseRefreshAt: LocalDateTime?,
+    timerPlaced: Boolean,
+    timerCleared: Boolean
+): LocalDateTime? {
+    if (!timerPlaced || timerCleared) return scheduleAt
+    return earlierRefresh(scheduleAt, phaseEndsAt ?: phaseRefreshAt)
+}
+
 object TimerWidgetComposer {
     private const val PAIR_MINUTES = 95L
 

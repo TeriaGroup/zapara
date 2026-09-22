@@ -114,6 +114,64 @@ class TimerWidgetComposerTest {
         assertEquals(day.plusDays(1).atStartOfDay(), snap.nextRefreshAt)
     }
 
+    @Test fun the_break_becomes_the_next_pair_at_the_bell() {
+        val before = at(10, 49, 50)
+        assertEquals(TimerPhaseKind.Break, before.kind)
+        assertEquals("00:10", before.timeText)
+        assertTrue(before.fraction > 0f)
+        assertTrue(before.fraction < 0.02f)
+        val bell = at(10, 50, 0)
+        assertEquals(TimerPhaseKind.Lesson, bell.kind)
+        assertEquals("ОСН РОС ГОС", bell.subject)
+        assertEquals("1:35:00", bell.timeText)
+        assertEquals(1f, bell.fraction, 0.001f)
+        assertTrue(!bell.timeText.startsWith("-"))
+    }
+
+    @Test fun the_widget_wakes_at_the_bell_not_every_minute() {
+        val during = at(10, 40)
+        val wake = widgetWakeAt(
+            scheduleAt = LocalDateTime.of(day, java.time.LocalTime.of(12, 25)),
+            phaseEndsAt = during.endsAt,
+            phaseRefreshAt = during.nextRefreshAt,
+            timerPlaced = true,
+            timerCleared = false
+        )
+        assertEquals(LocalDateTime.of(day, java.time.LocalTime.of(10, 50)), wake)
+        assertEquals(LocalDateTime.of(day, java.time.LocalTime.of(10, 41)), during.nextRefreshAt)
+        val waiting = at(8, 0)
+        assertNull(waiting.endsAt)
+        assertEquals(
+            LocalDateTime.of(day, java.time.LocalTime.of(9, 0)),
+            widgetWakeAt(
+                scheduleAt = LocalDateTime.of(day, java.time.LocalTime.of(10, 35)),
+                phaseEndsAt = waiting.endsAt,
+                phaseRefreshAt = waiting.nextRefreshAt,
+                timerPlaced = true,
+                timerCleared = false
+            )
+        )
+        assertEquals(
+            LocalDateTime.of(day, java.time.LocalTime.of(10, 35)),
+            widgetWakeAt(
+                scheduleAt = LocalDateTime.of(day, java.time.LocalTime.of(10, 35)),
+                phaseEndsAt = during.endsAt,
+                phaseRefreshAt = during.nextRefreshAt,
+                timerPlaced = false,
+                timerCleared = false
+            )
+        )
+    }
+
+    @Test fun the_visible_tick_is_one_second_and_does_not_use_the_idle_quota() {
+        assertEquals(1_000L, timerPulseDelayMs(interactive = true, exactAlarms = true, untilBellMs = 30_000))
+        assertEquals(400L, timerPulseDelayMs(interactive = true, exactAlarms = true, untilBellMs = 400))
+        assertEquals(60_000L, timerPulseDelayMs(interactive = false, exactAlarms = true, untilBellMs = 90 * 60_000))
+        assertEquals(20_000L, timerPulseDelayMs(interactive = false, exactAlarms = true, untilBellMs = 20_000))
+        assertNull(timerPulseDelayMs(interactive = true, exactAlarms = false, untilBellMs = 30_000))
+        assertNull(timerPulseDelayMs(interactive = true, exactAlarms = true, untilBellMs = 0))
+    }
+
     @Test fun partial_minute_rounds_the_face_and_wakes_at_the_bell() {
         val snap = at(10, 34, 30)
         assertEquals(TimerPhaseKind.Lesson, snap.kind)
