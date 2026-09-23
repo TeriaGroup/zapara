@@ -73,6 +73,23 @@ services:
       timeout: 3s
       retries: 12
 
+  admin:
+    build: ./admin-panel
+    <<: *log
+    env_file: ./admin.env
+    expose:
+      - "80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 192m
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/up"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
   caddy:
     image: caddy:2-alpine
     <<: *log

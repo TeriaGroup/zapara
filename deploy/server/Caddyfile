@@ -1,6 +1,12 @@
 voen.teriahost.ru {
 	encode gzip
-	reverse_proxy server:8080
+	@admin path /admin /admin/* /livewire* /css/filament* /js/filament* /fonts/filament*
+	handle @admin {
+		reverse_proxy admin:80
+	}
+	handle {
+		reverse_proxy server:8080
+	}
 }
 
 mail.voen.teriahost.ru {
