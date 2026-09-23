@@ -1,6 +1,10 @@
 ﻿# Vograph — Timetable API Recon (Phase 0)
 
 Это осмотр XML сайта вуза от 2026-09-01, не API «Расписание военмех».
+С 2026-09-22 импорт сервера и обновление Windows сначала берут JSON вуза
+`/api/schedule/meta` и `/api/schedule/lessons`. XML ниже остаётся запасным источником и предметом этого замера.
+Английские словари в §6 описывают клиент того дня: переключатель языка снят.
+Звёздочка в аудитории означает УЛК (§11). Ранний проход называл её главным корпусом; таблица поля и §8 приведены к §11.
 Текущее состояние продукта: `docs/STATUS.md`.
 
 **Date:** 2026-09-01  
@@ -11,7 +15,9 @@
 
 ## 1. Overview
 
-The site does **not** expose a JSON/REST API. The timetable is delivered as **static XML + XSLT** transformed client-side.
+Замер 2026-09-01. Позже у вуза появился JSON `/api/schedule`, и импорт берёт его первым. Ниже — устройство XML того дня.
+
+The site at that date did **not** expose a JSON/REST API. The timetable was delivered as **static XML + XSLT** transformed client-side.
 
 - HTML page `https://voenmeh.ru/obrazovanie/timetables/` contains a placeholder `<div id="studsTimetableresult">` and a `<select id="studsCbxGroupNumber">`.
 - On load, `studs.js` fetches two static resources via **synchronous XHR** `GET` and populates the `<select>`, then transforms via `XSLTProcessor` when user clicks "Показать".
@@ -94,7 +100,7 @@ No auth, no CORS issues via local fetch. All GETs are synchronous in original JS
 | `Lesson/Time` | string | `9:00 Нечетная` | Format `H:mm` or `HH:mm` + space + `Нечетная`/`Четная`. Some rooms have no suffix for common lessons. Parse via regex `^(\d{1,2}:\d{2})` → `timeStart`. No `timeEnd` in source; must map to standard slot table or infer +95 min. |
 | `Lesson/Discipline` | string | `лек ВЫСШ. МАТЕМАТ` | Prefix `лек` (lecture), `пр` (practical), `лаб` (lab), `конс` etc. Subject raw = trim, remainder. TypeRaw = prefix. |
 | `Lecturer/ShortName` | string | `Барт Е.Л.` | May be multiple per lesson. Empty `<Lecturers/>` → no teacher. |
-| `Lesson/Classroom` | string | `493;` `563*;` `ВЦ 282;` `дистанционно` | Contains room and building. `*` marks main building. `ВЦ` = computing center, `СЭК` etc. Empty string → no room (e.g., физ-ра). Semi-colon separated if multiple. No separate `Building` field; parser must split: `roomRaw = before ";"`, `buildingRaw = extract prefix letters`. |
+| `Lesson/Classroom` | string | `493;` `563*;` `ВЦ 282;` `дистанционно` | Contains room and building. `*` means УЛК (see §11; the first pass called it the main building). `ВЦ` folds into ГК. Empty string → no room (e.g., физ-ра). Semi-colon separated if multiple. No separate `Building` field; parser must split: `roomRaw = before ";"`, `buildingRaw = extract prefix letters`. |
 
 **No dedicated fields for:** `Building`, `Type` separate, `TimeEnd`. Must derive.
 
@@ -234,7 +240,7 @@ Full dump in `docs/raw/`.
 
 ## 8. Time Slots
 
-`Time` field only gives start `H:mm`. No end in source. For MVP, assume fixed slots per university standard (95 min + break). Infer `timeEnd = timeStart + 95m` if needed for intersection overlap calc. Classroom `*` likely indicates main building; no explicit floor.
+`Time` field only gives start `H:mm`. No end in source. For MVP, assume fixed slots per university standard (95 min + break). Infer `timeEnd = timeStart + 95m` if needed for intersection overlap calc. Classroom `*` means УЛК, as corrected in §11. No explicit floor.
 
 ---
 

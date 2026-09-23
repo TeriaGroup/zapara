@@ -1,5 +1,9 @@
 # ZAPARA Android — API Recon (Phase A0)
 
+Осмотр файлов вуза 2026-09-03, не устройство сегодняшнего клиента.
+Клиенты ходят на свой JSON по адресу, записанному в сборке. Планы карт лежат в `android/app/src/main/assets/maps/` и `src/Vograph.Desktop/Assets/maps/`.
+Картина продукта: `docs/STATUS.md`.
+
 **Date:** 2026-09-03
 **Branch:** `android` (from `master@c36dda9`)
 **Scope:** re-measure every network source the Windows MVP uses, so the Android port has zero guesswork.
@@ -20,7 +24,7 @@
 | Map JPGs (×9) | `https://voenmeh.ru/wp-content/uploads/2024/09/karta-*.jpg` | 200 `image/jpeg` ×9 | see §4 | 12 Feb 2025 | byte-identical to `src/Vograph/maps/` bundle (до удаления WPF-клиента; см. локальный тег `wpf-final`) |
 
 Base: `https://voenmeh.ru/wp-content/themes/Avada-Child-Theme-Voenmeh/_voenmeh_grafics/`.
-No JSON API, no auth. Poll via `HEAD If-Modified-Since` (24h), full GET only when `Last-Modified` is newer.
+На ту дату у XML-каталога вуза не было своего JSON и входа. Позже клиенты ходят на JSON «Расписание военмех» и на `/api/schedule` вуза. Poll via `HEAD If-Modified-Since` (24h), full GET only when `Last-Modified` is newer.
 
 ## 2. `TimetableGroup50.xml` (student)
 

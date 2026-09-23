@@ -1,5 +1,7 @@
 ﻿# Phase 4 — Intersections + Notifications Verification
 
+Журнал проверки 2026-09-01…03, не описание текущего клиента. Картина продукта — `docs/STATUS.md`.
+
 ## Intersections
 - Friend group: 09С33 (Id 3032) added to friends (color #FF6CA5E0, 1 of 5)
 - Strictness slider 0..100, threshold logic:
