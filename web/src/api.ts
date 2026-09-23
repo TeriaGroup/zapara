@@ -1,3 +1,4 @@
+import { postGroupMedia } from "./group-media";
 import type { BallotBoard, ChatMessage, Community, Conversation, GroupDesk, GroupHomeworkCopy, GroupHome, GroupTopic, GroupsPayload, MapsManifest, Session, SocialHome, SocialMessage, SocialPage, Teacher, TeacherLesson, TimetablePayload } from "./types";
 
 const cacheKey = "zapara.react.cache.v1";
@@ -82,6 +83,21 @@ async function send<T>(method: string, url: string, body?: unknown, empty = fals
   if (!response.ok) throw new Error(String(response.status));
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+export type SupportLine = { author: string; body: string; at: string };
+export type SupportThread = { id: string; subject: string; messages: SupportLine[] };
+
+export function supportList() {
+  return read<SupportThread[]>("/web-api/support");
+}
+
+export function supportOpen(subject: string, body: string) {
+  return send<SupportThread>("POST", "/web-api/support", { subject, body });
+}
+
+export function supportReply(id: string, body: string) {
+  return send<SupportThread>("POST", "/web-api/support/" + id, { body });
 }
 
 export function login(username: string, password: string) {
@@ -213,12 +229,30 @@ export function messages(id: string, topic?: string) {
   return read<{ messages: ChatMessage[]; hasMore: boolean }>(`/web-api/communities/conversations/${id}/messages` + query);
 }
 
-export function sendMessage(id: string, body: string) {
-  return send<ChatMessage>("POST", `/web-api/communities/conversations/${id}/messages`, { body });
+export function sendMessage(id: string, body: string, replyTo?: string) {
+  return send<ChatMessage>("POST", `/web-api/communities/conversations/${id}/messages`, replyTo ? { body, replyTo } : { body });
 }
 
-export function sendTopicMessage(id: string, body: string, topicId: string | null) {
-  return send<ChatMessage>("POST", `/web-api/communities/conversations/${id}/topic-messages`, { body, topicId });
+export function sendTopicMessage(id: string, body: string, topicId: string | null, replyTo?: string) {
+  return send<ChatMessage>("POST", `/web-api/communities/conversations/${id}/topic-messages`, replyTo ? { body, topicId, replyTo } : { body, topicId });
+}
+
+export function editGroupMessage(id: string, messageId: string, body: string) {
+  return send<ChatMessage>("POST", `/web-api/communities/conversations/${id}/messages/${messageId}/edit`, { body });
+}
+
+export function deleteGroupMessage(id: string, messageId: string) {
+  return send<ChatMessage>("POST", `/web-api/communities/conversations/${id}/messages/${messageId}/delete`, undefined, true);
+}
+
+export function reactGroupMessage(id: string, messageId: string) {
+  return send<ChatMessage>("POST", `/web-api/communities/conversations/${id}/messages/${messageId}/react`, { emoji: "like" });
+}
+
+export async function sendGroupMedia(id: string, kind: "image" | "video" | "file", name: string, file: Blob, replyTo?: string): Promise<ChatMessage> {
+  const response = await postGroupMedia(id, kind, name, file, replyTo, fetch, authHeaders());
+  if (!response.ok) throw new Error(String(response.status));
+  return response.json() as Promise<ChatMessage>;
 }
 
 export function topics(id: string) {

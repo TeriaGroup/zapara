@@ -53,6 +53,7 @@ export type GroupTopic = {
 };
 export type ChatMessage = {
   messageId: string; conversationId: string; senderId: string; senderName: string; body: string; createdAt: string;
+  kind?: string; deleted?: boolean; replyTo?: string | null;
 };
 
 export type MapPlan = { id: string; building: string; floor: number; url: string };
@@ -74,7 +75,9 @@ export type SocialMessage = {
 export type SocialPage = { messages: SocialMessage[]; hasMore: boolean };
 
 export type Teacher = { id: string; name: string; kafedra: string; shortName: string };
+export type TeacherGroup = { idGroup?: string; number?: string };
 export type TeacherLesson = {
-  dayOfWeek: number; timeStart: string; timeEnd: string; disciplineRaw: string;
-  classroomRaw: string; parity: number; subjectRaw: string;
+  dayOfWeek: number; timeStart: string; timeEnd?: string; disciplineRaw?: string;
+  classroomRaw?: string; roomRaw?: string; buildingRaw?: string; typeRaw?: string;
+  parity: number; subjectRaw?: string; groups?: TeacherGroup[];
 };

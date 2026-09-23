@@ -8,6 +8,7 @@ import { CardView } from "./share";
 import { Sticker, stickerPack, stickerTitle } from "./stickers";
 import { useApp } from "./store";
 import { Icon } from "./icons";
+import { holdActions, runHold } from "./hold";
 import type { SocialFriend, SocialHome, SocialMessage } from "./types";
 
 function personName(username: string, displayName: string | null) {
@@ -92,20 +93,6 @@ export function PeoplePanel() {
   return (
     <div className="stack">
       {error && <div className="banner">{error}</div>}
-      <article className="card">
-        <h2>Ваш код</h2>
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <span className="code">{home?.code || "……"}</span>
-          <button className="btn" type="button" onClick={() => void copy()} disabled={!home}>{copied ? "Скопирован" : "Скопировать"}</button>
-        </div>
-        <p className="muted">Код индивидуальный. Его можно продиктовать или отправить человеку, с которым хотите переписываться.</p>
-      </article>
-      <form className="card stack" onSubmit={event => void invite(event)}>
-        <label className="field">Добавить по коду
-          <input value={code} onChange={event => setCode(event.target.value.toUpperCase())} placeholder="ABCD2345" maxLength={16} autoCapitalize="characters" aria-label="Код друга" />
-        </label>
-        <button className="btn primary" type="submit" disabled={busy || code.trim().length < 8}>Добавить</button>
-      </form>
       {!!home?.incoming.length && (
         <div className="stack">
           <h2>Входящие запросы</h2>
@@ -129,7 +116,22 @@ export function PeoplePanel() {
         </div>
       )}
       <div className={"grid-2 split" + (active ? " focus" : "")}>
-        <div className="people split-list">
+        <div className="split-list stack">
+          <article className="card">
+            <h2>Ваш код</h2>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <span className="code">{home?.code || "……"}</span>
+              <button className="btn" type="button" onClick={() => void copy()} disabled={!home}>{copied ? "Скопирован" : "Скопировать"}</button>
+            </div>
+            <p className="muted">Код индивидуальный. Его можно продиктовать или отправить человеку, с которым хотите переписываться.</p>
+          </article>
+          <form className="card stack" onSubmit={event => void invite(event)}>
+            <label className="field">Добавить по коду
+              <input value={code} onChange={event => setCode(event.target.value.toUpperCase())} placeholder="ABCD2345" maxLength={16} autoCapitalize="characters" aria-label="Код друга" />
+            </label>
+            <button className="btn primary" type="submit" disabled={busy || code.trim().length < 8}>Добавить</button>
+          </form>
+          <div className="people">
           {(home?.friends || []).map(friend => (
             <button className="person" key={friend.userId} type="button" onClick={() => setActive(friend)}>
               <span><b>{personName(friend.username, friend.displayName)}</b><div className="muted">{friend.lastBody || "Нет сообщений"}</div></span>
@@ -137,6 +139,7 @@ export function PeoplePanel() {
             </button>
           ))}
           {home && home.friends.length === 0 && <div className="empty">Пока никого нет. Добавьте человека по коду.</div>}
+          </div>
         </div>
         {active ? <section className="split-detail"><button className="btn back-only" type="button" onClick={() => setActive(null)}>К списку</button><Chat friend={active} self={app.session.user?.userId || ""} onError={setError} /></section> : <section className="card chat split-detail"><h2>Чат</h2><p className="muted">Выберите человека в списке.</p></section>}
       </div>
@@ -279,6 +282,8 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [reply, setReply] = useState<SocialMessage | null>(null);
+  const holdTimer = useRef<number | null>(null);
+  const heldOpen = useRef(false);
   const [editing, setEditing] = useState<SocialMessage | null>(null);
   const [recording, setRecording] = useState(false);
   const [circling, setCircling] = useState(false);
@@ -335,6 +340,24 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   useEffect(() => {
     if (stick.current && logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [messages]);
+
+  useEffect(() => {
+    if (!openMenu) return;
+    const log = logRef.current;
+    if (!log) return;
+    stick.current = false;
+    const reveal = () => {
+      const menu = log.querySelector(".actions");
+      if (!(menu instanceof HTMLElement)) return;
+      const logBox = log.getBoundingClientRect();
+      const menuBox = menu.getBoundingClientRect();
+      if (menuBox.top < logBox.top) log.scrollTop -= logBox.top - menuBox.top + 8;
+      else if (menuBox.bottom > logBox.bottom) log.scrollTop += menuBox.bottom - logBox.bottom + 8;
+    };
+    reveal();
+    const frame = window.requestAnimationFrame(reveal);
+    return () => window.cancelAnimationFrame(frame);
+  }, [openMenu]);
 
   function onScroll(event: UIEvent<HTMLDivElement>) {
     const node = event.currentTarget;
@@ -567,7 +590,11 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
           const sticker = message.kind === "sticker" && !message.deleted;
           const round = message.kind === "circle" && !message.deleted;
           return (
-            <article key={message.messageId} className={"bubble" + (mine ? " mine" : "") + (sticker ? " sticker" : "") + (round ? " round" : "")}>
+            <article key={message.messageId} data-hold={message.kind} className={"bubble" + (mine ? " mine" : "") + (sticker ? " sticker" : "") + (round ? " round" : "")}
+              onPointerDown={() => { heldOpen.current = false; if (holdTimer.current) window.clearTimeout(holdTimer.current); holdTimer.current = window.setTimeout(() => { holdTimer.current = 0; heldOpen.current = true; setOpenMenu(message.messageId); }, 450); }}
+              onPointerUp={event => { if (holdTimer.current) window.clearTimeout(holdTimer.current); if (heldOpen.current && !(event.target instanceof Element && event.target.closest(".actions"))) event.preventDefault(); }}
+              onPointerLeave={() => { if (holdTimer.current) window.clearTimeout(holdTimer.current); }}
+              onClickCapture={event => { if (event.target instanceof Element && event.target.closest(".actions")) return; if (heldOpen.current || openMenu === message.messageId) { event.preventDefault(); event.stopPropagation(); } }}>
               {!mine && !sticker && !round && <b>{message.senderName}</b>}
               {message.replyTo && <div className="quote">{message.replyBody || "Сообщение"}</div>}
               {message.deleted ? <div>Сообщение удалено</div> : (
@@ -590,12 +617,12 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
                   {message.reactions.map(item => <button key={item.emoji} type="button" className={item.mine ? "on" : ""} onClick={() => void change(message, item.emoji)}>{reactionMark(item.emoji)} {item.count}</button>)}
                 </div>
               )}
-              {openMenu === message.messageId && (
+              {holdActions(message.kind, mine, message.deleted, openMenu === message.messageId).length > 0 && (
                 <div className="actions">
-                  <button type="button" onClick={() => setReactFor(reactFor === message.messageId ? null : message.messageId)}>Реакция</button>
-                  <button type="button" onClick={() => { setOpenMenu(null); setEditing(null); setReply(message); }}>Ответить</button>
-                  {mine && message.kind === "text" && <button type="button" onClick={() => { setOpenMenu(null); setReply(null); setPanel(null); setEditing(message); setDraft(message.body || ""); }}>Изменить</button>}
-                  {mine && <button type="button" onClick={() => { setOpenMenu(null); void remove(message); }}>Удалить</button>}
+                  {holdActions(message.kind, mine, message.deleted, true).includes("reaction") && <button type="button" onClick={() => runHold("reaction", { reply() {}, reaction() { setReactFor(reactFor === message.messageId ? null : message.messageId); }, edit() {}, delete() {} })}>Реакция</button>}
+                  {holdActions(message.kind, mine, message.deleted, true).includes("reply") && <button type="button" onClick={() => runHold("reply", { reply() { setOpenMenu(null); setEditing(null); setReply(message); }, reaction() {}, edit() {}, delete() {} })}>Ответить</button>}
+                  {holdActions(message.kind, mine, message.deleted, true).includes("edit") && <button type="button" onClick={() => runHold("edit", { reply() {}, reaction() {}, edit() { setOpenMenu(null); setReply(null); setPanel(null); setEditing(message); setDraft(message.body || ""); }, delete() {} })}>Изменить</button>}
+                  {holdActions(message.kind, mine, message.deleted, true).includes("delete") && <button type="button" onClick={() => runHold("delete", { reply() {}, reaction() {}, edit() {}, delete() { setOpenMenu(null); void remove(message); } })}>Удалить</button>}
                 </div>
               )}
               {reactFor === message.messageId && (

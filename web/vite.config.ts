@@ -41,8 +41,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://127.0.0.1:5187",
-      "/web-api": "http://127.0.0.1:5187"
+      "/api": { target: process.env.ZAPARA_API_PROXY || "http://127.0.0.1:5187", changeOrigin: false },
+      "/web-api": { target: process.env.ZAPARA_API_PROXY || "http://127.0.0.1:5187", changeOrigin: false }
     }
   }
 });

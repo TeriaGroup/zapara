@@ -1,15 +1,20 @@
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSwipe } from "./swipe";
 import * as api from "./api";
 import { followGroupCommunity, openGroupFace } from "./groupChoice";
 import { completeGroupCopy, saveEditorHomework } from "./groupHomework";
-import { addDays, dayTitle, friendRoomMark, isoDay, lessonsOn, longDate, sameSubject, teacherLessonLabel, weekday } from "./parity";
+import { addDays, dayTitle, friendRoomMark, isoDay, lessonsOn, longDate, sameSubject, weekday } from "./parity";
+import { composeSummary } from "./summary";
+import { lessonsOfGroupTeacher, teacherCode, teacherRows, teacherWeek, type TeacherRow } from "./teachers";
 import { subgroupIndex, subgroupMark, visibleLessons } from "./subgroups";
 import { HOMEWORK_FILE_LIMIT, checkHomeworkFile, compressHomeworkPhoto, deleteHomeworkBlob, putHomeworkBlob, readHomeworkBlob } from "./homework-files";
+import { supportAppend, supportDraft } from "./support";
+import { holdActions, runHold } from "./hold";
+import { groupBubbleText, GroupMediaError } from "./group-media";
 import { legalDocument, type LegalId } from "./legal";
 import { useApp } from "./store";
-import { homeworkCard, lessonCard, lessonFrom, placeCard, scheduleCard } from "./cards";
+import { homeworkCard, lessonFrom, placeCard, scheduleCard } from "./cards";
 import { BallotBoardView } from "./ballots";
 import { GroupTopics } from "./topics";
 import { GroupAdmin, titlesOf } from "./group-admin";
@@ -160,64 +165,136 @@ export function WeekPage() {
   );
 }
 
+const summarySegments = ["Нечётная", "Чётная", "Обе"];
+
 export function SummaryPage() {
   const app = useApp();
-  const counts = useMemo(() => {
-    const map = new Map<string, number>();
-    const mine = visibleLessons(app.lessons, app.subgroups[app.groupId] || {});
-    for (const lesson of mine) {
-      const key = lesson.typeRaw || "без типа";
-      map.set(key, (map.get(key) || 0) + 1);
-    }
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }, [app.lessons, app.subgroups, app.groupId]);
+  const [segment, setSegment] = useState(2);
+  const summary = useMemo(
+    () => composeSummary(app.lessons, app.subgroups[app.groupId] || {}, segment, app.invert),
+    [app.lessons, app.subgroups, app.groupId, segment, app.invert],
+  );
   return (
     <section className="page">
-      <Head title="Сводка" text="Сколько пар каждого вида в загруженной группе" />
-      <div className="stats">
-        {counts.map(([name, count]) => <article className="card stat" key={name}><b>{count}</b><span>{name}</span></article>)}
-        {counts.length === 0 && <div className="card empty"><p>Сначала выберите группу в настройках.</p><Link className="btn primary" to="/settings">Выбрать группу</Link></div>}
-      </div>
+      <Head title="Сводка" text={app.groupId ? "Сколько пар в выбранной группе" : "Группа не выбрана"} />
+      {!app.groupId ? (
+        <div className="card empty">
+          <p>Выберите группу, чтобы открыть расписание</p>
+          <Link className="btn primary" to="/settings">Выбрать группу</Link>
+        </div>
+      ) : (
+        <div className="stack">
+          <div className="seg" role="tablist" aria-label="Неделя сводки">
+            {summarySegments.map((label, index) => (
+              <button key={label} className={segment === index ? "active" : ""} type="button" aria-pressed={segment === index} onClick={() => setSegment(index)}>{label}</button>
+            ))}
+          </div>
+          <article className="card">
+            <div className="muted">Пар в неделю</div>
+            <b className="summary-total">{summary.total}</b>
+          </article>
+          <CountCard title="По дням" rows={summary.byDay} />
+          <CountCard title="По типам" rows={summary.byType} />
+          <CountCard title="По предметам" rows={summary.bySubject} />
+          <CountCard title="По преподавателям" rows={summary.byTeacher} />
+          <CountCard title="По аудиториям" rows={summary.byRoom} empty="Аудитории не указаны" />
+        </div>
+      )}
     </section>
   );
 }
 
+function CountCard({ title, rows, empty }: { title: string; rows: { name: string; count: number }[]; empty?: string }) {
+  return (
+    <article className="card stack">
+      <h2>{title}</h2>
+      {rows.length === 0 && empty && <p className="muted">{empty}</p>}
+      {rows.map(row => (
+        <div className="count" key={title + row.name}>
+          <span>{row.name}</span>
+          <b>{row.count}</b>
+        </div>
+      ))}
+    </article>
+  );
+}
+
+const teacherFilters = ["Обе", "Нечётная", "Чётная"];
+
 export function TeachersPage() {
+  const app = useApp();
   const [query, setQuery] = useState("");
-  const [list, setList] = useState<Teacher[]>([]);
-  const [current, setCurrent] = useState<Teacher | null>(null);
+  const [onlyMine, setOnlyMine] = useState(true);
+  const [catalog, setCatalog] = useState<Teacher[]>([]);
+  const [selected, setSelected] = useState<TeacherRow | null>(null);
   const [lessons, setLessons] = useState<TeacherLesson[]>([]);
+  const [filter, setFilter] = useState(0);
   const [error, setError] = useState("");
-  useEffect(() => { api.loadTeachers().then(data => setList(data.lecturers || [])).catch(() => setError("Не удалось загрузить преподавателей")); }, []);
-  async function open(teacher: Teacher) {
-    setCurrent(teacher);
-    setLessons([]);
-    try { setLessons((await api.loadTeacher(teacher.id)).lessons || []); }
-    catch { setError("Расписание преподавателя не открылось"); }
+  const groupName = app.catalog?.groups.find(group => group.id === app.groupId)?.name || "";
+  useEffect(() => { api.loadTeachers().then(data => setCatalog(data.lecturers || [])).catch(() => setError("Список преподавателей не открылся. Показаны преподаватели выбранной группы.")); }, []);
+  const attended = useMemo(
+    () => visibleLessons(app.lessons, app.subgroups[app.groupId] || {}),
+    [app.lessons, app.subgroups, app.groupId],
+  );
+  const found = useMemo(() => teacherRows(catalog, attended, query, onlyMine), [catalog, attended, query, onlyMine]);
+  const week = useMemo(
+    () => teacherWeek(lessons, teacherCode(filter, app.invert), app.groupId, groupName, app.invert),
+    [lessons, filter, app.invert, app.groupId, groupName],
+  );
+  async function open(row: TeacherRow) {
+    setSelected(row);
+    const own = lessonsOfGroupTeacher(attended, row.name, app.groupId, groupName);
+    setLessons(own);
+    if (row.id.startsWith("group:")) return;
+    try { setLessons((await api.loadTeacher(row.id)).lessons || own); }
+    catch { setError("Полное расписание преподавателя не открылось. Показаны пары вашей группы."); }
   }
-  const shown = list.filter(teacher => (teacher.name + teacher.kafedra).toLowerCase().includes(query.trim().toLowerCase())).slice(0, 40);
   return (
     <section className="page">
-      <Head title="Преподаватели" text={error || "Поиск по имени и кафедре"} />
-      <input className="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Фамилия" aria-label="Поиск преподавателя" />
-      <div className={"grid-2 split" + (current ? " focus" : "")} style={{ marginTop: 14 }}>
-        <div className="people split-list">
-          {shown.map(teacher => <button className="person" key={teacher.id} type="button" onClick={() => void open(teacher)}><span><b>{teacher.name}</b><div className="muted">{teacher.kafedra}</div></span></button>)}
-          {shown.length === 0 && <div className="empty">Никого не нашлось</div>}
-        </div>
-        <article className="card split-detail">
-          <button className="btn back-only" type="button" onClick={() => { setCurrent(null); setLessons([]); }}>К списку</button>
-          <h2>{current?.name || "Выберите преподавателя"}</h2>
-          <div className="stack">
-            {[...lessons].sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.parity - b.parity || a.timeStart.localeCompare(b.timeStart) || (a.subjectRaw || "").localeCompare(b.subjectRaw || "")).map((lesson, index) => (
-              <div key={`${lesson.dayOfWeek}-${lesson.parity}-${lesson.timeStart}-${index}`} className="row" style={{ justifyContent: "space-between" }}>
-                <div><b>{teacherLessonLabel(lesson)}</b> {lesson.disciplineRaw || lesson.subjectRaw}<div className="muted">{lesson.classroomRaw}</div></div>
-                <ShareMenu card={lessonCard(current?.name || "Преподаватель", "", { time: `${lesson.timeStart}–${lesson.timeEnd || ""}`, subject: lesson.disciplineRaw || lesson.subjectRaw, place: lesson.classroomRaw, teacher: current?.name })} />
-              </div>
+      <Head title="Преподаватели" text={selected ? selected.name : error || "Поиск по фамилии или предмету"} />
+      {selected ? (
+        <div className="stack">
+          <button className="btn teacher-back" type="button" onClick={() => setSelected(null)}>Назад</button>
+          <h2>{selected.name}</h2>
+          <div className="seg" role="tablist" aria-label="Неделя преподавателя">
+            {teacherFilters.map((label, index) => (
+              <button key={label} className={filter === index ? "active" : ""} type="button" aria-pressed={filter === index} onClick={() => setFilter(index)}>{label}</button>
             ))}
           </div>
-        </article>
-      </div>
+          {week.length === 0 && <div className="card empty"><p>На этой неделе пар нет</p></div>}
+          {week.map(day => (
+            <article className="card stack" key={day.day}>
+              <h2>{day.title}</h2>
+              {day.rows.map((row, index) => (
+                <div key={day.day + row.time + row.subject + index}>
+                  <div className="time">{row.time}</div>
+                  <strong className="subject">{row.subject}</strong>
+                  {row.groups && <div className="muted">{row.groups}</div>}
+                  <div className="muted">{row.room}</div>
+                  <div>{row.parityLabel}</div>
+                  {row.mine && <div>Моя группа</div>}
+                </div>
+              ))}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="stack">
+          <input className="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Фамилия или предмет" aria-label="Поиск преподавателя" />
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <span>Только мои</span>
+            <button className={"switch" + (onlyMine ? " on" : "")} type="button" aria-pressed={onlyMine} aria-label="Только мои" onClick={() => setOnlyMine(value => !value)}><i /></button>
+          </div>
+          <p className="muted">Найдено {found.rows.length} из {found.total}</p>
+          {found.rows.length === 0 && <div className="card empty"><p>Никого не нашлось</p></div>}
+          {found.rows.map(row => (
+            <button className="person teacher-person" key={row.id} type="button" onClick={() => void open(row)}>
+              {row.mine && <i className="mine-mark" />}
+              <span><b>{row.name}</b><div className="muted">{row.detail}</div></span>
+            </button>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -385,13 +462,23 @@ export function HomeworkPage() {
         const blob = item.kind === "photo" ? await compressHomeworkPhoto(item.file) : item.file;
         const id = crypto.randomUUID();
         await putHomeworkBlob(id, blob);
+        if (app.session?.authenticated) {
+          const data = new FormData();
+          data.append("file", blob, name);
+          if (app.groupId) data.append("groupId", app.groupId);
+          const uploaded = await fetch("/web-api/files", { method: "POST", credentials: "same-origin", body: data });
+          if (uploaded.status === 413) {
+            await deleteHomeworkBlob(id);
+            throw new Error("quota");
+          }
+        }
         stored.push(id);
         files.push({ id, kind: item.kind, name: item.kind === "photo" ? name.replace(/\.[^.]+$/, ".jpg") : name, mime: item.kind === "photo" ? "image/jpeg" : item.file.type || "application/octet-stream" });
       }
     } catch (error) {
       await Promise.all(stored.map(id => deleteHomeworkBlob(id).catch(() => undefined)));
       const code = error instanceof Error ? error.message : "";
-      setNote(code === "big" ? "Файл слишком большой" : code === "full" ? "Можно приложить не больше шести файлов" : "Такой файл приложить нельзя");
+      setNote(code === "quota" ? "Превышен лимит трафика." : code === "big" ? "Файл слишком большой" : code === "full" ? "Можно приложить не больше шести файлов" : "Такой файл приложить нельзя");
       return;
     }
     const outcome = await saveEditorHomework(
@@ -519,8 +606,15 @@ export function GroupPage() {
   const [thread, setThread] = useState<GroupTopic | "list">("list");
   const [log, setLog] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [editing, setEditing] = useState<ChatMessage | null>(null);
+  const [menu, setMenu] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [focusChat, setFocusChat] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const pickKind = useRef<"image" | "video" | "file">("image");
+  const holdTimer = useRef(0);
+  const heldOpen = useRef(false);
   useEffect(() => {
     let stop = false;
     const drop = () => {
@@ -547,7 +641,12 @@ export function GroupPage() {
     );
     return () => { stop = true; };
   }, [app.session, app.groupId]);
-  useEffect(() => { setThread("list"); setDraft(""); }, [chat?.conversationId]);
+  useEffect(() => { setThread("list"); setDraft(""); setReplyTo(null); setEditing(null); setMenu(null); }, [chat?.conversationId]);
+  useEffect(() => {
+    if (!menu) return;
+    const node = document.querySelector(".log .actions");
+    if (node instanceof HTMLElement) node.scrollIntoView({ block: "nearest" });
+  }, [menu]);
   useEffect(() => {
     if (!chat) return;
     if (chat.kind === "group" && thread === "list") return;
@@ -572,6 +671,26 @@ export function GroupPage() {
     const timer = window.setInterval(pull, 4000);
     return () => { stop = true; window.clearInterval(timer); };
   }, [app.session?.authenticated, communityId]);
+  function choose(kind: "image" | "video" | "file") {
+    pickKind.current = kind;
+    const input = fileRef.current;
+    if (!input) return;
+    input.accept = kind === "image" ? "image/*" : kind === "video" ? "video/*" : "*/*";
+    input.click();
+  }
+  async function onPicked(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !chat) return;
+    if (chat.kind === "group" && (thread === "list" || thread.topicId != null)) return;
+    try {
+      const message = await api.sendGroupMedia(chat.conversationId, pickKind.current, file.name, file, replyTo ?? undefined);
+      setReplyTo(null);
+      setLog(current => current.some(item => item.messageId === message.messageId) ? current.map(item => item.messageId === message.messageId ? message : item) : [...current, message]);
+    } catch (reason) {
+      setError(reason instanceof GroupMediaError && reason.code === "size" ? "Файл слишком большой." : "Сообщение не отправилось");
+    }
+  }
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!chat || !draft.trim()) return;
@@ -579,9 +698,16 @@ export function GroupPage() {
     const body = draft;
     setDraft("");
     try {
+      if (editing) {
+        const message = await api.editGroupMessage(chat.conversationId, editing.messageId, body);
+        setEditing(null);
+        setLog(current => current.map(item => item.messageId === message.messageId ? message : item));
+        return;
+      }
       const message = chat.kind === "group" && thread !== "list"
-        ? await api.sendTopicMessage(chat.conversationId, body, thread.topicId)
-        : await api.sendMessage(chat.conversationId, body);
+        ? await api.sendTopicMessage(chat.conversationId, body, thread.topicId, replyTo ?? undefined)
+        : await api.sendMessage(chat.conversationId, body, replyTo ?? undefined);
+      setReplyTo(null);
       setLog(current => [...current, message]);
     }
     catch { setDraft(body); setError("Сообщение не отправилось"); }
@@ -614,15 +740,54 @@ export function GroupPage() {
               <h2>{chat?.kind === "group" && thread !== "list" ? `${thread.icon} ${thread.title}` : (chat?.title || "Чат")}</h2>
             </div>
             <div className="log">
-              {log.map(message => (
-                <article key={message.messageId} className={"bubble" + (message.senderId === app.session?.user?.userId ? " mine" : "")}>
-                  {message.senderId !== app.session?.user?.userId && <b>{message.senderName}</b>}
-                  <div>{message.body}</div>
-                  <div className="muted">{message.createdAt.slice(0, 16).replace("T", " ")}</div>
-                </article>
-              ))}
+              {log.map(message => {
+                const mine = message.senderId === app.session?.user?.userId;
+                const kind = message.kind || "text";
+                const actions = holdActions(kind, mine, !!message.deleted, menu === message.messageId);
+                return (
+                  <article key={message.messageId} data-hold={kind} className={"bubble" + (mine ? " mine" : "")}
+                    onPointerDown={() => { heldOpen.current = false; if (holdTimer.current) window.clearTimeout(holdTimer.current); holdTimer.current = window.setTimeout(() => { holdTimer.current = 0; heldOpen.current = true; setMenu(message.messageId); }, 450); }}
+                    onPointerUp={event => { if (holdTimer.current) window.clearTimeout(holdTimer.current); if (heldOpen.current && !(event.target instanceof Element && event.target.closest(".actions"))) event.preventDefault(); }}
+                    onPointerLeave={() => { if (holdTimer.current) window.clearTimeout(holdTimer.current); }}
+                    onClickCapture={event => { if (event.target instanceof Element && event.target.closest(".actions")) return; if (heldOpen.current || menu === message.messageId) { event.preventDefault(); event.stopPropagation(); } }}>
+                    {message.senderId !== app.session?.user?.userId && <b>{message.senderName}</b>}
+                    {message.replyTo && <div className="muted">Ответ</div>}
+                    <div>{groupBubbleText(message)}</div>
+                    <div className="muted">{message.createdAt.slice(0, 16).replace("T", " ")}</div>
+                    {actions.length > 0 && (
+                      <div className="actions">
+                        {actions.map(action => (
+                          <button key={action} type="button" onClick={() => runHold(action, {
+                            reply() { setMenu(null); setEditing(null); setReplyTo(message.messageId); },
+                            reaction() {
+                              setMenu(null);
+                              if (!chat) return;
+                              void api.reactGroupMessage(chat.conversationId, message.messageId).then(next => setLog(current => current.map(item => item.messageId === next.messageId ? next : item))).catch(() => setError("Реакция не сохранилась"));
+                            },
+                            edit() { setMenu(null); setReplyTo(null); setEditing(message); setDraft(message.body); },
+                            delete() {
+                              setMenu(null);
+                              if (!chat) return;
+                              void api.deleteGroupMessage(chat.conversationId, message.messageId).then(next => setLog(current => current.map(item => item.messageId === next.messageId ? next : item))).catch(() => setError("Сообщение не удалилось"));
+                            },
+                          })}>{action === "reply" ? "Ответить" : action === "reaction" ? "Реакция" : action === "edit" ? "Изменить" : "Удалить"}</button>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
             </div>
+            {chat && !editing && (chat.kind !== "group" || (thread !== "list" && thread.topicId == null)) && (
+              <div className="row">
+                <button className="btn" type="button" onClick={() => choose("image")}>Фото</button>
+                <button className="btn" type="button" onClick={() => choose("video")}>Видео</button>
+                <button className="btn" type="button" onClick={() => choose("file")}>Документ</button>
+                <input ref={fileRef} type="file" hidden aria-label="Файл" onChange={event => void onPicked(event)} />
+              </div>
+            )}
             <form className="compose" onSubmit={event => void submit(event)}>
+              {(editing || replyTo) && <p className="muted">{editing ? "Редактирование" : "Ответ"}</p>}
               <input value={draft} onChange={event => setDraft(event.target.value)} placeholder="Сообщение" aria-label="Сообщение" maxLength={2000} />
               <button className="btn primary" type="submit">Отправить</button>
             </form>
@@ -744,7 +909,85 @@ export function SettingsPage() {
             </form>
           )}
         </article>
+        <SupportCard />
       </div>
     </section>
+  );
+}
+
+function FollowUp({ onSend }: { onSend: (text: string) => void }) {
+  const [text, setText] = useState("");
+  return (
+    <form className="stack" onSubmit={event => { event.preventDefault(); const value = text.trim(); if (!value) return; setText(""); onSend(value); }}>
+      <label className="field">Уточнение<textarea value={text} onChange={event => setText(event.target.value)} maxLength={4000} rows={3} /></label>
+      <button className="btn" type="submit">Ответить</button>
+    </form>
+  );
+}
+
+function SupportCard() {
+  const app = useApp();
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [threads, setThreads] = useState<api.SupportThread[]>([]);
+  const [note, setNote] = useState("");
+  useEffect(() => {
+    if (!app.session?.authenticated) { setThreads([]); return; }
+    void api.supportList().then(setThreads).catch(() => setNote("Переписка не открылась."));
+  }, [app.session?.authenticated]);
+  async function send(event: FormEvent) {
+    event.preventDefault();
+    setNote("");
+    const draft = supportDraft(!!app.session?.authenticated, subject, body);
+    if (draft.error || !draft.subject || !draft.body) { setNote(draft.error || "Опишите тему и что случилось."); return; }
+    try {
+      const opened = await api.supportOpen(draft.subject, draft.body);
+      setThreads(list => [opened, ...list.filter(item => item.id !== opened.id)]);
+      setSubject("");
+      setBody("");
+    } catch {
+      setNote("Не удалось отправить сообщение.");
+    }
+  }
+  async function follow(id: string, text: string) {
+    const draft = supportDraft(!!app.session?.authenticated, "уточнение", text);
+    if (draft.error || !draft.body) { setNote(draft.error || "Опишите, что случилось."); return; }
+    const next = supportAppend([], "user", draft.body);
+    if (next.length !== 1) return;
+    try {
+      const updated = await api.supportReply(id, next[0].body);
+      setThreads(list => list.map(item => item.id === updated.id ? updated : item));
+    } catch {
+      setNote("Не удалось отправить сообщение.");
+    }
+  }
+  return (
+    <article className="card stack">
+      <h2>Сообщить о баге</h2>
+      {!app.session?.authenticated ? (
+        <form className="stack" onSubmit={event => void send(event)}>
+          <p>Войдите в аккаунт, чтобы отправить сообщение об ошибке и увидеть ответ. Расписание и карты остаются доступны без входа.</p>
+          <label className="field">Тема<input value={subject} onChange={event => setSubject(event.target.value)} maxLength={120} /></label>
+          <label className="field">Что случилось<textarea value={body} onChange={event => setBody(event.target.value)} maxLength={4000} rows={4} /></label>
+          <button className="btn primary" type="submit">Отправить</button>
+        </form>
+      ) : (
+        <form className="stack" onSubmit={event => void send(event)}>
+          <label className="field">Тема<input value={subject} onChange={event => setSubject(event.target.value)} maxLength={120} required /></label>
+          <label className="field">Что случилось<textarea value={body} onChange={event => setBody(event.target.value)} maxLength={4000} required rows={4} /></label>
+          <button className="btn primary" type="submit">Отправить</button>
+        </form>
+      )}
+      {note && <p className="banner">{note}</p>}
+      {threads.map(thread => (
+        <div key={thread.id} className="stack">
+          <h3>{thread.subject}</h3>
+          {thread.messages.map((line, index) => (
+            <p key={thread.id + index}><b>{line.author === "operator" ? "Поддержка" : "Вы"}.</b> {line.body}</p>
+          ))}
+          <FollowUp onSend={text => void follow(thread.id, text)} />
+        </div>
+      ))}
+    </article>
   );
 }
