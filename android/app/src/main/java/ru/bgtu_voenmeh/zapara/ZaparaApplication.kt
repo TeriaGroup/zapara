@@ -105,6 +105,7 @@ class AndroidProfileHost(val app: Application) : ViewModelStoreOwner {
         val created = AppContainer(
             app, descriptor, db, repo, work, api,
             communities = accountScope?.let { CommunityHttpClient(transport, it) },
+            accounts = if (descriptor.isGuest) null else accounts,
             readAccessToken = { readAccessToken(descriptor) },
             syncHttp = if (descriptor.isGuest) null else accountScope?.let { PrivateSyncHttpClient(transport, it.baseUri) }
         )
@@ -164,6 +165,7 @@ class AppContainer(
     val work: ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork,
     val api: ApiRefreshCoordinator,
     val communities: CommunityHttpClient? = null,
+    val accounts: AccountHttpClient? = null,
     private val readAccessToken: (suspend () -> String?)? = null,
     private val syncHttp: PrivateSyncHttpClient? = null
 ) {

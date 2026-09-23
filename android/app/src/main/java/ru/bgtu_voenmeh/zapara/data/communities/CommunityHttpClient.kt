@@ -226,10 +226,48 @@ class CommunityHttpClient(
         return read("GET", "/conversations/$id/messages$query", null, accessToken, 200) { page(it.obj()) }
     }
 
-    suspend fun sendMessage(accessToken: String, conversationId: String, body: String): ChatMessage {
+    suspend fun sendMedia(accessToken: String, conversationId: String, kind: String, name: String, bytes: ByteArray, replyTo: String? = null): ChatMessage {
+        if (kind != "image" && kind != "video" && kind != "file") throw CommunityClientException(CommunityClientFailure.InvalidRequest)
+        if (bytes.isEmpty() || bytes.size > 8 * 1024 * 1024) throw CommunityClientException(CommunityClientFailure.PayloadTooLarge)
+        val id = CommunityValidation.id(conversationId)
+        val token = AccountValidation.token(accessToken, "za_")
+        val headers = linkedMapOf(
+            "Accept" to "application/json",
+            "Authorization" to "Bearer $token",
+            "Content-Type" to "application/octet-stream",
+            "X-Zapara-Kind" to kind,
+            "X-Zapara-Name" to URLEncoder.encode(name.ifBlank { if (kind == "image") "Фото" else if (kind == "video") "Видео" else "Документ" }, StandardCharsets.UTF_8.name()).replace("+", "%20")
+        )
+        if (replyTo != null) headers["X-Zapara-Reply"] = CommunityValidation.id(replyTo)
+        val reply = exchange("POST", "/conversations/$id/media", headers, bytes, 201)
+        return payload { message(reply.obj()) }
+    }
+
+    suspend fun sendMessage(accessToken: String, conversationId: String, body: String, replyTo: String? = null): ChatMessage {
         val id = CommunityValidation.id(conversationId)
         val text = CommunityValidation.message(body)
-        return read("POST", "/conversations/$id/messages", """{"body":${q(text)}}""", accessToken, 201) { message(it.obj()) }
+        val reply = if (replyTo == null) "" else ""","replyTo":${q(CommunityValidation.id(replyTo))}"""
+        return read("POST", "/conversations/$id/messages", """{"body":${q(text)}$reply}""", accessToken, 201) { message(it.obj()) }
+    }
+
+    suspend fun editMessage(accessToken: String, conversationId: String, messageId: String, body: String): ChatMessage {
+        val id = CommunityValidation.id(conversationId)
+        val target = CommunityValidation.id(messageId)
+        val text = CommunityValidation.message(body)
+        return read("POST", "/conversations/$id/messages/$target/edit", """{"body":${q(text)}}""", accessToken, 200) { message(it.obj()) }
+    }
+
+    suspend fun deleteMessage(accessToken: String, conversationId: String, messageId: String): ChatMessage {
+        val id = CommunityValidation.id(conversationId)
+        val target = CommunityValidation.id(messageId)
+        return read("POST", "/conversations/$id/messages/$target/delete", null, accessToken, 200) { message(it.obj()) }
+    }
+
+    suspend fun reactMessage(accessToken: String, conversationId: String, messageId: String, emoji: String): ChatMessage {
+        val id = CommunityValidation.id(conversationId)
+        val target = CommunityValidation.id(messageId)
+        if (emoji !in setOf("like", "heart", "laugh", "wow", "sad")) throw CommunityClientException(CommunityClientFailure.InvalidRequest)
+        return read("POST", "/conversations/$id/messages/$target/react", """{"emoji":${q(emoji)}}""", accessToken, 200) { message(it.obj()) }
     }
 
     suspend fun markRead(accessToken: String, conversationId: String): Conversation {
@@ -253,6 +291,32 @@ class CommunityHttpClient(
     ): T {
         val json = send(method, path, body, access, expected)
         return payload { parse(json) }
+    }
+
+    private suspend fun exchange(method: String, path: String, headers: Map<String, String>, bytes: ByteArray, expected: Int): JsonValue {
+        val reply = try {
+            val version = if (legacyRoutes) 1 else 2
+            val first = transport.exchange(HttpCall(method, scope.baseUri.toString() + "api/v$version/communities" + path, headers, bytes, CommunityValidation.RequestBytes))
+            val code = if (first.status == 404) runCatching { StrictJson.parse(first.body, 16).obj().text("code", 64) }.getOrNull() else null
+            if (version == 2 && first.status == 404 && code != "not_found") {
+                legacyRoutes = true
+                transport.exchange(HttpCall(method, scope.baseUri.toString() + "api/v1/communities" + path, headers, bytes, CommunityValidation.RequestBytes))
+            } else first
+        } catch (_: HttpBodyTooLargeException) {
+            throw CommunityClientException(CommunityClientFailure.BodyTooLarge)
+        } catch (_: IOException) {
+            throw CommunityClientException(CommunityClientFailure.Transport)
+        }
+        if (reply.headers.keys.any { it.equals("Content-Encoding", true) && reply.headers.getValue(it).isNotBlank() }) {
+            throw CommunityClientException(CommunityClientFailure.InvalidPayload)
+        }
+        if (reply.body.size > CommunityValidation.RequestBytes) throw CommunityClientException(CommunityClientFailure.BodyTooLarge)
+        if (reply.status != expected) throw mapError(reply.status, reply.body)
+        return try {
+            StrictJson.parse(reply.body, 16)
+        } catch (_: JsonFail) {
+            throw CommunityClientException(CommunityClientFailure.InvalidPayload)
+        }
     }
 
     private suspend fun send(method: String, path: String, body: String?, access: String, expected: Int): JsonValue {
@@ -374,14 +438,20 @@ class CommunityHttpClient(
     }
 
     private fun message(obj: JsonValue.Obj): ChatMessage {
-        obj.requireKeys("messageId", "conversationId", "senderId", "senderName", "body", "createdAt")
+        val kind = if ("kind" in obj.fields) obj.text("kind", 16) else "text"
+        if (kind !in setOf("text", "image", "video", "file", "voice", "circle")) throw JsonFail()
+        val deleted = if ("deleted" in obj.fields) obj.bool("deleted") else false
+        val reply = if ("replyTo" in obj.fields && obj.field("replyTo") !is JsonValue.Null) CommunityValidation.id(obj.text("replyTo", 36)) else null
         return ChatMessage(
             CommunityValidation.id(obj.text("messageId", 36)),
             CommunityValidation.id(obj.text("conversationId", 36)),
             CommunityValidation.id(obj.text("senderId", 36)),
             obj.text("senderName", 80, nonempty = true),
-            CommunityValidation.message(obj.text("body", 4000)),
-            CommunityUtc.parse(obj.text("createdAt", 40))
+            if (deleted) obj.text("body", 4000) else CommunityValidation.message(obj.text("body", 4000)),
+            CommunityUtc.parse(obj.text("createdAt", 40)),
+            kind,
+            deleted,
+            reply
         )
     }
 

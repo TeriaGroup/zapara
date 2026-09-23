@@ -42,7 +42,46 @@ internal class GroupRuntime(
 data class GroupCommunityUi(val id: String, val name: String, val role: String)
 data class GroupPersonUi(val id: String, val name: String, val handle: String, val role: String, val self: Boolean)
 data class GroupChatUi(val id: String, val title: String, val preview: String, val unread: Int)
-data class GroupMessageUi(val id: String, val author: String, val body: String, val time: String, val mine: Boolean)
+data class GroupMessageUi(val id: String, val author: String, val body: String, val time: String, val mine: Boolean, val kind: String = "text", val deleted: Boolean = false)
+
+internal interface GroupHoldApi {
+    suspend fun edit(token: String, conversationId: String, messageId: String, body: String)
+    suspend fun delete(token: String, conversationId: String, messageId: String)
+    suspend fun react(token: String, conversationId: String, messageId: String, emoji: String)
+}
+
+internal data class GroupHoldState(val draft: String = "", val replyTo: String? = null, val editing: String? = null, val removed: Boolean = false)
+
+internal object GroupMedia {
+    const val maxBytes = 8 * 1024 * 1024
+    suspend fun place(api: ru.bgtu_voenmeh.zapara.data.communities.CommunityHttpClient, token: String, conversationId: String, kind: String, name: String, bytes: ByteArray, replyTo: String?): ru.bgtu_voenmeh.zapara.data.communities.ChatMessage {
+        if (kind != "image" && kind != "video" && kind != "file") throw ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.InvalidRequest)
+        if (bytes.isEmpty() || bytes.size > maxBytes) throw ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.PayloadTooLarge)
+        val clean = name.trim().substringAfterLast('/').substringAfterLast('\\').ifBlank {
+            if (kind == "image") "Фото" else if (kind == "video") "Видео" else "Документ"
+        }
+        return api.sendMedia(token, conversationId, kind, clean, bytes, replyTo)
+    }
+}
+
+internal object GroupHold {
+    suspend fun perform(message: GroupMessageUi, action: String, conversationId: String, token: String, api: GroupHoldApi, state: GroupHoldState): GroupHoldState {
+        if (!ru.bgtu_voenmeh.zapara.ui.chat.HoldDecision.actions(message.kind, message.mine, message.deleted, true).contains(action)) return state
+        return when (action) {
+            "reply" -> state.copy(replyTo = message.id, editing = null, draft = "")
+            "edit" -> state.copy(editing = message.id, replyTo = null, draft = message.body)
+            "reaction" -> {
+                api.react(token, conversationId, message.id, "like")
+                state
+            }
+            "delete" -> {
+                api.delete(token, conversationId, message.id)
+                state.copy(removed = true)
+            }
+            else -> state
+        }
+    }
+}
 
 data class GroupUiState(
     val guest: Boolean = false,
@@ -62,7 +101,9 @@ data class GroupUiState(
     val direct: Boolean = false,
     val hasMore: Boolean = false,
     val groupUnread: Int = 0,
-    val chatLoading: Boolean = false
+    val chatLoading: Boolean = false,
+    val replyTo: String? = null,
+    val editing: String? = null
 )
 
 sealed interface GroupEvent {
@@ -74,6 +115,8 @@ sealed interface GroupEvent {
     data object Older : GroupEvent
     data class Draft(val text: String) : GroupEvent
     data object Send : GroupEvent
+    data class Hold(val messageId: String, val action: String) : GroupEvent
+    data class Media(val kind: String, val name: String, val bytes: ByteArray) : GroupEvent
     data object People : GroupEvent
     data object Chat : GroupEvent
 }
@@ -88,6 +131,9 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     private var poll: Job? = null
     private var generation = 0
     private var sending = false
+    private var pendingKind: String? = null
+    private var pendingName: String = ""
+    private var pendingBytes: ByteArray? = null
     private val drafts = HashMap<String, String>()
     private val clock: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM HH:mm").withZone(ZoneId.systemDefault())
 
@@ -107,6 +153,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 mutable.value = mutable.value.copy(draft = text)
             }
             GroupEvent.Send -> viewModelScope.launch { send() }
+            is GroupEvent.Media -> attach(event.kind, event.name, event.bytes)
+            is GroupEvent.Hold -> hold(event.messageId, event.action)
             GroupEvent.People -> mutable.value = mutable.value.copy(showPeople = true)
             GroupEvent.Chat -> mutable.value = mutable.value.copy(showPeople = false)
         }
@@ -273,10 +321,56 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         )
     }
 
+    private fun attach(kind: String, name: String, bytes: ByteArray) {
+        if (conversationId == null || mutable.value.editing != null) return
+        if (bytes.isEmpty() || bytes.size > GroupMedia.maxBytes || (kind != "image" && kind != "video" && kind != "file")) {
+            mutable.value = mutable.value.copy(failed = true)
+            return
+        }
+        pendingKind = kind
+        pendingName = name
+        pendingBytes = bytes
+        viewModelScope.launch { send() }
+    }
+
     private suspend fun send() {
         if (sending) return
         val id = conversationId ?: return
         val ticket = generation
+        val file = pendingBytes
+        val fileKind = pendingKind
+        if (file != null && fileKind != null) {
+            pendingBytes = null
+            pendingKind = null
+            val name = pendingName
+            pendingName = ""
+            sending = true
+            try {
+                val api = runtime.client
+                val token = if (api == null) null else runtime.accessToken()
+                if (api == null || token.isNullOrEmpty() || !current(ticket, id)) {
+                    if (current(ticket, id)) mutable.value = mutable.value.copy(failed = true)
+                    return
+                }
+                val saved = GroupMedia.place(api, token, id, fileKind, name, file, mutable.value.replyTo)
+                if (!current(ticket, id)) return
+                val next = row(saved)
+                mutable.value = mutable.value.copy(
+                    failed = false,
+                    replyTo = null,
+                    editing = null,
+                    messages = mutable.value.messages.filter { it.id != next.id } + next
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("ZaparaGroup", "media", e)
+                if (current(ticket, id)) mutable.value = mutable.value.copy(failed = true)
+            } finally {
+                sending = false
+            }
+            return
+        }
         val body = mutable.value.draft.trim()
         if (body.isEmpty()) return
         sending = true
@@ -289,7 +383,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 restoreDraft(id, ticket, body)
                 return
             }
-            val message = api.sendMessage(token, id, body)
+            val message = if (mutable.value.editing != null) api.editMessage(token, id, mutable.value.editing!!, body) else api.sendMessage(token, id, body, mutable.value.replyTo)
             if (!current(ticket, id)) {
                 if (drafts[id].isNullOrEmpty()) drafts.remove(id)
                 return
@@ -297,10 +391,13 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             val row = row(message)
             if (drafts[id].isNullOrEmpty()) drafts.remove(id)
             if (!current(ticket, id)) return
+            val kept = mutable.value.messages.filter { it.id != row.id }
             mutable.value = mutable.value.copy(
                 draft = drafts[id].orEmpty(),
                 failed = false,
-                messages = if (mutable.value.messages.any { it.id == row.id }) mutable.value.messages else mutable.value.messages + row
+                replyTo = null,
+                editing = null,
+                messages = kept + row
             )
         } catch (e: CancellationException) {
             restoreDraft(id, ticket, body)
@@ -357,8 +454,34 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
 
     private fun person(item: Classmate) = GroupPersonUi(item.userId, item.displayName ?: item.username, item.username, item.role, item.self)
     private fun chat(item: Conversation) = GroupChatUi(item.conversationId, item.title, item.lastBody ?: "", item.unread)
+    private fun hold(messageId: String, action: String) {
+        val message = mutable.value.messages.find { it.id == messageId } ?: return
+        val id = conversationId ?: return
+        val api = runtime.client ?: return
+        viewModelScope.launch {
+            val token = runtime.accessToken()
+            if (token.isNullOrEmpty() || conversationId != id) return@launch
+            val port = object : GroupHoldApi {
+                override suspend fun edit(token: String, conversationId: String, messageId: String, body: String) {
+                    api.editMessage(token, conversationId, messageId, body)
+                }
+                override suspend fun delete(token: String, conversationId: String, messageId: String) {
+                    api.deleteMessage(token, conversationId, messageId)
+                }
+                override suspend fun react(token: String, conversationId: String, messageId: String, emoji: String) {
+                    api.reactMessage(token, conversationId, messageId, emoji)
+                }
+            }
+            val next = GroupHold.perform(message, action, id, token, port, GroupHoldState(mutable.value.draft, mutable.value.replyTo, mutable.value.editing))
+            if (conversationId != id) return@launch
+            val messages = if (next.removed) mutable.value.messages.map { if (it.id == messageId) it.copy(deleted = true) else it } else mutable.value.messages
+            mutable.value = mutable.value.copy(draft = next.draft, replyTo = next.replyTo, editing = next.editing, messages = messages)
+            conversationId?.let { drafts[it] = next.draft }
+        }
+    }
+
     private fun row(item: ChatMessage) = GroupMessageUi(
-        item.messageId, item.senderName, item.body, clock.format(item.createdAt), item.senderId == runtime.userId
+        item.messageId, item.senderName, item.body, clock.format(item.createdAt), item.senderId == runtime.userId, item.kind, item.deleted
     )
 
     companion object {

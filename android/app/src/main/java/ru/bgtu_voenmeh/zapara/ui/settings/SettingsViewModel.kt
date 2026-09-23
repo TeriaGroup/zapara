@@ -101,6 +101,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 mutable.update { it.copy(useUniversityXml = event.enabled) }
                 save(transform = { it.copy(useUniversityXml = event.enabled) })
             }
+            is SettingsEvent.Report -> report(event.subject, event.body)
             is SettingsEvent.MapsAlpha -> {
                 mutable.update { it.copy(mapsAlpha = event.enabled) }
                 save(transform = { it.copy(mapsAlpha = event.enabled) }, after = {
@@ -226,9 +227,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     mapsAlpha = prefs.mapsAlpha,
                     syncConflicts = if (container.profile.isGuest) emptyList() else container.outbox.inbox.conflicts(),
                     syncBusy = false,
-                    syncError = null
+                    syncError = null,
+                    signedIn = !container.profile.isGuest,
+                    reportNote = mutable.value.reportNote,
+                    reportThread = mutable.value.reportThread
                 )
             }
+            if (ticket != reloadTicket) return
+            val thread = loadSupport(snap.signedIn)
             if (ticket != reloadTicket) return
             mutable.update { cur ->
                 val editingTimes = cur.timeError != null
@@ -238,13 +244,66 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     syncError = cur.syncError,
                     time1 = if (editingTimes) cur.time1 else snap.time1,
                     time2 = if (editingTimes) cur.time2 else snap.time2,
-                    timeError = if (editingTimes) cur.timeError else snap.timeError
+                    timeError = if (editingTimes) cur.timeError else snap.timeError,
+                    reportNote = cur.reportNote,
+                    reportThread = if (thread.isEmpty()) cur.reportThread else thread
                 )
             }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             android.util.Log.w("ZaparaSettings", "reload", e)
             mutable.update { it.copy(loaded = true) }
+        }
+    }
+
+    private var reportThreadId: String? = null
+
+    private suspend fun loadSupport(signedIn: Boolean): List<ru.bgtu_voenmeh.zapara.ui.chat.SupportForm.Note> {
+        if (!signedIn) return emptyList()
+        val client = container.accounts ?: return emptyList()
+        val token = container.accessToken() ?: return emptyList()
+        return try {
+            val opened = withContext(Dispatchers.IO) { client.supportThreads(token).lastOrNull() } ?: return emptyList()
+            reportThreadId = opened.id
+            opened.messages.map { ru.bgtu_voenmeh.zapara.ui.chat.SupportForm.Note(it.author, it.body) }
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) {
+            android.util.Log.w("ZaparaSettings", "support", e)
+            emptyList()
+        }
+    }
+
+    private fun report(subject: String, body: String) {
+        val local = ru.bgtu_voenmeh.zapara.ui.chat.SupportForm.submit(mutable.value.signedIn, mutable.value.reportThread, subject, body)
+        if (local.error != null) {
+            mutable.update { it.copy(reportNote = local.error) }
+            return
+        }
+        val client = container.accounts
+        viewModelScope.launch {
+            val token = container.accessToken()
+            if (client == null || token.isNullOrEmpty()) {
+                mutable.update { it.copy(reportNote = "Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ.") }
+                return@launch
+            }
+            try {
+                val saved = withContext(Dispatchers.IO) {
+                    val existing = reportThreadId
+                    if (existing == null) client.openSupport(token, subject.trim(), body.trim())
+                    else client.continueSupport(token, existing, body.trim())
+                }
+                reportThreadId = saved.id
+                mutable.update {
+                    it.copy(
+                        reportNote = "",
+                        reportThread = saved.messages.map { line -> ru.bgtu_voenmeh.zapara.ui.chat.SupportForm.Note(line.author, line.body) }
+                    )
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                android.util.Log.w("ZaparaSettings", "support send", e)
+                mutable.update { it.copy(reportNote = "Сообщение не отправилось") }
+            }
         }
     }
 

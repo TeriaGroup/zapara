@@ -18,6 +18,9 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
 
+data class SupportMessage(val author: String, val body: String, val at: Instant)
+data class SupportThread(val id: String, val subject: String, val messages: List<SupportMessage>)
+
 class AccountHttpClient(
     private val transport: HttpExchange,
     val scope: AccountServerScope
@@ -208,6 +211,33 @@ class AccountHttpClient(
                 AccountExternalIdentity(provider, instant(obj.text("linkedAt", 40)))
             }
         }
+    }
+
+    suspend fun supportThreads(accessToken: String): List<SupportThread> {
+        return send("GET", "support", null, accessToken, 200).arr().items.map { supportThread(it.obj()) }
+    }
+
+    suspend fun openSupport(accessToken: String, subject: String, body: String): SupportThread {
+        val payload = """{"subject":${q(subject)},"body":${q(body)}}"""
+        return supportThread(send("POST", "support", payload, accessToken, 200).obj())
+    }
+
+    suspend fun continueSupport(accessToken: String, id: String, body: String): SupportThread {
+        val thread = AccountValidation.id(id)
+        return supportThread(send("POST", "support/$thread", """{"body":${q(body)}}""", accessToken, 200).obj())
+    }
+
+    private fun supportThread(obj: JsonValue.Obj): SupportThread {
+        return SupportThread(
+            AccountValidation.id(obj.text("id", 36)),
+            obj.text("subject", 120, nonempty = true),
+            obj.array("messages", 200).items.map { line ->
+                val item = line.obj()
+                val author = item.text("author", 16)
+                if (author != "user" && author != "operator") throw JsonFail()
+                SupportMessage(author, item.text("body", 4000, nonempty = true), instant(item.text("at", 40)))
+            }
+        )
     }
 
     suspend fun unlinkIdentity(accessToken: String, provider: String, proofToken: String) {

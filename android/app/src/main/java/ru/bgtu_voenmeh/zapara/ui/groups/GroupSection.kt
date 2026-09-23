@@ -1,7 +1,20 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package ru.bgtu_voenmeh.zapara.ui.groups
 
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +32,10 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -26,6 +43,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
+import ru.bgtu_voenmeh.zapara.ui.chat.HoldDecision
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
@@ -227,16 +245,27 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
                 }
             }
             items(state.messages, key = { it.id }) { message ->
-                MessageBubble(message)
+                MessageBubble(message, onEvent)
             }
         }
     }
 }
 
+private fun messageLabel(message: GroupMessageUi): String = when {
+    message.deleted -> "Сообщение удалено"
+    message.kind == "image" -> "Фото"
+    message.kind == "video" || message.kind == "circle" -> "Видео"
+    message.kind == "voice" -> "Голосовое"
+    message.kind == "file" -> message.body.ifBlank { "Документ" }
+    else -> message.body
+}
+
 @Composable
-private fun MessageBubble(message: GroupMessageUi) {
+private fun MessageBubble(message: GroupMessageUi, onEvent: (GroupEvent) -> Unit) {
     val c = Zapara.colors
     val mine = message.mine
+    var menu by remember(message.id) { mutableStateOf(false) }
+    val actions = HoldDecision.actions(message.kind, mine, message.deleted, menu)
     Column(
         Modifier.fillMaxWidth().testTag("Group.Author.${message.id}"),
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
@@ -250,13 +279,13 @@ private fun MessageBubble(message: GroupMessageUi) {
             color = if (mine) c.accent else c.card,
             contentColor = if (mine) c.onAccent else c.text1,
             border = if (mine) null else BorderStroke(Zapara.space.hairline, c.line),
-            modifier = Modifier.widthIn(max = 280.dp)
+            modifier = Modifier.widthIn(max = 280.dp).combinedClickable(onClick = {}, onLongClick = { menu = true })
         ) {
             Column(
                 Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
                 verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)
             ) {
-                Text(message.body, style = Zapara.typography.body)
+                Text(messageLabel(message), style = Zapara.typography.body)
                 Text(
                     message.time,
                     style = Zapara.typography.caption,
@@ -265,17 +294,57 @@ private fun MessageBubble(message: GroupMessageUi) {
                 )
             }
         }
+        if (menu) Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            actions.forEach { action ->
+                val label = when (action) {
+                    "reply" -> "Ответить"
+                    "reaction" -> "Реакция"
+                    "edit" -> "Изменить"
+                    else -> "Удалить"
+                }
+                ZButton(label, {
+                    HoldDecision.perform(action,
+                        reply = { onEvent(GroupEvent.Hold(message.id, "reply")) },
+                        reaction = { onEvent(GroupEvent.Hold(message.id, "reaction")) },
+                        edit = { onEvent(GroupEvent.Hold(message.id, "edit")) },
+                        delete = { onEvent(GroupEvent.Hold(message.id, "delete")) }
+                    )
+                    menu = false
+                }, ghost = true)
+            }
+        }
     }
 }
 
 @Composable
 private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
     val c = Zapara.colors
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    fun pick(kind: String, uri: Uri?) {
+        if (uri == null) return
+        scope.launch {
+            val read = withContext(Dispatchers.IO) { readAttachment(context, uri) }
+            onEvent(GroupEvent.Media(kind, read?.first ?: "", read?.second ?: ByteArray(0)))
+        }
+    }
+    val photo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { pick("image", it) }
+    val video = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { pick("video", it) }
+    val document = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { pick("file", it) }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        ZButton("Фото", { photo.launch(arrayOf("image/*")) }, ghost = true, tag = "Group.Photo")
+        ZButton("Видео", { video.launch(arrayOf("video/*")) }, ghost = true, tag = "Group.Video")
+        ZButton("Документ", { document.launch(arrayOf("*/*")) }, ghost = true, tag = "Group.File")
+    }
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)
     ) {
+        if (state.editing != null || state.replyTo != null) {
+            Text(if (state.editing != null) "Редактирование" else "Ответ", style = Zapara.typography.caption, color = c.text2)
+        }
         OutlinedTextField(
             value = state.draft,
             onValueChange = { onEvent(GroupEvent.Draft(it)) },
@@ -291,6 +360,28 @@ private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
         )
         ZButton(stringResource(R.string.group_send), { onEvent(GroupEvent.Send) }, enabled = state.draft.isNotBlank(), tag = "Group.Send")
     }
+    }
+}
+
+private fun readAttachment(context: android.content.Context, uri: Uri): Pair<String, ByteArray>? {
+    val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) cursor.getString(0) else null
+    }?.substringAfterLast('/')?.substringAfterLast('\\') ?: "Файл"
+    val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+        val out = ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        var total = 0
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            total += n
+            if (total > GroupMedia.maxBytes) return null
+            out.write(buf, 0, n)
+        }
+        out.toByteArray()
+    } ?: return null
+    if (bytes.isEmpty()) return null
+    return name to bytes
 }
 
 @Composable

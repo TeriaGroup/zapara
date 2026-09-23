@@ -39,6 +39,7 @@ import ru.bgtu_voenmeh.zapara.ui.account.AccountCard
 import ru.bgtu_voenmeh.zapara.ui.legal.LegalDocumentPage
 import ru.bgtu_voenmeh.zapara.ui.account.AccountEvent
 import ru.bgtu_voenmeh.zapara.ui.account.AccountUiState
+import ru.bgtu_voenmeh.zapara.ui.chat.SupportForm
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
@@ -175,7 +176,7 @@ fun SettingsSection(
                 if (state.selfUpdate) UpdatesCard(state, updates, onEvent)
                 else RustoreUpdatesCard()
             }
-            item { AboutCard(state.version) }
+            item { AboutCard(state, onEvent) }
         }
     }
 }
@@ -241,16 +242,33 @@ fun UpdatesCard(state: SettingsUiState, updates: UpdateUiState, onEvent: (Settin
 }
 
 @Composable
-fun AboutCard(version: String) {
+fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
     val ctx = LocalContext.current
     val c = Zapara.colors
+    var open by remember { mutableStateOf(false) }
+    var subject by remember { mutableStateOf("") }
+    var body by remember { mutableStateOf("") }
     ZCard(Modifier.fillMaxWidth().testTag("Settings.About")) {
         Text(stringResource(R.string.settings_about_title), style = Zapara.typography.section, color = c.text1)
-        Text(stringResource(R.string.settings_version, version), style = Zapara.typography.caption, color = c.text2)
+        Text(stringResource(R.string.settings_version, state.version), style = Zapara.typography.caption, color = c.text2)
         Text(stringResource(R.string.settings_unofficial), style = Zapara.typography.body, color = c.text2)
         ZButton(stringResource(R.string.settings_releases), {
             ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AutoUpdate.RELEASES_PAGE)))
         }, ghost = true, tag = "Settings.Releases")
+        ZButton(stringResource(R.string.settings_report), { open = !open }, ghost = true, tag = "Settings.Report")
+        Text(stringResource(R.string.settings_report_hint), style = Zapara.typography.caption, color = c.text2)
+        if (open) {
+            OutlinedTextField(subject, { subject = it.take(120) }, modifier = Modifier.fillMaxWidth(), label = { Text("Тема") }, singleLine = true)
+            OutlinedTextField(body, { body = it.take(4000) }, modifier = Modifier.fillMaxWidth(), label = { Text("Что случилось") })
+            ZButton("Отправить", {
+                onEvent(SettingsEvent.Report(subject, body))
+                if (state.signedIn && subject.trim().length >= 3 && body.trim().length >= 3) { subject = ""; body = "" }
+            }, tag = "Settings.ReportSend")
+            if (state.reportNote.isNotBlank()) Text(state.reportNote, style = Zapara.typography.body, color = c.text1)
+            state.reportThread.forEach { line ->
+                Text((if (line.author == "operator") "Поддержка. " else "Вы. ") + line.body, style = Zapara.typography.body, color = c.text1)
+            }
+        }
         Text(stringResource(R.string.settings_licenses), style = Zapara.typography.caption, color = c.text2)
     }
 }

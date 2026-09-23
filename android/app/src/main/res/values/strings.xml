@@ -194,6 +194,8 @@
     <string name="settings_rustore_early">Ранние версии и последние сборки можно найти на нашем GitHub, чтобы всегда быть в курсе.</string>
     <string name="settings_rustore_github">Открыть GitHub</string>
     <string name="settings_about_title">Расписание БГТУ «Военмех»</string>
+    <string name="settings_report">Сообщить о баге</string>
+    <string name="settings_report_hint">Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ.</string>
     <string name="settings_version">Версия %1$s</string>
     <string name="settings_unofficial">Неофициальное приложение для студентов БГТУ «Военмех». Не связано с администрацией вуза.</string>
     <string name="settings_releases">Страница релизов</string>

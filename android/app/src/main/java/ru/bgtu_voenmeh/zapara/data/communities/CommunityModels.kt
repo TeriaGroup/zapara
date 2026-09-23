@@ -56,7 +56,10 @@ data class ChatMessage(
     val senderId: String,
     val senderName: String,
     val body: String,
-    val createdAt: Instant
+    val createdAt: Instant,
+    val kind: String = "text",
+    val deleted: Boolean = false,
+    val replyTo: String? = null
 )
 
 data class ChatPage(val messages: List<ChatMessage>, val hasMore: Boolean)

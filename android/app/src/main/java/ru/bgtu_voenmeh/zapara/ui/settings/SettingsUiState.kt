@@ -24,7 +24,10 @@ data class SettingsUiState(
     val mapsAlpha: Boolean = false,
     val syncConflicts: List<ru.bgtu_voenmeh.zapara.data.sync.SyncConflict> = emptyList(),
     val syncBusy: Boolean = false,
-    val syncError: String? = null
+    val syncError: String? = null,
+    val signedIn: Boolean = false,
+    val reportNote: String = "",
+    val reportThread: List<ru.bgtu_voenmeh.zapara.ui.chat.SupportForm.Note> = emptyList()
 )
 
 sealed interface SettingsEvent {
@@ -47,4 +50,5 @@ sealed interface SettingsEvent {
     data class UseUniversityXml(val enabled: Boolean) : SettingsEvent
     data class MapsAlpha(val enabled: Boolean) : SettingsEvent
     data class ResolveSync(val conflict: ru.bgtu_voenmeh.zapara.data.sync.SyncConflict, val keepLocal: Boolean) : SettingsEvent
+    data class Report(val subject: String, val body: String) : SettingsEvent
 }

@@ -63,7 +63,9 @@ class UrlConnectionTransport : HttpExchange {
             val payload = call.body
             if (payload != null) {
                 conn.doOutput = true
-                conn.setRequestProperty("Content-Type", "application/json")
+                if (call.headers.keys.none { it.equals("Content-Type", ignoreCase = true) }) {
+                    conn.setRequestProperty("Content-Type", "application/json")
+                }
                 conn.outputStream.use { it.write(payload) }
             }
             val status = conn.responseCode
