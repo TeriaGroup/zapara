@@ -73,14 +73,17 @@ public sealed record GroupHomeResponse
 public sealed record ChatMessageResponse
 {
     [JsonConstructor]
-    public ChatMessageResponse(Guid messageId, Guid conversationId, Guid senderId, string senderName, string body, DateTimeOffset createdAt)
+    public ChatMessageResponse(Guid messageId, Guid conversationId, Guid senderId, string senderName, string body, DateTimeOffset createdAt, string kind = "text", bool deleted = false, Guid? replyTo = null)
     {
         MessageId = CommunityValidation.Id(messageId);
         ConversationId = CommunityValidation.Id(conversationId);
         SenderId = CommunityValidation.Id(senderId);
         SenderName = senderName;
-        Body = CommunityValidation.Message(body);
+        Body = deleted ? body : CommunityValidation.Message(body);
         CreatedAt = CommunityValidation.Utc(createdAt);
+        Kind = kind is "text" or "image" or "video" or "file" or "voice" or "circle" ? kind : throw CommunityValidation.Invalid();
+        Deleted = deleted;
+        ReplyTo = replyTo is null || replyTo == Guid.Empty ? null : CommunityValidation.Id(replyTo.Value);
     }
     [JsonRequired, JsonInclude] public Guid MessageId { get; private init; }
     [JsonRequired, JsonInclude] public Guid ConversationId { get; private init; }
@@ -88,13 +91,31 @@ public sealed record ChatMessageResponse
     [JsonRequired, JsonInclude] public string SenderName { get; private init; }
     [JsonRequired, JsonInclude] public string Body { get; private init; }
     [JsonRequired, JsonInclude] public DateTimeOffset CreatedAt { get; private init; }
+    [JsonInclude] public string Kind { get; private init; }
+    [JsonInclude] public bool Deleted { get; private init; }
+    [JsonInclude] public Guid? ReplyTo { get; private init; }
 }
 
 public sealed record SendMessageRequest
 {
     [JsonConstructor]
-    public SendMessageRequest(string body) => Body = CommunityValidation.Message(body);
+    public SendMessageRequest(string body, Guid? replyTo = null, string? kind = null)
+    {
+        Body = body ?? throw CommunityValidation.Invalid();
+        ReplyTo = replyTo is null || replyTo == Guid.Empty ? null : CommunityValidation.Id(replyTo.Value);
+        var value = string.IsNullOrEmpty(kind) ? "text" : kind;
+        Kind = value is "text" or "image" or "video" or "file" or "voice" or "circle" ? value : throw CommunityValidation.Invalid();
+    }
     [JsonRequired, JsonInclude] public string Body { get; private init; }
+    [JsonInclude] public Guid? ReplyTo { get; private init; }
+    [JsonInclude] public string Kind { get; private init; }
+}
+
+public sealed record ReactMessageRequest
+{
+    [JsonConstructor]
+    public ReactMessageRequest(string emoji) => Emoji = emoji is "like" or "heart" or "laugh" or "wow" or "sad" ? emoji : throw CommunityValidation.Invalid();
+    [JsonRequired, JsonInclude] public string Emoji { get; private init; }
 }
 
 public sealed record ChatPageResponse

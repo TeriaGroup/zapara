@@ -20,15 +20,17 @@ public sealed record GroupTopicRequest
 public sealed record TopicMessageRequest
 {
     [JsonConstructor]
-    public TopicMessageRequest(string body, Guid? topicId)
+    public TopicMessageRequest(string body, Guid? topicId, Guid? replyTo = null)
     {
         Body = CommunityValidation.Message(body);
         if (topicId == Guid.Empty) throw CommunityValidation.Invalid();
         TopicId = topicId;
+        ReplyTo = replyTo is null || replyTo == Guid.Empty ? null : CommunityValidation.Id(replyTo.Value);
     }
 
     [JsonRequired, JsonInclude] public string Body { get; private init; }
     [JsonRequired, JsonInclude] public Guid? TopicId { get; private init; }
+    [JsonInclude] public Guid? ReplyTo { get; private init; }
 }
 
 public sealed record GroupTopicResponse

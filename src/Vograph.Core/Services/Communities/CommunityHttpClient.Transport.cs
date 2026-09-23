@@ -89,6 +89,80 @@ public sealed partial class CommunityHttpClient
         finally { CryptographicOperations.ZeroMemory(buffer); }
     }
 
+    private async Task<ChatMessageResponse> SendMediaCoreAsync(string access, string conversationId, string kind, string name, byte[] bytes, Guid? replyTo, CancellationToken caller)
+    {
+        if (kind is not ("image" or "video" or "file") || bytes is null || bytes.Length is < 1 or > 8 * 1024 * 1024 || string.IsNullOrWhiteSpace(name))
+            throw new CommunityClientException(CommunityClientFailure.InvalidRequest);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30), clock);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(caller, timeout.Token);
+        var ct = deadline.Token;
+        var path = "/conversations/" + conversationId + "/media";
+        var version = legacyRoutes ? 1 : 2;
+        using var request = MediaRequest(version, path, access, kind, name, bytes, replyTo);
+        try
+        {
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            var received = await ReadAsync(response.Content, CommunityValidation.RequestBytes, ct).ConfigureAwait(false);
+            try
+            {
+                if ((int)response.StatusCode == 404 && version == 2 && !NotFound(received))
+                {
+                    legacyRoutes = true;
+                    using var again = MediaRequest(1, path, access, kind, name, bytes, replyTo);
+                    using var second = await http.SendAsync(again, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                    return await ReadMediaAsync(second, ct).ConfigureAwait(false);
+                }
+                if ((int)response.StatusCode != 201) throw Error(response, received);
+                if (response.Content.Headers.ContentType?.MediaType != "application/json")
+                    throw new CommunityClientException(CommunityClientFailure.InvalidPayload);
+                return CommunityResponseReader.Read<ChatMessageResponse>(received);
+            }
+            finally { CryptographicOperations.ZeroMemory(received); }
+        }
+        catch (OperationCanceledException)
+        {
+            if (caller.IsCancellationRequested) throw new OperationCanceledException("Операция отменена.", caller);
+            throw new CommunityClientException(CommunityClientFailure.Timeout);
+        }
+        catch (HttpRequestException) { throw new CommunityClientException(CommunityClientFailure.Transport); }
+        catch (IOException) { throw new CommunityClientException(CommunityClientFailure.Transport); }
+        catch (CommunityClientException) { throw; }
+        catch (Exception e) when (e is JsonException or ArgumentException or InvalidOperationException or FormatException)
+        { throw new CommunityClientException(CommunityClientFailure.InvalidPayload); }
+    }
+
+    private HttpRequestMessage MediaRequest(int version, string path, string access, string kind, string name, byte[] bytes, Guid? replyTo)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, new Uri(Scope.BaseUri, $"api/v{version}/communities" + path));
+        request.Headers.Accept.Add(new("application/json"));
+        request.Headers.Authorization = new("Bearer", access);
+        request.Headers.TryAddWithoutValidation("X-Zapara-Kind", kind);
+        request.Headers.TryAddWithoutValidation("X-Zapara-Name", Uri.EscapeDataString(name));
+        if (replyTo is Guid parent) request.Headers.TryAddWithoutValidation("X-Zapara-Reply", parent.ToString("D"));
+        request.Content = new ByteArrayContent(bytes);
+        request.Content.Headers.ContentType = new("application/octet-stream");
+        return request;
+    }
+
+    private static bool NotFound(byte[] bytes)
+    {
+        try { return CommunityJson.Parse<CommunityError>(bytes).Code == "not_found"; }
+        catch (Exception e) when (e is JsonException or ArgumentException or InvalidOperationException or FormatException) { return false; }
+    }
+
+    private async Task<ChatMessageResponse> ReadMediaAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        var received = await ReadAsync(response.Content, CommunityValidation.RequestBytes, ct).ConfigureAwait(false);
+        try
+        {
+            if ((int)response.StatusCode != 201) throw Error(response, received);
+            if (response.Content.Headers.ContentType?.MediaType != "application/json")
+                throw new CommunityClientException(CommunityClientFailure.InvalidPayload);
+            return CommunityResponseReader.Read<ChatMessageResponse>(received);
+        }
+        finally { CryptographicOperations.ZeroMemory(received); }
+    }
+
     private CommunityClientException Error(HttpResponseMessage response, byte[] bytes)
     {
         var status = (int)response.StatusCode;

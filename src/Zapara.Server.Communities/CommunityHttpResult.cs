@@ -7,6 +7,7 @@ namespace Zapara.Server.Communities;
 internal static class CommunityHttpResult
 {
     internal static IResult Json<T>(T value, int status = 200) => new TypedJson<T>(value, status);
+    internal static IResult Bytes(byte[] body) => new FrozenJson(body, 200, "application/octet-stream");
     internal static IResult Problem(int status, string code)
     {
         var title = status switch

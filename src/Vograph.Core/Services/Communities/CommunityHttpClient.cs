@@ -107,6 +107,14 @@ public sealed partial class CommunityHttpClient : IDisposable
     }
     public Task<ChatMessageResponse> SendMessageAsync(string accessToken, Guid conversationId, SendMessageRequest request, CancellationToken ct = default)
         => SendAsync<ChatMessageResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/messages", Required(request), Access(accessToken), 201, ct);
+    public Task<ChatMessageResponse> SendMediaAsync(string accessToken, Guid conversationId, string kind, string name, byte[] bytes, Guid? replyTo = null, CancellationToken ct = default)
+        => SendMediaCoreAsync(Access(accessToken), Id(conversationId), kind, name, bytes, replyTo, ct);
+    public Task<ChatMessageResponse> EditMessageAsync(string accessToken, Guid conversationId, Guid messageId, SendMessageRequest request, CancellationToken ct = default)
+        => SendAsync<ChatMessageResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/messages/" + Id(messageId) + "/edit", Required(request), Access(accessToken), 200, ct);
+    public Task<ChatMessageResponse> DeleteMessageAsync(string accessToken, Guid conversationId, Guid messageId, CancellationToken ct = default)
+        => SendAsync<ChatMessageResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/messages/" + Id(messageId) + "/delete", null, Access(accessToken), 200, ct);
+    public Task<ChatMessageResponse> ReactMessageAsync(string accessToken, Guid conversationId, Guid messageId, string emoji, CancellationToken ct = default)
+        => SendAsync<ChatMessageResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/messages/" + Id(messageId) + "/react", new ReactMessageRequest(emoji), Access(accessToken), 200, ct);
     public Task<ConversationResponse> MarkReadAsync(string accessToken, Guid conversationId, CancellationToken ct = default)
         => SendAsync<ConversationResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/read", null, Access(accessToken), 200, ct);
 

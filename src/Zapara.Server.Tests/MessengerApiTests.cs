@@ -121,4 +121,50 @@ public sealed class MessengerApiTests
         using var anonymous = await host.Client.GetAsync($"/api/v1/communities/{communityId}/home", Ct);
         Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
     }
+
+    [Fact]
+    public async Task Media_message_keeps_its_kind_and_bytes_and_cannot_be_edited()
+    {
+        await using var db = await CommunityPostgresFixture.CreateAsync(true);
+        await using var host = await CommunityApiTestHost.StartAsync(db);
+        var member = await Seed(host.Accounts, "msg.media");
+        var outsider = await Seed(host.Accounts, "msg.media.out");
+        var communityId = Guid.NewGuid();
+        await db.SeedCommunityAsync(communityId, "О3313");
+        await db.SeedCatalogAsync(communityId, "O3313", "О3313");
+        await db.SeedMemberAsync(communityId, member.User.UserId);
+        var home = await host.Get<GroupHomeResponse>($"/{communityId}/home", member.AccessToken);
+        var chat = home.GroupChat.ConversationId;
+        var photo = new byte[] { 1, 2, 3, 4 };
+        var clip = new byte[] { 9, 8, 7 };
+        var notes = "конспект"u8.ToArray();
+        var image = CommunityJson.Parse<ChatMessageResponse>(await host.SendMedia($"/conversations/{chat}/media", member.AccessToken, "image", "снимок.png", photo));
+        var video = CommunityJson.Parse<ChatMessageResponse>(await host.SendMedia($"/conversations/{chat}/media", member.AccessToken, "video", "ролик.mp4", clip));
+        var file = CommunityJson.Parse<ChatMessageResponse>(await host.SendMedia($"/conversations/{chat}/media", member.AccessToken, "file", "notes.txt", notes));
+        Assert.Equal("image", image.Kind);
+        Assert.Equal("снимок.png", image.Body);
+        Assert.Equal("image", await db.Accounts.ScalarAsync<string>($"SELECT kind FROM \"{db.Configuration.MessagesSchema}\".chat_messages WHERE message_id='{image.MessageId}'"));
+        Assert.Equal("video", await db.Accounts.ScalarAsync<string>($"SELECT kind FROM \"{db.Configuration.MessagesSchema}\".chat_messages WHERE message_id='{video.MessageId}'"));
+        Assert.Equal("file", await db.Accounts.ScalarAsync<string>($"SELECT kind FROM \"{db.Configuration.MessagesSchema}\".chat_messages WHERE message_id='{file.MessageId}'"));
+        var labeled = CommunityJson.Parse<ChatMessageResponse>(await host.Send("POST",
+            $"/conversations/{chat}/messages", 201, member.AccessToken, Json(new SendMessageRequest("кадр.png", null, "image"))));
+        Assert.Equal("image", labeled.Kind);
+        Assert.Equal("кадр.png", labeled.Body);
+        Assert.Equal("video", video.Kind);
+        Assert.Equal("file", file.Kind);
+        Assert.Equal(photo, await host.Send("GET", $"/conversations/{chat}/messages/{image.MessageId}/media", 200, member.AccessToken));
+        Assert.Equal(clip, await host.Send("GET", $"/conversations/{chat}/messages/{video.MessageId}/media", 200, member.AccessToken));
+        Assert.Equal(notes, await host.Send("GET", $"/conversations/{chat}/messages/{file.MessageId}/media", 200, member.AccessToken));
+        var page = await host.Get<ChatPageResponse>($"/conversations/{chat}/messages", member.AccessToken);
+        Assert.Equal(new[] { "image", "video", "file", "image" }, page.Messages.Select(item => item.Kind).ToArray());
+        await host.Problem("POST", $"/conversations/{chat}/messages/{image.MessageId}/edit", 400, "invalid_request", member.AccessToken, Json(new SendMessageRequest("подпись")));
+        var reacted = CommunityJson.Parse<ChatMessageResponse>(await host.Send("POST", $"/conversations/{chat}/messages/{image.MessageId}/react", 200, member.AccessToken, Json(new ReactMessageRequest("like"))));
+        Assert.Equal("image", reacted.Kind);
+        Assert.False(reacted.Deleted);
+        await host.Problem("GET", $"/conversations/{chat}/messages/{image.MessageId}/media", 403, "forbidden", outsider.AccessToken);
+        var removed = CommunityJson.Parse<ChatMessageResponse>(await host.Send("POST", $"/conversations/{chat}/messages/{image.MessageId}/delete", 200, member.AccessToken));
+        Assert.True(removed.Deleted);
+        Assert.Equal("image", removed.Kind);
+        await host.Problem("GET", $"/conversations/{chat}/messages/{image.MessageId}/media", 404, "not_found", member.AccessToken);
+    }
 }

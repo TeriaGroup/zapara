@@ -300,11 +300,31 @@ internal static partial class WebEndpoints
             var topic = context.Request.Query.TryGetValue("topic", out var topicRaw) ? topicRaw.ToString() : null;
             return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().ListMessagesAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), before, after, topic, context.RequestAborted));
         });
+        Route(group, "POST", "/conversations/{conversationId}/media", context => CommunityMedia.Post(context, Token(context)));
+        Route(group, "GET", "/conversations/{conversationId}/messages/{messageId}/media", context => CommunityMedia.Get(context, Token(context)));
         Route(group, "POST", "/conversations/{conversationId}/messages", async context =>
         {
             CommunityHttpInput.Query(context);
             var body = await CommunityHttpInput.Body<SendMessageRequest>(context);
             return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().SendMessageAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), body, context.RequestAborted), 201);
+        });
+        Route(group, "POST", "/conversations/{conversationId}/messages/{messageId}/edit", async context =>
+        {
+            CommunityHttpInput.Query(context);
+            var edit = await CommunityHttpInput.Body<SendMessageRequest>(context);
+            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().EditMessageAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), CommunityHttpInput.Id(context.Request.RouteValues["messageId"]), edit, context.RequestAborted));
+        });
+        Route(group, "POST", "/conversations/{conversationId}/messages/{messageId}/delete", async context =>
+        {
+            CommunityHttpInput.Query(context);
+            await CommunityHttpInput.Empty(context);
+            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().DeleteMessageAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), CommunityHttpInput.Id(context.Request.RouteValues["messageId"]), context.RequestAborted));
+        });
+        Route(group, "POST", "/conversations/{conversationId}/messages/{messageId}/react", async context =>
+        {
+            CommunityHttpInput.Query(context);
+            var react = await CommunityHttpInput.Body<ReactMessageRequest>(context);
+            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().ReactMessageAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), CommunityHttpInput.Id(context.Request.RouteValues["messageId"]), react, context.RequestAborted));
         });
         Route(group, "POST", "/conversations/{conversationId}/topic-messages", async context =>
         {

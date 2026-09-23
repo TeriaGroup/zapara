@@ -66,7 +66,16 @@ internal static class MessengerSchema
             CREATE UNIQUE INDEX conversations_direct ON __MSG__.conversations(community_id, direct_key) WHERE kind = 'direct';
             DROP INDEX IF EXISTS __MSG__.chat_messages_conversation;
             CREATE INDEX chat_messages_conversation ON __MSG__.chat_messages(conversation_id, message_no);
+            ALTER TABLE __MSG__.chat_messages ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'text';
+            ALTER TABLE __MSG__.chat_messages ADD COLUMN IF NOT EXISTS deleted boolean NOT NULL DEFAULT false;
+            ALTER TABLE __MSG__.chat_messages ADD COLUMN IF NOT EXISTS reply_to uuid;
             ALTER TABLE __MSG__.chat_messages ADD COLUMN IF NOT EXISTS topic_id uuid;
+            CREATE TABLE IF NOT EXISTS __MSG__.chat_reactions (
+                message_id uuid NOT NULL REFERENCES __MSG__.chat_messages(message_id) ON DELETE CASCADE,
+                user_id uuid NOT NULL REFERENCES __ACCOUNTS__.users(user_id) ON DELETE CASCADE,
+                emoji text NOT NULL,
+                PRIMARY KEY (message_id, user_id)
+            );
             CREATE INDEX IF NOT EXISTS chat_messages_topic ON __MSG__.chat_messages (topic_id, message_no);
             CREATE TABLE IF NOT EXISTS __MSG__.group_topics (
                 topic_id uuid PRIMARY KEY,

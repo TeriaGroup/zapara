@@ -1,9 +1,10 @@
+using System.Text;
 using Zapara.Contracts.Communities;
 using Zapara.Server.Accounts;
 
 namespace Zapara.Server.Communities;
 
-public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, CommunitiesConfiguration configuration)
+public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, CommunitiesConfiguration configuration, IContentArchive? archive = null, IUploadQuota? uploads = null)
 {
     public Task<IReadOnlyList<CommunityResponse>> ListAsync(string bearer, string? groupId = null, CancellationToken ct = default)
         => Run(bearer, db => groupId is null ? db.ListMembershipsAsync() : db.LookupGroupAsync(CommunityValidation.GroupId(groupId)), ct);
@@ -53,18 +54,25 @@ public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, Communi
         => Run(bearer, db => db.CloseBallotAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(ballotId)), ct);
     public Task<BallotBoardResponse> ProposeChangeAsync(string bearer, Guid communityId, BallotChangeRequest request, CancellationToken ct = default)
         => Run(bearer, db => db.ProposeChangeAsync(CommunityValidation.Id(communityId), request ?? throw CommunityServiceException.InvalidRequest()), ct);
-    public Task<HomeworkResponse> PublishHomeworkAsync(string bearer, Guid communityId, HomeworkUpsert request, CancellationToken ct = default)
-        => Run(bearer, db => db.PublishHomeworkAsync(CommunityValidation.Id(communityId), request ?? throw CommunityServiceException.InvalidRequest()), ct);
-    public Task<HomeworkResponse> ShareHomeworkAsync(string bearer, Guid communityId, HomeworkUpsert request, CancellationToken ct = default)
-        => Run(bearer, db => db.ShareHomeworkAsync(CommunityValidation.Id(communityId), request ?? throw CommunityServiceException.InvalidRequest()), ct);
-    public Task<IReadOnlyList<GroupHomeworkCopyResponse>> ListHomeworkCopiesAsync(string bearer, Guid communityId, CancellationToken ct = default)
-        => Run(bearer, db => db.ListHomeworkCopiesAsync(CommunityValidation.Id(communityId)), ct);
-    public Task<HomeworkResponse> UpdateHomeworkAsync(string bearer, Guid communityId, Guid homeworkId, HomeworkUpsert request, CancellationToken ct = default)
-        => Run(bearer, db => db.UpdateHomeworkAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(homeworkId), request ?? throw CommunityServiceException.InvalidRequest()), ct);
-    public Task<IReadOnlyList<HomeworkResponse>> ListHomeworkAsync(string bearer, Guid communityId, CancellationToken ct = default)
-        => Run(bearer, db => db.ListHomeworkAsync(CommunityValidation.Id(communityId)), ct);
-    public Task<HomeworkResponse> GetHomeworkAsync(string bearer, Guid communityId, Guid homeworkId, CancellationToken ct = default)
-        => Run(bearer, db => db.GetHomeworkAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(homeworkId)), ct);
+    public async Task<HomeworkResponse> PublishHomeworkAsync(string bearer, Guid communityId, HomeworkUpsert request, CancellationToken ct = default)
+        => StoreHomework(await Run(bearer, db => db.PublishHomeworkAsync(CommunityValidation.Id(communityId), request ?? throw CommunityServiceException.InvalidRequest()), ct));
+    public async Task<HomeworkResponse> ShareHomeworkAsync(string bearer, Guid communityId, HomeworkUpsert request, CancellationToken ct = default)
+        => StoreHomework(await Run(bearer, db => db.ShareHomeworkAsync(CommunityValidation.Id(communityId), request ?? throw CommunityServiceException.InvalidRequest()), ct));
+    public async Task<IReadOnlyList<GroupHomeworkCopyResponse>> ListHomeworkCopiesAsync(string bearer, Guid communityId, CancellationToken ct = default)
+    {
+        var list = await Run(bearer, db => db.ListHomeworkCopiesAsync(CommunityValidation.Id(communityId)), ct);
+        return list.Select(item =>
+        {
+            var body = ReadText(ContentNames.Homework(item.HomeworkId), item.Body);
+            return body == item.Body ? item : new GroupHomeworkCopyResponse(item.HomeworkId, item.Title, body, item.Revision, item.Completed, item.CompletionRevision);
+        }).ToArray();
+    }
+    public async Task<HomeworkResponse> UpdateHomeworkAsync(string bearer, Guid communityId, Guid homeworkId, HomeworkUpsert request, CancellationToken ct = default)
+        => StoreHomework(await Run(bearer, db => db.UpdateHomeworkAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(homeworkId), request ?? throw CommunityServiceException.InvalidRequest()), ct));
+    public async Task<IReadOnlyList<HomeworkResponse>> ListHomeworkAsync(string bearer, Guid communityId, CancellationToken ct = default)
+        => (await Run(bearer, db => db.ListHomeworkAsync(CommunityValidation.Id(communityId)), ct)).Select(LoadHomework).ToArray();
+    public async Task<HomeworkResponse> GetHomeworkAsync(string bearer, Guid communityId, Guid homeworkId, CancellationToken ct = default)
+        => LoadHomework(await Run(bearer, db => db.GetHomeworkAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(homeworkId)), ct));
     public Task<CompletionResponse> UpsertCompletionAsync(string bearer, Guid communityId, Guid homeworkId, CompletionUpsert request, CancellationToken ct = default)
         => Run(bearer, db => db.UpsertCompletionAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(homeworkId), request ?? throw CommunityServiceException.InvalidRequest()), ct);
     public Task<CompletionResponse> GetCompletionAsync(string bearer, Guid communityId, Guid homeworkId, CancellationToken ct = default)
@@ -91,13 +99,55 @@ public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, Communi
         => Run(bearer, db => db.GroupHomeAsync(CommunityValidation.Id(communityId)), ct);
     public Task<ConversationResponse> OpenDirectAsync(string bearer, OpenDirectRequest request, CancellationToken ct = default)
         => Run(bearer, db => db.OpenDirectAsync(CommunityValidation.Id(request.CommunityId), CommunityValidation.Id(request.UserId)), ct);
-    public Task<ChatPageResponse> ListMessagesAsync(string bearer, Guid conversationId, Guid? before, Guid? after, string? topic = null, CancellationToken ct = default)
-        => Run(bearer, db => db.ListMessagesAsync(CommunityValidation.Id(conversationId),
+    public async Task<ChatPageResponse> ListMessagesAsync(string bearer, Guid conversationId, Guid? before, Guid? after, string? topic = null, CancellationToken ct = default)
+    {
+        var page = await Run(bearer, db => db.ListMessagesAsync(CommunityValidation.Id(conversationId),
             before is null ? null : CommunityValidation.Id(before.Value), after is null ? null : CommunityValidation.Id(after.Value), topic), ct);
-    public Task<ChatMessageResponse> SendMessageAsync(string bearer, Guid conversationId, SendMessageRequest request, CancellationToken ct = default)
-        => Run(bearer, db => db.SendMessageAsync(CommunityValidation.Id(conversationId), request.Body), ct);
-    public Task<ChatMessageResponse> SendTopicMessageAsync(string bearer, Guid conversationId, TopicMessageRequest request, CancellationToken ct = default)
-        => Run(bearer, db => db.SendTopicMessageAsync(CommunityValidation.Id(conversationId), request.Body, request?.TopicId), ct);
+        return new(page.Messages.Select(LoadMessage).ToArray(), page.HasMore);
+    }
+    public async Task<ChatMessageResponse> SendMessageAsync(string bearer, Guid conversationId, SendMessageRequest request, CancellationToken ct = default)
+        => StoreMessage(await Run(bearer, db => db.SendMessageAsync(CommunityValidation.Id(conversationId), request.Body, request.ReplyTo, request.Kind), ct));
+    public async Task<ChatMessageResponse> SendMediaAsync(string bearer, Guid conversationId, string kind, string name, byte[] content, Guid? replyTo, CancellationToken ct = default)
+    {
+        if (kind is not ("image" or "video" or "file")) throw CommunityServiceException.InvalidRequest();
+        if (content is null || content.Length is < 1 or > CommunityMedia.MaxBytes) throw new CommunityServiceException(413, "payload_too_large");
+        var label = MediaName(kind, name);
+        var message = StoreMessage(await Run(bearer, db => db.SendMessageAsync(CommunityValidation.Id(conversationId), label, replyTo, kind), ct));
+        var key = ContentNames.GroupFile(message.MessageId);
+        try
+        {
+            if (uploads is not null) await uploads.Accept(trustedAccounts, bearer, null, key, content, ct);
+            else if (archive is not null) archive.Put(key, content);
+            else throw new CommunityServiceException(503, "storage_unavailable");
+        }
+        catch (Exception)
+        {
+            try { await Run(bearer, db => db.DeleteMessageAsync(message.ConversationId, message.MessageId), ct); }
+            catch (CommunityServiceException) { }
+            Drop(message.MessageId);
+            throw;
+        }
+        return message;
+    }
+    public async Task<byte[]> ReadMediaAsync(string bearer, Guid conversationId, Guid messageId, CancellationToken ct = default)
+    {
+        await Run(bearer, db => db.OpenMediaAsync(CommunityValidation.Id(conversationId), CommunityValidation.Id(messageId)), ct);
+        var stored = archive?.Get(ContentNames.GroupFile(messageId));
+        if (stored is null || stored.Length == 0) throw CommunityServiceException.NotFound();
+        return stored;
+    }
+    public async Task<ChatMessageResponse> EditMessageAsync(string bearer, Guid conversationId, Guid messageId, SendMessageRequest request, CancellationToken ct = default)
+        => StoreMessage(await Run(bearer, db => db.EditMessageAsync(CommunityValidation.Id(conversationId), CommunityValidation.Id(messageId), request.Body), ct));
+    public async Task<ChatMessageResponse> DeleteMessageAsync(string bearer, Guid conversationId, Guid messageId, CancellationToken ct = default)
+    {
+        var message = await Run(bearer, db => db.DeleteMessageAsync(CommunityValidation.Id(conversationId), CommunityValidation.Id(messageId)), ct);
+        if (message.Kind is "image" or "video" or "file") Drop(message.MessageId);
+        return message;
+    }
+    public async Task<ChatMessageResponse> ReactMessageAsync(string bearer, Guid conversationId, Guid messageId, ReactMessageRequest request, CancellationToken ct = default)
+        => await Run(bearer, db => db.ReactMessageAsync(CommunityValidation.Id(conversationId), CommunityValidation.Id(messageId), request.Emoji), ct);
+    public async Task<ChatMessageResponse> SendTopicMessageAsync(string bearer, Guid conversationId, TopicMessageRequest request, CancellationToken ct = default)
+        => StoreMessage(await Run(bearer, db => db.SendTopicMessageAsync(CommunityValidation.Id(conversationId), request.Body, request?.TopicId, request?.ReplyTo), ct));
     public Task<GroupTopicListResponse> TopicsAsync(string bearer, Guid communityId, CancellationToken ct = default)
         => Run(bearer, db => db.TopicsAsync(CommunityValidation.Id(communityId)), ct);
     public Task<GroupTopicListResponse> CreateTopicAsync(string bearer, Guid communityId, GroupTopicRequest request, CancellationToken ct = default)
@@ -108,6 +158,60 @@ public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, Communi
         => Run(bearer, db => db.DeleteTopicAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(topicId)), ct);
     public Task<ConversationResponse> MarkReadAsync(string bearer, Guid conversationId, CancellationToken ct = default)
         => Run(bearer, db => db.MarkReadAsync(CommunityValidation.Id(conversationId)), ct);
+
+    private HomeworkResponse StoreHomework(HomeworkResponse item)
+    {
+        if (archive is null) return item;
+        archive.Put(ContentNames.Homework(item.HomeworkId), Encoding.UTF8.GetBytes(item.Body));
+        return LoadHomework(item);
+    }
+
+    private HomeworkResponse LoadHomework(HomeworkResponse item)
+    {
+        var body = ReadText(ContentNames.Homework(item.HomeworkId), item.Body);
+        return body == item.Body ? item : new HomeworkResponse(item.HomeworkId, item.CommunityId, item.Title, body, item.Revision, item.CreatedAt, item.UpdatedAt);
+    }
+
+    private static string MediaName(string kind, string? name)
+    {
+        var fallback = kind switch { "image" => "Фото", "video" => "Видео", _ => "Документ" };
+        var raw = string.IsNullOrWhiteSpace(name) ? fallback : name.Trim();
+        var slash = Math.Max(raw.LastIndexOf('/'), raw.LastIndexOf('\\'));
+        if (slash >= 0 && slash < raw.Length - 1) raw = raw[(slash + 1)..];
+        if (raw.Length > 80) raw = raw[..80];
+        try { return CommunityValidation.Message(raw); }
+        catch (ArgumentException) { return fallback; }
+    }
+
+    private void Drop(Guid id)
+    {
+        if (archive is null) return;
+        foreach (var key in new[] { ContentNames.GroupMessage(id), ContentNames.GroupFile(id) })
+        {
+            try { archive.Delete(key); }
+            catch (Exception) { }
+        }
+    }
+
+    private ChatMessageResponse StoreMessage(ChatMessageResponse message)
+    {
+        if (archive is null) return message;
+        archive.Put(ContentNames.GroupMessage(message.MessageId), Encoding.UTF8.GetBytes(message.Body));
+        return LoadMessage(message);
+    }
+
+    private ChatMessageResponse LoadMessage(ChatMessageResponse message)
+    {
+        var body = ReadText(ContentNames.GroupMessage(message.MessageId), message.Body);
+        return body == message.Body ? message : new ChatMessageResponse(message.MessageId, message.ConversationId, message.SenderId, message.SenderName, body, message.CreatedAt, message.Kind, message.Deleted, message.ReplyTo);
+    }
+
+    private string ReadText(string key, string fallback)
+    {
+        if (archive is null) return fallback;
+        var stored = archive.Get(key);
+        return stored is null ? fallback : Encoding.UTF8.GetString(stored);
+    }
 
     private Task<T> Run<T>(string bearer, Func<CommunityRepository, Task<T>> operation, CancellationToken ct)
         => trustedAccounts.ExecuteAsync(bearer, async (context, token) =>

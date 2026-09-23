@@ -107,7 +107,7 @@ internal sealed partial class CommunityRepository
         }
         var list = new List<ChatMessageResponse>();
         var sql = $"""
-            SELECT m.message_id, m.conversation_id, m.sender_id, coalesce(u.display_name, u.username), m.body, m.created_at
+            SELECT m.message_id, m.conversation_id, m.sender_id, coalesce(u.display_name, u.username), m.body, m.created_at, m.kind, m.deleted, m.reply_to
             FROM {Msg}.chat_messages m
             JOIN {configuration.Accounts.QuotedSchema}.users u ON u.user_id=m.sender_id
             WHERE m.conversation_id=@p0{topicClause}{comparison}
@@ -129,16 +129,61 @@ internal sealed partial class CommunityRepository
         return new(list, hasMore);
     }
 
-    internal async Task<ChatMessageResponse> SendMessageAsync(Guid conversationId, string body)
+    internal async Task<ChatMessageResponse> SendMessageAsync(Guid conversationId, string body, Guid? replyTo = null, string kind = "text")
     {
-        body = CommunityValidation.Message(body);
+        body = Clean(body);
+        if (kind is not ("text" or "image" or "video" or "file" or "voice" or "circle")) throw CommunityServiceException.InvalidRequest();
         await RequireConversationAsync(conversationId);
+        if (replyTo is Guid parent && await MessageNoAsync(conversationId, parent) is null) throw CommunityServiceException.InvalidRequest();
         var id = Guid.NewGuid();
         await ExecuteAsync($"""
-            INSERT INTO {Msg}.chat_messages(message_id,conversation_id,sender_id,body,created_at)
-            VALUES(@p0,@p1,@p2,@p3,@p4)
-            """, id, conversationId, UserId, body, Now);
-        return new(id, conversationId, UserId, await DisplayNameAsync(UserId), body, Now);
+            INSERT INTO {Msg}.chat_messages(message_id,conversation_id,sender_id,body,created_at,kind,reply_to)
+            VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6)
+            """, id, conversationId, UserId, body, Now, kind, replyTo);
+        return new(id, conversationId, UserId, await DisplayNameAsync(UserId), body, Now, kind, false, replyTo);
+    }
+
+    internal async Task<ChatMessageResponse> EditMessageAsync(Guid conversationId, Guid messageId, string body)
+    {
+        body = Clean(body);
+        await RequireConversationAsync(conversationId);
+        await using (var command = Command($"""
+            UPDATE {Msg}.chat_messages SET body=@p0
+            WHERE message_id=@p1 AND conversation_id=@p2 AND sender_id=@p3 AND deleted=false AND kind='text'
+            """, body, messageId, conversationId, UserId))
+            if (await command.ExecuteNonQueryAsync(ct) != 1) throw CommunityServiceException.InvalidRequest();
+        return await ReadOneAsync(conversationId, messageId);
+    }
+
+    internal async Task<ChatMessageResponse> OpenMediaAsync(Guid conversationId, Guid messageId)
+    {
+        await RequireConversationAsync(conversationId);
+        var message = await ReadOneAsync(conversationId, messageId);
+        if (message.Deleted || message.Kind is not ("image" or "video" or "file")) throw CommunityServiceException.NotFound();
+        return message;
+    }
+
+    internal async Task<ChatMessageResponse> DeleteMessageAsync(Guid conversationId, Guid messageId)
+    {
+        await RequireConversationAsync(conversationId);
+        await using (var command = Command($"""
+            UPDATE {Msg}.chat_messages SET deleted=true
+            WHERE message_id=@p0 AND conversation_id=@p1 AND sender_id=@p2 AND deleted=false
+            """, messageId, conversationId, UserId))
+            if (await command.ExecuteNonQueryAsync(ct) != 1) throw CommunityServiceException.InvalidRequest();
+        return await ReadOneAsync(conversationId, messageId);
+    }
+
+    internal async Task<ChatMessageResponse> ReactMessageAsync(Guid conversationId, Guid messageId, string emoji)
+    {
+        if (emoji is not ("like" or "heart" or "laugh" or "wow" or "sad")) throw CommunityServiceException.InvalidRequest();
+        await RequireConversationAsync(conversationId);
+        if (await MessageNoAsync(conversationId, messageId) is null) throw CommunityServiceException.InvalidRequest();
+        await ExecuteAsync($"""
+            INSERT INTO {Msg}.chat_reactions(message_id,user_id,emoji) VALUES(@p0,@p1,@p2)
+            ON CONFLICT (message_id, user_id) DO UPDATE SET emoji=EXCLUDED.emoji
+            """, messageId, UserId, emoji);
+        return await ReadOneAsync(conversationId, messageId);
     }
 
     internal async Task<ConversationResponse> MarkReadAsync(Guid conversationId)
@@ -301,9 +346,29 @@ internal sealed partial class CommunityRepository
         return (string)(await command.ExecuteScalarAsync(ct))!;
     }
 
+    private async Task<ChatMessageResponse> ReadOneAsync(Guid conversationId, Guid messageId)
+    {
+        await using var command = Command($"""
+            SELECT m.message_id, m.conversation_id, m.sender_id, coalesce(u.display_name, u.username), m.body, m.created_at, m.kind, m.deleted, m.reply_to
+            FROM {Msg}.chat_messages m
+            JOIN {configuration.Accounts.QuotedSchema}.users u ON u.user_id=m.sender_id
+            WHERE m.conversation_id=@p0 AND m.message_id=@p1
+            """, conversationId, messageId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) throw CommunityServiceException.NotFound();
+        return ReadMessage(reader);
+    }
+
+    private static string Clean(string body)
+    {
+        try { return CommunityValidation.Message(body); }
+        catch (ArgumentException) { throw CommunityServiceException.InvalidRequest(); }
+    }
+
     private static ChatMessageResponse ReadMessage(NpgsqlDataReader reader) => new(
         reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetString(3), reader.GetString(4),
-        reader.GetFieldValue<DateTimeOffset>(5).ToUniversalTime());
+        reader.GetFieldValue<DateTimeOffset>(5).ToUniversalTime(), reader.GetString(6), reader.GetBoolean(7),
+        reader.IsDBNull(8) ? null : reader.GetGuid(8));
 
     private static string DirectKey(Guid left, Guid right)
     {

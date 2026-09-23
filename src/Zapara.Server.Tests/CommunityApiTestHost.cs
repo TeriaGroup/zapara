@@ -40,6 +40,7 @@ internal sealed class CommunityApiTestHost : IAsyncDisposable
         builder.Services.AddSingleton<TimeProvider>(clock ?? TimeProvider.System);
         builder.Services.AddAccounts(builder.Configuration);
         builder.Services.AddCommunities(builder.Configuration);
+        builder.Services.AddSingleton<IContentArchive, MemoryContentArchive>();
         var app = builder.Build();
         app.MapAccounts();
         app.MapCommunities();
@@ -66,6 +67,19 @@ internal sealed class CommunityApiTestHost : IAsyncDisposable
         if (store) Assert.True(response.Headers.CacheControl?.NoStore);
         return await response.Content.ReadAsByteArrayAsync(Ct);
     }
+    internal async Task<byte[]> SendMedia(string path, string token, string kind, string name, byte[] body, int status = 201)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/communities" + path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.TryAddWithoutValidation("X-Zapara-Kind", kind);
+        request.Headers.TryAddWithoutValidation("X-Zapara-Name", Uri.EscapeDataString(name));
+        request.Content = new ByteArrayContent(body);
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        using var response = await Client.SendAsync(request, Ct);
+        Assert.Equal(status, (int)response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        return await response.Content.ReadAsByteArrayAsync(Ct);
+    }
     internal async Task<T> Get<T>(string path, string token, int status = 200)
         => CommunityJson.Parse<T>(await Send("GET", path, status, token));
     internal async Task<JsonElement> Problem(string method, string path, int status, string code, string? token = null, byte[]? body = null)
@@ -84,4 +98,12 @@ internal sealed class CommunityApiTestHost : IAsyncDisposable
         await App.StopAsync(CancellationToken.None);
         await App.DisposeAsync();
     }
+}
+
+internal sealed class MemoryContentArchive : IContentArchive
+{
+    private readonly Dictionary<string, byte[]> items = new();
+    public void Put(string key, byte[] bytes) { lock (items) items[key] = bytes.ToArray(); }
+    public byte[]? Get(string key) { lock (items) return items.TryGetValue(key, out var found) ? found.ToArray() : null; }
+    public void Delete(string key) { lock (items) items.Remove(key); }
 }

@@ -82,7 +82,7 @@ internal sealed partial class CommunityRepository
         return await TopicsAsync(communityId);
     }
 
-    internal async Task<ChatMessageResponse> SendTopicMessageAsync(Guid conversationId, string body, Guid? topicId)
+    internal async Task<ChatMessageResponse> SendTopicMessageAsync(Guid conversationId, string body, Guid? topicId, Guid? replyTo = null)
     {
         body = CommunityValidation.Message(body);
         await RequireConversationAsync(conversationId);
@@ -93,12 +93,13 @@ internal sealed partial class CommunityRepository
             if (!await ExistsAsync($"SELECT topic_id FROM {Msg}.group_topics WHERE topic_id=@p0 AND community_id=@p1", topicId, info.CommunityId))
                 throw CommunityServiceException.NotFound();
         }
+        if (replyTo is Guid parent && await MessageNoAsync(conversationId, parent) is null) throw CommunityServiceException.InvalidRequest();
         var id = Guid.NewGuid();
         await ExecuteAsync($"""
-            INSERT INTO {Msg}.chat_messages(message_id,conversation_id,sender_id,body,created_at,topic_id)
-            VALUES(@p0,@p1,@p2,@p3,@p4,@p5)
-            """, id, conversationId, UserId, body, Now, topicId);
-        return new(id, conversationId, UserId, await DisplayNameAsync(UserId), body, Now);
+            INSERT INTO {Msg}.chat_messages(message_id,conversation_id,sender_id,body,created_at,topic_id,reply_to)
+            VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6)
+            """, id, conversationId, UserId, body, Now, topicId, replyTo);
+        return new(id, conversationId, UserId, await DisplayNameAsync(UserId), body, Now, replyTo: replyTo);
     }
 
     private async Task<GroupTopicResponse> DescribeTopicAsync(Guid communityId, Guid conversationId, Guid? topicId, string title, string icon, Guid? author, bool canDelete)
