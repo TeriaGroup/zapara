@@ -78,6 +78,20 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     public ObservableCollection<DeviceResponse> Devices { get; } = [];
     public ObservableCollection<ExternalIdentityResponse> Identities { get; } = [];
     public bool IsGuest => snapshot?.Profile.IsGuest != false;
+
+    public async Task<SupportThreadResponse[]?> LoadSupportAsync(CancellationToken ct)
+    {
+        if (service is null || IsGuest) return null;
+        return await service.SupportAsync(ct);
+    }
+
+    public async Task<SupportThreadResponse?> SendSupportAsync(Guid? threadId, string subject, string body, CancellationToken ct)
+    {
+        if (service is null || IsGuest) return null;
+        return threadId is Guid id
+            ? await service.ContinueSupportAsync(id, body, ct)
+            : await service.OpenSupportAsync(subject, body, ct);
+    }
     public bool IsAccount => !IsGuest;
     public bool CanAct => Ready && !Busy && !disposed && service is not null && snapshot?.Phase == ProfilePhase.Idle;
     public bool NeedsRecovery => snapshot?.Phase == ProfilePhase.RecoveryRequired;

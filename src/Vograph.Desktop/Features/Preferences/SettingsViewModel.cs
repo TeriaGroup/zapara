@@ -4,9 +4,12 @@ using System.Text;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using System.Collections.ObjectModel;
 using Vograph.Core.Models;
 using Vograph.Core.Services;
+using Vograph.Core.Services.Accounts;
 using Vograph.Desktop.Services;
+using Zapara.Client.Domain;
 using Vograph.Desktop.Shell;
 using Vograph.Desktop.ViewModels;
 
@@ -79,12 +82,56 @@ public sealed partial class SettingsViewModel : ViewModelBase
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
         await LoadAsync();
+        await LoadReportAsync();
         await Updates.LoadAsync();
         if (App.AllowNetwork && Updates.AutoUpdate && !Updates.CheckedThisSession && !Updates.IsChecking) _ = Updates.CheckAsync();
     }
 
     public string Title => T("navSettings");
     public Features.Account.AccountPanelViewModel AccountPanel => App.Shared.AccountPanel;
+    public ObservableCollection<SupportNote> ReportMessages { get; } = [];
+    [ObservableProperty] private string reportSubject = "";
+    [ObservableProperty] private string reportBody = "";
+    [ObservableProperty] private string reportNote = "";
+    private Guid? reportThreadId;
+
+    public async Task LoadReportAsync()
+    {
+        if (AccountPanel.IsGuest) return;
+        try
+        {
+            var list = await AccountPanel.LoadSupportAsync(CancellationToken.None);
+            var latest = list?.LastOrDefault();
+            if (latest is null) return;
+            reportThreadId = latest.Id;
+            ReportMessages.Clear();
+            foreach (var line in latest.Messages) ReportMessages.Add(new(line.Author, line.Body));
+        }
+        catch (AccountClientException) { ReportNote = "Сообщение не отправилось"; }
+    }
+
+    [RelayCommand]
+    private async Task SendReport()
+    {
+        var (_, error) = SupportChat.Submit(!AccountPanel.IsGuest, ReportMessages.ToArray(), ReportSubject, ReportBody);
+        ReportNote = error ?? "";
+        if (error is not null) return;
+        try
+        {
+            var saved = await AccountPanel.SendSupportAsync(reportThreadId, ReportSubject.Trim(), ReportBody.Trim(), CancellationToken.None);
+            if (saved is null)
+            {
+                ReportNote = "Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ.";
+                return;
+            }
+            reportThreadId = saved.Id;
+            ReportMessages.Clear();
+            foreach (var line in saved.Messages) ReportMessages.Add(new(line.Author, line.Body));
+            ReportSubject = "";
+            ReportBody = "";
+        }
+        catch (AccountClientException) { ReportNote = "Сообщение не отправилось"; }
+    }
     public bool LegacyTransferAvailable => App.Profile.IsGuest;
 
     /// <summary>The shell's single update state: the card here and the sidebar item show the same check.</summary>

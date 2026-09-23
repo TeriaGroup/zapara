@@ -6,6 +6,7 @@ using Vograph.Core.Services.Accounts;
 using Vograph.Core.Services.Communities;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.ViewModels;
+using Zapara.Client.Domain;
 using Zapara.Contracts.Communities;
 
 namespace Vograph.Desktop.Features.Groups;
@@ -46,6 +47,12 @@ public sealed partial class GroupViewModel : ViewModelBase
     [ObservableProperty] private string homeTitle = "";
     [ObservableProperty] private string chatTitle = "";
     [ObservableProperty] private string draft = "";
+    [ObservableProperty] private string holdCaption = "";
+    private Guid? replyTo;
+    private Guid? editing;
+    private string? pendingKind;
+    private string? pendingName;
+    private byte[]? pendingBytes;
     public bool ShowList => !NeedAccount && !HasHome && !IsEmpty;
     public bool HasDirects => Directs.Count > 0;
 
@@ -235,22 +242,66 @@ public sealed partial class GroupViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanSend))]
     private async Task Send()
     {
-        if (conversationId is not Guid id || Api is null || Access is null || string.IsNullOrWhiteSpace(Draft)) return;
+        var api = Api;
+        var file = pendingBytes;
+        var fileKind = pendingKind;
+        if (conversationId is not Guid id || api is null || Access is null || (string.IsNullOrWhiteSpace(Draft) && file is null)) return;
         using var operation = App.Work.Enter();
         Busy(true);
         try
         {
             var token = await Access(operation.Token);
             if (string.IsNullOrEmpty(token)) { ShowAccount(); return; }
-            var message = await Api.SendMessageAsync(token, id, new(Draft.Trim()), operation.Token);
+            ChatMessageResponse message;
+            if (file is { Length: > 0 } && fileKind is "image" or "video" or "file")
+            {
+                pendingBytes = null;
+                pendingKind = null;
+                var name = pendingName ?? fileKind;
+                pendingName = null;
+                message = await GroupMedia.Place(api, token, id, fileKind, name, file, replyTo, operation.Token);
+            }
+            else if (editing is Guid editId)
+                message = await api.EditMessageAsync(token, id, editId, new(Draft.Trim()), operation.Token);
+            else
+                message = await api.SendMessageAsync(token, id, new(Draft.Trim(), replyTo), operation.Token);
             if (!operation.IsCurrent) return;
             Draft = "";
-            if (Messages.All(item => item.Id != message.MessageId)) Messages.Add(Row(message));
+            replyTo = null;
+            editing = null;
+            HoldCaption = "";
+            var row = Row(message);
+            var previous = Messages.FirstOrDefault(item => item.Id == message.MessageId);
+            if (previous is not null) Messages.Remove(previous);
+            Messages.Add(row);
             Status = "";
         }
         catch (CommunityClientException) when (operation.IsCurrent) { Status = T("groupFailed"); }
         catch (AccountClientException ex) when (operation.IsCurrent) { FailSession(ex); }
         finally { if (operation.IsCurrent) Busy(false); }
+    }
+
+    [RelayCommand]
+    private async Task Attach(string? kind)
+    {
+        if (kind is not ("image" or "video" or "file") || editing is not null || conversationId is null || Api is null || Access is null) return;
+        var path = await App.FileDialogs.OpenChatMediaAsync(kind);
+        if (string.IsNullOrWhiteSpace(path)) return;
+        var info = new FileInfo(path);
+        if (!info.Exists || info.Length < 1)
+        {
+            Status = T("groupFailed");
+            return;
+        }
+        if (info.Length > GroupMedia.MaxBytes)
+        {
+            Status = "Файл слишком большой.";
+            return;
+        }
+        pendingKind = kind;
+        pendingName = info.Name;
+        pendingBytes = await File.ReadAllBytesAsync(path);
+        await Send();
     }
 
     private bool CanSend() => !IsBusy && !string.IsNullOrWhiteSpace(Draft) && conversationId is not null;
@@ -299,9 +350,49 @@ public sealed partial class GroupViewModel : ViewModelBase
         finally { Interlocked.Exchange(ref polling, 0); }
     }
 
+    private async void ApplyHold(GroupMessageRow row, string action)
+    {
+        if (conversationId is not Guid id || Api is null || Access is null) return;
+        if (!MessengerHold.Actions(row.Kind, row.Mine, row.Deleted, true).Contains(action)) return;
+        if (action == "reply")
+        {
+            replyTo = row.Id;
+            editing = null;
+            Draft = "";
+            HoldCaption = "Ответ";
+            return;
+        }
+        if (action == "edit")
+        {
+            editing = row.Id;
+            replyTo = null;
+            Draft = row.Body;
+            HoldCaption = "Редактирование";
+            return;
+        }
+        try
+        {
+            using var operation = App.Work.Enter();
+            var token = await Access(operation.Token);
+            if (string.IsNullOrEmpty(token) || !operation.IsCurrent) return;
+            var message = action == "delete"
+                ? await Api.DeleteMessageAsync(token, id, row.Id, operation.Token)
+                : await Api.ReactMessageAsync(token, id, row.Id, "like", operation.Token);
+            if (!operation.IsCurrent) return;
+            var fresh = Row(message);
+            var index = Messages.IndexOf(row);
+            if (index >= 0) Messages[index] = fresh;
+            Status = action == "reaction" ? "Реакция" : "";
+        }
+        catch (CommunityClientException) { Status = T("groupFailed"); }
+        catch (AccountClientException ex) { FailSession(ex); }
+    }
+
     private GroupMessageRow Row(ChatMessageResponse message)
     {
-        return new(message.MessageId, message.SenderName, message.Body, message.CreatedAt.ToLocalTime().ToString("dd.MM HH:mm"), message.SenderId == me);
+        GroupMessageRow row = null!;
+        row = new(message.MessageId, message.SenderName, message.Body, message.CreatedAt.ToLocalTime().ToString("dd.MM HH:mm"), message.SenderId == me, message.Kind, message.Deleted, action => ApplyHold(row, action));
+        return row;
     }
 
     private void FailSession(AccountClientException ex)
@@ -349,11 +440,22 @@ public sealed class GroupPersonRow(string name, string detail, string role, stri
     public IRelayCommand? OpenCommand { get; } = open;
 }
 
-public sealed class GroupMessageRow(Guid id, string author, string body, string when, bool mine)
+public sealed class GroupMessageRow(Guid id, string author, string body, string when, bool mine, string kind = "text", bool deleted = false, Action<string>? apply = null)
 {
     public Guid Id { get; } = id;
     public string Author { get; } = author;
     public string Body { get; } = body;
+    public string Display { get; } = deleted ? "Сообщение удалено" : kind switch
+    {
+        "image" => "Фото",
+        "video" or "circle" => "Видео",
+        "voice" => "Голосовое",
+        "file" => string.IsNullOrWhiteSpace(body) ? "Документ" : body,
+        _ => body
+    };
     public string When { get; } = when;
     public bool Mine { get; } = mine;
+    public string Kind { get; } = kind;
+    public bool Deleted { get; } = deleted;
+    public void Apply(string action) => apply?.Invoke(action);
 }

@@ -33,6 +33,12 @@ public sealed class AccountUiService(AccountHttpClient client, IAccountSessionVa
             && profiles.Snapshot.Identity == expected ? entry.Session.User : null;
     }
 
+    public Task<SupportThreadResponse[]> SupportAsync(CancellationToken ct)
+        => RunAsync((s, token) => client.ListSupportAsync(s.AccessToken, token), ct);
+    public Task<SupportThreadResponse> OpenSupportAsync(string subject, string body, CancellationToken ct)
+        => RunAsync((s, token) => client.OpenSupportAsync(s.AccessToken, subject, body, token), ct);
+    public Task<SupportThreadResponse> ContinueSupportAsync(Guid id, string body, CancellationToken ct)
+        => RunAsync((s, token) => client.ContinueSupportAsync(s.AccessToken, id, body, token), ct);
     public Task<MeResponse> MeAsync(CancellationToken ct) => RunAsync((s, token) => client.GetMeAsync(s.AccessToken, token), ct);
     public Task<UserResponse> SaveAsync(string? name, CancellationToken ct)
         => RunAsync((s, token) => client.UpdateProfileAsync(s.AccessToken, new(name), token), ct);

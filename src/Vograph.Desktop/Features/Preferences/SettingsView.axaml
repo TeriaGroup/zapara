@@ -4,6 +4,7 @@
              xmlns:loc="using:Vograph.Desktop.Services"
              xmlns:st="using:Vograph.Desktop.Features.Preferences"
              xmlns:account="using:Vograph.Desktop.Features.Account"
+             xmlns:domain="using:Zapara.Client.Domain"
              x:Class="Vograph.Desktop.Features.Preferences.SettingsView"
              x:DataType="st:SettingsViewModel">
   <UserControl.Styles>
@@ -16,6 +17,23 @@
     <StackPanel Margin="32,26" Spacing="14" MaxWidth="720" HorizontalAlignment="Left">
       <TextBlock Classes="display" Text="{Binding Title}" />
       <account:AccountPanelView DataContext="{Binding AccountPanel}" />
+      <Border Classes="card">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="micro" Text="Поддержка" />
+          <TextBlock TextWrapping="Wrap" Text="Сообщить о баге или ошибке. Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ." />
+          <TextBox Text="{Binding ReportSubject}" PlaceholderText="Тема" MinHeight="48" AutomationProperties.AutomationId="Settings.ReportSubject" />
+          <TextBox Text="{Binding ReportBody}" PlaceholderText="Что случилось" AcceptsReturn="True" MinHeight="96" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings.ReportBody" />
+          <Button Content="Сообщить о баге" HorizontalAlignment="Left" MinHeight="48" Command="{Binding SendReportCommand}" AutomationProperties.AutomationId="Settings.Report" />
+          <TextBlock Text="{Binding ReportNote}" TextWrapping="Wrap" />
+          <ItemsControl ItemsSource="{Binding ReportMessages}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="domain:SupportNote">
+                <TextBlock Text="{Binding Body}" TextWrapping="Wrap" Margin="0,4" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
 
       <!-- Appearance -->
       <Border Classes="card">

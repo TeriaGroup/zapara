@@ -9,6 +9,7 @@ public interface IFileDialogs
     Task<string?> SaveJsonAsync(string suggestedName);
     Task<string?> OpenJsonAsync();
     Task<string?> OpenHomeworkAsync(bool photo);
+    Task<string?> OpenChatMediaAsync(string kind);
 }
 
 /// <summary>Default slot before App installs the real pickers: every dialog reads as "cancelled".</summary>
@@ -17,6 +18,7 @@ public sealed class NullFileDialogs : IFileDialogs
     public Task<string?> SaveJsonAsync(string suggestedName) => Task.FromResult<string?>(null);
     public Task<string?> OpenJsonAsync() => Task.FromResult<string?>(null);
     public Task<string?> OpenHomeworkAsync(bool photo) => Task.FromResult<string?>(null);
+    public Task<string?> OpenChatMediaAsync(string kind) => Task.FromResult<string?>(null);
 }
 
 public sealed class AvaloniaFileDialogs : IFileDialogs
@@ -53,6 +55,19 @@ public sealed class AvaloniaFileDialogs : IFileDialogs
             ? new FilePickerFileType("image") { Patterns = new[] { "*.jpg", "*.jpeg", "*.png", "*.webp", "*.gif" } }
             : new FilePickerFileType("document") { Patterns = new[] { "*.pdf", "*.txt", "*.csv", "*.rtf", "*.doc", "*.docx", "*.xls", "*.xlsx", "*.ppt", "*.pptx", "*.odt", "*.ods", "*.odp", "*.zip" } };
         var files = await tl.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { AllowMultiple = false, FileTypeFilter = new[] { kind } });
+        return files.Count == 0 ? null : files[0].TryGetLocalPath();
+    }
+
+    public async Task<string?> OpenChatMediaAsync(string kind)
+    {
+        if (_topLevel() is not { } tl) return null;
+        var filter = kind switch
+        {
+            "image" => new FilePickerFileType("image") { Patterns = new[] { "*.jpg", "*.jpeg", "*.png", "*.webp", "*.gif", "*.bmp" } },
+            "video" => new FilePickerFileType("video") { Patterns = new[] { "*.mp4", "*.webm", "*.mov" } },
+            _ => new FilePickerFileType("document") { Patterns = new[] { "*.pdf", "*.txt", "*.csv", "*.rtf", "*.doc", "*.docx", "*.xls", "*.xlsx", "*.ppt", "*.pptx", "*.odt", "*.ods", "*.odp", "*.zip" } }
+        };
+        var files = await tl.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { AllowMultiple = false, FileTypeFilter = new[] { filter } });
         return files.Count == 0 ? null : files[0].TryGetLocalPath();
     }
 }

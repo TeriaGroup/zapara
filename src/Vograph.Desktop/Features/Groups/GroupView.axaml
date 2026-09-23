@@ -132,12 +132,19 @@
             </Grid>
           </Border>
           <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10">
+            <StackPanel Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Classes="ghost" Content="Фото" Command="{Binding AttachCommand}" CommandParameter="image" MinHeight="48" AutomationProperties.AutomationId="Group.Photo" />
+              <Button Classes="ghost" Content="Видео" Command="{Binding AttachCommand}" CommandParameter="video" MinHeight="48" AutomationProperties.AutomationId="Group.Video" />
+              <Button Classes="ghost" Content="Документ" Command="{Binding AttachCommand}" CommandParameter="file" MinHeight="48" AutomationProperties.AutomationId="Group.File" />
+            </StackPanel>
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
               <TextBox Text="{Binding Draft}" PlaceholderText="{loc:T groupMessage}" MaxLength="2000" MinWidth="0"
                        TextWrapping="Wrap" VerticalAlignment="Center" />
               <Button Grid.Column="1" Classes="primary" Content="{loc:T groupSend}" Command="{Binding SendCommand}"
-                      VerticalAlignment="Center" AutomationProperties.AutomationId="Group.Send" />
+                      VerticalAlignment="Center" MinHeight="48" AutomationProperties.AutomationId="Group.Send" />
             </Grid>
+            </StackPanel>
           </Border>
           <ScrollViewer HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="12,10,12,8">
@@ -146,16 +153,16 @@
               <ItemsControl ItemsSource="{Binding Messages}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="g:GroupMessageRow">
-                    <Border Background="{DynamicResource Brush.Chip}" CornerRadius="10" Padding="12,8" Margin="0,0,0,8" MaxWidth="440"
+                    <g:HoldBox Background="{DynamicResource Brush.Chip}" CornerRadius="10" Padding="12,8" Margin="0,0,0,8" MaxWidth="440"
                             HorizontalAlignment="{Binding Mine, Converter={x:Static loc:Converters.ChatAlign}}">
                       <StackPanel Spacing="2">
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                           <TextBlock Classes="caption" Text="{Binding Author}" TextTrimming="CharacterEllipsis" IsVisible="{Binding !Mine}" />
                           <TextBlock Grid.Column="1" Classes="muted caption" Text="{Binding When}" />
                         </Grid>
-                        <TextBlock Text="{Binding Body}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
                       </StackPanel>
-                    </Border>
+                    </g:HoldBox>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>

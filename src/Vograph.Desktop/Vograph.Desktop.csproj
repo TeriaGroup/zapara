@@ -24,6 +24,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Vograph.Core\Vograph.Core.csproj" />
+    <Compile Include="..\Zapara.Client.Domain\MessengerHold.cs" Link="MessengerHold.cs" />
+    <Compile Include="..\Zapara.Client.Domain\SupportChat.cs" Link="SupportChat.cs" />
   </ItemGroup>
 
   <!-- ShellViewModel is sealed, so its event raisers are internal rather than protected (CS0628);
