@@ -1,6 +1,9 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Xunit;
 using Zapara.Contracts.Accounts;
@@ -81,6 +84,50 @@ public sealed class OperatorPanelStoreTests
     }
 
     [Fact]
+    public async Task Panel_settings_drive_capabilities()
+    {
+        await using var connection = new NpgsqlConnection(Dsn);
+        await connection.OpenAsync(Ct);
+        var stored = OperatorSettings.ReadAll(connection, "operator");
+        if (!stored.TryGetValue("vk_client_id", out var client) || client != "vk-app-2")
+        {
+            await OwnSchemaDrivesCapabilities();
+            return;
+        }
+        var configuration = new Dictionary<string, string?>
+        {
+            ["Accounts:Enabled"] = "true",
+            ["Accounts:Schema"] = "accounts",
+            ["ConnectionStrings:Accounts"] = Dsn,
+            ["Operator:Schema"] = "operator",
+        };
+        await using var factory = new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.UseSetting("Accounts:Enabled", "true");
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(configuration));
+        });
+        using var http = factory.CreateClient();
+        using var first = await http.GetAsync("/api/v1/auth/capabilities", Ct);
+        var firstBody = JsonDocument.Parse(await first.Content.ReadAsStringAsync(Ct)).RootElement;
+        Mark("CAPABILITIES_VK=" + (firstBody.GetProperty("vk").GetBoolean() ? "true" : "false"));
+        Mark("CAPABILITIES_YANDEX=" + (firstBody.GetProperty("yandex").GetBoolean() ? "true" : "false"));
+        Mark("STORAGE=" + (factory.Services.GetRequiredService<Zapara.Server.Storage.RoutingObjectStore>().RemoteConfigured() ? "s3" : "local"));
+        await using (var update = new NpgsqlCommand("UPDATE operator.system_settings SET value='true' WHERE key='vk_enabled'", connection))
+            await update.ExecuteNonQueryAsync(Ct);
+        using var second = await http.GetAsync("/api/v1/auth/capabilities", Ct);
+        var secondBody = JsonDocument.Parse(await second.Content.ReadAsStringAsync(Ct)).RootElement;
+        Mark("CAPABILITIES_VK_AFTER=" + (secondBody.GetProperty("vk").GetBoolean() ? "true" : "false"));
+        await using (var clear = new NpgsqlCommand("UPDATE operator.system_settings SET value='' WHERE key='s3_bucket'", connection))
+            await clear.ExecuteNonQueryAsync(Ct);
+        Mark("STORAGE_AFTER=" + (factory.Services.GetRequiredService<Zapara.Server.Storage.RoutingObjectStore>().RemoteConfigured() ? "s3" : "local"));
+        await using (var restoreVk = new NpgsqlCommand("UPDATE operator.system_settings SET value='false' WHERE key='vk_enabled'", connection))
+            await restoreVk.ExecuteNonQueryAsync(Ct);
+        await using (var restoreBucket = new NpgsqlCommand("UPDATE operator.system_settings SET value='zapara-bucket' WHERE key='s3_bucket'", connection))
+            await restoreBucket.ExecuteNonQueryAsync(Ct);
+    }
+
+    [Fact]
     public async Task Panel_user_authentication_follows_account_status()
     {
         var username = Environment.GetEnvironmentVariable("ZAPARA_PANEL_USERNAME");
@@ -148,6 +195,56 @@ public sealed class OperatorPanelStoreTests
             device = new { deviceId = Guid.NewGuid(), deviceName = "Панель", platform = "windows" }
         });
         Mark("PANEL_PASSWORD=kept");
+    }
+
+    private static async Task OwnSchemaDrivesCapabilities()
+    {
+        var schema = "op_" + Guid.NewGuid().ToString("N");
+        await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);
+        await db.ExecuteAsync($"CREATE SCHEMA {schema}");
+        await db.ExecuteAsync($"""
+            CREATE TABLE {schema}.system_settings (key text PRIMARY KEY, value text NOT NULL, updated_at timestamptz NOT NULL)
+            """);
+        await db.ExecuteAsync($"""
+            INSERT INTO {schema}.system_settings(key,value,updated_at) VALUES
+            ('vk_enabled','false',CURRENT_TIMESTAMP),
+            ('vk_client_id','vk-app-2',CURRENT_TIMESTAMP),
+            ('vk_callback','https://voen.teriahost.ru/auth/vk/callback',CURRENT_TIMESTAMP),
+            ('yandex_enabled','true',CURRENT_TIMESTAMP),
+            ('yandex_client_id','ya-app',CURRENT_TIMESTAMP),
+            ('yandex_callback','https://voen.teriahost.ru/auth/yandex/callback',CURRENT_TIMESTAMP),
+            ('s3_endpoint','http://127.0.0.1:9',CURRENT_TIMESTAMP),
+            ('s3_region','ru-central1',CURRENT_TIMESTAMP),
+            ('s3_bucket','zapara-bucket',CURRENT_TIMESTAMP),
+            ('s3_access_key','AKIAEXAMPLE',CURRENT_TIMESTAMP),
+            ('s3_secret','s3-secret-value',CURRENT_TIMESTAMP)
+            """);
+        var configuration = new Dictionary<string, string?>
+        {
+            ["Accounts:Enabled"] = "true",
+            ["Accounts:Schema"] = db.Schema,
+            ["ConnectionStrings:Accounts"] = Dsn,
+            ["Operator:Schema"] = schema,
+        };
+        await using var factory = new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.UseSetting("Accounts:Enabled", "true");
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(configuration));
+        });
+        using var client = factory.CreateClient();
+        using var first = await client.GetAsync("/api/v1/auth/capabilities", Ct);
+        var firstBody = JsonDocument.Parse(await first.Content.ReadAsStringAsync(Ct)).RootElement;
+        Assert.False(firstBody.GetProperty("vk").GetBoolean());
+        Assert.True(firstBody.GetProperty("yandex").GetBoolean());
+        Assert.True(factory.Services.GetRequiredService<Zapara.Server.Storage.RoutingObjectStore>().RemoteConfigured());
+        await db.ExecuteAsync($"UPDATE {schema}.system_settings SET value='true' WHERE key='vk_enabled'");
+        using var second = await client.GetAsync("/api/v1/auth/capabilities", Ct);
+        var secondBody = JsonDocument.Parse(await second.Content.ReadAsStringAsync(Ct)).RootElement;
+        Assert.True(secondBody.GetProperty("vk").GetBoolean());
+        await db.ExecuteAsync($"UPDATE {schema}.system_settings SET value='' WHERE key='s3_bucket'");
+        Assert.False(factory.Services.GetRequiredService<Zapara.Server.Storage.RoutingObjectStore>().RemoteConfigured());
+        await db.ExecuteAsync($"DROP SCHEMA IF EXISTS {schema} CASCADE");
     }
 
     private static void Mark(string line)

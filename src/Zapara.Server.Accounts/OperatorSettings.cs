@@ -32,4 +32,23 @@ public static class OperatorSettings
         enabled = value is string text && bool.TryParse(text, out var parsed) && parsed;
         return true;
     }
+
+    public static IReadOnlyDictionary<string, string> ReadAll(NpgsqlConnection connection, string schema)
+    {
+        var found = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (!SchemaName.IsMatch(schema)) return found;
+        var openedHere = connection.State != ConnectionState.Open;
+        if (openedHere) connection.Open();
+        using var probe = new NpgsqlCommand("SELECT to_regclass(@name)::text", connection);
+        probe.Parameters.AddWithValue("name", schema + ".system_settings");
+        if (probe.ExecuteScalar() is not string) return found;
+        using var command = new NpgsqlCommand($"SELECT key, value FROM {schema}.system_settings", connection);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (reader.GetString(0) is { Length: > 0 } key && reader.GetValue(1) is string value)
+                found[key] = value;
+        }
+        return found;
+    }
 }

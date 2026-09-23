@@ -37,7 +37,12 @@ public class Program
         builder.Services.AddExternalAuth(builder.Configuration);
         builder.Services.AddSync(builder.Configuration);
         builder.Services.AddCommunities(builder.Configuration);
+        builder.Services.AddSingleton<Zapara.Server.Storage.RoutingObjectStore>();
+        builder.Services.AddSingleton<Zapara.Server.Social.IObjectStore>(provider => provider.GetRequiredService<Zapara.Server.Storage.RoutingObjectStore>());
+        builder.Services.AddSingleton<Zapara.Server.Accounts.IContentArchive>(provider => provider.GetRequiredService<Zapara.Server.Storage.RoutingObjectStore>());
         builder.Services.AddSocial(builder.Configuration);
+        if (Zapara.Server.Accounts.AccountsConfiguration.IsEnabled(builder.Configuration))
+            builder.Services.AddSingleton<Zapara.Server.Operator.SupportStore>();
         builder.Services.AddAdmin(builder.Configuration);
         builder.Services.AddWebClient(builder.Configuration);
         builder.Services.AddPublicCatalogs();
@@ -76,6 +81,7 @@ public class Program
         SocialHttp.MapNative(app);
         app.MapAdmin();
         app.MapWebClient();
+        Zapara.Server.Operator.SupportEndpoints.MapSupport(app);
         app.MapPublicCatalogs();
         app.MapTimetableEndpoints();
         app.MapWebShell();

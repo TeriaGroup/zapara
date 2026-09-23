@@ -14,7 +14,10 @@ public static class SocialRegistration
             try { return SocialConfiguration.Create(provider.GetRequiredService<AccountsConfiguration>(), provider.GetRequiredService<IConfiguration>()); }
             catch (ArgumentException) { throw new AccountServiceException(AccountFailure.DbUnavailable); }
         });
-        services.AddSingleton(provider => new MediaStore(provider.GetRequiredService<SocialConfiguration>().MediaRoot));
+        services.AddSingleton(provider => new MediaStore(provider.GetRequiredService<SocialConfiguration>().MediaRoot, provider.GetService<IObjectStore>()));
+        services.AddSingleton<QuotaLedger>();
+        services.AddSingleton(provider => new StudentUpload(provider.GetRequiredService<IObjectStore>(), provider.GetRequiredService<QuotaLedger>()));
+        services.AddSingleton<IUploadQuota>(provider => provider.GetRequiredService<StudentUpload>());
         services.AddSingleton<IAccountUnitOfWork>(provider => provider.GetRequiredService<AccountService>());
         services.AddSingleton<SocialService>();
         services.AddHostedService<SocialSchemaService>();

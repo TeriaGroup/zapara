@@ -1,3 +1,4 @@
+using System.Text;
 using Zapara.Contracts.Social;
 using Zapara.Server.Accounts;
 
@@ -11,7 +12,7 @@ public sealed class SocialDownload(Stream stream, string name, string type, bool
     public bool Image { get; } = image;
 }
 
-public sealed class SocialService(IAccountUnitOfWork trustedAccounts, SocialConfiguration configuration, MediaStore media)
+public sealed class SocialService(IAccountUnitOfWork trustedAccounts, SocialConfiguration configuration, MediaStore media, QuotaLedger ledger, IObjectStore objects, StudentUpload uploads)
 {
     public Task<SocialHomeResponse> HomeAsync(string token, CancellationToken ct = default)
         => Run(token, db => db.HomeAsync(), ct);
@@ -25,11 +26,17 @@ public sealed class SocialService(IAccountUnitOfWork trustedAccounts, SocialConf
     public Task<SocialHomeResponse> DeclineAsync(string token, Guid friendshipId, CancellationToken ct = default)
         => Run(token, db => db.DeclineAsync(friendshipId), ct);
 
-    public Task<SocialPageResponse> MessagesAsync(string token, Guid conversationId, Guid? before, CancellationToken ct = default)
-        => Run(token, db => db.MessagesAsync(conversationId, before), ct);
+    public async Task<SocialPageResponse> MessagesAsync(string token, Guid conversationId, Guid? before, CancellationToken ct = default)
+    {
+        var page = await Run(token, db => db.MessagesAsync(conversationId, before), ct);
+        return new(page.Messages.Select(ReadText).ToArray(), page.HasMore);
+    }
 
-    public Task<SocialMessageResponse> SendTextAsync(string token, Guid conversationId, string body, Guid? replyTo = null, CancellationToken ct = default)
-        => Run(token, db => db.SendTextAsync(conversationId, body, replyTo), ct);
+    public async Task<SocialMessageResponse> SendTextAsync(string token, Guid conversationId, string body, Guid? replyTo = null, CancellationToken ct = default)
+    {
+        var message = await Run(token, db => db.SendTextAsync(conversationId, body, replyTo), ct);
+        return WriteText(message);
+    }
 
     public Task<SocialMessageResponse> SendCardAsync(string token, Guid conversationId, string body, Guid? replyTo = null, CancellationToken ct = default)
         => Run(token, db => db.SendCardAsync(conversationId, body, replyTo), ct);
@@ -37,11 +44,25 @@ public sealed class SocialService(IAccountUnitOfWork trustedAccounts, SocialConf
     public Task<SocialMessageResponse> SendStickerAsync(string token, Guid conversationId, string sticker, Guid? replyTo = null, CancellationToken ct = default)
         => Run(token, db => db.SendStickerAsync(conversationId, sticker, replyTo), ct);
 
-    public Task<SocialMessageResponse> EditAsync(string token, Guid conversationId, Guid messageId, string body, CancellationToken ct = default)
-        => Run(token, db => db.EditAsync(conversationId, messageId, body), ct);
+    public async Task<SocialMessageResponse> EditAsync(string token, Guid conversationId, Guid messageId, string body, CancellationToken ct = default)
+    {
+        var message = await Run(token, db => db.EditAsync(conversationId, messageId, body), ct);
+        return WriteText(message);
+    }
 
-    public Task<SocialMessageResponse> DeleteAsync(string token, Guid conversationId, Guid messageId, CancellationToken ct = default)
-        => Run(token, db => db.DeleteAsync(conversationId, messageId), ct);
+    public async Task<SocialMessageResponse> DeleteAsync(string token, Guid conversationId, Guid messageId, CancellationToken ct = default)
+    {
+        var names = await Run(token, db => db.AttachmentNamesAsync(conversationId, messageId), ct);
+        var message = await Run(token, db => db.DeleteAsync(conversationId, messageId), ct);
+        foreach (var name in names)
+        {
+            try { media.Delete(name); }
+            catch (SocialException) { /* A name the store rejects is already absent. */ }
+        }
+        try { objects.Delete(ContentNames.Text(messageId)); }
+        catch (Exception) { /* Removing the text object is best-effort after the message is deleted. */ }
+        return message;
+    }
 
     public Task<SocialMessageResponse> ReactAsync(string token, Guid conversationId, Guid messageId, string emoji, CancellationToken ct = default)
         => Run(token, db => db.ReactAsync(conversationId, messageId, emoji), ct);
@@ -50,32 +71,14 @@ public sealed class SocialService(IAccountUnitOfWork trustedAccounts, SocialConf
     {
         var (bytes, width, height) = PhotoCompressor.Compress(input);
         var stored = Guid.NewGuid().ToString("N") + ".webp";
-        media.Save(stored, bytes);
-        try
-        {
-            return await Run(token, db => db.SendFileAsync(conversationId, "image", stored, "Фото.webp", "image/webp", bytes.Length, width, height, replyTo), ct);
-        }
-        catch
-        {
-            media.Delete(stored);
-            throw;
-        }
+        return await Keep(token, bytes.LongLength, null, stored, bytes, db => db.SendFileAsync(conversationId, "image", stored, "Фото.webp", "image/webp", bytes.Length, width, height, replyTo), ct);
     }
 
     public async Task<SocialMessageResponse> SendDocumentAsync(string token, Guid conversationId, string? fileName, byte[] input, Guid? replyTo = null, CancellationToken ct = default)
     {
         var clean = DocumentPolicy.CleanName(fileName, input.LongLength);
         var stored = Guid.NewGuid().ToString("N") + Path.GetExtension(clean).ToLowerInvariant();
-        media.Save(stored, input);
-        try
-        {
-            return await Run(token, db => db.SendFileAsync(conversationId, "file", stored, clean, DocumentPolicy.ContentType(clean), input.LongLength, null, null, replyTo), ct);
-        }
-        catch
-        {
-            media.Delete(stored);
-            throw;
-        }
+        return await Keep(token, input.LongLength, null, stored, input, db => db.SendFileAsync(conversationId, "file", stored, clean, DocumentPolicy.ContentType(clean), input.LongLength, null, null, replyTo), ct);
     }
 
     public async Task<SocialMessageResponse> SendVoiceAsync(string token, Guid conversationId, byte[] input, int? durationMs, Guid? replyTo = null, CancellationToken ct = default)
@@ -83,16 +86,7 @@ public sealed class SocialService(IAccountUnitOfWork trustedAccounts, SocialConf
         var (type, extension) = VoicePolicy.Inspect(input);
         durationMs = VoicePolicy.Duration(durationMs);
         var stored = Guid.NewGuid().ToString("N") + extension;
-        media.Save(stored, input);
-        try
-        {
-            return await Run(token, db => db.SendFileAsync(conversationId, "voice", stored, "Голосовое" + extension, type, input.LongLength, null, null, replyTo, durationMs), ct);
-        }
-        catch
-        {
-            media.Delete(stored);
-            throw;
-        }
+        return await Keep(token, input.LongLength, null, stored, input, db => db.SendFileAsync(conversationId, "voice", stored, "Голосовое" + extension, type, input.LongLength, null, null, replyTo, durationMs), ct);
     }
 
     public async Task<SocialMessageResponse> SendCircleAsync(string token, Guid conversationId, byte[] input, int? durationMs, Guid? replyTo = null, CancellationToken ct = default)
@@ -100,16 +94,7 @@ public sealed class SocialService(IAccountUnitOfWork trustedAccounts, SocialConf
         var (type, extension) = CirclePolicy.Inspect(input);
         durationMs = CirclePolicy.Duration(durationMs);
         var stored = Guid.NewGuid().ToString("N") + extension;
-        media.Save(stored, input);
-        try
-        {
-            return await Run(token, db => db.SendFileAsync(conversationId, "circle", stored, "Кружок" + extension, type, input.LongLength, null, null, replyTo, durationMs), ct);
-        }
-        catch
-        {
-            media.Delete(stored);
-            throw;
-        }
+        return await Keep(token, input.LongLength, null, stored, input, db => db.SendFileAsync(conversationId, "circle", stored, "Кружок" + extension, type, input.LongLength, null, null, replyTo, durationMs), ct);
     }
 
     public async Task<SocialDownload> OpenAsync(string token, Guid attachmentId, CancellationToken ct = default)
@@ -117,6 +102,44 @@ public sealed class SocialService(IAccountUnitOfWork trustedAccounts, SocialConf
         var meta = await Run(token, db => db.OpenAsync(attachmentId), ct);
         var inline = meta.Type.StartsWith("image/", StringComparison.Ordinal) || meta.Type.StartsWith("audio/", StringComparison.Ordinal) || meta.Type.StartsWith("video/", StringComparison.Ordinal);
         return new SocialDownload(media.Open(meta.Stored), meta.Name, meta.Type, inline);
+    }
+
+    private async Task<T> Keep<T>(string token, long bytes, string? groupId, string stored, byte[] payload, Func<SocialRepository, Task<T>> write, CancellationToken ct)
+    {
+        _ = bytes;
+        await uploads.Accept(trustedAccounts, token, groupId, stored, payload, ct);
+        try { return await Run(token, write, ct); }
+        catch
+        {
+            try { media.Delete(stored); } catch (SocialException) { }
+            await ledger.Release(trustedAccounts, token, payload.LongLength, groupId, ct);
+            throw;
+        }
+    }
+
+    private SocialMessageResponse WriteText(SocialMessageResponse message)
+    {
+        if (message.Deleted || message.Kind != "text" || string.IsNullOrEmpty(message.Body)) return message;
+        var bytes = Encoding.UTF8.GetBytes(message.Body);
+        objects.Put(ContentNames.Text(message.MessageId), bytes);
+        return ReadText(message);
+    }
+
+    private SocialMessageResponse ReadText(SocialMessageResponse message)
+    {
+        if (message.Deleted || message.Kind != "text") return message;
+        try
+        {
+            var stored = objects.Get(ContentNames.Text(message.MessageId));
+            if (stored is null) return message;
+            return new(message.MessageId, message.SenderId, message.SenderName, message.Kind, Encoding.UTF8.GetString(stored),
+                message.AttachmentId, message.FileName, message.ContentType, message.Bytes, message.CreatedAt,
+                message.ReplyTo, message.ReplyBody, message.EditedAt, message.Deleted, message.Read, message.DurationMs, message.Reactions);
+        }
+        catch (Exception)
+        {
+            return message;
+        }
     }
 
     private Task<T> Run<T>(string token, Func<SocialRepository, Task<T>> operation, CancellationToken ct)

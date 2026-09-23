@@ -127,6 +127,19 @@ internal sealed class SocialRepository(TrustedAccountContext context, string sch
         return await ReadOneAsync(messageId);
     }
 
+    public async Task<string[]> AttachmentNamesAsync(Guid conversationId, Guid messageId)
+    {
+        var names = new List<string>();
+        await using var command = Command($"""
+            SELECT a.stored_name FROM {schema}.attachments a
+            JOIN {schema}.messages m ON m.message_id = a.message_id
+            WHERE m.message_id=@p0 AND m.conversation_id=@p1 AND m.sender_id=@p2 AND m.deleted_at IS NULL
+            """, messageId, conversationId, Me);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) names.Add(reader.GetString(0));
+        return names.ToArray();
+    }
+
     public async Task<SocialMessageResponse> DeleteAsync(Guid conversationId, Guid messageId)
     {
         await ExecuteAsync($"""

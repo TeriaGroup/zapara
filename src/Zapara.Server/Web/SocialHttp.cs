@@ -17,12 +17,17 @@ internal static class SocialHttp
     }
 
     internal static IResult Problem(SocialException exception) => Results.Json(
-        new AccountError(exception.Status switch
+        new AccountError(exception.Code switch
         {
-            400 or 413 or 415 => "Некорректный запрос",
-            404 => "Не найдено",
-            503 => "Сервис временно недоступен",
-            _ => "Внутренняя ошибка сервера"
+            "quota_user" => "Превышен лимит трафика студента.",
+            "quota_group" => "Превышен лимит трафика группы.",
+            _ => exception.Status switch
+            {
+                400 or 413 or 415 => "Некорректный запрос",
+                404 => "Не найдено",
+                503 => "Сервис временно недоступен",
+                _ => "Внутренняя ошибка сервера"
+            }
         }, exception.Status, exception.Code),
         AccountJson.CreateOptions(), "application/problem+json", exception.Status);
 

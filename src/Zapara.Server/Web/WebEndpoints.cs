@@ -37,7 +37,7 @@ internal static partial class WebEndpoints
             // Explicit login is also an account switch: revoke the previous browser family.
             if (c.Request.Cookies.ContainsKey(WebConfiguration.SessionCookie))
             {
-                try { await Store(c).UseAsync(c, async token => { await Service(c).LogoutAsync(token, c.RequestAborted); return true; }); }
+                try { await Store(c).UseAsync(c, async token => { await Service(c).LogoutAsync(token, c.RequestAborted); return true; }, bootstrap: true); }
                 catch (WebRequestException e) when (e.Status == 401) { }
                 catch (AccountServiceException e) when (e.Failure == AccountFailure.InvalidSession) { }
                 await Store(c).DeleteAsync(c);
@@ -99,7 +99,7 @@ internal static partial class WebEndpoints
     }
 
     private static void Route(RouteGroupBuilder group, string method, string path, Func<HttpContext, Task<IResult>> handler,
-        bool authenticated = true, string rate = "account-other", bool rotate = false)
+        bool authenticated = true, string rate = "account-other", bool rotate = false, bool bootstrap = false)
     {
         var endpoint = group.MapMethods(path, [method], (Delegate)(Func<HttpContext, Task<IResult>>)(async c =>
         {
@@ -112,7 +112,7 @@ internal static partial class WebEndpoints
                 else if (c.Request.Headers["Sec-Fetch-Site"].ToString() is "cross-site" or "same-site"
                     || (c.Request.Headers.ContainsKey("Origin") && !WebConfiguration.SameOrigin(c.Request))) throw new WebRequestException(403, "csrf_invalid");
                 if (authenticated)
-                    return await Store(c).UseAsync(c, async token => { c.Items[typeof(WebSessionStore)] = token; return await handler(c); }, rotate: rotate);
+                    return await Store(c).UseAsync(c, async token => { c.Items[typeof(WebSessionStore)] = token; return await handler(c); }, bootstrap: bootstrap, rotate: rotate);
                 return await handler(c);
             }
             catch (WebRequestException e) { return AccountErrors.Problem(e.Status, e.Code); }

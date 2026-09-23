@@ -20,6 +20,6 @@ internal static partial class WebEndpoints
         Route(group, "POST", "/conversations/{conversationId}/files", SocialHttp.Document);
         Route(group, "POST", "/conversations/{conversationId}/voice", SocialHttp.Voice);
         Route(group, "POST", "/conversations/{conversationId}/circles", SocialHttp.Circle);
-        Route(group, "GET", "/attachments/{attachmentId}", SocialHttp.Attachment);
+        Route(group, "GET", "/attachments/{attachmentId}", SocialHttp.Attachment, bootstrap: true);
     }
 }

@@ -14,6 +14,8 @@ public static class Program
             return await SyncMigrationCommand.RunAsync(output, ct);
         if (args.Length == 2 && args[0] == "communities" && args[1] == "db-migrate")
             return await CommunitiesMigrationCommand.RunAsync(output, ct);
+        if (args.Length == 6 && args[0] == "support" && args[1] == "reply" && args[2] == "--thread" && args[4] == "--body-file")
+            return await SupportReplyCommand.RunAsync(args[3], args[5], output, ct);
         if (args.Length == 4 && args[0] == "admin" && args[1] == "bootstrap" && args[2] == "--user-id")
             return await AdminBootstrapCommand.RunAsync(args[3], output, ct);
         if (args.Length != 2 || args[0] != "accounts" || args[1] != "db-migrate")
