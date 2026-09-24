@@ -188,6 +188,34 @@ public sealed class OperatorContentTests
             Assert.Equal("Теперь нажимается.", messages[2].GetProperty("body").GetString());
             Assert.Contains(handler.Calls, call => call.Method == "PUT" && Encoding.UTF8.GetString(call.Body) == "На сводке кнопка чётности не отвечает.");
             Assert.Contains(handler.Calls, call => call.Method == "PUT" && Encoding.UTF8.GetString(call.Body) == "Поправили переключатель.");
+
+            await Setting(communities, op, "quota_user_bytes", "1073741824");
+            await Setting(communities, op, "quota_group_bytes", "1073741824");
+            var log = "строка лога\n"u8.ToArray();
+            var userBefore = await communities.Accounts.ScalarAsync<long>($"SELECT bytes FROM {op}.quota_counters WHERE scope='user' AND scope_id='{userId:D}'");
+            var reported = await SupportForm(client, "/api/v1/support", left, "Снимок и лог", "Кнопка не рисуется на тёмном фоне.", png, log);
+            var reportId = reported.GetProperty("id").GetGuid();
+            var attached = reported.GetProperty("messages")[0].GetProperty("attachments");
+            Assert.Equal(2, attached.GetArrayLength());
+            var photoId = attached.EnumerateArray().Single(item => item.GetProperty("kind").GetString() == "photo").GetProperty("id").GetGuid();
+            var logId = attached.EnumerateArray().Single(item => item.GetProperty("kind").GetString() == "log").GetProperty("id").GetGuid();
+            Assert.Equal(png, await Raw(client, "GET", "/api/v1/support/attachments/" + photoId.ToString("D"), left));
+            Assert.Equal(log, await Raw(client, "GET", "/api/v1/support/attachments/" + logId.ToString("D"), left));
+            Assert.Equal(HttpStatusCode.NotFound, await Status(client, "GET", "/api/v1/support/attachments/" + photoId.ToString("D"), right));
+            Assert.Contains(handler.Calls, call => call.Method == "PUT" && call.Body.AsSpan().SequenceEqual(png));
+            Assert.Contains(handler.Calls, call => call.Method == "PUT" && call.Body.AsSpan().SequenceEqual(log));
+            var userAfter = await communities.Accounts.ScalarAsync<long>($"SELECT bytes FROM {op}.quota_counters WHERE scope='user' AND scope_id='{userId:D}'");
+            Assert.Equal(userBefore + png.Length + log.Length, userAfter);
+
+            var refused = await SupportForm(client, "/api/v1/support", left, "Лишний файл", "Это не фотография, а текст.", log, null, "photo", HttpStatusCode.BadRequest);
+            Assert.Contains("фотография", refused.GetProperty("title").GetString());
+            await Setting(communities, op, "quota_user_bytes", userAfter.ToString());
+            var blocked = await SupportForm(client, "/api/v1/support/" + reportId.ToString("D"), left, "", "Ещё одна строка лога.", null, "ещё\n"u8.ToArray(), "log", HttpStatusCode.RequestEntityTooLarge);
+            Assert.Contains("студента", blocked.GetProperty("title").GetString());
+            Assert.Equal(userAfter, await communities.Accounts.ScalarAsync<long>($"SELECT bytes FROM {op}.quota_counters WHERE scope='user' AND scope_id='{userId:D}'"));
+            var still = await Send(client, "GET", "/api/v1/support", 200, bearer: left);
+            Assert.DoesNotContain(still.EnumerateArray(), item => item.GetProperty("subject").GetString() == "Лишний файл");
+            Assert.Equal(1, still.EnumerateArray().Single(item => item.GetProperty("id").GetGuid() == reportId).GetProperty("messages").GetArrayLength());
         }
         finally
         {
@@ -258,6 +286,40 @@ public sealed class OperatorContentTests
         var text = await response.Content.ReadAsStringAsync(Ct);
         using var document = JsonDocument.Parse(text);
         return ((int)response.StatusCode, document.RootElement.GetProperty("title").GetString() ?? "");
+    }
+
+    private static async Task<JsonElement> SupportForm(HttpClient client, string path, string bearer, string subject, string body, byte[]? photo, byte[]? log, string logKind = "log", HttpStatusCode status = HttpStatusCode.OK)
+    {
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent(subject), "subject");
+        form.Add(new StringContent(body), "body");
+        if (photo is not null)
+        {
+            var file = new ByteArrayContent(photo);
+            file.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+            form.Add(file, "photo", "снимок.png");
+        }
+        if (log is not null)
+        {
+            var file = new ByteArrayContent(log);
+            file.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+            form.Add(file, logKind, logKind == "photo" ? "не-фото.png" : "отчёт.log");
+        }
+        using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = form };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+        using var response = await client.SendAsync(request, Ct);
+        var text = await response.Content.ReadAsStringAsync(Ct);
+        Assert.Equal(status, response.StatusCode);
+        using var document = JsonDocument.Parse(text);
+        return document.RootElement.Clone();
+    }
+
+    private static async Task<HttpStatusCode> Status(HttpClient client, string method, string path, string bearer)
+    {
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+        using var response = await client.SendAsync(request, Ct);
+        return response.StatusCode;
     }
 
     private static async Task<byte[]> Raw(HttpClient client, string method, string path, string? bearer)

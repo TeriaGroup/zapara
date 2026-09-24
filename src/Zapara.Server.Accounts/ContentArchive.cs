@@ -20,4 +20,5 @@ public static class ContentNames
     public static string Homework(Guid id) => "hw" + id.ToString("N");
     public static string HomeworkFile(Guid id) => "hwf" + id.ToString("N") + ".bin";
     public static string Support(Guid id) => "sup" + id.ToString("N");
+    public static string SupportFile(Guid id) => "supf" + id.ToString("N");
 }

@@ -13,10 +13,12 @@ public static class SupportEndpoints
         if (!AccountsConfiguration.IsEnabled(app.Configuration)) return app;
         app.MapGet("/api/v1/support", (Delegate)ListNative);
         app.MapPost("/api/v1/support", (Delegate)OpenNative);
-        app.MapPost("/api/v1/support/{id}", (Delegate)ContinueNative);
+        app.MapPost("/api/v1/support/{id:guid}", (Delegate)ContinueNative);
+        app.MapGet("/api/v1/support/attachments/{id:guid}", (Delegate)AttachmentNative);
         app.MapPost("/web-api/support", (Delegate)OpenWeb);
         app.MapGet("/web-api/support", (Delegate)ListWeb);
-        app.MapPost("/web-api/support/{id}", (Delegate)ContinueWeb);
+        app.MapPost("/web-api/support/{id:guid}", (Delegate)ContinueWeb);
+        app.MapGet("/web-api/support/attachments/{id:guid}", (Delegate)AttachmentWeb);
         app.MapPost("/api/v1/files", (Delegate)FileNative);
         app.MapGet("/api/v1/files/{name}", (Delegate)ReadFile);
         app.MapPost("/web-api/files", (Delegate)FileWeb);
@@ -70,17 +72,74 @@ public static class SupportEndpoints
 
     private static async Task<IResult> Continue(HttpContext context, Guid userId, Guid id)
     {
-        var body = await context.Request.ReadFromJsonAsync<SupportBody>(context.RequestAborted) ?? throw new AccountBodyException();
-        var ticket = await context.RequestServices.GetRequiredService<SupportStore>().ContinueAsync(userId, id, body.Body ?? "", context.RequestAborted);
+        var report = await ReadReport(context);
+        var ticket = await context.RequestServices.GetRequiredService<SupportStore>().ContinueAsync(userId, id, report.Body, context.RequestAborted, report.Files, Token(context));
         return Results.Text(SupportStore.Write(ticket), "application/json");
     }
 
     private static async Task<IResult> Open(HttpContext context, Guid userId)
     {
-        var body = await context.Request.ReadFromJsonAsync<SupportBody>(context.RequestAborted) ?? throw new AccountBodyException();
-        var ticket = await context.RequestServices.GetRequiredService<SupportStore>().OpenAsync(userId, body.Subject ?? "", body.Body ?? "", context.RequestAborted);
+        var report = await ReadReport(context);
+        var ticket = await context.RequestServices.GetRequiredService<SupportStore>().OpenAsync(userId, report.Subject, report.Body, context.RequestAborted, report.Files, Token(context));
         return Results.Text(SupportStore.Write(ticket), "application/json");
     }
+
+    private static async Task<IResult> AttachmentNative(HttpContext context, Guid id)
+    {
+        var user = await Me(context, Bearer(context));
+        return await Attachment(context, user.User.UserId, id);
+    }
+
+    private static async Task<IResult> AttachmentWeb(HttpContext context, Guid id)
+    {
+        var user = await Me(context, await WebToken(context, bootstrap: true));
+        return await Attachment(context, user.User.UserId, id);
+    }
+
+    private static async Task<IResult> Attachment(HttpContext context, Guid userId, Guid id)
+    {
+        var found = await context.RequestServices.GetRequiredService<SupportStore>().ReadFileAsync(userId, id, context.RequestAborted);
+        if (found is null) return Results.NotFound();
+        var file = found.Value;
+        var name = file.Name.Replace("\"", "").Replace("\r", "").Replace("\n", "");
+        var disposition = file.Kind == "photo" ? "inline" : "attachment";
+        context.Response.Headers.ContentDisposition = $"{disposition}; filename*=UTF-8''{Uri.EscapeDataString(name)}";
+        context.Response.Headers.CacheControl = "private, no-store";
+        return Results.Bytes(file.Bytes, file.Type);
+    }
+
+    private static async Task<(string Subject, string Body, IReadOnlyList<SupportFile> Files)> ReadReport(HttpContext context)
+    {
+        if (!context.Request.HasFormContentType)
+        {
+            var body = await context.Request.ReadFromJsonAsync<SupportBody>(context.RequestAborted) ?? throw new AccountBodyException();
+            return (body.Subject ?? "", body.Body ?? "", []);
+        }
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+        if (form.Files.GetFiles("photo").Count > SupportFiles.MaxEach)
+            throw new SupportAttachmentException("Можно приложить не больше трёх фотографий.");
+        if (form.Files.GetFiles("log").Count > SupportFiles.MaxEach)
+            throw new SupportAttachmentException("Можно приложить не больше трёх логов.");
+        var files = new List<SupportFile>();
+        await Take(form, "photo", SupportFiles.PhotoBytes, "Фото больше 4 МиБ.", files, context.RequestAborted);
+        await Take(form, "log", SupportFiles.LogBytes, "Лог больше 512 КиБ.", files, context.RequestAborted);
+        return (form["subject"].ToString(), form["body"].ToString(), files);
+    }
+
+    private static async Task Take(IFormCollection form, string kind, int max, string tooBig, List<SupportFile> files, CancellationToken ct)
+    {
+        foreach (var file in form.Files.GetFiles(kind))
+        {
+            if (file.Length <= 0) throw new SupportAttachmentException("Файл пустой.");
+            if (file.Length > max) throw new SupportAttachmentException(tooBig);
+            var bytes = new byte[file.Length];
+            await using var stream = file.OpenReadStream();
+            await stream.ReadExactlyAsync(bytes, ct);
+            files.Add(SupportFiles.Inspect(kind, file.FileName, bytes));
+        }
+    }
+
+    private static string Token(HttpContext context) => context.Items["support-token"] as string ?? Bearer(context);
 
     private static async Task<IResult> FileNative(HttpContext context)
     {
@@ -152,10 +211,10 @@ public static class SupportEndpoints
         return header["Bearer ".Length..].Trim();
     }
 
-    private static async Task<string> WebToken(HttpContext context)
+    private static async Task<string> WebToken(HttpContext context, bool bootstrap = false)
     {
         var store = context.RequestServices.GetService<WebSessionStore>() ?? throw new AccountServiceException(AccountFailure.InvalidSession);
-        return await store.UseAsync(context, token => Task.FromResult(token));
+        return await store.UseAsync(context, token => Task.FromResult(token), bootstrap);
     }
 
     private sealed record SupportBody(string? Subject, string? Body);

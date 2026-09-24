@@ -95,6 +95,9 @@ public class Program
             => ApiErrors.ForStatus(bad.StatusCode, bad.StatusCode == 413 ? "payload_too_large" : "invalid_request"),
         AdminException admin => ApiErrors.ForStatus(admin.Status, admin.Code),
         AccountBodyException body => ApiErrors.ForStatus(body.Status, body.Status == 413 ? "payload_too_large" : "invalid_request"),
+        Zapara.Server.Operator.SupportAttachmentException file => Results.Json(
+            new Zapara.Contracts.Accounts.AccountError(file.Message, 400, "invalid_request"),
+            Zapara.Contracts.Accounts.AccountJson.CreateOptions(), "application/problem+json", 400),
         AccountServiceException account => AccountErrors.From(account),
         ExternalAuthException external => AccountErrors.Problem(external.Status, external.Code),
         WebRequestException web => AccountErrors.Problem(web.Status, web.Code),

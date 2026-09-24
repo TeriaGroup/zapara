@@ -1,6 +1,8 @@
 namespace Zapara.Server.Operator;
 
-public sealed record SupportLine(string Author, string Body, DateTimeOffset At);
+public sealed record SupportAttachment(Guid Id, string Kind, string Name);
+
+public sealed record SupportLine(string Author, string Body, DateTimeOffset At, IReadOnlyList<SupportAttachment>? Attachments = null);
 
 public sealed class SupportTicket
 {
