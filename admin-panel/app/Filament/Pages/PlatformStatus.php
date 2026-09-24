@@ -32,42 +32,43 @@ class PlatformStatus extends Page
             $status = is_object($attempt) ? (string) $attempt->status : '';
             $error = is_object($attempt) ? (string) ($attempt->error_code ?? '') : '';
             $rows[] = match ($status) {
-                'running' => ['name' => 'Парсер расписания', 'ok' => true, 'detail' => 'Работает: обновление идёт'],
-                'success' => ['name' => 'Парсер расписания', 'ok' => true, 'detail' => 'Работает'],
-                'failed', 'abandoned' => ['name' => 'Парсер расписания', 'ok' => false, 'detail' => 'Не работает: '.($error !== '' ? $error : 'сбой парсера')],
-                default => ['name' => 'Парсер расписания', 'ok' => false, 'detail' => 'Не работает: нет попыток обновления'],
+                'running' => ['name' => 'Парсер расписания', 'ok' => true, 'detail' => 'Сейчас идёт обновление расписания.'],
+                'success' => ['name' => 'Парсер расписания', 'ok' => true, 'detail' => 'Последняя попытка обновления прошла.'],
+                'failed', 'abandoned' => ['name' => 'Парсер расписания', 'ok' => false, 'detail' => 'Обновление сорвалось'.($error !== '' ? ': '.$error : '.').' На сайте остаётся прежний снимок.'],
+                default => ['name' => 'Парсер расписания', 'ok' => false, 'detail' => 'Попыток обновления ещё не было.'],
             };
         } catch (\Throwable) {
-            $rows[] = ['name' => 'Парсер расписания', 'ok' => false, 'detail' => 'Не работает: схема '.$timetable.' отсутствует'];
+            $rows[] = ['name' => 'Парсер расписания', 'ok' => false, 'detail' => 'Таблицы расписания не найдены. Парсер проверить нельзя.'];
         }
         try {
             $failedAfter = DB::selectOne("select error_code from {$timetable}.refresh_attempts where status in ('failed', 'abandoned') and sequence > coalesce((select max(sequence) from {$timetable}.refresh_attempts where status = 'success'), 0) order by sequence desc limit 1");
             $snapshot = DB::selectOne('select s.fetched_at from '.$timetable.'.state t join '.$timetable.'.snapshots s on s.snapshot_id = t.current_snapshot_id');
             if (! is_object($snapshot)) {
-                $rows[] = ['name' => 'Снимок расписания', 'ok' => false, 'detail' => 'Не работает: снимка нет'];
+                $rows[] = ['name' => 'Снимок расписания', 'ok' => false, 'detail' => 'Сохранённого расписания нет. Сайт не сможет показать пары.'];
             } elseif (is_object($failedAfter)) {
                 $code = (string) ($failedAfter->error_code ?? '');
-                $rows[] = ['name' => 'Снимок расписания', 'ok' => false, 'detail' => 'Не работает: обновление после успеха не удалось'.($code !== '' ? '. '.$code : '')];
+                $rows[] = ['name' => 'Снимок расписания', 'ok' => false, 'detail' => 'После удачного снимка обновление снова сорвалось'.($code !== '' ? ': '.$code : '.').' Показывается прошлый снимок.'];
             } else {
                 $at = strtotime((string) $snapshot->fetched_at) ?: 0;
                 $stale = $at > 0 && (time() - $at) >= 86400;
-                $rows[] = ['name' => 'Снимок расписания', 'ok' => ! $stale, 'detail' => ($stale ? 'Не работает: снимок устарел. ' : 'Свежий. ').'последний успех '.gmdate('Y-m-d H:i', $at).'Z'];
+                $when = $at > 0 ? gmdate('d.m.Y H:i', $at).' UTC' : 'неизвестно';
+                $rows[] = ['name' => 'Снимок расписания', 'ok' => ! $stale, 'detail' => $stale ? 'Снимок старше суток. Последний успех '.$when.'.' : 'Снимок свежий. Последний успех '.$when.'.'];
             }
         } catch (\Throwable) {
-            $rows[] = ['name' => 'Снимок расписания', 'ok' => false, 'detail' => 'Не работает: схема '.$timetable.' отсутствует'];
+            $rows[] = ['name' => 'Снимок расписания', 'ok' => false, 'detail' => 'Таблицы расписания не найдены.'];
         }
         $schemas = [
-            'timetable' => $timetable.'.schema_version',
-            'accounts' => $this->identifier('Accounts__Schema', 'accounts').'.users',
-            'sync' => $this->identifier('Sync__Schema', 'sync').'.schema_migrations',
-            'communities' => $this->identifier('Communities__Schema', 'communities').'.schema_migrations',
+            'Расписание' => [$timetable.'.schema_version', 'Таблицы расписания открываются.'],
+            'Аккаунты' => [$this->identifier('Accounts__Schema', 'accounts').'.users', 'Таблицы пользователей открываются.'],
+            'Синхронизация' => [$this->identifier('Sync__Schema', 'sync').'.schema_migrations', 'Таблицы синхронизации открываются.'],
+            'Сообщества' => [$this->identifier('Communities__Schema', 'communities').'.schema_migrations', 'Таблицы сообществ открываются.'],
         ];
-        foreach ($schemas as $name => $table) {
+        foreach ($schemas as $name => $probe) {
             try {
-                DB::select('select 1 from '.$table.' limit 1');
-                $rows[] = ['name' => $name, 'ok' => true, 'detail' => 'Работает'];
+                DB::select('select 1 from '.$probe[0].' limit 1');
+                $rows[] = ['name' => $name, 'ok' => true, 'detail' => $probe[1]];
             } catch (\Throwable) {
-                $rows[] = ['name' => $name, 'ok' => false, 'detail' => 'Не работает: схема '.$name.' отсутствует'];
+                $rows[] = ['name' => $name, 'ok' => false, 'detail' => 'Таблицы не найдены. Эта часть сайта сейчас недоступна.'];
             }
         }
         $rows[] = $this->storage();
@@ -96,7 +97,7 @@ class PlatformStatus extends Page
         $access = \App\Services\OperatorSettings::read('s3_access_key') ?? '';
         $secret = \App\Services\OperatorSettings::read('s3_secret') ?? '';
         if ($endpoint === '' || $region === '' || $bucket === '' || $access === '' || $secret === '') {
-            return ['name' => 'S3', 'ok' => false, 'detail' => 'Не настроено'];
+            return ['name' => 'Хранилище S3', 'ok' => false, 'detail' => 'S3 не заполнено. Новые файлы вошедших людей пишутся на диск сервера.'];
         }
         try {
             $context = stream_context_create(['http' => ['method' => 'GET', 'timeout' => 2, 'ignore_errors' => true]]);
@@ -106,15 +107,15 @@ class PlatformStatus extends Page
                 $code = (int) $match[1];
             }
             if ($body === false && $code === 0) {
-                return ['name' => 'S3', 'ok' => false, 'detail' => 'Не работает: хранилище не отвечает'];
+                return ['name' => 'Хранилище S3', 'ok' => false, 'detail' => 'Бакет не отвечает. Новые файлы вошедших людей сейчас не сохраняются в S3.'];
             }
             if ($code >= 500 || $code === 0) {
-                return ['name' => 'S3', 'ok' => false, 'detail' => 'Не работает: HTTP '.$code];
+                return ['name' => 'Хранилище S3', 'ok' => false, 'detail' => 'Бакет ответил ошибкой HTTP '.$code.'. Новые файлы в S3 не кладутся.'];
             }
 
-            return ['name' => 'S3', 'ok' => true, 'detail' => 'Доступно'];
+            return ['name' => 'Хранилище S3', 'ok' => true, 'detail' => 'Бакет отвечает. Новые файлы вошедших людей пишутся туда.'];
         } catch (\Throwable) {
-            return ['name' => 'S3', 'ok' => false, 'detail' => 'Не работает: хранилище не отвечает'];
+            return ['name' => 'Хранилище S3', 'ok' => false, 'detail' => 'Бакет не отвечает. Новые файлы вошедших людей сейчас не сохраняются в S3.'];
         }
     }
 }

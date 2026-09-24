@@ -13,6 +13,7 @@ use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Schema;
+use Filament\Support\Exceptions\Halt;
 
 class SystemSettings extends Page
 {
@@ -66,11 +67,11 @@ class SystemSettings extends Page
                 ->helperText('Сохранённое значение читает сервер «Расписание военмех» и по нему открывает или закрывает регистрацию.'),
             Toggle::make('vk_enabled')->label('VK ID включён'),
             TextInput::make('vk_client_id')->label('VK ID, идентификатор клиента'),
-            TextInput::make('vk_callback')->label('VK ID, адрес возврата'),
+            TextInput::make('vk_callback')->label('VK ID, адрес возврата')->helperText('Точный адрес: https://voen.teriahost.ru/auth/vk/callback'),
             TextInput::make('vk_secret')->label('VK ID, секрет')->password()->helperText(OperatorSettings::publicValue('vk_secret') === 'configured' ? 'Секрет уже сохранён. Пустое поле его не заменяет.' : 'Секрет не показывается целиком.'),
             Toggle::make('yandex_enabled')->label('Яндекс ID включён'),
             TextInput::make('yandex_client_id')->label('Яндекс ID, идентификатор клиента'),
-            TextInput::make('yandex_callback')->label('Яндекс ID, адрес возврата'),
+            TextInput::make('yandex_callback')->label('Яндекс ID, адрес возврата')->helperText('Точный адрес: https://voen.teriahost.ru/auth/yandex/callback'),
             TextInput::make('yandex_secret')->label('Яндекс ID, секрет')->password()->helperText(OperatorSettings::publicValue('yandex_secret') === 'configured' ? 'Секрет уже сохранён. Пустое поле его не заменяет.' : 'Секрет не показывается целиком.'),
             TextInput::make('s3_endpoint')->label('S3, адрес'),
             TextInput::make('s3_region')->label('S3, регион'),
@@ -99,6 +100,8 @@ class SystemSettings extends Page
     public function save(): void
     {
         $state = $this->form->getState();
+        $this->requireCallback($state, 'yandex_enabled', 'yandex_callback', 'Яндекс ID', 'https://voen.teriahost.ru/auth/yandex/callback');
+        $this->requireCallback($state, 'vk_enabled', 'vk_callback', 'VK ID', 'https://voen.teriahost.ru/auth/vk/callback');
         OperatorSettings::saveRegistration((bool) ($state['registration_enabled'] ?? false));
         foreach ([
             'vk_enabled', 'vk_client_id', 'vk_callback', 'yandex_enabled', 'yandex_client_id', 'yandex_callback',
@@ -112,5 +115,21 @@ class SystemSettings extends Page
             OperatorSettings::save($key, (string) ($state[$key] ?? ''), true);
         }
         Notification::make()->title('Настройки сохранены')->success()->send();
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     */
+    private function requireCallback(array &$state, string $enabled, string $key, string $name, string $expected): void
+    {
+        if (! (bool) ($state[$enabled] ?? false)) {
+            return;
+        }
+        $callback = trim((string) ($state[$key] ?? ''));
+        if ($callback !== $expected) {
+            Notification::make()->title($name.': адрес возврата должен быть '.$expected)->danger()->send();
+            throw new Halt();
+        }
+        $state[$key] = $callback;
     }
 }
