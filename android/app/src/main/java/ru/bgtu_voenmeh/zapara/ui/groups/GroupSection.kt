@@ -367,7 +367,8 @@ private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
                 focusedTextColor = c.text1, unfocusedTextColor = c.text1
             )
         )
-        ZButton(stringResource(R.string.group_send), { onEvent(GroupEvent.Send) }, enabled = state.draft.isNotBlank() && !state.sending, tag = "Group.Send")
+        ZButton(if (state.attachmentPending) "Повторить" else stringResource(R.string.group_send),
+            { onEvent(GroupEvent.Send) }, enabled = (state.draft.isNotBlank() || state.attachmentPending) && !state.sending, tag = "Group.Send")
     }
     }
 }

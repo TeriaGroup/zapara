@@ -119,8 +119,12 @@
             <TextBox Text="{Binding NewPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountNewPassword}" AutomationProperties.AutomationId="Account.NewPassword" />
             <Button HorizontalAlignment="Left" Content="{loc:T accountChangePassword}" Command="{Binding ChangePasswordCommand}" AutomationProperties.AutomationId="Account.ChangePassword" />
           </StackPanel>
-          <TextBlock Text="{loc:T accountProof}" />
-          <TextBox Text="{Binding Proof}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountProof}" AutomationProperties.AutomationId="Account.Proof" />
+          <StackPanel Spacing="8" IsVisible="{Binding HasPassword}">
+            <TextBlock Text="{loc:T accountProof}" />
+            <TextBox Text="{Binding Proof}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountProof}" AutomationProperties.AutomationId="Account.Proof" />
+          </StackPanel>
+          <TextBlock Text="Важные действия подтверждаются через привязанный Яндекс ID или VK ID."
+                     TextWrapping="Wrap" IsVisible="{Binding ShowProviderProof}" />
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Button Content="{loc:T accountExport}" Command="{Binding ExportCommand}" AutomationProperties.AutomationId="Account.Export" />
             <Button Content="{loc:T accountExportDownload}" Command="{Binding DownloadExportCommand}" IsVisible="{Binding CanDownloadExport}" AutomationProperties.AutomationId="Account.ExportDownload" />
@@ -141,6 +145,7 @@
                 <StackPanel Spacing="8" Margin="0,4">
                   <TextBlock Text="{Binding Provider}" />
                   <Button HorizontalAlignment="Left" Content="{loc:T accountUnlink}" AutomationProperties.AutomationId="Account.Unlink"
+                          IsEnabled="{Binding $parent[a:AccountPanelView].((a:AccountPanelViewModel)DataContext).CanUnlinkIdentity}"
                           Command="{Binding $parent[a:AccountPanelView].((a:AccountPanelViewModel)DataContext).UnlinkIdentityCommand}" CommandParameter="{Binding}" />
                 </StackPanel>
               </DataTemplate>

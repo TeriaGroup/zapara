@@ -80,6 +80,17 @@ public sealed class ExternalProviderTests
     }
 
     [Theory]
+    [InlineData("{\"id\":\"opaque-subject\",\"client_id\":\"example-id\",\"display_name\":\" \",\"first_name\":\"Глеб\",\"last_name\":\"Иванов\"}", "Глеб Иванов")]
+    [InlineData("{\"id\":\"opaque-subject\",\"client_id\":\"example-id\",\"real_name\":\"Глеб Иванов\"}", "Глеб Иванов")]
+    public async Task Yandex_name_uses_profile_name_when_display_name_is_missing(string userJson, string expected)
+    {
+        using var handler = new ExternalProviderTestsHandler { UserJson = userJson };
+        using var http = new HttpClient(handler);
+        using var adapter = Adapter(false, http);
+        Assert.Equal(expected, (await Exchange(adapter, false)).DisplayName);
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("short")]
     [InlineData("sssssssssssssssssssssssssssssss+")]

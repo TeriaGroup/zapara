@@ -30,7 +30,14 @@ internal static class ProviderIdentityReader
 
     internal static string? DisplayName(JsonElement user, bool vk)
     {
-        var raw = vk ? OptionalName(user, "first_name") + " " + OptionalName(user, "last_name") : OptionalName(user, "display_name");
+        if (vk) return CleanName(OptionalName(user, "first_name") + " " + OptionalName(user, "last_name"));
+        return CleanName(OptionalName(user, "display_name"))
+            ?? CleanName(OptionalName(user, "first_name") + " " + OptionalName(user, "last_name"))
+            ?? CleanName(OptionalName(user, "real_name"));
+    }
+
+    private static string? CleanName(string? raw)
+    {
         if (raw is null) return null;
         var output = new StringBuilder();
         var remaining = raw.AsSpan();

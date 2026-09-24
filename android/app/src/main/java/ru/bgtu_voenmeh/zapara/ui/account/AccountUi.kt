@@ -102,13 +102,14 @@ data class AccountUiState(
     val showRecovery get() = showGuestAuth && recoveryAvailable
     val showDevices get() = showAccount
     val showPasswordChange get() = showAccount && hasPassword == true
+    val showPasswordProof get() = showAccount && hasPassword == true
     val showExport get() = showAccount
     val showDelete get() = showAccount
     val showIdentities get() = showAccount && (vkAvailable || yandexAvailable || identities.isNotEmpty())
     val showVkLink get() = showAccount && vkAvailable && identities.none { it.provider == "vk" }
     val showYandexLink get() = showAccount && yandexAvailable && identities.none { it.provider == "yandex" }
-    val showVkUnlink get() = showAccount && identities.any { it.provider == "vk" }
-    val showYandexUnlink get() = showAccount && identities.any { it.provider == "yandex" }
+    val showVkUnlink get() = showAccount && identities.any { it.provider == "vk" } && (hasPassword == true || identities.size > 1)
+    val showYandexUnlink get() = showAccount && identities.any { it.provider == "yandex" } && (hasPassword == true || identities.size > 1)
 
     fun clearSecrets() = copy(password = "", currentPassword = "", newPassword = "", proof = "")
 
@@ -287,8 +288,12 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
         }
         ZButton(stringResource(R.string.account_change_password), { onEvent(AccountEvent.ChangePassword) }, enabled = enabled, tag = "Account.ChangePassword")
     }
-    AccountField(state.proof, stringResource(R.string.account_proof), "Account.Proof", password = true) {
-        onEvent(AccountEvent.Proof(it))
+    if (state.showPasswordProof) {
+        AccountField(state.proof, stringResource(R.string.account_proof), "Account.Proof", password = true) {
+            onEvent(AccountEvent.Proof(it))
+        }
+    } else if (state.identities.isNotEmpty()) {
+        Text(stringResource(R.string.account_proof_provider), style = Zapara.typography.caption, color = Zapara.colors.text2)
     }
     ZButton(stringResource(R.string.account_export), { onEvent(AccountEvent.CreateExport) }, ghost = true, enabled = enabled, tag = "Account.Export")
     if (state.exportReady) {

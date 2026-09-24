@@ -29,4 +29,23 @@ public sealed class OAuthFlowTests
         });
         Assert.Null(error);
     }
+
+    [Fact]
+    public async Task Existing_yandex_account_receives_provider_name_without_overwriting_custom_name()
+    {
+        await using var h = await OAuthTestHarness.Create();
+        h.Handler.Name = null;
+        var first = (await h.Flow()).Session!;
+        Assert.Null(first.User.DisplayName);
+
+        h.Handler.Name = "Глеб Иванов";
+        var second = (await h.Flow()).Session!;
+        Assert.Equal(first.User.UserId, second.User.UserId);
+        Assert.Equal("Глеб Иванов", second.User.DisplayName);
+
+        await h.Accounts.UpdateProfileAsync(second.AccessToken, new("Моё имя"), TestContext.Current.CancellationToken);
+        h.Handler.Name = "Другое имя";
+        var third = (await h.Flow()).Session!;
+        Assert.Equal("Моё имя", third.User.DisplayName);
+    }
 }

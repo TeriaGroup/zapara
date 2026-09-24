@@ -111,6 +111,7 @@ class MainActivity : ComponentActivity() {
                     ExternalReturnResult.Expired -> R.string.account_external_expired
                     ExternalReturnResult.ProfileChanged -> R.string.account_external_profile_changed
                     ExternalReturnResult.TransitionFailed -> R.string.account_transition_failed
+                    is ExternalReturnResult.Verified -> R.string.account_external_verified
                     ExternalReturnResult.Ignored, ExternalReturnResult.Pending -> return result
                 }
                 Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()

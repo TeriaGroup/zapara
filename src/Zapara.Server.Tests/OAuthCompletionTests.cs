@@ -52,6 +52,7 @@ internal sealed class OAuthHandler(bool vk) : HttpMessageHandler
 {
     internal int Count;
     internal string Subject = "synthetic-subject";
+    internal string? Name = "Тест";
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         Interlocked.Increment(ref Count);
@@ -59,7 +60,7 @@ internal sealed class OAuthHandler(bool vk) : HttpMessageHandler
         var subject = System.Text.Json.JsonSerializer.Serialize(Subject);
         var payload = token ? "{\"access_token\":\"synthetic-token\"}" : vk
             ? "{\"user\":{\"user_id\":" + subject + ",\"first_name\":\"Тест\"}}"
-            : "{\"id\":" + subject + ",\"client_id\":\"synthetic-client\",\"display_name\":\"Тест\",\"default_email\":\"same@example.invalid\"}";
+            : "{\"id\":" + subject + ",\"client_id\":\"synthetic-client\",\"display_name\":" + System.Text.Json.JsonSerializer.Serialize(Name) + ",\"default_email\":\"same@example.invalid\"}";
         return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(payload, Encoding.UTF8, "application/json") });
     }
 }

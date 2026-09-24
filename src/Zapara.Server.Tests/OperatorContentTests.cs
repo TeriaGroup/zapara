@@ -97,10 +97,19 @@ public sealed class OperatorContentTests
             var friends = await Send(client, "GET", "/api/v1/social/home", 200, bearer: left);
             var conversation = friends.GetProperty("friends")[0].GetProperty("conversationId").GetGuid();
             const string text = "Пара перенесена на четверг";
-            await Send(client, "POST", "/api/v1/social/conversations/" + conversation.ToString("D") + "/messages", 201, bearer: left, body: new { body = text });
+            var sentText = await Send(client, "POST", "/api/v1/social/conversations/" + conversation.ToString("D") + "/messages", 201, bearer: left, body: new { body = text });
             var page = await Send(client, "GET", "/api/v1/social/conversations/" + conversation.ToString("D") + "/messages", 200, bearer: left);
             Assert.Equal(text, page.GetProperty("messages")[0].GetProperty("body").GetString());
             Assert.Contains(handler.Calls, call => call.Method == "PUT" && Encoding.UTF8.GetString(call.Body) == text);
+
+            handler.FailPut = true;
+            var another = await Send(client, "POST", "/api/v1/social/conversations/" + conversation.ToString("D") + "/messages", 201, bearer: left, body: new { body = "Сообщение при сбое хранилища" });
+            Assert.Equal("Сообщение при сбое хранилища", another.GetProperty("body").GetString());
+            var edited = await Send(client, "POST", "/api/v1/social/conversations/" + conversation.ToString("D") + "/messages/" + sentText.GetProperty("messageId").GetGuid().ToString("D") + "/edit", 200, bearer: left, body: new { body = "Исправленный текст" });
+            Assert.Equal("Исправленный текст", edited.GetProperty("body").GetString());
+            var freshPage = await Send(client, "GET", "/api/v1/social/conversations/" + conversation.ToString("D") + "/messages", 200, bearer: left);
+            Assert.Contains(freshPage.GetProperty("messages").EnumerateArray(), item => item.GetProperty("body").GetString() == "Исправленный текст");
+            handler.FailPut = false;
 
             var png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
             var image = await Upload(client, "/api/v1/social/conversations/" + conversation.ToString("D") + "/images", left, png, "photo.png", "image/png");
@@ -397,6 +406,7 @@ public sealed class OperatorContentTests
     private sealed class Bucket : HttpMessageHandler
     {
         public List<(string Method, string Path, byte[] Body)> Calls { get; } = [];
+        public bool FailPut { get; set; }
         private readonly Dictionary<string, byte[]> files = new(StringComparer.Ordinal);
 
         protected override HttpResponseMessage Send(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -409,6 +419,7 @@ public sealed class OperatorContentTests
             Calls.Add((request.Method.Method, path, body));
             if (request.Method == HttpMethod.Put)
             {
+                if (FailPut) return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
                 files[path] = body;
                 return new HttpResponseMessage(HttpStatusCode.OK);
             }

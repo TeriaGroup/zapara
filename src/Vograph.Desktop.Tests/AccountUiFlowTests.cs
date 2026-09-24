@@ -87,6 +87,19 @@ public sealed partial class AccountUiFlowTests
         Assert.Contains("не подтверждён", f.Vm.Status);
     }
 
+    [Fact]
+    public async Task Account_header_uses_provider_display_name_when_available()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        var previous = f.Handler.Send;
+        f.Handler.Send = (request, token) => request.RequestUri!.AbsolutePath == "/api/v1/account/me"
+            ? Task.FromResult(Json(new MeResponse(new(User.UserId, User.Username, "Глеб Иванов", User.CreatedAt), FamilyId, ["yandex"])))
+            : previous(request, token);
+        await f.Vm.RefreshProfileCommand.ExecuteAsync(null);
+        Assert.Equal("Глеб Иванов", f.Vm.AccountName);
+    }
+
     [Theory]
     [InlineData(401, "invalid_credentials", "Неверный")]
     [InlineData(429, "rate_limited", "Слишком")]

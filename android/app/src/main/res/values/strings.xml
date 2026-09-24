@@ -286,7 +286,9 @@
     <string name="account_reauth">Требуется повторный вход. Локальные данные сохранены.</string>
     <string name="account_transition_failed">Профиль не переключён. Завершите текущие операции и повторите попытку.</string>
     <string name="account_external_pending">Завершите вход в браузере и вернитесь в приложение. Если вход не завершился, нажмите «Открыть приложение» на странице браузера.</string>
-    <string name="account_external_signed_in">Вход выполнен. Функции аккаунта доступны.</string>
+    <string name="account_external_signed_in">Вход выполнен. Общие данные и чаты доступны при работающем сервере.</string>
+    <string name="account_external_verified">Подтверждение через провайдера получено.</string>
+    <string name="account_proof_provider">Важные действия подтверждаются через привязанный Яндекс ID или VK ID.</string>
     <string name="account_external_linked">Аккаунт привязан.</string>
     <string name="account_external_profile_changed">Профиль изменился во время входа. Начните вход заново.</string>
     <string name="account_external_expired">Время входа истекло. Начните вход заново.</string>

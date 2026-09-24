@@ -18,6 +18,7 @@ import ru.bgtu_voenmeh.zapara.data.accounts.AccountClientException
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountClientFailure
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountExternalStartRequest
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountHttpClient
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountReauthProof
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountSession
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountSessionManager
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountSessionVault
@@ -33,7 +34,7 @@ internal class AccountRuntime(
     val commitSession: suspend (AccountSession, String) -> Boolean,
     val logout: suspend (remote: (suspend (AccountSession) -> Unit)?) -> Boolean,
     val openUrl: (String) -> Unit,
-    val rememberExternal: (String, String, String?) -> Unit = { _, _, _ -> },
+    val rememberExternal: (String, String, String?, String?) -> Unit = { _, _, _, _ -> },
     val writeExport: (ByteArray, String) -> Unit,
     val capabilitiesTransport: HttpExchange?,
     val scopeBase: String?,
@@ -51,7 +52,7 @@ internal class AccountRuntime(
             isGuest = { host.container.profile.isGuest },
             commitSession = { session, key -> host.coordinator.commitSession(session, key).committed },
             logout = { remote -> host.coordinator.logout(remote).committed },
-            rememberExternal = { id, verifier, userId -> ExternalReturn.remember(host.app, id, verifier, userId) },
+            rememberExternal = { id, verifier, userId, purpose -> ExternalReturn.remember(host.app, id, verifier, userId, purpose) },
             openUrl = { url ->
                 val parsed = Uri.parse(url)
                 if (parsed.scheme != "https") throw AccountClientException(AccountClientFailure.InvalidPayload)
@@ -79,6 +80,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
     constructor(host: AndroidProfileHost) : this(AccountRuntime.from(host))
 
     private var exportId: String? = null
+    private var identityRevision = 0
     private val mutable = MutableStateFlow(
         AccountUiState(
             configured = runtime.client != null,
@@ -96,6 +98,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
 
     init {
         viewModelScope.launch {
+            val revision = identityRevision
             try {
                 val caps = when {
                     runtime.capabilitiesTransport != null && runtime.scopeBase != null ->
@@ -129,10 +132,11 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                     }
                 } else null
                 mutable.update {
+                    if (revision != identityRevision) return@update it.applyCaps(caps).copy(ready = true)
                     it.applyCaps(caps).copy(
                         ready = true,
                         guest = guest,
-                        accountName = if (guest) "" else (session?.user?.username ?: ""),
+                        accountName = if (guest) "" else session?.user?.accountName().orEmpty(),
                         identities = identities,
                         hasPassword = hasPassword,
                         status = statusText(guest)
@@ -186,6 +190,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
             } else {
                 val session = client.login(captured.username, secret, runtime.deviceId(), "Android")
                 val result = runtime.commitSession(session, runtime.serverKey ?: client.scope.key)
+                if (result) identityRevision++
                 val identities = try {
                     client.identities(session.accessToken).map { AccountIdentityRow(it.provider) }
                 } catch (_: Exception) {
@@ -193,8 +198,9 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                 }
                 captured.copy(
                     guest = runtime.isGuest(),
-                    accountName = session.user.username,
+                    accountName = session.user.accountName(),
                     identities = identities,
+                    hasPassword = if (result) true else captured.hasPassword,
                     status = if (result) runtime.strings(R.string.account_local) else runtime.strings(R.string.account_transition_failed)
                 )
             }
@@ -243,6 +249,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
 
     private fun createExport() {
         launchOp { captured ->
+            if (captured.hasPassword != true) return@launchOp startProviderProof(captured, "export")
             val session = requireSession()
             val client = runtime.client!!
             val issued = client.reauthenticate(session.accessToken, captured.proof, "export")
@@ -266,6 +273,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
     private fun deleteAccount() {
         if (!mutable.value.confirmDelete) return
         launchOp { captured ->
+            if (captured.hasPassword != true) return@launchOp startProviderProof(captured, "delete_account")
             val session = requireSession()
             val client = runtime.client!!
             val issued = client.reauthenticate(session.accessToken, captured.proof, "delete_account")
@@ -298,6 +306,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
         if (login && !snap.guest) return
         if (!login && snap.guest) return
         launchOp(provider) { captured ->
+            if (!login && captured.hasPassword != true) return@launchOp startProviderProof(captured, "link:$provider")
             val client = runtime.client!!
             val pkce = nativePkce()
             val current = if (login) null else requireSession()
@@ -317,7 +326,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                 ),
                 accessToken = access
             )
-            runtime.rememberExternal(start.transactionId, pkce.verifier, current?.user?.userId)
+            runtime.rememberExternal(start.transactionId, pkce.verifier, current?.user?.userId, null)
             runtime.openUrl(start.authorizeUrl)
             captured.copy(status = runtime.strings(R.string.account_external_pending), guest = runtime.isGuest())
         }
@@ -326,6 +335,10 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
     private fun unlink(provider: String) {
         if (provider != "vk" && provider != "yandex") return
         launchOp(provider) { captured ->
+            if (captured.hasPassword != true) {
+                if (captured.identities.size <= 1) throw AccountClientException(AccountClientFailure.InvalidRequest)
+                return@launchOp startProviderProof(captured, "unlink:$provider", exclude = provider)
+            }
             val session = requireSession()
             val client = runtime.client!!
             val issued = client.reauthenticate(session.accessToken, captured.proof, "unlink:$provider")
@@ -334,6 +347,61 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                 identities = captured.identities.filter { it.provider != provider },
                 status = statusText(false)
             )
+        }
+    }
+
+    private suspend fun startProviderProof(captured: AccountUiState, purpose: String, exclude: String? = null): AccountUiState {
+        val provider = captured.identities.map { it.provider }.firstOrNull {
+            it != exclude && ((it == "yandex" && captured.yandexAvailable) || (it == "vk" && captured.vkAvailable))
+        } ?: throw AccountClientException(AccountClientFailure.ProviderUnavailable)
+        val session = requireSession()
+        val client = runtime.client ?: throw AccountClientException(AccountClientFailure.NotConfigured)
+        val pkce = nativePkce()
+        val start = client.externalStart(provider, AccountExternalStartRequest(
+            purpose = "reauth", nativeChallenge = pkce.challenge, nativeChallengeMethod = "S256",
+            deviceId = runtime.deviceId(), deviceName = "Android", platform = "android", returnKind = "android",
+            proofPurpose = purpose
+        ), session.accessToken)
+        runtime.rememberExternal(start.transactionId, pkce.verifier, session.user.userId, purpose)
+        runtime.openUrl(start.authorizeUrl)
+        return captured.copy(status = runtime.strings(R.string.account_external_pending))
+    }
+
+    private fun finishProviderProof(proof: AccountReauthProof) {
+        launchOp { captured ->
+            val session = requireSession()
+            val client = runtime.client ?: throw AccountClientException(AccountClientFailure.NotConfigured)
+            when (proof.purpose) {
+                "export" -> {
+                    var job = client.createExport(session.accessToken, proof.proofToken)
+                    if (job.status != "ready") job = client.getExport(session.accessToken, job.exportId)
+                    exportId = job.exportId
+                    captured.copy(exportReady = job.status == "ready", status = statusText(false))
+                }
+                "delete_account" -> {
+                    if (!captured.confirmDelete) return@launchOp captured
+                    client.deleteAccount(session.accessToken, proof.proofToken)
+                    leave(captured, runtime.logout(null))
+                }
+                "link:vk", "link:yandex" -> {
+                    val provider = proof.purpose.substringAfter(':')
+                    val pkce = nativePkce()
+                    val start = client.externalStart(provider, AccountExternalStartRequest(
+                        purpose = "link", nativeChallenge = pkce.challenge, nativeChallengeMethod = "S256",
+                        deviceId = runtime.deviceId(), deviceName = "Android", platform = "android", returnKind = "android",
+                        proofToken = proof.proofToken
+                    ), session.accessToken)
+                    runtime.rememberExternal(start.transactionId, pkce.verifier, session.user.userId, null)
+                    runtime.openUrl(start.authorizeUrl)
+                    captured.copy(status = runtime.strings(R.string.account_external_pending))
+                }
+                "unlink:vk", "unlink:yandex" -> {
+                    val provider = proof.purpose.substringAfter(':')
+                    client.unlinkIdentity(session.accessToken, provider, proof.proofToken)
+                    captured.copy(identities = captured.identities.filter { it.provider != provider }, status = statusText(false))
+                }
+                else -> throw AccountClientException(AccountClientFailure.InvalidPayload)
+            }
         }
     }
 
@@ -365,12 +433,14 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
     }
 
     private fun leave(from: AccountUiState, ok: Boolean): AccountUiState {
+        if (ok) identityRevision++
         exportId = null
         return from.copy(
             guest = true,
             accountName = "",
             devices = emptyList(),
             identities = emptyList(),
+            hasPassword = null,
             exportReady = false,
             confirmDelete = false,
             confirmLogout = false,
@@ -401,7 +471,8 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
             AccountClientFailure.InvalidCredentials -> R.string.account_bad_login
             AccountClientFailure.UsernameUnavailable -> R.string.account_username_taken
             AccountClientFailure.RateLimited -> R.string.account_rate_limited
-            AccountClientFailure.NotConfigured, AccountClientFailure.RegistrationUnavailable -> R.string.account_registration_unavailable
+            AccountClientFailure.NotConfigured, AccountClientFailure.ProviderUnavailable -> R.string.account_unconfigured
+            AccountClientFailure.RegistrationUnavailable -> R.string.account_registration_unavailable
             AccountClientFailure.ExternalAttemptExpired -> R.string.account_external_expired
             AccountClientFailure.ReauthenticationRequired, AccountClientFailure.InvalidSession, AccountClientFailure.InvalidExternalProof -> R.string.account_reauth
             else -> R.string.account_failed
@@ -411,6 +482,32 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
 
     internal fun externalResult(result: ExternalReturnResult) {
         when (result) {
+            is ExternalReturnResult.Verified -> finishProviderProof(result.proof)
+            ExternalReturnResult.SignedIn -> {
+                identityRevision++
+                viewModelScope.launch {
+                    try {
+                        val session = requireSession()
+                        val client = runtime.client ?: return@launch
+                        val identities = try { client.identities(session.accessToken).map { AccountIdentityRow(it.provider) } }
+                        catch (e: CancellationException) { throw e }
+                        catch (_: Exception) { emptyList() }
+                        val hasPassword = try { "password" in client.authenticationMethods(session.accessToken) }
+                        catch (e: CancellationException) { throw e }
+                        catch (_: Exception) { null }
+                        mutable.update { it.copy(
+                            ready = true, guest = runtime.isGuest(), registration = false,
+                            accountName = session.user.accountName(), identities = identities,
+                            hasPassword = hasPassword, devices = emptyList(),
+                            status = runtime.strings(R.string.account_external_signed_in)
+                        ) }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        mutable.update { it.copy(status = runtime.strings(R.string.account_reauth)) }
+                    }
+                }
+            }
             ExternalReturnResult.Linked -> {
                 launchOp { captured ->
                     val session = requireSession()
@@ -444,3 +541,6 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
         }
     }
 }
+
+private fun ru.bgtu_voenmeh.zapara.data.accounts.AccountUser.accountName(): String =
+    displayName?.takeIf { it.isNotBlank() } ?: username

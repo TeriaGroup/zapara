@@ -105,6 +105,7 @@ data class GroupUiState(
     val groupUnread: Int = 0,
     val chatLoading: Boolean = false,
     val sending: Boolean = false,
+    val attachmentPending: Boolean = false,
     val mediaLoadingId: String? = null,
     val mediaError: Boolean = false,
     val replyTo: String? = null,
@@ -259,9 +260,13 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         val ticket = ++generation
         poll?.cancel()
         conversationId = id
+        pendingBytes = null
+        pendingKind = null
+        pendingName = ""
         mutable.value = mutable.value.copy(
             chatTitle = title, direct = direct, showPeople = false, messages = emptyList(), hasMore = false,
             draft = drafts[id].orEmpty(), replyTo = null, editing = null, chatLoading = true, failed = false,
+            attachmentPending = false,
             mediaLoadingId = null, mediaError = false
         )
         val api = runtime.client
@@ -374,6 +379,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         pendingKind = kind
         pendingName = name
         pendingBytes = bytes
+        mutable.value = mutable.value.copy(attachmentPending = true)
         viewModelScope.launch { send() }
     }
 
@@ -413,6 +419,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         val file = pendingBytes
         val fileKind = pendingKind
         if (file != null && fileKind != null) {
+            var delivered = false
             pendingBytes = null
             pendingKind = null
             val name = pendingName
@@ -427,10 +434,12 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                     return
                 }
                 val saved = GroupMedia.place(api, token, id, fileKind, name, file, mutable.value.replyTo)
+                delivered = true
                 if (!current(ticket, id)) return
                 val next = row(saved)
                 mutable.value = mutable.value.copy(
                     failed = false,
+                    attachmentPending = false,
                     replyTo = null,
                     editing = null,
                     messages = mutable.value.messages.filter { it.id != next.id } + next
@@ -438,9 +447,15 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                android.util.Log.w("ZaparaGroup", "media", e)
                 if (current(ticket, id)) mutable.value = mutable.value.copy(failed = true)
+                runCatching { android.util.Log.w("ZaparaGroup", "media", e) }
             } finally {
+                if (!delivered && current(ticket, id) && pendingBytes == null) {
+                    pendingBytes = file
+                    pendingKind = fileKind
+                    pendingName = name
+                    mutable.value = mutable.value.copy(attachmentPending = true)
+                }
                 sending = false
                 mutable.value = mutable.value.copy(sending = false)
             }
@@ -484,8 +499,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             restoreDraft(id, ticket, body, contextual)
             throw e
         } catch (e: Exception) {
-            android.util.Log.w("ZaparaGroup", "send", e)
             restoreDraft(id, ticket, body, contextual)
+            runCatching { android.util.Log.w("ZaparaGroup", "send", e) }
         } finally {
             sending = false
             mutable.value = mutable.value.copy(sending = false)
@@ -529,9 +544,12 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             conversationId?.let { drafts[it] = mutable.value.draft }
         }
         conversationId = null
+        pendingBytes = null
+        pendingKind = null
+        pendingName = ""
         home = null
         mutable.value = mutable.value.copy(
-            hasHome = false, messages = emptyList(), direct = false, failed = false,
+            hasHome = false, messages = emptyList(), direct = false, failed = false, attachmentPending = false,
             showPeople = false, chatLoading = false, draft = "", replyTo = null, editing = null,
             mediaLoadingId = null, mediaError = false
         )

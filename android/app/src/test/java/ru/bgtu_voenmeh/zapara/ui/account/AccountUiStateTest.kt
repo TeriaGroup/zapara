@@ -16,7 +16,9 @@ import org.junit.Before
 import org.junit.Test
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountHttpClient
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountClientFailure
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountSessionManager
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountReauthProof
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountServerScope
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountSession
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountUser
@@ -52,6 +54,121 @@ class AccountUiStateTest {
         val account = guest.copy(guest = false, accountName = "Test.User")
         assertFalse(account.guest)
         assertTrue(account.accountName.isNotBlank())
+    }
+
+    @Test
+    fun yandex_return_updates_existing_account_screen_with_provider_name() = runTest(dispatcher) {
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson(yandex = true)
+                "GET account/identities" -> json("""[{"provider":"yandex","linkedAt":"$seen"}]""")
+                "GET account/me" -> json("""{"user":{"userId":"$family","username":"u_generated","displayName":"Глеб Иванов","createdAt":"$created"},"familyId":"$family","authenticationMethods":["yandex"]}""")
+                else -> error(route(call))
+            }
+        }
+        val vault = MemoryAccountSessionVault(scope().key)
+        var guest = true
+        val vm = AccountViewModel(AccountRuntime(
+            client = AccountHttpClient(http, scope()), vault = vault, strings = ::copy,
+            deviceId = { device }, isGuest = { guest }, commitSession = { _, _ -> true },
+            logout = { _ -> true }, openUrl = {}, writeExport = { _, _ -> },
+            capabilitiesTransport = http, scopeBase = "https://example.invalid/root/", serverKey = scope().key
+        ))
+        advanceUntilIdle()
+        assertTrue(vm.state.value.showGuestAuth)
+        guest = false
+        val session = session(testToken("za_", 3)).copy(user = AccountUser(family, "u_generated", "Глеб Иванов", Instant.parse(created)))
+        vault.acquire().use { it.write(AccountVaultEntry.ready(scope().key, session)) }
+        vm.externalResult(ExternalReturnResult.SignedIn)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.showAccount)
+        assertEquals("Глеб Иванов", vm.state.value.accountName)
+        assertEquals(false, vm.state.value.hasPassword)
+        assertTrue(vm.state.value.identities.any { it.provider == "yandex" })
+    }
+
+    @Test
+    fun provider_only_account_starts_yandex_verification_for_export_without_asking_for_password() = runTest(dispatcher) {
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson(yandex = true)
+                "GET account/identities" -> json("""[{"provider":"yandex","linkedAt":"$seen"}]""")
+                "GET account/me" -> json("""{"user":{"userId":"$family","username":"u_generated","displayName":"Глеб","createdAt":"$created"},"familyId":"$family","authenticationMethods":["yandex"]}""")
+                "POST auth/external/yandex/start" -> {
+                    val body = String(call.body!!)
+                    assertTrue(body.contains("\"purpose\":\"reauth\""))
+                    assertTrue(body.contains("\"proofPurpose\":\"export\""))
+                    json("""{"transactionId":"$txId","authorizeUrl":"https://example.invalid/mock/authorize","expiresAt":"$seen"}""")
+                }
+                else -> error(route(call))
+            }
+        }
+        val vm = signedIn(http, testToken("za_", 3))
+        advanceUntilIdle()
+        assertEquals(false, vm.state.value.hasPassword)
+        assertFalse(vm.state.value.showPasswordProof)
+        vm.onEvent(AccountEvent.CreateExport)
+        advanceUntilIdle()
+        assertTrue(http.requests.any { route(it) == "POST auth/external/yandex/start" })
+        assertTrue(http.requests.none { route(it) == "POST account/reauthenticate" })
+    }
+
+    @Test
+    fun provider_verification_completes_export_without_application_password() = runTest(dispatcher) {
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson(yandex = true)
+                "GET account/identities" -> json("""[{"provider":"yandex","linkedAt":"$seen"}]""")
+                "GET account/me" -> json("""{"user":{"userId":"$family","username":"u_generated","displayName":"Глеб","createdAt":"$created"},"familyId":"$family","authenticationMethods":["yandex"]}""")
+                "POST account/exports" -> {
+                    assertEquals("""{"proofToken":"$proof"}""", String(call.body!!))
+                    json(exportJson(), 202)
+                }
+                else -> error(route(call))
+            }
+        }
+        val vm = signedIn(http, testToken("za_", 3))
+        advanceUntilIdle()
+        vm.externalResult(ExternalReturnResult.Verified(AccountReauthProof(proof, "export", Instant.parse(expires))))
+        advanceUntilIdle()
+        assertTrue(vm.state.value.exportReady)
+        assertTrue(http.requests.any { route(it) == "POST account/exports" })
+        assertFalse(vm.state.value.guest)
+    }
+
+    @Test
+    fun provider_proof_starts_link_of_second_identity_without_password() = runTest(dispatcher) {
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson(vk = true, yandex = true)
+                "GET account/identities" -> json("""[{"provider":"yandex","linkedAt":"$seen"}]""")
+                "GET account/me" -> json("""{"user":{"userId":"$family","username":"u_generated","displayName":"Глеб","createdAt":"$created"},"familyId":"$family","authenticationMethods":["yandex"]}""")
+                "POST auth/external/vk/start" -> {
+                    val body = String(call.body!!)
+                    assertTrue(body.contains("\"purpose\":\"link\""))
+                    assertTrue(body.contains("\"proofToken\":\"$proof\""))
+                    json("""{"transactionId":"$txId","authorizeUrl":"https://example.invalid/mock/authorize","expiresAt":"$seen"}""")
+                }
+                else -> error(route(call))
+            }
+        }
+        val vm = signedIn(http, testToken("za_", 3))
+        advanceUntilIdle()
+        vm.externalResult(ExternalReturnResult.Verified(AccountReauthProof(proof, "link:vk", Instant.parse(expires))))
+        advanceUntilIdle()
+        assertTrue(http.requests.any { route(it) == "POST auth/external/vk/start" })
+        assertTrue(http.requests.none { route(it) == "POST account/reauthenticate" })
+    }
+
+    @Test
+    fun unavailable_account_server_is_not_reported_as_closed_registration() = runTest(dispatcher) {
+        val vm = guestVm(FakeHttp { call -> when (route(call)) {
+            "GET auth/capabilities" -> capsJson()
+            else -> error(route(call))
+        } }, openUrl = {})
+        advanceUntilIdle()
+        vm.externalFailure(AccountClientFailure.NotConfigured)
+        assertEquals("Сервер аккаунтов не настроен", vm.state.value.status)
     }
 
     @Test
@@ -125,8 +242,8 @@ class AccountUiStateTest {
         assertEquals(43, pkce.verifier.length)
         assertTrue(pkce.challenge.all { it.isLetterOrDigit() || it == '-' || it == '_' })
         assertTrue(pkce.challenge != pkce.verifier)
-        assertTrue(!pkce.challenge.contains("vk", ignoreCase = true))
-        assertTrue(!pkce.verifier.contains("yandex", ignoreCase = true))
+        assertFalse(pkce.challenge.contains("://"))
+        assertFalse(pkce.verifier.contains("://"))
     }
 
     @Test
@@ -204,6 +321,7 @@ class AccountUiStateTest {
             when (route(call)) {
                 "GET auth/capabilities" -> capsJson()
                 "GET account/identities" -> json("[]")
+                "GET account/me" -> passwordMeJson()
                 "POST account/reauthenticate" -> {
                     assertTrue(String(call.body!!).contains("\"purpose\":\"export\""))
                     json("""{"proofToken":"$proof","purpose":"export","expiresAt":"$seen"}""")
@@ -238,6 +356,7 @@ class AccountUiStateTest {
             when (route(call)) {
                 "GET auth/capabilities" -> capsJson()
                 "GET account/identities" -> json("[]")
+                "GET account/me" -> passwordMeJson()
                 "POST account/reauthenticate" -> json("""{"proofToken":"$proof","purpose":"delete_account","expiresAt":"$seen"}""")
                 "DELETE account" -> {
                     assertEquals("""{"proofToken":"$proof"}""", String(call.body!!))
@@ -305,6 +424,7 @@ class AccountUiStateTest {
             when (route(call)) {
                 "GET auth/capabilities" -> capsJson(yandex = true)
                 "GET account/identities" -> json("""[{"provider":"yandex","linkedAt":"$seen"}]""")
+                "GET account/me" -> passwordMeJson()
                 "POST account/reauthenticate" -> json("""{"proofToken":"$proof","purpose":"unlink:yandex","expiresAt":"$seen"}""")
                 "DELETE account/identities/yandex" -> {
                     assertEquals("""{"proofToken":"$proof"}""", String(call.body!!))
@@ -451,6 +571,8 @@ class AccountUiStateTest {
 
     private fun capsJson(vk: Boolean = false, yandex: Boolean = false, recovery: Boolean = false) =
         json("""{"password":true,"vk":$vk,"yandex":$yandex,"registration":true,"recovery":$recovery}""")
+
+    private fun passwordMeJson() = json("""{"user":{"userId":"$family","username":"Test.User","displayName":null,"createdAt":"$created"},"familyId":"$family","authenticationMethods":["password"]}""")
 
     private fun devicesJson() = """
         {"devices":[

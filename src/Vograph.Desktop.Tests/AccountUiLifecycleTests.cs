@@ -295,6 +295,157 @@ public sealed class AccountUiLifecycleTests
         Assert.False(f.Vm.ShowYandexLink);
     }
 
+    [Fact]
+    public async Task Provider_only_export_starts_yandex_verification_without_application_password()
+    {
+        await using var f = new Fixture(yandex: true);
+        await f.Login();
+        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Handler.Send = async (request, ct) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/account/me", StringComparison.Ordinal))
+                return Json(new MeResponse(User, FamilyId, ["yandex"]));
+            if (path.EndsWith("/account/identities", StringComparison.Ordinal))
+                return Json(new[] { new ExternalIdentityResponse("yandex", Now) });
+            if (path.EndsWith("/auth/external/yandex/start", StringComparison.Ordinal))
+            {
+                using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+                Assert.Equal("reauth", body.RootElement.GetProperty("purpose").GetString());
+                Assert.Equal("export", body.RootElement.GetProperty("proofPurpose").GetString());
+                started.SetResult(true);
+                return Json(new ExternalStartResponse(Guid.NewGuid(), "https://example.invalid/authorize", DateTimeOffset.UtcNow.AddMinutes(10)));
+            }
+            throw new InvalidOperationException(path);
+        };
+        await f.Vm.RefreshProfileCommand.ExecuteAsync(null);
+        await f.Vm.LoadIdentitiesCommand.ExecuteAsync(null);
+        Assert.False(f.Vm.HasPassword);
+        var export = f.Vm.ExportCommand.ExecuteAsync(null);
+        try { Assert.True(await started.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)); }
+        finally { f.Vm.CancelExternalCommand.Execute(null); await export.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken); }
+    }
+
+    [Fact]
+    public async Task Provider_only_export_uses_verified_yandex_proof_and_keeps_session()
+    {
+        await using var f = new Fixture(yandex: true);
+        await f.Login();
+        var id = Guid.NewGuid();
+        var started = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Handler.Send = async (request, ct) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/account/me", StringComparison.Ordinal)) return Json(new MeResponse(User, FamilyId, ["yandex"]));
+            if (path.EndsWith("/account/identities", StringComparison.Ordinal)) return Json(new[] { new ExternalIdentityResponse("yandex", Now) });
+            if (path.EndsWith("/auth/external/yandex/start", StringComparison.Ordinal))
+            {
+                using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+                Assert.Equal("reauth", body.RootElement.GetProperty("purpose").GetString());
+                Assert.Equal("export", body.RootElement.GetProperty("proofPurpose").GetString());
+                started.SetResult(body.RootElement.GetProperty("nativeReturn").GetProperty("port").GetInt32());
+                return Json(new ExternalStartResponse(id, "https://example.invalid/authorize", DateTimeOffset.UtcNow.AddMinutes(10)));
+            }
+            if (path.EndsWith("/auth/external/exchange", StringComparison.Ordinal))
+                return Json(new ExternalExchangeResponse("completed", Proof: Proof("export")));
+            if (path.EndsWith("/account/exports", StringComparison.Ordinal))
+            {
+                using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+                Assert.Equal(new string('B', 43), body.RootElement.GetProperty("proofToken").GetString());
+                return Json(ReadyJob, HttpStatusCode.Accepted);
+            }
+            throw new InvalidOperationException(path);
+        };
+        await f.Vm.RefreshProfileCommand.ExecuteAsync(null);
+        await f.Vm.LoadIdentitiesCommand.ExecuteAsync(null);
+        var export = f.Vm.ExportCommand.ExecuteAsync(null);
+        var port = await started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        using var browser = new HttpClient(new HttpClientHandler { UseProxy = false });
+        using var response = await browser.GetAsync($"http://127.0.0.1:{port}/zapara/oauth/callback?transactionId={id:D}&handoffCode={new string('B', 43)}", TestContext.Current.CancellationToken);
+        Assert.True(response.IsSuccessStatusCode);
+        await export.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.True(f.Vm.CanDownloadExport);
+        Assert.False(f.Vm.IsGuest);
+        Assert.False(f.Vm.HasPassword);
+    }
+
+    [Fact]
+    public async Task Last_yandex_login_method_cannot_be_unlinked_from_the_account_screen()
+    {
+        await using var f = new Fixture(yandex: true);
+        await f.Login();
+        f.Handler.Send = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/account/me" => Json(new MeResponse(User, FamilyId, ["yandex"])),
+            "/api/v1/account/identities" => Json(new[] { new ExternalIdentityResponse("yandex", Now) }),
+            _ => throw new InvalidOperationException(request.RequestUri.AbsolutePath)
+        });
+        await f.Vm.RefreshProfileCommand.ExecuteAsync(null);
+        await f.Vm.LoadIdentitiesCommand.ExecuteAsync(null);
+        Assert.False(f.Vm.CanUnlinkIdentity);
+        Assert.True(f.Vm.ShowProviderProof);
+    }
+
+    [Fact]
+    public async Task Provider_only_account_links_vk_after_yandex_proof()
+    {
+        await using var f = new Fixture(vk: true, yandex: true);
+        await f.Login();
+        var yandexId = Guid.NewGuid();
+        var vkId = Guid.NewGuid();
+        var yandexStarted = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var vkStarted = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var linked = false;
+        f.Handler.Send = async (request, ct) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/account/me", StringComparison.Ordinal))
+                return Json(new MeResponse(User, FamilyId, linked ? ["yandex", "vk"] : ["yandex"]));
+            if (path.EndsWith("/account/identities", StringComparison.Ordinal))
+                return Json(linked ? new[] { new ExternalIdentityResponse("yandex", Now), new ExternalIdentityResponse("vk", Now) }
+                    : new[] { new ExternalIdentityResponse("yandex", Now) });
+            if (path.EndsWith("/auth/external/yandex/start", StringComparison.Ordinal) ||
+                path.EndsWith("/auth/external/vk/start", StringComparison.Ordinal))
+            {
+                using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+                var port = body.RootElement.GetProperty("nativeReturn").GetProperty("port").GetInt32();
+                if (path.Contains("/yandex/", StringComparison.Ordinal))
+                {
+                    Assert.Equal("reauth", body.RootElement.GetProperty("purpose").GetString());
+                    Assert.Equal("link:vk", body.RootElement.GetProperty("proofPurpose").GetString());
+                    yandexStarted.SetResult(port);
+                    return Json(new ExternalStartResponse(yandexId, "https://example.invalid/yandex", DateTimeOffset.UtcNow.AddMinutes(10)));
+                }
+                Assert.Equal("link", body.RootElement.GetProperty("purpose").GetString());
+                Assert.Equal(new string('B', 43), body.RootElement.GetProperty("proofToken").GetString());
+                vkStarted.SetResult(port);
+                return Json(new ExternalStartResponse(vkId, "https://example.invalid/vk", DateTimeOffset.UtcNow.AddMinutes(10)));
+            }
+            if (path.EndsWith("/auth/external/exchange", StringComparison.Ordinal))
+            {
+                using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+                if (body.RootElement.GetProperty("transactionId").GetGuid() == yandexId)
+                    return Json(new ExternalExchangeResponse("completed", Proof: Proof("link:vk")));
+                linked = true;
+                return Json(new ExternalExchangeResponse("completed"));
+            }
+            throw new InvalidOperationException(path);
+        };
+        await f.Vm.RefreshProfileCommand.ExecuteAsync(null);
+        await f.Vm.LoadIdentitiesCommand.ExecuteAsync(null);
+        var link = f.Vm.LinkVkCommand.ExecuteAsync(null);
+        using var browser = new HttpClient(new HttpClientHandler { UseProxy = false });
+        var firstPort = await yandexStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        using (var first = await browser.GetAsync($"http://127.0.0.1:{firstPort}/zapara/oauth/callback?transactionId={yandexId:D}&handoffCode={new string('B', 43)}", TestContext.Current.CancellationToken))
+            Assert.True(first.IsSuccessStatusCode);
+        var secondPort = await vkStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        using (var second = await browser.GetAsync($"http://127.0.0.1:{secondPort}/zapara/oauth/callback?transactionId={vkId:D}&handoffCode={new string('B', 43)}", TestContext.Current.CancellationToken))
+            Assert.True(second.IsSuccessStatusCode);
+        await link.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(2, f.Vm.Identities.Count);
+        Assert.False(f.Vm.IsGuest);
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]

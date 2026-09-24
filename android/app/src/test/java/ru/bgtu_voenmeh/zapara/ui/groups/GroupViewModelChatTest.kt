@@ -148,6 +148,65 @@ class GroupViewModelChatTest {
     }
 
     @Test
+    fun failed_attachment_send_keeps_file_for_retry() = runTest(dispatcher) {
+        val http = server()
+        val normal = http.handler
+        var attempts = 0
+        http.handler = { call ->
+            if (call.method == "POST" && call.url.endsWith("/media")) {
+                attempts++
+                if (attempts == 1) HttpReply(503, """{"title":"Недоступно","status":503,"code":"unavailable"}""".toByteArray())
+                else HttpReply(201, message(fourth, "Фото").toByteArray())
+            } else normal(call)
+        }
+        val vm = viewModel(http)
+        runCurrent()
+        try {
+            vm.onEvent(GroupEvent.Media("image", "photo.png", byteArrayOf(1, 2, 3)))
+            runCurrent()
+            assertTrue("attempts=$attempts state=${vm.state.value} requests=${http.requests.map { it.url }}", vm.state.value.failed)
+            vm.onEvent(GroupEvent.Send)
+            runCurrent()
+            assertEquals(2, attempts)
+            assertTrue(vm.state.value.messages.any { it.id == fourth })
+        } finally {
+            vm.onEvent(GroupEvent.Back)
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun failed_text_send_preserves_draft_and_retry_adds_message_once() = runTest(dispatcher) {
+        val http = server()
+        val normal = http.handler
+        var attempts = 0
+        http.handler = { call ->
+            if (call.method == "POST" && call.url.endsWith("/conversations/$group/messages")) {
+                attempts++
+                if (attempts == 1) HttpReply(503, """{"title":"Недоступно","status":503,"code":"unavailable"}""".toByteArray())
+                else HttpReply(201, message(fourth, "Встречаемся после пары").toByteArray())
+            } else normal(call)
+        }
+        val vm = viewModel(http)
+        runCurrent()
+        try {
+            vm.onEvent(GroupEvent.Draft("Встречаемся после пары"))
+            vm.onEvent(GroupEvent.Send)
+            runCurrent()
+            assertTrue(vm.state.value.failed)
+            assertEquals("Встречаемся после пары", vm.state.value.draft)
+            vm.onEvent(GroupEvent.Send)
+            runCurrent()
+            assertEquals(2, attempts)
+            assertEquals(1, vm.state.value.messages.count { it.id == fourth })
+            assertEquals("", vm.state.value.draft)
+        } finally {
+            vm.onEvent(GroupEvent.Back)
+            runCurrent()
+        }
+    }
+
+    @Test
     fun openingAndPollingTheGroupChatAcknowledgesUnreadMessages() = runTest(dispatcher) {
         val http = server(groupUnread = 2)
         val vm = viewModel(http)

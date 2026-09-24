@@ -112,6 +112,8 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     public bool ShowExternalLogin => ShowVkLogin || ShowYandexLogin;
     public bool ShowVkLink => VkAvailable && IsAccount && Identities.All(i => i.Provider != "vk");
     public bool ShowYandexLink => YandexAvailable && IsAccount && Identities.All(i => i.Provider != "yandex");
+    public bool ShowProviderProof => IsAccount && !HasPassword && Identities.Count > 0;
+    public bool CanUnlinkIdentity => HasPassword || Identities.Count > 1;
     public bool CanDownloadExport => ExportJob?.Status == "ready";
     partial void OnBusyChanged(bool value) => OnPropertyChanged(nameof(CanAct));
     partial void OnReadyChanged(bool value) => OnPropertyChanged(nameof(CanAct));
@@ -120,6 +122,11 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     partial void OnRecoveryAvailableChanged(bool value) => OnPropertyChanged(nameof(ShowRecovery));
     partial void OnExportJobChanged(ExportJobResponse? value) => OnPropertyChanged(nameof(CanDownloadExport));
     private void OnIdentitiesChanged(object? sender, NotifyCollectionChangedEventArgs e) => NotifyExternal();
+    partial void OnHasPasswordChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowProviderProof));
+        OnPropertyChanged(nameof(CanUnlinkIdentity));
+    }
     [ObservableProperty] private bool documentsAccepted;
 
     partial void OnRegistrationChanged(bool value)
@@ -168,19 +175,20 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
             : value.ReauthRequired ? T("accountReauth") : T(value.Profile.IsGuest ? "accountGuest" : "accountLocal");
         foreach (var name in new[] { nameof(IsGuest), nameof(IsAccount), nameof(CanAct), nameof(NeedsRecovery), nameof(ShowLogin) })
             OnPropertyChanged(name);
+        OnPropertyChanged(nameof(ShowProviderProof));
         NotifyExternal();
     }
 
     private void NotifyExternal()
     {
         foreach (var name in new[] { nameof(ShowRecovery), nameof(ShowVkLogin), nameof(ShowYandexLogin), nameof(ShowExternalLogin),
-            nameof(ShowVkLink), nameof(ShowYandexLink) })
+            nameof(ShowVkLink), nameof(ShowYandexLink), nameof(ShowProviderProof), nameof(CanUnlinkIdentity) })
             OnPropertyChanged(name);
     }
 
     private void Present(UserResponse user)
     {
-        AccountName = user.Username;
+        AccountName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Username : user.DisplayName;
         DisplayName = user.DisplayName ?? "";
     }
 
@@ -192,6 +200,18 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         var me = await service!.MeAsync(lifetime.Token);
         if (disposed || profiles.Current != current || profiles.Snapshot.Identity != expected) return;
         PresentAuthentication(me);
+        if (!HasPassword)
+        {
+            try
+            {
+                var identities = await service.ListIdentitiesAsync(lifetime.Token);
+                if (disposed || profiles.Current != current || profiles.Snapshot.Identity != expected) return;
+                Identities.Clear();
+                foreach (var identity in identities) Identities.Add(identity);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (AccountClientException) { }
+        }
     }
 
     private void PresentAuthentication(MeResponse me)

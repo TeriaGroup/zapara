@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.Input;
+using Vograph.Core.Services.Accounts;
 using Zapara.Contracts.Accounts.ExternalResponses;
 
 namespace Vograph.Desktop.Features.Account;
@@ -24,7 +25,9 @@ public sealed partial class AccountPanelViewModel
         ClearSecrets();
         return ProfileAction(async () =>
         {
-            var job = await service!.CreateExportAsync(secret, lifetime.Token);
+            var job = HasPassword
+                ? await service!.CreateExportAsync(secret, lifetime.Token)
+                : await service!.CreateExportWithProofAsync(await ProviderProofAsync("export", null), lifetime.Token);
             if (job.Status is "queued" or "running")
                 job = await service.GetExportAsync(job.ExportId, lifetime.Token);
             return job;
@@ -65,7 +68,9 @@ public sealed partial class AccountPanelViewModel
         if (!CanAct || IsGuest || !ConfirmDelete) return;
         await RunAsync(async () =>
         {
-            var result = await service!.DeleteAccountAsync(secret, lifetime.Token);
+            var result = HasPassword
+                ? await service!.DeleteAccountAsync(secret, lifetime.Token)
+                : await service!.DeleteAccountWithProofAsync(await ProviderProofAsync("delete_account", null), lifetime.Token);
             if (result is not null) Apply(result.Snapshot);
             Status = T("accountDelete");
         });
@@ -94,12 +99,12 @@ public sealed partial class AccountPanelViewModel
             OnPropertyChanged(nameof(ExternalPending));
             try
             {
-                var result = await service!.CompleteExternalAsync(provider, link ? secret : null, async url =>
-                {
-                    AuthorizeUrl = url;
-                    Status = T(provider == "vk" ? "accountVk" : "accountYandex");
-                    await profiles!.Current.Services.Launcher.OpenUrlAsync(url);
-                }, pending.Token);
+                var result = link && !HasPassword
+                    ? await service!.CompleteExternalWithProofAsync(provider,
+                        await ProviderProofCoreAsync("link:" + provider, null, pending.Token),
+                        url => LaunchExternalAsync(provider, url), pending.Token)
+                    : await service!.CompleteExternalAsync(provider, link ? secret : null,
+                        url => LaunchExternalAsync(provider, url), pending.Token);
                 Apply(result.Snapshot);
                 if (result.Committed && IsAccount)
                 {
@@ -127,6 +132,37 @@ public sealed partial class AccountPanelViewModel
     public bool ExternalPending => externalCancellation is not null;
     [RelayCommand] private void CancelExternal() => externalCancellation?.Cancel();
 
+    private async Task LaunchExternalAsync(string provider, string url)
+    {
+        AuthorizeUrl = url;
+        Status = T(provider == "vk" ? "accountVk" : "accountYandex");
+        await profiles!.Current.Services.Launcher.OpenUrlAsync(url);
+    }
+
+    private async Task<string> ProviderProofAsync(string purpose, string? exclude)
+    {
+        using var pending = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        externalCancellation = pending;
+        OnPropertyChanged(nameof(ExternalPending));
+        try { return await ProviderProofCoreAsync(purpose, exclude, pending.Token); }
+        finally
+        {
+            externalCancellation = null;
+            AuthorizeUrl = null;
+            OnPropertyChanged(nameof(ExternalPending));
+        }
+    }
+
+    private async Task<string> ProviderProofCoreAsync(string purpose, string? exclude, CancellationToken ct)
+    {
+        var identities = Identities.Count > 0 ? Identities.ToArray() : (await service!.ListIdentitiesAsync(ct)).ToArray();
+        var provider = identities.Select(item => item.Provider).FirstOrDefault(item =>
+            item != exclude && (item == "yandex" && YandexAvailable || item == "vk" && VkAvailable));
+        if (provider is null) throw new AccountClientException(AccountClientFailure.ProviderUnavailable);
+        var proof = await service!.ExternalProofAsync(provider, purpose, url => LaunchExternalAsync(provider, url), ct);
+        return proof.ProofToken;
+    }
+
     [RelayCommand]
     private Task LoadIdentities() => ProfileAction(() => service!.ListIdentitiesAsync(lifetime.Token), items =>
     {
@@ -140,10 +176,16 @@ public sealed partial class AccountPanelViewModel
     {
         var secret = Proof;
         ClearSecrets();
-        if (!CanAct || identity is null || !Identities.Contains(identity)) return;
+        if (!CanAct || !CanUnlinkIdentity || identity is null || !Identities.Contains(identity)) return;
         await RunAsync(async () =>
         {
-            await service!.UnlinkIdentityAsync(identity.Provider, secret, lifetime.Token);
+            if (HasPassword) await service!.UnlinkIdentityAsync(identity.Provider, secret, lifetime.Token);
+            else
+            {
+                if (Identities.Count <= 1) throw new AccountClientException(AccountClientFailure.InvalidPayload);
+                await service!.UnlinkIdentityWithProofAsync(identity.Provider,
+                    await ProviderProofAsync("unlink:" + identity.Provider, identity.Provider), lifetime.Token);
+            }
             Identities.Remove(identity);
             Status = T("accountUnlink");
         });

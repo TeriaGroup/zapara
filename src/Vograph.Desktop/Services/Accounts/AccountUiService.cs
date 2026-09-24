@@ -67,6 +67,9 @@ public sealed class AccountUiService(AccountHttpClient client, IAccountSessionVa
         }, ct);
     }
 
+    public Task<ExportJobResponse> CreateExportWithProofAsync(string proofToken, CancellationToken ct)
+        => RunAsync((s, token) => client.CreateExportAsync(s.AccessToken, new ProofRequest(proofToken), token), ct);
+
     public Task<ExportJobResponse> GetExportAsync(Guid exportId, CancellationToken ct)
         => RunAsync((s, token) => client.GetExportAsync(s.AccessToken, exportId, token), ct);
 
@@ -84,6 +87,9 @@ public sealed class AccountUiService(AccountHttpClient client, IAccountSessionVa
         }, true, ct);
     }
 
+    public Task<ProfileSwitchResult?> DeleteAccountWithProofAsync(string proofToken, CancellationToken ct)
+        => MutateAsync((s, token) => client.DeleteAccountAsync(s.AccessToken, new ProofRequest(proofToken), token), true, ct);
+
     public Task RequestPasswordResetAsync(string username, CancellationToken ct)
         => client.RequestPasswordResetAsync(new PasswordResetRequest(username), ct);
 
@@ -92,6 +98,14 @@ public sealed class AccountUiService(AccountHttpClient client, IAccountSessionVa
 
     public Task<ProfileSwitchResult> CompleteExternalAsync(string provider, string? password,
         Func<string, Task> launch, CancellationToken ct)
+        => CompleteExternalCoreAsync(provider, password, null, launch, ct);
+
+    public Task<ProfileSwitchResult> CompleteExternalWithProofAsync(string provider, string proofToken,
+        Func<string, Task> launch, CancellationToken ct)
+        => CompleteExternalCoreAsync(provider, null, proofToken, launch, ct);
+
+    private Task<ProfileSwitchResult> CompleteExternalCoreAsync(string provider, string? password, string? proofToken,
+        Func<string, Task> launch, CancellationToken ct)
         => profiles.ExternalAsync(async token =>
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -99,13 +113,14 @@ public sealed class AccountUiService(AccountHttpClient client, IAccountSessionVa
             using var callback = new ExternalLoopback();
             var verifier = Token();
             var expected = profiles.Snapshot.Identity;
-            var start = password is null
+            var link = password is not null || proofToken is not null;
+            var start = !link
                 ? await client.StartExternalAsync(provider, BuildStart("login", null, verifier, callback.Port), ct: timeout.Token)
                 : await RunAsync(async (session, inner) =>
                 {
-                    var proof = await client.ReauthenticateAsync(session.AccessToken,
-                        new PasswordProofRequest(AccountValidation.Password(password), "link:" + provider), inner);
-                    return await client.StartExternalAsync(provider, BuildStart("link", proof.ProofToken, verifier, callback.Port), session.AccessToken, inner);
+                    var proof = proofToken ?? (await client.ReauthenticateAsync(session.AccessToken,
+                        new PasswordProofRequest(AccountValidation.Password(password!), "link:" + provider), inner)).ProofToken;
+                    return await client.StartExternalAsync(provider, BuildStart("link", proof, verifier, callback.Port), session.AccessToken, inner);
                 }, timeout.Token);
             var remaining = start.ExpiresAt - DateTimeOffset.UtcNow;
             if (start.TransactionId == Guid.Empty || remaining <= TimeSpan.Zero
@@ -118,12 +133,34 @@ public sealed class AccountUiService(AccountHttpClient client, IAccountSessionVa
             timeout.Token.ThrowIfCancellationRequested();
             if (profiles.Snapshot.Identity != expected) throw new AccountClientException(AccountClientFailure.SessionChanged);
             var request = new ExternalExchangeRequest(start.TransactionId, verifier, code);
-            var result = password is null ? await client.ExchangeExternalAsync(request, ct: timeout.Token)
+            var result = !link ? await client.ExchangeExternalAsync(request, ct: timeout.Token)
                 : await RunAsync((session, inner) => client.ExchangeExternalAsync(request, session.AccessToken, inner), timeout.Token);
-            if (result.Status != "completed" || (password is null ? result.Session is null : result.Session is not null))
+            if (result.Status != "completed" || (!link ? result.Session is null : result.Session is not null))
                 throw new AccountClientException(AccountClientFailure.InvalidPayload);
             return result.Session;
-        }, password is null, ct);
+        }, password is null && proofToken is null, ct);
+
+    public Task<ReauthResponse> ExternalProofAsync(string provider, string purpose, Func<string, Task> launch, CancellationToken ct)
+        => RunAsync(async (session, token) =>
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            timeout.CancelAfter(TimeSpan.FromMinutes(10));
+            using var callback = new ExternalLoopback();
+            var verifier = Token();
+            var start = await client.StartExternalAsync(provider,
+                BuildStart("reauth", null, verifier, callback.Port, purpose), session.AccessToken, timeout.Token);
+            var remaining = start.ExpiresAt - DateTimeOffset.UtcNow;
+            if (start.TransactionId == Guid.Empty || remaining <= TimeSpan.Zero ||
+                !Uri.TryCreate(start.AuthorizeUrl, UriKind.Absolute, out var authorize) || authorize.Scheme != "https" ||
+                !string.IsNullOrEmpty(authorize.UserInfo)) throw new AccountClientException(AccountClientFailure.InvalidPayload);
+            timeout.CancelAfter(remaining < TimeSpan.FromMinutes(10) ? remaining : TimeSpan.FromMinutes(10));
+            await launch(start.AuthorizeUrl);
+            var code = await callback.ReceiveAsync(start.TransactionId, timeout.Token);
+            var result = await client.ExchangeExternalAsync(new(start.TransactionId, verifier, code), session.AccessToken, timeout.Token);
+            if (result.Status != "completed" || result.Session is not null || result.Proof?.Purpose != purpose)
+                throw new AccountClientException(AccountClientFailure.InvalidPayload);
+            return result.Proof;
+        }, ct);
 
     public Task<ExternalStatusResponse> GetExternalStatusAsync(Guid transactionId, CancellationToken ct)
         => client.GetExternalStatusAsync(transactionId, ct);
@@ -148,13 +185,20 @@ public sealed class AccountUiService(AccountHttpClient client, IAccountSessionVa
         }, ct);
     }
 
-    private ExternalStartRequest BuildStart(string purpose, string? proofToken, string verifier, int port)
+    public Task UnlinkIdentityWithProofAsync(string provider, string proofToken, CancellationToken ct)
+        => RunAsync(async (s, token) =>
+        {
+            await client.UnlinkIdentityAsync(s.AccessToken, provider, new ProofRequest(proofToken), token);
+            return true;
+        }, ct);
+
+    private ExternalStartRequest BuildStart(string purpose, string? proofToken, string verifier, int port, string? proofPurpose = null)
     {
         var challenge = Convert.ToBase64String(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
         var deviceId = ProfileInstallation.LoadOrCreate(profiles.Current.Services.Shared.GlobalDataDir);
         return new(purpose, challenge, "S256", new DeviceInput(deviceId, "Windows", "windows"),
-            new NativeReturn("windows", port), proofToken);
+            new NativeReturn("windows", port), proofToken, proofPurpose);
     }
 
     private static string Token()

@@ -93,6 +93,12 @@ public sealed partial class ExternalAuthService
             user = await db.UserAsync(id, locked: true) ?? throw ExternalAuthException.Invalid();
         }
         if (user.Status != "active") throw ExternalAuthException.Invalid();
+        if (owner is not null && user.User.DisplayName is null && row.DisplayName is not null)
+        {
+            await db.ExecuteAsync($"UPDATE {schema}.users SET display_name=@p0 WHERE user_id=@p1 AND display_name IS NULL",
+                row.DisplayName, owner.Value);
+            user = await db.UserAsync(owner, locked: true) ?? throw ExternalAuthException.Invalid();
+        }
         var family = Guid.NewGuid();
         var expiry = db.Now.AddDays(30);
         await db.ExecuteAsync($"""

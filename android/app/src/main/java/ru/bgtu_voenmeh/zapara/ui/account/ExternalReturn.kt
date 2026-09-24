@@ -10,8 +10,19 @@ import ru.bgtu_voenmeh.zapara.data.accounts.AccountExternalExchangeRequest
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountClientException
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountClientFailure
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountHttpClient
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountReauthProof
 
-internal enum class ExternalReturnResult { Ignored, Pending, SignedIn, Linked, Failed, Expired, ProfileChanged, TransitionFailed }
+internal sealed interface ExternalReturnResult {
+    data object Ignored : ExternalReturnResult
+    data object Pending : ExternalReturnResult
+    data object SignedIn : ExternalReturnResult
+    data object Linked : ExternalReturnResult
+    data object Failed : ExternalReturnResult
+    data object Expired : ExternalReturnResult
+    data object ProfileChanged : ExternalReturnResult
+    data object TransitionFailed : ExternalReturnResult
+    data class Verified(val proof: AccountReauthProof) : ExternalReturnResult
+}
 
 internal object ExternalReturn {
     private const val prefs = "zapara_external"
@@ -22,11 +33,12 @@ internal object ExternalReturn {
     fun hasPending(context: Context): Boolean = context.getSharedPreferences(prefs, Context.MODE_PRIVATE)
         .getString("transaction", null) != null
 
-    fun remember(context: Context, transactionId: String, verifier: String, userId: String?) {
+    fun remember(context: Context, transactionId: String, verifier: String, userId: String?, proofPurpose: String? = null) {
         val saved = context.getSharedPreferences(prefs, Context.MODE_PRIVATE).edit()
             .putString("transaction", transactionId)
             .putString("verifier", verifier)
             .putString("userId", userId)
+            .putString("proofPurpose", proofPurpose)
             .commit()
         if (!saved) throw AccountClientException(AccountClientFailure.VaultUnavailable)
     }
@@ -87,6 +99,7 @@ internal object ExternalReturn {
     ): ExternalReturnResult {
         val client = host.accounts ?: throw AccountClientException(AccountClientFailure.NotConfigured)
         val expectedUser = stored.getString("userId", null)
+        val proofPurpose = stored.getString("proofPurpose", null)
         if (host.container.profile.userId != expectedUser) {
             stored.edit().clear().commit()
             return ExternalReturnResult.ProfileChanged
@@ -110,7 +123,13 @@ internal object ExternalReturn {
             return ExternalReturnResult.ProfileChanged
         }
         if (expectedUser != null) {
-            if (exchanged.session != null || exchanged.proof != null) throw AccountClientException(AccountClientFailure.InvalidPayload)
+            if (exchanged.session != null) throw AccountClientException(AccountClientFailure.InvalidPayload)
+            if (exchanged.proof != null) {
+                if (proofPurpose == null || exchanged.proof.purpose != proofPurpose)
+                    throw AccountClientException(AccountClientFailure.InvalidPayload)
+                return ExternalReturnResult.Verified(exchanged.proof)
+            }
+            if (proofPurpose != null) throw AccountClientException(AccountClientFailure.InvalidPayload)
             return ExternalReturnResult.Linked
         }
         val session = exchanged.session ?: throw AccountClientException(AccountClientFailure.InvalidPayload)

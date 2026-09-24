@@ -26,11 +26,8 @@ public sealed class SocialService(IAccountUnitOfWork trustedAccounts, SocialConf
     public Task<SocialHomeResponse> DeclineAsync(string token, Guid friendshipId, CancellationToken ct = default)
         => Run(token, db => db.DeclineAsync(friendshipId), ct);
 
-    public async Task<SocialPageResponse> MessagesAsync(string token, Guid conversationId, Guid? before, CancellationToken ct = default)
-    {
-        var page = await Run(token, db => db.MessagesAsync(conversationId, before), ct);
-        return new(page.Messages.Select(ReadText).ToArray(), page.HasMore);
-    }
+    public Task<SocialPageResponse> MessagesAsync(string token, Guid conversationId, Guid? before, CancellationToken ct = default)
+        => Run(token, db => db.MessagesAsync(conversationId, before), ct);
 
     public async Task<SocialMessageResponse> SendTextAsync(string token, Guid conversationId, string body, Guid? replyTo = null, CancellationToken ct = default)
     {
@@ -121,25 +118,9 @@ public sealed class SocialService(IAccountUnitOfWork trustedAccounts, SocialConf
     {
         if (message.Deleted || message.Kind != "text" || string.IsNullOrEmpty(message.Body)) return message;
         var bytes = Encoding.UTF8.GetBytes(message.Body);
-        objects.Put(ContentNames.Text(message.MessageId), bytes);
-        return ReadText(message);
-    }
-
-    private SocialMessageResponse ReadText(SocialMessageResponse message)
-    {
-        if (message.Deleted || message.Kind != "text") return message;
-        try
-        {
-            var stored = objects.Get(ContentNames.Text(message.MessageId));
-            if (stored is null) return message;
-            return new(message.MessageId, message.SenderId, message.SenderName, message.Kind, Encoding.UTF8.GetString(stored),
-                message.AttachmentId, message.FileName, message.ContentType, message.Bytes, message.CreatedAt,
-                message.ReplyTo, message.ReplyBody, message.EditedAt, message.Deleted, message.Read, message.DurationMs, message.Reactions);
-        }
-        catch (Exception)
-        {
-            return message;
-        }
+        try { objects.Put(ContentNames.Text(message.MessageId), bytes); }
+        catch (Exception) { /* The committed database row is the source of truth. */ }
+        return message;
     }
 
     private Task<T> Run<T>(string token, Func<SocialRepository, Task<T>> operation, CancellationToken ct)
