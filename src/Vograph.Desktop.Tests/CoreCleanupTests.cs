@@ -37,7 +37,7 @@ public class CoreCleanupTests
     public void Version_Tags_Agree()
     {
         Assert.Equal(AppVersion.Tag, AutoUpdateService.CurrentTagWindows);
-        Assert.Equal("windows-v2.1.16", AutoUpdateService.CurrentTagWindows);
+        Assert.Equal("windows-v2.1.17", AutoUpdateService.CurrentTagWindows);
     }
 
     [Fact]

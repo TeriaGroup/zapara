@@ -39,7 +39,8 @@ data class ScheduleWidgetSnapshot(
 data class HomeworkWidgetRow(
     val subject: String,
     val detail: String,
-    val tone: String
+    val tone: String,
+    val id: Long = 0
 )
 
 data class HomeworkWidgetSnapshot(
@@ -49,7 +50,8 @@ data class HomeworkWidgetSnapshot(
     val empty: String?,
     val rows: List<HomeworkWidgetRow>,
     val cleared: Boolean = false,
-    val isDark: Boolean = false
+    val isDark: Boolean = false,
+    val doneIds: Set<Long> = emptySet()
 )
 
 internal fun widgetSubtitle(identity: WidgetJobIdentity, groupName: String?, copy: UiCopy): String {
@@ -178,6 +180,15 @@ object ScheduleWidgetComposer {
 object HomeworkWidgetComposer {
     const val MAX_ROWS = 4
 
+    fun rowsForHeightDp(heightDp: Int, fontScale: Float = 1f): Int {
+        // Outer padding + title/subtitle, then margin + subject + two detail lines.
+        // Budget font metrics as well as text sizes: two wrapped rows do not fit 160dp.
+        val scale = fontScale.coerceAtLeast(1f)
+        val chrome = 28 + 40 * scale
+        val row = 8 + 52 * scale
+        return if (heightDp < 120) 1 else ((heightDp - chrome) / row).toInt().coerceIn(1, MAX_ROWS)
+    }
+
     fun cleared(identity: WidgetJobIdentity, copy: UiCopy, isDark: Boolean = false) = fromHomework(
         identity = identity,
         settings = ScheduleRepository.SettingsState(),
@@ -223,10 +234,11 @@ object HomeworkWidgetComposer {
                 }
                 val due = HomeworkGroups.dueLabel(hw, today, copy)
                 val detail = if (hw.text.isBlank()) due else "${hw.text} · $due"
-                HomeworkWidgetRow(subject, detail, tone(hw.status))
+                HomeworkWidgetRow(subject, detail, tone(hw.status), hw.id)
             }
         val empty = if (rows.isEmpty()) copy.get("hw_empty_title") else null
-        return HomeworkWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark)
+        return HomeworkWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark,
+            homework.filter { it.done || it.status == "done" }.map { it.id }.toSet())
     }
 
     internal fun rank(status: String): Int = when (status) {
@@ -246,6 +258,22 @@ object HomeworkWidgetComposer {
 }
 
 object WidgetSnapshots {
+    fun wayfinder(container: AppContainer, identity: WidgetJobIdentity, cleared: Boolean, systemNight: Boolean): WayfinderWidgetSnapshot {
+        val settings = container.repo.settings()
+        val dark = WidgetTheme.isDark(settings.theme, systemNight)
+        if (cleared) return WayfinderWidgetComposer.cleared(identity, container.copy, dark)
+        val lessons = if (settings.myGroupId.isNullOrBlank()) emptyList() else container.ownLessons()
+        return WayfinderWidgetComposer.fromSchedule(
+            identity = identity,
+            settings = settings,
+            allLessons = lessons,
+            now = container.clock(),
+            displayName = { lesson -> container.overrides.displayNameByNorm(lesson.subjectNormalized, lesson.dayOfWeek) },
+            copy = container.copy,
+            isDark = dark
+        )
+    }
+
     fun schedule(container: AppContainer, identity: WidgetJobIdentity, cleared: Boolean, systemNight: Boolean): ScheduleWidgetSnapshot {
         val settings = container.repo.settings()
         val dark = WidgetTheme.isDark(settings.theme, systemNight)
@@ -283,6 +311,24 @@ object WidgetSnapshots {
                 val lesson = lessons.firstOrNull { Parity.sameSubject(it.subjectNormalized, norm) }
                 if (lesson != null) container.overrides.displayNameByNorm(norm, lesson.dayOfWeek) else ""
             },
+            copy = container.copy,
+            isDark = dark
+        )
+    }
+
+    fun week(container: AppContainer, identity: WidgetJobIdentity, cleared: Boolean, systemNight: Boolean): WeekWidgetSnapshot {
+        val settings = container.repo.settings()
+        val dark = WidgetTheme.isDark(settings.theme, systemNight)
+        if (cleared) return WeekWidgetComposer.cleared(identity, container.copy, dark)
+        val gid = settings.myGroupId.orEmpty()
+        val groupName = container.repo.groups().firstOrNull { it.id == gid }?.name
+        val lessons = if (gid.isEmpty()) emptyList() else container.ownLessons()
+        return WeekWidgetComposer.fromSchedule(
+            identity = identity,
+            settings = settings,
+            allLessons = lessons,
+            today = container.clock().toLocalDate(),
+            groupName = groupName,
             copy = container.copy,
             isDark = dark
         )

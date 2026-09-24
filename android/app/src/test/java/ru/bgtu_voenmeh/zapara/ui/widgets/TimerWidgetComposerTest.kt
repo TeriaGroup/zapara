@@ -12,6 +12,34 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 
 class TimerWidgetComposerTest {
+    @Test fun timer_seconds_do_not_restart_phase_effect() {
+        val old = TimerWidgetSnapshot(guestId, "10:00", "Пара", "Математика", "493 ГК",
+            TimerPhaseKind.Lesson, 0.5f, day.atTime(12, 0))
+        org.junit.Assert.assertFalse(timerFaceChanged(old, old.copy(timeText = "09:59", fraction = 0.49f)))
+        assertTrue(timerFaceChanged(old, old.copy(kind = TimerPhaseKind.Break, phaseText = "Перемена")))
+        assertTrue(timerFaceChanged(old, old.copy(endsAt = old.endsAt!!.plusHours(1))))
+        assertNull(WidgetFaceEffects.timer(old, old, WidgetMotionPolicy.of(true, 1f, true)))
+        assertEquals(WidgetMotionKind.Phase, WidgetFaceEffects.timer(old,
+            old.copy(kind = TimerPhaseKind.Break), WidgetMotionPolicy.of(true, 1f, true))?.kind)
+    }
+
+    @Test fun advance_ignores_unplaced_faces_and_uses_the_earliest_placed_boundary() {
+        val scheduleAt = LocalDateTime.of(2026, 9, 23, 9, 0)
+        val timerEnd = scheduleAt.plusHours(1)
+        val timerMinute = scheduleAt.plusMinutes(1)
+        val wayAt = scheduleAt.plusMinutes(30)
+        fun wake(schedule: Boolean, timer: Boolean, wayfinder: Boolean, cleared: Boolean = false): LocalDateTime? {
+            return WidgetPresence(schedule, true, timer, wayfinder, true)
+                .advanceAt(scheduleAt, timerEnd, timerMinute, cleared, wayAt)
+        }
+        assertNull(wake(false, false, false))
+        assertEquals(wayAt, wake(false, false, true))
+        assertEquals(timerEnd, wake(false, true, false))
+        assertNull(wake(false, true, false, cleared = true))
+        assertEquals(wayAt, wake(false, true, true))
+        assertEquals(scheduleAt, wake(true, true, true))
+    }
+
     private val day = LocalDate.of(2026, 9, 15)
     private val guestId = WidgetJobIdentity.of(ProfileDescriptor.guest(), 0)
     private val settings = ScheduleRepository.SettingsState(

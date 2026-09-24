@@ -26,6 +26,7 @@ import ru.bgtu_voenmeh.zapara.ui.AppEvent
 import ru.bgtu_voenmeh.zapara.ui.components.ToastKind
 import ru.bgtu_voenmeh.zapara.ui.shell.ShellLogic
 import ru.bgtu_voenmeh.zapara.ui.theme.ThemeChoice
+import ru.bgtu_voenmeh.zapara.ui.widgets.WidgetUpdater
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val mutable = MutableStateFlow(SettingsUiState())
@@ -50,7 +51,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             }
             is SettingsEvent.Animations -> {
                 mutable.update { it.copy(animations = event.enabled) }
-                save(transform = { it.copy(animations = event.enabled) })
+                val motionChange = WidgetUpdater.animationsChanging(container)
+                save(transform = { it.copy(animations = event.enabled) },
+                    finished = { WidgetUpdater.animationsSaved(container, motionChange) })
             }
             is SettingsEvent.Notify -> {
                 mutable.update { it.copy(notifyEnabled = event.enabled) }
@@ -174,7 +177,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     private fun save(
         transform: (ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState) -> ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState,
-        after: (ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState) -> Unit = {}
+        after: (ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState) -> Unit = {},
+        finished: () -> Unit = {}
     ) {
         viewModelScope.launch {
             try {
@@ -192,7 +196,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 android.util.Log.w("ZaparaSettings", "save", e)
-            }
+            } finally { finished() }
         }
     }
 

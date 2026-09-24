@@ -12,13 +12,31 @@ object TimerRing {
         val px = (sizeDp.coerceIn(80, 240) * density).toInt().coerceIn(160, 360)
         val bitmap = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        val stroke = px * 0.08f
-        val inset = stroke / 2f + 2f
-        val oval = RectF(inset, inset, px - inset, px - inset)
+        draw(canvas, RectF(0f, 0f, px.toFloat(), px.toFloat()), fraction, track, arc)
+        return bitmap
+    }
+
+    internal fun blend(old: Int, next: Int, progress: Float): Int = android.graphics.Color.argb(
+        255,
+        (android.graphics.Color.red(old) + (android.graphics.Color.red(next) - android.graphics.Color.red(old)) * progress).toInt(),
+        (android.graphics.Color.green(old) + (android.graphics.Color.green(next) - android.graphics.Color.green(old)) * progress).toInt(),
+        (android.graphics.Color.blue(old) + (android.graphics.Color.blue(next) - android.graphics.Color.blue(old)) * progress).toInt())
+
+    internal fun draw(canvas: Canvas, area: RectF, fraction: Float, track: Int, arc: Int,
+                      mask: Int? = null, haloAlpha: Float = 0f) {
+        val size = minOf(area.width(), area.height())
+        val stroke = size * 0.08f
+        val oval = RectF(area).apply { inset(size * 0.10f, size * 0.10f) }
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = stroke
             strokeCap = Paint.Cap.BUTT
+        }
+        if (mask != null) {
+            paint.color = mask
+            paint.strokeWidth = stroke + size * 0.015f
+            canvas.drawOval(oval, paint)
+            paint.strokeWidth = stroke
         }
         paint.color = track
         canvas.drawArc(oval, 0f, 360f, false, paint)
@@ -28,6 +46,12 @@ object TimerRing {
             paint.strokeCap = if (left >= 0.999f) Paint.Cap.BUTT else Paint.Cap.ROUND
             canvas.drawArc(oval, -90f, left * 360f, false, paint)
         }
-        return bitmap
+        if (haloAlpha > 0f) {
+            paint.color = arc
+            paint.alpha = (haloAlpha * 150).toInt().coerceIn(0, 255)
+            paint.strokeWidth = size * 0.009f
+            val halo = RectF(area).apply { inset(size * 0.035f, size * 0.035f) }
+            canvas.drawOval(halo, paint)
+        }
     }
 }

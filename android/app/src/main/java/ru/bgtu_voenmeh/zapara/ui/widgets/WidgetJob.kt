@@ -2,6 +2,29 @@ package ru.bgtu_voenmeh.zapara.ui.widgets
 
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileDescriptor
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork
+import java.time.LocalDateTime
+
+data class WidgetPresence(
+    val schedule: Boolean,
+    val homework: Boolean,
+    val timer: Boolean,
+    val wayfinder: Boolean,
+    val week: Boolean
+) {
+    val any: Boolean get() = schedule || homework || timer || wayfinder || week
+    val needsAdvance: Boolean get() = schedule || timer || wayfinder
+
+    fun advanceAt(
+        scheduleAt: LocalDateTime?,
+        timerEndsAt: LocalDateTime?,
+        timerRefreshAt: LocalDateTime?,
+        timerCleared: Boolean,
+        wayfinderAt: LocalDateTime?
+    ): LocalDateTime? = earlierRefresh(
+        widgetWakeAt(scheduleAt.takeIf { schedule }, timerEndsAt, timerRefreshAt, timer, timerCleared),
+        wayfinderAt.takeIf { wayfinder }
+    )
+}
 
 data class WidgetJobIdentity(
     val profileId: String,
@@ -32,6 +55,56 @@ object WidgetJobs {
         job: WidgetJobIdentity,
         current: WidgetJobIdentity
     ): Boolean = ticket.isCurrent && accept(job, current)
+}
+
+internal enum class WidgetFace { Schedule, Homework, Timer, Wayfinder, Week }
+
+/** Main-thread publication barrier: a generation is ready only after all placed faces clear. */
+internal class WidgetProfilePreparation {
+    private var clearingIdentity: WidgetJobIdentity? = null
+    private val cleared = mutableSetOf<WidgetFace>()
+
+    fun prepare(
+        identity: WidgetJobIdentity,
+        current: () -> WidgetJobIdentity,
+        readPresence: () -> WidgetPresence,
+        clear: (WidgetFace) -> Unit,
+        onFailure: (WidgetFace, Exception) -> Unit = { _, _ -> },
+        beforeClear: () -> Unit = {}
+    ): Boolean {
+        if (!WidgetJobs.accept(identity, current())) return false
+        if (clearingIdentity != identity) beforeClear()
+        val placed = try {
+            readPresence()
+        } catch (_: Exception) {
+            // Unknown placement cannot prove that a previously failed clear is no longer needed.
+            return false
+        }
+        if (!WidgetJobs.accept(identity, current())) return false
+        if (clearingIdentity != identity) {
+            clearingIdentity = identity
+            cleared.clear()
+        }
+        val required = buildList {
+            if (placed.schedule) add(WidgetFace.Schedule)
+            if (placed.homework) add(WidgetFace.Homework)
+            if (placed.timer) add(WidgetFace.Timer)
+            if (placed.wayfinder) add(WidgetFace.Wayfinder)
+            if (placed.week) add(WidgetFace.Week)
+        }
+        for (face in required) {
+            if (!WidgetJobs.accept(identity, current())) return false
+            if (face in cleared) continue
+            try {
+                clear(face)
+                if (!WidgetJobs.accept(identity, current())) return false
+                cleared += face
+            } catch (error: Exception) {
+                onFailure(face, error)
+            }
+        }
+        return WidgetJobs.accept(identity, current()) && required.all { it in cleared }
+    }
 }
 
 object WidgetTheme {

@@ -9,10 +9,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
+import android.database.ContentObserver
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +25,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.bgtu_voenmeh.zapara.ZaparaApplication
+import ru.bgtu_voenmeh.zapara.AppContainer
 import java.time.LocalDateTime
 import java.time.ZoneId
 
@@ -34,6 +37,33 @@ object WidgetUpdater {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val main = Handler(Looper.getMainLooper())
     private val restoreLock = Mutex()
+    // Accessed only on main. Failed reads retain the last successful boundary for this profile.
+    private val profilePreparation = WidgetProfilePreparation()
+    private var alarmIdentity: WidgetJobIdentity? = null
+    private var scheduleWake: LocalDateTime? = null
+    private var timerEnd: LocalDateTime? = null
+    private var timerWake: LocalDateTime? = null
+    private var wayfinderWake: LocalDateTime? = null
+
+    data class MotionPreferenceChange(val identity: WidgetJobIdentity, val revision: Long)
+
+    /** Called synchronously by the real preference event, before its asynchronous database save. */
+    fun animationsChanging(container: AppContainer): MotionPreferenceChange? {
+        val app = container.app as? ZaparaApplication ?: return null
+        if (app.host.container !== container || container.closed) return null
+        val identity = WidgetJobIdentity.of(container.profile, app.host.generation.value)
+        return MotionPreferenceChange(identity, WidgetMotionPlayer.beginPreferenceChange(identity))
+    }
+
+    /** Read persisted state after success, failure or cancellation; only the active profile may refresh. */
+    fun animationsSaved(container: AppContainer, change: MotionPreferenceChange?) {
+        if (change == null) return
+        val app = container.app as? ZaparaApplication ?: return
+        val current = WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value)
+        if (app.host.container !== container || !WidgetJobs.accept(change.identity, current)) return
+        WidgetMotionPlayer.finishPreferenceChange(change.identity, change.revision)
+        refresh(app)
+    }
 
     fun bind(app: ZaparaApplication) {
         synchronized(gate) {
@@ -55,6 +85,10 @@ object WidgetUpdater {
     fun refresh(context: Context) {
         val app = context.applicationContext as? ZaparaApplication ?: return
         bind(app)
+        main.post {
+            cancelAbsentAlarms(app)
+            prepareProfile(app, WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value))
+        }
         scope.launch {
             restoreIfGuest(app)
             push(app, app.host.generation.value, clearFirst = false)
@@ -67,7 +101,7 @@ object WidgetUpdater {
         scheduleHeartbeat(app)
         scope.launch {
             if (app.host.container.closed) return@launch
-            push(app, app.host.generation.value, clearFirst = false)
+            push(app, app.host.generation.value, clearFirst = false, heartbeatOnly = true)
         }
     }
 
@@ -88,6 +122,8 @@ object WidgetUpdater {
     fun pulse(context: Context) {
         val app = context.applicationContext as? ZaparaApplication ?: return
         bind(app)
+        // Retry pending profile clears even when the following timer read fails.
+        main.post { prepareProfile(app, WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value)) }
         scope.launch { repaintTimer(app) }
     }
 
@@ -96,16 +132,26 @@ object WidgetUpdater {
             if (screenWatch != null) return@post
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(ctx: Context, intent: Intent?) {
-                    if (timerPlaced(ctx)) pulse(ctx)
+                    if (intent?.action == Intent.ACTION_SCREEN_OFF) WidgetMotionPlayer.cancelAll()
+                    else refresh(ctx)
                 }
             }
-            val filter = IntentFilter(Intent.ACTION_SCREEN_ON)
+            val filter = IntentFilter(Intent.ACTION_SCREEN_ON).apply { addAction(Intent.ACTION_SCREEN_OFF) }
             if (Build.VERSION.SDK_INT >= 33) {
                 app.applicationContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
             } else {
                 app.applicationContext.registerReceiver(receiver, filter)
             }
             screenWatch = receiver
+            app.contentResolver.registerContentObserver(
+                Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false,
+                object : ContentObserver(main) {
+                    override fun onChange(selfChange: Boolean) {
+                        WidgetMotionPlayer.cancelAll()
+                        refresh(app)
+                    }
+                }
+            )
         }
     }
 
@@ -122,34 +168,30 @@ object WidgetUpdater {
         }
     }
 
-    private fun push(app: ZaparaApplication, gen: Long, clearFirst: Boolean) {
+    private fun push(app: ZaparaApplication, gen: Long, clearFirst: Boolean, heartbeatOnly: Boolean = false) {
         val container = app.host.container
         if (container.closed) return
         val identity = WidgetJobIdentity.of(container.profile, gen)
         val night = night(app)
         if (clearFirst) {
-            val copy = container.copy
-            val dark = WidgetTheme.isDark("system", night)
-            apply(
-                app,
-                ScheduleWidgetComposer.cleared(identity, copy, dark),
-                HomeworkWidgetComposer.cleared(identity, copy, dark),
-                TimerWidgetComposer.cleared(identity, copy, dark)
-            )
+            main.post { prepareProfile(app, identity) }
         }
         container.work.enter().use { ticket ->
             if (!ticket.admitted) return
+            val policyRevision = WidgetMotionPlayer.beginPolicyObservation()
+            val policy = motionPolicy(app, container)
+            observeMotionPolicy(app, identity, policy, policyRevision)
             val schedule = try {
                 WidgetSnapshots.schedule(container, identity, false, night)
             } catch (e: Exception) {
                 Log.w("ZaparaWidget", "schedule", e)
-                return
+                null
             }
-            val homework = try {
+            val homework = if (heartbeatOnly) null else try {
                 WidgetSnapshots.homework(container, identity, false, night)
             } catch (e: Exception) {
                 Log.w("ZaparaWidget", "homework", e)
-                return
+                null
             }
             val timer = try {
                 WidgetSnapshots.timer(container, identity, false, night)
@@ -157,42 +199,120 @@ object WidgetUpdater {
                 Log.w("ZaparaWidget", "timer", e)
                 null
             }
+            val wayfinder = if (heartbeatOnly) null else try {
+                WidgetSnapshots.wayfinder(container, identity, false, night)
+            } catch (e: Exception) {
+                Log.w("ZaparaWidget", "wayfinder", e)
+                null
+            }
+            val week = if (heartbeatOnly) null else try {
+                WidgetSnapshots.week(container, identity, false, night)
+            } catch (e: Exception) {
+                Log.w("ZaparaWidget", "week", e)
+                null
+            }
             val current = WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value)
             if (!WidgetJobs.canApply(ticket, identity, current)) return
-            apply(app, schedule, homework, timer)
+            apply(app, identity, policy, schedule, homework, timer, wayfinder, week)
         }
     }
 
     private fun apply(
         app: ZaparaApplication,
-        schedule: ScheduleWidgetSnapshot,
-        homework: HomeworkWidgetSnapshot,
-        timer: TimerWidgetSnapshot?
+        identity: WidgetJobIdentity,
+        policy: WidgetMotionPolicy,
+        schedule: ScheduleWidgetSnapshot?,
+        homework: HomeworkWidgetSnapshot?,
+        timer: TimerWidgetSnapshot?,
+        wayfinder: WayfinderWidgetSnapshot?,
+        week: WeekWidgetSnapshot?
     ) {
         main.post {
+            if (!prepareProfile(app, identity)) return@post
+            publish("motion policy") { WidgetRemoteViews.prepareMotion(app, policy) }
             scheduleDaily(app)
             scheduleHeartbeat(app)
             val current = WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value)
-            if (!WidgetJobs.accept(schedule.identity, current)) return@post
-            if (!WidgetJobs.accept(homework.identity, current)) return@post
-            if (timer != null && !WidgetJobs.accept(timer.identity, current)) return@post
-            try {
-                WidgetRemoteViews.pushSchedule(app, schedule)
-                WidgetRemoteViews.pushHomework(app, homework)
-                if (timer != null) WidgetRemoteViews.pushTimer(app, timer)
-                val phaseEnd = widgetWakeAt(
-                    schedule.nextRefreshAt,
-                    timer?.endsAt,
-                    timer?.nextRefreshAt,
-                    timerPlaced(app),
-                    timer?.cleared != false
-                )
-                scheduleAdvance(app, phaseEnd)
-                followTimer(app, timer)
-            } catch (e: Exception) {
-                Log.w("ZaparaWidget", "apply", e)
+            if (schedule != null && WidgetJobs.accept(schedule.identity, current)) publish("schedule") {
+                WidgetRemoteViews.pushSchedule(app, schedule, policy)
+                scheduleWake = schedule.nextRefreshAt
             }
+            if (homework != null && WidgetJobs.accept(homework.identity, current)) publish("homework") {
+                WidgetRemoteViews.pushHomework(app, homework, policy)
+            }
+            if (timer != null && WidgetJobs.accept(timer.identity, current)) publish("timer") {
+                WidgetRemoteViews.pushTimer(app, timer, policy)
+                timerEnd = timer.endsAt.takeUnless { timer.cleared }
+                timerWake = timer.nextRefreshAt.takeUnless { timer.cleared }
+                followTimer(app, timer)
+            }
+            if (wayfinder != null && WidgetJobs.accept(wayfinder.identity, current)) publish("wayfinder") {
+                WidgetRemoteViews.pushWayfinder(app, wayfinder, policy)
+                wayfinderWake = wayfinder.nextRefreshAt
+            }
+            if (week != null && WidgetJobs.accept(week.identity, current)) publish("week") {
+                WidgetRemoteViews.pushWeek(app, week, policy)
+            }
+            val placed = presence(app)
+            val now = LocalDateTime.now()
+            // A failed read must not turn a past last-good boundary into a one-second alarm loop.
+            fun LocalDateTime?.future() = this?.takeIf { it.isAfter(now) }
+            val phaseEnd = placed.advanceAt(scheduleWake.future(), timerEnd.future(), timerWake.future(), false, wayfinderWake.future())
+            scheduleAdvance(app, phaseEnd)
+            cancelAbsentAlarms(app)
         }
+    }
+
+    private fun publish(name: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (e: Exception) {
+            Log.w("ZaparaWidget", name, e)
+        }
+    }
+
+    private fun prepareProfile(app: ZaparaApplication, identity: WidgetJobIdentity): Boolean {
+        val container = app.host.container
+        val current = WidgetJobIdentity.of(container.profile, app.host.generation.value)
+        if (!WidgetJobs.accept(identity, current)) return false
+        if (alarmIdentity != current) {
+            WidgetRemoteViews.clearMotion()
+            alarmIdentity = current
+            scheduleWake = null
+            timerEnd = null
+            timerWake = null
+            wayfinderWake = null
+            WidgetRemoteViews.dropTimerFaces()
+            scheduleAdvance(app, null)
+            followTimer(app, null)
+        }
+        val copy = container.copy
+        val dark = WidgetTheme.isDark("system", night(app))
+        return profilePreparation.prepare(
+            identity = identity,
+            current = { WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value) },
+            readPresence = { queryPresence(app) },
+            clear = { face ->
+                when (face) {
+                    WidgetFace.Schedule -> WidgetRemoteViews.pushSchedule(app, ScheduleWidgetComposer.cleared(identity, copy, dark))
+                    WidgetFace.Homework -> WidgetRemoteViews.pushHomework(app, HomeworkWidgetComposer.cleared(identity, copy, dark))
+                    WidgetFace.Timer -> WidgetRemoteViews.pushTimer(app, TimerWidgetComposer.cleared(identity, copy, dark))
+                    WidgetFace.Wayfinder -> WidgetRemoteViews.pushWayfinder(app, WayfinderWidgetComposer.cleared(identity, copy, dark))
+                    WidgetFace.Week -> WidgetRemoteViews.pushWeek(app, WeekWidgetComposer.cleared(identity, copy, dark))
+                }
+            },
+            onFailure = { face, error -> Log.w("ZaparaWidget", "clear $face", error) },
+            beforeClear = { WidgetRemoteViews.clearMotion() }
+        )
+    }
+
+    private fun cancelAbsentAlarms(context: Context) {
+        publish("prune motion") { WidgetMotionPlayer.prune(context) }
+        val placed = presence(context)
+        if (!placed.needsAdvance) scheduleAdvance(context, null)
+        if (!placed.timer) followTimer(context, null)
+        if (!placed.schedule && !placed.timer) scheduleHeartbeat(context)
+        if (!placed.any) scheduleDaily(context)
     }
 
     private fun timerPlaced(context: Context): Boolean = try {
@@ -213,6 +333,9 @@ object WidgetUpdater {
                 keepPulse(app)
                 return
             }
+            val policyRevision = WidgetMotionPlayer.beginPolicyObservation()
+            val policy = motionPolicy(app, container)
+            observeMotionPolicy(app, identity, policy, policyRevision)
             val timer = try {
                 WidgetSnapshots.timer(container, identity, false, night)
             } catch (e: Exception) {
@@ -232,7 +355,8 @@ object WidgetUpdater {
                     return@post
                 }
                 try {
-                    WidgetRemoteViews.pushTimer(app, timer)
+                    if (!prepareProfile(app, timer.identity)) return@post
+                    WidgetRemoteViews.pushTimer(app, timer, policy)
                     followTimer(app, timer)
                 } catch (e: Exception) {
                     Log.w("ZaparaWidget", "timer", e)
@@ -327,7 +451,8 @@ object WidgetUpdater {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         am.cancel(pending)
-        if (!anyWidget(context)) return
+        val placed = presence(context)
+        if (!placed.schedule && !placed.timer) return
         val exact = Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()
         val interactive = (context.getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
         val delay = widgetHeartbeatMs(interactive, exact) ?: return
@@ -358,15 +483,38 @@ object WidgetUpdater {
         }
     }
 
-    private fun anyWidget(context: Context): Boolean = try {
-        val mgr = AppWidgetManager.getInstance(context)
-        listOf(
-            TimerWidgetProvider::class.java,
-            ScheduleWidgetProvider::class.java,
-            HomeworkWidgetProvider::class.java
-        ).any { mgr.getAppWidgetIds(ComponentName(context, it)).isNotEmpty() }
+    private fun anyWidget(context: Context): Boolean = presence(context).any
+
+    private fun presence(context: Context): WidgetPresence = try {
+        queryPresence(context)
     } catch (_: Exception) {
-        false
+        WidgetPresence(false, false, false, false, false)
+    }
+
+    /** Called only by the IO worker; one immutable decision travels with its snapshots. */
+    private fun motionPolicy(context: Context, container: AppContainer): WidgetMotionPolicy = try {
+        WidgetMotionPolicy.of(
+            container.repo.settings().animations,
+            Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f),
+            (context.getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
+        )
+    } catch (error: Exception) {
+        Log.w("ZaparaWidget", "motion policy", error)
+        WidgetMotionPolicy.Disabled
+    }
+
+    private fun observeMotionPolicy(app: ZaparaApplication, identity: WidgetJobIdentity, policy: WidgetMotionPolicy, revision: Long) {
+        main.post {
+            val current = WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value)
+            if (WidgetJobs.accept(identity, current)) WidgetMotionPlayer.updatePolicy(identity, policy, revision)
+        }
+    }
+
+    private fun queryPresence(context: Context): WidgetPresence {
+        val mgr = AppWidgetManager.getInstance(context)
+        fun placed(provider: Class<*>) = mgr.getAppWidgetIds(ComponentName(context, provider)).isNotEmpty()
+        return WidgetPresence(placed(ScheduleWidgetProvider::class.java), placed(HomeworkWidgetProvider::class.java),
+            placed(TimerWidgetProvider::class.java), placed(WayfinderWidgetProvider::class.java), placed(WeekWidgetProvider::class.java))
     }
 
     private fun scheduleAdvance(context: Context, at: LocalDateTime?) {
@@ -379,7 +527,7 @@ object WidgetUpdater {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         am.cancel(pending)
-        if (at == null) return
+        if (at == null || !presence(context).needsAdvance) return
         val due = at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val millis = if (due <= System.currentTimeMillis()) System.currentTimeMillis() + 1_000 else due
         if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {

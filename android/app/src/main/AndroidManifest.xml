@@ -86,6 +86,28 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_timer_info" />
         </receiver>
+        <receiver
+            android:name=".ui.widgets.WayfinderWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_wayfinder_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_wayfinder_info" />
+        </receiver>
+        <receiver
+            android:name=".ui.widgets.WeekWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_week_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_week_info" />
+        </receiver>
         <provider
             android:name=".ui.widgets.WidgetInitProvider"
             android:authorities="${applicationId}.widgets"

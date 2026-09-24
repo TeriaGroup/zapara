@@ -47,7 +47,9 @@ fun NavHostController.openSection(section: Section, arg: String? = null) {
     }
     navigate(dest) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
-        launchSingleTop = true
+        // Argument-bearing routes need a fresh entry even when the route string repeats:
+        // Schedule may have moved to another day since the last launch.
+        launchSingleTop = arg == null
         restoreState = arg == null
     }
 }

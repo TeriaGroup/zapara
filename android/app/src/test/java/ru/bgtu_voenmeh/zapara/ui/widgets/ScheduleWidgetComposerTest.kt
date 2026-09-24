@@ -93,24 +93,20 @@ class ScheduleWidgetComposerTest {
         assertTrue(at(10, 38).toss == null)
     }
 
-    @Test fun the_paper_toss_needs_room_and_a_row_that_was_on_screen() {
-        assertFalse(scheduleTossFits(179, 220))
-        assertFalse(scheduleTossFits(240, 149))
-        assertTrue(scheduleTossFits(180, 150))
-        assertTrue(scheduleTossFits(280, 210))
-        val key = ScheduleWidgetRow("ИН. ЯЗ.", "09:00 – 10:35 · 100 УЛК", true, 1).faceKey()
-        assertTrue(shouldTossSchedule(true, 1f, "guest:db", setOf(key), "guest:db", key))
-        assertFalse(shouldTossSchedule(false, 1f, "guest:db", setOf(key), "guest:db", key))
-        assertFalse(shouldTossSchedule(true, 0f, "guest:db", setOf(key), "guest:db", key))
-        assertFalse(shouldTossSchedule(true, 1f, "other:db", setOf(key), "guest:db", key))
-        assertFalse(shouldTossSchedule(true, 1f, "guest:db", emptySet(), "guest:db", key))
-        val start = tossPose(0f, schedulePaperStartY(200))
-        val mid = tossPose(0.55f, schedulePaperStartY(200))
-        val end = tossPose(1f, schedulePaperStartY(200))
-        assertTrue(start.cx < 0.55f && start.paper > 0.95f && start.scale > 0.9f)
-        assertTrue(mid.crumple > 0.2f && mid.cy < start.cy)
-        assertTrue(end.cx > 0.75f && end.paper < 0.02f && end.bin < 0.02f)
-        assertTrue(scheduleEase(0f) < 0.02f && scheduleEase(1f) > 0.98f)
+    @Test fun ended_row_moves_up_and_fades_only_when_it_was_visible() {
+        val ended = ScheduleWidgetRow("ИН. ЯЗ.", "09:00 – 10:35 · 100 УЛК", true, 1)
+        val next = ScheduleWidgetRow("Матан", "10:45 – 12:20 · 493 ГК", false, 2)
+        val before = ScheduleWidgetSnapshot(guestId, "Расписание", "Гость", null, listOf(ended, next))
+        val after = before.copy(rows = listOf(next), toss = ended)
+        val policy = WidgetMotionPolicy.of(true, 1f, true)
+        val scene = WidgetRowEffects.schedule(before, after, policy)!!
+        assertEquals(WidgetMotionKind.ScheduleShift, scene.kind)
+        assertEquals(0f, scene.poseAt(0f).oldOffsetYDp)
+        assertTrue(scene.poseAt(0.5f).oldOffsetYDp < 0f)
+        assertTrue(scene.poseAt(0.5f).oldAlpha < 1f)
+        assertEquals(0f, scene.poseAt(1f).oldAlpha)
+        assertEquals(null, WidgetRowEffects.schedule(before.copy(rows = listOf(next)), after, policy))
+        assertEquals(null, WidgetRowEffects.schedule(before, after, WidgetMotionPolicy.Disabled))
     }
 
     @Test fun guest_monday_shows_local_lessons_in_russian() {

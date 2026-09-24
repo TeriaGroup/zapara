@@ -15,6 +15,7 @@ import ru.bgtu_voenmeh.zapara.AppContainer
 import ru.bgtu_voenmeh.zapara.data.Parity
 import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
 import ru.bgtu_voenmeh.zapara.ui.theme.ThemeChoice
+import ru.bgtu_voenmeh.zapara.ui.widgets.WidgetUpdater
 
 /** Guest shell projection: group chip, badges, theme, overlays. */
 class ShellViewModel(private val container: AppContainer) : ViewModel() {
@@ -69,7 +70,10 @@ class ShellViewModel(private val container: AppContainer) : ViewModel() {
         when (event) {
             is ShellEvent.Overlay -> mutable.update { it.copy(overlay = event.value) }
             is ShellEvent.Theme -> save { it.copy(theme = event.value.key) }
-            is ShellEvent.Animations -> save { it.copy(animations = event.enabled) }
+            is ShellEvent.Animations -> {
+                val motionChange = WidgetUpdater.animationsChanging(container)
+                save(finished = { WidgetUpdater.animationsSaved(container, motionChange) }) { it.copy(animations = event.enabled) }
+            }
             is ShellEvent.PickGroup -> viewModelScope.launch {
                 try {
                     withContext(Dispatchers.IO) {
@@ -93,7 +97,7 @@ class ShellViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { recompute() }
     }
 
-    private fun save(transform: (ScheduleRepository.SettingsState) -> ScheduleRepository.SettingsState) {
+    private fun save(finished: () -> Unit = {}, transform: (ScheduleRepository.SettingsState) -> ScheduleRepository.SettingsState) {
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {
@@ -103,7 +107,7 @@ class ShellViewModel(private val container: AppContainer) : ViewModel() {
             catch (e: Exception) {
                 android.util.Log.w("ZaparaShell", "Preference write failed", e)
                 mutable.update { it.copy(error = true) }
-            }
+            } finally { finished() }
         }
     }
 

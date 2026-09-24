@@ -70,7 +70,11 @@ import ru.bgtu_voenmeh.zapara.ui.week.WeekViewModel
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun ZaparaApp(container: AppContainer, startSection: String? = null) {
+fun ZaparaApp(
+    container: AppContainer,
+    launch: WidgetLaunch? = null,
+    onLaunchHandled: (Long) -> Unit = {}
+) {
     val activity = LocalContext.current as ComponentActivity
     val app = activity.application as? ZaparaApplication
     val genFlow = app?.host?.generation ?: remember { MutableStateFlow(0L) }
@@ -78,7 +82,7 @@ fun ZaparaApp(container: AppContainer, startSection: String? = null) {
     key(generation) {
         val live = app?.container ?: container
         val owner = app?.host ?: activity
-        ZaparaAppBody(live, activity, owner, app?.host, startSection)
+        ZaparaAppBody(live, activity, owner, app?.host, launch, onLaunchHandled)
     }
 }
 
@@ -89,7 +93,8 @@ private fun ZaparaAppBody(
     activity: ComponentActivity,
     owner: androidx.lifecycle.ViewModelStoreOwner,
     host: ru.bgtu_voenmeh.zapara.AndroidProfileHost?,
-    startSection: String? = null
+    launch: WidgetLaunch?,
+    onLaunchHandled: (Long) -> Unit
 ) {
     val shellVm: ShellViewModel = viewModel(owner, factory = ShellViewModel.factory(container))
     val state by shellVm.state.collectAsStateWithLifecycle()
@@ -101,8 +106,11 @@ private fun ZaparaAppBody(
         val nav = rememberNavController()
         val entry by nav.currentBackStackEntryAsState()
         val current = Section.byRoute(entry?.destination?.route) ?: Section.Schedule
-        LaunchedEffect(startSection) {
-            Section.byRoute(startSection)?.let { nav.openSection(it) }
+        LaunchedEffect(launch?.id) {
+            launch?.let {
+                nav.openSection(it.section, it.argument)
+                onLaunchHandled(it.id)
+            }
         }
         val chip = state.groupName?.let { ShellLogic.chip(it, state.odd, container.copy) }
         val chrome = ShellChrome(chip, state.stale, state.hasGroup) {

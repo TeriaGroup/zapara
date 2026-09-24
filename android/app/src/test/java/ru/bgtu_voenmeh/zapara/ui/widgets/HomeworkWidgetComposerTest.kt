@@ -111,4 +111,14 @@ class HomeworkWidgetComposerTest {
         val snap = build(items = many)
         assertEquals(HomeworkWidgetComposer.MAX_ROWS, snap.rows.size)
     }
+
+    @Test fun height_limits_rows_and_composer_preserves_completion_ids() {
+        assertEquals(1, HomeworkWidgetComposer.rowsForHeightDp(80))
+        assertEquals(1, HomeworkWidgetComposer.rowsForHeightDp(160))
+        assertEquals(2, HomeworkWidgetComposer.rowsForHeightDp(200))
+        assertEquals(4, HomeworkWidgetComposer.rowsForHeightDp(320))
+        val snap = build(items = listOf(hw(11, "сдать", "far", today), hw(12, "готово", "done", today)))
+        assertEquals(11L, snap.rows.single().id)
+        assertEquals(setOf(12L), snap.doneIds)
+    }
 }

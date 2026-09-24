@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_wayfinder_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg_light">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="8dp"
+        android:orientation="vertical">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <TextView
+                android:id="@+id/widget_wayfinder_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:includeFontPadding="false"
+                android:fontFamily="@font/inter_medium"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="@string/widget_wayfinder_title"
+                android:textColor="@color/widget_text1"
+                android:textSize="17sp" />
+            <TextView
+                android:id="@+id/widget_wayfinder_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:includeFontPadding="false"
+                android:fontFamily="@font/inter_regular"
+                android:maxLines="1"
+                android:textColor="@color/widget_text2"
+                android:textSize="12sp" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/widget_wayfinder_room"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:fontFamily="@font/inter_medium"
+            android:includeFontPadding="false"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textSize="28sp"
+            android:textColor="@color/widget_text1"
+            android:layout_marginTop="4dp"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="12sp"
+            android:autoSizeMaxTextSize="28sp"
+            android:autoSizeStepGranularity="1sp"
+            android:layout_weight="1"
+            android:minHeight="28dp"
+            android:gravity="center_vertical" />
+        <TextView
+            android:id="@+id/widget_wayfinder_subject"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/inter_regular"
+            android:includeFontPadding="false"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textSize="15sp"
+            android:textColor="@color/widget_text1"
+            android:layout_marginTop="4dp" />
+        <TextView
+            android:id="@+id/widget_wayfinder_time"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/inter_regular"
+            android:includeFontPadding="false"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textSize="12sp"
+            android:textColor="@color/widget_text1"
+            android:layout_marginTop="4dp" />
+        <TextView
+            android:id="@+id/widget_wayfinder_empty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/inter_regular"
+            android:includeFontPadding="false"
+            android:ellipsize="end"
+            android:maxLines="3"
+            android:textSize="15sp"
+            android:textColor="@color/widget_text1"
+            android:layout_marginTop="8dp"
+            android:visibility="gone" />
+    </LinearLayout>
+    <ImageView
+        android:id="@+id/widget_wayfinder_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="false"
+        android:focusable="false"
+        android:importantForAccessibility="no"
+        android:contentDescription="@null"
+        android:scaleType="fitXY"
+        android:visibility="gone" />
+</FrameLayout>
