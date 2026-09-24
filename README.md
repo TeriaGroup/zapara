@@ -2,15 +2,15 @@
 
 Расписание БГТУ «Военмех»: пары, карты корпусов, друзья, домашка и уведомления.
 Публичное имя — «Расписание военмех». Ярлык Android и заголовок окна Windows в этом дереве ещё подписаны «Военмех - расписание и карты».
-Windows и Android 2.1.17 работают без обязательного аккаунта. Телефон и Windows читают уже лежащие расписание и карты без сети.
+Windows и Android 2.1.18 работают без обязательного аккаунта. Телефон и Windows читают уже лежащие расписание и карты без сети.
 Браузерная оболочка открыта по адресу, который записан в клиентах. Состав экранов и проверка сайта 2026-09-22: [`docs/STATUS.md`](docs/STATUS.md).
 
 ## Скачать
 
-Актуальная версия **2.1.17** — [страница релиза](https://github.com/TeriaGroup/zapara/releases/tag/v2.1.17):
+Актуальная версия **2.1.18** — [страница релиза](https://github.com/TeriaGroup/zapara/releases/tag/v2.1.18):
 
-- **Windows:** [ZAPARA_win-x64.zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.17/ZAPARA_win-x64.zip) — распаковать и запустить `Vograph.exe` (.NET 8 Runtime).
-- **Android:** [ZAPARA_android-debug.apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.17/ZAPARA_android-debug.apk) — ставится сразу (`adb install -r` тоже).
+- **Windows:** [ZAPARA_win-x64.zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.18/ZAPARA_win-x64.zip) — распаковать и запустить `Vograph.exe` (.NET 8 Runtime).
+- **Android:** [ZAPARA_android-debug.apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.18/ZAPARA_android-debug.apk) — ставится сразу (`adb install -r` тоже).
 
 Все версии (по возрастанию): [releases](https://github.com/TeriaGroup/zapara/releases)
 
@@ -61,7 +61,8 @@ Windows и Android 2.1.17 работают без обязательного а�
 | 2.1.14 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.14/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.14/ZAPARA_android-debug.apk) |
 | 2.1.15 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.15/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.15/ZAPARA_android-debug.apk) |
 | 2.1.16 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.16/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.16/ZAPARA_android-debug.apk) |
-| **2.1.17** | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.17/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.17/ZAPARA_android-debug.apk) |
+| 2.1.17 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.17/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.17/ZAPARA_android-debug.apk) |
+| **2.1.18** | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.18/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.18/ZAPARA_android-debug.apk) |
 
 ## Развитие платформы
 
@@ -149,11 +150,11 @@ HTTP localhost — только для локальной разработки. 
 ## Приложения
 
 - **Windows** — Avalonia 12, .NET 8, темы системная / светлая / тёмная, интерфейс только на русском, самообновление с проверкой архива, синхронизация по локальной сети без прав администратора.
-- **Android** — Kotlin + Compose 2.0 (дизайн-система, тёмная и светлая темы), нижняя навигация, пакет `ru.zapara.app`, версия 2.1.17, интерфейс только на русском, Android 8.0+.
+- **Android** — Kotlin + Compose 2.0 (дизайн-система, тёмная и светлая темы), нижняя навигация, пакет `ru.zapara.app`, версия 2.1.18, интерфейс только на русском, Android 8.0+.
 
 ## Что умеет
 
-Список ниже — гостевое ядро Windows и Android 2.1.17. В тех же исходниках уже есть подгруппы, файлы к домашке, аккаунт, сообщество и текстовый чат группы. Личная переписка, стол старосты и голосования собраны на сайте. Таблица экранов — в [`docs/STATUS.md`](docs/STATUS.md).
+Список ниже — гостевое ядро Windows и Android 2.1.18. В тех же исходниках уже есть подгруппы, файлы к домашке, аккаунт, сообщество и текстовый чат группы. Личная переписка, стол старосты и голосования собраны на сайте. Таблица экранов — в [`docs/STATUS.md`](docs/STATUS.md).
 
 - **Расписание: Вчера / Сегодня / Завтра / Неделя / Сводка.** Умный старт: если сегодняшние пары еще не прошли — открывается сегодня, иначе завтра.
 - **Четность.** Неделя с 1 сентября = неделя 1 = нечетная. Есть ручная инверсия, если вуз сдвинул неделю.
