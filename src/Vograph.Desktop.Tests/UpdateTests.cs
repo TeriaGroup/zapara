@@ -65,7 +65,7 @@ public class UpdateTests : UiTest
         source.Latest = new AutoUpdateService.UpdateInfo("windows-v2.1.16", "u", "z", "2026-09-01T00:00:00Z");
         Assert.False(await vm.CheckAsync());
         Assert.Equal(UpdateState.UpToDate, vm.State);
-        Assert.Contains("windows-v2.1.16", vm.StatusText);
+        Assert.Contains(AppVersion.Tag, vm.StatusText);
         Assert.Contains("15:00", vm.CheckedAt);
         Assert.True(vm.CheckedThisSession);
 
@@ -316,10 +316,10 @@ public class UpdateTests : UiTest
         using var db = TestDb.Create();
         var (vm, _, _) = Make(db);
         Directory.CreateDirectory(vm.UpdatesDir);
-        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.19_win-x64.zip"), new byte[10]);      // this very version: installed
-        File.WriteAllText(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.19_win-x64.zip.attempted"), "x");
+        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.20_win-x64.zip"), new byte[10]);      // this very version: installed
+        File.WriteAllText(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.20_win-x64.zip.attempted"), "x");
         File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v1.2.2_win-x64.zip"), new byte[10]);      // older
-        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.19_win-x64.zip.part"), new byte[10]); // a torn download
+        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.20_win-x64.zip.part"), new byte[10]); // a torn download
         File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.2.0_win-x64.zip"), new byte[10]);      // newer: keep
 
         await vm.CleanupAsync();
