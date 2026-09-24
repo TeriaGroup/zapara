@@ -88,6 +88,7 @@ data class AccountUiState(
     val recoveryUsername: String = "",
     val devices: List<AccountDeviceRow> = emptyList(),
     val identities: List<AccountIdentityRow> = emptyList(),
+    val hasPassword: Boolean? = null,
     val exportReady: Boolean = false,
     val confirmDelete: Boolean = false,
     val vkAvailable: Boolean = false,
@@ -100,7 +101,7 @@ data class AccountUiState(
     val showYandexLogin get() = showGuestAuth && yandexAvailable
     val showRecovery get() = showGuestAuth && recoveryAvailable
     val showDevices get() = showAccount
-    val showPasswordChange get() = showAccount
+    val showPasswordChange get() = showAccount && hasPassword == true
     val showExport get() = showAccount
     val showDelete get() = showAccount
     val showIdentities get() = showAccount && (vkAvailable || yandexAvailable || identities.isNotEmpty())
@@ -277,13 +278,15 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
         Text(device.deviceName, style = Zapara.typography.body, color = Zapara.colors.text1, modifier = Modifier.testTag("Account.Device"))
         ZButton(stringResource(R.string.account_revoke), { onEvent(AccountEvent.Revoke(device.familyId)) }, ghost = true, enabled = enabled, tag = "Account.Revoke")
     }
-    AccountField(state.currentPassword, stringResource(R.string.account_current_password), "Account.CurrentPassword", password = true) {
-        onEvent(AccountEvent.CurrentPassword(it))
+    if (state.showPasswordChange) {
+        AccountField(state.currentPassword, stringResource(R.string.account_current_password), "Account.CurrentPassword", password = true) {
+            onEvent(AccountEvent.CurrentPassword(it))
+        }
+        AccountField(state.newPassword, stringResource(R.string.account_new_password), "Account.NewPassword", password = true) {
+            onEvent(AccountEvent.NewPassword(it))
+        }
+        ZButton(stringResource(R.string.account_change_password), { onEvent(AccountEvent.ChangePassword) }, enabled = enabled, tag = "Account.ChangePassword")
     }
-    AccountField(state.newPassword, stringResource(R.string.account_new_password), "Account.NewPassword", password = true) {
-        onEvent(AccountEvent.NewPassword(it))
-    }
-    ZButton(stringResource(R.string.account_change_password), { onEvent(AccountEvent.ChangePassword) }, enabled = enabled, tag = "Account.ChangePassword")
     AccountField(state.proof, stringResource(R.string.account_proof), "Account.Proof", password = true) {
         onEvent(AccountEvent.Proof(it))
     }

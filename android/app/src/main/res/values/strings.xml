@@ -273,7 +273,7 @@
     <string name="account_title">Аккаунт</string>
     <string name="account_unconfigured">Сервер аккаунтов не настроен</string>
     <string name="account_guest">Гостевой профиль: данные доступны без аккаунта и сети.</string>
-    <string name="account_local">Локальные данные аккаунта. Синхронизация личных данных пока недоступна.</string>
+    <string name="account_local">Вы вошли в аккаунт. Общие данные и функции аккаунта доступны при подключении к серверу.</string>
     <string name="account_isolation">Данные гостя и каждого аккаунта хранятся отдельно. Автоматического переноса и отправки личных данных нет.</string>
     <string name="account_created">Аккаунт создан. Теперь введите пароль и войдите.</string>
     <string name="account_registration_unavailable">Регистрация на этом сервере недоступна. Войдите в существующий аккаунт или продолжайте как гость.</string>
@@ -285,6 +285,12 @@
     <string name="account_rate_limited">Слишком много попыток. Подождите и повторите позже.</string>
     <string name="account_reauth">Требуется повторный вход. Локальные данные сохранены.</string>
     <string name="account_transition_failed">Профиль не переключён. Завершите текущие операции и повторите попытку.</string>
+    <string name="account_external_pending">Завершите вход в браузере и вернитесь в приложение. Если вход не завершился, нажмите «Открыть приложение» на странице браузера.</string>
+    <string name="account_external_signed_in">Вход выполнен. Функции аккаунта доступны.</string>
+    <string name="account_external_linked">Аккаунт привязан.</string>
+    <string name="account_external_profile_changed">Профиль изменился во время входа. Начните вход заново.</string>
+    <string name="account_external_expired">Время входа истекло. Начните вход заново.</string>
+    <string name="account_external_failed">Не удалось завершить вход. Проверьте подключение и попробуйте ещё раз.</string>
     <string name="account_username">Логин</string>
     <string name="account_password">Пароль</string>
     <string name="account_display_name">Отображаемое имя (необязательно)</string>

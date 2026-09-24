@@ -9,4 +9,5 @@ public sealed class ExternalAuthException : Exception
     internal static ExternalAuthException Invalid() => new(403, "invalid_external_proof");
     internal static ExternalAuthException Gone() => new(410, "external_attempt_expired");
     internal static ExternalAuthException Unavailable() => new(503, "provider_unavailable");
+    internal static ExternalAuthException RegistrationUnavailable() => new(503, "registration_unavailable");
 }

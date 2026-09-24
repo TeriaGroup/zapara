@@ -24,7 +24,7 @@ public sealed partial class AccountPanelViewModel
     [RelayCommand]
     private Task RefreshProfile() => ProfileAction(() => service!.MeAsync(lifetime.Token), me =>
     {
-        Present(me.User);
+        PresentAuthentication(me);
         Status = T("accountProfileLoaded");
     });
 

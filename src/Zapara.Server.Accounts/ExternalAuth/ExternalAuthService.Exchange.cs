@@ -15,7 +15,9 @@ public sealed partial class ExternalAuthService
     {
         if (request is null || request.TransactionId == Guid.Empty) throw ExternalAuthException.Invalid();
         ExternalSecrets.Token(request.NativeVerifier);
-        ExternalSecrets.Token(request.HandoffCode, 43, 43);
+        // Android may resume from the browser without receiving its custom-scheme link.
+        // The native PKCE verifier is sufficient for that platform after the provider callback.
+        if (request.HandoffCode != "") ExternalSecrets.Token(request.HandoffCode, 43, 43);
         return DatabaseAsync(async db =>
         {
             var snapshot = await ReadTransaction(db, request.TransactionId, false, ct);
@@ -42,9 +44,12 @@ public sealed partial class ExternalAuthService
     {
         if (row.Status != "awaitingApp" || row.Expires <= now || row.HandoffExpires is null || row.HandoffExpires <= now)
             throw ExternalAuthException.Gone();
+        var androidResume = request.HandoffCode == "" && row.ReturnKind == "android" && row.Device.Platform == "android";
         if (row.Subject is null || row.HandoffHash is null ||
             !CryptographicOperations.FixedTimeEquals(row.NativeChallenge, ExternalSecrets.Hash(request.NativeVerifier)) ||
-            !CryptographicOperations.FixedTimeEquals(row.HandoffHash, ExternalSecrets.Hash(request.HandoffCode))) throw ExternalAuthException.Invalid();
+            (!androidResume && (request.HandoffCode == "" ||
+                !CryptographicOperations.FixedTimeEquals(row.HandoffHash, ExternalSecrets.Hash(request.HandoffCode)))))
+            throw ExternalAuthException.Invalid();
     }
 
     private bool RegistrationOpen(AccountRepository db)
@@ -74,7 +79,7 @@ public sealed partial class ExternalAuthService
         AccountRow user;
         if (owner is not null) user = await db.UserAsync(owner, locked: true) ?? throw ExternalAuthException.Invalid();
         else if (hostConfiguration is not null && hostEnvironment is not null && !RegistrationOpen(db))
-            throw ExternalAuthException.Invalid();
+            throw ExternalAuthException.RegistrationUnavailable();
         else
         {
             var id = Guid.NewGuid();

@@ -34,6 +34,7 @@
         <Button HorizontalAlignment="Left" Content="Закрыть" Command="{Binding CloseDocumentCommand}" AutomationProperties.AutomationId="Legal.Close" />
       </StackPanel>
       <TextBlock Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.AutomationId="Account.Status" />
+      <Button Content="Отменить вход" Command="{Binding CancelExternalCommand}" IsVisible="{Binding ExternalPending}" AutomationProperties.AutomationId="Account.CancelExternal" />
       <TextBlock Classes="caption" Text="{loc:T accountIsolation}" TextWrapping="Wrap" />
       <Button Content="{loc:T accountRecover}" Command="{Binding RecoverCommand}" IsVisible="{Binding NeedsRecovery}" />
       <StackPanel Spacing="10" IsEnabled="{Binding CanAct}">
@@ -111,11 +112,13 @@
           </ItemsControl>
           <Button HorizontalAlignment="Left" Content="{loc:T accountMore}" Command="{Binding MoreDevicesCommand}" IsVisible="{Binding HasMore}" />
           <Button HorizontalAlignment="Left" Content="{loc:T accountRevokeAll}" Command="{Binding RevokeAllCommand}" />
-          <TextBlock Text="{loc:T accountCurrentPassword}" />
-          <TextBox Text="{Binding CurrentPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountCurrentPassword}" AutomationProperties.AutomationId="Account.CurrentPassword" />
-          <TextBlock Text="{loc:T accountNewPassword}" />
-          <TextBox Text="{Binding NewPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountNewPassword}" AutomationProperties.AutomationId="Account.NewPassword" />
-          <Button HorizontalAlignment="Left" Content="{loc:T accountChangePassword}" Command="{Binding ChangePasswordCommand}" AutomationProperties.AutomationId="Account.ChangePassword" />
+          <StackPanel Spacing="10" IsVisible="{Binding HasPassword}">
+            <TextBlock Text="{loc:T accountCurrentPassword}" />
+            <TextBox Text="{Binding CurrentPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountCurrentPassword}" AutomationProperties.AutomationId="Account.CurrentPassword" />
+            <TextBlock Text="{loc:T accountNewPassword}" />
+            <TextBox Text="{Binding NewPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountNewPassword}" AutomationProperties.AutomationId="Account.NewPassword" />
+            <Button HorizontalAlignment="Left" Content="{loc:T accountChangePassword}" Command="{Binding ChangePasswordCommand}" AutomationProperties.AutomationId="Account.ChangePassword" />
+          </StackPanel>
           <TextBlock Text="{loc:T accountProof}" />
           <TextBox Text="{Binding Proof}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountProof}" AutomationProperties.AutomationId="Account.Proof" />
           <StackPanel Orientation="Horizontal" Spacing="8">

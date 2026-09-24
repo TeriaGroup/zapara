@@ -89,14 +89,43 @@ public sealed partial class AccountPanelViewModel
         else if (provider == "vk" ? !ShowVkLogin : !ShowYandexLogin) return;
         await RunAsync(async () =>
         {
-            var start = link
-                ? await service!.StartExternalLinkAsync(provider, secret, lifetime.Token)
-                : await service!.StartExternalLoginAsync(provider, lifetime.Token);
-            AuthorizeUrl = start.AuthorizeUrl;
-            await profiles!.Current.Services.Launcher.OpenUrlAsync(start.AuthorizeUrl);
-            Status = T(provider == "vk" ? "accountVk" : "accountYandex");
+            using var pending = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+            externalCancellation = pending;
+            OnPropertyChanged(nameof(ExternalPending));
+            try
+            {
+                var result = await service!.CompleteExternalAsync(provider, link ? secret : null, async url =>
+                {
+                    AuthorizeUrl = url;
+                    Status = T(provider == "vk" ? "accountVk" : "accountYandex");
+                    await profiles!.Current.Services.Launcher.OpenUrlAsync(url);
+                }, pending.Token);
+                Apply(result.Snapshot);
+                if (result.Committed && IsAccount)
+                {
+                    var user = await service.CachedUserAsync(lifetime.Token);
+                    if (user is not null) Present(user);
+                    await RefreshAuthenticationAsync();
+                    if (link)
+                    {
+                        var identities = await service.ListIdentitiesAsync(lifetime.Token);
+                        Identities.Clear();
+                        foreach (var identity in identities) Identities.Add(identity);
+                    }
+                }
+            }
+            finally
+            {
+                externalCancellation = null;
+                AuthorizeUrl = null;
+                OnPropertyChanged(nameof(ExternalPending));
+            }
         });
     }
+
+    private CancellationTokenSource? externalCancellation;
+    public bool ExternalPending => externalCancellation is not null;
+    [RelayCommand] private void CancelExternal() => externalCancellation?.Cancel();
 
     [RelayCommand]
     private Task LoadIdentities() => ProfileAction(() => service!.ListIdentitiesAsync(lifetime.Token), items =>

@@ -76,14 +76,12 @@ internal static class ExternalAuthEndpoints
         if (destination.Scheme == "zapara")
         {
             var link = System.Net.WebUtility.HtmlEncode(destination.AbsoluteUri);
-            var html = """
+            var html = $$"""
                 <!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Вход</title></head>
                 <body style="margin:0;background:#0d0d0d;color:#f2f2f2;font-family:sans-serif"><main style="max-width:28rem;margin:0 auto;padding:32px 20px">
-                <h1 style="font-size:22px;font-weight:500">Вход подтверждён</h1>
-                <p style="font-size:15px;line-height:1.4">Вернитесь в приложение. Если оно не открылось само, нажмите кнопку.</p>
-                <p><a href="
-                """ + link + """
-                " style="display:inline-flex;align-items:center;min-height:48px;padding:0 16px;border-radius:8px;background:#f2f2f2;color:#0d0d0d;text-decoration:none;font-weight:500">Открыть приложение</a></p>
+                <h1 style="font-size:22px;font-weight:500">Подтверждение получено</h1>
+                <p style="font-size:15px;line-height:1.4">Вернитесь в приложение для завершения входа. Если оно не открылось, нажмите кнопку. Дождитесь подтверждения входа в настройках.</p>
+                <p><a href="{{link}}" style="display:inline-flex;align-items:center;min-height:48px;padding:0 16px;border-radius:8px;background:#f2f2f2;color:#0d0d0d;text-decoration:none;font-weight:500">Открыть приложение</a></p>
                 </main></body></html>
                 """;
             return Results.Content(html, "text/html; charset=utf-8");
@@ -102,7 +100,7 @@ internal static class ExternalAuthEndpoints
                 if (c.Request.ContentLength > AccountBodyReader.MaximumBytes) throw new AccountBodyException(413);
                 return await handler(c);
             }
-            catch (ExternalAuthException e) { return callback ? Page(e.Status) : Error(e.Status, e.Code); }
+            catch (ExternalAuthException e) { return callback ? Page(e.Status, e.Code) : Error(e.Status, e.Code); }
             catch (AccountBodyException e) { return callback ? Page(e.Status) : Error(e.Status, "invalid_request"); }
             catch (AccountServiceException e) { return callback ? Page(503) : AccountErrors.From(e); }
             catch (ArgumentException) { return callback ? Page(403) : Error(403, "invalid_external_proof"); }
@@ -110,7 +108,11 @@ internal static class ExternalAuthEndpoints
         })).RequireRateLimiting(rate);
         if (authenticated) endpoint.RequireAuthorization("AccountUser"); else endpoint.AllowAnonymous();
     }
-    private static IResult Page(int status) => Results.Text("Вход не завершён. Начните новую попытку в приложении.", "text/plain; charset=utf-8", statusCode: status);
+    private static IResult Page(int status, string? code = null) => Results.Text(
+        code == "registration_unavailable"
+            ? "Создание нового аккаунта закрыто. Войдите в ранее привязанный аккаунт или обратитесь к администрации приложения."
+            : "Вход не завершён. Начните новую попытку в приложении.",
+        "text/plain; charset=utf-8", statusCode: status);
     private static IResult Error(int status, string code) => Results.Json(new AccountError("Не удалось выполнить вход.", status, code), AccountJson.CreateOptions(), "application/problem+json", status);
     private static IResult Json<T>(T value) => Results.Json(value, AccountJson.CreateOptions());
     private static string Provider(HttpContext c) => (string)c.Request.RouteValues["provider"]!;

@@ -153,7 +153,7 @@ public sealed class AccountUiLifecycleTests
         await using var f = new Fixture(vk: true, yandex: true);
         await f.Vm.InitializeAsync();
         var start = new ExternalStartResponse(Guid.Parse("50000000-0000-0000-0000-000000000001"),
-            "https://example.invalid/mock/authorize?state=abc", Now.AddMinutes(10));
+            "https://example.invalid/mock/authorize?state=abc", DateTimeOffset.UtcNow.AddMinutes(10));
         string? body = null;
         f.Handler.Send = async (request, ct) =>
         {
@@ -164,7 +164,8 @@ public sealed class AccountUiLifecycleTests
             body = await request.Content!.ReadAsStringAsync(ct);
             return Json(start);
         };
-        await f.Vm.StartVkCommand.ExecuteAsync(null);
+        var pendingLogin = f.Vm.StartVkCommand.ExecuteAsync(null);
+        Assert.True(f.Vm.ExternalPending);
         using var doc = JsonDocument.Parse(body!);
         Assert.Equal("login", doc.RootElement.GetProperty("purpose").GetString());
         Assert.Equal("S256", doc.RootElement.GetProperty("nativeChallengeMethod").GetString());
@@ -180,6 +181,10 @@ public sealed class AccountUiLifecycleTests
         Assert.Contains("VK ID", f.Vm.Status);
         Assert.DoesNotContain(start.AuthorizeUrl, f.Vm.Status, StringComparison.Ordinal);
         Assert.DoesNotContain("nativeChallenge", f.Vm.Status, StringComparison.Ordinal);
+        f.Vm.CancelExternalCommand.Execute(null);
+        await pendingLogin.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.True(f.Vm.IsGuest);
+        Assert.False(f.Vm.ExternalPending);
     }
 
     [Fact]
@@ -207,6 +212,137 @@ public sealed class AccountUiLifecycleTests
         Assert.False(f.Vm.IsGuest);
         Assert.Equal("", f.Vm.Proof);
         Assert.Contains("Отвязать", f.Vm.Status);
+    }
+
+    [Theory]
+    [InlineData("yandex")]
+    [InlineData("vk")]
+    public async Task External_callback_exchanges_retained_verifier_and_activates_account(string provider)
+    {
+        await using var f = new Fixture(vk: true, yandex: true);
+        await f.Vm.InitializeAsync();
+        var started = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var id = Guid.NewGuid();
+        var handoff = new string('B', 43);
+        string? challenge = null;
+        f.Handler.Send = async (request, ct) =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/account/me", StringComparison.Ordinal))
+                return Json(new MeResponse(User, FamilyId, [provider]));
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+            if (request.RequestUri!.AbsolutePath.EndsWith("/start", StringComparison.Ordinal))
+            {
+                challenge = body.RootElement.GetProperty("nativeChallenge").GetString();
+                started.SetResult(body.RootElement.GetProperty("nativeReturn").GetProperty("port").GetInt32());
+                return Json(new ExternalStartResponse(id, "https://example.invalid/authorize", DateTimeOffset.UtcNow.AddMinutes(10)));
+            }
+            Assert.EndsWith("/exchange", request.RequestUri.AbsolutePath);
+            Assert.Equal(id, body.RootElement.GetProperty("transactionId").GetGuid());
+            Assert.Equal(handoff, body.RootElement.GetProperty("handoffCode").GetString());
+            var verifier = body.RootElement.GetProperty("nativeVerifier").GetString()!;
+            Assert.Equal(challenge, Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(Encoding.ASCII.GetBytes(verifier)))
+                .TrimEnd('=').Replace('+', '-').Replace('/', '_'));
+            return Json(new ExternalExchangeResponse("completed", new SessionResponse(User, FamilyId, Token("za_"), Token("zr_"),
+                "Bearer", DateTimeOffset.UtcNow.AddMinutes(15), DateTimeOffset.UtcNow.AddDays(30))));
+        };
+        var login = provider == "vk" ? f.Vm.StartVkCommand.ExecuteAsync(null) : f.Vm.StartYandexCommand.ExecuteAsync(null);
+        var port = await started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        using var browser = new HttpClient(new HttpClientHandler { UseProxy = false });
+        using var response = await browser.GetAsync($"http://127.0.0.1:{port}/zapara/oauth/callback?transactionId={id:D}&handoffCode={handoff}", TestContext.Current.CancellationToken);
+        Assert.True(response.IsSuccessStatusCode);
+        await login.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.False(f.Vm.IsGuest);
+        Assert.False(f.Vm.ShowLogin);
+        Assert.False(f.Vm.HasPassword);
+        Assert.NotNull(f.Vault.Entry);
+        Assert.Equal(UserId, f.Profiles.Snapshot.Identity!.UserId);
+    }
+
+    [Fact]
+    public async Task External_link_completes_with_initiating_bearer_and_refreshes_identities()
+    {
+        await using var f = new Fixture(yandex: true);
+        await f.Login();
+        var graph = f.Profiles.Current;
+        var id = Guid.NewGuid();
+        var started = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Handler.Send = async (request, ct) =>
+        {
+            Assert.Equal("Bearer " + Token("za_"), request.Headers.Authorization?.ToString());
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/reauthenticate", StringComparison.Ordinal)) return Json(Proof("link:yandex"));
+            if (path.EndsWith("/account/me", StringComparison.Ordinal)) return Json(new MeResponse(User, FamilyId, ["password", "yandex"]));
+            if (path.EndsWith("/identities", StringComparison.Ordinal)) return Json(new[] { new ExternalIdentityResponse("yandex", Now) });
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+            if (path.EndsWith("/start", StringComparison.Ordinal))
+            {
+                Assert.Equal("link", body.RootElement.GetProperty("purpose").GetString());
+                started.SetResult(body.RootElement.GetProperty("nativeReturn").GetProperty("port").GetInt32());
+                return Json(new ExternalStartResponse(id, "https://example.invalid/authorize", DateTimeOffset.UtcNow.AddMinutes(10)));
+            }
+            Assert.EndsWith("/exchange", path);
+            return Json(new ExternalExchangeResponse("completed"));
+        };
+        f.Vm.Proof = Password;
+        var link = f.Vm.LinkYandexCommand.ExecuteAsync(null);
+        var port = await started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        using var browser = new HttpClient(new HttpClientHandler { UseProxy = false });
+        using var response = await browser.GetAsync($"http://127.0.0.1:{port}/zapara/oauth/callback?transactionId={id:D}&handoffCode={new string('B', 43)}", TestContext.Current.CancellationToken);
+        Assert.True(response.IsSuccessStatusCode);
+        await link.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Same(graph, f.Profiles.Current);
+        Assert.Equal("yandex", Assert.Single(f.Vm.Identities).Provider);
+        Assert.False(f.Vm.ShowYandexLink);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Restored_account_shows_password_change_only_for_password_authentication(bool password)
+    {
+        await using var f = new Fixture(yandex: true);
+        await f.Login();
+        var meCalls = 0;
+        f.Handler.Send = (request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/account/me", StringComparison.Ordinal))
+            {
+                meCalls++;
+                return Task.FromResult(Json(new MeResponse(User, FamilyId, password ? ["password", "yandex"] : ["yandex"])));
+            }
+            return Task.FromResult(Json(new AuthCapabilitiesResponse(true, false, true, true, false)));
+        };
+        await f.Vm.InitializeAsync();
+        Assert.Equal(1, meCalls);
+        Assert.Equal(password, f.Vm.HasPassword);
+        Assert.True(f.Vm.IsAccount);
+    }
+
+    [Fact]
+    public async Task Leaving_profile_cancels_pending_authentication_refresh_and_clears_password_state()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        Assert.True(f.Vm.HasPassword);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Handler.Send = async (request, ct) =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/account/me", StringComparison.Ordinal))
+            {
+                entered.TrySetResult();
+                return await release.Task.WaitAsync(ct);
+            }
+            return new HttpResponseMessage(HttpStatusCode.NoContent);
+        };
+        var refresh = f.Vm.RefreshProfileCommand.ExecuteAsync(null);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var logout = await f.Profiles.LogoutAsync(TestContext.Current.CancellationToken);
+        Assert.True(logout.Committed);
+        release.TrySetResult(Json(new MeResponse(User, FamilyId, ["password"])));
+        await refresh.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.True(f.Vm.IsGuest);
+        Assert.False(f.Vm.HasPassword);
     }
 
     private static HttpResponseMessage ExportFile()

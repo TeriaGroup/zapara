@@ -1,5 +1,3 @@
-using System.Net;
-using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using Vograph.Core.Services.Accounts;
@@ -92,20 +90,40 @@ public sealed class AccountUiService(AccountHttpClient client, IAccountSessionVa
     public Task ConfirmPasswordResetAsync(string token, string password, CancellationToken ct)
         => client.ConfirmPasswordResetAsync(new PasswordResetConfirmRequest(token, password), ct);
 
-    public Task<ExternalStartResponse> StartExternalLoginAsync(string provider, CancellationToken ct)
-        => client.StartExternalAsync(provider, BuildStart("login", null), ct: ct);
-
-    public Task<ExternalStartResponse> StartExternalLinkAsync(string provider, string password, CancellationToken ct)
-    {
-        var secret = AccountValidation.Password(password);
-        return RunAsync(async (s, token) =>
+    public Task<ProfileSwitchResult> CompleteExternalAsync(string provider, string? password,
+        Func<string, Task> launch, CancellationToken ct)
+        => profiles.ExternalAsync(async token =>
         {
-            var proof = await client.ReauthenticateAsync(s.AccessToken,
-                new PasswordProofRequest(secret, "link:" + provider), token).ConfigureAwait(false);
-            return await client.StartExternalAsync(provider, BuildStart("link", proof.ProofToken), s.AccessToken, token)
-                .ConfigureAwait(false);
-        }, ct);
-    }
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            timeout.CancelAfter(TimeSpan.FromMinutes(10));
+            using var callback = new ExternalLoopback();
+            var verifier = Token();
+            var expected = profiles.Snapshot.Identity;
+            var start = password is null
+                ? await client.StartExternalAsync(provider, BuildStart("login", null, verifier, callback.Port), ct: timeout.Token)
+                : await RunAsync(async (session, inner) =>
+                {
+                    var proof = await client.ReauthenticateAsync(session.AccessToken,
+                        new PasswordProofRequest(AccountValidation.Password(password), "link:" + provider), inner);
+                    return await client.StartExternalAsync(provider, BuildStart("link", proof.ProofToken, verifier, callback.Port), session.AccessToken, inner);
+                }, timeout.Token);
+            var remaining = start.ExpiresAt - DateTimeOffset.UtcNow;
+            if (start.TransactionId == Guid.Empty || remaining <= TimeSpan.Zero
+                || !Uri.TryCreate(start.AuthorizeUrl, UriKind.Absolute, out var authorize) || authorize.Scheme != "https"
+                || !string.IsNullOrEmpty(authorize.UserInfo))
+                throw new AccountClientException(AccountClientFailure.InvalidPayload);
+            timeout.CancelAfter(remaining < TimeSpan.FromMinutes(10) ? remaining : TimeSpan.FromMinutes(10));
+            await launch(start.AuthorizeUrl);
+            var code = await callback.ReceiveAsync(start.TransactionId, timeout.Token);
+            timeout.Token.ThrowIfCancellationRequested();
+            if (profiles.Snapshot.Identity != expected) throw new AccountClientException(AccountClientFailure.SessionChanged);
+            var request = new ExternalExchangeRequest(start.TransactionId, verifier, code);
+            var result = password is null ? await client.ExchangeExternalAsync(request, ct: timeout.Token)
+                : await RunAsync((session, inner) => client.ExchangeExternalAsync(request, session.AccessToken, inner), timeout.Token);
+            if (result.Status != "completed" || (password is null ? result.Session is null : result.Session is not null))
+                throw new AccountClientException(AccountClientFailure.InvalidPayload);
+            return result.Session;
+        }, password is null, ct);
 
     public Task<ExternalStatusResponse> GetExternalStatusAsync(Guid transactionId, CancellationToken ct)
         => client.GetExternalStatusAsync(transactionId, ct);
@@ -130,14 +148,13 @@ public sealed class AccountUiService(AccountHttpClient client, IAccountSessionVa
         }, ct);
     }
 
-    private ExternalStartRequest BuildStart(string purpose, string? proofToken)
+    private ExternalStartRequest BuildStart(string purpose, string? proofToken, string verifier, int port)
     {
-        var verifier = Token();
         var challenge = Convert.ToBase64String(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
         var deviceId = ProfileInstallation.LoadOrCreate(profiles.Current.Services.Shared.GlobalDataDir);
         return new(purpose, challenge, "S256", new DeviceInput(deviceId, "Windows", "windows"),
-            new NativeReturn("windows", FreePort()), proofToken);
+            new NativeReturn("windows", port), proofToken);
     }
 
     private static string Token()
@@ -145,15 +162,6 @@ public sealed class AccountUiService(AccountHttpClient client, IAccountSessionVa
         Span<byte> bytes = stackalloc byte[32];
         RandomNumberGenerator.Fill(bytes);
         return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-    }
-
-    private static int FreePort()
-    {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port is >= 1024 and <= 65535 ? port : throw new AccountClientException(AccountClientFailure.InvalidRequest);
     }
 
     private async Task<T> RunAsync<T>(Func<SessionResponse, CancellationToken, Task<T>> action, CancellationToken ct)

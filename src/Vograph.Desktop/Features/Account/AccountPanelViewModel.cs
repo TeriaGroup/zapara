@@ -22,6 +22,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     private bool disposed;
     private string? cursor;
     [ObservableProperty] private bool registrationAvailable;
+    [ObservableProperty] private bool hasPassword;
     private string T(string key) => Loc.Current.T(key);
 
     [RelayCommand]
@@ -137,6 +138,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
             var expected = profiles.Snapshot.Identity;
             var user = await service!.CachedUserAsync(lifetime.Token);
             if (profiles.Snapshot.Identity == expected && user is not null) Present(user);
+            if (expected is not null) await RefreshAuthenticationAsync();
         });
         Ready = true;
         await RunAsync(async () =>
@@ -156,6 +158,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         {
             Devices.Clear(); Identities.Clear(); cursor = null; HasMore = false; AccountName = ""; DisplayName = "";
             ClearSecrets(); ConfirmLogout = false; ConfirmDelete = false;
+            HasPassword = false;
             ExportJob = null; ExportPayload = null; ExportPath = null; ExportFileName = null; AuthorizeUrl = null;
         }
         snapshot = value;
@@ -179,6 +182,25 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     {
         AccountName = user.Username;
         DisplayName = user.DisplayName ?? "";
+    }
+
+    private async Task RefreshAuthenticationAsync()
+    {
+        var expected = profiles!.Snapshot.Identity;
+        var current = profiles.Current;
+        if (expected is null) return;
+        var me = await service!.MeAsync(lifetime.Token);
+        if (disposed || profiles.Current != current || profiles.Snapshot.Identity != expected) return;
+        PresentAuthentication(me);
+    }
+
+    private void PresentAuthentication(MeResponse me)
+    {
+        var expected = profiles?.Snapshot.Identity;
+        if (expected is null || me.User.UserId != expected.UserId || me.FamilyId != expected.FamilyId)
+            throw new AccountClientException(AccountClientFailure.InvalidPayload);
+        Present(me.User);
+        HasPassword = me.AuthenticationMethods.Contains("password", StringComparer.Ordinal);
     }
 
     [RelayCommand] private void ToggleRegistration() { if (CanAct && RegistrationAvailable) Registration = !Registration; }
@@ -208,6 +230,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
                 Apply(result.Snapshot);
                 if (result.Committed && result.Snapshot.Phase == ProfilePhase.Idle)
                 {
+                    HasPassword = true; // This session was authenticated with the app password.
                     var user = await service!.CachedUserAsync(lifetime.Token);
                     if (user is not null) Present(user);
                 }

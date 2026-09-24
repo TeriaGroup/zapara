@@ -14,7 +14,8 @@ internal sealed class ProfileHarness : IAsyncDisposable
     internal readonly AppServices Guest;
     internal readonly ProfileSwitchCoordinator Coordinator;
     internal ProfileHarness(Func<string, AccountServerScope, IAccountSessionVault>? vaultFactory = null,
-        Func<AppServices, ProfileDescriptor, AppServices>? factory = null, Action<ProfileRoot>? publish = null)
+        Func<AppServices, ProfileDescriptor, AppServices>? factory = null, Action<ProfileRoot>? publish = null,
+        Func<Action, Task>? dispatch = null)
     {
         Http = new(Handler);
         Client = new(Http, new Uri("http://127.0.0.1/profile/"));
@@ -22,7 +23,7 @@ internal sealed class ProfileHarness : IAsyncDisposable
         Guest = AppServices.Create(Directory.Root, () => false);
         Guest.AllowNetwork = false;
         Coordinator = new(new(Guest, new(Guest)), Client, Vault, AccountClientTestSupport.DeviceId,
-            action => { action(); return Task.CompletedTask; }, publish ?? (_ => { }),
+            dispatch ?? (action => { action(); return Task.CompletedTask; }), publish ?? (_ => { }),
             factory is null ? null : profile => factory(Guest, profile), TimeSpan.FromMilliseconds(100), new Clock());
     }
     public async ValueTask DisposeAsync()

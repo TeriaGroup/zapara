@@ -1,5 +1,6 @@
 package ru.bgtu_voenmeh.zapara.data.accounts
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -21,6 +22,26 @@ class AccountHttpClientLifecycleTest {
     private val created = "2026-09-01T00:00:00Z"
     private val seen = "2026-09-08T12:00:00Z"
     private val expires = "2026-10-08T00:00:00Z"
+
+    @Test
+    fun cancellation_during_external_status_propagates_to_activity_lifecycle() = runBlocking {
+        val client = httpClient(FakeHttp { throw CancellationException("cancelled") })
+        try {
+            client.externalStatus(txId)
+            fail("Cancelled request must not become an invalid payload")
+        } catch (_: CancellationException) { }
+    }
+
+    @Test
+    fun provider_only_account_reports_no_application_password() = runBlocking {
+        val http = FakeHttp { call ->
+            assertEquals("GET", call.method)
+            assertTrue(call.url.endsWith("/account/me"))
+            json("""{"user":{"userId":"$family","username":"Test.User","displayName":null,"createdAt":"$created"},
+                "familyId":"$family","authenticationMethods":["yandex"]}""".trimIndent())
+        }
+        assertEquals(setOf("yandex"), httpClient(http).authenticationMethods(testToken("za_", 1)))
+    }
 
     @Test
     fun logout_posts_empty_body() = runBlocking {
@@ -269,9 +290,11 @@ class AccountHttpClientLifecycleTest {
                     json("""{"transactionId":"$txId","authorizeUrl":"https://example.invalid/mock/authorize","expiresAt":"$seen"}""")
                 }
                 path == "auth/external/vk/start" -> problem(503, "provider_unavailable")
-                path == "auth/external/exchange" -> json(
-                    """{"status":"completed","session":$sessionJson,"proof":null}"""
-                )
+                path == "auth/external/exchange" -> {
+                    val body = String(call.body!!)
+                    assertTrue(body.contains("\"handoffCode\":\"$handoff\"") || body.contains("\"handoffCode\":\"\""))
+                    json("""{"status":"completed","session":$sessionJson,"proof":null}""")
+                }
                 path == "auth/external/$txId/status" -> json("""{"status":"awaitingApp"}""")
                 else -> error(path)
             }
@@ -307,6 +330,7 @@ class AccountHttpClientLifecycleTest {
         assertEquals("completed", exchanged.status)
         assertEquals("Test.User", exchanged.session!!.user.username)
         assertNull(exchanged.proof)
+        assertEquals("completed", client.externalExchange(AccountExternalExchangeRequest(txId, verifier, "")).status)
         assertEquals("awaitingApp", client.externalStatus(txId).status)
         val blocked = FakeHttp { error("live-idp") }
         for (provider in listOf("google", "vk/../yandex", "VK", "yandex.com")) {

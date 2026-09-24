@@ -75,6 +75,7 @@ class AccountUiStateTest {
 
         val account = AccountUiState(
             ready = true, configured = true, guest = false, accountName = "Test.User",
+            hasPassword = true,
             vkAvailable = true, yandexAvailable = false,
             identities = listOf(AccountIdentityRow("vk")),
             devices = listOf(AccountDeviceRow(family, device, "Pixel", "android", true))
@@ -83,6 +84,7 @@ class AccountUiStateTest {
         assertTrue(account.showExport)
         assertTrue(account.showDelete)
         assertTrue(account.showPasswordChange)
+        assertFalse(account.copy(hasPassword = false).showPasswordChange)
         assertTrue(account.showVkUnlink)
         assertFalse(account.showVkLink)
         assertFalse(account.showYandexLink)

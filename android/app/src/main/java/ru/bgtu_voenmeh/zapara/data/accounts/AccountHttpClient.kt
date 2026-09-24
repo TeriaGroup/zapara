@@ -1,5 +1,6 @@
 package ru.bgtu_voenmeh.zapara.data.accounts
 
+import kotlinx.coroutines.CancellationException
 import ru.bgtu_voenmeh.zapara.data.api.HttpCall
 import ru.bgtu_voenmeh.zapara.data.api.HttpExchange
 import ru.bgtu_voenmeh.zapara.data.api.HttpReply
@@ -68,6 +69,16 @@ class AccountHttpClient(
     suspend fun me(accessToken: String): AccountUser {
         val root = send("GET", "account/me", null, accessToken, 200).obj()
         return user(root.field("user").obj())
+    }
+
+    suspend fun authenticationMethods(accessToken: String): Set<String> = readPayload {
+        val root = send("GET", "account/me", null, accessToken, 200).obj()
+        val methods = root.array("authenticationMethods", 3).items.map {
+            (it as? JsonValue.Str)?.value ?: throw JsonFail()
+        }
+        if (methods.isEmpty() || methods.size != methods.toSet().size ||
+            methods.any { it != "password" && it != "vk" && it != "yandex" }) throw JsonFail()
+        methods.toSet()
     }
 
     suspend fun listDevices(accessToken: String, limit: Int = 20, cursor: String? = null): AccountDevicesPage {
@@ -183,7 +194,7 @@ class AccountHttpClient(
         val body = buildString {
             append("{\"transactionId\":").append(q(AccountValidation.id(request.transactionId)))
             append(",\"nativeVerifier\":").append(q(AccountValidation.opaque(request.nativeVerifier, 43, 128)))
-            append(",\"handoffCode\":").append(q(AccountValidation.opaque(request.handoffCode, 43, 43)))
+            append(",\"handoffCode\":").append(q(if (request.handoffCode.isEmpty()) "" else AccountValidation.opaque(request.handoffCode, 43, 43)))
             append('}')
         }
         return readPayload {
@@ -477,6 +488,8 @@ class AccountHttpClient(
 
     private suspend fun <T> readPayload(block: suspend () -> T): T = try {
         block()
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: AccountClientException) {
         throw e
     } catch (_: Exception) {
