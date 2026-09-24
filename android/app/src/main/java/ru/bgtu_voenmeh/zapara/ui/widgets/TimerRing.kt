@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import kotlin.math.cos
+import kotlin.math.sin
 
 object TimerRing {
     fun bitmap(context: Context, sizeDp: Int, fraction: Float, track: Int, arc: Int): Bitmap {
@@ -38,11 +40,26 @@ object TimerRing {
             canvas.drawOval(oval, paint)
             paint.strokeWidth = stroke
         }
+        // Four quarter marks make the remaining share readable in both themes.
         paint.color = track
+        paint.alpha = 112
         canvas.drawArc(oval, 0f, 360f, false, paint)
+        paint.alpha = 170
+        paint.strokeWidth = stroke * 0.18f
+        val inner = oval.width() / 2f + stroke * 0.64f
+        val outer = oval.width() / 2f + stroke * 1.02f
+        if (mask == null) repeat(4) { quarter ->
+            val radians = Math.toRadians((quarter * 90 - 90).toDouble())
+            val dx = cos(radians).toFloat()
+            val dy = sin(radians).toFloat()
+            canvas.drawLine(oval.centerX() + dx * inner, oval.centerY() + dy * inner,
+                oval.centerX() + dx * outer, oval.centerY() + dy * outer, paint)
+        }
         val left = fraction.coerceIn(0f, 1f)
         if (left > 0f) {
             paint.color = arc
+            paint.alpha = 255
+            paint.strokeWidth = stroke
             paint.strokeCap = if (left >= 0.999f) Paint.Cap.BUTT else Paint.Cap.ROUND
             canvas.drawArc(oval, -90f, left * 360f, false, paint)
         }

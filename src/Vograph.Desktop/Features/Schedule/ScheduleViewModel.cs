@@ -57,7 +57,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     }
 
     /// <summary>Week/Teachers hand over a concrete date; the offset change reloads the day.</summary>
-    public override Task ActivateAsync() => ReloadAsync();
+    public override Task ActivateAsync() => _loaded ? ReloadAsync() : InitializeAsync();
 
     public void ShowDate(DateTime date) => DayOffset = (date.Date - _clock().Date).Days;
 
@@ -69,6 +69,15 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     [ObservableProperty] private string _title = "";
     [ObservableProperty] private string _subtitle = "";
     [ObservableProperty] private bool _isEmpty;
+    [ObservableProperty] private bool _isUnavailable;
+    public IAsyncRelayCommand ChangeGroupCommand => _shell.OpenGroupPickerCommand;
+
+    [RelayCommand]
+    private async Task Retry()
+    {
+        await _shell.RefreshScheduleAsync(force: true, quiet: true);
+        await ReloadAsync();
+    }
     [ObservableProperty] private string? _emptyTitle;
     [ObservableProperty] private string? _emptyHint;
     [ObservableProperty] private bool _showGoToday;
@@ -130,6 +139,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         var i = 0;
         foreach (var row in model.Rows) Lessons.Add(new LessonRowViewModel(row, this, i++));
         IsEmpty = model.Rows.Count == 0;
+        IsUnavailable = model.IsUnavailable;
         EmptyTitle = model.EmptyTitle;
         EmptyHint = model.EmptyHint;
         DayShown?.Invoke(direction);

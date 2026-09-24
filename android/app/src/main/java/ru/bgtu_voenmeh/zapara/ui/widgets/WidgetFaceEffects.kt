@@ -8,10 +8,14 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Chronometer
 import android.widget.FrameLayout
 import android.widget.RemoteViews
 import android.widget.TextView
 import ru.bgtu_voenmeh.zapara.R
+import java.time.Duration
+import java.time.LocalDateTime
+import java.util.Locale
 import kotlin.math.roundToInt
 
 fun timerFaceChanged(previous: TimerWidgetSnapshot, current: TimerWidgetSnapshot): Boolean =
@@ -46,7 +50,7 @@ fun weekMarker(oldDayIndex: Int, newDayIndex: Int, progress: Float): WeekMarkerF
 object WidgetFaceEffects {
     fun timer(old: TimerWidgetSnapshot, next: TimerWidgetSnapshot, policy: WidgetMotionPolicy): WidgetFaceScene? =
         if (policy.enabled && old.identity == next.identity && !old.cleared && !next.cleared &&
-            old.isDark == next.isDark && timerFaceChanged(old, next)) WidgetFaceScene.Timer(old, next) else null
+            timerFaceChanged(old, next)) WidgetFaceScene.Timer(old, next) else null
 
     fun room(old: WayfinderWidgetSnapshot, next: WayfinderWidgetSnapshot, policy: WidgetMotionPolicy): WidgetFaceScene.Room? =
         if (policy.enabled && old.identity == next.identity && !old.cleared && !next.cleared &&
@@ -73,8 +77,20 @@ sealed class WidgetFaceScene(val kind: WidgetMotionKind) {
                val from: Int, val to: Int) : WidgetFaceScene(WidgetMotionKind.Day)
 
     private var measured: FaceCanvas? = null
+    private var oldThemeFace: Bitmap? = null
 
     fun bitmapAt(context: Context, widgetId: Int, widthDp: Int, heightDp: Int, progress: Float): Bitmap {
+        if (this is Timer && old.isDark != next.isDark) {
+            val source = oldThemeFace ?: FaceCanvas(context, WidgetRemoteViews.timer(context, old, widthDp),
+                widthDp, heightDp).full().also { oldThemeFace = it }
+            val frame = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+            val themeProgress = progress.coerceIn(0f, 1f)
+            val ink = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                alpha = ((1f - widgetMotionEase(themeProgress)) * 255).roundToInt().coerceIn(0, 255)
+            }
+            Canvas(frame).drawBitmap(source, 0f, 0f, ink)
+            return frame
+        }
         val face = measured ?: FaceCanvas(context, when (this) {
             is Timer -> WidgetRemoteViews.timer(context, next, widthDp)
             is Room -> WidgetExtraViews.wayfinder(context, next, widgetId)
@@ -94,6 +110,15 @@ private class FaceCanvas(private val context: Context, views: RemoteViews, width
         root.measure(View.MeasureSpec.makeMeasureSpec((widthDp * density).roundToInt(), View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec((heightDp * density).roundToInt(), View.MeasureSpec.EXACTLY))
         root.layout(0, 0, root.measuredWidth, root.measuredHeight)
+        // This detached measurement view must not leave a host-style ticker running.
+        root.findViewById<Chronometer>(R.id.widget_timer_time)?.stop()
+    }
+    fun full(): Bitmap {
+        val bitmap = Bitmap.createBitmap(geometry.widthPx, geometry.heightPx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.scale(geometry.widthPx.toFloat() / root.width, geometry.heightPx.toFloat() / root.height)
+        root.draw(canvas)
+        return bitmap
     }
     private fun bounds(id: Int): RectF {
         val child = root.findViewById<View>(id)
@@ -103,22 +128,33 @@ private class FaceCanvas(private val context: Context, views: RemoteViews, width
         return RectF(rect)
     }
     private fun card(dark: Boolean) = context.getColor(if (dark) R.color.widget_dark_card else R.color.widget_light_card)
-    private fun text(canvas: Canvas, id: Int, value: String? = null, dy: Float = 0f, alpha: Float = 1f) {
+    private fun text(canvas: Canvas, id: Int, value: String? = null, dy: Float = 0f,
+                     alpha: Float = 1f, color: Int? = null) {
         val view = root.findViewById<TextView>(id)
         val savedText = view.text
+        val savedColor = view.currentTextColor
         if (value != null) {
             view.text = value
             view.measure(View.MeasureSpec.makeMeasureSpec(view.width, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(view.height, View.MeasureSpec.EXACTLY))
             view.layout(view.left, view.top, view.right, view.bottom)
         }
-        val rect = bounds(id)
-        val save = canvas.saveLayerAlpha(rect, (alpha * 255).roundToInt().coerceIn(0, 255))
-        canvas.clipRect(rect)
-        canvas.translate(rect.left, rect.top + dy * density)
-        view.draw(canvas)
-        canvas.restoreToCount(save)
-        if (value != null) view.text = savedText
+        if (color != null) view.setTextColor(color)
+        try {
+            val rect = bounds(id)
+            if (rect.width() <= 0f || rect.height() <= 0f) return
+            val save = canvas.saveLayerAlpha(rect, (alpha * 255).roundToInt().coerceIn(0, 255))
+            try {
+                canvas.clipRect(rect)
+                canvas.translate(rect.left, rect.top + dy * density)
+                view.draw(canvas)
+            } finally {
+                canvas.restoreToCount(save)
+            }
+        } finally {
+            if (value != null) view.text = savedText
+            if (color != null) view.setTextColor(savedColor)
+        }
     }
 
     fun frame(scene: WidgetFaceScene, progress: Float): Bitmap {
@@ -139,15 +175,46 @@ private class FaceCanvas(private val context: Context, views: RemoteViews, width
         val size = minOf(area.width(), area.height())
         val rect = RectF(area.centerX() - size / 2, area.centerY() - size / 2,
             area.centerX() + size / 2, area.centerY() + size / 2)
-        // Only mask the ring band; current countdown TextViews remain visible during every pulse.
         val arc = phaseArc(scene.old.fraction, scene.next.fraction, progress)
-        val oldColor = if (scene.old.kind == TimerPhaseKind.Break) colors.warn else colors.ok
-        val newColor = if (scene.next.kind == TimerPhaseKind.Break) colors.warn else colors.ok
+        fun arcTone(kind: TimerPhaseKind): Int = when (kind) {
+            TimerPhaseKind.Lesson -> colors.ok
+            TimerPhaseKind.Break -> colors.warn
+            else -> colors.text3
+        }
+        val oldColor = arcTone(scene.old.kind)
+        val newColor = arcTone(scene.next.kind)
         TimerRing.draw(canvas, rect, arc.fraction, colors.text3,
             TimerRing.blend(oldColor, newColor, widgetMotionEase(progress)), card(scene.next.isDark), arc.haloAlpha)
+
+        // Mask the final host text for this short scene; the live Chronometer resumes afterward.
         val pose = widgetMotionPose(progress)
-        text(canvas, R.id.widget_timer_time, scene.old.timeText, pose.oldOffsetYDp, pose.oldAlpha * 0.65f)
-        text(canvas, R.id.widget_timer_phase, scene.old.phaseText, pose.oldOffsetYDp, pose.oldAlpha * 0.65f)
+        fun reel(id: Int, oldText: String, newText: String, oldInk: Int, newInk: Int) {
+            val box = bounds(id)
+            if (box.width() <= 0f || box.height() <= 0f) return
+            paint.color = card(scene.next.isDark)
+            paint.alpha = 255
+            box.inset(-density, -density)
+            canvas.drawRect(box, paint)
+            text(canvas, id, oldText, pose.oldOffsetYDp, pose.oldAlpha, oldInk)
+            text(canvas, id, newText, pose.newOffsetYDp, pose.newAlpha, newInk)
+        }
+        fun clock(snapshot: TimerWidgetSnapshot): String = snapshot.endsAt?.let {
+            timerDigitText(Duration.between(LocalDateTime.now(), it).toMillis())
+        } ?: snapshot.timeText
+        fun tone(kind: TimerPhaseKind): Int = when (kind) {
+            TimerPhaseKind.Lesson -> colors.ok
+            TimerPhaseKind.Break -> colors.warn
+            else -> colors.text2
+        }
+        fun endLabel(snapshot: TimerWidgetSnapshot): String = snapshot.endsAt?.let {
+            context.getString(R.string.widget_timer_until, String.format(Locale.ROOT, "%02d:%02d", it.hour, it.minute))
+        }.orEmpty()
+        reel(R.id.widget_timer_time, clock(scene.old), clock(scene.next), colors.text1, colors.text1)
+        reel(R.id.widget_timer_fallback, endLabel(scene.old), endLabel(scene.next), colors.text1, colors.text1)
+        reel(R.id.widget_timer_phase, scene.old.phaseText, scene.next.phaseText,
+            tone(scene.old.kind), tone(scene.next.kind))
+        reel(R.id.widget_timer_subject, scene.old.subject, scene.next.subject, colors.text1, colors.text1)
+        reel(R.id.widget_timer_detail, scene.old.detail, scene.next.detail, colors.text2, colors.text2)
     }
 
     private fun room(canvas: Canvas, scene: WidgetFaceScene.Room, progress: Float) {

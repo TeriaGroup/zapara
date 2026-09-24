@@ -47,7 +47,8 @@ data class HomeworkUiState(
     val groups: List<HomeworkGroupUi> = emptyList(),
     val editor: HomeworkEditorState? = null,
     val confirmDelete: Long? = null,
-    val subjectPicker: SubjectPickerUi? = null
+    val subjectPicker: SubjectPickerUi? = null,
+    val guest: Boolean = false
 )
 
 sealed interface HomeworkEvent {

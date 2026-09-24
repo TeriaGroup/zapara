@@ -36,6 +36,7 @@ public sealed partial class MapsViewModel : ViewModelBase
     private string? _destRoomKey;
     private string? _prevRoomKey;
     private string? _fallbackToastKey;
+    private bool _syncingBuilding;
 
     public MapsViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null, CampusGraph? graph = null) : base(app)
     {
@@ -146,11 +147,30 @@ public sealed partial class MapsViewModel : ViewModelBase
 
     partial void OnBuildingIndexChanged(int value)
     {
+        UpdateFloorSelection(value);
+        if (_syncingBuilding) return;
+        // A building tab is a navigation action: show its plan without requiring a second floor click.
+        var floor = Floors.FirstOrDefault(f => f.Floor == Current?.Floor) ?? Floors.FirstOrDefault();
+        if (floor is not null) _ = SelectFloor(floor);
+    }
+
+    private void UpdateFloorSelection(int value)
+    {
         var building = Buildings[Math.Clamp(value, 0, 1)];
         var selected = Current is { } c && (c.Building == "ВЦ" ? "ГК" : c.Building) == building ? c.Floor : 0;
         Floors = MapsComposer.Floors(building).Select(f => new FloorPill(f, T("mapFloorN", f), f == selected)).ToList();
         OnPropertyChanged(nameof(ShownBuilding));
-        _ = RefreshStackFloorsAsync();
+    }
+
+    private void SyncBuilding(int index)
+    {
+        _syncingBuilding = true;
+        try
+        {
+            if (BuildingIndex == index) UpdateFloorSelection(index);
+            else BuildingIndex = index;
+        }
+        finally { _syncingBuilding = false; }
     }
 
     private sealed record NextData(Lesson? Lesson, DateTime Date, MapInfo? Map, string? Name, CoordsRect? Coords, string? DestRoomKey, string? PrevRoomKey);
@@ -261,7 +281,7 @@ public sealed partial class MapsViewModel : ViewModelBase
         if (step is null) return;
         var index = Array.IndexOf(Buildings, step.Building);
         if (index < 0) return;
-        BuildingIndex = index;
+        SyncBuilding(index);
         var pill = Floors.FirstOrDefault(f => f.Floor == step.Floor);
         if (pill is null) return;
         ShowStack = false;
@@ -278,8 +298,7 @@ public sealed partial class MapsViewModel : ViewModelBase
         ContextLine = MapsComposer.ContextLine(Mode, map, _lessonName, _start, _end, _clock(), App.Loc);
         var shownBuilding = map is null ? "ГК" : map.Building == "ВЦ" ? "ГК" : map.Building;
         var index = Array.IndexOf(Buildings, shownBuilding) is var i and >= 0 ? i : 0;
-        if (BuildingIndex == index) OnBuildingIndexChanged(index); // same building: re-mark the floor without a second rebuild (T6 #7)
-        else BuildingIndex = index;
+        SyncBuilding(index);
         HasHighlight = false;
         ImageError = null;
         if (map is not { HasMap: true } || map.IsRemote)
@@ -620,7 +639,7 @@ public sealed partial class MapsViewModel : ViewModelBase
         OnPropertyChanged(nameof(RouteUnmarked));
         Note = Current is { } c ? NoteFor(c) : null;
         ContextLine = MapsComposer.ContextLine(Mode, Current, _lessonName, _start, _end, _clock(), App.Loc);
-        OnBuildingIndexChanged(BuildingIndex);
+        UpdateFloorSelection(BuildingIndex);
         RefreshRouteSteps();
         _ = RefreshCacheStatusAsync();
     }

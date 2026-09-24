@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { followGroupCommunity, homeworkCommunityId, openGroupFace, resolveStoredGroup } from "./groupChoice.ts";
 
-test("an explicit empty group stays empty and a missing choice takes the first group", () => {
+test("a missing or explicit empty choice stays empty until the student selects a group", () => {
   const groups = [{ id: "3313" }, { id: "0901" }];
-  assert.equal(resolveStoredGroup(null, groups), "3313");
+  assert.equal(resolveStoredGroup(null, groups), "");
   assert.equal(resolveStoredGroup("", groups), "");
   assert.equal(resolveStoredGroup("0901", groups), "0901");
   assert.equal(resolveStoredGroup("gone", groups), "");

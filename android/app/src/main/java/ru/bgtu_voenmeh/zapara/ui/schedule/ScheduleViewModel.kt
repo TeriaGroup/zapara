@@ -38,7 +38,7 @@ class ScheduleViewModel(
     private val container: AppContainer,
     private val initialDateArg: String?
 ) : ViewModel() {
-    private val mutable = MutableStateFlow(ScheduleUiState())
+    private val mutable = MutableStateFlow(ScheduleUiState(guest = container.profile.isGuest))
     val state: StateFlow<ScheduleUiState> = mutable.asStateFlow()
     private var ctx: SchedCtx? = null
     private var allLessons: List<Lesson> = emptyList()
@@ -424,6 +424,7 @@ class ScheduleViewModel(
             } catch (e: Exception) {
                 android.util.Log.w("ZaparaSchedule", "homework", e)
                 mutable.update { cur -> if (cur.homeworkEditor == null) cur.copy(homeworkEditor = editor) else cur }
+                container.toasts.show(container.app.getString(R.string.homework_save_failed), ToastKind.Bad)
             } finally {
                 savingHomework = false
             }

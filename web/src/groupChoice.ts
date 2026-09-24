@@ -1,8 +1,7 @@
-/** Empty string is an explicit «Не выбрана». Null means the choice was never stored. */
+/** A missing or empty choice stays unselected; an unavailable stored group is cleared. */
 export function resolveStoredGroup(stored: string | null, groups: { id: string }[]): string {
   if (stored === "") return "";
   if (stored && groups.some(group => group.id === stored)) return stored;
-  if (stored === null && groups.length > 0) return groups[0].id;
   return "";
 }
 

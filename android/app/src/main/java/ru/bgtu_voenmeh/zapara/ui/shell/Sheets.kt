@@ -25,6 +25,7 @@ import ru.bgtu_voenmeh.zapara.data.GroupInfo
 import ru.bgtu_voenmeh.zapara.ui.components.HighlightText
 import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
+import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
 
@@ -119,11 +120,25 @@ fun GroupPickerSheet(
         ) {
             if (filtered.isEmpty()) {
                 item {
-                    Text(
-                        if (groups.isEmpty()) stringResource(R.string.group_empty) else stringResource(R.string.group_empty_hint),
-                        style = Zapara.typography.body,
-                        color = c.text2
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        Text(
+                            when {
+                                groups.isEmpty() -> stringResource(R.string.group_empty)
+                                query.isNotBlank() -> stringResource(R.string.group_search_empty)
+                                else -> stringResource(R.string.group_empty_hint)
+                            },
+                            style = Zapara.typography.body,
+                            color = c.text2
+                        )
+                        if (groups.isNotEmpty() && query.isNotBlank()) {
+                            ZButton(
+                                stringResource(R.string.group_search_clear),
+                                { query = "" },
+                                ghost = true,
+                                tag = "Picker.ClearSearch"
+                            )
+                        }
+                    }
                 }
             }
             items(filtered, key = { it.id }) { group ->

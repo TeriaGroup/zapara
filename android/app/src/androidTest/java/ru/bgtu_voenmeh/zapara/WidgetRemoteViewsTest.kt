@@ -27,6 +27,82 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 
 class WidgetRemoteViewsTest {
+    @Test fun timer_without_exact_alarm_shows_absolute_end_and_no_running_clock() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val ctx = instrumentation.targetContext
+        val snapshot = TimerWidgetSnapshot(extraIdentity, "42:00", "Пара", "Математика", "493 ГК",
+            TimerPhaseKind.Lesson, 0.5f, LocalDate.now().plusDays(1).atTime(10, 35))
+        lateinit var fallback: TextView
+        androidx.test.core.app.ActivityScenario.launch(Api37TestActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val tree = WidgetRemoteViews.timer(ctx, snapshot, 180, liveCountdown = false)
+                    .apply(ctx, FrameLayout(activity))
+                activity.setContentView(tree)
+                fallback = tree.findViewById(R.id.widget_timer_fallback)
+                assertEquals(View.GONE, tree.findViewById<View>(R.id.widget_timer_time).visibility)
+                assertEquals(View.VISIBLE, fallback.visibility)
+                assertEquals("До 10:35", fallback.text.toString())
+                assertEquals("Пара, Математика, 493 ГК, До 10:35", tree.contentDescription.toString())
+            }
+            android.os.SystemClock.sleep(1_200)
+            scenario.onActivity { assertEquals("До 10:35", fallback.text.toString()) }
+        }
+    }
+
+    @Test fun timer_host_counts_without_provider_updates_and_stops_when_cleared() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val ctx = instrumentation.targetContext
+        lateinit var active: TimerWidgetSnapshot
+        lateinit var clock: android.widget.Chronometer
+        lateinit var tree: View
+        androidx.test.core.app.ActivityScenario.launch(Api37TestActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                active = TimerWidgetSnapshot(extraIdentity, "00:05", "Пара", "Математика", "493 ГК",
+                    TimerPhaseKind.Lesson, 0.5f, LocalDateTime.now().plusSeconds(5))
+                tree = WidgetRemoteViews.timer(ctx, active, 180, liveCountdown = true).apply(ctx, FrameLayout(activity))
+                activity.setContentView(tree)
+                clock = tree.findViewById(R.id.widget_timer_time)
+                assertEquals(View.VISIBLE, clock.visibility)
+            }
+            var first = ""
+            scenario.onActivity { first = clock.text.toString() }
+            android.os.SystemClock.sleep(1_600)
+            scenario.onActivity { assertTrue("The host must change seconds without a provider broadcast", first != clock.text.toString()) }
+            scenario.onActivity {
+                val cleared = active.copy(timeText = "", endsAt = null, fraction = 0f, cleared = true)
+                WidgetRemoteViews.timer(ctx, cleared, 180, liveCountdown = true).reapply(ctx, tree)
+                assertEquals(View.GONE, clock.visibility)
+                // Reveal the test view to prove the RemoteViews action stopped its internal ticker.
+                clock.visibility = View.VISIBLE
+                first = clock.text.toString()
+            }
+            android.os.SystemClock.sleep(1_600)
+            scenario.onActivity { assertEquals("Clearing must stop the host ticker", first, clock.text.toString()) }
+        }
+    }
+
+    @Test fun timer_theme_crossfade_uses_old_card_and_finishes_transparent() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val ctx = instrumentation.targetContext
+        val old = TimerWidgetSnapshot(extraIdentity, "10:00", "Lesson", "Subject", "Room",
+            TimerPhaseKind.Lesson, 0.5f, LocalDateTime.now().plusMinutes(10), isDark = false)
+        val next = old.copy(isDark = true)
+        val enabled = WidgetMotionPolicy.of(true, 1f, true)
+        val scene = WidgetFaceEffects.timer(old, next, enabled)
+        assertTrue("Theme changes should have a finite timer scene", scene != null)
+        assertTrue(WidgetFaceEffects.timer(old, next, WidgetMotionPolicy.Disabled) == null)
+        instrumentation.runOnMainSync {
+            val first = scene!!.bitmapAt(ctx, 901, 180, 180, 0f)
+            val middle = scene.bitmapAt(ctx, 901, 180, 180, 0.5f)
+            val last = scene.bitmapAt(ctx, 901, 180, 180, 1f)
+            val x = first.width / 2
+            val y = first.height / 2
+            assertEquals(255, android.graphics.Color.alpha(first.getPixel(x, y)))
+            assertTrue(android.graphics.Color.alpha(middle.getPixel(x, y)) in 1..254)
+            assertEquals(0, android.graphics.Color.alpha(last.getPixel(x, y)))
+        }
+    }
+
     @Test fun homework_wrapped_rows_fit_180dp_width_at_normal_and_enlarged_font_scale() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val base = instrumentation.targetContext
@@ -252,28 +328,20 @@ class WidgetRemoteViewsTest {
                     assertTrue(ids.all { WidgetMotionPlayer.isRunning(it) })
                 }
                 android.os.SystemClock.sleep(90)
-                var pulseText = ""
                 instrumentation.runOnMainSync {
                     WidgetRemoteViews.pushTimer(ctx, nextTimer.copy(timeText = "09:59", fraction = 0.89f), policy)
                     assertTrue("An ordinary timer pulse must keep the phase scene alive", WidgetMotionPlayer.isRunning(ids[0]))
-                    // A deliberately newer clock is supplied through the player API while the semantic scene stays the same.
-                    val fresh = WidgetRemoteViews.timer(ctx, nextTimer, 320).apply {
-                        setTextViewText(R.id.widget_timer_time, "09:58")
-                        setContentDescription(R.id.widget_timer_root, "Перемена, 09:58, Математика, 493 ГК")
-                    }
+                    val fresh = WidgetRemoteViews.timer(ctx, nextTimer, 320, liveCountdown = true)
                     assertTrue(WidgetMotionPlayer.refreshFinal(ids[0], identity, fresh))
-                    manager.partiallyUpdateAppWidget(ids[0], android.widget.RemoteViews(ctx.packageName, R.layout.widget_timer).apply {
-                        setTextViewText(R.id.widget_timer_time, "09:58")
-                    })
                     assertTrue(WidgetMotionPlayer.isRunning(ids[0]))
-                    pulseText = "09:58"
                 }
                 screenshot("during")
                 android.os.SystemClock.sleep(550)
                 instrumentation.runOnMainSync {
                     assertTrue(ids.none { WidgetMotionPlayer.isRunning(it) })
-                    assertEquals(pulseText, hosted[0].findViewById<TextView>(R.id.widget_timer_time).text.toString())
-                    assertTrue(hosted[0].findViewById<View>(R.id.widget_timer_root).contentDescription.contains(pulseText))
+                    assertTrue(hosted[0].findViewById<TextView>(R.id.widget_timer_time).text.isNotBlank())
+                    assertEquals("Перемена", hosted[0].findViewById<TextView>(R.id.widget_timer_phase).text.toString())
+                    assertTrue(hosted[0].findViewById<View>(R.id.widget_timer_root).contentDescription.contains("До "))
                     assertEquals("201 Б", hosted[1].findViewById<TextView>(R.id.widget_wayfinder_room).text.toString())
                     assertTrue(hosted[2].findViewById<View>(R.id.widget_week_day1).contentDescription.contains("Сегодня", ignoreCase = true))
                     listOf(R.id.widget_timer_overlay, R.id.widget_wayfinder_overlay, R.id.widget_week_overlay).forEachIndexed { i, overlay ->
@@ -282,8 +350,17 @@ class WidgetRemoteViewsTest {
                     // The ordinary provider pulse must not create another scene.
                     WidgetRemoteViews.pushTimer(ctx, nextTimer.copy(fraction = 0.89f), policy)
                     assertFalse(WidgetMotionPlayer.isRunning(ids[0]))
+                    WidgetRemoteViews.freezeTimerAtBell(ctx)
                 }
                 instrumentation.waitForIdleSync()
+                instrumentation.runOnMainSync {
+                    assertEquals("00:00", hosted[0].findViewById<TextView>(R.id.widget_timer_time).text.toString())
+                }
+                android.os.SystemClock.sleep(1_200)
+                instrumentation.runOnMainSync {
+                    assertEquals("The phase bell must stop host-side seconds", "00:00",
+                        hosted[0].findViewById<TextView>(R.id.widget_timer_time).text.toString())
+                }
                 screenshot("after")
             }
         } finally {

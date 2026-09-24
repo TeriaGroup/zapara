@@ -30,4 +30,4 @@ public sealed record LessonRow(
     MapInfo? Map,
     SubgroupChoice? Subgroup = null);
 
-public sealed record DayModel(DateTime Date, int Offset, string Title, string Subtitle, IReadOnlyList<LessonRow> Rows, string? EmptyTitle, string? EmptyHint);
+public sealed record DayModel(DateTime Date, int Offset, string Title, string Subtitle, IReadOnlyList<LessonRow> Rows, string? EmptyTitle, string? EmptyHint, bool IsUnavailable = false);

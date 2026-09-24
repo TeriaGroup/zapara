@@ -12,7 +12,11 @@ class TimerWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == ACTION_PULSE) {
-            WidgetUpdater.pulse(context)
+            WidgetUpdater.pulse(context, intent)
+            return
+        }
+        if (intent.action == Intent.ACTION_TIME_CHANGED || intent.action == Intent.ACTION_TIMEZONE_CHANGED) {
+            WidgetUpdater.refresh(context)
             return
         }
         super.onReceive(context, intent)
@@ -43,5 +47,9 @@ class TimerWidgetProvider : AppWidgetProvider() {
         const val ACTION_PULSE = "ru.zapara.app.WIDGET_TIMER_PULSE"
         const val PULSE = 4105
         const val BELL = 4106
+        const val EXTRA_BELL_END = "timer_bell_end"
+        const val EXTRA_BELL_PROFILE = "timer_bell_profile"
+        const val EXTRA_BELL_DATABASE = "timer_bell_database"
+        const val EXTRA_BELL_GENERATION = "timer_bell_generation"
     }
 }

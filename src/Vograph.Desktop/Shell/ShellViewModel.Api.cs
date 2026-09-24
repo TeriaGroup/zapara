@@ -8,6 +8,13 @@ public sealed partial class ShellViewModel
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
         if (!App.Api.Configured) return;
+        // Schedule owns this state so navigating away and back cannot turn an absent cache into a free day.
+        if (CurrentKey == SectionKey.Schedule || Current is Features.States.ErrorStateViewModel)
+        {
+            if (Current is not Features.Schedule.ScheduleViewModel) NavigateTo(SectionKey.Schedule);
+            await Current!.ActivateAsync();
+            return;
+        }
         var state = await RunAsync(() => new ApiAvailability(App.Api.HasSelectedCache), "api cache availability");
         if (state is { Available: false } && operation.IsCurrent)
             Current = new Features.States.ErrorStateViewModel(App,
@@ -34,6 +41,8 @@ public sealed partial class ShellViewModel
             if (changed)
             {
                 _staleToastShown = false;
+                if (Current is Features.States.ErrorStateViewModel && CurrentKey == SectionKey.Schedule)
+                    NavigateTo(SectionKey.Schedule);
                 RaiseScheduleChanged();
                 await UpdateHomeworkBadgeAsync();
                 if (!quiet) App.Toasts.Ok(T("refreshOk"));

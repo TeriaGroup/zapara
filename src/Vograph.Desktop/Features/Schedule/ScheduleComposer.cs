@@ -30,6 +30,10 @@ public sealed class ScheduleComposer
             return new DayModel(date, offset, title, "", Array.Empty<LessonRow>(), loc.T("noGroup"), loc.T("noGroupHint"));
 
         var groupId = settings.MyGroupId;
+        if (_app.Api.Configured && !_app.Api.HasSelectedCache)
+            return new DayModel(date, offset, title, "", Array.Empty<LessonRow>(),
+                loc.T("bootstrapError"), loc.T("bootstrapHint"), IsUnavailable: true);
+
         var period = ParityCodes.Period(settings, date);
         var isOdd = ParityCodes.IsOdd(date, settings, period);
         var weekNumber = ParityService.GetWeekNumber(date, period.PeriodStart);

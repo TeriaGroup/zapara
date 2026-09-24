@@ -117,7 +117,8 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, on
             onCancel = { onEvent(ScheduleEvent.HomeworkEditorCancel) },
             onPick = { kind, uri -> onEvent(ScheduleEvent.HomeworkAttach(kind, uri)) },
             onRemove = { onEvent(ScheduleEvent.HomeworkRemoveFile(it)) },
-            onShare = { onEvent(ScheduleEvent.HomeworkEditorShare(it)) }
+            onShare = { onEvent(ScheduleEvent.HomeworkEditorShare(it)) },
+            isGuest = state.guest
         )
     }
 }

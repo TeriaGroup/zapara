@@ -39,7 +39,8 @@ fun HomeworkEditorSheet(
     onCancel: () -> Unit,
     onPick: (String, Uri) -> Unit = { _, _ -> },
     onRemove: (String) -> Unit = {},
-    onShare: (Boolean) -> Unit = {}
+    onShare: (Boolean) -> Unit = {},
+    isGuest: Boolean = false
 ) {
     val photo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onPick("photo", uri)
@@ -99,7 +100,15 @@ fun HomeworkEditorSheet(
                 ZButton(stringResource(R.string.hw_attach_remove), { onRemove(file.id) }, ghost = true, tag = "Editor.Remove.${file.id}")
             }
         }
-        if (!state.isEdit) {
+        if (!state.isEdit && isGuest) {
+            Spacer(Modifier.height(Zapara.space.s))
+            Text(
+                stringResource(R.string.homework_guest_share_hint),
+                style = Zapara.typography.caption,
+                color = c.text2,
+                modifier = Modifier.fillMaxWidth()
+            )
+        } else if (!state.isEdit) {
             Spacer(Modifier.height(Zapara.space.s))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 Checkbox(

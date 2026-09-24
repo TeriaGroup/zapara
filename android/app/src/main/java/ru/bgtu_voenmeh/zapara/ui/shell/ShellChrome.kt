@@ -27,9 +27,10 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
@@ -102,11 +103,17 @@ fun ZTopBar(title: String, actions: @Composable RowScope.() -> Unit = {}) {
 private fun GroupChip() {
     val chrome = LocalShellChrome.current
     val c = Zapara.colors
+    val staleDescription = if (chrome.stale && chrome.chip != null) {
+        stringResource(R.string.group_stale_chip_accessibility, chrome.chip)
+    } else null
     if (chrome.hasGroup && chrome.chip != null) {
         ZChip(
             text = chrome.chip,
             onClick = chrome.onGroupChip,
             tag = "Top.GroupChip",
+            modifier = staleDescription?.let { description ->
+                Modifier.semantics(mergeDescendants = true) { contentDescription = description }
+            } ?: Modifier,
             leading = if (chrome.stale) {
                 {
                     Box(

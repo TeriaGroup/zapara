@@ -27,7 +27,7 @@ import ru.bgtu_voenmeh.zapara.ui.components.ToastKind
 import java.time.LocalDate
 
 class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
-    private val mutable = MutableStateFlow(HomeworkUiState())
+    private val mutable = MutableStateFlow(HomeworkUiState(guest = container.profile.isGuest))
     val state: StateFlow<HomeworkUiState> = mutable.asStateFlow()
     private val writes = Mutex()
     private var saving = false
@@ -222,6 +222,7 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
             } catch (e: Exception) {
                 android.util.Log.w("ZaparaHomework", "save", e)
                 mutable.update { cur -> if (cur.editor == null) cur.copy(editor = editor) else cur }
+                container.toasts.show(container.app.getString(R.string.homework_save_failed), ToastKind.Bad)
             } finally {
                 saving = false
             }

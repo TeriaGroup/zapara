@@ -34,6 +34,8 @@ object WidgetUpdater {
     private var bound = false
     private var screenWatch: BroadcastReceiver? = null
     private var armedBell: Long = Long.MIN_VALUE
+    // Accessed on main; retries are only for a failed timer read, never a clock tick.
+    private var timerReadRetries = 0
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val main = Handler(Looper.getMainLooper())
     private val restoreLock = Mutex()
@@ -119,11 +121,25 @@ object WidgetUpdater {
         }
     }
 
-    fun pulse(context: Context) {
+    fun pulse(context: Context, intent: Intent? = null) {
         val app = context.applicationContext as? ZaparaApplication ?: return
         bind(app)
-        // Retry pending profile clears even when the following timer read fails.
-        main.post { prepareProfile(app, WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value)) }
+        // A bell must stop the host clock before asynchronous profile data is read.
+        main.post {
+            val current = WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value)
+            if (!prepareProfile(app, current)) return@post
+            val endMillis = intent?.getLongExtra(TimerWidgetProvider.EXTRA_BELL_END, Long.MIN_VALUE) ?: Long.MIN_VALUE
+            val expected = timerEnd?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
+            val sameProfile = intent != null &&
+                intent.getStringExtra(TimerWidgetProvider.EXTRA_BELL_PROFILE) == current.profileId &&
+                intent.getStringExtra(TimerWidgetProvider.EXTRA_BELL_DATABASE) == current.databaseName &&
+                intent.getLongExtra(TimerWidgetProvider.EXTRA_BELL_GENERATION, Long.MIN_VALUE) == current.generation
+            val am = app.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val exact = Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()
+            if (sameProfile && endMillis != Long.MIN_VALUE && endMillis == expected && exact) {
+                publish("freeze timer") { WidgetRemoteViews.freezeTimerAtBell(app) }
+            }
+        }
         scope.launch { repaintTimer(app) }
     }
 
@@ -132,7 +148,10 @@ object WidgetUpdater {
             if (screenWatch != null) return@post
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(ctx: Context, intent: Intent?) {
-                    if (intent?.action == Intent.ACTION_SCREEN_OFF) WidgetMotionPlayer.cancelAll()
+                    if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                        WidgetMotionPlayer.cancelAll()
+                        scheduleHeartbeat(ctx)
+                    }
                     else refresh(ctx)
                 }
             }
@@ -197,6 +216,7 @@ object WidgetUpdater {
                 WidgetSnapshots.timer(container, identity, false, night)
             } catch (e: Exception) {
                 Log.w("ZaparaWidget", "timer", e)
+                keepPulse(app)
                 null
             }
             val wayfinder = if (heartbeatOnly) null else try {
@@ -278,6 +298,7 @@ object WidgetUpdater {
         if (alarmIdentity != current) {
             WidgetRemoteViews.clearMotion()
             alarmIdentity = current
+            timerReadRetries = 0
             scheduleWake = null
             timerEnd = null
             timerWake = null
@@ -357,6 +378,8 @@ object WidgetUpdater {
                 try {
                     if (!prepareProfile(app, timer.identity)) return@post
                     WidgetRemoteViews.pushTimer(app, timer, policy)
+                    timerEnd = timer.endsAt.takeUnless { timer.cleared }
+                    timerWake = timer.nextRefreshAt.takeUnless { timer.cleared }
                     followTimer(app, timer)
                 } catch (e: Exception) {
                     Log.w("ZaparaWidget", "timer", e)
@@ -368,28 +391,38 @@ object WidgetUpdater {
 
     private fun keepPulse(app: ZaparaApplication) {
         main.post {
-            if (timerPlaced(app)) schedulePulse(app, LocalDateTime.now().plusSeconds(2))
+            if (timerPlaced(app) && timerReadRetries < 3) {
+                timerReadRetries++
+                scheduleTimerRetry(app, 2_000L * timerReadRetries)
+            }
         }
     }
 
     private fun followTimer(context: Context, timer: TimerWidgetSnapshot?) {
+        timerReadRetries = 0
+        scheduleTimerRetry(context, null)
         val end = timer?.endsAt
         val counting = timer != null && !timer.cleared && end != null && end.isAfter(LocalDateTime.now()) && timerPlaced(context)
         val phaseEnd = if (counting) end else null
-        schedulePulse(context, phaseEnd)
-        scheduleBell(context, phaseEnd)
+        scheduleBell(context, phaseEnd, timer?.identity)
     }
 
-    private fun scheduleBell(context: Context, end: LocalDateTime?) {
+    private fun scheduleBell(context: Context, end: LocalDateTime?, identity: WidgetJobIdentity?) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val millis = end?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli() ?: Long.MIN_VALUE
         val intent = Intent(context, TimerWidgetProvider::class.java).setAction(TimerWidgetProvider.ACTION_PULSE)
+        if (millis != Long.MIN_VALUE && identity != null) {
+            intent.putExtra(TimerWidgetProvider.EXTRA_BELL_END, millis)
+            intent.putExtra(TimerWidgetProvider.EXTRA_BELL_PROFILE, identity.profileId)
+            intent.putExtra(TimerWidgetProvider.EXTRA_BELL_DATABASE, identity.databaseName)
+            intent.putExtra(TimerWidgetProvider.EXTRA_BELL_GENERATION, identity.generation)
+        }
         val pending = PendingIntent.getBroadcast(
             context,
             TimerWidgetProvider.BELL,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val millis = end?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli() ?: Long.MIN_VALUE
         if (millis == armedBell && millis > System.currentTimeMillis()) return
         am.cancel(pending)
         armedBell = Long.MIN_VALUE
@@ -417,7 +450,7 @@ object WidgetUpdater {
         }
     }
 
-    private fun schedulePulse(context: Context, end: LocalDateTime?) {
+    private fun scheduleTimerRetry(context: Context, delayMs: Long?) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, TimerWidgetProvider::class.java).setAction(TimerWidgetProvider.ACTION_PULSE)
         val pending = PendingIntent.getBroadcast(
@@ -427,18 +460,7 @@ object WidgetUpdater {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         am.cancel(pending)
-        if (end == null) return
-        val bell = end.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val exact = Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()
-        val interactive = (context.getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
-        val delay = timerPulseDelayMs(interactive, exact, bell - System.currentTimeMillis()) ?: return
-        try {
-            // RTC, not RTC_WAKEUP: the screen-off tick must not wake the phone.
-            // The phase boundary wakes through scheduleBell.
-            am.setExact(AlarmManager.RTC, System.currentTimeMillis() + delay, pending)
-        } catch (e: SecurityException) {
-            Log.w("ZaparaWidget", "pulse", e)
-        }
+        if (delayMs != null) am.set(AlarmManager.RTC, System.currentTimeMillis() + delayMs, pending)
     }
 
     private fun scheduleHeartbeat(context: Context) {
@@ -457,7 +479,8 @@ object WidgetUpdater {
         val interactive = (context.getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
         val delay = widgetHeartbeatMs(interactive, exact) ?: return
         try {
-            am.setExact(AlarmManager.RTC, System.currentTimeMillis() + delay, pending)
+            if (exact) am.setExact(AlarmManager.RTC, System.currentTimeMillis() + delay, pending)
+            else am.set(AlarmManager.RTC, System.currentTimeMillis() + delay, pending)
         } catch (e: SecurityException) {
             Log.w("ZaparaWidget", "heartbeat", e)
         }

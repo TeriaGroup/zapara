@@ -38,9 +38,11 @@
         </DataTemplate>
       </ItemsControl.ItemTemplate>
     </ItemsControl>
-    <CheckBox IsVisible="{Binding ShowShare}" IsChecked="{Binding Share}" AutomationProperties.AutomationId="Dialog.Share">
+    <CheckBox IsVisible="{Binding ShowShare}" IsEnabled="{Binding CanShare}" IsChecked="{Binding Share}" AutomationProperties.AutomationId="Dialog.Share">
       <TextBlock Text="Дублировать всей группе — одна и та же домашка появится у всех участников" TextWrapping="Wrap" MaxWidth="400" />
     </CheckBox>
+    <TextBlock IsVisible="{Binding ShowShareSignInHint}" Classes="muted caption" TextWrapping="Wrap"
+               Text="Чтобы поделиться домашкой с группой, войдите в аккаунт. Сейчас задание сохранится только у вас." />
     <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,6,0,0">
       <Button Content="{loc:T cancel}" Command="{Binding CancelCommand}" AutomationProperties.AutomationId="Dialog.Cancel" />
       <Button Classes="primary" Content="{loc:T save}" Command="{Binding ConfirmCommand}" AutomationProperties.AutomationId="Dialog.Confirm" />

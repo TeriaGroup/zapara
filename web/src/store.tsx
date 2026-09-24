@@ -13,6 +13,9 @@ type State = {
   setGroupId: (id: string) => void;
   catalog: GroupsPayload | null;
   lessons: Lesson[];
+  timetableAvailable: boolean;
+  timetableLoading: boolean;
+  timetableFailed: boolean;
   notice: string;
   loading: boolean;
   refresh: () => void;
@@ -45,7 +48,11 @@ export function Provider({ children }: { children: ReactNode }) {
   const [groupId, setGroupState] = useState(() => localStorage.getItem(groupKey) ?? "");
   const groupReady = useRef(localStorage.getItem(groupKey) !== null);
   const [catalog, setCatalog] = useState<GroupsPayload | null>(api.readCache().groups ?? null);
-  const [bundle, setBundle] = useState<TimetablePayload | null>(groupId ? api.readCache().lessons[groupId] ?? null : null);
+  const [bundle, setBundle] = useState<{ groupId: string; payload: TimetablePayload } | null>(() => {
+    const cached = groupId ? api.readCache().lessons[groupId] : null;
+    return cached ? { groupId, payload: cached } : null;
+  });
+  const [timetableStatus, setTimetableStatus] = useState<{ groupId: string; loading: boolean; failed: boolean }>({ groupId, loading: !!groupId, failed: false });
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const [tick, setTick] = useState(0);
@@ -65,6 +72,10 @@ export function Provider({ children }: { children: ReactNode }) {
   const chooseGroup = (id: string) => {
     groupReady.current = true;
     localStorage.setItem(groupKey, id);
+    const cached = id ? api.readCache().lessons[id] : null;
+    setBundle(cached ? { groupId: id, payload: cached } : null);
+    setTimetableStatus({ groupId: id, loading: !!id, failed: false });
+    setNotice(catalog?.meta.stale ? "Расписание может быть устаревшим. Показана сохранённая копия." : "");
     setGroupState(id);
   };
   useEffect(() => { localStorage.setItem(homeworkKey, JSON.stringify(homework)); }, [homework]);
@@ -80,13 +91,15 @@ export function Provider({ children }: { children: ReactNode }) {
       const cache = api.readCache();
       cache.groups = payload;
       api.writeCache(cache);
-      setGroupState(() => {
-        if (groupReady.current) return resolveStoredGroup(localStorage.getItem(groupKey), payload.groups);
-        const next = resolveStoredGroup(null, payload.groups);
+      const next = resolveStoredGroup(groupReady.current ? localStorage.getItem(groupKey) : null, payload.groups);
+      const cached = next ? api.readCache().lessons[next] : null;
+      setBundle(cached ? { groupId: next, payload: cached } : null);
+      setTimetableStatus({ groupId: next, loading: !!next, failed: false });
+      if (!groupReady.current) {
         groupReady.current = true;
         localStorage.setItem(groupKey, next);
-        return next;
-      });
+      }
+      setGroupState(next);
       setNotice(payload.meta.stale ? "Расписание может быть устаревшим. Показана сохранённая копия." : "");
     }).catch(() => {
       if (stop) return;
@@ -96,19 +109,27 @@ export function Provider({ children }: { children: ReactNode }) {
   }, [tick]);
 
   useEffect(() => {
-    if (!groupId) return;
+    if (!groupId) {
+      setBundle(null);
+      setTimetableStatus({ groupId: "", loading: false, failed: false });
+      return;
+    }
     let stop = false;
     const cached = api.readCache().lessons[groupId];
-    if (cached) setBundle(cached);
+    setBundle(cached ? { groupId, payload: cached } : null);
+    setTimetableStatus({ groupId, loading: true, failed: false });
     api.loadTimetable(groupId).then(payload => {
       if (stop) return;
-      setBundle(payload);
+      setBundle({ groupId, payload });
+      setTimetableStatus({ groupId, loading: false, failed: false });
       const cache = api.readCache();
       cache.lessons[groupId] = payload;
       if (payload.period) cache.groups = { period: payload.period, meta: payload.meta, groups: cache.groups?.groups || catalog?.groups || [] };
       api.writeCache(cache);
     }).catch(() => {
-      if (!stop && cached) setNotice("Расписание не обновилось. Доступна сохранённая копия.");
+      if (stop) return;
+      setTimetableStatus({ groupId, loading: false, failed: true });
+      if (cached) setNotice("Расписание не обновилось. Доступна сохранённая копия.");
     });
     return () => { stop = true; };
   }, [groupId, tick]);
@@ -116,13 +137,17 @@ export function Provider({ children }: { children: ReactNode }) {
   useEffect(() => { void api.session().then(setSession).catch(() => setSession(null)); }, []);
   useEffect(() => {
     if (dateMoved.current) return;
-    const period = bundle?.period;
-    setDateState(openingDate(new Date(), bundle?.lessons || [], subgroups[groupId] || {}, period ? { start: period.start, weekCount: period.weekCount, invert } : undefined));
+    const current = bundle?.groupId === groupId ? bundle.payload : null;
+    const period = current?.period;
+    setDateState(openingDate(new Date(), current?.lessons || [], subgroups[groupId] || {}, period ? { start: period.start, weekCount: period.weekCount, invert } : undefined));
   }, [bundle, subgroups, groupId, invert]);
 
   const value = useMemo<State>(() => ({
     theme, setTheme: setThemeState, invert, setInvert: setInvertState,
-    groupId, setGroupId: chooseGroup, catalog, lessons: bundle?.lessons || [],
+    groupId, setGroupId: chooseGroup, catalog, lessons: bundle?.groupId === groupId ? bundle.payload.lessons : [],
+    timetableAvailable: bundle?.groupId === groupId,
+    timetableLoading: !!groupId && (timetableStatus.groupId !== groupId || timetableStatus.loading),
+    timetableFailed: timetableStatus.groupId === groupId && timetableStatus.failed,
     notice, loading, refresh: () => setTick(n => n + 1),
     session, refreshSession: async () => setSession(await api.session()),
     homework, saveHomework: item => setHomework(list => {
@@ -137,7 +162,7 @@ export function Provider({ children }: { children: ReactNode }) {
       else group[streamId] = optionId;
       return { ...current, [groupId]: group };
     }),
-  }), [theme, invert, groupId, catalog, bundle, notice, loading, session, homework, friends, date, subgroups]);
+  }), [theme, invert, groupId, catalog, bundle, timetableStatus, notice, loading, session, homework, friends, date, subgroups]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

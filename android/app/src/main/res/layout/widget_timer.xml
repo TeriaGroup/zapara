@@ -3,7 +3,7 @@
     android:id="@+id/widget_timer_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_bg_light"
+    android:background="@drawable/widget_timer_bg_light"
     android:contentDescription="@string/widget_timer_description">
 
     <LinearLayout
@@ -33,7 +33,7 @@
             android:paddingLeft="12dp"
             android:paddingRight="12dp">
 
-            <TextView
+            <Chronometer
                 android:id="@+id/widget_timer_time"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -43,6 +43,18 @@
                 android:singleLine="true"
                 android:textColor="@color/widget_text1"
                 android:textSize="22sp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/widget_timer_fallback"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="@font/inter_medium"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:singleLine="true"
+                android:textColor="@color/widget_text1"
+                android:textSize="18sp"
                 android:visibility="gone" />
 
             <TextView

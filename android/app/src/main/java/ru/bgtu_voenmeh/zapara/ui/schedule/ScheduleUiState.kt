@@ -79,7 +79,8 @@ data class ScheduleUiState(
     val actionsFor: LessonUi? = null,
     val rename: RenameUi? = null,
     val homeworkEditor: HomeworkEditorState? = null,
-    val error: String? = null
+    val error: String? = null,
+    val guest: Boolean = false
 )
 
 sealed interface ScheduleEvent {

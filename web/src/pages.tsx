@@ -95,14 +95,21 @@ export function SchedulePage() {
   const today = new Date();
   const strip = Array.from({ length: 7 }, (_, index) => addDays(addDays(app.date, -((weekday(app.date) + 6) % 7)), index));
   const swipe = useSwipe(() => app.setDate(addDays(app.date, 1)), () => app.setDate(addDays(app.date, -1)));
+  const groupsUnavailable = !app.groupId && !app.catalog && !app.loading;
+  const timetableUnavailable = !!app.groupId && !app.timetableAvailable && !app.timetableLoading;
+  const emptyMessage = !app.groupId
+    ? app.loading ? "Загружаем список групп" : groupsUnavailable ? "Список групп не загрузился. Проверьте сеть и попробуйте ещё раз." : app.catalog?.groups.length === 0 ? "В списке пока нет групп" : "Группа ещё не выбрана. Расписание, карты и домашка останутся на этом устройстве."
+    : !app.timetableAvailable
+      ? app.timetableLoading ? "Загружаем расписание группы" : "Расписание группы не загрузилось. Проверьте сеть и попробуйте ещё раз."
+      : "В этот день пар нет";
   return (
     <section className="page">
-      <Head title={dayTitle(app.date, today)} text={period ? longDate(app.date, period.start, period.weekCount, app.invert) : "Загружаем расписание"}>
+      <Head title={dayTitle(app.date, today)} text={period ? longDate(app.date, period.start, period.weekCount, app.invert) : app.timetableFailed ? "Расписание недоступно" : "Загружаем расписание"}>
         <button className="icon-btn" type="button" aria-label="Предыдущий день" onClick={() => app.setDate(addDays(app.date, -1))}><Icon name="left" /></button>
         <button className="btn" type="button" onClick={() => app.setDate(new Date())}>Сегодня</button>
         <button className="icon-btn" type="button" aria-label="Следующий день" onClick={() => app.setDate(addDays(app.date, 1))}><Icon name="right" /></button>
         <button className="btn" type="button" onClick={app.refresh} disabled={app.loading}><Icon name="refresh" size={16} />Обновить</button>
-        <ShareMenu card={dayCard} label="День в чат" />
+        <ShareMenu card={app.timetableAvailable && period ? dayCard : null} label="День в чат" />
       </Head>
       <div className="dates">
         {strip.map(date => (
@@ -114,10 +121,11 @@ export function SchedulePage() {
       </div>
       <p className="swipe-hint">Смахните влево или вправо, чтобы сменить день</p>
       <div className="stack swipe" {...swipe}>
-        {lessons.length === 0 && (
+        {(!app.groupId || !app.timetableAvailable || lessons.length === 0) && (
           <div className="card empty">
-            <p>{app.groupId ? "В этот день пар нет" : "Группа ещё не выбрана. Расписание, карты и домашка останутся на этом устройстве."}</p>
-            {!app.groupId && <Link className="btn primary" to="/settings">Выбрать группу</Link>}
+            <p>{emptyMessage}</p>
+            {!app.groupId && !!app.catalog?.groups.length && <Link className="btn primary" to="/settings">Выбрать группу</Link>}
+            {(groupsUnavailable || timetableUnavailable) && <button className="btn primary" type="button" onClick={app.refresh}>Повторить</button>}
           </div>
         )}
         {lessons.map(lesson => {
@@ -304,14 +312,24 @@ export function MapsPage() {
   const [plans, setPlans] = useState<MapPlan[]>([]);
   const [plan, setPlan] = useState<MapPlan | null>(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
+    let stop = false;
+    setLoading(true);
+    setError("");
+    setPlans([]);
+    setPlan(null);
     api.loadMaps().then(data => {
+      if (stop) return;
       setPlans(data.maps);
       const building = sessionStorage.getItem("zapara.map.building");
       const floor = sessionStorage.getItem("zapara.map.floor");
       setPlan(data.maps.find(item => item.building === building && String(item.floor) === floor) || data.maps.find(item => item.building === building) || data.maps[0] || null);
-    }).catch(() => setError("Карты не загрузились"));
-  }, []);
+    }).catch(() => { if (!stop) setError("Карты не загрузились. Проверьте сеть и попробуйте ещё раз."); })
+      .finally(() => { if (!stop) setLoading(false); });
+    return () => { stop = true; };
+  }, [retry]);
   const buildings = [...new Set(plans.map(item => item.building))];
   const floors = plans.filter(item => item.building === plan?.building).sort((a, b) => a.floor - b.floor);
   const floorAt = floors.findIndex(item => item.id === plan?.id);
@@ -333,7 +351,8 @@ export function MapsPage() {
         <button className="btn" type="button" disabled={floorAt < 0 || floorAt >= floors.length - 1} onClick={() => floorAt >= 0 && floorAt < floors.length - 1 && setPlan(floors[floorAt + 1])}><Icon name="up" size={16} />Выше</button>
       </div>
       <p className="swipe-hint">Смахните по плану, чтобы сменить этаж</p>
-      <div className="map-frame swipe" {...swipe}>{plan ? <img src={plan.url} alt={`${plan.building}, ${plan.floor} этаж`} /> : <span className="muted">Нет плана</span>}</div>
+      <div className="map-frame swipe" {...swipe}>{plan ? <img src={plan.url} alt={`${plan.building}, ${plan.floor} этаж`} /> : <span className="muted">{loading ? "Загружаем карты" : error ? "Карты недоступны" : "Планов пока нет"}</span>}</div>
+      {error && <button className="btn primary" type="button" onClick={() => setRetry(value => value + 1)}>Повторить</button>}
     </section>
   );
 }
@@ -418,9 +437,15 @@ export function HomeworkPage() {
   const [communityId, setCommunityId] = useState("");
   const [copies, setCopies] = useState<GroupHomeworkCopy[]>([]);
   const [note, setNote] = useState("");
+  const [copiesFailed, setCopiesFailed] = useState(false);
+  const [copiesRetry, setCopiesRetry] = useState(0);
   const subjects = [...new Set(app.lessons.map(lesson => lesson.subjectRaw))];
+  useEffect(() => { if (!app.session?.authenticated) setShare(false); }, [app.session?.authenticated]);
   useEffect(() => {
     let stop = false;
+    setCommunityId("");
+    setCopies([]);
+    setCopiesFailed(false);
     void followGroupCommunity(
       { authenticated: !!app.session?.authenticated, groupId: app.groupId },
       groupId => api.communities(groupId),
@@ -428,12 +453,14 @@ export function HomeworkPage() {
         if (stop) return;
         setCommunityId(state.communityId);
         if (!state.communityId) setCopies([]);
-        if (state.failed) setNote("Общая домашка не открылась");
-        else if (state.communityId) void api.groupHomework(state.communityId).then(loaded => { if (!stop) setCopies(loaded); });
+        if (state.failed) setCopiesFailed(true);
+        else if (state.communityId) void api.groupHomework(state.communityId)
+          .then(loaded => { if (!stop) setCopies(loaded); })
+          .catch(() => { if (!stop) setCopiesFailed(true); });
       },
     );
     return () => { stop = true; };
-  }, [app.session, app.groupId]);
+  }, [app.session, app.groupId, copiesRetry]);
   function addPending(list: FileList | null, kind: "photo" | "document") {
     const file = list?.[0];
     if (!file) return;
@@ -492,7 +519,10 @@ export function HomeworkPage() {
     setText("");
     setPending([]);
     setNote(outcome.note);
-    if (outcome.sent) setCopies(await api.groupHomework(communityId));
+    if (outcome.sent) {
+      try { setCopies(await api.groupHomework(communityId)); }
+      catch { setCopies([]); setCopiesFailed(true); }
+    }
   }
   async function toggleCopy(item: GroupHomeworkCopy) {
     if (!communityId) return;
@@ -531,11 +561,12 @@ export function HomeworkPage() {
           </span>
         ))}
         <label className="check">
-          <input type="checkbox" checked={share} onChange={event => setShare(event.target.checked)} />
-          <span>Дублировать всей группе<span className="muted"> — одна и та же домашка появится у всех участников</span></span>
+          <input type="checkbox" checked={share} disabled={!app.session?.authenticated} onChange={event => setShare(event.target.checked)} />
+          <span>Дублировать всей группе<span className="muted">{app.session?.authenticated ? " — одна и та же домашка появится у всех участников" : " — войдите в аккаунт, чтобы отправить группе"}</span></span>
         </label>
         <button className="btn primary" type="submit">Сохранить</button>
       </form>
+      {copiesFailed && <div className="card empty"><p>Общая домашка не загрузилась. Проверьте сеть и попробуйте ещё раз.</p><button className="btn primary" type="button" onClick={() => setCopiesRetry(value => value + 1)}>Повторить</button></div>}
       {copies.length > 0 && <h2 style={{ marginTop: 18 }}>Всей группе</h2>}
       <div className="stack" style={{ marginTop: copies.length > 0 ? 12 : 0 }}>
         {copies.map(item => (

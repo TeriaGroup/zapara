@@ -39,6 +39,7 @@
     <string name="widget_week_sun">Вс</string>
     <string name="widget_timer_label">Таймер</string>
     <string name="widget_timer_description">Время до конца текущей пары или перемены</string>
+    <string name="widget_timer_until">До %1$s</string>
     <string name="widget_timer_lesson">Пара</string>
     <string name="widget_timer_break">Перемена</string>
     <string name="widget_timer_idle">Сейчас нет пары</string>

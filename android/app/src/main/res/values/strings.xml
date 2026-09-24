@@ -34,6 +34,11 @@
     <string name="group_search">Поиск группы</string>
     <string name="group_empty">Групп пока нет</string>
     <string name="group_empty_hint">Сначала загрузите расписание</string>
+    <string name="group_search_empty">Группа не найдена</string>
+    <string name="group_search_clear">Очистить поиск</string>
+    <string name="group_stale_chip_accessibility">%1$s. Расписание может быть устаревшим. Выбрать группу</string>
+    <string name="homework_guest_share_hint">Войдите в аккаунт, чтобы дублировать домашку всей группе. Локальное сохранение доступно.</string>
+    <string name="homework_save_failed">Не удалось сохранить домашку. Черновик оставлен открытым — попробуйте ещё раз.</string>
     <string name="sections_title">Разделы</string>
     <string name="empty_no_group">Группа не выбрана</string>
     <string name="empty_no_group_hint">Выберите группу, чтобы открыть расписание</string>

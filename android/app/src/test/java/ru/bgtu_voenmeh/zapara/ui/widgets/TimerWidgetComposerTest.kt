@@ -214,16 +214,18 @@ class TimerWidgetComposerTest {
         assertTrue(!timerDigitText(-1).contains("-"))
     }
 
-    @Test fun the_visible_tick_is_half_a_second_and_does_not_use_the_idle_quota() {
-        assertEquals(500L, timerPulseDelayMs(interactive = true, exactAlarms = true, untilBellMs = 30_000))
-        assertEquals(400L, timerPulseDelayMs(interactive = true, exactAlarms = true, untilBellMs = 400))
-        assertEquals(15_000L, timerPulseDelayMs(interactive = false, exactAlarms = true, untilBellMs = 90 * 60_000))
-        assertEquals(10_000L, timerPulseDelayMs(interactive = false, exactAlarms = true, untilBellMs = 10_000))
-        assertNull(timerPulseDelayMs(interactive = true, exactAlarms = false, untilBellMs = 30_000))
-        assertNull(timerPulseDelayMs(interactive = true, exactAlarms = true, untilBellMs = 0))
-        assertEquals(15_000L, widgetHeartbeatMs(interactive = true, exactAlarms = true))
-        assertEquals(30_000L, widgetHeartbeatMs(interactive = false, exactAlarms = true))
-        assertNull(widgetHeartbeatMs(interactive = true, exactAlarms = false))
+    @Test fun the_host_clock_keeps_the_last_partial_second_visible() {
+        assertEquals(11_000L, timerChronometerBase(1L, 10_000L))
+        assertEquals(11_598L, timerChronometerBase(600L, 9_999L))
+        assertEquals(71_999L, timerChronometerBase(61_000L, 10_000L))
+        assertNull(timerChronometerBase(0L, 10_000L))
+        assertNull(timerChronometerBase(-1L, 10_000L))
+    }
+
+    @Test fun the_ring_heartbeat_is_modest_and_never_wakes_the_screen() {
+        assertEquals(30_000L, widgetHeartbeatMs(interactive = true, exactAlarms = true))
+        assertEquals(60_000L, widgetHeartbeatMs(interactive = true, exactAlarms = false))
+        assertNull(widgetHeartbeatMs(interactive = false, exactAlarms = true))
     }
 
     @Test fun partial_minute_rounds_the_face_and_wakes_at_the_bell() {

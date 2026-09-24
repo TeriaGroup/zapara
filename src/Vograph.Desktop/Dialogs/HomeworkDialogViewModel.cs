@@ -26,6 +26,7 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
 
     public bool IsEdit { get; }
     public bool ShowShare => !IsEdit;
+    public bool ShowShareSignInHint => ShowShare && !CanShare;
     public string SubjectLine { get; }
     public string DraftId { get; } = Guid.NewGuid().ToString("N");
     public ObservableCollection<HomeworkAttachment> Files { get; } = new();
@@ -35,12 +36,19 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
     public Action? OnTooMany { get; set; }
 
     [ObservableProperty] private bool _share;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowShareSignInHint))]
+    private bool _canShare;
     [ObservableProperty] private string _text = "";
     [ObservableProperty] private int _nth = 1;
     [ObservableProperty] private string _dueText = "";
 
     partial void OnTextChanged(string value) => RefreshCanConfirm();
     partial void OnNthChanged(int value) => UpdateDue();
+    partial void OnCanShareChanged(bool value)
+    {
+        if (!value) Share = false;
+    }
 
     protected override bool CanConfirm() => !string.IsNullOrWhiteSpace(Text);
 
@@ -86,6 +94,7 @@ public static class HomeworkFilePrompt
 {
     public static void Bind(this HomeworkDialogViewModel dialog, AppServices app)
     {
+        dialog.CanShare = !app.Profile.IsGuest;
         dialog.DiscardStaged = id => app.HomeworkFiles.DiscardFile(dialog.DraftId, id);
         dialog.OnTooMany = () => app.Toasts.Info(app.Loc.T("hwFileFull"));
         dialog.Import = async photo =>
