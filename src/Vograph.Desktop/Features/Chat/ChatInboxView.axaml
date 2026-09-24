@@ -67,13 +67,26 @@
           <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10">
             <StackPanel Spacing="8">
               <TextBlock Classes="muted caption" Text="{Binding ActionCaption}" />
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <Button Classes="ghost" Content="Фото" Command="{Binding AttachCommand}" CommandParameter="image" />
-                <Button Classes="ghost" Content="Документ" Command="{Binding AttachCommand}" CommandParameter="file" />
+              <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsRecording}">
+                <TextBlock Text="{Binding RecordingCaption}" VerticalAlignment="Center" />
+                <Button Classes="primary" Content="Отправить запись" Command="{Binding FinishRecordingCommand}" />
+                <Button Classes="ghost" Content="Отменить" Command="{Binding CancelRecordingCommand}" />
               </StackPanel>
-              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                <TextBox Text="{Binding Draft}" PlaceholderText="Сообщение" MaxLength="2000" TextWrapping="Wrap" />
-                <Button Grid.Column="1" Classes="primary" Content="Отправить" Command="{Binding SendCommand}" MinHeight="48" />
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                <Button Classes="ghost" Content="📎" ToolTip.Tip="Прикрепить" MinWidth="48" MinHeight="48"
+                        IsEnabled="{Binding CanAttachMedia}" AutomationProperties.AutomationId="Chat.Attach">
+                  <Button.Flyout>
+                    <MenuFlyout Placement="Top">
+                      <MenuItem Header="Фото" Command="{Binding AttachCommand}" CommandParameter="image" />
+                      <MenuItem Header="Документ" Command="{Binding AttachCommand}" CommandParameter="file" />
+                      <Separator />
+                      <MenuItem Header="Записать голосовое" Command="{Binding StartRecordingCommand}" CommandParameter="voice" />
+                      <MenuItem Header="Записать кружок" Command="{Binding StartRecordingCommand}" CommandParameter="circle" />
+                    </MenuFlyout>
+                  </Button.Flyout>
+                </Button>
+                <TextBox Grid.Column="1" Text="{Binding Draft}" PlaceholderText="Сообщение" MaxLength="2000" TextWrapping="Wrap" />
+                <Button Grid.Column="2" Classes="primary" Content="Отправить" Command="{Binding SendCommand}" MinHeight="48" />
               </Grid>
             </StackPanel>
           </Border>
@@ -91,6 +104,10 @@
                         </Grid>
                         <TextBlock Classes="muted caption" Text="{Binding Detail}" />
                         <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
+                        <Image Source="{Binding Preview}" MaxWidth="300" MaxHeight="220" HorizontalAlignment="Left"
+                               Stretch="Uniform" />
+                        <Button Classes="ghost" Content="{Binding PlayCaption}" Command="{Binding PlayCommand}"
+                                IsVisible="{Binding CanPlay}" HorizontalAlignment="Left" />
                         <Button Classes="ghost" Content="Сохранить файл" Command="{Binding DownloadCommand}"
                                 IsVisible="{Binding CanDownload}" HorizontalAlignment="Left" />
                         <TextBlock Classes="muted caption" Text="{Binding Reactions}" />

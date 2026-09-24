@@ -16,7 +16,7 @@ fun groupInboxRows(home: ru.bgtu_voenmeh.zapara.data.communities.GroupHome): Lis
 data class SocialInvite(val id: String, val name: String)
 data class SocialHome(val code: String, val friends: List<InboxRow>, val incoming: List<SocialInvite>, val outgoing: List<SocialInvite>)
 data class SocialReaction(val emoji: String, val count: Int, val mine: Boolean)
-data class SocialMessage(val id: String, val senderId: String, val senderName: String, val body: String?, val kind: String, val createdAt: Instant, val replyTo: String?, val replyBody: String?, val deleted: Boolean, val edited: Boolean, val read: Boolean, val reactions: List<SocialReaction>, val attachmentId: String?, val fileName: String?)
+data class SocialMessage(val id: String, val senderId: String, val senderName: String, val body: String?, val kind: String, val createdAt: Instant, val replyTo: String?, val replyBody: String?, val deleted: Boolean, val edited: Boolean, val read: Boolean, val reactions: List<SocialReaction>, val attachmentId: String?, val fileName: String?, val durationMs: Int? = null)
 data class SocialPage(val messages: List<SocialMessage>, val hasMore: Boolean)
 suspend fun loadSocialUpdates(knownIds: Set<String>, load: suspend (String?) -> SocialPage): SocialPage {
     var page = load(null)
@@ -53,15 +53,26 @@ class SocialHttpClient(private val transport: HttpExchange, private val scope: A
         return message(request(token, "POST", "/conversations/${id(conversation)}/messages/${id(target)}/reaction", "{\"emoji\":${quote(emoji)}}").obj())
     }
     suspend fun upload(token: String, conversation: String, name: String, bytes: ByteArray, image: Boolean, reply: String?): SocialMessage {
-        require(bytes.isNotEmpty() && bytes.size <= 20 * 1024 * 1024)
+        return uploadMultipart(token, conversation, if (image) "images" else "files", name, bytes, "application/octet-stream", 20 * 1024 * 1024, null, reply)
+    }
+    suspend fun uploadRecording(token: String, conversation: String, kind: String, bytes: ByteArray, durationMs: Int, reply: String?): SocialMessage {
+        require(kind == "voice" || kind == "circle")
+        val voice = kind == "voice"
+        require(durationMs in 1..(if (voice) 180_000 else 60_000))
+        return uploadMultipart(token, conversation, if (voice) "voice" else "circles", if (voice) "voice.m4a" else "circle.mp4", bytes,
+            if (voice) "audio/mp4" else "video/mp4", if (voice) 2 * 1024 * 1024 else 8 * 1024 * 1024, durationMs, reply)
+    }
+    private suspend fun uploadMultipart(token: String, conversation: String, route: String, name: String, bytes: ByteArray, mime: String, maxBytes: Int, durationMs: Int?, reply: String?): SocialMessage {
+        require(bytes.isNotEmpty() && bytes.size <= maxBytes)
         val boundary = "zapara-${java.util.UUID.randomUUID()}"
         val safeName = name.replace(Regex("[\\r\\n\"\\\\]"), "_").take(180).ifBlank { "document" }
         val body = java.io.ByteArrayOutputStream()
         fun part(text: String) { body.write(text.toByteArray(Charsets.UTF_8)) }
         if (reply != null) part("--$boundary\r\nContent-Disposition: form-data; name=\"replyTo\"\r\n\r\n${id(reply)}\r\n")
-        part("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$safeName\"\r\nContent-Type: application/octet-stream\r\n\r\n")
+        if (durationMs != null) part("--$boundary\r\nContent-Disposition: form-data; name=\"durationMs\"\r\n\r\n$durationMs\r\n")
+        part("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$safeName\"\r\nContent-Type: $mime\r\n\r\n")
         body.write(bytes); part("\r\n--$boundary--\r\n")
-        val response = transport.exchange(HttpCall("POST", scope.baseUri.toString() + "api/v1/social/conversations/${id(conversation)}/${if (image) "images" else "files"}", mapOf("Authorization" to "Bearer ${AccountValidation.token(token, "za_")}", "Content-Type" to "multipart/form-data; boundary=$boundary", "Accept" to "application/json"), body.toByteArray(), 1024 * 1024))
+        val response = transport.exchange(HttpCall("POST", scope.baseUri.toString() + "api/v1/social/conversations/${id(conversation)}/$route", mapOf("Authorization" to "Bearer ${AccountValidation.token(token, "za_")}", "Content-Type" to "multipart/form-data; boundary=$boundary", "Accept" to "application/json"), body.toByteArray(), 1024 * 1024))
         if (response.status != 201) throw SocialFailure(response.status)
         return message(StrictJson.parse(response.body, 16).obj())
     }
@@ -84,7 +95,8 @@ class SocialHttpClient(private val transport: HttpExchange, private val scope: A
         InboxRow(id(row.text("conversationId", 36)), row.nullableText("displayName", 80)?.takeIf { it.isNotBlank() } ?: row.text("username", 80), lastBody = row.nullableText("lastBody", 4000), lastAt = row.nullableText("lastAt", 40)?.let(Instant::parse), unread = unread)
     }, invites(obj, "incoming"), invites(obj, "outgoing"))
     private fun invites(obj: JsonValue.Obj, key: String) = obj.array(key, 1000).items.map { val row = it.obj(); SocialInvite(id(row.text("friendshipId", 36)), row.nullableText("displayName", 80)?.takeIf { it.isNotBlank() } ?: row.text("username", 80)) }
-    private fun message(row: JsonValue.Obj) = SocialMessage(id(row.text("messageId", 36)), id(row.text("senderId", 36)), row.text("senderName", 80), row.nullableText("body", 16000), row.text("kind", 24), Instant.parse(row.text("createdAt", 40)), row.nullableText("replyTo", 36)?.let(::id), row.nullableText("replyBody", 16000), row.bool("deleted"), row.nullableText("editedAt", 40) != null, row.bool("read"), row.array("reactions", 32).items.map { val r = it.obj(); SocialReaction(r.text("emoji", 32), r.int("count"), r.bool("mine")) }, row.nullableText("attachmentId", 36)?.let(::id), row.nullableText("fileName", 255))
+    private fun message(row: JsonValue.Obj) = SocialMessage(id(row.text("messageId", 36)), id(row.text("senderId", 36)), row.text("senderName", 80), row.nullableText("body", 16000), row.text("kind", 24), Instant.parse(row.text("createdAt", 40)), row.nullableText("replyTo", 36)?.let(::id), row.nullableText("replyBody", 16000), row.bool("deleted"), row.nullableText("editedAt", 40) != null, row.bool("read"), row.array("reactions", 32).items.map { val r = it.obj(); SocialReaction(r.text("emoji", 32), r.int("count"), r.bool("mine")) }, row.nullableText("attachmentId", 36)?.let(::id), row.nullableText("fileName", 255),
+        when(row.fields["durationMs"]) { null, JsonValue.Null -> null; else -> row.int("durationMs").also { require(it in 1..180_000) } })
     private fun id(value: String) = CommunityValidation.id(value)
     private fun textBody(body: String, reply: String?): String = "{\"body\":${quote(CommunityValidation.message(body))},\"replyTo\":${reply?.let { quote(id(it)) } ?: "null"}}"
     private fun quote(value: String): String = buildString { append('"'); value.forEach { c -> when(c) { '"' -> append("\\\""); '\\' -> append("\\\\"); '\n' -> append("\\n"); '\r' -> append("\\r"); '\t' -> append("\\t"); else -> if (c < ' ') append("\\u%04x".format(c.code)) else append(c) } }; append('"') }

@@ -238,6 +238,71 @@ public sealed class MessengerApiTests
         await host.Problem("GET", $"/conversations/{chat}/messages/{image.MessageId}/media", 404, "not_found", member.AccessToken);
     }
 
+    [Fact]
+    public async Task Group_voice_and_circle_uploads_keep_their_kind_and_round_trip_bytes()
+    {
+        await using var db = await CommunityPostgresFixture.CreateAsync(true);
+        await using var host = await CommunityApiTestHost.StartAsync(db);
+        var member = await Seed(host.Accounts, "msg.recordings");
+        var communityId = Guid.NewGuid();
+        await db.SeedCommunityAsync(communityId);
+        await db.SeedMemberAsync(communityId, member.User.UserId);
+        var chat = (await host.Get<GroupHomeResponse>($"/{communityId}/home", member.AccessToken)).GroupChat.ConversationId;
+        var voiceBytes = new byte[] { 0, 0, 0, 12, (byte)'f', (byte)'t', (byte)'y', (byte)'p', (byte)'M', (byte)'4', (byte)'A', (byte)' ' };
+        var circleBytes = new byte[] { 0, 0, 0, 12, (byte)'f', (byte)'t', (byte)'y', (byte)'p', (byte)'i', (byte)'s', (byte)'o', (byte)'m' };
+
+        var voice = CommunityJson.Parse<ChatMessageResponse>(await host.SendMedia($"/conversations/{chat}/media",
+            member.AccessToken, "voice", "Голосовое.m4a", voiceBytes, durationMs: "180000"));
+        var circle = CommunityJson.Parse<ChatMessageResponse>(await host.SendMedia($"/conversations/{chat}/media",
+            member.AccessToken, "circle", "Кружок.mp4", circleBytes, durationMs: "60000"));
+
+        Assert.Equal("voice", voice.Kind);
+        Assert.Equal("Голосовое.m4a", voice.Body);
+        Assert.Equal("circle", circle.Kind);
+        Assert.Equal("Кружок.mp4", circle.Body);
+        Assert.Equal(voiceBytes, await host.Send("GET", $"/conversations/{chat}/messages/{voice.MessageId}/media", 200, member.AccessToken));
+        Assert.Equal(circleBytes, await host.Send("GET", $"/conversations/{chat}/messages/{circle.MessageId}/media", 200, member.AccessToken));
+        var listed = await host.Get<ChatPageResponse>($"/conversations/{chat}/messages", member.AccessToken);
+        Assert.Equal(new[] { "voice", "circle" }, listed.Messages.Select(message => message.Kind));
+    }
+
+    [Fact]
+    public async Task Group_recording_upload_rejects_invalid_format_size_and_duration_before_storing_a_message()
+    {
+        await using var db = await CommunityPostgresFixture.CreateAsync(true);
+        await using var host = await CommunityApiTestHost.StartAsync(db);
+        var member = await Seed(host.Accounts, "msg.recordings.invalid");
+        var communityId = Guid.NewGuid();
+        await db.SeedCommunityAsync(communityId);
+        await db.SeedMemberAsync(communityId, member.User.UserId);
+        var chat = (await host.Get<GroupHomeResponse>($"/{communityId}/home", member.AccessToken)).GroupChat.ConversationId;
+        var voiceBytes = new byte[] { 0, 0, 0, 12, (byte)'f', (byte)'t', (byte)'y', (byte)'p', (byte)'M', (byte)'4', (byte)'A', (byte)' ' };
+        var circleBytes = new byte[] { 0, 0, 0, 12, (byte)'f', (byte)'t', (byte)'y', (byte)'p', (byte)'i', (byte)'s', (byte)'o', (byte)'m' };
+        var oversizedVoice = new byte[2 * 1024 * 1024 + 1];
+        Array.Copy(voiceBytes, oversizedVoice, voiceBytes.Length);
+        var oversizedCircle = new byte[8 * 1024 * 1024 + 1];
+
+        async Task Rejected(string kind, byte[] bytes, int status, string code, string? durationMs = null)
+        {
+            using var problem = System.Text.Json.JsonDocument.Parse(await host.SendMedia($"/conversations/{chat}/media",
+                member.AccessToken, kind, "recording.mp4", bytes, status, durationMs));
+            Assert.Equal(code, problem.RootElement.GetProperty("code").GetString());
+        }
+
+        await Rejected("voice", voiceBytes, 400, "invalid_request");
+        await Rejected("circle", circleBytes, 400, "invalid_request");
+        await Rejected("voice", [1, 2, 3, 4], 400, "invalid_request", "1");
+        await Rejected("circle", voiceBytes, 400, "invalid_request", "1");
+        await Rejected("voice", oversizedVoice, 413, "payload_too_large", "1");
+        await Rejected("circle", oversizedCircle, 413, "payload_too_large", "1");
+        await Rejected("voice", voiceBytes, 400, "invalid_request", "0");
+        await Rejected("voice", voiceBytes, 400, "invalid_request", "180001");
+        await Rejected("circle", circleBytes, 400, "invalid_request", "60001");
+        await Rejected("voice", voiceBytes, 400, "invalid_request", "1.5");
+        await Rejected("image", [1, 2, 3], 400, "invalid_request", "1");
+        Assert.Empty((await host.Get<ChatPageResponse>($"/conversations/{chat}/messages", member.AccessToken)).Messages);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -26,6 +26,12 @@
     <string name="group_chat">Чат группы</string>
     <string name="group_directs">Личные чаты</string>
     <string name="group_send">Отправить</string>
+    <string name="group_attach">Прикрепить</string>
+    <string name="group_video">Видео</string>
+    <string name="group_document">Документ</string>
+    <string name="group_retry">Повторить</string>
+    <string name="group_record_circle">Записать кружок</string>
+    <string name="group_record_voice">Записать голосовое</string>
     <string name="group_message">Сообщение</string>
     <string name="group_back">К чату группы</string>
     <string name="group_older">Раньше</string>

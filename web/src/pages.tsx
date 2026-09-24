@@ -13,6 +13,8 @@ import { HOMEWORK_FILE_LIMIT, checkHomeworkFile, compressHomeworkPhoto, deleteHo
 import { supportAppend, supportDraft, supportFiles } from "./support";
 import { holdActions, runHold } from "./hold";
 import { groupBubbleText, groupMediaDownload, GroupMediaError, type GroupMediaDownload } from "./group-media";
+import { GroupComposer } from "./group-composer";
+import { GroupInlineMedia } from "./group-inline-media";
 import { legalDocument, type LegalId } from "./legal";
 import { useApp } from "./store";
 import { homeworkCard, lessonFrom, placeCard, scheduleCard } from "./cards";
@@ -830,16 +832,19 @@ export function GroupPage() {
     if (!file || !pick || !chat || !groupMediaSelectionIsCurrent(pick,
       { key: viewKey, conversationId: chat.conversationId, epoch: selectionEpoch.current })) return;
     if (chat.kind === "group" && (thread === "list" || thread.topicId != null)) return;
-    const key = pick.key;
-    const sentReply = pick.replyTo;
+    await sendGroupAttachment(pick.key, pick.conversationId, pick.kind, file.name, file, pick.replyTo, pick.epoch);
+  }
+  async function sendGroupAttachment(key: string, conversationId: string, kind: "image" | "video" | "file" | "voice" | "circle",
+    name: string, blob: Blob, sentReply: string | null, epoch: number, durationMs?: number) {
     markLogChanged(key);
     try {
-      const message = await api.sendGroupMedia(pick.conversationId, pick.kind, file.name, file, sentReply ?? undefined);
+      const message = await api.sendGroupMedia(conversationId, kind, name, blob, sentReply ?? undefined, durationMs);
       markLogChanged(key);
       updateLog(key, [message]);
-      if (viewKeyRef.current === key) setReplyTo(current => current === sentReply ? null : current);
+      if (viewKeyRef.current === key && selectionEpoch.current === epoch) setReplyTo(current => current === sentReply ? null : current);
     } catch (reason) {
-      if (viewKeyRef.current === key) setError(reason instanceof GroupMediaError && reason.code === "size" ? "Файл слишком большой." : "Сообщение не отправилось");
+      if (viewKeyRef.current === key && selectionEpoch.current === epoch) setError(reason instanceof GroupMediaError && reason.code === "size" || reason instanceof Error && reason.message === "413"
+        ? "Файл слишком большой." : reason instanceof GroupMediaError && reason.code === "format" ? "Формат записи не поддерживается" : "Сообщение не отправилось");
     }
   }
   async function downloadMedia(download: GroupMediaDownload) {
@@ -979,15 +984,17 @@ export function GroupPage() {
                 const actions = holdActions(kind, mine, !!message.deleted, menu === message.messageId);
                 const download = chat && groupMediaDownload(chat.conversationId, message);
                 return (
-                  <article key={message.messageId} data-hold={kind} className={"bubble" + (mine ? " mine" : "")}
-                    onPointerDown={() => { heldOpen.current = false; if (holdTimer.current) window.clearTimeout(holdTimer.current); holdTimer.current = window.setTimeout(() => { holdTimer.current = 0; heldOpen.current = true; setMenu(message.messageId); }, 450); }}
-                    onPointerUp={event => { if (holdTimer.current) window.clearTimeout(holdTimer.current); if (heldOpen.current && !(event.target instanceof Element && event.target.closest(".actions"))) event.preventDefault(); }}
+                  <article key={message.messageId} data-hold={kind} className={"bubble" + (mine ? " mine" : "") + (kind === "circle" && !message.deleted ? " round" : "")}
+                    onPointerDown={event => { heldOpen.current = false; if (holdTimer.current) window.clearTimeout(holdTimer.current); if (event.target instanceof Element && event.target.closest(".group-inline-media, .group-media-download")) return; holdTimer.current = window.setTimeout(() => { holdTimer.current = 0; heldOpen.current = true; setMenu(message.messageId); }, 450); }}
+                    onPointerUp={event => { if (holdTimer.current) window.clearTimeout(holdTimer.current); if (heldOpen.current && !(event.target instanceof Element && event.target.closest(".actions, .group-inline-media, .group-media-download"))) event.preventDefault(); }}
                     onPointerLeave={() => { if (holdTimer.current) window.clearTimeout(holdTimer.current); }}
-                    onClickCapture={event => { if (event.target instanceof Element && event.target.closest(".actions")) return; if (event.target instanceof Element && event.target.closest(".group-media-download") && !heldOpen.current) return; if (heldOpen.current || menu === message.messageId) { event.preventDefault(); event.stopPropagation(); } }}>
+                    onClickCapture={event => { if (event.target instanceof Element && event.target.closest(".actions, .group-inline-media")) return; if (event.target instanceof Element && event.target.closest(".group-media-download") && !heldOpen.current) return; if (heldOpen.current || menu === message.messageId) { event.preventDefault(); event.stopPropagation(); } }}>
                     {message.senderId !== app.session?.user?.userId && <b>{message.senderName}</b>}
                     {message.replyTo && <div className="muted">↳ {log.find(item => item.messageId === message.replyTo)?.body || "Сообщение"}</div>}
                     <div>{download
-                      ? <button className="group-media-download" type="button" disabled={mediaBusy.includes(download.href)} onClick={() => { setMenu(null); void downloadMedia(download); }} style={{ border: 0, background: "none", padding: 0, textAlign: "left", textDecoration: "underline" }}>{mediaBusy.includes(download.href) ? "Загрузка…" : download.label}</button>
+                      ? download.kind === "file"
+                        ? <button className="group-media-download" type="button" disabled={mediaBusy.includes(download.href)} onClick={() => { setMenu(null); void downloadMedia(download); }}>{mediaBusy.includes(download.href) ? "Загрузка…" : download.label}</button>
+                        : <GroupInlineMedia download={download} busy={mediaBusy.includes(download.href)} onDownload={() => { setMenu(null); void downloadMedia(download); }} />
                       : groupBubbleText(message)}</div>
                     <div className="muted">{message.createdAt.slice(0, 16).replace("T", " ")}</div>
                     {!message.deleted && !!message.reactions?.length && <div className="react-chips">
@@ -1023,19 +1030,12 @@ export function GroupPage() {
                 );
               })}
             </div>
-            {chat && !editing && (chat.kind !== "group" || (thread !== "list" && thread.topicId == null)) && (
-              <div className="row">
-                <button className="btn" type="button" onClick={() => choose("image")}>Фото</button>
-                <button className="btn" type="button" onClick={() => choose("video")}>Видео</button>
-                <button className="btn" type="button" onClick={() => choose("file")}>Документ</button>
-                <input ref={fileRef} type="file" hidden aria-label="Файл" onChange={event => void onPicked(event)} />
-              </div>
-            )}
-            <form className="compose" onSubmit={event => void submit(event)}>
-              {(editing || replyTo) && <p className="muted">{editing ? "Редактирование" : "Ответ"}</p>}
-              <input value={draft} onChange={event => setDraft(event.target.value)} placeholder="Сообщение" aria-label="Сообщение" maxLength={2000} />
-              <button className="btn primary" type="submit">Отправить</button>
-            </form>
+            <input ref={fileRef} type="file" hidden aria-label="Файл" onChange={event => void onPicked(event)} />
+            <GroupComposer key={viewKey} draft={draft} editing={!!editing} replyTo={!!replyTo}
+              allowMedia={chat.kind !== "group" || (thread !== "list" && thread.topicId == null)}
+              onDraft={setDraft} onSubmit={event => void submit(event)} onChoose={choose}
+              onRecorded={(kind, name, blob, durationMs) => sendGroupAttachment(viewKey, chat.conversationId, kind, name, blob, replyTo, selectionEpoch.current, durationMs)}
+              onError={setError} />
             </>}
           </section>
         </div>

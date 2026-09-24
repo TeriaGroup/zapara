@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.io.File
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,16 +25,22 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,10 +48,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.chat.HoldDecision
+import ru.bgtu_voenmeh.zapara.ui.media.ChatMediaBubble
+import ru.bgtu_voenmeh.zapara.ui.media.ChatMediaCaptureHost
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
@@ -248,7 +258,8 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
             }
             items(state.messages, key = { it.id }) { message ->
                 MessageBubble(message, state.messages.firstOrNull { it.id == message.replyTo }?.body,
-                    state.mediaLoadingId == message.id, onEvent)
+                    state.mediaLoadingId == message.id || message.id in state.mediaLoadingIds,
+                    state.mediaFiles[message.id], message.id in state.mediaFailedIds, onEvent)
             }
         }
     }
@@ -273,7 +284,8 @@ private fun reactionEmoji(code: String): String = when (code) {
 }
 
 @Composable
-private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaLoading: Boolean, onEvent: (GroupEvent) -> Unit) {
+private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaLoading: Boolean,
+    mediaFile: File?, mediaFailed: Boolean, onEvent: (GroupEvent) -> Unit) {
     val c = Zapara.colors
     val mine = message.mine
     var menu by remember(message.id) { mutableStateOf(false) }
@@ -308,7 +320,13 @@ private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaL
                 if (message.replyTo != null) Text("↳ ${replyPreview?.take(80) ?: "Сообщение"}",
                     style = Zapara.typography.caption, color = if (mine) c.onAccent else c.text2,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(if (mediaLoading) stringResource(R.string.group_media_loading) else messageLabel(message), style = Zapara.typography.body)
+                if (!message.deleted && message.kind in setOf("image", "voice", "circle")) {
+                    ChatMediaBubble(kind = message.kind, file = mediaFile, durationMs = null,
+                        loading = mediaLoading, error = mediaFailed,
+                        onLoad = { onEvent(GroupEvent.LoadMedia(message.id)) })
+                } else {
+                    Text(if (mediaLoading) stringResource(R.string.group_media_loading) else messageLabel(message), style = Zapara.typography.body)
+                }
                 Text(
                     message.time,
                     style = Zapara.typography.caption,
@@ -359,48 +377,81 @@ private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
     val c = Zapara.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var pendingPickConversation by remember { mutableStateOf<String?>(null) }
     fun pick(kind: String, uri: Uri?) {
-        if (uri == null) return
+        val origin = pendingPickConversation
+        pendingPickConversation = null
+        if (uri == null || origin == null) return
         scope.launch {
             val read = withContext(Dispatchers.IO) { readAttachment(context, uri) }
-            onEvent(GroupEvent.Media(kind, read?.first ?: "", read?.second ?: ByteArray(0)))
+            onEvent(GroupEvent.Media(kind, read?.first ?: "", read?.second ?: ByteArray(0), origin))
         }
     }
     val photo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { pick("image", it) }
     val video = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { pick("video", it) }
     val document = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { pick("file", it) }
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-        ZButton("Фото", { photo.launch(arrayOf("image/*")) }, enabled = !state.sending, ghost = true, tag = "Group.Photo")
-        ZButton("Видео", { video.launch(arrayOf("video/*")) }, enabled = !state.sending, ghost = true, tag = "Group.Video")
-        ZButton("Документ", { document.launch(arrayOf("*/*")) }, enabled = !state.sending, ghost = true, tag = "Group.File")
-    }
-    Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)
-    ) {
-        if (state.editing != null || state.replyTo != null) {
-            val preview = state.messages.firstOrNull { it.id == state.replyTo }?.body?.take(60)
-            Text(if (state.editing != null) "Редактирование" else "Ответ · ${preview ?: "Сообщение"}",
-                style = Zapara.typography.caption, color = c.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    var attachOpen by remember(state.chatTitle) { mutableStateOf(false) }
+    key(state.activeConversationId) {
+    ChatMediaCaptureHost(enabled = !state.sending && state.editing == null,
+        onRecorded = { kind, file, duration -> onEvent(GroupEvent.Recorded(kind, file, duration, state.activeConversationId)) },
+        onError = { onEvent(GroupEvent.MediaError) }, modifier = Modifier.fillMaxWidth()) { startVoice, startCircle ->
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            if (state.editing != null || state.replyTo != null) {
+                val preview = state.messages.firstOrNull { it.id == state.replyTo }?.body?.take(60)
+                Text(if (state.editing != null) "Редактирование" else "Ответ · ${preview ?: "Сообщение"}",
+                    style = Zapara.typography.caption, color = c.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                if (state.editing == null) Box {
+                    IconButton(onClick = { attachOpen = true }, enabled = !state.sending,
+                        modifier = Modifier.testTag("Group.Attach")) {
+                        Icon(painterResource(R.drawable.ic_paperclip), stringResource(R.string.group_attach), tint = c.text1)
+                    }
+                    DropdownMenu(expanded = attachOpen, onDismissRequest = { attachOpen = false }) {
+                        DropdownMenuItem(text = { Text(stringResource(R.string.chat_media_photo)) }, onClick = {
+                            attachOpen = false; pendingPickConversation = state.activeConversationId; photo.launch(arrayOf("image/*")) },
+                            modifier = Modifier.testTag("Group.Photo"))
+                        DropdownMenuItem(text = { Text(stringResource(R.string.group_video)) }, onClick = {
+                            attachOpen = false; pendingPickConversation = state.activeConversationId; video.launch(arrayOf("video/*")) },
+                            modifier = Modifier.testTag("Group.Video"))
+                        DropdownMenuItem(text = { Text(stringResource(R.string.group_document)) }, onClick = {
+                            attachOpen = false; pendingPickConversation = state.activeConversationId; document.launch(arrayOf("*/*")) },
+                            modifier = Modifier.testTag("Group.File"))
+                    }
+                }
+                OutlinedTextField(value = state.draft, onValueChange = { onEvent(GroupEvent.Draft(it)) },
+                    enabled = !state.sending, modifier = Modifier.weight(1f).testTag("Group.Draft"),
+                    placeholder = { Text(stringResource(R.string.group_message), style = Zapara.typography.caption, color = c.text3) },
+                    maxLines = 4, shape = RoundedCornerShape(Zapara.radii.control),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = c.chip, unfocusedContainerColor = c.chip,
+                        focusedBorderColor = c.lineStrong, unfocusedBorderColor = c.chip,
+                        focusedTextColor = c.text1, unfocusedTextColor = c.text1
+                    ))
+                if (state.draft.isNotBlank() || state.attachmentPending || state.editing != null) {
+                    if (state.attachmentPending) ZButton(stringResource(R.string.group_retry), { onEvent(GroupEvent.Send) },
+                        enabled = !state.sending, tag = "Group.Send")
+                    else Surface(onClick = { onEvent(GroupEvent.Send) },
+                        enabled = !state.sending && state.draft.isNotBlank(),
+                        shape = RoundedCornerShape(Zapara.radii.icon), color = c.accent, contentColor = c.onAccent,
+                        modifier = Modifier.size(Zapara.space.minTouch).testTag("Group.Send")) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(painterResource(R.drawable.ic_send), stringResource(R.string.group_send))
+                        }
+                    }
+                } else {
+                    IconButton(onClick = startCircle, enabled = !state.sending,
+                        modifier = Modifier.testTag("Group.Circle")) {
+                        Icon(painterResource(R.drawable.ic_video_circle), stringResource(R.string.group_record_circle), tint = c.text1)
+                    }
+                    IconButton(onClick = startVoice, enabled = !state.sending,
+                        modifier = Modifier.testTag("Group.Voice")) {
+                        Icon(painterResource(R.drawable.ic_mic), stringResource(R.string.group_record_voice), tint = c.text1)
+                    }
+                }
+            }
         }
-        OutlinedTextField(
-            value = state.draft,
-            onValueChange = { onEvent(GroupEvent.Draft(it)) },
-            enabled = !state.sending,
-            modifier = Modifier.weight(1f).testTag("Group.Draft"),
-            placeholder = { Text(stringResource(R.string.group_message), style = Zapara.typography.caption, color = c.text3) },
-            singleLine = true,
-            shape = RoundedCornerShape(Zapara.radii.control),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = c.chip, unfocusedContainerColor = c.chip,
-                focusedBorderColor = c.lineStrong, unfocusedBorderColor = c.chip,
-                focusedTextColor = c.text1, unfocusedTextColor = c.text1
-            )
-        )
-        ZButton(if (state.attachmentPending) "Повторить" else stringResource(R.string.group_send),
-            { onEvent(GroupEvent.Send) }, enabled = (state.draft.isNotBlank() || state.attachmentPending) && !state.sending, tag = "Group.Send")
     }
     }
 }

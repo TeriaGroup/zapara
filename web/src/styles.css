@@ -162,6 +162,16 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .bubble.mine .react button.on { background: color-mix(in srgb, var(--on-accent) 18%, transparent); }
 .voice { display: flex; align-items: center; gap: 8px; min-width: 160px; }
 .voice audio { display: none; }
+.group-inline-media { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 150px; }
+.group-inline-media img { margin-top: 0; }
+.group-inline-media .circle { max-width: min(220px, 70vw); max-height: min(220px, 70vw); }
+.group-video { display: block; width: min(100%, 320px); max-height: 320px; border-radius: 8px; background: #111; }
+.group-media-download { border: 0; background: none; color: inherit; padding: 2px 0; text-align: left; text-decoration: underline; cursor: pointer; }
+.group-media-download:disabled { opacity: .6; cursor: wait; }
+.group-attachment-menu { margin-top: 4px; }
+.group-recording { display: flex; flex-direction: column; gap: 8px; }
+.group-recording .compose { justify-content: flex-end; }
+.group-recording .compose span { margin-right: auto; }
 .bubble.sticker, .bubble.sticker.mine, .bubble.round, .bubble.round.mine { background: transparent; color: var(--text); border-color: transparent; padding: 2px 0; }
 .circle { position: relative; width: 220px; height: 220px; }
 .circle.live { width: 260px; height: 260px; margin: 8px auto 12px; }

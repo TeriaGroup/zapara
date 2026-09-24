@@ -107,10 +107,13 @@ public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, Communi
     }
     public async Task<ChatMessageResponse> SendMessageAsync(string bearer, Guid conversationId, SendMessageRequest request, CancellationToken ct = default)
         => StoreMessage(await Run(bearer, db => db.SendMessageAsync(CommunityValidation.Id(conversationId), request.Body, request.ReplyTo, request.Kind), ct));
-    public async Task<ChatMessageResponse> SendMediaAsync(string bearer, Guid conversationId, string kind, string name, byte[] content, Guid? replyTo, CancellationToken ct = default)
+    public async Task<ChatMessageResponse> SendMediaAsync(string bearer, Guid conversationId, string kind, string name, byte[] content, Guid? replyTo, int? durationMs = null, CancellationToken ct = default)
     {
-        if (kind is not ("image" or "video" or "file")) throw CommunityServiceException.InvalidRequest();
-        if (content is null || content.Length is < 1 or > CommunityMedia.MaxBytes) throw new CommunityServiceException(413, "payload_too_large");
+        if (kind is not ("image" or "video" or "file" or "voice" or "circle")) throw CommunityServiceException.InvalidRequest();
+        if (content is null || content.Length is < 1 or > CommunityMedia.MaxBytes ||
+            kind == "voice" && content.Length > CommunityMedia.MaxVoiceBytes)
+            throw new CommunityServiceException(413, "payload_too_large");
+        CommunityMedia.ValidateRecording(kind, content, durationMs);
         var label = MediaName(kind, name);
         var message = StoreMessage(await Run(bearer, db => db.SendMessageAsync(CommunityValidation.Id(conversationId), label, replyTo, kind), ct));
         var key = ContentNames.GroupFile(message.MessageId);
@@ -174,7 +177,7 @@ public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, Communi
 
     private static string MediaName(string kind, string? name)
     {
-        var fallback = kind switch { "image" => "Фото", "video" => "Видео", _ => "Документ" };
+        var fallback = kind switch { "image" => "Фото", "video" => "Видео", "voice" => "Голосовое", "circle" => "Кружок", _ => "Документ" };
         var raw = string.IsNullOrWhiteSpace(name) ? fallback : name.Trim();
         var slash = Math.Max(raw.LastIndexOf('/'), raw.LastIndexOf('\\'));
         if (slash >= 0 && slash < raw.Length - 1) raw = raw[(slash + 1)..];

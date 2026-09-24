@@ -760,7 +760,7 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
             </div>
           )}
           <form className="compose" onSubmit={event => void submit(event)}>
-            {!editing && <button className="btn tool" type="button" aria-label="Вложения" onClick={() => setPanel(panel === "attach" ? null : "attach")}><Icon name="plus" size={18} /></button>}
+            {!editing && <button className="btn tool" type="button" aria-label="Вложения" onClick={() => setPanel(panel === "attach" ? null : "attach")}><Icon name="paperclip" size={18} /></button>}
             {!editing && <button className={"btn tool" + (panel === "emoji" ? " primary" : "")} type="button" aria-label="Смайлы" onClick={() => setPanel(panel === "emoji" ? null : "emoji")}><Icon name="smile" size={18} /></button>}
             <input ref={inputRef} value={draft} onChange={event => setDraft(event.target.value)} placeholder={editing ? "Новый текст" : "Сообщение"} aria-label="Сообщение" maxLength={2000} />
             {draft.trim() || editing

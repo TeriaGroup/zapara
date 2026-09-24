@@ -107,8 +107,8 @@ public sealed partial class CommunityHttpClient : IDisposable
     }
     public Task<ChatMessageResponse> SendMessageAsync(string accessToken, Guid conversationId, SendMessageRequest request, CancellationToken ct = default)
         => SendAsync<ChatMessageResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/messages", Required(request), Access(accessToken), 201, ct);
-    public Task<ChatMessageResponse> SendMediaAsync(string accessToken, Guid conversationId, string kind, string name, byte[] bytes, Guid? replyTo = null, CancellationToken ct = default)
-        => SendMediaCoreAsync(Access(accessToken), Id(conversationId), kind, name, bytes, replyTo, ct);
+    public Task<ChatMessageResponse> SendMediaAsync(string accessToken, Guid conversationId, string kind, string name, byte[] bytes, Guid? replyTo = null, CancellationToken ct = default, int? durationMs = null)
+        => SendMediaCoreAsync(Access(accessToken), Id(conversationId), kind, name, bytes, replyTo, ct, durationMs);
     public Task<ChatMessageResponse> EditMessageAsync(string accessToken, Guid conversationId, Guid messageId, SendMessageRequest request, CancellationToken ct = default)
         => SendAsync<ChatMessageResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/messages/" + Id(messageId) + "/edit", Required(request), Access(accessToken), 200, ct);
     public Task<ChatMessageResponse> DeleteMessageAsync(string accessToken, Guid conversationId, Guid messageId, CancellationToken ct = default)

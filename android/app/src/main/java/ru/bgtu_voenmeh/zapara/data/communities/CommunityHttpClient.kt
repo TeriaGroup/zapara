@@ -226,9 +226,13 @@ class CommunityHttpClient(
         return read("GET", "/conversations/$id/messages$query", null, accessToken, 200) { page(it.obj()) }
     }
 
-    suspend fun sendMedia(accessToken: String, conversationId: String, kind: String, name: String, bytes: ByteArray, replyTo: String? = null): ChatMessage {
-        if (kind != "image" && kind != "video" && kind != "file") throw CommunityClientException(CommunityClientFailure.InvalidRequest)
-        if (bytes.isEmpty() || bytes.size > 8 * 1024 * 1024) throw CommunityClientException(CommunityClientFailure.PayloadTooLarge)
+    suspend fun sendMedia(accessToken: String, conversationId: String, kind: String, name: String, bytes: ByteArray, replyTo: String? = null, durationMs: Int? = null): ChatMessage {
+        if (kind !in setOf("image", "video", "file", "voice", "circle")) throw CommunityClientException(CommunityClientFailure.InvalidRequest)
+        val maxBytes = if (kind == "voice") 2 * 1024 * 1024 else 8 * 1024 * 1024
+        if (bytes.isEmpty() || bytes.size > maxBytes) throw CommunityClientException(CommunityClientFailure.PayloadTooLarge)
+        if (kind in setOf("voice", "circle") && durationMs == null) throw CommunityClientException(CommunityClientFailure.InvalidRequest)
+        if (durationMs != null && (kind !in setOf("voice", "circle") || durationMs !in 1..(if (kind == "voice") 180_000 else 60_000)))
+            throw CommunityClientException(CommunityClientFailure.InvalidRequest)
         val id = CommunityValidation.id(conversationId)
         val token = AccountValidation.token(accessToken, "za_")
         val headers = linkedMapOf(
@@ -236,9 +240,10 @@ class CommunityHttpClient(
             "Authorization" to "Bearer $token",
             "Content-Type" to "application/octet-stream",
             "X-Zapara-Kind" to kind,
-            "X-Zapara-Name" to URLEncoder.encode(name.ifBlank { if (kind == "image") "Фото" else if (kind == "video") "Видео" else "Документ" }, StandardCharsets.UTF_8.name()).replace("+", "%20")
+            "X-Zapara-Name" to URLEncoder.encode(name.ifBlank { when(kind) { "image" -> "Фото"; "video" -> "Видео"; "voice" -> "Голосовое сообщение"; "circle" -> "Кружок"; else -> "Документ" } }, StandardCharsets.UTF_8.name()).replace("+", "%20")
         )
         if (replyTo != null) headers["X-Zapara-Reply"] = CommunityValidation.id(replyTo)
+        if (durationMs != null) headers["X-Zapara-Duration-Ms"] = durationMs.toString()
         val reply = exchange("POST", "/conversations/$id/media", headers, bytes, 201)
         return payload { message(reply.obj()) }
     }

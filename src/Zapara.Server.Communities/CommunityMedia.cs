@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,12 +9,15 @@ namespace Zapara.Server.Communities;
 internal static class CommunityMedia
 {
     internal const int MaxBytes = 8 * 1024 * 1024;
+    internal const int MaxVoiceBytes = 2 * 1024 * 1024;
+    private const int MaxVoiceDurationMs = 180_000;
+    private const int MaxCircleDurationMs = 60_000;
 
     internal static async Task<IResult> Post(HttpContext context, string token)
     {
-        var (kind, name, bytes, reply) = await Read(context);
+        var (kind, name, bytes, reply, durationMs) = await Read(context);
         var message = await context.RequestServices.GetRequiredService<CommunityService>().SendMediaAsync(
-            token, CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), kind, name, bytes, reply, context.RequestAborted);
+            token, CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), kind, name, bytes, reply, durationMs, context.RequestAborted);
         return CommunityHttpResult.Json(message, 201);
     }
 
@@ -28,14 +32,14 @@ internal static class CommunityMedia
         return CommunityHttpResult.Bytes(bytes);
     }
 
-    private static async Task<(string Kind, string Name, byte[] Bytes, Guid? Reply)> Read(HttpContext context)
+    private static async Task<(string Kind, string Name, byte[] Bytes, Guid? Reply, int? DurationMs)> Read(HttpContext context)
     {
         CommunityHttpInput.Query(context);
         if (!MediaTypeHeaderValue.TryParse(context.Request.ContentType, out var media) ||
             !string.Equals(media.MediaType.Value, "application/octet-stream", StringComparison.OrdinalIgnoreCase))
             throw new CommunityInputException(415);
         var kind = One(context, "X-Zapara-Kind");
-        if (kind is not ("image" or "video" or "file")) throw new CommunityInputException();
+        if (kind is not ("image" or "video" or "file" or "voice" or "circle")) throw new CommunityInputException();
         var encoded = One(context, "X-Zapara-Name");
         string name;
         try { name = Uri.UnescapeDataString(encoded); }
@@ -47,21 +51,60 @@ internal static class CommunityMedia
                 throw new CommunityInputException();
             reply = id;
         }
+        int? durationMs = null;
+        if (context.Request.Headers.TryGetValue("X-Zapara-Duration-Ms", out var durationValues))
+        {
+            if (durationValues.Count != 1 ||
+                !int.TryParse(durationValues[0], NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
+                throw new CommunityInputException();
+            durationMs = parsed;
+        }
+        if (!ValidDuration(kind, durationMs)) throw new CommunityInputException();
+        var maximum = kind == "voice" ? MaxVoiceBytes : MaxBytes;
         var feature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
-        if (feature is { IsReadOnly: false }) feature.MaxRequestBodySize = MaxBytes + 1024;
-        if (context.Request.ContentLength > MaxBytes) throw new CommunityInputException(413);
+        if (feature is { IsReadOnly: false }) feature.MaxRequestBodySize = maximum + 1024;
+        if (context.Request.ContentLength > maximum) throw new CommunityInputException(413);
         using var output = new MemoryStream();
         var buffer = new byte[8192];
         while (true)
         {
             var count = await context.Request.Body.ReadAsync(buffer.AsMemory(0, buffer.Length), context.RequestAborted);
             if (count == 0) break;
-            if (output.Length + count > MaxBytes) throw new CommunityInputException(413);
+            if (output.Length + count > maximum) throw new CommunityInputException(413);
             output.Write(buffer, 0, count);
         }
         if (output.Length == 0) throw new CommunityInputException();
-        return (kind, name, output.ToArray(), reply);
+        return (kind, name, output.ToArray(), reply, durationMs);
     }
+
+    internal static void ValidateRecording(string kind, ReadOnlySpan<byte> bytes, int? durationMs)
+    {
+        if (!ValidDuration(kind, durationMs)) throw CommunityServiceException.InvalidRequest();
+        if (kind is not ("voice" or "circle"))
+            return;
+        if (bytes.Length < 12) throw CommunityServiceException.InvalidRequest();
+
+        var webm = bytes[0] == 0x1A && bytes[1] == 0x45 && bytes[2] == 0xDF && bytes[3] == 0xA3;
+        var mp4 = bytes[4] == (byte)'f' && bytes[5] == (byte)'t' && bytes[6] == (byte)'y' && bytes[7] == (byte)'p';
+        if (kind == "voice")
+        {
+            var ogg = bytes[0] == (byte)'O' && bytes[1] == (byte)'g' && bytes[2] == (byte)'g' && bytes[3] == (byte)'S';
+            var mp3 = (bytes[0] == (byte)'I' && bytes[1] == (byte)'D' && bytes[2] == (byte)'3') ||
+                (bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0);
+            if (!webm && !ogg && !mp4 && !mp3) throw CommunityServiceException.InvalidRequest();
+        }
+        else if (!webm && (!mp4 ||
+            bytes[8] == (byte)'M' && bytes[9] == (byte)'4' &&
+            (bytes[10] == (byte)'A' || bytes[10] == (byte)'B') && bytes[11] == (byte)' '))
+            throw CommunityServiceException.InvalidRequest();
+    }
+
+    private static bool ValidDuration(string kind, int? durationMs) => kind switch
+    {
+        "voice" => durationMs is >= 1 and <= MaxVoiceDurationMs,
+        "circle" => durationMs is >= 1 and <= MaxCircleDurationMs,
+        _ => durationMs is null
+    };
 
     private static string One(HttpContext context, string name)
     {

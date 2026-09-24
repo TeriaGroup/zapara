@@ -72,4 +72,43 @@ class SocialHttpClientTest {
         val rows = listOf(InboxRow("a", "А", lastAt = java.time.Instant.parse("2026-01-01T00:00:00Z")), InboxRow("b", "Б", unread = 1), InboxRow("c", "В"))
         assertEquals(listOf("a", "b", "c"), orderInbox(rows).map { it.id })
     }
+    @Test fun recorded_media_uses_authenticated_native_routes_and_duration() = runBlocking {
+        val conversation = "22222222-2222-4222-8222-222222222222"
+        val attachment = "33333333-3333-4333-8333-333333333333"
+        val message = """{"messageId":"11111111-1111-4111-8111-111111111111","senderId":"11111111-1111-4111-8111-111111111111","senderName":"Друг","body":null,"kind":"voice","createdAt":"2026-01-01T00:00:00Z","replyTo":null,"replyBody":null,"deleted":false,"editedAt":null,"read":false,"reactions":[],"attachmentId":"$attachment","fileName":"voice.m4a","durationMs":1234}"""
+        val http = FakeHttp { call -> HttpReply(201, message.toByteArray()) }
+        val api = SocialHttpClient(http, AccountServerScope.parse("https://example.test"))
+        val token = "za_" + "A".repeat(43)
+        val bytes = byteArrayOf(0, 0, 0, 16, 'f'.code.toByte(), 't'.code.toByte(), 'y'.code.toByte(), 'p'.code.toByte(), 1, 2, 3, 4)
+        val voice = api.uploadRecording(token, conversation, "voice", bytes, 1234, null)
+        assertEquals(1234, voice.durationMs)
+        val call = http.requests.single()
+        assertEquals("https://example.test/api/v1/social/conversations/$conversation/voice", call.url)
+        assertEquals("Bearer $token", call.headers["Authorization"])
+        assertTrue(call.body!!.toString(Charsets.ISO_8859_1).contains("name=\"durationMs\"\r\n\r\n1234"))
+        assertTrue(call.body!!.toString(Charsets.ISO_8859_1).contains("filename=\"voice.m4a\""))
+        api.uploadRecording(token, conversation, "circle", bytes, 1000, null)
+        assertTrue(http.requests.last().url.endsWith("/circles"))
+        assertTrue(http.requests.last().body!!.toString(Charsets.ISO_8859_1).contains("filename=\"circle.mp4\""))
+    }
+    @Test fun recorded_media_rejects_oversized_payload_and_duration_before_network() = runBlocking {
+        val http = FakeHttp { error("Must not call transport") }
+        val api = SocialHttpClient(http, AccountServerScope.parse("https://example.test"))
+        val token = "za_" + "A".repeat(43)
+        val conversation = "22222222-2222-4222-8222-222222222222"
+        try { api.uploadRecording(token, conversation, "voice", ByteArray(2 * 1024 * 1024 + 1), 1000, null); fail() } catch (_: IllegalArgumentException) { }
+        try { api.uploadRecording(token, conversation, "circle", byteArrayOf(1), 60_001, null); fail() } catch (_: IllegalArgumentException) { }
+        assertTrue(http.requests.isEmpty())
+    }
+    @Test fun attachment_download_keeps_bearer_out_of_url() = runBlocking {
+        val attachment = "33333333-3333-4333-8333-333333333333"
+        val token = "za_" + "A".repeat(43)
+        val content = byteArrayOf(1, 2, 3, 4)
+        val http = FakeHttp { HttpReply(200, content, "image/png") }
+        val api = SocialHttpClient(http, AccountServerScope.parse("https://example.test"))
+        assertArrayEquals(content, api.download(token, attachment))
+        assertEquals("https://example.test/api/v1/social/attachments/$attachment", http.requests.single().url)
+        assertFalse(http.requests.single().url.contains(token))
+        assertEquals("Bearer $token", http.requests.single().headers["Authorization"])
+    }
 }

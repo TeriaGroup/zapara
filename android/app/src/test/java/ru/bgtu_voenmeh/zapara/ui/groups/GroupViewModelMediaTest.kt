@@ -51,6 +51,9 @@ class GroupViewModelMediaTest {
         runCurrent()
         assertTrue(vm.state.value.hasHome)
         val photo = byteArrayOf(1, 2, 3, 4)
+        vm.onEvent(GroupEvent.Media("image", "from-other-chat.png", photo, "dddddddd-dddd-4ddd-8ddd-dddddddddddd"))
+        runCurrent()
+        assertFalse(http.requests.any { it.url.endsWith("/media") })
         val clip = byteArrayOf(9, 8, 7)
         val notes = byteArrayOf(5, 6)
         vm.onEvent(GroupEvent.Media("image", "снимок.png", photo))
@@ -86,6 +89,12 @@ class GroupViewModelMediaTest {
         assertTrue(http.requests.any { it.url.endsWith("/delete") })
         vm.onEvent(GroupEvent.Back)
         runCurrent()
+        val staleRecording = java.io.File.createTempFile("stale-group-voice-", ".m4a")
+        staleRecording.writeBytes(byteArrayOf(1, 2, 3))
+        vm.onEvent(GroupEvent.Recorded("voice", staleRecording, 1200, conversation))
+        runCurrent()
+        assertFalse(staleRecording.exists())
+        assertEquals(3, http.requests.count { it.url.endsWith("/media") })
     }
 
     private fun home() = """{"communityId":"$community","name":"O3313","groupName":"O3313","groupChat":${chat()},"classmates":[{"userId":"$user","username":"student","displayName":"Аня","role":"member","self":true}],"directs":[]}"""

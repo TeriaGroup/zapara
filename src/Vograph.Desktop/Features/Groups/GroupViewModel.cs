@@ -1,9 +1,12 @@
 using System.Collections.ObjectModel;
+using System.Security.Cryptography;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Services.Accounts;
 using Vograph.Core.Services.Communities;
+using Vograph.Desktop.Features.Chat;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.ViewModels;
 using Zapara.Client.Domain;
@@ -15,6 +18,15 @@ public sealed partial class GroupViewModel : ViewModelBase
 {
     private readonly CommunityHttpClient? client;
     private readonly Func<CancellationToken, Task<string?>>? accessToken;
+    private readonly IChatMediaRecorder recorder;
+    private readonly ChatMediaPlayer player = new();
+    private readonly Dictionary<Guid, Bitmap> previewCache = [];
+    private readonly HashSet<Guid> previewLoading = [];
+    private CancellationTokenSource previewCancellation = new();
+    private DispatcherTimer? recordingTimer;
+    private DateTimeOffset recordingStarted;
+    private string? recordingKind;
+    private Guid? playingMessage;
     // Built before UseCommunities: keep reading the live session instead of the null captured here.
     private CommunityHttpClient? Api => client ?? App.Communities;
     private Func<CancellationToken, Task<string?>>? Access => accessToken ?? App.CommunityAccess;
@@ -30,10 +42,18 @@ public sealed partial class GroupViewModel : ViewModelBase
     private bool watching;
     private DispatcherTimer? timer;
 
-    public GroupViewModel(AppServices app) : base(app)
+    public GroupViewModel(AppServices app, IChatMediaRecorder? recorder = null) : base(app)
     {
         client = app.Communities;
         accessToken = app.CommunityAccess;
+        this.recorder = recorder ?? new WindowsChatMediaRecorder();
+        player.PlaybackEnded += () => Dispatcher.UIThread.Post(StopPlayback);
+        player.PlaybackFailed += () => Dispatcher.UIThread.Post(() =>
+        {
+            if (playingMessage is null) return;
+            StopPlayback();
+            Status = "Не удалось воспроизвести запись.";
+        });
         NeedAccount = Api is null || Access is null;
     }
 
@@ -53,6 +73,9 @@ public sealed partial class GroupViewModel : ViewModelBase
     [ObservableProperty] private string chatTitle = "";
     [ObservableProperty] private string draft = "";
     [ObservableProperty] private string holdCaption = "";
+    [ObservableProperty] private bool isRecording;
+    [ObservableProperty] private bool isFinalizingRecording;
+    [ObservableProperty] private string recordingCaption = "";
     private Guid? replyTo;
     private Guid? editing;
     private string? pendingKind;
@@ -60,14 +83,36 @@ public sealed partial class GroupViewModel : ViewModelBase
     private byte[]? pendingBytes;
     public bool ShowList => !NeedAccount && !HasHome && !IsEmpty;
     public bool HasDirects => Directs.Count > 0;
+    public bool CanAttachMedia => !IsBusy && !IsRecording && !IsFinalizingRecording;
 
     public override void Detach() => Watch(false);
     public override Task ActivateAsync() => LoadAsync();
-    public void Watch(bool visible) { watching = visible; RestartTimer(); }
+    public void Watch(bool visible)
+    {
+        watching = visible;
+        RestartTimer();
+        if (!visible)
+        {
+            _ = CancelRecordingAsync();
+            StopPlayback();
+        }
+    }
 
     partial void OnNeedAccountChanged(bool value) => RaiseList();
     partial void OnIsEmptyChanged(bool value) => RaiseList();
     partial void OnHasHomeChanged(bool value) => RaiseList();
+    partial void OnIsRecordingChanged(bool value)
+    {
+        SendCommand.NotifyCanExecuteChanged();
+        StartRecordingCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanAttachMedia));
+    }
+    partial void OnIsFinalizingRecordingChanged(bool value)
+    {
+        SendCommand.NotifyCanExecuteChanged();
+        StartRecordingCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanAttachMedia));
+    }
     partial void OnDraftChanged(string value)
     {
         if (conversationId is Guid id && editing is null && replyTo is null)
@@ -82,6 +127,8 @@ public sealed partial class GroupViewModel : ViewModelBase
         busyDepth = Math.Max(0, busyDepth + (value ? 1 : -1));
         IsBusy = busyDepth != 0;
         SendCommand.NotifyCanExecuteChanged();
+        StartRecordingCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanAttachMedia));
     }
 
     private async Task LoadAsync()
@@ -218,7 +265,14 @@ public sealed partial class GroupViewModel : ViewModelBase
     private async Task OpenConversationAsync(Guid id, string title, bool direct)
     {
         var ticket = ++navigationGeneration;
+        await CancelRecordingAsync();
+        if (ticket != navigationGeneration) return;
+        StopPlayback();
+        Messages.Clear();
+        ClearPreviews();
         conversationId = id;
+        StartRecordingCommand.NotifyCanExecuteChanged();
+        if (pendingBytes is not null) CryptographicOperations.ZeroMemory(pendingBytes);
         pendingBytes = null;
         pendingKind = null;
         pendingName = null;
@@ -228,7 +282,6 @@ public sealed partial class GroupViewModel : ViewModelBase
         replyTo = null;
         editing = null;
         HoldCaption = "";
-        Messages.Clear();
         HasMore = false;
         try
         {
@@ -408,13 +461,135 @@ public sealed partial class GroupViewModel : ViewModelBase
             FailSession(ex);
         }
         catch (OperationCanceledException) { }
-        finally { if (operation.IsCurrent) Busy(false); }
+        finally
+        {
+            if (file is not null && !ReferenceEquals(pendingBytes, file)) CryptographicOperations.ZeroMemory(file);
+            if (operation.IsCurrent) Busy(false);
+        }
+    }
+
+    private bool CanStartRecording(string? kind) => (kind is "voice" or "circle")
+        && !IsBusy && !IsRecording && !IsFinalizingRecording && editing is null && conversationId is not null;
+
+    [RelayCommand(CanExecute = nameof(CanStartRecording))]
+    private async Task StartRecordingAsync(string? kind)
+    {
+        if (kind is not ("voice" or "circle") || !CanStartRecording(kind)) return;
+        var ticket = navigationGeneration;
+        using var operation = App.Work.Enter();
+        try
+        {
+            await recorder.StartAsync(kind, operation.Token);
+            if (!operation.IsCurrent || ticket != navigationGeneration)
+            {
+                await recorder.CancelAsync();
+                return;
+            }
+            recordingKind = kind;
+            recordingStarted = DateTimeOffset.UtcNow;
+            RecordingCaption = kind == "voice" ? "Голосовое · 0:00" : "Кружок · 0:00";
+            IsRecording = true;
+            recordingTimer?.Stop();
+            recordingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            recordingTimer.Tick += OnRecordingTick;
+            recordingTimer.Start();
+            Status = "";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or IOException
+            or PlatformNotSupportedException or System.Runtime.InteropServices.COMException)
+        { if (operation.IsCurrent && ticket == navigationGeneration) Status = "Не удалось начать запись. Проверьте доступ к микрофону и камере."; }
+    }
+
+    private async void OnRecordingTick(object? sender, EventArgs e)
+    {
+        if (!IsRecording || recordingKind is null) return;
+        var elapsed = DateTimeOffset.UtcNow - recordingStarted;
+        RecordingCaption = (recordingKind == "voice" ? "Голосовое · " : "Кружок · ") +
+            $"{(int)elapsed.TotalMinutes}:{elapsed.Seconds:00}";
+        if (recorder.CurrentLength > ChatMediaLimits.MaxBytes(recordingKind))
+        {
+            await CancelRecordingAsync();
+            Status = "Запись слишком большая. Попробуйте короче.";
+        }
+        else if (elapsed.TotalMilliseconds >= ChatMediaLimits.MaxDurationMs(recordingKind) - 1000)
+            await FinishRecordingAsync();
+    }
+
+    [RelayCommand]
+    private async Task FinishRecordingAsync()
+    {
+        if (!IsRecording || IsFinalizingRecording) return;
+        if (conversationId is not Guid id || Api is null || Access is null)
+        {
+            await CancelRecordingAsync();
+            return;
+        }
+        IsFinalizingRecording = true;
+        recordingTimer?.Stop();
+        recordingTimer = null;
+        IsRecording = false;
+        recordingKind = null;
+        RecordingCaption = "";
+        var ticket = navigationGeneration;
+        ChatCapturedMedia? media = null;
+        using var operation = App.Work.Enter();
+        Busy(true);
+        try
+        {
+            media = await recorder.FinishAsync(operation.Token);
+            ChatMediaLimits.Validate(media);
+            if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
+            var token = await Access(operation.Token);
+            if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
+            if (string.IsNullOrEmpty(token)) { ShowAccount(); return; }
+            var submittedReply = replyTo;
+            var message = await GroupMedia.Place(Api, token, id, media.Kind, media.FileName,
+                media.Bytes, submittedReply, operation.Token, media.DurationMs);
+            if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
+            if (replyTo == submittedReply) { replyTo = null; HoldCaption = ""; }
+            var row = Row(message);
+            var index = Messages.ToList().FindIndex(item => item.Id == row.Id);
+            if (index >= 0) Messages[index] = row;
+            else Messages.Add(row);
+            Status = "";
+        }
+        catch (OperationCanceledException) { }
+        catch (AccountClientException ex) when (operation.IsCurrent && CurrentChat(id, ticket)) { FailSession(ex); }
+        catch (Exception ex) when (operation.IsCurrent && CurrentChat(id, ticket) && ex is
+            (CommunityClientException or IOException or InvalidDataException or InvalidOperationException
+                or UnauthorizedAccessException or System.Runtime.InteropServices.COMException))
+        { Status = "Не удалось отправить запись."; }
+        finally
+        {
+            if (media is not null) CryptographicOperations.ZeroMemory(media.Bytes);
+            try { await recorder.CancelAsync(); }
+            catch (Exception ex) when (ex is IOException or System.Runtime.InteropServices.COMException) { }
+            finally
+            {
+                Busy(false);
+                IsFinalizingRecording = false;
+            }
+        }
+    }
+
+    [RelayCommand]
+    private async Task CancelRecordingAsync()
+    {
+        if (IsFinalizingRecording) return;
+        recordingTimer?.Stop();
+        recordingTimer = null;
+        IsRecording = false;
+        recordingKind = null;
+        RecordingCaption = "";
+        try { await recorder.CancelAsync(); }
+        catch (Exception ex) when (ex is IOException or System.Runtime.InteropServices.COMException) { }
     }
 
     [RelayCommand]
     private async Task Attach(string? kind)
     {
-        if (IsBusy || kind is not ("image" or "video" or "file") || editing is not null || conversationId is not Guid id || Api is null || Access is null) return;
+        if (IsBusy || IsRecording || IsFinalizingRecording || kind is not ("image" or "video" or "file") || editing is not null || conversationId is not Guid id || Api is null || Access is null) return;
         var ticket = navigationGeneration;
         var path = await App.FileDialogs.OpenChatMediaAsync(kind);
         if (string.IsNullOrWhiteSpace(path) || IsBusy || !CurrentChat(id, ticket)) return;
@@ -430,7 +605,8 @@ public sealed partial class GroupViewModel : ViewModelBase
             return;
         }
         var bytes = await File.ReadAllBytesAsync(path);
-        if (IsBusy || !CurrentChat(id, ticket)) return;
+        if (IsBusy || !CurrentChat(id, ticket)) { CryptographicOperations.ZeroMemory(bytes); return; }
+        if (pendingBytes is not null) CryptographicOperations.ZeroMemory(pendingBytes);
         pendingKind = kind;
         pendingName = info.Name;
         pendingBytes = bytes;
@@ -438,7 +614,7 @@ public sealed partial class GroupViewModel : ViewModelBase
         await Send();
     }
 
-    private bool CanSend() => !IsBusy && conversationId is not null && (!string.IsNullOrWhiteSpace(Draft) || pendingBytes is { Length: > 0 });
+    private bool CanSend() => !IsBusy && !IsRecording && !IsFinalizingRecording && conversationId is not null && (!string.IsNullOrWhiteSpace(Draft) || pendingBytes is { Length: > 0 });
 
     [RelayCommand]
     private Task BackToGroup()
@@ -451,8 +627,12 @@ public sealed partial class GroupViewModel : ViewModelBase
     private void Back()
     {
         navigationGeneration++;
+        _ = CancelRecordingAsync();
+        StopPlayback();
         conversationId = null;
+        StartRecordingCommand.NotifyCanExecuteChanged();
         RestartTimer();
+        if (pendingBytes is not null) CryptographicOperations.ZeroMemory(pendingBytes);
         pendingBytes = null;
         pendingKind = null;
         pendingName = null;
@@ -463,6 +643,7 @@ public sealed partial class GroupViewModel : ViewModelBase
         HasHome = false;
         IsDirect = false;
         Messages.Clear();
+        ClearPreviews();
         People.Clear();
         Directs.Clear();
         IsEmpty = Communities.Count == 0;
@@ -547,8 +728,85 @@ public sealed partial class GroupViewModel : ViewModelBase
         GroupMessageRow row = null!;
         row = new(message.MessageId, message.SenderName, message.Body, message.CreatedAt.ToLocalTime().ToString("dd.MM HH:mm"),
             message.SenderId == me, message.Kind, message.Deleted, action => ApplyHold(row, action),
-            () => DownloadMediaAsync(row, message.ConversationId), message.Reactions, replyPreview);
+            () => DownloadMediaAsync(row, message.ConversationId), message.Reactions, replyPreview,
+            () => PlayMediaAsync(row, message.ConversationId));
+        if (message.Kind == "image" && !message.Deleted)
+        {
+            if (previewCache.TryGetValue(message.MessageId, out var cached)) row.Preview = cached;
+            else Dispatcher.UIThread.Post(() => _ = LoadPhotoPreviewAsync(message.ConversationId, message.MessageId));
+        }
         return row;
+    }
+
+    private async Task LoadPhotoPreviewAsync(Guid conversation, Guid messageId)
+    {
+        if (!previewLoading.Add(messageId) || Api is null || Access is null) return;
+        var selectedConversation = conversationId;
+        var cancellation = previewCancellation.Token;
+        byte[]? bytes = null;
+        Bitmap? bitmap = null;
+        try
+        {
+            var token = await Access(cancellation);
+            if (string.IsNullOrWhiteSpace(token) || cancellation.IsCancellationRequested || selectedConversation != conversationId) return;
+            bytes = await Api.ReadMediaAsync(token, conversation, messageId, cancellation);
+            if (cancellation.IsCancellationRequested || selectedConversation != conversationId) return;
+            bitmap = ChatMediaPreview.DecodePhoto(bytes);
+            previewCache[messageId] = bitmap;
+            foreach (var row in Messages.Where(row => row.Id == messageId)) row.Preview = bitmap;
+            bitmap = null;
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or CommunityClientException or AccountClientException
+            or ArgumentException or InvalidDataException or IOException) { }
+        finally
+        {
+            bitmap?.Dispose();
+            if (bytes is not null) CryptographicOperations.ZeroMemory(bytes);
+            previewLoading.Remove(messageId);
+        }
+    }
+
+    private void ClearPreviews()
+    {
+        previewCancellation.Cancel();
+        previewCancellation.Dispose();
+        previewCancellation = new CancellationTokenSource();
+        previewLoading.Clear();
+        foreach (var image in previewCache.Values) image.Dispose();
+        previewCache.Clear();
+    }
+
+    private async Task PlayMediaAsync(GroupMessageRow row, Guid id)
+    {
+        if (!row.CanPlay || !Messages.Contains(row) || Api is null || Access is null) return;
+        if (playingMessage == row.Id) { StopPlayback(); return; }
+        StopPlayback();
+        var ticket = navigationGeneration;
+        byte[]? bytes = null;
+        using var operation = App.Work.Enter();
+        try
+        {
+            var token = await Access(operation.Token);
+            if (string.IsNullOrWhiteSpace(token) || !operation.IsCurrent || !CurrentChat(id, ticket)) return;
+            bytes = await Api.ReadMediaAsync(token, id, row.Id, operation.Token);
+            if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
+            await player.PlayAsync(row.Kind, null, bytes, operation.Token);
+            if (!operation.IsCurrent || !CurrentChat(id, ticket)) { player.Stop(); return; }
+            if (row.Kind == "voice") { playingMessage = row.Id; row.IsPlaying = true; }
+            Status = "";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is CommunityClientException or AccountClientException or IOException or InvalidDataException
+            or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
+        { if (operation.IsCurrent && CurrentChat(id, ticket)) Status = "Не удалось воспроизвести запись."; }
+        finally { if (bytes is not null) CryptographicOperations.ZeroMemory(bytes); }
+    }
+
+    private void StopPlayback()
+    {
+        player.Stop();
+        playingMessage = null;
+        foreach (var row in Messages) row.IsPlaying = false;
     }
 
     private async Task DownloadMediaAsync(GroupMessageRow row, Guid id)
@@ -556,22 +814,24 @@ public sealed partial class GroupViewModel : ViewModelBase
         if (!row.CanDownload || !Messages.Contains(row) || Api is null || Access is null) return;
         var ticket = navigationGeneration;
         if (!CurrentChat(id, ticket)) return;
+        byte[]? bytes = null;
         using var operation = App.Work.Enter();
         try
         {
             var path = await App.FileDialogs.SaveChatMediaAsync(GroupMedia.SafeName(row.Body, row.Kind));
             if (string.IsNullOrWhiteSpace(path) || !operation.IsCurrent || !CurrentChat(id, ticket)) return;
+            if (File.Exists(path)) { Status = "Файл уже существует. Выберите новое имя."; return; }
             var token = await Access(operation.Token);
             if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
             if (string.IsNullOrEmpty(token)) { ShowAccount(); return; }
-            var bytes = await Api.ReadMediaAsync(token, id, row.Id, operation.Token);
+            bytes = await Api.ReadMediaAsync(token, id, row.Id, operation.Token);
             if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
             var temporary = path + "." + Guid.NewGuid().ToString("N") + ".part";
             try
             {
                 await File.WriteAllBytesAsync(temporary, bytes, operation.Token);
                 if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
-                File.Move(temporary, path, overwrite: true);
+                File.Move(temporary, path);
             }
             finally
             {
@@ -584,6 +844,7 @@ public sealed partial class GroupViewModel : ViewModelBase
         catch (AccountClientException ex) when (operation.IsCurrent && CurrentChat(id, ticket)) { FailSession(ex); }
         catch (Exception ex) when (operation.IsCurrent && CurrentChat(id, ticket) && ex is (CommunityClientException or IOException or UnauthorizedAccessException))
         { Status = T("groupMediaFailed"); }
+        finally { if (bytes is not null) CryptographicOperations.ZeroMemory(bytes); }
     }
 
     private void FailSession(AccountClientException ex)
@@ -596,7 +857,11 @@ public sealed partial class GroupViewModel : ViewModelBase
     private void ShowAccount()
     {
         navigationGeneration++;
+        _ = CancelRecordingAsync();
+        StopPlayback();
         conversationId = null;
+        StartRecordingCommand.NotifyCanExecuteChanged();
+        if (pendingBytes is not null) CryptographicOperations.ZeroMemory(pendingBytes);
         pendingBytes = null;
         pendingKind = null;
         pendingName = null;
@@ -609,6 +874,8 @@ public sealed partial class GroupViewModel : ViewModelBase
         NeedAccount = true;
         HasHome = false;
         IsEmpty = false;
+        Messages.Clear();
+        ClearPreviews();
         Status = "";
         RaiseList();
     }
@@ -641,7 +908,7 @@ public sealed class GroupPersonRow(string name, string detail, string role, stri
     public IRelayCommand? OpenCommand { get; } = open;
 }
 
-public sealed class GroupMessageRow(Guid id, string author, string body, string when, bool mine, string kind = "text", bool deleted = false, Action<string>? apply = null, Func<Task>? download = null, IReadOnlyList<ChatReactionSummary>? reactions = null, string? replyPreview = null)
+public sealed partial class GroupMessageRow(Guid id, string author, string body, string when, bool mine, string kind = "text", bool deleted = false, Action<string>? apply = null, Func<Task>? download = null, IReadOnlyList<ChatReactionSummary>? reactions = null, string? replyPreview = null, Func<Task>? play = null) : ObservableObject
 {
     public Guid Id { get; } = id;
     public string Author { get; } = author;
@@ -649,7 +916,8 @@ public sealed class GroupMessageRow(Guid id, string author, string body, string 
     public string Display { get; } = deleted ? "Сообщение удалено" : kind switch
     {
         "image" => "Фото",
-        "video" or "circle" => "Видео",
+        "video" => "Видео",
+        "circle" => "Кружок",
         "voice" => "Голосовое",
         "file" => string.IsNullOrWhiteSpace(body) ? "Документ" : body,
         _ => body
@@ -665,8 +933,14 @@ public sealed class GroupMessageRow(Guid id, string author, string body, string 
         .Where(reaction => reaction.Count > 0)
         .Select(reaction => new GroupReactionRow(reaction)).ToArray();
     public bool HasReactions => Reactions.Count > 0;
-    public bool CanDownload => download is not null && !Deleted && Kind is ("image" or "video" or "file");
+    public bool CanDownload => download is not null && !Deleted && Kind is ("image" or "video" or "file" or "voice" or "circle");
     public IAsyncRelayCommand? DownloadCommand { get; } = download is null ? null : new AsyncRelayCommand(download);
+    public bool CanPlay => play is not null && !Deleted && Kind is ("voice" or "circle");
+    public IAsyncRelayCommand? PlayCommand { get; } = play is null ? null : new AsyncRelayCommand(play);
+    public string PlayCaption => Kind == "circle" ? "Смотреть кружок" : IsPlaying ? "Остановить" : "Слушать";
+    [ObservableProperty] private bool isPlaying;
+    [ObservableProperty] private Bitmap? preview;
+    partial void OnIsPlayingChanged(bool value) => OnPropertyChanged(nameof(PlayCaption));
     public void Apply(string action) => apply?.Invoke(action);
 }
 

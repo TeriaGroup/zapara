@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_header_chats">Чаты</string>
+    <string name="chat_header_back">К чатам</string>
+    <string name="chat_header_refresh">Обновить</string>
+    <string name="chat_media_permission_voice">Разрешите доступ к микрофону для записи голосового сообщения</string>
+    <string name="chat_media_permission_circle">Разрешите доступ к камере и микрофону для записи кружка</string>
+    <string name="chat_media_recording">● Запись %1$s</string>
+    <string name="chat_media_cancel">Отмена</string>
+    <string name="chat_media_send">Отправить</string>
+    <string name="chat_media_camera_ready">Камера готова</string>
+    <string name="chat_media_camera_connecting">Подключаем камеру…</string>
+    <string name="chat_media_start">Записать</string>
+    <string name="chat_media_finalizing">Готовим запись…</string>
+    <string name="chat_media_file_space">Нет места для записи</string>
+    <string name="chat_media_prepare_failed">Не удалось подготовить запись</string>
+    <string name="chat_media_voice_start_failed">Не удалось начать запись голоса</string>
+    <string name="chat_media_voice_invalid">Голосовое сообщение слишком короткое или превышает 2 МБ</string>
+    <string name="chat_media_camera_open_failed">Не удалось открыть камеру</string>
+    <string name="chat_media_circle_start_failed">Не удалось начать запись кружка</string>
+    <string name="chat_media_circle_invalid">Кружок слишком короткий или превышает 8 МБ</string>
+    <string name="chat_media_load_failed">Не удалось загрузить · Повторить</string>
+    <string name="chat_media_loading_image">Загружаем фото…</string>
+    <string name="chat_media_loading_voice">Загружаем голосовое…</string>
+    <string name="chat_media_loading_circle">Загружаем кружок…</string>
+    <string name="chat_media_image_unavailable">Фото недоступно</string>
+    <string name="chat_media_photo">Фото</string>
+    <string name="chat_media_play_failed">Не удалось воспроизвести</string>
+</resources>

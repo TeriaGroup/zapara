@@ -133,15 +133,28 @@
           </Border>
           <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10">
             <StackPanel Spacing="8">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <Button Classes="ghost" Content="Фото" Command="{Binding AttachCommand}" CommandParameter="image" IsEnabled="{Binding !IsBusy}" MinHeight="48" AutomationProperties.AutomationId="Group.Photo" />
-              <Button Classes="ghost" Content="Видео" Command="{Binding AttachCommand}" CommandParameter="video" IsEnabled="{Binding !IsBusy}" MinHeight="48" AutomationProperties.AutomationId="Group.Video" />
-              <Button Classes="ghost" Content="Документ" Command="{Binding AttachCommand}" CommandParameter="file" IsEnabled="{Binding !IsBusy}" MinHeight="48" AutomationProperties.AutomationId="Group.File" />
+            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsRecording}">
+              <TextBlock Text="{Binding RecordingCaption}" VerticalAlignment="Center" />
+              <Button Classes="primary" Content="Отправить запись" Command="{Binding FinishRecordingCommand}" />
+              <Button Classes="ghost" Content="Отменить" Command="{Binding CancelRecordingCommand}" />
             </StackPanel>
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-              <TextBox Text="{Binding Draft}" PlaceholderText="{loc:T groupMessage}" MaxLength="2000" MinWidth="0"
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+              <Button Classes="ghost" Content="📎" ToolTip.Tip="Прикрепить" MinWidth="48" MinHeight="48"
+                      IsEnabled="{Binding CanAttachMedia}" AutomationProperties.AutomationId="Group.Attach">
+                <Button.Flyout>
+                  <MenuFlyout Placement="Top">
+                    <MenuItem Header="Фото" Command="{Binding AttachCommand}" CommandParameter="image" />
+                    <MenuItem Header="Видео" Command="{Binding AttachCommand}" CommandParameter="video" />
+                    <MenuItem Header="Документ" Command="{Binding AttachCommand}" CommandParameter="file" />
+                    <Separator />
+                    <MenuItem Header="Записать голосовое" Command="{Binding StartRecordingCommand}" CommandParameter="voice" />
+                    <MenuItem Header="Записать кружок" Command="{Binding StartRecordingCommand}" CommandParameter="circle" />
+                  </MenuFlyout>
+                </Button.Flyout>
+              </Button>
+              <TextBox Grid.Column="1" Text="{Binding Draft}" PlaceholderText="{loc:T groupMessage}" MaxLength="2000" MinWidth="0"
                        TextWrapping="Wrap" VerticalAlignment="Center" />
-              <Button Grid.Column="1" Classes="primary" Content="{loc:T groupSend}" Command="{Binding SendCommand}"
+              <Button Grid.Column="2" Classes="primary" Content="{loc:T groupSend}" Command="{Binding SendCommand}"
                       VerticalAlignment="Center" MinHeight="48" AutomationProperties.AutomationId="Group.Send" />
             </Grid>
             </StackPanel>
@@ -162,6 +175,10 @@
                         </Grid>
                         <TextBlock Classes="muted caption" Text="{Binding ReplyPreview}" IsVisible="{Binding IsReply}" TextWrapping="Wrap" />
                         <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
+                        <Image Source="{Binding Preview}" MaxWidth="300" MaxHeight="220" HorizontalAlignment="Left"
+                               Stretch="Uniform" />
+                        <Button Classes="ghost" Content="{Binding PlayCaption}" Command="{Binding PlayCommand}"
+                                IsVisible="{Binding CanPlay}" HorizontalAlignment="Left" Padding="6,3" />
                         <ItemsControl ItemsSource="{Binding Reactions}" IsVisible="{Binding HasReactions}">
                           <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                           <ItemsControl.ItemTemplate>

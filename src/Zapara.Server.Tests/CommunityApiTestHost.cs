@@ -67,12 +67,13 @@ internal sealed class CommunityApiTestHost : IAsyncDisposable
         if (store) Assert.True(response.Headers.CacheControl?.NoStore);
         return await response.Content.ReadAsByteArrayAsync(Ct);
     }
-    internal async Task<byte[]> SendMedia(string path, string token, string kind, string name, byte[] body, int status = 201)
+    internal async Task<byte[]> SendMedia(string path, string token, string kind, string name, byte[] body, int status = 201, string? durationMs = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/communities" + path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.TryAddWithoutValidation("X-Zapara-Kind", kind);
         request.Headers.TryAddWithoutValidation("X-Zapara-Name", Uri.EscapeDataString(name));
+        if (durationMs is not null) request.Headers.TryAddWithoutValidation("X-Zapara-Duration-Ms", durationMs);
         request.Content = new ByteArrayContent(body);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
         using var response = await Client.SendAsync(request, Ct);

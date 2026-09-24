@@ -1,4 +1,4 @@
-import { getGroupMedia, postGroupMedia, type GroupMediaDownload } from "./group-media";
+import { getGroupMedia, postGroupMedia, type GroupMediaDownload, type GroupMediaKind } from "./group-media";
 import { groupMessageQuery, type GroupMessageCursor } from "./groupChat";
 import type { BallotBoard, ChatMessage, Community, Conversation, GroupDesk, GroupHomeworkCopy, GroupHome, GroupTopic, GroupsPayload, MapsManifest, Session, SocialHome, SocialMessage, SocialPage, Teacher, TeacherLesson, TimetablePayload } from "./types";
 
@@ -268,8 +268,8 @@ export function reactGroupMessage(id: string, messageId: string, emoji: string) 
   return send<ChatMessage>("POST", `/web-api/communities/conversations/${id}/messages/${messageId}/react`, { emoji });
 }
 
-export async function sendGroupMedia(id: string, kind: "image" | "video" | "file", name: string, file: Blob, replyTo?: string): Promise<ChatMessage> {
-  const response = await postGroupMedia(id, kind, name, file, replyTo, fetch, authHeaders());
+export async function sendGroupMedia(id: string, kind: GroupMediaKind, name: string, file: Blob, replyTo?: string, durationMs?: number): Promise<ChatMessage> {
+  const response = await postGroupMedia(id, kind, name, file, replyTo, fetch, authHeaders(), durationMs);
   if (!response.ok) throw new Error(String(response.status));
   return response.json() as Promise<ChatMessage>;
 }

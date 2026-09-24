@@ -353,6 +353,7 @@ public sealed class ChatInboxTests
         var attachmentId = Guid.Parse("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
         var sent = false;
         var downloaded = false;
+        var png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAANSURBVBhXY/jPwPAfAAUAAf+mXJtdAAAAAElFTkSuQmCC");
         var photo = new SocialMessageResponse(First, PromotedId, "Друг", "image", null, attachmentId,
             "photo.webp", "image/webp", 4, Now, null, null, null, false, false, null, []);
         handler.Send = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
@@ -367,7 +368,7 @@ public sealed class ChatInboxTests
             _ => new HttpResponseMessage(System.Net.HttpStatusCode.NotFound)
         });
         HttpResponseMessage Uploaded() { sent = true; return AccountClientTestSupport.Json(photo, System.Net.HttpStatusCode.Created); }
-        HttpResponseMessage Downloaded() { downloaded = true; return new(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent([5, 6, 7]) }; }
+        HttpResponseMessage Downloaded() { downloaded = true; return new(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent(png) }; }
 
         var inbox = new ChatInboxViewModel(services, new ShellViewModel(services));
         await inbox.ActivateAsync();
@@ -377,11 +378,142 @@ public sealed class ChatInboxTests
         Assert.True(sent);
         var row = Assert.Single(inbox.Messages);
         Assert.Equal("Фото", row.Display);
+        await Waits.Until(() => downloaded, "authenticated photo bytes downloaded");
+        await Waits.Until(() => row.Preview is not null, "authenticated photo preview loaded");
+        Assert.InRange(row.Preview!.PixelSize.Width, 1, 320);
         Assert.True(row.CanDownload);
         await row.DownloadCommand!.ExecuteAsync(null);
         Assert.True(downloaded);
         Assert.Equal("photo.webp", dialogs.LastSuggestedName);
-        Assert.Equal([5, 6, 7], File.ReadAllBytes(destination));
+        Assert.Equal(png, File.ReadAllBytes(destination));
         Assert.Empty(Directory.GetFiles(directory.Root, "*.part"));
+    }
+
+    [AvaloniaTheory]
+    [InlineData("voice", "/voice", "Голосовое · 0:01")]
+    [InlineData("circle", "/circles", "Кружок · 0:01")]
+    public async Task Recorded_media_is_uploaded_with_duration_and_appears_in_personal_chat(
+        string kind, string route, string display)
+    {
+        using var directory = new ProfileTestDirectory();
+        using var services = AppServices.Create(directory.Root, () => false);
+        services.AllowNetwork = false;
+        using var handler = new AccountClientHandler();
+        using var http = new HttpClient(handler);
+        using var social = new SocialHttpClient(http, Root);
+        services.UseSocial(social, _ => Task.FromResult<string?>(Access));
+        var uploads = 0;
+        handler.Send = async (request, ct) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path == "/root/api/v2/social/home") return AccountClientTestSupport.Json(FriendHome());
+            if (request.Method == HttpMethod.Get && path.EndsWith("/messages", StringComparison.Ordinal))
+                return AccountClientTestSupport.Json(new SocialPageResponse([], false));
+            if (request.Method == HttpMethod.Post && path.EndsWith(route, StringComparison.Ordinal))
+            {
+                var form = await request.Content!.ReadAsStringAsync(ct);
+                Assert.Contains("name=durationMs", form);
+                Assert.Contains("1500", form);
+                uploads++;
+                return AccountClientTestSupport.Json(new SocialMessageResponse(First, PromotedId, "Друг", kind, null,
+                    Second, kind == "voice" ? "voice.m4a" : "circle.mp4",
+                    kind == "voice" ? "audio/mp4" : "video/mp4", 12, Now,
+                    null, null, null, false, false, 1500, []),
+                    System.Net.HttpStatusCode.Created);
+            }
+            return new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+        };
+        var recorder = new FakeChatMediaRecorder(kind);
+        var inbox = new ChatInboxViewModel(services, new ShellViewModel(services), recorder: recorder);
+        await inbox.ActivateAsync();
+        Assert.Single(inbox.Chats).OpenCommand.Execute(null);
+        await Waits.Until(() => inbox.HasConversation, "personal chat opened");
+
+        await inbox.StartRecordingCommand.ExecuteAsync(kind);
+        Assert.True(inbox.IsRecording);
+        await inbox.FinishRecordingCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, uploads);
+        Assert.False(inbox.IsRecording);
+        Assert.Equal(display, Assert.Single(inbox.Messages).Display);
+        await inbox.StartRecordingCommand.ExecuteAsync(kind);
+        await inbox.CancelRecordingCommand.ExecuteAsync(null);
+        Assert.False(inbox.IsRecording);
+        Assert.Equal(1, uploads);
+    }
+
+    private sealed class FakeChatMediaRecorder(string kind) : IChatMediaRecorder
+    {
+        public long CurrentLength => 3;
+        public Task StartAsync(string kind, CancellationToken ct) => Task.CompletedTask;
+        public Task<ChatCapturedMedia> FinishAsync(CancellationToken ct)
+            => Task.FromResult(new ChatCapturedMedia(kind, kind == "voice" ? "voice.m4a" : "circle.mp4",
+                [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 1500));
+        public Task CancelAsync() => Task.CompletedTask;
+    }
+
+    [AvaloniaFact]
+    public async Task Finalizing_personal_recording_blocks_a_second_capture_until_cleanup_finishes()
+    {
+        using var directory = new ProfileTestDirectory();
+        using var services = AppServices.Create(directory.Root, () => false);
+        services.AllowNetwork = false;
+        using var handler = new AccountClientHandler();
+        using var http = new HttpClient(handler);
+        using var social = new SocialHttpClient(http, Root);
+        services.UseSocial(social, _ => Task.FromResult<string?>(Access));
+        handler.Send = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/root/api/v2/social/home" => AccountClientTestSupport.Json(FriendHome()),
+            var path when request.Method == HttpMethod.Get && path.EndsWith("/messages", StringComparison.Ordinal)
+                => AccountClientTestSupport.Json(new SocialPageResponse([], false)),
+            var path when request.Method == HttpMethod.Post && path.EndsWith("/voice", StringComparison.Ordinal)
+                => AccountClientTestSupport.Json(new SocialMessageResponse(First, PromotedId, "Друг", "voice", null,
+                    Second, "voice.m4a", "audio/mp4", 12, Now, null, null, null, false, false, 1500, []),
+                    System.Net.HttpStatusCode.Created),
+            _ => new HttpResponseMessage(System.Net.HttpStatusCode.NotFound)
+        });
+        var recorder = new BlockingChatMediaRecorder();
+        var inbox = new ChatInboxViewModel(services, new ShellViewModel(services), recorder: recorder);
+        await inbox.ActivateAsync();
+        Assert.Single(inbox.Chats).OpenCommand.Execute(null);
+        await Waits.Until(() => inbox.HasConversation, "personal chat opened");
+
+        await inbox.StartRecordingCommand.ExecuteAsync("voice");
+        var cancelBeforeFinish = recorder.Cancellations;
+        var finishing = inbox.FinishRecordingCommand.ExecuteAsync(null);
+        await recorder.FinishEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(inbox.IsFinalizingRecording);
+        Assert.False(inbox.StartRecordingCommand.CanExecute("circle"));
+        await inbox.CancelRecordingCommand.ExecuteAsync(null);
+        await inbox.StartRecordingCommand.ExecuteAsync("circle");
+        Assert.Equal(1, recorder.Starts);
+        Assert.Equal(cancelBeforeFinish, recorder.Cancellations);
+
+        recorder.ReleaseFinish();
+        await finishing;
+        Assert.False(inbox.IsFinalizingRecording);
+        Assert.True(inbox.StartRecordingCommand.CanExecute("circle"));
+        Assert.Equal(1, recorder.Starts);
+        Assert.Equal(cancelBeforeFinish + 1, recorder.Cancellations);
+    }
+
+    private sealed class BlockingChatMediaRecorder : IChatMediaRecorder
+    {
+        private readonly TaskCompletionSource<ChatCapturedMedia> release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource FinishEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int Starts { get; private set; }
+        public int Cancellations { get; private set; }
+        public long CurrentLength => 12;
+        public Task StartAsync(string kind, CancellationToken ct) { Starts++; return Task.CompletedTask; }
+        public async Task<ChatCapturedMedia> FinishAsync(CancellationToken ct)
+        {
+            FinishEntered.TrySetResult();
+            return await release.Task.WaitAsync(ct);
+        }
+        public void ReleaseFinish() => release.TrySetResult(new ChatCapturedMedia("voice", "voice.m4a",
+            [0, 0, 0, 12, (byte)'f', (byte)'t', (byte)'y', (byte)'p', 1, 2, 3, 4], 1500));
+        public Task CancelAsync() { Cancellations++; return Task.CompletedTask; }
     }
 }

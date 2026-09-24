@@ -10,6 +10,42 @@ namespace Vograph.Desktop.Tests;
 
 public sealed class GroupMediaTests
 {
+    [Fact]
+    public async Task Recorded_voice_and_circle_use_group_media_route_with_duration_and_size_caps()
+    {
+        var seen = new List<(string Kind, string? Duration, byte[] Body)>();
+        var handler = new AccountClientHandler { Send = async (request, ct) =>
+        {
+            var kind = request.Headers.GetValues("X-Zapara-Kind").Single();
+            request.Headers.TryGetValues("X-Zapara-Duration-Ms", out var duration);
+            seen.Add((kind, duration?.SingleOrDefault(), await request.Content!.ReadAsByteArrayAsync(ct)));
+            var message = new ChatMessageResponse(Guid.Parse("11111111-1111-4111-8111-111111111111"),
+                Guid.Parse("22222222-2222-4222-8222-222222222222"), Guid.Parse("33333333-3333-4333-8333-333333333333"),
+                "Аня", kind, DateTimeOffset.UtcNow, kind);
+            return new HttpResponseMessage(HttpStatusCode.Created)
+            {
+                Content = new ByteArrayContent(CommunityJson.Serialize(message)) { Headers = { ContentType = new("application/json") } }
+            };
+        } };
+        using var http = new HttpClient(handler);
+        using var client = new CommunityHttpClient(http, new Uri("http://127.0.0.1:9/"));
+        var token = AccountClientTestSupport.Token("za_");
+        var conversation = Guid.Parse("22222222-2222-4222-8222-222222222222");
+        var m4a = new byte[] { 0, 0, 0, 12, (byte)'f', (byte)'t', (byte)'y', (byte)'p', 0, 0, 0, 0 };
+        Assert.Equal("voice", (await GroupMedia.Place(client, token, conversation, "voice", "voice.m4a", m4a, null,
+            TestContext.Current.CancellationToken, 4200)).Kind);
+        Assert.Equal("4200", seen.Single().Duration);
+        Assert.Equal(m4a, seen.Single().Body);
+        Assert.Equal("circle", (await GroupMedia.Place(client, token, conversation, "circle", "circle.mp4", m4a, null,
+            TestContext.Current.CancellationToken, 12_000)).Kind);
+        Assert.Equal("12000", seen.Last().Duration);
+        await Assert.ThrowsAsync<CommunityClientException>(() => GroupMedia.Place(client, token, conversation,
+            "voice", "missing-duration.m4a", m4a, null, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<CommunityClientException>(() => GroupMedia.Place(client, token, conversation,
+            "voice", "too-large.m4a", new byte[2 * 1024 * 1024 + 1], null, TestContext.Current.CancellationToken, 1000));
+        Assert.Equal(2, seen.Count);
+    }
+
     [AvaloniaFact]
     public async Task Place_sends_the_photo_and_the_bubble_can_be_held()
     {

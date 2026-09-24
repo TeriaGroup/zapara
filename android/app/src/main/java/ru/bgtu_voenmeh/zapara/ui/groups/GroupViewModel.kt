@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import ru.bgtu_voenmeh.zapara.AppContainer
 import ru.bgtu_voenmeh.zapara.data.communities.ChatMessage
 import ru.bgtu_voenmeh.zapara.data.communities.ChatReaction
@@ -32,7 +33,8 @@ internal class GroupRuntime(
     val groupName: suspend () -> String?,
     val openMedia: suspend (GroupMessageUi, ByteArray) -> Boolean = { _, _ -> false },
     val initialCommunityId: String? = null,
-    val initialConversationId: String? = null
+    val initialConversationId: String? = null,
+    val mediaCacheDir: File? = null
 ) {
     companion object {
         fun from(container: AppContainer, initialCommunityId: String? = null, initialConversationId: String? = null) = GroupRuntime(
@@ -43,7 +45,8 @@ internal class GroupRuntime(
             groupName = { readGroupNameOffMain { container.repo.settings().myGroupId } },
             openMedia = { message, bytes -> GroupMediaViewer(container.app).open(message, bytes) },
             initialCommunityId = initialCommunityId,
-            initialConversationId = initialConversationId
+            initialConversationId = initialConversationId,
+            mediaCacheDir = container.app.cacheDir
         )
     }
 }
@@ -67,13 +70,23 @@ internal data class GroupHoldState(val draft: String = "", val replyTo: String? 
 
 internal object GroupMedia {
     const val maxBytes = 8 * 1024 * 1024
-    suspend fun place(api: ru.bgtu_voenmeh.zapara.data.communities.CommunityHttpClient, token: String, conversationId: String, kind: String, name: String, bytes: ByteArray, replyTo: String?): ru.bgtu_voenmeh.zapara.data.communities.ChatMessage {
-        if (kind != "image" && kind != "video" && kind != "file") throw ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.InvalidRequest)
-        if (bytes.isEmpty() || bytes.size > maxBytes) throw ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.PayloadTooLarge)
+    fun extension(kind: String, bytes: ByteArray): String = when {
+        kind == "image" -> ".img"
+        kind == "voice" && bytes.size >= 4 && bytes.take(4) == listOf(0x1A, 0x45, 0xDF, 0xA3).map(Int::toByte) -> ".webm"
+        kind == "voice" && bytes.size >= 4 && bytes.take(4) == "OggS".toByteArray().toList() -> ".ogg"
+        kind == "voice" && bytes.size >= 8 && String(bytes, 4, 4, Charsets.US_ASCII) == "ftyp" -> ".m4a"
+        kind == "voice" -> ".mp3"
+        kind == "circle" && bytes.size >= 4 && bytes.take(4) == listOf(0x1A, 0x45, 0xDF, 0xA3).map(Int::toByte) -> ".webm"
+        else -> ".mp4"
+    }
+    suspend fun place(api: ru.bgtu_voenmeh.zapara.data.communities.CommunityHttpClient, token: String, conversationId: String, kind: String, name: String, bytes: ByteArray, replyTo: String?, durationMs: Int? = null): ru.bgtu_voenmeh.zapara.data.communities.ChatMessage {
+        if (kind !in setOf("image", "video", "file", "voice", "circle")) throw ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.InvalidRequest)
+        if (bytes.isEmpty() || bytes.size > (if (kind == "voice") 2 * 1024 * 1024 else maxBytes)) throw ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.PayloadTooLarge)
+        if (kind in setOf("voice", "circle") && durationMs == null) throw ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.InvalidRequest)
         val clean = name.trim().substringAfterLast('/').substringAfterLast('\\').ifBlank {
-            if (kind == "image") "Фото" else if (kind == "video") "Видео" else "Документ"
+            when (kind) { "image" -> "Фото"; "video" -> "Видео"; "voice" -> "voice.m4a"; "circle" -> "circle.mp4"; else -> "Документ" }
         }
-        return api.sendMedia(token, conversationId, kind, clean, bytes, replyTo)
+        return api.sendMedia(token, conversationId, kind, clean, bytes, replyTo, durationMs)
     }
 }
 
@@ -108,6 +121,7 @@ data class GroupUiState(
     val directs: List<GroupChatUi> = emptyList(),
     val messages: List<GroupMessageUi> = emptyList(),
     val chatTitle: String = "",
+    val activeConversationId: String? = null,
     val draft: String = "",
     val hasHome: Boolean = false,
     val showPeople: Boolean = false,
@@ -119,6 +133,9 @@ data class GroupUiState(
     val attachmentPending: Boolean = false,
     val mediaLoadingId: String? = null,
     val mediaError: Boolean = false,
+    val mediaFiles: Map<String, File> = emptyMap(),
+    val mediaLoadingIds: Set<String> = emptySet(),
+    val mediaFailedIds: Set<String> = emptySet(),
     val replyTo: String? = null,
     val editing: String? = null
 )
@@ -134,7 +151,10 @@ sealed interface GroupEvent {
     data object Send : GroupEvent
     data class Hold(val messageId: String, val action: String) : GroupEvent
     data class React(val messageId: String, val emoji: String) : GroupEvent
-    data class Media(val kind: String, val name: String, val bytes: ByteArray) : GroupEvent
+    data class Media(val kind: String, val name: String, val bytes: ByteArray, val conversationId: String? = null) : GroupEvent
+    data class Recorded(val kind: String, val file: File, val durationMs: Int, val conversationId: String?) : GroupEvent
+    data class LoadMedia(val messageId: String) : GroupEvent
+    data object MediaError : GroupEvent
     data class OpenMedia(val messageId: String) : GroupEvent
     data object People : GroupEvent
     data object Chat : GroupEvent
@@ -154,6 +174,10 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     private var pendingKind: String? = null
     private var pendingName: String = ""
     private var pendingBytes: ByteArray? = null
+    private var pendingDurationMs: Int? = null
+    private val cachedMedia = HashMap<String, File>()
+    private val mediaCacheRoot = runtime.mediaCacheDir?.let { File(it, "group-chat-${java.util.UUID.randomUUID()}") }
+    private val mediaJobs = HashMap<String, Job>()
     private val drafts = HashMap<String, String>()
     private val clock: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM HH:mm").withZone(ZoneId.systemDefault())
 
@@ -175,7 +199,11 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 mutable.value = mutable.value.copy(draft = text)
             }
             GroupEvent.Send -> viewModelScope.launch { send() }
-            is GroupEvent.Media -> attach(event.kind, event.name, event.bytes)
+            is GroupEvent.Media -> if (event.conversationId == null || event.conversationId == conversationId)
+                attach(event.kind, event.name, event.bytes)
+            is GroupEvent.Recorded -> viewModelScope.launch { attachRecorded(event) }
+            is GroupEvent.LoadMedia -> loadMedia(event.messageId)
+            GroupEvent.MediaError -> mutable.value = mutable.value.copy(mediaError = true)
             is GroupEvent.OpenMedia -> openMedia(event.messageId)
             is GroupEvent.Hold -> hold(event.messageId, event.action)
             is GroupEvent.React -> react(event.messageId, event.emoji)
@@ -186,6 +214,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
 
     override fun onCleared() {
         poll?.cancel()
+        mediaJobs.values.forEach { it.cancel() }
+        runCatching { mediaCacheRoot?.deleteRecursively() }
     }
 
     private suspend fun load() {
@@ -283,15 +313,19 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         }
         val ticket = ++generation
         poll?.cancel()
+        mediaJobs.values.forEach { it.cancel() }
+        mediaJobs.clear()
         conversationId = id
         pendingBytes = null
         pendingKind = null
         pendingName = ""
+        pendingDurationMs = null
         mutable.value = mutable.value.copy(
-            chatTitle = title, direct = direct, showPeople = false, messages = emptyList(), hasMore = false,
+            chatTitle = title, activeConversationId = id, direct = direct, showPeople = false, messages = emptyList(), hasMore = false,
             draft = drafts[id].orEmpty(), replyTo = null, editing = null, chatLoading = true, failed = false,
             attachmentPending = false,
-            mediaLoadingId = null, mediaError = false
+            mediaLoadingId = null, mediaError = false,
+            mediaFiles = emptyMap(), mediaLoadingIds = emptySet(), mediaFailedIds = emptySet()
         )
         val api = runtime.client
         if (api == null) {
@@ -390,21 +424,86 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         } catch (_: CommunityClientException) { }
     }
 
-    private fun attach(kind: String, name: String, bytes: ByteArray) {
+    private fun attach(kind: String, name: String, bytes: ByteArray, durationMs: Int? = null) {
         if (conversationId == null || mutable.value.editing != null) return
         if (sending || pendingBytes != null) {
             mutable.value = mutable.value.copy(failed = true)
             return
         }
-        if (bytes.isEmpty() || bytes.size > GroupMedia.maxBytes || (kind != "image" && kind != "video" && kind != "file")) {
+        val maxBytes = if (kind == "voice") 2 * 1024 * 1024 else GroupMedia.maxBytes
+        val maxDuration = if (kind == "voice") 180_000 else 60_000
+        if (bytes.isEmpty() || bytes.size > maxBytes || kind !in setOf("image", "video", "file", "voice", "circle") ||
+            (durationMs != null && (kind !in setOf("voice", "circle") || durationMs !in 1..maxDuration))) {
             mutable.value = mutable.value.copy(failed = true)
             return
         }
         pendingKind = kind
         pendingName = name
         pendingBytes = bytes
+        pendingDurationMs = durationMs
         mutable.value = mutable.value.copy(attachmentPending = true)
         viewModelScope.launch { send() }
+    }
+
+    private suspend fun attachRecorded(event: GroupEvent.Recorded) {
+        try {
+            val id = event.conversationId ?: return
+            val ticket = generation
+            if (!current(ticket, id)) return
+            val bytes = withContext(Dispatchers.IO) {
+                val limit = if (event.kind == "voice") 2L * 1024 * 1024 else 8L * 1024 * 1024
+                if (!event.file.isFile || event.file.length() !in 1L..limit) error("recording_unavailable")
+                event.file.readBytes()
+            }
+            if (!current(ticket, id)) return
+            attach(event.kind, event.file.name, bytes, event.durationMs)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            mutable.value = mutable.value.copy(mediaError = true)
+        } finally {
+            runCatching { event.file.delete() }
+        }
+    }
+
+    private fun loadMedia(messageId: String) {
+        val id = conversationId ?: return
+        val ticket = generation
+        val message = mutable.value.messages.firstOrNull { it.id == messageId } ?: return
+        if (message.deleted || message.kind !in setOf("image", "voice", "circle")) return
+        val existing = cachedMedia[messageId]
+        if (existing?.isFile == true) {
+            if (mutable.value.mediaFiles[messageId] != existing)
+                mutable.value = mutable.value.copy(mediaFiles = mutable.value.mediaFiles + (messageId to existing))
+            return
+        }
+        if (mediaJobs[messageId]?.isActive == true) return
+        val api = runtime.client ?: return
+        val root = mediaCacheRoot ?: return
+        mediaJobs[messageId] = viewModelScope.launch {
+            mutable.value = mutable.value.copy(mediaLoadingIds = mutable.value.mediaLoadingIds + messageId,
+                mediaFailedIds = mutable.value.mediaFailedIds - messageId)
+            try {
+                val token = runtime.accessToken() ?: error("Сессия недоступна")
+                val bytes = withContext(Dispatchers.IO) { api.downloadMedia(token, id, messageId) }
+                if (!current(ticket, id)) return@launch
+                val file = withContext(Dispatchers.IO) {
+                    root.mkdirs()
+                    val extension = GroupMedia.extension(message.kind, bytes)
+                    File(root, messageId + extension).also { it.writeBytes(bytes) }
+                }
+                if (!current(ticket, id)) { file.delete(); return@launch }
+                cachedMedia[messageId] = file
+                mutable.value = mutable.value.copy(mediaFiles = mutable.value.mediaFiles + (messageId to file))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                if (current(ticket, id)) mutable.value = mutable.value.copy(mediaFailedIds = mutable.value.mediaFailedIds + messageId)
+            } finally {
+                if (current(ticket, id)) mediaJobs.remove(messageId)
+                if (current(ticket, id)) mutable.value = mutable.value.copy(mediaLoadingIds = mutable.value.mediaLoadingIds - messageId)
+            }
+        }
     }
 
     private fun openMedia(messageId: String) {
@@ -448,6 +547,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             pendingKind = null
             val name = pendingName
             pendingName = ""
+            val durationMs = pendingDurationMs
+            pendingDurationMs = null
             sending = true
             mutable.value = mutable.value.copy(sending = true)
             try {
@@ -457,7 +558,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                     if (current(ticket, id)) mutable.value = mutable.value.copy(failed = true)
                     return
                 }
-                val saved = GroupMedia.place(api, token, id, fileKind, name, file, mutable.value.replyTo)
+                val saved = GroupMedia.place(api, token, id, fileKind, name, file, mutable.value.replyTo, durationMs)
                 delivered = true
                 if (!current(ticket, id)) return
                 val next = row(saved)
@@ -478,6 +579,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                     pendingBytes = file
                     pendingKind = fileKind
                     pendingName = name
+                    pendingDurationMs = durationMs
                     mutable.value = mutable.value.copy(attachmentPending = true)
                 }
                 sending = false
@@ -563,6 +665,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
 
     private fun leave() {
         poll?.cancel()
+        mediaJobs.values.forEach { it.cancel() }
+        mediaJobs.clear()
         generation++
         if (mutable.value.editing == null && mutable.value.replyTo == null) {
             conversationId?.let { drafts[it] = mutable.value.draft }
@@ -571,11 +675,15 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         pendingBytes = null
         pendingKind = null
         pendingName = ""
+        pendingDurationMs = null
+        cachedMedia.clear()
+        runCatching { mediaCacheRoot?.deleteRecursively() }
         home = null
         mutable.value = mutable.value.copy(
-            hasHome = false, messages = emptyList(), direct = false, failed = false, attachmentPending = false,
+            hasHome = false, messages = emptyList(), activeConversationId = null, direct = false, failed = false, attachmentPending = false,
             showPeople = false, chatLoading = false, draft = "", replyTo = null, editing = null,
-            mediaLoadingId = null, mediaError = false
+            mediaLoadingId = null, mediaError = false,
+            mediaFiles = emptyMap(), mediaLoadingIds = emptySet(), mediaFailedIds = emptySet()
         )
     }
 

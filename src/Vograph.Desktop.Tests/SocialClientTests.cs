@@ -111,4 +111,53 @@ public sealed class SocialClientTests
         await Assert.ThrowsAsync<SocialClientException>(() => client.SendMediaAsync(Access, Conversation, "file", "large.pdf",
             new byte[20 * 1024 * 1024 + 1], ct: TestContext.Current.CancellationToken));
     }
+
+    [Fact]
+    public async Task Voice_and_circle_uploads_use_their_routes_mime_types_and_duration()
+    {
+        using var handler = new AccountClientHandler();
+        using var http = new HttpClient(handler);
+        using var client = new SocialHttpClient(http, Root);
+        var seen = new List<(string Path, string Body)>();
+        handler.Send = async (request, ct) =>
+        {
+            var body = await request.Content!.ReadAsStringAsync(ct);
+            seen.Add((request.RequestUri!.AbsolutePath, body));
+            Assert.Equal(Access, request.Headers.Authorization?.Parameter);
+            var kind = seen.Count == 1 ? "voice" : "circle";
+            return Json(new SocialMessageResponse(Message, Peer, "Друг", kind, null, Message,
+                kind == "voice" ? "voice.m4a" : "circle.mp4", kind == "voice" ? "audio/mp4" : "video/mp4",
+                12, Now, null, null, null, false, false, 1500, []), HttpStatusCode.Created);
+        };
+
+        var voice = await client.SendMediaAsync(Access, Conversation, "voice", "voice.m4a", [1, 2, 3], Message,
+            TestContext.Current.CancellationToken, durationMs: 1500);
+        var circle = await client.SendMediaAsync(Access, Conversation, "circle", "circle.mp4", [4, 5, 6], null,
+            TestContext.Current.CancellationToken, durationMs: 1500);
+
+        Assert.Equal("voice", voice.Kind);
+        Assert.Equal("circle", circle.Kind);
+        Assert.Equal($"/api/v2/social/conversations/{Conversation:D}/voice", seen[0].Path);
+        Assert.Equal($"/api/v2/social/conversations/{Conversation:D}/circles", seen[1].Path);
+        Assert.Contains("audio/mp4", seen[0].Body);
+        Assert.Contains("video/mp4", seen[1].Body);
+        Assert.Contains("name=durationMs", seen[0].Body);
+        Assert.Contains("1500", seen[0].Body);
+        Assert.Contains("name=replyTo", seen[0].Body);
+        Assert.Contains("1500", seen[1].Body);
+    }
+
+    [Fact]
+    public async Task Voice_and_circle_bounds_reject_invalid_media_before_network()
+    {
+        using var handler = new AccountClientHandler();
+        using var http = new HttpClient(handler);
+        using var client = new SocialHttpClient(http, Root);
+        handler.Send = (_, _) => throw new Xunit.Sdk.XunitException("Invalid media reached the server");
+
+        await Assert.ThrowsAsync<SocialClientException>(() => client.SendMediaAsync(Access, Conversation,
+            "voice", "voice.m4a", new byte[2 * 1024 * 1024 + 1], ct: TestContext.Current.CancellationToken, durationMs: 1000));
+        await Assert.ThrowsAsync<SocialClientException>(() => client.SendMediaAsync(Access, Conversation,
+            "circle", "circle.mp4", [1, 2, 3], ct: TestContext.Current.CancellationToken, durationMs: 60_001));
+    }
 }

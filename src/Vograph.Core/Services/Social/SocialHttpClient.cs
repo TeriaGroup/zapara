@@ -60,23 +60,29 @@ public sealed class SocialHttpClient : IDisposable
         => SendAsync<SocialMessageResponse>(HttpMethod.Post, $"conversations/{Id(conversationId)}/messages/{Id(messageId)}/reaction", token, new SocialReactionRequest(emoji), 200, ct);
 
     public async Task<SocialMessageResponse> SendMediaAsync(string token, Guid conversationId, string kind,
-        string fileName, byte[] bytes, Guid? replyTo = null, CancellationToken ct = default)
+        string fileName, byte[] bytes, Guid? replyTo = null, CancellationToken ct = default, int? durationMs = null)
     {
         token = AccountValidation.Token(token, "za_");
-        var limit = kind switch { "image" => 25 * 1024 * 1024, "file" => 20 * 1024 * 1024, _ => 0 };
-        if (limit == 0 || bytes is null || bytes.Length is 0 || bytes.Length > limit || string.IsNullOrWhiteSpace(fileName))
+        var limit = kind switch { "image" => 25 * 1024 * 1024, "file" => 20 * 1024 * 1024,
+            "voice" => 2 * 1024 * 1024, "circle" => 8 * 1024 * 1024, _ => 0 };
+        var maxDuration = kind switch { "voice" => 180_000, "circle" => 60_000, _ => 0 };
+        if (limit == 0 || bytes is null || bytes.Length is 0 || bytes.Length > limit || string.IsNullOrWhiteSpace(fileName)
+            || (maxDuration == 0 && durationMs is not null)
+            || (durationMs is int duration && (duration < 1 || duration > maxDuration)))
             throw new SocialClientException(400);
         var name = Path.GetFileName(fileName.Replace('\\', '/'));
         if (string.IsNullOrWhiteSpace(name)) throw new SocialClientException(400);
+        var route = kind switch { "image" => "images", "file" => "files", "voice" => "voice", _ => "circles" };
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
         using var request = new HttpRequestMessage(HttpMethod.Post,
-            new Uri(Scope.BaseUri, $"api/v2/social/conversations/{Id(conversationId)}/{(kind == "image" ? "images" : "files")}"));
+            new Uri(Scope.BaseUri, $"api/v2/social/conversations/{Id(conversationId)}/{route}"));
         using var form = new MultipartFormDataContent();
         var file = new ByteArrayContent(bytes);
-        file.Headers.ContentType = new("application/octet-stream");
+        file.Headers.ContentType = new(kind switch { "voice" => "audio/mp4", "circle" => "video/mp4", _ => "application/octet-stream" });
         form.Add(file, "file", name);
         if (replyTo is Guid parent) form.Add(new StringContent(Id(parent)), "replyTo");
+        if (durationMs is int ms) form.Add(new StringContent(ms.ToString(System.Globalization.CultureInfo.InvariantCulture)), "durationMs");
         request.Content = form;
         request.Headers.Authorization = new("Bearer", token);
         request.Headers.Accept.ParseAdd("application/json");
@@ -113,7 +119,7 @@ public sealed class SocialHttpClient : IDisposable
         {
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linked.Token).ConfigureAwait(false);
             if ((int)response.StatusCode != 200) throw new SocialClientException((int)response.StatusCode);
-            const int limit = 20 * 1024 * 1024;
+            const int limit = 25 * 1024 * 1024;
             if (response.Content.Headers.ContentLength > limit || response.Content.Headers.ContentEncoding.Count != 0)
                 throw new SocialClientException(0);
             await using var stream = await response.Content.ReadAsStreamAsync(linked.Token).ConfigureAwait(false);

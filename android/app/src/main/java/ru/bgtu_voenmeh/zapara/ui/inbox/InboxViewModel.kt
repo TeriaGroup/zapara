@@ -8,10 +8,16 @@ import kotlinx.coroutines.flow.*
 import ru.bgtu_voenmeh.zapara.AppContainer
 import ru.bgtu_voenmeh.zapara.data.api.UrlConnectionTransport
 import ru.bgtu_voenmeh.zapara.data.social.*
+import java.io.File
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
-data class InboxUiState(val guest: Boolean = false, val loading: Boolean = false, val error: String? = null, val rows: List<InboxRow> = emptyList(), val code: String = "", val incoming: List<SocialInvite> = emptyList(), val outgoing: List<SocialInvite> = emptyList(), val active: InboxRow? = null, val messages: List<SocialMessage> = emptyList(), val hasMore: Boolean = false, val draft: String = "", val inviteCode: String = "", val reply: SocialMessage? = null, val editing: SocialMessage? = null, val userId: String = "")
+data class InboxUiState(val guest: Boolean = false, val loading: Boolean = false, val error: String? = null, val rows: List<InboxRow> = emptyList(), val code: String = "", val incoming: List<SocialInvite> = emptyList(), val outgoing: List<SocialInvite> = emptyList(), val active: InboxRow? = null, val messages: List<SocialMessage> = emptyList(), val hasMore: Boolean = false, val draft: String = "", val inviteCode: String = "", val reply: SocialMessage? = null, val editing: SocialMessage? = null, val userId: String = "", val mediaFiles: Map<String, File> = emptyMap(), val mediaLoading: Set<String> = emptySet(), val mediaErrors: Set<String> = emptySet())
 sealed interface InboxEvent {
-    data class Upload(val uri: android.net.Uri) : InboxEvent
+    data class Upload(val conversationId: String, val uri: android.net.Uri) : InboxEvent
+    data class UploadRecorded(val conversationId: String, val kind: String, val file: File, val durationMs: Int) : InboxEvent
+    data class LoadMedia(val message: SocialMessage) : InboxEvent
+    data class LocalError(val message: String) : InboxEvent
     data class Save(val message: SocialMessage, val uri: android.net.Uri) : InboxEvent
     data object Refresh : InboxEvent
     data object Back : InboxEvent
@@ -33,17 +39,30 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
     private val mutable = MutableStateFlow(InboxUiState(guest = container.profile.isGuest, userId = container.profile.userId.orEmpty()))
     val state: StateFlow<InboxUiState> = mutable.asStateFlow()
     private var operation: Job? = null
+    private val mediaJobs = ConcurrentHashMap<String, Job>()
+    private val mediaDirectory = File(container.app.cacheDir, "personal-chat-${UUID.randomUUID()}")
     private var generation = 0
     init { onEvent(InboxEvent.Refresh) }
     fun onEvent(event: InboxEvent) {
         when(event) {
+            is InboxEvent.LocalError -> mutable.update { it.copy(error = event.message) }
+            is InboxEvent.LoadMedia -> loadMedia(event.message)
+            is InboxEvent.Upload -> if (state.value.active?.id == event.conversationId) execute(event)
+            is InboxEvent.UploadRecorded -> {
+                if (state.value.active?.id != event.conversationId) {
+                    event.file.delete()
+                } else if (state.value.guest || operation?.isActive == true) {
+                    event.file.delete()
+                    mutable.update { it.copy(error = "Дождитесь завершения предыдущей отправки") }
+                } else execute(event)
+            }
             is InboxEvent.Draft -> mutable.update { it.copy(draft = event.value.take(4000)) }
             is InboxEvent.Code -> mutable.update { it.copy(inviteCode = event.value.take(64)) }
             is InboxEvent.Reply -> mutable.update { it.copy(reply = event.message, editing = null) }
             is InboxEvent.Edit -> mutable.update { it.copy(editing = event.message, reply = null, draft = event.message.body.orEmpty()) }
             InboxEvent.CancelCompose -> mutable.update { it.copy(editing = null, reply = null, draft = if (it.editing != null) "" else it.draft) }
-            InboxEvent.Back -> { generation++; operation?.cancel(); mutable.update { it.copy(active = null, messages = emptyList(), draft = "", reply = null, editing = null, loading = false) }; onEvent(InboxEvent.Refresh) }
-            is InboxEvent.Open -> { generation++; operation?.cancel(); mutable.update { it.copy(active = event.row, messages = emptyList(), draft = "", reply = null, editing = null, loading = false) }; onEvent(InboxEvent.Refresh) }
+            InboxEvent.Back -> { generation++; operation?.cancel(); cancelMediaLoads(); mutable.update { it.copy(active = null, messages = emptyList(), draft = "", reply = null, editing = null, loading = false, mediaLoading = emptySet()) }; onEvent(InboxEvent.Refresh) }
+            is InboxEvent.Open -> { generation++; operation?.cancel(); cancelMediaLoads(); mutable.update { it.copy(active = event.row, messages = emptyList(), draft = "", reply = null, editing = null, loading = false, mediaLoading = emptySet()) }; onEvent(InboxEvent.Refresh) }
             else -> execute(event)
         }
     }
@@ -58,7 +77,7 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                 withContext(Dispatchers.IO) {
                     val token = container.accessToken() ?: throw SocialFailure(401)
                     when(event) {
-                        is InboxEvent.Upload -> snapshot.active?.let { row ->
+                        is InboxEvent.Upload -> snapshot.active?.takeIf { it.id == event.conversationId }?.let { row ->
                             val resolver = container.app.contentResolver
                             val name = resolver.query(event.uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null } ?: "document"
                             val bytes = resolver.openInputStream(event.uri)?.use { input ->
@@ -74,6 +93,16 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                         is InboxEvent.Save -> {
                             val bytes = api.download(token, event.message.attachmentId ?: error("Нет вложения"))
                             container.app.contentResolver.openOutputStream(event.uri)?.use { it.write(bytes) } ?: error("Не удалось сохранить")
+                        }
+                        is InboxEvent.UploadRecorded -> snapshot.active?.takeIf { it.id == event.conversationId }?.let { row ->
+                            try {
+                                val cap = if (event.kind == "voice") 2 * 1024 * 1024 else 8 * 1024 * 1024
+                                require(event.file.length() in 1..cap.toLong())
+                                val bytes = event.file.readBytes()
+                                publishMessage(started, row.id, api.uploadRecording(token, row.id, event.kind, bytes, event.durationMs, snapshot.reply?.id)) {
+                                    it.copy(reply = if (it.reply?.id == snapshot.reply?.id) null else it.reply)
+                                }
+                            } finally { event.file.delete() }
                         }
                         InboxEvent.Invite -> {
                             api.invite(token, snapshot.inviteCode)
@@ -130,8 +159,16 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                     }
                 }
             } catch (cancel: CancellationException) { throw cancel }
-            catch (e: Exception) { if (generation == started) mutable.update { it.copy(error = if (e is SocialFailure && e.status == 401) "Сессия истекла. Войдите в аккаунт снова." else "Не удалось обновить чаты. Проверьте подключение и повторите.") } }
-            finally { if (generation == started) mutable.update { it.copy(loading = false) } }
+            catch (e: Exception) { if (generation == started) mutable.update { it.copy(error = when {
+                e is SocialFailure && e.status == 401 -> "Сессия истекла. Войдите в аккаунт снова."
+                e is SocialFailure && e.status == 413 -> "Вложение превышает допустимый размер"
+                event is InboxEvent.UploadRecorded -> "Не удалось отправить запись. Проверьте подключение и повторите."
+                else -> "Не удалось обновить чаты. Проверьте подключение и повторите."
+            }) } }
+            finally {
+                if (event is InboxEvent.UploadRecorded) event.file.delete()
+                if (generation == started) mutable.update { it.copy(loading = false) }
+            }
         }
     }
     private suspend fun publishMessage(started: Int, conversationId: String, message: SocialMessage,
@@ -142,6 +179,59 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
     private fun merge(a: List<SocialMessage>, b: List<SocialMessage>) = (a + b).associateBy { it.id }.values.sortedBy { it.createdAt }
+    private fun loadMedia(message: SocialMessage) {
+        val attachment = message.attachmentId ?: return
+        if (message.deleted || message.kind !in setOf("image", "voice", "circle")) return
+        if (state.value.mediaFiles[attachment]?.isFile == true || mediaJobs[attachment]?.isActive == true) return
+        val api = social ?: return
+        mutable.update { it.copy(mediaLoading = it.mediaLoading + attachment, mediaErrors = it.mediaErrors - attachment) }
+        mediaJobs[attachment] = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val token = container.accessToken() ?: throw SocialFailure(401)
+                val bytes = api.download(token, attachment)
+                ensureActive()
+                val cap = when (message.kind) { "voice" -> 2 * 1024 * 1024; "circle" -> 8 * 1024 * 1024; else -> 20 * 1024 * 1024 }
+                require(bytes.isNotEmpty() && bytes.size <= cap)
+                if (!mediaDirectory.isDirectory && !mediaDirectory.mkdirs()) error("Нет места для вложения")
+                val suffix = when (message.kind) {
+                    "voice" -> if (message.fileName?.endsWith(".webm", true) == true) ".webm" else if (message.fileName?.endsWith(".ogg", true) == true) ".ogg" else ".m4a"
+                    "circle" -> if (message.fileName?.endsWith(".webm", true) == true) ".webm" else ".mp4"
+                    else -> ".image"
+                }
+                val destination = File(mediaDirectory, "$attachment$suffix")
+                val temporary = File.createTempFile("media-", ".tmp", mediaDirectory)
+                try {
+                    temporary.writeBytes(bytes)
+                    ensureActive()
+                    if (!temporary.renameTo(destination)) error("Не удалось сохранить вложение")
+                } finally { temporary.delete() }
+                withContext(Dispatchers.Main.immediate) {
+                    mutable.update { current ->
+                        val next = current.mediaFiles + (attachment to destination)
+                        val ordered = next.entries.sortedByDescending { it.value.lastModified() }
+                        var total = 0L
+                        val kept = ordered.filter { entry ->
+                            val keep = total + entry.value.length() <= 64L * 1024 * 1024 && total >= 0 && ordered.indexOf(entry) < 32
+                            if (keep) total += entry.value.length() else entry.value.delete()
+                            keep
+                        }.associate { it.key to it.value }
+                        current.copy(mediaFiles = kept, mediaLoading = current.mediaLoading - attachment, mediaErrors = current.mediaErrors - attachment)
+                    }
+                }
+            } catch (cancel: CancellationException) { throw cancel }
+            catch (_: Exception) { mutable.update { it.copy(mediaLoading = it.mediaLoading - attachment, mediaErrors = it.mediaErrors + attachment) } }
+            finally { coroutineContext[Job]?.let { mediaJobs.remove(attachment, it) } }
+        }
+    }
+    private fun cancelMediaLoads() {
+        mediaJobs.values.forEach { it.cancel() }
+        mediaJobs.clear()
+    }
+    override fun onCleared() {
+        cancelMediaLoads()
+        mediaDirectory.deleteRecursively()
+        super.onCleared()
+    }
     companion object {
         fun factory(container: AppContainer): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = InboxViewModel(container) as T

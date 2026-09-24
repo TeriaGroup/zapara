@@ -162,7 +162,7 @@ internal sealed partial class CommunityRepository
     {
         await RequireConversationAsync(conversationId);
         var message = await ReadOneAsync(conversationId, messageId);
-        if (message.Deleted || message.Kind is not ("image" or "video" or "file")) throw CommunityServiceException.NotFound();
+        if (message.Deleted || message.Kind is not ("image" or "video" or "file" or "voice" or "circle")) throw CommunityServiceException.NotFound();
         return message;
     }
 
