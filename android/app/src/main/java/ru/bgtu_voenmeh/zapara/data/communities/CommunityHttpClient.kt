@@ -473,6 +473,17 @@ class CommunityHttpClient(
         if (kind !in setOf("text", "image", "video", "file", "voice", "circle")) throw JsonFail()
         val deleted = if ("deleted" in obj.fields) obj.bool("deleted") else false
         val reply = if ("replyTo" in obj.fields && obj.field("replyTo") !is JsonValue.Null) CommunityValidation.id(obj.text("replyTo", 36)) else null
+        val reactions = when (val value = obj.fields["reactions"]) {
+            null -> emptyList()
+            is JsonValue.Arr -> value.items.map { item ->
+                val reaction = item.obj()
+                val emoji = reaction.text("emoji", 16)
+                val count = reaction.int("count")
+                if (emoji !in setOf("like", "heart", "laugh", "wow", "sad") || count < 1) throw JsonFail()
+                ChatReaction(emoji, count, reaction.bool("mine"))
+            }
+            else -> throw JsonFail()
+        }
         return ChatMessage(
             CommunityValidation.id(obj.text("messageId", 36)),
             CommunityValidation.id(obj.text("conversationId", 36)),
@@ -482,7 +493,8 @@ class CommunityHttpClient(
             CommunityUtc.parse(obj.text("createdAt", 40)),
             kind,
             deleted,
-            reply
+            reply,
+            reactions
         )
     }
 

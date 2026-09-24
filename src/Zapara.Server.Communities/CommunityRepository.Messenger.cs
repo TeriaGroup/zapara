@@ -120,6 +120,7 @@ internal sealed partial class CommunityRepository
         await using (var reader = await command.ExecuteReaderAsync(ct))
             while (await reader.ReadAsync(ct))
                 list.Add(ReadMessage(reader));
+        list = await WithReactionsAsync(list);
         var hasMore = list.Count > PageSize;
         if (hasMore) list.RemoveAt(list.Count - 1);
         if (order == "DESC") list.Reverse();
@@ -173,6 +174,7 @@ internal sealed partial class CommunityRepository
             WHERE message_id=@p0 AND conversation_id=@p1 AND sender_id=@p2 AND deleted=false
             """, messageId, conversationId, UserId))
             if (await command.ExecuteNonQueryAsync(ct) != 1) throw CommunityServiceException.InvalidRequest();
+        await ExecuteAsync($"DELETE FROM {Msg}.chat_reactions WHERE message_id=@p0", messageId);
         return await ReadOneAsync(conversationId, messageId);
     }
 
@@ -180,11 +182,18 @@ internal sealed partial class CommunityRepository
     {
         if (emoji is not ("like" or "heart" or "laugh" or "wow" or "sad")) throw CommunityServiceException.InvalidRequest();
         await RequireConversationAsync(conversationId);
-        if (await MessageNoAsync(conversationId, messageId) is null) throw CommunityServiceException.InvalidRequest();
-        await ExecuteAsync($"""
-            INSERT INTO {Msg}.chat_reactions(message_id,user_id,emoji) VALUES(@p0,@p1,@p2)
-            ON CONFLICT (message_id, user_id) DO UPDATE SET emoji=EXCLUDED.emoji
-            """, messageId, UserId, emoji);
+        if (!await ExistsAsync($"SELECT 1 FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND message_id=@p1 AND deleted=false", conversationId, messageId))
+            throw CommunityServiceException.InvalidRequest();
+        string? existing;
+        await using (var current = Command($"SELECT emoji FROM {Msg}.chat_reactions WHERE message_id=@p0 AND user_id=@p1 FOR UPDATE", messageId, UserId))
+            existing = await current.ExecuteScalarAsync(ct) as string;
+        if (existing == emoji)
+            await ExecuteAsync($"DELETE FROM {Msg}.chat_reactions WHERE message_id=@p0 AND user_id=@p1", messageId, UserId);
+        else
+            await ExecuteAsync($"""
+                INSERT INTO {Msg}.chat_reactions(message_id,user_id,emoji) VALUES(@p0,@p1,@p2)
+                ON CONFLICT (message_id, user_id) DO UPDATE SET emoji=EXCLUDED.emoji
+                """, messageId, UserId, emoji);
         return await ReadOneAsync(conversationId, messageId);
     }
 
@@ -360,7 +369,33 @@ internal sealed partial class CommunityRepository
             """, conversationId, messageId);
         await using var reader = await command.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) throw CommunityServiceException.NotFound();
-        return ReadMessage(reader);
+        var message = ReadMessage(reader);
+        await reader.DisposeAsync();
+        return (await WithReactionsAsync([message]))[0];
+    }
+
+    private async Task<List<ChatMessageResponse>> WithReactionsAsync(List<ChatMessageResponse> messages)
+    {
+        var ids = messages.Where(message => !message.Deleted).Select(message => message.MessageId).ToArray();
+        if (ids.Length == 0) return messages;
+        var summaries = new Dictionary<Guid, List<ChatReactionSummary>>();
+        await using var command = Command($"""
+            SELECT message_id, emoji, count(*)::int, bool_or(user_id=@p1)
+            FROM {Msg}.chat_reactions WHERE message_id=ANY(@p0)
+            GROUP BY message_id, emoji ORDER BY emoji
+            """, ids, UserId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var id = reader.GetGuid(0);
+            if (!summaries.TryGetValue(id, out var entries)) summaries[id] = entries = [];
+            entries.Add(new(reader.GetString(1), reader.GetInt32(2), reader.GetBoolean(3)));
+        }
+        return messages.Select(message => message with
+        {
+            Reactions = !message.Deleted && summaries.TryGetValue(message.MessageId, out var entries)
+                ? entries : []
+        }).ToList();
     }
 
     private static string Clean(string body)

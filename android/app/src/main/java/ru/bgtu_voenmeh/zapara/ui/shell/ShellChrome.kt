@@ -146,7 +146,7 @@ fun ZBottomBar(
 ) {
     val c = Zapara.colors
     val motion = Zapara.motion
-    val activeIndex = if (sectionsActive) 3 else Section.bar.indexOf(current).coerceAtLeast(0)
+    val activeIndex = if (sectionsActive) Section.bar.size else Section.bar.indexOf(current).coerceAtLeast(0)
     val labels = Section.bar.map { stringResource(it.title) } + stringResource(R.string.nav_sections)
     val textMeasurer = rememberTextMeasurer()
     val short = LocalConfiguration.current.screenHeightDp < 560
@@ -162,13 +162,13 @@ fun ZBottomBar(
             val labelWidths = labels.map { textMeasurer.measure(AnnotatedString(it), Zapara.typography.caption).size.width }
             val inlineWidths = labelWidths.map { with(density) { it.toDp() } + 22.dp + Zapara.space.s + Zapara.space.l }
             val inline = short && maxWidth > LocalConfiguration.current.screenHeightDp.dp &&
-                inlineWidths.maxOrNull()!! <= maxWidth / 4
-            val columns = if (!inline && density.fontScale >= 1.5f) 2 else 4
+                inlineWidths.maxOrNull()!! <= maxWidth / (Section.bar.size + 1)
+            val columns = if (!inline && density.fontScale >= 1.5f) 2 else Section.bar.size + 1
             val cell = maxWidth / columns
             val target = cell * (activeIndex % columns) + (cell - 18.dp) / 2
             val offsetX by animateDpAsState(targetValue = target, animationSpec = tween(motion.ms(Durations.indicator), easing = ZaparaEase), label = "indicator")
             Column {
-                (0..3).toList().chunked(columns).forEach { row ->
+                (0..Section.bar.size).toList().chunked(columns).forEach { row ->
                     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                         row.forEach { index ->
                             val section = Section.bar.getOrNull(index)

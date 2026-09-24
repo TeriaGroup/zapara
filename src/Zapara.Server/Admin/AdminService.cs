@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Npgsql;
 using Zapara.Contracts.Communities;
 using Zapara.Server.Accounts;
+using Zapara.Server.Communities;
 
 namespace Zapara.Server.Admin;
 
@@ -147,6 +148,7 @@ public sealed class AdminWork(NpgsqlConnection connection, NpgsqlTransaction tx,
             ON CONFLICT (community_id,user_id) DO UPDATE
             SET role=@p2, status='active', revoked_at=NULL
             """, communityId, targetUserId, role, now);
+        await GroupConversationMembership.EnsureAsync(connection, tx, configuration.Communities, communityId, now, ct);
         await Exec($"""
             UPDATE {Com}.staff_assignments SET revoked_at=@p0
             WHERE community_id=@p1 AND user_id=@p2 AND revoked_at IS NULL
@@ -208,6 +210,7 @@ public sealed class AdminWork(NpgsqlConnection connection, NpgsqlTransaction tx,
                 SET role='member', status='active', revoked_at=NULL
                 WHERE m.status='revoked'
                 """, communityId, target, now);
+            await GroupConversationMembership.EnsureAsync(connection, tx, configuration.Communities, communityId, now, ct);
         }
         await CommunityAudit(communityId, accepted ? "join_accepted" : "join_rejected", "join_request", requestId);
         await Audit(accepted ? "join_accepted" : "join_rejected", "join_request", requestId.ToString("D"));

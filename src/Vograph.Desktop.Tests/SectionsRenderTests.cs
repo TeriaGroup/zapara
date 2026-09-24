@@ -58,6 +58,7 @@ public class SectionsRenderTests : UiTest
             [SectionKey.Homework] = vm => ((HomeworkViewModel)vm).Groups.Count > 0,
             [SectionKey.Community] = vm => ((CommunitiesViewModel)vm).NeedAccount,
             [SectionKey.Group] = vm => ((Vograph.Desktop.Features.Groups.GroupViewModel)vm).NeedAccount,
+            [SectionKey.Chat] = vm => ((Vograph.Desktop.Features.Chat.ChatInboxViewModel)vm).NeedAccount,
             [SectionKey.Settings] = vm => ((SettingsViewModel)vm).GroupName == "А863С",
         };
         foreach (var key in Enum.GetValues<SectionKey>())

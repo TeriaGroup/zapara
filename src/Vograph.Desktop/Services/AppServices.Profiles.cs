@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Vograph.Core.Services.Communities;
+using Vograph.Core.Services.Social;
 using Vograph.Desktop.Services.Profiles;
 
 namespace Vograph.Desktop.Services;
@@ -8,6 +9,16 @@ public sealed partial class AppServices
 {
     internal CommunityHttpClient? Communities { get; private set; }
     internal Func<CancellationToken, Task<string?>>? CommunityAccess { get; private set; }
+    internal SocialHttpClient? Social { get; private set; }
+    internal Func<CancellationToken, Task<string?>>? SocialAccess { get; private set; }
+
+    internal void UseSocial(SocialHttpClient client, Func<CancellationToken, Task<string?>> access)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(access);
+        Social = client;
+        SocialAccess = access;
+    }
 
     internal void UseCommunities(CommunityHttpClient client, Func<CancellationToken, Task<string?>> access)
     {

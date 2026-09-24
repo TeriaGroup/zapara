@@ -2,6 +2,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using Vograph.Core.Services.Accounts;
 using Vograph.Core.Services.Communities;
+using Vograph.Core.Services.Social;
 using Vograph.Core.Services.Sync;
 using Vograph.Desktop.Services.Accounts;
 using Vograph.Desktop.Services.Profiles;
@@ -14,6 +15,7 @@ public partial class App
     private ProfileRoot? startedRoot;
     private AccountHttpClient? accountClient;
     private CommunityHttpClient? communityClient;
+    private SocialHttpClient? socialClient;
     private AccountSessionManager? accountSessions;
     private bool exitReady, exitPending;
 
@@ -25,6 +27,7 @@ public partial class App
         {
             accountClient = AccountHttpClient.CreateOwned(new Uri(url));
             communityClient = CommunityHttpClient.CreateOwned(accountClient.Scope.BaseUri);
+            socialClient = SocialHttpClient.CreateOwned(accountClient.Scope.BaseUri);
             var root = CurrentRoot!;
             var vaultRoot = Path.Combine(root.Services.DataDir, "credentials");
             Directory.CreateDirectory(vaultRoot);
@@ -61,6 +64,7 @@ public partial class App
                     await Profiles.RemoteLogouts;
                     accountClient.Dispose();
                     communityClient?.Dispose();
+                    socialClient?.Dispose();
                     exitReady = true;
                     desktop.Shutdown();
                 }
@@ -77,6 +81,7 @@ public partial class App
         {
             accountClient?.Dispose();
             communityClient?.Dispose();
+            socialClient?.Dispose();
             Services!.Log.Warn("account configuration unavailable: " + ex.GetType().Name);
             // No fabricated production endpoint and no credential fallback. Guest remains usable.
         }
@@ -87,20 +92,22 @@ public partial class App
         var root = Profiles?.Current ?? CurrentRoot;
         if (root is null || ReferenceEquals(root, startedRoot) || !root.Services.Work.IsAccepting) return;
         startedRoot = root;
-        StartCurrentProfile(root, accountClient, accountSessions, communities: communityClient);
+        StartCurrentProfile(root, accountClient, accountSessions, communities: communityClient, social: socialClient);
         root.Services.Work.Post(a => Dispatcher.UIThread.Post(a), () => root.Shell.StartAsync(root.Services.AllowNetwork),
             ex => root.Services.Log.Error("profile startup callback", ex));
     }
 
     /// <summary>Guest may start LAN. Account never does; it attaches private sync with the vault session instead.</summary>
     internal static void StartCurrentProfile(ProfileRoot root, AccountHttpClient? accounts, AccountSessionManager? sessions,
-        Func<Uri, PrivateSyncHttpClient>? syncHttp = null, CommunityHttpClient? communities = null)
+        Func<Uri, PrivateSyncHttpClient>? syncHttp = null, CommunityHttpClient? communities = null, SocialHttpClient? social = null)
     {
         if (!root.Services.Profile.IsGuest && communities is not null && sessions is not null)
         {
             root.Services.UseCommunities(communities, async ct => (await sessions.GetValidSessionAsync(ct).ConfigureAwait(false)).AccessToken);
             root.Shell.ReloadAccountSections();
         }
+        if (!root.Services.Profile.IsGuest && social is not null && sessions is not null)
+            root.Services.UseSocial(social, async ct => (await sessions.GetValidSessionAsync(ct).ConfigureAwait(false)).AccessToken);
         root.Services.NotificationScheduler.Start();
         if (root.Services.Profile.IsGuest && root.Services.Prefs.LanSync)
         {

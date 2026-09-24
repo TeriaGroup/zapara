@@ -17,6 +17,7 @@ enum class Section(
     Schedule("schedule", R.string.nav_schedule, R.drawable.ic_calendar, "Nav.Schedule", true),
     Maps("maps", R.string.nav_maps, R.drawable.ic_map, "Nav.Maps", true),
     Homework("homework", R.string.nav_homework, R.drawable.ic_homework, "Nav.Homework", true),
+    Chat("chat", R.string.nav_chat, R.drawable.ic_chat, "Nav.Chat", true),
     Week("week", R.string.nav_week, R.drawable.ic_week, "Sections.Week", false),
     Summary("summary", R.string.nav_summary, R.drawable.ic_summary, "Sections.Summary", false),
     Teachers("teachers", R.string.nav_teachers, R.drawable.ic_teachers, "Sections.Teachers", false),
@@ -28,6 +29,7 @@ enum class Section(
     val pattern: String get() = when (this) {
         Schedule -> "schedule?date={date}"
         Maps -> "maps?room={room}"
+        Group -> "group?communityId={communityId}&conversationId={conversationId}"
         else -> route
     }
 
@@ -39,10 +41,12 @@ enum class Section(
     }
 }
 
-fun NavHostController.openSection(section: Section, arg: String? = null) {
+fun NavHostController.openSection(section: Section, arg: String? = null, conversationId: String? = null) {
     val dest = when {
         section == Section.Schedule && arg != null -> "schedule?date=$arg"
         section == Section.Maps && arg != null -> "maps?room=${Uri.encode(arg)}"
+        section == Section.Group && arg != null -> "group?communityId=${Uri.encode(arg)}" +
+            (conversationId?.let { "&conversationId=${Uri.encode(it)}" } ?: "")
         else -> section.route
     }
     navigate(dest) {

@@ -27,8 +27,10 @@ class ShellContractTest {
         assertTrue(app.contains("CommunitiesViewModel.factory(container)"))
         assertTrue(app.contains("CommunitiesSection("))
         assertTrue(File(root, "ui/communities/CommunitiesViewModel.kt").isFile)
-        assertTrue(app.contains("Section.Group.route"))
-        assertTrue(app.contains("GroupViewModel.factory(container)"))
+        assertTrue(app.contains("Section.Group.pattern"))
+        assertTrue(app.contains("InboxViewModel.factory(container)"))
+        assertTrue(app.contains("InboxSection("))
+        assertTrue(app.contains("GroupViewModel.factory(container, communityId, conversationId)"))
         assertTrue(app.contains("GroupSection("))
         assertTrue(File(root, "ui/groups/GroupViewModel.kt").isFile)
     }

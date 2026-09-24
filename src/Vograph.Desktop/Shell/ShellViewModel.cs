@@ -51,6 +51,7 @@ public sealed partial class ShellViewModel : ViewModelBase
             Make(SectionKey.Homework, "navHomework", "Icon.Homework", "Ctrl+7"),
             Make(SectionKey.Community, "navCommunity", "Icon.Community", "Ctrl+9"),
             Make(SectionKey.Group, "navGroup", "Icon.Chat", "Ctrl+0"),
+            Make(SectionKey.Chat, "navChat", "Icon.Chat", ""),
         };
         SettingsSection = Make(SectionKey.Settings, "navSettings", "Icon.Settings", "Ctrl+8");
 
@@ -65,6 +66,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         Register(SectionKey.Homework, () => new Features.Homeworks.HomeworkViewModel(App, this));
         Register(SectionKey.Community, () => new Features.Communities.CommunitiesViewModel(App, App.Communities, App.CommunityAccess));
         Register(SectionKey.Group, () => new Features.Groups.GroupViewModel(App));
+        Register(SectionKey.Chat, () => new Features.Chat.ChatInboxViewModel(App, this));
         Register(SectionKey.Settings, () => new Features.Preferences.SettingsViewModel(App, this));
 
         _sidebarCollapsed = app.Prefs.SidebarCollapsed;
@@ -733,7 +735,7 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// <summary>Group and community view models may have been created while the session client was still null.</summary>
     internal void ReloadAccountSections()
     {
-        if (CanPublish && Current is Features.Communities.CommunitiesViewModel or Features.Groups.GroupViewModel)
+        if (CanPublish && Current is Features.Communities.CommunitiesViewModel or Features.Groups.GroupViewModel or Features.Chat.ChatInboxViewModel)
             _ = Current.ActivateAsync();
     }
 }

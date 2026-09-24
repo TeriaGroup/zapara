@@ -21,10 +21,10 @@ public sealed class MessengerHoldTests
         var row = new GroupMessageRow(Guid.NewGuid(), "Аня", "текст", "сейчас", true, "text", false, called.Add);
         var box = new HoldBox { DataContext = row };
         box.Choose("reply");
-        box.Choose("reaction");
+        box.Choose("reaction:heart");
         box.Choose("edit");
         box.Choose("delete");
-        Assert.Equal(["reply", "reaction", "edit", "delete"], called);
+        Assert.Equal(["reply", "reaction:heart", "edit", "delete"], called);
         var photo = new GroupMessageRow(Guid.NewGuid(), "Аня", "фото", "сейчас", true, "image", false, called.Add);
         Assert.Equal("Фото", photo.Display);
         var media = new HoldBox { DataContext = photo };

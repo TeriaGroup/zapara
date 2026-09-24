@@ -43,6 +43,8 @@ import ru.bgtu_voenmeh.zapara.ui.communities.CommunitiesSection
 import ru.bgtu_voenmeh.zapara.ui.communities.CommunitiesViewModel
 import ru.bgtu_voenmeh.zapara.ui.groups.GroupSection
 import ru.bgtu_voenmeh.zapara.ui.groups.GroupViewModel
+import ru.bgtu_voenmeh.zapara.ui.inbox.InboxSection
+import ru.bgtu_voenmeh.zapara.ui.inbox.InboxViewModel
 import ru.bgtu_voenmeh.zapara.ui.components.ToastHost
 import ru.bgtu_voenmeh.zapara.ui.friends.FriendsSection
 import ru.bgtu_voenmeh.zapara.ui.friends.FriendsViewModel
@@ -106,6 +108,7 @@ private fun ZaparaAppBody(
         val nav = rememberNavController()
         val entry by nav.currentBackStackEntryAsState()
         val current = Section.byRoute(entry?.destination?.route) ?: Section.Schedule
+        val barCurrent = if (current == Section.Group && !entry?.arguments?.getString("communityId").isNullOrBlank()) Section.Chat else current
         LaunchedEffect(launch?.id) {
             launch?.let {
                 nav.openSection(it.section, it.argument)
@@ -134,8 +137,8 @@ private fun ZaparaAppBody(
                     containerColor = Zapara.colors.canvas,
                     bottomBar = {
                         ZBottomBar(
-                            current = current,
-                            sectionsActive = current !in Section.bar || state.overlay == ShellOverlay.Sections,
+                            current = barCurrent,
+                            sectionsActive = barCurrent !in Section.bar || state.overlay == ShellOverlay.Sections,
                             homeworkBadge = state.homeworkBadge,
                             updateBadge = update.hasUpdate,
                             onSection = {
@@ -228,9 +231,23 @@ private fun ZaparaAppBody(
                                 CommunitiesSection(s, vm::onEvent)
                                 }
                             }
-                            composable(Section.Group.route) {
+                            composable(Section.Chat.route) {
                                 ProvideSectionEntry {
-                                val vm: GroupViewModel = viewModel(factory = GroupViewModel.factory(container))
+                                val vm: InboxViewModel = viewModel(factory = InboxViewModel.factory(container))
+                                val s by vm.state.collectAsStateWithLifecycle()
+                                InboxSection(s, vm::onEvent, onOpenGroup = { communityId, conversationId ->
+                                    nav.openSection(Section.Group, communityId, conversationId)
+                                })
+                                }
+                            }
+                            composable(Section.Group.pattern, arguments = listOf(
+                                navArgument("communityId") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                navArgument("conversationId") { type = NavType.StringType; nullable = true; defaultValue = null }
+                            )) { dest ->
+                                ProvideSectionEntry {
+                                val communityId = dest.arguments?.getString("communityId")?.takeIf { it.isNotBlank() }
+                                val conversationId = dest.arguments?.getString("conversationId")?.takeIf { it.isNotBlank() }
+                                val vm: GroupViewModel = viewModel(factory = GroupViewModel.factory(container, communityId, conversationId))
                                 val s by vm.state.collectAsStateWithLifecycle()
                                 GroupSection(s, vm::onEvent)
                                 }

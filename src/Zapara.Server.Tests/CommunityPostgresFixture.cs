@@ -33,7 +33,11 @@ public sealed class CommunityPostgresFixture : IAsyncDisposable
         {
             await db.Accounts.ExecuteAsync($"CREATE SCHEMA {db.QuotedSchema}");
             Console.WriteLine($"CREATE {db.Schema}");
-            if (initialize) await db.Migrations.EnsureAsync(TestContext.Current.CancellationToken);
+            if (initialize)
+            {
+                await db.Migrations.EnsureAsync(TestContext.Current.CancellationToken);
+                await MessengerSchema.EnsureAsync(db.Accounts.DataSource, db.Configuration, TestContext.Current.CancellationToken);
+            }
             return db;
         }
         catch { await db.DisposeAsync(); throw; }

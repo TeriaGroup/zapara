@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package ru.bgtu_voenmeh.zapara.ui.groups
 
@@ -18,6 +18,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -246,7 +247,8 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
                 }
             }
             items(state.messages, key = { it.id }) { message ->
-                MessageBubble(message, state.mediaLoadingId == message.id, onEvent)
+                MessageBubble(message, state.messages.firstOrNull { it.id == message.replyTo }?.body,
+                    state.mediaLoadingId == message.id, onEvent)
             }
         }
     }
@@ -261,11 +263,21 @@ private fun messageLabel(message: GroupMessageUi): String = when {
     else -> message.body
 }
 
+private fun reactionEmoji(code: String): String = when (code) {
+    "like" -> "👍"
+    "heart" -> "❤️"
+    "laugh" -> "😂"
+    "wow" -> "😮"
+    "sad" -> "😢"
+    else -> code
+}
+
 @Composable
-private fun MessageBubble(message: GroupMessageUi, mediaLoading: Boolean, onEvent: (GroupEvent) -> Unit) {
+private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaLoading: Boolean, onEvent: (GroupEvent) -> Unit) {
     val c = Zapara.colors
     val mine = message.mine
     var menu by remember(message.id) { mutableStateOf(false) }
+    var reactionPicker by remember(message.id) { mutableStateOf(false) }
     val actions = HoldDecision.actions(message.kind, mine, message.deleted, menu)
     Column(
         Modifier.fillMaxWidth().testTag("Group.Author.${message.id}"),
@@ -293,6 +305,9 @@ private fun MessageBubble(message: GroupMessageUi, mediaLoading: Boolean, onEven
                 Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
                 verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)
             ) {
+                if (message.replyTo != null) Text("↳ ${replyPreview?.take(80) ?: "Сообщение"}",
+                    style = Zapara.typography.caption, color = if (mine) c.onAccent else c.text2,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(if (mediaLoading) stringResource(R.string.group_media_loading) else messageLabel(message), style = Zapara.typography.body)
                 Text(
                     message.time,
@@ -300,6 +315,13 @@ private fun MessageBubble(message: GroupMessageUi, mediaLoading: Boolean, onEven
                     color = if (mine) c.onAccent.copy(alpha = 0.72f) else c.text2,
                     modifier = Modifier.align(Alignment.End)
                 )
+            }
+        }
+        if (!message.deleted && message.reactions.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            message.reactions.forEach { reaction ->
+                ZChip("${reactionEmoji(reaction.emoji)} ${reaction.count}", selected = reaction.mine,
+                    onClick = { onEvent(GroupEvent.React(message.id, reaction.emoji)) },
+                    tag = "Group.Reaction.${message.id}.${reaction.emoji}")
             }
         }
         if (menu) Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
@@ -313,12 +335,20 @@ private fun MessageBubble(message: GroupMessageUi, mediaLoading: Boolean, onEven
                 ZButton(label, {
                     HoldDecision.perform(action,
                         reply = { onEvent(GroupEvent.Hold(message.id, "reply")) },
-                        reaction = { onEvent(GroupEvent.Hold(message.id, "reaction")) },
+                        reaction = { reactionPicker = true },
                         edit = { onEvent(GroupEvent.Hold(message.id, "edit")) },
                         delete = { onEvent(GroupEvent.Hold(message.id, "delete")) }
                     )
                     menu = false
                 }, ghost = true)
+            }
+        }
+        if (reactionPicker) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            listOf("like", "heart", "laugh", "wow", "sad").forEach { emoji ->
+                ZChip(reactionEmoji(emoji), onClick = {
+                    reactionPicker = false
+                    onEvent(GroupEvent.React(message.id, emoji))
+                }, tag = "Group.React.${message.id}.$emoji")
             }
         }
     }
@@ -351,7 +381,9 @@ private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)
     ) {
         if (state.editing != null || state.replyTo != null) {
-            Text(if (state.editing != null) "Редактирование" else "Ответ", style = Zapara.typography.caption, color = c.text2)
+            val preview = state.messages.firstOrNull { it.id == state.replyTo }?.body?.take(60)
+            Text(if (state.editing != null) "Редактирование" else "Ответ · ${preview ?: "Сообщение"}",
+                style = Zapara.typography.caption, color = c.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         OutlinedTextField(
             value = state.draft,

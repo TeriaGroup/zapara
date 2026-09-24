@@ -22,6 +22,8 @@ public sealed partial class GroupViewModel : ViewModelBase
     private Guid me;
     private Guid? conversationId;
     private Guid? communityId;
+    private Guid? requestedCommunityId;
+    private (Guid CommunityId, Guid ConversationId)? requestedConversation;
     private readonly Dictionary<Guid, string> drafts = new();
     private int navigationGeneration;
     private int busyDepth;
@@ -108,7 +110,11 @@ public sealed partial class GroupViewModel : ViewModelBase
             Communities.Clear();
             foreach (var row in rows)
                 Communities.Add(new(row.Name, Role(row.Role), new RelayCommand(() => _ = OpenAsync(row.CommunityId))));
-            var preferred = rows.FirstOrDefault(item => item.Name == wanted || item.Name == "Группа " + wanted) ?? (rows.Length == 1 ? rows[0] : null);
+            var preferred = rows.FirstOrDefault(item => item.CommunityId == requestedConversation?.CommunityId)
+                ?? rows.FirstOrDefault(item => item.CommunityId == requestedCommunityId)
+                ?? rows.FirstOrDefault(item => item.Name == wanted || item.Name == "Группа " + wanted)
+                ?? (rows.Length == 1 ? rows[0] : null);
+            requestedCommunityId = null;
             IsEmpty = rows.Length == 0;
             HasHome = false;
             Status = "";
@@ -119,6 +125,18 @@ public sealed partial class GroupViewModel : ViewModelBase
         catch (AccountClientException ex) when (operation.IsCurrent && ticket == navigationGeneration) { FailSession(ex); }
         catch (OperationCanceledException) { }
         finally { if (operation.IsCurrent) Busy(false); }
+    }
+
+    public void RequestCommunity(Guid id)
+    {
+        requestedCommunityId = id;
+        requestedConversation = null;
+    }
+
+    public void RequestConversation(Guid communityId, Guid conversationId)
+    {
+        requestedCommunityId = communityId;
+        requestedConversation = (communityId, conversationId);
     }
 
     private async Task OpenAsync(Guid id)
@@ -134,6 +152,18 @@ public sealed partial class GroupViewModel : ViewModelBase
             var home = await Api.GroupHomeAsync(token, id, operation.Token);
             if (!operation.IsCurrent || ticket != navigationGeneration) return;
             Show(home);
+            if (requestedConversation is { } requested && requested.CommunityId == id)
+            {
+                requestedConversation = null;
+                var direct = home.Directs.FirstOrDefault(chat => chat.ConversationId == requested.ConversationId);
+                if (direct is null)
+                {
+                    Status = "Личная беседа группы больше недоступна.";
+                    return;
+                }
+                await OpenConversationAsync(direct.ConversationId, direct.Title, true);
+                return;
+            }
             await OpenConversationAsync(home.GroupChat.ConversationId, T("groupChat"), false);
         }
         catch (CommunityClientException) when (operation.IsCurrent && ticket == navigationGeneration) { Status = T("groupFailed"); }
@@ -302,7 +332,8 @@ public sealed partial class GroupViewModel : ViewModelBase
                 Messages.Add(Row(message));
                 receivedFromOther |= message.SenderId != me;
             }
-            else if (Messages[index].Body != message.Body || Messages[index].Deleted != message.Deleted || Messages[index].Kind != message.Kind)
+            else if (Messages[index].Body != message.Body || Messages[index].Deleted != message.Deleted
+                || Messages[index].Kind != message.Kind || !Messages[index].ReactionSummaries.SequenceEqual(message.Reactions))
                 Messages[index] = Row(message);
         }
         if (receivedFromOther && reachedLatest && operation.IsCurrent && CurrentChat(id, ticket))
@@ -468,7 +499,10 @@ public sealed partial class GroupViewModel : ViewModelBase
         if (conversationId is not Guid id || Api is null || Access is null) return;
         if (!Messages.Contains(row)) return;
         var ticket = navigationGeneration;
-        if (!MessengerHold.Actions(row.Kind, row.Mine, row.Deleted, true).Contains(action)) return;
+        var emoji = action.StartsWith("reaction:", StringComparison.Ordinal) ? action["reaction:".Length..] : null;
+        var allowed = MessengerHold.Actions(row.Kind, row.Mine, row.Deleted, true);
+        if (emoji is null ? !allowed.Contains(action)
+            : !allowed.Contains("reaction") || !HoldBox.ReactionChoices.Any(choice => choice.Code == emoji)) return;
         if (action == "reply")
         {
             replyTo = row.Id;
@@ -485,6 +519,7 @@ public sealed partial class GroupViewModel : ViewModelBase
             HoldCaption = "Редактирование";
             return;
         }
+        if (action != "delete" && emoji is null) return;
         try
         {
             using var operation = App.Work.Enter();
@@ -492,12 +527,12 @@ public sealed partial class GroupViewModel : ViewModelBase
             if (string.IsNullOrEmpty(token) || !operation.IsCurrent || !CurrentChat(id, ticket)) return;
             var message = action == "delete"
                 ? await Api.DeleteMessageAsync(token, id, row.Id, operation.Token)
-                : await Api.ReactMessageAsync(token, id, row.Id, "like", operation.Token);
+                : await Api.ReactMessageAsync(token, id, row.Id, emoji!, operation.Token);
             if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
             var fresh = Row(message);
             var index = Messages.ToList().FindIndex(item => item.Id == row.Id);
             if (index >= 0) Messages[index] = fresh;
-            Status = action == "reaction" ? "Реакция" : "";
+            Status = "";
         }
         catch (CommunityClientException) { if (CurrentChat(id, ticket)) Status = T("groupFailed"); }
         catch (AccountClientException ex) { if (CurrentChat(id, ticket)) FailSession(ex); }
@@ -506,10 +541,13 @@ public sealed partial class GroupViewModel : ViewModelBase
 
     private GroupMessageRow Row(ChatMessageResponse message)
     {
+        var replyPreview = message.ReplyTo is Guid parentId
+            ? Messages.FirstOrDefault(item => item.Id == parentId)?.Display ?? "Сообщение"
+            : null;
         GroupMessageRow row = null!;
         row = new(message.MessageId, message.SenderName, message.Body, message.CreatedAt.ToLocalTime().ToString("dd.MM HH:mm"),
             message.SenderId == me, message.Kind, message.Deleted, action => ApplyHold(row, action),
-            () => DownloadMediaAsync(row, message.ConversationId));
+            () => DownloadMediaAsync(row, message.ConversationId), message.Reactions, replyPreview);
         return row;
     }
 
@@ -603,7 +641,7 @@ public sealed class GroupPersonRow(string name, string detail, string role, stri
     public IRelayCommand? OpenCommand { get; } = open;
 }
 
-public sealed class GroupMessageRow(Guid id, string author, string body, string when, bool mine, string kind = "text", bool deleted = false, Action<string>? apply = null, Func<Task>? download = null)
+public sealed class GroupMessageRow(Guid id, string author, string body, string when, bool mine, string kind = "text", bool deleted = false, Action<string>? apply = null, Func<Task>? download = null, IReadOnlyList<ChatReactionSummary>? reactions = null, string? replyPreview = null)
 {
     public Guid Id { get; } = id;
     public string Author { get; } = author;
@@ -620,7 +658,24 @@ public sealed class GroupMessageRow(Guid id, string author, string body, string 
     public bool Mine { get; } = mine;
     public string Kind { get; } = kind;
     public bool Deleted { get; } = deleted;
+    public bool IsReply => replyPreview is not null;
+    public string ReplyPreview { get; } = replyPreview is null ? "" : "↳ " + replyPreview[..Math.Min(replyPreview.Length, 80)];
+    public IReadOnlyList<ChatReactionSummary> ReactionSummaries { get; } = reactions ?? [];
+    public IReadOnlyList<GroupReactionRow> Reactions { get; } = (reactions ?? [])
+        .Where(reaction => reaction.Count > 0)
+        .Select(reaction => new GroupReactionRow(reaction)).ToArray();
+    public bool HasReactions => Reactions.Count > 0;
     public bool CanDownload => download is not null && !Deleted && Kind is ("image" or "video" or "file");
     public IAsyncRelayCommand? DownloadCommand { get; } = download is null ? null : new AsyncRelayCommand(download);
     public void Apply(string action) => apply?.Invoke(action);
+}
+
+public sealed class GroupReactionRow(ChatReactionSummary reaction)
+{
+    public string Display => reaction.Emoji switch
+    {
+        "like" => "👍", "heart" => "❤️", "laugh" => "😂", "wow" => "😮", "sad" => "😢",
+        _ => reaction.Emoji
+    } + $" {reaction.Count}" + (reaction.Mine ? " ✓" : "");
+    public bool Mine => reaction.Mine;
 }

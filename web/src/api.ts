@@ -264,8 +264,8 @@ export function deleteGroupMessage(id: string, messageId: string) {
   return send<ChatMessage>("POST", `/web-api/communities/conversations/${id}/messages/${messageId}/delete`, undefined, true);
 }
 
-export function reactGroupMessage(id: string, messageId: string) {
-  return send<ChatMessage>("POST", `/web-api/communities/conversations/${id}/messages/${messageId}/react`, { emoji: "like" });
+export function reactGroupMessage(id: string, messageId: string, emoji: string) {
+  return send<ChatMessage>("POST", `/web-api/communities/conversations/${id}/messages/${messageId}/react`, { emoji });
 }
 
 export async function sendGroupMedia(id: string, kind: "image" | "video" | "file", name: string, file: Blob, replyTo?: string): Promise<ChatMessage> {

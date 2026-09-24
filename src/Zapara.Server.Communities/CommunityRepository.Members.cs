@@ -87,6 +87,7 @@ internal sealed partial class CommunityRepository
                 SET role='member', status='active', revoked_at=NULL
                 WHERE m.status='revoked'
                 """, communityId, userId, Now);
+            await GroupConversationMembership.EnsureAsync(context.Connection, context.Transaction, configuration, communityId, Now, ct);
         }
         await AuditAsync(communityId, accepted ? "join_accepted" : "join_rejected", "join_request", requestId);
         return new(requestId, communityId, userId, status, createdAt);

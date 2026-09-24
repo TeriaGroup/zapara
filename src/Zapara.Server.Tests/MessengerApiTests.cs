@@ -13,6 +13,74 @@ public sealed class MessengerApiTests
     private static byte[] Json<T>(T value) => CommunityJson.Serialize(value);
 
     [Fact]
+    public void Old_message_json_without_reactions_still_deserializes()
+    {
+        var message = new ChatMessageResponse(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "Автор",
+            "Сообщение", new DateTimeOffset(2026, 9, 24, 12, 0, 0, TimeSpan.Zero));
+        var oldJson = System.Text.Encoding.UTF8.GetString(Json(message)).Replace(",\"reactions\":[]", "", StringComparison.Ordinal);
+        Assert.DoesNotContain("\"reactions\"", oldJson, StringComparison.Ordinal);
+        Assert.Empty(CommunityJson.Parse<ChatMessageResponse>(System.Text.Encoding.UTF8.GetBytes(oldJson)).Reactions);
+    }
+
+    [Fact]
+    public async Task Reactions_are_visible_toggle_per_member_and_clear_on_delete()
+    {
+        await using var db = await CommunityPostgresFixture.CreateAsync(true);
+        await using var host = await CommunityApiTestHost.StartAsync(db);
+        var author = await Seed(host.Accounts, "reaction.author");
+        var other = await Seed(host.Accounts, "reaction.other");
+        var communityId = Guid.NewGuid();
+        await db.SeedCommunityAsync(communityId);
+        await db.SeedMemberAsync(communityId, author.User.UserId);
+        await db.SeedMemberAsync(communityId, other.User.UserId);
+        var chat = (await host.Get<GroupHomeResponse>($"/{communityId}/home", author.AccessToken)).GroupChat.ConversationId;
+        var message = CommunityJson.Parse<ChatMessageResponse>(await host.Send("POST", $"/conversations/{chat}/messages", 201,
+            author.AccessToken, Json(new SendMessageRequest("Привет"))));
+        Assert.Empty(message.Reactions);
+
+        var reactedJson = await host.Send("POST", $"/conversations/{chat}/messages/{message.MessageId}/react", 200,
+            author.AccessToken, Json(new ReactMessageRequest("like")));
+        using var reacted = System.Text.Json.JsonDocument.Parse(reactedJson);
+        var own = Assert.Single(reacted.RootElement.GetProperty("reactions").EnumerateArray());
+        Assert.Equal("like", own.GetProperty("emoji").GetString());
+        Assert.Equal(1, own.GetProperty("count").GetInt32());
+        Assert.True(own.GetProperty("mine").GetBoolean());
+
+        var pageJson = await host.Send("GET", $"/conversations/{chat}/messages", 200, other.AccessToken);
+        using var page = System.Text.Json.JsonDocument.Parse(pageJson);
+        var visible = Assert.Single(Assert.Single(page.RootElement.GetProperty("messages").EnumerateArray()).GetProperty("reactions").EnumerateArray());
+        Assert.Equal("like", visible.GetProperty("emoji").GetString());
+        Assert.Equal(1, visible.GetProperty("count").GetInt32());
+        Assert.False(visible.GetProperty("mine").GetBoolean());
+
+        var otherReaction = CommunityJson.Parse<ChatMessageResponse>(await host.Send("POST", $"/conversations/{chat}/messages/{message.MessageId}/react", 200,
+            other.AccessToken, Json(new ReactMessageRequest("like"))));
+        Assert.Equal(new ChatReactionSummary("like", 2, true), Assert.Single(otherReaction.Reactions));
+        var toggledOff = CommunityJson.Parse<ChatMessageResponse>(await host.Send("POST", $"/conversations/{chat}/messages/{message.MessageId}/react", 200,
+            other.AccessToken, Json(new ReactMessageRequest("like"))));
+        Assert.Equal(new ChatReactionSummary("like", 1, false), Assert.Single(toggledOff.Reactions));
+        var afterToggle = await host.Get<ChatPageResponse>($"/conversations/{chat}/messages", author.AccessToken);
+        Assert.Equal(new ChatReactionSummary("like", 1, true), Assert.Single(Assert.Single(afterToggle.Messages).Reactions));
+        var restored = CommunityJson.Parse<ChatMessageResponse>(await host.Send("POST", $"/conversations/{chat}/messages/{message.MessageId}/react", 200,
+            other.AccessToken, Json(new ReactMessageRequest("like"))));
+        Assert.Equal(new ChatReactionSummary("like", 2, true), Assert.Single(restored.Reactions));
+        var replaced = CommunityJson.Parse<ChatMessageResponse>(await host.Send("POST", $"/conversations/{chat}/messages/{message.MessageId}/react", 200,
+            author.AccessToken, Json(new ReactMessageRequest("heart"))));
+        Assert.Equal(2, replaced.Reactions.Count);
+        Assert.Contains(replaced.Reactions, reaction => reaction == new ChatReactionSummary("heart", 1, true));
+        Assert.Contains(replaced.Reactions, reaction => reaction == new ChatReactionSummary("like", 1, false));
+
+        var removed = CommunityJson.Parse<ChatMessageResponse>(await host.Send("POST", $"/conversations/{chat}/messages/{message.MessageId}/delete", 200, author.AccessToken));
+        Assert.Empty(removed.Reactions);
+        var deleted = await host.Get<ChatPageResponse>($"/conversations/{chat}/messages", other.AccessToken);
+        Assert.True(Assert.Single(deleted.Messages).Deleted);
+        Assert.Empty(Assert.Single(deleted.Messages).Reactions);
+        Assert.Equal(0L, await db.Accounts.ScalarAsync<long>($"SELECT count(*) FROM \"{db.Configuration.MessagesSchema}\".chat_reactions WHERE message_id='{message.MessageId}'"));
+        await host.Problem("POST", $"/conversations/{chat}/messages/{message.MessageId}/react", 400, "invalid_request",
+            other.AccessToken, Json(new ReactMessageRequest("heart")));
+    }
+
+    [Fact]
     public async Task Group_home_opens_one_chat_and_keeps_directs_inside_the_community()
     {
         await using var db = await CommunityPostgresFixture.CreateAsync(true);

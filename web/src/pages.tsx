@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useSwipe } from "./swipe";
 import * as api from "./api";
 import { followGroupCommunity, openGroupFace } from "./groupChoice";
@@ -19,7 +19,6 @@ import { homeworkCard, lessonFrom, placeCard, scheduleCard } from "./cards";
 import { BallotBoardView } from "./ballots";
 import { GroupTopics } from "./topics";
 import { GroupAdmin, titlesOf } from "./group-admin";
-import { PeoplePanel } from "./people";
 import { ShareMenu } from "./share";
 import { Icon } from "./icons";
 import { VkMark, YandexMark } from "./brands";
@@ -372,9 +371,8 @@ export function FriendsPage() {
   }
   return (
     <section className="page">
-      <Head title="Друзья" text="Код аккаунта для переписки и группы в расписании." />
-      <PeoplePanel />
-      <h2 style={{ marginTop: 28 }}>Группы в расписании</h2>
+      <Head title="Пересечения" text="Группы друзей в вашем расписании." />
+      <h2>Группы в расписании</h2>
       <p className="sub">До пяти групп. Их пары отмечаются на вашем дне.</p>
       <form className="card stack" onSubmit={add} style={{ marginTop: 12 }}>
         <label className="field">Группа<input value={name} onChange={event => setName(event.target.value)} placeholder="А863С" /></label>
@@ -629,9 +627,15 @@ export function CommunityPage() {
   );
 }
 
+const groupReactions = [["like", "👍"], ["heart", "❤️"], ["laugh", "😂"], ["wow", "😮"], ["sad", "😢"]] as const;
+
 export function GroupPage() {
   const app = useApp();
-  const groupViewKey = `${app.groupId}:${app.session?.user?.userId ?? ""}:${app.session?.authenticated ? "in" : "out"}`;
+  const location = useLocation();
+  const query = new URLSearchParams(location.search);
+  const selectedCommunityId = query.get("communityId")?.match(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i)?.[0] ?? null;
+  const selectedConversationId = query.get("conversationId")?.match(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i)?.[0] ?? null;
+  const groupViewKey = `${app.groupId}:${selectedCommunityId ?? ""}:${selectedConversationId ?? ""}:${app.session?.user?.userId ?? ""}:${app.session?.authenticated ? "in" : "out"}`;
   const groupViewKeyRef = useRef(groupViewKey);
   groupViewKeyRef.current = groupViewKey;
   const [homeState, setHomeState] = useState<{ key: string; value: GroupHome | null }>({ key: groupViewKey, value: null });
@@ -657,6 +661,7 @@ export function GroupPage() {
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [editing, setEditing] = useState<ChatMessage | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
+  const [reactionFor, setReactionFor] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [focusChat, setFocusChat] = useState(false);
   const [mediaBusy, setMediaBusy] = useState<string[]>([]);
@@ -715,11 +720,29 @@ export function GroupPage() {
       setHome(null);
       setChat(null);
       setThread("list");
+      setFocusChat(false);
       setDesk(null);
       setBoard(null);
       clearLog();
     };
     drop();
+    const openHome = (id: string) => void api.groupHome(id).then(loaded => {
+      if (stop) return;
+      setHome(loaded);
+      const requested = selectedConversationId === loaded.groupChat.conversationId
+        ? loaded.groupChat : loaded.directs.find(item => item.conversationId === selectedConversationId);
+      setThread(requested?.kind === "group"
+        ? { topicId: null, title: "Общий поток", icon: "💬", lastBody: requested.lastBody,
+          lastAuthor: null, lastAt: requested.lastAt, unread: requested.unread, canDelete: false }
+        : "list");
+      setChat(requested ?? loaded.groupChat);
+      setFocusChat(!!requested);
+      void api.groupDesk(id).then(office => { if (!stop) setDesk(office); }).catch(() => { if (!stop) setDesk(null); });
+    }).catch(() => { if (!stop) { drop(); setError("Не удалось загрузить группу"); } });
+    if (app.session?.authenticated && selectedCommunityId) {
+      openHome(selectedCommunityId);
+      return () => { stop = true; };
+    }
     void openGroupFace(
       { authenticated: !!app.session?.authenticated, groupId: app.groupId },
       groupId => api.communities(groupId),
@@ -727,18 +750,12 @@ export function GroupPage() {
         if (stop) return;
         setError(face.error);
         if (!face.communityId) return;
-        void api.groupHome(face.communityId).then(loaded => {
-          if (stop) return;
-          setHome(loaded);
-          setThread("list");
-          setChat(loaded.groupChat);
-          void api.groupDesk(face.communityId).then(office => { if (!stop) setDesk(office); }).catch(() => { if (!stop) setDesk(null); });
-        }).catch(() => { if (!stop) { drop(); setError("Не удалось загрузить группу"); } });
+        openHome(face.communityId);
       },
     );
     return () => { stop = true; };
-  }, [app.session, app.groupId]);
-  useEffect(() => { setReplyTo(null); setEditing(null); setMenu(null); }, [viewKey]);
+  }, [app.session, app.groupId, selectedCommunityId, selectedConversationId]);
+  useEffect(() => { setReplyTo(null); setEditing(null); setMenu(null); setReactionFor(null); }, [viewKey]);
   useEffect(() => {
     if (!menu) return;
     const node = document.querySelector(".log .actions");
@@ -908,6 +925,14 @@ export function GroupPage() {
     } catch { if (viewKeyRef.current === key) setError(target ? "Изменение не сохранилось" : "Сообщение не отправилось"); }
     finally { sendPending.current.delete(key); }
   }
+  function reactTo(message: ChatMessage, emoji: string) {
+    if (!chat) return;
+    const key = viewKey;
+    markLogChanged(key);
+    void api.reactGroupMessage(chat.conversationId, message.messageId, emoji)
+      .then(next => { markLogChanged(key); updateLog(key, [next]); if (viewKeyRef.current === key) setReactionFor(null); })
+      .catch(() => { if (viewKeyRef.current === key) setError("Реакция не сохранилась"); });
+  }
   if (!app.session?.authenticated) return <section className="page"><div className="card empty"><h1>Группа</h1><p>Войдите в аккаунт, чтобы открыть группу, разделы чата и голосования.</p><Link className="btn primary" to="/settings">Открыть настройки</Link></div></section>;
   return (
     <section className="page">
@@ -960,25 +985,21 @@ export function GroupPage() {
                     onPointerLeave={() => { if (holdTimer.current) window.clearTimeout(holdTimer.current); }}
                     onClickCapture={event => { if (event.target instanceof Element && event.target.closest(".actions")) return; if (event.target instanceof Element && event.target.closest(".group-media-download") && !heldOpen.current) return; if (heldOpen.current || menu === message.messageId) { event.preventDefault(); event.stopPropagation(); } }}>
                     {message.senderId !== app.session?.user?.userId && <b>{message.senderName}</b>}
-                    {message.replyTo && <div className="muted">Ответ</div>}
+                    {message.replyTo && <div className="muted">↳ {log.find(item => item.messageId === message.replyTo)?.body || "Сообщение"}</div>}
                     <div>{download
                       ? <button className="group-media-download" type="button" disabled={mediaBusy.includes(download.href)} onClick={() => { setMenu(null); void downloadMedia(download); }} style={{ border: 0, background: "none", padding: 0, textAlign: "left", textDecoration: "underline" }}>{mediaBusy.includes(download.href) ? "Загрузка…" : download.label}</button>
                       : groupBubbleText(message)}</div>
                     <div className="muted">{message.createdAt.slice(0, 16).replace("T", " ")}</div>
+                    {!message.deleted && !!message.reactions?.length && <div className="react-chips">
+                      {message.reactions.map(reaction => <button key={reaction.emoji} type="button" className={reaction.mine ? "on" : ""}
+                        onClick={() => reactTo(message, reaction.emoji)}>{groupReactions.find(item => item[0] === reaction.emoji)?.[1] || reaction.emoji} {reaction.count}</button>)}
+                    </div>}
                     {actions.length > 0 && (
                       <div className="actions">
                         {actions.map(action => (
                           <button key={action} type="button" onClick={() => runHold(action, {
                             reply() { setMenu(null); setEditing(null); setReplyTo(message.messageId); },
-                            reaction() {
-                              setMenu(null);
-                              if (!chat) return;
-                              const key = viewKey;
-                              markLogChanged(key);
-                              void api.reactGroupMessage(chat.conversationId, message.messageId)
-                                .then(next => { markLogChanged(key); updateLog(key, [next]); })
-                                .catch(() => { if (viewKeyRef.current === key) setError("Реакция не сохранилась"); });
-                            },
+                            reaction() { setMenu(null); setReactionFor(message.messageId); },
                             edit() { setMenu(null); setReplyTo(null); setEditing(message); setDraft(message.body); },
                             delete() {
                               setMenu(null);
@@ -993,6 +1014,11 @@ export function GroupPage() {
                         ))}
                       </div>
                     )}
+                    {reactionFor === message.messageId && <div className="react">
+                      {groupReactions.map(([code, mark]) => <button key={code} type="button" aria-label={`Реакция ${mark}`}
+                        className={message.reactions?.some(item => item.emoji === code && item.mine) ? "on" : ""}
+                        onClick={() => reactTo(message, code)}>{mark}</button>)}
+                    </div>}
                   </article>
                 );
               })}

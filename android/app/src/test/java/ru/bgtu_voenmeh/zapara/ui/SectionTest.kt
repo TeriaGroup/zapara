@@ -7,13 +7,13 @@ import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.shell.Section
 
 class SectionTest {
-    @Test fun three_in_the_bar_and_the_rest_in_the_sheet() {
-        assertEquals(listOf(Section.Schedule, Section.Maps, Section.Homework), Section.bar)
+    @Test fun chat_is_in_the_bar_and_schedule_comparison_stays_in_the_sheet() {
+        assertEquals(listOf(Section.Schedule, Section.Maps, Section.Homework, Section.Chat), Section.bar)
         assertEquals(
             listOf(Section.Week, Section.Summary, Section.Teachers, Section.Friends, Section.Community, Section.Group, Section.Settings),
             Section.sheet
         )
-        assertEquals(10, Section.entries.size)
+        assertEquals(11, Section.entries.size)
     }
 
     @Test fun community_is_sheet_not_bar() {
@@ -34,6 +34,8 @@ class SectionTest {
 
     @Test fun tags_follow_the_scheme() {
         assertEquals("Nav.Schedule", Section.Schedule.tag)
+        assertEquals("Nav.Chat", Section.Chat.tag)
+        assertEquals("Sections.Group", Section.Group.tag)
         assertEquals("Sections.Settings", Section.Settings.tag)
         assertEquals("Sections.Community", Section.Community.tag)
     }

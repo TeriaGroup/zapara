@@ -17,8 +17,9 @@
     <string name="community_forbidden">Нет доступа</string>
     <string name="community_failed">Не удалось загрузить сообщество</string>
     <string name="nav_community">Сообщества</string>
+    <string name="nav_chat">Чат</string>
     <string name="nav_group">Группа</string>
-    <string name="group_title">Группа</string>
+    <string name="group_title">Чат группы</string>
     <string name="group_need_account">Войдите в аккаунт, чтобы открыть группу</string>
     <string name="group_not_member">Вы ещё не в группе</string>
     <string name="group_roster">Одногруппники</string>

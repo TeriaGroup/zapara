@@ -73,7 +73,7 @@ public sealed record GroupHomeResponse
 public sealed record ChatMessageResponse
 {
     [JsonConstructor]
-    public ChatMessageResponse(Guid messageId, Guid conversationId, Guid senderId, string senderName, string body, DateTimeOffset createdAt, string kind = "text", bool deleted = false, Guid? replyTo = null)
+    public ChatMessageResponse(Guid messageId, Guid conversationId, Guid senderId, string senderName, string body, DateTimeOffset createdAt, string kind = "text", bool deleted = false, Guid? replyTo = null, IReadOnlyList<ChatReactionSummary>? reactions = null)
     {
         MessageId = CommunityValidation.Id(messageId);
         ConversationId = CommunityValidation.Id(conversationId);
@@ -84,6 +84,7 @@ public sealed record ChatMessageResponse
         Kind = kind is "text" or "image" or "video" or "file" or "voice" or "circle" ? kind : throw CommunityValidation.Invalid();
         Deleted = deleted;
         ReplyTo = replyTo is null || replyTo == Guid.Empty ? null : CommunityValidation.Id(replyTo.Value);
+        Reactions = reactions ?? [];
     }
     [JsonRequired, JsonInclude] public Guid MessageId { get; private init; }
     [JsonRequired, JsonInclude] public Guid ConversationId { get; private init; }
@@ -94,7 +95,10 @@ public sealed record ChatMessageResponse
     [JsonInclude] public string Kind { get; private init; }
     [JsonInclude] public bool Deleted { get; private init; }
     [JsonInclude] public Guid? ReplyTo { get; private init; }
+    [JsonInclude] public IReadOnlyList<ChatReactionSummary> Reactions { get; init; }
 }
+
+public sealed record ChatReactionSummary(string Emoji, int Count, bool Mine);
 
 public sealed record SendMessageRequest
 {

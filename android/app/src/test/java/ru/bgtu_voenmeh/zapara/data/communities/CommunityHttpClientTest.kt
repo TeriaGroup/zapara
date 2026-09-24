@@ -326,6 +326,21 @@ class CommunityHttpClientTest {
         assertEquals(0, api.markRead(ACCESS, chat).unread)
     }
 
+    @Test
+    fun group_message_exposes_reply_and_persistent_reaction_summary() = runBlocking {
+        val chat = OID1
+        val response = """{"messages":[{"messageId":"$HID_A","conversationId":"$chat","senderId":"$UID","senderName":"Староста","body":"ответ","createdAt":"$AT","replyTo":"$HID_B","reactions":[{"emoji":"heart","count":2,"mine":true}]}],"hasMore":false}"""
+        val http = FakeHttp { call -> when (suffix(call)) {
+            "GET /conversations/$chat/messages" -> ok(response)
+            else -> throw AssertionError(suffix(call))
+        } }
+        val message = client(http).messages(ACCESS, chat).messages.single()
+        assertEquals(HID_B, message.replyTo)
+        assertEquals("heart", message.reactions.single().emoji)
+        assertEquals(2, message.reactions.single().count)
+        assertTrue(message.reactions.single().mine)
+    }
+
     private suspend fun expect(failure: CommunityClientFailure, block: suspend () -> Unit) {
         try {
             block()

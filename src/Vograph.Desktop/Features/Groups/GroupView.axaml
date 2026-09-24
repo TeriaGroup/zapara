@@ -160,7 +160,18 @@
                           <TextBlock Classes="caption" Text="{Binding Author}" TextTrimming="CharacterEllipsis" IsVisible="{Binding !Mine}" />
                           <TextBlock Grid.Column="1" Classes="muted caption" Text="{Binding When}" />
                         </Grid>
+                        <TextBlock Classes="muted caption" Text="{Binding ReplyPreview}" IsVisible="{Binding IsReply}" TextWrapping="Wrap" />
                         <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
+                        <ItemsControl ItemsSource="{Binding Reactions}" IsVisible="{Binding HasReactions}">
+                          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="4" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="g:GroupReactionRow">
+                              <Border Classes="badge" Padding="6,2">
+                                <TextBlock Text="{Binding Display}" />
+                              </Border>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                         <Button Classes="ghost" Content="{loc:T groupSaveMedia}" Command="{Binding DownloadCommand}"
                                 IsVisible="{Binding CanDownload}" HorizontalAlignment="Left" Padding="6,3"
                                 AutomationProperties.AutomationId="Group.Download" />

@@ -175,6 +175,34 @@ public sealed class CommunityDomainTests
     }
 
     [Fact]
+    public async Task Headman_acceptance_creates_only_own_group_chat_membership_immediately()
+    {
+        await using var db = await CommunityPostgresFixture.CreateAsync(true);
+        await using var host = await CommunityApiTestHost.StartAsync(db);
+        var head = await Seed(host.Accounts, "join.scope.head");
+        var candidate = await Seed(host.Accounts, "join.scope.candidate");
+        var own = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        await db.SeedCommunityAsync(own);
+        await db.SeedCommunityAsync(other);
+        await db.SeedStaffAsync(own, head.User.UserId);
+        var service = new CommunityService(host.Accounts, db.Configuration);
+        var ownRequest = await service.RequestJoinAsync(candidate.AccessToken, own, Ct);
+        var otherRequest = await service.RequestJoinAsync(candidate.AccessToken, other, Ct);
+
+        var denied = await Assert.ThrowsAsync<CommunityServiceException>(() =>
+            service.AcceptJoinAsync(head.AccessToken, other, otherRequest.RequestId, Ct));
+        Assert.Equal(403, denied.Status);
+        Assert.Equal("pending", (await service.GetOwnJoinRequestAsync(candidate.AccessToken, other, Ct)).Request?.Status);
+
+        await service.AcceptJoinAsync(head.AccessToken, own, ownRequest.RequestId, Ct);
+        var messageSchema = $"\"{db.Configuration.MessagesSchema}\"";
+        Assert.Equal(1L, await db.Accounts.ScalarAsync<long>($"SELECT count(*) FROM {messageSchema}.conversations WHERE kind='group' AND community_id='{own}'"));
+        Assert.Equal(1L, await db.Accounts.ScalarAsync<long>($"SELECT count(*) FROM {messageSchema}.conversation_members m JOIN {messageSchema}.conversations c USING (conversation_id) WHERE c.community_id='{own}' AND m.user_id='{candidate.User.UserId}'"));
+        Assert.Equal(0L, await db.Accounts.ScalarAsync<long>($"SELECT count(*) FROM {messageSchema}.conversations WHERE community_id='{other}'"));
+    }
+
+    [Fact]
     public async Task Expected_revision_conflict_and_session_revoke_are_401()
     {
         await using var db = await CommunityPostgresFixture.CreateAsync(true);

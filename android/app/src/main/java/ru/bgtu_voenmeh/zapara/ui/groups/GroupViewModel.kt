@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,8 +12,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import ru.bgtu_voenmeh.zapara.AppContainer
 import ru.bgtu_voenmeh.zapara.data.communities.ChatMessage
+import ru.bgtu_voenmeh.zapara.data.communities.ChatReaction
 import ru.bgtu_voenmeh.zapara.data.communities.Classmate
 import ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException
 import ru.bgtu_voenmeh.zapara.data.communities.CommunityHttpClient
@@ -27,24 +30,32 @@ internal class GroupRuntime(
     val client: CommunityHttpClient?,
     val accessToken: suspend () -> String?,
     val groupName: suspend () -> String?,
-    val openMedia: suspend (GroupMessageUi, ByteArray) -> Boolean = { _, _ -> false }
+    val openMedia: suspend (GroupMessageUi, ByteArray) -> Boolean = { _, _ -> false },
+    val initialCommunityId: String? = null,
+    val initialConversationId: String? = null
 ) {
     companion object {
-        fun from(container: AppContainer) = GroupRuntime(
+        fun from(container: AppContainer, initialCommunityId: String? = null, initialConversationId: String? = null) = GroupRuntime(
             guest = container.profile.isGuest,
             userId = container.profile.userId,
             client = container.communities,
-            accessToken = { container.accessToken() },
-            groupName = { container.repo.settings().myGroupId },
-            openMedia = { message, bytes -> GroupMediaViewer(container.app).open(message, bytes) }
+            accessToken = { withContext(Dispatchers.IO) { container.accessToken() } },
+            groupName = { readGroupNameOffMain { container.repo.settings().myGroupId } },
+            openMedia = { message, bytes -> GroupMediaViewer(container.app).open(message, bytes) },
+            initialCommunityId = initialCommunityId,
+            initialConversationId = initialConversationId
         )
     }
 }
 
+internal suspend fun readGroupNameOffMain(read: () -> String?): String? = withContext(Dispatchers.IO) { read() }
+
 data class GroupCommunityUi(val id: String, val name: String, val role: String)
 data class GroupPersonUi(val id: String, val name: String, val handle: String, val role: String, val self: Boolean)
 data class GroupChatUi(val id: String, val title: String, val preview: String, val unread: Int)
-data class GroupMessageUi(val id: String, val author: String, val body: String, val time: String, val mine: Boolean, val kind: String = "text", val deleted: Boolean = false)
+data class GroupMessageUi(val id: String, val author: String, val body: String, val time: String, val mine: Boolean,
+    val kind: String = "text", val deleted: Boolean = false, val replyTo: String? = null,
+    val reactions: List<ChatReaction> = emptyList())
 
 internal interface GroupHoldApi {
     suspend fun edit(token: String, conversationId: String, messageId: String, body: String)
@@ -122,6 +133,7 @@ sealed interface GroupEvent {
     data class Draft(val text: String) : GroupEvent
     data object Send : GroupEvent
     data class Hold(val messageId: String, val action: String) : GroupEvent
+    data class React(val messageId: String, val emoji: String) : GroupEvent
     data class Media(val kind: String, val name: String, val bytes: ByteArray) : GroupEvent
     data class OpenMedia(val messageId: String) : GroupEvent
     data object People : GroupEvent
@@ -129,7 +141,8 @@ sealed interface GroupEvent {
 }
 
 class GroupViewModel internal constructor(private val runtime: GroupRuntime) : ViewModel() {
-    constructor(container: AppContainer) : this(GroupRuntime.from(container))
+    constructor(container: AppContainer, initialCommunityId: String? = null, initialConversationId: String? = null) :
+        this(GroupRuntime.from(container, initialCommunityId, initialConversationId))
 
     private val mutable = MutableStateFlow(GroupUiState(guest = runtime.guest || runtime.client == null))
     val state: StateFlow<GroupUiState> = mutable.asStateFlow()
@@ -165,6 +178,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             is GroupEvent.Media -> attach(event.kind, event.name, event.bytes)
             is GroupEvent.OpenMedia -> openMedia(event.messageId)
             is GroupEvent.Hold -> hold(event.messageId, event.action)
+            is GroupEvent.React -> react(event.messageId, event.emoji)
             GroupEvent.People -> mutable.value = mutable.value.copy(showPeople = true)
             GroupEvent.Chat -> mutable.value = mutable.value.copy(showPeople = false)
         }
@@ -180,16 +194,17 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             mutable.value = GroupUiState(guest = true)
             return
         }
-        val token = runtime.accessToken()
-        if (token.isNullOrEmpty()) {
-            mutable.value = GroupUiState(guest = true)
-            return
-        }
         mutable.value = mutable.value.copy(loading = true, failed = false, guest = false)
         try {
+            val token = runtime.accessToken()
+            if (token.isNullOrEmpty()) {
+                mutable.value = GroupUiState(guest = true)
+                return
+            }
             val rows = api.list(token).filter { it.role != null }
             val wanted = runtime.groupName()
-            val preferred = rows.firstOrNull { it.name == wanted || it.name == "Группа $wanted" } ?: rows.singleOrNull()
+            val preferred = rows.firstOrNull { it.communityId == runtime.initialCommunityId }
+                ?: rows.firstOrNull { it.name == wanted || it.name == "Группа $wanted" } ?: rows.singleOrNull()
             mutable.value = mutable.value.copy(
                 loading = false,
                 empty = rows.isEmpty(),
@@ -198,24 +213,33 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             if (preferred != null) open(preferred.communityId)
         } catch (e: CancellationException) {
             throw e
-        } catch (_: CommunityClientException) {
+        } catch (e: Exception) {
             mutable.value = mutable.value.copy(loading = false, failed = true)
+            runCatching { android.util.Log.w("ZaparaGroup", "load", e) }
         }
     }
 
     private suspend fun open(communityId: String) {
         val api = runtime.client ?: return
-        val token = runtime.accessToken() ?: return
         mutable.value = mutable.value.copy(loading = true, failed = false)
         try {
+            val token = runtime.accessToken()
+            if (token.isNullOrEmpty()) {
+                mutable.value = mutable.value.copy(loading = false, failed = true)
+                return
+            }
             val loaded = api.groupHome(token, communityId)
             home = loaded
             publishHome(loaded)
-            openChat(loaded.groupChat.conversationId, "", false)
+            val requested = if (communityId == runtime.initialCommunityId)
+                loaded.directs.firstOrNull { it.conversationId == runtime.initialConversationId } else null
+            if (requested == null) openChat(loaded.groupChat.conversationId, "", false)
+            else openChat(requested.conversationId, requested.title, true)
         } catch (e: CancellationException) {
             throw e
-        } catch (_: CommunityClientException) {
+        } catch (e: Exception) {
             mutable.value = mutable.value.copy(loading = false, failed = true)
+            runCatching { android.util.Log.w("ZaparaGroup", "open", e) }
         }
     }
 
@@ -589,14 +613,37 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         }
     }
 
+    private fun react(messageId: String, emoji: String) {
+        if (emoji !in setOf("like", "heart", "laugh", "wow", "sad")) return
+        val id = conversationId ?: return
+        val ticket = generation
+        val api = runtime.client ?: return
+        viewModelScope.launch {
+            try {
+                val token = runtime.accessToken()
+                if (token.isNullOrEmpty() || !current(ticket, id)) return@launch
+                val updated = row(api.reactMessage(token, id, messageId, emoji))
+                if (!current(ticket, id)) return@launch
+                mutable.value = mutable.value.copy(messages = mutable.value.messages.map { if (it.id == messageId) updated else it }, failed = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (current(ticket, id)) mutable.value = mutable.value.copy(failed = true)
+                runCatching { android.util.Log.w("ZaparaGroup", "reaction", e) }
+            }
+        }
+    }
+
     private fun row(item: ChatMessage) = GroupMessageUi(
-        item.messageId, item.senderName, item.body, clock.format(item.createdAt), item.senderId == runtime.userId, item.kind, item.deleted
+        item.messageId, item.senderName, item.body, clock.format(item.createdAt), item.senderId == runtime.userId,
+        item.kind, item.deleted, item.replyTo, item.reactions
     )
 
     companion object {
-        fun factory(container: AppContainer) = object : ViewModelProvider.Factory {
+        fun factory(container: AppContainer, initialCommunityId: String? = null, initialConversationId: String? = null) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T = GroupViewModel(container) as T
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                GroupViewModel(container, initialCommunityId, initialConversationId) as T
         }
     }
 }

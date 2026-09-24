@@ -80,6 +80,28 @@ public sealed class GroupViewModelConversationTests
     }
 
     [AvaloniaFact]
+    public async Task Requested_group_direct_opens_exact_conversation()
+    {
+        using var directory = new ProfileTestDirectory();
+        using var services = AppServices.Create(directory.Root, () => false);
+        services.AllowNetwork = false;
+        using var handler = new AccountClientHandler();
+        using var http = new HttpClient(handler);
+        using var client = new CommunityHttpClient(http, Root);
+        services.UseCommunities(client, _ => Task.FromResult<string?>(Access));
+        handler.Send = (request, _) => Task.FromResult(Respond(request, direct: true));
+
+        var vm = new GroupViewModel(services);
+        vm.RequestConversation(CommunityId, DirectChatId);
+        await vm.ActivateAsync();
+
+        Assert.True(vm.IsDirect);
+        Assert.Equal("Борис", vm.ChatTitle);
+        Assert.Equal([DirectMessageId], vm.Messages.Select(item => item.Id).ToArray());
+        vm.Detach();
+    }
+
+    [AvaloniaFact]
     public async Task Late_group_page_cannot_replace_the_direct_chat_that_opened_after_it()
     {
         using var directory = new ProfileTestDirectory();
@@ -153,6 +175,49 @@ public sealed class GroupViewModelConversationTests
         await Waits.Until(() => vm.Messages.Count == 3 && vm.Messages[0].Body == "Новое содержание", "edited and new messages", 6500);
         Assert.Equal([FirstId, SecondId, DirectMessageId], vm.Messages.Select(item => item.Id).ToArray());
         await Waits.Until(() => reads == 2, "new message marked read");
+        vm.Detach();
+    }
+
+    [AvaloniaFact]
+    public async Task Chosen_reaction_and_later_count_are_visible_on_group_message()
+    {
+        using var directory = new ProfileTestDirectory();
+        using var services = AppServices.Create(directory.Root, () => false);
+        services.AllowNetwork = false;
+        using var handler = new AccountClientHandler();
+        using var http = new HttpClient(handler);
+        using var client = new CommunityHttpClient(http, Root);
+        services.UseCommunities(client, _ => Task.FromResult<string?>(Access));
+        var count = 0;
+        string? sentEmoji = null;
+        handler.Send = async (request, _) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (request.Method == HttpMethod.Get && path.EndsWith("/messages", StringComparison.Ordinal))
+                return Payload(new ChatPageResponse([new ChatMessageResponse(FirstId, GroupChatId, PromotedId,
+                    "Борис", "Первое", CommunityClientTestSupport.Now, reactions:
+                    [new("like", 2, false), new("heart", count, true)])], false));
+            if (request.Method == HttpMethod.Post && path.EndsWith("/react", StringComparison.Ordinal))
+            {
+                sentEmoji = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(
+                    TestContext.Current.CancellationToken)).RootElement.GetProperty("emoji").GetString();
+                count = 1;
+                return Payload(new ChatMessageResponse(FirstId, GroupChatId, PromotedId, "Борис", "Первое",
+                    CommunityClientTestSupport.Now, reactions: [new("like", 2, false), new("heart", 1, true)]));
+            }
+            return Respond(request);
+        };
+
+        var vm = new GroupViewModel(services);
+        await vm.ActivateAsync();
+        Assert.Equal("👍 2", Assert.Single(vm.Messages[0].Reactions).Display);
+        vm.Messages[0].Apply("reaction:heart");
+        await Waits.Until(() => vm.Messages[0].Reactions.Any(item => item.Display == "❤️ 1 ✓"), "chosen reaction displayed");
+        Assert.Equal("heart", sentEmoji);
+
+        count = 2;
+        vm.Watch(true);
+        await Waits.Until(() => vm.Messages[0].Reactions.Any(item => item.Display == "❤️ 2 ✓"), "reaction count refreshed", 6500);
         vm.Detach();
     }
 

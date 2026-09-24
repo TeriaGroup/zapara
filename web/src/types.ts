@@ -54,6 +54,7 @@ export type GroupTopic = {
 export type ChatMessage = {
   messageId: string; conversationId: string; senderId: string; senderName: string; body: string; createdAt: string;
   kind?: string; deleted?: boolean; replyTo?: string | null;
+  reactions?: { emoji: string; count: number; mine: boolean }[];
 };
 
 export type MapPlan = { id: string; building: string; floor: number; url: string };

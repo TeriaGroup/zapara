@@ -180,7 +180,7 @@ public class I18nService
             ["updFail"] = "Не удалось проверить обновление",
             // ---- Desktop v2 (Avalonia) ----
             ["navSchedule"] = "Расписание", ["navWeek"] = "Неделя", ["navSummary"] = "Сводка", ["navTools"] = "Инструменты",
-            ["navTeachers"] = "Преподаватели", ["navMaps"] = "Карты", ["navFriends"] = "Друзья", ["navHomework"] = "Домашка", ["navCommunity"] = "Сообщества", ["navGroup"] = "Группа", ["navSettings"] = "Настройки",
+            ["navTeachers"] = "Преподаватели", ["navMaps"] = "Карты", ["navFriends"] = "Друзья", ["navHomework"] = "Домашка", ["navCommunity"] = "Сообщества", ["navGroup"] = "Группа", ["navChat"] = "Чаты", ["navSettings"] = "Настройки",
             ["groupTitle"] = "Группа",
             ["groupNeedAccount"] = "Войдите в аккаунт, чтобы открыть группу.",
             ["groupEmpty"] = "Вы ещё не в группе.",

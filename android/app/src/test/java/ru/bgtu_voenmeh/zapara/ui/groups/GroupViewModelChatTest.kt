@@ -13,6 +13,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -38,6 +39,72 @@ class GroupViewModelChatTest {
 
     @Before fun setMain() { Dispatchers.setMain(dispatcher) }
     @After fun resetMain() { Dispatchers.resetMain() }
+
+    @Test
+    fun signed_in_group_reads_local_settings_off_the_main_thread() = runTest(dispatcher) {
+        val main = Thread.currentThread()
+        var readThread: Thread? = null
+        readGroupNameOffMain { readThread = Thread.currentThread(); "O3313" }
+        assertNotSame(main, readThread)
+    }
+
+    @Test
+    fun local_settings_failure_shows_group_error_without_crashing() = runTest(dispatcher) {
+        val vm = GroupViewModel(GroupRuntime(false, user,
+            CommunityHttpClient(server(), AccountServerScope.parse("http://127.0.0.1:9/")),
+            { testToken("za_", 4) }, { throw IllegalStateException("Room settings unavailable") }))
+        runCurrent()
+        assertTrue(vm.state.value.failed)
+    }
+
+    @Test
+    fun account_token_failure_shows_group_error_without_crashing() = runTest(dispatcher) {
+        val vm = GroupViewModel(GroupRuntime(false, user,
+            CommunityHttpClient(server(), AccountServerScope.parse("http://127.0.0.1:9/")),
+            { throw IllegalStateException("Session store unavailable") }, { "O3313" }))
+        runCurrent()
+        assertTrue(vm.state.value.failed)
+    }
+
+    @Test
+    fun inbox_group_direct_opens_the_requested_conversation() = runTest(dispatcher) {
+        val http = server()
+        val vm = GroupViewModel(GroupRuntime(false, user,
+            CommunityHttpClient(http, AccountServerScope.parse("http://127.0.0.1:9/")),
+            { testToken("za_", 4) }, { "O3313" },
+            initialCommunityId = community, initialConversationId = direct))
+        runCurrent()
+        try {
+            assertTrue(vm.state.value.direct)
+            assertTrue(http.requests.any { it.url.endsWith("/conversations/$direct/messages") })
+        } finally {
+            vm.onEvent(GroupEvent.Back)
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun chosen_reaction_updates_group_message_summary() = runTest(dispatcher) {
+        val http = server()
+        val normal = http.handler
+        http.handler = { call ->
+            if (call.method == "POST" && call.url.endsWith("/conversations/$group/messages/$first/react")) {
+                assertEquals("""{"emoji":"heart"}""", String(call.body!!))
+                jsonReply(message(first, "Первое").dropLast(1) + ",\"reactions\":[{\"emoji\":\"heart\",\"count\":2,\"mine\":true}]}")
+            } else normal(call)
+        }
+        val vm = viewModel(http)
+        runCurrent()
+        try {
+            vm.onEvent(GroupEvent.React(first, "heart"))
+            runCurrent()
+            assertEquals("heart", vm.state.value.messages.first().reactions.single().emoji)
+            assertEquals(2, vm.state.value.messages.first().reactions.single().count)
+        } finally {
+            vm.onEvent(GroupEvent.Back)
+            runCurrent()
+        }
+    }
 
     @Test
     fun editingAnOlderMessageKeepsChronologicalCursorForPolling() = runTest(dispatcher) {

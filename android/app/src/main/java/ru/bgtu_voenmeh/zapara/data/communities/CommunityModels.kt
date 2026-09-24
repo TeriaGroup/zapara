@@ -59,8 +59,11 @@ data class ChatMessage(
     val createdAt: Instant,
     val kind: String = "text",
     val deleted: Boolean = false,
-    val replyTo: String? = null
+    val replyTo: String? = null,
+    val reactions: List<ChatReaction> = emptyList()
 )
+
+data class ChatReaction(val emoji: String, val count: Int, val mine: Boolean)
 
 data class ChatPage(val messages: List<ChatMessage>, val hasMore: Boolean)
 

@@ -35,7 +35,7 @@ function explain(error: unknown, fallback: string) {
   return fallback;
 }
 
-export function PeoplePanel() {
+export function PeoplePanel({ initialConversationId }: { initialConversationId?: string } = {}) {
   const app = useApp();
   const [home, setHome] = useState<SocialHome | null>(null);
   const [active, setActive] = useState<SocialFriend | null>(null);
@@ -45,13 +45,14 @@ export function PeoplePanel() {
   const [busy, setBusy] = useState(false);
   const homeRevision = useRef(0);
   const activeIdRef = useRef<string | null>(null);
+  const openedFromRoute = useRef<string | null>(null);
   const activeId = active?.conversationId ?? null;
   const chatError = useCallback((text: string) => {
     if (activeIdRef.current === activeId) setError(text);
   }, [activeId]);
 
   useEffect(() => {
-    if (!app.session?.authenticated) { activeIdRef.current = null; setHome(null); setActive(null); return; }
+    if (!app.session?.authenticated) { activeIdRef.current = null; openedFromRoute.current = null; setHome(null); setActive(null); return; }
     let stop = false;
     let pulling = false;
     const pull = async () => {
@@ -62,6 +63,11 @@ export function PeoplePanel() {
         const value = await api.socialHome();
         if (!stop && revision === homeRevision.current) {
           setHome(value);
+          if (initialConversationId && openedFromRoute.current !== initialConversationId) {
+            openedFromRoute.current = initialConversationId;
+            const selected = value.friends.find(item => item.conversationId === initialConversationId);
+            if (selected) { activeIdRef.current = selected.conversationId; setActive(selected); }
+          }
           setError(current => current === "Переписка не открылась" ? "" : current);
         }
       } catch {
@@ -71,7 +77,7 @@ export function PeoplePanel() {
     void pull();
     const timer = window.setInterval(pull, 4000);
     return () => { stop = true; window.clearInterval(timer); };
-  }, [app.session]);
+  }, [app.session, initialConversationId]);
 
   async function invite(event: FormEvent) {
     event.preventDefault();

@@ -1,0 +1,114 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:chat="using:Vograph.Desktop.Features.Chat"
+             x:Class="Vograph.Desktop.Features.Chat.ChatInboxView"
+             x:DataType="chat:ChatInboxViewModel">
+  <Grid Margin="32,26" RowDefinitions="Auto,*" MaxWidth="1080" HorizontalAlignment="Stretch">
+    <StackPanel Spacing="4">
+      <TextBlock Classes="display" Text="Чаты" />
+      <TextBlock Classes="muted caption" Text="Общение внутри приложения «Расписание военмех»" />
+      <TextBlock Classes="muted" Text="{Binding Status}" TextWrapping="Wrap" />
+    </StackPanel>
+    <c:EmptyState Grid.Row="1" IsVisible="{Binding NeedAccount}" Title="Войдите в аккаунт"
+                  Hint="Личные чаты и группы доступны после входа." Icon="{StaticResource Icon.Chat}" />
+    <Grid Grid.Row="1" Margin="0,18,0,0" ColumnDefinitions="340,16,*" IsVisible="{Binding !NeedAccount}">
+      <Border Classes="card" Padding="10" ClipToBounds="True">
+        <DockPanel LastChildFill="True">
+          <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="4,2,4,12">
+            <TextBlock Classes="subject" Text="Все беседы" />
+            <Button Classes="ghost" Content="Обновить" Command="{Binding RefreshCommand}" HorizontalAlignment="Left" />
+            <TextBlock Classes="muted caption" Text="Ваш код для приглашения" />
+            <TextBlock Text="{Binding MyCode}" FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <TextBox Text="{Binding InviteCode}" PlaceholderText="Код друга" MaxLength="64" />
+              <Button Grid.Column="1" Classes="primary" Content="Пригласить" Command="{Binding InviteCommand}" />
+            </Grid>
+            <ItemsControl ItemsSource="{Binding Incoming}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="chat:ChatInviteRow">
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,3">
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Classes="primary" Content="Принять" Command="{Binding AcceptCommand}" />
+                    <Button Grid.Column="2" Classes="ghost" Content="Отклонить" Command="{Binding DeclineCommand}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding Chats}" AutomationProperties.AutomationId="Chat.Inbox">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="chat:ChatInboxRow">
+                  <Button Classes="ghost" Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,8" Margin="0,2">
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                      <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                      <Border Grid.Column="1" Classes="badge" IsVisible="{Binding Unread, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <TextBlock Text="{Binding Unread}" />
+                      </Border>
+                      <TextBlock Grid.Row="1" Classes="muted caption" Text="{Binding Kind}" />
+                      <TextBlock Grid.Row="2" Classes="muted caption" Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+      <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True" IsVisible="{Binding HasConversation}">
+        <DockPanel LastChildFill="True">
+          <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,0,0,1" Padding="14,12">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Classes="subject" Text="{Binding ChatTitle}" />
+              <Button Grid.Column="1" Classes="ghost" Content="Обновить" Command="{Binding ReloadMessagesCommand}" />
+            </Grid>
+          </Border>
+          <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10">
+            <StackPanel Spacing="8">
+              <TextBlock Classes="muted caption" Text="{Binding ActionCaption}" />
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Classes="ghost" Content="Фото" Command="{Binding AttachCommand}" CommandParameter="image" />
+                <Button Classes="ghost" Content="Документ" Command="{Binding AttachCommand}" CommandParameter="file" />
+              </StackPanel>
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBox Text="{Binding Draft}" PlaceholderText="Сообщение" MaxLength="2000" TextWrapping="Wrap" />
+                <Button Grid.Column="1" Classes="primary" Content="Отправить" Command="{Binding SendCommand}" MinHeight="48" />
+              </Grid>
+            </StackPanel>
+          </Border>
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="12,10" Spacing="8">
+              <Button Classes="ghost" Content="Ранее" Command="{Binding LoadOlderCommand}" IsVisible="{Binding HasMore}" HorizontalAlignment="Center" />
+              <ItemsControl ItemsSource="{Binding Messages}" AutomationProperties.AutomationId="Chat.Messages">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="chat:ChatMessageRow">
+                    <Border Classes="card" Margin="0,0,0,6" Padding="10,8">
+                      <StackPanel Spacing="4">
+                        <Grid ColumnDefinitions="*,Auto">
+                          <TextBlock Classes="caption" Text="{Binding Author}" />
+                          <TextBlock Grid.Column="1" Classes="muted caption" Text="{Binding When}" />
+                        </Grid>
+                        <TextBlock Classes="muted caption" Text="{Binding Detail}" />
+                        <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
+                        <Button Classes="ghost" Content="Сохранить файл" Command="{Binding DownloadCommand}"
+                                IsVisible="{Binding CanDownload}" HorizontalAlignment="Left" />
+                        <TextBlock Classes="muted caption" Text="{Binding Reactions}" />
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                          <Button Classes="ghost" Content="Ответить" Command="{Binding ReplyCommand}" />
+                          <Button Classes="ghost" Content="👍" Command="{Binding ReactCommand}" IsVisible="{Binding CanReact}" />
+                          <Button Classes="ghost" Content="Изменить" Command="{Binding EditCommand}" IsVisible="{Binding CanEdit}" />
+                          <Button Classes="ghost" Content="Удалить" Command="{Binding DeleteCommand}" IsVisible="{Binding CanDelete}" />
+                        </StackPanel>
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>
