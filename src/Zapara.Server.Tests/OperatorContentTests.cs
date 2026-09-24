@@ -223,6 +223,69 @@ public sealed class OperatorContentTests
         }
     }
 
+    [Fact]
+    public async Task Former_friends_cannot_download_or_change_previous_messages()
+    {
+        await using var communities = await CommunityPostgresFixture.CreateAsync(true);
+        var op = "op_auth_" + Guid.NewGuid().ToString("N");
+        var configuration = new Dictionary<string, string?>
+        {
+            ["Accounts:Enabled"] = "true",
+            ["Accounts:Schema"] = communities.Accounts.Schema,
+            ["Communities:Enabled"] = "true",
+            ["Communities:Schema"] = communities.Schema,
+            ["ConnectionStrings:Accounts"] = Environment.GetEnvironmentVariable("ZAPARA_TEST_POSTGRES"),
+            ["Operator:Schema"] = op,
+            ["Social:MediaRoot"] = Path.Combine(Path.GetTempPath(), "zapara-authz-" + Guid.NewGuid().ToString("N")),
+        };
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.UseSetting("Accounts:Enabled", "true");
+            builder.UseSetting("Communities:Enabled", "true");
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(configuration));
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IObjectStore>();
+                services.AddSingleton<IObjectStore, MemoryObjectStore>();
+            });
+        });
+        try
+        {
+            using var client = factory.CreateClient();
+            var author = await Register(client, "authz.author");
+            var peer = await Register(client, "authz.peer");
+            var authorHome = await Send(client, "GET", "/api/v1/social/home", 200, bearer: author);
+            await Send(client, "POST", "/api/v1/social/invites", 200, bearer: peer,
+                body: new { code = authorHome.GetProperty("code").GetString() });
+            var incoming = await Send(client, "GET", "/api/v1/social/home", 200, bearer: author);
+            var friendship = incoming.GetProperty("incoming")[0].GetProperty("friendshipId").GetGuid();
+            await Send(client, "POST", $"/api/v1/social/invites/{friendship:D}/accept", 200, bearer: author);
+            var home = await Send(client, "GET", "/api/v1/social/home", 200, bearer: author);
+            var conversation = home.GetProperty("friends")[0].GetProperty("conversationId").GetGuid();
+            var message = await Send(client, "POST", $"/api/v1/social/conversations/{conversation:D}/messages", 201,
+                bearer: author, body: new { body = "private text" });
+            var messageId = message.GetProperty("messageId").GetGuid();
+            var document = await Upload(client, $"/api/v1/social/conversations/{conversation:D}/files", author,
+                "private file"u8.ToArray(), "notes.txt", "text/plain");
+            var attachmentId = document.GetProperty("attachmentId").GetGuid();
+            var social = factory.Services.GetRequiredService<SocialConfiguration>();
+            await communities.Accounts.ExecuteAsync($"UPDATE {social.QuotedSchema}.friendships SET status='declined' WHERE friendship_id='{friendship:D}'");
+
+            await Send(client, "GET", $"/api/v1/social/conversations/{conversation:D}/messages", 404, bearer: author);
+            await Send(client, "GET", $"/api/v1/social/attachments/{attachmentId:D}", 404, bearer: author);
+            await Send(client, "POST", $"/api/v1/social/conversations/{conversation:D}/messages/{messageId:D}/edit", 404,
+                bearer: author, body: new { body = "changed" });
+            await Send(client, "POST", $"/api/v1/social/conversations/{conversation:D}/messages/{messageId:D}/delete", 404,
+                bearer: author);
+            Assert.Equal("private text", await communities.Accounts.ScalarAsync<string>($"SELECT body FROM {social.QuotedSchema}.messages WHERE message_id='{messageId:D}'"));
+        }
+        finally
+        {
+            await communities.Accounts.ExecuteAsync($"DROP SCHEMA IF EXISTS {op} CASCADE");
+        }
+    }
+
     private static async Task Setting(CommunityPostgresFixture db, string schema, string key, string value)
         => await db.Accounts.ExecuteAsync($"""
             INSERT INTO {schema}.system_settings(key,value,updated_at) VALUES ('{key}','{value.Replace("'", "''")}',CURRENT_TIMESTAMP)

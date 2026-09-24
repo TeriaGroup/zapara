@@ -119,6 +119,7 @@ internal sealed class SocialRepository(TrustedAccountContext context, string sch
     {
         try { body = CommunityValidation.Message(body); }
         catch (ArgumentException) { throw new SocialException(400, "invalid_request"); }
+        await RequireMemberAsync(conversationId);
         var updated = await ExecuteAsync($"""
             UPDATE {schema}.messages SET body=@p0, edited_at=@p1
             WHERE message_id=@p2 AND conversation_id=@p3 AND sender_id=@p4 AND kind='text' AND deleted_at IS NULL
@@ -142,6 +143,7 @@ internal sealed class SocialRepository(TrustedAccountContext context, string sch
 
     public async Task<SocialMessageResponse> DeleteAsync(Guid conversationId, Guid messageId)
     {
+        await RequireMemberAsync(conversationId);
         await ExecuteAsync($"""
             INSERT INTO {schema}.file_purge(stored_name, created_at)
             SELECT a.stored_name, @p2 FROM {schema}.attachments a
@@ -234,6 +236,8 @@ internal sealed class SocialRepository(TrustedAccountContext context, string sch
             SELECT a.stored_name, a.original_name, a.content_type
             FROM {schema}.attachments a
             JOIN {schema}.messages m ON m.message_id=a.message_id
+            JOIN {schema}.conversations c ON c.conversation_id=m.conversation_id
+            JOIN {schema}.friendships f ON f.friendship_id=c.friendship_id AND f.status='accepted'
             JOIN {schema}.reads r ON r.conversation_id=m.conversation_id AND r.user_id=@p1
             WHERE a.attachment_id=@p0 AND m.deleted_at IS NULL
             """, attachmentId, Me);

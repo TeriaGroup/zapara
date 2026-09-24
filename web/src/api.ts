@@ -1,4 +1,5 @@
-import { postGroupMedia } from "./group-media";
+import { getGroupMedia, postGroupMedia, type GroupMediaDownload } from "./group-media";
+import { groupMessageQuery, type GroupMessageCursor } from "./groupChat";
 import type { BallotBoard, ChatMessage, Community, Conversation, GroupDesk, GroupHomeworkCopy, GroupHome, GroupTopic, GroupsPayload, MapsManifest, Session, SocialHome, SocialMessage, SocialPage, Teacher, TeacherLesson, TimetablePayload } from "./types";
 
 const cacheKey = "zapara.react.cache.v1";
@@ -243,9 +244,8 @@ export function setRolePower(id: string, roleId: string, power: string, enabled:
   return send<GroupDesk>("POST", `/web-api/communities/${id}/roles/${roleId}/powers`, { power, enabled });
 }
 
-export function messages(id: string, topic?: string) {
-  const query = topic ? "?topic=" + encodeURIComponent(topic) : "";
-  return read<{ messages: ChatMessage[]; hasMore: boolean }>(`/web-api/communities/conversations/${id}/messages` + query);
+export function messages(id: string, topic?: string, cursor?: GroupMessageCursor) {
+  return read<{ messages: ChatMessage[]; hasMore: boolean }>(`/web-api/communities/conversations/${id}/messages` + groupMessageQuery(topic, cursor));
 }
 
 export function sendMessage(id: string, body: string, replyTo?: string) {
@@ -272,6 +272,10 @@ export async function sendGroupMedia(id: string, kind: "image" | "video" | "file
   const response = await postGroupMedia(id, kind, name, file, replyTo, fetch, authHeaders());
   if (!response.ok) throw new Error(String(response.status));
   return response.json() as Promise<ChatMessage>;
+}
+
+export function groupMedia(download: GroupMediaDownload): Promise<Blob> {
+  return getGroupMedia(download, fetch, authHeaders());
 }
 
 export function topics(id: string) {

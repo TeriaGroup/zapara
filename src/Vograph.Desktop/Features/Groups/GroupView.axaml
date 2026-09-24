@@ -134,9 +134,9 @@
           <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10">
             <StackPanel Spacing="8">
             <StackPanel Orientation="Horizontal" Spacing="8">
-              <Button Classes="ghost" Content="Фото" Command="{Binding AttachCommand}" CommandParameter="image" MinHeight="48" AutomationProperties.AutomationId="Group.Photo" />
-              <Button Classes="ghost" Content="Видео" Command="{Binding AttachCommand}" CommandParameter="video" MinHeight="48" AutomationProperties.AutomationId="Group.Video" />
-              <Button Classes="ghost" Content="Документ" Command="{Binding AttachCommand}" CommandParameter="file" MinHeight="48" AutomationProperties.AutomationId="Group.File" />
+              <Button Classes="ghost" Content="Фото" Command="{Binding AttachCommand}" CommandParameter="image" IsEnabled="{Binding !IsBusy}" MinHeight="48" AutomationProperties.AutomationId="Group.Photo" />
+              <Button Classes="ghost" Content="Видео" Command="{Binding AttachCommand}" CommandParameter="video" IsEnabled="{Binding !IsBusy}" MinHeight="48" AutomationProperties.AutomationId="Group.Video" />
+              <Button Classes="ghost" Content="Документ" Command="{Binding AttachCommand}" CommandParameter="file" IsEnabled="{Binding !IsBusy}" MinHeight="48" AutomationProperties.AutomationId="Group.File" />
             </StackPanel>
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
               <TextBox Text="{Binding Draft}" PlaceholderText="{loc:T groupMessage}" MaxLength="2000" MinWidth="0"
@@ -161,6 +161,9 @@
                           <TextBlock Grid.Column="1" Classes="muted caption" Text="{Binding When}" />
                         </Grid>
                         <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
+                        <Button Classes="ghost" Content="{loc:T groupSaveMedia}" Command="{Binding DownloadCommand}"
+                                IsVisible="{Binding CanDownload}" HorizontalAlignment="Left" Padding="6,3"
+                                AutomationProperties.AutomationId="Group.Download" />
                       </StackPanel>
                     </g:HoldBox>
                   </DataTemplate>

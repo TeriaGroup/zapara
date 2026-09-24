@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useSwipe } from "./swipe";
 import * as api from "./api";
 import { followGroupCommunity, openGroupFace } from "./groupChoice";
+import { clearSentGroupDraft, createGroupPoller, groupMediaSelectionIsCurrent, mergeGroupMessages, newestUnseenIncoming } from "./groupChat";
 import { completeGroupCopy, saveEditorHomework } from "./groupHomework";
 import { addDays, dayTitle, friendRoomMark, isoDay, lessonsOn, longDate, sameSubject, weekday } from "./parity";
 import { composeSummary } from "./summary";
@@ -11,7 +12,7 @@ import { subgroupIndex, subgroupMark, visibleLessons } from "./subgroups";
 import { HOMEWORK_FILE_LIMIT, checkHomeworkFile, compressHomeworkPhoto, deleteHomeworkBlob, putHomeworkBlob, readHomeworkBlob } from "./homework-files";
 import { supportAppend, supportDraft, supportFiles } from "./support";
 import { holdActions, runHold } from "./hold";
-import { groupBubbleText, GroupMediaError } from "./group-media";
+import { groupBubbleText, groupMediaDownload, GroupMediaError, type GroupMediaDownload } from "./group-media";
 import { legalDocument, type LegalId } from "./legal";
 import { useApp } from "./store";
 import { homeworkCard, lessonFrom, placeCard, scheduleCard } from "./cards";
@@ -630,42 +631,106 @@ export function CommunityPage() {
 
 export function GroupPage() {
   const app = useApp();
-  const [home, setHome] = useState<GroupHome | null>(null);
+  const groupViewKey = `${app.groupId}:${app.session?.user?.userId ?? ""}:${app.session?.authenticated ? "in" : "out"}`;
+  const groupViewKeyRef = useRef(groupViewKey);
+  groupViewKeyRef.current = groupViewKey;
+  const [homeState, setHomeState] = useState<{ key: string; value: GroupHome | null }>({ key: groupViewKey, value: null });
+  const home = homeState.key === groupViewKey ? homeState.value : null;
   const [desk, setDesk] = useState<GroupDesk | null>(null);
   const [board, setBoard] = useState<BallotBoard | null>(null);
   const [votesOff, setVotesOff] = useState(false);
-  const [chat, setChat] = useState<Conversation | null>(null);
+  const [selectedChat, setChat] = useState<Conversation | null>(null);
+  const chat = home ? selectedChat : null;
   const [thread, setThread] = useState<GroupTopic | "list">("list");
-  const [log, setLog] = useState<ChatMessage[]>([]);
-  const [draft, setDraft] = useState("");
+  const viewKey = chat && (chat.kind !== "group" || thread !== "list")
+    ? `${chat.conversationId}:${chat.kind === "group" && thread !== "list" ? thread.topicId ?? "general" : "direct"}`
+    : "";
+  const viewKeyRef = useRef(viewKey);
+  viewKeyRef.current = viewKey;
+  const [logState, setLogState] = useState<{ key: string; messages: ChatMessage[]; hasOlder: boolean }>({ key: "", messages: [], hasOlder: false });
+  const logRef = useRef(logState);
+  const log = logState.key === viewKey ? logState.messages : [];
+  const hasOlder = logState.key === viewKey && logState.hasOlder;
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const draft = drafts[viewKey] ?? "";
+  const draftEpoch = useRef<Record<string, number>>({});
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [editing, setEditing] = useState<ChatMessage | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [focusChat, setFocusChat] = useState(false);
+  const [mediaBusy, setMediaBusy] = useState<string[]>([]);
+  const mediaPending = useRef(new Set<string>());
+  const [loadingOlder, setLoadingOlder] = useState<string[]>([]);
+  const olderPending = useRef(new Set<string>());
+  const logBoxRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const pickKind = useRef<"image" | "video" | "file">("image");
+  const pendingPick = useRef<{ kind: "image" | "video" | "file"; key: string; conversationId: string; epoch: number; replyTo: string | null } | null>(null);
   const holdTimer = useRef(0);
   const heldOpen = useRef(false);
+  const sendPending = useRef(new Set<string>());
+  const selectionEpoch = useRef(0);
+  const pollerRef = useRef<{ key: string; poller: ReturnType<typeof createGroupPoller> } | null>(null);
+
+  function setHome(value: GroupHome | null) {
+    if (groupViewKeyRef.current === groupViewKey) setHomeState({ key: groupViewKey, value });
+  }
+
+  function setDraft(value: string) {
+    if (!viewKey) return;
+    draftEpoch.current[viewKey] = (draftEpoch.current[viewKey] ?? 0) + 1;
+    setDrafts(current => ({ ...current, [viewKey]: value }));
+  }
+
+  function clearLog() {
+    logRef.current = { key: "", messages: [], hasOlder: false };
+    setLogState(logRef.current);
+  }
+
+  function updateLog(key: string, incoming: ChatMessage[], initialHasOlder?: boolean) {
+    if (viewKeyRef.current !== key) return;
+    const current = logRef.current.key === key ? logRef.current : { messages: [], hasOlder: false };
+    logRef.current = {
+      key,
+      messages: mergeGroupMessages(current.messages, incoming),
+      hasOlder: initialHasOlder ?? current.hasOlder,
+    };
+    setLogState(logRef.current);
+  }
+
+  function prependOlder(key: string, incoming: ChatMessage[], more: boolean) {
+    if (viewKeyRef.current !== key) return;
+    const current = logRef.current.key === key ? logRef.current.messages : [];
+    logRef.current = { key, messages: mergeGroupMessages(incoming, current), hasOlder: more };
+    setLogState(logRef.current);
+  }
+
+  function markLogChanged(key: string) {
+    if (pollerRef.current?.key === key) pollerRef.current.poller.changed();
+  }
   useEffect(() => {
     let stop = false;
     const drop = () => {
+      selectionEpoch.current += 1;
       setHome(null);
       setChat(null);
+      setThread("list");
       setDesk(null);
       setBoard(null);
-      setLog([]);
+      clearLog();
     };
+    drop();
     void openGroupFace(
       { authenticated: !!app.session?.authenticated, groupId: app.groupId },
       groupId => api.communities(groupId),
       face => {
         if (stop) return;
         setError(face.error);
-        if (!face.communityId) { drop(); return; }
+        if (!face.communityId) return;
         void api.groupHome(face.communityId).then(loaded => {
           if (stop) return;
           setHome(loaded);
+          setThread("list");
           setChat(loaded.groupChat);
           void api.groupDesk(face.communityId).then(office => { if (!stop) setDesk(office); }).catch(() => { if (!stop) setDesk(null); });
         }).catch(() => { if (!stop) { drop(); setError("Не удалось загрузить группу"); } });
@@ -673,23 +738,52 @@ export function GroupPage() {
     );
     return () => { stop = true; };
   }, [app.session, app.groupId]);
-  useEffect(() => { setThread("list"); setDraft(""); setReplyTo(null); setEditing(null); setMenu(null); }, [chat?.conversationId]);
+  useEffect(() => { setReplyTo(null); setEditing(null); setMenu(null); }, [viewKey]);
   useEffect(() => {
     if (!menu) return;
     const node = document.querySelector(".log .actions");
     if (node instanceof HTMLElement) node.scrollIntoView({ block: "nearest" });
   }, [menu]);
   useEffect(() => {
-    if (!chat) return;
-    if (chat.kind === "group" && thread === "list") return;
+    clearLog();
+    if (!chat || !viewKey) return;
     const topic = chat.kind === "group" && thread !== "list" ? (thread.topicId ?? "general") : undefined;
-    let stop = false;
-    const pull = () => api.messages(chat.conversationId, topic).then(page => { if (!stop) setLog(page.messages); }).catch(() => { if (!stop) setError("Чат не обновился"); });
-    void pull();
-    if (chat.kind !== "group") void api.markRead(chat.conversationId).catch(() => undefined);
-    const timer = window.setInterval(pull, 4000);
-    return () => { stop = true; window.clearInterval(timer); };
-  }, [chat, thread]);
+    let wantedReadId: string | null = null;
+    let markedReadId: string | null = null;
+    let markingRead = false;
+    const markDirectRead = () => {
+      if (!wantedReadId || wantedReadId === markedReadId || markingRead) return;
+      const target = wantedReadId;
+      markingRead = true;
+      void api.markRead(chat.conversationId)
+        .then(() => { markedReadId = target; })
+        .catch(() => undefined)
+        .finally(() => { markingRead = false; });
+    };
+    const poller = createGroupPoller(
+      after => api.messages(chat.conversationId, topic, after ? { after } : undefined),
+      () => logRef.current.key === viewKey ? logRef.current.messages : [],
+      (updates, firstLoad) => {
+        const known = logRef.current.key === viewKey ? logRef.current.messages : [];
+        const incoming = chat.kind !== "group" ? newestUnseenIncoming(known, updates.messages, app.session?.user?.userId || "") : null;
+        updateLog(viewKey, updates.messages, firstLoad ? updates.hasOlder : undefined);
+        if (chat.kind !== "group") {
+          if (firstLoad) wantedReadId = updates.messages.at(-1)?.messageId ?? "open";
+          if (incoming) wantedReadId = incoming.messageId;
+          markDirectRead();
+        }
+      },
+      () => { if (viewKeyRef.current === viewKey) setError("Чат не обновился"); },
+    );
+    pollerRef.current = { key: viewKey, poller };
+    void poller.poll();
+    const timer = window.setInterval(() => void poller.poll(), 4000);
+    return () => {
+      poller.dispose();
+      if (pollerRef.current?.poller === poller) pollerRef.current = null;
+      window.clearInterval(timer);
+    };
+  }, [viewKey]);
   const communityId = home?.communityId ?? "";
   useEffect(() => {
     if (!app.session?.authenticated || !communityId) return;
@@ -704,45 +798,115 @@ export function GroupPage() {
     return () => { stop = true; window.clearInterval(timer); };
   }, [app.session?.authenticated, communityId]);
   function choose(kind: "image" | "video" | "file") {
-    pickKind.current = kind;
+    if (!chat || !viewKey) return;
     const input = fileRef.current;
     if (!input) return;
+    pendingPick.current = { kind, key: viewKey, conversationId: chat.conversationId, epoch: selectionEpoch.current, replyTo };
     input.accept = kind === "image" ? "image/*" : kind === "video" ? "video/*" : "*/*";
     input.click();
   }
   async function onPicked(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file || !chat) return;
+    const pick = pendingPick.current;
+    pendingPick.current = null;
+    if (!file || !pick || !chat || !groupMediaSelectionIsCurrent(pick,
+      { key: viewKey, conversationId: chat.conversationId, epoch: selectionEpoch.current })) return;
     if (chat.kind === "group" && (thread === "list" || thread.topicId != null)) return;
+    const key = pick.key;
+    const sentReply = pick.replyTo;
+    markLogChanged(key);
     try {
-      const message = await api.sendGroupMedia(chat.conversationId, pickKind.current, file.name, file, replyTo ?? undefined);
-      setReplyTo(null);
-      setLog(current => current.some(item => item.messageId === message.messageId) ? current.map(item => item.messageId === message.messageId ? message : item) : [...current, message]);
+      const message = await api.sendGroupMedia(pick.conversationId, pick.kind, file.name, file, sentReply ?? undefined);
+      markLogChanged(key);
+      updateLog(key, [message]);
+      if (viewKeyRef.current === key) setReplyTo(current => current === sentReply ? null : current);
     } catch (reason) {
-      setError(reason instanceof GroupMediaError && reason.code === "size" ? "Файл слишком большой." : "Сообщение не отправилось");
+      if (viewKeyRef.current === key) setError(reason instanceof GroupMediaError && reason.code === "size" ? "Файл слишком большой." : "Сообщение не отправилось");
+    }
+  }
+  async function downloadMedia(download: GroupMediaDownload) {
+    if (mediaPending.current.has(download.href)) return;
+    const key = viewKey;
+    const epoch = selectionEpoch.current;
+    mediaPending.current.add(download.href);
+    setMediaBusy([...mediaPending.current]);
+    try {
+      const blob = await api.groupMedia(download);
+      if (blob.size === 0) throw new Error("empty media");
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = download.filename;
+      link.hidden = true;
+      document.body.appendChild(link);
+      try { link.click(); }
+      finally {
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      }
+    } catch { if (viewKeyRef.current === key && selectionEpoch.current === epoch) setError("Файл не загрузился"); }
+    finally {
+      mediaPending.current.delete(download.href);
+      setMediaBusy([...mediaPending.current]);
+    }
+  }
+  async function earlier() {
+    if (!chat || !viewKey || !hasOlder || olderPending.current.has(viewKey)) return;
+    const first = logRef.current.key === viewKey ? logRef.current.messages[0] : null;
+    if (!first) return;
+    const key = viewKey;
+    const topic = chat.kind === "group" && thread !== "list" ? (thread.topicId ?? "general") : undefined;
+    olderPending.current.add(key);
+    setLoadingOlder([...olderPending.current]);
+    try {
+      const page = await api.messages(chat.conversationId, topic, { before: first.messageId });
+      if (viewKeyRef.current !== key) return;
+      const node = logBoxRef.current;
+      const top = node?.scrollTop ?? 0;
+      const height = node?.scrollHeight ?? 0;
+      const anchor = node?.querySelector<HTMLElement>("article.bubble");
+      const anchorTop = anchor?.getBoundingClientRect().top;
+      prependOlder(key, page.messages, page.hasMore);
+      window.requestAnimationFrame(() => {
+        if (!node?.isConnected || viewKeyRef.current !== key) return;
+        const shift = anchor?.isConnected && anchorTop !== undefined
+          ? anchor.getBoundingClientRect().top - anchorTop
+          : node.scrollHeight - height;
+        node.scrollTop = top + shift;
+      });
+    } catch { if (viewKeyRef.current === key) setError("Старые сообщения не загрузились"); }
+    finally {
+      olderPending.current.delete(key);
+      setLoadingOlder([...olderPending.current]);
     }
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!chat || !draft.trim()) return;
+    if (!chat || !viewKey || !draft.trim() || sendPending.current.has(viewKey)) return;
     if (chat.kind === "group" && thread === "list") return;
+    const key = viewKey;
     const body = draft;
-    setDraft("");
+    const sentDraftEpoch = draftEpoch.current[key] ?? 0;
+    const target = editing;
+    const sentReply = replyTo;
+    sendPending.current.add(key);
+    markLogChanged(key);
     try {
-      if (editing) {
-        const message = await api.editGroupMessage(chat.conversationId, editing.messageId, body);
-        setEditing(null);
-        setLog(current => current.map(item => item.messageId === message.messageId ? message : item));
-        return;
+      const message = target
+        ? await api.editGroupMessage(chat.conversationId, target.messageId, body)
+        : chat.kind === "group" && thread !== "list"
+          ? await api.sendTopicMessage(chat.conversationId, body, thread.topicId, sentReply ?? undefined)
+          : await api.sendMessage(chat.conversationId, body, sentReply ?? undefined);
+      markLogChanged(key);
+      updateLog(key, [message]);
+      setDrafts(current => clearSentGroupDraft(current, key, body, draftEpoch.current[key] === sentDraftEpoch));
+      if (viewKeyRef.current === key) {
+        if (target) setEditing(current => current?.messageId === target.messageId ? null : current);
+        setReplyTo(current => current === sentReply ? null : current);
       }
-      const message = chat.kind === "group" && thread !== "list"
-        ? await api.sendTopicMessage(chat.conversationId, body, thread.topicId, replyTo ?? undefined)
-        : await api.sendMessage(chat.conversationId, body, replyTo ?? undefined);
-      setReplyTo(null);
-      setLog(current => [...current, message]);
-    }
-    catch { setDraft(body); setError("Сообщение не отправилось"); }
+    } catch { if (viewKeyRef.current === key) setError(target ? "Изменение не сохранилось" : "Сообщение не отправилось"); }
+    finally { sendPending.current.delete(key); }
   }
   if (!app.session?.authenticated) return <section className="page"><div className="card empty"><h1>Группа</h1><p>Войдите в аккаунт, чтобы открыть группу, разделы чата и голосования.</p><Link className="btn primary" to="/settings">Открыть настройки</Link></div></section>;
   return (
@@ -754,37 +918,52 @@ export function GroupPage() {
       {home && (
         <div className={"grid-2 split" + (focusChat ? " focus" : "")}>
           <div className="people split-list">
-            <button className="person" type="button" onClick={() => { setChat(home.groupChat); setThread("list"); setFocusChat(true); }}><span><b>Чат группы</b><div className="muted">Разделы и общий поток</div></span>{home.groupChat.unread > 0 && <span className="chip">{home.groupChat.unread}</span>}</button>
+            <button className="person" type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setChat(home.groupChat); setThread("list"); setFocusChat(true); }}><span><b>Чат группы</b><div className="muted">Разделы и общий поток</div></span>{home.groupChat.unread > 0 && <span className="chip">{home.groupChat.unread}</span>}</button>
             {home.classmates.map(person => (
-              <button className="person" key={person.userId} type="button" disabled={person.self} onClick={() => { if (!home || person.self) return; setFocusChat(true); void api.openDirect(home.communityId, person.userId).then(setChat).catch(() => setError("Личный чат не открылся")); }}>
+              <button className="person" key={person.userId} type="button" disabled={person.self} onClick={() => {
+                if (!home || person.self) return;
+                const epoch = ++selectionEpoch.current;
+                clearLog();
+                setChat(null);
+                setThread("list");
+                setFocusChat(true);
+                void api.openDirect(home.communityId, person.userId)
+                  .then(next => { if (selectionEpoch.current === epoch) setChat(next); })
+                  .catch(() => { if (selectionEpoch.current === epoch) setError("Личный чат не открылся"); });
+              }}>
                 <span><b>{person.displayName || person.username}</b><div className="muted">@{person.username}</div></span>
                 <span className="row">{[person.role === "headman" ? "Староста" : person.role === "curator" ? "Куратор" : "Участник", ...titlesOf(desk, person.userId)].map(title => <span className="chip" key={title}>{title}</span>)}</span>
               </button>
             ))}
-            {home.directs.map(item => <button className="person" key={item.conversationId} type="button" onClick={() => { setChat(item); setFocusChat(true); }}><span><b>{item.title}</b><div className="muted">{item.lastBody}</div></span></button>)}
+            {home.directs.map(item => <button className="person" key={item.conversationId} type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setChat(item); setThread("list"); setFocusChat(true); }}><span><b>{item.title}</b><div className="muted">{item.lastBody}</div></span></button>)}
           </div>
           <section className="card chat split-detail">
             <button className="btn back-only" type="button" onClick={() => setFocusChat(false)}>К списку</button>
-            {chat?.kind === "group" && thread === "list" && <GroupTopics communityId={home.communityId} onOpen={setThread} onError={setError} />}
-            {(chat?.kind !== "group" || thread !== "list") && <>
+            {!chat && <p className="muted">{error || "Чат открывается…"}</p>}
+            {chat?.kind === "group" && thread === "list" && <GroupTopics communityId={home.communityId} onOpen={next => { selectionEpoch.current += 1; clearLog(); setThread(next); }} onError={setError} />}
+            {chat && (chat.kind !== "group" || thread !== "list") && <>
             <div className="row">
-              {chat?.kind === "group" && <button className="btn" type="button" onClick={() => setThread("list")}>Все разделы</button>}
+              {chat?.kind === "group" && <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setThread("list"); }}>Все разделы</button>}
               <h2>{chat?.kind === "group" && thread !== "list" ? `${thread.icon} ${thread.title}` : (chat?.title || "Чат")}</h2>
             </div>
-            <div className="log">
+            <div className="log" ref={logBoxRef}>
+              {hasOlder && <button className="btn" type="button" disabled={loadingOlder.includes(viewKey)} onClick={() => void earlier()}>{loadingOlder.includes(viewKey) ? "Загрузка…" : "Раньше"}</button>}
               {log.map(message => {
                 const mine = message.senderId === app.session?.user?.userId;
                 const kind = message.kind || "text";
                 const actions = holdActions(kind, mine, !!message.deleted, menu === message.messageId);
+                const download = chat && groupMediaDownload(chat.conversationId, message);
                 return (
                   <article key={message.messageId} data-hold={kind} className={"bubble" + (mine ? " mine" : "")}
                     onPointerDown={() => { heldOpen.current = false; if (holdTimer.current) window.clearTimeout(holdTimer.current); holdTimer.current = window.setTimeout(() => { holdTimer.current = 0; heldOpen.current = true; setMenu(message.messageId); }, 450); }}
                     onPointerUp={event => { if (holdTimer.current) window.clearTimeout(holdTimer.current); if (heldOpen.current && !(event.target instanceof Element && event.target.closest(".actions"))) event.preventDefault(); }}
                     onPointerLeave={() => { if (holdTimer.current) window.clearTimeout(holdTimer.current); }}
-                    onClickCapture={event => { if (event.target instanceof Element && event.target.closest(".actions")) return; if (heldOpen.current || menu === message.messageId) { event.preventDefault(); event.stopPropagation(); } }}>
+                    onClickCapture={event => { if (event.target instanceof Element && event.target.closest(".actions")) return; if (event.target instanceof Element && event.target.closest(".group-media-download") && !heldOpen.current) return; if (heldOpen.current || menu === message.messageId) { event.preventDefault(); event.stopPropagation(); } }}>
                     {message.senderId !== app.session?.user?.userId && <b>{message.senderName}</b>}
                     {message.replyTo && <div className="muted">Ответ</div>}
-                    <div>{groupBubbleText(message)}</div>
+                    <div>{download
+                      ? <button className="group-media-download" type="button" disabled={mediaBusy.includes(download.href)} onClick={() => { setMenu(null); void downloadMedia(download); }} style={{ border: 0, background: "none", padding: 0, textAlign: "left", textDecoration: "underline" }}>{mediaBusy.includes(download.href) ? "Загрузка…" : download.label}</button>
+                      : groupBubbleText(message)}</div>
                     <div className="muted">{message.createdAt.slice(0, 16).replace("T", " ")}</div>
                     {actions.length > 0 && (
                       <div className="actions">
@@ -794,13 +973,21 @@ export function GroupPage() {
                             reaction() {
                               setMenu(null);
                               if (!chat) return;
-                              void api.reactGroupMessage(chat.conversationId, message.messageId).then(next => setLog(current => current.map(item => item.messageId === next.messageId ? next : item))).catch(() => setError("Реакция не сохранилась"));
+                              const key = viewKey;
+                              markLogChanged(key);
+                              void api.reactGroupMessage(chat.conversationId, message.messageId)
+                                .then(next => { markLogChanged(key); updateLog(key, [next]); })
+                                .catch(() => { if (viewKeyRef.current === key) setError("Реакция не сохранилась"); });
                             },
                             edit() { setMenu(null); setReplyTo(null); setEditing(message); setDraft(message.body); },
                             delete() {
                               setMenu(null);
                               if (!chat) return;
-                              void api.deleteGroupMessage(chat.conversationId, message.messageId).then(next => setLog(current => current.map(item => item.messageId === next.messageId ? next : item))).catch(() => setError("Сообщение не удалилось"));
+                              const key = viewKey;
+                              markLogChanged(key);
+                              void api.deleteGroupMessage(chat.conversationId, message.messageId)
+                                .then(next => { markLogChanged(key); updateLog(key, [next]); })
+                                .catch(() => { if (viewKeyRef.current === key) setError("Сообщение не удалилось"); });
                             },
                           })}>{action === "reply" ? "Ответить" : action === "reaction" ? "Реакция" : action === "edit" ? "Изменить" : "Удалить"}</button>
                         ))}

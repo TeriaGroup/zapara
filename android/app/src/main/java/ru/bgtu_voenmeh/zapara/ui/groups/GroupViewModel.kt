@@ -26,7 +26,8 @@ internal class GroupRuntime(
     val userId: String?,
     val client: CommunityHttpClient?,
     val accessToken: suspend () -> String?,
-    val groupName: suspend () -> String?
+    val groupName: suspend () -> String?,
+    val openMedia: suspend (GroupMessageUi, ByteArray) -> Boolean = { _, _ -> false }
 ) {
     companion object {
         fun from(container: AppContainer) = GroupRuntime(
@@ -34,7 +35,8 @@ internal class GroupRuntime(
             userId = container.profile.userId,
             client = container.communities,
             accessToken = { container.accessToken() },
-            groupName = { container.repo.settings().myGroupId }
+            groupName = { container.repo.settings().myGroupId },
+            openMedia = { message, bytes -> GroupMediaViewer(container.app).open(message, bytes) }
         )
     }
 }
@@ -102,6 +104,9 @@ data class GroupUiState(
     val hasMore: Boolean = false,
     val groupUnread: Int = 0,
     val chatLoading: Boolean = false,
+    val sending: Boolean = false,
+    val mediaLoadingId: String? = null,
+    val mediaError: Boolean = false,
     val replyTo: String? = null,
     val editing: String? = null
 )
@@ -117,6 +122,7 @@ sealed interface GroupEvent {
     data object Send : GroupEvent
     data class Hold(val messageId: String, val action: String) : GroupEvent
     data class Media(val kind: String, val name: String, val bytes: ByteArray) : GroupEvent
+    data class OpenMedia(val messageId: String) : GroupEvent
     data object People : GroupEvent
     data object Chat : GroupEvent
 }
@@ -149,11 +155,14 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             GroupEvent.Older -> viewModelScope.launch { older() }
             is GroupEvent.Draft -> {
                 val text = event.text.take(2000)
-                conversationId?.let { drafts[it] = text }
+                if (mutable.value.editing == null && mutable.value.replyTo == null) {
+                    conversationId?.let { drafts[it] = text }
+                }
                 mutable.value = mutable.value.copy(draft = text)
             }
             GroupEvent.Send -> viewModelScope.launch { send() }
             is GroupEvent.Media -> attach(event.kind, event.name, event.bytes)
+            is GroupEvent.OpenMedia -> openMedia(event.messageId)
             is GroupEvent.Hold -> hold(event.messageId, event.action)
             GroupEvent.People -> mutable.value = mutable.value.copy(showPeople = true)
             GroupEvent.Chat -> mutable.value = mutable.value.copy(showPeople = false)
@@ -244,13 +253,16 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     }
 
     private suspend fun openChat(id: String, title: String, direct: Boolean) {
-        conversationId?.let { drafts[it] = mutable.value.draft }
+        if (mutable.value.editing == null && mutable.value.replyTo == null) {
+            conversationId?.let { drafts[it] = mutable.value.draft }
+        }
         val ticket = ++generation
         poll?.cancel()
         conversationId = id
         mutable.value = mutable.value.copy(
             chatTitle = title, direct = direct, showPeople = false, messages = emptyList(), hasMore = false,
-            draft = drafts[id].orEmpty(), chatLoading = true, failed = false
+            draft = drafts[id].orEmpty(), replyTo = null, editing = null, chatLoading = true, failed = false,
+            mediaLoadingId = null, mediaError = false
         )
         val api = runtime.client
         if (api == null) {
@@ -269,7 +281,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             mutable.value = mutable.value.copy(
                 messages = page.messages.map { row(it) }, hasMore = page.hasMore, failed = false, chatLoading = false
             )
-            try { api.markRead(token, id) } catch (_: CommunityClientException) { }
+            acknowledge(token, id, ticket)
             if (current(ticket, id)) arm(id)
         } catch (e: CancellationException) {
             throw e
@@ -309,20 +321,52 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         val last = mutable.value.messages.lastOrNull()
         val page = if (last == null) api.messages(token, id) else api.messages(token, id, after = last.id)
         if (!current(ticket, id)) return
+        val recent = if (last == null) page.messages else try {
+            api.messages(token, id).messages
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: CommunityClientException) {
+            emptyList()
+        }
+        if (!current(ticket, id)) return
         val have = mutable.value.messages.map { it.id }.toSet()
         val added = page.messages.map { row(it) }.filter { it.id !in have }
         val pageIds = page.messages.map { it.messageId }.toSet()
         val kept = if (last == null) mutable.value.messages.filter { it.id !in pageIds } else mutable.value.messages
+        val recentById = recent.associateBy { it.messageId }
+        val merged = (if (last == null) page.messages.map { row(it) } + kept else kept + added).map { existing ->
+            recentById[existing.id]?.let { row(it) } ?: existing
+        }
         mutable.value = mutable.value.copy(
-            messages = if (last == null) page.messages.map { row(it) } + kept else kept + added,
+            messages = merged,
             hasMore = if (last == null) page.hasMore else mutable.value.hasMore,
             failed = false,
             chatLoading = false
         )
+        if (page.messages.isNotEmpty()) acknowledge(token, id, ticket)
+    }
+
+    private suspend fun acknowledge(token: String, id: String, ticket: Int) {
+        val api = runtime.client ?: return
+        try {
+            val read = api.markRead(token, id)
+            if (!current(ticket, id)) return
+            mutable.value = if (read.kind == "group") {
+                mutable.value.copy(groupUnread = read.unread)
+            } else {
+                mutable.value.copy(directs = mutable.value.directs.map { if (it.id == id) it.copy(unread = read.unread) else it })
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: CommunityClientException) { }
     }
 
     private fun attach(kind: String, name: String, bytes: ByteArray) {
         if (conversationId == null || mutable.value.editing != null) return
+        if (sending || pendingBytes != null) {
+            mutable.value = mutable.value.copy(failed = true)
+            return
+        }
         if (bytes.isEmpty() || bytes.size > GroupMedia.maxBytes || (kind != "image" && kind != "video" && kind != "file")) {
             mutable.value = mutable.value.copy(failed = true)
             return
@@ -331,6 +375,35 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         pendingName = name
         pendingBytes = bytes
         viewModelScope.launch { send() }
+    }
+
+    private fun openMedia(messageId: String) {
+        val id = conversationId ?: return
+        val message = mutable.value.messages.firstOrNull { it.id == messageId } ?: return
+        if (message.deleted || message.kind !in setOf("image", "video", "file") || mutable.value.mediaLoadingId != null) return
+        val api = runtime.client ?: return
+        val ticket = generation
+        mutable.value = mutable.value.copy(mediaLoadingId = messageId, mediaError = false)
+        viewModelScope.launch {
+            try {
+                val token = runtime.accessToken()
+                if (token.isNullOrEmpty()) {
+                    if (current(ticket, id)) mutable.value = mutable.value.copy(mediaError = true)
+                    return@launch
+                }
+                if (!current(ticket, id)) return@launch
+                val bytes = api.downloadMedia(token, id, messageId)
+                if (!current(ticket, id)) return@launch
+                val opened = runtime.openMedia(message, bytes)
+                if (current(ticket, id)) mutable.value = mutable.value.copy(mediaError = !opened)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                if (current(ticket, id)) mutable.value = mutable.value.copy(mediaError = true)
+            } finally {
+                if (current(ticket, id)) mutable.value = mutable.value.copy(mediaLoadingId = null)
+            }
+        }
     }
 
     private suspend fun send() {
@@ -345,6 +418,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             val name = pendingName
             pendingName = ""
             sending = true
+            mutable.value = mutable.value.copy(sending = true)
             try {
                 val api = runtime.client
                 val token = if (api == null) null else runtime.accessToken()
@@ -368,54 +442,62 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 if (current(ticket, id)) mutable.value = mutable.value.copy(failed = true)
             } finally {
                 sending = false
+                mutable.value = mutable.value.copy(sending = false)
             }
             return
         }
         val body = mutable.value.draft.trim()
         if (body.isEmpty()) return
+        val editing = mutable.value.editing
+        val replyTo = mutable.value.replyTo
+        val contextual = editing != null || replyTo != null
         sending = true
-        drafts[id] = ""
+        mutable.value = mutable.value.copy(sending = true)
+        if (!contextual) drafts[id] = ""
         if (current(ticket, id)) mutable.value = mutable.value.copy(draft = "")
         try {
             val api = runtime.client
             val token = if (api == null) null else runtime.accessToken()
             if (api == null || token.isNullOrEmpty()) {
-                restoreDraft(id, ticket, body)
+                restoreDraft(id, ticket, body, contextual)
                 return
             }
-            val message = if (mutable.value.editing != null) api.editMessage(token, id, mutable.value.editing!!, body) else api.sendMessage(token, id, body, mutable.value.replyTo)
+            val message = if (editing != null) api.editMessage(token, id, editing, body) else api.sendMessage(token, id, body, replyTo)
             if (!current(ticket, id)) {
-                if (drafts[id].isNullOrEmpty()) drafts.remove(id)
+                if (!contextual && drafts[id].isNullOrEmpty()) drafts.remove(id)
                 return
             }
             val row = row(message)
-            if (drafts[id].isNullOrEmpty()) drafts.remove(id)
+            if (!contextual && drafts[id].isNullOrEmpty()) drafts.remove(id)
             if (!current(ticket, id)) return
-            val kept = mutable.value.messages.filter { it.id != row.id }
+            val messages = mutable.value.messages.toMutableList()
+            val previous = messages.indexOfFirst { it.id == row.id }
+            if (previous < 0) messages += row else messages[previous] = row
             mutable.value = mutable.value.copy(
                 draft = drafts[id].orEmpty(),
                 failed = false,
                 replyTo = null,
                 editing = null,
-                messages = kept + row
+                messages = messages
             )
         } catch (e: CancellationException) {
-            restoreDraft(id, ticket, body)
+            restoreDraft(id, ticket, body, contextual)
             throw e
         } catch (e: Exception) {
             android.util.Log.w("ZaparaGroup", "send", e)
-            restoreDraft(id, ticket, body)
+            restoreDraft(id, ticket, body, contextual)
         } finally {
             sending = false
+            mutable.value = mutable.value.copy(sending = false)
         }
     }
 
-    private fun restoreDraft(id: String, ticket: Int, body: String) {
-        if (drafts[id].isNullOrEmpty()) drafts[id] = body
+    private fun restoreDraft(id: String, ticket: Int, body: String, contextual: Boolean) {
+        if (!contextual && drafts[id].isNullOrEmpty()) drafts[id] = body
         if (!current(ticket, id)) return
         mutable.value = mutable.value.copy(
             failed = true,
-            draft = mutable.value.draft.ifEmpty { drafts[id].orEmpty() }
+            draft = mutable.value.draft.ifEmpty { if (contextual) body else drafts[id].orEmpty() }
         )
     }
 
@@ -443,12 +525,15 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     private fun leave() {
         poll?.cancel()
         generation++
-        conversationId?.let { drafts[it] = mutable.value.draft }
+        if (mutable.value.editing == null && mutable.value.replyTo == null) {
+            conversationId?.let { drafts[it] = mutable.value.draft }
+        }
         conversationId = null
         home = null
         mutable.value = mutable.value.copy(
             hasHome = false, messages = emptyList(), direct = false, failed = false,
-            showPeople = false, chatLoading = false, draft = ""
+            showPeople = false, chatLoading = false, draft = "", replyTo = null, editing = null,
+            mediaLoadingId = null, mediaError = false
         )
     }
 
@@ -457,26 +542,32 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     private fun hold(messageId: String, action: String) {
         val message = mutable.value.messages.find { it.id == messageId } ?: return
         val id = conversationId ?: return
+        val ticket = generation
         val api = runtime.client ?: return
         viewModelScope.launch {
-            val token = runtime.accessToken()
-            if (token.isNullOrEmpty() || conversationId != id) return@launch
-            val port = object : GroupHoldApi {
-                override suspend fun edit(token: String, conversationId: String, messageId: String, body: String) {
-                    api.editMessage(token, conversationId, messageId, body)
+            try {
+                val token = runtime.accessToken()
+                if (token.isNullOrEmpty() || !current(ticket, id)) return@launch
+                val port = object : GroupHoldApi {
+                    override suspend fun edit(token: String, conversationId: String, messageId: String, body: String) {
+                        api.editMessage(token, conversationId, messageId, body)
+                    }
+                    override suspend fun delete(token: String, conversationId: String, messageId: String) {
+                        api.deleteMessage(token, conversationId, messageId)
+                    }
+                    override suspend fun react(token: String, conversationId: String, messageId: String, emoji: String) {
+                        api.reactMessage(token, conversationId, messageId, emoji)
+                    }
                 }
-                override suspend fun delete(token: String, conversationId: String, messageId: String) {
-                    api.deleteMessage(token, conversationId, messageId)
-                }
-                override suspend fun react(token: String, conversationId: String, messageId: String, emoji: String) {
-                    api.reactMessage(token, conversationId, messageId, emoji)
-                }
+                val next = GroupHold.perform(message, action, id, token, port, GroupHoldState(mutable.value.draft, mutable.value.replyTo, mutable.value.editing))
+                if (!current(ticket, id)) return@launch
+                val messages = if (next.removed) mutable.value.messages.map { if (it.id == messageId) it.copy(deleted = true) else it } else mutable.value.messages
+                mutable.value = mutable.value.copy(draft = next.draft, replyTo = next.replyTo, editing = next.editing, messages = messages)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (current(ticket, id)) mutable.value = mutable.value.copy(failed = true)
             }
-            val next = GroupHold.perform(message, action, id, token, port, GroupHoldState(mutable.value.draft, mutable.value.replyTo, mutable.value.editing))
-            if (conversationId != id) return@launch
-            val messages = if (next.removed) mutable.value.messages.map { if (it.id == messageId) it.copy(deleted = true) else it } else mutable.value.messages
-            mutable.value = mutable.value.copy(draft = next.draft, replyTo = next.replyTo, editing = next.editing, messages = messages)
-            conversationId?.let { drafts[it] = next.draft }
         }
     }
 

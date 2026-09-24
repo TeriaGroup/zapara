@@ -8,12 +8,47 @@ export class GroupMediaError extends Error {
 
 export const groupMediaLimit = 8 * 1024 * 1024;
 
+const mediaId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export type GroupMediaDownload = { href: string; filename: string; label: string };
+
+function mediaFilename(body: string, kind: "image" | "video" | "file"): string {
+  const fallback = kind === "image" ? "Фото" : kind === "video" ? "Видео" : "Документ";
+  const basename = body.replace(/\\/g, "/").split("/").pop() ?? "";
+  const clean = basename
+    .replace(/[\u0000-\u001f\u007f-\u009f<>:"|?*\u202a-\u202e\u2066-\u2069]/g, "")
+    .trim().replace(/^[. ]+|[. ]+$/g, "").slice(0, 80).replace(/[. ]+$/g, "");
+  if (!clean) return fallback;
+  return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(clean) ? `_${clean}` : clean;
+}
+
+export function groupMediaDownload(conversationId: string, message: { messageId: string; kind?: string; body: string; deleted?: boolean }): GroupMediaDownload | null {
+  if (message.deleted || !mediaId.test(conversationId) || !mediaId.test(message.messageId)) return null;
+  if (message.kind !== "image" && message.kind !== "video" && message.kind !== "file") return null;
+  const filename = mediaFilename(message.body, message.kind);
+  const label = message.kind === "image" ? "Скачать фото" : message.kind === "video" ? "Скачать видео" : `Скачать документ: ${filename}`;
+  return {
+    href: `/web-api/communities/conversations/${conversationId}/messages/${message.messageId}/media`,
+    filename,
+    label,
+  };
+}
+
+export async function getGroupMedia(download: GroupMediaDownload, get: typeof fetch, headers: Record<string, string>): Promise<Blob> {
+  const response = await get(download.href, {
+    credentials: "same-origin",
+    headers: { ...headers, Accept: "application/octet-stream" },
+  });
+  if (!response.ok) throw new Error(String(response.status));
+  return response.blob();
+}
+
 export function groupBubbleText(message: { kind?: string; body: string; deleted?: boolean }): string {
   if (message.deleted) return "Сообщение удалено";
   if (message.kind === "image") return "Фото";
   if (message.kind === "video" || message.kind === "circle") return "Видео";
   if (message.kind === "voice") return "Голосовое";
-  if (message.kind === "file") return message.body.trim() ? message.body : "Документ";
+  if (message.kind === "file") return mediaFilename(message.body, "file");
   return message.body;
 }
 

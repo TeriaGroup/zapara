@@ -20,4 +20,12 @@ internal static class GroupMedia
         "video" => "Видео",
         _ => "Документ"
     };
+
+    public static string SafeName(string? name, string kind)
+    {
+        var last = (name ?? "").Replace('\\', '/').Split('/').LastOrDefault()?.Trim() ?? "";
+        var clean = new string(last.Where(c => !char.IsControl(c) && c is not ('<' or '>' or ':' or '"' or '/' or '\\' or '|' or '?' or '*')).ToArray());
+        if (clean is "" or "." or "..") clean = Label(kind);
+        return clean.Length <= 80 ? clean : clean[..80];
+    }
 }

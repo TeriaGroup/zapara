@@ -3,13 +3,14 @@ using Avalonia.Platform.Storage;
 
 namespace Vograph.Desktop.Services;
 
-/// <summary>Save/Open JSON pickers behind an interface so view models and tests never open OS dialogs.</summary>
+/// <summary>File pickers behind an interface so view models and tests never open OS dialogs.</summary>
 public interface IFileDialogs
 {
     Task<string?> SaveJsonAsync(string suggestedName);
     Task<string?> OpenJsonAsync();
     Task<string?> OpenHomeworkAsync(bool photo);
     Task<string?> OpenChatMediaAsync(string kind);
+    Task<string?> SaveChatMediaAsync(string suggestedName);
     Task<IReadOnlyList<string>> OpenSupportAsync(string kind);
 }
 
@@ -20,6 +21,7 @@ public sealed class NullFileDialogs : IFileDialogs
     public Task<string?> OpenJsonAsync() => Task.FromResult<string?>(null);
     public Task<string?> OpenHomeworkAsync(bool photo) => Task.FromResult<string?>(null);
     public Task<string?> OpenChatMediaAsync(string kind) => Task.FromResult<string?>(null);
+    public Task<string?> SaveChatMediaAsync(string suggestedName) => Task.FromResult<string?>(null);
     public Task<IReadOnlyList<string>> OpenSupportAsync(string kind) => Task.FromResult<IReadOnlyList<string>>([]);
 }
 
@@ -71,6 +73,17 @@ public sealed class AvaloniaFileDialogs : IFileDialogs
         };
         var files = await tl.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { AllowMultiple = false, FileTypeFilter = new[] { filter } });
         return files.Count == 0 ? null : files[0].TryGetLocalPath();
+    }
+
+    public async Task<string?> SaveChatMediaAsync(string suggestedName)
+    {
+        if (_topLevel() is not { } tl) return null;
+        var file = await tl.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            SuggestedFileName = suggestedName,
+            ShowOverwritePrompt = true
+        });
+        return file?.TryGetLocalPath();
     }
 
     public async Task<IReadOnlyList<string>> OpenSupportAsync(string kind)

@@ -1,5 +1,7 @@
 using System.Net;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
+using Zapara.Server.Accounts;
 using Zapara.Contracts.Communities;
 using static Zapara.Server.Tests.AccountTestSupport;
 
@@ -166,5 +168,62 @@ public sealed class MessengerApiTests
         Assert.True(removed.Deleted);
         Assert.Equal("image", removed.Kind);
         await host.Problem("GET", $"/conversations/{chat}/messages/{image.MessageId}/media", 404, "not_found", member.AccessToken);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Deleted_message_does_not_expose_its_body_in_chat_preview_or_archive(bool direct)
+    {
+        await using var db = await CommunityPostgresFixture.CreateAsync(true);
+        await using var host = await CommunityApiTestHost.StartAsync(db);
+        var author = await Seed(host.Accounts, "msg.deleted.author");
+        var peer = await Seed(host.Accounts, "msg.deleted.peer");
+        var communityId = Guid.NewGuid();
+        await db.SeedCommunityAsync(communityId);
+        await db.SeedMemberAsync(communityId, author.User.UserId);
+        await db.SeedMemberAsync(communityId, peer.User.UserId);
+        var home = await host.Get<GroupHomeResponse>($"/{communityId}/home", author.AccessToken);
+        var chat = direct
+            ? CommunityJson.Parse<ConversationResponse>(await host.Send("POST", "/direct", 201, author.AccessToken,
+                Json(new OpenDirectRequest(communityId, peer.User.UserId)))).ConversationId
+            : home.GroupChat.ConversationId;
+        const string secret = "Удалить приватный текст 91745";
+        var sent = CommunityJson.Parse<ChatMessageResponse>(await host.Send("POST", $"/conversations/{chat}/messages", 201,
+            author.AccessToken, Json(new SendMessageRequest(secret))));
+        var archive = host.App.Services.GetRequiredService<IContentArchive>();
+        Assert.NotNull(archive.Get(ContentNames.GroupMessage(sent.MessageId)));
+
+        var deleted = CommunityJson.Parse<ChatMessageResponse>(await host.Send("POST",
+            $"/conversations/{chat}/messages/{sent.MessageId}/delete", 200, author.AccessToken));
+        Assert.True(deleted.Deleted);
+        Assert.DoesNotContain(secret, deleted.Body);
+        var page = await host.Get<ChatPageResponse>($"/conversations/{chat}/messages", peer.AccessToken);
+        var listed = Assert.Single(page.Messages);
+        Assert.True(listed.Deleted);
+        Assert.DoesNotContain(secret, listed.Body);
+        var peerHome = await host.Get<GroupHomeResponse>($"/{communityId}/home", peer.AccessToken);
+        var preview = direct ? Assert.Single(peerHome.Directs).LastBody : peerHome.GroupChat.LastBody;
+        Assert.NotNull(preview);
+        Assert.DoesNotContain(secret, preview);
+        Assert.Null(archive.Get(ContentNames.GroupMessage(sent.MessageId)));
+        Assert.DoesNotContain(secret, await db.Accounts.ScalarAsync<string>($"SELECT body FROM \"{db.Configuration.MessagesSchema}\".chat_messages WHERE message_id='{sent.MessageId}'"));
+
+        // Rows and archive objects written before this fix can still contain the original body.
+        await db.Accounts.ExecuteAsync($"UPDATE \"{db.Configuration.MessagesSchema}\".chat_messages SET body='{secret}' WHERE message_id='{sent.MessageId}'");
+        archive.Put(ContentNames.GroupMessage(sent.MessageId), System.Text.Encoding.UTF8.GetBytes(secret));
+        var olderPage = await host.Get<ChatPageResponse>($"/conversations/{chat}/messages", peer.AccessToken);
+        Assert.DoesNotContain(secret, Assert.Single(olderPage.Messages).Body);
+        var olderHome = await host.Get<GroupHomeResponse>($"/{communityId}/home", peer.AccessToken);
+        var olderPreview = direct ? Assert.Single(olderHome.Directs).LastBody : olderHome.GroupChat.LastBody;
+        Assert.NotNull(olderPreview);
+        Assert.DoesNotContain(secret, olderPreview);
+        if (!direct)
+        {
+            var topics = await host.Get<GroupTopicListResponse>($"/{communityId}/topics", peer.AccessToken);
+            var general = Assert.Single(topics.Topics);
+            Assert.NotNull(general.LastBody);
+            Assert.DoesNotContain(secret, general.LastBody);
+        }
     }
 }

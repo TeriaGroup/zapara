@@ -1,4 +1,4 @@
-import { FormEvent, UIEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./api";
 import { emojiGroups } from "./emoji";
 import { cardLabel, homeworkCard, lessonFrom, placeFromLesson, scheduleCard, tasksCard } from "./cards";
@@ -9,6 +9,7 @@ import { Sticker, stickerPack, stickerTitle } from "./stickers";
 import { useApp } from "./store";
 import { Icon } from "./icons";
 import { holdActions, runHold } from "./hold";
+import { createSocialPoller, mergeSocialMessages } from "./socialChat";
 import type { SocialFriend, SocialHome, SocialMessage } from "./types";
 
 function personName(username: string, displayName: string | null) {
@@ -24,12 +25,6 @@ function size(bytes: number | null) {
   if (bytes < 1024) return `${bytes} Б`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} КБ`;
   return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
-}
-
-function merge(current: SocialMessage[], incoming: SocialMessage[]) {
-  const map = new Map(current.map(item => [item.messageId, item]));
-  for (const item of incoming) map.set(item.messageId, item);
-  return [...map.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.messageId.localeCompare(right.messageId));
 }
 
 function explain(error: unknown, fallback: string) {
@@ -48,11 +43,31 @@ export function PeoplePanel() {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const homeRevision = useRef(0);
+  const activeIdRef = useRef<string | null>(null);
+  const activeId = active?.conversationId ?? null;
+  const chatError = useCallback((text: string) => {
+    if (activeIdRef.current === activeId) setError(text);
+  }, [activeId]);
 
   useEffect(() => {
-    if (!app.session?.authenticated) { setHome(null); setActive(null); return; }
+    if (!app.session?.authenticated) { activeIdRef.current = null; setHome(null); setActive(null); return; }
     let stop = false;
-    const pull = () => api.socialHome().then(value => { if (!stop) { setHome(value); setError(""); } }).catch(() => { if (!stop) setError("Переписка не открылась"); });
+    let pulling = false;
+    const pull = async () => {
+      if (pulling) return;
+      pulling = true;
+      const revision = homeRevision.current;
+      try {
+        const value = await api.socialHome();
+        if (!stop && revision === homeRevision.current) {
+          setHome(value);
+          setError(current => current === "Переписка не открылась" ? "" : current);
+        }
+      } catch {
+        if (!stop && revision === homeRevision.current) setError(current => current || "Переписка не открылась");
+      } finally { pulling = false; }
+    };
     void pull();
     const timer = window.setInterval(pull, 4000);
     return () => { stop = true; window.clearInterval(timer); };
@@ -60,11 +75,13 @@ export function PeoplePanel() {
 
   async function invite(event: FormEvent) {
     event.preventDefault();
-    if (!code.trim()) return;
+    if (!code.trim() || busy) return;
+    homeRevision.current += 1;
     setBusy(true);
     setError("");
     try {
       setHome(await api.socialInvite(code.trim()));
+      homeRevision.current += 1;
       setCode("");
     } catch (reason) {
       setError(explain(reason, "Не удалось добавить по коду"));
@@ -72,8 +89,12 @@ export function PeoplePanel() {
   }
 
   async function answer(friendshipId: string, accept: boolean) {
+    homeRevision.current += 1;
     setError("");
-    try { setHome(await (accept ? api.socialAccept(friendshipId) : api.socialDecline(friendshipId))); }
+    try {
+      setHome(await (accept ? api.socialAccept(friendshipId) : api.socialDecline(friendshipId)));
+      homeRevision.current += 1;
+    }
     catch { setError(accept ? "Не удалось принять запрос" : "Не удалось отклонить запрос"); }
   }
 
@@ -133,7 +154,7 @@ export function PeoplePanel() {
           </form>
           <div className="people">
           {(home?.friends || []).map(friend => (
-            <button className="person" key={friend.userId} type="button" onClick={() => setActive(friend)}>
+            <button className="person" key={friend.userId} type="button" onClick={() => { activeIdRef.current = friend.conversationId; setError(""); setActive(friend); }}>
               <span><b>{personName(friend.username, friend.displayName)}</b><div className="muted">{friend.lastBody || "Нет сообщений"}</div></span>
               {friend.unread > 0 && <span className="chip">{friend.unread}</span>}
             </button>
@@ -141,7 +162,7 @@ export function PeoplePanel() {
           {home && home.friends.length === 0 && <div className="empty">Пока никого нет. Добавьте человека по коду.</div>}
           </div>
         </div>
-        {active ? <section className="split-detail"><button className="btn back-only" type="button" onClick={() => setActive(null)}>К списку</button><Chat friend={active} self={app.session.user?.userId || ""} onError={setError} /></section> : <section className="card chat split-detail"><h2>Чат</h2><p className="muted">Выберите человека в списке.</p></section>}
+        {active ? <section className="split-detail"><button className="btn back-only" type="button" onClick={() => { activeIdRef.current = null; setError(""); setActive(null); }}>К списку</button><Chat key={active.conversationId} friend={active} self={app.session.user?.userId || ""} onError={chatError} /></section> : <section className="card chat split-detail"><h2>Чат</h2><p className="muted">Выберите человека в списке.</p></section>}
       </div>
     </div>
   );
@@ -279,6 +300,7 @@ function StudyShelf({ onSend }: { onSend: (body: string | null) => void }) {
 function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; onError: (text: string) => void }) {
   const [messages, setMessages] = useState<SocialMessage[]>([]);
   const [more, setMore] = useState(false);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [reply, setReply] = useState<SocialMessage | null>(null);
@@ -307,28 +329,70 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   const cancelVoice = useRef(false);
   const elapsedRef = useRef(0);
   const replyRef = useRef<string | undefined>(undefined);
+  const messagesRef = useRef<SocialMessage[]>([]);
+  const pollerRef = useRef<ReturnType<typeof createSocialPoller> | null>(null);
+  const aliveRef = useRef(false);
+  const sendingRef = useRef(false);
+  const earlierRef = useRef(false);
+  const voiceStartingRef = useRef(false);
+  const circleStartingRef = useRef(false);
   replyRef.current = reply?.messageId;
 
+  function addMessages(incoming: SocialMessage[], older = false) {
+    const next = older
+      ? mergeSocialMessages(incoming, messagesRef.current)
+      : mergeSocialMessages(messagesRef.current, incoming);
+    messagesRef.current = next;
+    setMessages(next);
+  }
+
+  function reportError(value: string) {
+    if (aliveRef.current) onError(value);
+  }
+
+  function beginSend() {
+    if (!aliveRef.current || sendingRef.current) return false;
+    sendingRef.current = true;
+    setSending(true);
+    pollerRef.current?.changed();
+    return true;
+  }
+
+  function endSend() {
+    sendingRef.current = false;
+    if (aliveRef.current) setSending(false);
+  }
+
   useEffect(() => {
-    let stop = false;
+    aliveRef.current = true;
     stick.current = true;
+    messagesRef.current = [];
     setMessages([]);
+    setMore(false);
     setDraft("");
     setReply(null);
     setEditing(null);
     setPanel(null);
     setOpenMenu(null);
     setReactFor(null);
-    const pull = () => api.socialMessages(friend.conversationId).then(page => {
-      if (stop) return;
-      setMore(page.hasMore);
-      setMessages(current => current.length > page.messages.length ? merge(current, page.messages) : page.messages);
-    }).catch(() => { if (!stop) onError("Чат не обновился"); });
-    void pull();
-    const timer = window.setInterval(pull, 4000);
+    const poller = createSocialPoller(
+      before => api.socialMessages(friend.conversationId, before),
+      () => messagesRef.current,
+      (page, firstLoad) => {
+        if (firstLoad) setMore(page.hasMore);
+        addMessages(page.messages);
+      },
+      () => reportError("Чат не обновился"),
+    );
+    pollerRef.current = poller;
+    void poller.poll();
+    const timer = window.setInterval(() => void poller.poll(), 4000);
     return () => {
-      stop = true;
+      aliveRef.current = false;
+      poller.dispose();
+      pollerRef.current = null;
       window.clearInterval(timer);
+      if (holdTimer.current) window.clearTimeout(holdTimer.current);
       cancelVoice.current = true;
       if (recorder.current && recorder.current.state !== "inactive") recorder.current.stop();
       circleCancel.current = true;
@@ -365,51 +429,64 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   }
 
   async function earlier() {
-    const first = messages[0];
-    if (!first) return;
+    const first = messagesRef.current[0];
+    if (!first || !more || earlierRef.current) return;
+    earlierRef.current = true;
+    setLoadingEarlier(true);
     const node = logRef.current;
     const height = node?.scrollHeight ?? 0;
+    const top = node?.scrollTop ?? 0;
     stick.current = false;
     try {
       const page = await api.socialMessages(friend.conversationId, first.messageId);
+      if (!aliveRef.current) return;
       setMore(page.hasMore);
-      setMessages(current => merge(page.messages, current));
-      requestAnimationFrame(() => { if (node) node.scrollTop = node.scrollHeight - height; });
-    } catch { onError("Старые сообщения не загрузились"); }
+      addMessages(page.messages, true);
+      requestAnimationFrame(() => { if (node?.isConnected) node.scrollTop = top + node.scrollHeight - height; });
+    } catch { reportError("Старые сообщения не загрузились"); }
+    finally {
+      earlierRef.current = false;
+      if (aliveRef.current) setLoadingEarlier(false);
+    }
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const body = draft.trim();
-    if (!body || sending) return;
-    setDraft("");
-    setSending(true);
+    if (!body || !beginSend()) return;
+    const sentDraft = draft;
+    const target = editing;
+    const replyTo = reply?.messageId;
     try {
-      const message = editing
-        ? await api.socialEdit(friend.conversationId, editing.messageId, body)
-        : await api.socialText(friend.conversationId, body, reply?.messageId);
-      setMessages(current => merge(current, [message]));
-      setReply(null);
-      setEditing(null);
+      const message = target
+        ? await api.socialEdit(friend.conversationId, target.messageId, body)
+        : await api.socialText(friend.conversationId, body, replyTo);
+      if (!aliveRef.current) return;
+      pollerRef.current?.changed();
+      addMessages([message]);
+      setDraft(current => current === sentDraft ? "" : current);
+      setReply(current => current?.messageId === replyTo ? null : current);
+      if (target) setEditing(current => current?.messageId === target.messageId ? null : current);
       stick.current = true;
     } catch {
-      setDraft(body);
-      onError("Сообщение не отправилось");
-    } finally { setSending(false); }
+      reportError(target ? "Изменение не сохранилось" : "Сообщение не отправилось");
+    } finally { endSend(); }
   }
 
   async function sendFile(file: File | undefined, kind: "image" | "file" | "voice" | "circle", durationMs?: number) {
-    if (!file || sending) return;
-    setSending(true);
-    onError("");
+    if (!file || !beginSend()) return;
+    const replyTo = replyRef.current;
+    reportError("");
     try {
-      const message = await api.socialUpload(friend.conversationId, file, kind, { replyTo: replyRef.current, durationMs });
-      setReply(null);
-      setMessages(current => merge(current, [message]));
+      const message = await api.socialUpload(friend.conversationId, file, kind, { replyTo, durationMs });
+      if (!aliveRef.current) return;
+      pollerRef.current?.changed();
+      setReply(current => current?.messageId === replyTo ? null : current);
+      addMessages([message]);
       stick.current = true;
     } catch (reason) {
-      onError(explain(reason, kind === "image" ? "Фото не отправилось" : kind === "voice" ? "Голосовое не отправилось" : kind === "circle" ? "Кружок не отправился" : "Документ не отправился"));
-    } finally { setSending(false); }
+      reportError(explain(reason, kind === "image" ? "Фото не отправилось" : kind === "voice" ? "Голосовое не отправилось" : kind === "circle" ? "Кружок не отправился" : "Документ не отправился"));
+    } finally { endSend(); }
   }
 
   function insertEmoji(emoji: string) {
@@ -424,53 +501,65 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   }
 
   async function sendCard(body: string | null) {
-    if (!body) { onError("Нечего отправить"); return; }
-    if (sending) return;
-    setSending(true);
+    if (!body) { reportError("Нечего отправить"); return; }
+    if (!beginSend()) return;
+    const replyTo = replyRef.current;
     setPanel(null);
     try {
-      const message = await api.socialCard(friend.conversationId, body, replyRef.current);
-      setMessages(current => merge(current, [message]));
-      setReply(null);
+      const message = await api.socialCard(friend.conversationId, body, replyTo);
+      if (!aliveRef.current) return;
+      pollerRef.current?.changed();
+      addMessages([message]);
+      setReply(current => current?.messageId === replyTo ? null : current);
       stick.current = true;
-    } catch { onError("Карточка не отправилась"); }
-    finally { setSending(false); }
+    } catch { reportError("Карточка не отправилась"); }
+    finally { endSend(); }
   }
 
   async function sendSticker(id: string) {
-    if (sending) return;
-    setSending(true);
+    if (!beginSend()) return;
+    const replyTo = replyRef.current;
     setPanel(null);
     try {
-      const message = await api.socialSticker(friend.conversationId, id, replyRef.current);
-      setMessages(current => merge(current, [message]));
-      setReply(null);
+      const message = await api.socialSticker(friend.conversationId, id, replyTo);
+      if (!aliveRef.current) return;
+      pollerRef.current?.changed();
+      addMessages([message]);
+      setReply(current => current?.messageId === replyTo ? null : current);
       stick.current = true;
-    } catch { onError("Стикер не отправился"); }
-    finally { setSending(false); }
+    } catch { reportError("Стикер не отправился"); }
+    finally { endSend(); }
   }
 
   async function change(message: SocialMessage, emoji: string) {
+    pollerRef.current?.changed();
     try {
       const next = await api.socialReact(friend.conversationId, message.messageId, emoji);
-      setMessages(current => merge(current, [next]));
-    } catch { onError("Реакция не сохранилась"); }
+      if (!aliveRef.current) return;
+      pollerRef.current?.changed();
+      addMessages([next]);
+    } catch { reportError("Реакция не сохранилась"); }
   }
 
   async function remove(message: SocialMessage) {
     if (!window.confirm("Удалить сообщение?")) return;
+    pollerRef.current?.changed();
     try {
       const next = await api.socialDelete(friend.conversationId, message.messageId);
-      setMessages(current => merge(current, [next]));
-    } catch { onError("Сообщение не удалилось"); }
+      if (!aliveRef.current) return;
+      pollerRef.current?.changed();
+      addMessages([next]);
+    } catch { reportError("Сообщение не удалилось"); }
   }
 
   async function toggleVoice() {
     if (recording) { recorder.current?.stop(); return; }
-    if (circling) return;
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") { onError("Этот браузер не записывает голос"); return; }
+    if (circling || sendingRef.current || voiceStartingRef.current) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") { reportError("Этот браузер не записывает голос"); return; }
+    voiceStartingRef.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!aliveRef.current) { stream.getTracks().forEach(track => track.stop()); return; }
       const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"].find(item => MediaRecorder.isTypeSupported(item)) || "";
       const options: MediaRecorderOptions = mime ? { mimeType: mime, audioBitsPerSecond: 24000 } : { audioBitsPerSecond: 24000 };
       let media: MediaRecorder;
@@ -487,7 +576,7 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
         setRecording(false);
         const blob = new Blob(chunks.current, { type: media.mimeType || "audio/webm" });
         const duration = Math.max(1, elapsedRef.current) * 1000;
-        if (cancelVoice.current || blob.size < 200) { if (!cancelVoice.current) onError("Слишком короткое сообщение"); return; }
+        if (cancelVoice.current || blob.size < 200) { if (!cancelVoice.current) reportError("Слишком короткое сообщение"); return; }
         const extension = blob.type.includes("mp4") ? "m4a" : blob.type.includes("ogg") ? "ogg" : "webm";
         void sendFile(new File([blob], `voice.${extension}`, { type: blob.type || "audio/webm" }), "voice", duration);
       };
@@ -504,7 +593,8 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
         throw new Error("record");
       }
       setRecording(true);
-    } catch { onError("Нет доступа к микрофону"); }
+    } catch { reportError("Нет доступа к микрофону"); }
+    finally { voiceStartingRef.current = false; }
   }
 
   function discardVoice() {
@@ -520,14 +610,16 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   }
 
   async function startCircle() {
-    if (circling || recording || sending) return;
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") { onError("Этот браузер не снимает кружочки"); return; }
+    if (circling || recording || sendingRef.current || circleStartingRef.current) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") { reportError("Этот браузер не снимает кружочки"); return; }
+    circleStartingRef.current = true;
     setPanel(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: { facingMode: "user", width: { ideal: 480, max: 640 }, height: { ideal: 480, max: 640 }, frameRate: { ideal: 24, max: 30 } }
       });
+      if (!aliveRef.current) { stream.getTracks().forEach(track => track.stop()); return; }
       circleStream.current = stream;
       const mime = ["video/webm;codecs=vp8,opus", "video/webm;codecs=vp9,opus", "video/webm", "video/mp4"].find(item => MediaRecorder.isTypeSupported(item)) || "";
       const options: MediaRecorderOptions = mime ? { mimeType: mime, videoBitsPerSecond: 450000, audioBitsPerSecond: 24000 } : { videoBitsPerSecond: 450000, audioBitsPerSecond: 24000 };
@@ -544,7 +636,7 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
         setCircling(false);
         const blob = new Blob(circleChunks.current, { type: media.mimeType || "video/webm" });
         const duration = Math.min(60, Math.max(1, elapsedRef.current)) * 1000;
-        if (circleCancel.current || blob.size < 1000) { if (!circleCancel.current) onError("Слишком короткий кружок"); return; }
+        if (circleCancel.current || blob.size < 1000) { if (!circleCancel.current) reportError("Слишком короткий кружок"); return; }
         const extension = blob.type.includes("mp4") ? "mp4" : "webm";
         void sendFile(new File([blob], `circle.${extension}`, { type: blob.type || "video/webm" }), "circle", duration);
       };
@@ -562,8 +654,9 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
       setCircling(true);
     } catch {
       stopCircleStream();
-      onError("Нет доступа к камере");
+      reportError("Нет доступа к камере");
     }
+    finally { circleStartingRef.current = false; }
   }
 
   useEffect(() => {
@@ -584,7 +677,7 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
     <section className="card chat">
       <h2>{personName(friend.username, friend.displayName)}</h2>
       <div className="log" ref={logRef} onScroll={onScroll}>
-        {more && <button className="btn" type="button" onClick={() => void earlier()}>Раньше</button>}
+        {more && <button className="btn" type="button" disabled={loadingEarlier} onClick={() => void earlier()}>{loadingEarlier ? "Загрузка…" : "Раньше"}</button>}
         {messages.map(message => {
           const mine = message.senderId === self;
           const sticker = message.kind === "sticker" && !message.deleted;

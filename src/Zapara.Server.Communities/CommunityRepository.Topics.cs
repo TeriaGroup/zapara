@@ -110,14 +110,16 @@ internal sealed partial class CommunityRepository
         DateTimeOffset? lastAt = null;
         var previewSql = topicId is null
             ? $"""
-            SELECT m.body, coalesce(u.display_name, u.username), m.created_at
+            SELECT CASE WHEN m.deleted THEN 'Сообщение удалено' ELSE m.body END,
+                   coalesce(u.display_name, u.username), m.created_at
             FROM {Msg}.chat_messages m
             JOIN {configuration.Accounts.QuotedSchema}.users u ON u.user_id=m.sender_id
             WHERE m.conversation_id=@p0 AND m.topic_id IS NULL
             ORDER BY m.message_no DESC LIMIT 1
             """
             : $"""
-            SELECT m.body, coalesce(u.display_name, u.username), m.created_at
+            SELECT CASE WHEN m.deleted THEN 'Сообщение удалено' ELSE m.body END,
+                   coalesce(u.display_name, u.username), m.created_at
             FROM {Msg}.chat_messages m
             JOIN {configuration.Accounts.QuotedSchema}.users u ON u.user_id=m.sender_id
             WHERE m.conversation_id=@p0 AND m.topic_id=@p1

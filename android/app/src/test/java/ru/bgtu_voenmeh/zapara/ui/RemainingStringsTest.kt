@@ -26,7 +26,8 @@ class RemainingStringsTest {
         "nav_group", "group_title", "group_need_account", "group_not_member", "group_roster", "group_chat",
         "group_directs", "group_send", "group_message", "group_back", "group_older", "group_open",
         "group_people", "group_list", "group_disclaimer", "group_role_headman", "group_role_curator",
-        "group_role_member", "group_failed", "group_load_failed", "group_loading", "group_no_messages",
+        "group_role_member", "group_failed", "group_media_loading", "group_media_failed",
+        "group_load_failed", "group_loading", "group_no_messages",
     )
 
     private val syncKeys = listOf(

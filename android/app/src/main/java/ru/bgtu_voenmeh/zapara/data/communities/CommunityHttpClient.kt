@@ -243,6 +243,37 @@ class CommunityHttpClient(
         return payload { message(reply.obj()) }
     }
 
+    suspend fun downloadMedia(accessToken: String, conversationId: String, messageId: String): ByteArray {
+        val id = CommunityValidation.id(conversationId)
+        val target = CommunityValidation.id(messageId)
+        val token = AccountValidation.token(accessToken, "za_")
+        val path = "/conversations/$id/messages/$target/media"
+        val headers = mapOf("Accept" to "application/octet-stream", "Authorization" to "Bearer $token")
+        val limit = 8 * 1024 * 1024
+        val reply = try {
+            val version = if (legacyRoutes) 1 else 2
+            val first = transport.exchange(HttpCall("GET", scope.baseUri.toString() + "api/v$version/communities" + path, headers, maxBytes = limit))
+            val code = if (first.status == 404) runCatching { StrictJson.parse(first.body, 16).obj().text("code", 64) }.getOrNull() else null
+            if (version == 2 && first.status == 404 && code != "not_found") {
+                legacyRoutes = true
+                transport.exchange(HttpCall("GET", scope.baseUri.toString() + "api/v1/communities" + path, headers, maxBytes = limit))
+            } else first
+        } catch (_: HttpBodyTooLargeException) {
+            throw CommunityClientException(CommunityClientFailure.PayloadTooLarge)
+        } catch (_: IOException) {
+            throw CommunityClientException(CommunityClientFailure.Transport)
+        }
+        if (reply.status != 200) throw mapError(reply.status, reply.body)
+        if (reply.headers.any { it.key.equals("Content-Encoding", true) && it.value.isNotBlank() }) {
+            throw CommunityClientException(CommunityClientFailure.InvalidPayload)
+        }
+        if (reply.body.size > limit) throw CommunityClientException(CommunityClientFailure.PayloadTooLarge)
+        if (reply.body.isEmpty() || !reply.contentType?.substringBefore(';')?.trim().equals("application/octet-stream", true)) {
+            throw CommunityClientException(CommunityClientFailure.InvalidPayload)
+        }
+        return reply.body
+    }
+
     suspend fun sendMessage(accessToken: String, conversationId: String, body: String, replyTo: String? = null): ChatMessage {
         val id = CommunityValidation.id(conversationId)
         val text = CommunityValidation.message(body)

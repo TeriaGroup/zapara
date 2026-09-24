@@ -141,7 +141,7 @@ public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, Communi
     public async Task<ChatMessageResponse> DeleteMessageAsync(string bearer, Guid conversationId, Guid messageId, CancellationToken ct = default)
     {
         var message = await Run(bearer, db => db.DeleteMessageAsync(CommunityValidation.Id(conversationId), CommunityValidation.Id(messageId)), ct);
-        if (message.Kind is "image" or "video" or "file") Drop(message.MessageId);
+        Drop(message.MessageId);
         return message;
     }
     public async Task<ChatMessageResponse> ReactMessageAsync(string bearer, Guid conversationId, Guid messageId, ReactMessageRequest request, CancellationToken ct = default)
@@ -202,6 +202,7 @@ public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, Communi
 
     private ChatMessageResponse LoadMessage(ChatMessageResponse message)
     {
+        if (message.Deleted) return message;
         var body = ReadText(ContentNames.GroupMessage(message.MessageId), message.Body);
         return body == message.Body ? message : new ChatMessageResponse(message.MessageId, message.ConversationId, message.SenderId, message.SenderName, body, message.CreatedAt, message.Kind, message.Deleted, message.ReplyTo);
     }

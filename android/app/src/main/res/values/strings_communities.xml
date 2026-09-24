@@ -36,6 +36,8 @@
     <string name="group_role_curator">Куратор</string>
     <string name="group_role_member">Участник</string>
     <string name="group_failed">Не удалось обновить чат</string>
+    <string name="group_media_loading">Загружаем вложение</string>
+    <string name="group_media_failed">Не удалось открыть вложение</string>
     <string name="group_load_failed">Не удалось загрузить группу</string>
     <string name="group_loading">Загружаем группу</string>
     <string name="group_no_messages">Сообщений пока нет</string>

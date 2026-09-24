@@ -107,7 +107,9 @@ internal sealed partial class CommunityRepository
         }
         var list = new List<ChatMessageResponse>();
         var sql = $"""
-            SELECT m.message_id, m.conversation_id, m.sender_id, coalesce(u.display_name, u.username), m.body, m.created_at, m.kind, m.deleted, m.reply_to
+            SELECT m.message_id, m.conversation_id, m.sender_id, coalesce(u.display_name, u.username),
+                   CASE WHEN m.deleted THEN 'Сообщение удалено' ELSE m.body END,
+                   m.created_at, m.kind, m.deleted, m.reply_to
             FROM {Msg}.chat_messages m
             JOIN {configuration.Accounts.QuotedSchema}.users u ON u.user_id=m.sender_id
             WHERE m.conversation_id=@p0{topicClause}{comparison}
@@ -167,7 +169,7 @@ internal sealed partial class CommunityRepository
     {
         await RequireConversationAsync(conversationId);
         await using (var command = Command($"""
-            UPDATE {Msg}.chat_messages SET deleted=true
+            UPDATE {Msg}.chat_messages SET deleted=true, body='Сообщение удалено'
             WHERE message_id=@p0 AND conversation_id=@p1 AND sender_id=@p2 AND deleted=false
             """, messageId, conversationId, UserId))
             if (await command.ExecuteNonQueryAsync(ct) != 1) throw CommunityServiceException.InvalidRequest();
@@ -287,7 +289,7 @@ internal sealed partial class CommunityRepository
         string? body = null;
         DateTimeOffset? at = null;
         await using (var command = Command($"""
-            SELECT body, created_at FROM {Msg}.chat_messages
+            SELECT CASE WHEN deleted THEN 'Сообщение удалено' ELSE body END, created_at FROM {Msg}.chat_messages
             WHERE conversation_id=@p0 ORDER BY message_no DESC LIMIT 1
             """, conversationId))
         await using (var reader = await command.ExecuteReaderAsync(ct))
@@ -349,7 +351,9 @@ internal sealed partial class CommunityRepository
     private async Task<ChatMessageResponse> ReadOneAsync(Guid conversationId, Guid messageId)
     {
         await using var command = Command($"""
-            SELECT m.message_id, m.conversation_id, m.sender_id, coalesce(u.display_name, u.username), m.body, m.created_at, m.kind, m.deleted, m.reply_to
+            SELECT m.message_id, m.conversation_id, m.sender_id, coalesce(u.display_name, u.username),
+                   CASE WHEN m.deleted THEN 'Сообщение удалено' ELSE m.body END,
+                   m.created_at, m.kind, m.deleted, m.reply_to
             FROM {Msg}.chat_messages m
             JOIN {configuration.Accounts.QuotedSchema}.users u ON u.user_id=m.sender_id
             WHERE m.conversation_id=@p0 AND m.message_id=@p1

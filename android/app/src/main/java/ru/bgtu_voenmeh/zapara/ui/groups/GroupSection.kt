@@ -155,6 +155,7 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
             )
         }
         if (state.failed) Text(stringResource(R.string.group_failed), color = c.bad, modifier = Modifier.testTag("Group.Error"))
+        if (state.mediaError) Text(stringResource(R.string.group_media_failed), color = c.bad, modifier = Modifier.testTag("Group.MediaError"))
         if (state.direct && !state.showPeople) {
             ZButton(stringResource(R.string.group_back), { onEvent(GroupEvent.GroupChat) }, ghost = true, tag = "Group.Back")
         }
@@ -245,7 +246,7 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
                 }
             }
             items(state.messages, key = { it.id }) { message ->
-                MessageBubble(message, onEvent)
+                MessageBubble(message, state.mediaLoadingId == message.id, onEvent)
             }
         }
     }
@@ -261,7 +262,7 @@ private fun messageLabel(message: GroupMessageUi): String = when {
 }
 
 @Composable
-private fun MessageBubble(message: GroupMessageUi, onEvent: (GroupEvent) -> Unit) {
+private fun MessageBubble(message: GroupMessageUi, mediaLoading: Boolean, onEvent: (GroupEvent) -> Unit) {
     val c = Zapara.colors
     val mine = message.mine
     var menu by remember(message.id) { mutableStateOf(false) }
@@ -279,13 +280,20 @@ private fun MessageBubble(message: GroupMessageUi, onEvent: (GroupEvent) -> Unit
             color = if (mine) c.accent else c.card,
             contentColor = if (mine) c.onAccent else c.text1,
             border = if (mine) null else BorderStroke(Zapara.space.hairline, c.line),
-            modifier = Modifier.widthIn(max = 280.dp).combinedClickable(onClick = {}, onLongClick = { menu = true })
+            modifier = Modifier.widthIn(max = 280.dp).combinedClickable(
+                onClick = {
+                    if (!mediaLoading && !message.deleted && message.kind in setOf("image", "video", "file")) {
+                        onEvent(GroupEvent.OpenMedia(message.id))
+                    }
+                },
+                onLongClick = { menu = true }
+            )
         ) {
             Column(
                 Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
                 verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)
             ) {
-                Text(messageLabel(message), style = Zapara.typography.body)
+                Text(if (mediaLoading) stringResource(R.string.group_media_loading) else messageLabel(message), style = Zapara.typography.body)
                 Text(
                     message.time,
                     style = Zapara.typography.caption,
@@ -333,9 +341,9 @@ private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
     val document = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { pick("file", it) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-        ZButton("Фото", { photo.launch(arrayOf("image/*")) }, ghost = true, tag = "Group.Photo")
-        ZButton("Видео", { video.launch(arrayOf("video/*")) }, ghost = true, tag = "Group.Video")
-        ZButton("Документ", { document.launch(arrayOf("*/*")) }, ghost = true, tag = "Group.File")
+        ZButton("Фото", { photo.launch(arrayOf("image/*")) }, enabled = !state.sending, ghost = true, tag = "Group.Photo")
+        ZButton("Видео", { video.launch(arrayOf("video/*")) }, enabled = !state.sending, ghost = true, tag = "Group.Video")
+        ZButton("Документ", { document.launch(arrayOf("*/*")) }, enabled = !state.sending, ghost = true, tag = "Group.File")
     }
     Row(
         Modifier.fillMaxWidth(),
@@ -348,6 +356,7 @@ private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
         OutlinedTextField(
             value = state.draft,
             onValueChange = { onEvent(GroupEvent.Draft(it)) },
+            enabled = !state.sending,
             modifier = Modifier.weight(1f).testTag("Group.Draft"),
             placeholder = { Text(stringResource(R.string.group_message), style = Zapara.typography.caption, color = c.text3) },
             singleLine = true,
@@ -358,7 +367,7 @@ private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
                 focusedTextColor = c.text1, unfocusedTextColor = c.text1
             )
         )
-        ZButton(stringResource(R.string.group_send), { onEvent(GroupEvent.Send) }, enabled = state.draft.isNotBlank(), tag = "Group.Send")
+        ZButton(stringResource(R.string.group_send), { onEvent(GroupEvent.Send) }, enabled = state.draft.isNotBlank() && !state.sending, tag = "Group.Send")
     }
     }
 }

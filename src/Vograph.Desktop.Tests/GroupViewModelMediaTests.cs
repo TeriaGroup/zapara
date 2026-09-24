@@ -66,6 +66,7 @@ public sealed class GroupViewModelMediaTests
         var photo = new byte[] { 1, 2, 3, 4 };
         var clip = new byte[] { 9, 8, 7 };
         var notes = "конспект"u8.ToArray();
+        vm.Draft = "Черновик сообщения";
         dialogs.OpenPath = Write(directory.Root, "снимок.png", photo);
         await vm.AttachCommand.ExecuteAsync("image");
         dialogs.OpenPath = Write(directory.Root, "ролик.mp4", clip);
@@ -78,6 +79,7 @@ public sealed class GroupViewModelMediaTests
         Assert.Equal(photo, uploads[0].Body);
         Assert.Equal(clip, uploads[1].Body);
         Assert.Equal(notes, uploads[2].Body);
+        Assert.Equal("Черновик сообщения", vm.Draft);
         var photoRow = vm.Messages[0];
         photoRow.Apply("edit");
         Dispatcher.UIThread.RunJobs();

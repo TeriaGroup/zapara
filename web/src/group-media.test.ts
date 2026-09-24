@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { groupBubbleText, GroupMediaError, postGroupMedia } from "./group-media.ts";
+import { getGroupMedia, groupBubbleText, groupMediaDownload, GroupMediaError, postGroupMedia } from "./group-media.ts";
 import { holdActions } from "./hold.ts";
 
 test("group media posts the file bytes and a photo hold has no edit", async () => {
@@ -56,4 +56,45 @@ test("group media posts the file bytes and a photo hold has no edit", async () =
   assert.deepEqual(seen[0].bytes, photo);
   assert.deepEqual(seen[1].bytes, Uint8Array.from([9, 8, 7]));
   assert.deepEqual(seen[2].bytes, new TextEncoder().encode("конспект"));
+});
+
+test("group media offers a same-origin download using IDs, not a supplied path", () => {
+  const conversationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const messageId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const file = groupMediaDownload(conversationId, { messageId, kind: "file", body: "C:\\secret\\notes<1>.pdf" });
+  assert.deepEqual(file, {
+    href: `/web-api/communities/conversations/${conversationId}/messages/${messageId}/media`,
+    filename: "notes1.pdf",
+    label: "Скачать документ: notes1.pdf",
+  });
+  assert.equal(groupBubbleText({ kind: "file", body: "../../report.pdf" }), "report.pdf");
+  assert.equal(groupMediaDownload(conversationId, { messageId, kind: "image", body: "photos/shot.png" })?.label, "Скачать фото");
+  assert.equal(groupMediaDownload(conversationId, { messageId, kind: "video", body: "clip.mp4" })?.filename, "clip.mp4");
+  assert.equal(groupMediaDownload(conversationId, { messageId, kind: "file", body: "folder/CON.txt" })?.filename, "_CON.txt");
+  assert.equal(groupMediaDownload(conversationId, { messageId, kind: "file", body: "folder/\u202ephoto.exe" })?.filename, "photo.exe");
+});
+
+test("deleted, non-media, and malformed-ID messages have no download link", () => {
+  const conversationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const messageId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  assert.equal(groupMediaDownload(conversationId, { messageId, kind: "image", body: "photo.png", deleted: true }), null);
+  assert.equal(groupMediaDownload(conversationId, { messageId, kind: "text", body: "hello" }), null);
+  assert.equal(groupMediaDownload("../outside", { messageId, kind: "file", body: "report.pdf" }), null);
+  assert.equal(groupMediaDownload(conversationId, { messageId: "../outside", kind: "file", body: "report.pdf" }), null);
+});
+
+test("media download fetches bytes with browser session headers and fails closed on HTTP error", async () => {
+  const download = groupMediaDownload("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", {
+    messageId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind: "file", body: "report.pdf",
+  });
+  assert.ok(download);
+  const seen: { url: string; credentials: RequestCredentials | undefined; family: string | null }[] = [];
+  const get: typeof fetch = async (url, init) => {
+    seen.push({ url: String(url), credentials: init?.credentials, family: new Headers(init?.headers).get("X-Zapara-Family") });
+    return new Response(Uint8Array.from([1, 2, 3]), { status: 200 });
+  };
+  const blob = await getGroupMedia(download, get, { "X-Zapara-Family": "session-family" });
+  assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), Uint8Array.from([1, 2, 3]));
+  assert.deepEqual(seen, [{ url: download.href, credentials: "same-origin", family: "session-family" }]);
+  await assert.rejects(() => getGroupMedia(download, async () => new Response("no", { status: 409 }), {}), /409/);
 });
