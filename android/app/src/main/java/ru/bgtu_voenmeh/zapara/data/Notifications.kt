@@ -146,7 +146,7 @@ object Notifications {
                 .setContentTitle(title)
                 .setContentText(text)
                 .setStyle(android.app.Notification.BigTextStyle().bigText(text))
-                .setSmallIcon(android.R.drawable.ic_menu_today)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentIntent(openApp)
                 .setVisibility(android.app.Notification.VISIBILITY_PRIVATE)
                 .setAutoCancel(true)

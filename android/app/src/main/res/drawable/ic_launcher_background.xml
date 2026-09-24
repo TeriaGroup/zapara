@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Charon Obsidian tile. -->
+<!-- Background for the "Vector" adaptive launcher icon. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#0E1013" />
+    <solid android:color="#111111" />
 </shape>

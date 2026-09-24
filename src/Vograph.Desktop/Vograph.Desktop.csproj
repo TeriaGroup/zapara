@@ -9,11 +9,13 @@
     <AssemblyName>Vograph</AssemblyName>
     <RootNamespace>Vograph.Desktop</RootNamespace>
     <Version>2.1.22</Version>
+    <ApplicationIcon>Assets\voenmeh.ico</ApplicationIcon>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
   <ItemGroup>
+    <AvaloniaResource Include="Assets\voenmeh.ico" />
     <PackageReference Include="Avalonia" Version="12.1.1" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />

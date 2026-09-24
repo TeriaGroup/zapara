@@ -6,7 +6,7 @@
   "start_url": "/app/schedule",
   "scope": "/app/",
   "display": "standalone",
-  "background_color": "#0d0d0d",
+  "background_color": "#111111",
   "theme_color": "#111111",
   "icons": [
     { "src": "icons/zapara.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },

@@ -7,6 +7,7 @@
         x:Class="Vograph.Desktop.Shell.MainWindow"
         x:DataType="shell:ShellViewModel"
         Title="Военмех — расписание и карты"
+        Icon="/Assets/voenmeh.ico"
         Width="1280" Height="800" MinWidth="960" MinHeight="600"
         WindowStartupLocation="CenterScreen"
         ExtendClientAreaToDecorationsHint="True"
