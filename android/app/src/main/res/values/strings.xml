@@ -285,6 +285,8 @@
     <string name="account_display_name">Отображаемое имя (необязательно)</string>
     <string name="account_login">Войти</string>
     <string name="account_register">Создать аккаунт</string>
+    <string name="account_accept">Я принимаю пользовательское соглашение и политику обработки персональных данных.</string>
+    <string name="account_accept_required">Примите пользовательское соглашение и политику обработки персональных данных.</string>
     <string name="account_mode">Вход / регистрация</string>
     <string name="account_logout">Выйти из аккаунта</string>
     <string name="account_confirm_logout">Выйти и открыть гостевой профиль? Данные аккаунта сохранятся отдельно.</string>

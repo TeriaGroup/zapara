@@ -50,5 +50,5 @@ sealed interface SettingsEvent {
     data class UseUniversityXml(val enabled: Boolean) : SettingsEvent
     data class MapsAlpha(val enabled: Boolean) : SettingsEvent
     data class ResolveSync(val conflict: ru.bgtu_voenmeh.zapara.data.sync.SyncConflict, val keepLocal: Boolean) : SettingsEvent
-    data class Report(val subject: String, val body: String) : SettingsEvent
+    data class Report(val subject: String, val body: String, val photos: List<Pair<String, ByteArray>> = emptyList(), val logs: List<Pair<String, ByteArray>> = emptyList()) : SettingsEvent
 }

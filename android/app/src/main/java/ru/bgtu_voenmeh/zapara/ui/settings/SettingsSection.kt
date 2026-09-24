@@ -2,7 +2,15 @@ package ru.bgtu_voenmeh.zapara.ui.settings
 
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import androidx.compose.runtime.rememberCoroutineScope
+import java.io.ByteArrayOutputStream
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -248,6 +256,36 @@ fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
     var open by remember { mutableStateOf(false) }
     var subject by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
+    var photos by remember { mutableStateOf(listOf<Pair<String, ByteArray>>()) }
+    var logs by remember { mutableStateOf(listOf<Pair<String, ByteArray>>()) }
+    var fileNote by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    fun take(kind: String, uri: Uri?) {
+        if (uri == null) return
+        scope.launch {
+            val read = withContext(Dispatchers.IO) { readSupportFile(ctx, uri, if (kind == "photo") 4 * 1024 * 1024 else 512 * 1024) }
+            if (read == null) {
+                fileNote = if (kind == "photo") "Фото больше 4 МиБ." else "Лог больше 512 КиБ."
+                return@launch
+            }
+            val name = read.first
+            val ext = name.substringAfterLast('.', "").lowercase()
+            if (kind == "photo" && ext !in setOf("jpg", "jpeg", "png", "webp")) {
+                fileNote = "Нужна фотография JPEG, PNG или WebP."
+                return@launch
+            }
+            if (kind == "log" && ext !in setOf("txt", "log")) {
+                fileNote = "Лог должен быть текстовым файлом .txt или .log."
+                return@launch
+            }
+            if (kind == "photo" && photos.size >= 3) { fileNote = "Можно приложить не больше трёх фотографий."; return@launch }
+            if (kind == "log" && logs.size >= 3) { fileNote = "Можно приложить не больше трёх логов."; return@launch }
+            fileNote = ""
+            if (kind == "photo") photos = photos + read else logs = logs + read
+        }
+    }
+    val photo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { take("photo", it) }
+    val log = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { take("log", it) }
     ZCard(Modifier.fillMaxWidth().testTag("Settings.About")) {
         Text(stringResource(R.string.settings_about_title), style = Zapara.typography.section, color = c.text1)
         Text(stringResource(R.string.settings_version, state.version), style = Zapara.typography.caption, color = c.text2)
@@ -260,9 +298,18 @@ fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
         if (open) {
             OutlinedTextField(subject, { subject = it.take(120) }, modifier = Modifier.fillMaxWidth(), label = { Text("Тема") }, singleLine = true)
             OutlinedTextField(body, { body = it.take(4000) }, modifier = Modifier.fillMaxWidth(), label = { Text("Что случилось") })
+            Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZButton("Фото", { photo.launch(arrayOf("image/*")) }, ghost = true, tag = "Settings.ReportPhoto")
+                ZButton("Лог", { log.launch(arrayOf("*/*")) }, ghost = true, tag = "Settings.ReportLog")
+            }
+            Text("До трёх фотографий JPEG, PNG или WebP, до 4 МиБ. До трёх логов .txt или .log, до 512 КиБ.", style = Zapara.typography.caption, color = c.text2)
+            (photos.map { "Фото: ${it.first}" } + logs.map { "Лог: ${it.first}" }).forEach { Text(it, style = Zapara.typography.body, color = c.text1) }
+            if (fileNote.isNotBlank()) Text(fileNote, style = Zapara.typography.body, color = c.text1)
             ZButton("Отправить", {
-                onEvent(SettingsEvent.Report(subject, body))
-                if (state.signedIn && subject.trim().length >= 3 && body.trim().length >= 3) { subject = ""; body = "" }
+                onEvent(SettingsEvent.Report(subject, body, photos, logs))
+                if (state.signedIn && subject.trim().length >= 3 && body.trim().length >= 3) {
+                    subject = ""; body = ""; photos = emptyList(); logs = emptyList(); fileNote = ""
+                }
             }, tag = "Settings.ReportSend")
             if (state.reportNote.isNotBlank()) Text(state.reportNote, style = Zapara.typography.body, color = c.text1)
             state.reportThread.forEach { line ->
@@ -271,4 +318,25 @@ fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
         }
         Text(stringResource(R.string.settings_licenses), style = Zapara.typography.caption, color = c.text2)
     }
+}
+
+private fun readSupportFile(context: android.content.Context, uri: Uri, max: Int): Pair<String, ByteArray>? {
+    val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) cursor.getString(0) else null
+    }?.substringAfterLast('/')?.substringAfterLast('\\') ?: "Файл"
+    val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+        val out = ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        var total = 0
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            total += n
+            if (total > max) return null
+            out.write(buf, 0, n)
+        }
+        out.toByteArray()
+    } ?: return null
+    if (bytes.isEmpty()) return null
+    return name to bytes
 }

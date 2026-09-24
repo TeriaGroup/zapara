@@ -7,8 +7,8 @@
     <string name="account_proof">Подтверждение</string>
     <string name="account_recovery_email">Почта для восстановления</string>
     <string name="account_reset">Сбросить пароль</string>
-    <string name="account_vk">ВКонтакте</string>
-    <string name="account_yandex">Яндекс</string>
+    <string name="account_vk">Войти с VK ID</string>
+    <string name="account_yandex">Войти с Яндекс ID</string>
     <string name="account_link">Привязать</string>
     <string name="account_unlink">Отвязать</string>
     <string name="account_identities">Способы входа</string>

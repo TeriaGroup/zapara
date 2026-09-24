@@ -18,7 +18,8 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
 
-data class SupportMessage(val author: String, val body: String, val at: Instant)
+data class SupportAttachment(val id: String, val kind: String, val name: String)
+data class SupportMessage(val author: String, val body: String, val at: Instant, val attachments: List<SupportAttachment> = emptyList())
 data class SupportThread(val id: String, val subject: String, val messages: List<SupportMessage>)
 
 class AccountHttpClient(
@@ -227,6 +228,19 @@ class AccountHttpClient(
         return supportThread(send("POST", "support/$thread", """{"body":${q(body)}}""", accessToken, 200).obj())
     }
 
+    suspend fun openSupport(accessToken: String, subject: String, body: String, photos: List<Pair<String, ByteArray>>, logs: List<Pair<String, ByteArray>>): SupportThread {
+        if (photos.isEmpty() && logs.isEmpty()) return openSupport(accessToken, subject, body)
+        val packed = supportForm(subject, body, photos, logs)
+        return supportThread(sendRaw("POST", "support", packed.second, packed.first, accessToken, 200).obj())
+    }
+
+    suspend fun continueSupport(accessToken: String, id: String, body: String, photos: List<Pair<String, ByteArray>>, logs: List<Pair<String, ByteArray>>): SupportThread {
+        if (photos.isEmpty() && logs.isEmpty()) return continueSupport(accessToken, id, body)
+        val thread = AccountValidation.id(id)
+        val packed = supportForm(null, body, photos, logs)
+        return supportThread(sendRaw("POST", "support/$thread", packed.second, packed.first, accessToken, 200).obj())
+    }
+
     private fun supportThread(obj: JsonValue.Obj): SupportThread {
         return SupportThread(
             AccountValidation.id(obj.text("id", 36)),
@@ -235,9 +249,58 @@ class AccountHttpClient(
                 val item = line.obj()
                 val author = item.text("author", 16)
                 if (author != "user" && author != "operator") throw JsonFail()
-                SupportMessage(author, item.text("body", 4000, nonempty = true), instant(item.text("at", 40)))
+                val attachments = (item.fields["attachments"] as? JsonValue.Arr)?.items?.map { raw ->
+                    val file = raw.obj()
+                    val kind = file.text("kind", 16)
+                    if (kind != "photo" && kind != "log") throw JsonFail()
+                    SupportAttachment(AccountValidation.id(file.text("id", 36)), kind, file.text("name", 80, nonempty = true))
+                } ?: emptyList()
+                if (attachments.size > 6) throw JsonFail()
+                SupportMessage(author, item.text("body", 4000, nonempty = true), instant(item.text("at", 40)), attachments)
             }
         )
+    }
+
+    private fun supportForm(subject: String?, body: String, photos: List<Pair<String, ByteArray>>, logs: List<Pair<String, ByteArray>>): Pair<String, ByteArray> {
+        val boundary = "zapara" + UUID.randomUUID().toString().replace("-", "")
+        val out = java.io.ByteArrayOutputStream()
+        fun text(name: String, value: String) {
+            out.write("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$value\r\n".toByteArray())
+        }
+        fun file(name: String, fileName: String, type: String, bytes: ByteArray) {
+            val safe = fileName.replace("\"", "").replace("\r", "").replace("\n", "")
+            out.write("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"; filename=\"$safe\"\r\nContent-Type: $type\r\n\r\n".toByteArray())
+            out.write(bytes)
+            out.write("\r\n".toByteArray())
+        }
+        if (subject != null) text("subject", subject)
+        text("body", body)
+        photos.forEach { file("photo", it.first, "image/jpeg", it.second) }
+        logs.forEach { file("log", it.first, "text/plain", it.second) }
+        out.write("--$boundary--\r\n".toByteArray())
+        return "multipart/form-data; boundary=$boundary" to out.toByteArray()
+    }
+
+    private suspend fun sendRaw(method: String, path: String, body: ByteArray, contentType: String, access: String, expected: Int): JsonValue {
+        if (body.size > 14 * 1024 * 1024) throw AccountClientException(AccountClientFailure.BodyTooLarge)
+        val headers = linkedMapOf(
+            "Accept" to "application/json",
+            "Content-Type" to contentType,
+            "Authorization" to "Bearer ${AccountValidation.token(access, "za_")}"
+        )
+        val reply = try {
+            transport.exchange(HttpCall(method, scope.baseUri.toString() + "api/v1/" + path, headers, body, maxBytes = JSON_MAX))
+        } catch (_: ru.bgtu_voenmeh.zapara.data.api.HttpBodyTooLargeException) {
+            throw AccountClientException(AccountClientFailure.BodyTooLarge)
+        } catch (_: java.io.IOException) {
+            throw AccountClientException(AccountClientFailure.Transport)
+        }
+        if (reply.status != expected) throw mapError(reply.status, reply.body)
+        return try {
+            StrictJson.parse(reply.body)
+        } catch (_: JsonFail) {
+            throw AccountClientException(AccountClientFailure.InvalidPayload)
+        }
     }
 
     suspend fun unlinkIdentity(accessToken: String, provider: String, proofToken: String) {

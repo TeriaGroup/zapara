@@ -33,6 +33,7 @@ internal class AccountRuntime(
     val commitSession: suspend (AccountSession, String) -> Boolean,
     val logout: suspend (remote: (suspend (AccountSession) -> Unit)?) -> Boolean,
     val openUrl: (String) -> Unit,
+    val rememberExternal: (String, String) -> Unit = { _, _ -> },
     val writeExport: (ByteArray, String) -> Unit,
     val capabilitiesTransport: HttpExchange?,
     val scopeBase: String?,
@@ -50,6 +51,7 @@ internal class AccountRuntime(
             isGuest = { host.container.profile.isGuest },
             commitSession = { session, key -> host.coordinator.commitSession(session, key).committed },
             logout = { remote -> host.coordinator.logout(remote).committed },
+            rememberExternal = { id, verifier -> ExternalReturn.remember(host.app, id, verifier) },
             openUrl = { url ->
                 val parsed = Uri.parse(url)
                 if (parsed.scheme == "https" || parsed.scheme == "http") {
@@ -166,6 +168,9 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                 if (!captured.registrationAvailable) {
                     return@launchOp captured.copy(status = runtime.strings(R.string.account_registration_unavailable))
                 }
+                if (!captured.documentsAccepted) {
+                    return@launchOp captured.copy(status = runtime.strings(R.string.account_accept_required))
+                }
                 client.register(captured.username, secret, captured.displayName.ifBlank { null })
                 captured.copy(registration = false, status = runtime.strings(R.string.account_created))
             } else {
@@ -276,6 +281,10 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
 
     private fun startExternal(provider: String, login: Boolean) {
         val snap = mutable.value
+        if (login && snap.registration && !snap.documentsAccepted) {
+            mutable.update { it.copy(status = runtime.strings(R.string.account_accept_required)) }
+            return
+        }
         if (login && !snap.guest) return
         if (!login && snap.guest) return
         launchOp(provider) { captured ->
@@ -297,6 +306,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                 ),
                 accessToken = access
             )
+            runtime.rememberExternal(start.transactionId, pkce.verifier)
             runtime.openUrl(start.authorizeUrl)
             captured.copy(status = statusText(captured.guest), guest = runtime.isGuest())
         }

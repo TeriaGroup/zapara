@@ -104,7 +104,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 mutable.update { it.copy(useUniversityXml = event.enabled) }
                 save(transform = { it.copy(useUniversityXml = event.enabled) })
             }
-            is SettingsEvent.Report -> report(event.subject, event.body)
+            is SettingsEvent.Report -> report(event.subject, event.body, event.photos, event.logs)
             is SettingsEvent.MapsAlpha -> {
                 mutable.update { it.copy(mapsAlpha = event.enabled) }
                 save(transform = { it.copy(mapsAlpha = event.enabled) }, after = {
@@ -269,7 +269,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         return try {
             val opened = withContext(Dispatchers.IO) { client.supportThreads(token).lastOrNull() } ?: return emptyList()
             reportThreadId = opened.id
-            opened.messages.map { ru.bgtu_voenmeh.zapara.ui.chat.SupportForm.Note(it.author, it.body) }
+            opened.messages.map { ru.bgtu_voenmeh.zapara.ui.chat.SupportForm.Note(it.author, supportText(it)) }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             android.util.Log.w("ZaparaSettings", "support", e)
@@ -277,7 +277,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    private fun report(subject: String, body: String) {
+    private fun supportText(message: ru.bgtu_voenmeh.zapara.data.accounts.SupportMessage): String {
+        val extra = message.attachments.joinToString("\n") { if (it.kind == "photo") "Фото: ${it.name}" else "Лог: ${it.name}" }
+        return if (extra.isEmpty()) message.body else message.body + "\n" + extra
+    }
+
+    private fun report(subject: String, body: String, photos: List<Pair<String, ByteArray>>, logs: List<Pair<String, ByteArray>>) {
         val local = ru.bgtu_voenmeh.zapara.ui.chat.SupportForm.submit(mutable.value.signedIn, mutable.value.reportThread, subject, body)
         if (local.error != null) {
             mutable.update { it.copy(reportNote = local.error) }
@@ -293,14 +298,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             try {
                 val saved = withContext(Dispatchers.IO) {
                     val existing = reportThreadId
-                    if (existing == null) client.openSupport(token, subject.trim(), body.trim())
-                    else client.continueSupport(token, existing, body.trim())
+                    if (existing == null) client.openSupport(token, subject.trim(), body.trim(), photos, logs)
+                    else client.continueSupport(token, existing, body.trim(), photos, logs)
                 }
                 reportThreadId = saved.id
                 mutable.update {
                     it.copy(
                         reportNote = "",
-                        reportThread = saved.messages.map { line -> ru.bgtu_voenmeh.zapara.ui.chat.SupportForm.Note(line.author, line.body) }
+                        reportThread = saved.messages.map { line -> ru.bgtu_voenmeh.zapara.ui.chat.SupportForm.Note(line.author, supportText(line)) }
                     )
                 }
             } catch (e: CancellationException) { throw e }

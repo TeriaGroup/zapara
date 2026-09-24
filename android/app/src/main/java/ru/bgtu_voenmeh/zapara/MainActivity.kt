@@ -15,6 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import ru.bgtu_voenmeh.zapara.data.Notifications
+import ru.bgtu_voenmeh.zapara.ui.account.ExternalReturn
 import ru.bgtu_voenmeh.zapara.ui.shell.WidgetLaunchInbox
 import ru.bgtu_voenmeh.zapara.ui.shell.ZaparaApp
 
@@ -27,6 +28,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         acceptLaunch(intent)
+        acceptExternal(intent)
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -49,6 +51,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         acceptLaunch(intent)
+        acceptExternal(intent)
     }
 
     private fun acceptLaunch(intent: Intent) {
@@ -63,6 +66,17 @@ class MainActivity : ComponentActivity() {
         widgetLaunchInbox.consume(id)
         intent.removeExtra(SECTION_EXTRA)
         intent.removeExtra(ARGUMENT_EXTRA)
+    }
+
+    private fun acceptExternal(intent: Intent?) {
+        val data = intent?.data ?: return
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                ExternalReturn.complete((application as ZaparaApplication).host, data)
+            } catch (e: Exception) {
+                android.util.Log.w("ZaparaMain", "external", e)
+            }
+        }
     }
 
     companion object {
