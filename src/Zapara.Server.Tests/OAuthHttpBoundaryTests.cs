@@ -35,6 +35,22 @@ public sealed class OAuthHttpBoundaryTests
     }
 
     [Fact]
+    public async Task Yandex_callback_accepts_the_client_id_echo()
+    {
+        await using var h = await Create();
+        await using var host = new AccountApiTestHost(h.Db, clock: h.Clock);
+        await using var factory = host.Factory.WithWebHostBuilder(b => b.ConfigureServices(s =>
+        { s.RemoveAll<ExternalProviderRegistry>(); s.AddSingleton(h.Registry); s.RemoveAll<ExternalAuthService>(); s.AddSingleton(h.Service); }));
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new("https://example.invalid"), AllowAutoRedirect = false });
+        var p = await h.Start();
+        using var response = await client.GetAsync(Callback + "?state=" + p.State + "&code=synthetic-code&cid=synthetic-client", Ct);
+        Assert.NotEqual(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotEqual(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("text/plain", response.Content.Headers.ContentType!.MediaType);
+        Assert.DoesNotContain("synthetic-client", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    [Fact]
     public async Task New_anonymous_routes_bound_bodies_and_rate_limits()
     {
         await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);

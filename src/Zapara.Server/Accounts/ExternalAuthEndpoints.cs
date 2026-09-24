@@ -41,11 +41,21 @@ internal static class ExternalAuthEndpoints
             return Results.NoContent();
         }, true, "account-login");
         var registry = app.Services.GetRequiredService<ExternalProviderRegistry>();
-        foreach (var provider in new[] { "vk", "yandex" }.Where(registry.IsConfigured))
+        var mapped = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var provider in new[] { "vk", "yandex" })
         {
-            var path = new Uri(registry.CallbackUri(provider)).AbsolutePath;
-            var callbackGroup = app.MapGroup("").WithMetadata(new AccountEndpoint(), new ExternalEndpoint());
-            Route(callbackGroup, "GET", path, c => Callback(c, provider), rate: "account-refresh", callback: true);
+            // The canonical path stays registered after a settings change. A callback that
+            // existed only while the provider was configured at startup came back as an empty 404.
+            var paths = new List<string> { "/auth/" + provider + "/callback" };
+            if (registry.IsConfigured(provider)) paths.Add(new Uri(registry.CallbackUri(provider)).AbsolutePath);
+            foreach (var path in paths)
+            {
+                if (!mapped.Add(path)) continue;
+                var name = provider;
+                var callbackGroup = app.MapGroup("").WithMetadata(new AccountEndpoint(), new ExternalEndpoint());
+                Route(callbackGroup, "GET", path, c =>
+                    Registry(c).IsConfigured(name) ? Callback(c, name) : Task.FromResult(Page(503)), rate: "account-refresh", callback: true);
+            }
         }
     }
 
@@ -54,7 +64,7 @@ internal static class ExternalAuthEndpoints
         if (c.Request.QueryString.Value?.Length > 16384) throw new AccountBodyException();
         var query = c.Request.Query;
         if (query.Any(p => p.Value.Count != 1) ||
-            query.Keys.Any(k => k is not ("state" or "code" or "device_id" or "error" or "error_description"))) throw new AccountBodyException();
+            query.Keys.Any(k => k is not ("state" or "code" or "device_id" or "error" or "error_description" or "cid"))) throw new AccountBodyException();
         string? Value(string key) => query.TryGetValue(key, out var value) ? value.ToString() : null;
         if (c.RequestServices.GetService<Zapara.Server.Web.WebOAuth>() is { } web)
         {
@@ -63,6 +73,21 @@ internal static class ExternalAuthEndpoints
         }
         var destination = await Service(c).CallbackAsync(provider, new Uri(c.Request.GetEncodedUrl()), Value("state")!,
             Value("code"), Value("device_id"), query.ContainsKey("error"), c.RequestAborted);
+        if (destination.Scheme == "zapara")
+        {
+            var link = System.Net.WebUtility.HtmlEncode(destination.AbsoluteUri);
+            var html = """
+                <!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Вход</title></head>
+                <body style="margin:0;background:#0d0d0d;color:#f2f2f2;font-family:sans-serif"><main style="max-width:28rem;margin:0 auto;padding:32px 20px">
+                <h1 style="font-size:22px;font-weight:500">Вход подтверждён</h1>
+                <p style="font-size:15px;line-height:1.4">Вернитесь в приложение. Если оно не открылось само, нажмите кнопку.</p>
+                <p><a href="
+                """ + link + """
+                " style="display:inline-flex;align-items:center;min-height:48px;padding:0 16px;border-radius:8px;background:#f2f2f2;color:#0d0d0d;text-decoration:none;font-weight:500">Открыть приложение</a></p>
+                </main></body></html>
+                """;
+            return Results.Content(html, "text/html; charset=utf-8");
+        }
         c.Response.Headers.Location = destination.AbsoluteUri;
         return Results.Text("Вход подтверждён. Вернитесь в приложение.", "text/plain; charset=utf-8", statusCode: 302);
     }
