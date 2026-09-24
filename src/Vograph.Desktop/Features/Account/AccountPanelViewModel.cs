@@ -86,11 +86,20 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     }
 
     public async Task<SupportThreadResponse?> SendSupportAsync(Guid? threadId, string subject, string body, CancellationToken ct)
+        => await SendSupportAsync(threadId, subject, body, [], ct);
+
+    public async Task<SupportThreadResponse?> SendSupportAsync(Guid? threadId, string subject, string body, IReadOnlyList<SupportUpload> files, CancellationToken ct)
     {
         if (service is null || IsGuest) return null;
+        if (files.Count == 0)
+        {
+            return threadId is Guid plain
+                ? await service.ContinueSupportAsync(plain, body, ct)
+                : await service.OpenSupportAsync(subject, body, ct);
+        }
         return threadId is Guid id
-            ? await service.ContinueSupportAsync(id, body, ct)
-            : await service.OpenSupportAsync(subject, body, ct);
+            ? await service.ContinueSupportAsync(id, body, files, ct)
+            : await service.OpenSupportAsync(subject, body, files, ct);
     }
     public bool IsAccount => !IsGuest;
     public bool CanAct => Ready && !Busy && !disposed && service is not null && snapshot?.Phase == ProfilePhase.Idle;
@@ -99,6 +108,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     public bool ShowRecovery => RecoveryAvailable && ShowLogin;
     public bool ShowVkLogin => VkAvailable && ShowLogin;
     public bool ShowYandexLogin => YandexAvailable && ShowLogin;
+    public bool ShowExternalLogin => ShowVkLogin || ShowYandexLogin;
     public bool ShowVkLink => VkAvailable && IsAccount && Identities.All(i => i.Provider != "vk");
     public bool ShowYandexLink => YandexAvailable && IsAccount && Identities.All(i => i.Provider != "yandex");
     public bool CanDownloadExport => ExportJob?.Status == "ready";
@@ -109,9 +119,12 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     partial void OnRecoveryAvailableChanged(bool value) => OnPropertyChanged(nameof(ShowRecovery));
     partial void OnExportJobChanged(ExportJobResponse? value) => OnPropertyChanged(nameof(CanDownloadExport));
     private void OnIdentitiesChanged(object? sender, NotifyCollectionChangedEventArgs e) => NotifyExternal();
+    [ObservableProperty] private bool documentsAccepted;
+
     partial void OnRegistrationChanged(bool value)
     {
         ClearSecrets();
+        DocumentsAccepted = false;
         if (value && !RegistrationAvailable) Registration = false;
     }
 
@@ -157,7 +170,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
 
     private void NotifyExternal()
     {
-        foreach (var name in new[] { nameof(ShowRecovery), nameof(ShowVkLogin), nameof(ShowYandexLogin),
+        foreach (var name in new[] { nameof(ShowRecovery), nameof(ShowVkLogin), nameof(ShowYandexLogin), nameof(ShowExternalLogin),
             nameof(ShowVkLink), nameof(ShowYandexLink) })
             OnPropertyChanged(name);
     }
@@ -184,6 +197,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
             if (Registration)
             {
                 if (!RegistrationAvailable) { Status = T("accountRegistrationUnavailable"); return; }
+                if (!DocumentsAccepted) { Status = T("accountAcceptRequired"); return; }
                 await service!.RegisterAsync(request, lifetime.Token);
                 Registration = false;
                 Status = T("accountCreated");

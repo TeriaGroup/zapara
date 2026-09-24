@@ -18,4 +18,5 @@ public sealed class FakeFileDialogs : IFileDialogs
     public Task<string?> OpenJsonAsync() => Task.FromResult(OpenPath);
     public Task<string?> OpenHomeworkAsync(bool photo) => Task.FromResult(OpenPath);
     public Task<string?> OpenChatMediaAsync(string kind) => Task.FromResult(OpenPath);
+    public Task<IReadOnlyList<string>> OpenSupportAsync(string kind) => Task.FromResult<IReadOnlyList<string>>(OpenPath is null ? [] : [OpenPath]);
 }

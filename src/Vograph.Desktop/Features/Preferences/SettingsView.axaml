@@ -23,6 +23,12 @@
           <TextBlock TextWrapping="Wrap" Text="Сообщить о баге или ошибке. Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ." />
           <TextBox Text="{Binding ReportSubject}" PlaceholderText="Тема" MinHeight="48" AutomationProperties.AutomationId="Settings.ReportSubject" />
           <TextBox Text="{Binding ReportBody}" PlaceholderText="Что случилось" AcceptsReturn="True" MinHeight="96" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings.ReportBody" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Фото" MinHeight="48" MinWidth="48" Command="{Binding PickReportPhotoCommand}" AutomationProperties.AutomationId="Settings.ReportPhoto" />
+            <Button Content="Лог" MinHeight="48" MinWidth="48" Command="{Binding PickReportLogCommand}" AutomationProperties.AutomationId="Settings.ReportLog" />
+          </StackPanel>
+          <TextBlock TextWrapping="Wrap" Text="До трёх фотографий JPEG, PNG или WebP, до 4 МиБ. До трёх логов .txt или .log, до 512 КиБ." />
+          <TextBlock Text="{Binding ReportFilesText}" TextWrapping="Wrap" />
           <Button Content="Сообщить о баге" HorizontalAlignment="Left" MinHeight="48" Command="{Binding SendReportCommand}" AutomationProperties.AutomationId="Settings.Report" />
           <TextBlock Text="{Binding ReportNote}" TextWrapping="Wrap" />
           <ItemsControl ItemsSource="{Binding ReportMessages}">

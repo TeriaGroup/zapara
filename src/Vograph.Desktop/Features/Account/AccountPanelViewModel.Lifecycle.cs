@@ -81,6 +81,7 @@ public sealed partial class AccountPanelViewModel
         var secret = Proof;
         ClearSecrets();
         if (!CanAct) return;
+        if (!link && Registration && !DocumentsAccepted) { Status = T("accountAcceptRequired"); return; }
         if (link)
         {
             if (IsGuest || (provider == "vk" ? !ShowVkLink : !ShowYandexLink)) return;

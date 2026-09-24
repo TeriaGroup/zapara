@@ -93,7 +93,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private string reportSubject = "";
     [ObservableProperty] private string reportBody = "";
     [ObservableProperty] private string reportNote = "";
+    [ObservableProperty] private string reportFilesText = "";
     private Guid? reportThreadId;
+    private readonly List<SupportUpload> reportPhotos = [];
+    private readonly List<SupportUpload> reportLogs = [];
 
     public async Task LoadReportAsync()
     {
@@ -105,7 +108,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             if (latest is null) return;
             reportThreadId = latest.Id;
             ReportMessages.Clear();
-            foreach (var line in latest.Messages) ReportMessages.Add(new(line.Author, line.Body));
+            foreach (var line in latest.Messages) ReportMessages.Add(new(line.Author, Shown(line)));
         }
         catch (AccountClientException) { ReportNote = "Сообщение не отправилось"; }
     }
@@ -118,7 +121,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
         if (error is not null) return;
         try
         {
-            var saved = await AccountPanel.SendSupportAsync(reportThreadId, ReportSubject.Trim(), ReportBody.Trim(), CancellationToken.None);
+            var files = reportPhotos.Concat(reportLogs).ToArray();
+            var saved = await AccountPanel.SendSupportAsync(reportThreadId, ReportSubject.Trim(), ReportBody.Trim(), files, CancellationToken.None);
             if (saved is null)
             {
                 ReportNote = "Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ.";
@@ -126,11 +130,63 @@ public sealed partial class SettingsViewModel : ViewModelBase
             }
             reportThreadId = saved.Id;
             ReportMessages.Clear();
-            foreach (var line in saved.Messages) ReportMessages.Add(new(line.Author, line.Body));
+            foreach (var line in saved.Messages) ReportMessages.Add(new(line.Author, Shown(line)));
             ReportSubject = "";
             ReportBody = "";
+            reportPhotos.Clear();
+            reportLogs.Clear();
+            ReportFilesText = "";
         }
         catch (AccountClientException) { ReportNote = "Сообщение не отправилось"; }
+    }
+
+    [RelayCommand]
+    private Task PickReportPhoto() => PickReport("photo");
+
+    [RelayCommand]
+    private Task PickReportLog() => PickReport("log");
+
+    private async Task PickReport(string kind)
+    {
+        var paths = await App.FileDialogs.OpenSupportAsync(kind);
+        var list = kind == "photo" ? reportPhotos : reportLogs;
+        foreach (var path in paths)
+        {
+            if (list.Count >= 3)
+            {
+                ReportNote = kind == "photo" ? "Можно приложить не больше трёх фотографий." : "Можно приложить не больше трёх логов.";
+                break;
+            }
+            var info = new FileInfo(path);
+            var ext = info.Extension.ToLowerInvariant();
+            if (kind == "photo" && ext is not (".jpg" or ".jpeg" or ".png" or ".webp"))
+            {
+                ReportNote = "Нужна фотография JPEG, PNG или WebP.";
+                break;
+            }
+            if (kind == "log" && ext is not (".txt" or ".log"))
+            {
+                ReportNote = "Лог должен быть текстовым файлом .txt или .log.";
+                break;
+            }
+            if (info.Length <= 0) { ReportNote = "Файл пустой."; break; }
+            if (info.Length > (kind == "photo" ? 4 * 1024 * 1024 : 512 * 1024))
+            {
+                ReportNote = kind == "photo" ? "Фото больше 4 МиБ." : "Лог больше 512 КиБ.";
+                break;
+            }
+            var bytes = await File.ReadAllBytesAsync(path);
+            var type = ext switch { ".png" => "image/png", ".webp" => "image/webp", ".jpg" or ".jpeg" => "image/jpeg", _ => "text/plain" };
+            list.Add(new SupportUpload(kind, info.Name, type, bytes));
+            ReportNote = "";
+        }
+        ReportFilesText = string.Join("\n", reportPhotos.Select(file => "Фото: " + file.Name).Concat(reportLogs.Select(file => "Лог: " + file.Name)));
+    }
+
+    private static string Shown(SupportLineResponse line)
+    {
+        var extra = string.Join("\n", line.Attachments.Select(file => file.Kind == "photo" ? "Фото: " + file.Name : "Лог: " + file.Name));
+        return extra.Length == 0 ? line.Body : line.Body + "\n" + extra;
     }
     public bool LegacyTransferAvailable => App.Profile.IsGuest;
 

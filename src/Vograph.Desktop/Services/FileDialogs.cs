@@ -10,6 +10,7 @@ public interface IFileDialogs
     Task<string?> OpenJsonAsync();
     Task<string?> OpenHomeworkAsync(bool photo);
     Task<string?> OpenChatMediaAsync(string kind);
+    Task<IReadOnlyList<string>> OpenSupportAsync(string kind);
 }
 
 /// <summary>Default slot before App installs the real pickers: every dialog reads as "cancelled".</summary>
@@ -19,6 +20,7 @@ public sealed class NullFileDialogs : IFileDialogs
     public Task<string?> OpenJsonAsync() => Task.FromResult<string?>(null);
     public Task<string?> OpenHomeworkAsync(bool photo) => Task.FromResult<string?>(null);
     public Task<string?> OpenChatMediaAsync(string kind) => Task.FromResult<string?>(null);
+    public Task<IReadOnlyList<string>> OpenSupportAsync(string kind) => Task.FromResult<IReadOnlyList<string>>([]);
 }
 
 public sealed class AvaloniaFileDialogs : IFileDialogs
@@ -69,5 +71,15 @@ public sealed class AvaloniaFileDialogs : IFileDialogs
         };
         var files = await tl.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { AllowMultiple = false, FileTypeFilter = new[] { filter } });
         return files.Count == 0 ? null : files[0].TryGetLocalPath();
+    }
+
+    public async Task<IReadOnlyList<string>> OpenSupportAsync(string kind)
+    {
+        if (_topLevel() is not { } tl) return [];
+        var filter = kind == "photo"
+            ? new FilePickerFileType("image") { Patterns = ["*.jpg", "*.jpeg", "*.png", "*.webp"] }
+            : new FilePickerFileType("log") { Patterns = ["*.txt", "*.log"] };
+        var files = await tl.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { AllowMultiple = true, FileTypeFilter = [filter] });
+        return files.Select(file => file.TryGetLocalPath()).Where(path => !string.IsNullOrEmpty(path)).Cast<string>().ToArray();
     }
 }

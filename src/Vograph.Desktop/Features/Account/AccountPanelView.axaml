@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="using:Vograph.Desktop.Services"
              xmlns:a="using:Vograph.Desktop.Features.Account"
+             xmlns:c="using:Vograph.Desktop.Controls"
              xmlns:dto="clr-namespace:Zapara.Contracts.Accounts;assembly=Zapara.Contracts"
              xmlns:ext="clr-namespace:Zapara.Contracts.Accounts.ExternalResponses;assembly=Zapara.Contracts"
              x:Class="Vograph.Desktop.Features.Account.AccountPanelView"
@@ -12,11 +13,17 @@
       <StackPanel Spacing="8">
         <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                 Command="{Binding OpenAgreementCommand}" AutomationProperties.AutomationId="Legal.Agreement">
-          <TextBlock Text="Пользовательское соглашение" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <c:Icon Data="{StaticResource Icon.File}" Size="18" VerticalAlignment="Center" />
+            <TextBlock Text="Пользовательское соглашение" TextWrapping="Wrap" VerticalAlignment="Center" />
+          </StackPanel>
         </Button>
         <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                 Command="{Binding OpenPolicyCommand}" AutomationProperties.AutomationId="Legal.Policy">
-          <TextBlock Text="Политика обработки персональных данных" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <c:Icon Data="{StaticResource Icon.Shield}" Size="18" VerticalAlignment="Center" />
+            <TextBlock Text="Политика обработки персональных данных" TextWrapping="Wrap" VerticalAlignment="Center" />
+          </StackPanel>
         </Button>
       </StackPanel>
       <StackPanel Spacing="8" IsVisible="{Binding HasOpenDocument}">
@@ -39,16 +46,34 @@
           <StackPanel Spacing="10" IsVisible="{Binding Registration}">
             <TextBlock Text="{loc:T accountDisplayName}" />
             <TextBox Text="{Binding DisplayName}" AutomationProperties.Name="{loc:T accountDisplayName}" />
+            <CheckBox IsChecked="{Binding DocumentsAccepted}" MinHeight="48" VerticalAlignment="Center" AutomationProperties.AutomationId="Account.AcceptDocuments">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <c:Icon Data="{StaticResource Icon.File}" Size="16" VerticalAlignment="Center" />
+                <c:Icon Data="{StaticResource Icon.Shield}" Size="16" VerticalAlignment="Center" />
+                <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="520" Text="Я принимаю пользовательское соглашение и политику обработки персональных данных." />
+              </StackPanel>
+            </CheckBox>
           </StackPanel>
           <TextBlock Classes="caption" Text="{loc:T accountValidation}" TextWrapping="Wrap" />
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Button Classes="primary" Content="{loc:T accountLogin}" Command="{Binding SubmitCommand}" IsVisible="{Binding !Registration}" AutomationProperties.AutomationId="Account.Login" />
-            <Button Classes="primary" Content="{loc:T accountRegister}" Command="{Binding SubmitCommand}" IsVisible="{Binding Registration}" AutomationProperties.AutomationId="Account.Register" />
+            <Button Classes="primary" Content="{loc:T accountRegister}" Command="{Binding SubmitCommand}" IsVisible="{Binding Registration}" IsEnabled="{Binding DocumentsAccepted}" AutomationProperties.AutomationId="Account.Register" />
             <Button Content="{loc:T accountMode}" Command="{Binding ToggleRegistrationCommand}" IsVisible="{Binding RegistrationAvailable}" AutomationProperties.AutomationId="Account.Mode" />
           </StackPanel>
+          <TextBlock Classes="caption" Text="Войти с помощью" IsVisible="{Binding ShowExternalLogin}" />
           <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Content="{loc:T accountVk}" Command="{Binding StartVkCommand}" IsVisible="{Binding ShowVkLogin}" AutomationProperties.AutomationId="Account.Vk" />
-            <Button Content="{loc:T accountYandex}" Command="{Binding StartYandexCommand}" IsVisible="{Binding ShowYandexLogin}" AutomationProperties.AutomationId="Account.Yandex" />
+            <Button Classes="id" Command="{Binding StartYandexCommand}" IsVisible="{Binding ShowYandexLogin}" AutomationProperties.AutomationId="Account.Yandex" AutomationProperties.Name="{loc:T accountYandex}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <a:YandexMark VerticalAlignment="Center" />
+                <TextBlock Text="Яндекс ID" VerticalAlignment="Center" Foreground="#111111" />
+              </StackPanel>
+            </Button>
+            <Button Classes="id" Command="{Binding StartVkCommand}" IsVisible="{Binding ShowVkLogin}" AutomationProperties.AutomationId="Account.Vk" AutomationProperties.Name="{loc:T accountVk}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <a:VkMark VerticalAlignment="Center" />
+                <TextBlock Text="VK ID" VerticalAlignment="Center" Foreground="#111111" />
+              </StackPanel>
+            </Button>
           </StackPanel>
           <StackPanel Spacing="8" IsVisible="{Binding ShowRecovery}">
             <TextBlock Text="{loc:T accountRecoveryEmail}" TextWrapping="Wrap" />
@@ -119,8 +144,18 @@
             </ItemsControl.ItemTemplate>
           </ItemsControl>
           <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Content="{loc:T accountLink}" Command="{Binding LinkVkCommand}" IsVisible="{Binding ShowVkLink}" AutomationProperties.AutomationId="Account.LinkVk" />
-            <Button Content="{loc:T accountLink}" Command="{Binding LinkYandexCommand}" IsVisible="{Binding ShowYandexLink}" AutomationProperties.AutomationId="Account.LinkYandex" />
+            <Button Classes="id" Command="{Binding LinkYandexCommand}" IsVisible="{Binding ShowYandexLink}" AutomationProperties.AutomationId="Account.LinkYandex" AutomationProperties.Name="Привязать Яндекс ID">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <a:YandexMark VerticalAlignment="Center" />
+                <TextBlock Text="{loc:T accountLink}" VerticalAlignment="Center" Foreground="#111111" />
+              </StackPanel>
+            </Button>
+            <Button Classes="id" Command="{Binding LinkVkCommand}" IsVisible="{Binding ShowVkLink}" AutomationProperties.AutomationId="Account.LinkVk" AutomationProperties.Name="Привязать VK ID">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <a:VkMark VerticalAlignment="Center" />
+                <TextBlock Text="{loc:T accountLink}" VerticalAlignment="Center" Foreground="#111111" />
+              </StackPanel>
+            </Button>
           </StackPanel>
         </StackPanel>
       </StackPanel>
