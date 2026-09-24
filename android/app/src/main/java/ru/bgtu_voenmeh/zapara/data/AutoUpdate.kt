@@ -11,7 +11,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object AutoUpdate {
-    const val CURRENT_TAG = "android-v2.1.23"
+    const val CURRENT_TAG = "android-v2.1.24"
     private const val OWNER = "TeriaGroup"
     private const val REPO = "zapara"
     private const val PREFS = "zapara"
