@@ -22,7 +22,9 @@ const paths = {
   smile: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M8 14s1.5 2 4 2 4-2 4-2 M9 9h.01 M15 9h.01",
   circle: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z",
   mic: "M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z M19 10v2a7 7 0 0 1-14 0v-2 M12 19v4 M8 23h8",
-  menu: "M4 6h16 M4 12h16 M4 18h16"
+  menu: "M4 6h16 M4 12h16 M4 18h16",
+  file: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M8 13h8 M8 17h6",
+  shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
 } as const;
 
 export type IconName = keyof typeof paths;

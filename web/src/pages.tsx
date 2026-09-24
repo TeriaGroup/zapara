@@ -9,7 +9,7 @@ import { composeSummary } from "./summary";
 import { lessonsOfGroupTeacher, teacherCode, teacherRows, teacherWeek, type TeacherRow } from "./teachers";
 import { subgroupIndex, subgroupMark, visibleLessons } from "./subgroups";
 import { HOMEWORK_FILE_LIMIT, checkHomeworkFile, compressHomeworkPhoto, deleteHomeworkBlob, putHomeworkBlob, readHomeworkBlob } from "./homework-files";
-import { supportAppend, supportDraft } from "./support";
+import { supportAppend, supportDraft, supportFiles } from "./support";
 import { holdActions, runHold } from "./hold";
 import { groupBubbleText, GroupMediaError } from "./group-media";
 import { legalDocument, type LegalId } from "./legal";
@@ -21,6 +21,7 @@ import { GroupAdmin, titlesOf } from "./group-admin";
 import { PeoplePanel } from "./people";
 import { ShareMenu } from "./share";
 import { Icon } from "./icons";
+import { VkMark, YandexMark } from "./brands";
 import type { BallotBoard, ChatMessage, Community, Conversation, FriendItem, GroupDesk, GroupHome, GroupHomeworkCopy, GroupTopic, HomeworkFile, Lesson, MapPlan, Teacher, TeacherLesson } from "./types";
 
 function Head({ title, text, children }: { title: string; text?: string; children?: ReactNode }) {
@@ -802,8 +803,8 @@ export function GroupPage() {
 function LegalLinks() {
   return (
     <nav className="stack legal-links" aria-label="Документы">
-      <Link className="btn" to="/legal/agreement">Пользовательское соглашение</Link>
-      <Link className="btn" to="/legal/policy">Политика обработки персональных данных</Link>
+      <Link className="btn" to="/legal/agreement"><Icon name="file" size={18} />Пользовательское соглашение</Link>
+      <Link className="btn" to="/legal/policy"><Icon name="shield" size={18} />Политика обработки персональных данных</Link>
     </nav>
   );
 }
@@ -825,12 +826,17 @@ export function SettingsPage() {
   const [password, setPassword] = useState("");
   const [display, setDisplay] = useState("");
   const [mode, setMode] = useState<"login" | "register">("login");
+  const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const yandex = app.session?.capabilities.yandex === true;
   const vk = app.session?.capabilities.vk === true;
   async function external(provider: "vk" | "yandex") {
     if (busy) return;
+    if (mode === "register" && !accepted) {
+      setError("Примите пользовательское соглашение и политику обработки персональных данных.");
+      return;
+    }
     setError("");
     setBusy(true);
     try {
@@ -843,6 +849,10 @@ export function SettingsPage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
+    if (mode === "register" && !accepted) {
+      setError("Примите пользовательское соглашение и политику обработки персональных данных.");
+      return;
+    }
     try {
       if (mode === "register") await api.register(username, password, display || username);
       await api.login(username, password);
@@ -892,20 +902,30 @@ export function SettingsPage() {
               <p className="muted">Гостевой профиль: расписание доступно без аккаунта и сети, если копия уже сохранена.</p>
               {(yandex || vk) && (
                 <div className="providers">
-                  {yandex && <button className="btn" type="button" disabled={busy} onClick={() => void external("yandex")}>Войти с Яндекс ID</button>}
-                  {vk && <button className="btn" type="button" disabled={busy} onClick={() => void external("vk")}>Войти с VK ID</button>}
+                  <p className="muted">Войти с помощью</p>
+                  <div className="id-row">
+                    {yandex && <button className="id-btn" type="button" disabled={busy} aria-label="Войти с Яндекс ID" onClick={() => void external("yandex")}><YandexMark />Яндекс ID</button>}
+                    {vk && <button className="id-btn" type="button" disabled={busy} aria-label="Войти с VK ID" onClick={() => void external("vk")}><VkMark />VK ID</button>}
+                  </div>
                 </div>
               )}
               <div className="seg">
-                <button type="button" className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Вход</button>
+                <button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setAccepted(false); }}>Вход</button>
                 <button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")} disabled={!app.session?.capabilities.registration}>Регистрация</button>
               </div>
               <label className="field">Логин<input value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" /></label>
               <label className="field">Пароль<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" /></label>
               {mode === "register" && <label className="field">Имя<input value={display} onChange={event => setDisplay(event.target.value)} /></label>}
+              {mode === "register" && (
+                <label className="check">
+                  <input type="checkbox" checked={accepted} onChange={event => setAccepted(event.target.checked)} />
+                  <span className="check-marks" aria-hidden="true"><Icon name="file" size={16} /><Icon name="shield" size={16} /></span>
+                  <span>Я принимаю <Link to="/legal/agreement">пользовательское соглашение</Link> и <Link to="/legal/policy">политику обработки персональных данных</Link>.</span>
+                </label>
+              )}
               {error && <div className="banner">{error}</div>}
               <LegalLinks />
-              <button className="btn primary" type="submit">{mode === "login" ? "Войти" : "Создать аккаунт"}</button>
+              <button className="btn primary" type="submit" disabled={mode === "register" && !accepted}>{mode === "login" ? "Войти" : "Создать аккаунт"}</button>
             </form>
           )}
         </article>
@@ -915,13 +935,65 @@ export function SettingsPage() {
   );
 }
 
-function FollowUp({ onSend }: { onSend: (text: string) => void }) {
+function FollowUp({ onSend }: { onSend: (text: string, photos: File[], logs: File[]) => void }) {
   const [text, setText] = useState("");
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [logs, setLogs] = useState<File[]>([]);
+  const [note, setNote] = useState("");
   return (
-    <form className="stack" onSubmit={event => { event.preventDefault(); const value = text.trim(); if (!value) return; setText(""); onSend(value); }}>
+    <form className="stack" onSubmit={event => {
+      event.preventDefault();
+      const value = text.trim();
+      if (!value) return;
+      const files = supportFiles(photos, logs);
+      if (files.error) { setNote(files.error); return; }
+      setText("");
+      setPhotos([]);
+      setLogs([]);
+      setNote("");
+      onSend(value, photos, logs);
+    }}>
       <label className="field">Уточнение<textarea value={text} onChange={event => setText(event.target.value)} maxLength={4000} rows={3} /></label>
+      <Attach photos={photos} logs={logs} onPhotos={setPhotos} onLogs={setLogs} onNote={setNote} />
+      {note && <p className="banner">{note}</p>}
       <button className="btn" type="submit">Ответить</button>
     </form>
+  );
+}
+
+function Attach({ photos, logs, onPhotos, onLogs, onNote }: { photos: File[]; logs: File[]; onPhotos: (files: File[]) => void; onLogs: (files: File[]) => void; onNote: (note: string) => void }) {
+  function add(kind: "photo" | "log", list: FileList | null, input: HTMLInputElement) {
+    const next = [...(kind === "photo" ? photos : logs), ...Array.from(list ?? [])].slice(0, 3);
+    const check = supportFiles(kind === "photo" ? next : photos, kind === "log" ? next : logs);
+    input.value = "";
+    if (check.error) { onNote(check.error); return; }
+    onNote("");
+    if (kind === "photo") onPhotos(next);
+    else onLogs(next);
+  }
+  return (
+    <div className="stack">
+      <div className="attach">
+        <label className="btn file">Фото<input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple aria-label="Фото" onChange={event => add("photo", event.target.files, event.target)} /></label>
+        <label className="btn file">Лог<input type="file" accept=".txt,.log,text/plain" multiple aria-label="Лог" onChange={event => add("log", event.target.files, event.target)} /></label>
+      </div>
+      <p className="muted">До трёх фотографий JPEG, PNG или WebP, до 4 МиБ. До трёх логов .txt или .log, до 512 КиБ.</p>
+      <div className="attach">
+        {photos.map((file, index) => <button className="btn" type="button" key={"p" + file.name + index} onClick={() => onPhotos(photos.filter((_, item) => item !== index))}>{file.name} · убрать</button>)}
+        {logs.map((file, index) => <button className="btn" type="button" key={"l" + file.name + index} onClick={() => onLogs(logs.filter((_, item) => item !== index))}>{file.name} · убрать</button>)}
+      </div>
+    </div>
+  );
+}
+
+function SupportLineView({ line }: { line: api.SupportLine }) {
+  return (
+    <div>
+      <p><b>{line.author === "operator" ? "Поддержка" : "Вы"}.</b> {line.body}</p>
+      {(line.attachments ?? []).map(file => file.kind === "photo"
+        ? <img key={file.id} className="support-photo" src={"/web-api/support/attachments/" + file.id} alt={file.name} />
+        : <p key={file.id} className="support-log"><a href={"/web-api/support/attachments/" + file.id}>{file.name}</a></p>)}
+    </div>
   );
 }
 
@@ -929,6 +1001,8 @@ function SupportCard() {
   const app = useApp();
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [logs, setLogs] = useState<File[]>([]);
   const [threads, setThreads] = useState<api.SupportThread[]>([]);
   const [note, setNote] = useState("");
   useEffect(() => {
@@ -940,52 +1014,47 @@ function SupportCard() {
     setNote("");
     const draft = supportDraft(!!app.session?.authenticated, subject, body);
     if (draft.error || !draft.subject || !draft.body) { setNote(draft.error || "Опишите тему и что случилось."); return; }
+    const files = supportFiles(photos, logs);
+    if (files.error) { setNote(files.error); return; }
     try {
-      const opened = await api.supportOpen(draft.subject, draft.body);
+      const opened = await api.supportOpen(draft.subject, draft.body, photos, logs);
       setThreads(list => [opened, ...list.filter(item => item.id !== opened.id)]);
       setSubject("");
       setBody("");
-    } catch {
-      setNote("Не удалось отправить сообщение.");
+      setPhotos([]);
+      setLogs([]);
+    } catch (error) {
+      setNote(error instanceof Error && error.message ? error.message : "Не удалось отправить сообщение.");
     }
   }
-  async function follow(id: string, text: string) {
+  async function follow(id: string, text: string, nextPhotos: File[], nextLogs: File[]) {
     const draft = supportDraft(!!app.session?.authenticated, "уточнение", text);
     if (draft.error || !draft.body) { setNote(draft.error || "Опишите, что случилось."); return; }
     const next = supportAppend([], "user", draft.body);
     if (next.length !== 1) return;
     try {
-      const updated = await api.supportReply(id, next[0].body);
+      const updated = await api.supportReply(id, next[0].body, nextPhotos, nextLogs);
       setThreads(list => list.map(item => item.id === updated.id ? updated : item));
-    } catch {
-      setNote("Не удалось отправить сообщение.");
+    } catch (error) {
+      setNote(error instanceof Error && error.message ? error.message : "Не удалось отправить сообщение.");
     }
   }
   return (
     <article className="card stack">
       <h2>Сообщить о баге</h2>
-      {!app.session?.authenticated ? (
-        <form className="stack" onSubmit={event => void send(event)}>
-          <p>Войдите в аккаунт, чтобы отправить сообщение об ошибке и увидеть ответ. Расписание и карты остаются доступны без входа.</p>
-          <label className="field">Тема<input value={subject} onChange={event => setSubject(event.target.value)} maxLength={120} /></label>
-          <label className="field">Что случилось<textarea value={body} onChange={event => setBody(event.target.value)} maxLength={4000} rows={4} /></label>
-          <button className="btn primary" type="submit">Отправить</button>
-        </form>
-      ) : (
-        <form className="stack" onSubmit={event => void send(event)}>
-          <label className="field">Тема<input value={subject} onChange={event => setSubject(event.target.value)} maxLength={120} required /></label>
-          <label className="field">Что случилось<textarea value={body} onChange={event => setBody(event.target.value)} maxLength={4000} required rows={4} /></label>
-          <button className="btn primary" type="submit">Отправить</button>
-        </form>
-      )}
+      <form className="stack" onSubmit={event => void send(event)}>
+        {!app.session?.authenticated && <p>Войдите в аккаунт, чтобы отправить сообщение об ошибке и увидеть ответ. Расписание и карты остаются доступны без входа.</p>}
+        <label className="field">Тема<input value={subject} onChange={event => setSubject(event.target.value)} maxLength={120} required={!!app.session?.authenticated} /></label>
+        <label className="field">Что случилось<textarea value={body} onChange={event => setBody(event.target.value)} maxLength={4000} required={!!app.session?.authenticated} rows={4} /></label>
+        <Attach photos={photos} logs={logs} onPhotos={setPhotos} onLogs={setLogs} onNote={setNote} />
+        <button className="btn primary" type="submit">Отправить</button>
+      </form>
       {note && <p className="banner">{note}</p>}
       {threads.map(thread => (
         <div key={thread.id} className="stack">
           <h3>{thread.subject}</h3>
-          {thread.messages.map((line, index) => (
-            <p key={thread.id + index}><b>{line.author === "operator" ? "Поддержка" : "Вы"}.</b> {line.body}</p>
-          ))}
-          <FollowUp onSend={text => void follow(thread.id, text)} />
+          {thread.messages.map((line, index) => <SupportLineView key={thread.id + index} line={line} />)}
+          <FollowUp onSend={(text, nextPhotos, nextLogs) => void follow(thread.id, text, nextPhotos, nextLogs)} />
         </div>
       ))}
     </article>

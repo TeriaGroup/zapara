@@ -85,19 +85,38 @@ async function send<T>(method: string, url: string, body?: unknown, empty = fals
   return response.json() as Promise<T>;
 }
 
-export type SupportLine = { author: string; body: string; at: string };
+export type SupportAttachment = { id: string; kind: "photo" | "log"; name: string };
+export type SupportLine = { author: string; body: string; at: string; attachments?: SupportAttachment[] };
 export type SupportThread = { id: string; subject: string; messages: SupportLine[] };
 
 export function supportList() {
   return read<SupportThread[]>("/web-api/support");
 }
 
-export function supportOpen(subject: string, body: string) {
-  return send<SupportThread>("POST", "/web-api/support", { subject, body });
+export function supportOpen(subject: string, body: string, photos: File[] = [], logs: File[] = []) {
+  return supportSend("/web-api/support", { subject, body }, photos, logs);
 }
 
-export function supportReply(id: string, body: string) {
-  return send<SupportThread>("POST", "/web-api/support/" + id, { body });
+export function supportReply(id: string, body: string, photos: File[] = [], logs: File[] = []) {
+  return supportSend("/web-api/support/" + id, { body }, photos, logs);
+}
+
+async function supportSend(path: string, fields: Record<string, string>, photos: File[], logs: File[]) {
+  if (photos.length === 0 && logs.length === 0) return send<SupportThread>("POST", path, fields);
+  const form = new FormData();
+  for (const [key, value] of Object.entries(fields)) form.append(key, value);
+  for (const file of photos) form.append("photo", file, file.name);
+  for (const file of logs) form.append("log", file, file.name);
+  const response = await fetch(path, { method: "POST", credentials: "same-origin", headers: authHeaders(), body: form });
+  if (!response.ok) {
+    let message = "Не удалось отправить сообщение.";
+    try {
+      const problem = await response.json() as { title?: string };
+      if (problem.title) message = problem.title;
+    } catch { /* The status line stays the fallback. */ }
+    throw new Error(message);
+  }
+  return response.json() as Promise<SupportThread>;
 }
 
 export function login(username: string, password: string) {
