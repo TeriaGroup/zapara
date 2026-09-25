@@ -22,8 +22,8 @@ android {
         applicationId = "ru.zapara.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 51
-        versionName = "2.1.25"
+        versionCode = 52
+        versionName = "2.1.26"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         val apiBase = keystoreProps.getProperty("zapara.apiBaseUrl") ?: "https://voen.teriahost.ru"
