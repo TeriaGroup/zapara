@@ -1,6 +1,6 @@
 namespace Vograph.Desktop.Services;
 
-/// <summary>The client's own release tag, derived from the csproj Version (2.1.27 → windows-v2.1.27). Compared with GitHub
+/// <summary>The client's own release tag, derived from the csproj Version (2.1.28 → windows-v2.1.28). Compared with GitHub
 /// tags through AutoUpdateService.IsNewer; Core's CurrentTagWindows names the same release (CoreCleanupTests pins the two together).</summary>
 public static class AppVersion
 {
