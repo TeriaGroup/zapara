@@ -8,7 +8,17 @@ export function canCreateBallot(topic: GroupTopic, canManageChannels: boolean): 
 
 export function orderedTopics(topics: GroupTopic[]): GroupTopic[] {
   const rank = (topic: GroupTopic) => topic.topicId === null ? 0 : topic.pinned ? 1 : 2;
-  return [...topics].sort((left, right) => rank(left) - rank(right));
+  return [...topics].sort((left, right) => rank(left) - rank(right) || Number(right.unread > 0) - Number(left.unread > 0));
+}
+
+export type TopicBrowseFilter = { query: string; kind: "all" | "chat" | "ballots"; unreadOnly: boolean };
+
+export function filterTopics(topics: GroupTopic[], filter: TopicBrowseFilter): GroupTopic[] {
+  const query = filter.query.trim().toLocaleLowerCase("ru-RU");
+  return orderedTopics(topics).filter(topic =>
+    (filter.kind === "all" || topic.kind === filter.kind) &&
+    (!filter.unreadOnly || topic.unread > 0) &&
+    (!query || `${topic.title} ${topic.description}`.toLocaleLowerCase("ru-RU").includes(query)));
 }
 
 const paints = ["#3d6b4f", "#3d5a80", "#8a5a2a", "#6b3d5a", "#3d5a6b", "#5a4a3d", "#6b4030", "#2f5d50"];

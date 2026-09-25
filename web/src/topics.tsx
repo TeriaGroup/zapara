@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import * as api from "./api";
-import { channelAccentColor, orderedTopics, topicPreview } from "./channels";
+import { channelAccentColor, filterTopics, topicPreview } from "./channels";
 import type { ChannelAccent, ChannelWritePolicy, GroupTopic, GroupTopicPage } from "./types";
 
 const icons = ["📌", "💬", "🗳️", "📅", "📚", "💻", "📎", "❗", "🏀", "🧪", "✏️", "🎵", "🌍"];
@@ -77,24 +77,43 @@ export function GroupTopics({ communityId, onOpen, onError }: {
   const [editWritePolicy, setEditWritePolicy] = useState<ChannelWritePolicy>("all");
   const [busy, setBusy] = useState(false);
   const [off, setOff] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [reloadEpoch, setReloadEpoch] = useState(0);
+  const [search, setSearch] = useState("");
+  const [kindFilter, setKindFilter] = useState<"all" | "chat" | "ballots">("all");
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const requestEpoch = useRef(0);
+  const lastCommunity = useRef(communityId);
+  const visible = filterTopics(page.topics, { query: search, kind: kindFilter, unreadOnly });
+  const filtered = !!search.trim() || kindFilter !== "all" || unreadOnly;
 
   useEffect(() => {
     let stop = false;
     requestEpoch.current += 1;
-    setPage({ topics: [], canManageChannels: false });
+    if (lastCommunity.current !== communityId) {
+      lastCommunity.current = communityId;
+      setPage({ topics: [], canManageChannels: false });
+      setSearch("");
+      setKindFilter("all");
+      setUnreadOnly(false);
+      setManageOpen(false);
+      setEditingId(null);
+    }
+    setLoading(true);
     const pull = () => {
       const ticket = ++requestEpoch.current;
       void api.topics(communityId).then(next => {
         if (stop || ticket !== requestEpoch.current) return;
         setPage(next);
         setOff(false);
-      }).catch(() => { if (!stop && ticket === requestEpoch.current) setOff(true); });
+        setLoading(false);
+      }).catch(() => { if (!stop && ticket === requestEpoch.current) { setOff(true); setLoading(false); } });
     };
     pull();
     const timer = window.setInterval(pull, 4000);
     return () => { stop = true; requestEpoch.current += 1; window.clearInterval(timer); };
-  }, [communityId]);
+  }, [communityId, reloadEpoch]);
 
   function create(event: FormEvent) {
     event.preventDefault();
@@ -109,6 +128,7 @@ export function GroupTopics({ communityId, onOpen, onError }: {
       setAccent("default");
       setPinned(false);
       setWritePolicy("all");
+      setManageOpen(false);
     }).catch(() => onError("Не получилось создать раздел")).finally(() => setBusy(false));
   }
 
@@ -129,7 +149,23 @@ export function GroupTopics({ communityId, onOpen, onError }: {
   return (
     <div className="topics">
       <p className="muted">Разделы группы: чаты с сообщениями и файлами или отдельные каналы для голосований. Общий поток остаётся наверху.</p>
-      {page.canManageChannels && <form className="stack channel-create" onSubmit={create}>
+      <label className="field">Поиск раздела
+        <input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Название или описание" aria-label="Поиск раздела" />
+      </label>
+      <div className="row topic-filters" role="group" aria-label="Фильтр разделов">
+        {([ ["all", "Все"], ["chat", "Чаты"], ["ballots", "Голосования"] ] as const).map(([value, label]) =>
+          <button key={value} className={kindFilter === value ? "btn primary" : "btn"} type="button"
+            aria-pressed={kindFilter === value} onClick={() => setKindFilter(value)}>{label}</button>)}
+        <button className={unreadOnly ? "btn primary" : "btn"} type="button" aria-pressed={unreadOnly}
+          onClick={() => setUnreadOnly(value => !value)}>Непрочитанные</button>
+      </div>
+      <div className="row">
+        <span className="muted">Показано {visible.length} из {page.topics.length}</span>
+        {filtered && <button className="btn" type="button" onClick={() => { setSearch(""); setKindFilter("all"); setUnreadOnly(false); }}>Сбросить фильтры</button>}
+        {page.canManageChannels && <button className="btn" type="button" aria-expanded={manageOpen}
+          onClick={() => setManageOpen(value => !value)}>{manageOpen ? "Закрыть управление" : "Управлять разделами"}</button>}
+      </div>
+      {page.canManageChannels && manageOpen && <form className="stack channel-create" onSubmit={create}>
         <h2>Новый раздел</h2>
         <div className="channel-kinds" role="group" aria-label="Тип раздела">
           <button className={kind === "chat" ? "channel-kind selected" : "channel-kind"} type="button" aria-pressed={kind === "chat"} onClick={() => { setKind("chat"); setIcon("💬"); }}>
@@ -150,9 +186,13 @@ export function GroupTopics({ communityId, onOpen, onError }: {
         <p className="muted">Тип раздела нельзя изменить после создания.</p>
         <button className="btn primary" type="submit" disabled={title.trim().length < 2 || busy}>Создать раздел</button>
       </form>}
-      {off && page.topics.length === 0 && <p className="muted">Разделы сейчас не открылись.</p>}
+      {loading && <p className="muted" role="status">Загрузка разделов…</p>}
+      {off && <div className="row" role="alert"><p className="muted">Разделы сейчас не открылись.</p>
+        <button className="btn" type="button" onClick={() => setReloadEpoch(value => value + 1)}>Повторить</button></div>}
+      {!loading && !off && visible.length === 0 && <div className="empty">{filtered ? "По запросу ничего не найдено" : "Разделов пока нет"}
+        {filtered && <button className="btn" type="button" onClick={() => { setSearch(""); setKindFilter("all"); setUnreadOnly(false); }}>Показать все</button>}</div>}
       <div className="topic-list">
-        {orderedTopics(page.topics).map(topic => (
+        {visible.map(topic => (
           <div className={topic.pinned ? "topic pinned" : "topic"} key={topic.topicId ?? "general"}>
             <div className="topic-row">
               <button className="topic-open" type="button" onClick={() => onOpen(topic, page.canManageChannels)}>
@@ -167,7 +207,7 @@ export function GroupTopics({ communityId, onOpen, onError }: {
                   {topic.unread > 0 && <span className="chip">{topic.unread}</span>}
                 </span>
               </button>
-              {page.canManageChannels && topic.topicId && <button className="btn topic-edit" type="button" onClick={() => {
+              {page.canManageChannels && manageOpen && topic.topicId && <button className="btn topic-edit" type="button" onClick={() => {
                 setEditingId(topic.topicId);
                 setEditTitle(topic.title);
                 setEditIcon(topic.icon);
@@ -178,7 +218,7 @@ export function GroupTopics({ communityId, onOpen, onError }: {
                 setEditWritePolicy(topic.writePolicy);
               }}>Изменить</button>}
             </div>
-            {page.canManageChannels && topic.topicId && editingId === topic.topicId && <form className="stack channel-edit" onSubmit={rename}>
+            {page.canManageChannels && manageOpen && topic.topicId && editingId === topic.topicId && <form className="stack channel-edit" onSubmit={rename}>
               <div className="row" aria-label="Значок раздела">
                 {icons.map(item => <button key={item} className={"btn channel-icon-choice" + (editIcon === item ? " primary" : "")} type="button" aria-label={item} aria-pressed={editIcon === item} onClick={() => setEditIcon(item)}>{item}</button>)}
               </div>

@@ -14,6 +14,7 @@ import { supportAppend, supportDraft, supportFiles } from "./support";
 import { holdActions, runHold } from "./hold";
 import { groupBubbleText, groupMediaDownload, GroupMediaError, type GroupMediaDownload } from "./group-media";
 import { canComposeChannel, canCreateBallot, isChatChannel } from "./channels";
+import { isNearLatest, matchesBrowseQuery } from "./groupBrowse";
 import { GroupComposer } from "./group-composer";
 import { GroupInlineMedia } from "./group-inline-media";
 import { legalDocument, type LegalId } from "./legal";
@@ -605,16 +606,33 @@ export function CommunityPage() {
   const app = useApp();
   const [list, setList] = useState<Community[]>([]);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [reloadEpoch, setReloadEpoch] = useState(0);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     if (!app.session?.authenticated) return;
-    api.communities(app.groupId).then(setList).catch(() => setError("Сообщества не открылись"));
-  }, [app.session, app.groupId]);
+    let stopped = false;
+    setError("");
+    setLoading(true);
+    api.communities(app.groupId).then(rows => { if (!stopped) { setList(rows); setLoading(false); } })
+      .catch(() => { if (!stopped) { setError("Сообщества не открылись"); setLoading(false); } });
+    return () => { stopped = true; };
+  }, [app.session, app.groupId, reloadEpoch]);
+  const visible = list.filter(item => matchesBrowseQuery(search, item.name, item.description));
   if (!app.session?.authenticated) return <section className="page"><div className="card empty"><h1>Сообщество</h1><p>Войдите в аккаунт, чтобы видеть сообщества своей группы.</p><Link className="btn primary" to="/settings">Открыть настройки</Link></div></section>;
   return (
     <section className="page">
       <Head title="Сообщество" text={error || "Роли старосты и куратора действуют только внутри «Расписание военмех» и не подтверждены университетом."} />
       <div className="stack">
-        {list.map(item => (
+        <label className="field">Поиск группы
+          <input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Название группы" />
+        </label>
+        <div className="row"><span className="muted">Показано {visible.length} из {list.length}</span>
+          {!!search.trim() && <button className="btn" type="button" onClick={() => setSearch("")}>Сбросить поиск</button>}
+          {error && <button className="btn" type="button" onClick={() => setReloadEpoch(value => value + 1)}>Повторить</button>}
+        </div>
+        {loading && <p className="muted" role="status">Загрузка сообществ…</p>}
+        {visible.map(item => (
           <article className="card" key={item.communityId}>
             <h2>{item.name}</h2>
             <p className="muted">{item.description}</p>
@@ -624,7 +642,8 @@ export function CommunityPage() {
             </div>
           </article>
         ))}
-        {list.length === 0 && <div className="empty">Сообществ пока нет</div>}
+        {!loading && !error && visible.length === 0 && <div className="empty">{list.length === 0 ? "Сообществ пока нет" : "Группы по запросу не найдены"}
+          {list.length > 0 && <button className="btn" type="button" onClick={() => setSearch("")}>Показать все</button>}</div>}
       </div>
     </section>
   );
@@ -673,6 +692,9 @@ export function GroupPage() {
   const [reactionFor, setReactionFor] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [focusChat, setFocusChat] = useState(false);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [reloadEpoch, setReloadEpoch] = useState(0);
+  const [atLatest, setAtLatest] = useState(true);
   const [mediaBusy, setMediaBusy] = useState<string[]>([]);
   const mediaPending = useRef(new Set<string>());
   const [loadingOlder, setLoadingOlder] = useState<string[]>([]);
@@ -771,8 +793,12 @@ export function GroupPage() {
       },
     );
     return () => { stop = true; };
-  }, [app.session, app.groupId, selectedCommunityId, selectedConversationId]);
+  }, [app.session, app.groupId, selectedCommunityId, selectedConversationId, reloadEpoch]);
   useEffect(() => { setReplyTo(null); setEditing(null); setMenu(null); setReactionFor(null); }, [viewKey]);
+  useEffect(() => { setAtLatest(true); }, [viewKey]);
+  useEffect(() => {
+    if (atLatest && logBoxRef.current) logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
+  }, [atLatest, log.length, viewKey]);
   useEffect(() => {
     if (!menu) return;
     const node = document.querySelector(".log .actions");
@@ -1005,14 +1031,19 @@ export function GroupPage() {
   return (
     <section className="page">
       <Head title="Группа" text={home ? `${home.name}${home.groupName ? " · " + home.groupName : ""}` : error || "Одногруппники и чат"} />
+      {!home && error && <button className="btn" type="button" onClick={() => setReloadEpoch(value => value + 1)}>Повторить загрузку группы</button>}
       {home && desk && desk.mine.length > 0 && <GroupAdmin communityId={home.communityId} classmates={home.classmates} desk={desk} onChange={updateDesk} onReload={async () => { const [loaded, office] = await Promise.all([api.groupHome(home.communityId), api.groupDesk(home.communityId)]); setHome(loaded); updateDesk(office); }} onError={setError} />}
       {home && board && <BallotBoardView communityId={home.communityId} board={board} classmates={home.classmates} roles={desk?.roles ?? []} onChange={setBoard} onError={setError} />}
       {home && !board && votesOff && <p className="muted">Голосования сейчас не открылись. Чат группы на месте.</p>}
       {home && (
         <div className={"grid-2 split" + (focusChat ? " focus" : "")}>
           <div className="people split-list">
+            <label className="field">Поиск участника
+              <input type="search" value={memberSearch} onChange={event => setMemberSearch(event.target.value)}
+                placeholder="Имя или логин" />
+            </label>
             <button className="person" type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setChat(home.groupChat); setThread("list"); setFocusChat(true); }}><span><b>Чат группы</b><div className="muted">Разделы и общий поток</div></span>{home.groupChat.unread > 0 && <span className="chip">{home.groupChat.unread}</span>}</button>
-            {home.classmates.map(person => (
+            {home.classmates.filter(person => matchesBrowseQuery(memberSearch, person.displayName, person.username)).map(person => (
               <button className="person" key={person.userId} type="button" disabled={person.self} onClick={() => {
                 if (!home || person.self) return;
                 const epoch = ++selectionEpoch.current;
@@ -1028,6 +1059,8 @@ export function GroupPage() {
                 <span className="row">{[person.role === "headman" ? "Староста" : person.role === "curator" ? "Куратор" : "Участник", ...titlesOf(desk, person.userId)].map(title => <span className="chip" key={title}>{title}</span>)}</span>
               </button>
             ))}
+            {!!memberSearch.trim() && !home.classmates.some(person => matchesBrowseQuery(memberSearch, person.displayName, person.username)) &&
+              <div className="empty">Участник не найден <button className="btn" type="button" onClick={() => setMemberSearch("")}>Сбросить поиск</button></div>}
             {home.directs.map(item => <button className="person" key={item.conversationId} type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setChat(item); setThread("list"); setFocusChat(true); }}><span><b>{item.title}</b><div className="muted">{item.lastBody}</div></span></button>)}
           </div>
           <section className="card chat split-detail">
@@ -1052,7 +1085,10 @@ export function GroupPage() {
               <h2>{chat?.kind === "group" && thread !== "list" ? `${thread.icon} ${thread.title}` : (chat?.title || "Чат")}</h2>
             </div>
             {chat.kind === "group" && thread !== "list" && thread.description && <p className="muted">{thread.description}</p>}
-            <div className="log" ref={logBoxRef}>
+            <div className="log" ref={logBoxRef} onScroll={event => {
+              const node = event.currentTarget;
+              setAtLatest(isNearLatest(node.scrollTop, node.clientHeight, node.scrollHeight));
+            }}>
               {hasOlder && <button className="btn" type="button" disabled={loadingOlder.includes(viewKey)} onClick={() => void earlier()}>{loadingOlder.includes(viewKey) ? "Загрузка…" : "Раньше"}</button>}
               {log.map(message => {
                 const mine = message.senderId === app.session?.user?.userId;
@@ -1108,6 +1144,11 @@ export function GroupPage() {
                 );
               })}
             </div>
+            {!atLatest && log.length > 0 && <button className="btn latest-jump" type="button" onClick={() => {
+              const node = logBoxRef.current;
+              node?.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+              setAtLatest(true);
+            }}>К новым сообщениям</button>}
             <input ref={fileRef} type="file" hidden aria-label="Файл" onChange={event => void onPicked(event)} />
             {chat.kind === "group" && thread !== "list" && !canComposeChannel(thread)
               ? <p className="muted channel-readonly">Писать здесь могут только управляющие разделами.</p>

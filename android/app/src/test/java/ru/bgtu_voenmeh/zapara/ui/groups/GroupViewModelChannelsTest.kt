@@ -523,7 +523,7 @@ class GroupViewModelChannelsTest {
         val vm = viewModel(http)
         runCurrent()
         try {
-            assertEquals(ballotTopic, vm.state.value.channels.first().topicId)
+            assertEquals(listOf(null, ballotTopic, chatTopic), vm.state.value.channels.map { it.topicId })
             vm.onEvent(GroupEvent.OpenChannel(chatTopic))
             runCurrent()
             assertFalse(vm.state.value.canPost)

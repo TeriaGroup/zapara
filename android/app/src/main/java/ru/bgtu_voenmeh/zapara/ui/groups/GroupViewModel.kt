@@ -165,6 +165,7 @@ data class GroupUiState(
 )
 
 sealed interface GroupEvent {
+    data object Refresh : GroupEvent
     data class Open(val communityId: String) : GroupEvent
     data object Back : GroupEvent
     data class Direct(val userId: String) : GroupEvent
@@ -235,6 +236,20 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
 
     fun onEvent(event: GroupEvent) {
         when (event) {
+            GroupEvent.Refresh -> viewModelScope.launch {
+                val current = mutable.value
+                val loaded = home
+                when {
+                    loaded == null -> load()
+                    current.activeChannelKind == "ballots" -> openBallots(current.activeTopicId, current.chatTitle)
+                    current.activeConversationId != null -> openChat(current.activeConversationId, current.chatTitle,
+                        current.direct, current.activeTopicId)
+                    else -> {
+                        open(loaded.communityId)
+                        if (current.showPeople && home?.communityId == loaded.communityId) showHomePane(true)
+                    }
+                }
+            }
             is GroupEvent.Open -> viewModelScope.launch { open(event.communityId) }
             GroupEvent.Back -> leave()
             is GroupEvent.Direct -> viewModelScope.launch { direct(event.userId) }
@@ -381,9 +396,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         )
     }
 
-    private fun orderedChannels(rows: List<GroupTopic>): List<GroupTopic> = rows.withIndex()
-        .sortedWith(compareByDescending<IndexedValue<GroupTopic>> { it.value.pinned }.thenBy { it.index })
-        .map { it.value }
+    private fun orderedChannels(rows: List<GroupTopic>): List<GroupTopic> = browseChannels(rows)
 
     private suspend fun openChannel(topicId: String?) {
         val loaded = home ?: return

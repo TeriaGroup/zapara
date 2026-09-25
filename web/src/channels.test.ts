@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ballotBoardAfterMutation, canComposeChannel, canCreateBallot, channelAccentColor, isChatChannel, orderedTopics, topicPreview } from "./channels.ts";
+import { ballotBoardAfterMutation, canComposeChannel, canCreateBallot, channelAccentColor, filterTopics, isChatChannel, orderedTopics, topicPreview } from "./channels.ts";
 import type { BallotBoard, GroupTopic } from "./types.ts";
 
 const chat: GroupTopic = {
@@ -49,6 +49,23 @@ test("pinned channels lead the list after the built-in general stream", () => {
   const ordinary = { ...chat, topicId: "ordinary", title: "Учёба", pinned: false } as GroupTopic;
   const pinned = { ...chat, topicId: "pinned", title: "Объявления", pinned: true } as GroupTopic;
   assert.deepEqual(orderedTopics([ordinary, general, pinned]).map(topic => topic.title), ["Общий поток", "Объявления", "Учёба"]);
+});
+
+test("unread channels lead their unpinned peers without moving general or pinned channels", () => {
+  const general = { ...chat, topicId: null, pinned: false, unread: 0 };
+  const quiet = { ...chat, topicId: "quiet", pinned: false, unread: 0 };
+  const unread = { ...chat, topicId: "unread", pinned: false, unread: 3 };
+  const pinned = { ...chat, topicId: "pinned", pinned: true, unread: 0 };
+  assert.deepEqual(orderedTopics([quiet, unread, pinned, general]).map(topic => topic.topicId), [null, "pinned", "unread", "quiet"]);
+});
+
+test("channel browse combines description search, type and unread filters", () => {
+  const general = { ...chat, topicId: null, title: "Общий поток", description: "" };
+  const ballot = { ...chat, topicId: "vote", kind: "ballots" as const, title: "Опросы", description: "Куда идём после пар", unread: 1 };
+  const archive = { ...chat, topicId: "archive", title: "Конспекты", description: "После занятий", unread: 0 };
+  assert.deepEqual(filterTopics([general, ballot, archive], { query: "  ПОСЛЕ  ", kind: "ballots", unreadOnly: true }).map(topic => topic.topicId), ["vote"]);
+  assert.deepEqual(filterTopics([general, ballot, archive], { query: "", kind: "chat", unreadOnly: true }).map(topic => topic.topicId), [null]);
+  assert.deepEqual(filterTopics([general, ballot, archive], { query: "несуществующее", kind: "all", unreadOnly: false }), []);
 });
 
 test("accent colors use a fixed palette and leave default channels with their existing color", () => {

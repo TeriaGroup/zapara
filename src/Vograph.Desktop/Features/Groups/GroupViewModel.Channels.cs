@@ -79,7 +79,9 @@ public sealed partial class GroupViewModel
 
     partial void OnCanManageChannelsChanged(bool value)
     {
+        if (!value) ShowChannelManagement = false;
         OnPropertyChanged(nameof(CanManageSelectedChannel));
+        OnPropertyChanged(nameof(ShowSelectedChannelManagement));
         OnPropertyChanged(nameof(CanSaveChannelEdit));
         OnPropertyChanged(nameof(CanCreateBallot));
     }
@@ -185,6 +187,7 @@ public sealed partial class GroupViewModel
         ReloadChannelEditor();
         ConfirmDeleteChannel = false;
         OnPropertyChanged(nameof(CanManageSelectedChannel));
+        OnPropertyChanged(nameof(ShowSelectedChannelManagement));
         OnPropertyChanged(nameof(CanSaveChannelEdit));
         OnPropertyChanged(nameof(DeleteConfirmationText));
         OnPropertyChanged(nameof(CanPostChannel));
@@ -268,6 +271,7 @@ public sealed partial class GroupViewModel
             }
         }
         while (Channels.Count > ordered.Count) Channels.RemoveAt(Channels.Count - 1);
+        RefreshChannelBrowse();
         CanManageChannels = list.CanManageChannels;
         if (selected is null || !Channels.Contains(selected)) SelectedChannel = Channels[0];
         else
@@ -276,6 +280,7 @@ public sealed partial class GroupViewModel
             if (!IsDirect) ChatTitle = selected.Title;
         }
         OnPropertyChanged(nameof(CanManageSelectedChannel));
+        OnPropertyChanged(nameof(ShowSelectedChannelManagement));
         OnPropertyChanged(nameof(CanSaveChannelEdit));
         OnPropertyChanged(nameof(CanPostChannel));
         OnPropertyChanged(nameof(ShowComposer));

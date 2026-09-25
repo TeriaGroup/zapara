@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 
 namespace Vograph.Desktop.Features.Groups;
@@ -5,6 +6,9 @@ namespace Vograph.Desktop.Features.Groups;
 public partial class GroupView : UserControl
 {
     public GroupView() => InitializeComponent();
+    private void JumpToLatest(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => MessagesScroll.Offset = new Vector(MessagesScroll.Offset.X,
+            Math.Max(0, MessagesScroll.Extent.Height - MessagesScroll.Viewport.Height));
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);

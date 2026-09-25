@@ -2,6 +2,23 @@
 <resources>
     <string name="channel_list">Каналы</string>
     <string name="channel_list_title">Каналы группы</string>
+    <string name="channel_search">Поиск канала</string>
+    <string name="channel_search_hint">Название или описание</string>
+    <string name="channel_filter_all">Все</string>
+    <string name="channel_filter_chats">Чаты</string>
+    <string name="channel_filter_ballots">Голосования</string>
+    <string name="channel_filter_unread">Непрочитанные</string>
+    <string name="channel_results">Показано %1$d из %2$d</string>
+    <string name="channel_no_results">По запросу разделы не найдены</string>
+    <string name="channel_reset_filters">Сбросить фильтры</string>
+    <string name="channel_manage">Управлять каналами</string>
+    <string name="channel_close_manage">Закрыть управление</string>
+    <string name="channel_more">Действия с каналом</string>
+    <string name="channel_new_messages">К новым сообщениям</string>
+    <string name="channel_people_search">Поиск участника</string>
+    <string name="channel_people_search_hint">Имя или логин</string>
+    <string name="channel_people_empty">Участник не найден</string>
+    <string name="group_refresh">Обновить</string>
     <string name="channel_ballot_count">Голосования · %1$d активных</string>
     <string name="channel_no_messages">Сообщений пока нет</string>
     <string name="channel_edit">Изменить</string>

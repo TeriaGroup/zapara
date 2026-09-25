@@ -219,13 +219,16 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .chat { display: flex; flex-direction: column; gap: 8px; min-height: 420px; }
 .log { display: flex; flex-direction: column; gap: 8px; flex: 1; max-height: 52dvh; overflow: auto; padding-right: 4px; }
 .topics { display: flex; flex-direction: column; gap: 10px; }
+.topic-filters { flex-wrap: wrap; }
+.topic-filters .btn { min-height: 48px; }
+.latest-jump { align-self: flex-end; min-height: 48px; }
 .topic-list { display: flex; flex-direction: column; max-height: 52dvh; overflow: auto; }
 .topic { display: flex; flex-direction: column; border-bottom: 1px solid var(--line); }
 .topic-row { display: flex; gap: 8px; align-items: center; min-width: 0; width: 100%; }
 .topic-open { display: flex; gap: 10px; align-items: center; flex: 1; min-width: 0; min-height: 70px; text-align: left; background: transparent; border: 0; color: inherit; padding: 10px 2px; }
 .topic-open:hover { background: var(--selection); }
 .topic.pinned .topic-open { border-left: 2px solid var(--line-strong); padding-left: 8px; }
-.topic-edit { min-height: 40px; padding: 0 10px; }
+.topic-edit { min-height: 48px; padding: 0 10px; }
 .topic-icon { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; font-size: 20px; flex: none; }
 .topic-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .topic-main b { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

@@ -35,7 +35,11 @@ public sealed partial class GroupViewModel
         OnPropertyChanged(nameof(CanGrantTrusted));
     }
     partial void OnSelectedTrustCandidateChanged(GroupTrustedPersonRow? value) => OnPropertyChanged(nameof(CanGrantTrusted));
-    partial void OnIsHeadmanChanged(bool value) => OnPropertyChanged(nameof(CanGrantTrusted));
+    partial void OnIsHeadmanChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanGrantTrusted));
+        OnPropertyChanged(nameof(ShowTrustedManagement));
+    }
 
     private async Task LoadDeskAsync(string token, Guid community, IReadOnlyList<ClassmateResponse> classmates, int ticket, CancellationToken ct)
     {

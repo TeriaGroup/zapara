@@ -157,6 +157,7 @@ public sealed partial class GroupViewModel : ViewModelBase
             Communities.Clear();
             foreach (var row in rows)
                 Communities.Add(new(row.Name, Role(row.Role), new RelayCommand(() => _ = OpenAsync(row.CommunityId))));
+            RefreshCommunityBrowse();
             var preferred = rows.FirstOrDefault(item => item.CommunityId == requestedConversation?.CommunityId)
                 ?? rows.FirstOrDefault(item => item.CommunityId == requestedCommunityId)
                 ?? rows.FirstOrDefault(item => item.Name == wanted || item.Name == "Группа " + wanted)
@@ -230,10 +231,16 @@ public sealed partial class GroupViewModel : ViewModelBase
         HomeTitle = home.GroupName ?? home.Name;
         HasHome = true;
         IsEmpty = false;
+        MemberSearch = "";
+        ChannelSearch = "";
+        ChannelKindIndex = 0;
+        UnreadOnly = false;
+        ShowChannelManagement = false;
         People.Clear();
         foreach (var person in home.Classmates)
             People.Add(new(person.DisplayName ?? person.Username, "@" + person.Username, Role(person.Role), "", "", person.Self,
                 person.Self ? null : new RelayCommand(() => _ = OpenDirectAsync(person.UserId, person.DisplayName ?? person.Username))));
+        RefreshPeopleBrowse();
         Directs.Clear();
         foreach (var chat in home.Directs)
             Directs.Add(new(chat.Title, chat.LastBody ?? "", "", chat.LastBody ?? "", chat.Unread > 0 ? chat.Unread.ToString() : "", false,

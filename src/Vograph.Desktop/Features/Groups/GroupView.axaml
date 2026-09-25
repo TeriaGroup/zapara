@@ -10,6 +10,9 @@
       <TextBlock Classes="display" Text="{Binding Title}" />
       <TextBlock Classes="muted" Text="{Binding Status}" TextWrapping="Wrap"
                  IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      <Button Classes="ghost" Content="Обновить группу" Command="{Binding RetryBrowseCommand}"
+              IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+              HorizontalAlignment="Left" AutomationProperties.AutomationId="Group.Retry" />
       <TextBlock Classes="muted caption" Text="{loc:T groupDisclaimer}" Margin="0,6,0,0" TextWrapping="Wrap" />
     </StackPanel>
 
@@ -21,7 +24,17 @@
         <c:EmptyState IsVisible="{Binding IsEmpty}" Title="{loc:T groupEmpty}"
                       Icon="{StaticResource Icon.Chat}" Margin="0,28,0,0"
                       AutomationProperties.AutomationId="Group.Empty" />
-        <ItemsControl ItemsSource="{Binding Communities}" IsVisible="{Binding ShowList}">
+        <StackPanel Spacing="6" IsVisible="{Binding ShowList}">
+          <TextBox Text="{Binding GroupSearch, Mode=TwoWay}" PlaceholderText="Поиск группы"
+                   AutomationProperties.AutomationId="Group.Search" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Classes="muted caption" Text="{Binding CommunityResultCount}" VerticalAlignment="Center" />
+            <Button Classes="ghost" Content="Очистить поиск" Command="{Binding ClearGroupSearchCommand}"
+                    IsVisible="{Binding NoCommunitySearchResults}" />
+          </StackPanel>
+          <TextBlock Classes="muted" Text="Группа по запросу не найдена" IsVisible="{Binding NoCommunitySearchResults}" />
+        </StackPanel>
+        <ItemsControl ItemsSource="{Binding FilteredCommunities}" IsVisible="{Binding ShowList}">
           <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="g:GroupCommunityRow">
@@ -54,7 +67,23 @@
             <StackPanel Spacing="12">
               <StackPanel Spacing="6">
                 <TextBlock Classes="micro" Text="Каналы группы" Margin="8,0,8,4" />
-                <ItemsControl ItemsSource="{Binding Channels}" AutomationProperties.AutomationId="Group.Channels">
+                <TextBox Text="{Binding ChannelSearch, Mode=TwoWay}" PlaceholderText="Поиск по названию и описанию"
+                         AutomationProperties.AutomationId="Group.ChannelSearch" />
+                <ComboBox SelectedIndex="{Binding ChannelKindIndex, Mode=TwoWay}" AutomationProperties.AutomationId="Group.ChannelKind">
+                  <ComboBoxItem Content="Все каналы" />
+                  <ComboBoxItem Content="Чаты" />
+                  <ComboBoxItem Content="Голосования" />
+                </ComboBox>
+                <CheckBox Content="Только непрочитанные" IsChecked="{Binding UnreadOnly, Mode=TwoWay}"
+                          AutomationProperties.AutomationId="Group.UnreadOnly" />
+                <TextBlock Classes="muted caption" Text="{Binding ChannelResultCount}" />
+                <Button Classes="ghost" Content="Сбросить фильтры" Command="{Binding ResetChannelFiltersCommand}"
+                        IsVisible="{Binding HasChannelFilters}" HorizontalAlignment="Left" />
+                <TextBlock Classes="muted" Text="Разделы по запросу не найдены" IsVisible="{Binding NoChannelSearchResults}" />
+                <Button Classes="ghost" Content="{Binding ManagementCaption}" Command="{Binding ToggleChannelManagementCommand}"
+                        IsVisible="{Binding CanManageChannels}" HorizontalAlignment="Left"
+                        AutomationProperties.AutomationId="Group.ChannelManage" />
+                <ItemsControl ItemsSource="{Binding FilteredChannels}" AutomationProperties.AutomationId="Group.Channels">
                   <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="g:GroupChannelRow">
@@ -82,7 +111,7 @@
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <StackPanel Spacing="5" Margin="8,4,8,0" IsVisible="{Binding CanManageChannels}">
+                <StackPanel Spacing="5" Margin="8,4,8,0" IsVisible="{Binding ShowChannelManagement}">
                   <TextBlock Classes="micro" Text="Новый канал" />
                   <TextBox Text="{Binding ChannelTitle}" PlaceholderText="Название" MaxLength="40" />
                   <TextBox Text="{Binding ChannelIcon}" PlaceholderText="Значок" MaxLength="8" />
@@ -108,7 +137,7 @@
                             AutomationProperties.AutomationId="Group.CreateBallotChannel" />
                   </StackPanel>
                 </StackPanel>
-                <StackPanel Spacing="5" Margin="8,4,8,0" IsVisible="{Binding CanManageSelectedChannel}">
+                <StackPanel Spacing="5" Margin="8,4,8,0" IsVisible="{Binding ShowSelectedChannelManagement}">
                   <TextBlock Classes="micro" Text="Изменить канал" />
                   <TextBox Text="{Binding RenameTitle}" PlaceholderText="Название" MaxLength="40" />
                   <TextBox Text="{Binding RenameIcon}" PlaceholderText="Значок" MaxLength="8" />
@@ -144,7 +173,7 @@
                     </StackPanel>
                   </StackPanel>
                 </StackPanel>
-                <StackPanel Spacing="6" Margin="8,6,8,0" IsVisible="{Binding IsHeadman}">
+                <StackPanel Spacing="6" Margin="8,6,8,0" IsVisible="{Binding ShowTrustedManagement}">
                   <TextBlock Classes="micro" Text="Доверенные" />
                   <TextBlock Classes="muted caption" Text="Назначьте роль с правом управления каналами. Роли действуют только внутри приложения." TextWrapping="Wrap" />
                   <TextBox Text="{Binding TrustedRoleName}" PlaceholderText="Новая роль" MaxLength="32" />
@@ -190,7 +219,12 @@
               <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="8,2,8,6" />
               <StackPanel Spacing="2">
                 <TextBlock Classes="micro" Text="{loc:T groupRoster}" Margin="8,0,8,4" />
-                <ItemsControl ItemsSource="{Binding People}">
+                <TextBox Text="{Binding MemberSearch, Mode=TwoWay}" PlaceholderText="Поиск по имени или логину"
+                         AutomationProperties.AutomationId="Group.MemberSearch" />
+                <TextBlock Classes="muted caption" Text="Участник не найден" IsVisible="{Binding NoMemberSearchResults}" />
+                <Button Classes="ghost" Content="Очистить поиск" Command="{Binding ClearMemberSearchCommand}"
+                        IsVisible="{Binding NoMemberSearchResults}" HorizontalAlignment="Left" />
+                <ItemsControl ItemsSource="{Binding FilteredPeople}">
                   <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="g:GroupPersonRow">
@@ -261,10 +295,13 @@
       <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
         <DockPanel LastChildFill="True">
           <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,0,0,1" Padding="14,12">
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBlock Classes="subject" Text="{Binding ChatTitle}" VerticalAlignment="Center" TextWrapping="Wrap" />
               <Button Grid.Column="1" Classes="ghost" Content="{loc:T groupBack}" Command="{Binding BackToGroupCommand}"
                       Padding="8,4" VerticalAlignment="Center" IsVisible="{Binding IsDirect}" />
+              <Button Grid.Column="2" Classes="ghost" Content="К новым" Click="JumpToLatest"
+                      Padding="8,4" VerticalAlignment="Center" IsVisible="{Binding ShowMessages}"
+                      AutomationProperties.AutomationId="Group.JumpLatest" />
             </Grid>
           </Border>
           <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10"
@@ -300,7 +337,7 @@
             </Grid>
             </StackPanel>
           </Border>
-          <ScrollViewer HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding ShowMessages}">
+          <ScrollViewer x:Name="MessagesScroll" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding ShowMessages}">
             <StackPanel Margin="12,10,12,8">
               <Button Classes="ghost" Content="{loc:T groupOlder}" Command="{Binding LoadOlderCommand}"
                       HorizontalAlignment="Center" Padding="8,4" Margin="0,0,0,8" IsVisible="{Binding HasMore}" />

@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -42,11 +43,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -70,6 +73,11 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 
 @Composable
 fun GroupSection(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
+    var groupSearch by rememberSaveable { mutableStateOf("") }
+    var peopleSearch by rememberSaveable(state.title) { mutableStateOf("") }
+    var channelSearch by rememberSaveable(state.title) { mutableStateOf("") }
+    var channelKind by rememberSaveable(state.title) { mutableStateOf("all") }
+    var unreadOnly by rememberSaveable(state.title) { mutableStateOf(false) }
     if (state.hasHome) BackHandler {
         onEvent(when {
             state.showTrusted -> GroupEvent.CloseTrusted
@@ -91,6 +99,8 @@ fun GroupSection(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
             state.failed && !state.hasHome && state.communities.isEmpty() -> EmptyState(
                 R.drawable.ic_chat,
                 stringResource(R.string.group_load_failed),
+                actionText = stringResource(R.string.group_retry),
+                onAction = { onEvent(GroupEvent.Refresh) },
                 tag = "Empty.GroupFailed"
             )
             state.empty && !state.hasHome -> EmptyState(
@@ -101,28 +111,45 @@ fun GroupSection(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
             )
             !state.hasHome -> Column(Modifier.fillMaxSize()) {
                 if (state.failed) {
-                    Text(
-                        stringResource(R.string.group_load_failed),
-                        color = Zapara.colors.bad,
-                        style = Zapara.typography.caption,
-                        modifier = Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s).testTag("Group.Error")
-                    )
+                    Row(Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.group_load_failed), color = Zapara.colors.bad,
+                            style = Zapara.typography.caption, modifier = Modifier.weight(1f).testTag("Group.Error"))
+                        ZButton(stringResource(R.string.group_retry), { onEvent(GroupEvent.Refresh) }, ghost = true)
+                    }
                 }
-                CommunityList(state, onEvent, Modifier.weight(1f))
+                CommunityList(state, onEvent, groupSearch, { groupSearch = it }, Modifier.weight(1f))
             }
-            else -> Home(state, onEvent)
+            else -> Home(state, onEvent, peopleSearch, { peopleSearch = it },
+                channelSearch, { channelSearch = it }, channelKind, { channelKind = it },
+                unreadOnly, { unreadOnly = it })
         }
     }
 }
 
 @Composable
-private fun CommunityList(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifier: Modifier = Modifier.fillMaxSize()) {
+private fun CommunityList(state: GroupUiState, onEvent: (GroupEvent) -> Unit, query: String,
+                          onQuery: (String) -> Unit, modifier: Modifier = Modifier.fillMaxSize()) {
+    val visible = browseCommunities(state.communities, query)
     LazyColumn(
         modifier,
         contentPadding = PaddingValues(Zapara.space.l),
         verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
     ) {
-        items(state.communities, key = { it.id }) { item ->
+        item {
+            OutlinedTextField(query, onQuery, label = { Text(stringResource(R.string.group_search)) },
+                singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Group.Search"))
+        }
+        item { Text(stringResource(R.string.channel_results, visible.size, state.communities.size),
+            style = Zapara.typography.caption, color = Zapara.colors.text2) }
+        if (visible.isEmpty() && query.isNotBlank()) item {
+            ZCard(Modifier.fillMaxWidth(), tag = "Empty.GroupSearch") {
+                Text(stringResource(R.string.group_search_empty), style = Zapara.typography.body,
+                    color = Zapara.colors.text2)
+                ZButton(stringResource(R.string.group_search_clear), { onQuery("") }, ghost = true)
+            }
+        }
+        items(visible, key = { it.id }) { item ->
             ZCard(onClick = { onEvent(GroupEvent.Open(item.id)) }, tag = "Group.Open.${item.id}", modifier = Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                     Text(
@@ -141,7 +168,11 @@ private fun CommunityList(state: GroupUiState, onEvent: (GroupEvent) -> Unit, mo
 }
 
 @Composable
-private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
+private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
+                 peopleSearch: String, onPeopleSearch: (String) -> Unit,
+                 channelSearch: String, onChannelSearch: (String) -> Unit,
+                 channelKind: String, onChannelKind: (String) -> Unit,
+                 unreadOnly: Boolean, onUnreadOnly: (Boolean) -> Unit) {
     val c = Zapara.colors
     Column(
         Modifier.fillMaxSize().padding(horizontal = Zapara.space.l, vertical = Zapara.space.l),
@@ -176,7 +207,11 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
                 tag = "Group.People"
             )
         }
-        if (state.failed) Text(stringResource(R.string.group_failed), color = c.bad, modifier = Modifier.testTag("Group.Error"))
+        if (state.failed) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.group_failed), color = c.bad, modifier = Modifier.weight(1f).testTag("Group.Error"))
+            if (!state.attachmentPending) ZButton(stringResource(R.string.group_refresh),
+                { onEvent(GroupEvent.Refresh) }, ghost = true)
+        }
         if (state.mediaError) Text(stringResource(R.string.group_media_failed), color = c.bad, modifier = Modifier.testTag("Group.MediaError"))
         if (!state.showPeople && !state.showChannels) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -186,9 +221,10 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
             }
         }
         if (state.showPeople) {
-            People(state, onEvent, Modifier.weight(1f))
+            People(state, onEvent, peopleSearch, onPeopleSearch, Modifier.weight(1f))
         } else if (state.showChannels) {
-            ChannelList(state, onEvent, Modifier.weight(1f))
+            ChannelList(state, onEvent, channelSearch, onChannelSearch, channelKind, onChannelKind,
+                unreadOnly, onUnreadOnly, Modifier.weight(1f))
         } else if (state.activeChannelKind == "ballots") {
             BallotChannel(state, onEvent, Modifier.weight(1f))
         } else {
@@ -200,19 +236,75 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
 }
 
 @Composable
-private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifier: Modifier) {
+private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
+                        query: String, onQuery: (String) -> Unit, kind: String, onKind: (String) -> Unit,
+                        unreadOnly: Boolean, onUnreadOnly: (Boolean) -> Unit, modifier: Modifier) {
     if (state.showTrusted) {
         TrustedPanel(state, onEvent, modifier)
         return
     }
     val c = Zapara.colors
     val allBallotsTitle = stringResource(R.string.channel_all_ballots)
+    val visible = browseChannels(state.channels, query, kind, unreadOnly)
+    val filtered = query.isNotBlank() || kind != "all" || unreadOnly
+    val showAllBallots = !unreadOnly && kind != "chat" &&
+        (query.isBlank() || allBallotsTitle.contains(query.trim(), ignoreCase = true))
+    var managing by remember(state.title, state.canManageChannels) { mutableStateOf(false) }
     var creating by remember(state.title, state.canManageChannels) { mutableStateOf(false) }
     var editing by remember(state.title, state.canManageChannels) { mutableStateOf<GroupTopic?>(null) }
     var deleting by remember(state.title, state.canManageChannels) { mutableStateOf<GroupTopic?>(null) }
     LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         item { Text(stringResource(R.string.channel_list_title), style = Zapara.typography.section, color = c.text1) }
-        items(state.channels, key = { it.topicId ?: "general" }) { channel ->
+        item {
+            OutlinedTextField(query, onQuery, label = { Text(stringResource(R.string.channel_search)) },
+                placeholder = { Text(stringResource(R.string.channel_search_hint)) }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag("Group.ChannelSearch"))
+        }
+        item {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                listOf("all" to R.string.channel_filter_all, "chat" to R.string.channel_filter_chats,
+                    "ballots" to R.string.channel_filter_ballots).forEach { (value, label) ->
+                    ZChip(stringResource(label), selected = kind == value, onClick = { onKind(value) },
+                        tag = "Group.ChannelFilter.$value")
+                }
+                ZChip(stringResource(R.string.channel_filter_unread), selected = unreadOnly,
+                    onClick = { onUnreadOnly(!unreadOnly) }, tag = "Group.ChannelFilter.Unread")
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                Text(stringResource(R.string.channel_results, visible.size, state.channels.size),
+                    style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f))
+                if (filtered) ZButton(stringResource(R.string.channel_reset_filters), {
+                    onQuery(""); onKind("all"); onUnreadOnly(false)
+                }, ghost = true, tag = "Group.ChannelReset")
+            }
+        }
+        if (state.canManageChannels) item {
+            ZButton(stringResource(if (managing) R.string.channel_close_manage else R.string.channel_manage), {
+                managing = !managing
+                if (!managing) { creating = false; editing = null }
+            }, ghost = true, tag = "Group.ChannelManage")
+        }
+        if (state.canManageChannels && managing) item {
+            if (creating) ChannelEditor(null, state.channelBusy,
+                onSave = { title, icon, newKind, description, accent, pinned, policy ->
+                    onEvent(GroupEvent.CreateChannel(title, icon, newKind, description, accent, pinned, policy)); creating = false },
+                onCancel = { creating = false })
+            else ZButton(stringResource(R.string.channel_create), { creating = true },
+                enabled = !state.channelBusy, tag = "Group.ChannelCreate")
+        }
+        if (visible.isEmpty() && !showAllBallots) item {
+            ZCard(Modifier.fillMaxWidth(), tag = "Empty.ChannelSearch") {
+                Text(stringResource(R.string.channel_no_results), style = Zapara.typography.body, color = c.text2)
+                if (filtered) ZButton(stringResource(R.string.channel_reset_filters), {
+                    onQuery(""); onKind("all"); onUnreadOnly(false)
+                }, ghost = true)
+            }
+        }
+        items(visible, key = { it.topicId ?: "general" }) { channel ->
             ZCard(onClick = { onEvent(GroupEvent.OpenChannel(channel.topicId)) },
                 tag = "Group.Channel.${channel.topicId ?: "general"}", modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -238,45 +330,47 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modi
                             color = c.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (channel.unread > 0) ZChip(channel.unread.toString(), selected = true)
+                    if (state.canManageChannels && managing && channel.topicId != null) {
+                        var menuOpen by remember(channel.topicId) { mutableStateOf(false) }
+                        Box {
+                            IconButton(onClick = { menuOpen = true }, enabled = !state.channelBusy,
+                                modifier = Modifier.testTag("Group.ChannelActions.${channel.topicId}")) {
+                                Icon(painterResource(R.drawable.ic_menu), stringResource(R.string.channel_more), tint = c.text1)
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.channel_edit)) }, onClick = {
+                                    menuOpen = false; editing = channel
+                                }, modifier = Modifier.testTag("Group.ChannelEdit.${channel.topicId}"))
+                                if (channel.canDelete) DropdownMenuItem(text = { Text(stringResource(R.string.channel_delete)) }, onClick = {
+                                    menuOpen = false; deleting = channel
+                                }, modifier = Modifier.testTag("Group.ChannelDelete.${channel.topicId}"))
+                            }
+                        }
+                    }
                 }
                 if (channel.pinned || channel.writePolicy == "managers") FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                     if (channel.pinned) ZChip(stringResource(R.string.channel_pinned))
                     if (channel.writePolicy == "managers") ZChip(stringResource(R.string.channel_writes_managers))
                 }
-                if (state.canManageChannels && channel.topicId != null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                        ZButton(stringResource(R.string.channel_edit), { editing = channel }, ghost = true,
-                            enabled = !state.channelBusy, tag = "Group.ChannelEdit.${channel.topicId}")
-                        if (channel.canDelete) ZButton(stringResource(R.string.channel_delete), { deleting = channel }, ghost = true,
-                            enabled = !state.channelBusy, tag = "Group.ChannelDelete.${channel.topicId}")
-                    }
-                }
+            }
+            if (state.canManageChannels && managing && editing?.topicId == channel.topicId) {
+                ChannelEditor(editing, state.channelBusy,
+                    onSave = { title, icon, newKind, description, accent, pinned, policy ->
+                        channel.topicId?.let { onEvent(GroupEvent.RenameChannel(it, title, icon, newKind, description, accent, pinned, policy)) }
+                        editing = null },
+                    onCancel = { editing = null })
             }
         }
-        item {
+        if (showAllBallots) item {
             ZCard(onClick = { onEvent(GroupEvent.GlobalBallots(allBallotsTitle)) },
                 tag = "Group.AllBallots", modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.channel_all_ballots), style = Zapara.typography.bodyStrong, color = c.text1)
                 Text(stringResource(R.string.channel_all_ballots_hint), style = Zapara.typography.caption, color = c.text2)
             }
         }
-        if (state.canManageChannels) item {
-            if (creating) ChannelEditor(null, state.channelBusy,
-                onSave = { title, icon, kind, description, accent, pinned, policy ->
-                    onEvent(GroupEvent.CreateChannel(title, icon, kind, description, accent, pinned, policy)); creating = false },
-                onCancel = { creating = false })
-            else ZButton(stringResource(R.string.channel_create), { creating = true }, enabled = !state.channelBusy, tag = "Group.ChannelCreate")
-        }
-        if (state.myRole == "headman") item {
+        if (state.myRole == "headman" && managing) item {
             ZButton(stringResource(R.string.channel_trusted), { onEvent(GroupEvent.Trusted) },
                 enabled = !state.channelBusy, ghost = true, tag = "Group.Trusted")
-        }
-        if (state.canManageChannels && editing != null) item {
-            ChannelEditor(editing, state.channelBusy,
-                onSave = { title, icon, kind, description, accent, pinned, policy ->
-                    editing?.topicId?.let { onEvent(GroupEvent.RenameChannel(it, title, icon, kind, description, accent, pinned, policy)) }
-                    editing = null },
-                onCancel = { editing = null })
         }
     }
     if (state.canManageChannels) deleting?.let { channel ->
@@ -524,9 +618,16 @@ private fun BallotEditor(busy: Boolean, canOpen: Boolean,
 }
 
 @Composable
-private fun People(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifier: Modifier) {
+private fun People(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
+                   query: String, onQuery: (String) -> Unit, modifier: Modifier) {
     val c = Zapara.colors
+    val visible = browsePeople(state.people, query)
     LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        item {
+            OutlinedTextField(query, onQuery, label = { Text(stringResource(R.string.channel_people_search)) },
+                placeholder = { Text(stringResource(R.string.channel_people_search_hint)) }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag("Group.PeopleSearch"))
+        }
         item {
             ZCard(onClick = { onEvent(GroupEvent.GroupChat) }, tag = "Group.Room", modifier = Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
@@ -543,7 +644,13 @@ private fun People(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifier:
         if (state.people.isNotEmpty()) {
             item { Text(stringResource(R.string.group_roster), style = Zapara.typography.bodyStrong, color = c.text2) }
         }
-        items(state.people, key = { it.id }) { person ->
+        if (query.isNotBlank() && visible.isEmpty()) item {
+            ZCard(Modifier.fillMaxWidth(), tag = "Empty.GroupPeopleSearch") {
+                Text(stringResource(R.string.channel_people_empty), style = Zapara.typography.body, color = c.text2)
+                ZButton(stringResource(R.string.group_search_clear), { onQuery("") }, ghost = true)
+            }
+        }
+        items(visible, key = { it.id }) { person ->
             ZCard(
                 onClick = if (person.self) null else { { onEvent(GroupEvent.Direct(person.id)) } },
                 tag = "Group.Person.${person.id}",
@@ -580,6 +687,15 @@ private fun People(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifier:
 @Composable
 private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifier: Modifier) {
     val c = Zapara.colors
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    var firstScrollDone by remember(state.activeConversationId, state.activeTopicId) { mutableStateOf(false) }
+    LaunchedEffect(state.activeConversationId, state.activeTopicId, state.messages.size, state.hasMore) {
+        if (!firstScrollDone && state.messages.isNotEmpty()) {
+            listState.scrollToItem(state.messages.lastIndex + if (state.hasMore) 1 else 0)
+            firstScrollDone = true
+        }
+    }
     if (state.chatLoading && state.messages.isEmpty()) {
         Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Text(stringResource(R.string.group_loading), style = Zapara.typography.caption, color = c.text2)
@@ -589,7 +705,12 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
             Text(stringResource(R.string.group_no_messages), style = Zapara.typography.caption, color = c.text2)
         }
     } else {
-        LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        val total = listState.layoutInfo.totalItemsCount
+        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+        val showJump = state.messages.size > 4 && total > 0 && lastVisible < total - 2
+        Box(modifier.fillMaxWidth()) {
+        LazyColumn(Modifier.fillMaxSize(), state = listState,
+            verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             if (state.hasMore) {
                 item {
                     ZButton(stringResource(R.string.group_older), { onEvent(GroupEvent.Older) }, ghost = true, tag = "Group.Older")
@@ -605,6 +726,12 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
                     state.mediaLoadingId == message.id || message.id in state.mediaLoadingIds,
                     state.mediaFiles[message.id], message.id in state.mediaFailedIds, state.canPost, onEvent)
             }
+        }
+        if (showJump) ZButton(stringResource(R.string.channel_new_messages), {
+            val last = listState.layoutInfo.totalItemsCount - 1
+            if (last >= 0) scope.launch { listState.animateScrollToItem(last) }
+        }, modifier = Modifier.align(Alignment.BottomEnd).padding(Zapara.space.s),
+            ghost = true, tag = "Group.JumpLatest")
         }
     }
 }
