@@ -42,8 +42,9 @@ public sealed partial class ProfileSwitchCoordinator
             Current = candidate;
             candidate = null;
             Snapshot = new(Current.Services.Profile, AccountSessionIdentity.From(entry.Session),
-                entry.RefreshState != AccountRefreshState.Ready || entry.Session.AccessExpiresAt <= clock.GetUtcNow().AddSeconds(30)
-                    || entry.Session.RefreshExpiresAt <= clock.GetUtcNow(), ProfilePhase.Idle);
+                entry.Session.RefreshExpiresAt <= clock.GetUtcNow()
+                    || entry.RefreshState == AccountRefreshState.Pending && entry.RefreshAttemptId is null,
+                ProfilePhase.Idle);
             await dispatch(old.Shell.Stop).ConfigureAwait(false);
             await old.Services.CloseQuiescedAsync(exclusive).ConfigureAwait(false);
             await NotifyAsync().ConfigureAwait(false);

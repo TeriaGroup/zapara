@@ -470,6 +470,49 @@ public sealed class AccountUiLifecycleTests
     }
 
     [Fact]
+    public async Task Rotated_access_401_does_not_prompt_for_login_or_replay_profile_mutation()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        var calls = 0;
+        f.Handler.Send = (request, _) =>
+        {
+            Assert.Equal(HttpMethod.Patch, request.Method);
+            Assert.EndsWith("/account/me", request.RequestUri!.AbsolutePath);
+            calls++;
+            var previous = f.Vault.Entry!.Session;
+            var replacement = new SessionResponse(previous.User, previous.FamilyId, Token("za_", 2), Token("zr_", 2),
+                "Bearer", previous.AccessExpiresAt, previous.RefreshExpiresAt);
+            f.Vault.Entry = AccountVaultEntry.Ready(f.Vault.ServerKey, replacement);
+            return Task.FromResult(Json(new { status = 401, code = "invalid_session" }, HttpStatusCode.Unauthorized));
+        };
+
+        f.Vm.DisplayName = "Updated";
+        await f.Vm.SaveProfileCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, calls);
+        Assert.True(f.Vm.IsAccount);
+        Assert.False(f.Vm.ShowLogin);
+    }
+
+    [Fact]
+    public async Task Rejected_current_access_401_still_prompts_for_login()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Handler.Send = (request, _) =>
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.EndsWith("/account/me", request.RequestUri!.AbsolutePath);
+            return Task.FromResult(Json(new { status = 401, code = "invalid_session" }, HttpStatusCode.Unauthorized));
+        };
+
+        await f.Vm.RefreshProfileCommand.ExecuteAsync(null);
+
+        Assert.True(f.Vm.ShowLogin);
+    }
+
+    [Fact]
     public async Task Leaving_profile_cancels_pending_authentication_refresh_and_clears_password_state()
     {
         await using var f = new Fixture();

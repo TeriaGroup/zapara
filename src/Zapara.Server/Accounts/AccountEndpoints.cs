@@ -20,6 +20,14 @@ internal static class AccountEndpoints
             var token = await AccountBodyReader.Refresh(context);
             return Json(await Service(context).RefreshAsync(token, context.RequestAborted));
         }, "account-refresh", false);
+        Route(app.MapGroup("/api/v2").WithMetadata(new AccountEndpoint()), "POST", "/auth/refresh", async context =>
+        {
+            var attempt = context.Request.Headers["X-Zapara-Refresh-Attempt"];
+            if (attempt.Count != 1 || !Guid.TryParseExact(attempt[0], "D", out var id) ||
+                id == Guid.Empty || attempt[0] != id.ToString("D")) throw new AccountBodyException();
+            var token = await AccountBodyReader.Refresh(context);
+            return Json(await Service(context).RefreshRetryAsync(token, id, context.RequestAborted));
+        }, "account-refresh", false);
         Route(group, "GET", "/account/me", async context =>
             Json(await Service(context).GetMeAsync(Bearer(context), context.RequestAborted)));
         Route(group, "PATCH", "/account/me", async context =>

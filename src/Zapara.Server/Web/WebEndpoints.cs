@@ -70,10 +70,9 @@ internal static partial class WebEndpoints
             if (body.Purpose != "login") return await Store(c).UseAsync(c, async token => Json(await oauth.StartAsync(c, provider, body, token)));
             if (c.Request.Cookies.ContainsKey(WebConfiguration.SessionCookie))
             {
-                try { await Store(c).UseAsync(c, async token => { await Service(c).LogoutAsync(token, c.RequestAborted); return true; }); }
-                catch (WebRequestException e) when (e.Status == 401) { }
-                catch (AccountServiceException e) when (e.Failure == AccountFailure.InvalidSession) { }
-                await Store(c).DeleteAsync(c);
+                try { await Store(c).UseAsync(c, _ => Task.FromResult(true), bootstrap: true); }
+                catch (WebRequestException e) when (e.Status == 401) { await Store(c).DeleteAsync(c); }
+                catch (AccountServiceException e) when (e.Failure == AccountFailure.InvalidSession) { await Store(c).DeleteAsync(c); }
             }
             return Json(await oauth.StartAsync(c, provider, body, null));
         }, authenticated: false, rate: "account-login");
@@ -91,8 +90,11 @@ internal static partial class WebEndpoints
 
     private static async Task<IResult> CompleteLogin(HttpContext c, SessionResponse session)
     {
-        var state = c.RequestServices.GetRequiredService<WebBrowserState>().Create(c);
+        var browser = c.RequestServices.GetRequiredService<WebBrowserState>();
+        var state = browser.Prepare();
         var id = await Store(c).CreateAsync(session, state, c.RequestAborted);
+        await c.RequestServices.GetRequiredService<WebOAuth>().InvalidatePendingLoginsAsync(c);
+        browser.Write(c, state);
         c.Response.Cookies.Append(WebConfiguration.SessionCookie, id, WebConfiguration.Cookie(session.RefreshExpiresAt));
         return Json(new { authenticated = true, session.User, session.FamilyId, state.CsrfToken,
             capabilities = AccountCapabilities.Read(c.RequestServices) });

@@ -139,7 +139,7 @@ class AndroidProfileHost(val app: Application) : ViewModelStoreOwner {
             return
         } ?: return
         try {
-            coordinator.commitSession(entry.session, entry.serverKey)
+            coordinator.restoreSession(entry)
         } catch (e: Exception) {
             android.util.Log.w("ZaparaProfile", "profile restore", e)
         }

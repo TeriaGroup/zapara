@@ -8,7 +8,8 @@ namespace Vograph.Core.Services.Accounts;
 
 public sealed partial class AccountHttpClient
 {
-    private async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, string? access, int status, CancellationToken caller, int apiVersion = 1)
+    private async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, string? access, int status,
+        CancellationToken caller, int apiVersion = 1, Guid? refreshAttemptId = null)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30), clock);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(caller, timeout.Token);
@@ -22,6 +23,8 @@ public sealed partial class AccountHttpClient
             if (http.DefaultRequestHeaders.Any()) throw new AccountClientException(AccountClientFailure.InvalidRequest);
             request.Headers.Accept.Add(new("application/json"));
             if (access is not null) request.Headers.Authorization = new("Bearer", access);
+            if (refreshAttemptId is { } attemptId)
+                request.Headers.Add("X-Zapara-Refresh-Attempt", attemptId.ToString("D"));
             if (body is not null)
             {
                 sent = JsonSerializer.SerializeToUtf8Bytes(body, AccountJson.CreateOptions());

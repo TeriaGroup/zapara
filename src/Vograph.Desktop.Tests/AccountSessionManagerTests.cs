@@ -20,13 +20,15 @@ public partial class AccountSessionManagerTests
     [InlineData("family")]
     [InlineData("expiry")]
     [InlineData("unchanged")]
-    public async Task Ambiguous_or_invalid_refresh_keeps_pending_and_restart_never_retries(string failure)
+    public async Task Ambiguous_or_invalid_v2_refresh_keeps_pending_attempt_for_restart(string failure)
     {
         using var vault = new AccountMemoryVault(Scope.Key) { Entry = AccountVaultEntry.Ready(Scope.Key, Session()) };
         using var cancel = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var attempts = new List<string>();
         using var handler = new AccountClientHandler { Send = (_, _) =>
         {
             Assert.Equal(AccountRefreshState.Pending, vault.Entry!.RefreshState);
+            attempts.Add(vault.Entry.RefreshAttemptId?.ToString("D") ?? "");
             if (failure == "offline") throw new HttpRequestException(Password);
             if (failure == "cancel") { cancel.Cancel(); throw new OperationCanceledException(cancel.Token); }
             if (failure == "parse") return Task.FromResult(Raw("{}"));
@@ -45,8 +47,17 @@ public partial class AccountSessionManagerTests
         Assert.Equal(Session(), vault.Entry.Session);
         var restarted = new AccountSessionManager(client, vault, new AccountClientClock());
         var error = await Assert.ThrowsAsync<AccountClientException>(() => restarted.GetValidSessionAsync(Ct));
-        Assert.Equal(AccountClientFailure.ReauthenticationRequired, error.Failure);
-        Assert.Equal(1, handler.Calls);
+        Assert.Equal(failure switch
+        {
+            "offline" => AccountClientFailure.Transport,
+            "cancel" => AccountClientFailure.Timeout,
+            "save" => AccountClientFailure.VaultUnavailable,
+            _ => AccountClientFailure.InvalidPayload
+        }, error.Failure);
+        Assert.Equal(2, handler.Calls);
+        Assert.Equal(2, attempts.Count);
+        Assert.NotEqual("", attempts[0]);
+        Assert.Equal(attempts[0], attempts[1]);
     }
 
     [Fact]

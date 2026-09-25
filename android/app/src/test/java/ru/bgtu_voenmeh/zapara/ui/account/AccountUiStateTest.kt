@@ -88,6 +88,31 @@ class AccountUiStateTest {
     }
 
     @Test
+    fun transient_refresh_failure_after_return_does_not_claim_session_expired() = runTest(dispatcher) {
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson(yandex = true)
+                "POST auth/refresh" -> throw java.io.IOException("offline")
+                else -> error(route(call))
+            }
+        }
+        val vault = MemoryAccountSessionVault(scope().key)
+        vault.acquire().use { it.write(AccountVaultEntry.ready(scope().key, session(testToken("za_", 3)))) }
+        val client = AccountHttpClient(http, scope())
+        val vm = AccountViewModel(AccountRuntime(
+            client = client, vault = vault, strings = ::copy,
+            deviceId = { device }, isGuest = { false }, commitSession = { _, _ -> true },
+            logout = { _ -> true }, openUrl = {}, writeExport = { _, _ -> },
+            capabilitiesTransport = http, scopeBase = "https://example.invalid/root/", serverKey = scope().key,
+            sessions = AccountSessionManager(client, vault) { Instant.parse(seen) }
+        ))
+        advanceUntilIdle()
+        vm.externalResult(ExternalReturnResult.SignedIn)
+        advanceUntilIdle()
+        assertEquals(copy(R.string.account_failed), vm.state.value.status)
+    }
+
+    @Test
     fun provider_only_account_starts_yandex_verification_for_export_without_asking_for_password() = runTest(dispatcher) {
         val http = FakeHttp { call ->
             when (route(call)) {

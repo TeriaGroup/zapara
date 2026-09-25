@@ -55,19 +55,21 @@ public partial class AccountSessionManagerTests
         Assert.Equal(1, handler.Calls);
     }
 
-    [Theory]
-    [InlineData(401, "invalid_session")]
-    [InlineData(503, "db_unavailable")]
-    public async Task Explicit_refresh_failure_is_not_retried_or_restored_to_READY(int status, string code)
+    [Fact]
+    public async Task V2_invalid_session_is_terminal_and_does_not_replay_refresh()
     {
         using var vault = new AccountMemoryVault(Scope.Key) { Entry = AccountVaultEntry.Ready(Scope.Key, Session()) };
-        using var handler = new AccountClientHandler { Send = (_, _) => Task.FromResult(Json(new { title = Password, status, code }, (HttpStatusCode)status)) };
+        using var handler = new AccountClientHandler { Send = (_, _) => Task.FromResult(Json(
+            new { status = 401, code = "invalid_session" }, HttpStatusCode.Unauthorized)) };
         using var http = new HttpClient(handler);
         using var client = new AccountHttpClient(http, Scope.BaseUri);
         var manager = new AccountSessionManager(client, vault, new AccountClientClock());
-        await Assert.ThrowsAsync<AccountClientException>(() => manager.RefreshIfCurrentAsync(Session(), Ct));
-        await Assert.ThrowsAsync<AccountClientException>(() => manager.RefreshIfCurrentAsync(Session(), Ct));
+        var first = await Assert.ThrowsAsync<AccountClientException>(() => manager.RefreshIfCurrentAsync(Session(), Ct));
+        Assert.Equal(AccountClientFailure.InvalidSession, first.Failure);
+        var later = await Assert.ThrowsAsync<AccountClientException>(() => manager.RefreshIfCurrentAsync(Session(), Ct));
+        Assert.Equal(AccountClientFailure.ReauthenticationRequired, later.Failure);
         Assert.Equal(AccountRefreshState.Pending, vault.Entry!.RefreshState);
+        Assert.Null(vault.Entry.RefreshAttemptId);
         Assert.Equal(1, handler.Calls);
     }
 

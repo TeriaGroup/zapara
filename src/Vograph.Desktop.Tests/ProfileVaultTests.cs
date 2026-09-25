@@ -15,7 +15,8 @@ public sealed class ProfileVaultTests
     [Theory]
     [InlineData("ready", false)]
     [InlineData("pending", true)]
-    [InlineData("expired", true)]
+    [InlineData("resumable-pending", false)]
+    [InlineData("expired", false)]
     [InlineData("family-expired", true)]
     public async Task Real_DPAPI_startup_opens_known_account_cache_without_auth_HTTP(string state, bool reauth)
     {
@@ -28,6 +29,11 @@ public sealed class ProfileVaultTests
             "Bearer", Now.AddMinutes(-2), Now.AddMinutes(-1));
         var entry = AccountVaultEntry.Ready(h.Client.Scope.Key, session);
         if (state == "pending") entry = entry with { RefreshState = AccountRefreshState.Pending };
+        if (state == "resumable-pending") entry = entry with
+        {
+            RefreshState = AccountRefreshState.Pending,
+            RefreshAttemptId = Guid.Parse("40000000-0000-0000-0000-000000000001")
+        };
         using (var lease = await h.Vault.AcquireAsync(CT)) lease.Write(entry);
         var profile = ProfileDescriptor.Account(h.Directory.Root, h.Client.Scope.Key, UserId);
         using (var cached = h.Guest.CreateProfile(profile)) ProfileCoordinatorTests.Seed(cached, "cached-A");

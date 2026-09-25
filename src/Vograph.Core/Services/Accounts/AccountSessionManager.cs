@@ -47,7 +47,9 @@ public sealed class AccountSessionManager
     public async Task<SessionResponse> GetValidSessionAsync(CancellationToken ct = default)
     {
         using var lease = await vault.AcquireAsync(ct).ConfigureAwait(false);
-        var current = Ready(lease.Read());
+        var current = Validated(lease.Read());
+        if (current.RefreshState == AccountRefreshState.Pending)
+            return await ResumeAsync(lease, current, ct).ConfigureAwait(false);
         if (current.Session.AccessExpiresAt > clock.GetUtcNow().AddSeconds(30)) return current.Session;
         return await RotateAsync(lease, current, ct).ConfigureAwait(false);
     }
@@ -58,7 +60,9 @@ public sealed class AccountSessionManager
         using var lease = await vault.AcquireAsync(ct).ConfigureAwait(false);
         var entry = lease.Read();
         if (entry is null || AccountSessionIdentity.From(entry.Session) != AccountSessionIdentity.From(observed)) throw Changed();
-        var current = Ready(entry);
+        var current = Validated(entry);
+        if (current.RefreshState == AccountRefreshState.Pending)
+            return await ResumeAsync(lease, current, ct).ConfigureAwait(false);
         // Another waiter has already rotated this exact family. Never rotate a second time for its stale observation.
         if (current.Session.AccessToken != observed.AccessToken) return current.Session;
         return await RotateAsync(lease, current, ct).ConfigureAwait(false);
@@ -68,12 +72,45 @@ public sealed class AccountSessionManager
     {
         if (current.Session.RefreshExpiresAt <= clock.GetUtcNow()) throw Reauthenticate();
         ct.ThrowIfCancellationRequested();
-        lease.Write(current with { RefreshState = AccountRefreshState.Pending });
-        // From here any failure leaves PENDING; even a 401/503 is never a license to resend the old refresh.
-        var next = await client.RefreshAsync(current.Session.RefreshToken, ct).ConfigureAwait(false);
+        var attemptId = Guid.NewGuid();
+        lease.Write(current with { RefreshState = AccountRefreshState.Pending, RefreshAttemptId = attemptId });
+        return await CompleteRotationAsync(lease, current, attemptId, ct).ConfigureAwait(false);
+    }
+
+    private async Task<SessionResponse> ResumeAsync(IAccountVaultLease lease, AccountVaultEntry current, CancellationToken ct)
+    {
+        if (current.RefreshAttemptId is not { } attemptId) throw Reauthenticate();
+        if (current.Session.RefreshExpiresAt <= clock.GetUtcNow()) throw Reauthenticate();
+        var resumed = await CompleteRotationAsync(lease, current, attemptId, ct).ConfigureAwait(false);
+        // An idempotent replay can return the original replacement after its access token has expired.
+        if (resumed.AccessExpiresAt <= clock.GetUtcNow().AddSeconds(30))
+            return await RotateAsync(lease, AccountVaultEntry.Ready(vault.ServerKey, resumed), ct).ConfigureAwait(false);
+        return resumed;
+    }
+
+    private async Task<SessionResponse> CompleteRotationAsync(IAccountVaultLease lease, AccountVaultEntry current,
+        Guid attemptId, CancellationToken ct)
+    {
+        SessionResponse next;
+        try { next = await client.RefreshResumableAsync(current.Session.RefreshToken, attemptId, ct).ConfigureAwait(false); }
+        catch (AccountClientException ex) when (ex.Status == 404 && ex.Failure == AccountClientFailure.NotConfigured)
+        {
+            // A missing v2 route is definitive. Mark the v1 attempt as non-resumable before sending it.
+            ct.ThrowIfCancellationRequested();
+            lease.Write(current with { RefreshState = AccountRefreshState.Pending, RefreshAttemptId = null });
+            next = await client.RefreshAsync(current.Session.RefreshToken, ct).ConfigureAwait(false);
+        }
+        catch (AccountClientException ex) when (ex.Failure is AccountClientFailure.InvalidSession or AccountClientFailure.SessionNotFound)
+        {
+            // The server has definitively rejected this family; repeating the attempt cannot recover it.
+            lease.Write(current with { RefreshState = AccountRefreshState.Pending, RefreshAttemptId = null });
+            throw;
+        }
         var old = current.Session;
         if (next.User.UserId != old.User.UserId || next.FamilyId != old.FamilyId || next.User.CreatedAt != old.User.CreatedAt
-            || next.RefreshExpiresAt != old.RefreshExpiresAt || next.AccessToken == old.AccessToken || next.RefreshToken == old.RefreshToken)
+            || next.RefreshExpiresAt > old.RefreshExpiresAt
+            || old.RefreshExpiresAt - next.RefreshExpiresAt > TimeSpan.FromTicks(10)
+            || next.AccessToken == old.AccessToken || next.RefreshToken == old.RefreshToken)
             throw new AccountClientException(AccountClientFailure.InvalidPayload);
         ct.ThrowIfCancellationRequested();
         lease.Write(AccountVaultEntry.Ready(vault.ServerKey, next));
@@ -109,11 +146,19 @@ public sealed class AccountSessionManager
         lease.Clear();
     }
 
-    private AccountVaultEntry Ready(AccountVaultEntry? entry)
+    private AccountVaultEntry Validated(AccountVaultEntry? entry)
     {
         if (entry is null) throw Reauthenticate();
         if (entry.ServerKey != vault.ServerKey || entry.Version != 1 || entry.UserId != entry.Session.User.UserId
-            || entry.FamilyId != entry.Session.FamilyId) throw new AccountClientException(AccountClientFailure.VaultUnavailable);
+            || entry.FamilyId != entry.Session.FamilyId || entry.RefreshAttemptId == Guid.Empty
+            || entry.RefreshState is not (AccountRefreshState.Ready or AccountRefreshState.Pending)
+            || entry.RefreshState == AccountRefreshState.Ready && entry.RefreshAttemptId is not null)
+            throw new AccountClientException(AccountClientFailure.VaultUnavailable);
+        return entry;
+    }
+    private AccountVaultEntry Ready(AccountVaultEntry? entry)
+    {
+        entry = Validated(entry);
         if (entry.RefreshState != AccountRefreshState.Ready) throw Reauthenticate();
         return entry;
     }

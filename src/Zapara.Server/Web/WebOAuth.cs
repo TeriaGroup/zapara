@@ -34,6 +34,23 @@ public sealed partial class WebOAuth(AccountsDataSource source, AccountsConfigur
         return started;
     }
 
+    internal async Task InvalidatePendingLoginsAsync(HttpContext context)
+    {
+        var browser = context.RequestServices.GetRequiredService<WebBrowserState>().Read(context);
+        if (browser is null) return;
+        await using var connection = source.CreateConnection();
+        await connection.OpenAsync(context.RequestAborted);
+        await using var command = new NpgsqlCommand($"""
+            UPDATE {schema}.oauth_transactions t
+            SET status='failed',subject=NULL,display_name=NULL,handoff_hash=NULL,handoff_expires_at=NULL
+            FROM {schema}.web_oauth_flows w
+            WHERE t.transaction_id=w.transaction_id AND w.browser_hash=@browser AND t.purpose='login'
+              AND t.status IN ('pending','callbackClaimed','awaitingApp')
+            """, connection);
+        command.Parameters.AddWithValue("browser", WebConfiguration.Hash(browser.Nonce));
+        await command.ExecuteNonQueryAsync(context.RequestAborted);
+    }
+
     // Called from the already configured provider callback. A native transaction is left
     // entirely to its original handler; a browser transaction must match its initiating cookie.
     internal async Task<IResult?> TryCallbackAsync(HttpContext context, string provider)
@@ -73,38 +90,46 @@ public sealed partial class WebOAuth(AccountsDataSource source, AccountsConfigur
         ExternalExchangeResponse result;
         var store = context.RequestServices.GetRequiredService<WebSessionStore>();
         var hasCookie = context.Request.Cookies.ContainsKey(WebConfiguration.SessionCookie);
-        // A fresh login must not leave the previous browser family alive. Link and reauth keep it.
-        if (purpose == "login" && hasCookie)
+        var browserState = context.RequestServices.GetRequiredService<WebBrowserState>();
+        async Task SaveResultAsync(ExternalExchangeResponse completed, byte[] resultBrowserHash)
         {
-            try
-            {
-                await store.UseAsync(context, async token =>
-                {
-                    await context.RequestServices.GetRequiredService<AccountService>().LogoutAsync(token, context.RequestAborted);
-                    return true;
-                });
-            }
-            catch (WebRequestException e) when (e.Status == 401) { }
-            catch (AccountServiceException e) when (e.Failure == AccountFailure.InvalidSession) { }
-            await store.DeleteAsync(context);
-            result = await external.ExchangeAsync(exchange, ct: context.RequestAborted);
-        }
-        else if (hasCookie)
-            result = await store.UseAsync(context, token => external.ExchangeAsync(exchange, token, context.RequestAborted), bootstrap: true);
-        else result = await external.ExchangeAsync(exchange, ct: context.RequestAborted);
-        if (result.Session is { } session)
-        {
-            var next = context.RequestServices.GetRequiredService<WebBrowserState>().Create(context);
-            bound = WebConfiguration.Hash(next.Nonce);
-            var cookie = await context.RequestServices.GetRequiredService<WebSessionStore>().CreateAsync(session, next, context.RequestAborted);
-            context.Response.Cookies.Append(WebConfiguration.SessionCookie, cookie, WebConfiguration.Cookie(session.RefreshExpiresAt));
-        }
-        await using (var save = new NpgsqlCommand($"UPDATE {schema}.web_oauth_flows SET protected_verifier='',protected_result=@result,browser_hash=@browser WHERE transaction_id=@id", connection))
-        {
+            await using var save = new NpgsqlCommand($"UPDATE {schema}.web_oauth_flows SET protected_verifier='',protected_result=@result,browser_hash=@browser WHERE transaction_id=@id", connection);
             save.Parameters.AddWithValue("id", id);
-            save.Parameters.AddWithValue("browser", bound);
-            save.Parameters.AddWithValue("result", protector.Protect(JsonSerializer.Serialize(new { result.Status, result.Proof }, AccountJson.CreateOptions())));
+            save.Parameters.AddWithValue("browser", resultBrowserHash);
+            save.Parameters.AddWithValue("result", protector.Protect(JsonSerializer.Serialize(new { completed.Status, completed.Proof }, AccountJson.CreateOptions())));
             await save.ExecuteNonQueryAsync(context.RequestAborted);
+        }
+        async Task<ExternalExchangeResponse> CompleteLoginAsync(string? previousAccess)
+        {
+            var completed = await external.ExchangeAsync(exchange, ct: context.RequestAborted);
+            var session = completed.Session ?? throw new WebRequestException(403, "invalid_external_proof");
+            var next = browserState.Prepare();
+            var cookie = await store.CreateAsync(session, next, context.RequestAborted);
+            await SaveResultAsync(completed, WebConfiguration.Hash(next.Nonce));
+            await InvalidatePendingLoginsAsync(context);
+            if (previousAccess is not null)
+            {
+                await context.RequestServices.GetRequiredService<AccountService>().LogoutAsync(previousAccess, context.RequestAborted);
+                await store.DeleteAsync(context);
+            }
+            browserState.Write(context, next);
+            context.Response.Cookies.Append(WebConfiguration.SessionCookie, cookie, WebConfiguration.Cookie(session.RefreshExpiresAt));
+            return completed;
+        }
+        if (purpose == "login")
+        {
+            // The previous cookie is authoritative for a switch. A callback racing a newer
+            // login must fail rather than exchange again under that newer browser account.
+            result = hasCookie
+                ? await store.UseAsync(context, CompleteLoginAsync, bootstrap: true)
+                : await CompleteLoginAsync(null);
+        }
+        else
+        {
+            result = hasCookie
+                ? await store.UseAsync(context, token => external.ExchangeAsync(exchange, token, context.RequestAborted), bootstrap: true)
+                : await external.ExchangeAsync(exchange, ct: context.RequestAborted);
+            await SaveResultAsync(result, bound);
         }
         return Results.Redirect("/app/settings");
     }

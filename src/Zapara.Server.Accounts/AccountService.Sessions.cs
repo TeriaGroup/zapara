@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Zapara.Contracts.Accounts;
 
 namespace Zapara.Server.Accounts;
@@ -5,13 +6,19 @@ namespace Zapara.Server.Accounts;
 public sealed partial class AccountService
 {
     public Task<SessionResponse> RefreshAsync(string refreshToken, CancellationToken ct = default)
-        => RefreshCoreAsync(refreshToken, null, null, ct);
+        => RefreshCoreAsync(refreshToken, null, null, null, ct);
+
+    public Task<SessionResponse> RefreshRetryAsync(string refreshToken, Guid attemptId, CancellationToken ct = default)
+    {
+        if (attemptId == Guid.Empty) throw new AccountServiceException(AccountFailure.InvalidRequest);
+        return RefreshCoreAsync(refreshToken, attemptId, null, null, ct);
+    }
 
     public Task<SessionResponse> RefreshBrowserSessionAsync(string refreshToken, byte[] sessionHash,
         Func<SessionResponse, string> protect, CancellationToken ct = default)
-        => RefreshCoreAsync(refreshToken, sessionHash, protect, ct);
+        => RefreshCoreAsync(refreshToken, null, sessionHash, protect, ct);
 
-    private Task<SessionResponse> RefreshCoreAsync(string refreshToken, byte[]? browserHash,
+    private Task<SessionResponse> RefreshCoreAsync(string refreshToken, Guid? attemptId, byte[]? browserHash,
         Func<SessionResponse, string>? protect, CancellationToken ct)
     {
         var hash = AccountTokens.Hash(refreshToken, "zr_");
@@ -25,13 +32,30 @@ public sealed partial class AccountService
             db.CheckLive(user, family, token);
             if (token!.Consumed)
             {
+                if (attemptId.HasValue && token.ReplacementHash is { } replacementHash)
+                {
+                    var retryAccess = AccountTokens.DeriveReplacement(refreshToken, attemptId.Value, "za_");
+                    var retryRefresh = AccountTokens.DeriveReplacement(refreshToken, attemptId.Value, "zr_");
+                    var retryHash = AccountTokens.Hash(retryRefresh, "zr_");
+                    if (CryptographicOperations.FixedTimeEquals(replacementHash, retryHash))
+                    {
+                        var recovered = await db.RecoverRetryAsync(user!.User, family!, retryAccess, retryRefresh);
+                        if (recovered is null) throw AccountRepository.InvalidSession();
+                        await db.CommitAsync(tx);
+                        return recovered;
+                    }
+                }
                 await db.RevokeAsync(identity.UserId, identity.FamilyId, "refresh_replay");
                 await db.AuditAsync(identity.UserId, identity.FamilyId, "refresh_replay");
                 await db.CommitAsync(tx);
                 throw AccountRepository.InvalidSession();
             }
             await db.ExecuteAsync($"UPDATE {schema}.refresh_tokens SET consumed_at=@p0 WHERE token_hash=@p1", db.Now, hash);
-            var session = await db.IssueAsync(user!.User, family!.Id, family.Expires);
+            var session = attemptId.HasValue
+                ? await db.IssueAsync(user!.User, family!.Id, family.Expires,
+                    AccountTokens.DeriveReplacement(refreshToken, attemptId.Value, "za_"),
+                    AccountTokens.DeriveReplacement(refreshToken, attemptId.Value, "zr_"))
+                : await db.IssueAsync(user!.User, family!.Id, family.Expires);
             await db.ExecuteAsync($"""
                 UPDATE {schema}.refresh_tokens SET replacement_hash=@p0 WHERE token_hash=@p1;
                 UPDATE {schema}.session_families SET last_seen_at=@p2 WHERE family_id=@p3

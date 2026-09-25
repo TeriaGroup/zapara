@@ -138,7 +138,8 @@ data class AccountVaultEntry(
     val userId: String,
     val familyId: String,
     val session: AccountSession,
-    val refreshState: AccountRefreshState
+    val refreshState: AccountRefreshState,
+    val refreshAttemptId: String? = null
 ) {
     override fun toString(): String = "AccountVaultEntry { [REDACTED] }"
 
@@ -149,6 +150,7 @@ data class AccountVaultEntry(
         append("\"userId\":").append(jsonString(userId)).append(',')
         append("\"familyId\":").append(jsonString(familyId)).append(',')
         append("\"refreshState\":").append(jsonString(refreshState.name)).append(',')
+        if (refreshAttemptId != null) append("\"refreshAttemptId\":").append(jsonString(refreshAttemptId)).append(',')
         append("\"session\":{")
         append("\"user\":{")
         append("\"userId\":").append(jsonString(session.user.userId)).append(',')
@@ -197,12 +199,18 @@ data class AccountVaultEntry(
                     refreshExpiresAt = Instant.parse(sessionObj.text("refreshExpiresAt", 40))
                 )
                 val state = AccountRefreshState.valueOf(root.text("refreshState", 16))
+                val attemptId = when (val value = root.fields["refreshAttemptId"]) {
+                    null, ru.bgtu_voenmeh.zapara.data.api.JsonValue.Null -> null
+                    is ru.bgtu_voenmeh.zapara.data.api.JsonValue.Str -> AccountValidation.refreshAttemptId(value.value)
+                    else -> throw JsonFail()
+                }
+                if (state == AccountRefreshState.Ready && attemptId != null) throw JsonFail()
                 val userId = AccountValidation.id(root.text("userId", 36))
                 val familyId = AccountValidation.id(root.text("familyId", 36))
                 if (userId != session.user.userId || familyId != session.familyId) {
                     throw AccountClientException(AccountClientFailure.VaultUnavailable)
                 }
-                return AccountVaultEntry(version, serverKey, userId, familyId, session, state)
+                return AccountVaultEntry(version, serverKey, userId, familyId, session, state, attemptId)
             } catch (e: AccountClientException) {
                 throw e
             } catch (_: Exception) {
@@ -229,6 +237,12 @@ object AccountValidation {
     private val usernameRe = Regex("\\A[A-Za-z0-9_.-]{3,32}\\z")
     private val tokenBody = Regex("\\A[A-Za-z0-9_-]{43}\\z")
     private val uuidRe = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+    private val attemptIdRe = Regex("\\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\z")
+
+    fun refreshAttemptId(value: String): String {
+        if (!attemptIdRe.matches(value) || value == "00000000-0000-0000-0000-000000000000") throw invalid()
+        return value
+    }
 
     fun username(value: String?): String {
         if (value == null || !usernameRe.matches(value)) throw invalid()

@@ -503,6 +503,8 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                         ) }
                     } catch (e: CancellationException) {
                         throw e
+                    } catch (e: AccountClientException) {
+                        mutable.update { it.copy(status = failureText(e.failure)) }
                     } catch (_: Exception) {
                         mutable.update { it.copy(status = runtime.strings(R.string.account_reauth)) }
                     }

@@ -41,6 +41,12 @@ public sealed partial class AccountHttpClient : IDisposable
         => SendAsync<SessionResponse>(HttpMethod.Post, "auth/login", Required(request), null, 200, ct);
     public Task<SessionResponse> RefreshAsync(string refreshToken, CancellationToken ct = default)
         => SendAsync<SessionResponse>(HttpMethod.Post, "auth/refresh", new RefreshRequest(refreshToken), null, 200, ct);
+    public Task<SessionResponse> RefreshResumableAsync(string refreshToken, Guid attemptId, CancellationToken ct = default)
+    {
+        if (attemptId == Guid.Empty) throw new AccountClientException(AccountClientFailure.InvalidRequest);
+        return SendAsync<SessionResponse>(HttpMethod.Post, "auth/refresh", new RefreshRequest(refreshToken), null, 200,
+            ct, apiVersion: 2, refreshAttemptId: attemptId);
+    }
     public Task<MeResponse> GetMeAsync(string accessToken, CancellationToken ct = default)
         => SendAsync<MeResponse>(HttpMethod.Get, "account/me", null, Access(accessToken), 200, ct);
     public Task<UserResponse> UpdateProfileAsync(string accessToken, UpdateProfileRequest request, CancellationToken ct = default)

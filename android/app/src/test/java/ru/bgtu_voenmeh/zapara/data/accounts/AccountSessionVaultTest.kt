@@ -52,6 +52,16 @@ class AccountSessionVaultTest {
     }
 
     @Test
+    fun pending_attempt_round_trips_and_old_vault_entry_stays_readable() {
+        val scope = AccountServerScope.parse("https://example.invalid/root")
+        val ready = AccountVaultEntry.ready(scope.key, session())
+        val attemptId = "12345678-1234-4234-8234-123456789abc"
+        val pending = ready.copy(refreshState = AccountRefreshState.Pending, refreshAttemptId = attemptId)
+        assertEquals(attemptId, AccountVaultEntry.decode(pending.encode(), scope.key).refreshAttemptId)
+        assertNull(AccountVaultEntry.decode(ready.encode(), scope.key).refreshAttemptId)
+    }
+
+    @Test
     fun rejects_entry_from_another_server_key() = runBlocking {
         val vault = MemoryAccountSessionVault("A".repeat(64))
         val other = AccountVaultEntry.ready("B".repeat(64), session())

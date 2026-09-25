@@ -40,12 +40,17 @@ public class AccountSessionVaultFailureTests
         var vault = new WindowsAccountSessionVault(dir.Root, Scope);
         using (var lease = await vault.AcquireAsync(Ct)) lease.Write(AccountVaultEntry.Ready(Scope.Key, Session()));
         FileStream? blocking = null;
+        var firstRequest = true;
         try
         {
             using var handler = new AccountClientHandler { Send = (_, _) =>
             {
                 // Open AFTER PENDING is committed, and deny the READY rename with a real Windows sharing rule.
-                blocking = new FileStream(Path.Combine(dir.Root, Scope.Key, "session.dpapi"), FileMode.Open, FileAccess.Read, FileShare.Read);
+                if (firstRequest)
+                {
+                    firstRequest = false;
+                    blocking = new FileStream(Path.Combine(dir.Root, Scope.Key, "session.dpapi"), FileMode.Open, FileAccess.Read, FileShare.Read);
+                }
                 return Task.FromResult(Json(Session(2)));
             } };
             using var http = new HttpClient(handler);
@@ -56,11 +61,17 @@ public class AccountSessionVaultFailureTests
             Assert.NotNull(blocking);
             blocking.Dispose();
             blocking = null;
-            using var persisted = await vault.AcquireAsync(Ct);
-            Assert.Equal(AccountRefreshState.Pending, persisted.Read()!.RefreshState);
-            Assert.Equal(Session(), persisted.Read()!.Session);
+            using (var persisted = await vault.AcquireAsync(Ct))
+            {
+                Assert.Equal(AccountRefreshState.Pending, persisted.Read()!.RefreshState);
+                Assert.NotNull(persisted.Read()!.RefreshAttemptId);
+                Assert.Equal(Session(), persisted.Read()!.Session);
+            }
             Assert.Empty(Directory.GetFiles(dir.Root, "*.tmp", SearchOption.AllDirectories));
             Assert.Equal(1, handler.Calls);
+            Assert.Equal(Session(2), await new AccountSessionManager(client,
+                new WindowsAccountSessionVault(dir.Root, Scope), new AccountClientClock()).GetValidSessionAsync(Ct));
+            Assert.Equal(2, handler.Calls);
         }
         finally { blocking?.Dispose(); }
     }
@@ -91,6 +102,34 @@ public class AccountSessionVaultFailureTests
             if (plain is not null) CryptographicOperations.ZeroMemory(plain);
             CryptographicOperations.ZeroMemory(cipher);
             CryptographicOperations.ZeroMemory(entropy);
+        }
+    }
+
+    [Fact]
+    public async Task Legacy_DPAPI_pending_entry_without_attempt_field_remains_readable_and_nonresumable()
+    {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
+        using var dir = new AccountVaultTestDirectory();
+        var vault = new WindowsAccountSessionVault(dir.Root, Scope);
+        using (var lease = await vault.AcquireAsync(Ct)) Assert.Null(lease.Read());
+        var legacy = AccountVaultEntry.Ready(Scope.Key, Session()) with { RefreshState = AccountRefreshState.Pending };
+        var envelope = JsonSerializer.SerializeToNode(legacy, AccountJson.CreateOptions())!.AsObject();
+        Assert.True(envelope.Remove("refreshAttemptId"));
+        var plain = Encoding.UTF8.GetBytes(envelope.ToJsonString());
+        var entropy = Encoding.UTF8.GetBytes(Scope.Key);
+        byte[]? cipher = null;
+        try
+        {
+            cipher = ProtectedData.Protect(plain, entropy, DataProtectionScope.CurrentUser);
+            await File.WriteAllBytesAsync(Path.Combine(dir.Root, Scope.Key, "session.dpapi"), cipher, Ct);
+            using var lease = await new WindowsAccountSessionVault(dir.Root, Scope).AcquireAsync(Ct);
+            Assert.Equal(legacy, lease.Read());
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plain);
+            CryptographicOperations.ZeroMemory(entropy);
+            if (cipher is not null) CryptographicOperations.ZeroMemory(cipher);
         }
     }
 

@@ -217,7 +217,20 @@ public sealed class AccountUiService(AccountHttpClient client, IAccountSessionVa
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, work.Token);
         var session = await sessions.GetValidSessionAsync(linked.Token);
         Check();
-        var result = await action(session, linked.Token);
+        T result;
+        try { result = await action(session, linked.Token); }
+        catch (AccountClientException ex) when (ex.Failure == AccountClientFailure.InvalidSession)
+        {
+            Check();
+            using var lease = await vault.AcquireAsync(linked.Token);
+            var latest = lease.Read();
+            Check();
+            if (latest is not null && AccountSessionIdentity.From(latest.Session) == expected
+                && (latest.RefreshState == AccountRefreshState.Ready && latest.Session.AccessToken != session.AccessToken
+                    || latest.RefreshState == AccountRefreshState.Pending && latest.RefreshAttemptId is not null))
+                throw new AccountClientException(AccountClientFailure.SessionChanged);
+            throw;
+        }
         Check();
         return result;
 

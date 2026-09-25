@@ -66,6 +66,16 @@ class AccountHttpClient(
         return session(send("POST", "auth/refresh", "{\"refreshToken\":${q(token)}}", null, 200).obj())
     }
 
+    suspend fun refreshResumable(refreshToken: String, attemptId: String): AccountSession {
+        val token = AccountValidation.token(refreshToken, "zr_")
+        val canonicalAttemptId = AccountValidation.refreshAttemptId(attemptId)
+        return session(send(
+            "POST", "auth/refresh", "{\"refreshToken\":${q(token)}}", null, 200,
+            apiVersion = 2,
+            extraHeaders = mapOf("X-Zapara-Refresh-Attempt" to canonicalAttemptId)
+        ).obj())
+    }
+
     suspend fun me(accessToken: String): AccountUser {
         val root = send("GET", "account/me", null, accessToken, 200).obj()
         return user(root.field("user").obj())
@@ -318,8 +328,9 @@ class AccountHttpClient(
         send("DELETE", "account/identities/${requireProvider(provider)}", proofBody(proofToken), accessToken, 204)
     }
 
-    private suspend fun send(method: String, path: String, body: String?, access: String?, expected: Int, apiVersion: Int = 1): JsonValue {
-        val reply = exchange(method, path, body, access, JSON_MAX, apiVersion)
+    private suspend fun send(method: String, path: String, body: String?, access: String?, expected: Int,
+                             apiVersion: Int = 1, extraHeaders: Map<String, String> = emptyMap()): JsonValue {
+        val reply = exchange(method, path, body, access, JSON_MAX, apiVersion, extraHeaders)
         if (reply.status != expected) throw mapError(reply.status, reply.body)
         if (expected == 204) return JsonValue.Null
         return try {
@@ -335,10 +346,12 @@ class AccountHttpClient(
         body: String?,
         access: String?,
         maxBytes: Int,
-        apiVersion: Int = 1
+        apiVersion: Int = 1,
+        extraHeaders: Map<String, String> = emptyMap()
     ): HttpReply {
         val headers = linkedMapOf("Accept" to "application/json")
         if (access != null) headers["Authorization"] = "Bearer ${AccountValidation.token(access, "za_")}"
+        headers.putAll(extraHeaders)
         val bytes = body?.toByteArray(Charsets.UTF_8)
         if (bytes != null && bytes.size > JSON_REQUEST_MAX) throw AccountClientException(AccountClientFailure.InvalidRequest)
         val reply = try {
@@ -347,6 +360,8 @@ class AccountHttpClient(
             )
         } catch (_: ru.bgtu_voenmeh.zapara.data.api.HttpBodyTooLargeException) {
             throw AccountClientException(AccountClientFailure.BodyTooLarge)
+        } catch (_: java.net.SocketTimeoutException) {
+            throw AccountClientException(AccountClientFailure.Timeout)
         } catch (_: java.io.IOException) {
             throw AccountClientException(AccountClientFailure.Transport)
         }

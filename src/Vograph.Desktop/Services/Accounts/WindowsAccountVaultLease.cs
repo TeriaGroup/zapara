@@ -108,6 +108,8 @@ internal sealed class WindowsAccountVaultLease(FileStream fileLock, string direc
     {
         if (entry is null || entry.Version != 1 || entry.ServerKey != serverKey || entry.Session is null
             || entry.RefreshState is not (AccountRefreshState.Ready or AccountRefreshState.Pending)
+            || entry.RefreshAttemptId == Guid.Empty
+            || entry.RefreshState == AccountRefreshState.Ready && entry.RefreshAttemptId is not null
             || entry.UserId != entry.Session.User.UserId || entry.FamilyId != entry.Session.FamilyId
             || entry.Session.User.CreatedAt >= entry.Session.AccessExpiresAt) throw Failure();
     }

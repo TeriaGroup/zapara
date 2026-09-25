@@ -17,7 +17,8 @@ public sealed record AccountVaultEntry(
     [property: JsonRequired] Guid UserId,
     [property: JsonRequired] Guid FamilyId,
     [property: JsonRequired] SessionResponse Session,
-    [property: JsonRequired] AccountRefreshState RefreshState)
+    [property: JsonRequired] AccountRefreshState RefreshState,
+    Guid? RefreshAttemptId = null)
 {
     public static AccountVaultEntry Ready(string serverKey, SessionResponse session)
         => new(1, serverKey, session.User.UserId, session.FamilyId, session, AccountRefreshState.Ready);

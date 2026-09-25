@@ -190,6 +190,26 @@ class ProfileCoordinatorTest {
     }
 
     @Test
+    fun restore_pending_account_does_not_replace_pending_vault_entry() = runBlocking {
+        val scope = AccountServerScope.parse("https://example.invalid/root")
+        val vault = MemoryAccountSessionVault(scope.key)
+        val user = "11111111-1111-4111-8111-111111111111"
+        val pending = AccountVaultEntry.ready(scope.key, session(user)).copy(
+            refreshState = ru.bgtu_voenmeh.zapara.data.accounts.AccountRefreshState.Pending,
+            refreshAttemptId = "12345678-1234-4234-8234-123456789abc"
+        )
+        vault.acquire().use { it.write(pending) }
+        val guest = ProfileGraph(ProfileDescriptor.guest(), MemoryTimetableStore(), ProfileWork())
+        val coordinator = ProfileCoordinator(guest, { desc ->
+            ProfileGraph(desc, MemoryTimetableStore(), ProfileWork())
+        }, vault)
+        assertTrue(coordinator.restoreSession(pending).committed)
+        assertEquals(pending, vault.acquire().use { it.read() })
+        assertEquals(user, coordinator.current.descriptor.userId)
+        coordinator.close()
+    }
+
+    @Test
     fun logout_posts_then_clears_and_keeps_local_on_transport_failure() = runBlocking {
         val scope = AccountServerScope.parse("https://example.invalid/root")
         val vault = MemoryAccountSessionVault(scope.key)

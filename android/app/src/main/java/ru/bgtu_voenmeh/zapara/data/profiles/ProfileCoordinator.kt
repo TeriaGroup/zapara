@@ -27,6 +27,13 @@ class ProfileCoordinator(
         }
     }
 
+    suspend fun restoreSession(entry: AccountVaultEntry): ProfileSwitchResult {
+        if (entry.serverKey != vault.serverKey || entry.userId != entry.session.user.userId ||
+            entry.familyId != entry.session.familyId
+        ) throw IllegalArgumentException("Invalid account vault entry")
+        return switch(ProfileDescriptor.account(entry.serverKey, entry.userId)) { }
+    }
+
     suspend fun logout(remoteLogout: (suspend (AccountSession) -> Unit)? = null): ProfileSwitchResult {
         var session: AccountSession? = null
         val result = switch(ProfileDescriptor.guest()) {
