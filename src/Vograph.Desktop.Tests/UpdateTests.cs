@@ -316,10 +316,10 @@ public class UpdateTests : UiTest
         using var db = TestDb.Create();
         var (vm, _, _) = Make(db);
         Directory.CreateDirectory(vm.UpdatesDir);
-        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.26_win-x64.zip"), new byte[10]);      // this very version: installed
-        File.WriteAllText(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.26_win-x64.zip.attempted"), "x");
+        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.27_win-x64.zip"), new byte[10]);      // this very version: installed
+        File.WriteAllText(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.27_win-x64.zip.attempted"), "x");
         File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v1.2.2_win-x64.zip"), new byte[10]);      // older
-        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.26_win-x64.zip.part"), new byte[10]); // a torn download
+        File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.1.27_win-x64.zip.part"), new byte[10]); // a torn download
         File.WriteAllBytes(Path.Combine(vm.UpdatesDir, "ZAPARA_windows-v2.2.0_win-x64.zip"), new byte[10]);      // newer: keep
 
         await vm.CleanupAsync();
