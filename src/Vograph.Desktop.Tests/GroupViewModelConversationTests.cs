@@ -22,6 +22,105 @@ public sealed class GroupViewModelConversationTests
     private static readonly Guid SixthId = Guid.Parse("66666666-6666-4666-8666-666666666666");
 
     [AvaloniaFact]
+    public void Day_dividers_keep_the_year_and_collapse_adjacent_messages_by_sender()
+    {
+        using var directory = new ProfileTestDirectory();
+        using var services = AppServices.Create(directory.Root, () => false);
+        var vm = new GroupViewModel(services);
+        var sender = Guid.NewGuid();
+        vm.Messages.Add(new GroupMessageRow(Guid.NewGuid(), "Аня", "Первое", "", false,
+            senderId: sender, createdAt: new DateTimeOffset(2025, 12, 31, 10, 0, 0, TimeSpan.Zero)));
+        vm.Messages.Add(new GroupMessageRow(Guid.NewGuid(), "Аня", "Второе", "", false,
+            senderId: sender, createdAt: new DateTimeOffset(2025, 12, 31, 10, 1, 0, TimeSpan.Zero)));
+        vm.Messages.Add(new GroupMessageRow(Guid.NewGuid(), "Аня", "Третье", "", false,
+            senderId: sender, createdAt: new DateTimeOffset(2026, 1, 1, 10, 0, 0, TimeSpan.Zero)));
+
+        Assert.Contains("2025", vm.Messages[0].DayHeader);
+        Assert.True(vm.Messages[0].ShowAuthor);
+        Assert.Equal("", vm.Messages[1].DayHeader);
+        Assert.False(vm.Messages[1].ShowAuthor);
+        Assert.Contains("2026", vm.Messages[2].DayHeader);
+        Assert.True(vm.Messages[2].ShowAuthor);
+    }
+
+    [AvaloniaFact]
+    public async Task Delete_requires_confirmation_and_can_be_cancelled()
+    {
+        using var directory = new ProfileTestDirectory();
+        using var services = AppServices.Create(directory.Root, () => false);
+        services.AllowNetwork = false;
+        using var handler = new AccountClientHandler();
+        using var http = new HttpClient(handler);
+        using var client = new CommunityHttpClient(http, Root);
+        services.UseCommunities(client, _ => Task.FromResult<string?>(Access));
+        var deletes = 0;
+        handler.Send = (request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/delete", StringComparison.Ordinal)) deletes++;
+            return Task.FromResult(Respond(request, delete: true));
+        };
+        var vm = new GroupViewModel(services);
+        await vm.ActivateAsync();
+
+        vm.Messages[0].Apply("delete");
+        Assert.True(vm.HasPendingDeleteMessage);
+        Assert.Equal(0, deletes);
+        vm.CancelDeleteMessageCommand.Execute(null);
+        Assert.False(vm.HasPendingDeleteMessage);
+        vm.Messages[0].Apply("delete");
+        await vm.ConfirmDeleteMessageCommand.ExecuteAsync(null);
+        Assert.Equal(1, deletes);
+        Assert.True(vm.Messages[0].Deleted);
+        vm.Detach();
+    }
+
+    [AvaloniaFact]
+    public async Task Loaded_message_search_filters_without_changing_source_and_copy_reports_success_and_failure()
+    {
+        using var directory = new ProfileTestDirectory();
+        using var services = AppServices.Create(directory.Root, () => false);
+        services.AllowNetwork = false;
+        using var handler = new AccountClientHandler();
+        using var http = new HttpClient(handler);
+        using var client = new CommunityHttpClient(http, Root);
+        services.UseCommunities(client, _ => Task.FromResult<string?>(Access));
+        handler.Send = (request, _) => Task.FromResult(Respond(request));
+
+        string? copied = null;
+        var vm = new GroupViewModel(services, clipboardWriter: body => { copied = body; return Task.CompletedTask; });
+        await vm.ActivateAsync();
+        Assert.Equal(2, vm.Messages.Count);
+        Assert.False(vm.ShowMessageBrowse);
+        vm.ToggleMessageBrowseCommand.Execute(null);
+        Assert.True(vm.ShowMessageBrowse);
+        vm.MessageSearch = "  ВТОР ";
+        Assert.Equal(SecondId, Assert.Single(vm.FilteredMessages).Id);
+        Assert.Equal(2, vm.Messages.Count);
+        vm.MessageAuthorIndex = 2;
+        Assert.Empty(vm.FilteredMessages);
+        Assert.True(vm.NoMessageMatches);
+        vm.ResetMessageFiltersCommand.Execute(null);
+        Assert.Equal(2, vm.FilteredMessages.Count);
+
+        vm.Draft = "Черновик";
+        vm.Messages[0].Apply("reply");
+        Assert.True(vm.HasHoldAction);
+        vm.CancelHoldActionCommand.Execute(null);
+        Assert.False(vm.HasHoldAction);
+        Assert.Equal("Черновик", vm.Draft);
+
+        await vm.Messages[0].CopyCommand!.ExecuteAsync(null);
+        Assert.Equal("Первое", copied);
+        Assert.Equal("Текст скопирован.", vm.Status);
+        Assert.False(vm.ShowRetryBrowse);
+        vm.SetClipboardWriter(_ => throw new InvalidOperationException("clipboard unavailable"));
+        await vm.Messages[0].CopyCommand!.ExecuteAsync(null);
+        Assert.Equal("Не удалось скопировать текст.", vm.Status);
+        Assert.False(vm.ShowRetryBrowse);
+        vm.Detach();
+    }
+
+    [AvaloniaFact]
     public async Task Editing_an_older_message_keeps_chronological_order()
     {
         using var directory = new ProfileTestDirectory();
@@ -67,6 +166,7 @@ public sealed class GroupViewModelConversationTests
         vm.Directs.Single().OpenCommand!.Execute(null);
         await Waits.Until(() => vm.IsDirect && vm.Messages.Any(item => item.Id == DirectMessageId), "direct chat opened");
         Assert.Equal("", vm.Draft);
+        Assert.DoesNotContain(vm.Channels, row => row.IsSelected);
 
         vm.Draft = "Личный черновик";
         await vm.BackToGroupCommand.ExecuteAsync(null);
@@ -359,7 +459,7 @@ public sealed class GroupViewModelConversationTests
         vm.Detach();
     }
 
-    private static HttpResponseMessage Respond(HttpRequestMessage request, bool edit = false, bool direct = false)
+    private static HttpResponseMessage Respond(HttpRequestMessage request, bool edit = false, bool direct = false, bool delete = false)
     {
         var path = request.RequestUri!.AbsolutePath;
         if (request.Method == HttpMethod.Get && path.EndsWith("/communities", StringComparison.Ordinal))
@@ -376,6 +476,8 @@ public sealed class GroupViewModelConversationTests
             return Payload(new ConversationResponse(GroupChatId, "group", CommunityId, "О3313", null, null, null, 0));
         if (edit && request.Method == HttpMethod.Post && path.EndsWith("/edit", StringComparison.Ordinal))
             return Payload(new ChatMessageResponse(FirstId, GroupChatId, UserId, "Аня", "Изменено", CommunityClientTestSupport.Now, "text"));
+        if (delete && request.Method == HttpMethod.Post && path.EndsWith("/delete", StringComparison.Ordinal))
+            return Payload(new ChatMessageResponse(FirstId, GroupChatId, UserId, "Аня", "Сообщение удалено", CommunityClientTestSupport.Now, "text", true));
         return Problem(404, "not_found");
     }
 

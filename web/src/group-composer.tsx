@@ -24,13 +24,15 @@ function clock(ms: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export function GroupComposer({ draft, editing, replyTo, allowMedia, onDraft, onSubmit, onChoose, onRecorded, onError }: {
+export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia, onDraft, onSubmit, onCancelContext, onChoose, onRecorded, onError }: {
   draft: string;
   editing: boolean;
   replyTo: boolean;
+  contextText: string;
   allowMedia: boolean;
   onDraft: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onCancelContext: () => void;
   onChoose: (kind: AttachmentKind) => void;
   onRecorded: (kind: RecordingKind, name: string, blob: Blob, durationMs: number) => Promise<void>;
   onError: (message: string) => void;
@@ -184,13 +186,16 @@ export function GroupComposer({ draft, editing, replyTo, allowMedia, onDraft, on
 
   return (
     <>
-      {(editing || replyTo) && <p className="muted">{editing ? "Редактирование" : "Ответ"}</p>}
+      {(editing || replyTo) && <div className="compose-context">
+        <span className="compose-context-text">{editing ? "Редактирование" : "Ответ"}: {contextText}</span>
+        <button className="btn tool" type="button" aria-label={editing ? "Отменить редактирование" : "Отменить ответ"} onClick={onCancelContext}>Отменить</button>
+      </div>}
       <form className="compose" onSubmit={onSubmit}>
         {!editing && allowMedia && <button className="btn tool" type="button" aria-label="Вложения" disabled={starting || sending}
           onClick={() => setPanel(value => !value)}><Icon name="paperclip" size={18} /></button>}
         <input value={draft} onChange={event => onDraft(event.target.value)} placeholder="Сообщение" aria-label="Сообщение" maxLength={2000} />
         {draft.trim() || editing || !allowMedia
-          ? <button className="btn primary" type="submit" disabled={!draft.trim() || sending}>Отправить</button>
+          ? <button className="btn primary" type="submit" disabled={!draft.trim() || sending}>{editing ? "Сохранить" : "Отправить"}</button>
           : <>
               <button className="btn tool" type="button" aria-label="Кружок" disabled={starting || sending} onClick={() => void begin("circle")}><Icon name="circle" size={18} /></button>
               <button className="btn primary tool" type="button" aria-label="Голосовое" disabled={starting || sending} onClick={() => void begin("voice")}><Icon name="mic" size={18} /></button>

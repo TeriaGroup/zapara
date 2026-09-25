@@ -19,6 +19,7 @@ public sealed partial class GroupViewModel : ViewModelBase
     private readonly CommunityHttpClient? client;
     private readonly Func<CancellationToken, Task<string?>>? accessToken;
     private readonly IChatMediaRecorder recorder;
+    private Func<string, Task>? clipboardWriter;
     private readonly ChatMediaPlayer player = new();
     private readonly Dictionary<Guid, Bitmap> previewCache = [];
     private readonly HashSet<Guid> previewLoading = [];
@@ -41,11 +42,15 @@ public sealed partial class GroupViewModel : ViewModelBase
     private bool watching;
     private DispatcherTimer? timer;
 
-    public GroupViewModel(AppServices app, IChatMediaRecorder? recorder = null) : base(app)
+    public GroupViewModel(AppServices app, IChatMediaRecorder? recorder = null,
+        Func<string, Task>? clipboardWriter = null) : base(app)
     {
         client = app.Communities;
         accessToken = app.CommunityAccess;
         this.recorder = recorder ?? new WindowsChatMediaRecorder();
+        this.clipboardWriter = clipboardWriter;
+        Messages.CollectionChanged += (_, _) => RefreshMessageBrowse();
+        Ballots.CollectionChanged += (_, _) => RefreshBallotBrowse();
         player.PlaybackEnded += () => Dispatcher.UIThread.Post(StopPlayback);
         player.PlaybackFailed += () => Dispatcher.UIThread.Post(() =>
         {
@@ -83,6 +88,7 @@ public sealed partial class GroupViewModel : ViewModelBase
     public bool ShowList => !NeedAccount && !HasHome && !IsEmpty;
     public bool HasDirects => Directs.Count > 0;
     public bool CanAttachMedia => ShowComposer && !IsBusy && !IsRecording && !IsFinalizingRecording;
+    public void SetClipboardWriter(Func<string, Task>? writer) => clipboardWriter = writer;
 
     public override void Detach() => Watch(false);
     public override Task ActivateAsync() => LoadAsync();
@@ -280,6 +286,17 @@ public sealed partial class GroupViewModel : ViewModelBase
         if (ticket != navigationGeneration) return;
         StopPlayback();
         Messages.Clear();
+        ballotRequestSerial++;
+        Ballots.Clear();
+        BallotLoading = false;
+        BallotLoadFailed = false;
+        BallotLoaded = false;
+        BallotFeedback = "";
+        ResetBallotFilters();
+        ShowBallotComposer = false;
+        ResetMessageFilters();
+        LoadingOlder = false;
+        CancelDeleteMessage();
         ClearPreviews();
         conversationId = id;
         selectedGroupChannel = !direct;
@@ -339,9 +356,10 @@ public sealed partial class GroupViewModel : ViewModelBase
     [RelayCommand]
     private async Task LoadOlder()
     {
-        if (conversationId is not Guid id || Messages.Count == 0 || Api is null || Access is null) return;
+        if (LoadingOlder || conversationId is not Guid id || Messages.Count == 0 || Api is null || Access is null) return;
         var ticket = navigationGeneration;
         using var operation = App.Work.Enter();
+        LoadingOlder = true;
         Busy(true);
         try
         {
@@ -357,7 +375,11 @@ public sealed partial class GroupViewModel : ViewModelBase
         catch (CommunityClientException) when (operation.IsCurrent && ticket == navigationGeneration) { Status = T("groupFailed"); }
         catch (AccountClientException ex) when (operation.IsCurrent && ticket == navigationGeneration) { FailSession(ex); }
         catch (OperationCanceledException) { }
-        finally { if (operation.IsCurrent) Busy(false); }
+        finally
+        {
+            if (ticket == navigationGeneration) LoadingOlder = false;
+            if (operation.IsCurrent) Busy(false);
+        }
     }
 
     private async Task PullAsync()
@@ -719,9 +741,8 @@ public sealed partial class GroupViewModel : ViewModelBase
 
     private async void ApplyHold(GroupMessageRow row, string action)
     {
-        if (conversationId is not Guid id || Api is null || Access is null) return;
+        if (conversationId is null || Api is null || Access is null) return;
         if (!Messages.Contains(row)) return;
-        var ticket = navigationGeneration;
         var emoji = action.StartsWith("reaction:", StringComparison.Ordinal) ? action["reaction:".Length..] : null;
         var allowed = MessengerHold.Actions(row.Kind, row.Mine, row.Deleted, true);
         if (emoji is null ? !allowed.Contains(action)
@@ -742,13 +763,21 @@ public sealed partial class GroupViewModel : ViewModelBase
             HoldCaption = "Редактирование";
             return;
         }
-        if (action != "delete" && emoji is null) return;
+        if (action == "delete") { AskDeleteMessage(row); return; }
+        if (emoji is null) return;
+        await ChangeHeldMessageAsync(row, false, emoji);
+    }
+
+    private async Task ChangeHeldMessageAsync(GroupMessageRow row, bool delete, string? emoji)
+    {
+        if (conversationId is not Guid id || Api is null || Access is null || !Messages.Contains(row)) return;
+        var ticket = navigationGeneration;
         try
         {
             using var operation = App.Work.Enter();
             var token = await Access(operation.Token);
             if (string.IsNullOrEmpty(token) || !operation.IsCurrent || !CurrentChat(id, ticket)) return;
-            var message = action == "delete"
+            var message = delete
                 ? await Api.DeleteMessageAsync(token, id, row.Id, operation.Token)
                 : await Api.ReactMessageAsync(token, id, row.Id, emoji!, operation.Token);
             if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
@@ -771,7 +800,8 @@ public sealed partial class GroupViewModel : ViewModelBase
         row = new(message.MessageId, message.SenderName, message.Body, message.CreatedAt.ToLocalTime().ToString("dd.MM HH:mm"),
             message.SenderId == me, message.Kind, message.Deleted, action => ApplyHold(row, action),
             () => DownloadMediaAsync(row, message.ConversationId), message.Reactions, replyPreview,
-            () => PlayMediaAsync(row, message.ConversationId));
+            () => PlayMediaAsync(row, message.ConversationId), message.SenderId, message.CreatedAt,
+            () => CopyMessageAsync(row));
         if (message.Kind == "image" && !message.Deleted)
         {
             if (previewCache.TryGetValue(message.MessageId, out var cached)) row.Preview = cached;
@@ -958,15 +988,19 @@ public sealed class GroupPersonRow(string name, string detail, string role, stri
     public string Detail { get; } = detail;
     public string Role { get; } = role;
     public string Preview { get; } = preview;
-    public string Unread { get; } = unread;
+    public int UnreadCount { get; } = int.TryParse(unread, out var count) ? count : 0;
+    public string Unread => UnreadBadge.Label(UnreadCount);
+    public string UnreadDescription => UnreadBadge.Description(UnreadCount);
     public bool Self { get; } = self;
     public IRelayCommand? OpenCommand { get; } = open;
 }
 
-public sealed partial class GroupMessageRow(Guid id, string author, string body, string when, bool mine, string kind = "text", bool deleted = false, Action<string>? apply = null, Func<Task>? download = null, IReadOnlyList<ChatReactionSummary>? reactions = null, string? replyPreview = null, Func<Task>? play = null) : ObservableObject
+public sealed partial class GroupMessageRow(Guid id, string author, string body, string when, bool mine, string kind = "text", bool deleted = false, Action<string>? apply = null, Func<Task>? download = null, IReadOnlyList<ChatReactionSummary>? reactions = null, string? replyPreview = null, Func<Task>? play = null, Guid senderId = default, DateTimeOffset createdAt = default, Func<Task>? copy = null) : ObservableObject
 {
     public Guid Id { get; } = id;
     public string Author { get; } = author;
+    public Guid SenderId { get; } = senderId;
+    public DateTimeOffset CreatedAt { get; } = createdAt;
     public string Body { get; } = body;
     public string Display { get; } = deleted ? "Сообщение удалено" : kind switch
     {
@@ -981,6 +1015,8 @@ public sealed partial class GroupMessageRow(Guid id, string author, string body,
     public bool Mine { get; } = mine;
     public string Kind { get; } = kind;
     public bool Deleted { get; } = deleted;
+    [ObservableProperty] private string dayHeader = "";
+    [ObservableProperty] private bool showAuthor;
     public bool IsReply => replyPreview is not null;
     public string ReplyPreview { get; } = replyPreview is null ? "" : "↳ " + replyPreview[..Math.Min(replyPreview.Length, 80)];
     public IReadOnlyList<ChatReactionSummary> ReactionSummaries { get; } = reactions ?? [];
@@ -992,6 +1028,8 @@ public sealed partial class GroupMessageRow(Guid id, string author, string body,
     public IAsyncRelayCommand? DownloadCommand { get; } = download is null ? null : new AsyncRelayCommand(download);
     public bool CanPlay => play is not null && !Deleted && Kind is ("voice" or "circle");
     public IAsyncRelayCommand? PlayCommand { get; } = play is null ? null : new AsyncRelayCommand(play);
+    public bool CanCopy => copy is not null && !Deleted && Kind == "text" && !string.IsNullOrWhiteSpace(Body);
+    public IAsyncRelayCommand? CopyCommand { get; } = copy is null ? null : new AsyncRelayCommand(copy);
     public string PlayCaption => Kind == "circle" ? "Смотреть кружок" : IsPlaying ? "Остановить" : "Слушать";
     [ObservableProperty] private bool isPlaying;
     [ObservableProperty] private Bitmap? preview;

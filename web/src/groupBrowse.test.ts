@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isNearLatest, matchesBrowseQuery } from "./groupBrowse.ts";
+import { isNearLatest, matchesBrowseQuery, unreadBadgeDescription, unreadBadgeText } from "./groupBrowse.ts";
 
 test("group and member search ignores case and surrounding spaces", () => {
   assert.equal(matchesBrowseQuery("  ВОЕН  ", "Группа Военмеха"), true);
@@ -13,4 +13,12 @@ test("group and member search ignores case and surrounding spaces", () => {
 test("jump to latest is needed when the chat is more than 48px from the bottom", () => {
   assert.equal(isNearLatest(500, 400, 920), true);
   assert.equal(isNearLatest(200, 400, 920), false);
+});
+
+test("unread badges cap the visible number but preserve the exact accessible count", () => {
+  assert.equal(unreadBadgeText(1), "1");
+  assert.equal(unreadBadgeText(99), "99");
+  assert.equal(unreadBadgeText(100), "99+");
+  assert.equal(unreadBadgeText(1000), "99+");
+  assert.equal(unreadBadgeDescription(100), "Непрочитанных сообщений: 100");
 });

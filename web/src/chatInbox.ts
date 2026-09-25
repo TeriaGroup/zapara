@@ -10,6 +10,16 @@ export type ChatInboxItem = {
   unread: number;
 };
 
+export function unreadChatTotal(rows: ChatInboxItem[]): number {
+  return rows.reduce((sum, row) => sum + Math.max(0, row.unread), 0);
+}
+
+export function filterChatInbox(rows: ChatInboxItem[], query: string, kind: ChatInboxItem["kind"] | "all"): ChatInboxItem[] {
+  const needle = query.trim().toLocaleLowerCase("ru-RU");
+  return rows.filter(row => (kind === "all" || row.kind === kind) &&
+    (!needle || `${row.title} ${row.preview || ""}`.toLocaleLowerCase("ru-RU").includes(needle)));
+}
+
 /** The two existing APIs stay separate; only the presentation list is shared. */
 export function mergeChatInbox(groups: GroupHome[], social: SocialHome | null): ChatInboxItem[] {
   const rows: ChatInboxItem[] = [];

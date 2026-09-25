@@ -11,6 +11,16 @@ export function orderedTopics(topics: GroupTopic[]): GroupTopic[] {
   return [...topics].sort((left, right) => rank(left) - rank(right) || Number(right.unread > 0) - Number(left.unread > 0));
 }
 
+export function nextUnreadTopic(topics: GroupTopic[], currentTopicId: string | null | undefined = undefined): GroupTopic | null {
+  const real = orderedTopics(topics).filter(topic => topic.topicId !== null || topic.kind === "chat");
+  const current = real.findIndex(topic => topic.topicId === currentTopicId);
+  for (let offset = 1; offset <= real.length; offset += 1) {
+    const index = (current + offset) % real.length;
+    if (index !== current && real[index].unread > 0) return real[index];
+  }
+  return null;
+}
+
 export type TopicBrowseFilter = { query: string; kind: "all" | "chat" | "ballots"; unreadOnly: boolean };
 
 export function filterTopics(topics: GroupTopic[], filter: TopicBrowseFilter): GroupTopic[] {

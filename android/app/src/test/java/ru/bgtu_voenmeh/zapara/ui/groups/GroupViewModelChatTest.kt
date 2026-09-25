@@ -409,6 +409,51 @@ class GroupViewModelChatTest {
         }
     }
 
+    @Test
+    fun loadingOlderMessagesDisablesDuplicateRequestsUntilPageArrives() = runTest(dispatcher) {
+        val http = server()
+        val normal = http.handler
+        val releaseOlder = CompletableDeferred<Unit>()
+        var olderRequests = 0
+        http.handler = { call ->
+            val path = call.url.substringAfter("/communities")
+            when (path) {
+                "/conversations/$group/messages" ->
+                    jsonReply("""{"messages":[${message(second, "Второе")},${message(third, "Третье")}],"hasMore":true}""")
+                "/conversations/$group/messages?before=$second" -> {
+                    olderRequests++
+                    releaseOlder.await()
+                    jsonReply("""{"messages":[${message(first, "Первое")}],"hasMore":false}""")
+                }
+                else -> normal(call)
+            }
+        }
+        val vm = viewModel(http)
+        runCurrent()
+        vm.onEvent(GroupEvent.Older)
+        vm.onEvent(GroupEvent.Older)
+        runCurrent()
+        assertTrue(vm.state.value.olderLoading)
+        assertEquals(1, olderRequests)
+        releaseOlder.complete(Unit)
+        runCurrent()
+        assertFalse(vm.state.value.olderLoading)
+        assertEquals(listOf(first, second, third), vm.state.value.messages.map { it.id })
+        vm.onEvent(GroupEvent.Back)
+        runCurrent()
+    }
+
+    @Test
+    fun messageDateKeepsYearForDaySeparators() = runTest(dispatcher) {
+        val vm = viewModel(server())
+        runCurrent()
+        assertEquals("23.09.2026", vm.state.value.messages.first().day)
+        assertEquals(user, vm.state.value.messages.first().senderId)
+        assertEquals(java.time.Instant.parse("2026-09-23T12:00:00Z"), vm.state.value.messages.first().createdAt)
+        vm.onEvent(GroupEvent.Back)
+        runCurrent()
+    }
+
     private fun viewModel(
         http: FakeHttp,
         opener: suspend (GroupMessageUi, ByteArray) -> Boolean = { _, _ -> false }

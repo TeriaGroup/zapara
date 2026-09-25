@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useSwipe } from "./swipe";
 import * as api from "./api";
@@ -13,8 +13,9 @@ import { HOMEWORK_FILE_LIMIT, checkHomeworkFile, compressHomeworkPhoto, deleteHo
 import { supportAppend, supportDraft, supportFiles } from "./support";
 import { holdActions, runHold } from "./hold";
 import { groupBubbleText, groupMediaDownload, GroupMediaError, type GroupMediaDownload } from "./group-media";
-import { canComposeChannel, canCreateBallot, isChatChannel } from "./channels";
-import { isNearLatest, matchesBrowseQuery } from "./groupBrowse";
+import { canComposeChannel, canCreateBallot, isChatChannel, nextUnreadTopic, orderedTopics, topicPreview } from "./channels";
+import { isNearLatest, matchesBrowseQuery, unreadBadgeDescription, unreadBadgeText } from "./groupBrowse";
+import { canCopyMessageText, filterMessages, messageDayKey, sameMessageCluster, type MessageBrowseFilter } from "./messageBrowse";
 import { GroupComposer } from "./group-composer";
 import { GroupInlineMedia } from "./group-inline-media";
 import { legalDocument, type LegalId } from "./legal";
@@ -26,7 +27,7 @@ import { GroupAdmin, titlesOf } from "./group-admin";
 import { ShareMenu } from "./share";
 import { Icon } from "./icons";
 import { VkMark, YandexMark } from "./brands";
-import type { BallotBoard, ChatMessage, Community, Conversation, FriendItem, GroupDesk, GroupHome, GroupHomeworkCopy, GroupTopic, HomeworkFile, Lesson, MapPlan, Teacher, TeacherLesson } from "./types";
+import type { BallotBoard, ChatMessage, Community, Conversation, FriendItem, GroupDesk, GroupHome, GroupHomeworkCopy, GroupTopic, GroupTopicPage, HomeworkFile, Lesson, MapPlan, Teacher, TeacherLesson } from "./types";
 
 function Head({ title, text, children }: { title: string; text?: string; children?: ReactNode }) {
   return (
@@ -651,6 +652,28 @@ export function CommunityPage() {
 
 const groupReactions = [["like", "👍"], ["heart", "❤️"], ["laugh", "😂"], ["wow", "😮"], ["sad", "😢"]] as const;
 
+function groupMessageDay(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso.slice(0, 10)
+    : date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function groupMessageTime(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
+function groupTopicWhen(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toDateString() === new Date().toDateString()
+    ? date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
+    : date.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
+
+const defaultMessageFilter: MessageBrowseFilter = { query: "", author: "all", kind: "all" };
+
 export function GroupPage() {
   const app = useApp();
   const location = useLocation();
@@ -667,9 +690,13 @@ export function GroupPage() {
   const [board, setBoard] = useState<BallotBoard | null>(null);
   const [channelBoardState, setChannelBoardState] = useState<{ topicId: string; value: BallotBoard | null; failed: boolean }>({ topicId: "", value: null, failed: false });
   const [votesOff, setVotesOff] = useState(false);
+  const [votesRetry, setVotesRetry] = useState(0);
+  const [channelVotesRetry, setChannelVotesRetry] = useState(0);
   const [selectedChat, setChat] = useState<Conversation | null>(null);
   const chat = home ? selectedChat : null;
   const [thread, setThread] = useState<GroupTopic | "list">("list");
+  const [topicPageState, setTopicPageState] = useState<{ key: string; value: GroupTopicPage | null }>({ key: "", value: null });
+  const [nextUnreadBusy, setNextUnreadBusy] = useState(false);
   const viewKey = chat && (chat.kind !== "group" || (thread !== "list" && isChatChannel(thread)))
     ? `${chat.conversationId}:${chat.kind === "group" && thread !== "list" ? thread.topicId ?? "general" : "direct"}`
     : "";
@@ -683,11 +710,17 @@ export function GroupPage() {
   const logRef = useRef(logState);
   const log = logState.key === viewKey ? logState.messages : [];
   const hasOlder = logState.key === viewKey && logState.hasOlder;
+  const [messageFilter, setMessageFilter] = useState<MessageBrowseFilter>(defaultMessageFilter);
+  const visibleLog = filterMessages(log, messageFilter, app.session?.user?.userId || "");
+  const messageFiltered = !!messageFilter.query.trim() || messageFilter.author !== "all" || messageFilter.kind !== "all";
+  const [copyNotice, setCopyNotice] = useState<{ key: string; text: string } | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const draft = drafts[viewKey] ?? "";
   const draftEpoch = useRef<Record<string, number>>({});
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [editing, setEditing] = useState<ChatMessage | null>(null);
+  const editReturnDraft = useRef<{ key: string; messageId: string; value: string } | null>(null);
+  const repliedMessage = replyTo ? log.find(item => item.messageId === replyTo) : null;
   const [menu, setMenu] = useState<string | null>(null);
   const [reactionFor, setReactionFor] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -722,6 +755,15 @@ export function GroupPage() {
     if (!viewKey) return;
     draftEpoch.current[viewKey] = (draftEpoch.current[viewKey] ?? 0) + 1;
     setDrafts(current => ({ ...current, [viewKey]: value }));
+  }
+
+  function cancelComposerContext() {
+    if (editing && editReturnDraft.current?.key === viewKey) {
+      setDraft(editReturnDraft.current.value);
+      editReturnDraft.current = null;
+    }
+    setEditing(null);
+    setReplyTo(null);
   }
 
   function clearLog() {
@@ -760,7 +802,9 @@ export function GroupPage() {
       setFocusChat(false);
       updateDesk(null);
       setCanManageChannels(false);
+      setTopicPageState({ key: "", value: null });
       setBoard(null);
+      setVotesOff(false);
       setChannelBoardState({ topicId: "", value: null, failed: false });
       clearLog();
     };
@@ -794,7 +838,15 @@ export function GroupPage() {
     );
     return () => { stop = true; };
   }, [app.session, app.groupId, selectedCommunityId, selectedConversationId, reloadEpoch]);
-  useEffect(() => { setReplyTo(null); setEditing(null); setMenu(null); setReactionFor(null); }, [viewKey]);
+  useEffect(() => {
+    const previousEdit = editReturnDraft.current;
+    if (previousEdit) {
+      setDrafts(current => ({ ...current, [previousEdit.key]: previousEdit.value }));
+      editReturnDraft.current = null;
+    }
+    setReplyTo(null); setEditing(null); setMenu(null); setReactionFor(null);
+  }, [viewKey]);
+  useEffect(() => { setMessageFilter(defaultMessageFilter); setCopyNotice(null); }, [viewKey]);
   useEffect(() => { setAtLatest(true); }, [viewKey]);
   useEffect(() => {
     if (atLatest && logBoxRef.current) logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
@@ -845,6 +897,9 @@ export function GroupPage() {
     };
   }, [viewKey]);
   const communityId = home?.communityId ?? "";
+  const topicPage = topicPageState.key === communityId ? topicPageState.value : null;
+  const nextUnread = chat?.kind === "group" && thread !== "list" && topicPage
+    ? nextUnreadTopic(topicPage.topics, thread.topicId) : null;
   useEffect(() => {
     if (!app.session?.authenticated || !communityId) return;
     let stop = false;
@@ -864,6 +919,7 @@ export function GroupPage() {
     const refresh = () => {
       void api.topics(communityId).then(page => {
         if (stop) return;
+        setTopicPageState({ key: communityId, value: page });
         setCanManageChannels(page.canManageChannels);
         const selected = page.topics.find(item => item.topicId === selectedTopicId);
         if (selected) setThread(selected);
@@ -891,18 +947,19 @@ export function GroupPage() {
     void pull();
     const timer = window.setInterval(pull, 4000);
     return () => { stop = true; window.clearInterval(timer); };
-  }, [app.session?.authenticated, communityId]);
+  }, [app.session?.authenticated, communityId, votesRetry]);
   useEffect(() => {
     if (!communityId || !activeBallotTopicId) return;
     const topicId = activeBallotTopicId;
     let stop = false;
     const pull = () => api.ballots(communityId, topicId).then(value => {
       if (!stop) setChannelBoardState({ topicId, value, failed: false });
-    }).catch(() => { if (!stop) setChannelBoardState({ topicId, value: null, failed: true }); });
+    }).catch(() => { if (!stop) setChannelBoardState(current => current.topicId === topicId
+      ? { ...current, failed: true } : { topicId, value: null, failed: true }); });
     void pull();
     const timer = window.setInterval(pull, 4000);
     return () => { stop = true; window.clearInterval(timer); };
-  }, [communityId, activeBallotTopicId]);
+  }, [communityId, activeBallotTopicId, channelVotesRetry]);
   function choose(kind: "image" | "video" | "file") {
     if (!chat || !viewKey) return;
     const input = fileRef.current;
@@ -1001,6 +1058,8 @@ export function GroupPage() {
     const sentDraftEpoch = draftEpoch.current[key] ?? 0;
     const target = editing;
     const sentReply = replyTo;
+    const previousDraft = target && editReturnDraft.current?.key === key && editReturnDraft.current.messageId === target.messageId
+      ? editReturnDraft.current.value : null;
     sendPending.current.add(key);
     markLogChanged(key);
     try {
@@ -1011,7 +1070,13 @@ export function GroupPage() {
           : await api.sendMessage(chat.conversationId, body, sentReply ?? undefined);
       markLogChanged(key);
       updateLog(key, [message]);
-      setDrafts(current => clearSentGroupDraft(current, key, body, draftEpoch.current[key] === sentDraftEpoch));
+      setDrafts(current => {
+        const unchanged = draftEpoch.current[key] === sentDraftEpoch;
+        const cleared = clearSentGroupDraft(current, key, body, unchanged);
+        return target && previousDraft !== null && unchanged ? { ...cleared, [key]: previousDraft } : cleared;
+      });
+      if (target && editReturnDraft.current?.key === key && editReturnDraft.current.messageId === target.messageId)
+        editReturnDraft.current = null;
       if (viewKeyRef.current === key) {
         if (target) setEditing(current => current?.messageId === target.messageId ? null : current);
         setReplyTo(current => current === sentReply ? null : current);
@@ -1027,14 +1092,44 @@ export function GroupPage() {
       .then(next => { markLogChanged(key); updateLog(key, [next]); if (viewKeyRef.current === key) setReactionFor(null); })
       .catch(() => { if (viewKeyRef.current === key) setError("Реакция не сохранилась"); });
   }
+  async function openNextUnread() {
+    if (!communityId || chat?.kind !== "group" || thread === "list" || nextUnreadBusy) return;
+    const ticket = selectionEpoch.current;
+    setNextUnreadBusy(true);
+    try {
+      const page = await api.topics(communityId);
+      if (selectionEpoch.current !== ticket || groupViewKeyRef.current !== groupViewKey) return;
+      setTopicPageState({ key: communityId, value: page });
+      const next = nextUnreadTopic(page.topics, thread.topicId);
+      if (!next) { setError("Непрочитанных каналов нет"); return; }
+      selectionEpoch.current += 1;
+      clearLog();
+      setCanManageChannels(page.canManageChannels);
+      setThread(next);
+    } catch { if (groupViewKeyRef.current === groupViewKey) setError("Не удалось проверить непрочитанные каналы"); }
+    finally { setNextUnreadBusy(false); }
+  }
+  async function copyGroupMessage(message: ChatMessage) {
+    if (!canCopyMessageText(message)) return;
+    const key = viewKey;
+    setMenu(null);
+    try {
+      await navigator.clipboard.writeText(message.body);
+      if (viewKeyRef.current === key) setCopyNotice({ key, text: "Текст скопирован" });
+    } catch {
+      if (viewKeyRef.current === key) setCopyNotice({ key, text: "Не удалось скопировать текст" });
+    }
+  }
   if (!app.session?.authenticated) return <section className="page"><div className="card empty"><h1>Группа</h1><p>Войдите в аккаунт, чтобы открыть группу, разделы чата и голосования.</p><Link className="btn primary" to="/settings">Открыть настройки</Link></div></section>;
   return (
     <section className="page">
       <Head title="Группа" text={home ? `${home.name}${home.groupName ? " · " + home.groupName : ""}` : error || "Одногруппники и чат"} />
       {!home && error && <button className="btn" type="button" onClick={() => setReloadEpoch(value => value + 1)}>Повторить загрузку группы</button>}
       {home && desk && desk.mine.length > 0 && <GroupAdmin communityId={home.communityId} classmates={home.classmates} desk={desk} onChange={updateDesk} onReload={async () => { const [loaded, office] = await Promise.all([api.groupHome(home.communityId), api.groupDesk(home.communityId)]); setHome(loaded); updateDesk(office); }} onError={setError} />}
+      {home && !board && !votesOff && <p className="muted" role="status">Загрузка голосований…</p>}
+      {home && votesOff && <div className="banner row" role="status"><span>{board ? "Голосования не обновились. Показана предыдущая доска." : "Голосования сейчас не открылись. Чат группы на месте."}</span>
+        <button className="btn" type="button" onClick={() => setVotesRetry(value => value + 1)}>Повторить</button></div>}
       {home && board && <BallotBoardView communityId={home.communityId} board={board} classmates={home.classmates} roles={desk?.roles ?? []} onChange={setBoard} onError={setError} />}
-      {home && !board && votesOff && <p className="muted">Голосования сейчас не открылись. Чат группы на месте.</p>}
       {home && (
         <div className={"grid-2 split" + (focusChat ? " focus" : "")}>
           <div className="people split-list">
@@ -1042,7 +1137,24 @@ export function GroupPage() {
               <input type="search" value={memberSearch} onChange={event => setMemberSearch(event.target.value)}
                 placeholder="Имя или логин" />
             </label>
-            <button className="person" type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setChat(home.groupChat); setThread("list"); setFocusChat(true); }}><span><b>Чат группы</b><div className="muted">Разделы и общий поток</div></span>{home.groupChat.unread > 0 && <span className="chip">{home.groupChat.unread}</span>}</button>
+            <button className="person" type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setChat(home.groupChat); setThread("list"); setFocusChat(true); }}><span><b>Чат группы</b><div className="muted">Разделы и общий поток</div></span>{home.groupChat.unread > 0 && <span className="chip" aria-label={unreadBadgeDescription(home.groupChat.unread)}>{unreadBadgeText(home.groupChat.unread)}</span>}</button>
+            {chat?.kind === "group" && thread !== "list" && topicPage && <div className="group-quick-topics">
+              <h2>Каналы группы</h2>
+              {orderedTopics(topicPage.topics).filter(topic => topic.topicId !== null || topic.kind === "chat").map(topic => {
+                const active = topic.topicId === thread.topicId && topic.kind === thread.kind;
+                return <button key={`${topic.kind}:${topic.topicId ?? "general"}`} className={active ? "group-quick-topic active" : "group-quick-topic"}
+                  type="button" aria-current={active ? "page" : undefined} onClick={() => {
+                    if (active) return;
+                    selectionEpoch.current += 1;
+                    clearLog();
+                    setThread(topic);
+                  }}>
+                  <span className="group-quick-topic-top"><b>{topic.icon} {topic.title}</b><span className="muted">{groupTopicWhen(topic.lastAt)}</span></span>
+                  <span className="group-quick-topic-bottom"><span className="muted">{topicPreview(topic)}</span>
+                    {topic.unread > 0 && <span className="chip" aria-label={unreadBadgeDescription(topic.unread)}>{unreadBadgeText(topic.unread)}</span>}</span>
+                </button>;
+              })}
+            </div>}
             {home.classmates.filter(person => matchesBrowseQuery(memberSearch, person.displayName, person.username)).map(person => (
               <button className="person" key={person.userId} type="button" disabled={person.self} onClick={() => {
                 if (!home || person.self) return;
@@ -1071,46 +1183,86 @@ export function GroupPage() {
               <div className="row">
                 <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; setThread("list"); }}>Все разделы</button>
                 <h2>{thread.icon} {thread.title}</h2>
+                <button className="btn" type="button" disabled={!nextUnread || nextUnreadBusy} onClick={() => void openNextUnread()}
+                  title={nextUnread ? `Открыть: ${nextUnread.title}` : "Непрочитанных каналов нет"}>{nextUnreadBusy ? "Проверяем…" : "Следующий непрочитанный"}</button>
               </div>
               {thread.description && <p className="muted">{thread.description}</p>}
               {activeBallotTopicId && channelBoard && <BallotBoardView key={activeBallotTopicId} communityId={home.communityId} board={channelBoard}
                 classmates={home.classmates} roles={desk?.roles ?? []} topicId={activeBallotTopicId} title={thread.title}
                 canCreate={canCreateBallot(thread, canManageChannels)}
                 onChange={value => setChannelBoardState({ topicId: activeBallotTopicId, value, failed: false })} onError={setError} />}
-              {!channelBoard && <p className="muted">{channelBoardFailed ? "Голосования не открылись. Попробуйте позже." : "Загрузка голосований…"}</p>}
+              {channelBoardFailed && <div className="banner row" role="status"><span>{channelBoard ? "Голосования не обновились. Показана предыдущая доска." : "Голосования не открылись."}</span>
+                <button className="btn" type="button" onClick={() => setChannelVotesRetry(value => value + 1)}>Повторить</button></div>}
+              {!channelBoard && !channelBoardFailed && <p className="muted" role="status">Загрузка голосований…</p>}
             </>}
             {chat && (chat.kind !== "group" || (thread !== "list" && isChatChannel(thread))) && <>
             <div className="row">
               {chat?.kind === "group" && <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setThread("list"); }}>Все разделы</button>}
               <h2>{chat?.kind === "group" && thread !== "list" ? `${thread.icon} ${thread.title}` : (chat?.title || "Чат")}</h2>
+              {chat.kind === "group" && <button className="btn" type="button" disabled={!nextUnread || nextUnreadBusy} onClick={() => void openNextUnread()}
+                title={nextUnread ? `Открыть: ${nextUnread.title}` : "Непрочитанных каналов нет"}>{nextUnreadBusy ? "Проверяем…" : "Следующий непрочитанный"}</button>}
             </div>
             {chat.kind === "group" && thread !== "list" && thread.description && <p className="muted">{thread.description}</p>}
+            <div className="message-browse" role="group" aria-label="Поиск и фильтры сообщений">
+              <label className="field">Поиск сообщения
+                <input type="search" value={messageFilter.query} onChange={event => setMessageFilter(current => ({ ...current, query: event.target.value }))}
+                  placeholder="Текст загруженного сообщения" />
+              </label>
+              <label className="field">Автор
+                <select value={messageFilter.author} onChange={event => setMessageFilter(current => ({ ...current, author: event.target.value as MessageBrowseFilter["author"] }))}>
+                  <option value="all">Все</option><option value="mine">Мои</option><option value="others">Других</option>
+                </select>
+              </label>
+              <label className="field">Вид
+                <select value={messageFilter.kind} onChange={event => setMessageFilter(current => ({ ...current, kind: event.target.value as MessageBrowseFilter["kind"] }))}>
+                  <option value="all">Все</option><option value="text">Текст</option><option value="visual">Фото и видео</option>
+                  <option value="file">Документы</option><option value="audio">Голос и кружки</option>
+                </select>
+              </label>
+              <div className="row message-browse-summary"><span className="muted">В загруженных сообщениях: {visibleLog.length} из {log.length}</span>
+                {messageFiltered && <button className="btn" type="button" onClick={() => setMessageFilter(defaultMessageFilter)}>Сбросить фильтры</button>}
+              </div>
+            </div>
+            {copyNotice?.key === viewKey && <p className="muted copy-notice" role="status">{copyNotice.text}</p>}
             <div className="log" ref={logBoxRef} onScroll={event => {
               const node = event.currentTarget;
               setAtLatest(isNearLatest(node.scrollTop, node.clientHeight, node.scrollHeight));
             }}>
-              {hasOlder && <button className="btn" type="button" disabled={loadingOlder.includes(viewKey)} onClick={() => void earlier()}>{loadingOlder.includes(viewKey) ? "Загрузка…" : "Раньше"}</button>}
-              {log.map(message => {
+              {hasOlder && (visibleLog.length > 0 || !messageFiltered) && <button className="btn" type="button" disabled={loadingOlder.includes(viewKey)} onClick={() => void earlier()}>{loadingOlder.includes(viewKey) ? "Загрузка…" : "Раньше"}</button>}
+              {visibleLog.length === 0 && <div className="empty message-empty">{messageFiltered ? "В загруженных сообщениях совпадений нет." : "Сообщений пока нет."}
+                {messageFiltered && <button className="btn" type="button" onClick={() => setMessageFilter(defaultMessageFilter)}>Сбросить фильтры</button>}
+                {hasOlder && <button className="btn" type="button" disabled={loadingOlder.includes(viewKey)} onClick={() => void earlier()}>{loadingOlder.includes(viewKey) ? "Загрузка…" : "Загрузить раньше"}</button>}
+              </div>}
+              {visibleLog.map((message, index) => {
                 const mine = message.senderId === app.session?.user?.userId;
                 const kind = message.kind || "text";
                 const canWrite = chat.kind !== "group" || (thread !== "list" && canComposeChannel(thread));
-                const actions = holdActions(kind, mine, !!message.deleted, menu === message.messageId)
+                const actions = [...holdActions(kind, mine, !!message.deleted, menu === message.messageId),
+                  ...(menu === message.messageId && canCopyMessageText(message) ? ["copy"] : [])]
                   .filter(action => canWrite || action !== "reply" && action !== "edit");
                 const download = chat && groupMediaDownload(chat.conversationId, message);
+                const previous = visibleLog[index - 1];
+                const newDay = !previous || messageDayKey(previous.createdAt) !== messageDayKey(message.createdAt);
+                const grouped = !messageFiltered && !!previous && sameMessageCluster(previous, message);
                 return (
-                  <article key={message.messageId} data-hold={kind} className={"bubble" + (mine ? " mine" : "") + (kind === "circle" && !message.deleted ? " round" : "")}
-                    onPointerDown={event => { heldOpen.current = false; if (holdTimer.current) window.clearTimeout(holdTimer.current); if (event.target instanceof Element && event.target.closest(".group-inline-media, .group-media-download")) return; holdTimer.current = window.setTimeout(() => { holdTimer.current = 0; heldOpen.current = true; setMenu(message.messageId); }, 450); }}
-                    onPointerUp={event => { if (holdTimer.current) window.clearTimeout(holdTimer.current); if (heldOpen.current && !(event.target instanceof Element && event.target.closest(".actions, .group-inline-media, .group-media-download"))) event.preventDefault(); }}
+                  <Fragment key={message.messageId}>
+                  {newDay && <div className="message-day" role="separator">{groupMessageDay(message.createdAt)}</div>}
+                  <article data-hold={kind} className={"bubble" + (mine ? " mine" : "") + (grouped ? " grouped" : "") + (kind === "circle" && !message.deleted ? " round" : "")}
+                    aria-label={`Сообщение: ${message.senderName}`}
+                    onPointerDown={event => { heldOpen.current = false; if (holdTimer.current) window.clearTimeout(holdTimer.current); if (event.target instanceof Element && event.target.closest(".actions, .react, .react-chips, .group-inline-media, .group-media-download, .message-action-toggle")) return; holdTimer.current = window.setTimeout(() => { holdTimer.current = 0; heldOpen.current = true; setMenu(message.messageId); }, 450); }}
+                    onPointerUp={event => { if (holdTimer.current) window.clearTimeout(holdTimer.current); if (heldOpen.current && !(event.target instanceof Element && event.target.closest(".actions, .group-inline-media, .group-media-download, .message-action-toggle"))) event.preventDefault(); }}
                     onPointerLeave={() => { if (holdTimer.current) window.clearTimeout(holdTimer.current); }}
-                    onClickCapture={event => { if (event.target instanceof Element && event.target.closest(".actions, .group-inline-media")) return; if (event.target instanceof Element && event.target.closest(".group-media-download") && !heldOpen.current) return; if (heldOpen.current || menu === message.messageId) { event.preventDefault(); event.stopPropagation(); } }}>
-                    {message.senderId !== app.session?.user?.userId && <b>{message.senderName}</b>}
+                    onClickCapture={event => { if (event.target instanceof Element && event.target.closest(".actions, .group-inline-media, .message-action-toggle")) return; if (event.target instanceof Element && event.target.closest(".group-media-download") && !heldOpen.current) return; if (heldOpen.current || menu === message.messageId) { event.preventDefault(); event.stopPropagation(); } }}>
+                    {!mine && !grouped && <b>{message.senderName}</b>}
                     {message.replyTo && <div className="muted">↳ {log.find(item => item.messageId === message.replyTo)?.body || "Сообщение"}</div>}
                     <div>{download
                       ? download.kind === "file"
                         ? <button className="group-media-download" type="button" disabled={mediaBusy.includes(download.href)} onClick={() => { setMenu(null); void downloadMedia(download); }}>{mediaBusy.includes(download.href) ? "Загрузка…" : download.label}</button>
                         : <GroupInlineMedia download={download} busy={mediaBusy.includes(download.href)} onDownload={() => { setMenu(null); void downloadMedia(download); }} />
                       : groupBubbleText(message)}</div>
-                    <div className="muted">{message.createdAt.slice(0, 16).replace("T", " ")}</div>
+                    <div className="message-meta"><span className="muted" title={new Date(message.createdAt).toLocaleString("ru-RU")}>{groupMessageTime(message.createdAt)}</span>
+                      {!message.deleted && <button className="tool message-action-toggle" type="button" aria-label={`Действия с сообщением: ${message.senderName}`}
+                        aria-expanded={menu === message.messageId} onClick={() => setMenu(current => current === message.messageId ? null : message.messageId)}><Icon name="more" size={16} /></button>}</div>
                     {!message.deleted && !!message.reactions?.length && <div className="react-chips">
                       {message.reactions.map(reaction => <button key={reaction.emoji} type="button" className={reaction.mine ? "on" : ""}
                         onClick={() => reactTo(message, reaction.emoji)}>{groupReactions.find(item => item[0] === reaction.emoji)?.[1] || reaction.emoji} {reaction.count}</button>)}
@@ -1118,20 +1270,26 @@ export function GroupPage() {
                     {actions.length > 0 && (
                       <div className="actions">
                         {actions.map(action => (
-                          <button key={action} type="button" onClick={() => runHold(action, {
-                            reply() { setMenu(null); setEditing(null); setReplyTo(message.messageId); },
+                          <button key={action} type="button" onClick={() => action === "copy" ? void copyGroupMessage(message) : runHold(action, {
+                            reply() { setMenu(null); cancelComposerContext(); setReplyTo(message.messageId); },
                             reaction() { setMenu(null); setReactionFor(message.messageId); },
-                            edit() { setMenu(null); setReplyTo(null); setEditing(message); setDraft(message.body); },
+                            edit() {
+                              setMenu(null);
+                              const savedDraft = editReturnDraft.current?.key === viewKey ? editReturnDraft.current.value : draft;
+                              editReturnDraft.current = { key: viewKey, messageId: message.messageId, value: savedDraft };
+                              setReplyTo(null); setEditing(message); setDraft(message.body);
+                            },
                             delete() {
                               setMenu(null);
                               if (!chat) return;
+                              if (!window.confirm("Удалить сообщение для участников? Восстановить его нельзя.")) return;
                               const key = viewKey;
                               markLogChanged(key);
                               void api.deleteGroupMessage(chat.conversationId, message.messageId)
                                 .then(next => { markLogChanged(key); updateLog(key, [next]); })
                                 .catch(() => { if (viewKeyRef.current === key) setError("Сообщение не удалилось"); });
                             },
-                          })}>{action === "reply" ? "Ответить" : action === "reaction" ? "Реакция" : action === "edit" ? "Изменить" : "Удалить"}</button>
+                          })}>{action === "reply" ? "Ответить" : action === "reaction" ? "Реакция" : action === "edit" ? "Изменить" : action === "copy" ? "Копировать текст" : "Удалить"}</button>
                         ))}
                       </div>
                     )}
@@ -1141,6 +1299,7 @@ export function GroupPage() {
                         onClick={() => reactTo(message, code)}>{mark}</button>)}
                     </div>}
                   </article>
+                  </Fragment>
                 );
               })}
             </div>
@@ -1153,8 +1312,9 @@ export function GroupPage() {
             {chat.kind === "group" && thread !== "list" && !canComposeChannel(thread)
               ? <p className="muted channel-readonly">Писать здесь могут только управляющие разделами.</p>
               : <GroupComposer key={viewKey} draft={draft} editing={!!editing} replyTo={!!replyTo}
+              contextText={editing?.body ?? (replyTo ? (repliedMessage ? `${repliedMessage.senderName}: ${repliedMessage.body || "Сообщение"}` : "Сообщение") : "")}
               allowMedia={true}
-              onDraft={setDraft} onSubmit={event => void submit(event)} onChoose={choose}
+              onDraft={setDraft} onSubmit={event => void submit(event)} onCancelContext={cancelComposerContext} onChoose={choose}
               onRecorded={(kind, name, blob, durationMs) => sendGroupAttachment(viewKey, chat.conversationId, kind, name, blob, replyTo, selectionEpoch.current, durationMs,
                 chat.kind === "group" && thread !== "list" ? thread.topicId ?? undefined : undefined)}
               onError={setError} />}

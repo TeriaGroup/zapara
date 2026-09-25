@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mergeChatInbox } from "./chatInbox.ts";
+import { filterChatInbox, mergeChatInbox, unreadChatTotal } from "./chatInbox.ts";
 import type { Conversation, GroupHome, SocialHome } from "./types.ts";
 
 function conversation(id: string, kind: "group" | "direct", lastAt: string | null, unread: number): Conversation {
@@ -31,4 +31,20 @@ test("empty conversations remain reachable after active ones", () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].conversationId, "empty-group");
   assert.equal(rows[0].lastAt, null);
+});
+
+test("inbox search, source filter and unread total preserve original rows", () => {
+  const group: GroupHome = { communityId: "study-a", name: "Группа А", groupName: "А863С",
+    groupChat: conversation("group", "group", "2026-09-24T12:00:00Z", 2),
+    classmates: [], directs: [conversation("classmate", "direct", null, 0)] };
+  const social: SocialHome = { code: "ABCDEFGH", incoming: [], outgoing: [], friends: [
+    { userId: "friend", username: "anna", displayName: "Анна", conversationId: "personal",
+      lastBody: "Привет", lastAt: null, unread: 3 },
+  ] };
+  const rows = mergeChatInbox([group], social);
+  assert.equal(unreadChatTotal(rows), 5);
+  assert.deepEqual(filterChatInbox(rows, "  ПРИВЕТ ", "personal").map(row => row.conversationId), ["personal"]);
+  assert.deepEqual(filterChatInbox(rows, "", "classmate").map(row => row.conversationId), ["classmate"]);
+  assert.equal(filterChatInbox(rows, "никто", "all").length, 0);
+  assert.equal(rows.length, 3);
 });

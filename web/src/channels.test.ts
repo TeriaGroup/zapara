@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ballotBoardAfterMutation, canComposeChannel, canCreateBallot, channelAccentColor, filterTopics, isChatChannel, orderedTopics, topicPreview } from "./channels.ts";
+import { ballotBoardAfterMutation, canComposeChannel, canCreateBallot, channelAccentColor, filterTopics, isChatChannel, nextUnreadTopic, orderedTopics, topicPreview } from "./channels.ts";
 import type { BallotBoard, GroupTopic } from "./types.ts";
 
 const chat: GroupTopic = {
@@ -72,4 +72,18 @@ test("accent colors use a fixed palette and leave default channels with their ex
   assert.equal(channelAccentColor("blue", "Учёба"), "#3d5a80");
   assert.equal(channelAccentColor("red", "Учёба"), "#6b4030");
   assert.equal(channelAccentColor("default", "Учёба"), "#3d5a6b");
+});
+
+test("next unread advances through real topics, skips the aggregate and wraps past the current one", () => {
+  const general = { ...chat, topicId: null, title: "Общий поток", unread: 2 };
+  const quiet = { ...chat, topicId: "quiet", unread: 0 };
+  const next = { ...chat, topicId: "next", unread: 3 };
+  const ballot = { ...chat, topicId: "poll", kind: "ballots" as const, unread: 7 };
+  const aggregate = { ...chat, topicId: null, kind: "ballots" as const, unread: 9 };
+  const topics = [quiet, ballot, next, general, aggregate];
+  assert.equal(nextUnreadTopic(topics)?.topicId, null);
+  assert.equal(nextUnreadTopic(topics, null)?.topicId, "poll");
+  assert.equal(nextUnreadTopic(topics, "poll")?.topicId, "next");
+  assert.equal(nextUnreadTopic(topics, "next")?.topicId, null);
+  assert.equal(nextUnreadTopic([quiet, { ...ballot, unread: 0 }, aggregate], null), null);
 });

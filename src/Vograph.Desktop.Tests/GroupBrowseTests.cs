@@ -41,6 +41,32 @@ public sealed class GroupBrowseTests
         Assert.Empty(GroupBrowse.Channels(rows, "нет совпадений", "all", false));
     }
 
+    [Fact]
+    public void Chat_channel_activity_names_last_sender_and_local_event_time()
+    {
+        var row = new GroupChannelRow(new GroupTopicResponse(Guid.NewGuid(), "Учёба", "💬",
+            "Следующая пара", "Аня", new DateTimeOffset(2026, 9, 25, 10, 30, 0, TimeSpan.Zero),
+            1, false), new RelayCommand(() => { }));
+
+        Assert.Contains("Аня", row.ActivityText);
+        Assert.Contains("25.09", row.ActivityText);
+        var historical = new GroupChannelRow(new GroupTopicResponse(Guid.NewGuid(), "Архив", "💬",
+            "Старое", "Борис", new DateTimeOffset(2020, 3, 1, 9, 0, 0, TimeSpan.Zero),
+            0, false), new RelayCommand(() => { }));
+        Assert.Contains("2020", historical.ActivityText);
+    }
+
+    [Fact]
+    public void Channel_and_group_direct_unread_badges_cap_without_losing_accessible_count()
+    {
+        var channel = Topic(Guid.NewGuid(), "Учёба", "chat", 120);
+        var direct = new GroupPersonRow("Аня", "", "", "", "120", false, null);
+        Assert.Equal("99+", channel.Unread);
+        Assert.Equal("Непрочитанных сообщений: 120", channel.UnreadDescription);
+        Assert.Equal("99+", direct.Unread);
+        Assert.Equal("Непрочитанных сообщений: 120", direct.UnreadDescription);
+    }
+
     private static GroupChannelRow Topic(Guid? id, string title, string kind, int unread,
         bool pinned = false, string description = "")
         => new(new GroupTopicResponse(id, title, "💬", null, null, null, unread, false,

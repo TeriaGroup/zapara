@@ -6,12 +6,23 @@ import ru.bgtu_voenmeh.zapara.data.api.*
 import ru.bgtu_voenmeh.zapara.data.communities.CommunityValidation
 import java.time.Instant
 
-data class InboxRow(val id: String, val title: String, val communityId: String? = null, val lastBody: String? = null, val lastAt: Instant? = null, val unread: Int = 0, val subtitle: String = if (communityId == null) "Личный чат" else "Учебная группа")
+enum class InboxSource { Group, GroupDirect, Friend }
+data class InboxRow(
+    val id: String,
+    val title: String,
+    val communityId: String? = null,
+    val lastBody: String? = null,
+    val lastAt: Instant? = null,
+    val unread: Int = 0,
+    val subtitle: String = if (communityId == null) "Личный чат" else "Учебная группа",
+    val source: InboxSource = if (communityId == null) InboxSource.Friend else InboxSource.Group
+)
 fun orderInbox(rows: List<InboxRow>): List<InboxRow> = rows.distinctBy { it.id }.sortedWith(compareByDescending<InboxRow> { it.lastAt }.thenByDescending { it.unread > 0 }.thenBy { it.title })
 fun groupInboxRows(home: ru.bgtu_voenmeh.zapara.data.communities.GroupHome): List<InboxRow> =
     (listOf(home.groupChat) + home.directs).map { conversation ->
         InboxRow(conversation.conversationId, conversation.title, home.communityId, conversation.lastBody, conversation.lastAt, conversation.unread,
-            if (conversation.kind == "direct") "Личный чат · ${home.groupName ?: home.name}" else "Учебная группа")
+            if (conversation.kind == "direct") "Личный чат · ${home.groupName ?: home.name}" else "Учебная группа",
+            if (conversation.kind == "direct") InboxSource.GroupDirect else InboxSource.Group)
     }
 data class SocialInvite(val id: String, val name: String)
 data class SocialHome(val code: String, val friends: List<InboxRow>, val incoming: List<SocialInvite>, val outgoing: List<SocialInvite>)

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import * as api from "./api";
-import { mergeChatInbox, sortChatInbox, type ChatInboxItem } from "./chatInbox";
+import { filterChatInbox, mergeChatInbox, sortChatInbox, unreadChatTotal, type ChatInboxItem } from "./chatInbox";
 import { PeoplePanel } from "./people";
 import { useApp } from "./store";
 import type { GroupHome, SocialHome } from "./types";
@@ -11,13 +11,35 @@ function destination(item: ChatInboxItem): string {
   return `/group?communityId=${encodeURIComponent(item.communityId || "")}&conversationId=${encodeURIComponent(item.conversationId)}`;
 }
 
+function inboxTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toDateString() === new Date().toDateString()
+    ? date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
+    : date.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+const inboxKinds: { value: ChatInboxItem["kind"] | "all"; label: string }[] = [
+  { value: "all", label: "Все" }, { value: "group", label: "Группы" },
+  { value: "classmate", label: "Одногруппники" }, { value: "personal", label: "Друзья по коду" },
+];
+
+function inboxSource(kind: ChatInboxItem["kind"]): string {
+  return kind === "group" ? "Группа" : kind === "classmate" ? "Чат одногруппника" : "Друг по коду";
+}
+
 export function ChatInboxPage() {
   const app = useApp();
   const [rows, setRows] = useState<ChatInboxItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState<ChatInboxItem["kind"] | "all">("all");
   const accountId = app.session?.authenticated ? app.session.user?.userId : null;
+  const visible = filterChatInbox(rows, query, kind);
+  const unread = unreadChatTotal(rows);
+  const filtered = !!query.trim() || kind !== "all";
 
   useEffect(() => {
     if (!accountId) { setRows([]); setLoading(false); return; }
@@ -58,19 +80,36 @@ export function ChatInboxPage() {
   </div></section>;
 
   return <section className="page inbox">
-    <div className="page-head"><h1>Чат</h1><p>Сообщения группы и личные беседы в одном месте.</p></div>
+    <div className="page-head"><div><h1>Чат</h1><p className="sub">Сообщения группы и личные беседы в одном месте.</p></div>
+      {unread > 0 && <span className="chip inbox-total" aria-label={`Непрочитанных сообщений: ${unread}`}>Непрочитано: {unread > 99 ? "99+" : unread}</span>}</div>
     <div className="row">
       <Link className="btn" to="/chat/people">Код, запросы и люди</Link>
       <button className="btn" type="button" onClick={() => setRetry(value => value + 1)}>Обновить</button>
     </div>
     {error && <div className="banner" role="status">{error}</div>}
+    {rows.length > 0 && <div className="card stack inbox-browse">
+      <label className="field">Поиск беседы
+        <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Название или последнее сообщение" />
+      </label>
+      <div className="row" role="group" aria-label="Источник беседы">
+        {inboxKinds.map(option => <button key={option.value} className={kind === option.value ? "btn primary" : "btn"} type="button"
+          aria-pressed={kind === option.value} onClick={() => setKind(option.value)}>{option.label}</button>)}
+      </div>
+      <div className="row"><span className="muted">Показано {visible.length} из {rows.length}</span>
+        {filtered && <button className="btn" type="button" onClick={() => { setQuery(""); setKind("all"); }}>Сбросить</button>}
+      </div>
+    </div>}
     {loading && rows.length === 0 && <p className="muted">Загружаем беседы…</p>}
     {!loading && rows.length === 0 && <div className="card empty">Пока нет бесед. Вступите в учебную группу или добавьте человека по коду.</div>}
+    {rows.length > 0 && visible.length === 0 && <div className="card empty">По запросу бесед нет.
+      <button className="btn" type="button" onClick={() => { setQuery(""); setKind("all"); }}>Показать все</button>
+    </div>}
     <div className="people">
-      {rows.map(item => <Link className="person" key={`${item.kind}:${item.conversationId}`} to={destination(item)}>
-        <span><b>{item.title}</b><span className="muted">{item.preview || (item.kind === "group" ? "Чат группы" : "Нет сообщений")}</span></span>
-        <span className="inbox-meta">{item.lastAt && <span className="muted">{item.lastAt.slice(0, 16).replace("T", " ")}</span>}
-          {item.unread > 0 && <span className="chip">{item.unread}</span>}</span>
+      {visible.map(item => <Link className="person" key={`${item.kind}:${item.conversationId}`} to={destination(item)}>
+        <span><span className="muted inbox-source">{inboxSource(item.kind)}</span><b>{item.title}</b>
+          <span className="muted">{item.preview || (item.kind === "group" ? "Чат группы" : "Нет сообщений")}</span></span>
+        <span className="inbox-meta">{item.lastAt && <span className="muted" title={new Date(item.lastAt).toLocaleString("ru-RU")}>{inboxTime(item.lastAt)}</span>}
+          {item.unread > 0 && <span className="chip" aria-label={`Непрочитанных сообщений: ${item.unread}`}>{item.unread > 99 ? "99+" : item.unread}</span>}</span>
       </Link>)}
     </div>
   </section>;

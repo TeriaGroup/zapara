@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package ru.bgtu_voenmeh.zapara.ui.inbox
 
 import androidx.activity.compose.BackHandler
@@ -14,21 +14,29 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.data.social.SocialMessage
+import ru.bgtu_voenmeh.zapara.data.social.InboxSource
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.media.ChatMediaBubble
 import ru.bgtu_voenmeh.zapara.ui.media.ChatMediaCaptureHost
+import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
+import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.theme.*
 import java.time.ZoneId
@@ -36,6 +44,8 @@ import java.time.format.DateTimeFormatter
 
 @Composable
 fun InboxSection(state: InboxUiState, onEvent: (InboxEvent) -> Unit, onOpenGroup: (communityId: String, conversationId: String) -> Unit, modifier: Modifier = Modifier) {
+    var inboxQuery by rememberSaveable { mutableStateOf("") }
+    var inboxSource by rememberSaveable { mutableStateOf(InboxSourceFilter.All.name) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val currentEvent by rememberUpdatedState(onEvent)
     LaunchedEffect(lifecycle, state.guest) {
@@ -63,7 +73,8 @@ fun InboxSection(state: InboxUiState, onEvent: (InboxEvent) -> Unit, onOpenGroup
             Text("Войдите в аккаунт, чтобы общаться с группой и друзьями. Расписание и карты доступны без входа.", Modifier.padding(Zapara.space.l), color = Zapara.colors.text2)
         } else {
             state.error?.let { Text(it, Modifier.padding(horizontal = Zapara.space.l, vertical = 8.dp).testTag("Inbox.Error"), color = Zapara.colors.bad) }
-            if (state.active == null) InboxList(state, onEvent, onOpenGroup, Modifier.weight(1f))
+            if (state.active == null) InboxList(state, onEvent, onOpenGroup,
+                inboxQuery, { inboxQuery = it }, inboxSource, { inboxSource = it }, Modifier.weight(1f))
             else PersonalChat(state, onEvent, Modifier.weight(1f))
         }
     }
@@ -77,9 +88,41 @@ private fun ChatHeaderAction(icon: Int, description: String, enabled: Boolean, t
 }
 
 @Composable
-private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit, onOpenGroup: (communityId: String, conversationId: String) -> Unit, modifier: Modifier) {
+private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
+    onOpenGroup: (communityId: String, conversationId: String) -> Unit,
+    query: String, onQuery: (String) -> Unit, source: String, onSource: (String) -> Unit,
+    modifier: Modifier) {
     var adding by remember { mutableStateOf(false) }
+    val sourceFilter = InboxSourceFilter.entries.firstOrNull { it.name == source } ?: InboxSourceFilter.All
+    val visible = browseInbox(state.rows, query, sourceFilter)
+    val filtered = query.isNotBlank() || sourceFilter != InboxSourceFilter.All
     LazyColumn(modifier, contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        item {
+            OutlinedTextField(query, onQuery, label = { Text(stringResource(R.string.inbox_search)) },
+                singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Inbox.Search"))
+        }
+        item {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                listOf(InboxSourceFilter.All to R.string.inbox_source_all,
+                    InboxSourceFilter.Group to R.string.inbox_source_group,
+                    InboxSourceFilter.GroupDirect to R.string.inbox_source_group_direct,
+                    InboxSourceFilter.Friend to R.string.inbox_source_friend).forEach { (value, label) ->
+                    ZChip(stringResource(label), selected = sourceFilter == value,
+                        onClick = { onSource(value.name) }, tag = "Inbox.Source.${value.name}",
+                        modifier = Modifier.semantics { selected = sourceFilter == value })
+                }
+            }
+        }
+        item {
+            Text(stringResource(R.string.inbox_results, visible.size, state.rows.size),
+                color = Zapara.colors.text2, style = Zapara.typography.caption)
+            Text(stringResource(R.string.inbox_unread_total, totalInboxUnread(state.rows)),
+                color = Zapara.colors.text2, style = Zapara.typography.caption)
+            if (filtered) ZButton(stringResource(R.string.inbox_search_reset), {
+                onQuery(""); onSource(InboxSourceFilter.All.name)
+            }, ghost = true, tag = "Inbox.Reset")
+        }
         item {
             ZButton(if (adding) "Закрыть приглашения" else "Новый личный чат", { adding = !adding }, modifier = Modifier.fillMaxWidth(), ghost = true)
         }
@@ -101,14 +144,38 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit, onOpen
                 }
             }
         }
-        if (state.rows.isEmpty() && !state.loading) item { Text("Здесь появятся ваши группы и личные чаты. Начните общение по коду друга.", color = Zapara.colors.text2) }
-        items(state.rows, key = { it.id }) { row ->
+        if (state.rows.isEmpty() && state.loading) item {
+            Text(stringResource(R.string.inbox_loading), color = Zapara.colors.text2, style = Zapara.typography.caption)
+            SkeletonList()
+        }
+        if (state.rows.isEmpty() && !state.loading && !filtered) item { Text("Здесь появятся ваши группы и личные чаты. Начните общение по коду друга.", color = Zapara.colors.text2) }
+        if (!state.loading && visible.isEmpty() && filtered) item {
+            ZCard(modifier = Modifier.fillMaxWidth(), tag = "Empty.InboxSearch") {
+                Text(stringResource(R.string.inbox_no_results), color = Zapara.colors.text2)
+                ZButton(stringResource(R.string.inbox_search_reset), {
+                    onQuery(""); onSource(InboxSourceFilter.All.name)
+                }, ghost = true)
+            }
+        }
+        items(visible, key = { it.id }) { row ->
             ZCard(onClick = { row.communityId?.let { onOpenGroup(it, row.id) } ?: onEvent(InboxEvent.Open(row)) }, modifier = Modifier.fillMaxWidth(), tag = "Inbox.Chat.${row.id}") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(row.title, Modifier.weight(1f), color = Zapara.colors.text1, style = Zapara.typography.bodyStrong, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (row.unread > 0) Text("${row.unread}", color = Zapara.colors.accent)
+                    if (row.unread > 0) {
+                        val description = stringResource(R.string.group_unread_count, row.unread)
+                        ZChip(if (row.unread > 99) "99+" else row.unread.toString(), selected = true,
+                            modifier = Modifier.semantics { contentDescription = description })
+                    }
                 }
-                Text(row.subtitle, color = Zapara.colors.text2, style = Zapara.typography.caption)
+                ZChip(stringResource(when (row.source) {
+                    InboxSource.Group -> R.string.inbox_source_group
+                    InboxSource.GroupDirect -> R.string.inbox_source_group_direct
+                    InboxSource.Friend -> R.string.inbox_source_friend
+                }))
+                if (row.source == InboxSource.GroupDirect) Text(row.subtitle,
+                    color = Zapara.colors.text2, style = Zapara.typography.caption)
+                row.lastAt?.let { Text(stringResource(R.string.inbox_last_at, formatInboxTime(it, ZoneId.systemDefault())),
+                    color = Zapara.colors.text2, style = Zapara.typography.caption) }
                 Text(row.lastBody ?: "Сообщений пока нет", color = Zapara.colors.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
@@ -132,11 +199,20 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
     var lastId by remember(state.active?.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(state.messages.lastOrNull()?.id) {
         val next = state.messages.lastOrNull()?.id
-        if (next != null && next != lastId) list.animateScrollToItem((state.messages.size - 1 + if (state.hasMore) 1 else 0).coerceAtLeast(0))
+        val total = list.layoutInfo.totalItemsCount
+        val lastVisible = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+        val nearBottom = total == 0 || lastVisible >= total - 2
+        if (shouldAutoScroll(lastId, next, nearBottom))
+            list.animateScrollToItem((state.messages.size - 1 + if (state.hasMore) 1 else 0).coerceAtLeast(0))
         lastId = next
     }
     Column(modifier) {
-        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val scope = rememberCoroutineScope()
+        val totalItems = list.layoutInfo.totalItemsCount
+        val lastVisible = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+        val showJump = state.messages.size > 4 && totalItems > 0 && lastVisible < totalItems - 2
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (state.hasMore) item { ZButton("Ранние сообщения", { onEvent(InboxEvent.Older) }, enabled = !state.loading, ghost = true) }
             if (state.messages.isEmpty() && !state.loading) item { Text("Напишите первое сообщение", color = Zapara.colors.text2) }
             items(state.messages, key = { it.id }) { message ->
@@ -160,6 +236,12 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                     }
                 }
             }
+        }
+        if (showJump) ZButton(stringResource(R.string.inbox_jump_latest), {
+            val last = list.layoutInfo.totalItemsCount - 1
+            if (last >= 0) scope.launch { list.animateScrollToItem(last) }
+        }, modifier = Modifier.align(Alignment.BottomEnd).padding(Zapara.space.s),
+            ghost = true, tag = "Inbox.JumpLatest")
         }
         key(activeId) {
             ChatMediaCaptureHost(enabled = !state.loading && state.editing == null,

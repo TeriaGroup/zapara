@@ -16,9 +16,17 @@ public sealed class HoldBox : Border
 
     public HoldBox()
     {
+        Focusable = true;
         PointerPressed += (_, eventArgs) =>
         {
-            if (eventArgs.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            var point = eventArgs.GetCurrentPoint(this);
+            if (point.Properties.IsRightButtonPressed)
+            {
+                timer?.Stop();
+                Open();
+                eventArgs.Handled = true;
+            }
+            else if (point.Properties.IsLeftButtonPressed && eventArgs.Source is not Button)
             {
                 timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
                 timer.Tick += (_, _) =>
@@ -30,6 +38,13 @@ public sealed class HoldBox : Border
             }
         };
         PointerReleased += (_, _) => timer?.Stop();
+        PointerExited += (_, _) => timer?.Stop();
+        KeyDown += (_, eventArgs) =>
+        {
+            if (eventArgs.Key != Key.F10 || !eventArgs.KeyModifiers.HasFlag(KeyModifiers.Shift)) return;
+            Open();
+            eventArgs.Handled = true;
+        };
     }
 
     private void Open() => Choose(null);
@@ -72,7 +87,13 @@ public sealed class HoldBox : Border
             item.Click += (_, _) => MessengerHold.Perform(name, () => row.Apply("reply"), () => { }, () => row.Apply("edit"), () => row.Apply("delete"));
             menu.Items.Add(item);
         }
-        if (actions.Count > 0) menu.Open(this);
+        if (row.CanCopy)
+        {
+            var copy = new MenuItem { Header = "Копировать текст" };
+            copy.Click += (_, _) => row.CopyCommand?.Execute(null);
+            menu.Items.Add(copy);
+        }
+        if (menu.Items.Count > 0) menu.Open(this);
     }
 
     private void OpenReactions(GroupMessageRow row)

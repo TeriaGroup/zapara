@@ -91,9 +91,45 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
             Status = "Не удалось воспроизвести запись.";
         });
         NeedAccount = (Social is null && Communities is null) || Access is null;
+        Chats.CollectionChanged += (_, _) => RefreshInboxBrowse();
     }
 
     public ObservableCollection<ChatInboxRow> Chats { get; } = [];
+    private IReadOnlyList<ChatInboxRow> filteredChats = [];
+    [ObservableProperty] private string inboxSearch = "";
+    [ObservableProperty] private int inboxSourceIndex;
+    [ObservableProperty] private bool loadingInbox;
+    public IReadOnlyList<ChatInboxRow> FilteredChats => filteredChats;
+    public int UnreadTotal => ChatInboxBrowse.UnreadTotal(Chats);
+    public string UnreadSummary => UnreadTotal == 0 ? "Нет непрочитанных" : $"Непрочитанных: {UnreadTotal}";
+    public string InboxResultCount => $"Показано {filteredChats.Count} из {Chats.Count}";
+    public bool HasInboxFilters => InboxSearch.Trim().Length > 0 || InboxSourceIndex is >= 1 and <= 3;
+    public bool NoInboxMatches => !LoadingInbox && HasInboxFilters && filteredChats.Count == 0;
+    public bool NoChats => !LoadingInbox && Chats.Count == 0 && !HasInboxFilters;
+    partial void OnInboxSearchChanged(string value) => RefreshInboxBrowse();
+    partial void OnInboxSourceIndexChanged(int value) => RefreshInboxBrowse();
+    partial void OnLoadingInboxChanged(bool value)
+    {
+        OnPropertyChanged(nameof(NoChats));
+        OnPropertyChanged(nameof(NoInboxMatches));
+    }
+    [RelayCommand]
+    private void ResetInboxFilters()
+    {
+        InboxSearch = "";
+        InboxSourceIndex = 0;
+    }
+    private void RefreshInboxBrowse()
+    {
+        filteredChats = ChatInboxBrowse.Filter(Chats, InboxSearch, InboxSourceIndex);
+        OnPropertyChanged(nameof(FilteredChats));
+        OnPropertyChanged(nameof(UnreadTotal));
+        OnPropertyChanged(nameof(UnreadSummary));
+        OnPropertyChanged(nameof(InboxResultCount));
+        OnPropertyChanged(nameof(HasInboxFilters));
+        OnPropertyChanged(nameof(NoInboxMatches));
+        OnPropertyChanged(nameof(NoChats));
+    }
     public ObservableCollection<ChatInviteRow> Incoming { get; } = [];
     public ObservableCollection<ChatMessageRow> Messages { get; } = [];
     [ObservableProperty] private bool needAccount;
@@ -104,6 +140,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
     [ObservableProperty] private string draft = "";
     [ObservableProperty] private string actionCaption = "";
     [ObservableProperty] private bool hasMore;
+    [ObservableProperty] private bool showJumpLatest;
     [ObservableProperty] private bool isRecording;
     [ObservableProperty] private bool isFinalizingRecording;
     [ObservableProperty] private string recordingCaption = "";
@@ -132,7 +169,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         var ticket = background ? generation : ++generation;
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent || (Social is null && Communities is null) || Access is null) { NeedAccount = true; return; }
-        if (!background) IsBusy = true;
+        if (!background) { IsBusy = true; LoadingInbox = true; }
         try
         {
             var token = await Access(operation.Token);
@@ -202,7 +239,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is SocialClientException or CommunityClientException or AccountClientException)
         { if (operation.IsCurrent && ticket == generation) Status = "Не удалось загрузить чаты."; }
-        finally { if (!background && operation.IsCurrent) IsBusy = false; }
+        finally { if (!background && operation.IsCurrent) { IsBusy = false; LoadingInbox = false; } }
     }
 
     private void OpenGroup(Guid communityId)
@@ -709,10 +746,23 @@ public sealed class ChatInboxRow(Guid conversationId, Guid? communityId, bool pe
     public Guid? CommunityId { get; } = communityId;
     public bool Personal { get; } = personal;
     public string Kind => kind ?? (Personal ? "Личный" : "Группа");
+    public int SourceIndex => Personal ? 3 : kind == "Личный в группе" ? 2 : 1;
+    public string SourceTitle => SourceIndex switch { 1 => "Группа", 2 => "Личный чат группы", _ => "Друг по коду" };
     public string Title { get; } = title;
     public string Preview { get; } = preview;
     public DateTimeOffset? LastAt { get; } = lastAt;
-    public string Unread => unread > 0 ? unread.ToString() : "";
+    public string When
+    {
+        get
+        {
+            if (LastAt is not { } at) return "";
+            var local = at.ToLocalTime();
+            return local.ToString(local.Year == DateTime.Now.Year ? "dd.MM HH:mm" : "dd.MM.yyyy HH:mm");
+        }
+    }
+    public string Unread => UnreadBadge.Label(unread);
+    public int UnreadCount => unread;
+    public string UnreadDescription => UnreadBadge.Description(unread);
     public IRelayCommand OpenCommand { get; } = open;
 }
 

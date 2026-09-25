@@ -87,6 +87,7 @@ class GroupViewModelChannelsTest {
         runCurrent()
         vm.onEvent(GroupEvent.OpenChannel(ballotTopic))
         runCurrent()
+        assertEquals(community, vm.state.value.communityId)
         assertEquals("ballots", vm.state.value.activeChannelKind)
         assertEquals(ballot, vm.state.value.board?.ballots?.single()?.ballotId)
         assertTrue(http.requests.any { it.url.endsWith("/$community/ballots?topic=$ballotTopic") })
@@ -133,6 +134,39 @@ class GroupViewModelChannelsTest {
         }
     }
 
+    @Test fun failedBallotCreationKeepsEditorPendingUntilSuccessfulRetry() = runTest(dispatcher) {
+        val http = server()
+        val normal = http.handler
+        var createFails = true
+        http.handler = { call ->
+            if (call.method == "POST" && call.url.endsWith("/$community/ballots/collective")) {
+                if (createFails) HttpReply(503, """{"title":"Недоступно","status":503,"code":"db_unavailable"}""".toByteArray())
+                else HttpReply(201, board(false).toByteArray())
+            } else normal(call)
+        }
+        val vm = viewModel(http)
+        runCurrent()
+        try {
+            vm.onEvent(GroupEvent.OpenChannel(ballotTopic))
+            runCurrent()
+            assertEquals(0, vm.state.value.ballotCreateVersion)
+            vm.onEvent(GroupEvent.CreateBallot("Когда?", listOf("Завтра", "Позже"), 3, false))
+            runCurrent()
+            assertTrue(vm.state.value.failed)
+            assertTrue(vm.state.value.ballotCreateFailed)
+            assertEquals(0, vm.state.value.ballotCreateVersion)
+            createFails = false
+            vm.onEvent(GroupEvent.CreateBallot("Когда?", listOf("Завтра", "Позже"), 3, false))
+            runCurrent()
+            assertFalse(vm.state.value.failed)
+            assertFalse(vm.state.value.ballotCreateFailed)
+            assertEquals(1, vm.state.value.ballotCreateVersion)
+        } finally {
+            vm.onEvent(GroupEvent.Back)
+            runCurrent()
+        }
+    }
+
     @Test fun expired_session_does_not_leave_ballot_channel_loading_forever() = runTest(dispatcher) {
         var expired = false
         val vm = GroupViewModel(GroupRuntime(false, user,
@@ -145,6 +179,28 @@ class GroupViewModelChannelsTest {
             runCurrent()
             assertFalse(vm.state.value.chatLoading)
             assertTrue(vm.state.value.failed)
+        } finally {
+            vm.onEvent(GroupEvent.Back)
+            runCurrent()
+        }
+    }
+
+    @Test fun expiredSessionDuringBallotCreateReportsFailureAndKeepsDraftOpen() = runTest(dispatcher) {
+        var expired = false
+        val vm = GroupViewModel(GroupRuntime(false, user,
+            CommunityHttpClient(server(), AccountServerScope.parse("http://127.0.0.1:9/")),
+            { if (expired) null else testToken("za_", 4) }, { "O3313" }))
+        runCurrent()
+        try {
+            vm.onEvent(GroupEvent.OpenChannel(ballotTopic))
+            runCurrent()
+            expired = true
+            vm.onEvent(GroupEvent.CreateBallot("Когда?", listOf("Завтра", "Позже"), 3, false))
+            runCurrent()
+            assertTrue(vm.state.value.failed)
+            assertTrue(vm.state.value.ballotCreateFailed)
+            assertFalse(vm.state.value.channelBusy)
+            assertEquals(0, vm.state.value.ballotCreateVersion)
         } finally {
             vm.onEvent(GroupEvent.Back)
             runCurrent()

@@ -307,6 +307,7 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   const [messages, setMessages] = useState<SocialMessage[]>([]);
   const [more, setMore] = useState(false);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const [showLatestJump, setShowLatestJump] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [reply, setReply] = useState<SocialMessage | null>(null);
@@ -372,6 +373,7 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   useEffect(() => {
     aliveRef.current = true;
     stick.current = true;
+    setShowLatestJump(false);
     messagesRef.current = [];
     setMessages([]);
     setMore(false);
@@ -408,7 +410,10 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   }, [friend.conversationId, onError]);
 
   useEffect(() => {
-    if (stick.current && logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+    if (stick.current && logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+      setShowLatestJump(false);
+    } else setShowLatestJump(messages.length > 0);
   }, [messages]);
 
   useEffect(() => {
@@ -432,6 +437,15 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   function onScroll(event: UIEvent<HTMLDivElement>) {
     const node = event.currentTarget;
     stick.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80;
+    setShowLatestJump(!stick.current && messagesRef.current.length > 0);
+  }
+
+  function jumpToLatest() {
+    const node = logRef.current;
+    if (!node) return;
+    stick.current = true;
+    node.scrollTop = node.scrollHeight;
+    setShowLatestJump(false);
   }
 
   async function earlier() {
@@ -734,6 +748,7 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
         })}
         {messages.length === 0 && <p className="muted">Напишите сообщение, отправьте стикер или кружок.</p>}
       </div>
+      {showLatestJump && <button className="btn latest-jump" type="button" onClick={jumpToLatest}>К новым сообщениям</button>}
       {circling ? (
         <div className="circle-record">
           <div className="circle live">

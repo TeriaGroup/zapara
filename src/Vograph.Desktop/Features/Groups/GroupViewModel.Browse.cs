@@ -25,6 +25,8 @@ public sealed partial class GroupViewModel
     public string ManagementCaption => ShowChannelManagement ? "Закрыть управление" : "Управлять каналами";
     public bool ShowSelectedChannelManagement => ShowChannelManagement && CanManageSelectedChannel;
     public bool ShowTrustedManagement => ShowChannelManagement && IsHeadman;
+    public bool HasUnreadChannel => GroupBrowse.NextUnread(GroupBrowse.Channels(Channels, "", "all", false),
+        IsDirect ? null : SelectedChannel) is not null;
 
     partial void OnGroupSearchChanged(string value) => RefreshCommunityBrowse();
     partial void OnMemberSearchChanged(string value) => RefreshPeopleBrowse();
@@ -57,6 +59,7 @@ public sealed partial class GroupViewModel
         OnPropertyChanged(nameof(ChannelResultCount));
         OnPropertyChanged(nameof(NoChannelSearchResults));
         OnPropertyChanged(nameof(HasChannelFilters));
+        OnPropertyChanged(nameof(HasUnreadChannel));
     }
 
     [RelayCommand]
@@ -69,6 +72,14 @@ public sealed partial class GroupViewModel
 
     [RelayCommand]
     private void ToggleChannelManagement() => ShowChannelManagement = !ShowChannelManagement;
+
+    [RelayCommand]
+    private Task NextUnreadChannel()
+    {
+        var next = GroupBrowse.NextUnread(GroupBrowse.Channels(Channels, "", "all", false),
+            IsDirect ? null : SelectedChannel);
+        return next is null ? Task.CompletedTask : OpenChannelAsync(next);
+    }
 
     [RelayCommand]
     private void ClearGroupSearch() => GroupSearch = "";

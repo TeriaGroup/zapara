@@ -5,13 +5,21 @@
              xmlns:g="using:Vograph.Desktop.Features.Groups"
              x:Class="Vograph.Desktop.Features.Groups.GroupView"
              x:DataType="g:GroupViewModel">
+  <UserControl.Styles>
+    <Style Selector="Button.ghost.on">
+      <Setter Property="Background" Value="{DynamicResource Brush.Selection}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.LineStrong}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+  </UserControl.Styles>
   <Grid Margin="32,26" RowDefinitions="Auto,*" MaxWidth="880" HorizontalAlignment="Stretch">
     <StackPanel Spacing="4">
       <TextBlock Classes="display" Text="{Binding Title}" />
       <TextBlock Classes="muted" Text="{Binding Status}" TextWrapping="Wrap"
                  IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       <Button Classes="ghost" Content="Обновить группу" Command="{Binding RetryBrowseCommand}"
-              IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+              IsVisible="{Binding ShowRetryBrowse}"
               HorizontalAlignment="Left" AutomationProperties.AutomationId="Group.Retry" />
       <TextBlock Classes="muted caption" Text="{loc:T groupDisclaimer}" Margin="0,6,0,0" TextWrapping="Wrap" />
     </StackPanel>
@@ -62,6 +70,9 @@
             <Button Classes="ghost" Content="{loc:T groupList}" Command="{Binding BackCommand}"
                     HorizontalAlignment="Left" Padding="4,2" />
             <TextBlock Classes="subject" Text="{Binding HomeTitle}" TextWrapping="Wrap" />
+            <Button Classes="ghost" Content="Следующий непрочитанный" Command="{Binding NextUnreadChannelCommand}"
+                    IsEnabled="{Binding HasUnreadChannel}" HorizontalAlignment="Stretch" MinHeight="48"
+                    AutomationProperties.AutomationId="Group.NextUnread" />
           </StackPanel>
           <ScrollViewer HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="12">
@@ -87,7 +98,7 @@
                   <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="g:GroupChannelRow">
-                      <Button Classes="ghost" Padding="8,7" CornerRadius="8" HorizontalAlignment="Stretch"
+                      <Button Classes="ghost" Classes.on="{Binding IsSelected}" Padding="8,7" CornerRadius="8" HorizontalAlignment="Stretch"
                               HorizontalContentAlignment="Stretch" Command="{Binding OpenCommand}">
                         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                           <Border Background="{Binding AccentBrush}" CornerRadius="8" Width="32" Height="32" VerticalAlignment="Center">
@@ -101,8 +112,11 @@
                             <TextBlock Classes="muted caption" Text="{Binding Description}" TextTrimming="CharacterEllipsis"
                                        IsVisible="{Binding Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             <TextBlock Classes="muted caption" Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Classes="muted caption" Text="{Binding ActivityText}" TextTrimming="CharacterEllipsis"
+                                       IsVisible="{Binding ActivityText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                           </StackPanel>
                           <Border Grid.Column="2" Classes="badge" VerticalAlignment="Center"
+                                  AutomationProperties.Name="{Binding UnreadDescription}"
                                   IsVisible="{Binding Unread, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                             <TextBlock Text="{Binding Unread}" />
                           </Border>
@@ -241,6 +255,7 @@
                               <TextBlock Classes="muted caption" Text="{Binding Role}" VerticalAlignment="Center"
                                          IsVisible="{Binding Role, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                               <Border Classes="badge" VerticalAlignment="Center"
+                                      AutomationProperties.Name="{Binding UnreadDescription}"
                                       IsVisible="{Binding Unread, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                                 <TextBlock Text="{Binding Unread}" />
                               </Border>
@@ -278,6 +293,7 @@
                                        IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                           </StackPanel>
                           <Border Grid.Column="1" Classes="badge" VerticalAlignment="Center"
+                                  AutomationProperties.Name="{Binding UnreadDescription}"
                                   IsVisible="{Binding Unread, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                             <TextBlock Text="{Binding Unread}" />
                           </Border>
@@ -304,6 +320,50 @@
                       AutomationProperties.AutomationId="Group.JumpLatest" />
             </Grid>
           </Border>
+          <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,0,0,1"
+                  Padding="12,8" IsVisible="{Binding ShowMessages}">
+            <StackPanel Spacing="6">
+              <Button Classes="ghost" Content="{Binding MessageBrowseCaption}" Command="{Binding ToggleMessageBrowseCommand}"
+                      HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" MinHeight="48"
+                      AutomationProperties.AutomationId="Group.MessageBrowseToggle" />
+              <StackPanel Spacing="6" IsVisible="{Binding ShowMessageBrowse}">
+              <TextBlock Classes="muted caption" Text="Поиск в загруженных сообщениях" />
+              <TextBox Text="{Binding MessageSearch, Mode=TwoWay}" PlaceholderText="Текст сообщения"
+                       AutomationProperties.AutomationId="Group.MessageSearch" />
+              <WrapPanel Orientation="Horizontal">
+                <ComboBox SelectedIndex="{Binding MessageAuthorIndex, Mode=TwoWay}" MinWidth="150" Margin="0,0,8,4"
+                          AutomationProperties.AutomationId="Group.MessageAuthor">
+                  <ComboBoxItem Content="Все авторы" />
+                  <ComboBoxItem Content="Мои" />
+                  <ComboBoxItem Content="Других" />
+                </ComboBox>
+                <ComboBox SelectedIndex="{Binding MessageKindIndex, Mode=TwoWay}" MinWidth="180" Margin="0,0,8,4"
+                          AutomationProperties.AutomationId="Group.MessageKind">
+                  <ComboBoxItem Content="Все виды" />
+                  <ComboBoxItem Content="Текст" />
+                  <ComboBoxItem Content="Фото и видео" />
+                  <ComboBoxItem Content="Документы" />
+                  <ComboBoxItem Content="Голос и кружки" />
+                </ComboBox>
+              </WrapPanel>
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBlock Classes="muted caption" Text="{Binding MessageResultCount}" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Classes="ghost" Content="Сбросить" Command="{Binding ResetMessageFiltersCommand}"
+                        IsVisible="{Binding HasMessageFilters}" MinHeight="48" />
+              </Grid>
+              </StackPanel>
+            </StackPanel>
+          </Border>
+          <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10"
+                  IsVisible="{Binding HasPendingDeleteMessage}">
+            <StackPanel Spacing="6">
+              <TextBlock Text="Удалить сообщение? В ленте останется отметка об удалении." TextWrapping="Wrap" />
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Classes="ghost" Content="Отмена" Command="{Binding CancelDeleteMessageCommand}" MinHeight="48" />
+                <Button Classes="primary" Content="Удалить сообщение" Command="{Binding ConfirmDeleteMessageCommand}" MinHeight="48" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
           <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10"
                   IsVisible="{Binding IsRestrictedChat}">
             <TextBlock Classes="muted caption" Text="В этом канале могут писать только управляющие." TextWrapping="Wrap" />
@@ -311,6 +371,11 @@
           <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10"
                   IsVisible="{Binding ShowComposer}">
             <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding HasHoldAction}">
+              <TextBlock Classes="muted caption" Text="{Binding HoldCaption}" VerticalAlignment="Center" />
+              <Button Grid.Column="1" Classes="ghost" Content="Отменить" Command="{Binding CancelHoldActionCommand}"
+                      MinHeight="48" />
+            </Grid>
             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsRecording}">
               <TextBlock Text="{Binding RecordingCaption}" VerticalAlignment="Center" />
               <Button Classes="primary" Content="Отправить запись" Command="{Binding FinishRecordingCommand}" />
@@ -339,17 +404,29 @@
           </Border>
           <ScrollViewer x:Name="MessagesScroll" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding ShowMessages}">
             <StackPanel Margin="12,10,12,8">
-              <Button Classes="ghost" Content="{loc:T groupOlder}" Command="{Binding LoadOlderCommand}"
-                      HorizontalAlignment="Center" Padding="8,4" Margin="0,0,0,8" IsVisible="{Binding HasMore}" />
-              <ItemsControl ItemsSource="{Binding Messages}">
+              <Button Classes="ghost" Content="{Binding OlderCaption}" Command="{Binding LoadOlderCommand}"
+                      HorizontalAlignment="Center" MinHeight="48" Margin="0,0,0,8" IsVisible="{Binding HasMore}"
+                      IsEnabled="{Binding CanLoadOlder}" />
+              <TextBlock Classes="muted" Text="Сообщений пока нет" IsVisible="{Binding NoMessages}" />
+              <StackPanel Spacing="6" IsVisible="{Binding NoMessageMatches}">
+                <TextBlock Classes="muted" Text="Среди загруженных сообщений совпадений нет" TextWrapping="Wrap" />
+                <Button Classes="ghost" Content="Загрузить ранние" Command="{Binding LoadOlderCommand}"
+                        IsVisible="{Binding HasMore}" IsEnabled="{Binding CanLoadOlder}" MinHeight="48" HorizontalAlignment="Left" />
+              </StackPanel>
+              <ItemsControl ItemsSource="{Binding FilteredMessages}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="g:GroupMessageRow">
+                    <StackPanel>
+                    <TextBlock Classes="muted caption" Text="{Binding DayHeader}" HorizontalAlignment="Center"
+                               Margin="0,10,0,12" IsVisible="{Binding DayHeader, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     <g:HoldBox Background="{DynamicResource Brush.Chip}" CornerRadius="10" Padding="12,8" Margin="0,0,0,8" MaxWidth="440"
                             HorizontalAlignment="{Binding Mine, Converter={x:Static loc:Converters.ChatAlign}}">
                       <StackPanel Spacing="2">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                          <TextBlock Classes="caption" Text="{Binding Author}" TextTrimming="CharacterEllipsis" IsVisible="{Binding !Mine}" />
+                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+                          <TextBlock Classes="caption" Text="{Binding Author}" TextTrimming="CharacterEllipsis" IsVisible="{Binding ShowAuthor}" />
                           <TextBlock Grid.Column="1" Classes="muted caption" Text="{Binding When}" />
+                          <Button Grid.Column="2" Classes="ghost" Content="Действия" Click="OpenMessageActions"
+                                  IsVisible="{Binding !Deleted}" MinHeight="48" AutomationProperties.AutomationId="Group.MessageActions" />
                         </Grid>
                         <TextBlock Classes="muted caption" Text="{Binding ReplyPreview}" IsVisible="{Binding IsReply}" TextWrapping="Wrap" />
                         <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
@@ -372,6 +449,7 @@
                                 AutomationProperties.AutomationId="Group.Download" />
                       </StackPanel>
                     </g:HoldBox>
+                    </StackPanel>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
@@ -380,6 +458,69 @@
           <ScrollViewer HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding ShowBallots}">
             <StackPanel Margin="14,12" Spacing="12">
               <TextBlock Classes="muted caption" Text="В этом канале публикуются только голосования. Текстовые сообщения сюда не отправляются." TextWrapping="Wrap" />
+              <Border Classes="card" Padding="12">
+                <StackPanel Spacing="6">
+                  <TextBlock Classes="muted caption" Text="Поиск на текущей доске" />
+                  <TextBox Text="{Binding BallotSearch, Mode=TwoWay}" PlaceholderText="Вопрос или вариант"
+                           AutomationProperties.AutomationId="Group.BallotSearch" />
+                  <WrapPanel Orientation="Horizontal">
+                    <ComboBox SelectedIndex="{Binding BallotStatusIndex, Mode=TwoWay}" MinWidth="170" Margin="0,0,8,4"
+                              AutomationProperties.AutomationId="Group.BallotStatus">
+                      <ComboBoxItem Content="Все статусы" />
+                      <ComboBoxItem Content="Сбор поддержки" />
+                      <ComboBoxItem Content="Идут" />
+                      <ComboBoxItem Content="Завершены" />
+                    </ComboBox>
+                    <ComboBox SelectedIndex="{Binding BallotSortIndex, Mode=TwoWay}" MinWidth="180" Margin="0,0,8,4"
+                              AutomationProperties.AutomationId="Group.BallotSort">
+                      <ComboBoxItem Content="Исходный порядок" />
+                      <ComboBoxItem Content="Ближайший срок" />
+                      <ComboBoxItem Content="Дальний срок" />
+                    </ComboBox>
+                  </WrapPanel>
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <TextBlock Classes="muted caption" Text="{Binding BallotResultCount}" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Classes="ghost" Content="Сбросить" Command="{Binding ResetBallotFiltersCommand}"
+                            IsVisible="{Binding HasBallotFilters}" MinHeight="48" />
+                  </Grid>
+                </StackPanel>
+              </Border>
+              <TextBlock Classes="muted" Text="Загрузка голосований…" IsVisible="{Binding BallotLoading}" />
+              <Border Classes="card" Padding="12" IsVisible="{Binding BallotLoadFailed}">
+                <StackPanel Spacing="6">
+                  <TextBlock Classes="muted" Text="{Binding BallotErrorText}" TextWrapping="Wrap" />
+                  <Button Classes="ghost" Content="Повторить" Command="{Binding RetryBallotsCommand}"
+                          HorizontalAlignment="Left" MinHeight="48" />
+                </StackPanel>
+              </Border>
+              <TextBlock Classes="muted" Text="Голосований пока нет на текущей доске" IsVisible="{Binding NoBallots}" />
+              <StackPanel Spacing="6" IsVisible="{Binding NoBallotMatches}">
+                <TextBlock Classes="muted" Text="Голосования по запросу не найдены на текущей доске" TextWrapping="Wrap" />
+                <Button Classes="ghost" Content="Сбросить фильтры" Command="{Binding ResetBallotFiltersCommand}"
+                        HorizontalAlignment="Left" MinHeight="48" />
+              </StackPanel>
+              <TextBlock Classes="muted caption" Text="{Binding BallotFeedback}" TextWrapping="Wrap"
+                         IsVisible="{Binding BallotFeedback, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <StackPanel Spacing="6" IsVisible="{Binding CanCreateBallot}">
+                <Button Classes="ghost" Content="{Binding BallotComposerCaption}" Command="{Binding ToggleBallotComposerCommand}"
+                        HorizontalAlignment="Left" MinHeight="48" AutomationProperties.AutomationId="Group.BallotComposerToggle" />
+                <StackPanel Spacing="6" IsVisible="{Binding ShowBallotComposer}">
+                  <TextBlock Classes="micro" Text="Новое голосование" />
+                  <TextBox Text="{Binding BallotQuestion}" PlaceholderText="Вопрос" MaxLength="400" />
+                  <TextBox Text="{Binding BallotOptionA}" PlaceholderText="Первый вариант" MaxLength="80" />
+                  <TextBox Text="{Binding BallotOptionB}" PlaceholderText="Второй вариант" MaxLength="80" />
+                  <TextBox Text="{Binding BallotOptionC}" PlaceholderText="Третий вариант (необязательно)" MaxLength="80" />
+                  <TextBox Text="{Binding BallotOptionD}" PlaceholderText="Четвёртый вариант (необязательно)" MaxLength="80" />
+                  <TextBox Text="{Binding BallotOptionE}" PlaceholderText="Пятый вариант (необязательно)" MaxLength="80" />
+                  <TextBox Text="{Binding BallotOptionF}" PlaceholderText="Шестой вариант (необязательно)" MaxLength="80" />
+                  <TextBox Text="{Binding BallotDays}" PlaceholderText="Срок в днях (1–14)" MaxLength="2" />
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="primary" Content="Объявить" Command="{Binding OpenBallotCommand}"
+                            IsVisible="{Binding CanOpenBallot}" MinHeight="48" />
+                    <Button Classes="ghost" Content="Предложить" Command="{Binding ProposeBallotCommand}" MinHeight="48" />
+                  </StackPanel>
+                </StackPanel>
+              </StackPanel>
               <Border Classes="card" Padding="12" IsVisible="{Binding HasPendingCloseBallot}">
                 <StackPanel Spacing="7">
                   <TextBlock Classes="subject" Text="Завершить голосование досрочно?" TextWrapping="Wrap" />
@@ -390,7 +531,7 @@
                   </StackPanel>
                 </StackPanel>
               </Border>
-              <ItemsControl ItemsSource="{Binding Ballots}" AutomationProperties.AutomationId="Group.Ballots">
+              <ItemsControl ItemsSource="{Binding FilteredBallots}" AutomationProperties.AutomationId="Group.Ballots">
                 <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="g:GroupBallotRow">
@@ -399,44 +540,42 @@
                         <TextBlock Classes="subject" Text="{Binding Question}" TextWrapping="Wrap" />
                         <TextBlock Classes="muted caption" Text="{Binding Origin}" />
                         <TextBlock Classes="muted caption" Text="Изменение группы" IsVisible="{Binding IsEffect}" />
-                        <TextBlock Classes="muted caption" Text="{Binding Status}" />
-                        <TextBlock Classes="muted caption" Text="{Binding Deadline}" />
-                        <TextBlock Classes="muted caption" Text="{Binding Supporters}" IsVisible="{Binding IsCollecting}" />
-                        <Button Classes="primary" Content="Поддержать" Command="{Binding SupportCommand}"
-                                IsVisible="{Binding CanSupport}" HorizontalAlignment="Left" />
-                        <ItemsControl ItemsSource="{Binding Options}">
+                         <TextBlock Classes="muted caption" Text="{Binding Status}" />
+                         <TextBlock Classes="muted caption" Text="{Binding Deadline}" />
+                         <TextBlock Foreground="{DynamicResource Brush.Warn}" Text="{Binding DeadlineHint}"
+                                    IsVisible="{Binding HasDeadlineHint}" />
+                         <TextBlock Classes="muted caption" Text="{Binding Supporters}" IsVisible="{Binding IsCollecting}" />
+                         <Button Classes="primary" Content="Поддержать" Command="{Binding SupportCommand}"
+                                 IsVisible="{Binding CanSupport}" HorizontalAlignment="Left" MinHeight="48" />
+                         <TextBlock Classes="muted caption" Text="Вы поддержали" IsVisible="{Binding AlreadySupported}" />
+                         <TextBlock Classes="muted caption" Text="{Binding VoteShareCaption}" TextWrapping="Wrap" />
+                         <ItemsControl ItemsSource="{Binding Options}">
                           <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="5" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                           <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="g:GroupBallotOptionRow">
-                              <Button Classes="ghost" Content="{Binding Label}" Command="{Binding VoteCommand}"
-                                      IsEnabled="{Binding CanVote}" HorizontalAlignment="Left" />
+                             <DataTemplate x:DataType="g:GroupBallotOptionRow">
+                               <StackPanel Spacing="3">
+                                 <Button Classes="ghost" Classes.on="{Binding IsChosen}" Content="{Binding Text}"
+                                         Command="{Binding VoteCommand}" IsEnabled="{Binding CanVote}"
+                                         HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" MinHeight="48" />
+                                 <TextBlock Classes="muted caption" Text="{Binding ChoiceCaption}" IsVisible="{Binding IsChosen}" />
+                                 <TextBlock Classes="muted caption" Text="{Binding VoteCountCaption}" />
+                                 <ProgressBar Minimum="0" Maximum="100" Value="{Binding Percent}" Height="8"
+                                              AutomationProperties.Name="{Binding PercentAccessible}" />
+                               </StackPanel>
                             </DataTemplate>
                           </ItemsControl.ItemTemplate>
                         </ItemsControl>
                         <TextBlock Classes="muted caption" Text="{Binding Outcome}" TextWrapping="Wrap"
                                    IsVisible="{Binding Outcome, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                        <Button Classes="ghost" Content="Завершить" Command="{Binding CloseCommand}"
-                                IsVisible="{Binding CanClose}" HorizontalAlignment="Left" />
+                         <Button Classes="ghost" Content="Завершить" Command="{Binding CloseCommand}"
+                                 IsVisible="{Binding CanClose}" HorizontalAlignment="Left" MinHeight="48" />
+                         <Button Classes="ghost" Content="Копировать сводку" Command="{Binding CopyCommand}"
+                                 IsVisible="{Binding CanCopySummary}" HorizontalAlignment="Left" MinHeight="48" />
                       </StackPanel>
                     </Border>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <StackPanel Spacing="6" IsVisible="{Binding CanCreateBallot}">
-                <TextBlock Classes="micro" Text="Новое голосование" />
-                <TextBox Text="{Binding BallotQuestion}" PlaceholderText="Вопрос" MaxLength="400" />
-                <TextBox Text="{Binding BallotOptionA}" PlaceholderText="Первый вариант" MaxLength="80" />
-                <TextBox Text="{Binding BallotOptionB}" PlaceholderText="Второй вариант" MaxLength="80" />
-                <TextBox Text="{Binding BallotOptionC}" PlaceholderText="Третий вариант (необязательно)" MaxLength="80" />
-                <TextBox Text="{Binding BallotOptionD}" PlaceholderText="Четвёртый вариант (необязательно)" MaxLength="80" />
-                <TextBox Text="{Binding BallotOptionE}" PlaceholderText="Пятый вариант (необязательно)" MaxLength="80" />
-                <TextBox Text="{Binding BallotOptionF}" PlaceholderText="Шестой вариант (необязательно)" MaxLength="80" />
-                <TextBox Text="{Binding BallotDays}" PlaceholderText="Срок в днях (1–14)" MaxLength="2" />
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Button Classes="primary" Content="Объявить" Command="{Binding OpenBallotCommand}" IsVisible="{Binding CanOpenBallot}" />
-                  <Button Classes="ghost" Content="Предложить" Command="{Binding ProposeBallotCommand}" />
-                </StackPanel>
-              </StackPanel>
             </StackPanel>
           </ScrollViewer>
         </DockPanel>

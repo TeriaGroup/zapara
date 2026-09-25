@@ -68,6 +68,14 @@ public sealed class ChatInboxTests
         Assert.Equal("2", groupDirect.Unread);
         Assert.Contains(inbox.Chats, row => row.ConversationId == GroupChat && row.Kind == "Группа");
         Assert.Contains(inbox.Chats, row => row.ConversationId == SocialDirect && row.Personal);
+        Assert.Equal(6, inbox.UnreadTotal);
+        inbox.InboxSearch = "  БОРИС ";
+        Assert.Equal(GroupDirect, Assert.Single(inbox.FilteredChats).ConversationId);
+        inbox.InboxSourceIndex = 3;
+        Assert.Empty(inbox.FilteredChats);
+        Assert.True(inbox.NoInboxMatches);
+        inbox.ResetInboxFiltersCommand.Execute(null);
+        Assert.Equal(3, inbox.FilteredChats.Count);
         groupDirect.OpenCommand.Execute(null);
         await Waits.Until(() => shell.Current is Vograph.Desktop.Features.Groups.GroupViewModel group
             && group.IsDirect && group.Messages.Count == 1, "group direct opened from inbox");

@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import * as api from "./api";
 import { ballotBoardAfterMutation } from "./channels";
+import { ballotDeadlineLabel, ballotStatusTitle, ballotSummary, ballotVoteTotal, filterBallots, isBallotDeadlineSoon, voteShare, type BallotBrowseFilter } from "./ballotBrowse";
 import { emptyId, groupPowers } from "./powers";
 import type { Ballot, BallotBoard, Classmate, GroupRole } from "./types";
 
@@ -22,18 +23,6 @@ function originTitle(origin: string) {
   return "Общее";
 }
 
-function statusTitle(status: string) {
-  if (status === "collecting") return "Сбор поддержки";
-  if (status === "open") return "Идёт";
-  return "Завершено";
-}
-
-function when(iso: string) {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(date);
-}
-
 function failureText(error: unknown, fallback: string) {
   const status = error instanceof Error ? error.message : "";
   if (status === "409") return "Голосование уже закрыто";
@@ -49,9 +38,8 @@ function BallotForm({ title, hint, submitLabel, action, onDone, onError }: {
   onDone: (board: BallotBoard) => void | Promise<void>;
   onError: (text: string) => void;
 }) {
-  const [question, setQuestion] = useState("");
-  const [options, setOptions] = useState(["", ""]);
-  const [days, setDays] = useState(5);
+  const [draft, setDraft] = useState({ question: "", options: ["", ""], days: 5 });
+  const { question, options, days } = draft;
   const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent) {
@@ -69,9 +57,7 @@ function BallotForm({ title, hint, submitLabel, action, onDone, onError }: {
     setBusy(true);
     try {
       await onDone(await action(text, labels, days));
-      setQuestion("");
-      setOptions(["", ""]);
-      setDays(5);
+      setDraft({ question: "", options: ["", ""], days: 5 });
     }
     catch (error) { onError(failureText(error, "Не получилось сохранить голосование")); }
     finally { setBusy(false); }
@@ -82,19 +68,19 @@ function BallotForm({ title, hint, submitLabel, action, onDone, onError }: {
       <h2>{title}</h2>
       <p className="muted">{hint}</p>
       <label className="field">Вопрос
-        <input value={question} onChange={event => setQuestion(event.target.value)} maxLength={400} aria-label="Вопрос голосования" />
+        <input value={question} onChange={event => setDraft(current => ({ ...current, question: event.target.value }))} maxLength={400} aria-label="Вопрос голосования" />
       </label>
       {options.map((value, index) => (
         <label className="field" key={index}>Вариант {index + 1}
           <span className="row">
-            <input className="ballot-choice" value={value} onChange={event => setOptions(current => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} maxLength={80} aria-label={`Вариант ${index + 1}`} />
-            {options.length > 2 && <button className="btn" type="button" onClick={() => setOptions(current => current.filter((_, itemIndex) => itemIndex !== index))}>Убрать</button>}
+            <input className="ballot-choice" value={value} onChange={event => setDraft(current => ({ ...current, options: current.options.map((item, itemIndex) => itemIndex === index ? event.target.value : item) }))} maxLength={80} aria-label={`Вариант ${index + 1}`} />
+            {options.length > 2 && <button className="btn" type="button" onClick={() => setDraft(current => ({ ...current, options: current.options.filter((_, itemIndex) => itemIndex !== index) }))}>Убрать</button>}
           </span>
         </label>
       ))}
       <div className="row">
-        <button className="btn" type="button" disabled={options.length >= 6} onClick={() => setOptions(current => [...current, ""])}>Ещё вариант</button>
-        <select className="ballot-days" aria-label="Срок голосования" value={days} onChange={event => setDays(Number(event.target.value))}>
+        <button className="btn" type="button" disabled={options.length >= 6} onClick={() => setDraft(current => ({ ...current, options: [...current.options, ""] }))}>Ещё вариант</button>
+        <select className="ballot-days" aria-label="Срок голосования" value={days} onChange={event => setDraft(current => ({ ...current, days: Number(event.target.value) }))}>
           {Array.from({ length: 14 }, (_, index) => index + 1).map(day => <option key={day} value={day}>{dayLabel(day)}</option>)}
         </select>
         <button className="btn primary" type="submit" disabled={busy}>{submitLabel}</button>
@@ -110,53 +96,72 @@ function outcomeTitle(outcome: string) {
   return "";
 }
 
-function BallotCard({ ballot, canClose, busy, onSupport, onVote, onClose }: {
+function BallotCard({ ballot, canClose, busy, onSupport, onVote, onClose, onCopy }: {
   ballot: Ballot;
   canClose: boolean;
   busy: boolean;
   onSupport: () => void;
   onVote: (optionId: string) => void;
   onClose: () => void;
+  onCopy: () => void;
 }) {
-  const total = ballot.options.reduce((sum, option) => sum + option.votes, 0);
+  const total = ballotVoteTotal(ballot);
+  const soon = isBallotDeadlineSoon(ballot, Date.now());
+  const supportPercent = Math.min(100, Math.round(ballot.supporters / Math.max(1, ballot.supportersNeeded) * 100));
   return (
     <article className="stack ballot-card">
       <div className="row">
         <span className="chip">{originTitle(ballot.origin)}</span>
         {ballot.effect && <span className="chip">Изменение группы</span>}
-        <span className="chip">{statusTitle(ballot.status)}</span>
-        {when(ballot.deadlineAt) && <span className="muted">до {when(ballot.deadlineAt)}</span>}
+        <span className="chip">{ballotStatusTitle(ballot.status)}</span>
+        <span className="muted">Срок: {ballotDeadlineLabel(ballot.deadlineAt)}</span>
+        {soon && <span className="chip ballot-soon">Скоро завершится</span>}
       </div>
       <b>{ballot.question}</b>
       {ballot.status === "collecting" && (
         <>
           <p className="muted">Поддержали {ballot.supporters} из {ballot.supportersNeeded}</p>
-          <div className="ballot-bar" aria-hidden="true"><span style={{ width: `${Math.min(100, Math.round(ballot.supporters / Math.max(1, ballot.supportersNeeded) * 100))}%` }} /></div>
-          <div className="row">{ballot.options.map(option => <span className="chip" key={option.optionId}>{option.label}</span>)}</div>
+          <div className="ballot-bar" role="progressbar" aria-label="Поддержка голосования" aria-valuemin={0} aria-valuemax={100} aria-valuenow={supportPercent}>
+            <span style={{ width: `${supportPercent}%` }} /></div>
+          <p className="muted">Доля голосов: пока {total} {plural(total, "голос", "голоса", "голосов")}.</p>
+          <div className="stack">{ballot.options.map(option => {
+            const percent = voteShare(option.votes, total);
+            return <div className="ballot-option" key={option.optionId}>
+              <div className="row" style={{ justifyContent: "space-between" }}>
+                <span>{option.label}</span>
+                <span>{option.votes} {plural(option.votes, "голос", "голоса", "голосов")} · {percent}%</span>
+              </div>
+              <div className="ballot-bar" role="progressbar" aria-label={`Доля голосов за «${option.label}»`}
+                aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div>
+            </div>;
+          })}</div>
           {ballot.supported ? <span className="chip">Вы поддержали</span> : <button className="btn primary" type="button" disabled={busy} onClick={onSupport}>Поддержать</button>}
         </>
       )}
+      {ballot.status !== "collecting" && <p className="muted">Всего {total} {plural(total, "голос", "голоса", "голосов")}. Проценты показывают долю голосов.</p>}
       {ballot.status !== "collecting" && ballot.options.map(option => {
-        const width = total === 0 ? 0 : Math.round(option.votes / total * 100);
+        const width = voteShare(option.votes, total);
         return (
           <div className="ballot-option" key={option.optionId}>
             {ballot.status === "open" ? (
               <button className={option.chosen ? "btn primary" : "btn"} type="button" disabled={busy} onClick={() => onVote(option.optionId)}>
                 <span>{option.label}{option.chosen ? " · ваш выбор" : ""}</span>
-                <span>{option.votes}</span>
+                <span>{option.votes} {plural(option.votes, "голос", "голоса", "голосов")} · {width}%</span>
               </button>
             ) : (
               <div className="row" style={{ justifyContent: "space-between" }}>
                 <span>{option.label}{option.chosen ? " · ваш выбор" : ""}</span>
-                <span>{option.votes}</span>
+                <span>{option.votes} {plural(option.votes, "голос", "голоса", "голосов")} · {width}%</span>
               </div>
             )}
-            <div className="ballot-bar" aria-hidden="true"><span style={{ width: `${width}%` }} /></div>
+            <div className="ballot-bar" role="progressbar" aria-label={`Доля голосов за «${option.label}»`}
+              aria-valuemin={0} aria-valuemax={100} aria-valuenow={width}><span style={{ width: `${width}%` }} /></div>
           </div>
         );
       })}
       {ballot.status === "open" && <p className="muted">{ballot.effect ? "Если «Принять» победит и наберёт не меньше порога, изменение вступит в силу в конце срока. Свой выбор можно сменить." : "Свой вариант можно сменить до конца срока."}</p>}
       {ballot.status === "closed" && outcomeTitle(ballot.outcome) && <p className="muted">{outcomeTitle(ballot.outcome)}</p>}
+      <button className="btn ballot-copy" type="button" onClick={onCopy}>Копировать сводку</button>
       {canClose && !ballot.effect && ballot.status !== "closed" && <button className="btn" type="button" disabled={busy} onClick={onClose}>Завершить</button>}
     </article>
   );
@@ -265,6 +270,11 @@ export function BallotBoardView({ communityId, board, classmates, roles, topicId
   onError: (text: string) => void;
 }) {
   const [busy, setBusy] = useState("");
+  const [browse, setBrowse] = useState<BallotBrowseFilter>({ query: "", status: "all", sort: "default" });
+  const [createOpen, setCreateOpen] = useState(false);
+  const [copyNotice, setCopyNotice] = useState("");
+  const visible = filterBallots(board.ballots, browse);
+  const filtered = !!browse.query.trim() || browse.status !== "all" || browse.sort !== "default";
   async function refreshResult(result: BallotBoard) {
     onChange(await ballotBoardAfterMutation(result, topicId, selected => api.ballots(communityId, selected)));
   }
@@ -275,16 +285,71 @@ export function BallotBoardView({ communityId, board, classmates, roles, topicId
     finally { setBusy(""); }
   }
 
+  async function copySummary(ballot: Ballot) {
+    try {
+      await navigator.clipboard.writeText(ballotSummary(ballot));
+      setCopyNotice("Сводка скопирована");
+    } catch { setCopyNotice("Не удалось скопировать сводку"); }
+  }
+
   return (
     <section className={topicId ? "ballots channel-ballots" : "ballots"}>
-      <div className="card stack">
-        <h2>{title || "Голосования"}</h2>
+      <div className="card stack ballot-board-head">
+        <div className="row ballot-head-row"><h2>{title || "Голосования"}</h2>
+          {canCreate && <button className="btn" type="button" aria-expanded={createOpen} onClick={() => setCreateOpen(value => !value)}>
+            {createOpen ? "Свернуть создание" : "Создать голосование"}</button>}
+        </div>
         {topicId ? <p className="muted">Здесь только голосования группы. Выберите вариант в карточке или предложите свой вопрос.</p> : <p className="muted">
           Система раз в неделю спрашивает, как прошла учёба, если в группе хотя бы три человека. Староста открывает голосование сразу.
           Общее начинается после {board.supportersNeeded} {plural(board.supportersNeeded, "подписи", "подписей", "подписей")}: в группе {board.members} {plural(board.members, "человек", "человека", "человек")}.
           Таким голосованием можно менять роли, возможности и состав группы. Одновременно идут не больше пяти голосований.
         </p>}
-        {board.ballots.map(ballot => (
+        <div className="ballot-browse" role="group" aria-label="Поиск и фильтры голосований">
+          <label className="field">Поиск голосования
+            <input type="search" value={browse.query} onChange={event => setBrowse(current => ({ ...current, query: event.target.value }))}
+              placeholder="Вопрос или вариант" />
+          </label>
+          <label className="field">Статус
+            <select value={browse.status} onChange={event => setBrowse(current => ({ ...current, status: event.target.value as BallotBrowseFilter["status"] }))}>
+              <option value="all">Все</option><option value="collecting">Сбор поддержки</option>
+              <option value="open">Идёт</option><option value="closed">Завершено</option>
+            </select>
+          </label>
+          <label className="field">Порядок
+            <select value={browse.sort} onChange={event => setBrowse(current => ({ ...current, sort: event.target.value as BallotBrowseFilter["sort"] }))}>
+              <option value="default">Как на доске</option><option value="nearest">Ближайший срок</option>
+              <option value="farthest">Дальний срок</option>
+            </select>
+          </label>
+        </div>
+        <div className="row ballot-browse-summary"><span className="muted">На текущей доске: {visible.length} из {board.ballots.length}</span>
+          {filtered && <button className="btn" type="button" onClick={() => setBrowse({ query: "", status: "all", sort: "default" })}>Сбросить фильтры</button>}
+        </div>
+      </div>
+      {canCreate ? <div className="ballot-create stack" hidden={!createOpen}>
+        <div className={board.canOpen ? "ballot-grid" : "stack"}>
+          {board.canOpen && <BallotForm
+            title="Объявить голосование"
+            hint="Откроется сразу для всей группы."
+            submitLabel="Объявить"
+            action={(question, options, days) => api.openHeadmanBallot(communityId, question, options, days, topicId)}
+            onDone={refreshResult}
+            onError={onError}
+          />}
+          <BallotForm
+            title="Предложить голосование"
+            hint="Автор уже считается поддержавшим. Голосование откроется, когда подписей будет достаточно."
+            submitLabel="Предложить"
+            action={(question, options, days) => api.proposeBallot(communityId, question, options, days, topicId)}
+            onDone={refreshResult}
+            onError={onError}
+          />
+        </div>
+        {!topicId && <ChangeForm communityId={communityId} classmates={classmates} roles={roles} onDone={onChange} onError={onError} />}
+      </div> : <p className="muted">Создавать голосования здесь могут только управляющие разделами.</p>}
+      <div className="card stack ballot-list">
+        {copyNotice && <p className="muted" role="status">{copyNotice}</p>}
+        {visible.map(ballot => (
           <BallotCard
             key={ballot.ballotId}
             ballot={ballot}
@@ -292,34 +357,17 @@ export function BallotBoardView({ communityId, board, classmates, roles, topicId
             busy={busy === ballot.ballotId}
             onSupport={() => void run(ballot.ballotId, () => api.supportBallot(communityId, ballot.ballotId), "Не получилось поддержать голосование")}
             onVote={optionId => void run(ballot.ballotId, () => api.voteBallot(communityId, ballot.ballotId, optionId), "Не получилось проголосовать")}
+            onCopy={() => void copySummary(ballot)}
             onClose={() => {
               if (window.confirm("Завершить голосование до срока?")) void run(ballot.ballotId, () => api.closeBallot(communityId, ballot.ballotId), "Не получилось завершить голосование");
             }}
           />
         ))}
-        {board.ballots.length === 0 && <p className="muted">Голосований пока нет.</p>}
+        {board.ballots.length === 0 && <div className="empty">Голосований пока нет.
+          {canCreate && <button className="btn" type="button" onClick={() => setCreateOpen(true)}>Создать голосование</button>}</div>}
+        {board.ballots.length > 0 && visible.length === 0 && <div className="empty">На текущей доске совпадений нет.
+          <button className="btn" type="button" onClick={() => setBrowse({ query: "", status: "all", sort: "default" })}>Показать все</button></div>}
       </div>
-      {canCreate ? <div className={board.canOpen ? "ballot-grid" : "stack"}>
-        {board.canOpen && (
-          <BallotForm
-            title="Объявить голосование"
-            hint="Откроется сразу для всей группы."
-            submitLabel="Объявить"
-            action={(question, options, days) => api.openHeadmanBallot(communityId, question, options, days, topicId)}
-            onDone={refreshResult}
-            onError={onError}
-          />
-        )}
-        <BallotForm
-          title="Предложить голосование"
-          hint="Автор уже считается поддержавшим. Голосование откроется, когда подписей будет достаточно."
-          submitLabel="Предложить"
-          action={(question, options, days) => api.proposeBallot(communityId, question, options, days, topicId)}
-          onDone={refreshResult}
-          onError={onError}
-        />
-      </div> : <p className="muted">Создавать голосования здесь могут только управляющие разделами.</p>}
-      {!topicId && <ChangeForm communityId={communityId} classmates={classmates} roles={roles} onDone={onChange} onError={onError} />}
     </section>
   );
 }

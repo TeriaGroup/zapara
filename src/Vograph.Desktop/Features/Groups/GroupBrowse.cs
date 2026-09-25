@@ -17,6 +17,18 @@ public static class GroupBrowse
             .ThenByDescending(row => row.Unread.Length > 0)
             .ToArray();
 
+    public static GroupChannelRow? NextUnread(IEnumerable<GroupChannelRow> rows, GroupChannelRow? selected)
+    {
+        var real = rows.Where(row => !row.IsGlobalBallots).ToArray();
+        var current = Array.IndexOf(real, selected);
+        for (var offset = 1; offset <= real.Length; offset++)
+        {
+            var candidate = real[(current + offset) % real.Length];
+            if (candidate != selected && candidate.UnreadCount > 0) return candidate;
+        }
+        return null;
+    }
+
     private static bool Matches(string query, params string[] values)
     {
         var needle = query.Trim();

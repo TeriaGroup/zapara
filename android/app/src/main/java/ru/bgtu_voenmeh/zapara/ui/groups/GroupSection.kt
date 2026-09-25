@@ -4,16 +4,21 @@ package ru.bgtu_voenmeh.zapara.ui.groups
 
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import androidx.compose.foundation.BorderStroke
@@ -31,6 +36,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
@@ -40,6 +46,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,6 +62,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
@@ -66,6 +78,8 @@ import ru.bgtu_voenmeh.zapara.ui.media.ChatMediaCaptureHost
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
+import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
+import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
@@ -178,48 +192,42 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
         Modifier.fillMaxSize().padding(horizontal = Zapara.space.l, vertical = Zapara.space.l),
         verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
     ) {
-        ZButton(stringResource(R.string.group_list), { onEvent(GroupEvent.Back) }, ghost = true, tag = "Group.List")
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            Text(
-                state.title,
-                style = Zapara.typography.section,
-                color = c.text1,
-                modifier = Modifier.weight(1f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            RoleChip(state.myRole)
+        if (state.showChannels || state.showPeople) {
+            ZButton(stringResource(R.string.group_list), { onEvent(GroupEvent.Back) }, ghost = true, tag = "Group.List")
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                Text(state.title, style = Zapara.typography.section, color = c.text1,
+                    modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                RoleChip(state.myRole)
+            }
+            Text(stringResource(R.string.group_disclaimer), style = Zapara.typography.caption, color = c.text2)
+            ZSegmented(listOf(stringResource(R.string.channel_list), stringResource(R.string.group_people)),
+                selected = if (state.showPeople) 1 else 0,
+                onSelect = { onEvent(if (it == 0) GroupEvent.Chat else GroupEvent.People) },
+                tag = "Group.Panes", modifier = Modifier.fillMaxWidth())
+        } else {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZButton(stringResource(R.string.group_back), { onEvent(GroupEvent.Channels) }, ghost = true, tag = "Group.Back")
+                Column(Modifier.weight(1f)) {
+                    Text(state.title, style = Zapara.typography.caption, color = c.text2,
+                        modifier = Modifier.fillMaxWidth())
+                    Text(state.chatTitle, style = Zapara.typography.bodyStrong, color = c.text1,
+                        modifier = Modifier.fillMaxWidth())
+                }
+            }
         }
-        Text(stringResource(R.string.group_disclaimer), style = Zapara.typography.caption, color = c.text2)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            ZButton(
-                stringResource(R.string.channel_list),
-                { onEvent(GroupEvent.Chat) },
-                modifier = Modifier.weight(1f),
-                ghost = !state.showChannels,
-                tag = "Group.Channels"
-            )
-            ZButton(
-                stringResource(R.string.group_people),
-                { onEvent(GroupEvent.People) },
-                modifier = Modifier.weight(1f),
-                ghost = !state.showPeople,
-                tag = "Group.People"
-            )
-        }
+        val nextUnread = nextUnreadChannel(state.channels, state.activeTopicId,
+            inChannel = !state.showChannels && !state.showPeople && !state.direct &&
+                (state.activeConversationId != null || state.activeTopicId != null))
+        if (!state.direct) ZButton(stringResource(if (nextUnread == null) R.string.group_no_unread else R.string.group_next_unread),
+            { nextUnread?.let { onEvent(GroupEvent.OpenChannel(it.topicId)) } },
+            enabled = nextUnread != null, ghost = true, tag = "Group.NextUnread")
         if (state.failed) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.group_failed), color = c.bad, modifier = Modifier.weight(1f).testTag("Group.Error"))
             if (!state.attachmentPending) ZButton(stringResource(R.string.group_refresh),
                 { onEvent(GroupEvent.Refresh) }, ghost = true)
         }
         if (state.mediaError) Text(stringResource(R.string.group_media_failed), color = c.bad, modifier = Modifier.testTag("Group.MediaError"))
-        if (!state.showPeople && !state.showChannels) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                ZButton(stringResource(R.string.group_back), { onEvent(GroupEvent.Channels) }, ghost = true, tag = "Group.Back")
-                Text(state.chatTitle, style = Zapara.typography.bodyStrong, color = c.text1,
-                    modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
         if (state.showPeople) {
             People(state, onEvent, peopleSearch, onPeopleSearch, Modifier.weight(1f))
         } else if (state.showChannels) {
@@ -328,8 +336,15 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                         Text(if (channel.kind == "ballots") stringResource(R.string.channel_ballot_count, channel.activeBallots)
                             else channel.lastBody ?: stringResource(R.string.channel_no_messages), style = Zapara.typography.caption,
                             color = c.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (channel.kind == "chat") channel.lastAt?.let { lastAt ->
+                            val whenText = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+                                .withZone(ZoneId.systemDefault()).format(lastAt)
+                            Text(if (channel.lastAuthor.isNullOrBlank()) stringResource(R.string.group_channel_last_at, whenText)
+                                else stringResource(R.string.group_channel_last_by, channel.lastAuthor, whenText),
+                                style = Zapara.typography.caption, color = c.text2)
+                        }
                     }
-                    if (channel.unread > 0) ZChip(channel.unread.toString(), selected = true)
+                    UnreadBadge(channel.unread)
                     if (state.canManageChannels && managing && channel.topicId != null) {
                         var menuOpen by remember(channel.topicId) { mutableStateOf(false) }
                         Box {
@@ -500,70 +515,189 @@ private fun ChannelEditor(initial: GroupTopic?, busy: Boolean,
 private fun BallotChannel(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifier: Modifier) {
     val c = Zapara.colors
     val board = state.board
-    if (state.chatLoading && board == null) {
-        Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Text(stringResource(R.string.group_loading), color = c.text2)
+    var query by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf("") }
+    var status by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(BallotStatus.All.name) }
+    var sort by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(BallotSort.Original.name) }
+    var filtersOpen by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(false) }
+    var composing by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(false) }
+    var draftQuestion by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf("") }
+    var draftOptions by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(arrayListOf("", "")) }
+    var draftDays by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(3) }
+    var seenCreateVersion by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(state.ballotCreateVersion) }
+    LaunchedEffect(state.communityId, state.activeTopicId, state.ballotCreateVersion) {
+        if (state.ballotCreateVersion != seenCreateVersion) {
+            seenCreateVersion = state.ballotCreateVersion
+            composing = false
+            draftQuestion = ""
+            draftOptions = arrayListOf("", "")
+            draftDays = 3
         }
-        return
     }
-    var composing by remember(state.activeTopicId) { mutableStateOf(false) }
-    LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-        item { Text(stringResource(R.string.channel_ballot_type), style = Zapara.typography.section, color = c.text1) }
-        if (state.ballotRefreshFailed) item {
-            Text(stringResource(R.string.channel_ballot_refresh_failed), style = Zapara.typography.caption, color = c.warn)
-        }
-        if (board == null) item { Text(stringResource(R.string.channel_ballot_load_failed), color = c.text2) }
-        else {
-            items(board.ballots, key = { it.ballotId }) { ballot ->
-                BallotCard(ballot, board.canClose, state.channelBusy, onEvent)
+    val statusFilter = BallotStatus.entries.firstOrNull { it.name == status } ?: BallotStatus.All
+    val sortOrder = BallotSort.entries.firstOrNull { it.name == sort } ?: BallotSort.Original
+    val visible = browseBallots(board?.ballots.orEmpty(), query, statusFilter, sortOrder)
+    val filtered = query.isNotBlank() || statusFilter != BallotStatus.All || sortOrder != BallotSort.Original
+    val hasDraft = draftQuestion.isNotBlank() || draftOptions.any { it.isNotBlank() }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        Text(stringResource(R.string.channel_ballot_type), style = Zapara.typography.section, color = c.text1)
+        if (state.chatLoading && board == null) {
+            Text(stringResource(R.string.group_loading), style = Zapara.typography.caption, color = c.text2)
+            SkeletonList()
+        } else if (board == null) {
+            ZCard(Modifier.fillMaxWidth(), tag = "Empty.BallotError") {
+                Text(stringResource(R.string.channel_ballot_load_failed), color = c.bad)
+                ZButton(stringResource(R.string.group_ballot_retry), { onEvent(GroupEvent.Refresh) }, ghost = true,
+                    tag = "Group.BallotRetry")
             }
-            if (board.ballots.isEmpty()) item { Text(stringResource(R.string.channel_ballot_empty), color = c.text2) }
-            item {
-                if (!state.canPost) Text(stringResource(R.string.channel_ballot_read_only), style = Zapara.typography.caption, color = c.text2)
-                else if (composing) BallotEditor(state.channelBusy, board.canOpen,
-                    onSave = { question, options, days, headman ->
-                        onEvent(GroupEvent.CreateBallot(question, options, days, headman)); composing = false
-                    }, onCancel = { composing = false })
-                else ZButton(stringResource(R.string.channel_ballot_new), { composing = true }, enabled = !state.channelBusy,
-                    tag = "Group.BallotCreate")
+        } else {
+            OutlinedTextField(query, { query = it }, label = { Text(stringResource(R.string.group_ballot_search)) },
+                singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Group.BallotSearch"))
+            Text(stringResource(R.string.group_ballot_scope), style = Zapara.typography.caption, color = c.text2)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                Text(stringResource(R.string.group_ballot_results, visible.size, board.ballots.size),
+                    style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f))
+                ZChip(stringResource(R.string.group_ballot_filters), selected = filtered,
+                    onClick = { filtersOpen = true }, tag = "Group.BallotFilters")
+            }
+            if (filtered) ZButton(stringResource(R.string.group_ballot_reset), {
+                query = ""; status = BallotStatus.All.name; sort = BallotSort.Original.name
+            }, ghost = true, tag = "Group.BallotReset")
+            if (state.canPost || hasDraft) ZButton(stringResource(if (hasDraft) R.string.group_ballot_continue_draft else R.string.channel_ballot_new), {
+                filtersOpen = false; composing = true
+            }, enabled = !state.channelBusy, tag = "Group.BallotCreate")
+            if (!state.canPost) Text(stringResource(R.string.channel_ballot_read_only), style = Zapara.typography.caption, color = c.text2)
+            if (state.ballotRefreshFailed) ZCard(Modifier.fillMaxWidth(), tag = "Group.BallotRefreshError") {
+                Text(stringResource(R.string.channel_ballot_refresh_failed), style = Zapara.typography.caption, color = c.warn)
+                ZButton(stringResource(R.string.group_ballot_retry), { onEvent(GroupEvent.Refresh) }, ghost = true)
+            }
+            LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                if (visible.isEmpty()) item {
+                    ZCard(Modifier.fillMaxWidth(), tag = if (filtered) "Empty.BallotSearch" else "Empty.BallotBoard") {
+                        Text(stringResource(if (filtered) R.string.group_ballot_no_results else R.string.channel_ballot_empty),
+                            style = Zapara.typography.caption, color = c.text2)
+                        if (filtered) ZButton(stringResource(R.string.group_ballot_reset), {
+                            query = ""; status = BallotStatus.All.name; sort = BallotSort.Original.name
+                        }, ghost = true)
+                    }
+                }
+                items(visible, key = { it.ballotId }) { ballot ->
+                    BallotCard(ballot, board.canClose, state.channelBusy, onEvent)
+                }
             }
         }
+    }
+    if (filtersOpen && board != null) ZBottomSheet(onDismiss = { filtersOpen = false },
+        tag = "Group.BallotFilterSheet", scrollable = true) {
+        Text(stringResource(R.string.group_ballot_filters), style = Zapara.typography.section, color = c.text1)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+            verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            listOf(BallotStatus.All to R.string.group_ballot_status_all,
+                BallotStatus.Collecting to R.string.group_ballot_status_collecting,
+                BallotStatus.Open to R.string.group_ballot_status_open,
+                BallotStatus.Closed to R.string.group_ballot_status_closed).forEach { (value, label) ->
+                ZChip(stringResource(label), selected = statusFilter == value,
+                    onClick = { status = value.name }, tag = "Group.BallotStatus.${value.name}",
+                    modifier = Modifier.semantics { selected = statusFilter == value })
+            }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+            verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            listOf(BallotSort.Original to R.string.group_ballot_sort_original,
+                BallotSort.Nearest to R.string.group_ballot_sort_nearest,
+                BallotSort.Farthest to R.string.group_ballot_sort_farthest).forEach { (value, label) ->
+                ZChip(stringResource(label), selected = sortOrder == value,
+                    onClick = { sort = value.name }, tag = "Group.BallotSort.${value.name}",
+                    modifier = Modifier.semantics { selected = sortOrder == value })
+            }
+        }
+        ZButton(stringResource(R.string.group_ballot_filters_done), { filtersOpen = false },
+            modifier = Modifier.fillMaxWidth(), tag = "Group.BallotFiltersDone")
+    }
+    if (composing && board != null) ZBottomSheet(
+        onDismiss = { if (!state.channelBusy) composing = false }, tag = "Group.BallotCreateSheet", scrollable = true) {
+        BallotEditor(state.channelBusy, board.canOpen, state.canPost, state.ballotCreateFailed,
+            question = draftQuestion, onQuestion = { draftQuestion = it },
+            options = draftOptions, onOptions = { draftOptions = ArrayList(it) },
+            days = draftDays, onDays = { draftDays = it },
+            onSave = { question, options, days, headman ->
+                onEvent(GroupEvent.CreateBallot(question, options, days, headman))
+            }, onCancel = {
+                if (!state.channelBusy) {
+                    draftQuestion = ""; draftOptions = arrayListOf("", ""); draftDays = 3; composing = false
+                }
+            })
     }
 }
 
 @Composable
 private fun BallotCard(ballot: Ballot, canClose: Boolean, busy: Boolean, onEvent: (GroupEvent) -> Unit) {
     val c = Zapara.colors
+    val context = LocalContext.current
     var closing by remember(ballot.ballotId) { mutableStateOf(false) }
-    val total = ballot.options.sumOf { it.votes }
+    var copyFeedback by remember(ballot.ballotId) { mutableStateOf<String?>(null) }
+    val total = ballotTotalVotes(ballot)
     val deadline = remember(ballot.deadlineAt) {
         DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm").withZone(ZoneId.systemDefault()).format(ballot.deadlineAt)
+    }
+    val statusLabel = stringResource(when (ballot.status) {
+        "collecting" -> R.string.channel_ballot_collecting
+        "open" -> R.string.channel_ballot_open
+        else -> R.string.channel_ballot_closed
+    })
+    val supportLine = if (ballot.status == "collecting")
+        stringResource(R.string.channel_ballot_supporters, ballot.supporters, ballot.supportersNeeded) else null
+    val summary = ballotSummary(ballot,
+        stringResource(R.string.group_ballot_summary_status, statusLabel),
+        stringResource(R.string.group_ballot_summary_deadline, deadline),
+        stringResource(R.string.group_ballot_votes_label), stringResource(R.string.group_ballot_share_label), supportLine)
+    val copiedText = stringResource(R.string.group_ballot_copied)
+    val copyFailedText = stringResource(R.string.group_ballot_copy_failed)
+    val clipboardLabel = stringResource(R.string.group_ballot_clip_label)
+    LaunchedEffect(copyFeedback) {
+        if (copyFeedback != null) {
+            delay(2500)
+            copyFeedback = null
+        }
     }
     ZCard(Modifier.fillMaxWidth(), tag = "Group.Ballot.${ballot.ballotId}") {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             ZChip(stringResource(when (ballot.origin) { "system" -> R.string.channel_ballot_origin_system;
                 "headman" -> R.string.channel_ballot_origin_headman; else -> R.string.channel_ballot_origin_collective }))
-            ZChip(stringResource(when (ballot.status) { "collecting" -> R.string.channel_ballot_collecting; "open" -> R.string.channel_ballot_open; else -> R.string.channel_ballot_closed }))
+            ZChip(statusLabel)
             if (ballot.effect.isNotBlank()) ZChip(stringResource(R.string.channel_ballot_effect))
         }
         Text(ballot.question, style = Zapara.typography.bodyStrong, color = c.text1)
         Text(stringResource(R.string.channel_ballot_deadline, deadline), style = Zapara.typography.caption, color = c.text2)
+        when (ballotDeadlineNotice(ballot, Instant.now())) {
+            DeadlineNotice.Soon -> Text(stringResource(R.string.group_ballot_deadline_soon),
+                style = Zapara.typography.caption, color = c.warn)
+            DeadlineNotice.AwaitingServer -> Text(stringResource(R.string.group_ballot_deadline_waiting),
+                style = Zapara.typography.caption, color = c.warn)
+            DeadlineNotice.None -> Unit
+        }
         if (ballot.status == "collecting") {
-            Text(stringResource(R.string.channel_ballot_supporters, ballot.supporters, ballot.supportersNeeded), style = Zapara.typography.caption, color = c.text2)
+            Text(supportLine.orEmpty(), style = Zapara.typography.caption, color = c.text2)
             if (ballot.supported) ZChip(stringResource(R.string.channel_ballot_supported))
             else ZButton(stringResource(R.string.channel_ballot_support), { onEvent(GroupEvent.SupportBallot(ballot.ballotId)) },
                 enabled = !busy, tag = "Group.BallotSupport.${ballot.ballotId}")
         }
         ballot.options.forEach { option ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            val percent = ballotPercent(option.votes, total)
+            val resultText = stringResource(R.string.group_ballot_option_result, option.votes, percent)
+            val optionLabel = if (option.chosen) stringResource(R.string.group_ballot_your_choice, option.label) else option.label
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                 if (ballot.status == "open") ZButton(
-                    (if (option.chosen) "✓ " else "") + option.label,
+                    optionLabel,
                     { onEvent(GroupEvent.VoteBallot(ballot.ballotId, option.optionId)) },
-                    modifier = Modifier.weight(1f), enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(), enabled = !busy,
                     ghost = !option.chosen, tag = "Group.BallotVote.${ballot.ballotId}.${option.optionId}")
-                else Text(option.label, style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
-                if (ballot.status != "collecting") Text("${option.votes} / $total", style = Zapara.typography.caption, color = c.text2)
+                else Text(optionLabel, style = Zapara.typography.body, color = c.text1)
+                Text(resultText, style = Zapara.typography.caption, color = c.text2)
+                val barDescription = stringResource(R.string.group_ballot_bar_description, option.label, resultText)
+                LinearProgressIndicator(progress = { percent / 100f },
+                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = barDescription },
+                    color = c.accent, trackColor = c.chip)
             }
         }
         val outcome = when (ballot.outcome) {
@@ -573,6 +707,16 @@ private fun BallotCard(ballot: Ballot, canClose: Boolean, busy: Boolean, onEvent
             else -> null
         }
         if (outcome != null) Text(stringResource(outcome), style = Zapara.typography.caption, color = c.text2)
+        ZButton(stringResource(R.string.group_ballot_copy), {
+            copyFeedback = try {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText(clipboardLabel, summary))
+                copiedText
+            } catch (_: Exception) { copyFailedText }
+        }, ghost = true, tag = "Group.BallotCopy.${ballot.ballotId}")
+        if (copyFeedback != null) Text(copyFeedback.orEmpty(), style = Zapara.typography.caption,
+            color = c.text2, modifier = Modifier.testTag("Group.BallotCopyFeedback.${ballot.ballotId}")
+                .semantics { liveRegion = LiveRegionMode.Polite })
         if (canClose && ballot.effect.isBlank() && ballot.status != "closed") ZButton(stringResource(R.string.channel_ballot_finish), { closing = true },
             enabled = !busy, ghost = true, tag = "Group.BallotClose.${ballot.ballotId}")
     }
@@ -583,36 +727,41 @@ private fun BallotCard(ballot: Ballot, canClose: Boolean, busy: Boolean, onEvent
 }
 
 @Composable
-private fun BallotEditor(busy: Boolean, canOpen: Boolean,
+private fun BallotEditor(busy: Boolean, canOpen: Boolean, canSubmit: Boolean, failed: Boolean,
+    question: String, onQuestion: (String) -> Unit, options: List<String>, onOptions: (List<String>) -> Unit,
+    days: Int, onDays: (Int) -> Unit,
     onSave: (String, List<String>, Int, Boolean) -> Unit, onCancel: () -> Unit) {
-    var question by remember { mutableStateOf("") }
-    var options by remember { mutableStateOf(listOf("", "")) }
-    var days by remember { mutableStateOf(3) }
     ZCard(Modifier.fillMaxWidth(), tag = "Group.BallotEditor") {
         Text(stringResource(R.string.channel_ballot_one_question), style = Zapara.typography.bodyStrong)
-        OutlinedTextField(question, { question = it.take(400) }, label = { Text(stringResource(R.string.channel_ballot_question)) },
+        if (failed) Text(stringResource(R.string.group_ballot_submit_failed), style = Zapara.typography.caption,
+            color = Zapara.colors.bad, modifier = Modifier.testTag("Group.BallotSubmitError"))
+        if (busy) Text(stringResource(R.string.group_ballot_submitting), style = Zapara.typography.caption,
+            color = Zapara.colors.text2)
+        if (!canSubmit) Text(stringResource(R.string.group_ballot_write_revoked), style = Zapara.typography.caption,
+            color = Zapara.colors.warn)
+        OutlinedTextField(question, { onQuestion(it.take(400)) }, label = { Text(stringResource(R.string.channel_ballot_question)) },
             modifier = Modifier.fillMaxWidth().testTag("Group.BallotQuestion"))
         options.forEachIndexed { index, option ->
-            OutlinedTextField(option, { next -> options = options.mapIndexed { i, value -> if (i == index) next.take(80) else value } },
+            OutlinedTextField(option, { next -> onOptions(options.mapIndexed { i, value -> if (i == index) next.take(80) else value }) },
                 label = { Text(stringResource(R.string.channel_ballot_option, index + 1)) }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("Group.BallotOption.$index"))
         }
-        if (options.size < 6) ZButton(stringResource(R.string.channel_ballot_add_option), { options = options + "" }, ghost = true)
-        if (options.size > 2) ZButton(stringResource(R.string.channel_ballot_remove_option), { options = options.dropLast(1) }, ghost = true)
+        if (options.size < 6) ZButton(stringResource(R.string.channel_ballot_add_option), { onOptions(options + "") }, ghost = true)
+        if (options.size > 2) ZButton(stringResource(R.string.channel_ballot_remove_option), { onOptions(options.dropLast(1)) }, ghost = true)
         Text(stringResource(R.string.channel_ballot_duration), style = Zapara.typography.caption)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             listOf(1, 3, 7, 14).forEach { value ->
-                ZChip(stringResource(R.string.channel_ballot_days, value), selected = days == value, onClick = { days = value }, tag = "Group.BallotDays.$value")
+                ZChip(stringResource(R.string.channel_ballot_days, value), selected = days == value, onClick = { onDays(value) }, tag = "Group.BallotDays.$value")
             }
         }
         val valid = question.isNotBlank() && options.size in 2..6 && options.all { it.isNotBlank() } &&
             options.map { it.trim() }.distinct().size == options.size
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             ZButton(stringResource(R.string.channel_ballot_propose), { onSave(question.trim(), options.map { it.trim() }, days, false) },
-                enabled = valid && !busy, tag = "Group.BallotPropose")
+                enabled = valid && canSubmit && !busy, tag = "Group.BallotPropose")
             if (canOpen) ZButton(stringResource(R.string.channel_ballot_announce), { onSave(question.trim(), options.map { it.trim() }, days, true) },
-                enabled = valid && !busy, ghost = true, tag = "Group.BallotOpen")
-            ZButton(stringResource(R.string.channel_cancel), onCancel, ghost = true)
+                enabled = valid && canSubmit && !busy, ghost = true, tag = "Group.BallotOpen")
+            ZButton(stringResource(R.string.channel_cancel), onCancel, enabled = !busy, ghost = true)
         }
     }
 }
@@ -637,7 +786,7 @@ private fun People(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                         color = c.text1,
                         modifier = Modifier.weight(1f)
                     )
-                    if (state.groupUnread > 0) ZChip(state.groupUnread.toString(), selected = true)
+                    UnreadBadge(state.groupUnread)
                 }
             }
         }
@@ -676,7 +825,7 @@ private fun People(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                                 Text(chat.preview, style = Zapara.typography.caption, color = c.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             }
                         }
-                        if (chat.unread > 0) ZChip(chat.unread.toString(), selected = true)
+                        UnreadBadge(chat.unread)
                     }
                 }
             }
@@ -685,54 +834,121 @@ private fun People(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
 }
 
 @Composable
+private fun UnreadBadge(count: Int) {
+    if (count <= 0) return
+    val description = stringResource(R.string.group_unread_count, count)
+    ZChip(if (count > 99) "99+" else count.toString(), selected = true,
+        modifier = Modifier.semantics { contentDescription = description })
+}
+
+@Composable
 private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifier: Modifier) {
     val c = Zapara.colors
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    var query by rememberSaveable(state.activeConversationId, state.activeTopicId) { mutableStateOf("") }
+    var author by rememberSaveable(state.activeConversationId, state.activeTopicId) { mutableStateOf(MessageAuthor.All.name) }
+    var kind by rememberSaveable(state.activeConversationId, state.activeTopicId) { mutableStateOf(MessageKind.All.name) }
+    var filtersOpen by rememberSaveable(state.activeConversationId, state.activeTopicId) { mutableStateOf(false) }
+    val authorFilter = MessageAuthor.entries.firstOrNull { it.name == author } ?: MessageAuthor.All
+    val kindFilter = MessageKind.entries.firstOrNull { it.name == kind } ?: MessageKind.All
+    val visible = browseMessages(state.messages, query, authorFilter, kindFilter)
+    val filtered = query.isNotBlank() || authorFilter != MessageAuthor.All || kindFilter != MessageKind.All
     var firstScrollDone by remember(state.activeConversationId, state.activeTopicId) { mutableStateOf(false) }
-    LaunchedEffect(state.activeConversationId, state.activeTopicId, state.messages.size, state.hasMore) {
-        if (!firstScrollDone && state.messages.isNotEmpty()) {
-            listState.scrollToItem(state.messages.lastIndex + if (state.hasMore) 1 else 0)
+    val filterKey = Triple(query.trim(), authorFilter, kindFilter)
+    var previousFilterKey by remember(state.activeConversationId, state.activeTopicId) { mutableStateOf(filterKey) }
+    LaunchedEffect(state.activeConversationId, state.activeTopicId, state.messages.size, state.hasMore, filterKey) {
+        if (filterKey != previousFilterKey) {
+            previousFilterKey = filterKey
+            firstScrollDone = true
+            listState.scrollToItem(0)
+        } else if (!firstScrollDone && state.messages.isNotEmpty()) {
+            listState.scrollToItem(if (filtered) 0 else visible.lastIndex + if (state.hasMore) 1 else 0)
             firstScrollDone = true
         }
     }
-    if (state.chatLoading && state.messages.isEmpty()) {
-        Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Text(stringResource(R.string.group_loading), style = Zapara.typography.caption, color = c.text2)
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+        OutlinedTextField(query, { query = it }, label = { Text(stringResource(R.string.group_message_search)) },
+            singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Group.MessageSearch"))
+        Text(stringResource(R.string.group_message_scope), style = Zapara.typography.caption, color = c.text2)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            Text(stringResource(R.string.group_message_results, visible.size, state.messages.size),
+                style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f))
+            ZChip(stringResource(R.string.group_message_filters), selected = filtered,
+                onClick = { filtersOpen = !filtersOpen }, tag = "Group.MessageFilters")
         }
-    } else if (state.messages.isEmpty() && !state.hasMore) {
-        Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Text(stringResource(R.string.group_no_messages), style = Zapara.typography.caption, color = c.text2)
-        }
-    } else {
-        val total = listState.layoutInfo.totalItemsCount
-        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-        val showJump = state.messages.size > 4 && total > 0 && lastVisible < total - 2
-        Box(modifier.fillMaxWidth()) {
-        LazyColumn(Modifier.fillMaxSize(), state = listState,
-            verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            if (state.hasMore) {
-                item {
-                    ZButton(stringResource(R.string.group_older), { onEvent(GroupEvent.Older) }, ghost = true, tag = "Group.Older")
+        if (filtered) ZButton(stringResource(R.string.group_message_reset), {
+            query = ""; author = MessageAuthor.All.name; kind = MessageKind.All.name
+        }, ghost = true, tag = "Group.MessageReset")
+        if (state.chatLoading && state.messages.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(stringResource(R.string.group_loading), style = Zapara.typography.caption, color = c.text2)
+            }
+        } else {
+            val total = listState.layoutInfo.totalItemsCount
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            val showJump = visible.size > 4 && total > 0 && lastVisible < total - 2
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(Modifier.fillMaxSize(), state = listState) {
+                    if (state.hasMore && visible.isNotEmpty()) item {
+                        ZButton(stringResource(if (state.olderLoading) R.string.group_older_loading else R.string.group_older),
+                            { onEvent(GroupEvent.Older) }, enabled = !state.olderLoading, ghost = true, tag = "Group.Older")
+                    }
+                    if (visible.isEmpty()) item {
+                        ZCard(Modifier.fillMaxWidth(), tag = if (filtered) "Empty.GroupMessageSearch" else "Empty.GroupMessages") {
+                            Text(stringResource(if (filtered) R.string.group_message_no_results else R.string.group_no_messages),
+                                style = Zapara.typography.caption, color = c.text2)
+                            if (state.hasMore) ZButton(stringResource(if (state.olderLoading) R.string.group_older_loading else R.string.group_older),
+                                { onEvent(GroupEvent.Older) }, enabled = !state.olderLoading, ghost = true, tag = "Group.Older")
+                        }
+                    }
+                    itemsIndexed(visible, key = { _, message -> message.id }) { index, message ->
+                        val grouped = !filtered && sameMessageCluster(visible.getOrNull(index - 1), message)
+                        Column(Modifier.fillMaxWidth().padding(top = if (grouped) Zapara.space.xs else Zapara.space.s),
+                            verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                            if (message.day.isNotBlank() && (index == 0 || visible[index - 1].day != message.day))
+                                Text(message.day, modifier = Modifier.align(Alignment.CenterHorizontally).testTag("Group.Day.${message.id}"),
+                                    style = Zapara.typography.caption, color = c.text2)
+                            MessageBubble(message, state.messages.firstOrNull { it.id == message.replyTo }?.body,
+                                state.mediaLoadingId == message.id || message.id in state.mediaLoadingIds,
+                                state.mediaFiles[message.id], message.id in state.mediaFailedIds, state.canPost,
+                                showAuthor = !grouped, onEvent = onEvent)
+                        }
+                    }
                 }
-            }
-            if (state.messages.isEmpty()) {
-                item {
-                    Text(stringResource(R.string.group_no_messages), style = Zapara.typography.caption, color = c.text2)
-                }
-            }
-            items(state.messages, key = { it.id }) { message ->
-                MessageBubble(message, state.messages.firstOrNull { it.id == message.replyTo }?.body,
-                    state.mediaLoadingId == message.id || message.id in state.mediaLoadingIds,
-                    state.mediaFiles[message.id], message.id in state.mediaFailedIds, state.canPost, onEvent)
+                if (showJump) ZButton(stringResource(R.string.channel_new_messages), {
+                    val last = listState.layoutInfo.totalItemsCount - 1
+                    if (last >= 0) scope.launch { listState.animateScrollToItem(last) }
+                }, modifier = Modifier.align(Alignment.BottomEnd).padding(Zapara.space.s),
+                    ghost = true, tag = "Group.JumpLatest")
             }
         }
-        if (showJump) ZButton(stringResource(R.string.channel_new_messages), {
-            val last = listState.layoutInfo.totalItemsCount - 1
-            if (last >= 0) scope.launch { listState.animateScrollToItem(last) }
-        }, modifier = Modifier.align(Alignment.BottomEnd).padding(Zapara.space.s),
-            ghost = true, tag = "Group.JumpLatest")
+    }
+    if (filtersOpen) ZBottomSheet(onDismiss = { filtersOpen = false }, tag = "Group.MessageFilterSheet", scrollable = true) {
+        Text(stringResource(R.string.group_message_filters), style = Zapara.typography.section, color = c.text1)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+            verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            listOf(MessageAuthor.All to R.string.group_author_all, MessageAuthor.Mine to R.string.group_author_mine,
+                MessageAuthor.Others to R.string.group_author_others).forEach { (value, label) ->
+                ZChip(stringResource(label), selected = authorFilter == value,
+                    onClick = { author = value.name }, tag = "Group.MessageAuthor.${value.name}",
+                    modifier = Modifier.semantics { selected = authorFilter == value })
+            }
         }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+            verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            listOf(MessageKind.All to R.string.group_kind_all, MessageKind.Text to R.string.group_kind_text,
+                MessageKind.PhotoVideo to R.string.group_kind_photo_video,
+                MessageKind.Documents to R.string.group_kind_documents,
+                MessageKind.VoiceCircle to R.string.group_kind_voice_circle).forEach { (value, label) ->
+                ZChip(stringResource(label), selected = kindFilter == value,
+                    onClick = { kind = value.name }, tag = "Group.MessageKind.${value.name}",
+                    modifier = Modifier.semantics { selected = kindFilter == value })
+            }
+        }
+        ZButton(stringResource(R.string.group_message_filters_done), { filtersOpen = false },
+            tag = "Group.MessageFiltersDone", modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -756,21 +972,74 @@ private fun reactionEmoji(code: String): String = when (code) {
 
 @Composable
 private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaLoading: Boolean,
-    mediaFile: File?, mediaFailed: Boolean, canPost: Boolean, onEvent: (GroupEvent) -> Unit) {
+    mediaFile: File?, mediaFailed: Boolean, canPost: Boolean, showAuthor: Boolean,
+    onEvent: (GroupEvent) -> Unit) {
     val c = Zapara.colors
     val mine = message.mine
+    val context = LocalContext.current
     var menu by remember(message.id) { mutableStateOf(false) }
+    var deleting by remember(message.id) { mutableStateOf(false) }
     var reactionPicker by remember(message.id) { mutableStateOf(false) }
-    val actions = HoldDecision.actions(message.kind, mine, message.deleted, menu)
+    var copyFeedback by remember(message.id) { mutableStateOf<String?>(null) }
+    val actions = HoldDecision.actions(message.kind, mine, message.deleted, true)
         .filter { canPost || it !in setOf("reply", "edit") }
+    val copyText = copyableMessageText(message)
+    val canCopy = copyText != null
+    val copiedText = stringResource(R.string.group_message_copied)
+    val copyFailedText = stringResource(R.string.group_message_copy_failed)
+    val clipboardLabel = stringResource(R.string.group_message_clip_label)
+    LaunchedEffect(copyFeedback) {
+        if (copyFeedback != null) {
+            delay(2500)
+            copyFeedback = null
+        }
+    }
+    @Composable fun MessageActions() {
+        Box {
+            IconButton(onClick = { menu = true }, modifier = Modifier.size(Zapara.space.minTouch)
+                .testTag("Group.MessageActions.${message.id}")) {
+                Icon(painterResource(R.drawable.ic_menu),
+                    stringResource(R.string.group_message_actions_detail, message.author, message.time), tint = c.text2)
+            }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                if (copyText != null) DropdownMenuItem(text = { Text(stringResource(R.string.group_message_copy)) }, onClick = {
+                    menu = false
+                    copyFeedback = try {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText(clipboardLabel, copyText))
+                        copiedText
+                    } catch (_: Exception) { copyFailedText }
+                }, modifier = Modifier.testTag("Group.Copy.${message.id}"))
+                actions.forEach { action ->
+                    val label = when (action) {
+                        "reply" -> R.string.group_message_reply
+                        "reaction" -> R.string.group_message_react
+                        "edit" -> R.string.group_message_edit
+                        else -> R.string.group_message_delete
+                    }
+                    DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = {
+                        menu = false
+                        HoldDecision.perform(action,
+                            reply = { onEvent(GroupEvent.Hold(message.id, "reply")) },
+                            reaction = { reactionPicker = true },
+                            edit = { onEvent(GroupEvent.Hold(message.id, "edit")) },
+                            delete = { deleting = true })
+                    }, modifier = Modifier.testTag("Group.Action.${message.id}.$action"))
+                }
+            }
+        }
+    }
     Column(
         Modifier.fillMaxWidth().testTag("Group.Author.${message.id}"),
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)
     ) {
-        if (!mine && message.author.isNotBlank()) {
+        if (!mine && showAuthor && message.author.isNotBlank()) {
             Text(message.author, style = Zapara.typography.caption, color = c.text2)
         }
+        Row(verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
+        if (mine && (actions.isNotEmpty() || canCopy)) MessageActions()
         Surface(
             shape = RoundedCornerShape(Zapara.radii.card),
             color = if (mine) c.accent else c.card,
@@ -782,7 +1051,7 @@ private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaL
                         onEvent(GroupEvent.OpenMedia(message.id))
                     }
                 },
-                onLongClick = { menu = true }
+                onLongClick = { if (actions.isNotEmpty() || canCopy) menu = true }
             )
         ) {
             Column(
@@ -807,6 +1076,8 @@ private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaL
                 )
             }
         }
+        if (!mine && (actions.isNotEmpty() || canCopy)) MessageActions()
+        }
         if (!message.deleted && message.reactions.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             message.reactions.forEach { reaction ->
                 ZChip("${reactionEmoji(reaction.emoji)} ${reaction.count}", selected = reaction.mine,
@@ -814,25 +1085,9 @@ private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaL
                     tag = "Group.Reaction.${message.id}.${reaction.emoji}")
             }
         }
-        if (menu) Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-            actions.forEach { action ->
-                val label = when (action) {
-                    "reply" -> "Ответить"
-                    "reaction" -> "Реакция"
-                    "edit" -> "Изменить"
-                    else -> "Удалить"
-                }
-                ZButton(label, {
-                    HoldDecision.perform(action,
-                        reply = { onEvent(GroupEvent.Hold(message.id, "reply")) },
-                        reaction = { reactionPicker = true },
-                        edit = { onEvent(GroupEvent.Hold(message.id, "edit")) },
-                        delete = { onEvent(GroupEvent.Hold(message.id, "delete")) }
-                    )
-                    menu = false
-                }, ghost = true)
-            }
-        }
+        if (copyFeedback != null) Text(copyFeedback.orEmpty(), style = Zapara.typography.caption,
+            color = c.text2, modifier = Modifier.testTag("Group.CopyFeedback.${message.id}")
+                .semantics { liveRegion = LiveRegionMode.Polite })
         if (reactionPicker) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             listOf("like", "heart", "laugh", "wow", "sad").forEach { emoji ->
                 ZChip(reactionEmoji(emoji), onClick = {
@@ -842,6 +1097,13 @@ private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaL
             }
         }
     }
+    if (deleting) AlertDialog(onDismissRequest = { deleting = false },
+        title = { Text(stringResource(R.string.group_message_delete_title)) },
+        text = { Text(stringResource(R.string.group_message_delete_warning)) },
+        confirmButton = { ZButton(stringResource(R.string.group_message_delete), {
+            onEvent(GroupEvent.Hold(message.id, "delete")); deleting = false
+        }, tag = "Group.DeleteConfirm.${message.id}") },
+        dismissButton = { ZButton(stringResource(R.string.channel_cancel), { deleting = false }, ghost = true) })
 }
 
 @Composable
@@ -873,12 +1135,17 @@ private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             if (state.editing != null || state.replyTo != null) {
                 val preview = state.messages.firstOrNull { it.id == state.replyTo }?.body?.take(60)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (state.editing != null) "Редактирование" else "Ответ · ${preview ?: "Сообщение"}",
-                        style = Zapara.typography.caption, color = c.text2, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f))
-                    ZButton(stringResource(R.string.channel_cancel), { onEvent(GroupEvent.CancelContext) }, ghost = true,
-                        tag = "Group.CancelContext")
+                Surface(shape = RoundedCornerShape(Zapara.radii.control), color = c.chip,
+                    border = BorderStroke(Zapara.space.hairline, c.lineStrong),
+                    modifier = Modifier.fillMaxWidth().testTag("Group.ComposeContext")) {
+                    Row(Modifier.padding(Zapara.space.s), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        Text(if (state.editing != null) stringResource(R.string.group_edit_context)
+                            else stringResource(R.string.group_reply_context, preview ?: stringResource(R.string.group_message)),
+                            style = Zapara.typography.caption, color = c.text1, modifier = Modifier.weight(1f))
+                        ZButton(stringResource(R.string.channel_cancel), { onEvent(GroupEvent.CancelContext) }, ghost = true,
+                            tag = "Group.CancelContext")
+                    }
                 }
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,

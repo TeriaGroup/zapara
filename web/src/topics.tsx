@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import * as api from "./api";
-import { channelAccentColor, filterTopics, topicPreview } from "./channels";
+import { channelAccentColor, filterTopics, nextUnreadTopic, topicPreview } from "./channels";
+import { unreadBadgeDescription, unreadBadgeText } from "./groupBrowse";
 import type { ChannelAccent, ChannelWritePolicy, GroupTopic, GroupTopicPage } from "./types";
 
 const icons = ["📌", "💬", "🗳️", "📅", "📚", "💻", "📎", "❗", "🏀", "🧪", "✏️", "🎵", "🌍"];
@@ -76,6 +77,7 @@ export function GroupTopics({ communityId, onOpen, onError }: {
   const [editPinned, setEditPinned] = useState(false);
   const [editWritePolicy, setEditWritePolicy] = useState<ChannelWritePolicy>("all");
   const [busy, setBusy] = useState(false);
+  const [nextBusy, setNextBusy] = useState(false);
   const [off, setOff] = useState(false);
   const [loading, setLoading] = useState(true);
   const [reloadEpoch, setReloadEpoch] = useState(0);
@@ -87,6 +89,7 @@ export function GroupTopics({ communityId, onOpen, onError }: {
   const lastCommunity = useRef(communityId);
   const visible = filterTopics(page.topics, { query: search, kind: kindFilter, unreadOnly });
   const filtered = !!search.trim() || kindFilter !== "all" || unreadOnly;
+  const nextUnread = nextUnreadTopic(page.topics);
 
   useEffect(() => {
     let stop = false;
@@ -146,6 +149,20 @@ export function GroupTopics({ communityId, onOpen, onError }: {
     }).catch(() => onError("Не получилось изменить раздел")).finally(() => setBusy(false));
   }
 
+  function openNextUnread() {
+    if (busy || nextBusy || !nextUnread) return;
+    const ticket = requestEpoch.current;
+    setNextBusy(true);
+    void api.topics(communityId).then(fresh => {
+      if (ticket !== requestEpoch.current || lastCommunity.current !== communityId) return;
+      setPage(fresh);
+      const target = nextUnreadTopic(fresh.topics);
+      if (target) onOpen(target, fresh.canManageChannels);
+      else onError("Непрочитанных каналов нет");
+    }).catch(() => { if (ticket === requestEpoch.current && lastCommunity.current === communityId) onError("Не удалось проверить непрочитанные каналы"); })
+      .finally(() => setNextBusy(false));
+  }
+
   return (
     <div className="topics">
       <p className="muted">Разделы группы: чаты с сообщениями и файлами или отдельные каналы для голосований. Общий поток остаётся наверху.</p>
@@ -161,6 +178,9 @@ export function GroupTopics({ communityId, onOpen, onError }: {
       </div>
       <div className="row">
         <span className="muted">Показано {visible.length} из {page.topics.length}</span>
+        <button className="btn" type="button" disabled={!nextUnread || loading || off || busy || nextBusy}
+          onClick={openNextUnread}>{nextBusy ? "Проверяем…" : "Следующий непрочитанный канал"}</button>
+        {!nextUnread && !loading && !off && <span className="muted">Непрочитанных каналов нет</span>}
         {filtered && <button className="btn" type="button" onClick={() => { setSearch(""); setKindFilter("all"); setUnreadOnly(false); }}>Сбросить фильтры</button>}
         {page.canManageChannels && <button className="btn" type="button" aria-expanded={manageOpen}
           onClick={() => setManageOpen(value => !value)}>{manageOpen ? "Закрыть управление" : "Управлять разделами"}</button>}
@@ -204,7 +224,7 @@ export function GroupTopics({ communityId, onOpen, onError }: {
                 </span>
                 <span className="topic-meta">
                   {when(topic.lastAt)}
-                  {topic.unread > 0 && <span className="chip">{topic.unread}</span>}
+                  {topic.unread > 0 && <span className="chip" aria-label={unreadBadgeDescription(topic.unread)}>{unreadBadgeText(topic.unread)}</span>}
                 </span>
               </button>
               {page.canManageChannels && manageOpen && topic.topicId && <button className="btn topic-edit" type="button" onClick={() => {

@@ -65,6 +65,8 @@ class SocialHttpClientTest {
         val rows = orderInbox(groupInboxRows(home))
         assertEquals(listOf("direct-chat", "group-chat"), rows.map { it.id })
         assertTrue(rows.all { it.communityId == "community" })
+        assertEquals(InboxSource.GroupDirect, rows.first().source)
+        assertEquals(InboxSource.Group, rows.last().source)
         assertEquals("Личный чат · ИВТ-1", rows.first().subtitle)
         assertEquals("Учебная группа", rows.last().subtitle)
     }

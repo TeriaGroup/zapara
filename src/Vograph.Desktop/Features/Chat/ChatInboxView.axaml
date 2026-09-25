@@ -16,8 +16,23 @@
       <Border Classes="card" Padding="10" ClipToBounds="True">
         <DockPanel LastChildFill="True">
           <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="4,2,4,12">
-            <TextBlock Classes="subject" Text="Все беседы" />
-            <Button Classes="ghost" Content="Обновить" Command="{Binding RefreshCommand}" HorizontalAlignment="Left" />
+             <TextBlock Classes="subject" Text="Все беседы" />
+             <TextBlock Classes="muted caption" Text="{Binding UnreadSummary}" />
+             <Button Classes="ghost" Content="Обновить" Command="{Binding RefreshCommand}" HorizontalAlignment="Left" />
+             <TextBox Text="{Binding InboxSearch, Mode=TwoWay}" PlaceholderText="Название или последнее сообщение"
+                      AutomationProperties.AutomationId="Chat.InboxSearch" />
+             <ComboBox SelectedIndex="{Binding InboxSourceIndex, Mode=TwoWay}"
+                       AutomationProperties.AutomationId="Chat.InboxSource">
+               <ComboBoxItem Content="Все источники" />
+               <ComboBoxItem Content="Группы" />
+               <ComboBoxItem Content="Личные чаты группы" />
+               <ComboBoxItem Content="Друзья по коду" />
+             </ComboBox>
+             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+               <TextBlock Classes="muted caption" Text="{Binding InboxResultCount}" VerticalAlignment="Center" />
+               <Button Grid.Column="1" Classes="ghost" Content="Сбросить" Command="{Binding ResetInboxFiltersCommand}"
+                       IsVisible="{Binding HasInboxFilters}" MinHeight="48" />
+             </Grid>
             <TextBlock Classes="muted caption" Text="Ваш код для приглашения" />
             <TextBlock Text="{Binding MyCode}" FontWeight="SemiBold" />
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
@@ -37,31 +52,41 @@
             </ItemsControl>
           </StackPanel>
           <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-            <ItemsControl ItemsSource="{Binding Chats}" AutomationProperties.AutomationId="Chat.Inbox">
+            <StackPanel>
+            <TextBlock Classes="muted" Text="Загрузка бесед…" IsVisible="{Binding LoadingInbox}" Margin="10,8" />
+            <TextBlock Classes="muted" Text="Бесед пока нет" IsVisible="{Binding NoChats}" Margin="10,8" />
+            <TextBlock Classes="muted" Text="Беседы по запросу не найдены" IsVisible="{Binding NoInboxMatches}" Margin="10,8" />
+            <ItemsControl ItemsSource="{Binding FilteredChats}" AutomationProperties.AutomationId="Chat.Inbox">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="chat:ChatInboxRow">
                   <Button Classes="ghost" Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,8" Margin="0,2">
                     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
                       <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                      <Border Grid.Column="1" Classes="badge" IsVisible="{Binding Unread, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                      <Border Grid.Column="1" Classes="badge" AutomationProperties.Name="{Binding UnreadDescription}"
+                              IsVisible="{Binding Unread, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                         <TextBlock Text="{Binding Unread}" />
                       </Border>
-                      <TextBlock Grid.Row="1" Classes="muted caption" Text="{Binding Kind}" />
+                      <TextBlock Grid.Row="1" Classes="muted caption" Text="{Binding SourceTitle}" />
+                      <TextBlock Grid.Row="1" Grid.Column="1" Classes="muted caption" Text="{Binding When}" />
                       <TextBlock Grid.Row="2" Classes="muted caption" Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
                     </Grid>
                   </Button>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
+            </StackPanel>
           </ScrollViewer>
         </DockPanel>
       </Border>
       <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True" IsVisible="{Binding HasConversation}">
         <DockPanel LastChildFill="True">
           <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,0,0,1" Padding="14,12">
-            <Grid ColumnDefinitions="*,Auto">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBlock Classes="subject" Text="{Binding ChatTitle}" />
-              <Button Grid.Column="1" Classes="ghost" Content="Обновить" Command="{Binding ReloadMessagesCommand}" />
+              <Button Grid.Column="1" Classes="ghost" Content="К новым" Click="JumpToLatest" MinHeight="48"
+                      IsVisible="{Binding ShowJumpLatest}"
+                      AutomationProperties.AutomationId="Chat.JumpLatest" />
+              <Button Grid.Column="2" Classes="ghost" Content="Обновить" Command="{Binding ReloadMessagesCommand}" />
             </Grid>
           </Border>
           <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10">
@@ -90,7 +115,7 @@
               </Grid>
             </StackPanel>
           </Border>
-          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <ScrollViewer x:Name="MessageScroll" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="12,10" Spacing="8">
               <Button Classes="ghost" Content="Ранее" Command="{Binding LoadOlderCommand}" IsVisible="{Binding HasMore}" HorizontalAlignment="Center" />
               <ItemsControl ItemsSource="{Binding Messages}" AutomationProperties.AutomationId="Chat.Messages">

@@ -19,6 +19,114 @@ public sealed class GroupChannelViewModelTests
     private static readonly Guid NewTopic = Guid.Parse("88888888-8888-4888-8888-888888888888");
 
     [AvaloniaFact]
+    public async Task Ballot_browse_reapplies_search_and_status_after_live_board_replacement()
+    {
+        using var fixture = new Fixture(canManage: true);
+        var vm = fixture.Vm;
+        await vm.ActivateAsync();
+        vm.Channels.Single(row => row.TopicId == BallotTopic).OpenCommand.Execute(null);
+        await Waits.Until(() => vm.ShowBallots && vm.Ballots.Count == 1, "ballot channel opened");
+
+        vm.BallotSearch = "новый";
+        Assert.True(vm.NoBallotMatches);
+        vm.BallotStatusIndex = 2;
+        fixture.SetBoard(new BallotBoardResponse(false, true, false, 3, 2, [
+            new(PollId, "Новый вопрос", "headman", "open", CommunityClientTestSupport.Now.AddDays(1),
+                0, 2, false, [new(OptionYes, "Да", 1, false), new(OptionNo, "Нет", 7, false)], "", "", BallotTopic)
+        ]));
+        await vm.Ballots[0].Options[0].VoteCommand.ExecuteAsync(null);
+
+        Assert.Equal("Новый вопрос", Assert.Single(vm.FilteredBallots).Question);
+        Assert.Equal("Показано 1 из 1 на текущей доске", vm.BallotResultCount);
+        Assert.Equal(13, vm.FilteredBallots[0].Options[0].Percent);
+        vm.BallotStatusIndex = 3;
+        Assert.True(vm.NoBallotMatches);
+        vm.ResetBallotFiltersCommand.Execute(null);
+        Assert.Single(vm.FilteredBallots);
+    }
+
+    [AvaloniaFact]
+    public async Task Ballot_loading_error_is_distinct_from_empty_and_retry_recovers()
+    {
+        using var fixture = new Fixture(canManage: false);
+        fixture.FailBallotGet = true;
+        var vm = fixture.Vm;
+        await vm.ActivateAsync();
+        vm.Channels.Single(row => row.TopicId == BallotTopic).OpenCommand.Execute(null);
+        await Waits.Until(() => vm.ShowBallots && vm.BallotLoadFailed, "ballot load failed");
+        Assert.False(vm.NoBallots);
+        Assert.False(vm.BallotLoading);
+
+        fixture.FailBallotGet = false;
+        await vm.RetryBallotsCommand.ExecuteAsync(null);
+        Assert.False(vm.BallotLoadFailed);
+        Assert.True(vm.BallotLoaded);
+        Assert.Single(vm.Ballots);
+        Assert.Equal("", vm.Status);
+    }
+
+    [AvaloniaFact]
+    public async Task Empty_ballot_board_is_not_a_loading_or_error_state()
+    {
+        using var fixture = new Fixture(canManage: false);
+        fixture.SetBoard(new BallotBoardResponse(false, false, false, 3, 2, []));
+        var vm = fixture.Vm;
+        await vm.ActivateAsync();
+        vm.Channels.Single(row => row.TopicId == BallotTopic).OpenCommand.Execute(null);
+        await Waits.Until(() => vm.ShowBallots && vm.BallotLoaded, "empty ballot board loaded");
+        Assert.True(vm.NoBallots);
+        Assert.False(vm.BallotLoading);
+        Assert.False(vm.BallotLoadFailed);
+        vm.BallotSearch = "нет";
+        Assert.False(vm.NoBallots);
+        Assert.True(vm.NoBallotMatches);
+    }
+
+    [AvaloniaFact]
+    public async Task Ballot_copy_feedback_and_failed_create_keep_in_memory_draft()
+    {
+        using var fixture = new Fixture(canManage: true);
+        var vm = fixture.Vm;
+        await vm.ActivateAsync();
+        vm.Channels.Single(row => row.TopicId == BallotTopic).OpenCommand.Execute(null);
+        await Waits.Until(() => vm.ShowBallots && vm.Ballots.Count == 1, "ballot channel opened");
+
+        string? copied = null;
+        vm.SetClipboardWriter(value => { copied = value; return Task.CompletedTask; });
+        await vm.Ballots[0].CopyCommand!.ExecuteAsync(null);
+        Assert.Contains("Когда встречаемся?", copied);
+        Assert.Contains("Завтра: 1 голос · 100% голосов", copied);
+        Assert.Equal("Сводка скопирована.", vm.BallotFeedback);
+        vm.SetClipboardWriter(_ => throw new InvalidOperationException("clipboard unavailable"));
+        await vm.Ballots[0].CopyCommand!.ExecuteAsync(null);
+        Assert.Equal("Не удалось скопировать сводку.", vm.BallotFeedback);
+
+        vm.ToggleBallotComposerCommand.Execute(null);
+        Assert.True(vm.ShowBallotComposer);
+        vm.BallotQuestion = "Вопрос черновика";
+        vm.BallotOptionA = "Да";
+        vm.BallotOptionB = "Нет";
+        fixture.FailBallotCreate = true;
+        await vm.ProposeBallotCommand.ExecuteAsync(null);
+        Assert.Equal("Вопрос черновика", vm.BallotQuestion);
+        Assert.True(vm.ShowBallotComposer);
+    }
+
+    [AvaloniaFact]
+    public async Task Next_unread_opens_a_real_channel_and_updates_selection()
+    {
+        using var fixture = new Fixture(canManage: false);
+        fixture.SetUnread(ChatTopic, 2);
+        var vm = fixture.Vm;
+        await vm.ActivateAsync();
+
+        Assert.True(vm.HasUnreadChannel);
+        vm.NextUnreadChannelCommand.Execute(null);
+        await Waits.Until(() => vm.SelectedChannel?.TopicId == ChatTopic, "next unread channel opened");
+        Assert.True(vm.SelectedChannel?.IsSelected);
+    }
+
+    [AvaloniaFact]
     public async Task Switching_chat_channels_keeps_drafts_and_scopes_reads_and_sends()
     {
         using var fixture = new Fixture(canManage: true);
@@ -409,6 +517,9 @@ public sealed class GroupChannelViewModelTests
         public Guid? CreatedBallotTopic;
         public string[] CreatedOptions = [];
         public List<string> TrustActions { get; } = [];
+        public bool FailBallotGet;
+        public bool FailBallotCreate;
+        private BallotBoardResponse? boardOverride;
         public TaskCompletionSource? SendStarted;
         public TaskCompletionSource<HttpResponseMessage>? SendRelease;
         private readonly List<GroupTopicResponse> topics;
@@ -452,6 +563,14 @@ public sealed class GroupChannelViewModelTests
         public void AddExternalChannel(bool pinned = false) => topics.Add(new(NewTopic, "Новости", "📌", null, null, null, 0, canManage,
             "chat", 0, "Важные обновления", "blue", pinned));
 
+        public void SetUnread(Guid topicId, int unread)
+        {
+            var old = topics.Single(item => item.TopicId == topicId);
+            topics[topics.IndexOf(old)] = new(old.TopicId, old.Title, old.Icon, old.LastBody, old.LastAuthor,
+                old.LastAt, unread, old.CanDelete, old.Kind, old.ActiveBallots, old.Description, old.Accent,
+                old.Pinned, old.WritePolicy, old.CanPost);
+        }
+
         public void RevokeChannelAccess()
         {
             canManage = false;
@@ -464,6 +583,8 @@ public sealed class GroupChannelViewModelTests
 
         public void AddExternalBallotChannel() => topics.Add(new(NewTopic, "Выбор времени", "🗳", null, null, null, 0,
             canManage, "ballots", 0));
+
+        public void SetBoard(BallotBoardResponse board) => boardOverride = board;
 
         public void ChangeChatMetadata(string description, string accent, bool pinned, string policy)
         {
@@ -557,10 +678,14 @@ public sealed class GroupChannelViewModelTests
                 return Payload(new ChatMessageResponse(PollId, GroupChat, UserId, "Аня", SentBody!, CommunityClientTestSupport.Now), HttpStatusCode.Created);
             }
             if (path.EndsWith("/ballots", StringComparison.Ordinal) && request.Method == HttpMethod.Get)
+            {
+                if (FailBallotGet) return Problem(503, "unavailable");
                 return Payload(Board());
+            }
             if ((path.EndsWith("/ballots/headman", StringComparison.Ordinal) || path.EndsWith("/ballots/collective", StringComparison.Ordinal))
                 && request.Method == HttpMethod.Post)
             {
+                if (FailBallotCreate) return Problem(503, "unavailable");
                 using var json = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
                 var target = json.RootElement.GetProperty("topicId");
                 CreatedBallotTopic = target.ValueKind == JsonValueKind.Null ? null : target.GetGuid();
@@ -590,7 +715,7 @@ public sealed class GroupChannelViewModelTests
         private GroupDeskResponse Desk() => new(headman, roles.ToArray(), grants.ToArray(), [], powers.ToArray(),
             headman ? ["roles", "grants", "channels"] : []);
 
-        private BallotBoardResponse Board() => new(false, true, canCloseBallots, 3, 2, [
+        private BallotBoardResponse Board() => boardOverride ?? new(false, true, canCloseBallots, 3, 2, [
             new(PollId, "Когда встречаемся?", "headman", "open", CommunityClientTestSupport.Now.AddDays(2), 0, 2, false,
                 [new(OptionYes, "Завтра", 1, false), new(OptionNo, "В пятницу", 0, false)], "", "", BallotTopic)
         ]);

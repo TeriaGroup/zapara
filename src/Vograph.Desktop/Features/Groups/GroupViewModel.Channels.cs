@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Services.Accounts;
 using Vograph.Core.Services.Communities;
+using Vograph.Desktop.Features.Chat;
 using Zapara.Contracts.Communities;
 
 namespace Vograph.Desktop.Features.Groups;
@@ -133,7 +134,7 @@ public sealed partial class GroupViewModel
     {
         if (key is null || !ballotDrafts.TryGetValue(key, out var stored) || stored != submitted) return;
         ballotDrafts.Remove(key);
-        if (activeBallotDraftKey == key) LoadBallotDraft(key);
+        if (activeBallotDraftKey == key) { LoadBallotDraft(key); ShowBallotComposer = false; }
     }
 
     private void AskCloseBallot(Guid ballotId, string question)
@@ -165,6 +166,8 @@ public sealed partial class GroupViewModel
     }
     partial void OnIsDirectChanged(bool value)
     {
+        foreach (var channel in Channels) channel.IsSelected = !value && channel == SelectedChannel;
+        OnPropertyChanged(nameof(HasUnreadChannel));
         OnPropertyChanged(nameof(CanPostChannel));
         OnPropertyChanged(nameof(ShowComposer));
         OnPropertyChanged(nameof(IsRestrictedChat));
@@ -184,6 +187,8 @@ public sealed partial class GroupViewModel
     }
     partial void OnSelectedChannelChanged(GroupChannelRow? value)
     {
+        foreach (var channel in Channels) channel.IsSelected = !IsDirect && channel == value;
+        OnPropertyChanged(nameof(HasUnreadChannel));
         ReloadChannelEditor();
         ConfirmDeleteChannel = false;
         OnPropertyChanged(nameof(CanManageSelectedChannel));
@@ -426,16 +431,37 @@ public sealed partial class GroupViewModel
     private async Task LoadBallotsAsync(Guid id, int ticket)
     {
         if (!ShowBallots || SelectedChannel?.Kind != "ballots" || communityId is not Guid community || Api is null || Access is null) return;
+        var serial = ++ballotRequestSerial;
+        BallotLoading = !BallotLoaded;
+        BallotLoadFailed = false;
         using var operation = App.Work.Enter();
-        var token = await Access(operation.Token);
-        if (!operation.IsCurrent || !CurrentChat(id, ticket) || !ShowBallots) return;
-        if (string.IsNullOrWhiteSpace(token)) { ShowAccount(); return; }
-        var board = await Api.BallotsAsync(token, community, selectedTopicId, operation.Token);
-        if (operation.IsCurrent && CurrentChat(id, ticket) && ShowBallots) ApplyBallots(board);
+        try
+        {
+            var token = await Access(operation.Token);
+            if (!operation.IsCurrent || !CurrentChat(id, ticket) || !ShowBallots) return;
+            if (string.IsNullOrWhiteSpace(token)) { ShowAccount(); return; }
+            var board = await Api.BallotsAsync(token, community, selectedTopicId, operation.Token);
+            if (serial == ballotRequestSerial && operation.IsCurrent && CurrentChat(id, ticket) && ShowBallots)
+            {
+                ApplyBallots(board);
+                BallotLoaded = true;
+            }
+        }
+        catch (CommunityClientException)
+        {
+            if (serial != ballotRequestSerial || !CurrentChat(id, ticket)) return;
+            BallotLoadFailed = true;
+            throw;
+        }
+        finally
+        {
+            if (serial == ballotRequestSerial && CurrentChat(id, ticket)) BallotLoading = false;
+        }
     }
 
     private void ApplyBallots(BallotBoardResponse board)
     {
+        BallotFeedback = "";
         CanOpenBallot = board.CanOpen;
         if (pendingCloseBallotId is Guid closing && !board.Ballots.Any(ballot => ballot.BallotId == closing && ballot.Status != "closed"))
             CancelCloseBallot();
@@ -444,7 +470,8 @@ public sealed partial class GroupViewModel
             Ballots.Add(new GroupBallotRow(ballot, board.CanClose,
                 id => BallotActionAsync((api, token, community, ct) => api.SupportBallotAsync(token, community, id, ct)),
                 (id, option) => BallotActionAsync((api, token, community, ct) => api.VoteBallotAsync(token, community, id, new VoteRequest(option), ct)),
-                id => { AskCloseBallot(id, ballot.Question); return Task.CompletedTask; }));
+                id => { AskCloseBallot(id, ballot.Question); return Task.CompletedTask; },
+                CopyBallotSummaryAsync));
     }
 
     private async Task BallotActionAsync(Func<CommunityHttpClient, string, Guid, CancellationToken, Task<BallotBoardResponse>> action, Action? accepted = null)
@@ -497,6 +524,8 @@ public sealed partial class GroupViewModel
 public sealed class GroupChannelRow(GroupTopicResponse initial, IRelayCommand open, bool globalBallots = false) : ObservableObject
 {
     private GroupTopicResponse row = initial;
+    private bool isSelected;
+    public bool IsSelected { get => isSelected; set => SetProperty(ref isSelected, value); }
     internal string Key => IsGlobalBallots ? "global-ballots" : row.TopicId?.ToString("D") ?? "general";
     public bool IsGlobalBallots { get; } = globalBallots;
     public Guid? TopicId => row.TopicId;
@@ -525,7 +554,19 @@ public sealed class GroupChannelRow(GroupTopicResponse initial, IRelayCommand op
         : row.Kind == "ballots"
         ? (row.LastBody is { Length: > 0 } ? row.LastBody + " · " : "") + $"Активных голосований: {row.ActiveBallots}"
         : row.LastBody ?? "Пока пусто";
-    public string Unread => row.Unread > 0 ? row.Unread.ToString() : "";
+    public string ActivityText
+    {
+        get
+        {
+            if (row.Kind != "chat" || row.LastAt is not { } at) return "";
+            var local = at.ToLocalTime();
+            return (string.IsNullOrWhiteSpace(row.LastAuthor) ? "" : row.LastAuthor + " · ")
+                + local.ToString(local.Year == DateTime.Now.Year ? "dd.MM HH:mm" : "dd.MM.yyyy HH:mm");
+        }
+    }
+    public string Unread => UnreadBadge.Label(row.Unread);
+    public int UnreadCount => row.Unread;
+    public string UnreadDescription => UnreadBadge.Description(row.Unread);
     public bool CanDelete => row.CanDelete;
     public IRelayCommand OpenCommand { get; } = open;
     internal void Update(GroupTopicResponse next)
@@ -542,7 +583,10 @@ public sealed class GroupChannelRow(GroupTopicResponse initial, IRelayCommand op
         OnPropertyChanged(nameof(CanPost));
         OnPropertyChanged(nameof(AccentBrush));
         OnPropertyChanged(nameof(Preview));
+        OnPropertyChanged(nameof(ActivityText));
         OnPropertyChanged(nameof(Unread));
+        OnPropertyChanged(nameof(UnreadCount));
+        OnPropertyChanged(nameof(UnreadDescription));
         OnPropertyChanged(nameof(CanDelete));
     }
 }
@@ -552,40 +596,70 @@ public sealed record GroupChannelPolicyChoice(string Code, string Label);
 
 public sealed class GroupBallotRow
 {
-    public GroupBallotRow(BallotResponse ballot, bool canClose, Func<Guid, Task> support, Func<Guid, Guid, Task> vote, Func<Guid, Task> close)
+    public GroupBallotRow(BallotResponse ballot, bool canClose, Func<Guid, Task> support, Func<Guid, Guid, Task> vote,
+        Func<Guid, Task> close, Func<GroupBallotRow, Task>? copy = null)
     {
+        BallotId = ballot.BallotId;
         Question = ballot.Question;
+        StatusCode = ballot.Status;
+        DeadlineAt = ballot.DeadlineAt;
         Origin = ballot.Origin switch { "system" => "Система", "headman" => "Староста", "collective" => "Общее предложение", _ => ballot.Origin };
-        Status = ballot.Status switch { "collecting" => "Сбор поддержки", "open" => "Идёт голосование", _ => "Завершено" };
-        Deadline = "До " + ballot.DeadlineAt.ToLocalTime().ToString("dd.MM HH:mm");
+        Status = ballot.Status switch { "collecting" => "Сбор поддержки", "open" => "Идёт голосование",
+            "closed" => "Завершено", _ => ballot.Status };
+        var localDeadline = ballot.DeadlineAt.ToLocalTime();
+        Deadline = "До " + localDeadline.ToString(localDeadline.Year == DateTime.Now.Year ? "dd.MM HH:mm" : "dd.MM.yyyy HH:mm");
+        DeadlineHint = GroupBallotBrowse.Urgency(ballot.Status, ballot.DeadlineAt, DateTimeOffset.UtcNow);
         Supporters = $"Поддержали {ballot.Supporters} из {ballot.SupportersNeeded}";
         IsCollecting = ballot.Status == "collecting";
         IsEffect = !string.IsNullOrEmpty(ballot.Effect);
         Outcome = ballot.Outcome switch { "accepted" => "Изменение принято", "rejected" => "Изменение отклонено", "skipped" => "Изменение не применено", _ => ballot.Outcome };
         CanSupport = ballot.Status == "collecting" && !ballot.Supported;
+        AlreadySupported = ballot.Status == "collecting" && ballot.Supported;
         CanClose = canClose && ballot.Status != "closed" && string.IsNullOrEmpty(ballot.Effect);
-        Options = ballot.Options.Select(option => new GroupBallotOptionRow(option, ballot.Status == "open", () => vote(ballot.BallotId, option.OptionId))).ToArray();
+        var totalVotes = ballot.Options.Sum(option => (long)option.Votes);
+        TotalVotes = totalVotes;
+        Options = ballot.Options.Select(option => new GroupBallotOptionRow(option, totalVotes,
+            ballot.Status == "open", () => vote(ballot.BallotId, option.OptionId))).ToArray();
         SupportCommand = new AsyncRelayCommand(() => support(ballot.BallotId));
         CloseCommand = new AsyncRelayCommand(() => close(ballot.BallotId));
+        CopyCommand = copy is null ? null : new AsyncRelayCommand(() => copy(this));
     }
+    public Guid BallotId { get; }
     public string Question { get; }
+    public string StatusCode { get; }
+    public DateTimeOffset DeadlineAt { get; }
     public string Origin { get; }
     public string Status { get; }
     public string Deadline { get; }
+    public string DeadlineHint { get; }
+    public bool HasDeadlineHint => DeadlineHint.Length > 0;
     public string Supporters { get; }
     public string Outcome { get; }
+    public long TotalVotes { get; }
+    public string VoteShareCaption => TotalVotes == 0 ? "Голосов пока нет. Доли считаются от поданных голосов."
+        : $"Подано голосов: {TotalVotes}. Доли считаются от поданных голосов.";
     public bool IsCollecting { get; }
     public bool IsEffect { get; }
     public bool CanSupport { get; }
+    public bool AlreadySupported { get; }
     public bool CanClose { get; }
     public IReadOnlyList<GroupBallotOptionRow> Options { get; }
     public IAsyncRelayCommand SupportCommand { get; }
     public IAsyncRelayCommand CloseCommand { get; }
+    public IAsyncRelayCommand? CopyCommand { get; }
+    public bool CanCopySummary => CopyCommand is not null;
 }
 
-public sealed class GroupBallotOptionRow(BallotOptionResponse option, bool canVote, Func<Task> vote)
+public sealed class GroupBallotOptionRow(BallotOptionResponse option, long totalVotes, bool canVote, Func<Task> vote)
 {
     public string Label => option.Label + " · " + option.Votes + (option.Chosen ? " ✓" : "");
+    public string Text => option.Label;
+    public int Votes => option.Votes;
+    public int Percent => GroupBallotBrowse.Percent(option.Votes, totalVotes);
+    public string VoteCountCaption => $"Голосов: {Votes} · {Percent}% голосов";
+    public string ChoiceCaption => option.Chosen ? "Ваш выбор" : "";
+    public bool IsChosen => option.Chosen;
+    public string PercentAccessible => $"{Text}: голосов {Votes}, {Percent}% от поданных голосов";
     public bool CanVote { get; } = canVote;
     public IAsyncRelayCommand VoteCommand { get; } = new AsyncRelayCommand(vote);
 }

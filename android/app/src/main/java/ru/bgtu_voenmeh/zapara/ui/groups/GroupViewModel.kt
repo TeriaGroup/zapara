@@ -29,6 +29,7 @@ import ru.bgtu_voenmeh.zapara.data.communities.GroupRole
 import ru.bgtu_voenmeh.zapara.data.communities.GroupTopic
 import ru.bgtu_voenmeh.zapara.data.communities.GroupTopicList
 import java.time.ZoneId
+import java.time.Instant
 import java.time.format.DateTimeFormatter
 
 internal class GroupRuntime(
@@ -70,7 +71,8 @@ data class GroupPersonUi(val id: String, val name: String, val handle: String, v
 data class GroupChatUi(val id: String, val title: String, val preview: String, val unread: Int)
 data class GroupMessageUi(val id: String, val author: String, val body: String, val time: String, val mine: Boolean,
     val kind: String = "text", val deleted: Boolean = false, val replyTo: String? = null,
-    val reactions: List<ChatReaction> = emptyList())
+    val reactions: List<ChatReaction> = emptyList(), val day: String = "",
+    val senderId: String = "", val createdAt: Instant? = null)
 
 internal interface GroupHoldApi {
     suspend fun edit(token: String, conversationId: String, messageId: String, body: String)
@@ -127,6 +129,7 @@ data class GroupUiState(
     val loading: Boolean = false,
     val empty: Boolean = false,
     val failed: Boolean = false,
+    val communityId: String? = null,
     val title: String = "",
     val myRole: String = "",
     val channels: List<GroupTopic> = emptyList(),
@@ -137,6 +140,8 @@ data class GroupUiState(
     val canPost: Boolean = true,
     val board: BallotBoard? = null,
     val ballotRefreshFailed: Boolean = false,
+    val ballotCreateVersion: Int = 0,
+    val ballotCreateFailed: Boolean = false,
     val desk: GroupDesk? = null,
     val showTrusted: Boolean = false,
     val channelBusy: Boolean = false,
@@ -151,6 +156,7 @@ data class GroupUiState(
     val showPeople: Boolean = false,
     val direct: Boolean = false,
     val hasMore: Boolean = false,
+    val olderLoading: Boolean = false,
     val groupUnread: Int = 0,
     val chatLoading: Boolean = false,
     val sending: Boolean = false,
@@ -231,6 +237,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     private val draftContexts = HashMap<String, GroupDraftContext>()
     private val draftVersions = HashMap<String, Long>()
     private val clock: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM HH:mm").withZone(ZoneId.systemDefault())
+    private val dayClock: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy").withZone(ZoneId.systemDefault())
 
     init { viewModelScope.launch { load() } }
 
@@ -276,7 +283,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             is GroupEvent.EnableTrustedRole -> enableTrustedRole(event.roleId)
             is GroupEvent.GrantTrusted -> manageTrusted(event.roleId, event.userId, false)
             is GroupEvent.RevokeTrusted -> manageTrusted(event.roleId, event.userId, true)
-            is GroupEvent.CreateBallot -> if (mutable.value.canPost && (!event.headman || mutable.value.board?.canOpen == true)) ballotAction { api, token, id, topic ->
+            is GroupEvent.CreateBallot -> if (mutable.value.canPost && (!event.headman || mutable.value.board?.canOpen == true)) ballotAction(created = true) { api, token, id, topic ->
                 if (event.headman) api.openHeadmanBallot(token, id, event.question, event.options, event.days, topic)
                 else api.proposeBallot(token, id, event.question, event.options, event.days, topic)
             }
@@ -385,6 +392,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             loading = false,
             hasHome = true,
             empty = false,
+            communityId = loaded.communityId,
             title = loaded.groupName ?: loaded.name,
             myRole = me?.role ?: "member",
             channels = available,
@@ -440,7 +448,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         mutable.value = mutable.value.copy(
             chatTitle = title, activeConversationId = id, activeTopicId = topicId, activeChannelKind = if (direct) "direct" else "chat",
             canPost = direct || topics == null || topics?.topics?.firstOrNull { it.topicId == topicId }?.canPost == true,
-            board = null, ballotRefreshFailed = false, showTrusted = false, channelBusy = false, direct = direct, showPeople = false, showChannels = false, messages = emptyList(), hasMore = false,
+            board = null, ballotRefreshFailed = false, showTrusted = false, channelBusy = false, direct = direct, showPeople = false, showChannels = false, messages = emptyList(), hasMore = false, olderLoading = false,
             draft = drafts[draftKey] ?: plainDrafts[draftKey].orEmpty(),
             replyTo = context?.replyTo, editing = context?.editing,
             sending = draftKey in sendingKeys,
@@ -507,8 +515,9 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         pendingKind = null
         mutable.value = mutable.value.copy(activeConversationId = null, activeTopicId = topicId, activeChannelKind = "ballots",
             canPost = topicId == null || topics?.topics?.firstOrNull { it.topicId == topicId }?.canPost == true,
-            chatTitle = title, direct = false, showPeople = false, showChannels = false, showTrusted = false, messages = emptyList(), board = null,
-            ballotRefreshFailed = false,
+            chatTitle = title, direct = false, showPeople = false, showChannels = false, showTrusted = false,
+            messages = emptyList(), hasMore = false, olderLoading = false, board = null,
+            ballotRefreshFailed = false, ballotCreateFailed = false,
             draft = "", replyTo = null, editing = null, sending = false,
             chatLoading = true, channelBusy = false, failed = false, attachmentPending = false)
         val api = runtime.client
@@ -717,20 +726,29 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         }
     }
 
-    private fun ballotAction(action: suspend (CommunityHttpClient, String, String, String?) -> BallotBoard) {
+    private fun ballotAction(created: Boolean = false,
+        action: suspend (CommunityHttpClient, String, String, String?) -> BallotBoard) {
         if (mutable.value.activeChannelKind != "ballots" || mutable.value.channelBusy) return
         val loaded = home ?: return
         val api = runtime.client ?: return
         val topicId = mutable.value.activeTopicId
         val ticket = generation
-        mutable.value = mutable.value.copy(channelBusy = true)
+        mutable.value = mutable.value.copy(channelBusy = true,
+            ballotCreateFailed = if (created) false else mutable.value.ballotCreateFailed)
         viewModelScope.launch {
             try {
-                val token = runtime.accessToken() ?: return@launch
+                val token = runtime.accessToken()
+                if (token.isNullOrEmpty()) {
+                    if (currentBallots(ticket, topicId)) mutable.value = mutable.value.copy(failed = true,
+                        ballotCreateFailed = created)
+                    return@launch
+                }
                 val posted = action(api, token, loaded.communityId, topicId)
                 if (!currentBallots(ticket, topicId)) return@launch
                 val scoped = if (topicId == null) posted else posted.copy(ballots = posted.ballots.filter { it.topicId == topicId })
-                mutable.value = mutable.value.copy(board = scoped, failed = false, ballotRefreshFailed = false)
+                mutable.value = mutable.value.copy(board = scoped, failed = false, ballotRefreshFailed = false,
+                    ballotCreateFailed = false,
+                    ballotCreateVersion = mutable.value.ballotCreateVersion + if (created) 1 else 0)
                 try {
                     val fresh = api.ballots(token, loaded.communityId, topicId)
                     if (currentBallots(ticket, topicId)) mutable.value = mutable.value.copy(board = fresh, ballotRefreshFailed = false)
@@ -740,9 +758,11 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 throw e
             } catch (e: CommunityClientException) {
                 reconcileForbidden(e, ticket)
-                if (currentBallots(ticket, topicId)) mutable.value = mutable.value.copy(failed = true)
+                if (currentBallots(ticket, topicId)) mutable.value = mutable.value.copy(failed = true,
+                    ballotCreateFailed = created)
             } catch (_: Exception) {
-                if (currentBallots(ticket, topicId)) mutable.value = mutable.value.copy(failed = true)
+                if (currentBallots(ticket, topicId)) mutable.value = mutable.value.copy(failed = true,
+                    ballotCreateFailed = created)
             } finally {
                 if (currentBallots(ticket, topicId)) mutable.value = mutable.value.copy(channelBusy = false)
             }
@@ -752,11 +772,14 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     private suspend fun older() {
         val id = conversationId ?: return
         val ticket = generation
+        if (mutable.value.olderLoading || !mutable.value.hasMore) return
         val first = mutable.value.messages.firstOrNull() ?: return
         val api = runtime.client ?: return
-        val token = runtime.accessToken() ?: return
         if (!current(ticket, id)) return
+        mutable.value = mutable.value.copy(olderLoading = true)
         try {
+            val token = runtime.accessToken() ?: return
+            if (!current(ticket, id)) return
             val page = api.messages(token, id, before = first.id, topic = topicQuery(mutable.value.direct, mutable.value.activeTopicId))
             if (!current(ticket, id)) return
             val have = mutable.value.messages.map { it.id }.toSet()
@@ -767,6 +790,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         } catch (e: Exception) {
             android.util.Log.w("ZaparaGroup", "older", e)
             if (current(ticket, id)) mutable.value = mutable.value.copy(failed = true)
+        } finally {
+            if (current(ticket, id)) mutable.value = mutable.value.copy(olderLoading = false)
         }
     }
 
@@ -1137,7 +1162,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         home = null
         topics = null
         mutable.value = mutable.value.copy(
-            hasHome = false, messages = emptyList(), activeConversationId = null, activeTopicId = null, activeChannelKind = "chat", canPost = true,
+            hasHome = false, communityId = null, messages = emptyList(), hasMore = false, olderLoading = false,
+            activeConversationId = null, activeTopicId = null, activeChannelKind = "chat", canPost = true,
             channels = emptyList(), canManageChannels = false, board = null, ballotRefreshFailed = false, desk = null,
             channelBusy = false, direct = false, failed = false, attachmentPending = false,
             showPeople = false, showChannels = false, showTrusted = false, chatLoading = false, sending = false,
@@ -1162,7 +1188,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         pendingDurationMs = null
         mutable.value = mutable.value.copy(showPeople = people, showChannels = !people, showTrusted = false, desk = null,
             activeConversationId = null, activeTopicId = null, activeChannelKind = "chat", canPost = true, direct = false,
-            messages = emptyList(), board = null, ballotRefreshFailed = false, draft = "", replyTo = null, editing = null, sending = false,
+            messages = emptyList(), hasMore = false, olderLoading = false,
+            board = null, ballotRefreshFailed = false, draft = "", replyTo = null, editing = null, sending = false,
             chatLoading = false, channelBusy = false, attachmentPending = false,
             mediaLoadingId = null, mediaError = false, mediaFiles = emptyMap(),
             mediaLoadingIds = emptySet(), mediaFailedIds = emptySet())
@@ -1241,7 +1268,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
 
     private fun row(item: ChatMessage) = GroupMessageUi(
         item.messageId, item.senderName, item.body, clock.format(item.createdAt), item.senderId == runtime.userId,
-        item.kind, item.deleted, item.replyTo, item.reactions
+        item.kind, item.deleted, item.replyTo, item.reactions, dayClock.format(item.createdAt),
+        item.senderId, item.createdAt
     )
 
     companion object {
