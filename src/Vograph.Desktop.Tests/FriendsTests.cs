@@ -198,6 +198,56 @@ public class FriendsTests : UiTest
         Assert.Equal(DotFill.Full, vm.PreviewMarks[0].Fill);              // same room still qualifies at 100
     }
 
+    [Fact]
+    public void Always_Show_Does_Not_Describe_An_Unloaded_Friend_As_Absent()
+    {
+        using var db = TestDb.Create();
+        db.Services.Db.InsertFriend(new FriendGroup { GroupName = "Нет в каталоге", ColorHex = FriendPalette.Hex[1], Enabled = true });
+        var settings = db.Services.Db.GetSettings();
+        settings.AlwaysShowAllTrafficLights = true;
+        var lesson = db.Services.Db.GetLessons("3313", 1, 1).First(l => l.TimeStart == "09:00");
+
+        var marks = FriendMarks.Compute(db.Services.Intersections, lesson, new DateTime(2026, 9, 14),
+            db.Services.Db.GetFriends(), settings, db.Services.Loc);
+
+        Assert.Equal("09С31", Assert.Single(marks).GroupName);
+    }
+
+    [Fact]
+    public async Task Forecast_Shows_The_Ongoing_Pair_With_Friend_And_Skips_Finished_Today()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var now = new DateTime(2026, 9, 14, 9, 30, 0);
+        var vm = new FriendsViewModel(db.Services, shell, () => now);
+        await vm.LoadAsync();
+
+        var ongoing = Assert.Single(vm.Encounters, row => row.When.Contains("09:00"));
+        Assert.Equal("09С31", ongoing.GroupName);
+        Assert.Contains("Иван", ongoing.GroupDisplay);
+        Assert.Contains("аудитории", ongoing.Place);
+        Assert.Equal(0, vm.StrictnessIndex);
+
+        now = new DateTime(2026, 9, 14, 14, 30, 0);
+        await vm.LoadAsync();
+        Assert.Empty(vm.Encounters);
+        Assert.Equal("В ближайшие две недели пересечений нет", vm.ForecastStatus);
+    }
+
+    [Fact]
+    public async Task Forecast_Rejects_An_Imported_Friend_Entry_For_The_Selected_Group()
+    {
+        using var db = TestDb.Create();
+        foreach (var friend in db.Services.Db.GetFriends()) db.Services.Db.DeleteFriend(friend.Id);
+        db.Services.Db.InsertFriend(new FriendGroup { GroupName = "А863С", ColorHex = FriendPalette.Hex[0], Enabled = true });
+        var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => new DateTime(2026, 9, 14, 8, 0, 0));
+
+        await vm.LoadAsync();
+
+        Assert.Empty(vm.Encounters);
+    }
+
     [AvaloniaFact]
     public async Task Friends_Render_Both_Themes()
     {

@@ -57,7 +57,12 @@ public class TeachersTests : UiTest
         Assert.Equal("Барт Е.Л.", Assert.Single(vm.Items).Info.Name);
         vm.Query = "р7"; // department
         Assert.Equal("Лысенко Е.М.", Assert.Single(vm.Items).Info.Name);
-        vm.Query = "";
+        Assert.True(vm.HasTeacherSearch);
+        vm.Query = "несуществующий";
+        Assert.True(vm.NoTeacherMatches);
+        vm.ClearTeacherSearchCommand.Execute(null);
+        Assert.Equal("", vm.Query);
+        Assert.False(vm.HasTeacherSearch);
         Assert.Equal(3, vm.Items.Count);
     }
 

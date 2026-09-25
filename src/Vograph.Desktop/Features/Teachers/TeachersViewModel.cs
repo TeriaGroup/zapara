@@ -68,9 +68,22 @@ public sealed partial class TeachersViewModel : ViewModelBase
     [ObservableProperty] private bool _isLoading;
     [ObservableProperty] private string? _loadError;
     public bool HasDetail => Detail is not null;
+    public bool HasTeacherSearch => !string.IsNullOrWhiteSpace(Query);
+    public bool NoTeacherMatches => _loadedOnce && !IsLoading && string.IsNullOrWhiteSpace(LoadError) && Items.Count == 0;
+    public bool CanShowAllTeachers => NoTeacherMatches && OnlyMine && !HasTeacherSearch;
+    public string EmptyTeacherText => HasTeacherSearch ? "Преподаватели по запросу не найдены"
+        : OnlyMine ? "У выбранной группы преподаватели пока не найдены" : "Преподавателей пока нет";
 
-    partial void OnQueryChanged(string value) => ApplyFilter();
+    partial void OnQueryChanged(string value)
+    {
+        ApplyFilter();
+        OnPropertyChanged(nameof(HasTeacherSearch));
+    }
+    [RelayCommand] private void ClearTeacherSearch() => Query = "";
+    [RelayCommand] private void ShowAllTeachers() => OnlyMine = false;
     partial void OnOnlyMineChanged(bool value) => ApplyFilter();
+    partial void OnIsLoadingChanged(bool value) => NotifyEmptyTeacherState();
+    partial void OnLoadErrorChanged(string? value) => NotifyEmptyTeacherState();
     partial void OnSelectedChanged(TeacherItem? value)
     {
         Detail = value is null ? null : NewDetail(value, parityIndex: 0);
@@ -180,6 +193,14 @@ public sealed partial class TeachersViewModel : ViewModelBase
         var total = _index.Lecturers.Count;
         CountText = filtered.Count < total ? T("teachersCount", filtered.Count, total) : total.ToString();
         Selected = keep is null ? null : Items.FirstOrDefault(i => i.Info.Id == keep);
+        NotifyEmptyTeacherState();
+    }
+
+    private void NotifyEmptyTeacherState()
+    {
+        OnPropertyChanged(nameof(NoTeacherMatches));
+        OnPropertyChanged(nameof(CanShowAllTeachers));
+        OnPropertyChanged(nameof(EmptyTeacherText));
     }
 }
 
@@ -220,8 +241,10 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
     [ObservableProperty] private IList<string> _segmentItems;
     [ObservableProperty] private int _parityIndex; // 0 both, 1 odd, 2 even
     [ObservableProperty] private IReadOnlyList<TeacherDay> _days;
+    public string WeekLessonCountText => $"Пар в выбранной неделе: {Days.Sum(day => day.Rows.Count)}";
 
     partial void OnParityIndexChanged(int value) => Days = Build();
+    partial void OnDaysChanged(IReadOnlyList<TeacherDay> value) => OnPropertyChanged(nameof(WeekLessonCountText));
 
     public void Relabel()
     {

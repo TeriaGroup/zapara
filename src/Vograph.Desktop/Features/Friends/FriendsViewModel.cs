@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Models;
+using Vograph.Core.Services;
 using Vograph.Desktop.Dialogs;
 using Vograph.Desktop.Domain;
 using Vograph.Desktop.Features.Schedule;
@@ -12,6 +14,10 @@ using Vograph.Desktop.ViewModels;
 namespace Vograph.Desktop.Features.Friends;
 
 public sealed record ColorOption(int Index, bool IsCurrent);
+public sealed record FriendEncounterViewModel(string When, string GroupName, string Members, string Place, int ColorIndex)
+{
+    public string GroupDisplay => string.IsNullOrWhiteSpace(Members) ? GroupName : $"{GroupName} · {Members}";
+}
 
 public sealed partial class FriendsViewModel : ViewModelBase
 {
@@ -19,6 +25,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
     private readonly ShellViewModel _shell;
     private readonly Func<DateTime> _clock;
     private readonly Action _reload;
+    private readonly DispatcherTimer _forecastTimer = new() { Interval = TimeSpan.FromMinutes(1) };
     private bool _suppress;
     private bool _suppressReload;
     private int _version;
@@ -31,6 +38,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
         _tickLabels = BuildTicks();
         _strictnessLabel = LabelFor(25);
         _reload = () => { if (!_suppressReload) _ = LoadAsync(); };
+        _forecastTimer.Tick += OnForecastTick;
         shell.GroupChanged += _reload;
         shell.ScheduleChanged += _reload;
         app.Loc.LanguageChanged += _reload;
@@ -38,12 +46,20 @@ public sealed partial class FriendsViewModel : ViewModelBase
 
     public override void Detach()
     {
+        _forecastTimer.Stop();
+        _forecastTimer.Tick -= OnForecastTick;
         _shell.GroupChanged -= _reload;
         _shell.ScheduleChanged -= _reload;
         App.Loc.LanguageChanged -= _reload;
     }
 
-    public override Task ActivateAsync() => LoadAsync();
+    public override Task ActivateAsync()
+    {
+        _forecastTimer.Start();
+        return LoadAsync();
+    }
+
+    private void OnForecastTick(object? sender, EventArgs e) => _ = RefreshPreviewAsync();
 
     public string Title => T("navFriends");
     public string Subtitle => T("friendsSubtitle");
@@ -58,15 +74,28 @@ public sealed partial class FriendsViewModel : ViewModelBase
     [ObservableProperty] private string _previewLine = "";
     [ObservableProperty] private IReadOnlyList<FriendMarkViewModel> _previewMarks = Array.Empty<FriendMarkViewModel>();
     [ObservableProperty] private bool _hasPreview;
+    [ObservableProperty] private IReadOnlyList<FriendEncounterViewModel> _encounters = Array.Empty<FriendEncounterViewModel>();
+    [ObservableProperty] private string _forecastStatus = "";
+    [ObservableProperty] private string _missingSchedulesText = "";
 
     // Short tick labels for the slider (strictTick25..100) are their own keys, distinct from the long
     // inter25..100 texts the schedule's dot tooltips use ("в том же корпусе" etc. would not fit under a tick).
     private IList<string> BuildTicks() => new[] { T("strictTick25"), T("strictTick50"), T("strictTick75"), T("strictTick100") };
     private string LabelFor(double v) => T(v >= 100 ? "strictTick100" : v >= 75 ? "strictTick75" : v >= 50 ? "strictTick50" : "strictTick25");
+    public int StrictnessIndex
+    {
+        get => Strictness >= 100 ? 3 : Strictness >= 75 ? 2 : Strictness >= 50 ? 1 : 0;
+        set
+        {
+            if (value is < 0 or > 3) return;
+            Strictness = 25 + value * 25;
+        }
+    }
 
     partial void OnStrictnessChanged(double value)
     {
         StrictnessLabel = LabelFor(value);
+        OnPropertyChanged(nameof(StrictnessIndex));
         if (!_suppress) _pendingSettingsSave = SaveSettingsAsync();
     }
 
@@ -75,7 +104,8 @@ public sealed partial class FriendsViewModel : ViewModelBase
         if (!_suppress) _pendingSettingsSave = SaveSettingsAsync();
     }
 
-    private sealed record PreviewData(string Line, IReadOnlyList<FriendMark> Marks);
+    private sealed record PreviewData(string Line, IReadOnlyList<FriendMark> Marks,
+        IReadOnlyList<FriendEncounterViewModel> Encounters, string Status, string Missing);
     private sealed record FriendsData(List<FriendGroup> Friends, Settings Settings, PreviewData? Preview);
 
     public async Task LoadAsync()
@@ -83,12 +113,12 @@ public sealed partial class FriendsViewModel : ViewModelBase
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
         var version = ++_version;
-        var today = _clock().Date;
+        var now = _clock();
         var data = await RunAsync(() =>
         {
             var friends = App.Db.GetFriends();
             var settings = App.Db.GetSettings();
-            return new FriendsData(friends, settings, ComputePreview(friends, settings, today));
+            return new FriendsData(friends, settings, ComputePreview(friends, settings, now));
         }, "friends");
         if (data is null || version != _version || !operation.IsCurrent) return;
         _suppress = true;
@@ -105,34 +135,74 @@ public sealed partial class FriendsViewModel : ViewModelBase
         OnPropertyChanged(nameof(Subtitle));
     }
 
-    /// <summary>The nearest lesson (≤ 14 days) where at least one friend is around — otherwise the first lesson with dots when «always show» is on.</summary>
-    private PreviewData? ComputePreview(List<FriendGroup> friends, Settings settings, DateTime today)
+    /// <summary>Up to three upcoming schedule overlaps. A loaded empty timetable differs from an unavailable one.</summary>
+    private PreviewData ComputePreview(List<FriendGroup> friends, Settings settings, DateTime now)
     {
-        if (string.IsNullOrEmpty(settings.MyGroupId) || friends.Count == 0) return null;
         var loc = App.Loc;
-        PreviewData? fallback = null;
-        for (var i = 0; i < 14; i++)
+        var myId = settings.MyGroupId ?? "";
+        var enabled = friends.Where(f => f.Enabled).Take(MaxFriends).ToList();
+        var catalog = App.Db.GetAllGroups();
+        var cache = new TimetableApiCache(App.Db);
+        bool Loaded(string id, Group? group) => cache.Read(id) is not null || group?.LastFetchedAt is not null || App.Db.GetAllLessonsForGroup(id).Count > 0;
+        var ownGroup = catalog.FirstOrDefault(g => g.Id == myId);
+        var ownLoaded = myId.Length > 0 && Loaded(myId, ownGroup);
+        var ready = enabled.Select(friend =>
         {
-            var date = today.AddDays(i);
-            foreach (var l in App.Schedule.GetSchedule(date, settings.MyGroupId).OrderBy(x => TimeSpan.TryParse(x.TimeStart, out var t) ? t : TimeSpan.Zero))
+            var group = catalog.FirstOrDefault(g => g.Name.Equals(friend.GroupName, StringComparison.OrdinalIgnoreCase) ||
+                g.Id.Equals(friend.GroupName, StringComparison.OrdinalIgnoreCase));
+            return (Friend: friend, Id: group?.Id ?? "", Available: group is not null && group.Id != myId && Loaded(group.Id, group) && cache.CanIntersect(myId, group.Id));
+        }).ToList();
+        var missing = ready.Where(item => !item.Available).Select(item => item.Friend.GroupName).ToList();
+        var usable = ready.Where(item => item.Available).Select(item => item.Friend).ToList();
+        var encounters = new List<FriendEncounterViewModel>();
+        (string Line, IReadOnlyList<FriendMark> Marks)? first = null;
+        (string Line, IReadOnlyList<FriendMark> Marks)? fallback = null;
+        for (var i = 0; ownLoaded && i < 14 && encounters.Count < 3; i++)
+        {
+            var date = now.Date.AddDays(i);
+            foreach (var l in App.Schedule.GetSchedule(date, myId).OrderBy(x => TimeSpan.TryParse(x.TimeStart, out var t) ? t : TimeSpan.Zero))
             {
+                if (encounters.Count == 3) break;
+                if (!TimeSpan.TryParse(l.TimeStart, out var start)) continue;
+                var end = TimeSpan.TryParse(l.TimeEnd, out var parsedEnd) ? parsedEnd : start.Add(TimeSpan.FromMinutes(95));
+                if (i == 0 && end <= now.TimeOfDay) continue;
                 var marks = FriendMarks.Compute(App.Intersections, l, date, friends, settings, loc);
-                if (marks.Count == 0) continue;
                 var name = LessonText.StripType(App.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw);
                 var line = $"{loc.I18n.FormatDay(date)} {DayTitles.ShortDate(date, loc)} · {l.TimeStart} · {name}";
-                var data = new PreviewData(line, marks);
-                if (marks.Any(m => m.Fill != Controls.DotFill.Off)) return data;
-                fallback ??= data;
+                if (marks.Count > 0) fallback ??= (line, marks);
+                if (usable.Count == 0) continue;
+                var hits = App.Intersections.GetIntersections(l, date, usable, strictness: 0);
+                foreach (var friend in usable)
+                {
+                    var best = hits.Where(hit => hit.FriendGroupName == friend.GroupName).OrderByDescending(hit => hit.Score).FirstOrDefault();
+                    if (best is null || best.Score < settings.IntersectionStrictness) continue;
+                    first ??= (line, marks);
+                    var place = loc.T(best.Score switch { >= 100 => "inter100", >= 75 => "inter75", >= 50 => "inter50", _ => "inter25" });
+                    encounters.Add(new FriendEncounterViewModel(line, friend.GroupName, friend.MemberNames ?? "",
+                        string.IsNullOrWhiteSpace(best.Room) ? place : $"{place} · {best.Room}", FriendPalette.IndexOf(friend.ColorHex)));
+                    if (encounters.Count == 3) break;
+                }
             }
         }
-        return fallback;
+        var preview = first ?? fallback;
+        var status = myId.Length == 0 ? "Выберите свою группу, чтобы увидеть пересечения."
+            : !ownLoaded ? "Расписание вашей группы ещё не загружено."
+            : enabled.Count == 0 ? "Включите группу друзей или добавьте новую."
+            : usable.Count == 0 ? "Нет загруженных совместимых расписаний групп друзей."
+            : encounters.Count == 0 ? T("previewNone") : "";
+        var missingText = usable.Count == 0 || missing.Count == 0 ? "" :
+            $"Нет загруженного совместимого расписания: {string.Join(", ", missing)}. Прогноз пока неполный.";
+        return new PreviewData(preview?.Line ?? "", preview?.Marks ?? Array.Empty<FriendMark>(), encounters, status, missingText);
     }
 
     private void ApplyPreview(PreviewData? p)
     {
-        HasPreview = p is not null;
-        PreviewLine = p?.Line ?? T("previewNone");
+        HasPreview = !string.IsNullOrEmpty(p?.Line);
+        PreviewLine = HasPreview ? p!.Line : T("previewNone");
         PreviewMarks = p is null ? Array.Empty<FriendMarkViewModel>() : p.Marks.Select(m => new FriendMarkViewModel(m)).ToList();
+        Encounters = p?.Encounters ?? Array.Empty<FriendEncounterViewModel>();
+        ForecastStatus = p?.Status ?? "";
+        MissingSchedulesText = p?.Missing ?? "";
     }
 
     /// <summary>Called explicitly after Strictness/AlwaysShowAll change (and by Save/SetColor). Awaits the
@@ -143,10 +213,19 @@ public sealed partial class FriendsViewModel : ViewModelBase
         if (!operation.IsCurrent) return;
         if (_pendingSettingsSave is { } pending) await pending;
         var version = ++_version;
-        var today = _clock().Date;
-        var preview = await RunAsync(() => ComputePreview(App.Db.GetFriends(), App.Db.GetSettings(), today) ?? new PreviewData("", Array.Empty<FriendMark>()), "friends");
+        var now = _clock();
+        var preview = await RunAsync(() => ComputePreview(App.Db.GetFriends(), App.Db.GetSettings(), now), "friends");
         if (preview is null || version != _version || !operation.IsCurrent) return;
-        ApplyPreview(preview.Line.Length == 0 ? null : preview);
+        ApplyPreview(preview);
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = false)]
+    private async Task RefreshSchedules()
+    {
+        _suppressReload = true;
+        try { await _shell.RefreshScheduleAsync(force: true, quiet: false); }
+        finally { _suppressReload = false; }
+        await LoadAsync();
     }
 
     private async Task SaveSettingsAsync()

@@ -33,6 +33,9 @@
                     <TextBlock Classes="subject" Text="{Binding Title}" />
                     <TextBlock Grid.Column="1" Classes="faint tnum" FontSize="12" Text="{Binding DateText}" VerticalAlignment="Center" />
                   </Grid>
+                  <Border Classes="chip" HorizontalAlignment="Left" IsVisible="{Binding !IsEmpty}">
+                    <TextBlock Classes="caption" Text="{Binding CountLabel}" />
+                  </Border>
                   <TextBlock Classes="faint" Text="{loc:T noLessons}" IsVisible="{Binding IsEmpty}" />
                   <ItemsControl ItemsSource="{Binding Rows}">
                     <ItemsControl.ItemsPanel>

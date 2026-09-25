@@ -16,6 +16,7 @@
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
     <StackPanel Margin="32,26" Spacing="14" MaxWidth="720" HorizontalAlignment="Left">
       <TextBlock Classes="display" Text="{Binding Title}" />
+      <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,0,0,2" />
       <account:AccountPanelView DataContext="{Binding AccountPanel}" />
       <Border Classes="card">
         <StackPanel Spacing="8">

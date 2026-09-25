@@ -19,6 +19,27 @@ public sealed class GroupChannelViewModelTests
     private static readonly Guid NewTopic = Guid.Parse("88888888-8888-4888-8888-888888888888");
 
     [AvaloniaFact]
+    public async Task GroupContextKeepsItsCollapsedStateAcrossChannelsAndHidesOnBallotBoards()
+    {
+        using var fixture = new Fixture(canManage: false);
+        var vm = fixture.Vm;
+        await vm.ActivateAsync();
+        await Waits.Until(() => vm.ShowGroupContext, "group context from active ballot channel");
+        Assert.Equal("Активных голосований: 1", vm.ContextBallotsText);
+
+        vm.ToggleContextCommand.Execute(null);
+        Assert.False(vm.ContextExpanded);
+        vm.Channels.Single(row => row.TopicId == ChatTopic).OpenCommand.Execute(null);
+        await Waits.Until(() => vm.SelectedChannel?.TopicId == ChatTopic, "chat channel selected");
+        Assert.True(vm.ShowGroupContext);
+        Assert.False(vm.ContextExpanded);
+
+        vm.Channels.Single(row => row.TopicId == BallotTopic).OpenCommand.Execute(null);
+        await Waits.Until(() => vm.ShowBallots, "ballot channel selected");
+        Assert.False(vm.ShowGroupContext);
+    }
+
+    [AvaloniaFact]
     public async Task Ballot_browse_reapplies_search_and_status_after_live_board_replacement()
     {
         using var fixture = new Fixture(canManage: true);

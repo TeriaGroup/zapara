@@ -35,6 +35,7 @@ import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
 import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
+import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
@@ -70,8 +71,31 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
             Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
             return
         }
-        Text(stringResource(R.string.teachers_found, state.list.size, state.total), style = Zapara.typography.caption, color = c.text2, modifier = Modifier.padding(horizontal = Zapara.space.l))
+        Row(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            Text(stringResource(R.string.teachers_found, state.list.size, state.total),
+                style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f))
+            if (state.query.isNotBlank()) ZButton(stringResource(R.string.next_teachers_clear),
+                { onEvent(TeachersEvent.Query("")) }, ghost = true, tag = "Teachers.ClearSearch")
+        }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            if (state.list.isEmpty() && state.query.isNotBlank()) item("no-results") {
+                ZCard(Modifier.fillMaxWidth(), tag = "Empty.TeacherSearch") {
+                    Text(stringResource(R.string.next_teachers_no_results),
+                        style = Zapara.typography.body, color = c.text2)
+                    ZButton(stringResource(R.string.next_teachers_clear),
+                        { onEvent(TeachersEvent.Query("")) }, ghost = true)
+                }
+            }
+            if (state.list.isEmpty() && state.query.isBlank()) item("empty") {
+                ZCard(Modifier.fillMaxWidth(), tag = "Empty.Teachers") {
+                    Text(stringResource(if (state.onlyMine) R.string.next_teachers_my_empty else R.string.next_teachers_empty),
+                        style = Zapara.typography.body, color = c.text2)
+                    if (state.onlyMine) ZButton(stringResource(R.string.next_teachers_show_all),
+                        { onEvent(TeachersEvent.OnlyMine(false)) }, ghost = true)
+                }
+            }
             itemsIndexed(state.list, key = { _, it -> it.id }) { index, row ->
                 ZCard(onClick = { onEvent(TeachersEvent.Open(row.id)) }, tag = "Teachers.Row.${row.id}", modifier = Modifier.fillMaxWidth().appear(index)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
@@ -115,6 +139,11 @@ fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
             state.parityFilter, { onEvent(TeachersEvent.Parity(it)) }, "Teacher.Segment",
             Modifier.padding(horizontal = Zapara.space.l)
         )
+        }
+        item(key = "count") {
+            Text(stringResource(R.string.teacher_detail_lessons, state.details.sumOf { it.rows.size }),
+                style = Zapara.typography.caption, color = c.text2,
+                modifier = Modifier.padding(horizontal = Zapara.space.l))
         }
             itemsIndexed(state.details, key = { _, it -> it.dow }) { index, day ->
                 ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).appear(index), tag = "Teacher.Day.${day.dow}") {

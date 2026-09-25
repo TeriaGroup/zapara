@@ -24,6 +24,13 @@ public sealed partial class CommunityItemViewModel : ObservableObject
     public bool CanJoin => Role is null && !IsPending;
     public bool IsMember => Role is "member" or "headman" or "curator";
     public bool IsStaff => Role is "headman" or "curator";
+    public string RoleLabel => Role switch
+    {
+        "headman" => "Староста",
+        "curator" => "Куратор",
+        "member" => "Участник",
+        _ => ""
+    };
 
     [ObservableProperty] private string name;
     [ObservableProperty] private string description;
@@ -50,6 +57,7 @@ public sealed partial class CommunityItemViewModel : ObservableObject
         OnPropertyChanged(nameof(CanJoin));
         OnPropertyChanged(nameof(IsMember));
         OnPropertyChanged(nameof(IsStaff));
+        OnPropertyChanged(nameof(RoleLabel));
     }
 
     internal void SetPending() => IsPending = true;

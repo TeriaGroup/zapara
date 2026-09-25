@@ -9,7 +9,10 @@
     <Grid ColumnDefinitions="*,Auto">
       <StackPanel Margin="0,0,16,0">
         <TextBlock Classes="display" Text="{Binding Title}" />
-        <TextBlock Classes="muted" Text="{Binding ContextLine}" Margin="0,4,0,0" TextWrapping="Wrap" />
+        <Border Classes="chip" HorizontalAlignment="Left" Padding="8,5" Margin="0,6,0,0"
+                IsVisible="{Binding ContextLine, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <TextBlock Text="{Binding ContextLine}" TextWrapping="Wrap" />
+        </Border>
         <TextBlock Classes="muted" Text="{Binding RouteUnmarked}" IsVisible="{Binding IsRouteUnmarked}" Margin="0,4,0,0" />
       </StackPanel>
       <Button Grid.Column="1" Classes="pill" VerticalAlignment="Bottom" Command="{Binding GoToNextCommand}" IsVisible="{Binding ShowGoToNext}"

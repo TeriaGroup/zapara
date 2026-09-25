@@ -24,7 +24,20 @@
                     Icon="{StaticResource Icon.Friends}" Margin="0,24"
                     AutomationProperties.AutomationId="Community.Forbidden" />
 
-      <ItemsControl ItemsSource="{Binding Communities}" IsVisible="{Binding !NeedAccount}"
+      <StackPanel Spacing="8" IsVisible="{Binding ShowCommunitySearch}">
+        <TextBox Text="{Binding CommunitySearch, Mode=TwoWay}" PlaceholderText="Название или описание группы"
+                 AutomationProperties.AutomationId="Community.Search" />
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <StackPanel Spacing="2" VerticalAlignment="Center">
+            <TextBlock Classes="muted caption" Text="{Binding CommunityResultCount}" />
+            <TextBlock Classes="muted caption" Text="{Binding CommunityMembershipCount}" />
+          </StackPanel>
+          <Button Grid.Column="1" Classes="ghost" Content="Сбросить поиск" Command="{Binding ClearCommunitySearchCommand}"
+                  IsVisible="{Binding HasCommunitySearch}" MinHeight="48" AutomationProperties.AutomationId="Community.ClearSearch" />
+        </Grid>
+        <TextBlock Classes="muted" Text="Группы по запросу не найдены" IsVisible="{Binding NoCommunitySearchResults}" />
+      </StackPanel>
+      <ItemsControl ItemsSource="{Binding FilteredCommunities}" IsVisible="{Binding !NeedAccount}"
                     AutomationProperties.AutomationId="Community.List">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
@@ -39,6 +52,9 @@
                   </StackPanel>
                 </Button>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+                  <Border Classes="chip" IsVisible="{Binding IsMember}" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding RoleLabel}" />
+                  </Border>
                   <Button Classes="primary" Content="{loc:T communityJoin}" Command="{Binding JoinCommand}"
                           IsVisible="{Binding CanJoin}" AutomationProperties.AutomationId="Community.Join"
                           AutomationProperties.Name="{loc:T communityJoin}" />
@@ -85,7 +101,10 @@
               </StackPanel>
 
               <StackPanel Spacing="8">
-                <TextBlock Classes="micro" Text="{loc:T communityHomework}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Classes="micro" Text="{loc:T communityHomework}" VerticalAlignment="Center" />
+                  <Border Classes="chip"><TextBlock Classes="tnum" Text="{Binding Homework.Count}" /></Border>
+                </StackPanel>
                 <ItemsControl ItemsSource="{Binding Homework}" AutomationProperties.AutomationId="Community.Homework">
                   <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>
@@ -121,7 +140,10 @@
               </StackPanel>
 
               <StackPanel Spacing="8">
-                <TextBlock Classes="micro" Text="{loc:T communityAnnouncements}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Classes="micro" Text="{loc:T communityAnnouncements}" VerticalAlignment="Center" />
+                  <Border Classes="chip"><TextBlock Classes="tnum" Text="{Binding Announcements.Count}" /></Border>
+                </StackPanel>
                 <ItemsControl ItemsSource="{Binding Announcements}" AutomationProperties.AutomationId="Community.Announcements">
                   <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>
@@ -151,7 +173,10 @@
               </StackPanel>
 
               <StackPanel Spacing="8">
-                <TextBlock Classes="micro" Text="{loc:T communityPolls}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Classes="micro" Text="{loc:T communityPolls}" VerticalAlignment="Center" />
+                  <Border Classes="chip"><TextBlock Classes="tnum" Text="{Binding Polls.Count}" /></Border>
+                </StackPanel>
                 <ItemsControl ItemsSource="{Binding Polls}" AutomationProperties.AutomationId="Community.Polls">
                   <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>

@@ -3,6 +3,7 @@ package ru.bgtu_voenmeh.zapara.ui.week
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,6 +15,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Constraints
@@ -22,6 +24,7 @@ import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
+import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.schedule.LessonTypeChip
 import ru.bgtu_voenmeh.zapara.ui.shell.LocalShellChrome
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
@@ -49,10 +52,19 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
                 if (state.currentParity == 2) stringResource(R.string.week_current, even) else even
             )
             ZSegmented(labels, (state.parity - 1).coerceIn(0, 1), { onEvent(WeekEvent.Parity(it)) }, "Week.Segment", Modifier.padding(horizontal = Zapara.space.l))
+            Text(stringResource(R.string.next_week_total, state.days.sumOf { it.rows.size }),
+                style = Zapara.typography.caption, color = c.text2,
+                modifier = Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s))
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 itemsIndexed(state.days, key = { _, it -> it.dow }) { index, day ->
                     ZCard(onClick = { onOpenDay(day.date) }, tag = "Week.Day.${day.dow}", modifier = Modifier.fillMaxWidth().appear(index)) {
-                        Text(day.title, style = Zapara.typography.section, color = c.text1)
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                            Text(day.title, style = Zapara.typography.section, color = c.text1,
+                                modifier = Modifier.weight(1f))
+                            ZChip(stringResource(R.string.next_week_day_count, day.rows.size),
+                                tag = "Week.Count.${day.dow}")
+                        }
                         if (day.rows.isEmpty()) {
                             Text(stringResource(R.string.week_no_lessons), style = Zapara.typography.caption, color = c.text2)
                         } else {

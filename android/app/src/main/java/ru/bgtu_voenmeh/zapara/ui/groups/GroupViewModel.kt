@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import ru.bgtu_voenmeh.zapara.AppContainer
+import ru.bgtu_voenmeh.zapara.data.Schedule
 import ru.bgtu_voenmeh.zapara.data.communities.ChatMessage
 import ru.bgtu_voenmeh.zapara.data.communities.ChatReaction
 import ru.bgtu_voenmeh.zapara.data.communities.BallotBoard
@@ -30,6 +31,7 @@ import ru.bgtu_voenmeh.zapara.data.communities.GroupTopic
 import ru.bgtu_voenmeh.zapara.data.communities.GroupTopicList
 import java.time.ZoneId
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 internal class GroupRuntime(
@@ -42,7 +44,8 @@ internal class GroupRuntime(
     val initialCommunityId: String? = null,
     val initialConversationId: String? = null,
     val mediaCacheDir: File? = null,
-    val startInChannelList: Boolean = false
+    val startInChannelList: Boolean = false,
+    val lessonContext: suspend (String?) -> GroupLessonHint? = { null }
 ) {
     companion object {
         fun from(container: AppContainer, initialCommunityId: String? = null, initialConversationId: String? = null) = GroupRuntime(
@@ -55,7 +58,20 @@ internal class GroupRuntime(
             initialCommunityId = initialCommunityId,
             initialConversationId = initialConversationId,
             mediaCacheDir = container.app.cacheDir,
-            startInChannelList = true
+            startInChannelList = true,
+            lessonContext = { communityName -> withContext(Dispatchers.IO) {
+                val settings = container.repo.settings()
+                val selectedId = settings.myGroupId.orEmpty()
+                val selectedName = container.repo.groups().firstOrNull { it.id == selectedId }?.name
+                if (selectedId.isEmpty() || !sameAcademicGroup(communityName, selectedName)) null
+                else {
+                    val lessons = container.ownLessons()
+                    nextGroupLesson(communityName, selectedName, LocalDateTime.now()) { date ->
+                        Schedule.lessonsForDate(lessons, selectedId, date,
+                            settings.periodStart, settings.weekCount, settings.parityInvert)
+                    }
+                }
+            } }
         )
     }
 }
@@ -133,6 +149,7 @@ data class GroupUiState(
     val title: String = "",
     val myRole: String = "",
     val channels: List<GroupTopic> = emptyList(),
+    val contextLesson: GroupLessonHint? = null,
     val canManageChannels: Boolean = false,
     val showChannels: Boolean = false,
     val activeTopicId: String? = null,
@@ -218,6 +235,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     private val mutable = MutableStateFlow(GroupUiState(guest = runtime.guest || runtime.client == null))
     val state: StateFlow<GroupUiState> = mutable.asStateFlow()
     private var home: GroupHome? = null
+    private var contextLesson: GroupLessonHint? = null
     private var topics: GroupTopicList? = null
     private var conversationId: String? = null
     private var draftKey: String? = null
@@ -246,6 +264,15 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             GroupEvent.Refresh -> viewModelScope.launch {
                 val current = mutable.value
                 val loaded = home
+                if (loaded != null) {
+                    val refreshedLesson = try { runtime.lessonContext(loaded.groupName) }
+                    catch (error: CancellationException) { throw error }
+                    catch (_: Exception) { null }
+                    if (home?.communityId == loaded.communityId) {
+                        contextLesson = refreshedLesson
+                        mutable.value = mutable.value.copy(contextLesson = refreshedLesson)
+                    }
+                }
                 when {
                     loaded == null -> load()
                     current.activeChannelKind == "ballots" -> openBallots(current.activeTopicId, current.chatTitle)
@@ -354,7 +381,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
 
     private suspend fun open(communityId: String) {
         val api = runtime.client ?: return
-        mutable.value = mutable.value.copy(loading = true, failed = false)
+        contextLesson = null
+        mutable.value = mutable.value.copy(loading = true, failed = false, contextLesson = null)
         try {
             val token = runtime.accessToken()
             if (token.isNullOrEmpty()) {
@@ -366,6 +394,9 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 if (error.failure !in setOf(CommunityClientFailure.NotFound, CommunityClientFailure.InvalidRequest)) throw error
                 null
             }
+            contextLesson = try { runtime.lessonContext(loaded.groupName) }
+            catch (error: CancellationException) { throw error }
+            catch (_: Exception) { null }
             home = loaded
             publishHome(loaded)
             val requested = if (communityId == runtime.initialCommunityId)
@@ -396,6 +427,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             title = loaded.groupName ?: loaded.name,
             myRole = me?.role ?: "member",
             channels = available,
+            contextLesson = contextLesson,
             canManageChannels = topics?.canManageChannels == true,
             people = loaded.classmates.map { person(it) },
             directs = loaded.directs.map { chat(it) },

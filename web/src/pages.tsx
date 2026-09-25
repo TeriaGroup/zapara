@@ -5,7 +5,8 @@ import * as api from "./api";
 import { followGroupCommunity, openGroupFace } from "./groupChoice";
 import { clearSentGroupDraft, createGroupPoller, groupMediaSelectionIsCurrent, mergeGroupMessages, newestUnseenIncoming } from "./groupChat";
 import { completeGroupCopy, saveEditorHomework } from "./groupHomework";
-import { addDays, dayTitle, friendRoomMark, isoDay, lessonsOn, longDate, sameSubject, weekday } from "./parity";
+import { addDays, dayTitle, isoDay, lessonsOn, longDate, sameSubject, weekday } from "./parity";
+import { forecastIntersections, intersectionPlace, markDescription, marksForLesson, resolveFriendSchedules, type FriendMark } from "./intersections";
 import { composeSummary } from "./summary";
 import { lessonsOfGroupTeacher, teacherCode, teacherRows, teacherWeek, type TeacherRow } from "./teachers";
 import { subgroupIndex, subgroupMark, visibleLessons } from "./subgroups";
@@ -16,6 +17,7 @@ import { groupBubbleText, groupMediaDownload, GroupMediaError, type GroupMediaDo
 import { canComposeChannel, canCreateBallot, isChatChannel, nextUnreadTopic, orderedTopics, topicPreview } from "./channels";
 import { isNearLatest, matchesBrowseQuery, unreadBadgeDescription, unreadBadgeText } from "./groupBrowse";
 import { canCopyMessageText, filterMessages, messageDayKey, sameMessageCluster, type MessageBrowseFilter } from "./messageBrowse";
+import { buildGroupChatContext } from "./groupChatContext";
 import { GroupComposer } from "./group-composer";
 import { GroupInlineMedia } from "./group-inline-media";
 import { legalDocument, type LegalId } from "./legal";
@@ -60,7 +62,7 @@ function TypeChip({ type }: { type: string }) {
   return <span className={"type" + (kind ? " " + kind : "")}><i />{kind ? typeLabels[kind] : type}</span>;
 }
 
-function LessonCard({ lesson, mark, share, subgroup, onPick }: { lesson: Lesson; mark?: string; share?: string | null; subgroup?: ReturnType<typeof subgroupMark>; onPick?: (streamId: string, optionId: string) => void }) {
+function LessonCard({ lesson, marks = [], share, subgroup, onPick }: { lesson: Lesson; marks?: FriendMark[]; share?: string | null; subgroup?: ReturnType<typeof subgroupMark>; onPick?: (streamId: string, optionId: string) => void }) {
   return (
     <article className="lesson">
       <div className="lesson-top">
@@ -80,7 +82,11 @@ function LessonCard({ lesson, mark, share, subgroup, onPick }: { lesson: Lesson;
           </div>
         )}
         <div className="row" style={{ marginTop: 6 }}>
-          {mark && <span className="chip">{mark}</span>}
+          {marks.map(mark => <span key={mark.groupName} className={"chip friend-mark" + (mark.present ? "" : " absent")}
+            style={{ borderLeftColor: mark.color || "var(--line-strong)" }}
+            aria-label={`${mark.groupName}${mark.members ? " (" + mark.members + ")" : ""}: ${markDescription(mark)}`}>
+            {mark.groupName}{mark.members ? ` · ${mark.members}` : ""} · {markDescription(mark)}
+          </span>)}
           <ShareMenu card={share ?? null} />
         </div>
       </div>
@@ -90,11 +96,14 @@ function LessonCard({ lesson, mark, share, subgroup, onPick }: { lesson: Lesson;
 
 export function SchedulePage() {
   const app = useApp();
-  const period = app.catalog?.period;
+  const cache = api.readCache();
+  const ownTimetable = cache.lessons[app.groupId];
+  const period = ownTimetable?.period || app.catalog?.period;
   const choices = app.subgroups[app.groupId] || {};
   const index = useMemo(() => subgroupIndex(app.lessons), [app.lessons]);
   const shown = useMemo(() => visibleLessons(app.lessons, choices), [app.lessons, app.subgroups, app.groupId]);
   const lessons = period ? lessonsOn(shown, app.date, period.start, period.weekCount, app.invert) : [];
+  const friendSchedules = resolveFriendSchedules(app.friends, app.catalog?.groups || [], cache.lessons, ownTimetable);
   const groupName = app.catalog?.groups.find(group => group.id === app.groupId)?.name || "";
   const dayCard = scheduleCard(groupName, app.date, period ? longDate(app.date, period.start, period.weekCount, app.invert) : dayTitle(app.date), lessons);
   const today = new Date();
@@ -124,6 +133,10 @@ export function SchedulePage() {
           </button>
         ))}
       </div>
+      {app.timetableAvailable && <div className="section-overview">
+        <strong>{groupName || "Расписание группы"}</strong>
+        <span>Пар в этот день: {lessons.length}</span>
+      </div>}
       <p className="swipe-hint">Смахните влево или вправо, чтобы сменить день</p>
       <div className="stack swipe" {...swipe}>
         {(!app.groupId || !app.timetableAvailable || lessons.length === 0) && (
@@ -134,11 +147,11 @@ export function SchedulePage() {
           </div>
         )}
         {lessons.map(lesson => {
-          const friends = app.friends.filter(item => item.enabled).map(item => {
-            const cached = api.readCache().lessons[item.groupName];
-            return { enabled: true, lessons: cached && period ? lessonsOn(cached.lessons, app.date, period.start, period.weekCount, app.invert) : [] };
-          });
-          return <LessonCard key={lesson.index + lesson.timeStart + lesson.subjectRaw + (lesson.teacherRaw || "")} lesson={lesson} mark={friendRoomMark(lesson, friends)} share={lessonFrom(groupName, app.date, lesson)} subgroup={subgroupMark(lesson, lessons, index, choices)} onPick={app.pickSubgroup} />;
+          const marks = period ? marksForLesson(lesson, app.date, {
+            mineLessons: shown, friends: friendSchedules, period, invert: app.invert,
+            strictness: app.intersectionStrictness, now: today,
+          }, app.showAbsentFriends) : [];
+          return <LessonCard key={lesson.index + lesson.timeStart + lesson.subjectRaw + (lesson.teacherRaw || "")} lesson={lesson} marks={marks} share={lessonFrom(groupName, app.date, lesson)} subgroup={subgroupMark(lesson, lessons, index, choices)} onPick={app.pickSubgroup} />;
         })}
       </div>
     </section>
@@ -152,6 +165,8 @@ export function WeekPage() {
   const shown = useMemo(() => visibleLessons(app.lessons, app.subgroups[app.groupId] || {}), [app.lessons, app.subgroups, app.groupId]);
   const monday = addDays(app.date, -((weekday(app.date) + 6) % 7));
   const days = Array.from({ length: 6 }, (_, index) => addDays(monday, index));
+  const weekDays = days.map(date => ({ date, lessons: period ? lessonsOn(shown, date, period.start, period.weekCount, app.invert) : [] }));
+  const weekTotal = weekDays.reduce((total, day) => total + day.lessons.length, 0);
   const swipe = useSwipe(() => app.setDate(addDays(app.date, 7)), () => app.setDate(addDays(app.date, -7)));
   return (
     <section className="page">
@@ -160,17 +175,21 @@ export function WeekPage() {
         <button className="btn" type="button" onClick={() => app.setDate(new Date())}>Сегодня</button>
         <button className="icon-btn" type="button" aria-label="Следующая неделя" onClick={() => app.setDate(addDays(app.date, 7))}><Icon name="right" /></button>
       </Head>
+      {app.timetableAvailable && period && <div className="section-overview">
+        <strong>Пар за неделю: {weekTotal}</strong>
+        <span>{monday.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })} — {days[5].toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</span>
+      </div>}
       <p className="swipe-hint">Смахните, чтобы сменить неделю</p>
       <div className="week swipe" {...swipe}>
-        {days.map(date => (
+        {weekDays.map(({ date, lessons: dayLessons }) => (
           <article className="card" key={isoDay(date)}>
-            <h2>{dayTitle(date)} <span className="muted">{date.getDate()}</span></h2>
+            <h2 className="week-day-head">{dayTitle(date)} <span className="muted">{date.getDate()}</span><span className="chip">Пар: {dayLessons.length}</span></h2>
             <button className="btn" type="button" onClick={() => { app.setDate(date); navigate("/schedule"); }}>Открыть день</button>
             <div className="stack">
-              {period && lessonsOn(shown, date, period.start, period.weekCount, app.invert).map(lesson => (
+              {dayLessons.map(lesson => (
                 <div key={lesson.timeStart + lesson.subjectRaw + (lesson.teacherRaw || "")}><b>{lesson.timeStart}</b> {lesson.subjectRaw}<div className="muted">{lesson.roomRaw}</div></div>
               ))}
-              {period && lessonsOn(shown, date, period.start, period.weekCount, app.invert).length === 0 && <span className="muted">Нет пар</span>}
+              {period && dayLessons.length === 0 && <span className="muted">Нет пар</span>}
             </div>
           </article>
         ))}
@@ -203,6 +222,7 @@ export function SummaryPage() {
               <button key={label} className={segment === index ? "active" : ""} type="button" aria-pressed={segment === index} onClick={() => setSegment(index)}>{label}</button>
             ))}
           </div>
+          <div className="section-divider" aria-hidden="true" />
           <article className="card">
             <div className="muted">Пар в неделю</div>
             <b className="summary-total">{summary.total}</b>
@@ -255,6 +275,7 @@ export function TeachersPage() {
     () => teacherWeek(lessons, teacherCode(filter, app.invert), app.groupId, groupName, app.invert),
     [lessons, filter, app.invert, app.groupId, groupName],
   );
+  const teacherWeekTotal = week.reduce((total, day) => total + day.rows.length, 0);
   async function open(row: TeacherRow) {
     setSelected(row);
     const own = lessonsOfGroupTeacher(attended, row.name, app.groupId, groupName);
@@ -275,6 +296,7 @@ export function TeachersPage() {
               <button key={label} className={filter === index ? "active" : ""} type="button" aria-pressed={filter === index} onClick={() => setFilter(index)}>{label}</button>
             ))}
           </div>
+          <div className="section-overview"><strong>Пар в выбранной неделе: {teacherWeekTotal}</strong><span>{teacherFilters[filter]}</span></div>
           {week.length === 0 && <div className="card empty"><p>На этой неделе пар нет</p></div>}
           {week.map(day => (
             <article className="card stack" key={day.day}>
@@ -294,13 +316,19 @@ export function TeachersPage() {
         </div>
       ) : (
         <div className="stack">
-          <input className="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Фамилия или предмет" aria-label="Поиск преподавателя" />
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <span>Только мои</span>
-            <button className={"switch" + (onlyMine ? " on" : "")} type="button" aria-pressed={onlyMine} aria-label="Только мои" onClick={() => setOnlyMine(value => !value)}><i /></button>
+          <div className="teacher-search-bar">
+            <input className="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Фамилия или предмет" aria-label="Поиск преподавателя" />
+            {!!query.trim() && <button className="btn" type="button" onClick={() => setQuery("")}>Сбросить поиск</button>}
           </div>
-          <p className="muted">Найдено {found.rows.length} из {found.total}</p>
-          {found.rows.length === 0 && <div className="card empty"><p>Никого не нашлось</p></div>}
+          <div className="section-overview">
+            <strong>Найдено {found.rows.length} из {found.total}</strong>
+            <div className="row"><span>Только мои</span>
+              <button className={"switch" + (onlyMine ? " on" : "")} type="button" aria-pressed={onlyMine} aria-label="Только мои" onClick={() => setOnlyMine(value => !value)}><i /></button>
+            </div>
+          </div>
+          {found.rows.length === 0 && <div className="card empty"><p>{!query.trim() && onlyMine ? "У выбранной группы преподаватели пока не найдены" : "Никого не нашлось"}</p>
+            {!!query.trim() ? <button className="btn" type="button" onClick={() => setQuery("")}>Сбросить поиск</button>
+              : onlyMine && <button className="btn" type="button" onClick={() => setOnlyMine(false)}>Показать всех</button>}</div>}
           {found.rows.map(row => (
             <button className="person teacher-person" key={row.id} type="button" onClick={() => void open(row)}>
               {row.mine && <i className="mine-mark" />}
@@ -347,11 +375,17 @@ export function MapsPage() {
       <Head title="Карты" text={error || "Планы Военмеха · ГК и УЛК"}>
         <ShareMenu card={plan ? placeCard(plan.building, String(plan.floor), "", `${plan.building}, ${plan.floor} этаж`) : null} label="Этаж в чат" />
       </Head>
-      <div className="map-tools">
+      {plan && <div className="section-overview">
+        <strong>{plan.building} · {plan.floor} этаж</strong>
+        <span>Выбранный план</span>
+      </div>}
+      <div className="map-tools map-selectors" role="group" aria-label="Выбор корпуса и этажа">
         {buildings.map(building => <button key={building} className={"btn" + (plan?.building === building ? " primary" : "")} type="button" onClick={() => setPlan(plans.find(item => item.building === building) || null)}>{building}</button>)}
         {floors.map(item => (
           <button key={item.id} className={"btn" + (item.id === plan?.id ? " primary" : "")} type="button" onClick={() => setPlan(item)}>{item.floor} этаж</button>
         ))}
+      </div>
+      <div className="map-tools map-navigation" role="group" aria-label="Переход между этажами">
         <button className="btn" type="button" disabled={floorAt <= 0} onClick={() => floorAt > 0 && setPlan(floors[floorAt - 1])}><Icon name="down" size={16} />Ниже</button>
         <button className="btn" type="button" disabled={floorAt < 0 || floorAt >= floors.length - 1} onClick={() => floorAt >= 0 && floorAt < floors.length - 1 && setPlan(floors[floorAt + 1])}><Icon name="up" size={16} />Выше</button>
       </div>
@@ -364,42 +398,188 @@ export function MapsPage() {
 
 export function FriendsPage() {
   const app = useApp();
+  const [editorOpen, setEditorOpen] = useState(false);
   const [name, setName] = useState("");
   const [members, setMembers] = useState("");
+  const [error, setError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [, setCacheRevision] = useState(0);
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const groups = app.catalog?.groups || [];
+  const cache = api.readCache();
+  const ownTimetable = cache.lessons[app.groupId];
+  const schedules = resolveFriendSchedules(app.friends, groups, cache.lessons, ownTimetable);
+  const period = ownTimetable?.period || app.catalog?.period;
+  const forecast = period && app.groupId && app.timetableAvailable
+    ? forecastIntersections({
+      mineLessons: visibleLessons(app.lessons, app.subgroups[app.groupId] || {}),
+      friends: schedules, period, invert: app.invert,
+      strictness: app.intersectionStrictness, now,
+    }) : null;
+  const activeCount = app.friends.filter(friend => friend.enabled).length;
+  const missingCount = forecast?.missingGroups.length || 0;
+  const palette = ["#F2A33C", "#4CC38A", "#5AA9FF", "#C77DFF", "#FF7A9C"];
+  function knownGroup(value: string) {
+    return groups.find(group => group.id === value.trim() || group.name.toLocaleLowerCase("ru-RU") === value.trim().toLocaleLowerCase("ru-RU"));
+  }
+  function duplicateGroup(value: string, exceptId = "") {
+    const selected = knownGroup(value);
+    return app.friends.some(friend => friend.id !== exceptId &&
+      (friend.groupName.toLocaleLowerCase("ru-RU") === value.trim().toLocaleLowerCase("ru-RU") ||
+        (selected && knownGroup(friend.groupName)?.id === selected.id)));
+  }
+  async function updateFriendTimetable(groupName: string) {
+    const known = knownGroup(groupName);
+    if (!known) return false;
+    try {
+      const payload = await api.loadTimetable(known.id);
+      const cache = api.readCache();
+      cache.lessons[known.id] = payload;
+      cache.lessons[known.name] = payload;
+      api.writeCache(cache);
+      setCacheRevision(value => value + 1);
+      return true;
+    } catch { return false; }
+  }
+  async function refreshFriends() {
+    if (refreshing) return;
+    setRefreshing(true);
+    setError("");
+    const names = app.friends.filter(friend => friend.enabled).map(friend => friend.groupName);
+    const outcomes = await Promise.all(names.map(updateFriendTimetable));
+    if (outcomes.some(ok => !ok)) setError("Не все расписания удалось обновить. Сохранённые копии остаются доступны.");
+    setRefreshing(false);
+  }
   function add(event: FormEvent) {
     event.preventDefault();
+    const group = knownGroup(name);
     if (!name.trim() || app.friends.length >= 5) return;
-    app.saveFriends([...app.friends, { id: crypto.randomUUID(), groupName: name.trim(), members: members.trim(), enabled: true, color: "#e0527a" }]);
+    if (duplicateGroup(name)) { setError("Эта группа уже добавлена."); return; }
+    if (group?.id === app.groupId) { setError("Ваша группа уже есть в расписании."); return; }
+    const used = new Set(app.friends.map(friend => friend.color?.toUpperCase()));
+    const color = palette.find(value => !used.has(value.toUpperCase())) || palette[0];
+    app.saveFriends([...app.friends, { id: crypto.randomUUID(), groupName: group?.name || name.trim(), members: members.trim(), enabled: true, color }]);
     setName(""); setMembers("");
-    const known = app.catalog?.groups.find(group => group.name === name.trim() || group.id === name.trim());
-    if (known) void api.loadTimetable(known.id).then(payload => { const cache = api.readCache(); cache.lessons[known.id] = payload; cache.lessons[known.name] = payload; api.writeCache(cache); });
+    setError("");
+    setEditorOpen(false);
+    if (group) void updateFriendTimetable(group.name).then(ok => { if (!ok) setError("Расписание группы не загрузилось. Попробуйте обновить позже."); });
   }
   return (
     <section className="page">
-      <Head title="Пересечения" text="Группы друзей в вашем расписании." />
-      <h2>Группы в расписании</h2>
-      <p className="sub">До пяти групп. Их пары отмечаются на вашем дне.</p>
-      <form className="card stack" onSubmit={add} style={{ marginTop: 12 }}>
-        <label className="field">Группа<input value={name} onChange={event => setName(event.target.value)} placeholder="А863С" /></label>
+      <Head title="Пересечения" text="Узнайте, когда друзья из других групп учатся рядом с вами.">
+        <button className="btn primary" type="button" aria-expanded={editorOpen} aria-controls="friend-editor"
+          disabled={app.friends.length >= 5 && !editorOpen} onClick={() => setEditorOpen(value => !value)}>
+          {editorOpen ? "Скрыть редактор" : "Добавить группу"}
+        </button>
+      </Head>
+      <div className="section-overview">
+        <strong>Групп: {app.friends.length} из 5</strong>
+        <span>Активных: {activeCount}</span>
+      </div>
+      <div className="card stack intersection-settings">
+        <div><h2>Насколько близко</h2><p className="sub">Показываем совпадение времени и аудитории по расписанию, а не фактическое местоположение.</p></div>
+        <div className="seg intersection-presets" role="group" aria-label="Точность пересечений">
+          {([[25, "В вузе"], [50, "В корпусе"], [75, "На этаже"], [100, "В аудитории"]] as const).map(([value, label]) =>
+            <button key={value} type="button" className={app.intersectionStrictness === value ? "active" : ""}
+              aria-pressed={app.intersectionStrictness === value} onClick={() => app.setIntersectionStrictness(value)}>{label}</button>)}
+        </div>
+        <label className="check"><input type="checkbox" checked={app.showAbsentFriends} onChange={event => app.setShowAbsentFriends(event.target.checked)} />
+          <span>Показывать и группы без совпадения<span className="muted"> — в карточках пар будет виден уровень встречи или её отсутствие</span></span></label>
+      </div>
+      <div className="intersection-forecast-head row">
+        <div><h2>Ближайшие пересечения</h2><p className="sub">До трёх встреч на ближайшие 14 дней</p></div>
+        {activeCount > 0 && <button className="btn" type="button" disabled={refreshing} onClick={() => void refreshFriends()}>
+          <Icon name="refresh" size={16} />{refreshing ? "Обновляем…" : "Обновить расписания"}</button>}
+      </div>
+      {error && <div className="banner" role="status">{error}</div>}
+      {!app.groupId && <div className="card empty">Выберите свою группу в настройках, чтобы увидеть встречи с друзьями.<Link className="btn" to="/settings">Открыть настройки</Link></div>}
+      {!!app.groupId && !app.timetableAvailable && <div className="card empty">{app.timetableLoading ? "Загружаем ваше расписание…" : "Ваше расписание недоступно. Обновите его в разделе «Расписание»."}</div>}
+      {!!forecast && activeCount === 0 && <div className="card empty">Включите группу друзей или добавьте новую, чтобы увидеть пересечения.</div>}
+      {!!forecast && activeCount > 0 && forecast.encounters.length === 0 &&
+        <div className="card empty">{forecast.checkedGroups === 0 ? "Совместимые расписания групп друзей ещё не загружены." : "По выбранной точности встреч в ближайшие две недели не найдено."}</div>}
+      {!!forecast && forecast.encounters.length > 0 && <div className="intersection-forecast stack" aria-label="Ближайшие пересечения">
+        {forecast.encounters.map((encounter, index) => <article className="card intersection-encounter" key={`${encounter.date.toDateString()}-${encounter.time}-${encounter.friendGroupName}-${index}`}
+          style={{ borderLeftColor: encounter.color || "var(--line-strong)" }}>
+          <strong>{encounter.date.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "long" })} · {encounter.time} · {encounter.subject}</strong>
+          <span>{encounter.friendGroupName}{encounter.members ? ` · ${encounter.members}` : ""}</span>
+          <span className="muted">{intersectionPlace(encounter.score)}{encounter.friendRoom ? ` · ${encounter.friendRoom}` : ""}</span>
+        </article>)}
+      </div>}
+      {!!forecast && missingCount > 0 && <p className="muted" role="status">Нет подходящего загруженного расписания: {forecast.missingGroups.join(", ")}. Для этих групп прогноз пока неполный.</p>}
+      <h2 className="section-list-title">Группы в расписании <span className="chip">{app.friends.length}</span></h2>
+      <p className="sub">До пяти групп. Их пары отмечаются в вашем расписании.</p>
+      <form id="friend-editor" className="card stack friend-compose" hidden={!editorOpen} onSubmit={add} style={{ marginTop: 12 }}>
+        <label className="field">Группа<input list="friend-groups" value={name} onChange={event => setName(event.target.value)} placeholder="А863С" /></label>
+        <datalist id="friend-groups">{(app.catalog?.groups || []).map(group => <option key={group.id} value={group.name} />)}</datalist>
         <label className="field">Имена<input value={members} onChange={event => setMembers(event.target.value)} placeholder="Необязательно" /></label>
         <button className="btn primary" type="submit" disabled={app.friends.length >= 5}>Добавить</button>
       </form>
+      {app.friends.length === 0 && !editorOpen && <div className="card empty">Группы друзей ещё не добавлены.
+        <button className="btn" type="button" onClick={() => setEditorOpen(true)}>Добавить первую группу</button>
+      </div>}
       <div className="stack" style={{ marginTop: 12 }}>
-        {app.friends.map(friend => <FriendRow key={friend.id} friend={friend} />)}
+        {app.friends.map(friend => <FriendRow key={friend.id} friend={friend}
+          hasSchedule={schedules.find(item => item.groupName === friend.groupName)?.lessons != null}
+          groups={groups} palette={palette} duplicateGroup={duplicateGroup}
+          onGroupChanged={groupName => void updateFriendTimetable(groupName)} />)}
       </div>
     </section>
   );
 }
 
-function FriendRow({ friend }: { friend: FriendItem }) {
+function FriendRow({ friend, hasSchedule, groups, palette, duplicateGroup, onGroupChanged }: {
+  friend: FriendItem; hasSchedule: boolean;
+  groups: { id: string; name: string }[]; palette: string[];
+  duplicateGroup: (value: string, exceptId: string) => boolean;
+  onGroupChanged: (groupName: string) => void;
+}) {
   const app = useApp();
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(friend.groupName);
+  const [members, setMembers] = useState(friend.members);
+  const [error, setError] = useState("");
+  function save(event: FormEvent) {
+    event.preventDefault();
+    const next = name.trim();
+    if (!next) { setError("Укажите группу."); return; }
+    if (duplicateGroup(next, friend.id)) { setError("Эта группа уже добавлена."); return; }
+    const known = groups.find(group => group.id === next || group.name.toLocaleLowerCase("ru-RU") === next.toLocaleLowerCase("ru-RU"));
+    if (known?.id === app.groupId) { setError("Ваша группа уже есть в расписании."); return; }
+    const groupName = known?.name || next;
+    app.saveFriends(app.friends.map(item => item.id === friend.id ? { ...item, groupName, members: members.trim() } : item));
+    if (groupName !== friend.groupName) onGroupChanged(groupName);
+    setError(""); setEditing(false);
+  }
   return (
-    <article className="card row" style={{ justifyContent: "space-between" }}>
-      <div><b>{friend.groupName}</b><div className="muted">{friend.members}</div></div>
-      <div className="row">
-        <button className={"switch" + (friend.enabled ? " on" : "")} type="button" aria-label="Показывать" onClick={() => app.saveFriends(app.friends.map(item => item.id === friend.id ? { ...item, enabled: !item.enabled } : item))}><i /></button>
-        <button className="btn" type="button" onClick={() => app.saveFriends(app.friends.filter(item => item.id !== friend.id))}>Удалить</button>
+    <article className="card friend-row">
+      <div className="row friend-row-main">
+        <span className="friend-swatch" style={{ backgroundColor: friend.color || palette[0] }} aria-hidden="true" />
+        <div className="friend-row-name"><b>{friend.groupName}</b><div className="muted">{friend.members || "Имена не указаны"} · {hasSchedule ? "расписание готово" : "расписание недоступно"}</div></div>
+        <button className={"switch" + (friend.enabled ? " on" : "")} type="button" role="switch" aria-checked={friend.enabled}
+          aria-label={`Показывать группу ${friend.groupName}`}
+          onClick={() => app.saveFriends(app.friends.map(item => item.id === friend.id ? { ...item, enabled: !item.enabled } : item))}><i /></button>
+        <button className="btn" type="button" aria-expanded={editing} onClick={() => { setName(friend.groupName); setMembers(friend.members); setError(""); setEditing(value => !value); }}>{editing ? "Закрыть" : "Изменить"}</button>
+        <button className="btn" type="button" onClick={() => {
+          if (window.confirm(`Удалить группу ${friend.groupName} из пересечений?`))
+            app.saveFriends(app.friends.filter(item => item.id !== friend.id));
+        }}>Удалить</button>
       </div>
+      {editing && <form className="stack friend-row-edit" onSubmit={save}>
+        <label className="field">Группа<input list="friend-groups" value={name} onChange={event => setName(event.target.value)} /></label>
+        <label className="field">Имена друзей<input value={members} onChange={event => setMembers(event.target.value)} placeholder="Необязательно" /></label>
+        <div className="row friend-palette" role="group" aria-label={`Цвет группы ${friend.groupName}`}>
+          {palette.map(color => <button key={color} type="button" className={"friend-color-choice" + (friend.color?.toUpperCase() === color.toUpperCase() ? " selected" : "")}
+            style={{ backgroundColor: color }} aria-label={`Цвет ${color}`} aria-pressed={friend.color?.toUpperCase() === color.toUpperCase()}
+            disabled={app.friends.some(item => item.id !== friend.id && item.color?.toUpperCase() === color.toUpperCase())}
+            onClick={() => app.saveFriends(app.friends.map(item => item.id === friend.id ? { ...item, color } : item))} />)}
+        </div>
+        {error && <p className="muted" role="alert">{error}</p>}
+        <button className="btn primary" type="submit">Сохранить</button>
+      </form>}
     </article>
   );
 }
@@ -434,12 +614,14 @@ function HomeworkAttachments({ files }: { files: HomeworkFile[] }) {
 
 export function HomeworkPage() {
   const app = useApp();
+  const [editorOpen, setEditorOpen] = useState(false);
   const [subject, setSubject] = useState("");
   const [text, setText] = useState("");
   const [share, setShare] = useState(false);
   const [pending, setPending] = useState<{ file: File; kind: "photo" | "document" }[]>([]);
   const [communityId, setCommunityId] = useState("");
   const [copies, setCopies] = useState<GroupHomeworkCopy[]>([]);
+  const [copiesLoading, setCopiesLoading] = useState(false);
   const [note, setNote] = useState("");
   const [copiesFailed, setCopiesFailed] = useState(false);
   const [copiesRetry, setCopiesRetry] = useState(0);
@@ -447,6 +629,7 @@ export function HomeworkPage() {
   useEffect(() => { if (!app.session?.authenticated) setShare(false); }, [app.session?.authenticated]);
   useEffect(() => {
     let stop = false;
+    setCopiesLoading(!!app.session?.authenticated && !!app.groupId);
     setCommunityId("");
     setCopies([]);
     setCopiesFailed(false);
@@ -456,11 +639,12 @@ export function HomeworkPage() {
       state => {
         if (stop) return;
         setCommunityId(state.communityId);
-        if (!state.communityId) setCopies([]);
-        if (state.failed) setCopiesFailed(true);
+        if (!state.communityId) { setCopies([]); setCopiesLoading(false); }
+        if (state.failed) { setCopiesFailed(true); setCopiesLoading(false); }
         else if (state.communityId) void api.groupHomework(state.communityId)
           .then(loaded => { if (!stop) setCopies(loaded); })
-          .catch(() => { if (!stop) setCopiesFailed(true); });
+          .catch(() => { if (!stop) setCopiesFailed(true); })
+          .finally(() => { if (!stop) setCopiesLoading(false); });
       },
     );
     return () => { stop = true; };
@@ -523,6 +707,7 @@ export function HomeworkPage() {
     setText("");
     setPending([]);
     setNote(outcome.note);
+    setEditorOpen(false);
     if (outcome.sent) {
       try { setCopies(await api.groupHomework(communityId)); }
       catch { setCopies([]); setCopiesFailed(true); }
@@ -549,8 +734,15 @@ export function HomeworkPage() {
   }
   return (
     <section className="page">
-      <Head title="Домашка" text={note || "Хранится на этом устройстве. Галочка отправляет ту же домашку всей группе."} />
-      <form className="card stack" onSubmit={event => void add(event)}>
+      <Head title="Домашка" text={note || "Хранится на этом устройстве. Галочка отправляет ту же домашку всей группе."}>
+        <button className="btn primary" type="button" aria-expanded={editorOpen} aria-controls="homework-editor"
+          onClick={() => setEditorOpen(value => !value)}>{editorOpen ? "Скрыть редактор" : "Добавить задание"}</button>
+      </Head>
+      <div className="section-overview">
+        <strong>Мои задания: {app.homework.length} · Общие: {copiesLoading ? "загрузка…" : copies.length}</strong>
+        <span>Выполнено: {app.homework.filter(item => item.done).length + copies.filter(item => item.completed).length}</span>
+      </div>
+      <form id="homework-editor" className="card stack homework-compose" hidden={!editorOpen} onSubmit={event => void add(event)}>
         <label className="field">Предмет<input list="subjects" value={subject} onChange={event => setSubject(event.target.value)} /></label>
         <datalist id="subjects">{subjects.map(item => <option key={item} value={item} />)}</datalist>
         <label className="field">Задание<textarea value={text} onChange={event => setText(event.target.value)} /></label>
@@ -570,8 +762,10 @@ export function HomeworkPage() {
         </label>
         <button className="btn primary" type="submit">Сохранить</button>
       </form>
+      {!copiesLoading && !copiesFailed && app.homework.length === 0 && copies.length === 0 && !editorOpen &&
+        <div className="card empty">Заданий пока нет. <button className="btn" type="button" onClick={() => setEditorOpen(true)}>Добавить первое</button></div>}
       {copiesFailed && <div className="card empty"><p>Общая домашка не загрузилась. Проверьте сеть и попробуйте ещё раз.</p><button className="btn primary" type="button" onClick={() => setCopiesRetry(value => value + 1)}>Повторить</button></div>}
-      {copies.length > 0 && <h2 style={{ marginTop: 18 }}>Всей группе</h2>}
+      {copies.length > 0 && <h2 className="section-list-title">Всей группе <span className="chip">{copies.length}</span></h2>}
       <div className="stack" style={{ marginTop: copies.length > 0 ? 12 : 0 }}>
         {copies.map(item => (
           <article className="card" key={item.homeworkId}>
@@ -583,6 +777,7 @@ export function HomeworkPage() {
           </article>
         ))}
       </div>
+      {app.homework.length > 0 && <h2 className="section-list-title">Мои задания <span className="chip">{app.homework.length}</span></h2>}
       <div className="stack" style={{ marginTop: 12 }}>
         {app.homework.map(item => (
           <article className="card" key={item.id}>
@@ -601,6 +796,11 @@ export function HomeworkPage() {
       </div>
     </section>
   );
+}
+
+function communityRoleLabel(role: string | null): string {
+  return role === "headman" ? "Староста" : role === "curator" ? "Куратор"
+    : role === "member" ? "Участник" : "Не в группе";
 }
 
 export function CommunityPage() {
@@ -625,12 +825,15 @@ export function CommunityPage() {
     <section className="page">
       <Head title="Сообщество" text={error || "Роли старосты и куратора действуют только внутри «Расписание военмех» и не подтверждены университетом."} />
       <div className="stack">
-        <label className="field">Поиск группы
-          <input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Название группы" />
-        </label>
-        <div className="row"><span className="muted">Показано {visible.length} из {list.length}</span>
-          {!!search.trim() && <button className="btn" type="button" onClick={() => setSearch("")}>Сбросить поиск</button>}
-          {error && <button className="btn" type="button" onClick={() => setReloadEpoch(value => value + 1)}>Повторить</button>}
+        <div className="community-filter">
+          <label className="field">Поиск группы
+            <input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Название или описание" />
+          </label>
+          <div className="row"><span className="muted">Показано {visible.length} из {list.length}</span>
+            <span className="muted">Моих сообществ: {list.filter(item => item.role != null).length}</span>
+            {!!search.trim() && <button className="btn" type="button" onClick={() => setSearch("")}>Сбросить поиск</button>}
+            {error && <button className="btn" type="button" onClick={() => setReloadEpoch(value => value + 1)}>Повторить</button>}
+          </div>
         </div>
         {loading && <p className="muted" role="status">Загрузка сообществ…</p>}
         {visible.map(item => (
@@ -638,7 +841,7 @@ export function CommunityPage() {
             <h2>{item.name}</h2>
             <p className="muted">{item.description}</p>
             <div className="row">
-              <span className="chip">{item.role || "не в группе"}</span>
+              <span className="chip">{communityRoleLabel(item.role)}</span>
               {!item.role && <button className="btn" type="button" onClick={() => void api.joinCommunity(item.communityId).then(() => api.communities(app.groupId).then(setList))}>Подать заявку</button>}
             </div>
           </article>
@@ -711,6 +914,8 @@ export function GroupPage() {
   const log = logState.key === viewKey ? logState.messages : [];
   const hasOlder = logState.key === viewKey && logState.hasOlder;
   const [messageFilter, setMessageFilter] = useState<MessageBrowseFilter>(defaultMessageFilter);
+  const [messageBrowseOpen, setMessageBrowseOpen] = useState(false);
+  const [contextExpandedByGroup, setContextExpandedByGroup] = useState<Record<string, boolean>>({});
   const visibleLog = filterMessages(log, messageFilter, app.session?.user?.userId || "");
   const messageFiltered = !!messageFilter.query.trim() || messageFilter.author !== "all" || messageFilter.kind !== "all";
   const [copyNotice, setCopyNotice] = useState<{ key: string; text: string } | null>(null);
@@ -846,7 +1051,7 @@ export function GroupPage() {
     }
     setReplyTo(null); setEditing(null); setMenu(null); setReactionFor(null);
   }, [viewKey]);
-  useEffect(() => { setMessageFilter(defaultMessageFilter); setCopyNotice(null); }, [viewKey]);
+  useEffect(() => { setMessageFilter(defaultMessageFilter); setMessageBrowseOpen(false); setCopyNotice(null); }, [viewKey]);
   useEffect(() => { setAtLatest(true); }, [viewKey]);
   useEffect(() => {
     if (atLatest && logBoxRef.current) logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
@@ -898,6 +1103,20 @@ export function GroupPage() {
   }, [viewKey]);
   const communityId = home?.communityId ?? "";
   const topicPage = topicPageState.key === communityId ? topicPageState.value : null;
+  const selectedAcademicGroup = app.catalog?.groups.find(group => group.id === app.groupId)?.name ?? null;
+  const groupContext = buildGroupChatContext({
+    communityGroupName: home?.groupName ?? null,
+    selectedGroupName: selectedAcademicGroup,
+    timetableAvailable: app.timetableAvailable,
+    lessons: app.lessons,
+    subgroupChoices: app.subgroups[app.groupId] ?? {},
+    period: app.catalog?.period ?? null,
+    invert: app.invert,
+    topics: topicPage?.topics ?? [],
+    now: new Date(),
+  });
+  const contextExpanded = contextExpandedByGroup[communityId] !== false;
+  const activeBallotTopic = topicPage?.topics.find(topic => topic.topicId !== null && topic.kind === "ballots" && topic.activeBallots > 0);
   const nextUnread = chat?.kind === "group" && thread !== "list" && topicPage
     ? nextUnreadTopic(topicPage.topics, thread.topicId) : null;
   useEffect(() => {
@@ -1202,8 +1421,47 @@ export function GroupPage() {
               {chat.kind === "group" && <button className="btn" type="button" disabled={!nextUnread || nextUnreadBusy} onClick={() => void openNextUnread()}
                 title={nextUnread ? `Открыть: ${nextUnread.title}` : "Непрочитанных каналов нет"}>{nextUnreadBusy ? "Проверяем…" : "Следующий непрочитанный"}</button>}
             </div>
+            {chat.kind === "group" && thread !== "list" && topicPage && <nav className="group-quick-rail" aria-label="Быстрые каналы группы">
+              <div className="group-quick-rail-items">
+                {orderedTopics(topicPage.topics).filter(topic => topic.topicId !== null || topic.kind === "chat").map(topic => {
+                  const active = topic.topicId === thread.topicId && topic.kind === thread.kind;
+                  return <button key={`${topic.kind}:${topic.topicId ?? "general"}`} className={active ? "group-quick-rail-item active" : "group-quick-rail-item"}
+                    type="button" aria-current={active ? "page" : undefined} onClick={() => {
+                      if (active) return;
+                      selectionEpoch.current += 1; clearLog(); setThread(topic);
+                    }}>
+                    <span>{topic.title}</span>
+                    {topic.unread > 0 && <span className="chip" aria-label={unreadBadgeDescription(topic.unread)}>{unreadBadgeText(topic.unread)}</span>}
+                  </button>;
+                })}
+              </div>
+              <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setThread("list"); }}>Все каналы</button>
+            </nav>}
+            {chat.kind === "group" && thread !== "list" && groupContext.hasContent && <section className="group-context" aria-label="Контекст группы">
+              <div className="row group-context-head">
+                <b>В группе сейчас</b>
+                <button className="btn" type="button" aria-expanded={contextExpanded}
+                  onClick={() => setContextExpandedByGroup(current => ({ ...current, [communityId]: !contextExpanded }))}>
+                  {contextExpanded ? "Свернуть" : "Развернуть"}
+                </button>
+              </div>
+              {contextExpanded ? <div className="group-context-items">
+                {groupContext.nextLesson && <p><b>Ближайшая пара по расписанию</b> · {groupContext.nextLesson.date.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "short" })}, {groupContext.nextLesson.time} · {groupContext.nextLesson.subject}{groupContext.nextLesson.room && ` · ${groupContext.nextLesson.room}`}</p>}
+                {groupContext.activeBallots > 0 && <div className="row"><span>Активных голосований: {groupContext.activeBallots}</span>
+                  {activeBallotTopic && <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setThread(activeBallotTopic); }}>Открыть</button>}</div>}
+                {groupContext.unread > 0 && <p>Непрочитанных сообщений в каналах: {groupContext.unread}</p>}
+              </div> : <p className="muted group-context-collapsed">
+                {[groupContext.nextLesson ? `Следующая пара ${groupContext.nextLesson.time}` : null,
+                  groupContext.activeBallots > 0 ? `Голосований: ${groupContext.activeBallots}` : null,
+                  groupContext.unread > 0 ? `Непрочитано: ${groupContext.unread}` : null].filter(Boolean).join(" · ")}
+              </p>}
+            </section>}
             {chat.kind === "group" && thread !== "list" && thread.description && <p className="muted">{thread.description}</p>}
-            <div className="message-browse" role="group" aria-label="Поиск и фильтры сообщений">
+            <button className="btn message-browse-toggle" type="button" aria-expanded={messageBrowseOpen}
+              onClick={() => setMessageBrowseOpen(value => !value)}>
+              {messageBrowseOpen ? "Скрыть поиск" : messageFiltered ? `Поиск и фильтры · ${visibleLog.length} найдено` : "Поиск и фильтры"}
+            </button>
+            {messageBrowseOpen && <div className="message-browse" role="group" aria-label="Поиск и фильтры сообщений">
               <label className="field">Поиск сообщения
                 <input type="search" value={messageFilter.query} onChange={event => setMessageFilter(current => ({ ...current, query: event.target.value }))}
                   placeholder="Текст загруженного сообщения" />
@@ -1222,7 +1480,7 @@ export function GroupPage() {
               <div className="row message-browse-summary"><span className="muted">В загруженных сообщениях: {visibleLog.length} из {log.length}</span>
                 {messageFiltered && <button className="btn" type="button" onClick={() => setMessageFilter(defaultMessageFilter)}>Сбросить фильтры</button>}
               </div>
-            </div>
+            </div>}
             {copyNotice?.key === viewKey && <p className="muted copy-notice" role="status">{copyNotice.text}</p>}
             <div className="log" ref={logBoxRef} onScroll={event => {
               const node = event.currentTarget;
@@ -1357,6 +1615,7 @@ export function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const yandex = app.session?.capabilities.yandex === true;
   const vk = app.session?.capabilities.vk === true;
+  const chosenGroupName = app.catalog?.groups.find(group => group.id === app.groupId)?.name;
   async function external(provider: "vk" | "yandex") {
     if (busy) return;
     if (mode === "register" && !accepted) {
@@ -1391,6 +1650,10 @@ export function SettingsPage() {
   return (
     <section className="page">
       <Head title="Настройки" text="Неофициальное приложение для студентов БГТУ «Военмех»." />
+      <div className="section-overview">
+        <strong>{app.groupId ? chosenGroupName ? `Группа: ${chosenGroupName}` : "Группа выбрана" : "Группа не выбрана"}</strong>
+        <span>Оформление: {app.theme === "dark" ? "тёмное" : "светлое"}</span>
+      </div>
       <div className="stack">
         <article className="card">
           <h2>Группа</h2>

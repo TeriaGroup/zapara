@@ -5,8 +5,10 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -19,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -28,6 +31,7 @@ import androidx.compose.ui.res.stringResource
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
+import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEditorSheet
 import ru.bgtu_voenmeh.zapara.ui.shell.LocalShellChrome
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
@@ -61,7 +65,14 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, on
             ScheduleComposer.SchedulePane.Day -> {
             DateStrip(state.selected, state.today) { onEvent(ScheduleEvent.Select(it)) }
             val page = state.pages[state.selected]
-            Text(page?.caption ?: "", style = Zapara.typography.caption, color = Zapara.colors.text2, modifier = Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s).testTag("Schedule.Caption"))
+            Row(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                Text(page?.caption ?: "", style = Zapara.typography.caption, color = Zapara.colors.text2,
+                    modifier = Modifier.weight(1f).testTag("Schedule.Caption"))
+                if (page != null) ZChip(stringResource(R.string.other_schedule_pairs, page.lessons.size),
+                    tag = "Schedule.PairCount")
+            }
             val pager = rememberPagerState(initialPage = ScheduleComposer.pageIndex(state.selected, state.today)) { ScheduleComposer.PAGE_COUNT }
             val motionOn = Zapara.motion.enabled
             LaunchedEffect(pager.settledPage) {

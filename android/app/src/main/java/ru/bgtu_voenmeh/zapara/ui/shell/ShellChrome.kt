@@ -21,6 +21,8 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
@@ -54,8 +56,13 @@ val LocalShellChrome = staticCompositionLocalOf { ShellChrome(null, false, false
 
 @Composable
 fun ZTopBar(title: String, actions: @Composable RowScope.() -> Unit = {}) {
+    val line = Zapara.colors.line
     val container = Modifier.fillMaxWidth().heightIn(min = 56.dp)
-        .background(Zapara.colors.canvas).padding(horizontal = Zapara.space.l)
+        .background(Zapara.colors.canvas).drawBehind {
+            val stroke = 1.dp.toPx()
+            val y = size.height - stroke / 2
+            drawLine(line, Offset(0f, y), Offset(size.width, y), strokeWidth = stroke)
+        }.padding(horizontal = Zapara.space.l)
     val spacing = Zapara.space.s
     Layout(
         modifier = container,

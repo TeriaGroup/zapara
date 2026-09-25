@@ -30,6 +30,7 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
         if (NeedAccount) Status = T("communityNeedAccount");
         relabel = Relabel;
         app.Loc.LanguageChanged += relabel;
+        Communities.CollectionChanged += (_, _) => RefreshCommunityBrowse();
     }
 
     public override void Detach() => App.Loc.LanguageChanged -= relabel;
@@ -37,6 +38,29 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
 
     public string Title => T("communityTitle");
     public ObservableCollection<CommunityItemViewModel> Communities { get; } = [];
+    [ObservableProperty] private string communitySearch = "";
+    public IReadOnlyList<CommunityItemViewModel> FilteredCommunities =>
+        CommunityBrowse.Filter(Communities, CommunitySearch, row => row.Name, row => row.Description);
+    public bool HasCommunitySearch => !string.IsNullOrWhiteSpace(CommunitySearch);
+    public bool ShowCommunitySearch => !NeedAccount && !IsForbidden && Communities.Count > 0;
+    public bool NoCommunitySearchResults => ShowCommunitySearch && HasCommunitySearch && FilteredCommunities.Count == 0;
+    public string CommunityResultCount => $"Показано {FilteredCommunities.Count} из {Communities.Count}";
+    public string CommunityMembershipCount => $"Моих сообществ: {Communities.Count(row => row.IsMember)}";
+    partial void OnCommunitySearchChanged(string value) => RefreshCommunityBrowse();
+    partial void OnNeedAccountChanged(bool value) => RefreshCommunityBrowse();
+    partial void OnIsForbiddenChanged(bool value) => RefreshCommunityBrowse();
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void ClearCommunitySearch() => CommunitySearch = "";
+
+    private void RefreshCommunityBrowse()
+    {
+        OnPropertyChanged(nameof(FilteredCommunities));
+        OnPropertyChanged(nameof(HasCommunitySearch));
+        OnPropertyChanged(nameof(ShowCommunitySearch));
+        OnPropertyChanged(nameof(NoCommunitySearchResults));
+        OnPropertyChanged(nameof(CommunityResultCount));
+        OnPropertyChanged(nameof(CommunityMembershipCount));
+    }
 
     [ObservableProperty] private bool needAccount;
     [ObservableProperty] private bool isEmpty;
@@ -317,6 +341,7 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
 
     private void ShowNeedAccount()
     {
+        CommunitySearch = "";
         NeedAccount = true;
         IsEmpty = false;
         IsForbidden = false;

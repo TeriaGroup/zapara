@@ -166,6 +166,7 @@ public sealed partial class GroupViewModel
     }
     partial void OnIsDirectChanged(bool value)
     {
+        OnPropertyChanged(nameof(ShowGroupContext));
         foreach (var channel in Channels) channel.IsSelected = !value && channel == SelectedChannel;
         OnPropertyChanged(nameof(HasUnreadChannel));
         OnPropertyChanged(nameof(CanPostChannel));
@@ -177,6 +178,7 @@ public sealed partial class GroupViewModel
     }
     partial void OnShowBallotsChanged(bool value)
     {
+        OnPropertyChanged(nameof(ShowGroupContext));
         OnPropertyChanged(nameof(ShowMessages));
         OnPropertyChanged(nameof(ShowComposer));
         OnPropertyChanged(nameof(IsRestrictedChat));
@@ -276,6 +278,7 @@ public sealed partial class GroupViewModel
             }
         }
         while (Channels.Count > ordered.Count) Channels.RemoveAt(Channels.Count - 1);
+        RefreshGroupContext();
         RefreshChannelBrowse();
         CanManageChannels = list.CanManageChannels;
         if (selected is null || !Channels.Contains(selected)) SelectedChannel = Channels[0];
@@ -566,6 +569,7 @@ public sealed class GroupChannelRow(GroupTopicResponse initial, IRelayCommand op
     }
     public string Unread => UnreadBadge.Label(row.Unread);
     public int UnreadCount => row.Unread;
+    public int ActiveBallots => row.ActiveBallots;
     public string UnreadDescription => UnreadBadge.Description(row.Unread);
     public bool CanDelete => row.CanDelete;
     public IRelayCommand OpenCommand { get; } = open;
@@ -583,6 +587,7 @@ public sealed class GroupChannelRow(GroupTopicResponse initial, IRelayCommand op
         OnPropertyChanged(nameof(CanPost));
         OnPropertyChanged(nameof(AccentBrush));
         OnPropertyChanged(nameof(Preview));
+        OnPropertyChanged(nameof(ActiveBallots));
         OnPropertyChanged(nameof(ActivityText));
         OnPropertyChanged(nameof(Unread));
         OnPropertyChanged(nameof(UnreadCount));

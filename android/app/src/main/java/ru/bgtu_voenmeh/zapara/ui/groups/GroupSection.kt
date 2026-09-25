@@ -31,10 +31,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -228,6 +230,13 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                 { onEvent(GroupEvent.Refresh) }, ghost = true)
         }
         if (state.mediaError) Text(stringResource(R.string.group_media_failed), color = c.bad, modifier = Modifier.testTag("Group.MediaError"))
+        if (!state.showPeople && !state.showChannels && !state.direct) {
+            QuickChannels(state, onEvent)
+            if (state.activeChannelKind == "chat") {
+                val context = groupChatContext(state.channels, state.contextLesson)
+                if (context.hasContent) GroupContextCard(state, context, onEvent)
+            }
+        }
         if (state.showPeople) {
             People(state, onEvent, peopleSearch, onPeopleSearch, Modifier.weight(1f))
         } else if (state.showChannels) {
@@ -239,6 +248,84 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
             Messages(state, onEvent, Modifier.weight(1f))
             if (state.canPost) Composer(state, onEvent)
             else Text(stringResource(R.string.channel_read_only), style = Zapara.typography.caption, color = c.text2)
+        }
+    }
+}
+
+@Composable
+private fun QuickChannels(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
+    val c = Zapara.colors
+    val real = state.channels.filter { it.kind == "chat" || it.topicId != null }
+    if (real.isEmpty()) return
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        LazyRow(Modifier.weight(1f).testTag("Group.QuickChannels"),
+            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            items(real, key = { "${it.kind}:${it.topicId ?: "general"}" }) { channel ->
+                val active = channel.topicId == state.activeTopicId && channel.kind == state.activeChannelKind
+                val description = if (channel.unread > 0)
+                    "${channel.title}, ${stringResource(R.string.group_unread_count, channel.unread)}" else channel.title
+                Surface(onClick = { if (!active) onEvent(GroupEvent.OpenChannel(channel.topicId)) },
+                    shape = RoundedCornerShape(Zapara.radii.control),
+                    color = if (active) c.selection else c.card,
+                    border = BorderStroke(Zapara.space.hairline, if (active) c.lineStrong else c.line),
+                    modifier = Modifier.widthIn(min = 100.dp, max = 184.dp).heightIn(min = Zapara.space.minTouch)
+                        .semantics { selected = active; contentDescription = description }
+                        .testTag("Group.QuickChannel.${channel.topicId ?: "general"}")) {
+                    Row(Modifier.padding(horizontal = Zapara.space.s, vertical = Zapara.space.s),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                        Text(channel.title, style = Zapara.typography.caption, color = c.text1,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        if (channel.unread > 0) Text(if (channel.unread > 99) "99+" else channel.unread.toString(),
+                            style = Zapara.typography.caption, color = c.text1)
+                    }
+                }
+            }
+        }
+        ZButton(stringResource(R.string.chat_design_all_channels), { onEvent(GroupEvent.Channels) },
+            ghost = true, tag = "Group.AllChannelsQuick")
+    }
+}
+
+@Composable
+private fun GroupContextCard(state: GroupUiState, context: GroupChatContext, onEvent: (GroupEvent) -> Unit) {
+    val c = Zapara.colors
+    var expanded by rememberSaveable(state.communityId) { mutableStateOf(true) }
+    val lesson = context.nextLesson
+    val firstBallot = state.channels.firstOrNull { it.topicId != null && it.kind == "ballots" && it.activeBallots > 0 }
+    ZCard(Modifier.fillMaxWidth(), tag = "Group.Context") {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            Text(stringResource(R.string.chat_design_context_title), style = Zapara.typography.bodyStrong,
+                color = c.text1, modifier = Modifier.weight(1f))
+            ZButton(stringResource(if (expanded) R.string.chat_design_context_collapse else R.string.chat_design_context_expand),
+                { expanded = !expanded }, ghost = true, tag = "Group.ContextToggle")
+        }
+        if (expanded) {
+            if (lesson != null) {
+                val date = lesson.date.format(DateTimeFormatter.ofPattern("dd.MM"))
+                Text(if (lesson.room.isBlank()) stringResource(R.string.chat_design_next_lesson,
+                    date, lesson.time, lesson.subject) else stringResource(R.string.chat_design_next_lesson_room,
+                    date, lesson.time, lesson.subject, lesson.room),
+                    style = Zapara.typography.body, color = c.text1)
+            }
+            if (context.activeBallots > 0) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.chat_design_active_ballots, context.activeBallots),
+                    style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f))
+                if (firstBallot != null) ZButton(stringResource(R.string.chat_design_open_ballots),
+                    { onEvent(GroupEvent.OpenChannel(firstBallot.topicId)) }, ghost = true, tag = "Group.ContextBallots")
+            }
+            if (context.unread > 0) Text(stringResource(R.string.chat_design_channel_unread, context.unread),
+                style = Zapara.typography.caption, color = c.text2)
+        } else {
+            val lines = listOfNotNull(
+                lesson?.let { stringResource(R.string.chat_design_compact_lesson, it.time) },
+                if (context.activeBallots > 0) stringResource(R.string.chat_design_compact_ballots, context.activeBallots) else null,
+                if (context.unread > 0) stringResource(R.string.chat_design_compact_unread, context.unread) else null
+            )
+            Text(lines.joinToString(" · "), style = Zapara.typography.caption, color = c.text2,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -1042,9 +1129,9 @@ private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaL
         if (mine && (actions.isNotEmpty() || canCopy)) MessageActions()
         Surface(
             shape = RoundedCornerShape(Zapara.radii.card),
-            color = if (mine) c.accent else c.card,
-            contentColor = if (mine) c.onAccent else c.text1,
-            border = if (mine) null else BorderStroke(Zapara.space.hairline, c.line),
+            color = if (mine) c.chip else c.card,
+            contentColor = c.text1,
+            border = BorderStroke(Zapara.space.hairline, if (mine) c.lineStrong else c.line),
             modifier = Modifier.widthIn(max = 280.dp).combinedClickable(
                 onClick = {
                     if (!mediaLoading && !message.deleted && message.kind in setOf("image", "video", "file")) {
@@ -1059,7 +1146,7 @@ private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaL
                 verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)
             ) {
                 if (message.replyTo != null) Text("↳ ${replyPreview?.take(80) ?: "Сообщение"}",
-                    style = Zapara.typography.caption, color = if (mine) c.onAccent else c.text2,
+                    style = Zapara.typography.caption, color = c.text2,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (!message.deleted && message.kind in setOf("image", "voice", "circle")) {
                     ChatMediaBubble(kind = message.kind, file = mediaFile, durationMs = null,
@@ -1071,7 +1158,7 @@ private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaL
                 Text(
                     message.time,
                     style = Zapara.typography.caption,
-                    color = if (mine) c.onAccent.copy(alpha = 0.72f) else c.text2,
+                    color = c.text2,
                     modifier = Modifier.align(Alignment.End)
                 )
             }

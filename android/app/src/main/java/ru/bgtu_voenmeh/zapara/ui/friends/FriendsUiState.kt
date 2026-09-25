@@ -22,18 +22,29 @@ data class FriendEditorUi(
 
 data class FriendsUiState(
     val loaded: Boolean = false,
+    val failed: Boolean = false,
+    val refreshing: Boolean = false,
+    val refreshFailed: Boolean = false,
     val friends: List<FriendUi> = emptyList(),
     val canAdd: Boolean = true,
+    val myGroupId: String = "",
     val editor: FriendEditorUi? = null,
+    val editorError: String? = null,
     val confirmDelete: Long? = null,
     val strictness: Int = 25,
     val alwaysShow: Boolean = false,
     val invert: Boolean = false,
     val groups: List<GroupInfo> = emptyList(),
-    val previewLine: String = ""
+    val previewLine: String = "",
+    val encounters: List<FriendEncounter> = emptyList(),
+    val missingGroups: List<String> = emptyList(),
+    val checkedGroups: Int = 0,
+    val hasOwnSchedule: Boolean = false
 )
 
 sealed interface FriendsEvent {
+    data object Retry : FriendsEvent
+    data object RefreshSchedules : FriendsEvent
     data object Add : FriendsEvent
     data class Edit(val index: Int) : FriendsEvent
     data class EditorGroup(val name: String) : FriendsEvent

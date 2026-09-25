@@ -105,7 +105,12 @@ public sealed partial class GroupViewModel : ViewModelBase
 
     partial void OnNeedAccountChanged(bool value) => RaiseList();
     partial void OnIsEmptyChanged(bool value) => RaiseList();
-    partial void OnHasHomeChanged(bool value) => RaiseList();
+    partial void OnHasHomeChanged(bool value)
+    {
+        RaiseList();
+        if (!value) ResetGroupContext();
+        OnPropertyChanged(nameof(ShowGroupContext));
+    }
     partial void OnIsRecordingChanged(bool value)
     {
         SendCommand.NotifyCanExecuteChanged();
@@ -206,6 +211,7 @@ public sealed partial class GroupViewModel : ViewModelBase
             var home = await Api.GroupHomeAsync(token, id, operation.Token);
             if (!operation.IsCurrent || ticket != navigationGeneration) return;
             Show(home);
+            _ = LoadGroupLessonContextAsync(home.GroupName, id);
             await LoadChannelsAsync(token, id, home.GroupChat.ConversationId, ticket, operation.Token);
             if (!operation.IsCurrent || ticket != navigationGeneration) return;
             await LoadDeskAsync(token, id, home.Classmates, ticket, operation.Token);
@@ -232,6 +238,7 @@ public sealed partial class GroupViewModel : ViewModelBase
 
     private void Show(GroupHomeResponse home)
     {
+        ResetGroupContext();
         communityId = home.CommunityId;
         me = home.Classmates.FirstOrDefault(person => person.Self)?.UserId ?? Guid.Empty;
         HomeTitle = home.GroupName ?? home.Name;
@@ -271,6 +278,7 @@ public sealed partial class GroupViewModel : ViewModelBase
             var home = await Api.GroupHomeAsync(token, community, operation.Token);
             if (!operation.IsCurrent || ticket != navigationGeneration) return;
             Show(home);
+            _ = LoadGroupLessonContextAsync(home.GroupName, community);
             await OpenConversationAsync(conversation.ConversationId, title, true);
         }
         catch (CommunityClientException) when (operation.IsCurrent && ticket == navigationGeneration) { Status = T("groupFailed"); }

@@ -106,6 +106,7 @@ public sealed partial class WeekDayViewModel : ObservableObject
     public bool IsToday => Day.IsToday;
     public IReadOnlyList<WeekRow> Rows => Day.Rows;
     public bool IsEmpty => Day.Rows.Count == 0;
+    public string CountLabel => $"Пар: {Day.Rows.Count}";
 
     [RelayCommand] private void Open() => _owner.OpenDay(this);
 }

@@ -1,9 +1,17 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:loc="using:Vograph.Desktop.Services"
              xmlns:chat="using:Vograph.Desktop.Features.Chat"
              x:Class="Vograph.Desktop.Features.Chat.ChatInboxView"
              x:DataType="chat:ChatInboxViewModel">
+  <UserControl.Styles>
+    <Style Selector="Border.chat-message.mine">
+      <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.LineStrong}" />
+      <Setter Property="BorderThickness" Value="3,1,1,1" />
+    </Style>
+  </UserControl.Styles>
   <Grid Margin="32,26" RowDefinitions="Auto,*" MaxWidth="1080" HorizontalAlignment="Stretch">
     <StackPanel Spacing="4">
       <TextBlock Classes="display" Text="Чаты" />
@@ -121,10 +129,11 @@
               <ItemsControl ItemsSource="{Binding Messages}" AutomationProperties.AutomationId="Chat.Messages">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="chat:ChatMessageRow">
-                    <Border Classes="card" Margin="0,0,0,6" Padding="10,8">
+                    <Border Classes="card chat-message" Classes.mine="{Binding Mine}" Margin="0,0,0,6" Padding="12,8"
+                            MaxWidth="440" HorizontalAlignment="{Binding Mine, Converter={x:Static loc:Converters.ChatAlign}}">
                       <StackPanel Spacing="4">
                         <Grid ColumnDefinitions="*,Auto">
-                          <TextBlock Classes="caption" Text="{Binding Author}" />
+                          <TextBlock Classes="caption" Text="{Binding Author}" IsVisible="{Binding !Mine}" />
                           <TextBlock Grid.Column="1" Classes="muted caption" Text="{Binding When}" />
                         </Grid>
                         <TextBlock Classes="muted caption" Text="{Binding Detail}" />
@@ -136,12 +145,16 @@
                         <Button Classes="ghost" Content="Сохранить файл" Command="{Binding DownloadCommand}"
                                 IsVisible="{Binding CanDownload}" HorizontalAlignment="Left" />
                         <TextBlock Classes="muted caption" Text="{Binding Reactions}" />
-                        <StackPanel Orientation="Horizontal" Spacing="4">
-                          <Button Classes="ghost" Content="Ответить" Command="{Binding ReplyCommand}" />
-                          <Button Classes="ghost" Content="👍" Command="{Binding ReactCommand}" IsVisible="{Binding CanReact}" />
-                          <Button Classes="ghost" Content="Изменить" Command="{Binding EditCommand}" IsVisible="{Binding CanEdit}" />
-                          <Button Classes="ghost" Content="Удалить" Command="{Binding DeleteCommand}" IsVisible="{Binding CanDelete}" />
-                        </StackPanel>
+                        <Button Classes="ghost" Content="Действия" MinHeight="48" HorizontalAlignment="Left">
+                          <Button.Flyout>
+                            <MenuFlyout Placement="Bottom">
+                              <MenuItem Header="Ответить" Command="{Binding ReplyCommand}" />
+                              <MenuItem Header="Реакция" Command="{Binding ReactCommand}" IsVisible="{Binding CanReact}" />
+                              <MenuItem Header="Изменить" Command="{Binding EditCommand}" IsVisible="{Binding CanEdit}" />
+                              <MenuItem Header="Удалить" Command="{Binding DeleteCommand}" IsVisible="{Binding CanDelete}" />
+                            </MenuFlyout>
+                          </Button.Flyout>
+                        </Button>
                       </StackPanel>
                     </Border>
                   </DataTemplate>

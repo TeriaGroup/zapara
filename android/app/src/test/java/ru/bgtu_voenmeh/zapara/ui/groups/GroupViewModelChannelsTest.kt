@@ -1,5 +1,6 @@
 package ru.bgtu_voenmeh.zapara.ui.groups
 
+import java.time.LocalDate
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -42,6 +43,24 @@ class GroupViewModelChannelsTest {
 
     @Before fun setMain() { Dispatchers.setMain(dispatcher) }
     @After fun resetMain() { Dispatchers.resetMain() }
+
+    @Test fun groupContextUsesTheCurrentGroupLessonWithoutChangingChatNavigation() = runTest(dispatcher) {
+        val http = server()
+        val hint = GroupLessonHint(LocalDate.of(2026, 9, 25), "12:40", "Физика", "311")
+        val vm = GroupViewModel(GroupRuntime(false, user,
+            CommunityHttpClient(http, AccountServerScope.parse("http://127.0.0.1:9/")),
+            { testToken("za_", 4) }, { "O3313" }, startInChannelList = true,
+            lessonContext = { group -> if (group == "O3313") hint else null }))
+        runCurrent()
+        assertEquals(hint, vm.state.value.contextLesson)
+        assertTrue(vm.state.value.showChannels)
+        vm.onEvent(GroupEvent.OpenChannel(chatTopic))
+        runCurrent()
+        assertEquals(hint, vm.state.value.contextLesson)
+        assertEquals(chatTopic, vm.state.value.activeTopicId)
+        vm.onEvent(GroupEvent.Back)
+        runCurrent()
+    }
 
     @Test fun group_entry_opens_channel_list_without_marking_any_chat_read() = runTest(dispatcher) {
         val http = server()

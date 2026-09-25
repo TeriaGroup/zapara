@@ -25,6 +25,10 @@ type State = {
   saveHomework: (item: HomeworkItem) => void;
   friends: FriendItem[];
   saveFriends: (items: FriendItem[]) => void;
+  intersectionStrictness: number;
+  setIntersectionStrictness: (value: number) => void;
+  showAbsentFriends: boolean;
+  setShowAbsentFriends: (value: boolean) => void;
   date: Date;
   setDate: (date: Date) => void;
   subgroups: Record<string, Record<string, string>>;
@@ -36,6 +40,8 @@ const groupKey = "zapara.group";
 const invertKey = "zapara.invert";
 const homeworkKey = "zapara.homework";
 const friendsKey = "zapara.friends";
+const intersectionStrictnessKey = "zapara.intersectionStrictness";
+const showAbsentFriendsKey = "zapara.showAbsentFriends";
 const subgroupKey = "zapara.subgroups";
 
 function readList<T>(key: string): T[] {
@@ -59,6 +65,11 @@ export function Provider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [homework, setHomework] = useState<HomeworkItem[]>(() => readList(homeworkKey));
   const [friends, setFriends] = useState<FriendItem[]>(() => readList(friendsKey));
+  const [intersectionStrictness, setIntersectionStrictness] = useState(() => {
+    const stored = Number(localStorage.getItem(intersectionStrictnessKey));
+    return [25, 50, 75, 100].includes(stored) ? stored : 25;
+  });
+  const [showAbsentFriends, setShowAbsentFriends] = useState(localStorage.getItem(showAbsentFriendsKey) === "1");
   const [date, setDateState] = useState(() => openingDate(new Date(), []));
   const dateMoved = useRef(false);
   const setDate = (value: Date) => { dateMoved.current = true; setDateState(value); };
@@ -80,6 +91,8 @@ export function Provider({ children }: { children: ReactNode }) {
   };
   useEffect(() => { localStorage.setItem(homeworkKey, JSON.stringify(homework)); }, [homework]);
   useEffect(() => { localStorage.setItem(friendsKey, JSON.stringify(friends)); }, [friends]);
+  useEffect(() => { localStorage.setItem(intersectionStrictnessKey, String(intersectionStrictness)); }, [intersectionStrictness]);
+  useEffect(() => { localStorage.setItem(showAbsentFriendsKey, showAbsentFriends ? "1" : "0"); }, [showAbsentFriends]);
   useEffect(() => { localStorage.setItem(subgroupKey, JSON.stringify(subgroups)); }, [subgroups]);
 
   useEffect(() => {
@@ -154,7 +167,9 @@ export function Provider({ children }: { children: ReactNode }) {
       const next = list.some(row => row.id === item.id) ? list.map(row => row.id === item.id ? item : row) : [item, ...list];
       return next;
     }),
-    friends, saveFriends: setFriends, date, setDate,
+    friends, saveFriends: setFriends,
+    intersectionStrictness, setIntersectionStrictness, showAbsentFriends, setShowAbsentFriends,
+    date, setDate,
     subgroups,
     pickSubgroup: (streamId, optionId) => setSubgroups(current => {
       const group = { ...(current[groupId] || {}) };
@@ -162,7 +177,8 @@ export function Provider({ children }: { children: ReactNode }) {
       else group[streamId] = optionId;
       return { ...current, [groupId]: group };
     }),
-  }), [theme, invert, groupId, catalog, bundle, timetableStatus, notice, loading, session, homework, friends, date, subgroups]);
+  }), [theme, invert, groupId, catalog, bundle, timetableStatus, notice, loading, session, homework,
+    friends, intersectionStrictness, showAbsentFriends, date, subgroups]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

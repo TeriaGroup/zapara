@@ -138,10 +138,11 @@ private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifie
                         RouteMeta(state, onEvent)
                     }
                 }
+                if (state.contextLine.isNotBlank() && (state.mode == MapMode.NextLesson || state.mode == MapMode.Lesson)) {
+                    Text(state.contextLine, style = Zapara.typography.caption, color = c.text2,
+                        modifier = Modifier.padding(top = Zapara.space.xs).testTag("Maps.Context"))
+                }
             }
-        }
-        if (state.contextLine.isNotBlank() && (state.mode == MapMode.NextLesson || state.mode == MapMode.Lesson)) {
-            Text(state.contextLine, style = Zapara.typography.caption, color = c.text2, modifier = Modifier.testTag("Maps.Context"))
         }
         state.remoteNote?.let { Text(it, style = Zapara.typography.caption, color = c.text2) }
     }

@@ -16,15 +16,19 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
@@ -66,10 +70,29 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                 contentPadding = PaddingValues(Zapara.space.l),
                 verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
             ) {
+                item("summary") {
+                    val open = state.groups.sumOf { group -> group.items.count { !it.done } }
+                    val done = state.groups.sumOf { group -> group.items.count { it.done } }
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                        verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                        ZChip(stringResource(R.string.other_homework_open, open), tag = "Homework.OpenCount")
+                        ZChip(stringResource(R.string.other_homework_done, done), tag = "Homework.DoneCount")
+                    }
+                }
                 state.groups.forEach { group ->
                     item("g-${group.status}") {
-                        ZCard(onClick = { onEvent(HomeworkEvent.ToggleGroup(group.status)) }, tag = "Homework.Group.${group.status}", modifier = Modifier.fillMaxWidth().appear(cascade["g-${group.status}"] ?: 0)) {
-                            Text("${group.title} · ${group.items.size}", style = Zapara.typography.caption, color = c.text2)
+                        val expandedLabel = stringResource(if (group.collapsed)
+                            R.string.other_homework_group_collapsed else R.string.other_homework_group_expanded)
+                        ZCard(onClick = { onEvent(HomeworkEvent.ToggleGroup(group.status)) }, tag = "Homework.Group.${group.status}",
+                            modifier = Modifier.fillMaxWidth().appear(cascade["g-${group.status}"] ?: 0)
+                                .semantics { stateDescription = expandedLabel }) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                                Text("${group.title} · ${group.items.size}", style = Zapara.typography.bodyStrong,
+                                    color = c.text1, modifier = Modifier.weight(1f))
+                                Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null,
+                                    tint = c.text2, modifier = Modifier.size(20.dp).rotate(if (group.collapsed) 0f else 90f))
+                            }
                         }
                     }
                     if (!group.collapsed) {

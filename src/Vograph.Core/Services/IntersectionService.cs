@@ -9,6 +9,20 @@ public class IntersectionService
 
     public record IntersectionResult(string FriendGroupName, string FriendColor, string Teacher, string Room, int Score, bool MatchesThreshold);
 
+    public List<FriendGroup> ComparableFriends(string selectedGroupId, IReadOnlyList<FriendGroup> friends)
+    {
+        var groups = _db.GetAllGroups();
+        var cache = new TimetableApiCache(_db);
+        return friends.Where(friend => friend.Enabled).Take(5).Where(friend =>
+        {
+            var group = groups.FirstOrDefault(g => g.Name.Equals(friend.GroupName, StringComparison.OrdinalIgnoreCase) ||
+                g.Id.Equals(friend.GroupName, StringComparison.OrdinalIgnoreCase));
+            return group is not null && group.Id != selectedGroupId &&
+                (cache.Read(group.Id) is not null || group.LastFetchedAt is not null || _db.GetAllLessonsForGroup(group.Id).Count > 0) &&
+                cache.CanIntersect(selectedGroupId, group.Id);
+        }).ToList();
+    }
+
     public List<IntersectionResult> GetIntersections(Lesson myLesson, DateTime date, List<FriendGroup> friends, int strictness)
     {
         var results = new List<IntersectionResult>();
@@ -24,7 +38,8 @@ public class IntersectionService
         if (dow == 7) return results;
 
         var allGroups = _db.GetAllGroups();
-        var groupByName = allGroups.GroupBy(g => g.Name).ToDictionary(g => g.Key, g => g.First().Id);
+        var groupByName = allGroups.GroupBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
 
         foreach (var friend in friends.Where(f => f.Enabled).Take(5))
         {

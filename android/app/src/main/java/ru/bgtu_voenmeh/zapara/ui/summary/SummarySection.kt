@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Text
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -42,6 +43,8 @@ fun SummarySection(state: SummaryUiState, onEvent: (SummaryEvent) -> Unit) {
                 state.segment, { onEvent(SummaryEvent.Segment(it)) }, "Summary.Segment",
                 Modifier.padding(horizontal = Zapara.space.l)
             )
+            HorizontalDivider(Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
+                thickness = Zapara.space.hairline, color = c.line)
             LazyColumn(Modifier.fillMaxSize().testTag("Summary.List"), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 item {
                     ZCard(Modifier.fillMaxWidth().appear(0)) {

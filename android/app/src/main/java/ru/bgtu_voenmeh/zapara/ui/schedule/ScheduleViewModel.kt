@@ -204,33 +204,44 @@ class ScheduleViewModel(
     private fun compose(date: LocalDate, c: SchedCtx, now: LocalDateTime): DayPage {
         val prefs = container.repo.settings()
         val friends = container.db.friendDao().getAll().map { Friend(it.groupName, it.colorHex, it.enabled, it.memberNames) }
-        val groups = container.repo.groups().associate { it.name to it.id }
-        val myName = groups.entries.firstOrNull { it.value == c.groupId }?.key ?: c.groupId
+        val groups = container.repo.groups()
+        val apiCache = ru.bgtu_voenmeh.zapara.data.api.TimetableApiCache(container.repo.store)
+        val friendRows = friends.filter { it.enabled }.take(5).mapNotNull { friend ->
+            val id = groups.firstOrNull { it.id == friend.groupName || it.name.equals(friend.groupName, ignoreCase = true) }?.id
+                ?: return@mapNotNull null
+            if (id == c.groupId || !apiCache.canIntersect(c.groupId, id)) return@mapNotNull null
+            val lessons = container.repo.allForGroup(id)
+            if (apiCache.read(id) == null && lessons.isEmpty()) return@mapNotNull null
+            Triple(friend, id, lessons)
+        }
+        val enabled = friendRows.map { it.first }
+        val ids = friendRows.associate { it.first.groupName to it.second }
+        val lessonsById = friendRows.associate { it.second to it.third }
         return ScheduleComposer.page(
             date, allLessons, c, now,
             displayName = { norm, dow -> container.overrides.displayNameByNorm(norm, dow) },
             homeworkFor = { norm -> container.homework.forSubjectByNorm(norm) },
             friendsFor = { lesson ->
-                val enabled = friends.filter { it.enabled && !it.groupName.equals(myName, ignoreCase = true) }
+                val threshold = ru.bgtu_voenmeh.zapara.ui.friends.Strictness.nearest(prefs.intersectionStrictness)
                 val hits = IntersectionService.intersections(
                     my = lesson, date = date, friends = enabled,
-                    strictness = prefs.intersectionStrictness,
+                    strictness = 0,
                     periodStart = c.periodStart, weekCount = c.weekCount, invert = c.invert,
-                    lessonsFor = { fid, dow, parity ->
-                        container.repo.allForGroup(fid).filter { it.dayOfWeek == dow && (it.parity == parity || it.parity == 0) }
-                    },
-                    resolveId = { name -> groups[name] }
+                    lessonsFor = { fid, dow, parity -> lessonsById[fid].orEmpty().filter { it.dayOfWeek == dow && (it.parity == parity || it.parity == 0) } },
+                    resolveId = { name -> ids[name] }
                 )
                 val byGroup = hits.associateBy { it.friendGroupName }
-                val source = if (prefs.alwaysShowAllTrafficLights) enabled else enabled.filter { byGroup.containsKey(it.groupName) }
+                val source = if (prefs.alwaysShowAllTrafficLights) enabled else enabled.filter { (byGroup[it.groupName]?.score ?: 0) >= threshold }
                 source.map { f ->
                     val hit = byGroup[f.groupName]
+                    val visibleScore = hit?.score?.takeIf { it >= threshold } ?: -1
+                    val baseHint = LessonFormat.friendHint(f.memberNames, f.groupName, hit?.score ?: -1, container.copy)
                     FriendDotUi(
                         index = FriendPalette.indexOf(f.colorHex),
                         groupName = f.groupName,
                         members = f.memberNames,
-                        score = hit?.score ?: -1,
-                        hint = LessonFormat.friendHint(f.memberNames, f.groupName, hit?.score ?: -1, container.copy)
+                        score = visibleScore,
+                        hint = if (hit != null && visibleScore < 0) "$baseHint · ${container.copy.get("friend_below_level")}" else baseHint
                     )
                 }
             },

@@ -11,8 +11,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -20,6 +25,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
+import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
@@ -30,6 +36,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.appear
 
 @Composable
 fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
     val selected = state.selected
     if (state.pane == CommunityPane.Detail && selected != null) {
         CommunityDetail(selected, state.failed, onEvent)
@@ -55,6 +62,7 @@ fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) ->
                 tag = "Empty.Forbidden"
             )
             CommunityPane.Catalog, CommunityPane.Detail -> Column(Modifier.fillMaxSize()) {
+                val visible = browseCommunities(state.communities, query)
                 if (state.failed) {
                     Text(
                         stringResource(R.string.community_failed),
@@ -68,7 +76,34 @@ fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) ->
                     contentPadding = PaddingValues(Zapara.space.l),
                     verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
                 ) {
-                    itemsIndexed(state.communities, key = { _, it -> it.communityId }) { index, item ->
+                    if (state.communities.isNotEmpty()) {
+                        item("search") {
+                            OutlinedTextField(query, { query = it },
+                                label = { Text(stringResource(R.string.next_community_search)) },
+                                singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Community.Search"))
+                        }
+                        item("result") {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(stringResource(R.string.next_community_results, visible.size, state.communities.size),
+                                        style = Zapara.typography.caption, color = c.text2)
+                                    Text(stringResource(R.string.community_detail_joined, state.communities.count { it.role != null }),
+                                        style = Zapara.typography.caption, color = c.text2)
+                                }
+                                if (query.isNotBlank()) ZButton(stringResource(R.string.next_community_clear),
+                                    { query = "" }, ghost = true, tag = "Community.ClearSearch")
+                            }
+                        }
+                    }
+                    if (visible.isEmpty() && query.isNotBlank()) item("no-results") {
+                        ZCard(Modifier.fillMaxWidth(), tag = "Empty.CommunitySearch") {
+                            Text(stringResource(R.string.next_community_no_results),
+                                style = Zapara.typography.body, color = c.text2)
+                            ZButton(stringResource(R.string.next_community_clear), { query = "" }, ghost = true)
+                        }
+                    }
+                    itemsIndexed(visible, key = { _, it -> it.communityId }) { index, item ->
                         ZCard(
                             onClick = if (item.canOpen) {
                                 { onEvent(CommunitiesEvent.Open(item.communityId)) }
@@ -79,6 +114,13 @@ fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) ->
                             Text(item.name, style = Zapara.typography.bodyStrong, color = c.text1)
                             if (item.description.isNotEmpty()) {
                                 Text(item.description, style = Zapara.typography.caption, color = c.text2)
+                            }
+                            item.role?.let { role ->
+                                ZChip(stringResource(when (role) {
+                                    "headman" -> R.string.group_role_headman
+                                    "curator" -> R.string.group_role_curator
+                                    else -> R.string.group_role_member
+                                }), tag = "Community.Role.${item.communityId}")
                             }
                             if (item.joinStatus == "pending") {
                                 Text(
@@ -127,17 +169,21 @@ private fun CommunityDetail(selected: CommunityDetailUi, failed: Boolean, onEven
         ) {
             item {
                 ZCard(Modifier.fillMaxWidth().appear(0), tag = "Community.Members") {
-                    Text(stringResource(R.string.community_members), style = Zapara.typography.section, color = c.text1)
+                    Text("${stringResource(R.string.community_members)} · ${selected.members.size}", style = Zapara.typography.section, color = c.text1)
                     selected.members.forEach { Text(it.userId, style = Zapara.typography.caption, color = c.text2) }
                 }
             }
             item {
                 ZCard(Modifier.fillMaxWidth().appear(1), tag = "Community.Staff") {
-                    Text(stringResource(R.string.community_staff), style = Zapara.typography.section, color = c.text1)
+                    Text("${stringResource(R.string.community_staff)} · ${selected.staff.size}", style = Zapara.typography.section, color = c.text1)
                     selected.staff.forEach { Text(it.userId, style = Zapara.typography.caption, color = c.text2) }
                 }
             }
             if (selected.canModerate) {
+                if (selected.joinRequests.isNotEmpty()) item {
+                    Text("${stringResource(R.string.community_detail_requests)} · ${selected.joinRequests.size}",
+                        style = Zapara.typography.section, color = c.text1)
+                }
                 items(selected.joinRequests, key = { it.requestId }) { request ->
                     ZCard(Modifier.fillMaxWidth(), tag = "Community.Request.${request.requestId}") {
                         Text(stringResource(R.string.community_pending), style = Zapara.typography.body, color = c.text1)
@@ -161,7 +207,7 @@ private fun CommunityDetail(selected: CommunityDetailUi, failed: Boolean, onEven
                 }
             }
             item {
-                Text(stringResource(R.string.community_homework), style = Zapara.typography.section, color = c.text1)
+                Text("${stringResource(R.string.community_homework)} · ${selected.homework.size}", style = Zapara.typography.section, color = c.text1)
             }
             items(selected.homework, key = { it.homeworkId }) { item ->
                 ZCard(Modifier.fillMaxWidth(), tag = "Community.Homework.${item.homeworkId}") {
@@ -184,7 +230,7 @@ private fun CommunityDetail(selected: CommunityDetailUi, failed: Boolean, onEven
                 }
             }
             item {
-                Text(stringResource(R.string.community_announcements), style = Zapara.typography.section, color = c.text1)
+                Text("${stringResource(R.string.community_announcements)} · ${selected.announcements.size}", style = Zapara.typography.section, color = c.text1)
             }
             items(selected.announcements, key = { it.announcementId }) { item ->
                 ZCard(Modifier.fillMaxWidth(), tag = "Community.Announcement.${item.announcementId}") {
@@ -193,7 +239,7 @@ private fun CommunityDetail(selected: CommunityDetailUi, failed: Boolean, onEven
                 }
             }
             item {
-                Text(stringResource(R.string.community_polls), style = Zapara.typography.section, color = c.text1)
+                Text("${stringResource(R.string.community_polls)} · ${selected.polls.size}", style = Zapara.typography.section, color = c.text1)
             }
             items(selected.polls, key = { it.pollId }) { poll ->
                 ZCard(Modifier.fillMaxWidth(), tag = "Community.Poll.${poll.pollId}") {

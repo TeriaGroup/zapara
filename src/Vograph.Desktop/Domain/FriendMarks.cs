@@ -11,7 +11,7 @@ public static class FriendMarks
 {
     public static IReadOnlyList<FriendMark> Compute(IntersectionService intersections, Lesson l, DateTime date, IReadOnlyList<FriendGroup> friends, Settings settings, Loc loc)
     {
-        var enabled = friends.Where(f => f.Enabled).Take(5).ToList();
+        var enabled = intersections.ComparableFriends(l.GroupId, friends);
         if (enabled.Count == 0) return Array.Empty<FriendMark>();
         // strictness 0 → every time overlap; the visibility threshold is applied below.
         var results = intersections.GetIntersections(l, date, enabled, strictness: 0);
@@ -21,9 +21,8 @@ public static class FriendMarks
             var best = results.Where(r => r.FriendGroupName == f.GroupName).Select(r => r.Score).DefaultIfEmpty(0).Max();
             var present = best > 0 && best >= settings.IntersectionStrictness;
             if (!present && !settings.AlwaysShowAllTrafficLights) continue;
-            var where = present
-                ? loc.T(best switch { >= 100 => "inter100", >= 75 => "inter75", >= 50 => "inter50", _ => "inter25" })
-                : loc.T("friendAbsent");
+            var place = loc.T(best switch { >= 100 => "inter100", >= 75 => "inter75", >= 50 => "inter50", _ => "inter25" });
+            var where = present ? place : best > 0 ? $"{place} · ниже выбранной точности" : loc.T("friendAbsent");
             var names = string.IsNullOrWhiteSpace(f.MemberNames) ? "" : $" ({f.MemberNames})";
             marks.Add(new FriendMark(f.GroupName, f.MemberNames, FriendPalette.IndexOf(f.ColorHex), present ? FriendDot.FromScore(best) : DotFill.Off, $"{f.GroupName}{names} · {where}"));
         }

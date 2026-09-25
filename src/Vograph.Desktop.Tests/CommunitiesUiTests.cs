@@ -88,6 +88,23 @@ public sealed class CommunitiesUiTests : UiTest
     }
 
     [Fact]
+    public async Task Catalog_search_filters_loaded_rows_and_clear_restores_them()
+    {
+        using var h = new CommunitiesUiHarness(groupId: "O3313");
+        h.Catalog.Add(new CommunityResponse(Guid.NewGuid(), "О3313", "Проекты", 1, null));
+        h.Catalog.Add(new CommunityResponse(Guid.NewGuid(), "А4313", "Объявления", 1, null));
+        await h.Vm.LoadAsync();
+        Assert.Equal(2, h.Vm.Communities.Count);
+        h.Vm.CommunitySearch = "  ПРОЕКТ ";
+        Assert.Equal("О3313", Assert.Single(h.Vm.FilteredCommunities).Name);
+        Assert.Equal("Показано 1 из 2", h.Vm.CommunityResultCount);
+        h.Vm.CommunitySearch = "нет";
+        Assert.True(h.Vm.NoCommunitySearchResults);
+        h.Vm.ClearCommunitySearchCommand.Execute(null);
+        Assert.Equal(2, h.Vm.FilteredCommunities.Count);
+    }
+
+    [Fact]
     public async Task List_forbidden_maps_to_communityForbidden()
     {
         using var h = new CommunitiesUiHarness();
