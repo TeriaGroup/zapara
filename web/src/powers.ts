@@ -4,6 +4,7 @@ export const groupPowers = [
   { code: "roles", title: "Менять роли" },
   { code: "grants", title: "Назначать роли" },
   { code: "ballots", title: "Объявлять голосование" },
+  { code: "channels", title: "Управлять разделами" },
   { code: "close", title: "Завершать голосования" },
 ] as const;
 

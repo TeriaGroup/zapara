@@ -6,9 +6,9 @@ public sealed record GroupChange(string Kind, Guid RoleId, Guid UserId, string N
 
 public static class GroupChanges
 {
-    public static readonly string[] Powers = ["joins", "exclude", "roles", "grants", "ballots", "close"];
+    public static readonly string[] Powers = ["joins", "exclude", "roles", "grants", "ballots", "close", "channels"];
 
-    public static bool KnownPower(string? power) => power is "joins" or "exclude" or "roles" or "grants" or "ballots" or "close";
+    public static bool KnownPower(string? power) => power is "joins" or "exclude" or "roles" or "grants" or "ballots" or "close" or "channels";
 
     public static string PowerTitle(string power) => power switch
     {
@@ -18,6 +18,7 @@ public static class GroupChanges
         "grants" => "Назначать роли",
         "ballots" => "Объявлять голосование",
         "close" => "Завершать голосования",
+        "channels" => "Управлять каналами",
         _ => ""
     };
 

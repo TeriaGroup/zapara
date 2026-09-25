@@ -8,78 +8,115 @@ internal sealed partial class CommunityRepository
     // Reads for the built-in general thread. This id is not a row in group_topics.
     private static readonly Guid GeneralRead = new("00000000-0000-0000-0000-000000000001");
 
-    internal async Task<GroupTopicListResponse> TopicsAsync(Guid communityId)
+    internal async Task<GroupTopicListResponse> TopicsAsync(Guid communityId, bool includeTyped = false)
     {
         var role = await RequireMemberAsync(communityId);
         var conversationId = await EnsureGroupConversationAsync(communityId);
-        var headman = role == "headman";
+        var canManage = role == "headman" || await HasPowerAsync(communityId, "channels");
         var topics = new List<GroupTopicResponse>
         {
-            await DescribeTopicAsync(communityId, conversationId, null, GroupTopicNames.GeneralTitle, GroupTopicNames.GeneralIcon, null, false)
+            await DescribeTopicAsync(communityId, conversationId, null, GroupTopicNames.GeneralTitle, GroupTopicNames.GeneralIcon,
+                "", GroupTopicNames.DefaultAccent, false, GroupTopicNames.AllWriters, false)
         };
-        var rows = new List<(Guid Id, string Title, string Icon, Guid? Author)>();
-        await using (var command = Command($"SELECT topic_id, title, icon, created_by FROM {Msg}.group_topics WHERE community_id=@p0 ORDER BY title, topic_id", communityId))
+        var rows = new List<(Guid Id, string Title, string Icon, string Kind, string Description, string Accent, bool Pinned, string WritePolicy)>();
+        await using (var command = Command($"""
+            SELECT topic_id, title, icon, kind, description, accent, pinned, write_policy
+            FROM {Msg}.group_topics WHERE community_id=@p0
+            """, communityId))
         await using (var reader = await command.ExecuteReaderAsync(ct))
             while (await reader.ReadAsync(ct))
-                rows.Add((reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetGuid(3)));
+                rows.Add((reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
+                    reader.GetString(4), reader.GetString(5), reader.GetBoolean(6), reader.GetString(7)));
         foreach (var row in rows)
-            topics.Add(await DescribeTopicAsync(communityId, conversationId, row.Id, row.Title, row.Icon, row.Author, headman || row.Author == UserId));
+        {
+            if (!includeTyped && row.Kind == GroupTopicNames.BallotsKind) continue;
+            topics.Add(row.Kind == GroupTopicNames.BallotsKind
+                ? await DescribeBallotTopicAsync(communityId, row.Id, row.Title, row.Icon,
+                    row.Description, row.Accent, row.Pinned, row.WritePolicy, canManage)
+                : await DescribeTopicAsync(communityId, conversationId, row.Id, row.Title, row.Icon,
+                    row.Description, row.Accent, row.Pinned, row.WritePolicy, canManage));
+        }
         topics.Sort((left, right) =>
         {
             if (left.TopicId is null && right.TopicId is null) return 0;
             if (left.TopicId is null) return -1;
             if (right.TopicId is null) return 1;
-            return Nullable.Compare(right.LastAt, left.LastAt);
+            var pinned = right.Pinned.CompareTo(left.Pinned);
+            if (pinned != 0) return pinned;
+            var activity = Nullable.Compare(right.LastAt, left.LastAt);
+            return activity != 0 ? activity : string.Compare(left.Title, right.Title, StringComparison.CurrentCulture);
         });
-        return new(topics);
+        return new(topics, canManage);
     }
 
-    internal async Task<GroupTopicListResponse> CreateTopicAsync(Guid communityId, GroupTopicRequest request)
+    internal async Task<GroupTopicListResponse> CreateTopicAsync(Guid communityId, GroupTopicRequest request, bool includeTyped = false)
     {
-        await RequireMemberAsync(communityId);
-        var title = GroupTopicNames.Title(request?.Title) ?? throw CommunityServiceException.InvalidRequest();
-        var icon = GroupTopicNames.Icon(request?.Icon) ?? throw CommunityServiceException.InvalidRequest();
+        await RequirePowerAsync(communityId, "channels");
+        if (request is null) throw CommunityServiceException.InvalidRequest();
+        var title = GroupTopicNames.Title(request.Title) ?? throw CommunityServiceException.InvalidRequest();
+        var icon = GroupTopicNames.Icon(request.Icon) ?? throw CommunityServiceException.InvalidRequest();
+        var kind = GroupTopicNames.Kind(request.Kind) ?? throw CommunityServiceException.InvalidRequest();
+        var description = GroupTopicNames.Description(request.Description) ?? throw CommunityServiceException.InvalidRequest();
+        var accent = GroupTopicNames.Accent(request.Accent) ?? throw CommunityServiceException.InvalidRequest();
+        var pinned = request.Pinned ?? false;
+        var writePolicy = GroupTopicNames.WritePolicy(request.WritePolicy) ?? throw CommunityServiceException.InvalidRequest();
         if (await ScalarAsync($"SELECT count(*)::int FROM {Msg}.group_topics WHERE community_id=@p0", communityId) >= 24)
             throw CommunityServiceException.InvalidRequest();
         try
         {
             await ExecuteAsync($"""
-                INSERT INTO {Msg}.group_topics(topic_id,community_id,title,icon,created_by,created_at)
-                VALUES(@p0,@p1,@p2,@p3,@p4,@p5)
-                """, Guid.NewGuid(), communityId, title, icon, UserId, Now);
+                INSERT INTO {Msg}.group_topics(topic_id,community_id,title,icon,kind,description,accent,pinned,write_policy,created_by,created_at)
+                VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10)
+                """, Guid.NewGuid(), communityId, title, icon, kind, description, accent, pinned, writePolicy, UserId, Now);
         }
         catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
         { throw CommunityServiceException.Conflict("revision_conflict"); }
-        return await TopicsAsync(communityId);
+        return await TopicsAsync(communityId, includeTyped);
     }
 
-    internal async Task<GroupTopicListResponse> RenameTopicAsync(Guid communityId, Guid topicId, GroupTopicRequest request)
+    internal async Task<GroupTopicListResponse> RenameTopicAsync(Guid communityId, Guid topicId, GroupTopicRequest request, bool includeTyped = false)
     {
-        var role = await RequireMemberAsync(communityId);
-        var title = GroupTopicNames.Title(request?.Title) ?? throw CommunityServiceException.InvalidRequest();
-        var icon = GroupTopicNames.Icon(request?.Icon) ?? throw CommunityServiceException.InvalidRequest();
-        var author = await TopicAuthorAsync(communityId, topicId) ?? throw CommunityServiceException.NotFound();
-        if (role != "headman" && author != UserId) throw CommunityServiceException.Forbidden();
+        await RequirePowerAsync(communityId, "channels");
+        if (request is null) throw CommunityServiceException.InvalidRequest();
+        var title = GroupTopicNames.Title(request.Title) ?? throw CommunityServiceException.InvalidRequest();
+        var icon = GroupTopicNames.Icon(request.Icon) ?? throw CommunityServiceException.InvalidRequest();
+        var requestedKind = GroupTopicNames.Kind(request.Kind) ?? throw CommunityServiceException.InvalidRequest();
+        var existing = await TopicSettingsAsync(communityId, topicId) ?? throw CommunityServiceException.NotFound();
+        if (requestedKind != existing.Kind) throw CommunityServiceException.InvalidRequest();
+        var description = request.Description is null ? existing.Description
+            : GroupTopicNames.Description(request.Description) ?? throw CommunityServiceException.InvalidRequest();
+        var accent = request.Accent is null ? existing.Accent
+            : GroupTopicNames.Accent(request.Accent) ?? throw CommunityServiceException.InvalidRequest();
+        var pinned = request.Pinned ?? existing.Pinned;
+        var writePolicy = request.WritePolicy is null ? existing.WritePolicy
+            : GroupTopicNames.WritePolicy(request.WritePolicy) ?? throw CommunityServiceException.InvalidRequest();
         try
         {
-            var updated = await ExecuteCountAsync($"UPDATE {Msg}.group_topics SET title=@p0, icon=@p1 WHERE topic_id=@p2 AND community_id=@p3", title, icon, topicId, communityId);
+            var updated = await ExecuteCountAsync($"""
+                UPDATE {Msg}.group_topics
+                SET title=@p0, icon=@p1, description=@p2, accent=@p3, pinned=@p4, write_policy=@p5
+                WHERE topic_id=@p6 AND community_id=@p7
+                """, title, icon, description, accent, pinned, writePolicy, topicId, communityId);
             if (updated != 1) throw CommunityServiceException.NotFound();
         }
         catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
         { throw CommunityServiceException.Conflict("revision_conflict"); }
-        return await TopicsAsync(communityId);
+        return await TopicsAsync(communityId, includeTyped);
     }
 
-    internal async Task<GroupTopicListResponse> DeleteTopicAsync(Guid communityId, Guid topicId)
+    internal async Task<(GroupTopicListResponse Page, IReadOnlyList<Guid> MessageIds)> DeleteTopicAsync(Guid communityId, Guid topicId, bool includeTyped = false)
     {
-        var role = await RequireMemberAsync(communityId);
-        var author = await TopicAuthorAsync(communityId, topicId) ?? throw CommunityServiceException.NotFound();
-        if (role != "headman" && author != UserId) throw CommunityServiceException.Forbidden();
+        await RequirePowerAsync(communityId, "channels");
+        if (await TopicKindAsync(communityId, topicId) is null) throw CommunityServiceException.NotFound();
         var conversationId = await EnsureGroupConversationAsync(communityId);
+        var removed = new List<Guid>();
+        await using (var command = Command($"SELECT message_id FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND topic_id=@p1", conversationId, topicId))
+        await using (var reader = await command.ExecuteReaderAsync(ct))
+            while (await reader.ReadAsync(ct)) removed.Add(reader.GetGuid(0));
         await ExecuteAsync($"DELETE FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND topic_id=@p1", conversationId, topicId);
         await ExecuteAsync($"DELETE FROM {Msg}.group_topic_reads WHERE community_id=@p0 AND topic_id=@p1", communityId, topicId);
         await ExecuteAsync($"DELETE FROM {Msg}.group_topics WHERE topic_id=@p0 AND community_id=@p1", topicId, communityId);
-        return await TopicsAsync(communityId);
+        return (await TopicsAsync(communityId, includeTyped), removed);
     }
 
     internal async Task<ChatMessageResponse> SendTopicMessageAsync(Guid conversationId, string body, Guid? topicId, Guid? replyTo = null)
@@ -87,13 +124,10 @@ internal sealed partial class CommunityRepository
         body = CommunityValidation.Message(body);
         await RequireConversationAsync(conversationId);
         var info = await ConversationInfoAsync(conversationId);
-        if (topicId is not null)
-        {
-            if (info.Kind != "group") throw CommunityServiceException.InvalidRequest();
-            if (!await ExistsAsync($"SELECT topic_id FROM {Msg}.group_topics WHERE topic_id=@p0 AND community_id=@p1", topicId, info.CommunityId))
-                throw CommunityServiceException.NotFound();
-        }
-        if (replyTo is Guid parent && await MessageNoAsync(conversationId, parent) is null) throw CommunityServiceException.InvalidRequest();
+        if (info.Kind != "group") throw CommunityServiceException.InvalidRequest();
+        if (topicId is Guid selected) await RequireWritableChatTopicAsync(info.CommunityId, selected);
+        if (replyTo is Guid parent && !await ReplyMatchesTopicAsync(conversationId, parent, topicId))
+            throw CommunityServiceException.InvalidRequest();
         var id = Guid.NewGuid();
         await ExecuteAsync($"""
             INSERT INTO {Msg}.chat_messages(message_id,conversation_id,sender_id,body,created_at,topic_id,reply_to)
@@ -102,7 +136,7 @@ internal sealed partial class CommunityRepository
         return new(id, conversationId, UserId, await DisplayNameAsync(UserId), body, Now, replyTo: replyTo);
     }
 
-    private async Task<GroupTopicResponse> DescribeTopicAsync(Guid communityId, Guid conversationId, Guid? topicId, string title, string icon, Guid? author, bool canDelete)
+    private async Task<GroupTopicResponse> DescribeTopicAsync(Guid communityId, Guid conversationId, Guid? topicId, string title, string icon, string description, string accent, bool pinned, string writePolicy, bool canManage)
     {
         var readKey = topicId ?? GeneralRead;
         string? lastBody = null;
@@ -147,16 +181,83 @@ internal sealed partial class CommunityRepository
         var unread = topicId is null
             ? await ScalarAsync(unreadSql, conversationId, UserId, communityId, readKey)
             : await ScalarAsync(unreadSql, conversationId, UserId, communityId, readKey, topicId);
-        return new(topicId, title, icon, lastBody, lastAuthor, lastAt, unread, canDelete && topicId is not null);
+        return new(topicId, title, icon, lastBody, lastAuthor, lastAt, unread, canManage && topicId is not null, GroupTopicNames.ChatKind, 0, description, accent, pinned, writePolicy, writePolicy == GroupTopicNames.AllWriters || canManage);
     }
 
-    private async Task<Guid?> TopicAuthorAsync(Guid communityId, Guid topicId)
+
+    private async Task<GroupTopicResponse> DescribeBallotTopicAsync(Guid communityId, Guid topicId, string title, string icon, string description, string accent, bool pinned, string writePolicy, bool canManage)
     {
-        await using var command = Command($"SELECT created_by FROM {Msg}.group_topics WHERE topic_id=@p0 AND community_id=@p1", topicId, communityId);
+        string? lastBody = null;
+        string? lastAuthor = null;
+        DateTimeOffset? lastAt = null;
+        await using (var command = Command($"""
+            SELECT ballot.question, coalesce(author.display_name, author.username), ballot.created_at
+            FROM {Msg}.ballots ballot
+            LEFT JOIN {configuration.Accounts.QuotedSchema}.users author ON author.user_id=ballot.created_by
+            WHERE ballot.community_id=@p0 AND ballot.topic_id=@p1
+            ORDER BY ballot.created_at DESC, ballot.ballot_id DESC LIMIT 1
+            """, communityId, topicId))
+        await using (var reader = await command.ExecuteReaderAsync(ct))
+            if (await reader.ReadAsync(ct))
+            {
+                lastBody = reader.GetString(0);
+                lastAuthor = reader.IsDBNull(1) ? null : reader.GetString(1);
+                lastAt = AsUtc(reader.GetFieldValue<DateTimeOffset>(2));
+            }
+        var active = await ScalarAsync($"""
+            SELECT count(*)::int FROM {Msg}.ballots
+            WHERE community_id=@p0 AND topic_id=@p1 AND status IN ('collecting','open') AND deadline_at>@p2
+            """, communityId, topicId, Now);
+        return new(topicId, title, icon, lastBody, lastAuthor, lastAt, 0, canManage, GroupTopicNames.BallotsKind, active, description, accent, pinned, writePolicy, writePolicy == GroupTopicNames.AllWriters || canManage);
+    }
+
+    private async Task<(string Kind, string Description, string Accent, bool Pinned, string WritePolicy)?> TopicSettingsAsync(Guid communityId, Guid topicId)
+    {
+        await using var command = Command($"""
+            SELECT kind, description, accent, pinned, write_policy
+            FROM {Msg}.group_topics WHERE topic_id=@p0 AND community_id=@p1
+            """, topicId, communityId);
         await using var reader = await command.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) return null;
-        return reader.IsDBNull(0) ? Guid.Empty : reader.GetGuid(0);
+        return (reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetBoolean(3), reader.GetString(4));
     }
+
+    private async Task<string?> TopicKindAsync(Guid communityId, Guid topicId)
+        => (await TopicSettingsAsync(communityId, topicId))?.Kind;
+
+    private async Task RequireChatTopicAsync(Guid communityId, Guid topicId)
+    {
+        var settings = await TopicSettingsAsync(communityId, topicId) ?? throw CommunityServiceException.NotFound();
+        if (settings.Kind != GroupTopicNames.ChatKind) throw CommunityServiceException.InvalidRequest();
+    }
+
+    private async Task RequireWritableChatTopicAsync(Guid communityId, Guid topicId)
+    {
+        var settings = await TopicSettingsAsync(communityId, topicId) ?? throw CommunityServiceException.NotFound();
+        if (settings.Kind != GroupTopicNames.ChatKind) throw CommunityServiceException.InvalidRequest();
+        if (settings.WritePolicy == GroupTopicNames.ManagersOnly)
+            await RequirePowerAsync(communityId, "channels");
+    }
+
+    private async Task ValidateBallotTopicAsync(Guid communityId, Guid? topicId)
+    {
+        if (topicId is not Guid selected) return;
+        var settings = await TopicSettingsAsync(communityId, selected) ?? throw CommunityServiceException.NotFound();
+        if (settings.Kind != GroupTopicNames.BallotsKind) throw CommunityServiceException.InvalidRequest();
+    }
+
+    private async Task RequireBallotPublishTopicAsync(Guid communityId, Guid? topicId)
+    {
+        if (topicId is not Guid selected) return;
+        var settings = await TopicSettingsAsync(communityId, selected) ?? throw CommunityServiceException.NotFound();
+        if (settings.Kind != GroupTopicNames.BallotsKind) throw CommunityServiceException.InvalidRequest();
+        if (settings.WritePolicy == GroupTopicNames.ManagersOnly)
+            await RequirePowerAsync(communityId, "channels");
+    }
+
+    private Task<bool> ReplyMatchesTopicAsync(Guid conversationId, Guid replyTo, Guid? topicId) => topicId is Guid selected
+        ? ExistsAsync($"SELECT message_id FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND message_id=@p1 AND topic_id=@p2", conversationId, replyTo, selected)
+        : ExistsAsync($"SELECT message_id FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND message_id=@p1 AND topic_id IS NULL", conversationId, replyTo);
 
     private async Task<(string Kind, Guid CommunityId)> ConversationInfoAsync(Guid conversationId)
     {

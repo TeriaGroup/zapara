@@ -52,6 +52,142 @@
           </StackPanel>
           <ScrollViewer HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="12">
+              <StackPanel Spacing="6">
+                <TextBlock Classes="micro" Text="Каналы группы" Margin="8,0,8,4" />
+                <ItemsControl ItemsSource="{Binding Channels}" AutomationProperties.AutomationId="Group.Channels">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="g:GroupChannelRow">
+                      <Button Classes="ghost" Padding="8,7" CornerRadius="8" HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Stretch" Command="{Binding OpenCommand}">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                          <Border Background="{Binding AccentBrush}" CornerRadius="8" Width="32" Height="32" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Icon}" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                          </Border>
+                          <StackPanel Grid.Column="1" Spacing="1">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                              <TextBlock Text="{Binding PinMark}" />
+                              <TextBlock Text="{Binding Title}" FontWeight="Medium" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <TextBlock Classes="muted caption" Text="{Binding Description}" TextTrimming="CharacterEllipsis"
+                                       IsVisible="{Binding Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Classes="muted caption" Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
+                          </StackPanel>
+                          <Border Grid.Column="2" Classes="badge" VerticalAlignment="Center"
+                                  IsVisible="{Binding Unread, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                            <TextBlock Text="{Binding Unread}" />
+                          </Border>
+                        </Grid>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <StackPanel Spacing="5" Margin="8,4,8,0" IsVisible="{Binding CanManageChannels}">
+                  <TextBlock Classes="micro" Text="Новый канал" />
+                  <TextBox Text="{Binding ChannelTitle}" PlaceholderText="Название" MaxLength="40" />
+                  <TextBox Text="{Binding ChannelIcon}" PlaceholderText="Значок" MaxLength="8" />
+                  <TextBox Text="{Binding ChannelDescription}" PlaceholderText="Описание" MaxLength="240"
+                           TextWrapping="Wrap" AcceptsReturn="True" />
+                  <TextBlock Classes="muted caption" Text="Цвет канала" />
+                  <ComboBox ItemsSource="{Binding ChannelAccents}" SelectedItem="{Binding NewChannelAccent, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="g:GroupChannelAccentChoice"><TextBlock Text="{Binding Label}" /></DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <CheckBox Content="Закрепить канал" IsChecked="{Binding ChannelPinned, Mode=TwoWay}" />
+                  <TextBlock Classes="muted caption" Text="Кто может писать или создавать голосования" TextWrapping="Wrap" />
+                  <ComboBox ItemsSource="{Binding ChannelPolicies}" SelectedItem="{Binding NewChannelPolicy, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="g:GroupChannelPolicyChoice"><TextBlock Text="{Binding Label}" /></DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button Classes="ghost" Content="Чат" Command="{Binding CreateChannelCommand}" CommandParameter="chat"
+                            AutomationProperties.AutomationId="Group.CreateChatChannel" />
+                    <Button Classes="ghost" Content="Голосования" Command="{Binding CreateChannelCommand}" CommandParameter="ballots"
+                            AutomationProperties.AutomationId="Group.CreateBallotChannel" />
+                  </StackPanel>
+                </StackPanel>
+                <StackPanel Spacing="5" Margin="8,4,8,0" IsVisible="{Binding CanManageSelectedChannel}">
+                  <TextBlock Classes="micro" Text="Изменить канал" />
+                  <TextBox Text="{Binding RenameTitle}" PlaceholderText="Название" MaxLength="40" />
+                  <TextBox Text="{Binding RenameIcon}" PlaceholderText="Значок" MaxLength="8" />
+                  <TextBox Text="{Binding RenameDescription}" PlaceholderText="Описание" MaxLength="240"
+                           TextWrapping="Wrap" AcceptsReturn="True" />
+                  <TextBlock Classes="muted caption" Text="Цвет канала" />
+                  <ComboBox ItemsSource="{Binding ChannelAccents}" SelectedItem="{Binding RenameAccent, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="g:GroupChannelAccentChoice"><TextBlock Text="{Binding Label}" /></DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <CheckBox Content="Закрепить канал" IsChecked="{Binding RenamePinned, Mode=TwoWay}" />
+                  <TextBlock Classes="muted caption" Text="Кто может писать или создавать голосования" TextWrapping="Wrap" />
+                  <ComboBox ItemsSource="{Binding ChannelPolicies}" SelectedItem="{Binding RenamePolicy, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="g:GroupChannelPolicyChoice"><TextBlock Text="{Binding Label}" /></DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button Classes="ghost" Content="Сохранить" Command="{Binding RenameChannelCommand}"
+                            IsEnabled="{Binding CanSaveChannelEdit}" />
+                    <Button Classes="ghost" Content="Удалить" Command="{Binding AskDeleteChannelCommand}" />
+                  </StackPanel>
+                  <StackPanel Spacing="5" IsVisible="{Binding ChannelEditConflict}">
+                    <TextBlock Classes="muted caption" Text="Канал изменился на другом устройстве. Загрузите свежие настройки перед сохранением." TextWrapping="Wrap" />
+                    <Button Classes="ghost" Content="Загрузить настройки" Command="{Binding ReloadChannelEditorCommand}" HorizontalAlignment="Left" />
+                  </StackPanel>
+                  <StackPanel Spacing="5" IsVisible="{Binding ConfirmDeleteChannel}">
+                    <TextBlock Classes="muted caption" Text="{Binding DeleteConfirmationText}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Classes="ghost" Content="Отмена" Command="{Binding CancelDeleteChannelCommand}" />
+                      <Button Classes="ghost" Content="Удалить канал" Command="{Binding DeleteChannelCommand}" />
+                    </StackPanel>
+                  </StackPanel>
+                </StackPanel>
+                <StackPanel Spacing="6" Margin="8,6,8,0" IsVisible="{Binding IsHeadman}">
+                  <TextBlock Classes="micro" Text="Доверенные" />
+                  <TextBlock Classes="muted caption" Text="Назначьте роль с правом управления каналами. Роли действуют только внутри приложения." TextWrapping="Wrap" />
+                  <TextBox Text="{Binding TrustedRoleName}" PlaceholderText="Новая роль" MaxLength="32" />
+                  <Button Classes="ghost" Content="Создать роль" Command="{Binding CreateTrustedRoleCommand}"
+                          HorizontalAlignment="Left" />
+                  <ComboBox ItemsSource="{Binding TrustedRoles}" SelectedItem="{Binding SelectedTrustedRole, Mode=TwoWay}"
+                            HorizontalAlignment="Stretch" AutomationProperties.AutomationId="Group.TrustedRole">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="g:GroupTrustedRoleRow">
+                        <TextBlock Text="{Binding Display}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <Button Classes="ghost" Content="{Binding ChannelPowerAction}" Command="{Binding ToggleChannelPowerCommand}"
+                          IsVisible="{Binding HasTrustedRole}" HorizontalAlignment="Left" />
+                  <TextBlock Classes="muted caption" Text="Включение права даст доступ всем участникам с выбранной ролью." TextWrapping="Wrap"
+                             IsVisible="{Binding HasTrustedRole}" />
+                  <TextBlock Classes="muted caption" Text="Назначение этой роли передаст человеку и другие её права." TextWrapping="Wrap"
+                             IsVisible="{Binding SelectedRoleHasOtherPowers}" />
+                  <ComboBox ItemsSource="{Binding TrustCandidates}" SelectedItem="{Binding SelectedTrustCandidate, Mode=TwoWay}"
+                            HorizontalAlignment="Stretch" IsVisible="{Binding HasTrustedRole}"
+                            AutomationProperties.AutomationId="Group.TrustedPerson">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="g:GroupTrustedPersonRow">
+                        <TextBlock Text="{Binding Name}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <Button Classes="ghost" Content="Доверить управление" Command="{Binding GrantTrustedCommand}"
+                          IsEnabled="{Binding CanGrantTrusted}" IsVisible="{Binding HasTrustedRole}" HorizontalAlignment="Left" />
+                  <ItemsControl ItemsSource="{Binding TrustedGrants}" IsVisible="{Binding HasTrustedRole}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="g:GroupTrustedGrantRow">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,2">
+                          <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                          <Button Grid.Column="1" Classes="ghost" Content="Убрать" Command="{Binding RevokeCommand}" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </StackPanel>
+              <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="8,2,8,6" />
               <StackPanel Spacing="2">
                 <TextBlock Classes="micro" Text="{loc:T groupRoster}" Margin="8,0,8,4" />
                 <ItemsControl ItemsSource="{Binding People}">
@@ -131,7 +267,12 @@
                       Padding="8,4" VerticalAlignment="Center" IsVisible="{Binding IsDirect}" />
             </Grid>
           </Border>
-          <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10">
+          <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10"
+                  IsVisible="{Binding IsRestrictedChat}">
+            <TextBlock Classes="muted caption" Text="В этом канале могут писать только управляющие." TextWrapping="Wrap" />
+          </Border>
+          <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10"
+                  IsVisible="{Binding ShowComposer}">
             <StackPanel Spacing="8">
             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsRecording}">
               <TextBlock Text="{Binding RecordingCaption}" VerticalAlignment="Center" />
@@ -159,7 +300,7 @@
             </Grid>
             </StackPanel>
           </Border>
-          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding ShowMessages}">
             <StackPanel Margin="12,10,12,8">
               <Button Classes="ghost" Content="{loc:T groupOlder}" Command="{Binding LoadOlderCommand}"
                       HorizontalAlignment="Center" Padding="8,4" Margin="0,0,0,8" IsVisible="{Binding HasMore}" />
@@ -197,6 +338,68 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
+            </StackPanel>
+          </ScrollViewer>
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding ShowBallots}">
+            <StackPanel Margin="14,12" Spacing="12">
+              <TextBlock Classes="muted caption" Text="В этом канале публикуются только голосования. Текстовые сообщения сюда не отправляются." TextWrapping="Wrap" />
+              <Border Classes="card" Padding="12" IsVisible="{Binding HasPendingCloseBallot}">
+                <StackPanel Spacing="7">
+                  <TextBlock Classes="subject" Text="Завершить голосование досрочно?" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding PendingCloseQuestion}" TextWrapping="Wrap" />
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="ghost" Content="Отмена" Command="{Binding CancelCloseBallotCommand}" />
+                    <Button Classes="primary" Content="Завершить" Command="{Binding ConfirmCloseBallotCommand}" />
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+              <ItemsControl ItemsSource="{Binding Ballots}" AutomationProperties.AutomationId="Group.Ballots">
+                <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="g:GroupBallotRow">
+                    <Border Classes="card" Padding="12">
+                      <StackPanel Spacing="7">
+                        <TextBlock Classes="subject" Text="{Binding Question}" TextWrapping="Wrap" />
+                        <TextBlock Classes="muted caption" Text="{Binding Origin}" />
+                        <TextBlock Classes="muted caption" Text="Изменение группы" IsVisible="{Binding IsEffect}" />
+                        <TextBlock Classes="muted caption" Text="{Binding Status}" />
+                        <TextBlock Classes="muted caption" Text="{Binding Deadline}" />
+                        <TextBlock Classes="muted caption" Text="{Binding Supporters}" IsVisible="{Binding IsCollecting}" />
+                        <Button Classes="primary" Content="Поддержать" Command="{Binding SupportCommand}"
+                                IsVisible="{Binding CanSupport}" HorizontalAlignment="Left" />
+                        <ItemsControl ItemsSource="{Binding Options}">
+                          <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="5" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="g:GroupBallotOptionRow">
+                              <Button Classes="ghost" Content="{Binding Label}" Command="{Binding VoteCommand}"
+                                      IsEnabled="{Binding CanVote}" HorizontalAlignment="Left" />
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Classes="muted caption" Text="{Binding Outcome}" TextWrapping="Wrap"
+                                   IsVisible="{Binding Outcome, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <Button Classes="ghost" Content="Завершить" Command="{Binding CloseCommand}"
+                                IsVisible="{Binding CanClose}" HorizontalAlignment="Left" />
+                      </StackPanel>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <StackPanel Spacing="6" IsVisible="{Binding CanCreateBallot}">
+                <TextBlock Classes="micro" Text="Новое голосование" />
+                <TextBox Text="{Binding BallotQuestion}" PlaceholderText="Вопрос" MaxLength="400" />
+                <TextBox Text="{Binding BallotOptionA}" PlaceholderText="Первый вариант" MaxLength="80" />
+                <TextBox Text="{Binding BallotOptionB}" PlaceholderText="Второй вариант" MaxLength="80" />
+                <TextBox Text="{Binding BallotOptionC}" PlaceholderText="Третий вариант (необязательно)" MaxLength="80" />
+                <TextBox Text="{Binding BallotOptionD}" PlaceholderText="Четвёртый вариант (необязательно)" MaxLength="80" />
+                <TextBox Text="{Binding BallotOptionE}" PlaceholderText="Пятый вариант (необязательно)" MaxLength="80" />
+                <TextBox Text="{Binding BallotOptionF}" PlaceholderText="Шестой вариант (необязательно)" MaxLength="80" />
+                <TextBox Text="{Binding BallotDays}" PlaceholderText="Срок в днях (1–14)" MaxLength="2" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Classes="primary" Content="Объявить" Command="{Binding OpenBallotCommand}" IsVisible="{Binding CanOpenBallot}" />
+                  <Button Classes="ghost" Content="Предложить" Command="{Binding ProposeBallotCommand}" />
+                </StackPanel>
+              </StackPanel>
             </StackPanel>
           </ScrollViewer>
         </DockPanel>

@@ -60,6 +60,16 @@ public sealed partial class CommunityHttpClient : IDisposable
         => SendList<MemberResponse>(HttpMethod.Get, "/" + Id(communityId) + "/members", null, Access(accessToken), 200, ct);
     public Task<IReadOnlyList<MemberResponse>> ListStaffAsync(string accessToken, Guid communityId, CancellationToken ct = default)
         => SendList<MemberResponse>(HttpMethod.Get, "/" + Id(communityId) + "/staff", null, Access(accessToken), 200, ct);
+    public Task<GroupDeskResponse> DeskAsync(string accessToken, Guid communityId, CancellationToken ct = default)
+        => SendAsync<GroupDeskResponse>(HttpMethod.Get, "/" + Id(communityId) + "/desk", null, Access(accessToken), 200, ct);
+    public Task<GroupDeskResponse> CreateRoleAsync(string accessToken, Guid communityId, GroupRoleNameRequest request, CancellationToken ct = default)
+        => SendAsync<GroupDeskResponse>(HttpMethod.Post, "/" + Id(communityId) + "/roles", Required(request), Access(accessToken), 201, ct);
+    public Task<GroupDeskResponse> SetRolePowerAsync(string accessToken, Guid communityId, Guid roleId, GroupPowerRequest request, CancellationToken ct = default)
+        => SendAsync<GroupDeskResponse>(HttpMethod.Post, "/" + Id(communityId) + "/roles/" + Id(roleId) + "/powers", Required(request), Access(accessToken), 200, ct);
+    public Task<GroupDeskResponse> GrantRoleAsync(string accessToken, Guid communityId, Guid roleId, GroupGrantRequest request, CancellationToken ct = default)
+        => SendAsync<GroupDeskResponse>(HttpMethod.Post, "/" + Id(communityId) + "/roles/" + Id(roleId) + "/grants", Required(request), Access(accessToken), 200, ct);
+    public Task<GroupDeskResponse> RevokeRoleAsync(string accessToken, Guid communityId, Guid roleId, Guid userId, CancellationToken ct = default)
+        => SendAsync<GroupDeskResponse>(HttpMethod.Post, "/" + Id(communityId) + "/roles/" + Id(roleId) + "/grants/" + Id(userId) + "/delete", null, Access(accessToken), 200, ct);
     public Task<IReadOnlyList<HomeworkResponse>> ListHomeworkAsync(string accessToken, Guid communityId, CancellationToken ct = default)
         => SendList<HomeworkResponse>(HttpMethod.Get, "/" + Id(communityId) + "/homework", null, Access(accessToken), 200, ct);
     public Task<HomeworkResponse> PublishHomeworkAsync(string accessToken, Guid communityId, HomeworkUpsert request, CancellationToken ct = default)
@@ -94,21 +104,44 @@ public sealed partial class CommunityHttpClient : IDisposable
     public Task<PollResultsResponse> ResultsAsync(string accessToken, Guid communityId, Guid pollId, CancellationToken ct = default)
         => SendAsync<PollResultsResponse>(HttpMethod.Get, "/" + Id(communityId) + "/polls/" + Id(pollId) + "/results",
             null, Access(accessToken), 200, ct);
+    public Task<GroupTopicListResponse> TopicsAsync(string accessToken, Guid communityId, CancellationToken ct = default)
+        => SendAsync<GroupTopicListResponse>(HttpMethod.Get, "/" + Id(communityId) + "/topics?typed=1", null, Access(accessToken), 200, ct);
+    public Task<GroupTopicListResponse> CreateTopicAsync(string accessToken, Guid communityId, GroupTopicRequest request, CancellationToken ct = default)
+        => SendAsync<GroupTopicListResponse>(HttpMethod.Post, "/" + Id(communityId) + "/topics?typed=1", Required(request), Access(accessToken), 201, ct);
+    public Task<GroupTopicListResponse> RenameTopicAsync(string accessToken, Guid communityId, Guid topicId, GroupTopicRequest request, CancellationToken ct = default)
+        => SendAsync<GroupTopicListResponse>(HttpMethod.Post, "/" + Id(communityId) + "/topics/" + Id(topicId) + "?typed=1", Required(request), Access(accessToken), 200, ct);
+    public Task<GroupTopicListResponse> DeleteTopicAsync(string accessToken, Guid communityId, Guid topicId, CancellationToken ct = default)
+        => SendAsync<GroupTopicListResponse>(HttpMethod.Post, "/" + Id(communityId) + "/topics/" + Id(topicId) + "/delete?typed=1", null, Access(accessToken), 200, ct);
+    public Task<BallotBoardResponse> BallotsAsync(string accessToken, Guid communityId, Guid? topicId = null, CancellationToken ct = default)
+        => SendAsync<BallotBoardResponse>(HttpMethod.Get, "/" + Id(communityId) + "/ballots" + (topicId is Guid topic ? "?topic=" + Id(topic) : ""), null, Access(accessToken), 200, ct);
+    public Task<BallotBoardResponse> OpenHeadmanBallotAsync(string accessToken, Guid communityId, BallotDraftRequest request, CancellationToken ct = default)
+        => SendAsync<BallotBoardResponse>(HttpMethod.Post, "/" + Id(communityId) + "/ballots/headman", Required(request), Access(accessToken), 201, ct);
+    public Task<BallotBoardResponse> ProposeBallotAsync(string accessToken, Guid communityId, BallotDraftRequest request, CancellationToken ct = default)
+        => SendAsync<BallotBoardResponse>(HttpMethod.Post, "/" + Id(communityId) + "/ballots/collective", Required(request), Access(accessToken), 201, ct);
+    public Task<BallotBoardResponse> SupportBallotAsync(string accessToken, Guid communityId, Guid ballotId, CancellationToken ct = default)
+        => SendAsync<BallotBoardResponse>(HttpMethod.Post, "/" + Id(communityId) + "/ballots/" + Id(ballotId) + "/support", null, Access(accessToken), 200, ct);
+    public Task<BallotBoardResponse> VoteBallotAsync(string accessToken, Guid communityId, Guid ballotId, VoteRequest request, CancellationToken ct = default)
+        => SendAsync<BallotBoardResponse>(HttpMethod.Post, "/" + Id(communityId) + "/ballots/" + Id(ballotId) + "/votes", Required(request), Access(accessToken), 200, ct);
+    public Task<BallotBoardResponse> CloseBallotAsync(string accessToken, Guid communityId, Guid ballotId, CancellationToken ct = default)
+        => SendAsync<BallotBoardResponse>(HttpMethod.Post, "/" + Id(communityId) + "/ballots/" + Id(ballotId) + "/close", null, Access(accessToken), 200, ct);
     public Task<GroupHomeResponse> GroupHomeAsync(string accessToken, Guid communityId, CancellationToken ct = default)
         => SendAsync<GroupHomeResponse>(HttpMethod.Get, "/" + Id(communityId) + "/home", null, Access(accessToken), 200, ct);
     public Task<ConversationResponse> OpenDirectAsync(string accessToken, OpenDirectRequest request, CancellationToken ct = default)
         => SendAsync<ConversationResponse>(HttpMethod.Post, "/direct", Required(request), Access(accessToken), 201, ct);
-    public Task<ChatPageResponse> MessagesAsync(string accessToken, Guid conversationId, Guid? before = null, Guid? after = null, CancellationToken ct = default)
+    public Task<ChatPageResponse> MessagesAsync(string accessToken, Guid conversationId, Guid? before = null, Guid? after = null, CancellationToken ct = default, string? topic = null)
     {
         var path = "/conversations/" + Id(conversationId) + "/messages";
-        if (before is Guid older) path += "?before=" + Id(older);
-        else if (after is Guid newer) path += "?after=" + Id(newer);
+        if (topic is not null) path += "?topic=" + Topic(topic);
+        if (before is Guid older) path += (topic is null ? "?" : "&") + "before=" + Id(older);
+        else if (after is Guid newer) path += (topic is null ? "?" : "&") + "after=" + Id(newer);
         return SendAsync<ChatPageResponse>(HttpMethod.Get, path, null, Access(accessToken), 200, ct);
     }
+    public Task<ChatMessageResponse> SendTopicMessageAsync(string accessToken, Guid conversationId, TopicMessageRequest request, CancellationToken ct = default)
+        => SendAsync<ChatMessageResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/topic-messages", Required(request), Access(accessToken), 201, ct);
     public Task<ChatMessageResponse> SendMessageAsync(string accessToken, Guid conversationId, SendMessageRequest request, CancellationToken ct = default)
         => SendAsync<ChatMessageResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/messages", Required(request), Access(accessToken), 201, ct);
-    public Task<ChatMessageResponse> SendMediaAsync(string accessToken, Guid conversationId, string kind, string name, byte[] bytes, Guid? replyTo = null, CancellationToken ct = default, int? durationMs = null)
-        => SendMediaCoreAsync(Access(accessToken), Id(conversationId), kind, name, bytes, replyTo, ct, durationMs);
+    public Task<ChatMessageResponse> SendMediaAsync(string accessToken, Guid conversationId, string kind, string name, byte[] bytes, Guid? replyTo = null, CancellationToken ct = default, int? durationMs = null, Guid? topicId = null)
+        => SendMediaCoreAsync(Access(accessToken), Id(conversationId), kind, name, bytes, replyTo, ct, durationMs, topicId);
     public Task<ChatMessageResponse> EditMessageAsync(string accessToken, Guid conversationId, Guid messageId, SendMessageRequest request, CancellationToken ct = default)
         => SendAsync<ChatMessageResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/messages/" + Id(messageId) + "/edit", Required(request), Access(accessToken), 200, ct);
     public Task<ChatMessageResponse> DeleteMessageAsync(string accessToken, Guid conversationId, Guid messageId, CancellationToken ct = default)
@@ -122,6 +155,8 @@ public sealed partial class CommunityHttpClient : IDisposable
         => await SendAsync<T[]>(method, path, body, access, status, ct).ConfigureAwait(false);
     private static string Access(string value) => AccountValidation.Token(value, "za_");
     private static string Id(Guid value) => CommunityValidation.Id(value).ToString("D");
+    private static string Topic(string value) => value == "general" ? value
+        : Guid.TryParseExact(value, "D", out var id) ? Id(id) : throw new CommunityClientException(CommunityClientFailure.InvalidRequest);
     private static T Required<T>(T request) where T : class => request ?? throw new CommunityClientException(CommunityClientFailure.InvalidRequest);
     public void Dispose() { if (ownsHttp) http.Dispose(); }
 }

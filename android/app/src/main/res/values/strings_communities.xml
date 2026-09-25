@@ -19,7 +19,7 @@
     <string name="nav_community">Сообщества</string>
     <string name="nav_chat">Чат</string>
     <string name="nav_group">Группа</string>
-    <string name="group_title">Чат группы</string>
+    <string name="group_title">Группа</string>
     <string name="group_need_account">Войдите в аккаунт, чтобы открыть группу</string>
     <string name="group_not_member">Вы ещё не в группе</string>
     <string name="group_roster">Одногруппники</string>
@@ -33,7 +33,7 @@
     <string name="group_record_circle">Записать кружок</string>
     <string name="group_record_voice">Записать голосовое</string>
     <string name="group_message">Сообщение</string>
-    <string name="group_back">К чату группы</string>
+    <string name="group_back">К каналам</string>
     <string name="group_older">Раньше</string>
     <string name="group_open">Открыть группу</string>
     <string name="group_people">Состав</string>
@@ -42,7 +42,7 @@
     <string name="group_role_headman">Староста</string>
     <string name="group_role_curator">Куратор</string>
     <string name="group_role_member">Участник</string>
-    <string name="group_failed">Не удалось обновить чат</string>
+    <string name="group_failed">Не удалось выполнить действие в группе</string>
     <string name="group_media_loading">Загружаем вложение</string>
     <string name="group_media_failed">Не удалось открыть вложение</string>
     <string name="group_load_failed">Не удалось загрузить группу</string>

@@ -87,8 +87,8 @@ export function groupBubbleText(message: { kind?: string; body: string; deleted?
   return message.body;
 }
 
-export async function postGroupMedia(id: string, kind: GroupMediaKind, name: string, file: Blob, replyTo: string | undefined, post: typeof fetch, headers: Record<string, string>, durationMs?: number): Promise<Response> {
-  const prepared = groupMediaRequest(kind, name, file.size, replyTo, durationMs);
+export async function postGroupMedia(id: string, kind: GroupMediaKind, name: string, file: Blob, replyTo: string | undefined, post: typeof fetch, headers: Record<string, string>, durationMs?: number, topicId?: string): Promise<Response> {
+  const prepared = groupMediaRequest(kind, name, file.size, replyTo, durationMs, topicId);
   return post(`/web-api/communities/conversations/${id}/media`, {
     method: "POST",
     credentials: "same-origin",
@@ -97,7 +97,7 @@ export async function postGroupMedia(id: string, kind: GroupMediaKind, name: str
   });
 }
 
-export function groupMediaRequest(kind: string, name: string, bytes: number, replyTo?: string, durationMs?: number): { name: string; headers: Record<string, string> } {
+export function groupMediaRequest(kind: string, name: string, bytes: number, replyTo?: string, durationMs?: number, topicId?: string): { name: string; headers: Record<string, string> } {
   if (kind !== "image" && kind !== "video" && kind !== "file" && kind !== "voice" && kind !== "circle") throw new GroupMediaError("kind");
   if (!Number.isFinite(bytes) || bytes < 1 || bytes > (kind === "voice" ? groupVoiceLimit : groupMediaLimit)) throw new GroupMediaError("size");
   if ((kind === "voice" || kind === "circle") && durationMs === undefined) throw new GroupMediaError("duration");
@@ -112,6 +112,7 @@ export function groupMediaRequest(kind: string, name: string, bytes: number, rep
   };
   if (replyTo) headers["X-Zapara-Reply"] = replyTo;
   if (durationMs !== undefined) headers["X-Zapara-Duration-Ms"] = String(durationMs);
+  if (topicId) headers["X-Zapara-Topic"] = topicId;
   return { name: clean, headers };
 }
 

@@ -80,8 +80,7 @@ internal sealed partial class CommunityRepository
             else throw CommunityServiceException.InvalidRequest();
             var info = await ConversationInfoAsync(conversationId);
             if (info.Kind != "group") throw CommunityServiceException.InvalidRequest();
-            if (topicId is not null && !await ExistsAsync($"SELECT topic_id FROM {Msg}.group_topics WHERE topic_id=@p0 AND community_id=@p1", topicId, info.CommunityId))
-                throw CommunityServiceException.NotFound();
+            if (topicId is Guid selected) await RequireChatTopicAsync(info.CommunityId, selected);
         }
         long? cursor = null;
         if (before is not null || after is not null)
@@ -132,17 +131,25 @@ internal sealed partial class CommunityRepository
         return new(list, hasMore);
     }
 
-    internal async Task<ChatMessageResponse> SendMessageAsync(Guid conversationId, string body, Guid? replyTo = null, string kind = "text")
+    internal async Task<ChatMessageResponse> SendMessageAsync(Guid conversationId, string body, Guid? replyTo = null, string kind = "text", Guid? topicId = null)
     {
         body = Clean(body);
-        if (kind is not ("text" or "image" or "video" or "file" or "voice" or "circle")) throw CommunityServiceException.InvalidRequest();
+        if (kind is not ("text" or "image" or "video" or "file" or "voice" or "circle"))
+            throw CommunityServiceException.InvalidRequest();
         await RequireConversationAsync(conversationId);
-        if (replyTo is Guid parent && await MessageNoAsync(conversationId, parent) is null) throw CommunityServiceException.InvalidRequest();
+        if (topicId is Guid selected)
+        {
+            var info = await ConversationInfoAsync(conversationId);
+            if (info.Kind != "group") throw CommunityServiceException.InvalidRequest();
+            await RequireWritableChatTopicAsync(info.CommunityId, selected);
+        }
+        if (replyTo is Guid parent && !await ReplyMatchesTopicAsync(conversationId, parent, topicId))
+            throw CommunityServiceException.InvalidRequest();
         var id = Guid.NewGuid();
         await ExecuteAsync($"""
-            INSERT INTO {Msg}.chat_messages(message_id,conversation_id,sender_id,body,created_at,kind,reply_to)
-            VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6)
-            """, id, conversationId, UserId, body, Now, kind, replyTo);
+            INSERT INTO {Msg}.chat_messages(message_id,conversation_id,sender_id,body,created_at,kind,topic_id,reply_to)
+            VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7)
+            """, id, conversationId, UserId, body, Now, kind, topicId, replyTo);
         return new(id, conversationId, UserId, await DisplayNameAsync(UserId), body, Now, kind, false, replyTo);
     }
 
@@ -150,6 +157,22 @@ internal sealed partial class CommunityRepository
     {
         body = Clean(body);
         await RequireConversationAsync(conversationId);
+        Guid? topicId;
+        await using (var command = Command($"""
+            SELECT topic_id FROM {Msg}.chat_messages
+            WHERE message_id=@p0 AND conversation_id=@p1 AND sender_id=@p2 AND deleted=false AND kind='text'
+            """, messageId, conversationId, UserId))
+        await using (var reader = await command.ExecuteReaderAsync(ct))
+        {
+            if (!await reader.ReadAsync(ct)) throw CommunityServiceException.InvalidRequest();
+            topicId = reader.IsDBNull(0) ? null : reader.GetGuid(0);
+        }
+        if (topicId is Guid selected)
+        {
+            var info = await ConversationInfoAsync(conversationId);
+            if (info.Kind != "group") throw CommunityServiceException.InvalidRequest();
+            await RequireWritableChatTopicAsync(info.CommunityId, selected);
+        }
         await using (var command = Command($"""
             UPDATE {Msg}.chat_messages SET body=@p0
             WHERE message_id=@p1 AND conversation_id=@p2 AND sender_id=@p3 AND deleted=false AND kind='text'

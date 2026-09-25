@@ -40,8 +40,8 @@ public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, Communi
         => Run(bearer, db => db.RemoveMemberAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(userId)), ct);
     public Task<GroupDeskResponse> SetRolePowerAsync(string bearer, Guid communityId, Guid roleId, GroupPowerRequest request, CancellationToken ct = default)
         => Run(bearer, db => db.SetRolePowerAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(roleId), request ?? throw CommunityServiceException.InvalidRequest()), ct);
-    public Task<BallotBoardResponse> BallotsAsync(string bearer, Guid communityId, CancellationToken ct = default)
-        => Run(bearer, db => db.BoardAsync(CommunityValidation.Id(communityId)), ct);
+    public Task<BallotBoardResponse> BallotsAsync(string bearer, Guid communityId, CancellationToken ct = default, Guid? topicId = null)
+        => Run(bearer, db => db.BoardAsync(CommunityValidation.Id(communityId), topicId), ct);
     public Task<BallotBoardResponse> OpenHeadmanBallotAsync(string bearer, Guid communityId, BallotDraftRequest request, CancellationToken ct = default)
         => Run(bearer, db => db.OpenHeadmanBallotAsync(CommunityValidation.Id(communityId), request ?? throw CommunityServiceException.InvalidRequest()), ct);
     public Task<BallotBoardResponse> ProposeBallotAsync(string bearer, Guid communityId, BallotDraftRequest request, CancellationToken ct = default)
@@ -107,7 +107,7 @@ public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, Communi
     }
     public async Task<ChatMessageResponse> SendMessageAsync(string bearer, Guid conversationId, SendMessageRequest request, CancellationToken ct = default)
         => StoreMessage(await Run(bearer, db => db.SendMessageAsync(CommunityValidation.Id(conversationId), request.Body, request.ReplyTo, request.Kind), ct));
-    public async Task<ChatMessageResponse> SendMediaAsync(string bearer, Guid conversationId, string kind, string name, byte[] content, Guid? replyTo, int? durationMs = null, CancellationToken ct = default)
+    public async Task<ChatMessageResponse> SendMediaAsync(string bearer, Guid conversationId, string kind, string name, byte[] content, Guid? replyTo, int? durationMs = null, CancellationToken ct = default, Guid? topicId = null)
     {
         if (kind is not ("image" or "video" or "file" or "voice" or "circle")) throw CommunityServiceException.InvalidRequest();
         if (content is null || content.Length is < 1 or > CommunityMedia.MaxBytes ||
@@ -115,7 +115,7 @@ public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, Communi
             throw new CommunityServiceException(413, "payload_too_large");
         CommunityMedia.ValidateRecording(kind, content, durationMs);
         var label = MediaName(kind, name);
-        var message = StoreMessage(await Run(bearer, db => db.SendMessageAsync(CommunityValidation.Id(conversationId), label, replyTo, kind), ct));
+        var message = StoreMessage(await Run(bearer, db => db.SendMessageAsync(CommunityValidation.Id(conversationId), label, replyTo, kind, topicId), ct));
         var key = ContentNames.GroupFile(message.MessageId);
         try
         {
@@ -151,14 +151,18 @@ public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, Communi
         => await Run(bearer, db => db.ReactMessageAsync(CommunityValidation.Id(conversationId), CommunityValidation.Id(messageId), request.Emoji), ct);
     public async Task<ChatMessageResponse> SendTopicMessageAsync(string bearer, Guid conversationId, TopicMessageRequest request, CancellationToken ct = default)
         => StoreMessage(await Run(bearer, db => db.SendTopicMessageAsync(CommunityValidation.Id(conversationId), request.Body, request?.TopicId, request?.ReplyTo), ct));
-    public Task<GroupTopicListResponse> TopicsAsync(string bearer, Guid communityId, CancellationToken ct = default)
-        => Run(bearer, db => db.TopicsAsync(CommunityValidation.Id(communityId)), ct);
-    public Task<GroupTopicListResponse> CreateTopicAsync(string bearer, Guid communityId, GroupTopicRequest request, CancellationToken ct = default)
-        => Run(bearer, db => db.CreateTopicAsync(CommunityValidation.Id(communityId), request ?? throw CommunityServiceException.InvalidRequest()), ct);
-    public Task<GroupTopicListResponse> RenameTopicAsync(string bearer, Guid communityId, Guid topicId, GroupTopicRequest request, CancellationToken ct = default)
-        => Run(bearer, db => db.RenameTopicAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(topicId), request ?? throw CommunityServiceException.InvalidRequest()), ct);
-    public Task<GroupTopicListResponse> DeleteTopicAsync(string bearer, Guid communityId, Guid topicId, CancellationToken ct = default)
-        => Run(bearer, db => db.DeleteTopicAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(topicId)), ct);
+    public Task<GroupTopicListResponse> TopicsAsync(string bearer, Guid communityId, CancellationToken ct = default, bool includeTyped = false)
+        => Run(bearer, db => db.TopicsAsync(CommunityValidation.Id(communityId), includeTyped), ct);
+    public Task<GroupTopicListResponse> CreateTopicAsync(string bearer, Guid communityId, GroupTopicRequest request, CancellationToken ct = default, bool includeTyped = false)
+        => Run(bearer, db => db.CreateTopicAsync(CommunityValidation.Id(communityId), request ?? throw CommunityServiceException.InvalidRequest(), includeTyped), ct);
+    public Task<GroupTopicListResponse> RenameTopicAsync(string bearer, Guid communityId, Guid topicId, GroupTopicRequest request, CancellationToken ct = default, bool includeTyped = false)
+        => Run(bearer, db => db.RenameTopicAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(topicId), request ?? throw CommunityServiceException.InvalidRequest(), includeTyped), ct);
+    public async Task<GroupTopicListResponse> DeleteTopicAsync(string bearer, Guid communityId, Guid topicId, CancellationToken ct = default, bool includeTyped = false)
+    {
+        var result = await Run(bearer, db => db.DeleteTopicAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(topicId), includeTyped), ct);
+        foreach (var messageId in result.MessageIds) Drop(messageId);
+        return result.Page;
+    }
     public Task<ConversationResponse> MarkReadAsync(string bearer, Guid conversationId, CancellationToken ct = default)
         => Run(bearer, db => db.MarkReadAsync(CommunityValidation.Id(conversationId)), ct);
 

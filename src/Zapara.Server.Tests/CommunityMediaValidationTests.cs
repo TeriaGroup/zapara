@@ -68,4 +68,24 @@ public sealed class CommunityMediaValidationTests
         Assert.Equal(400, problem.Status);
         Assert.Equal(0, context.Request.Body.Position);
     }
+
+    [Theory]
+    [InlineData("general")]
+    [InlineData("not-a-guid")]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    public async Task Group_upload_rejects_invalid_channel_before_reading_media(string topic)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = "application/octet-stream";
+        context.Request.Headers["X-Zapara-Kind"] = "image";
+        context.Request.Headers["X-Zapara-Name"] = "photo.webp";
+        context.Request.Headers["X-Zapara-Topic"] = topic;
+        context.Request.Body = new MemoryStream(Mp4);
+
+        var problem = await Assert.ThrowsAsync<CommunityInputException>(() => CommunityMedia.Post(context, "unused"));
+
+        Assert.Equal(400, problem.Status);
+        Assert.Equal(0, context.Request.Body.Position);
+    }
+
 }

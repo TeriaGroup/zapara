@@ -5,15 +5,16 @@ namespace Zapara.Server.Communities;
 
 internal sealed partial class CommunityRepository
 {
-    internal Task<BallotBoardResponse> BoardAsync(Guid communityId) => ReadBoardAsync(communityId);
+    internal Task<BallotBoardResponse> BoardAsync(Guid communityId, Guid? topicId = null) => ReadBoardAsync(communityId, topicId);
 
     internal async Task<BallotBoardResponse> OpenHeadmanBallotAsync(Guid communityId, BallotDraftRequest request)
     {
         if (request is null) throw CommunityServiceException.InvalidRequest();
         await RequirePowerAsync(communityId, "ballots");
+        await RequireBallotPublishTopicAsync(communityId, request.TopicId);
         await CloseExpiredAsync(communityId);
         if (await ActiveCountAsync(communityId) >= BallotRules.ActiveLimit) throw CommunityServiceException.InvalidRequest();
-        await InsertBallotAsync(communityId, request.Question, request.Options, "headman", "open", Now.AddDays(request.Days), UserId);
+        await InsertBallotAsync(communityId, request.Question, request.Options, "headman", "open", Now.AddDays(request.Days), UserId, request.TopicId);
         return await ReadBoardAsync(communityId);
     }
 
@@ -21,6 +22,7 @@ internal sealed partial class CommunityRepository
     {
         if (request is null) throw CommunityServiceException.InvalidRequest();
         await RequireMemberAsync(communityId);
+        await RequireBallotPublishTopicAsync(communityId, request.TopicId);
         await CloseExpiredAsync(communityId);
         if (await ActiveCountAsync(communityId) >= BallotRules.ActiveLimit) throw CommunityServiceException.InvalidRequest();
         var pending = await ScalarAsync($"""
@@ -28,7 +30,7 @@ internal sealed partial class CommunityRepository
             WHERE community_id=@p0 AND created_by=@p1 AND origin='collective' AND status='collecting'
             """, communityId, UserId);
         if (pending >= 1) throw CommunityServiceException.InvalidRequest();
-        var id = await InsertBallotAsync(communityId, request.Question, request.Options, "collective", "collecting", Now.AddDays(request.Days), UserId);
+        var id = await InsertBallotAsync(communityId, request.Question, request.Options, "collective", "collecting", Now.AddDays(request.Days), UserId, request.TopicId);
         await ExecuteAsync($"""
             INSERT INTO {Msg}.ballot_support(ballot_id,user_id,created_at) VALUES(@p0,@p1,@p2)
             ON CONFLICT DO NOTHING
@@ -81,14 +83,14 @@ internal sealed partial class CommunityRepository
         return await ReadBoardAsync(communityId);
     }
 
-    private async Task<Guid> InsertBallotAsync(Guid communityId, string question, IReadOnlyList<string> options, string origin, string status, DateTimeOffset deadline, Guid createdBy)
+    private async Task<Guid> InsertBallotAsync(Guid communityId, string question, IReadOnlyList<string> options, string origin, string status, DateTimeOffset deadline, Guid createdBy, Guid? topicId = null)
     {
         var id = Guid.NewGuid();
         DateTimeOffset? opened = status == "open" ? Now : null;
         await ExecuteAsync($"""
-            INSERT INTO {Msg}.ballots(ballot_id,community_id,question,origin,status,deadline_at,opened_at,created_by,created_at)
-            VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8)
-            """, id, communityId, question, origin, status, deadline, opened, createdBy, Now);
+            INSERT INTO {Msg}.ballots(ballot_id,community_id,topic_id,question,origin,status,deadline_at,opened_at,created_by,created_at)
+            VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9)
+            """, id, communityId, topicId, question, origin, status, deadline, opened, createdBy, Now);
         for (var i = 0; i < options.Count; i++)
             await ExecuteAsync($"""
                 INSERT INTO {Msg}.ballot_options(option_id,ballot_id,label,ordinal)
@@ -97,9 +99,10 @@ internal sealed partial class CommunityRepository
         return id;
     }
 
-    private async Task<BallotBoardResponse> ReadBoardAsync(Guid communityId)
+    private async Task<BallotBoardResponse> ReadBoardAsync(Guid communityId, Guid? topicId = null)
     {
         var role = await RequireMemberAsync(communityId);
+        await ValidateBallotTopicAsync(communityId, topicId);
         await CloseExpiredAsync(communityId);
         await ApplyDueAsync(communityId);
         var members = await ScalarAsync($"SELECT count(*)::int FROM {Schema}.memberships WHERE community_id=@p0 AND status='active'", communityId);
@@ -113,21 +116,23 @@ internal sealed partial class CommunityRepository
                    WHERE support.ballot_id=ballot.ballot_id) >= @p2
             """, communityId, Now, need);
         var rows = new List<BallotRow>();
+        var topicClause = topicId is null ? "" : " AND topic_id=@p1";
+        object?[] filterArguments = topicId is Guid selected ? [communityId, selected] : [communityId];
         await using (var command = Command($"""
-            SELECT ballot_id, question, origin, status, deadline_at
+            SELECT ballot_id, question, origin, status, deadline_at, topic_id
             FROM {Msg}.ballots
-            WHERE community_id=@p0 AND status IN ('open','collecting')
+            WHERE community_id=@p0 AND status IN ('open','collecting'){topicClause}
             ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END, created_at DESC
-            """, communityId))
+            """, filterArguments))
         await using (var reader = await command.ExecuteReaderAsync(ct))
             while (await reader.ReadAsync(ct)) rows.Add(ReadRow(reader));
         await using (var command = Command($"""
-            SELECT ballot_id, question, origin, status, deadline_at
+            SELECT ballot_id, question, origin, status, deadline_at, topic_id
             FROM {Msg}.ballots
-            WHERE community_id=@p0 AND status='closed'
+            WHERE community_id=@p0 AND status='closed'{topicClause}
             ORDER BY created_at DESC
             LIMIT 8
-            """, communityId))
+            """, filterArguments))
         await using (var reader = await command.ExecuteReaderAsync(ct))
             while (await reader.ReadAsync(ct)) rows.Add(ReadRow(reader));
         var support = new Dictionary<Guid, (int Count, bool Mine)>();
@@ -185,7 +190,7 @@ internal sealed partial class CommunityRepository
             support.TryGetValue(row.Id, out var voice);
             options.TryGetValue(row.Id, out var choices);
             effects.TryGetValue(row.Id, out var effect);
-            ballots.Add(new(row.Id, row.Question, row.Origin, row.Status, row.Deadline, voice.Count, need, voice.Mine, choices ?? new List<BallotOptionResponse>(), effect.Kind ?? "", effect.Outcome ?? ""));
+            ballots.Add(new(row.Id, row.Question, row.Origin, row.Status, row.Deadline, voice.Count, need, voice.Mine, choices ?? new List<BallotOptionResponse>(), effect.Kind ?? "", effect.Outcome ?? "", row.TopicId));
         }
         var canOpen = role == "headman" || await HasPowerAsync(communityId, "ballots");
         var canClose = role == "headman" || await HasPowerAsync(communityId, "close");
@@ -210,7 +215,7 @@ internal sealed partial class CommunityRepository
         return (reader.GetString(0), AsUtc(reader.GetFieldValue<DateTimeOffset>(1)));
     }
 
-    private static BallotRow ReadRow(NpgsqlDataReader reader) => new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), AsUtc(reader.GetFieldValue<DateTimeOffset>(4)));
+    private static BallotRow ReadRow(NpgsqlDataReader reader) => new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), AsUtc(reader.GetFieldValue<DateTimeOffset>(4)), reader.IsDBNull(5) ? null : reader.GetGuid(5));
 
     private static DateTimeOffset AsUtc(DateTimeOffset value)
     {
@@ -218,5 +223,5 @@ internal sealed partial class CommunityRepository
         return new(utc.Ticks - utc.Ticks % 10, TimeSpan.Zero);
     }
 
-    private sealed record BallotRow(Guid Id, string Question, string Origin, string Status, DateTimeOffset Deadline);
+    private sealed record BallotRow(Guid Id, string Question, string Origin, string Status, DateTimeOffset Deadline, Guid? TopicId);
 }

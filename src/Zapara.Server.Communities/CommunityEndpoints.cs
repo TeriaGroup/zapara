@@ -113,8 +113,15 @@ internal static class CommunityEndpoints
         });
         Route(group, "GET", "/{communityId}/ballots", async context =>
         {
-            CommunityHttpInput.Query(context);
-            return CommunityHttpResult.Json(await Service(context).BallotsAsync(Bearer(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), context.RequestAborted));
+            CommunityHttpInput.Query(context, "topic");
+            Guid? topicId = null;
+            if (context.Request.Query.TryGetValue("topic", out var topicValues))
+            {
+                if (topicValues.Count != 1 || !Guid.TryParseExact(topicValues.ToString(), "D", out var selected) || selected == Guid.Empty)
+                    throw new CommunityInputException();
+                topicId = selected;
+            }
+            return CommunityHttpResult.Json(await Service(context).BallotsAsync(Bearer(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), context.RequestAborted, topicId));
         });
         Route(group, "POST", "/{communityId}/ballots/headman", async context =>
         {
@@ -275,26 +282,35 @@ internal static class CommunityEndpoints
         });
         Route(group, "GET", "/{communityId}/topics", async context =>
         {
-            CommunityHttpInput.Query(context);
-            return CommunityHttpResult.Json(await Service(context).TopicsAsync(Bearer(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), context.RequestAborted));
+            CommunityHttpInput.Query(context, "typed");
+            return CommunityHttpResult.Json(await Service(context).TopicsAsync(Bearer(context),
+                CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), context.RequestAborted, TypedChannels(context)));
         });
         Route(group, "POST", "/{communityId}/topics", async context =>
         {
-            CommunityHttpInput.Query(context);
+            CommunityHttpInput.Query(context, "typed");
+            var typed = TypedChannels(context);
             var body = await CommunityHttpInput.Body<GroupTopicRequest>(context);
-            return CommunityHttpResult.Json(await Service(context).CreateTopicAsync(Bearer(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), body, context.RequestAborted), 201);
+            return CommunityHttpResult.Json(await Service(context).CreateTopicAsync(Bearer(context),
+                CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), body, context.RequestAborted, typed), 201);
         });
         Route(group, "POST", "/{communityId}/topics/{topicId}", async context =>
         {
-            CommunityHttpInput.Query(context);
+            CommunityHttpInput.Query(context, "typed");
+            var typed = TypedChannels(context);
             var body = await CommunityHttpInput.Body<GroupTopicRequest>(context);
-            return CommunityHttpResult.Json(await Service(context).RenameTopicAsync(Bearer(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), CommunityHttpInput.Id(context.Request.RouteValues["topicId"]), body, context.RequestAborted));
+            return CommunityHttpResult.Json(await Service(context).RenameTopicAsync(Bearer(context),
+                CommunityHttpInput.Id(context.Request.RouteValues["communityId"]),
+                CommunityHttpInput.Id(context.Request.RouteValues["topicId"]), body, context.RequestAborted, typed));
         });
         Route(group, "POST", "/{communityId}/topics/{topicId}/delete", async context =>
         {
-            CommunityHttpInput.Query(context);
+            CommunityHttpInput.Query(context, "typed");
+            var typed = TypedChannels(context);
             await CommunityHttpInput.Empty(context);
-            return CommunityHttpResult.Json(await Service(context).DeleteTopicAsync(Bearer(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), CommunityHttpInput.Id(context.Request.RouteValues["topicId"]), context.RequestAborted));
+            return CommunityHttpResult.Json(await Service(context).DeleteTopicAsync(Bearer(context),
+                CommunityHttpInput.Id(context.Request.RouteValues["communityId"]),
+                CommunityHttpInput.Id(context.Request.RouteValues["topicId"]), context.RequestAborted, typed));
         });
         Route(group, "POST", "/direct", async context =>
         {
@@ -363,6 +379,13 @@ internal static class CommunityEndpoints
                 return CommunityHttpResult.From(exception);
             }
         }));
+    private static bool TypedChannels(HttpContext context)
+    {
+        if (!context.Request.Query.TryGetValue("typed", out var values)) return false;
+        if (values.Count != 1 || values.ToString() != "1") throw new CommunityInputException();
+        return true;
+    }
+
     private static CommunityService Service(HttpContext context) => context.RequestServices.GetRequiredService<CommunityService>();
     private static string Bearer(HttpContext context)
     {

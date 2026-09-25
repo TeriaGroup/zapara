@@ -89,7 +89,7 @@ public sealed partial class CommunityHttpClient
         finally { CryptographicOperations.ZeroMemory(buffer); }
     }
 
-    private async Task<ChatMessageResponse> SendMediaCoreAsync(string access, string conversationId, string kind, string name, byte[] bytes, Guid? replyTo, CancellationToken caller, int? durationMs)
+    private async Task<ChatMessageResponse> SendMediaCoreAsync(string access, string conversationId, string kind, string name, byte[] bytes, Guid? replyTo, CancellationToken caller, int? durationMs, Guid? topicId)
     {
         var maxBytes = kind == "voice" ? 2 * 1024 * 1024 : 8 * 1024 * 1024;
         if (kind is not ("image" or "video" or "file" or "voice" or "circle") || bytes is null || bytes.Length < 1 || bytes.Length > maxBytes || string.IsNullOrWhiteSpace(name)
@@ -101,7 +101,7 @@ public sealed partial class CommunityHttpClient
         var ct = deadline.Token;
         var path = "/conversations/" + conversationId + "/media";
         var version = legacyRoutes ? 1 : 2;
-        using var request = MediaRequest(version, path, access, kind, name, bytes, replyTo, durationMs);
+        using var request = MediaRequest(version, path, access, kind, name, bytes, replyTo, durationMs, topicId);
         try
         {
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
@@ -111,7 +111,7 @@ public sealed partial class CommunityHttpClient
                 if ((int)response.StatusCode == 404 && version == 2 && !NotFound(received))
                 {
                     legacyRoutes = true;
-                    using var again = MediaRequest(1, path, access, kind, name, bytes, replyTo, durationMs);
+                    using var again = MediaRequest(1, path, access, kind, name, bytes, replyTo, durationMs, topicId);
                     using var second = await http.SendAsync(again, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
                     return await ReadMediaAsync(second, ct).ConfigureAwait(false);
                 }
@@ -134,7 +134,7 @@ public sealed partial class CommunityHttpClient
         { throw new CommunityClientException(CommunityClientFailure.InvalidPayload); }
     }
 
-    private HttpRequestMessage MediaRequest(int version, string path, string access, string kind, string name, byte[] bytes, Guid? replyTo, int? durationMs)
+    private HttpRequestMessage MediaRequest(int version, string path, string access, string kind, string name, byte[] bytes, Guid? replyTo, int? durationMs, Guid? topicId)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, new Uri(Scope.BaseUri, $"api/v{version}/communities" + path));
         request.Headers.Accept.Add(new("application/json"));
@@ -142,6 +142,7 @@ public sealed partial class CommunityHttpClient
         request.Headers.TryAddWithoutValidation("X-Zapara-Kind", kind);
         request.Headers.TryAddWithoutValidation("X-Zapara-Name", Uri.EscapeDataString(name));
         if (replyTo is Guid parent) request.Headers.TryAddWithoutValidation("X-Zapara-Reply", parent.ToString("D"));
+        if (topicId is Guid topic) request.Headers.TryAddWithoutValidation("X-Zapara-Topic", Id(topic));
         if (durationMs is int duration) request.Headers.TryAddWithoutValidation("X-Zapara-Duration-Ms", duration.ToString(System.Globalization.CultureInfo.InvariantCulture));
         request.Content = new ByteArrayContent(bytes);
         request.Content.Headers.ContentType = new("application/octet-stream");

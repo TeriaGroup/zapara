@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import * as api from "./api";
+import { ballotBoardAfterMutation } from "./channels";
 import { emptyId, groupPowers } from "./powers";
 import type { Ballot, BallotBoard, Classmate, GroupRole } from "./types";
 
@@ -45,7 +46,7 @@ function BallotForm({ title, hint, submitLabel, action, onDone, onError }: {
   hint: string;
   submitLabel: string;
   action: (question: string, options: string[], days: number) => Promise<BallotBoard>;
-  onDone: (board: BallotBoard) => void;
+  onDone: (board: BallotBoard) => void | Promise<void>;
   onError: (text: string) => void;
 }) {
   const [question, setQuestion] = useState("");
@@ -67,7 +68,7 @@ function BallotForm({ title, hint, submitLabel, action, onDone, onError }: {
     }
     setBusy(true);
     try {
-      onDone(await action(text, labels, days));
+      await onDone(await action(text, labels, days));
       setQuestion("");
       setOptions(["", ""]);
       setDays(5);
@@ -119,7 +120,7 @@ function BallotCard({ ballot, canClose, busy, onSupport, onVote, onClose }: {
 }) {
   const total = ballot.options.reduce((sum, option) => sum + option.votes, 0);
   return (
-    <article className="stack">
+    <article className="stack ballot-card">
       <div className="row">
         <span className="chip">{originTitle(ballot.origin)}</span>
         {ballot.effect && <span className="chip">Изменение группы</span>}
@@ -252,31 +253,37 @@ function ChangeForm({ communityId, classmates, roles, onDone, onError }: {
   );
 }
 
-export function BallotBoardView({ communityId, board, classmates, roles, onChange, onError }: {
+export function BallotBoardView({ communityId, board, classmates, roles, topicId, title, canCreate = true, onChange, onError }: {
   communityId: string;
   board: BallotBoard;
   classmates: Classmate[];
   roles: GroupRole[];
+  topicId?: string;
+  title?: string;
+  canCreate?: boolean;
   onChange: (board: BallotBoard) => void;
   onError: (text: string) => void;
 }) {
   const [busy, setBusy] = useState("");
+  async function refreshResult(result: BallotBoard) {
+    onChange(await ballotBoardAfterMutation(result, topicId, selected => api.ballots(communityId, selected)));
+  }
   async function run(id: string, action: () => Promise<BallotBoard>, fallback: string) {
     setBusy(id);
-    try { onChange(await action()); }
+    try { await refreshResult(await action()); }
     catch (error) { onError(failureText(error, fallback)); }
     finally { setBusy(""); }
   }
 
   return (
-    <section className="ballots">
+    <section className={topicId ? "ballots channel-ballots" : "ballots"}>
       <div className="card stack">
-        <h2>Голосования</h2>
-        <p className="muted">
+        <h2>{title || "Голосования"}</h2>
+        {topicId ? <p className="muted">Здесь только голосования группы. Выберите вариант в карточке или предложите свой вопрос.</p> : <p className="muted">
           Система раз в неделю спрашивает, как прошла учёба, если в группе хотя бы три человека. Староста открывает голосование сразу.
           Общее начинается после {board.supportersNeeded} {plural(board.supportersNeeded, "подписи", "подписей", "подписей")}: в группе {board.members} {plural(board.members, "человек", "человека", "человек")}.
           Таким голосованием можно менять роли, возможности и состав группы. Одновременно идут не больше пяти голосований.
-        </p>
+        </p>}
         {board.ballots.map(ballot => (
           <BallotCard
             key={ballot.ballotId}
@@ -292,14 +299,14 @@ export function BallotBoardView({ communityId, board, classmates, roles, onChang
         ))}
         {board.ballots.length === 0 && <p className="muted">Голосований пока нет.</p>}
       </div>
-      <div className={board.canOpen ? "ballot-grid" : "stack"}>
+      {canCreate ? <div className={board.canOpen ? "ballot-grid" : "stack"}>
         {board.canOpen && (
           <BallotForm
             title="Объявить голосование"
             hint="Откроется сразу для всей группы."
             submitLabel="Объявить"
-            action={(question, options, days) => api.openHeadmanBallot(communityId, question, options, days)}
-            onDone={onChange}
+            action={(question, options, days) => api.openHeadmanBallot(communityId, question, options, days, topicId)}
+            onDone={refreshResult}
             onError={onError}
           />
         )}
@@ -307,12 +314,12 @@ export function BallotBoardView({ communityId, board, classmates, roles, onChang
           title="Предложить голосование"
           hint="Автор уже считается поддержавшим. Голосование откроется, когда подписей будет достаточно."
           submitLabel="Предложить"
-          action={(question, options, days) => api.proposeBallot(communityId, question, options, days)}
-          onDone={onChange}
+          action={(question, options, days) => api.proposeBallot(communityId, question, options, days, topicId)}
+          onDone={refreshResult}
           onError={onError}
         />
-      </div>
-      <ChangeForm communityId={communityId} classmates={classmates} roles={roles} onDone={onChange} onError={onError} />
+      </div> : <p className="muted">Создавать голосования здесь могут только управляющие разделами.</p>}
+      {!topicId && <ChangeForm communityId={communityId} classmates={classmates} roles={roles} onDone={onChange} onError={onError} />}
     </section>
   );
 }

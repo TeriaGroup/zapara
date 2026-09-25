@@ -46,11 +46,17 @@ export type GroupHome = {
   communityId: string; name: string; groupName: string | null;
   groupChat: Conversation; classmates: Classmate[]; directs: Conversation[];
 };
-export type GroupTopic = {
-  topicId: string | null; title: string; icon: string;
-  lastBody: string | null; lastAuthor: string | null; lastAt: string | null;
-  unread: number; canDelete: boolean;
+export type ChannelAccent = "default" | "blue" | "green" | "purple" | "orange" | "red";
+export type ChannelWritePolicy = "all" | "managers";
+export type GroupTopicMetadata = {
+  description: string; accent: ChannelAccent; pinned: boolean; writePolicy: ChannelWritePolicy;
 };
+export type GroupTopic = GroupTopicMetadata & {
+  topicId: string | null; title: string; icon: string; kind: "chat" | "ballots";
+  lastBody: string | null; lastAuthor: string | null; lastAt: string | null;
+  unread: number; canDelete: boolean; activeBallots: number; canPost: boolean;
+};
+export type GroupTopicPage = { topics: GroupTopic[]; canManageChannels: boolean };
 export type ChatMessage = {
   messageId: string; conversationId: string; senderId: string; senderName: string; body: string; createdAt: string;
   kind?: string; deleted?: boolean; replyTo?: string | null;

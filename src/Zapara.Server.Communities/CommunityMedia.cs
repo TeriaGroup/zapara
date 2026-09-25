@@ -15,9 +15,9 @@ internal static class CommunityMedia
 
     internal static async Task<IResult> Post(HttpContext context, string token)
     {
-        var (kind, name, bytes, reply, durationMs) = await Read(context);
+        var (kind, name, bytes, reply, durationMs, topicId) = await Read(context);
         var message = await context.RequestServices.GetRequiredService<CommunityService>().SendMediaAsync(
-            token, CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), kind, name, bytes, reply, durationMs, context.RequestAborted);
+            token, CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), kind, name, bytes, reply, durationMs, context.RequestAborted, topicId);
         return CommunityHttpResult.Json(message, 201);
     }
 
@@ -32,7 +32,7 @@ internal static class CommunityMedia
         return CommunityHttpResult.Bytes(bytes);
     }
 
-    private static async Task<(string Kind, string Name, byte[] Bytes, Guid? Reply, int? DurationMs)> Read(HttpContext context)
+    private static async Task<(string Kind, string Name, byte[] Bytes, Guid? Reply, int? DurationMs, Guid? TopicId)> Read(HttpContext context)
     {
         CommunityHttpInput.Query(context);
         if (!MediaTypeHeaderValue.TryParse(context.Request.ContentType, out var media) ||
@@ -50,6 +50,13 @@ internal static class CommunityMedia
             if (replyValues.Count != 1 || !Guid.TryParseExact(replyValues.ToString(), "D", out var id) || id == Guid.Empty)
                 throw new CommunityInputException();
             reply = id;
+        }
+        Guid? topicId = null;
+        if (context.Request.Headers.TryGetValue("X-Zapara-Topic", out var topicValues))
+        {
+            if (topicValues.Count != 1 || !Guid.TryParseExact(topicValues.ToString(), "D", out var id) || id == Guid.Empty)
+                throw new CommunityInputException();
+            topicId = id;
         }
         int? durationMs = null;
         if (context.Request.Headers.TryGetValue("X-Zapara-Duration-Ms", out var durationValues))
@@ -74,7 +81,7 @@ internal static class CommunityMedia
             output.Write(buffer, 0, count);
         }
         if (output.Length == 0) throw new CommunityInputException();
-        return (kind, name, output.ToArray(), reply, durationMs);
+        return (kind, name, output.ToArray(), reply, durationMs, topicId);
     }
 
     internal static void ValidateRecording(string kind, ReadOnlySpan<byte> bytes, int? durationMs)

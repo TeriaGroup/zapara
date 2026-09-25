@@ -17,6 +17,7 @@ internal sealed partial class CommunityRepository
     {
         if (request is null) throw CommunityServiceException.InvalidRequest();
         await RequireMemberAsync(communityId);
+        await RequireBallotPublishTopicAsync(communityId, request.TopicId);
         await CloseExpiredAsync(communityId);
         if (await ActiveCountAsync(communityId) >= BallotRules.ActiveLimit) throw CommunityServiceException.InvalidRequest();
         var pending = await ScalarAsync($"""
@@ -47,7 +48,7 @@ internal sealed partial class CommunityRepository
         string question;
         try { question = CommunityValidation.Question(GroupChanges.Question(change, roleName, personName)); }
         catch (ArgumentException) { throw CommunityServiceException.InvalidRequest(); }
-        var id = await InsertBallotAsync(communityId, question, new[] { "Принять", "Отклонить" }, "collective", "collecting", Now.AddDays(request.Days), UserId);
+        var id = await InsertBallotAsync(communityId, question, new[] { "Принять", "Отклонить" }, "collective", "collecting", Now.AddDays(request.Days), UserId, request.TopicId);
         await ExecuteAsync($"""
             INSERT INTO {Msg}.ballot_effects(ballot_id,kind,payload) VALUES(@p0,@p1,@p2)
             """, id, change.Kind, payload);

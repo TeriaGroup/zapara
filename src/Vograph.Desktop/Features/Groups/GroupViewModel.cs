@@ -36,7 +36,6 @@ public sealed partial class GroupViewModel : ViewModelBase
     private Guid? communityId;
     private Guid? requestedCommunityId;
     private (Guid CommunityId, Guid ConversationId)? requestedConversation;
-    private readonly Dictionary<Guid, string> drafts = new();
     private int navigationGeneration;
     private int busyDepth;
     private bool watching;
@@ -83,7 +82,7 @@ public sealed partial class GroupViewModel : ViewModelBase
     private byte[]? pendingBytes;
     public bool ShowList => !NeedAccount && !HasHome && !IsEmpty;
     public bool HasDirects => Directs.Count > 0;
-    public bool CanAttachMedia => !IsBusy && !IsRecording && !IsFinalizingRecording;
+    public bool CanAttachMedia => ShowComposer && !IsBusy && !IsRecording && !IsFinalizingRecording;
 
     public override void Detach() => Watch(false);
     public override Task ActivateAsync() => LoadAsync();
@@ -117,8 +116,9 @@ public sealed partial class GroupViewModel : ViewModelBase
     {
         if (conversationId is Guid id && editing is null && replyTo is null)
         {
-            if (value.Length == 0) drafts.Remove(id);
-            else drafts[id] = value;
+            var key = DraftKey(id);
+            if (value.Length == 0) channelDrafts.Remove(key);
+            else channelDrafts[key] = value;
         }
         SendCommand.NotifyCanExecuteChanged();
     }
@@ -199,6 +199,10 @@ public sealed partial class GroupViewModel : ViewModelBase
             var home = await Api.GroupHomeAsync(token, id, operation.Token);
             if (!operation.IsCurrent || ticket != navigationGeneration) return;
             Show(home);
+            await LoadChannelsAsync(token, id, home.GroupChat.ConversationId, ticket, operation.Token);
+            if (!operation.IsCurrent || ticket != navigationGeneration) return;
+            await LoadDeskAsync(token, id, home.Classmates, ticket, operation.Token);
+            if (!operation.IsCurrent || ticket != navigationGeneration) return;
             if (requestedConversation is { } requested && requested.CommunityId == id)
             {
                 requestedConversation = null;
@@ -211,7 +215,7 @@ public sealed partial class GroupViewModel : ViewModelBase
                 await OpenConversationAsync(direct.ConversationId, direct.Title, true);
                 return;
             }
-            await OpenConversationAsync(home.GroupChat.ConversationId, T("groupChat"), false);
+            await OpenChannelAsync(Channels[0]);
         }
         catch (CommunityClientException) when (operation.IsCurrent && ticket == navigationGeneration) { Status = T("groupFailed"); }
         catch (AccountClientException ex) when (operation.IsCurrent && ticket == navigationGeneration) { FailSession(ex); }
@@ -262,7 +266,7 @@ public sealed partial class GroupViewModel : ViewModelBase
         finally { if (operation.IsCurrent) Busy(false); }
     }
 
-    private async Task OpenConversationAsync(Guid id, string title, bool direct)
+    private async Task OpenConversationAsync(Guid id, string title, bool direct, GroupChannelRow? channel = null)
     {
         var ticket = ++navigationGeneration;
         await CancelRecordingAsync();
@@ -271,6 +275,10 @@ public sealed partial class GroupViewModel : ViewModelBase
         Messages.Clear();
         ClearPreviews();
         conversationId = id;
+        selectedGroupChannel = !direct;
+        selectedTopicId = channel?.TopicId;
+        ShowBallots = channel?.Kind == "ballots";
+        SelectBallotDraft(channel);
         StartRecordingCommand.NotifyCanExecuteChanged();
         if (pendingBytes is not null) CryptographicOperations.ZeroMemory(pendingBytes);
         pendingBytes = null;
@@ -278,16 +286,17 @@ public sealed partial class GroupViewModel : ViewModelBase
         pendingName = null;
         ChatTitle = title;
         IsDirect = direct;
-        Draft = drafts.GetValueOrDefault(id) ?? "";
+        Draft = channelDrafts.GetValueOrDefault(DraftKey(id)) ?? "";
         replyTo = null;
         editing = null;
         HoldCaption = "";
         HasMore = false;
         try
         {
-            await LoadLatestAsync(id, ticket);
+            if (ShowBallots) await LoadBallotsAsync(id, ticket);
+            else await LoadLatestAsync(id, ticket);
             if (!CurrentChat(id, ticket)) return;
-            if (Api is not null && Access is not null)
+            if (direct && Api is not null && Access is not null)
             {
                 try
                 {
@@ -313,7 +322,7 @@ public sealed partial class GroupViewModel : ViewModelBase
         var token = await Access(operation.Token);
         if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
         if (string.IsNullOrEmpty(token)) { ShowAccount(); return; }
-        var page = await Api.MessagesAsync(token, id, ct: operation.Token);
+        var page = await Api.MessagesAsync(token, id, ct: operation.Token, topic: TopicFilter);
         if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
         Messages.Clear();
         foreach (var message in page.Messages) Messages.Add(Row(message));
@@ -332,7 +341,7 @@ public sealed partial class GroupViewModel : ViewModelBase
             var token = await Access(operation.Token);
             if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
             if (string.IsNullOrEmpty(token)) { ShowAccount(); return; }
-            var page = await Api.MessagesAsync(token, id, before: Messages[0].Id, ct: operation.Token);
+            var page = await Api.MessagesAsync(token, id, before: Messages[0].Id, ct: operation.Token, topic: TopicFilter);
             if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
             HasMore = page.HasMore;
             for (var i = page.Messages.Count - 1; i >= 0; i--)
@@ -352,7 +361,7 @@ public sealed partial class GroupViewModel : ViewModelBase
         var token = await Access(operation.Token);
         if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
         if (string.IsNullOrEmpty(token)) { ShowAccount(); return; }
-        var page = await Api.MessagesAsync(token, id, ct: operation.Token);
+        var page = await Api.MessagesAsync(token, id, ct: operation.Token, topic: TopicFilter);
         if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
         if (Messages.Count == 0) HasMore = page.HasMore;
         var incoming = new List<ChatMessageResponse>();
@@ -364,7 +373,7 @@ public sealed partial class GroupViewModel : ViewModelBase
             var caughtUp = false;
             for (var count = 0; count < 8; count++)
             {
-                var next = await Api.MessagesAsync(token, id, after: cursor, ct: operation.Token);
+                var next = await Api.MessagesAsync(token, id, after: cursor, ct: operation.Token, topic: TopicFilter);
                 if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
                 if (next.Messages.Count == 0) throw new CommunityClientException(CommunityClientFailure.InvalidPayload);
                 incoming.AddRange(next.Messages);
@@ -389,7 +398,7 @@ public sealed partial class GroupViewModel : ViewModelBase
                 || Messages[index].Kind != message.Kind || !Messages[index].ReactionSummaries.SequenceEqual(message.Reactions))
                 Messages[index] = Row(message);
         }
-        if (receivedFromOther && reachedLatest && operation.IsCurrent && CurrentChat(id, ticket))
+        if (IsDirect && receivedFromOther && reachedLatest && operation.IsCurrent && CurrentChat(id, ticket))
             await Api.MarkReadAsync(token, id, operation.Token);
     }
 
@@ -401,8 +410,11 @@ public sealed partial class GroupViewModel : ViewModelBase
         var file = pendingBytes;
         var fileKind = pendingKind;
         var fileName = pendingName;
-        if (conversationId is not Guid id || api is null || Access is null || (string.IsNullOrWhiteSpace(Draft) && file is null)) return;
+        if (!ShowComposer || conversationId is not Guid id || api is null || Access is null || (string.IsNullOrWhiteSpace(Draft) && file is null)) return;
         var ticket = navigationGeneration;
+        var draftKey = DraftKey(id);
+        var sentTopic = selectedGroupChannel ? selectedTopicId : null;
+        var sentGroupChannel = selectedGroupChannel;
         var submittedDraft = Draft;
         var submittedReply = replyTo;
         var submittedEdit = editing;
@@ -420,16 +432,18 @@ public sealed partial class GroupViewModel : ViewModelBase
                 pendingKind = null;
                 var name = pendingName ?? fileKind;
                 pendingName = null;
-                message = await GroupMedia.Place(api, token, id, fileKind, name, file, submittedReply, operation.Token);
+                message = await GroupMedia.Place(api, token, id, fileKind, name, file, submittedReply, operation.Token, topicId: sentTopic);
             }
             else if (submittedEdit is Guid editId)
                 message = await api.EditMessageAsync(token, id, editId, new(submittedDraft.Trim()), operation.Token);
             else
-                message = await api.SendMessageAsync(token, id, new(submittedDraft.Trim(), submittedReply), operation.Token);
+                message = sentGroupChannel
+                    ? await api.SendTopicMessageAsync(token, id, new(submittedDraft.Trim(), sentTopic, submittedReply), operation.Token)
+                    : await api.SendMessageAsync(token, id, new(submittedDraft.Trim(), submittedReply), operation.Token);
             if (!operation.IsCurrent) return;
             if (!CurrentChat(id, ticket))
             {
-                if (file is null && drafts.GetValueOrDefault(id) == submittedDraft) drafts.Remove(id);
+                if (file is null && channelDrafts.GetValueOrDefault(draftKey) == submittedDraft) channelDrafts.Remove(draftKey);
                 return;
             }
             var unchangedDraft = Draft == submittedDraft;
@@ -438,8 +452,8 @@ public sealed partial class GroupViewModel : ViewModelBase
             if (replyTo is null && editing is null) HoldCaption = "";
             if (replyTo is null && editing is null && (submittedReply is not null || submittedEdit is not null))
             {
-                if (unchangedDraft) Draft = drafts.GetValueOrDefault(id) ?? "";
-                else if (Draft.Length > 0) drafts[id] = Draft;
+                if (unchangedDraft) Draft = channelDrafts.GetValueOrDefault(draftKey) ?? "";
+                else if (Draft.Length > 0) channelDrafts[draftKey] = Draft;
             }
             else if (file is null && unchangedDraft && submittedReply is null && submittedEdit is null) Draft = "";
             var row = Row(message);
@@ -469,7 +483,7 @@ public sealed partial class GroupViewModel : ViewModelBase
     }
 
     private bool CanStartRecording(string? kind) => (kind is "voice" or "circle")
-        && !IsBusy && !IsRecording && !IsFinalizingRecording && editing is null && conversationId is not null;
+        && ShowComposer && !IsBusy && !IsRecording && !IsFinalizingRecording && editing is null && conversationId is not null;
 
     [RelayCommand(CanExecute = nameof(CanStartRecording))]
     private async Task StartRecordingAsync(string? kind)
@@ -545,7 +559,7 @@ public sealed partial class GroupViewModel : ViewModelBase
             if (string.IsNullOrEmpty(token)) { ShowAccount(); return; }
             var submittedReply = replyTo;
             var message = await GroupMedia.Place(Api, token, id, media.Kind, media.FileName,
-                media.Bytes, submittedReply, operation.Token, media.DurationMs);
+                media.Bytes, submittedReply, operation.Token, media.DurationMs, selectedGroupChannel ? selectedTopicId : null);
             if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
             if (replyTo == submittedReply) { replyTo = null; HoldCaption = ""; }
             var row = Row(message);
@@ -589,7 +603,7 @@ public sealed partial class GroupViewModel : ViewModelBase
     [RelayCommand]
     private async Task Attach(string? kind)
     {
-        if (IsBusy || IsRecording || IsFinalizingRecording || kind is not ("image" or "video" or "file") || editing is not null || conversationId is not Guid id || Api is null || Access is null) return;
+        if (!ShowComposer || IsBusy || IsRecording || IsFinalizingRecording || kind is not ("image" or "video" or "file") || editing is not null || conversationId is not Guid id || Api is null || Access is null) return;
         var ticket = navigationGeneration;
         var path = await App.FileDialogs.OpenChatMediaAsync(kind);
         if (string.IsNullOrWhiteSpace(path) || IsBusy || !CurrentChat(id, ticket)) return;
@@ -614,7 +628,7 @@ public sealed partial class GroupViewModel : ViewModelBase
         await Send();
     }
 
-    private bool CanSend() => !IsBusy && !IsRecording && !IsFinalizingRecording && conversationId is not null && (!string.IsNullOrWhiteSpace(Draft) || pendingBytes is { Length: > 0 });
+    private bool CanSend() => ShowComposer && !IsBusy && !IsRecording && !IsFinalizingRecording && conversationId is not null && (!string.IsNullOrWhiteSpace(Draft) || pendingBytes is { Length: > 0 });
 
     [RelayCommand]
     private Task BackToGroup()
@@ -630,6 +644,18 @@ public sealed partial class GroupViewModel : ViewModelBase
         _ = CancelRecordingAsync();
         StopPlayback();
         conversationId = null;
+        groupConversationId = null;
+        communityId = null;
+        selectedGroupChannel = false;
+        selectedTopicId = null;
+        activeBallotDraftKey = null;
+        CancelCloseBallot();
+        ShowBallots = false;
+        CanManageChannels = false;
+        SelectedChannel = null;
+        Channels.Clear();
+        Ballots.Clear();
+        ClearDesk();
         StartRecordingCommand.NotifyCanExecuteChanged();
         RestartTimer();
         if (pendingBytes is not null) CryptographicOperations.ZeroMemory(pendingBytes);
@@ -667,7 +693,16 @@ public sealed partial class GroupViewModel : ViewModelBase
         if (Interlocked.Exchange(ref polling, 1) == 1) return;
         var id = conversationId;
         var ticket = navigationGeneration;
-        try { await PullAsync(); }
+        try
+        {
+            if (id is Guid current && CurrentChat(current, ticket)) await RefreshChannelsAsync(current, ticket);
+            if (id is Guid currentDesk && CurrentChat(currentDesk, ticket)) await RefreshDeskAsync(currentDesk, ticket);
+            if (id is Guid selected && CurrentChat(selected, ticket))
+            {
+                if (ShowBallots) await LoadBallotsAsync(selected, ticket);
+                else await PullAsync();
+            }
+        }
         catch (CommunityClientException) { if (id is Guid current && CurrentChat(current, ticket)) Status = T("groupFailed"); }
         catch (AccountClientException ex) { if (id is Guid current && CurrentChat(current, ticket)) FailSession(ex); }
         catch (OperationCanceledException) { }
@@ -860,12 +895,25 @@ public sealed partial class GroupViewModel : ViewModelBase
         _ = CancelRecordingAsync();
         StopPlayback();
         conversationId = null;
+        groupConversationId = null;
+        communityId = null;
         StartRecordingCommand.NotifyCanExecuteChanged();
         if (pendingBytes is not null) CryptographicOperations.ZeroMemory(pendingBytes);
         pendingBytes = null;
         pendingKind = null;
         pendingName = null;
-        drafts.Clear();
+        channelDrafts.Clear();
+        ballotDrafts.Clear();
+        activeBallotDraftKey = null;
+        CancelCloseBallot();
+        selectedGroupChannel = false;
+        selectedTopicId = null;
+        ShowBallots = false;
+        CanManageChannels = false;
+        SelectedChannel = null;
+        Channels.Clear();
+        Ballots.Clear();
+        ClearDesk();
         Draft = "";
         replyTo = null;
         editing = null;

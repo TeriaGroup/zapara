@@ -6,29 +6,31 @@ namespace Zapara.Contracts.Communities;
 public sealed record BallotDraftRequest
 {
     [JsonConstructor]
-    public BallotDraftRequest(string question, IReadOnlyList<string> options, int days)
+    public BallotDraftRequest(string question, IReadOnlyList<string> options, int days, Guid? topicId = null)
     {
         Question = CommunityValidation.Question(question);
         if (options is null || options.Count is < 2 or > 6) throw CommunityValidation.Invalid();
         Options = CommunityValidation.Options(options);
-        if (days is < 1 or > 14) throw CommunityValidation.Invalid();
+        if (days is < 1 or > 14 || topicId == Guid.Empty) throw CommunityValidation.Invalid();
         Days = days;
+        TopicId = topicId;
     }
 
     [JsonRequired, JsonInclude] public string Question { get; private init; }
     [JsonRequired, JsonInclude] public IReadOnlyList<string> Options { get; private init; }
     [JsonRequired, JsonInclude] public int Days { get; private init; }
+    [JsonInclude] public Guid? TopicId { get; private init; }
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record BallotChangeRequest
 {
     [JsonConstructor]
-    public BallotChangeRequest(string kind, int days, Guid roleId, Guid userId, string name, string power, bool enabled)
+    public BallotChangeRequest(string kind, int days, Guid roleId, Guid userId, string name, string power, bool enabled, Guid? topicId = null)
     {
         if (kind is not ("power" or "grant" or "revoke_grant" or "create_role" or "rename_role" or "delete_role" or "remove_member"))
             throw CommunityValidation.Invalid();
-        if (days is < 1 or > 14) throw CommunityValidation.Invalid();
+        if (days is < 1 or > 14 || topicId == Guid.Empty) throw CommunityValidation.Invalid();
         if (name is null || name.Length > 80 || power is null || power.Length > 32) throw CommunityValidation.Invalid();
         Kind = kind;
         Days = days;
@@ -37,6 +39,7 @@ public sealed record BallotChangeRequest
         Name = name;
         Power = power;
         Enabled = enabled;
+        TopicId = topicId;
     }
 
     [JsonRequired, JsonInclude] public string Kind { get; private init; }
@@ -46,6 +49,7 @@ public sealed record BallotChangeRequest
     [JsonRequired, JsonInclude] public string Name { get; private init; }
     [JsonRequired, JsonInclude] public string Power { get; private init; }
     [JsonRequired, JsonInclude] public bool Enabled { get; private init; }
+    [JsonInclude] public Guid? TopicId { get; private init; }
 }
 
 public sealed record BallotOptionResponse
@@ -68,7 +72,7 @@ public sealed record BallotOptionResponse
 public sealed record BallotResponse
 {
     [JsonConstructor]
-    public BallotResponse(Guid ballotId, string question, string origin, string status, DateTimeOffset deadlineAt, int supporters, int supportersNeeded, bool supported, IReadOnlyList<BallotOptionResponse> options, string effect, string outcome)
+    public BallotResponse(Guid ballotId, string question, string origin, string status, DateTimeOffset deadlineAt, int supporters, int supportersNeeded, bool supported, IReadOnlyList<BallotOptionResponse> options, string effect, string outcome, Guid? topicId = null)
     {
         BallotId = ballotId;
         Question = question ?? "";
@@ -81,6 +85,7 @@ public sealed record BallotResponse
         Options = options ?? Array.Empty<BallotOptionResponse>();
         Effect = effect ?? "";
         Outcome = outcome ?? "";
+        TopicId = topicId;
     }
 
     [JsonRequired, JsonInclude] public Guid BallotId { get; private init; }
@@ -94,6 +99,7 @@ public sealed record BallotResponse
     [JsonRequired, JsonInclude] public IReadOnlyList<BallotOptionResponse> Options { get; private init; }
     [JsonRequired, JsonInclude] public string Effect { get; private init; }
     [JsonRequired, JsonInclude] public string Outcome { get; private init; }
+    [JsonInclude] public Guid? TopicId { get; private init; }
 }
 
 public sealed record BallotBoardResponse

@@ -1,6 +1,6 @@
-import { getGroupMedia, postGroupMedia, type GroupMediaDownload, type GroupMediaKind } from "./group-media";
-import { groupMessageQuery, type GroupMessageCursor } from "./groupChat";
-import type { BallotBoard, ChatMessage, Community, Conversation, GroupDesk, GroupHomeworkCopy, GroupHome, GroupTopic, GroupsPayload, MapsManifest, Session, SocialHome, SocialMessage, SocialPage, Teacher, TeacherLesson, TimetablePayload } from "./types";
+import { getGroupMedia, postGroupMedia, type GroupMediaDownload, type GroupMediaKind } from "./group-media.ts";
+import { groupMessageQuery, type GroupMessageCursor } from "./groupChat.ts";
+import type { BallotBoard, ChatMessage, Community, Conversation, GroupDesk, GroupHomeworkCopy, GroupHome, GroupTopicMetadata, GroupTopicPage, GroupsPayload, MapsManifest, Session, SocialHome, SocialMessage, SocialPage, Teacher, TeacherLesson, TimetablePayload } from "./types";
 
 const cacheKey = "zapara.react.cache.v1";
 
@@ -212,16 +212,16 @@ export function rejectJoin(id: string, requestId: string) {
   return send("POST", `/web-api/communities/${id}/join-requests/${requestId}/reject`, undefined, true);
 }
 
-export function ballots(id: string) {
-  return read<BallotBoard>(`/web-api/communities/${id}/ballots`);
+export function ballots(id: string, topicId?: string) {
+  return read<BallotBoard>(`/web-api/communities/${id}/ballots` + (topicId ? `?topic=${encodeURIComponent(topicId)}` : ""));
 }
 
-export function openHeadmanBallot(id: string, question: string, options: string[], days: number) {
-  return send<BallotBoard>("POST", `/web-api/communities/${id}/ballots/headman`, { question, options, days });
+export function openHeadmanBallot(id: string, question: string, options: string[], days: number, topicId?: string) {
+  return send<BallotBoard>("POST", `/web-api/communities/${id}/ballots/headman`, { question, options, days, ...(topicId ? { topicId } : {}) });
 }
 
-export function proposeBallot(id: string, question: string, options: string[], days: number) {
-  return send<BallotBoard>("POST", `/web-api/communities/${id}/ballots/collective`, { question, options, days });
+export function proposeBallot(id: string, question: string, options: string[], days: number, topicId?: string) {
+  return send<BallotBoard>("POST", `/web-api/communities/${id}/ballots/collective`, { question, options, days, ...(topicId ? { topicId } : {}) });
 }
 
 export function supportBallot(id: string, ballotId: string) {
@@ -268,8 +268,8 @@ export function reactGroupMessage(id: string, messageId: string, emoji: string) 
   return send<ChatMessage>("POST", `/web-api/communities/conversations/${id}/messages/${messageId}/react`, { emoji });
 }
 
-export async function sendGroupMedia(id: string, kind: GroupMediaKind, name: string, file: Blob, replyTo?: string, durationMs?: number): Promise<ChatMessage> {
-  const response = await postGroupMedia(id, kind, name, file, replyTo, fetch, authHeaders(), durationMs);
+export async function sendGroupMedia(id: string, kind: GroupMediaKind, name: string, file: Blob, replyTo?: string, durationMs?: number, topicId?: string): Promise<ChatMessage> {
+  const response = await postGroupMedia(id, kind, name, file, replyTo, fetch, authHeaders(), durationMs, topicId);
   if (!response.ok) throw new Error(String(response.status));
   return response.json() as Promise<ChatMessage>;
 }
@@ -279,19 +279,19 @@ export function groupMedia(download: GroupMediaDownload): Promise<Blob> {
 }
 
 export function topics(id: string) {
-  return read<{ topics: GroupTopic[] }>(`/web-api/communities/${id}/topics`);
+  return read<GroupTopicPage>(`/web-api/communities/${id}/topics?typed=1`);
 }
 
-export function createTopic(id: string, title: string, icon: string) {
-  return send<{ topics: GroupTopic[] }>("POST", `/web-api/communities/${id}/topics`, { title, icon });
+export function createTopic(id: string, title: string, icon: string, kind: "chat" | "ballots", metadata?: GroupTopicMetadata) {
+  return send<GroupTopicPage>("POST", `/web-api/communities/${id}/topics?typed=1`, { title, icon, kind, ...metadata });
 }
 
-export function renameTopic(id: string, topicId: string, title: string, icon: string) {
-  return send<{ topics: GroupTopic[] }>("POST", `/web-api/communities/${id}/topics/${topicId}`, { title, icon });
+export function renameTopic(id: string, topicId: string, title: string, icon: string, kind: "chat" | "ballots", metadata?: GroupTopicMetadata) {
+  return send<GroupTopicPage>("POST", `/web-api/communities/${id}/topics/${topicId}?typed=1`, { title, icon, kind, ...metadata });
 }
 
 export function deleteTopic(id: string, topicId: string) {
-  return send<{ topics: GroupTopic[] }>("POST", `/web-api/communities/${id}/topics/${topicId}/delete`, undefined, true);
+  return send<GroupTopicPage>("POST", `/web-api/communities/${id}/topics/${topicId}/delete?typed=1`, undefined, true);
 }
 
 export function markRead(id: string) {

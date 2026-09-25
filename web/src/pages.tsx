@@ -13,6 +13,7 @@ import { HOMEWORK_FILE_LIMIT, checkHomeworkFile, compressHomeworkPhoto, deleteHo
 import { supportAppend, supportDraft, supportFiles } from "./support";
 import { holdActions, runHold } from "./hold";
 import { groupBubbleText, groupMediaDownload, GroupMediaError, type GroupMediaDownload } from "./group-media";
+import { canComposeChannel, canCreateBallot, isChatChannel } from "./channels";
 import { GroupComposer } from "./group-composer";
 import { GroupInlineMedia } from "./group-inline-media";
 import { legalDocument, type LegalId } from "./legal";
@@ -643,14 +644,20 @@ export function GroupPage() {
   const [homeState, setHomeState] = useState<{ key: string; value: GroupHome | null }>({ key: groupViewKey, value: null });
   const home = homeState.key === groupViewKey ? homeState.value : null;
   const [desk, setDesk] = useState<GroupDesk | null>(null);
+  const [canManageChannels, setCanManageChannels] = useState(false);
   const [board, setBoard] = useState<BallotBoard | null>(null);
+  const [channelBoardState, setChannelBoardState] = useState<{ topicId: string; value: BallotBoard | null; failed: boolean }>({ topicId: "", value: null, failed: false });
   const [votesOff, setVotesOff] = useState(false);
   const [selectedChat, setChat] = useState<Conversation | null>(null);
   const chat = home ? selectedChat : null;
   const [thread, setThread] = useState<GroupTopic | "list">("list");
-  const viewKey = chat && (chat.kind !== "group" || thread !== "list")
+  const viewKey = chat && (chat.kind !== "group" || (thread !== "list" && isChatChannel(thread)))
     ? `${chat.conversationId}:${chat.kind === "group" && thread !== "list" ? thread.topicId ?? "general" : "direct"}`
     : "";
+  const selectedTopicId = chat?.kind === "group" && thread !== "list" ? thread.topicId : undefined;
+  const activeBallotTopicId = chat?.kind === "group" && thread !== "list" && thread.kind === "ballots" ? thread.topicId : null;
+  const channelBoard = activeBallotTopicId && channelBoardState.topicId === activeBallotTopicId ? channelBoardState.value : null;
+  const channelBoardFailed = !!activeBallotTopicId && channelBoardState.topicId === activeBallotTopicId && channelBoardState.failed;
   const viewKeyRef = useRef(viewKey);
   viewKeyRef.current = viewKey;
   const [logState, setLogState] = useState<{ key: string; messages: ChatMessage[]; hasOlder: boolean }>({ key: "", messages: [], hasOlder: false });
@@ -678,6 +685,12 @@ export function GroupPage() {
   const sendPending = useRef(new Set<string>());
   const selectionEpoch = useRef(0);
   const pollerRef = useRef<{ key: string; poller: ReturnType<typeof createGroupPoller> } | null>(null);
+  const deskEpoch = useRef(0);
+
+  function updateDesk(value: GroupDesk | null) {
+    deskEpoch.current += 1;
+    setDesk(value);
+  }
 
   function setHome(value: GroupHome | null) {
     if (groupViewKeyRef.current === groupViewKey) setHomeState({ key: groupViewKey, value });
@@ -723,8 +736,10 @@ export function GroupPage() {
       setChat(null);
       setThread("list");
       setFocusChat(false);
-      setDesk(null);
+      updateDesk(null);
+      setCanManageChannels(false);
       setBoard(null);
+      setChannelBoardState({ topicId: "", value: null, failed: false });
       clearLog();
     };
     drop();
@@ -735,11 +750,11 @@ export function GroupPage() {
         ? loaded.groupChat : loaded.directs.find(item => item.conversationId === selectedConversationId);
       setThread(requested?.kind === "group"
         ? { topicId: null, title: "Общий поток", icon: "💬", lastBody: requested.lastBody,
-          lastAuthor: null, lastAt: requested.lastAt, unread: requested.unread, canDelete: false }
+          lastAuthor: null, lastAt: requested.lastAt, unread: requested.unread, canDelete: false, kind: "chat", activeBallots: 0,
+          description: "", accent: "default", pinned: false, writePolicy: "all", canPost: true }
         : "list");
       setChat(requested ?? loaded.groupChat);
       setFocusChat(!!requested);
-      void api.groupDesk(id).then(office => { if (!stop) setDesk(office); }).catch(() => { if (!stop) setDesk(null); });
     }).catch(() => { if (!stop) { drop(); setError("Не удалось загрузить группу"); } });
     if (app.session?.authenticated && selectedCommunityId) {
       openHome(selectedCommunityId);
@@ -807,6 +822,41 @@ export function GroupPage() {
   useEffect(() => {
     if (!app.session?.authenticated || !communityId) return;
     let stop = false;
+    const refresh = () => {
+      const ticket = ++deskEpoch.current;
+      void api.groupDesk(communityId).then(office => {
+        if (!stop && ticket === deskEpoch.current) setDesk(office);
+      }).catch(() => { /* Keep the last good desk on a transient outage. */ });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 4000);
+    return () => { stop = true; deskEpoch.current += 1; window.clearInterval(timer); };
+  }, [app.session?.authenticated, communityId]);
+  useEffect(() => {
+    if (!communityId || selectedTopicId === undefined) return;
+    let stop = false;
+    const refresh = () => {
+      void api.topics(communityId).then(page => {
+        if (stop) return;
+        setCanManageChannels(page.canManageChannels);
+        const selected = page.topics.find(item => item.topicId === selectedTopicId);
+        if (selected) setThread(selected);
+        else {
+          selectionEpoch.current += 1;
+          clearLog();
+          setReplyTo(null);
+          setEditing(null);
+          setThread("list");
+        }
+      }).catch(() => { /* Current messages remain readable; the server still checks writes. */ });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 4000);
+    return () => { stop = true; window.clearInterval(timer); };
+  }, [communityId, selectedTopicId]);
+  useEffect(() => {
+    if (!app.session?.authenticated || !communityId) return;
+    let stop = false;
     const pull = () => api.ballots(communityId).then(value => {
       if (stop) return;
       setBoard(value);
@@ -816,10 +866,22 @@ export function GroupPage() {
     const timer = window.setInterval(pull, 4000);
     return () => { stop = true; window.clearInterval(timer); };
   }, [app.session?.authenticated, communityId]);
+  useEffect(() => {
+    if (!communityId || !activeBallotTopicId) return;
+    const topicId = activeBallotTopicId;
+    let stop = false;
+    const pull = () => api.ballots(communityId, topicId).then(value => {
+      if (!stop) setChannelBoardState({ topicId, value, failed: false });
+    }).catch(() => { if (!stop) setChannelBoardState({ topicId, value: null, failed: true }); });
+    void pull();
+    const timer = window.setInterval(pull, 4000);
+    return () => { stop = true; window.clearInterval(timer); };
+  }, [communityId, activeBallotTopicId]);
   function choose(kind: "image" | "video" | "file") {
     if (!chat || !viewKey) return;
     const input = fileRef.current;
     if (!input) return;
+    if (chat.kind === "group" && (thread === "list" || !canComposeChannel(thread))) return;
     pendingPick.current = { kind, key: viewKey, conversationId: chat.conversationId, epoch: selectionEpoch.current, replyTo };
     input.accept = kind === "image" ? "image/*" : kind === "video" ? "video/*" : "*/*";
     input.click();
@@ -831,14 +893,15 @@ export function GroupPage() {
     pendingPick.current = null;
     if (!file || !pick || !chat || !groupMediaSelectionIsCurrent(pick,
       { key: viewKey, conversationId: chat.conversationId, epoch: selectionEpoch.current })) return;
-    if (chat.kind === "group" && (thread === "list" || thread.topicId != null)) return;
-    await sendGroupAttachment(pick.key, pick.conversationId, pick.kind, file.name, file, pick.replyTo, pick.epoch);
+    if (chat.kind === "group" && (thread === "list" || !canComposeChannel(thread))) return;
+    await sendGroupAttachment(pick.key, pick.conversationId, pick.kind, file.name, file, pick.replyTo, pick.epoch,
+      undefined, chat.kind === "group" && thread !== "list" ? thread.topicId ?? undefined : undefined);
   }
   async function sendGroupAttachment(key: string, conversationId: string, kind: "image" | "video" | "file" | "voice" | "circle",
-    name: string, blob: Blob, sentReply: string | null, epoch: number, durationMs?: number) {
+    name: string, blob: Blob, sentReply: string | null, epoch: number, durationMs?: number, topicId?: string) {
     markLogChanged(key);
     try {
-      const message = await api.sendGroupMedia(conversationId, kind, name, blob, sentReply ?? undefined, durationMs);
+      const message = await api.sendGroupMedia(conversationId, kind, name, blob, sentReply ?? undefined, durationMs, topicId);
       markLogChanged(key);
       updateLog(key, [message]);
       if (viewKeyRef.current === key && selectionEpoch.current === epoch) setReplyTo(current => current === sentReply ? null : current);
@@ -906,7 +969,7 @@ export function GroupPage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!chat || !viewKey || !draft.trim() || sendPending.current.has(viewKey)) return;
-    if (chat.kind === "group" && thread === "list") return;
+    if (chat.kind === "group" && (thread === "list" || !canComposeChannel(thread))) return;
     const key = viewKey;
     const body = draft;
     const sentDraftEpoch = draftEpoch.current[key] ?? 0;
@@ -942,7 +1005,7 @@ export function GroupPage() {
   return (
     <section className="page">
       <Head title="Группа" text={home ? `${home.name}${home.groupName ? " · " + home.groupName : ""}` : error || "Одногруппники и чат"} />
-      {home && desk && desk.mine.length > 0 && <GroupAdmin communityId={home.communityId} classmates={home.classmates} desk={desk} onChange={setDesk} onReload={async () => { const [loaded, office] = await Promise.all([api.groupHome(home.communityId), api.groupDesk(home.communityId)]); setHome(loaded); setDesk(office); }} onError={setError} />}
+      {home && desk && desk.mine.length > 0 && <GroupAdmin communityId={home.communityId} classmates={home.classmates} desk={desk} onChange={updateDesk} onReload={async () => { const [loaded, office] = await Promise.all([api.groupHome(home.communityId), api.groupDesk(home.communityId)]); setHome(loaded); updateDesk(office); }} onError={setError} />}
       {home && board && <BallotBoardView communityId={home.communityId} board={board} classmates={home.classmates} roles={desk?.roles ?? []} onChange={setBoard} onError={setError} />}
       {home && !board && votesOff && <p className="muted">Голосования сейчас не открылись. Чат группы на месте.</p>}
       {home && (
@@ -970,18 +1033,33 @@ export function GroupPage() {
           <section className="card chat split-detail">
             <button className="btn back-only" type="button" onClick={() => setFocusChat(false)}>К списку</button>
             {!chat && <p className="muted">{error || "Чат открывается…"}</p>}
-            {chat?.kind === "group" && thread === "list" && <GroupTopics communityId={home.communityId} onOpen={next => { selectionEpoch.current += 1; clearLog(); setThread(next); }} onError={setError} />}
-            {chat && (chat.kind !== "group" || thread !== "list") && <>
+            {chat?.kind === "group" && thread === "list" && <GroupTopics key={home.communityId} communityId={home.communityId} onOpen={(next, allowed) => { selectionEpoch.current += 1; clearLog(); setCanManageChannels(allowed); setThread(next); }} onError={setError} />}
+            {chat?.kind === "group" && thread !== "list" && !isChatChannel(thread) && <>
+              <div className="row">
+                <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; setThread("list"); }}>Все разделы</button>
+                <h2>{thread.icon} {thread.title}</h2>
+              </div>
+              {thread.description && <p className="muted">{thread.description}</p>}
+              {activeBallotTopicId && channelBoard && <BallotBoardView key={activeBallotTopicId} communityId={home.communityId} board={channelBoard}
+                classmates={home.classmates} roles={desk?.roles ?? []} topicId={activeBallotTopicId} title={thread.title}
+                canCreate={canCreateBallot(thread, canManageChannels)}
+                onChange={value => setChannelBoardState({ topicId: activeBallotTopicId, value, failed: false })} onError={setError} />}
+              {!channelBoard && <p className="muted">{channelBoardFailed ? "Голосования не открылись. Попробуйте позже." : "Загрузка голосований…"}</p>}
+            </>}
+            {chat && (chat.kind !== "group" || (thread !== "list" && isChatChannel(thread))) && <>
             <div className="row">
               {chat?.kind === "group" && <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setThread("list"); }}>Все разделы</button>}
               <h2>{chat?.kind === "group" && thread !== "list" ? `${thread.icon} ${thread.title}` : (chat?.title || "Чат")}</h2>
             </div>
+            {chat.kind === "group" && thread !== "list" && thread.description && <p className="muted">{thread.description}</p>}
             <div className="log" ref={logBoxRef}>
               {hasOlder && <button className="btn" type="button" disabled={loadingOlder.includes(viewKey)} onClick={() => void earlier()}>{loadingOlder.includes(viewKey) ? "Загрузка…" : "Раньше"}</button>}
               {log.map(message => {
                 const mine = message.senderId === app.session?.user?.userId;
                 const kind = message.kind || "text";
-                const actions = holdActions(kind, mine, !!message.deleted, menu === message.messageId);
+                const canWrite = chat.kind !== "group" || (thread !== "list" && canComposeChannel(thread));
+                const actions = holdActions(kind, mine, !!message.deleted, menu === message.messageId)
+                  .filter(action => canWrite || action !== "reply" && action !== "edit");
                 const download = chat && groupMediaDownload(chat.conversationId, message);
                 return (
                   <article key={message.messageId} data-hold={kind} className={"bubble" + (mine ? " mine" : "") + (kind === "circle" && !message.deleted ? " round" : "")}
@@ -1031,11 +1109,14 @@ export function GroupPage() {
               })}
             </div>
             <input ref={fileRef} type="file" hidden aria-label="Файл" onChange={event => void onPicked(event)} />
-            <GroupComposer key={viewKey} draft={draft} editing={!!editing} replyTo={!!replyTo}
-              allowMedia={chat.kind !== "group" || (thread !== "list" && thread.topicId == null)}
+            {chat.kind === "group" && thread !== "list" && !canComposeChannel(thread)
+              ? <p className="muted channel-readonly">Писать здесь могут только управляющие разделами.</p>
+              : <GroupComposer key={viewKey} draft={draft} editing={!!editing} replyTo={!!replyTo}
+              allowMedia={true}
               onDraft={setDraft} onSubmit={event => void submit(event)} onChoose={choose}
-              onRecorded={(kind, name, blob, durationMs) => sendGroupAttachment(viewKey, chat.conversationId, kind, name, blob, replyTo, selectionEpoch.current, durationMs)}
-              onError={setError} />
+              onRecorded={(kind, name, blob, durationMs) => sendGroupAttachment(viewKey, chat.conversationId, kind, name, blob, replyTo, selectionEpoch.current, durationMs,
+                chat.kind === "group" && thread !== "list" ? thread.topicId ?? undefined : undefined)}
+              onError={setError} />}
             </>}
           </section>
         </div>

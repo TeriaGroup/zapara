@@ -131,7 +131,7 @@ class GroupViewModelChatTest {
     }
 
     @Test
-    fun switchingChatsLeavesEditModeAndRestoresTheUnsentDraft() = runTest(dispatcher) {
+    fun switchingChatsKeepsEditModeForItsOriginalConversation() = runTest(dispatcher) {
         val vm = viewModel(server())
         runCurrent()
         try {
@@ -146,6 +146,9 @@ class GroupViewModelChatTest {
             assertNull(vm.state.value.editing)
             vm.onEvent(GroupEvent.GroupChat)
             runCurrent()
+            assertEquals(first, vm.state.value.editing)
+            assertEquals("Первое", vm.state.value.draft)
+            vm.onEvent(GroupEvent.CancelContext)
             assertNull(vm.state.value.editing)
             assertEquals("Мой черновик", vm.state.value.draft)
         } finally {

@@ -156,10 +156,13 @@ public sealed class GroupViewModelConversationTests
         services.UseCommunities(client, _ => Task.FromResult<string?>(Access));
         var changed = false;
         var reads = 0;
+        var topicReads = 0;
         handler.Send = (request, _) =>
         {
             if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath.EndsWith("/read", StringComparison.Ordinal))
                 reads++;
+            if (request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath.EndsWith("/messages", StringComparison.Ordinal)
+                && request.RequestUri.Query.Contains("topic=general", StringComparison.Ordinal)) topicReads++;
             if (changed && request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath.EndsWith("/messages", StringComparison.Ordinal))
                 return Task.FromResult(Payload(new ChatPageResponse([
                     new(FirstId, GroupChatId, UserId, "Аня", "Новое содержание", CommunityClientTestSupport.Now, "text"),
@@ -174,7 +177,8 @@ public sealed class GroupViewModelConversationTests
         changed = true;
         await Waits.Until(() => vm.Messages.Count == 3 && vm.Messages[0].Body == "Новое содержание", "edited and new messages", 6500);
         Assert.Equal([FirstId, SecondId, DirectMessageId], vm.Messages.Select(item => item.Id).ToArray());
-        await Waits.Until(() => reads == 2, "new message marked read");
+        await Waits.Until(() => topicReads >= 2, "general topic read on polling");
+        Assert.Equal(0, reads);
         vm.Detach();
     }
 
@@ -241,9 +245,9 @@ public sealed class GroupViewModelConversationTests
                 cursors.Add(request.RequestUri.Query);
                 return Task.FromResult(request.RequestUri.Query switch
                 {
-                    "" => Payload(new ChatPageResponse([Item(FifthId, 5), Item(SixthId, 6)], true)),
-                    var query when query == $"?after={SecondId:D}" => Payload(new ChatPageResponse([Item(DirectMessageId, 3), Item(FourthId, 4)], true)),
-                    var query when query == $"?after={FourthId:D}" => Payload(new ChatPageResponse([Item(FifthId, 5), Item(SixthId, 6)], false)),
+                    "?topic=general" => Payload(new ChatPageResponse([Item(FifthId, 5), Item(SixthId, 6)], true)),
+                    var query when query == $"?topic=general&after={SecondId:D}" => Payload(new ChatPageResponse([Item(DirectMessageId, 3), Item(FourthId, 4)], true)),
+                    var query when query == $"?topic=general&after={FourthId:D}" => Payload(new ChatPageResponse([Item(FifthId, 5), Item(SixthId, 6)], false)),
                     _ => Problem(400, "invalid_request")
                 });
             }
@@ -256,7 +260,7 @@ public sealed class GroupViewModelConversationTests
         changed = true;
         await Waits.Until(() => vm.Messages.Count == 6, "missing group messages caught up", 6500);
         Assert.Equal([FirstId, SecondId, DirectMessageId, FourthId, FifthId, SixthId], vm.Messages.Select(item => item.Id).ToArray());
-        Assert.Equal(["", $"?after={SecondId:D}", $"?after={FourthId:D}"], cursors.Take(3).ToArray());
+        Assert.Equal(["?topic=general", $"?topic=general&after={SecondId:D}", $"?topic=general&after={FourthId:D}"], cursors.Take(3).ToArray());
         vm.Detach();
     }
 
@@ -274,7 +278,7 @@ public sealed class GroupViewModelConversationTests
         var release = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
         handler.Send = async (request, ct) =>
         {
-            if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath.EndsWith("/messages", StringComparison.Ordinal))
+            if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath.EndsWith("/topic-messages", StringComparison.Ordinal))
             {
                 started.TrySetResult();
                 return await release.Task.WaitAsync(ct);
@@ -332,7 +336,7 @@ public sealed class GroupViewModelConversationTests
             }
             if (request.Method == HttpMethod.Get && path.EndsWith("/messages", StringComparison.Ordinal))
                 return Task.FromResult(Payload(new ChatPageResponse([
-                    new(FirstId, GroupChatId, PromotedId, "Борис", "../photo.png", CommunityClientTestSupport.Now, "image")], false)));
+                    new(FirstId, GroupChatId, PromotedId, "Борис", "../photo.png", CommunityClientTestSupport.Now, "file")], false)));
             return Task.FromResult(Respond(request));
         };
 

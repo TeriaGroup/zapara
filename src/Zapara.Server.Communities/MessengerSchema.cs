@@ -82,9 +82,39 @@ internal static class MessengerSchema
                 community_id uuid NOT NULL REFERENCES __COM__.communities(community_id) ON DELETE CASCADE,
                 title text NOT NULL CHECK (char_length(title) BETWEEN 2 AND 40),
                 icon text NOT NULL CHECK (char_length(icon) BETWEEN 1 AND 8),
+                kind text NOT NULL DEFAULT 'chat' CHECK (kind IN ('chat','ballots')),
+                description text NOT NULL DEFAULT '' CHECK (char_length(description) <= 240),
+                accent text NOT NULL DEFAULT 'default' CHECK (accent IN ('default','blue','green','purple','orange','red')),
+                pinned boolean NOT NULL DEFAULT false,
+                write_policy text NOT NULL DEFAULT 'all' CHECK (write_policy IN ('all','managers')),
                 created_by uuid NULL REFERENCES __ACCOUNTS__.users(user_id) ON DELETE SET NULL,
                 created_at timestamptz NOT NULL
             );
+            ALTER TABLE __MSG__.group_topics ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'chat';
+            ALTER TABLE __MSG__.group_topics ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '';
+            ALTER TABLE __MSG__.group_topics ADD COLUMN IF NOT EXISTS accent text NOT NULL DEFAULT 'default';
+            ALTER TABLE __MSG__.group_topics ADD COLUMN IF NOT EXISTS pinned boolean NOT NULL DEFAULT false;
+            ALTER TABLE __MSG__.group_topics ADD COLUMN IF NOT EXISTS write_policy text NOT NULL DEFAULT 'all';
+            DO $zapara_topic_kind$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conrelid='__MSG__.group_topics'::regclass AND conname='group_topics_kind_check') THEN
+                    ALTER TABLE __MSG__.group_topics ADD CONSTRAINT group_topics_kind_check CHECK (kind IN ('chat','ballots'));
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conrelid='__MSG__.group_topics'::regclass AND conname='group_topics_description_check') THEN
+                    ALTER TABLE __MSG__.group_topics ADD CONSTRAINT group_topics_description_check CHECK (char_length(description) <= 240);
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conrelid='__MSG__.group_topics'::regclass AND conname='group_topics_accent_check') THEN
+                    ALTER TABLE __MSG__.group_topics ADD CONSTRAINT group_topics_accent_check CHECK (accent IN ('default','blue','green','purple','orange','red'));
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conrelid='__MSG__.group_topics'::regclass AND conname='group_topics_write_policy_check') THEN
+                    ALTER TABLE __MSG__.group_topics ADD CONSTRAINT group_topics_write_policy_check CHECK (write_policy IN ('all','managers'));
+                END IF;
+            END
+            $zapara_topic_kind$;
             CREATE UNIQUE INDEX IF NOT EXISTS group_topics_ci ON __MSG__.group_topics (community_id, lower(title));
             CREATE TABLE IF NOT EXISTS __MSG__.group_topic_reads (
                 community_id uuid NOT NULL REFERENCES __COM__.communities(community_id) ON DELETE CASCADE,
@@ -108,6 +138,7 @@ internal static class MessengerSchema
             CREATE TABLE IF NOT EXISTS __MSG__.ballots (
                 ballot_id uuid PRIMARY KEY,
                 community_id uuid NOT NULL REFERENCES __COM__.communities(community_id) ON DELETE CASCADE,
+                topic_id uuid NULL REFERENCES __MSG__.group_topics(topic_id) ON DELETE SET NULL,
                 question text NOT NULL CHECK (char_length(question) BETWEEN 1 AND 400),
                 origin text NOT NULL CHECK (origin IN ('system','headman','collective')),
                 status text NOT NULL CHECK (status IN ('collecting','open','closed')),
@@ -116,7 +147,18 @@ internal static class MessengerSchema
                 created_by uuid NULL REFERENCES __ACCOUNTS__.users(user_id) ON DELETE SET NULL,
                 created_at timestamptz NOT NULL
             );
+            ALTER TABLE __MSG__.ballots ADD COLUMN IF NOT EXISTS topic_id uuid;
+            DO $zapara_ballot_topic$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conrelid='__MSG__.ballots'::regclass AND conname='ballots_topic_id_fkey') THEN
+                    ALTER TABLE __MSG__.ballots ADD CONSTRAINT ballots_topic_id_fkey
+                        FOREIGN KEY (topic_id) REFERENCES __MSG__.group_topics(topic_id) ON DELETE SET NULL;
+                END IF;
+            END
+            $zapara_ballot_topic$;
             CREATE INDEX IF NOT EXISTS ballots_community ON __MSG__.ballots (community_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS ballots_topic ON __MSG__.ballots (community_id, topic_id, created_at DESC);
             CREATE TABLE IF NOT EXISTS __MSG__.ballot_options (
                 option_id uuid PRIMARY KEY,
                 ballot_id uuid NOT NULL REFERENCES __MSG__.ballots(ballot_id) ON DELETE CASCADE,
@@ -139,9 +181,24 @@ internal static class MessengerSchema
             );
             CREATE TABLE IF NOT EXISTS __MSG__.group_role_powers (
                 role_id uuid NOT NULL REFERENCES __MSG__.group_roles(role_id) ON DELETE CASCADE,
-                power text NOT NULL CHECK (power IN ('joins','exclude','roles','grants','ballots','close')),
+                power text NOT NULL CHECK (power IN ('joins','exclude','roles','grants','ballots','close','channels')),
                 PRIMARY KEY (role_id, power)
             );
+            DO $zapara_role_power$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conrelid='__MSG__.group_role_powers'::regclass
+                      AND conname='group_role_powers_power_check'
+                      AND pg_get_constraintdef(oid) NOT LIKE '%channels%') THEN
+                    ALTER TABLE __MSG__.group_role_powers DROP CONSTRAINT group_role_powers_power_check;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conrelid='__MSG__.group_role_powers'::regclass AND conname='group_role_powers_power_check') THEN
+                    ALTER TABLE __MSG__.group_role_powers ADD CONSTRAINT group_role_powers_power_check
+                        CHECK (power IN ('joins','exclude','roles','grants','ballots','close','channels'));
+                END IF;
+            END
+            $zapara_role_power$;
             CREATE TABLE IF NOT EXISTS __MSG__.ballot_effects (
                 ballot_id uuid PRIMARY KEY REFERENCES __MSG__.ballots(ballot_id) ON DELETE CASCADE,
                 kind text NOT NULL CHECK (kind IN ('power','grant','revoke_grant','create_role','rename_role','delete_role','remove_member')),

@@ -210,23 +210,125 @@ class CommunityHttpClient(
         return read("GET", "/$id/home", null, accessToken, 200) { groupHome(it.obj()) }
     }
 
+    suspend fun topics(accessToken: String, communityId: String): GroupTopicList {
+        val id = CommunityValidation.id(communityId)
+        return read("GET", "/$id/topics?typed=1", null, accessToken, 200) { topicList(it.obj()) }
+    }
+
+    suspend fun desk(accessToken: String, communityId: String): GroupDesk {
+        val id = CommunityValidation.id(communityId)
+        return read("GET", "/$id/desk", null, accessToken, 200) { groupDesk(it.obj()) }
+    }
+
+    suspend fun createRole(accessToken: String, communityId: String, name: String): GroupDesk {
+        val id = CommunityValidation.id(communityId)
+        val clean = CommunityValidation.text(name.trim(), 32)
+        if (clean.length < 2) throw CommunityClientException(CommunityClientFailure.InvalidRequest)
+        return read("POST", "/$id/roles", """{"name":${q(clean)}}""", accessToken, 201) { groupDesk(it.obj()) }
+    }
+
+    suspend fun setRolePower(accessToken: String, communityId: String, roleId: String, enabled: Boolean): GroupDesk {
+        val id = CommunityValidation.id(communityId)
+        val role = CommunityValidation.id(roleId)
+        return read("POST", "/$id/roles/$role/powers", """{"power":"channels","enabled":$enabled}""", accessToken, 200) { groupDesk(it.obj()) }
+    }
+
+    suspend fun grantRole(accessToken: String, communityId: String, roleId: String, userId: String): GroupDesk {
+        val id = CommunityValidation.id(communityId)
+        val role = CommunityValidation.id(roleId)
+        val user = CommunityValidation.id(userId)
+        return read("POST", "/$id/roles/$role/grants", """{"userId":${q(user)}}""", accessToken, 200) { groupDesk(it.obj()) }
+    }
+
+    suspend fun revokeRole(accessToken: String, communityId: String, roleId: String, userId: String): GroupDesk {
+        val id = CommunityValidation.id(communityId)
+        val role = CommunityValidation.id(roleId)
+        val user = CommunityValidation.id(userId)
+        return read("POST", "/$id/roles/$role/grants/$user/delete", null, accessToken, 200) { groupDesk(it.obj()) }
+    }
+
+    suspend fun createTopic(accessToken: String, communityId: String, title: String, icon: String, kind: String,
+        description: String? = null, accent: String? = null, pinned: Boolean? = null, writePolicy: String? = null): GroupTopicList {
+        val id = CommunityValidation.id(communityId)
+        return read("POST", "/$id/topics?typed=1", topicBody(title, icon, kind, description, accent, pinned, writePolicy), accessToken, 201) { topicList(it.obj()) }
+    }
+
+    suspend fun renameTopic(accessToken: String, communityId: String, topicId: String, title: String, icon: String, kind: String,
+        description: String, accent: String, pinned: Boolean, writePolicy: String): GroupTopicList {
+        val id = CommunityValidation.id(communityId)
+        val tid = CommunityValidation.id(topicId)
+        return read("POST", "/$id/topics/$tid?typed=1", topicBody(title, icon, kind, description, accent, pinned, writePolicy), accessToken, 200) { topicList(it.obj()) }
+    }
+
+    suspend fun deleteTopic(accessToken: String, communityId: String, topicId: String): GroupTopicList {
+        val id = CommunityValidation.id(communityId)
+        val tid = CommunityValidation.id(topicId)
+        return read("POST", "/$id/topics/$tid/delete?typed=1", null, accessToken, 200) { topicList(it.obj()) }
+    }
+
+    suspend fun ballots(accessToken: String, communityId: String, topicId: String? = null): BallotBoard {
+        val id = CommunityValidation.id(communityId)
+        val query = topicId?.let { "?topic=" + CommunityValidation.id(it) }.orEmpty()
+        return read("GET", "/$id/ballots$query", null, accessToken, 200) { ballotBoard(it.obj()) }
+    }
+
+    suspend fun openHeadmanBallot(accessToken: String, communityId: String, question: String, options: List<String>, days: Int, topicId: String? = null): BallotBoard =
+        draftBallot(accessToken, communityId, "headman", question, options, days, topicId)
+
+    suspend fun proposeBallot(accessToken: String, communityId: String, question: String, options: List<String>, days: Int, topicId: String? = null): BallotBoard =
+        draftBallot(accessToken, communityId, "collective", question, options, days, topicId)
+
+    private suspend fun draftBallot(accessToken: String, communityId: String, route: String, question: String, options: List<String>, days: Int, topicId: String?): BallotBoard {
+        val id = CommunityValidation.id(communityId)
+        if (options.size !in 2..6 || days !in 1..14) throw CommunityClientException(CommunityClientFailure.InvalidRequest)
+        val body = buildString {
+            append("{\"question\":").append(q(CommunityValidation.question(question)))
+            append(",\"options\":[")
+            CommunityValidation.options(options).forEachIndexed { index, option ->
+                if (index > 0) append(',')
+                append(q(option))
+            }
+            append("],\"days\":").append(days)
+            if (topicId != null) append(",\"topicId\":").append(q(CommunityValidation.id(topicId)))
+            append('}')
+        }
+        return read("POST", "/$id/ballots/$route", body, accessToken, 201) { ballotBoard(it.obj()) }
+    }
+
+    suspend fun supportBallot(accessToken: String, communityId: String, ballotId: String): BallotBoard =
+        ballotAction(accessToken, communityId, ballotId, "support", null)
+
+    suspend fun voteBallot(accessToken: String, communityId: String, ballotId: String, optionId: String): BallotBoard =
+        ballotAction(accessToken, communityId, ballotId, "votes", """{"optionId":${q(CommunityValidation.id(optionId))}}""")
+
+    suspend fun closeBallot(accessToken: String, communityId: String, ballotId: String): BallotBoard =
+        ballotAction(accessToken, communityId, ballotId, "close", null)
+
+    private suspend fun ballotAction(accessToken: String, communityId: String, ballotId: String, route: String, body: String?): BallotBoard {
+        val id = CommunityValidation.id(communityId)
+        val bid = CommunityValidation.id(ballotId)
+        return read("POST", "/$id/ballots/$bid/$route", body, accessToken, 200) { ballotBoard(it.obj()) }
+    }
+
     suspend fun openDirect(accessToken: String, communityId: String, userId: String): Conversation {
         val community = CommunityValidation.id(communityId)
         val peer = CommunityValidation.id(userId)
         return read("POST", "/direct", """{"communityId":${q(community)},"userId":${q(peer)}}""", accessToken, 201) { conversation(it.obj()) }
     }
 
-    suspend fun messages(accessToken: String, conversationId: String, before: String? = null, after: String? = null): ChatPage {
+    suspend fun messages(accessToken: String, conversationId: String, before: String? = null, after: String? = null, topic: String? = null): ChatPage {
         val id = CommunityValidation.id(conversationId)
-        val query = when {
-            before != null -> "?before=" + CommunityValidation.id(before)
-            after != null -> "?after=" + CommunityValidation.id(after)
-            else -> ""
+        val parts = buildList {
+            if (topic != null) add("topic=" + if (topic == "general") topic else CommunityValidation.id(topic))
+            if (before != null) add("before=" + CommunityValidation.id(before))
+            if (after != null) add("after=" + CommunityValidation.id(after))
         }
+        if (before != null && after != null) throw CommunityClientException(CommunityClientFailure.InvalidRequest)
+        val query = if (parts.isEmpty()) "" else parts.joinToString("&", "?")
         return read("GET", "/conversations/$id/messages$query", null, accessToken, 200) { page(it.obj()) }
     }
 
-    suspend fun sendMedia(accessToken: String, conversationId: String, kind: String, name: String, bytes: ByteArray, replyTo: String? = null, durationMs: Int? = null): ChatMessage {
+    suspend fun sendMedia(accessToken: String, conversationId: String, kind: String, name: String, bytes: ByteArray, replyTo: String? = null, durationMs: Int? = null, topicId: String? = null): ChatMessage {
         if (kind !in setOf("image", "video", "file", "voice", "circle")) throw CommunityClientException(CommunityClientFailure.InvalidRequest)
         val maxBytes = if (kind == "voice") 2 * 1024 * 1024 else 8 * 1024 * 1024
         if (bytes.isEmpty() || bytes.size > maxBytes) throw CommunityClientException(CommunityClientFailure.PayloadTooLarge)
@@ -244,6 +346,7 @@ class CommunityHttpClient(
         )
         if (replyTo != null) headers["X-Zapara-Reply"] = CommunityValidation.id(replyTo)
         if (durationMs != null) headers["X-Zapara-Duration-Ms"] = durationMs.toString()
+        if (topicId != null) headers["X-Zapara-Topic"] = CommunityValidation.id(topicId)
         val reply = exchange("POST", "/conversations/$id/media", headers, bytes, 201)
         return payload { message(reply.obj()) }
     }
@@ -284,6 +387,14 @@ class CommunityHttpClient(
         val text = CommunityValidation.message(body)
         val reply = if (replyTo == null) "" else ""","replyTo":${q(CommunityValidation.id(replyTo))}"""
         return read("POST", "/conversations/$id/messages", """{"body":${q(text)}$reply}""", accessToken, 201) { message(it.obj()) }
+    }
+
+    suspend fun sendTopicMessage(accessToken: String, conversationId: String, body: String, topicId: String?, replyTo: String? = null): ChatMessage {
+        val id = CommunityValidation.id(conversationId)
+        val text = CommunityValidation.message(body)
+        val topic = topicId?.let { q(CommunityValidation.id(it)) } ?: "null"
+        val reply = replyTo?.let { ""","replyTo":${q(CommunityValidation.id(it))}""" }.orEmpty()
+        return read("POST", "/conversations/$id/topic-messages", """{"body":${q(text)},"topicId":$topic$reply}""", accessToken, 201) { message(it.obj()) }
     }
 
     suspend fun editMessage(accessToken: String, conversationId: String, messageId: String, body: String): ChatMessage {
@@ -437,6 +548,121 @@ class CommunityHttpClient(
             classmates,
             directs
         )
+    }
+
+    private fun topicList(obj: JsonValue.Obj): GroupTopicList {
+        obj.requireKeys("topics", "canManageChannels")
+        val rows = obj.array("topics", 25).items.map { topic(it.obj()) }
+        if (rows.count { it.topicId == null } != 1 || rows.first().topicId != null || rows.first().kind != "chat") throw JsonFail()
+        if (rows.mapNotNull { it.topicId }.distinct().size != rows.size - 1) throw JsonFail()
+        return GroupTopicList(rows, obj.bool("canManageChannels"))
+    }
+
+    private fun groupDesk(obj: JsonValue.Obj): GroupDesk {
+        obj.requireKeys("headman", "roles", "grants", "applicants", "powers", "mine")
+        val roles = obj.array("roles", 100).items.map { item ->
+            val row = item.obj()
+            row.requireKeys("roleId", "name")
+            GroupRole(CommunityValidation.id(row.text("roleId", 36)), row.text("name", 32, nonempty = true))
+        }
+        val grants = obj.array("grants", 500).items.map { item ->
+            val row = item.obj()
+            row.requireKeys("roleId", "userId")
+            GroupGrant(CommunityValidation.id(row.text("roleId", 36)), CommunityValidation.id(row.text("userId", 36)))
+        }
+        obj.array("applicants", 500).items.forEach { item ->
+            val row = item.obj()
+            row.requireKeys("requestId", "userId", "username", "displayName")
+            CommunityValidation.id(row.text("requestId", 36))
+            CommunityValidation.id(row.text("userId", 36))
+        }
+        val powers = obj.array("powers", 500).items.map { item ->
+            val row = item.obj()
+            row.requireKeys("roleId", "power")
+            GroupPower(CommunityValidation.id(row.text("roleId", 36)), row.text("power", 32, nonempty = true))
+        }
+        val mine = obj.array("mine", 100).items.map { item ->
+            val value = (item as? JsonValue.Str)?.value ?: throw JsonFail()
+            if (value.isBlank() || value.length > 32) throw JsonFail()
+            value
+        }
+        return GroupDesk(obj.bool("headman"), roles, grants, powers, mine)
+    }
+
+    private fun topic(obj: JsonValue.Obj): GroupTopic {
+        val metadata = listOf("description", "accent", "pinned", "writePolicy", "canPost")
+        val modern = metadata.all { it in obj.fields }
+        if (metadata.any { it in obj.fields } && !modern) throw JsonFail()
+        if (modern) obj.requireKeys("topicId", "title", "icon", "kind", "lastBody", "lastAuthor", "lastAt", "unread", "canDelete", "activeBallots",
+            "description", "accent", "pinned", "writePolicy", "canPost")
+        else obj.requireKeys("topicId", "title", "icon", "kind", "lastBody", "lastAuthor", "lastAt", "unread", "canDelete", "activeBallots")
+        val id = obj.nullableText("topicId", 36)?.let { CommunityValidation.id(it) }
+        val kind = obj.text("kind", 16)
+        if (kind != "chat" && kind != "ballots") throw JsonFail()
+        val unread = obj.int("unread")
+        val active = obj.int("activeBallots")
+        if (unread < 0 || active < 0) throw JsonFail()
+        val accent = if (modern) obj.text("accent", 16) else "default"
+        val policy = if (modern) obj.text("writePolicy", 16) else "all"
+        if (accent !in setOf("default", "blue", "green", "purple", "orange", "red") || policy !in setOf("all", "managers")) throw JsonFail()
+        val lastAt = obj.nullableText("lastAt", 40)?.let { CommunityUtc.parse(it) }
+        return GroupTopic(
+            id, obj.text("title", 80, nonempty = true), obj.text("icon", 16), kind,
+            obj.nullableText("lastBody", 2000), obj.nullableText("lastAuthor", 80), lastAt,
+            unread, obj.bool("canDelete"), active,
+            if (modern) obj.text("description", 240) else "", accent, if (modern) obj.bool("pinned") else false,
+            policy, if (modern) obj.bool("canPost") else true
+        )
+    }
+
+    private fun topicBody(title: String, icon: String, kind: String, description: String?, accent: String?, pinned: Boolean?, writePolicy: String?): String {
+        if (kind !in setOf("chat", "ballots")) throw CommunityClientException(CommunityClientFailure.InvalidRequest)
+        val cleanTitle = CommunityValidation.text(title.trim(), 40)
+        val cleanIcon = CommunityValidation.text(icon.trim(), 8, allowEmpty = true)
+        if (accent != null && accent !in setOf("default", "blue", "green", "purple", "orange", "red")) throw CommunityClientException(CommunityClientFailure.InvalidRequest)
+        if (writePolicy != null && writePolicy !in setOf("all", "managers")) throw CommunityClientException(CommunityClientFailure.InvalidRequest)
+        return buildString {
+            append("{\"title\":").append(q(cleanTitle)).append(",\"icon\":").append(q(cleanIcon))
+            append(",\"kind\":").append(q(kind))
+            if (description != null) append(",\"description\":").append(q(CommunityValidation.text(description, 240, allowEmpty = true)))
+            if (accent != null) append(",\"accent\":").append(q(accent))
+            if (pinned != null) append(",\"pinned\":").append(pinned)
+            if (writePolicy != null) append(",\"writePolicy\":").append(q(writePolicy))
+            append('}')
+        }
+    }
+
+    private fun ballotBoard(obj: JsonValue.Obj): BallotBoard {
+        obj.requireKeys("headman", "canOpen", "canClose", "members", "supportersNeeded", "ballots")
+        val members = obj.int("members")
+        val needed = obj.int("supportersNeeded")
+        if (members < 0 || needed < 1) throw JsonFail()
+        return BallotBoard(obj.bool("headman"), obj.bool("canOpen"), obj.bool("canClose"), members, needed,
+            obj.array("ballots", 500).items.map { ballot(it.obj()) })
+    }
+
+    private fun ballot(obj: JsonValue.Obj): Ballot {
+        if ("topicId" in obj.fields) obj.requireKeys("ballotId", "question", "origin", "status", "deadlineAt", "supporters", "supportersNeeded", "supported", "options", "effect", "outcome", "topicId")
+        else obj.requireKeys("ballotId", "question", "origin", "status", "deadlineAt", "supporters", "supportersNeeded", "supported", "options", "effect", "outcome")
+        val status = obj.text("status", 16)
+        if (status !in setOf("collecting", "open", "closed")) throw JsonFail()
+        val supporters = obj.int("supporters")
+        val needed = obj.int("supportersNeeded")
+        if (supporters < 0 || needed < 1) throw JsonFail()
+        return Ballot(
+            CommunityValidation.id(obj.text("ballotId", 36)), CommunityValidation.question(obj.text("question", 800)),
+            obj.text("origin", 32), status, CommunityUtc.parse(obj.text("deadlineAt", 40)),
+            supporters, needed, obj.bool("supported"), obj.array("options", 6).items.map { ballotOption(it.obj()) },
+            obj.text("effect", 80), obj.text("outcome", 80),
+            if ("topicId" in obj.fields) obj.nullableText("topicId", 36)?.let { CommunityValidation.id(it) } else null
+        )
+    }
+
+    private fun ballotOption(obj: JsonValue.Obj): BallotOption {
+        obj.requireKeys("optionId", "label", "votes", "chosen")
+        val votes = obj.int("votes")
+        if (votes < 0) throw JsonFail()
+        return BallotOption(CommunityValidation.id(obj.text("optionId", 36)), CommunityValidation.option(obj.text("label", 160)), votes, obj.bool("chosen"))
     }
 
     private fun classmate(obj: JsonValue.Obj): Classmate {
