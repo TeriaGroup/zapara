@@ -12,50 +12,41 @@
     <Style Selector="Grid.row > TextBlock"><Setter Property="VerticalAlignment" Value="Center" /></Style>
     <!-- Tabular figures in the notification time boxes, same as the .tnum TextBlocks elsewhere. -->
     <Style Selector="TextBox.tnum"><Setter Property="FontFeatures" Value="tnum" /></Style>
+    <Style Selector="Expander.settings-row">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.Line}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
   </UserControl.Styles>
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Margin="32,26" Spacing="14" MaxWidth="720" HorizontalAlignment="Left">
+    <StackPanel Margin="32,26" Spacing="6" MaxWidth="720" HorizontalAlignment="Left">
       <TextBlock Classes="display" Text="{Binding Title}" />
       <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,0,0,2" />
-      <account:AccountPanelView DataContext="{Binding AccountPanel}" />
-      <Border Classes="card">
-        <StackPanel Spacing="8">
-          <TextBlock Classes="micro" Text="Поддержка" />
-          <TextBlock TextWrapping="Wrap" Text="Сообщить о баге или ошибке. Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ." />
-          <TextBox Text="{Binding ReportSubject}" PlaceholderText="Тема" MinHeight="48" AutomationProperties.AutomationId="Settings.ReportSubject" />
-          <TextBox Text="{Binding ReportBody}" PlaceholderText="Что случилось" AcceptsReturn="True" MinHeight="96" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings.ReportBody" />
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Content="Фото" MinHeight="48" MinWidth="48" Command="{Binding PickReportPhotoCommand}" AutomationProperties.AutomationId="Settings.ReportPhoto" />
-            <Button Content="Лог" MinHeight="48" MinWidth="48" Command="{Binding PickReportLogCommand}" AutomationProperties.AutomationId="Settings.ReportLog" />
+      <Expander Classes="settings-row" AutomationProperties.AutomationId="Settings.AccountSection">
+        <Expander.Header>
+          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
+            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center">
+              <c:Icon Data="{StaticResource Icon.Users}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Аккаунт" FontWeight="Medium" />
+              <TextBlock Classes="muted caption" Text="{Binding AccountPanel.Status}" TextTrimming="CharacterEllipsis" MaxWidth="550" />
+            </StackPanel>
           </StackPanel>
-          <TextBlock TextWrapping="Wrap" Text="До трёх фотографий JPEG, PNG или WebP, до 4 МиБ. До трёх логов .txt или .log, до 512 КиБ." />
-          <TextBlock Text="{Binding ReportFilesText}" TextWrapping="Wrap" />
-          <Button Content="Сообщить о баге" HorizontalAlignment="Left" MinHeight="48" Command="{Binding SendReportCommand}" AutomationProperties.AutomationId="Settings.Report" />
-          <TextBlock Text="{Binding ReportNote}" TextWrapping="Wrap" />
-          <ItemsControl ItemsSource="{Binding ReportMessages}">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="domain:SupportNote">
-                <TextBlock Text="{Binding Body}" TextWrapping="Wrap" Margin="0,4" />
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </StackPanel>
-      </Border>
+        </Expander.Header>
+        <account:AccountPanelView DataContext="{Binding AccountPanel}" />
+      </Expander>
+      <TextBlock Classes="subject" Text="Основное" Margin="0,8,0,0" />
 
-      <!-- Appearance -->
-      <Border Classes="card">
-        <StackPanel Spacing="10">
-          <TextBlock Classes="micro" Text="{loc:TU setAppearance}" />
-          <Grid Classes="row" ColumnDefinitions="200,*">
-            <TextBlock Text="{loc:T setTheme}" />
-            <c:SegmentedControl Name="SettingsTheme" Grid.Column="1" Items="{Binding ThemeItems}" SelectedIndex="{Binding ThemeIndex}" />
-          </Grid>
-          <c:Switch Content="{loc:T setCompactSidebar}" IsChecked="{Binding CompactSidebar}" AutomationProperties.AutomationId="Settings.CompactSidebar" />
-          <c:Switch Content="{loc:T setAnimations}" IsChecked="{Binding Animations}" AutomationProperties.AutomationId="Settings.Animations" />
-        </StackPanel>
-      </Border>
 
       <!-- Schedule -->
+      <Expander Classes="settings-row" AutomationProperties.AutomationId="Settings.StudySection">
+        <Expander.Header>
+          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
+            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Calendar}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+            <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Учёба" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding GroupName}" /></StackPanel>
+          </StackPanel>
+        </Expander.Header>
       <Border Classes="card">
         <StackPanel Spacing="10">
           <TextBlock Classes="micro" Text="{loc:TU setSchedule}" />
@@ -86,8 +77,37 @@
           </StackPanel>
         </StackPanel>
       </Border>
+      </Expander>
+
+      <!-- Appearance -->
+      <Expander Classes="settings-row" AutomationProperties.AutomationId="Settings.AppearanceSection">
+        <Expander.Header>
+          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
+            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Sun}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+            <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Оформление" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding ThemeSummary}" /></StackPanel>
+          </StackPanel>
+        </Expander.Header>
+      <Border Classes="card">
+        <StackPanel Spacing="10">
+          <TextBlock Classes="micro" Text="{loc:TU setAppearance}" />
+          <Grid Classes="row" ColumnDefinitions="200,*">
+            <TextBlock Text="{loc:T setTheme}" />
+            <c:SegmentedControl Name="SettingsTheme" Grid.Column="1" Items="{Binding ThemeItems}" SelectedIndex="{Binding ThemeIndex}" />
+          </Grid>
+          <c:Switch Content="{loc:T setCompactSidebar}" IsChecked="{Binding CompactSidebar}" AutomationProperties.AutomationId="Settings.CompactSidebar" />
+          <c:Switch Content="{loc:T setAnimations}" IsChecked="{Binding Animations}" AutomationProperties.AutomationId="Settings.Animations" />
+        </StackPanel>
+      </Border>
+      </Expander>
 
       <!-- Notifications -->
+      <Expander Classes="settings-row" AutomationProperties.AutomationId="Settings.NotificationsSection">
+        <Expander.Header>
+          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
+            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Bell}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+            <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Уведомления" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding NotificationSummary}" /></StackPanel>
+          </StackPanel>
+        </Expander.Header>
       <Border Classes="card">
         <StackPanel Spacing="10">
           <TextBlock Classes="micro" Text="{loc:TU setNotifications}" />
@@ -112,8 +132,17 @@
           </Button>
         </StackPanel>
       </Border>
+      </Expander>
 
+      <TextBlock Classes="subject" Text="Сервис" Margin="0,8,0,0" />
       <!-- Sync -->
+      <Expander Classes="settings-row" IsVisible="{Binding LegacyTransferAvailable}" AutomationProperties.AutomationId="Settings.SyncSection">
+        <Expander.Header>
+          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
+            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Refresh}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+            <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Перенос данных" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="Экспорт и импорт" /></StackPanel>
+          </StackPanel>
+        </Expander.Header>
       <Border Classes="card" IsVisible="{Binding LegacyTransferAvailable}">
         <StackPanel Spacing="10">
           <TextBlock Classes="micro" Text="{loc:TU setSync}" />
@@ -144,8 +173,16 @@
                      AutomationProperties.AutomationId="Settings.LanAddress" />
         </StackPanel>
       </Border>
+      </Expander>
 
       <!-- Updates -->
+      <Expander Classes="settings-row" AutomationProperties.AutomationId="Settings.UpdatesSection">
+        <Expander.Header>
+          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
+            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Refresh}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+            <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Обновления" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding Updates.StatusText}" TextTrimming="CharacterEllipsis" MaxWidth="550" /></StackPanel>
+          </StackPanel>
+        </Expander.Header>
       <Border Classes="card">
         <StackPanel Spacing="10" DataContext="{Binding Updates}" x:DataType="st:UpdateCheckViewModel">
           <TextBlock Classes="micro" Text="{loc:TU setUpdates}" />
@@ -163,8 +200,54 @@
           </StackPanel>
         </StackPanel>
       </Border>
+      </Expander>
+
+
+      <Expander Classes="settings-row" AutomationProperties.AutomationId="Settings.SupportSection">
+        <Expander.Header>
+          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
+            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center">
+              <c:Icon Data="{StaticResource Icon.File}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Помощь" FontWeight="Medium" />
+              <TextBlock Classes="muted caption" Text="Поддержка и документы" />
+            </StackPanel>
+          </StackPanel>
+        </Expander.Header>
+      <Border Classes="card">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="micro" Text="Поддержка" />
+          <TextBlock TextWrapping="Wrap" Text="Сообщить о баге или ошибке. Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ." />
+          <TextBox Text="{Binding ReportSubject}" PlaceholderText="Тема" MinHeight="48" AutomationProperties.AutomationId="Settings.ReportSubject" />
+          <TextBox Text="{Binding ReportBody}" PlaceholderText="Что случилось" AcceptsReturn="True" MinHeight="96" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings.ReportBody" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Фото" MinHeight="48" MinWidth="48" Command="{Binding PickReportPhotoCommand}" AutomationProperties.AutomationId="Settings.ReportPhoto" />
+            <Button Content="Лог" MinHeight="48" MinWidth="48" Command="{Binding PickReportLogCommand}" AutomationProperties.AutomationId="Settings.ReportLog" />
+          </StackPanel>
+          <TextBlock TextWrapping="Wrap" Text="До трёх фотографий JPEG, PNG или WebP, до 4 МиБ. До трёх логов .txt или .log, до 512 КиБ." />
+          <TextBlock Text="{Binding ReportFilesText}" TextWrapping="Wrap" />
+          <Button Content="Сообщить о баге" HorizontalAlignment="Left" MinHeight="48" Command="{Binding SendReportCommand}" AutomationProperties.AutomationId="Settings.Report" />
+          <TextBlock Text="{Binding ReportNote}" TextWrapping="Wrap" />
+          <ItemsControl ItemsSource="{Binding ReportMessages}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="domain:SupportNote">
+                <TextBlock Text="{Binding Body}" TextWrapping="Wrap" Margin="0,4" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+      </Expander>
 
       <!-- About -->
+      <Expander Classes="settings-row" AutomationProperties.AutomationId="Settings.AboutSection">
+        <Expander.Header>
+          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
+            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.File}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+            <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="О приложении" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding VersionText}" /></StackPanel>
+          </StackPanel>
+        </Expander.Header>
       <Border Classes="card">
         <StackPanel Spacing="8">
           <TextBlock Classes="micro" Text="{loc:TU setAbout}" />
@@ -182,6 +265,7 @@
           </Button>
         </StackPanel>
       </Border>
+      </Expander>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

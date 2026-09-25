@@ -180,6 +180,15 @@
     <string name="friends_preview">%1$s %2$s · %3$s · %4$s</string>
     <string name="friends_preview_none">В ближайшие две недели пересечений нет</string>
     <string name="settings_group">Группа</string>
+    <string name="settings_overview_all">Все настройки</string>
+    <string name="settings_overview_core">Основное</string>
+    <string name="settings_overview_service">Сервис</string>
+    <string name="settings_overview_study">Учёба</string>
+    <string name="settings_overview_help">Помощь</string>
+    <string name="settings_overview_help_summary">Поддержка и документы</string>
+    <string name="settings_overview_guest">Гостевой режим</string>
+    <string name="settings_overview_notify_on">Включены · %1$s и %2$s</string>
+    <string name="settings_overview_notify_off">Выключены</string>
     <string name="settings_change">Изменить</string>
     <string name="settings_refresh">Обновить расписание</string>
     <string name="settings_notify">Уведомления</string>
@@ -198,7 +207,7 @@
     <string name="settings_rustore">Стабильные обновления приходят через RuStore. Эту сборку нельзя обновлять с GitHub — так устроены правила магазина.</string>
     <string name="settings_rustore_early">Ранние версии и последние сборки можно найти на нашем GitHub, чтобы всегда быть в курсе.</string>
     <string name="settings_rustore_github">Открыть GitHub</string>
-    <string name="settings_about_title">Расписание БГТУ «Военмех»</string>
+    <string name="settings_about_title">Расписание военмех</string>
     <string name="settings_report">Сообщить о баге</string>
     <string name="settings_report_hint">Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ.</string>
     <string name="settings_version">Версия %1$s</string>

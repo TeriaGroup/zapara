@@ -24,7 +24,7 @@ import { legalDocument, type LegalId } from "./legal";
 import { useApp } from "./store";
 import { homeworkCard, lessonFrom, placeCard, scheduleCard } from "./cards";
 import { BallotBoardView } from "./ballots";
-import { GroupTopics } from "./topics";
+import { GroupTopics, TopicMark } from "./topics";
 import { GroupAdmin, titlesOf } from "./group-admin";
 import { ShareMenu } from "./share";
 import { Icon } from "./icons";
@@ -1025,7 +1025,7 @@ export function GroupPage() {
           description: "", accent: "default", pinned: false, writePolicy: "all", canPost: true }
         : "list");
       setChat(requested ?? loaded.groupChat);
-      setFocusChat(!!requested);
+      setFocusChat(true);
     }).catch(() => { if (!stop) { drop(); setError("Не удалось загрузить группу"); } });
     if (app.session?.authenticated && selectedCommunityId) {
       openHome(selectedCommunityId);
@@ -1348,7 +1348,10 @@ export function GroupPage() {
       {home && !board && !votesOff && <p className="muted" role="status">Загрузка голосований…</p>}
       {home && votesOff && <div className="banner row" role="status"><span>{board ? "Голосования не обновились. Показана предыдущая доска." : "Голосования сейчас не открылись. Чат группы на месте."}</span>
         <button className="btn" type="button" onClick={() => setVotesRetry(value => value + 1)}>Повторить</button></div>}
-      {home && board && <BallotBoardView communityId={home.communityId} board={board} classmates={home.classmates} roles={desk?.roles ?? []} onChange={setBoard} onError={setError} />}
+      {home && board && <details className="group-board-panel">
+        <summary>Голосования группы · {board.ballots.length}</summary>
+        <BallotBoardView communityId={home.communityId} board={board} classmates={home.classmates} roles={desk?.roles ?? []} onChange={setBoard} onError={setError} />
+      </details>}
       {home && (
         <div className={"grid-2 split" + (focusChat ? " focus" : "")}>
           <div className="people split-list">
@@ -1368,9 +1371,12 @@ export function GroupPage() {
                     clearLog();
                     setThread(topic);
                   }}>
-                  <span className="group-quick-topic-top"><b>{topic.icon} {topic.title}</b><span className="muted">{groupTopicWhen(topic.lastAt)}</span></span>
-                  <span className="group-quick-topic-bottom"><span className="muted">{topicPreview(topic)}</span>
-                    {topic.unread > 0 && <span className="chip" aria-label={unreadBadgeDescription(topic.unread)}>{unreadBadgeText(topic.unread)}</span>}</span>
+                  <TopicMark topic={topic} />
+                  <span className="group-quick-topic-main">
+                    <span className="group-quick-topic-top"><b>{topic.title}</b><span className="muted">{groupTopicWhen(topic.lastAt)}</span></span>
+                    <span className="group-quick-topic-bottom"><span className="muted">{topicPreview(topic)}</span>
+                      {topic.unread > 0 && <span className="chip" aria-label={unreadBadgeDescription(topic.unread)}>{unreadBadgeText(topic.unread)}</span>}</span>
+                  </span>
                 </button>;
               })}
             </div>}
@@ -1606,6 +1612,11 @@ export function LegalPage({ id }: { id: LegalId }) {
 
 export function SettingsPage() {
   const app = useApp();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const requestedSection = new URLSearchParams(location.search).get("section");
+  const section = requestedSection === "account" || requestedSection === "study" || requestedSection === "appearance" || requestedSection === "help"
+    ? requestedSection : null;
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [display, setDisplay] = useState("");
@@ -1616,6 +1627,12 @@ export function SettingsPage() {
   const yandex = app.session?.capabilities.yandex === true;
   const vk = app.session?.capabilities.vk === true;
   const chosenGroupName = app.catalog?.groups.find(group => group.id === app.groupId)?.name;
+  const sections = [
+    { id: "account" as const, icon: "users" as const, title: "Аккаунт", summary: app.session?.authenticated ? (app.session.user?.displayName || app.session.user?.username || "Вход выполнен") : "Гостевой режим" },
+    { id: "study" as const, icon: "calendar" as const, title: "Учёба", summary: chosenGroupName || "Группа не выбрана" },
+    { id: "appearance" as const, icon: "sun" as const, title: "Оформление", summary: app.theme === "dark" ? "Тёмная тема" : "Светлая тема" },
+    { id: "help" as const, icon: "file" as const, title: "Помощь", summary: "Поддержка и документы" },
+  ];
   async function external(provider: "vk" | "yandex") {
     if (busy) return;
     if (mode === "register" && !accepted) {
@@ -1649,13 +1666,22 @@ export function SettingsPage() {
   }
   return (
     <section className="page">
-      <Head title="Настройки" text="Неофициальное приложение для студентов БГТУ «Военмех»." />
-      <div className="section-overview">
-        <strong>{app.groupId ? chosenGroupName ? `Группа: ${chosenGroupName}` : "Группа выбрана" : "Группа не выбрана"}</strong>
-        <span>Оформление: {app.theme === "dark" ? "тёмное" : "светлое"}</span>
-      </div>
-      <div className="stack">
-        <article className="card">
+      <Head title={section ? sections.find(item => item.id === section)?.title || "Настройки" : "Настройки"}
+        text={section ? undefined : "Неофициальное приложение для студентов БГТУ «Военмех»."}>
+        {section && <button className="btn" type="button" onClick={() => navigate("/settings")}>Все настройки</button>}
+      </Head>
+      {!section ? <div className="settings-overview" aria-label="Разделы настроек">
+        {sections.map((item, index) => <Fragment key={item.id}>
+          {(index === 1 || index === 3) && <h2 className="settings-overview-title">{index === 1 ? "Основное" : "Сервис"}</h2>}
+          <button className={index === 0 ? "settings-overview-row account" : "settings-overview-row"}
+            type="button" onClick={() => navigate(`/settings?section=${item.id}`)}>
+            <span className="settings-overview-icon"><Icon name={item.icon} size={20} /></span>
+            <span className="settings-overview-copy"><strong>{item.title}</strong><span>{item.summary}</span></span>
+            <Icon name="right" size={20} />
+          </button>
+        </Fragment>)}
+      </div> : <div className="stack settings-detail">
+        {section === "study" && <article className="card">
           <h2>Группа</h2>
           <label className="field">Моя группа
             <select value={app.groupId} onChange={event => app.setGroupId(event.target.value)} aria-label="Моя группа">
@@ -1668,15 +1694,15 @@ export function SettingsPage() {
             <span>Инвертировать чётность</span>
             <button className={"switch" + (app.invert ? " on" : "")} type="button" aria-label="Инвертировать чётность" onClick={() => app.setInvert(!app.invert)}><i /></button>
           </div>
-        </article>
-        <article className="card">
+        </article>}
+        {section === "appearance" && <article className="card">
           <h2>Оформление</h2>
           <div className="seg">
             <button type="button" className={app.theme === "light" ? "active" : ""} onClick={() => app.setTheme("light")}><Icon name="sun" size={16} />Светлая</button>
             <button type="button" className={app.theme === "dark" ? "active" : ""} onClick={() => app.setTheme("dark")}><Icon name="moon" size={16} />Тёмная</button>
           </div>
-        </article>
-        <article className="card">
+        </article>}
+        {section === "account" && <article className="card">
           <h2>Аккаунт</h2>
           {app.session?.authenticated ? (
             <div className="stack">
@@ -1717,9 +1743,12 @@ export function SettingsPage() {
               <button className="btn primary" type="submit" disabled={mode === "register" && !accepted}>{mode === "login" ? "Войти" : "Создать аккаунт"}</button>
             </form>
           )}
-        </article>
-        <SupportCard />
-      </div>
+        </article>}
+        {section === "help" && <>
+          <SupportCard />
+          <article className="card"><h2>Документы</h2><LegalLinks /></article>
+        </>}
+      </div>}
     </section>
   );
 }

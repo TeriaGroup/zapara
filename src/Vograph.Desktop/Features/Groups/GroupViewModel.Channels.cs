@@ -526,6 +526,10 @@ public sealed partial class GroupViewModel
 
 public sealed class GroupChannelRow(GroupTopicResponse initial, IRelayCommand open, bool globalBallots = false) : ObservableObject
 {
+    private static readonly Geometry ChatGlyph = Geometry.Parse("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z");
+    private static readonly Geometry PinGlyph = Geometry.Parse("M16 9V4l1-1V2H7v1l1 1v5l-3 3v1h14v-1z M12 17v5");
+    private static readonly Geometry BallotGlyph = Geometry.Parse("M8 6h13 M8 12h13 M8 18h13 M3 6l1 1 2-2 M3 12l1 1 2-2 M3 18l1 1 2-2");
+    private static readonly Geometry HomeworkGlyph = Geometry.Parse("M4 4h12l4 4v12H4z M8 12h8 M8 16h5");
     private GroupTopicResponse row = initial;
     private bool isSelected;
     public bool IsSelected { get => isSelected; set => SetProperty(ref isSelected, value); }
@@ -535,10 +539,19 @@ public sealed class GroupChannelRow(GroupTopicResponse initial, IRelayCommand op
     public string Kind => row.Kind;
     public string Title => row.Title;
     public string Icon => row.Icon;
+    public Geometry? SystemIcon => row.Icon switch
+    {
+        "💬" => ChatGlyph,
+        "📌" => PinGlyph,
+        "🗳️" or "🗳" => BallotGlyph,
+        "📚" => HomeworkGlyph,
+        _ => null
+    };
+    public bool HasSystemIcon => SystemIcon is not null;
     public string Description => row.Description;
     public string Accent => row.Accent;
+    public bool HasCustomAccent => row.Accent != "default";
     public bool Pinned => row.Pinned;
-    public string PinMark => row.Pinned ? "📌" : "";
     public string WritePolicy => row.WritePolicy;
     public bool CanPost => row.CanPost;
     public IBrush AccentBrush => new SolidColorBrush(Color.Parse(row.Accent switch
@@ -579,10 +592,12 @@ public sealed class GroupChannelRow(GroupTopicResponse initial, IRelayCommand op
         OnPropertyChanged(nameof(Kind));
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(Icon));
+        OnPropertyChanged(nameof(SystemIcon));
+        OnPropertyChanged(nameof(HasSystemIcon));
         OnPropertyChanged(nameof(Description));
         OnPropertyChanged(nameof(Accent));
+        OnPropertyChanged(nameof(HasCustomAccent));
         OnPropertyChanged(nameof(Pinned));
-        OnPropertyChanged(nameof(PinMark));
         OnPropertyChanged(nameof(WritePolicy));
         OnPropertyChanged(nameof(CanPost));
         OnPropertyChanged(nameof(AccentBrush));

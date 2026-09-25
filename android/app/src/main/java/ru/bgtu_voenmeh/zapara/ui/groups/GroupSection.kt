@@ -41,6 +41,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.AlertDialog
@@ -202,9 +204,14 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                 RoleChip(state.myRole)
             }
             Text(stringResource(R.string.group_disclaimer), style = Zapara.typography.caption, color = c.text2)
-            ZSegmented(listOf(stringResource(R.string.channel_list), stringResource(R.string.group_people)),
+            ZSegmented(listOf(stringResource(R.string.channel_list), stringResource(R.string.group_people),
+                stringResource(R.string.channel_general)),
                 selected = if (state.showPeople) 1 else 0,
-                onSelect = { onEvent(if (it == 0) GroupEvent.Chat else GroupEvent.People) },
+                onSelect = { onEvent(when (it) {
+                    1 -> GroupEvent.People
+                    2 -> GroupEvent.OpenChannel(null)
+                    else -> GroupEvent.Chat
+                }) },
                 tag = "Group.Panes", modifier = Modifier.fillMaxWidth())
         } else {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -348,9 +355,21 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     var creating by remember(state.title, state.canManageChannels) { mutableStateOf(false) }
     var editing by remember(state.title, state.canManageChannels) { mutableStateOf<GroupTopic?>(null) }
     var deleting by remember(state.title, state.canManageChannels) { mutableStateOf<GroupTopic?>(null) }
+    var searchOpen by rememberSaveable(state.communityId) { mutableStateOf(false) }
     LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-        item { Text(stringResource(R.string.channel_list_title), style = Zapara.typography.section, color = c.text1) }
         item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.channel_list_title), style = Zapara.typography.section,
+                    color = c.text1, modifier = Modifier.weight(1f))
+                IconButton(onClick = {
+                    searchOpen = !searchOpen
+                    if (!searchOpen) onQuery("")
+                }, modifier = Modifier.size(Zapara.space.minTouch).testTag("Group.ChannelSearchToggle")) {
+                    Icon(painterResource(R.drawable.ic_search), stringResource(R.string.channel_search), tint = c.text1)
+                }
+            }
+        }
+        if (searchOpen || query.isNotBlank()) item {
             OutlinedTextField(query, onQuery, label = { Text(stringResource(R.string.channel_search)) },
                 placeholder = { Text(stringResource(R.string.channel_search_hint)) }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("Group.ChannelSearch"))
@@ -367,7 +386,7 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                     onClick = { onUnreadOnly(!unreadOnly) }, tag = "Group.ChannelFilter.Unread")
             }
         }
-        item {
+        if (filtered) item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 Text(stringResource(R.string.channel_results, visible.size, state.channels.size),
@@ -400,60 +419,81 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
             }
         }
         items(visible, key = { it.topicId ?: "general" }) { channel ->
-            ZCard(onClick = { onEvent(GroupEvent.OpenChannel(channel.topicId)) },
-                tag = "Group.Channel.${channel.topicId ?: "general"}", modifier = Modifier.fillMaxWidth()) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                    val accent = when (channel.accent) {
-                        "blue" -> c.info
-                        "green" -> c.ok
-                        "purple" -> c.friends[3]
-                        "orange" -> c.warn
-                        "red" -> c.bad
-                        else -> c.lineStrong
-                    }
-                    Surface(shape = RoundedCornerShape(Zapara.radii.icon), color = c.chip,
-                        border = BorderStroke(2.dp, accent), modifier = Modifier.size(Zapara.space.minTouch)) {
-                        Box(contentAlignment = Alignment.Center) { Text(channel.icon, style = Zapara.typography.section) }
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text(channel.title, style = Zapara.typography.bodyStrong, color = c.text1)
-                        if (channel.description.isNotBlank()) Text(channel.description, style = Zapara.typography.caption,
-                            color = c.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(if (channel.kind == "ballots") stringResource(R.string.channel_ballot_count, channel.activeBallots)
-                            else channel.lastBody ?: stringResource(R.string.channel_no_messages), style = Zapara.typography.caption,
-                            color = c.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (channel.kind == "chat") channel.lastAt?.let { lastAt ->
-                            val whenText = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
-                                .withZone(ZoneId.systemDefault()).format(lastAt)
-                            Text(if (channel.lastAuthor.isNullOrBlank()) stringResource(R.string.group_channel_last_at, whenText)
-                                else stringResource(R.string.group_channel_last_by, channel.lastAuthor, whenText),
+            val accent = when (channel.accent) {
+                "blue" -> c.info
+                "green" -> c.ok
+                "purple" -> c.friends[3]
+                "orange" -> c.warn
+                "red" -> c.bad
+                else -> null
+            }
+            val iconRes = when (channel.icon) {
+                "💬" -> R.drawable.ic_chat
+                "📌" -> R.drawable.ic_pin
+                "🗳️" -> R.drawable.ic_ballot
+                "📚" -> R.drawable.ic_homework
+                else -> null
+            }
+            val preview = if (channel.kind == "ballots") stringResource(R.string.channel_ballot_count, channel.activeBallots)
+                else if (!channel.lastBody.isNullOrBlank()) {
+                    if (channel.lastAuthor.isNullOrBlank()) channel.lastBody!! else "${channel.lastAuthor}: ${channel.lastBody}"
+                } else channel.description.ifBlank { stringResource(R.string.channel_no_messages) }
+            Column {
+                Surface(onClick = { onEvent(GroupEvent.OpenChannel(channel.topicId)) }, color = c.canvas,
+                    modifier = Modifier.fillMaxWidth().testTag("Group.Channel.${channel.topicId ?: "general"}")) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(vertical = Zapara.space.s),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        Surface(shape = RoundedCornerShape(Zapara.radii.control), color = c.chip,
+                            modifier = Modifier.size(36.dp)) {
+                            Box(contentAlignment = Alignment.Center) {
+                                if (iconRes != null) Icon(painterResource(iconRes), null, tint = c.text1,
+                                    modifier = Modifier.size(20.dp))
+                                else Text(channel.icon, style = Zapara.typography.section, color = c.text1)
+                            }
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                                Text(channel.title, style = Zapara.typography.bodyStrong, color = c.text1,
+                                    modifier = Modifier.weight(1f, fill = false))
+                                if (channel.pinned) Icon(painterResource(R.drawable.ic_pin),
+                                    stringResource(R.string.channel_pinned), tint = c.text2, modifier = Modifier.size(14.dp))
+                                if (accent != null) Surface(shape = CircleShape, color = accent,
+                                    modifier = Modifier.size(6.dp)) {}
+                            }
+                            Text(preview, style = Zapara.typography.caption, color = c.text2,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (channel.writePolicy == "managers") Text(stringResource(R.string.channel_writes_managers),
                                 style = Zapara.typography.caption, color = c.text2)
                         }
-                    }
-                    UnreadBadge(channel.unread)
-                    if (state.canManageChannels && managing && channel.topicId != null) {
-                        var menuOpen by remember(channel.topicId) { mutableStateOf(false) }
-                        Box {
-                            IconButton(onClick = { menuOpen = true }, enabled = !state.channelBusy,
-                                modifier = Modifier.testTag("Group.ChannelActions.${channel.topicId}")) {
-                                Icon(painterResource(R.drawable.ic_menu), stringResource(R.string.channel_more), tint = c.text1)
+                        Column(horizontalAlignment = Alignment.End) {
+                            channel.lastAt?.let { lastAt ->
+                                Text(DateTimeFormatter.ofPattern("dd.MM HH:mm").withZone(ZoneId.systemDefault()).format(lastAt),
+                                    style = Zapara.typography.caption, color = c.text2)
                             }
-                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                                DropdownMenuItem(text = { Text(stringResource(R.string.channel_edit)) }, onClick = {
-                                    menuOpen = false; editing = channel
-                                }, modifier = Modifier.testTag("Group.ChannelEdit.${channel.topicId}"))
-                                if (channel.canDelete) DropdownMenuItem(text = { Text(stringResource(R.string.channel_delete)) }, onClick = {
-                                    menuOpen = false; deleting = channel
-                                }, modifier = Modifier.testTag("Group.ChannelDelete.${channel.topicId}"))
+                            UnreadBadge(channel.unread)
+                        }
+                        if (state.canManageChannels && managing && channel.topicId != null) {
+                            var menuOpen by remember(channel.topicId) { mutableStateOf(false) }
+                            Box {
+                                IconButton(onClick = { menuOpen = true }, enabled = !state.channelBusy,
+                                    modifier = Modifier.testTag("Group.ChannelActions.${channel.topicId}")) {
+                                    Icon(painterResource(R.drawable.ic_menu), stringResource(R.string.channel_more), tint = c.text1)
+                                }
+                                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                    DropdownMenuItem(text = { Text(stringResource(R.string.channel_edit)) }, onClick = {
+                                        menuOpen = false; editing = channel
+                                    }, modifier = Modifier.testTag("Group.ChannelEdit.${channel.topicId}"))
+                                    if (channel.canDelete) DropdownMenuItem(text = { Text(stringResource(R.string.channel_delete)) }, onClick = {
+                                        menuOpen = false; deleting = channel
+                                    }, modifier = Modifier.testTag("Group.ChannelDelete.${channel.topicId}"))
+                                }
                             }
                         }
                     }
                 }
-                if (channel.pinned || channel.writePolicy == "managers") FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-                    if (channel.pinned) ZChip(stringResource(R.string.channel_pinned))
-                    if (channel.writePolicy == "managers") ZChip(stringResource(R.string.channel_writes_managers))
-                }
+                HorizontalDivider(color = c.line, thickness = Zapara.space.hairline)
             }
             if (state.canManageChannels && managing && editing?.topicId == channel.topicId) {
                 ChannelEditor(editing, state.channelBusy,
@@ -464,10 +504,26 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
             }
         }
         if (showAllBallots) item {
-            ZCard(onClick = { onEvent(GroupEvent.GlobalBallots(allBallotsTitle)) },
-                tag = "Group.AllBallots", modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.channel_all_ballots), style = Zapara.typography.bodyStrong, color = c.text1)
-                Text(stringResource(R.string.channel_all_ballots_hint), style = Zapara.typography.caption, color = c.text2)
+            Column {
+                Surface(onClick = { onEvent(GroupEvent.GlobalBallots(allBallotsTitle)) }, color = c.canvas,
+                    modifier = Modifier.fillMaxWidth().testTag("Group.AllBallots")) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(vertical = Zapara.space.s),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        Surface(shape = RoundedCornerShape(Zapara.radii.control), color = c.chip,
+                            modifier = Modifier.size(36.dp)) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(painterResource(R.drawable.ic_ballot), null, tint = c.text1,
+                                    modifier = Modifier.size(20.dp))
+                            }
+                        }
+                        Column {
+                            Text(stringResource(R.string.channel_all_ballots), style = Zapara.typography.bodyStrong, color = c.text1)
+                            Text(stringResource(R.string.channel_all_ballots_hint), style = Zapara.typography.caption, color = c.text2)
+                        }
+                    }
+                }
+                HorizontalDivider(color = c.line, thickness = Zapara.space.hairline)
             }
         }
         if (state.myRole == "headman" && managing) item {

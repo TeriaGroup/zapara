@@ -103,19 +103,23 @@
                   <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="g:GroupChannelRow">
-                      <Button Classes="ghost" Classes.on="{Binding IsSelected}" Padding="10,8" CornerRadius="8" HorizontalAlignment="Stretch"
+                      <Button Classes="ghost" Classes.on="{Binding IsSelected}" Padding="8,6" CornerRadius="8" HorizontalAlignment="Stretch"
                               HorizontalContentAlignment="Stretch" Command="{Binding OpenCommand}">
                         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                          <Border Background="{Binding AccentBrush}" CornerRadius="8" Width="32" Height="32" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Icon}" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                          </Border>
+                          <Grid Width="36" Height="36" VerticalAlignment="Center">
+                            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8">
+                              <Grid>
+                                <c:Icon Data="{Binding SystemIcon}" Size="20" Foreground="{DynamicResource Brush.Text1}" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding HasSystemIcon}" />
+                                <TextBlock Text="{Binding Icon}" Foreground="{DynamicResource Brush.Text1}" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding !HasSystemIcon}" />
+                              </Grid>
+                            </Border>
+                            <Border Background="{Binding AccentBrush}" CornerRadius="3" Width="6" Height="6" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,3,3" IsVisible="{Binding HasCustomAccent}" />
+                          </Grid>
                           <StackPanel Grid.Column="1" Spacing="1">
                             <StackPanel Orientation="Horizontal" Spacing="4">
-                              <TextBlock Text="{Binding PinMark}" />
+                              <c:Icon Data="{StaticResource Icon.Pin}" Size="14" Foreground="{DynamicResource Brush.Text2}" IsVisible="{Binding Pinned}" />
                               <TextBlock Text="{Binding Title}" FontWeight="Medium" TextWrapping="Wrap" />
                             </StackPanel>
-                            <TextBlock Classes="muted caption" Text="{Binding Description}" TextTrimming="CharacterEllipsis"
-                                       IsVisible="{Binding Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             <TextBlock Classes="muted caption" Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
                             <TextBlock Classes="muted caption" Text="{Binding ActivityText}" TextTrimming="CharacterEllipsis"
                                        IsVisible="{Binding ActivityText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />

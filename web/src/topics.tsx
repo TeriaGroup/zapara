@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import * as api from "./api";
 import { channelAccentColor, filterTopics, nextUnreadTopic, topicPreview } from "./channels";
 import { unreadBadgeDescription, unreadBadgeText } from "./groupBrowse";
+import { Icon } from "./icons";
 import type { ChannelAccent, ChannelWritePolicy, GroupTopic, GroupTopicPage } from "./types";
 
 const icons = ["📌", "💬", "🗳️", "📅", "📚", "💻", "📎", "❗", "🏀", "🧪", "✏️", "🎵", "🌍"];
@@ -55,6 +56,13 @@ function when(iso: string | null) {
     : date.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
 }
 
+export function TopicMark({ topic }: { topic: GroupTopic }) {
+  return <span className="topic-icon">
+    {topic.icon === "💬" ? <Icon name="chat" /> : topic.icon === "📌" ? <Icon name="pin" /> : topic.icon === "🗳️" ? <Icon name="ballot" /> : topic.icon === "📚" ? <Icon name="homework" /> : topic.icon}
+    {topic.accent !== "default" && <i className="topic-accent-dot" style={{ background: channelAccentColor(topic.accent, topic.title) }} aria-hidden="true" />}
+  </span>;
+}
+
 export function GroupTopics({ communityId, onOpen, onError }: {
   communityId: string;
   onOpen: (topic: GroupTopic, canManageChannels: boolean) => void;
@@ -82,6 +90,7 @@ export function GroupTopics({ communityId, onOpen, onError }: {
   const [loading, setLoading] = useState(true);
   const [reloadEpoch, setReloadEpoch] = useState(0);
   const [search, setSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [kindFilter, setKindFilter] = useState<"all" | "chat" | "ballots">("all");
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
@@ -98,6 +107,7 @@ export function GroupTopics({ communityId, onOpen, onError }: {
       lastCommunity.current = communityId;
       setPage({ topics: [], canManageChannels: false });
       setSearch("");
+      setSearchOpen(false);
       setKindFilter("all");
       setUnreadOnly(false);
       setManageOpen(false);
@@ -165,22 +175,25 @@ export function GroupTopics({ communityId, onOpen, onError }: {
 
   return (
     <div className="topics">
-      <p className="muted">Разделы группы: чаты с сообщениями и файлами или отдельные каналы для голосований. Общий поток остаётся наверху.</p>
-      <label className="field">Поиск раздела
+      <div className="topic-head">
+        <div><h2>Каналы группы</h2><span className="muted">Чаты и голосования · {page.topics.length}</span></div>
+        <button className="icon-btn" type="button" aria-label="Поиск раздела" aria-expanded={searchOpen}
+          onClick={() => { setSearchOpen(value => !value); if (searchOpen) setSearch(""); }}><Icon name="search" /></button>
+      </div>
+      {searchOpen && <label className="field">Поиск раздела
         <input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Название или описание" aria-label="Поиск раздела" />
-      </label>
-      <div className="row topic-filters" role="group" aria-label="Фильтр разделов">
+      </label>}
+      <div className="topic-filters" role="group" aria-label="Фильтр разделов">
         {([ ["all", "Все"], ["chat", "Чаты"], ["ballots", "Голосования"] ] as const).map(([value, label]) =>
-          <button key={value} className={kindFilter === value ? "btn primary" : "btn"} type="button"
+          <button key={value} className={kindFilter === value ? "topic-filter active" : "topic-filter"} type="button"
             aria-pressed={kindFilter === value} onClick={() => setKindFilter(value)}>{label}</button>)}
-        <button className={unreadOnly ? "btn primary" : "btn"} type="button" aria-pressed={unreadOnly}
+        <button className={unreadOnly ? "topic-filter active unread" : "topic-filter unread"} type="button" aria-pressed={unreadOnly}
           onClick={() => setUnreadOnly(value => !value)}>Непрочитанные</button>
       </div>
-      <div className="row">
-        <span className="muted">Показано {visible.length} из {page.topics.length}</span>
-        <button className="btn" type="button" disabled={!nextUnread || loading || off || busy || nextBusy}
-          onClick={openNextUnread}>{nextBusy ? "Проверяем…" : "Следующий непрочитанный канал"}</button>
-        {!nextUnread && !loading && !off && <span className="muted">Непрочитанных каналов нет</span>}
+      <div className="row topic-tools">
+        {filtered && <span className="muted">Показано {visible.length} из {page.topics.length}</span>}
+        {nextUnread && <button className="btn" type="button" disabled={loading || off || busy || nextBusy}
+          onClick={openNextUnread}>{nextBusy ? "Проверяем…" : "Следующий непрочитанный"}</button>}
         {filtered && <button className="btn" type="button" onClick={() => { setSearch(""); setKindFilter("all"); setUnreadOnly(false); }}>Сбросить фильтры</button>}
         {page.canManageChannels && <button className="btn" type="button" aria-expanded={manageOpen}
           onClick={() => setManageOpen(value => !value)}>{manageOpen ? "Закрыть управление" : "Управлять разделами"}</button>}
@@ -215,12 +228,12 @@ export function GroupTopics({ communityId, onOpen, onError }: {
         {visible.map(topic => (
           <div className={topic.pinned ? "topic pinned" : "topic"} key={topic.topicId ?? "general"}>
             <div className="topic-row">
-              <button className="topic-open" type="button" onClick={() => onOpen(topic, page.canManageChannels)}>
-                <span className="topic-icon" style={{ background: channelAccentColor(topic.accent, topic.title) }}>{topic.icon}</span>
+              <button className="topic-open" type="button" onClick={() => onOpen(topic, page.canManageChannels)}
+                aria-label={[topic.title, topic.description, topicPreview(topic), topic.unread > 0 ? unreadBadgeDescription(topic.unread) : ""].filter(Boolean).join(", ")}>
+                <TopicMark topic={topic} />
                 <span className="topic-main">
-                  <b>{topic.title} {topic.pinned && <span className="chip">Закреплено</span>} {topic.kind === "ballots" && <span className="chip">Голосования</span>}</b>
-                  {topic.description && <span className="topic-description">{topic.description}</span>}
-                  <span className="preview">{topicPreview(topic)}</span>
+                  <b>{topic.title} {topic.pinned && <span className="topic-pinned"><Icon name="pin" size={14} />Закреплено</span>}</b>
+                  <span className="preview">{topic.description && !topic.lastBody ? topic.description : topicPreview(topic)}</span>
                 </span>
                 <span className="topic-meta">
                   {when(topic.lastAt)}

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="channel_list">Каналы</string>
+    <string name="channel_general">Общее</string>
     <string name="channel_list_title">Каналы группы</string>
     <string name="channel_search">Поиск канала</string>
     <string name="channel_search_hint">Название или описание</string>

@@ -199,10 +199,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private bool _compactSidebar;
     [ObservableProperty] private bool _animations;
 
+    public string ThemeSummary => ThemeIndex >= 0 && ThemeIndex < ThemeItems.Count
+        ? ThemeItems[ThemeIndex] : T("themeSystem");
+
     private IList<string> BuildThemeItems() => new[] { T("themeSystem"), T("themeLight"), T("themeDark") };
 
     partial void OnThemeIndexChanged(int value)
     {
+        OnPropertyChanged(nameof(ThemeSummary));
         if (_suppress || !CanPublish) return;
         var choice = (ThemeChoice)Math.Clamp(value, 0, 2);
         if (App.Theme is { } theme) theme.Apply(choice);
@@ -265,12 +269,19 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private string _notifyTime1 = "20:00";
     [ObservableProperty] private string _notifyTime2 = "07:30";
 
+    public string NotificationSummary => NotificationsEnabled
+        ? $"{NotifyTime1} · {NotifyTime2}" : "Выключены";
+
     partial void OnNotificationsEnabledChanged(bool value)
     {
+        OnPropertyChanged(nameof(NotificationSummary));
         if (_suppress || !CanPublish) return;
         App.Prefs.NotificationsEnabled = value;
         App.Prefs.Save();
     }
+
+    partial void OnNotifyTime1Changed(string value) => OnPropertyChanged(nameof(NotificationSummary));
+    partial void OnNotifyTime2Changed(string value) => OnPropertyChanged(nameof(NotificationSummary));
 
     [RelayCommand(AllowConcurrentExecutions = false)]
     private async Task SaveTimes()

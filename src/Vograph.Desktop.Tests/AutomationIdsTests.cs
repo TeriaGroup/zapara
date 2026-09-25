@@ -20,6 +20,22 @@ public class AutomationIdsTests : UiTest
     private static HashSet<string> Ids(Window window) =>
         window.GetVisualDescendants().OfType<Control>().Select(AutomationProperties.GetAutomationId).Where(id => !string.IsNullOrEmpty(id)).ToHashSet()!;
 
+    private void ExpandSettings(Window window)
+    {
+        foreach (var id in new[]
+                 {
+                     "Settings.AccountSection", "Settings.StudySection", "Settings.AppearanceSection",
+                     "Settings.NotificationsSection", "Settings.SyncSection", "Settings.UpdatesSection",
+                     "Settings.SupportSection", "Settings.AboutSection"
+                 })
+        {
+            var expander = window.GetVisualDescendants().OfType<Expander>()
+                .First(control => AutomationProperties.GetAutomationId(control) == id);
+            expander.IsExpanded = true;
+            Pump();
+        }
+    }
+
     /// <summary>What the every-id test below cannot say, because a set has no order: the segmented control numbers
     /// its buttons by position. UiVerify picks a theme by pressing «SettingsTheme.1» and expects the middle
     /// segment, so the index has to follow the visual order rather than merely exist somewhere in the window.
@@ -40,6 +56,7 @@ public class AutomationIdsTests : UiTest
         shell.NavigateTo(SectionKey.Settings);
         await Waits.Until(() => ((Features.Preferences.SettingsViewModel)shell.Current!).GroupName == "А863С", "settings");
         Pump();
+        ExpandSettings(window);
 
         var segment = window.GetVisualDescendants().OfType<SegmentedControl>().First(s => s.Name == "SettingsTheme");
         var buttons = segment.GetVisualDescendants().OfType<Button>().ToList();
@@ -67,6 +84,9 @@ public class AutomationIdsTests : UiTest
         "Maps.Reset", "Maps.Fullscreen", "Maps.More", "Maps.Plan", "MapsFull.Close", "MapsFull.ZoomIn",
         "Friends.Add", "Friend.Color", "Friend.Names", "Friend.Enabled", "Friend.Remove", "Friends.Strictness", "Friends.AlwaysAll",
         "Homework.Add", "Homework.Done", "Homework.Edit", "Homework.Delete",
+        "Settings.AccountSection", "Settings.StudySection", "Settings.AppearanceSection",
+        "Settings.NotificationsSection", "Settings.SyncSection", "Settings.UpdatesSection",
+        "Settings.SupportSection", "Settings.AboutSection",
         "SettingsTheme.0", "SettingsTheme.1", "SettingsTheme.2", "Account.Card", "Account.Status", "Account.Login",
         "Settings.CompactSidebar", "Settings.Animations", "Settings.ChangeGroup", "Settings.ParityInvert", "Settings.Refresh",
         "Settings.NotifyEnabled", "Settings.NotifyTime1", "Settings.NotifyTime2", "Settings.SaveTimes", "Settings.TestNotification",
@@ -131,6 +151,7 @@ public class AutomationIdsTests : UiTest
             var vm = shell.Current!;
             await Waits.Until(() => loaded[key](vm), $"section {key} loaded");
             Pump();
+            if (key == SectionKey.Settings) ExpandSettings(window);
             ids.UnionWith(Ids(window));
         }
 

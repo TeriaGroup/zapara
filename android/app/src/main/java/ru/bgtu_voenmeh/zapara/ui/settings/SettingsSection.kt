@@ -4,7 +4,9 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.annotation.DrawableRes
 import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -12,23 +14,33 @@ import kotlinx.coroutines.withContext
 import androidx.compose.runtime.rememberCoroutineScope
 import java.io.ByteArrayOutputStream
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
@@ -36,7 +48,9 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.data.AutoUpdate
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
@@ -84,6 +98,84 @@ private fun GroupActions(refreshing: Boolean, onChangeGroup: () -> Unit, onRefre
 }
 
 @Composable
+private fun SettingsOverviewRow(
+    @DrawableRes icon: Int,
+    title: String,
+    summary: String,
+    tag: String,
+    emphasized: Boolean = false,
+    onClick: () -> Unit
+) {
+    val c = Zapara.colors
+    Column {
+        Surface(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth().testTag(tag),
+            shape = RoundedCornerShape(if (emphasized) Zapara.radii.card else 0.dp),
+            color = if (emphasized) c.card else c.canvas,
+            border = if (emphasized) BorderStroke(Zapara.space.hairline, c.line) else null
+        ) {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = Zapara.space.s, vertical = Zapara.space.s),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)
+            ) {
+                Box(Modifier.size(36.dp).background(c.chip, RoundedCornerShape(Zapara.radii.control)),
+                    contentAlignment = Alignment.Center) {
+                    Icon(painterResource(icon), contentDescription = null, tint = c.text1, modifier = Modifier.size(20.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = Zapara.typography.bodyStrong, color = c.text1)
+                    Text(summary, style = Zapara.typography.caption, color = c.text2)
+                }
+                Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null,
+                    tint = c.text2, modifier = Modifier.size(20.dp))
+            }
+        }
+        if (!emphasized) HorizontalDivider(color = c.line, thickness = Zapara.space.hairline)
+    }
+}
+
+@Composable
+private fun SettingsOverview(state: SettingsUiState, account: AccountUiState, onOpen: (String) -> Unit) {
+    val c = Zapara.colors
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l),
+        verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+        if (state.syncConflicts.isNotEmpty() || state.syncError != null) item {
+            SettingsOverviewRow(R.drawable.ic_refresh, stringResource(R.string.sync_conflict_title),
+                state.syncError ?: stringResource(R.string.sync_conflict_body), "Settings.Overview.Sync", emphasized = true) {
+                onOpen("account")
+            }
+        }
+        item {
+            SettingsOverviewRow(R.drawable.ic_users, stringResource(R.string.account_title),
+                if (account.guest) stringResource(R.string.settings_overview_guest)
+                else account.accountName.ifBlank { stringResource(R.string.account_title) },
+                "Settings.Overview.Account", emphasized = true) { onOpen("account") }
+        }
+        item { Text(stringResource(R.string.settings_overview_core), style = Zapara.typography.section,
+            color = c.text1, modifier = Modifier.padding(top = Zapara.space.l, bottom = Zapara.space.xs)) }
+        item { SettingsOverviewRow(R.drawable.ic_calendar, stringResource(R.string.settings_overview_study),
+            state.groupName.ifBlank { stringResource(R.string.group_pick) }, "Settings.Overview.Study") { onOpen("study") } }
+        item { SettingsOverviewRow(R.drawable.ic_sun, stringResource(R.string.theme_appearance),
+            listOf(stringResource(R.string.theme_system), stringResource(R.string.theme_light), stringResource(R.string.theme_dark))[state.theme.ordinal],
+            "Settings.Overview.Appearance") { onOpen("appearance") } }
+        item { SettingsOverviewRow(R.drawable.ic_notification, stringResource(R.string.settings_notify),
+            if (state.notifyEnabled) stringResource(R.string.settings_overview_notify_on, state.time1, state.time2)
+            else stringResource(R.string.settings_overview_notify_off),
+            "Settings.Overview.Notifications") { onOpen("notifications") } }
+        item { SettingsOverviewRow(R.drawable.ic_map, stringResource(R.string.settings_maps),
+            stringResource(R.string.settings_maps_routes), "Settings.Overview.Maps") { onOpen("maps") } }
+        item { Text(stringResource(R.string.settings_overview_service), style = Zapara.typography.section,
+            color = c.text1, modifier = Modifier.padding(top = Zapara.space.l, bottom = Zapara.space.xs)) }
+        item { SettingsOverviewRow(R.drawable.ic_refresh, stringResource(R.string.settings_updates),
+            stringResource(R.string.settings_version, state.version), "Settings.Overview.Updates") { onOpen("updates") } }
+        item { SettingsOverviewRow(R.drawable.ic_file, stringResource(R.string.settings_overview_help),
+            stringResource(R.string.settings_overview_help_summary), "Settings.Overview.Help") { onOpen("help") } }
+    }
+}
+
+@Composable
 fun SettingsSection(
     state: SettingsUiState,
     onEvent: (SettingsEvent) -> Unit,
@@ -95,13 +187,27 @@ fun SettingsSection(
     val ctx = LocalContext.current
     val c = Zapara.colors
     var legalId by remember { mutableStateOf<String?>(null) }
+    var section by rememberSaveable { mutableStateOf<String?>(null) }
+    BackHandler(enabled = section != null && legalId == null) { section = null }
     if (legalId != null) {
         LegalDocumentPage(legalId!!, onClose = { legalId = null })
         return
     }
     Column(Modifier.fillMaxSize()) {
-        ZTopBar(stringResource(R.string.nav_settings))
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        ZTopBar(when (section) {
+            "account" -> stringResource(R.string.account_title)
+            "study" -> stringResource(R.string.settings_overview_study)
+            "appearance" -> stringResource(R.string.theme_appearance)
+            "maps" -> stringResource(R.string.settings_maps)
+            "notifications" -> stringResource(R.string.settings_notify)
+            "updates" -> stringResource(R.string.settings_updates)
+            "help" -> stringResource(R.string.settings_overview_help)
+            else -> stringResource(R.string.nav_settings)
+        })
+        if (section == null) SettingsOverview(state, account) { section = it }
+        else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            item { ZButton(stringResource(R.string.settings_overview_all), { section = null }, ghost = true, tag = "Settings.Overview.Back") }
+            if (section == "account") {
             item { AccountCard(account, onAccount) { legalId = it } }
             if (state.syncConflicts.isNotEmpty() || state.syncError != null) item {
                 ZCard(Modifier.fillMaxWidth().testTag("Sync.Conflicts")) {
@@ -113,6 +219,8 @@ fun SettingsSection(
             items(state.syncConflicts, key = { "conflict:${it.operation.opId}" }) { conflict ->
                 SyncConflictCard(conflict, state.syncBusy) { keepLocal -> onEvent(SettingsEvent.ResolveSync(conflict, keepLocal)) }
             }
+            }
+            if (section == "study") {
             item {
                 ZCard(Modifier.fillMaxWidth().testTag("Settings.Group")) {
                     Text(stringResource(R.string.settings_group), style = Zapara.typography.caption, color = c.text2)
@@ -131,6 +239,8 @@ fun SettingsSection(
                     Text(stringResource(R.string.settings_source_hint), style = Zapara.typography.caption, color = c.text2)
                 }
             }
+            }
+            if (section == "appearance") {
             item {
                 ZCard(Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.theme_appearance), style = Zapara.typography.section, color = c.text1)
@@ -144,6 +254,8 @@ fun SettingsSection(
                     }
                 }
             }
+            }
+            if (section == "maps") {
             item {
                 ZCard(Modifier.fillMaxWidth().testTag("Settings.Maps")) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
@@ -157,6 +269,8 @@ fun SettingsSection(
                     Text(stringResource(R.string.settings_maps_alpha_hint), style = Zapara.typography.caption, color = c.text2)
                 }
             }
+            }
+            if (section == "notifications") {
             item {
                 ZCard(Modifier.fillMaxWidth()) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -180,11 +294,16 @@ fun SettingsSection(
                     }
                 }
             }
+            }
+            if (section == "updates") {
             item {
                 if (state.selfUpdate) UpdatesCard(state, updates, onEvent)
                 else RustoreUpdatesCard()
             }
+            }
+            if (section == "help") {
             item { AboutCard(state, onEvent) }
+            }
         }
     }
 }
