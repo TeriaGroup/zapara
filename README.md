@@ -8,18 +8,18 @@
 
 Цель: русский язык во всём нативном интерфейсе Windows, Android и в админке. После W7 переключатель языка снят, клиенты только на русском.
 
-Windows и Android 2.1.24 работают без обязательного аккаунта. Телефон и Windows читают уже лежащее расписание и карты без сети. Браузерная оболочка открыта по адресу, который записан в клиентах.
+Windows и Android 2.1.25 работают без обязательного аккаунта. Телефон и Windows читают уже лежащее расписание и карты без сети. Браузерная оболочка открыта по адресу, который записан в клиентах.
 
 Состав экранов, проверка сайта 2026-09-22, границы сайта и место переписки, ролей, голосований и общей домашки: [`docs/STATUS.md`](docs/STATUS.md).
 
 ## Скачать
 
-Актуальная версия **2.1.24**, [страница релиза](https://github.com/TeriaGroup/zapara/releases/tag/v2.1.24).
+Актуальная версия **2.1.25**, [страница релиза](https://github.com/TeriaGroup/zapara/releases/tag/v2.1.25).
 
-- **Windows.** [ZAPARA_win-x64.zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.24/ZAPARA_win-x64.zip): распаковать и запустить `Vograph.exe`. Нужен .NET 8 Runtime.
-- **Android.** [ZAPARA_android-debug.apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.24/ZAPARA_android-debug.apk) ставится сразу (`adb install -r` тоже). Через ADB: `adb install -r ZAPARA_android-debug.apk`. `ZAPARA_android-release-unsigned.apk` перед установкой нужно подписать.
+- **Windows.** [ZAPARA_win-x64.zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.25/ZAPARA_win-x64.zip): распаковать и запустить `Vograph.exe`. Нужен .NET 8 Runtime.
+- **Android.** [ZAPARA_android-debug.apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.25/ZAPARA_android-debug.apk) ставится сразу (`adb install -r` тоже). Через ADB: `adb install -r ZAPARA_android-debug.apk`. `ZAPARA_android-release-unsigned.apk` перед установкой нужно подписать.
 
-Остальные версии, по возрастанию: [releases](https://github.com/TeriaGroup/zapara/releases). У 1.0, 1.1, 1.2, 1.2.1, 1.2.2, 1.2.3 и с 2.0.0 по 2.1.24 есть zip и APK. С 1.2.4 по 1.2.22, а также у 1.99.1 и 1.99.2, на GitHub только APK.
+Остальные версии, по возрастанию: [releases](https://github.com/TeriaGroup/zapara/releases). У 1.0, 1.1, 1.2, 1.2.1, 1.2.2, 1.2.3 и с 2.0.0 по 2.1.25 есть zip и APK. С 1.2.4 по 1.2.22, а также у 1.99.1 и 1.99.2, на GitHub только APK.
 
 <details>
 <summary>Прямые ссылки по версиям</summary>
@@ -78,13 +78,14 @@ Windows и Android 2.1.24 работают без обязательного а�
 | 2.1.21 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.21/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.21/ZAPARA_android-debug.apk) |
 | 2.1.22 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.22/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.22/ZAPARA_android-debug.apk) |
 | 2.1.23 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.23/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.23/ZAPARA_android-debug.apk) |
-| **2.1.24** | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.24/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.24/ZAPARA_android-debug.apk) |
+| 2.1.24 | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.24/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.24/ZAPARA_android-debug.apk) |
+| **2.1.25** | [zip](https://github.com/TeriaGroup/zapara/releases/download/v2.1.25/ZAPARA_win-x64.zip) | [apk](https://github.com/TeriaGroup/zapara/releases/download/v2.1.25/ZAPARA_android-debug.apk) |
 
 </details>
 
 ## Что умеет
 
-Ниже гостевое ядро Windows и Android 2.1.24. В тех же исходниках уже есть подгруппы, файлы к домашке, аккаунт, сообщество и текстовый чат группы. Личная переписка, стол старосты и голосования собраны на сайте.
+Ниже гостевое ядро Windows и Android 2.1.25. В тех же исходниках уже есть подгруппы, файлы к домашке, аккаунт, сообщество и текстовый чат группы. Личная переписка, стол старосты и голосования собраны на сайте.
 
 - **Расписание: Вчера / Сегодня / Завтра / Неделя / Сводка.** Умный старт: если сегодняшние пары ещё не прошли, открывается сегодня. Иначе завтра.
 - **Четность.** Неделя с 1 сентября: неделя 1, нечетная. Если вуз сдвинул неделю, есть ручная инверсия.
@@ -104,7 +105,7 @@ Windows и Android 2.1.24 работают без обязательного а�
 ## Клиенты
 
 - **Windows.** Avalonia 12, .NET 8, темы системная, светлая и тёмная, интерфейс только на русском. Самообновление проверяет архив. Синхронизация по локальной сети идёт без прав администратора.
-- **Android.** Kotlin и Compose 2.0 (дизайн-система, тёмная и светлая темы), нижняя навигация, пакет `ru.zapara.app`, версия 2.1.24, интерфейс только на русском, Android 8.0+.
+- **Android.** Kotlin и Compose 2.0 (дизайн-система, тёмная и светлая темы), нижняя навигация, пакет `ru.zapara.app`, версия 2.1.25, интерфейс только на русском, Android 8.0+.
 
 ## Откуда данные и где они лежат
 
