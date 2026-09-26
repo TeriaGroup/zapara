@@ -28,10 +28,52 @@ object ScheduleComposer {
     fun dateAt(index: Int, today: LocalDate): LocalDate =
         today.plusDays((index - TODAY_INDEX).toLong())
 
-    /** Roll the stored «today» to the clock. If the user was sitting on the old today, follow the new one. */
-    fun syncToday(clockToday: LocalDate, stateToday: LocalDate, selected: LocalDate): Pair<LocalDate, LocalDate> {
-        val nextSelected = if (selected == stateToday) clockToday else selected
-        return clockToday to nextSelected
+    /** The selected day is absolute; midnight only changes relative labels. */
+    fun syncToday(clockToday: LocalDate, stateToday: LocalDate, selected: LocalDate): Pair<LocalDate, LocalDate> = clockToday to selected
+
+    data class Break(val start: LocalTime, val end: LocalTime) {
+        val minutes: Long get() = ChronoUnit.MINUTES.between(start, end)
+    }
+
+    fun breaks(rows: List<LessonUi>): List<Break> {
+        val intervals = rows.mapNotNull { row -> runCatching { LocalTime.parse(row.timeStart) to LocalTime.parse(row.timeEnd) }.getOrNull() }
+            .filter { it.second > it.first }.sortedBy { it.first }
+        val merged = mutableListOf<Pair<LocalTime, LocalTime>>()
+        intervals.forEach { interval ->
+            val previous = merged.lastOrNull()
+            if (previous != null && interval.first <= previous.second) merged[merged.lastIndex] = previous.first to maxOf(previous.second, interval.second)
+            else merged.add(interval)
+        }
+        return merged.zipWithNext().map { Break(it.first.second, it.second.first) }.filter { it.minutes >= 30 }
+    }
+
+    fun conflicts(rows: List<LessonUi>): Set<LessonUi> = rows.filter { first ->
+        rows.any { second -> first !== second && runCatching {
+            LocalTime.parse(first.timeStart) < LocalTime.parse(second.timeEnd) && LocalTime.parse(second.timeStart) < LocalTime.parse(first.timeEnd)
+        }.getOrDefault(false) }
+    }.toSet()
+
+    fun deadlines(date: LocalDate, subjects: Set<String>, homework: List<Homework>): List<Homework> = homework.filter {
+        it.due?.let { due -> due >= date && due <= date.plusDays(2) } ?: (it.norm in subjects)
+    }.sortedWith(compareBy<Homework> { it.due ?: LocalDate.MAX }.thenBy { it.id })
+
+    fun millisUntilNextMinute(now: LocalDateTime): Long = ChronoUnit.MILLIS.between(now,now.withSecond(0).withNano(0).plusMinutes(1)).coerceIn(1L,60_000L)
+
+    fun atClock(page: DayPage, now: LocalDateTime): DayPage {
+        val today = page.date == now.toLocalDate()
+        return page.copy(isToday = today, lessons = page.lessons.map { row ->
+            row.copy(isPast = today && runCatching { LocalTime.parse(row.timeEnd) <= now.toLocalTime() }.getOrDefault(false))
+        })
+    }
+
+    fun purgeShared(state: ScheduleUiState): ScheduleUiState = state.copy(
+        pages = state.pages.mapValues { (_, page) -> page.copy(deadlines = page.deadlines.filter { it.sharedId == null }) },
+        subjectRows = state.subjectRows.filter { it.sharedId == null }, sharedDetail = null, undoShared = null)
+
+    fun featured(page: DayPage, now: LocalDateTime): LessonUi? = when {
+        page.date > now.toLocalDate() -> page.lessons.firstOrNull()
+        page.date < now.toLocalDate() -> null
+        else -> page.lessons.firstOrNull { runCatching { LocalTime.parse(it.timeEnd) > now.toLocalTime() }.getOrDefault(false) }
     }
 
     enum class SchedulePane { Loading, NoGroup, LoadFail, Day }
@@ -104,7 +146,10 @@ object ScheduleComposer {
             )
         }
         val hint = if (!isSunday && rows.isEmpty()) nextHint(date, allLessons, ctx, displayName, copy, choices) else null
-        return DayPage(date, isToday, caption, rows, hint, isSunday)
+        val nextKnown = if (rows.isEmpty()) (1L..60L).map { date.plusDays(it) }.firstOrNull {
+            Schedule.lessonsForDate(visible, ctx.groupId, it, ctx.periodStart, ctx.weekCount, ctx.invert).isNotEmpty()
+        } else null
+        return DayPage(date, isToday, caption, rows, hint, isSunday, nextKnownDate = nextKnown)
     }
 
     private fun nextHint(

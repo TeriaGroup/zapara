@@ -1,0 +1,4 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {hasPendingCreation,submitCreationOnce} from "./creation-pending.ts";
+test("pending creation remains shared across remount and scoped to owner/community until settlement",async()=>{let calls=0,release:(value:unknown)=>void=()=>{};const first=submitCreationOnce("owner:c:new",()=>{calls++;return new Promise(resolve=>{release=resolve;});})!;await new Promise(resolve=>setImmediate(resolve));assert.equal(hasPendingCreation("owner:c:new"),true);assert.equal(submitCreationOnce("owner:c:new",async()=>{calls++;}),null);assert.ok(submitCreationOnce("other-owner:c:new",async()=>"other"));assert.ok(submitCreationOnce("owner:other:new",async()=>"other community"));release({topics:[]});assert.deepEqual(await first,{topics:[]});await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,1);assert.equal(hasPendingCreation("owner:c:new"),false);});

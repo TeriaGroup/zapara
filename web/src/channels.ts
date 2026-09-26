@@ -1,14 +1,14 @@
 import type { BallotBoard, GroupTopic } from "./types";
 
-export function canComposeChannel(topic: GroupTopic): boolean { return topic.kind === "chat" && topic.canPost; }
+export function canComposeChannel(topic: GroupTopic): boolean { return isChatChannel(topic) && topic.supported !== false && !topic.archived && topic.canPost; }
 
 export function canCreateBallot(topic: GroupTopic, canManageChannels: boolean): boolean {
-  return topic.kind === "ballots" && (topic.writePolicy === "all" || canManageChannels);
+  return topic.kind === "ballots" && topic.supported !== false && !topic.archived && (topic.permissions ? topic.permissions.includes("ballots") : topic.writePolicy === "all" || canManageChannels);
 }
 
 export function orderedTopics(topics: GroupTopic[]): GroupTopic[] {
   const rank = (topic: GroupTopic) => topic.topicId === null ? 0 : topic.pinned ? 1 : 2;
-  return [...topics].sort((left, right) => rank(left) - rank(right) || Number(right.unread > 0) - Number(left.unread > 0));
+  return [...topics].sort((left, right) => rank(left) - rank(right) || (left.position ?? 0) - (right.position ?? 0) || Number(right.unread > 0) - Number(left.unread > 0));
 }
 
 export function nextUnreadTopic(topics: GroupTopic[], currentTopicId: string | null | undefined = undefined): GroupTopic | null {
@@ -48,7 +48,7 @@ export async function ballotBoardAfterMutation(board: BallotBoard, topicId: stri
 }
 
 export function isChatChannel(topic: GroupTopic): boolean {
-  return topic.kind === "chat";
+  return topic.kind === "chat" && topic.supported !== false;
 }
 
 export function topicPreview(topic: GroupTopic): string {
@@ -56,6 +56,7 @@ export function topicPreview(topic: GroupTopic): string {
     if (!topic.lastBody) return "Сообщений пока нет";
     return topic.lastAuthor ? `${topic.lastAuthor}: ${topic.lastBody}` : topic.lastBody;
   }
+  if (topic.kind !== "ballots") return topic.lastBody || ({ forms: "Анкеты группы", materials: "Файлы и ссылки", homework: "Общие задания", schedule: "Расписание группы" }[topic.kind] ?? "Обновите приложение для этого раздела");
   const count = topic.activeBallots;
   const activity = count > 0 ? `${count} активн${count % 10 === 1 && count % 100 !== 11 ? "ое голосование" : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14) ? "ых голосования" : "ых голосований"}` : "";
   return [topic.lastBody || (activity ? "" : "Голосований пока нет"), activity].filter(Boolean).join(" · ");

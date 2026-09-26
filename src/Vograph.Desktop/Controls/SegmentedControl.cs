@@ -134,22 +134,25 @@ public class SegmentedControl : TemplatedControl
         for (var i = 0; i < items.Count; i++)
         {
             var index = i;
-            var button = new Button { Content = items[i] };
+            var button = new SegmentButton { Content = items[i] };
             button.Classes.Add("seg");
             // The pill buttons are built here, so UiVerify can only address them by index off the control's own
             // Name: «ScheduleSegment.0», «SettingsLanguage.1» … An unnamed segment falls back to «Seg».
             AutomationProperties.SetAutomationId(button, $"{(string.IsNullOrEmpty(Name) ? "Seg" : Name)}.{i}");
-            button.Click += (_, _) => SelectedIndex = index;
+            button.Click += (_, _) => {SelectedIndex = index;UpdateSelection();};
             _panel.Children.Add(button);
             _buttons.Add(button);
         }
         UpdateSelection();
     }
 
+    private sealed class SegmentButton:ToggleButton {protected override Type StyleKeyOverride=>typeof(Button);}
+
     private void UpdateSelection()
     {
         for (var i = 0; i < _buttons.Count; i++)
         {
+            if(_buttons[i] is ToggleButton toggle)toggle.IsChecked=i==SelectedIndex;
             if (i == SelectedIndex) _buttons[i].Classes.Add("on");
             else _buttons[i].Classes.Remove("on");
         }

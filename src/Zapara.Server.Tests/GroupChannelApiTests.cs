@@ -31,9 +31,9 @@ public sealed class GroupChannelApiTests
         var desk = CommunityJson.Parse<GroupDeskResponse>(await host.Send("POST", $"/{group}/roles", 201,
             headman.AccessToken, Json(new GroupRoleNameRequest("Доверенный по чату"))));
         var role = Assert.Single(desk.Roles).RoleId;
-        var proposal = CommunityJson.Parse<BallotBoardResponse>(await host.Send("POST", $"/{group}/ballots/changes", 201,
-            member.AccessToken, Json(new BallotChangeRequest("power", 2, role, Guid.Empty, "", "channels", true))));
-        Assert.Contains("Управлять каналами", Assert.Single(proposal.Ballots).Question);
+        // A collective vote cannot grant permissions the proposer does not possess.
+        await host.Problem("POST", $"/{group}/ballots/changes", 403, "forbidden",
+            member.AccessToken, Json(new BallotChangeRequest("power", 2, role, Guid.Empty, "", "channels", true)));
         await host.Send("POST", $"/{group}/roles/{role}/powers", 200, headman.AccessToken,
             Json(new GroupPowerRequest("channels", true)));
         await host.Send("POST", $"/{group}/roles/{role}/grants", 200, headman.AccessToken,

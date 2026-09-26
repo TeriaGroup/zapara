@@ -64,10 +64,10 @@ class ScheduleComposerTest {
         assertEquals("563 УЛК", second.room)
     }
 
-    @Test fun syncToday_follows_the_clock_not_a_stale_session_date() {
+    @Test fun syncToday_changes_relative_labels_and_preserves_the_absolute_day() {
         val seventeen = LocalDate.of(2026, 9, 17)
         val eighteen = LocalDate.of(2026, 9, 18)
-        assertEquals(eighteen to eighteen, ScheduleComposer.syncToday(eighteen, seventeen, seventeen))
+        assertEquals(eighteen to seventeen, ScheduleComposer.syncToday(eighteen, seventeen, seventeen))
         assertEquals(eighteen to LocalDate.of(2026, 9, 19), ScheduleComposer.syncToday(eighteen, seventeen, LocalDate.of(2026, 9, 19)))
         assertEquals(eighteen to eighteen, ScheduleComposer.syncToday(eighteen, eighteen, eighteen))
     }

@@ -36,6 +36,8 @@ public sealed partial class GroupViewModel : ViewModelBase
     private Guid? conversationId;
     private Guid? communityId;
     private Guid? requestedCommunityId;
+    private (Guid Community,string? ChannelKey,Guid? Direct)? lastNavigation;
+    private readonly Dictionary<Guid,string> lastGroupChannels=[];
     private (Guid CommunityId, Guid ConversationId)? requestedConversation;
     private int navigationGeneration;
     private int busyDepth;
@@ -43,8 +45,9 @@ public sealed partial class GroupViewModel : ViewModelBase
     private DispatcherTimer? timer;
 
     public GroupViewModel(AppServices app, IChatMediaRecorder? recorder = null,
-        Func<string, Task>? clipboardWriter = null) : base(app)
+        Func<string, Task>? clipboardWriter = null, Vograph.Desktop.Shell.ShellViewModel? shell = null) : base(app)
     {
+        this.shell = shell;
         client = app.Communities;
         accessToken = app.CommunityAccess;
         this.recorder = recorder ?? new WindowsChatMediaRecorder();
@@ -87,7 +90,7 @@ public sealed partial class GroupViewModel : ViewModelBase
     private byte[]? pendingBytes;
     public bool ShowList => !NeedAccount && !HasHome && !IsEmpty;
     public bool HasDirects => Directs.Count > 0;
-    public bool CanAttachMedia => ShowComposer && !IsBusy && !IsRecording && !IsFinalizingRecording;
+    public bool CanAttachMedia => !HasRecordedDraft && ShowComposer && (IsDirect || SelectedChannel?.Permissions.Contains("media") == true || legacySpace) && !IsBusy && !IsRecording && !IsFinalizingRecording;
     public void SetClipboardWriter(Func<string, Task>? writer) => clipboardWriter = writer;
 
     public override void Detach() => Watch(false);
@@ -171,6 +174,7 @@ public sealed partial class GroupViewModel : ViewModelBase
             RefreshCommunityBrowse();
             var preferred = rows.FirstOrDefault(item => item.CommunityId == requestedConversation?.CommunityId)
                 ?? rows.FirstOrDefault(item => item.CommunityId == requestedCommunityId)
+                ?? rows.FirstOrDefault(item => item.CommunityId == lastNavigation?.Community)
                 ?? rows.FirstOrDefault(item => item.Name == wanted || item.Name == "Группа " + wanted)
                 ?? (rows.Length == 1 ? rows[0] : null);
             requestedCommunityId = null;
@@ -180,6 +184,7 @@ public sealed partial class GroupViewModel : ViewModelBase
             RaiseList();
             if (preferred is not null) await OpenAsync(preferred.CommunityId);
         }
+        catch(CommunityClientException ex)when(operation.IsCurrent && ticket==navigationGeneration && ReadDenied(ex)){if(ex.Failure==CommunityClientFailure.InvalidSession)ShowAccount();else ClearRevokedContent();}
         catch (CommunityClientException) when (operation.IsCurrent && ticket == navigationGeneration) { Status = T("groupFailed"); }
         catch (AccountClientException ex) when (operation.IsCurrent && ticket == navigationGeneration) { FailSession(ex); }
         catch (OperationCanceledException) { }
@@ -190,6 +195,7 @@ public sealed partial class GroupViewModel : ViewModelBase
     {
         requestedCommunityId = id;
         requestedConversation = null;
+        lastNavigation=null;
     }
 
     public void RequestConversation(Guid communityId, Guid conversationId)
@@ -228,8 +234,25 @@ public sealed partial class GroupViewModel : ViewModelBase
                 await OpenConversationAsync(direct.ConversationId, direct.Title, true);
                 return;
             }
-            await OpenChannelAsync(Channels[0]);
+            if(lastNavigation is {} remembered && remembered.Community==id && remembered.Direct is {} directId && home.Directs.Any(x=>x.ConversationId==directId))
+                await OpenConversationAsync(directId,home.Directs.First(x=>x.ConversationId==directId).Title,true);
+            else
+            {
+                var wantedChannel=lastNavigation is {} previous && previous.Community==id ? Channels.FirstOrDefault(x=>x.Key==previous.ChannelKey) : null;
+                if(wantedChannel is null && lastNavigation is {} archived && archived.Community==id && archived.ChannelKey is {} key)
+                {
+                    var archive=await Api.ArchivedTopicsAsync(token,id,operation.Token);
+                    if(!operation.IsCurrent || ticket!=navigationGeneration)return;
+                    var topic=archive.Topics.FirstOrDefault(x=>x.TopicId?.ToString("D")==key);
+                    if(topic is not null){ApplyArchiveList(archive,id);await OpenArchivedTopic(ArchivedChannels.First(x=>x.TopicId==topic.TopicId));}
+                    else await OpenChannelAsync(Channels.FirstOrDefault()!);
+                }
+                else await OpenChannelAsync(wantedChannel ?? Channels.FirstOrDefault()!);
+            }
+            await ApplyRequestedDiscussion();
+            ApplyRequestedHomework();
         }
+        catch(CommunityClientException ex)when(operation.IsCurrent && ticket==navigationGeneration && ReadDenied(ex)){if(ex.Failure==CommunityClientFailure.InvalidSession)ShowAccount();else ClearRevokedContent();}
         catch (CommunityClientException) when (operation.IsCurrent && ticket == navigationGeneration) { Status = T("groupFailed"); }
         catch (AccountClientException ex) when (operation.IsCurrent && ticket == navigationGeneration) { FailSession(ex); }
         catch (OperationCanceledException) { }
@@ -238,8 +261,14 @@ public sealed partial class GroupViewModel : ViewModelBase
 
     private void Show(GroupHomeResponse home)
     {
+        SaveAnswerDrafts();SaveHomeworkDraft();SaveFormDraft();SaveCreationDraft();
+        if(communityId!=home.CommunityId){ClearDesk();ArchivedChannels.Clear();archiveCommunity=null;archiveLoaded=false;archiveRequestVersion++;AuditEvents.Clear();}
+        conversationId=null;groupConversationId=null;SelectedChannel=null;IsDirect=false;ChatTitle="";
+        Messages.Clear();Forms.Clear();ChannelHomeworks.Clear();ChannelSchedule.Clear();Ballots.Clear();ShowBallots=false;
+        ClearPreviews();RestartTimer();
         ResetGroupContext();
         communityId = home.CommunityId;
+        trustClassmates=home.Classmates;
         me = home.Classmates.FirstOrDefault(person => person.Self)?.UserId ?? Guid.Empty;
         HomeTitle = home.GroupName ?? home.Name;
         HasHome = true;
@@ -281,6 +310,7 @@ public sealed partial class GroupViewModel : ViewModelBase
             _ = LoadGroupLessonContextAsync(home.GroupName, community);
             await OpenConversationAsync(conversation.ConversationId, title, true);
         }
+        catch(CommunityClientException ex)when(operation.IsCurrent && ticket==navigationGeneration && ReadDenied(ex)){if(ex.Failure==CommunityClientFailure.InvalidSession)ShowAccount();else ClearRevokedContent();}
         catch (CommunityClientException) when (operation.IsCurrent && ticket == navigationGeneration) { Status = T("groupFailed"); }
         catch (AccountClientException ex) when (operation.IsCurrent && ticket == navigationGeneration) { FailSession(ex); }
         catch (OperationCanceledException) { }
@@ -293,7 +323,10 @@ public sealed partial class GroupViewModel : ViewModelBase
         await CancelRecordingAsync();
         if (ticket != navigationGeneration) return;
         StopPlayback();
+        ClearSubjectPanels();
+        SaveAnswerDrafts();SaveHomeworkDraft();
         Messages.Clear();
+        Forms.Clear(); ChannelHomeworks.Clear(); ChannelSchedule.Clear();
         ballotRequestSerial++;
         Ballots.Clear();
         BallotLoading = false;
@@ -318,14 +351,20 @@ public sealed partial class GroupViewModel : ViewModelBase
         pendingName = null;
         ChatTitle = title;
         IsDirect = direct;
+        if(communityId is {} currentCommunity){lastNavigation=(currentCommunity,channel?.Key,direct?id:null);if(!direct && channel is not null)lastGroupChannels[currentCommunity]=channel.Key;}
+        SelectHomeworkDraft(ShowChannelHomework?selectedTopicId:null);
         Draft = channelDrafts.GetValueOrDefault(DraftKey(id)) ?? "";
+        DiscussionContext = discussionDrafts.GetValueOrDefault(DraftKey(id)) ?? "";
         replyTo = null;
         editing = null;
         HoldCaption = "";
         HasMore = false;
         try
         {
-            if (ShowBallots) await LoadBallotsAsync(id, ticket);
+            SelectFormDraft(ShowForms ? selectedTopicId : null);
+            if(ShowSubject) await LoadSubjectContext();
+            if (ShowSpecialized) await LoadSpecializedAsync(id, ticket);
+            else if (ShowBallots) await LoadBallotsAsync(id, ticket);
             else await LoadLatestAsync(id, ticket);
             if (!CurrentChat(id, ticket)) return;
             if (direct && Api is not null && Access is not null)
@@ -343,6 +382,7 @@ public sealed partial class GroupViewModel : ViewModelBase
             if (CurrentChat(id, ticket)) RestartTimer();
         }
         catch (OperationCanceledException) { }
+        catch(CommunityClientException ex)when(ReadDenied(ex)){if(CurrentChat(id,ticket))ClearRevokedContent();}
         catch (CommunityClientException) { if (CurrentChat(id, ticket)) Status = T("groupFailed"); }
         catch (AccountClientException ex) { if (CurrentChat(id, ticket)) FailSession(ex); }
     }
@@ -380,6 +420,7 @@ public sealed partial class GroupViewModel : ViewModelBase
             for (var i = page.Messages.Count - 1; i >= 0; i--)
                 if (Messages.All(item => item.Id != page.Messages[i].MessageId)) Messages.Insert(0, Row(page.Messages[i]));
         }
+        catch(CommunityClientException ex)when(operation.IsCurrent && ticket==navigationGeneration && ReadDenied(ex)){if(ex.Failure==CommunityClientFailure.InvalidSession)ShowAccount();else ClearRevokedContent();}
         catch (CommunityClientException) when (operation.IsCurrent && ticket == navigationGeneration) { Status = T("groupFailed"); }
         catch (AccountClientException ex) when (operation.IsCurrent && ticket == navigationGeneration) { FailSession(ex); }
         catch (OperationCanceledException) { }
@@ -453,6 +494,8 @@ public sealed partial class GroupViewModel : ViewModelBase
         var sentTopic = selectedGroupChannel ? selectedTopicId : null;
         var sentGroupChannel = selectedGroupChannel;
         var submittedDraft = Draft;
+        var submittedContext = DiscussionContext;
+        var submittedBody = (submittedContext.Length > 0 ? submittedContext + "\n\n" : "") + submittedDraft.Trim();
         var submittedReply = replyTo;
         var submittedEdit = editing;
         using var operation = App.Work.Enter();
@@ -475,14 +518,15 @@ public sealed partial class GroupViewModel : ViewModelBase
                 message = await api.EditMessageAsync(token, id, editId, new(submittedDraft.Trim()), operation.Token);
             else
                 message = sentGroupChannel
-                    ? await api.SendTopicMessageAsync(token, id, new(submittedDraft.Trim(), sentTopic, submittedReply), operation.Token)
-                    : await api.SendMessageAsync(token, id, new(submittedDraft.Trim(), submittedReply), operation.Token);
+                    ? await api.SendTopicMessageAsync(token, id, new(submittedBody, sentTopic, submittedReply), operation.Token)
+                    : await api.SendMessageAsync(token, id, new(submittedBody, submittedReply), operation.Token);
             if (!operation.IsCurrent) return;
             if (!CurrentChat(id, ticket))
             {
                 if (file is null && channelDrafts.GetValueOrDefault(draftKey) == submittedDraft) channelDrafts.Remove(draftKey);
                 return;
             }
+            if(DiscussionContext == submittedContext) DiscussionContext = "";
             var unchangedDraft = Draft == submittedDraft;
             if (replyTo == submittedReply) replyTo = null;
             if (editing == submittedEdit) editing = null;
@@ -519,8 +563,8 @@ public sealed partial class GroupViewModel : ViewModelBase
         }
     }
 
-    private bool CanStartRecording(string? kind) => (kind is "voice" or "circle")
-        && ShowComposer && !IsBusy && !IsRecording && !IsFinalizingRecording && editing is null && conversationId is not null;
+    private bool CanStartRecording(string? kind) => !HasRecordedDraft && (kind is "voice" or "circle")
+        && CanAttachMedia && !IsBusy && !IsRecording && !IsFinalizingRecording && editing is null && conversationId is not null;
 
     [RelayCommand(CanExecute = nameof(CanStartRecording))]
     private async Task StartRecordingAsync(string? kind)
@@ -591,18 +635,8 @@ public sealed partial class GroupViewModel : ViewModelBase
             media = await recorder.FinishAsync(operation.Token);
             ChatMediaLimits.Validate(media);
             if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
-            var token = await Access(operation.Token);
-            if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
-            if (string.IsNullOrEmpty(token)) { ShowAccount(); return; }
-            var submittedReply = replyTo;
-            var message = await GroupMedia.Place(Api, token, id, media.Kind, media.FileName,
-                media.Bytes, submittedReply, operation.Token, media.DurationMs, selectedGroupChannel ? selectedTopicId : null);
-            if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
-            if (replyTo == submittedReply) { replyTo = null; HoldCaption = ""; }
-            var row = Row(message);
-            var index = Messages.ToList().FindIndex(item => item.Id == row.Id);
-            if (index >= 0) Messages[index] = row;
-            else Messages.Add(row);
+            StageRecording(media);
+            media = null;
             Status = "";
         }
         catch (OperationCanceledException) { }
@@ -610,7 +644,7 @@ public sealed partial class GroupViewModel : ViewModelBase
         catch (Exception ex) when (operation.IsCurrent && CurrentChat(id, ticket) && ex is
             (CommunityClientException or IOException or InvalidDataException or InvalidOperationException
                 or UnauthorizedAccessException or System.Runtime.InteropServices.COMException))
-        { Status = "Не удалось отправить запись."; }
+        { Status = "Не удалось завершить запись."; }
         finally
         {
             if (media is not null) CryptographicOperations.ZeroMemory(media.Bytes);
@@ -628,6 +662,7 @@ public sealed partial class GroupViewModel : ViewModelBase
     private async Task CancelRecordingAsync()
     {
         if (IsFinalizingRecording) return;
+        ClearRecordedDraft();
         recordingTimer?.Stop();
         recordingTimer = null;
         IsRecording = false;
@@ -665,12 +700,13 @@ public sealed partial class GroupViewModel : ViewModelBase
         await Send();
     }
 
-    private bool CanSend() => ShowComposer && !IsBusy && !IsRecording && !IsFinalizingRecording && conversationId is not null && (!string.IsNullOrWhiteSpace(Draft) || pendingBytes is { Length: > 0 });
+    private bool CanSend() => !HasRecordedDraft && ShowComposer && !IsBusy && !IsRecording && !IsFinalizingRecording && conversationId is not null && (!string.IsNullOrWhiteSpace(Draft) || pendingBytes is { Length: > 0 });
 
     [RelayCommand]
     private Task BackToGroup()
     {
         if (communityId is not Guid id) return Task.CompletedTask;
+        lastNavigation=(id,lastGroupChannels.GetValueOrDefault(id),null);
         return OpenAsync(id);
     }
 
@@ -693,6 +729,7 @@ public sealed partial class GroupViewModel : ViewModelBase
         Channels.Clear();
         Ballots.Clear();
         ClearDesk();
+        Forms.Clear();ChannelHomeworks.Clear();ChannelSchedule.Clear();SubjectHomeworks.Clear();ShowSingleHomework=false;
         StartRecordingCommand.NotifyCanExecuteChanged();
         RestartTimer();
         if (pendingBytes is not null) CryptographicOperations.ZeroMemory(pendingBytes);
@@ -736,8 +773,10 @@ public sealed partial class GroupViewModel : ViewModelBase
             if (id is Guid currentDesk && CurrentChat(currentDesk, ticket)) await RefreshDeskAsync(currentDesk, ticket);
             if (id is Guid selected && CurrentChat(selected, ticket))
             {
-                if (ShowBallots) await LoadBallotsAsync(selected, ticket);
-                else await PullAsync();
+                if (PreviewMode) return;
+                if (ShowForms || ShowChannelHomework || ShowChannelSchedule) await LoadSpecializedAsync(selected, ticket);
+                else if (ShowBallots) await LoadBallotsAsync(selected, ticket);
+                else if (ShowMessages || ShowMaterials) await PullAsync();
             }
         }
         catch (CommunityClientException) { if (id is Guid current && CurrentChat(current, ticket)) Status = T("groupFailed"); }
@@ -747,12 +786,20 @@ public sealed partial class GroupViewModel : ViewModelBase
         finally { Interlocked.Exchange(ref polling, 0); }
     }
 
+    private IReadOnlyList<string> MessageActions(GroupMessageRow row)
+    {
+        if(PreviewMode || SelectedChannel?.Archived==true || !Messages.Contains(row) || conversationId is null)return [];
+        var actions=MessengerHold.Actions(row.Kind,row.Mine,row.Deleted,true).ToList();
+        if(!CanPostChannel)actions.Clear();
+        if(!row.Deleted && !IsDirect && SelectedChannel?.Permissions.Contains("moderate")==true && !actions.Contains("delete"))actions.Add("delete");
+        return actions;
+    }
     private async void ApplyHold(GroupMessageRow row, string action)
     {
         if (conversationId is null || Api is null || Access is null) return;
         if (!Messages.Contains(row)) return;
         var emoji = action.StartsWith("reaction:", StringComparison.Ordinal) ? action["reaction:".Length..] : null;
-        var allowed = MessengerHold.Actions(row.Kind, row.Mine, row.Deleted, true);
+        var allowed = MessageActions(row);
         if (emoji is null ? !allowed.Contains(action)
             : !allowed.Contains("reaction") || !HoldBox.ReactionChoices.Any(choice => choice.Code == emoji)) return;
         if (action == "reply")
@@ -778,13 +825,13 @@ public sealed partial class GroupViewModel : ViewModelBase
 
     private async Task ChangeHeldMessageAsync(GroupMessageRow row, bool delete, string? emoji)
     {
-        if (conversationId is not Guid id || Api is null || Access is null || !Messages.Contains(row)) return;
+        if (conversationId is not Guid id || Api is null || Access is null || !MessageActions(row).Contains(delete?"delete":"reaction")) return;
         var ticket = navigationGeneration;
         try
         {
             using var operation = App.Work.Enter();
             var token = await Access(operation.Token);
-            if (string.IsNullOrEmpty(token) || !operation.IsCurrent || !CurrentChat(id, ticket)) return;
+            if (string.IsNullOrEmpty(token) || !operation.IsCurrent || !CurrentChat(id, ticket) || !MessageActions(row).Contains(delete?"delete":"reaction")) return;
             var message = delete
                 ? await Api.DeleteMessageAsync(token, id, row.Id, operation.Token)
                 : await Api.ReactMessageAsync(token, id, row.Id, emoji!, operation.Token);
@@ -809,7 +856,7 @@ public sealed partial class GroupViewModel : ViewModelBase
             message.SenderId == me, message.Kind, message.Deleted, action => ApplyHold(row, action),
             () => DownloadMediaAsync(row, message.ConversationId), message.Reactions, replyPreview,
             () => PlayMediaAsync(row, message.ConversationId), message.SenderId, message.CreatedAt,
-            () => CopyMessageAsync(row));
+            () => CopyMessageAsync(row), () => MessageActions(row));
         if (message.Kind == "image" && !message.Deleted)
         {
             if (previewCache.TryGetValue(message.MessageId, out var cached)) row.Preview = cached;
@@ -822,6 +869,7 @@ public sealed partial class GroupViewModel : ViewModelBase
     {
         if (!previewLoading.Add(messageId) || Api is null || Access is null) return;
         var selectedConversation = conversationId;
+        var requestGeneration=navigationGeneration;
         var cancellation = previewCancellation.Token;
         byte[]? bytes = null;
         Bitmap? bitmap = null;
@@ -836,8 +884,9 @@ public sealed partial class GroupViewModel : ViewModelBase
             foreach (var row in Messages.Where(row => row.Id == messageId)) row.Preview = bitmap;
             bitmap = null;
         }
-        catch (Exception ex) when (ex is OperationCanceledException or CommunityClientException or AccountClientException
-            or ArgumentException or InvalidDataException or IOException) { }
+        catch(CommunityClientException ex)when(ReadDenied(ex)){if(requestGeneration==navigationGeneration && selectedConversation==conversationId)ClearRevokedContent();}
+        catch(AccountClientException ex){if(requestGeneration==navigationGeneration && selectedConversation==conversationId)FailSession(ex);}
+        catch (Exception ex) when (ex is OperationCanceledException or CommunityClientException or ArgumentException or InvalidDataException or IOException) { }
         finally
         {
             bitmap?.Dispose();
@@ -876,7 +925,9 @@ public sealed partial class GroupViewModel : ViewModelBase
             Status = "";
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) when (ex is CommunityClientException or AccountClientException or IOException or InvalidDataException
+        catch(CommunityClientException ex)when(ReadDenied(ex)){if(CurrentChat(id,ticket))ClearRevokedContent();}
+        catch(AccountClientException ex){if(CurrentChat(id,ticket))FailSession(ex);}
+        catch (Exception ex) when (ex is CommunityClientException or IOException or InvalidDataException
             or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
         { if (operation.IsCurrent && CurrentChat(id, ticket)) Status = "Не удалось воспроизвести запись."; }
         finally { if (bytes is not null) CryptographicOperations.ZeroMemory(bytes); }
@@ -922,6 +973,7 @@ public sealed partial class GroupViewModel : ViewModelBase
         }
         catch (OperationCanceledException) { }
         catch (AccountClientException ex) when (operation.IsCurrent && CurrentChat(id, ticket)) { FailSession(ex); }
+        catch(CommunityClientException ex)when(ReadDenied(ex)){if(operation.IsCurrent && CurrentChat(id,ticket))ClearRevokedContent();}
         catch (Exception ex) when (operation.IsCurrent && CurrentChat(id, ticket) && ex is (CommunityClientException or IOException or UnauthorizedAccessException))
         { Status = T("groupMediaFailed"); }
         finally { if (bytes is not null) CryptographicOperations.ZeroMemory(bytes); }
@@ -931,11 +983,12 @@ public sealed partial class GroupViewModel : ViewModelBase
     {
         if (ex.Failure is AccountClientFailure.InvalidSession or AccountClientFailure.ReauthenticationRequired
             or AccountClientFailure.SessionChanged) ShowAccount();
-        else Status = T("groupFailed");
+        else {ClearRevokedContent();Status = T("groupFailed");}
     }
 
     private void ShowAccount()
     {
+        ClearRevokedContent();
         navigationGeneration++;
         _ = CancelRecordingAsync();
         StopPlayback();
@@ -959,6 +1012,7 @@ public sealed partial class GroupViewModel : ViewModelBase
         Channels.Clear();
         Ballots.Clear();
         ClearDesk();
+        Forms.Clear();ChannelHomeworks.Clear();ChannelSchedule.Clear();SubjectHomeworks.Clear();ShowSingleHomework=false;
         Draft = "";
         replyTo = null;
         editing = null;
@@ -1003,13 +1057,16 @@ public sealed class GroupPersonRow(string name, string detail, string role, stri
     public IRelayCommand? OpenCommand { get; } = open;
 }
 
-public sealed partial class GroupMessageRow(Guid id, string author, string body, string when, bool mine, string kind = "text", bool deleted = false, Action<string>? apply = null, Func<Task>? download = null, IReadOnlyList<ChatReactionSummary>? reactions = null, string? replyPreview = null, Func<Task>? play = null, Guid senderId = default, DateTimeOffset createdAt = default, Func<Task>? copy = null) : ObservableObject
+public sealed partial class GroupMessageRow(Guid id, string author, string body, string when, bool mine, string kind = "text", bool deleted = false, Action<string>? apply = null, Func<Task>? download = null, IReadOnlyList<ChatReactionSummary>? reactions = null, string? replyPreview = null, Func<Task>? play = null, Guid senderId = default, DateTimeOffset createdAt = default, Func<Task>? copy = null, Func<IReadOnlyList<string>>? actions = null) : ObservableObject
 {
     public Guid Id { get; } = id;
     public string Author { get; } = author;
     public Guid SenderId { get; } = senderId;
     public DateTimeOffset CreatedAt { get; } = createdAt;
     public string Body { get; } = body;
+    public string? Link => Body.Split((char[]?)null,StringSplitOptions.RemoveEmptyEntries).FirstOrDefault(x=>Uri.TryCreate(x,UriKind.Absolute,out var uri)&&uri.Scheme is "https" or "http");
+    public bool HasLink=>!Deleted && Link is not null;
+    public IRelayCommand OpenLinkCommand=>new RelayCommand(()=>{if(Link is {} url)try{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url){UseShellExecute=true});}catch(System.ComponentModel.Win32Exception){} });
     public string Display { get; } = deleted ? "Сообщение удалено" : kind switch
     {
         "image" => "Фото",
@@ -1042,6 +1099,7 @@ public sealed partial class GroupMessageRow(Guid id, string author, string body,
     [ObservableProperty] private bool isPlaying;
     [ObservableProperty] private Bitmap? preview;
     partial void OnIsPlayingChanged(bool value) => OnPropertyChanged(nameof(PlayCaption));
+    public IReadOnlyList<string> HoldActions=>actions?.Invoke() ?? MessengerHold.Actions(Kind,Mine,Deleted,true);
     public void Apply(string action) => apply?.Invoke(action);
 }
 

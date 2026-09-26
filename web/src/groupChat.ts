@@ -46,7 +46,7 @@ export function createGroupPoller(
   load: (after?: string) => Promise<GroupPage>,
   known: () => ChatMessage[],
   publish: (updates: GroupUpdates, firstLoad: boolean) => void,
-  onError: () => void,
+  onError: (error?: unknown) => void,
 ) {
   let inFlight: Promise<void> | null = null;
   let revision = 0;
@@ -63,7 +63,7 @@ export function createGroupPoller(
           publish(updates, !loaded);
           loaded = true;
         })
-        .catch(() => { if (!disposed && startedAt === revision) onError(); })
+        .catch(error => { if (!disposed && startedAt === revision) onError(error); })
         .finally(() => { if (inFlight === task) inFlight = null; });
       inFlight = task;
       return task;

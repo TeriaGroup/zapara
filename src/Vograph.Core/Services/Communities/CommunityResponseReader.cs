@@ -7,7 +7,7 @@ internal static class CommunityResponseReader
 {
     internal static T Read<T>(byte[] bytes)
     {
-        var result = CommunityJson.Parse<T>(bytes);
+        var result = CommunityJson.ParseResponse<T>(bytes);
         if (result is Array array)
             foreach (var item in array)
                 if (item is null) throw Invalid();

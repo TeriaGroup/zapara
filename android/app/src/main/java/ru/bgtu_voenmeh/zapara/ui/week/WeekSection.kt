@@ -39,7 +39,7 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
     val chrome = LocalShellChrome.current
     val c = Zapara.colors
     Column(Modifier.fillMaxSize()) {
-        ZTopBar(stringResource(R.string.nav_week))
+        ZTopBar(stringResource(R.string.nav_week)) { ru.bgtu_voenmeh.zapara.ui.theme.ZButton(stringResource(R.string.nav_schedule), { onOpenDay(state.selectedDate) }, ghost = true, quiet = true) }
         if (!state.loaded) {
             Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
         } else if (!state.hasGroup) {

@@ -94,6 +94,13 @@ public sealed class NotificationScheduler : IDisposable
         }
     }
 
+    public async Task<string?> PreviewTestAsync(DateTime now)
+    {
+        using var operation=_app.Work.Enter();if(!operation.IsCurrent)return null;
+        try{return await GatedAsync(()=>BuildText(_app.Db.GetSettings(),now.Date.AddDays(1),now));}
+        catch(Exception ex){_app.Log.Error("notification preview",ex);return null;}
+    }
+
     /// <summary>«Тест уведомления»: tomorrow's text right now.</summary>
     public async Task<string?> ShowTestAsync(DateTime now)
     {

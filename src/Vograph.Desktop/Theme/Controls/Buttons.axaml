@@ -8,7 +8,9 @@
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="CornerRadius" Value="{DynamicResource Radius.Control}" />
     <Setter Property="Padding" Value="14,7" />
-    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="MinHeight" Value="48" />
+    <Setter Property="MinWidth" Value="48" />
     <Setter Property="FontWeight" Value="Medium" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
     <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -40,9 +42,17 @@
     <Style Selector="^.primary">
       <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />
       <Setter Property="Foreground" Value="{DynamicResource Brush.OnAccent}" />
-      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="FontWeight" Value="Medium" />
     </Style>
     <Style Selector="^.primary:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Accent}" /><Setter Property="Opacity" Value="0.9" /></Style>
+
+    <Style Selector="^.secondary">
+      <Setter Property="Background" Value="{DynamicResource Brush.Card}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.Line}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" />
+    </Style>
+    <Style Selector="^.secondary:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.CardHover}" /></Style>
 
     <Style Selector="^.ghost"><Setter Property="Background" Value="Transparent" /></Style>
     <Style Selector="^.ghost:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Selection}" /></Style>
@@ -53,12 +63,12 @@
 
     <!-- icon: 34x34 square -->
     <Style Selector="^.icon">
-      <Setter Property="Width" Value="34" /><Setter Property="Height" Value="34" />
+      <Setter Property="Width" Value="48" /><Setter Property="Height" Value="48" />
       <Setter Property="Padding" Value="0" /><Setter Property="CornerRadius" Value="{DynamicResource Radius.Icon}" />
       <Setter Property="Background" Value="Transparent" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
     </Style>
     <Style Selector="^.icon:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Selection}" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /></Style>
-    <Style Selector="^.icon.small"><Setter Property="Width" Value="26" /><Setter Property="Height" Value="26" /><Setter Property="CornerRadius" Value="7" /><Setter Property="Background" Value="{DynamicResource Brush.Chip}" /></Style>
+    <Style Selector="^.icon.small"><Setter Property="Width" Value="48" /><Setter Property="Height" Value="48" /><Setter Property="CornerRadius" Value="8" /><Setter Property="Background" Value="{DynamicResource Brush.Chip}" /></Style>
 
     <!-- pill: outlined, secondary text -->
     <Style Selector="^.pill">
@@ -94,6 +104,7 @@
 
     <!-- caption: window buttons -->
     <Style Selector="^.caption">
+      <Setter Property="MinWidth" Value="46" /><Setter Property="MinHeight" Value="40" />
       <Setter Property="Width" Value="46" /><Setter Property="Height" Value="40" /><Setter Property="Padding" Value="0" />
       <Setter Property="CornerRadius" Value="0" /><Setter Property="Background" Value="Transparent" />
       <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" /><Setter Property="Cursor" Value="Arrow" />

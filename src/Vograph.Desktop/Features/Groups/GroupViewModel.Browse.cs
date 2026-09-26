@@ -55,6 +55,7 @@ public sealed partial class GroupViewModel
 
     private void RefreshChannelBrowse()
     {
+        RefreshCategories();
         OnPropertyChanged(nameof(FilteredChannels));
         OnPropertyChanged(nameof(ChannelResultCount));
         OnPropertyChanged(nameof(NoChannelSearchResults));

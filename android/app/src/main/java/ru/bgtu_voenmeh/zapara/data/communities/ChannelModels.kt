@@ -17,7 +17,15 @@ data class GroupTopic(
     val accent: String = "default",
     val pinned: Boolean = false,
     val writePolicy: String = "all",
-    val canPost: Boolean = true
+    val canPost: Boolean = true,
+    val template: String = kind,
+    val categoryId: String? = null,
+    val position: Int = 0,
+    val subject: String? = null,
+    val archived: Boolean = false,
+    val revision: Long = 0,
+    val permissions: List<String> = emptyList(),
+    val supported: Boolean = true
 )
 
 data class GroupTopicList(val topics: List<GroupTopic>, val canManageChannels: Boolean)

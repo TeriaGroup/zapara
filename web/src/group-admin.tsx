@@ -1,103 +1,104 @@
 import { FormEvent, useState } from "react";
 import * as api from "./api";
+import { canReadAudit } from "./topic-policy";
 import { groupPowers } from "./powers";
-import type { Classmate, GroupDesk } from "./types";
-
-function roleTitle(role: string) {
-  if (role === "headman") return "Староста";
-  if (role === "curator") return "Куратор";
-  return "Участник";
-}
-
-export function titlesOf(desk: GroupDesk | null, userId: string) {
-  if (!desk) return [];
-  return desk.grants.filter(grant => grant.userId === userId).map(grant => desk.roles.find(role => role.roleId === grant.roleId)?.name).filter((name): name is string => !!name);
-}
-
+import { powerTitles } from "./topics";
+import type { Classmate, GroupDesk, GroupRole, GroupAuditEvent } from "./types";
+export function titlesOf(desk: GroupDesk | null, userId: string) { return desk?.grants.filter(grant => grant.userId === userId).map(grant => desk.roles.find(role => role.roleId === grant.roleId)?.name).filter((name): name is string => !!name) ?? []; }
 export function GroupAdmin({ communityId, classmates, desk, onChange, onReload, onError }: {
-  communityId: string;
-  classmates: Classmate[];
-  desk: GroupDesk;
-  onChange: (desk: GroupDesk) => void;
-  onReload: () => Promise<void>;
-  onError: (text: string) => void;
+    communityId: string;
+    classmates: Classmate[];
+    desk: GroupDesk;
+    onChange: (desk: GroupDesk) => void;
+    onReload: () => Promise<void>;
+    onError: (text: string) => void;
 }) {
-  const [name, setName] = useState("");
-  const [pick, setPick] = useState<Record<string, string>>({});
-  const can = (code: string) => desk.mine.includes(code);
-  if (desk.mine.length === 0) return null;
-
-  async function run(action: () => Promise<GroupDesk>) {
-    try { onChange(await action()); }
-    catch { onError("Не получилось сохранить изменение группы"); }
-  }
-
-  function create(event: FormEvent) {
-    event.preventDefault();
-    if (name.trim().length < 2) return;
-    const value = name.trim();
-    setName("");
-    void run(() => api.createGroupRole(communityId, value));
-  }
-
-  return (
-    <section className="card stack">
-      <h2>Управление группой</h2>
-      <p className="muted">Роли и возможности действуют только внутри «Расписание военмех» и не подтверждены университетом. Старосту и куратора назначает администрация приложения. Возможности роли включает староста или общее голосование.</p>
-      {can("roles") && <form className="row" onSubmit={create}>
-        <input value={name} onChange={event => setName(event.target.value)} placeholder="Название роли" aria-label="Название роли" maxLength={32} />
-        <button className="btn primary" type="submit" disabled={name.trim().length < 2}>Создать роль</button>
-      </form>}
-      {desk.roles.map(role => {
-        const titles = groupPowers.filter(item => desk.powers.some(power => power.roleId === role.roleId && power.power === item.code)).map(item => item.title);
-        return (
-        <div className="stack" key={role.roleId}>
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <b>{role.name}</b>
-            {can("roles") && <span className="row">
-              <button className="btn" type="button" onClick={() => {
-                const next = window.prompt("Новое название", role.name);
-                if (next && next.trim() && next.trim() !== role.name) void run(() => api.renameGroupRole(communityId, role.roleId, next.trim()));
-              }}>Переименовать</button>
-              <button className="btn" type="button" onClick={() => void run(() => api.deleteGroupRole(communityId, role.roleId))}>Удалить</button>
-            </span>}
-          </div>
-          {titles.length > 0 && <p className="muted">{titles.join(", ")}</p>}
-          {desk.headman && <span className="row">{groupPowers.map(item => {
-            const on = desk.powers.some(power => power.roleId === role.roleId && power.power === item.code);
-            return <button key={item.code} className={on ? "btn primary" : "btn"} type="button" onClick={() => void run(() => api.setRolePower(communityId, role.roleId, item.code, !on))}>{item.title}</button>;
-          })}</span>}
-        </div>
-        );
-      })}
-      {desk.roles.length === 0 && <p className="muted">Своих ролей пока нет. Например: замстаросты, ответственный за домашку.</p>}
-      {can("joins") && desk.applicants.length > 0 && <h2>Заявки</h2>}
-      {can("joins") && desk.applicants.map(person => (
-        <div className="row" key={person.requestId} style={{ justifyContent: "space-between" }}>
-          <span><b>{person.displayName || person.username}</b><div className="muted">@{person.username}</div></span>
-          <span className="row">
-            <button className="btn primary" type="button" onClick={() => void api.acceptJoin(communityId, person.requestId).then(onReload).catch(() => onError("Не получилось сохранить изменение группы"))}>Принять</button>
-            <button className="btn" type="button" onClick={() => void api.rejectJoin(communityId, person.requestId).then(onReload).catch(() => onError("Не получилось сохранить изменение группы"))}>Отклонить</button>
-          </span>
-        </div>
-      ))}
-      {(can("grants") || can("exclude")) && <h2>Участники</h2>}
-      {(can("grants") || can("exclude")) && classmates.map(person => (
-        <div className="row" key={person.userId} style={{ justifyContent: "space-between" }}>
-          <span>{person.displayName || person.username}</span>
-          <span className="row">
-            {can("grants") && <>
-              <select aria-label={"Роль для " + (person.displayName || person.username)} value={pick[person.userId] || ""} onChange={event => setPick(current => ({ ...current, [person.userId]: event.target.value }))}>
-                <option value="">Роль</option>
-                {desk.roles.map(role => <option key={role.roleId} value={role.roleId}>{role.name}</option>)}
-              </select>
-              <button className="btn" type="button" disabled={!pick[person.userId]} onClick={() => void run(() => api.grantGroupRole(communityId, pick[person.userId], person.userId))}>Назначить</button>
-            </>}
-            {can("exclude") && !person.self && person.role === "member" && <button className="btn" type="button" onClick={() => { if (window.confirm("Исключить участника из группы?")) void api.removeGroupMember(communityId, person.userId).then(onReload).catch(() => onError("Не получилось сохранить изменение группы")); }}>Исключить</button>}
-          </span>
-        </div>
-      ))}
-      {can("grants") && <p className="muted">У человека не больше трёх своих ролей. {roleTitle("headman")} и {roleTitle("curator")} этой формой не меняются.</p>}
-    </section>
-  );
+    const [open, setOpen] = useState(false);
+    const [name, setName] = useState("");
+    const [pick, setPick] = useState<Record<string, string>>({});
+    const [busy, setBusy] = useState(false);
+    const [editing, setEditing] = useState<GroupRole | null>(null);
+    const [roleConflict, setRoleConflict] = useState<GroupRole | "unavailable" | null>(null);
+    const [fields, setFields] = useState({ name: "", icon: "", position: 0 });
+    const [events, setEvents] = useState<GroupAuditEvent[] | null>(null);
+    const can = (code: string) => desk.headman || desk.mine.includes(code);
+    const self = classmates.find(person => person.self)?.userId;
+    const height = Math.max(0, ...desk.grants.filter(grant => grant.userId === self).map(grant => desk.roles.find(role => role.roleId === grant.roleId)?.position ?? 0));
+    const manageable = (role: GroupRole) => desk.headman || (role.position !== undefined && role.position < height);
+    const eligible = (person: Classmate, role: GroupRole) => manageable(role) && (desk.headman || (!person.self && person.role === "member"));
+    async function run(action: () => Promise<GroupDesk>, baseRole?: GroupRole) {
+        if (busy)
+            return;
+        setBusy(true);
+        try {
+            onChange(await action());
+        }
+        catch (error) {
+            if (error instanceof Error && error.message === "409" && baseRole) {
+                const fresh = await api.groupDesk(communityId).catch(() => null);
+                const latest = fresh?.roles.find(role => role.roleId === baseRole.roleId);
+                setRoleConflict(latest ? { ...latest } : "unavailable");
+                if (fresh)
+                    onChange(fresh);
+            }
+            onError(error instanceof Error && error.message === "409" ? "Роль изменена другим участником. Несохранённые поля оставлены; обновите данные перед повторением." : error instanceof Error && error.message === "403" ? "Недостаточно прав: нельзя менять равную или старшую роль, либо выдавать отсутствующее право." : "Изменение группы не сохранено");
+        }
+        finally {
+            setBusy(false);
+        }
+    }
+    function create(event: FormEvent) {
+        event.preventDefault();
+        if (name.trim().length < 2)
+            return;
+        void run(async () => { const next = await api.createGroupRole(communityId, name.trim()); setName(""); return next; });
+    }
+    if (!desk.mine.length && !desk.headman)
+        return null;
+    return <details className="group-admin-panel" open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary>Управление группой</summary><section className="card stack"><p className="muted">Роли действуют внутри приложения. Старосту и куратора назначает администрация приложения; их статусы защищены.</p>
+    {can("roles") && <form className="row" onSubmit={create}><input aria-label="Название новой роли" value={name} onChange={event => setName(event.target.value)} maxLength={32} placeholder="Название роли"/><button className="btn primary" disabled={busy || name.trim().length < 2 || desk.roles.length >= (desk.capabilities?.maxRoles ?? 12)}>Создать роль</button></form>}
+    {[...desk.roles].sort((a, b) => (b.position ?? 0) - (a.position ?? 0)).map(role => <div className="role-line stack" key={role.roleId}><div className="row"><b>{role.icon} {role.name}</b><span className="muted">Уровень {role.position ?? 0} · Назначений: {desk.grants.filter(grant => grant.roleId === role.roleId).length}</span>{can("roles") && manageable(role) && <><button className="btn quiet" type="button" disabled={busy} onClick={() => { setEditing({ ...role }); setRoleConflict(null); setFields({ name: role.name, icon: role.icon || "", position: role.position ?? 0 }); }}>Настройки</button><button className="btn quiet" type="button" disabled={busy} onClick={() => {
+                    if (!desk.capabilities) {
+                        if (window.confirm(`Удалить роль «${role.name}»? Назначений: ${desk.grants.filter(grant => grant.roleId === role.roleId).length}.`))
+                            void run(() => api.deleteGroupRole(communityId, role.roleId));
+                        return;
+                    }
+                    setBusy(true);
+                    void api.roleImpact(communityId, role.roleId).then(impact => {
+                        if (window.confirm(`Удалить роль «${role.name}»? Назначений: ${impact.assignments}. Правил доступа: ${impact.accessRules}. Официальное членство сохранится.`))
+                            return api.deleteGroupRole(communityId, role.roleId).then(onChange);
+                    }).catch(() => onError("Не удалось проверить влияние удаления роли")).finally(() => setBusy(false));
+                }}>Удалить</button></>}{!manageable(role) && <span className="muted">Равная или старшая роль</span>}</div>
+      <p className="muted">{desk.powers.filter(power => power.roleId === role.roleId).map(power => powerTitles[power.power] || power.power).join(", ") || "Без дополнительных прав"}</p>
+      {editing?.roleId === role.roleId && <form className="card stack" onSubmit={event => {
+                    event.preventDefault();
+                    const baseRole = editing;
+                    if (!baseRole || baseRole.roleId !== role.roleId || roleConflict || !can("roles") || !manageable(role))
+                        return;
+                    void run(async () => { const next = desk.capabilities ? await api.saveRoleSettings(communityId, baseRole.roleId, fields.name, fields.icon, fields.position, baseRole.revision ?? 0) : await api.renameGroupRole(communityId, baseRole.roleId, fields.name); setEditing(null); setRoleConflict(null); return next; }, baseRole);
+                }}><label className="field">Название<input value={fields.name} minLength={2} maxLength={32} required onChange={event => setFields(value => ({ ...value, name: event.target.value }))}/></label><label className="field">Значок<input value={fields.icon} maxLength={8} onChange={event => setFields(value => ({ ...value, icon: event.target.value }))}/></label><label className="field">Уровень<input type="number" min="0" max={desk.headman ? 100 : Math.max(0, height - 1)} value={fields.position} onChange={event => setFields(value => ({ ...value, position: +event.target.value }))}/></label><p className="muted">Базовая ревизия редактора: {editing.revision ?? "прежний сервер"}</p>{roleConflict && <div className="banner stack" role="alert"><h2>Роль изменилась на сервере</h2>{roleConflict === "unavailable" ? <p>Актуальные параметры не загрузились или роль удалена. Ваши поля сохранены.</p> : <><p>Актуальные параметры: {roleConflict.name} · {roleConflict.icon} · уровень {roleConflict.position ?? 0} · ревизия {roleConflict.revision}</p><p>Ваши несохранённые поля: {fields.name} · {fields.icon} · уровень {fields.position}</p><button className="btn" type="button" disabled={busy || !can("roles") || !manageable(roleConflict)} onClick={() => {
+                            if (window.confirm("Использовать актуальную ревизию для вашего черновика? При сохранении ваши поля заменят показанные параметры сервера.")) {
+                                setEditing({ ...roleConflict });
+                                setRoleConflict(null);
+                            }
+                        }}>Использовать актуальную ревизию</button></>}</div>}<p className="muted">Выше можно управлять только более низкими ролями. Права нескольких назначений объединяются.</p><div className="row"><button className="btn primary" disabled={busy || !!roleConflict || !can("roles") || !manageable(role)}>{busy ? "Сохраняем…" : "Сохранить"}</button><button className="btn quiet" type="button" onClick={() => { setEditing(null); setRoleConflict(null); }}>Отмена</button></div></form>}
+      {can("roles") && manageable(role) && <details><summary>Возможности роли</summary><div className="stack">{(desk.capabilities?.powers ?? groupPowers.map(row => row.code)).map(power => { const enabled = desk.powers.some(row => row.roleId === role.roleId && row.power === power); return <label className="switch-row" key={power}><span>{powerTitles[power] || power}</span><input type="checkbox" role="switch" checked={enabled} disabled={busy || (!desk.headman && !desk.mine.includes(power))} onChange={() => void run(() => api.setRolePower(communityId, role.roleId, power, !enabled))}/></label>; })}</div></details>}
+    </div>)}
+    {can("joins") && desk.applicants.length > 0 && <><h2>Заявки</h2>{desk.applicants.map(person => <div className="row" key={person.requestId}><b>{person.displayName || person.username}</b><button className="btn primary" type="button" disabled={busy} onClick={() => { setBusy(true); void api.acceptJoin(communityId, person.requestId).then(onReload).catch(() => onError("Заявка не принята")).finally(() => setBusy(false)); }}>Принять</button><button className="btn" type="button" disabled={busy} onClick={() => { setBusy(true); void api.rejectJoin(communityId, person.requestId).then(onReload).catch(() => onError("Не удалось отклонить заявку")).finally(() => setBusy(false)); }}>Отклонить</button></div>)}</>}
+    {(can("grants") || can("exclude")) && <><h2>Участники</h2>{classmates.map(person => <div className="role-person stack" key={person.userId}><div className="row"><b>{person.displayName || person.username}</b><span className="chip">{person.role === "headman" ? "Староста" : person.role === "curator" ? "Куратор" : "Участник"}</span></div><div className="row">{desk.grants.filter(grant => grant.userId === person.userId).map(grant => { const role = desk.roles.find(row => row.roleId === grant.roleId); return <span className="chip" key={grant.roleId}>{role?.name}{role && can("grants") && eligible(person, role) && <button className="btn quiet" type="button" disabled={busy} aria-label={`Снять роль ${role.name} у ${person.displayName || person.username}`} onClick={() => void run(() => api.revokeGroupRole(communityId, role.roleId, person.userId))}>Снять</button>}</span>; })}</div>
+      {can("grants") && <div className="row"><select aria-label={`Роль для ${person.displayName || person.username}`} value={pick[person.userId] || ""} onChange={event => setPick(value => ({ ...value, [person.userId]: event.target.value }))}><option value="">Выберите роль</option>{desk.roles.filter(role => eligible(person, role) && !desk.grants.some(grant => grant.userId === person.userId && grant.roleId === role.roleId)).map(role => <option value={role.roleId} key={role.roleId}>{role.name}</option>)}</select><button className="btn" type="button" disabled={busy || !pick[person.userId] || desk.grants.filter(grant => grant.userId === person.userId).length >= (desk.capabilities?.maxRolesPerMember ?? 3)} onClick={() => void run(() => api.grantGroupRole(communityId, pick[person.userId], person.userId))}>Назначить</button></div>}
+      {can("exclude") && !person.self && person.role === "member" && <button className="btn quiet" type="button" disabled={busy} onClick={() => {
+                        if (window.confirm("Исключить участника из группы?"))
+                            void run(() => api.removeGroupMember(communityId, person.userId));
+                    }}>Исключить</button>}
+    </div>)}</>}
+    {desk.capabilities && canReadAudit(desk) && <><button className="btn" type="button" disabled={busy} onClick={() => {
+                setBusy(true);
+                if (!canReadAudit(desk)) {
+                    setBusy(false);
+                    return;
+                }
+                void api.groupAudit(communityId).then(value => setEvents(value.events)).catch(() => onError("Журнал управления недоступен")).finally(() => setBusy(false));
+            }}>Журнал управления</button>{events && <div className="stack"><h2>Последние изменения</h2>{events.length === 0 && <p className="muted">Событий пока нет</p>}{events.map(event => <p key={event.eventId}>{new Date(event.createdAt).toLocaleString("ru-RU")} · {classmates.find(person => person.userId === event.actorId)?.displayName || "Участник"} · {event.action} · {desk.roles.find(role => role.roleId === event.objectId)?.name || "Объект группы"}</p>)}</div>}</>}
+  </section></details>;
 }

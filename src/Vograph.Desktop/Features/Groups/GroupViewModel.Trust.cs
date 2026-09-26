@@ -21,14 +21,16 @@ public sealed partial class GroupViewModel
     [ObservableProperty] private GroupTrustedPersonRow? selectedTrustCandidate;
 
     public string ChannelPowerAction => SelectedTrustedRole?.HasChannelsPower == true ? "Отозвать право управления" : "Разрешить управлять каналами";
-    public bool CanGrantTrusted => IsHeadman && SelectedTrustedRole?.HasChannelsPower == true
-        && SelectedTrustCandidate is { } person && desk?.Grants.All(grant => grant.RoleId != SelectedTrustedRole.RoleId || grant.UserId != person.UserId) == true;
+    public bool CanGrantTrusted => CanManageGrants && SelectedTrustedRole is not null
+        && SelectedTrustCandidate is { } person && (desk?.Grants.Count(x=>x.UserId==person.UserId)??0)<(space?.Capabilities.MaxRolesPerMember??3) && desk?.Grants.All(grant => grant.RoleId != SelectedTrustedRole.RoleId || grant.UserId != person.UserId) == true;
     public bool HasTrustedRole => SelectedTrustedRole is not null;
     public bool SelectedRoleHasOtherPowers => SelectedTrustedRole?.HasOtherPowers == true;
 
     partial void OnSelectedTrustedRoleChanged(GroupTrustedRoleRow? value)
     {
         RefreshTrustedGrants();
+        LoadRoleEditor();
+        NotifySpace();
         OnPropertyChanged(nameof(ChannelPowerAction));
         OnPropertyChanged(nameof(HasTrustedRole));
         OnPropertyChanged(nameof(SelectedRoleHasOtherPowers));
@@ -50,6 +52,7 @@ public sealed partial class GroupViewModel
             trustClassmates = classmates;
             ApplyDesk(loaded);
         }
+        catch(CommunityClientException ex)when(ReadDenied(ex) && (ex.Failure!=CommunityClientFailure.NotFound || !legacySpace)){if(!ct.IsCancellationRequested && navigationGeneration==ticket && communityId==community)ClearRevokedContent();}
         catch (CommunityClientException)
         {
             if (!ct.IsCancellationRequested && navigationGeneration == ticket && communityId == community) ClearDesk();
@@ -67,8 +70,8 @@ public sealed partial class GroupViewModel
             var latest = await Api.DeskAsync(token, community, operation.Token);
             if (operation.IsCurrent && CurrentChat(id, ticket) && communityId == community) ApplyDesk(latest);
         }
-        catch (CommunityClientException ex) when (ex.Failure is CommunityClientFailure.Forbidden or CommunityClientFailure.NotFound)
-        { if (operation.IsCurrent && CurrentChat(id, ticket)) ClearDesk(); }
+        catch (CommunityClientException ex) when (ReadDenied(ex) && (ex.Failure!=CommunityClientFailure.NotFound || !legacySpace))
+        { if (operation.IsCurrent && CurrentChat(id, ticket)) ClearRevokedContent(); }
         catch (CommunityClientException) { }
         catch (AccountClientException ex) when (operation.IsCurrent && CurrentChat(id, ticket)) { FailSession(ex); }
         catch (OperationCanceledException) { }
@@ -76,21 +79,27 @@ public sealed partial class GroupViewModel
 
     private void ApplyDesk(GroupDeskResponse value)
     {
+        if(!CurrentSpace())return;
+        if(desk is not null && System.Text.Json.JsonSerializer.Serialize(desk)==System.Text.Json.JsonSerializer.Serialize(value) && TrustCandidates.Select(x=>(x.UserId,x.Name)).SequenceEqual(trustClassmates.Select(x=>(x.UserId,x.DisplayName??x.Username))))return;
+        InvalidateAccessPreview();
         desk = value;
         IsHeadman = value.Headman;
         var selectedRoleId = SelectedTrustedRole?.RoleId;
         var selectedUserId = SelectedTrustCandidate?.UserId;
         TrustedRoles.Clear();
-        foreach (var role in value.Roles)
+        foreach (var role in value.Roles.OrderByDescending(x => x.Position))
             TrustedRoles.Add(new(role.RoleId, role.Name,
                 value.Powers.Where(power => power.RoleId == role.RoleId).Select(power => power.Power).ToArray()));
         SelectedTrustedRole = TrustedRoles.FirstOrDefault(role => role.RoleId == selectedRoleId) ?? TrustedRoles.FirstOrDefault();
         TrustCandidates.Clear();
-        foreach (var person in trustClassmates.Where(person => !person.Self))
+        foreach (var person in trustClassmates)
             TrustCandidates.Add(new(person.UserId, person.DisplayName ?? person.Username));
         SelectedTrustCandidate = TrustCandidates.FirstOrDefault(person => person.UserId == selectedUserId)
             ?? TrustCandidates.FirstOrDefault();
         RefreshTrustedGrants();
+        LoadRoleEditor();
+        ReconcileCreationRoles();
+        NotifySpace();
     }
 
     private void RefreshTrustedGrants()
@@ -109,7 +118,7 @@ public sealed partial class GroupViewModel
 
     private async Task<GroupDeskResponse?> MutateDeskAsync(Func<CommunityHttpClient, string, Guid, CancellationToken, Task<GroupDeskResponse>> action)
     {
-        if (!IsHeadman || communityId is not Guid community || Api is null || Access is null) return null;
+        if (PreviewMode || !(CanManageRoles || CanManageGrants) || communityId is not Guid community || Api is null || Access is null) return null;
         using var operation = App.Work.Enter();
         Busy(true);
         try
@@ -132,7 +141,7 @@ public sealed partial class GroupViewModel
     [RelayCommand]
     private async Task CreateTrustedRole()
     {
-        if (!IsHeadman || string.IsNullOrWhiteSpace(TrustedRoleName)) return;
+        if (!CanCreateRole || string.IsNullOrWhiteSpace(TrustedRoleName)) return;
         var name = TrustedRoleName.Trim();
         var result = await MutateDeskAsync((api, token, community, ct) =>
             api.CreateRoleAsync(token, community, new GroupRoleNameRequest(name), ct));
@@ -160,7 +169,7 @@ public sealed partial class GroupViewModel
 
     private Task RevokeTrustedAsync(Guid roleId, Guid userId)
     {
-        if (!IsHeadman || desk?.Grants.Any(grant => grant.RoleId == roleId && grant.UserId == userId) != true) return Task.CompletedTask;
+        if (!CanManageGrants || desk?.Grants.Any(grant => grant.RoleId == roleId && grant.UserId == userId) != true) return Task.CompletedTask;
         return MutateDeskAsync((api, token, community, ct) => api.RevokeRoleAsync(token, community, roleId, userId, ct));
     }
 

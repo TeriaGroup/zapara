@@ -52,7 +52,7 @@ public sealed class HoldBox : Border
     public void Choose(string? only)
     {
         if (DataContext is not GroupMessageRow row) return;
-        var actions = MessengerHold.Actions(row.Kind, row.Mine, row.Deleted, true);
+        var actions = row.HoldActions;
         if (only is not null)
         {
             if (only.StartsWith("reaction:", StringComparison.Ordinal))

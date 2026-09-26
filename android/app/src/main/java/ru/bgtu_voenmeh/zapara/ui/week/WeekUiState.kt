@@ -5,7 +5,8 @@ data class WeekUiState(
     val hasGroup: Boolean = false,
     val parity: Int = 1,
     val currentParity: Int = 1,
-    val days: List<WeekDayUi> = emptyList()
+    val days: List<WeekDayUi> = emptyList(),
+    val selectedDate: java.time.LocalDate = java.time.LocalDate.now()
 )
 
 sealed interface WeekEvent {

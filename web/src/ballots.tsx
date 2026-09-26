@@ -258,7 +258,7 @@ function ChangeForm({ communityId, classmates, roles, onDone, onError }: {
   );
 }
 
-export function BallotBoardView({ communityId, board, classmates, roles, topicId, title, canCreate = true, onChange, onError }: {
+export function BallotBoardView({ communityId, board, classmates, roles, topicId, title, canCreate = true, readOnly = false, onChange, onError }: {
   communityId: string;
   board: BallotBoard;
   classmates: Classmate[];
@@ -266,6 +266,7 @@ export function BallotBoardView({ communityId, board, classmates, roles, topicId
   topicId?: string;
   title?: string;
   canCreate?: boolean;
+  readOnly?: boolean;
   onChange: (board: BallotBoard) => void;
   onError: (text: string) => void;
 }) {
@@ -279,6 +280,7 @@ export function BallotBoardView({ communityId, board, classmates, roles, topicId
     onChange(await ballotBoardAfterMutation(result, topicId, selected => api.ballots(communityId, selected)));
   }
   async function run(id: string, action: () => Promise<BallotBoard>, fallback: string) {
+    if (readOnly) return;
     setBusy(id);
     try { await refreshResult(await action()); }
     catch (error) { onError(failureText(error, fallback)); }
@@ -353,8 +355,8 @@ export function BallotBoardView({ communityId, board, classmates, roles, topicId
           <BallotCard
             key={ballot.ballotId}
             ballot={ballot}
-            canClose={board.canClose}
-            busy={busy === ballot.ballotId}
+            canClose={board.canClose && !readOnly}
+            busy={readOnly || busy === ballot.ballotId}
             onSupport={() => void run(ballot.ballotId, () => api.supportBallot(communityId, ballot.ballotId), "Не получилось поддержать голосование")}
             onVote={optionId => void run(ballot.ballotId, () => api.voteBallot(communityId, ballot.ballotId, optionId), "Не получилось проголосовать")}
             onCopy={() => void copySummary(ballot)}

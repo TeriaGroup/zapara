@@ -199,8 +199,8 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
         Text(stringResource(R.string.account_title), style = Zapara.typography.section, color = c.text1)
         Text(state.status, style = Zapara.typography.body, color = c.text1, modifier = Modifier.testTag("Account.Status"))
         Text(stringResource(R.string.account_isolation), style = Zapara.typography.caption, color = c.text2)
-        LegalLink("Пользовательское соглашение", "Legal.Agreement", R.drawable.ic_file) { onOpenLegal("agreement") }
-        LegalLink("Политика обработки персональных данных", "Legal.Policy", R.drawable.ic_shield) { onOpenLegal("policy") }
+        LegalLink(stringResource(R.string.face_agreement), "Legal.Agreement", R.drawable.ic_file) { onOpenLegal("agreement") }
+        LegalLink(stringResource(R.string.face_policy), "Legal.Policy", R.drawable.ic_shield) { onOpenLegal("policy") }
         if (!state.configured || !state.ready) return@ZCard
         if (state.guest) {
             AccountField(state.username, stringResource(R.string.account_username), "Account.Username") {
@@ -230,10 +230,10 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
                 }
             }
             if (state.showYandexLogin || state.showVkLogin) {
-                Text("Войти с помощью", style = Zapara.typography.caption, color = c.text2)
+                Text(stringResource(R.string.face_sign_in_with), style = Zapara.typography.caption, color = c.text2)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                     if (state.showYandexLogin) {
-                        IdButton("Яндекс ID", stringResource(R.string.account_yandex), R.drawable.ic_brand_yandex, { onEvent(AccountEvent.StartYandex) }, !state.busy, "Account.Yandex", Modifier.weight(1f))
+                        IdButton(stringResource(R.string.face_yandex_id), stringResource(R.string.account_yandex), R.drawable.ic_brand_yandex, { onEvent(AccountEvent.StartYandex) }, !state.busy, "Account.Yandex", Modifier.weight(1f))
                     }
                     if (state.showVkLogin) {
                         IdButton("VK ID", stringResource(R.string.account_vk), R.drawable.ic_brand_vk, { onEvent(AccountEvent.StartVk) }, !state.busy, "Account.Vk", Modifier.weight(1f))
@@ -304,16 +304,16 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
         if (state.showYandexLink || state.showVkLink) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 if (state.showYandexLink) {
-                    IdButton(stringResource(R.string.account_link), "Привязать Яндекс ID", R.drawable.ic_brand_yandex, { onEvent(AccountEvent.LinkYandex) }, enabled, "Account.LinkYandex", Modifier.weight(1f))
+                    IdButton(stringResource(R.string.account_link), stringResource(R.string.face_link_yandex), R.drawable.ic_brand_yandex, { onEvent(AccountEvent.LinkYandex) }, enabled, "Account.LinkYandex", Modifier.weight(1f))
                 }
                 if (state.showVkLink) {
-                    IdButton(stringResource(R.string.account_link), "Привязать VK ID", R.drawable.ic_brand_vk, { onEvent(AccountEvent.LinkVk) }, enabled, "Account.LinkVk", Modifier.weight(1f))
+                    IdButton(stringResource(R.string.account_link), stringResource(R.string.face_link_vk), R.drawable.ic_brand_vk, { onEvent(AccountEvent.LinkVk) }, enabled, "Account.LinkVk", Modifier.weight(1f))
                 }
             }
         }
         if (state.showYandexUnlink || state.showVkUnlink) {
             if (state.showYandexUnlink) {
-                ZButton(stringResource(R.string.account_unlink) + " · Яндекс ID", { onEvent(AccountEvent.Unlink("yandex")) }, ghost = true, enabled = enabled, tag = "Account.UnlinkYandex")
+                ZButton(stringResource(R.string.face_unlink_yandex, stringResource(R.string.account_unlink)), { onEvent(AccountEvent.Unlink("yandex")) }, ghost = true, enabled = enabled, tag = "Account.UnlinkYandex")
             }
             if (state.showVkUnlink) {
                 ZButton(stringResource(R.string.account_unlink) + " · VK ID", { onEvent(AccountEvent.Unlink("vk")) }, ghost = true, enabled = enabled, tag = "Account.UnlinkVk")
@@ -392,8 +392,8 @@ private fun IdButton(
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         shape = shape,
         color = Color.White,
-        contentColor = Color(0xFF111111),
-        border = BorderStroke(1.dp, Color(0xFFE6E6E6))
+        contentColor = Zapara.colors.idInk,
+        border = BorderStroke(1.dp, Zapara.colors.idLine)
     ) {
         Row(
             Modifier.padding(horizontal = 12.dp).fillMaxWidth(),
@@ -402,7 +402,7 @@ private fun IdButton(
         ) {
             Image(painterResource(mark), contentDescription = null, modifier = Modifier.size(24.dp))
             Spacer(Modifier.width(8.dp))
-            Text(label, style = Zapara.typography.bodyStrong, color = Color(0xFF111111), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label, style = Zapara.typography.bodyStrong, color = Zapara.colors.idInk, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

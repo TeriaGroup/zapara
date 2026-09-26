@@ -62,7 +62,11 @@ public sealed class GroupViewModelRecordedMediaTests
         Assert.True(vm.IsRecording);
         await vm.FinishRecordingCommand.ExecuteAsync(null);
 
+        Assert.Equal(0, uploads);
+        Assert.True(vm.HasRecordedDraft);
+        await vm.SendRecordingCommand.ExecuteAsync(null);
         Assert.Equal(1, uploads);
+        Assert.False(vm.HasRecordedDraft);
         Assert.False(vm.IsRecording);
         Assert.Equal("Черновик", vm.Draft);
         Assert.Equal(label, Assert.Single(vm.Messages).Display);
@@ -165,6 +169,9 @@ public sealed class GroupViewModelRecordedMediaTests
         recorder.ReleaseFinish();
         await finishing;
         Assert.False(vm.IsFinalizingRecording);
+        Assert.True(vm.HasRecordedDraft);
+        Assert.False(vm.StartRecordingCommand.CanExecute("circle"));
+        vm.DiscardRecordingCommand.Execute(null);
         Assert.True(vm.StartRecordingCommand.CanExecute("circle"));
         Assert.Equal(1, recorder.Starts);
         Assert.Equal(cancelBeforeFinish + 1, recorder.Cancellations);

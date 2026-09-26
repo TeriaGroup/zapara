@@ -18,9 +18,11 @@ public static class CommunityJson
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         Converters = { new CommunityUtcConverter() }
     };
-    public static T Parse<T>(ReadOnlySpan<byte> bytes)
+    public static T Parse<T>(ReadOnlySpan<byte> bytes) => ParseCore<T>(bytes, CommunityValidation.RequestBytes);
+    public static T ParseResponse<T>(ReadOnlySpan<byte> bytes) => ParseCore<T>(bytes, CommunityValidation.ResponseBytes);
+    private static T ParseCore<T>(ReadOnlySpan<byte> bytes, int maximumBytes)
     {
-        if (bytes.Length > CommunityValidation.RequestBytes) throw CommunityValidation.Invalid();
+        if (bytes.Length > maximumBytes) throw CommunityValidation.Invalid();
         try
         {
             Utf8.GetCharCount(bytes);

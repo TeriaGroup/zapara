@@ -298,7 +298,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         if (ok) App.Toasts.Ok(T("notifSaved", t1, t2));
     }
 
-    [RelayCommand] private async Task TestNotification() => await App.NotificationScheduler.ShowTestAsync(_clock());
+    [RelayCommand] private async Task TestNotification(){if(!NotificationPreviewVisible){await PreviewNotification();return;}await App.NotificationScheduler.ShowTestAsync(_clock());}
 
     // ---- Sync ----
     [ObservableProperty] private Bitmap? _qrImage;
@@ -463,6 +463,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         AutoCheckText = T("setAutoCheckAt", Stamp(data.Settings.LastAutoCheckAt));
         IsRefreshing = _shell.IsRefreshing;
         // Last, because it awaits: the address is resolved off the UI thread and cached by the server.
+        await LoadStudyChoices();
         if (App.LanSync.IsRunning) await ShowLanAddressAsync();
         else LanAddress = "";
     }

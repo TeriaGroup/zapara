@@ -6,8 +6,14 @@ namespace Zapara.Contracts.Communities;
 public sealed record HomeworkUpsert
 {
     [JsonConstructor]
-    public HomeworkUpsert(string title, string body, long expectedRevision)
-        => (Title, Body, ExpectedRevision) = (CommunityValidation.Title(title), CommunityValidation.Body(body), CommunityValidation.Revision(expectedRevision));
+    public HomeworkUpsert(string title, string body, long expectedRevision, DateTimeOffset? deadlineAt = null, Guid? topicId = null)
+    {
+        (Title, Body, ExpectedRevision) = (CommunityValidation.Title(title), CommunityValidation.Body(body), CommunityValidation.Revision(expectedRevision));
+        DeadlineAt = deadlineAt is null ? null : CommunityValidation.Utc(deadlineAt.Value);
+        TopicId = topicId is null ? null : CommunityValidation.Id(topicId.Value);
+    }
+    [JsonInclude, JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Guid? TopicId { get; private init; }
+    [JsonInclude, JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? DeadlineAt { get; private init; }
     [JsonRequired, JsonInclude] public string Title { get; private init; }
     [JsonRequired, JsonInclude] public string Body { get; private init; }
     [JsonRequired, JsonInclude] public long ExpectedRevision { get; private init; }

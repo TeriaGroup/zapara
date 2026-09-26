@@ -1,0 +1,255 @@
+import { useEffect, useRef, useState } from "react";
+import * as api from "./api.ts";
+import { canonicalUtc, syncSubjectKey } from "./utc.ts";
+import type { HomeworkItem } from "./types";
+export type SyncHomeworkValue = {
+    subjectRaw: string;
+    subjectKey: string;
+    text: string;
+    targetNthOccurrence: number;
+    createdAtUtc: string;
+    legacyCreatedLocalDate: string | null;
+};
+export type SyncSettingsValue = {
+    selectedGroupId: string | null;
+    parityInvert: boolean;
+    notifyTime1: string | null;
+    notifyTime2: string | null;
+    strictness: number;
+    alwaysShow: boolean;
+};
+export type SyncRecord = {
+    entityType: string;
+    entityId: string;
+    revision: number;
+    tombstone: boolean;
+    changedAt: string;
+    value: SyncHomeworkValue | SyncSettingsValue | {
+        done: boolean;
+        doneAtUtc: string | null;
+    } | null;
+};
+type Pending = {
+    opId: string;
+    type: "homework" | "completion" | "settings";
+    id: string;
+    revision: number;
+    value: SyncHomeworkValue | SyncSettingsValue | {
+        done: boolean;
+        doneAtUtc: string | null;
+    };
+    conflict?: SyncRecord | null;
+};
+type Profile = {
+    owner: string;
+    items: HomeworkItem[];
+    records: SyncRecord[];
+    pending: Pending[];
+};
+const guestKey = "zapara.homework";
+const accountKey = (owner: string) => `zapara.private-homework.${owner}`;
+function read(owner: string): Profile {
+    try {
+        if (owner === "guest")
+            return { owner, items: JSON.parse(localStorage.getItem(guestKey) || "[]"), records: [], pending: [] };
+        const raw = JSON.parse(localStorage.getItem(accountKey(owner)) || "{}");
+        return { owner, items: raw.items ?? [], records: raw.records ?? [], pending: raw.pending ?? [] };
+    }
+    catch {
+        return { owner, items: [], records: [], pending: [] };
+    }
+}
+function write(profile: Profile) { localStorage.setItem(profile.owner === "guest" ? guestKey : accountKey(profile.owner), JSON.stringify(profile.owner === "guest" ? profile.items : profile)); }
+export function homeworkSyncValue(item: HomeworkItem): SyncHomeworkValue { return { subjectRaw: item.subject, subjectKey: syncSubjectKey(item.subject), text: item.text, targetNthOccurrence: Math.max(1, Math.min(10, item.targetNthOccurrence ?? 1)), createdAtUtc: canonicalUtc(item.created), legacyCreatedLocalDate: item.legacyCreatedLocalDate ?? null }; }
+export function projectHomework(records: SyncRecord[], local: HomeworkItem[]): HomeworkItem[] {
+    return records.filter(record => record.entityType === "homework" && !record.tombstone && record.value).map(record => {
+        const value = record.value as SyncHomeworkValue;
+        const completion = records.find(row => row.entityType === "completion" && row.entityId === record.entityId && !row.tombstone)?.value as {
+            done: boolean;
+        } | undefined;
+        return { ...local.find(row => row.id === record.entityId), id: record.entityId, subject: value.subjectRaw, text: value.text, created: value.createdAtUtc, targetNthOccurrence: value.targetNthOccurrence, legacyCreatedLocalDate: value.legacyCreatedLocalDate, done: completion?.done ?? false };
+    });
+}
+export function usePrivateHomework(userId: string | null) {
+    const owner = userId ?? "guest";
+    const [profile, setProfile] = useState<Profile>(() => read(owner));
+    const current = useRef(profile);
+    const expectedOwner = useRef(owner);
+    expectedOwner.current = owner;
+    const [status, setStatus] = useState("");
+    const [tick, setTick] = useState(0);
+    const running = useRef(false);
+    const cursor = useRef<{
+        owner: string;
+        epoch: string;
+        sequence: number;
+    } | null>(null);
+    const commit = (next: Profile) => {
+        if (next.owner !== expectedOwner.current)
+            return false;
+        write(next);
+        current.current = next;
+        setProfile(next);
+        return true;
+    };
+    useEffect(() => { const next = read(owner); current.current = next; setProfile(next); setStatus(owner === "guest" ? "Гостевые данные на устройстве" : "Синхронизация ожидается"); }, [owner]);
+    useEffect(() => {
+        if (owner === "guest")
+            return;
+        let stop = false;
+        async function pull() {
+            if (running.current)
+                return;
+            running.current = true;
+            try {
+                let epoch: string;
+                let records: SyncRecord[];
+                let nextCursor: {
+                    owner: string;
+                    epoch: string;
+                    sequence: number;
+                };
+                if (cursor.current?.owner === owner) {
+                    epoch = cursor.current.epoch;
+                    records = [...current.current.records];
+                    let more = true;
+                    let after = cursor.current.sequence;
+                    while (more) {
+                        const page = await api.privateChanges(epoch, after);
+                        if (stop || expectedOwner.current !== owner)
+                            return;
+                        for (const change of page.changes)
+                            records = [...records.filter(row => row.entityType !== change.record.entityType || row.entityId !== change.record.entityId), change.record];
+                        if (page.hasMore && page.nextAfterSequence <= after)
+                            throw new Error("invalid cursor");
+                        if (page.metadata.syncEpoch !== epoch)
+                            throw new Error("invalid sync epoch");
+                        after = page.nextAfterSequence;
+                        more = page.hasMore;
+                    }
+                    nextCursor = { owner, epoch, sequence: after };
+                }
+                else {
+                    const manifest = await api.beginSyncSnapshot();
+                    epoch = manifest.syncEpoch;
+                    let ordinal = 0;
+                    let more = true;
+                    records = [];
+                    while (more) {
+                        const page = await api.syncSnapshotPage(manifest.manifestId, ordinal);
+                        if (stop || expectedOwner.current !== owner)
+                            return;
+                        records.push(...page.items.map(item => item.record));
+                        if (page.hasMore && page.nextAfterOrdinal <= ordinal)
+                            throw new Error("invalid cursor");
+                        ordinal = page.nextAfterOrdinal;
+                        more = page.hasMore;
+                    }
+                    nextCursor = { owner, epoch, sequence: manifest.highWater };
+                }
+                if (stop || expectedOwner.current !== owner)
+                    return;
+                let local = current.current;
+                // Pending edits remain visible until acknowledged or explicitly resolved.
+                const ids = new Set(local.pending.map(row => row.id));
+                if (!commit({ ...local, records, items: [...projectHomework(records, local.items).filter(row => !ids.has(row.id)), ...local.items.filter(row => ids.has(row.id))] }))
+                    return;
+                cursor.current = nextCursor;
+                const queue = [...current.current.pending];
+                for (const pending of queue) {
+                    if (pending.conflict !== undefined)
+                        continue;
+                    if (stop || expectedOwner.current !== owner)
+                        return;
+                    const result = await api.mutatePrivate(epoch, pending.opId, pending.type, pending.id, pending.revision, pending.value, owner);
+                    if (stop || expectedOwner.current !== owner)
+                        return;
+                    local = current.current;
+                    const same = local.pending.find(row => row.opId === pending.opId);
+                    if (!same)
+                        continue;
+                    if (result.status === 409) {
+                        commit({ ...local, pending: local.pending.map(row => row.opId === pending.opId ? { ...row, conflict: result.serverRecord } : row) });
+                        continue;
+                    }
+                    if (result.serverRecord) {
+                        const updated = [...local.records.filter(row => row.entityType !== pending.type || row.entityId !== pending.id), result.serverRecord];
+                        commit({ ...local, records: updated, pending: local.pending.filter(row => row.opId !== pending.opId) });
+                    }
+                }
+                setStatus(current.current.pending.some(row => row.conflict !== undefined) ? "Есть конфликты. Выберите, какую версию сохранить." : current.current.pending.length ? "Есть несохранённые изменения" : "Личная домашка синхронизирована");
+            }
+            catch (error) {
+                if (error instanceof Error && error.message === "410")
+                    cursor.current = null;
+                if (!stop)
+                    setStatus("Нет связи с синхронизацией. Локальные изменения сохранены.");
+            }
+            finally {
+                running.current = false;
+            }
+        }
+        void pull();
+        const timer = window.setInterval(() => void pull(), 10000);
+        return () => { stop = true; window.clearInterval(timer); };
+    }, [owner, tick]);
+    function save(item: HomeworkItem) {
+        const local = current.current;
+        if (local.owner !== owner)
+            return;
+        const previous = local.items.find(row => row.id === item.id);
+        const items = previous ? local.items.map(row => row.id === item.id ? item : row) : [item, ...local.items];
+        let pending = local.pending;
+        if (owner !== "guest") {
+            const homework = homeworkSyncValue(item);
+            const old = previous ? homeworkSyncValue(previous) : null;
+            const updates: {
+                type: "homework" | "completion";
+                value: Pending["value"];
+            }[] = [];
+            if (!old || JSON.stringify(old) !== JSON.stringify(homework))
+                updates.push({ type: "homework", value: homework });
+            if (!previous || previous.done !== item.done)
+                updates.push({ type: "completion", value: { done: item.done, doneAtUtc: item.done ? canonicalUtc(new Date()) : null } });
+            for (const update of updates) {
+                const existing = pending.find(row => row.type === update.type && row.id === item.id);
+                const revision = existing?.revision ?? local.records.find(row => row.entityType === update.type && row.entityId === item.id)?.revision ?? 0;
+                pending = [...pending.filter(row => row.type !== update.type || row.id !== item.id), { opId: crypto.randomUUID(), id: item.id, type: update.type, revision, value: update.value }];
+            }
+        }
+        commit({ ...local, items, pending });
+        setTick(value => value + 1);
+    }
+    function resolve(opId: string, choice: "local" | "server") {
+        const local = current.current;
+        const pending = local.pending.find(row => row.opId === opId);
+        if (!pending)
+            return;
+        const records = pending.conflict ? [...local.records.filter(row => row.entityType !== pending.type || row.entityId !== pending.id), pending.conflict] : local.records;
+        const queue = choice === "server" ? local.pending.filter(row => row.opId !== opId) : local.pending.map(row => row.opId === opId ? { ...row, opId: crypto.randomUUID(), revision: pending.conflict?.revision ?? 0, conflict: undefined } : row);
+        const ids = new Set(queue.map(row => row.id));
+        commit({ ...local, records, pending: queue, items: [...projectHomework(records, local.items).filter(row => !ids.has(row.id)), ...local.items.filter(row => ids.has(row.id))] });
+        setTick(value => value + 1);
+    }
+    function saveSettings(patch: Partial<SyncSettingsValue>) {
+        const local = current.current;
+        if (owner === "guest" || local.owner !== owner || (cursor.current?.owner !== owner && !local.records.some(row => row.entityType === "settings")))
+            return false;
+        const id = "00000000-0000-0000-0000-000000000001";
+        const pending = local.pending.find(row => row.type === "settings");
+        const record = local.records.find(row => row.entityType === "settings" && !row.tombstone);
+        const defaults: SyncSettingsValue = { selectedGroupId: null, parityInvert: false, notifyTime1: null, notifyTime2: null, strictness: 25, alwaysShow: false };
+        const value = { ...defaults, ...(pending?.value ?? record?.value), ...patch } as SyncSettingsValue;
+        commit({ ...local, pending: [...local.pending.filter(row => row.type !== "settings"), { opId: crypto.randomUUID(), id, type: "settings", revision: pending?.revision ?? record?.revision ?? 0, value }] });
+        setTick(value => value + 1);
+        return true;
+    }
+    function importGuest() {
+        if (owner === "guest")
+            return;
+        const guest = read("guest");
+        for (const item of guest.items)
+            save({ ...item, id: crypto.randomUUID() });
+    }
+    return { items: profile.owner === owner ? profile.items : [], save, status, saveSettings, settings: (profile.pending.find(row => row.type === "settings")?.value ?? profile.records.find(row => row.entityType === "settings" && !row.tombstone)?.value) as SyncSettingsValue | undefined, ready: cursor.current?.owner === owner, pending: profile.owner === owner ? profile.pending : [], resolve, refresh: () => setTick(value => value + 1), importGuest };
+}

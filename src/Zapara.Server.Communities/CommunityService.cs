@@ -4,7 +4,7 @@ using Zapara.Server.Accounts;
 
 namespace Zapara.Server.Communities;
 
-public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, CommunitiesConfiguration configuration, IContentArchive? archive = null, IUploadQuota? uploads = null)
+public sealed partial class CommunityService(IAccountUnitOfWork trustedAccounts, CommunitiesConfiguration configuration, IContentArchive? archive = null, IUploadQuota? uploads = null)
 {
     public Task<IReadOnlyList<CommunityResponse>> ListAsync(string bearer, string? groupId = null, CancellationToken ct = default)
         => Run(bearer, db => groupId is null ? db.ListMembershipsAsync() : db.LookupGroupAsync(CommunityValidation.GroupId(groupId)), ct);
@@ -58,13 +58,13 @@ public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, Communi
         => StoreHomework(await Run(bearer, db => db.PublishHomeworkAsync(CommunityValidation.Id(communityId), request ?? throw CommunityServiceException.InvalidRequest()), ct));
     public async Task<HomeworkResponse> ShareHomeworkAsync(string bearer, Guid communityId, HomeworkUpsert request, CancellationToken ct = default)
         => StoreHomework(await Run(bearer, db => db.ShareHomeworkAsync(CommunityValidation.Id(communityId), request ?? throw CommunityServiceException.InvalidRequest()), ct));
-    public async Task<IReadOnlyList<GroupHomeworkCopyResponse>> ListHomeworkCopiesAsync(string bearer, Guid communityId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<GroupHomeworkCopyResponse>> ListHomeworkCopiesAsync(string bearer, Guid communityId, CancellationToken ct = default, Guid? topicId = null)
     {
-        var list = await Run(bearer, db => db.ListHomeworkCopiesAsync(CommunityValidation.Id(communityId)), ct);
+        var list = await Run(bearer, db => db.ListHomeworkCopiesAsync(CommunityValidation.Id(communityId),topicId), ct);
         return list.Select(item =>
         {
             var body = ReadText(ContentNames.Homework(item.HomeworkId), item.Body);
-            return body == item.Body ? item : new GroupHomeworkCopyResponse(item.HomeworkId, item.Title, body, item.Revision, item.Completed, item.CompletionRevision);
+            return body == item.Body ? item : new GroupHomeworkCopyResponse(item.HomeworkId, item.Title, body, item.Revision, item.Completed, item.CompletionRevision,item.DeadlineAt,item.TopicId);
         }).ToArray();
     }
     public async Task<HomeworkResponse> UpdateHomeworkAsync(string bearer, Guid communityId, Guid homeworkId, HomeworkUpsert request, CancellationToken ct = default)
@@ -155,8 +155,8 @@ public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, Communi
         => Run(bearer, db => db.TopicsAsync(CommunityValidation.Id(communityId), includeTyped), ct);
     public Task<GroupTopicListResponse> CreateTopicAsync(string bearer, Guid communityId, GroupTopicRequest request, CancellationToken ct = default, bool includeTyped = false)
         => Run(bearer, db => db.CreateTopicAsync(CommunityValidation.Id(communityId), request ?? throw CommunityServiceException.InvalidRequest(), includeTyped), ct);
-    public Task<GroupTopicListResponse> RenameTopicAsync(string bearer, Guid communityId, Guid topicId, GroupTopicRequest request, CancellationToken ct = default, bool includeTyped = false)
-        => Run(bearer, db => db.RenameTopicAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(topicId), request ?? throw CommunityServiceException.InvalidRequest(), includeTyped), ct);
+    public Task<GroupTopicListResponse> RenameTopicAsync(string bearer, Guid communityId, Guid topicId, GroupTopicRequest request, CancellationToken ct = default, bool includeTyped = false, bool modernMetadata = true)
+        => Run(bearer, db => db.RenameTopicAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(topicId), request ?? throw CommunityServiceException.InvalidRequest(), includeTyped, modernMetadata), ct);
     public async Task<GroupTopicListResponse> DeleteTopicAsync(string bearer, Guid communityId, Guid topicId, CancellationToken ct = default, bool includeTyped = false)
     {
         var result = await Run(bearer, db => db.DeleteTopicAsync(CommunityValidation.Id(communityId), CommunityValidation.Id(topicId), includeTyped), ct);
@@ -176,7 +176,7 @@ public sealed class CommunityService(IAccountUnitOfWork trustedAccounts, Communi
     private HomeworkResponse LoadHomework(HomeworkResponse item)
     {
         var body = ReadText(ContentNames.Homework(item.HomeworkId), item.Body);
-        return body == item.Body ? item : new HomeworkResponse(item.HomeworkId, item.CommunityId, item.Title, body, item.Revision, item.CreatedAt, item.UpdatedAt);
+        return body == item.Body ? item : new HomeworkResponse(item.HomeworkId, item.CommunityId, item.Title, body, item.Revision, item.CreatedAt, item.UpdatedAt,item.DeadlineAt,item.TopicId);
     }
 
     private static string MediaName(string kind, string? name)

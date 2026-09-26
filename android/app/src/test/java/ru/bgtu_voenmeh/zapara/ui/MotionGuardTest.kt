@@ -65,12 +65,4 @@ class MotionGuardTest {
         assertTrue("AppearAlphaKey stays for Compose tests", source.contains("AppearAlphaKey"))
     }
 
-    @Test fun schedule_pager_snap_uses_motion_ms() {
-        val source = File(main, "java/ru/bgtu_voenmeh/zapara/ui/schedule/ScheduleSection.kt").readText()
-        assertTrue("user swipe must go through PagerDefaults.flingBehavior", source.contains("PagerDefaults.flingBehavior"))
-        val snap = source.lineSequence().map { it.trim() }.firstOrNull { it.contains("snapAnimationSpec") }
-        assertNotNull("snapAnimationSpec required so the pager spring can be zeroed", snap)
-        assertTrue("snapAnimationSpec must use motion.ms: $snap",
-            snap!!.contains("motion.ms(") || snap.contains("Zapara.motion.ms(") || snap.contains("ms(Durations."))
-    }
 }

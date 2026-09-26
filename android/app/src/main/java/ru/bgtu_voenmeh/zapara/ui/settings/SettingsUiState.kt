@@ -4,12 +4,18 @@ import ru.bgtu_voenmeh.zapara.ui.theme.ThemeChoice
 
 data class SettingsUiState(
     val loaded: Boolean = false,
+    val subgroupStreams: List<ru.bgtu_voenmeh.zapara.data.Subgroups.Stream> = emptyList(),
+    val subgroupChoices: Map<String, String> = emptyMap(),
     val groupName: String = "",
     val groupUpdated: String = "",
     val stale: Boolean = false,
     val refreshing: Boolean = false,
     val theme: ThemeChoice = ThemeChoice.System,
     val animations: Boolean = true,
+    val showFreeTime: Boolean = true,
+    val parityInvert: Boolean = false,
+    val previewEvening: String = "",
+    val previewMorning: String = "",
     val notifyEnabled: Boolean = true,
     val time1: String = "20:00",
     val time2: String = "07:30",
@@ -31,6 +37,10 @@ data class SettingsUiState(
 )
 
 sealed interface SettingsEvent {
+    data class Subgroup(val streamId: String, val optionId: String) : SettingsEvent
+    data class FreeTime(val on: Boolean) : SettingsEvent
+    data class Invert(val on: Boolean) : SettingsEvent
+    data object SyncNow : SettingsEvent
     data object ChangeGroup : SettingsEvent
     data object Refresh : SettingsEvent
     data class Theme(val index: Int) : SettingsEvent

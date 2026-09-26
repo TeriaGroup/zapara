@@ -63,16 +63,19 @@ public sealed partial class GroupViewModel
     public IReadOnlyList<GroupChannelAccentChoice> ChannelAccents => AccentChoices;
     public IReadOnlyList<GroupChannelPolicyChoice> ChannelPolicies => PolicyChoices;
 
-    public bool ShowMessages => !ShowBallots;
+    public bool ShowMessages => !ShowBallots && !ShowSpecialized && (IsDirect || SelectedChannel is not null);
     public string DeleteConfirmationText => SelectedChannel?.Kind == "ballots"
         ? "Удалить канал? Голосования сохранятся в общем списке."
         : "Удалить канал и все его сообщения?";
     public bool CanPostChannel => IsDirect || SelectedChannel?.CanPost == true;
-    public bool ShowComposer => !ShowBallots && CanPostChannel;
+    public bool ShowComposer => (ShowMessages || ShowMaterials) && CanPostChannel && !PreviewMode;
+    public string RestrictedCaption=>PreviewMode?"Просмотр от лица участника. Изменения отключены.":SelectedChannel?.Archived==true?"Архивная тема доступна только для чтения.":"Публикация в этой теме не разрешена вашей ролью.";
     public bool IsRestrictedChat => !ShowBallots && !IsDirect && SelectedChannel?.CanPost == false;
-    public bool CanCreateBallot => ShowBallots && SelectedChannel?.Kind == "ballots"
-        && (SelectedChannel.WritePolicy == "all" || CanManageChannels);
-    public bool CanManageSelectedChannel => CanManageChannels && SelectedChannel is { TopicId: not null, CanDelete: true };
+    public bool CanCreateBallot => !PreviewMode && ShowBallots && SelectedChannel?.Kind == "ballots" && !SelectedChannel.Archived
+        && (SelectedChannel.Permissions.Contains("ballots") || legacySpace && (SelectedChannel.WritePolicy == "all" || CanManageChannels));
+    public bool CanManageSelectedChannel => !PreviewMode && SelectedChannel is { TopicId: not null } row && (row.Permissions.Contains("channels") || legacySpace && CanManageChannels);
+    public bool CanOpenChannelManagement=>CanManageChannels || CanManageSelectedChannel;
+    public bool ShowNewChannelManagement=>ShowChannelManagement && CanManageChannels;
     public bool CanSaveChannelEdit => CanManageSelectedChannel && !ChannelEditConflict;
     public bool HasPendingCloseBallot => pendingCloseBallotId is not null;
     private string? TopicFilter => selectedGroupChannel ? selectedTopicId?.ToString("D") ?? "general" : null;
@@ -172,6 +175,7 @@ public sealed partial class GroupViewModel
         OnPropertyChanged(nameof(CanPostChannel));
         OnPropertyChanged(nameof(ShowComposer));
         OnPropertyChanged(nameof(IsRestrictedChat));
+        OnPropertyChanged(nameof(RestrictedCaption));
         OnPropertyChanged(nameof(CanAttachMedia));
         SendCommand.NotifyCanExecuteChanged();
         StartRecordingCommand.NotifyCanExecuteChanged();
@@ -182,6 +186,7 @@ public sealed partial class GroupViewModel
         OnPropertyChanged(nameof(ShowMessages));
         OnPropertyChanged(nameof(ShowComposer));
         OnPropertyChanged(nameof(IsRestrictedChat));
+        OnPropertyChanged(nameof(RestrictedCaption));
         OnPropertyChanged(nameof(CanCreateBallot));
         OnPropertyChanged(nameof(CanAttachMedia));
         SendCommand.NotifyCanExecuteChanged();
@@ -189,9 +194,14 @@ public sealed partial class GroupViewModel
     }
     partial void OnSelectedChannelChanged(GroupChannelRow? value)
     {
+        ClearAccessEditor();
         foreach (var channel in Channels) channel.IsSelected = !IsDirect && channel == value;
         OnPropertyChanged(nameof(HasUnreadChannel));
         ReloadChannelEditor();
+        NotifySpace();
+        RenamePosition = value?.Position ?? 0;
+        RenameSubject = value?.Subject ?? "";
+        SelectedCategory = Categories.FirstOrDefault(x => x.CategoryId == value?.CategoryId);
         ConfirmDeleteChannel = false;
         OnPropertyChanged(nameof(CanManageSelectedChannel));
         OnPropertyChanged(nameof(ShowSelectedChannelManagement));
@@ -200,15 +210,16 @@ public sealed partial class GroupViewModel
         OnPropertyChanged(nameof(CanPostChannel));
         OnPropertyChanged(nameof(ShowComposer));
         OnPropertyChanged(nameof(IsRestrictedChat));
+        OnPropertyChanged(nameof(RestrictedCaption));
         OnPropertyChanged(nameof(CanCreateBallot));
         OnPropertyChanged(nameof(CanAttachMedia));
         SendCommand.NotifyCanExecuteChanged();
         StartRecordingCommand.NotifyCanExecuteChanged();
     }
 
-    private sealed record ChannelMetadata(string Title, string Icon, string Description, string Accent, bool Pinned, string WritePolicy);
-    private static ChannelMetadata Metadata(GroupChannelRow row) => new(row.Title, row.Icon, row.Description, row.Accent, row.Pinned, row.WritePolicy);
-    private ChannelMetadata EditorMetadata() => new(RenameTitle, RenameIcon, RenameDescription, RenameAccent.Code, RenamePinned, RenamePolicy.Code);
+    private sealed record ChannelMetadata(string Title, string Icon, string Description, string Accent, bool Pinned, string WritePolicy, Guid? CategoryId, int Position, string? Subject, long Revision);
+    private static ChannelMetadata Metadata(GroupChannelRow row) => new(row.Title, row.Icon, row.Description, row.Accent, row.Pinned, row.WritePolicy, row.CategoryId,row.Position,row.Subject,row.Revision);
+    private ChannelMetadata EditorMetadata() => new(RenameTitle, RenameIcon, RenameDescription, RenameAccent.Code, RenamePinned, RenamePolicy.Code,SelectedCategory?.CategoryId,RenamePosition,RenameSubject.Length==0?null:RenameSubject,renameBaseline?.Revision??0);
 
     [RelayCommand]
     private void ReloadChannelEditor()
@@ -220,6 +231,7 @@ public sealed partial class GroupViewModel
         RenameDescription = value?.Description ?? "";
         RenamePinned = value?.Pinned ?? false;
         RenameAccent = AccentChoices.FirstOrDefault(choice => choice.Code == value?.Accent) ?? AccentChoices[0];
+        RenamePosition=value?.Position??0;RenameSubject=value?.Subject??"";SelectedCategory=Categories.FirstOrDefault(x=>x.CategoryId==value?.CategoryId);
         RenamePolicy = PolicyChoices.FirstOrDefault(choice => choice.Code == value?.WritePolicy) ?? PolicyChoices[0];
         ChannelEditConflict = false;
     }
@@ -235,30 +247,31 @@ public sealed partial class GroupViewModel
 
     private async Task LoadChannelsAsync(string token, Guid community, Guid groupChat, int ticket, CancellationToken ct)
     {
-        GroupTopicListResponse list;
-        try { list = await Api!.TopicsAsync(token, community, ct); }
-        catch (CommunityClientException)
-        {
-            list = new([new GroupTopicResponse(null, "Общий", "💬", null, null, null, 0, false)], false);
-        }
+        var loaded = await ReadSpace(token, community, ct);
+        var list = new GroupTopicListResponse(loaded.Topics, loaded.Desk.Headman || loaded.Desk.Mine.Contains("channels"));
         if (ct.IsCancellationRequested || navigationGeneration != ticket || communityId != community) return;
         groupConversationId = groupChat;
-        ApplyChannels(list);
+        ApplySpace(loaded);
+        RestoreCreationDraft(community);
+        var subjects = await RunAsync(() => App.Db.GetAllLessonsForGroup(App.Db.GetAllGroups().FirstOrDefault(x=>x.Name==HomeTitle || "Группа "+x.Name==HomeTitle)?.Id ?? "").Select(x => x.SubjectRaw).Distinct().Order().ToList(), "group subjects");
+        SubjectChoices.Clear(); foreach(var subject in subjects ?? []) SubjectChoices.Add(subject);
     }
 
     private void ApplyChannels(GroupTopicListResponse list)
     {
         var selected = SelectedChannel;
+        var viewingArchive=selected?.Archived==true;
         var old = Channels.ToDictionary(row => row.Key);
-        IReadOnlyList<GroupTopicResponse> source = list.Topics.Count == 0
-            ? [new GroupTopicResponse(null, "Общий", "💬", null, null, null, 0, false)]
-            : list.Topics;
-        var general = source.FirstOrDefault(item => item.TopicId is null && item.Kind == "chat")
-            ?? new GroupTopicResponse(null, "Общий", "💬", null, null, null, 0, false);
-        var allBallots = new GroupTopicResponse(null, "Все голосования", "🗳", null, null, null, 0, false, "ballots");
-        var ordered = new List<(GroupTopicResponse Item, bool GlobalBallots)> { (general, false), (allBallots, true) };
-        ordered.AddRange(source.Where(item => item.TopicId is not null)
-            .OrderBy(item => item.Pinned ? 0 : 1).Select(item => (item, false)));
+        var source = list.Topics;
+        var ordered = source.Where(item => !item.Archived).OrderBy(item => Categories.FirstOrDefault(x => x.CategoryId == item.CategoryId)?.Position ?? -1)
+            .ThenByDescending(item => item.Pinned).ThenBy(item => item.Position).Select(item => (Item:item, GlobalBallots:false)).ToList();
+        if(legacySpace)
+        {
+            var general=ordered.FirstOrDefault(x=>x.Item.TopicId is null);
+            ordered.RemoveAll(x=>x.Item.TopicId is null);
+            ordered.Insert(0,(new GroupTopicResponse(null,"Все голосования","🗳",null,null,null,0,false,"ballots"),true));
+            if(general.Item is not null)ordered.Insert(0,general);
+        }
         for (var index = 0; index < ordered.Count; index++)
         {
             var (item, globalBallots) = ordered[index];
@@ -278,14 +291,21 @@ public sealed partial class GroupViewModel
             }
         }
         while (Channels.Count > ordered.Count) Channels.RemoveAt(Channels.Count - 1);
+        if(selected is not null && !Channels.Contains(selected) && Channels.FirstOrDefault(x=>x.Key==selected.Key) is {} recovered)
+        {SelectedChannel=recovered;selected=recovered;viewingArchive=recovered.Archived;}
+
+        if(!viewingArchive && SelectedChannel is {TopicId: {} removedTopic} && !Channels.Contains(SelectedChannel))PurgeTopicPrivate(removedTopic);
+        if(accessBaseline is {} acl && SelectedChannel?.TopicId==acl.TopicId && SelectedChannel.Revision!=acl.Revision)InvalidateAccessPreview();
+        NotifySpace();
         RefreshGroupContext();
         RefreshChannelBrowse();
         CanManageChannels = list.CanManageChannels;
-        if (selected is null || !Channels.Contains(selected)) SelectedChannel = Channels[0];
+        if (!viewingArchive && (selected is null || !Channels.Contains(selected))) SelectedChannel = Channels.FirstOrDefault();
+        if(SelectedChannel is null){conversationId=null;Messages.Clear(); Forms.Clear(); ChannelHomeworks.Clear(); Draft=""; DiscussionContext="";}
         else
         {
             ReconcileChannelEditor();
-            if (!IsDirect) ChatTitle = selected.Title;
+            if (!IsDirect) ChatTitle = SelectedChannel.Title;
         }
         OnPropertyChanged(nameof(CanManageSelectedChannel));
         OnPropertyChanged(nameof(ShowSelectedChannelManagement));
@@ -293,6 +313,7 @@ public sealed partial class GroupViewModel
         OnPropertyChanged(nameof(CanPostChannel));
         OnPropertyChanged(nameof(ShowComposer));
         OnPropertyChanged(nameof(IsRestrictedChat));
+        OnPropertyChanged(nameof(RestrictedCaption));
         OnPropertyChanged(nameof(CanCreateBallot));
         OnPropertyChanged(nameof(CanAttachMedia));
         SendCommand.NotifyCanExecuteChanged();
@@ -301,65 +322,53 @@ public sealed partial class GroupViewModel
 
     private async Task RefreshChannelsAsync(Guid id, int ticket)
     {
-        if (communityId is not Guid community || groupConversationId is null || Api is null || Access is null) return;
+        if (PreviewMode || communityId is not Guid community || groupConversationId is null || Api is null || Access is null) return;
         using var operation = App.Work.Enter();
+        int? archiveVersion=null;
         try
         {
             var token = await Access(operation.Token);
             if (string.IsNullOrWhiteSpace(token) || !operation.IsCurrent || !CurrentChat(id, ticket)) return;
-            var list = await Api.TopicsAsync(token, community, operation.Token);
+            var loaded = await ReadSpace(token, community, operation.Token);
+            var selectedArchive=SelectedChannel is {TopicId: {} candidate} && (SelectedChannel.Archived || !loaded.Topics.Any(x=>x.TopicId==candidate));
+            if(!legacySpace && (archiveLoaded&&archiveCommunity==community || selectedArchive))
+            {
+                var version=++archiveRequestVersion;archiveVersion=version;
+                var archive=await Api.ArchivedTopicsAsync(token,community,operation.Token);
+                if(!operation.IsCurrent || !CurrentChat(id,ticket) || version!=archiveRequestVersion)return;
+                var oldSelection=SelectedChannel;var selectedId=oldSelection?.TopicId;
+                ReconcileArchiveAuthority(archive,community,loaded.Topics);
+                if(selectedArchive && selectedId is {} archivedId)
+                {
+                    var visible=archive.Topics.FirstOrDefault(x=>x.TopicId==archivedId)??loaded.Topics.FirstOrDefault(x=>x.TopicId==archivedId);
+                    if(visible is null){SelectedChannel=null;ApplySpace(loaded);await OpenChannelAsync(Channels.FirstOrDefault()!);return;}
+                    oldSelection!.Update(visible);
+                }
+            }
+            var list = new GroupTopicListResponse(loaded.Topics, loaded.Desk.Headman || loaded.Desk.Mine.Contains("channels"));
             if (operation.IsCurrent && CurrentChat(id, ticket) && communityId == community)
             {
                 var previous = SelectedChannel;
-                ApplyChannels(list);
-                if (!IsDirect && previous is not null && !Channels.Contains(previous))
-                    await OpenChannelAsync(Channels[0]);
+                ApplySpace(loaded);
+                if (!IsDirect && SelectedChannel is not null && (selectedTopicId!=SelectedChannel.TopicId || previous is not null && !previous.Archived && !Channels.Contains(previous)))
+                    await OpenChannelAsync(SelectedChannel);
             }
         }
+        catch (CommunityClientException ex) when(ReadDenied(ex)) { if(operation.IsCurrent && CurrentChat(id,ticket) && (archiveVersion is null || archiveVersion==archiveRequestVersion)){ClearRevokedContent();Channels.Clear();ClearDesk();} }
         catch (CommunityClientException) { }
-        catch (AccountClientException ex) when (operation.IsCurrent && CurrentChat(id, ticket)) { FailSession(ex); }
+        catch (AccountClientException ex) when (operation.IsCurrent && CurrentChat(id, ticket) && (archiveVersion is null || archiveVersion==archiveRequestVersion)) { FailSession(ex); }
         catch (OperationCanceledException) { }
     }
 
     private Task OpenChannelAsync(GroupChannelRow row)
     {
-        if (groupConversationId is not Guid id || !Channels.Contains(row)) return Task.CompletedTask;
+        if (row is null || groupConversationId is not Guid id || !Channels.Contains(row)) return Task.CompletedTask;
+        ShowSingleHomework = false;
         SelectedChannel = row;
         return OpenConversationAsync(id, row.Title, false, row);
     }
 
-    [RelayCommand]
-    private async Task CreateChannel(string? kind)
-    {
-        if (!CanManageChannels || kind is not ("chat" or "ballots") || communityId is not Guid id || Api is null || Access is null) return;
-        var ticket = navigationGeneration;
-        using var operation = App.Work.Enter();
-        Busy(true);
-        try
-        {
-            var token = await Access(operation.Token);
-            if (string.IsNullOrWhiteSpace(token)) { ShowAccount(); return; }
-            var title = ChannelTitle.Trim();
-            var list = await Api.CreateTopicAsync(token, id,
-                new GroupTopicRequest(title, ChannelIcon.Trim(), kind, ChannelDescription.Trim(), NewChannelAccent.Code, ChannelPinned, NewChannelPolicy.Code), operation.Token);
-            if (!operation.IsCurrent || communityId != id) return;
-            ApplyChannels(list);
-            if (ticket != navigationGeneration) return;
-            ChannelTitle = "";
-            ChannelDescription = "";
-            ChannelPinned = false;
-            NewChannelAccent = AccentChoices[0];
-            NewChannelPolicy = PolicyChoices[0];
-            var created = Channels.FirstOrDefault(row => row.Kind == kind && row.Title == title);
-            if (created is not null) await OpenChannelAsync(created);
-            Status = "";
-        }
-        catch (Exception ex) when (ex is CommunityClientException or ArgumentException)
-        { if (operation.IsCurrent) Status = "Не удалось создать канал. Проверьте название и значок."; }
-        catch (AccountClientException ex) when (operation.IsCurrent) { FailSession(ex); }
-        catch (OperationCanceledException) { }
-        finally { if (operation.IsCurrent) Busy(false); }
-    }
+    [RelayCommand] private Task CreateChannel(string? kind)=>CreateTopicFromDraft(kind);
 
     [RelayCommand]
     private async Task RenameChannel()
@@ -380,14 +389,14 @@ public sealed partial class GroupViewModel
             if (!operation.IsCurrent || ticket != navigationGeneration || SelectedChannel?.TopicId != topic) return;
             var latest = fresh.Topics.FirstOrDefault(row => row.TopicId == topic);
             if (latest is null || expected is null ||
-                new ChannelMetadata(latest.Title, latest.Icon, latest.Description, latest.Accent, latest.Pinned, latest.WritePolicy) != expected)
+                new ChannelMetadata(latest.Title, latest.Icon, latest.Description, latest.Accent, latest.Pinned, latest.WritePolicy, latest.CategoryId,latest.Position,latest.Subject,latest.Revision) != expected)
             {
                 if (operation.IsCurrent && communityId == id) { ApplyChannels(fresh); ChannelEditConflict = true; }
                 return;
             }
             var list = await Api.RenameTopicAsync(token, id, topic,
                 new GroupTopicRequest(requested.Title.Trim(), requested.Icon.Trim(), kind, requested.Description.Trim(), requested.Accent,
-                    requested.Pinned, requested.WritePolicy), operation.Token);
+                    requested.Pinned, requested.WritePolicy, SelectedChannel!.Template, requested.CategoryId, requested.Position, requested.Subject, expected!.Revision), operation.Token);
             if (!operation.IsCurrent || communityId != id || ticket != navigationGeneration || SelectedChannel?.TopicId != topic) return;
             ApplyChannels(list);
             ReloadChannelEditor();
@@ -422,7 +431,7 @@ public sealed partial class GroupViewModel
             if (!operation.IsCurrent || communityId != id) return;
             ApplyChannels(list);
             ConfirmDeleteChannel = false;
-            if (ticket == navigationGeneration) await OpenChannelAsync(Channels[0]);
+            if (ticket == navigationGeneration) await OpenChannelAsync(Channels.FirstOrDefault()!);
             Status = "";
         }
         catch (CommunityClientException) { if (operation.IsCurrent) Status = "Не удалось удалить канал."; }
@@ -450,6 +459,7 @@ public sealed partial class GroupViewModel
                 BallotLoaded = true;
             }
         }
+        catch(CommunityClientException ex)when(ReadDenied(ex)){if(CurrentChat(id,ticket)){Ballots.Clear();ClearRevokedContent();}}
         catch (CommunityClientException)
         {
             if (serial != ballotRequestSerial || !CurrentChat(id, ticket)) return;
@@ -470,16 +480,16 @@ public sealed partial class GroupViewModel
             CancelCloseBallot();
         Ballots.Clear();
         foreach (var ballot in board.Ballots)
-            Ballots.Add(new GroupBallotRow(ballot, board.CanClose,
+            Ballots.Add(new GroupBallotRow(ballot, !PreviewMode && !SelectedChannel!.Archived && board.CanClose && (legacySpace || SelectedChannel.Permissions.Contains("close")),
                 id => BallotActionAsync((api, token, community, ct) => api.SupportBallotAsync(token, community, id, ct)),
                 (id, option) => BallotActionAsync((api, token, community, ct) => api.VoteBallotAsync(token, community, id, new VoteRequest(option), ct)),
                 id => { AskCloseBallot(id, ballot.Question); return Task.CompletedTask; },
-                CopyBallotSummaryAsync));
+                CopyBallotSummaryAsync, !PreviewMode && (SelectedChannel?.Permissions.Contains("vote") == true || legacySpace)));
     }
 
     private async Task BallotActionAsync(Func<CommunityHttpClient, string, Guid, CancellationToken, Task<BallotBoardResponse>> action, Action? accepted = null)
     {
-        if (!ShowBallots || communityId is not Guid community || conversationId is not Guid id || Api is null || Access is null) return;
+        if (PreviewMode || !ShowBallots || communityId is not Guid community || conversationId is not Guid id || Api is null || Access is null) return;
         var ticket = navigationGeneration;
         using var operation = App.Work.Enter();
         Busy(true);
@@ -553,7 +563,15 @@ public sealed class GroupChannelRow(GroupTopicResponse initial, IRelayCommand op
     public bool HasCustomAccent => row.Accent != "default";
     public bool Pinned => row.Pinned;
     public string WritePolicy => row.WritePolicy;
-    public bool CanPost => row.CanPost;
+    public string Template => row.Template;
+    public Guid? CategoryId => row.CategoryId;
+    public int Position => row.Position;
+    public long Revision => row.Revision;
+    public string? Subject => row.Subject;
+    public bool Supported => row.Supported;
+    public IReadOnlyList<string> Permissions => row.Permissions ?? [];
+    public bool Archived => row.Archived;
+    public bool CanPost => !row.Archived && row.Supported && row.Kind is ("chat" or "materials") && row.CanPost;
     public IBrush AccentBrush => new SolidColorBrush(Color.Parse(row.Accent switch
     {
         "blue" => "#3d5a80", "green" => "#3d6b4f", "purple" => "#6b3d5a", "orange" => "#8a5a2a", "red" => "#6b4030",
@@ -589,6 +607,7 @@ public sealed class GroupChannelRow(GroupTopicResponse initial, IRelayCommand op
     internal void Update(GroupTopicResponse next)
     {
         row = next;
+        foreach(var name in new[] { nameof(Archived), nameof(Template), nameof(CategoryId), nameof(Position), nameof(Revision), nameof(Subject), nameof(Supported), nameof(Permissions) }) OnPropertyChanged(name);
         OnPropertyChanged(nameof(Kind));
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(Icon));
@@ -617,7 +636,7 @@ public sealed record GroupChannelPolicyChoice(string Code, string Label);
 public sealed class GroupBallotRow
 {
     public GroupBallotRow(BallotResponse ballot, bool canClose, Func<Guid, Task> support, Func<Guid, Guid, Task> vote,
-        Func<Guid, Task> close, Func<GroupBallotRow, Task>? copy = null)
+        Func<Guid, Task> close, Func<GroupBallotRow, Task>? copy = null, bool canVote = true)
     {
         BallotId = ballot.BallotId;
         Question = ballot.Question;
@@ -633,13 +652,13 @@ public sealed class GroupBallotRow
         IsCollecting = ballot.Status == "collecting";
         IsEffect = !string.IsNullOrEmpty(ballot.Effect);
         Outcome = ballot.Outcome switch { "accepted" => "Изменение принято", "rejected" => "Изменение отклонено", "skipped" => "Изменение не применено", _ => ballot.Outcome };
-        CanSupport = ballot.Status == "collecting" && !ballot.Supported;
+        CanSupport = canVote && ballot.Status == "collecting" && !ballot.Supported;
         AlreadySupported = ballot.Status == "collecting" && ballot.Supported;
         CanClose = canClose && ballot.Status != "closed" && string.IsNullOrEmpty(ballot.Effect);
         var totalVotes = ballot.Options.Sum(option => (long)option.Votes);
         TotalVotes = totalVotes;
         Options = ballot.Options.Select(option => new GroupBallotOptionRow(option, totalVotes,
-            ballot.Status == "open", () => vote(ballot.BallotId, option.OptionId))).ToArray();
+            canVote && ballot.Status == "open", () => vote(ballot.BallotId, option.OptionId))).ToArray();
         SupportCommand = new AsyncRelayCommand(() => support(ballot.BallotId));
         CloseCommand = new AsyncRelayCommand(() => close(ballot.BallotId));
         CopyCommand = copy is null ? null : new AsyncRelayCommand(() => copy(this));

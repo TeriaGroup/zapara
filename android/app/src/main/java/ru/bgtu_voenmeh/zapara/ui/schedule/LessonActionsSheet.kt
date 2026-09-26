@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import ru.bgtu_voenmeh.zapara.ui.components.rememberUiText
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import ru.bgtu_voenmeh.zapara.R
@@ -22,16 +23,21 @@ fun LessonActionsSheet(
     onRename: () -> Unit,
     onHomework: () -> Unit,
     onMap: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onDiscuss: () -> Unit = {},
+    date: java.time.LocalDate? = null
 ) {
+    val uiText = rememberUiText()
     ZBottomSheet(onDismiss, "Lesson.Actions") {
         Column(
             Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.m)
         ) {
             Text(lesson.name, style = Zapara.typography.section, color = Zapara.colors.text1)
+            Text("${date ?: ""} · ${lesson.timeStart}–${lesson.timeEnd} · ${lesson.type} · ${lesson.room}", style = Zapara.typography.caption, color = Zapara.colors.text2)
             ActionRow(R.drawable.ic_pencil, stringResource(R.string.action_rename), "Actions.Rename", onRename)
             ActionRow(R.drawable.ic_plus, stringResource(R.string.action_homework), "Actions.Homework", onHomework)
+            ActionRow(R.drawable.ic_chat, uiText(R.string.space_day_28), "Actions.Discuss", onDiscuss)
             if (!lesson.remote) ActionRow(R.drawable.ic_map_pin, stringResource(R.string.action_map), "Actions.Map", onMap)
         }
     }
@@ -39,6 +45,7 @@ fun LessonActionsSheet(
 
 @Composable
 private fun ActionRow(icon: Int, title: String, tag: String, onClick: () -> Unit) {
+    val uiText = rememberUiText()
     ZCard(onClick = onClick, tag = tag, modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             ZIcon(icon, title, Modifier.size(Zapara.space.icon))

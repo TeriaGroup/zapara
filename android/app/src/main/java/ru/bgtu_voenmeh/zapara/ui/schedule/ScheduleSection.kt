@@ -5,6 +5,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,7 +22,23 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
+import androidx.compose.material3.Checkbox
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
+import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
+import ru.bgtu_voenmeh.zapara.ui.components.rememberUiText
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
@@ -43,10 +62,28 @@ import ru.bgtu_voenmeh.zapara.ui.theme.appear
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, onOpenMap: (String) -> Unit) {
+fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, onDiscuss: (String) -> Unit = {}, onWeek: (java.time.LocalDate) -> Unit = {}, onOpenMap: (String) -> Unit) {
+    val uiText = rememberUiText()
     val chrome = LocalShellChrome.current
+    val lifecycle = LocalLifecycleOwner.current
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) onEvent(ScheduleEvent.RefreshShared) }
+        lifecycle.lifecycle.addObserver(observer)
+        onDispose { lifecycle.lifecycle.removeObserver(observer) }
+    }
+    var restoredDate by rememberSaveable { mutableStateOf<String?>(null) }
+    var didRestore by remember { mutableStateOf(false) }
+    LaunchedEffect(state.loaded) {
+        if (state.loaded && !didRestore) {
+            didRestore = true
+            val date = runCatching { java.time.LocalDate.parse(restoredDate ?: state.selected.toString()) }.getOrNull()
+            if (date != null && date != state.selected) onEvent(ScheduleEvent.Select(date))
+        }
+    }
+    LaunchedEffect(state.selected) { if (didRestore) restoredDate = state.selected.toString() }
     Column(Modifier.fillMaxSize()) {
         ZTopBar(stringResource(R.string.nav_schedule)) {
+            ZButton(stringResource(R.string.nav_week), { onWeek(state.selected) }, ghost = true, quiet = true)
             if (state.selected != state.today) {
                 ZButton(stringResource(R.string.today), { onEvent(ScheduleEvent.Today) }, ghost = true, tag = "Top.Today")
             }
@@ -63,46 +100,24 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, on
             )
             ScheduleComposer.SchedulePane.NoGroup -> EmptyState(R.drawable.ic_calendar, stringResource(R.string.empty_no_group), stringResource(R.string.empty_no_group_hint), stringResource(R.string.group_pick), chrome.onGroupChip, "Empty.NoGroup")
             ScheduleComposer.SchedulePane.Day -> {
-            DateStrip(state.selected, state.today) { onEvent(ScheduleEvent.Select(it)) }
-            val page = state.pages[state.selected]
-            Row(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                Text(page?.caption ?: "", style = Zapara.typography.caption, color = Zapara.colors.text2,
-                    modifier = Modifier.weight(1f).testTag("Schedule.Caption"))
-                if (page != null) ZChip(stringResource(R.string.other_schedule_pairs, page.lessons.size),
-                    tag = "Schedule.PairCount")
-            }
-            val pager = rememberPagerState(initialPage = ScheduleComposer.pageIndex(state.selected, state.today)) { ScheduleComposer.PAGE_COUNT }
-            val motionOn = Zapara.motion.enabled
-            LaunchedEffect(pager.settledPage) {
-                val date = ScheduleComposer.dateAt(pager.settledPage, state.today)
-                if (date != state.selected) onEvent(ScheduleEvent.Select(date))
-            }
-            LaunchedEffect(Unit) { onEvent(ScheduleEvent.SyncClock) }
-            LaunchedEffect(state.selected, state.today) {
-                val idx = ScheduleComposer.pageIndex(state.selected, state.today)
-                if (pager.currentPage != idx) {
-                    if (motionOn) pager.animateScrollToPage(idx) else pager.scrollToPage(idx)
-                }
-            }
-            HorizontalPager(
-                pager,
-                Modifier.fillMaxSize().testTag("Schedule.Pager"),
-                flingBehavior = PagerDefaults.flingBehavior(
-                    state = pager,
-                    lowVelocityAnimationSpec = tween(Zapara.motion.ms(Durations.section), easing = ZaparaEase),
-                    snapAnimationSpec = tween(Zapara.motion.ms(Durations.section), easing = ZaparaEase)
-                )
-            ) { index ->
-                val date = ScheduleComposer.dateAt(index, state.today)
-                val day = state.pages[date]
-                LaunchedEffect(date) { if (day == null) onEvent(ScheduleEvent.Need(date)) }
-                when {
-                    day == null -> Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
-                    day.isSunday -> EmptyState(null, stringResource(R.string.no_lessons_sunday))
-                    day.lessons.isEmpty() -> EmptyState(R.drawable.ic_calendar, stringResource(R.string.no_lessons_day), day.nextHint)
-                    else -> LessonList(day, state.refreshing, onEvent, onOpenMap)
+            val page = state.pages[state.selected]?.let { ScheduleComposer.atClock(it, state.now) }
+            LaunchedEffect(state.selected) { onEvent(ScheduleEvent.Need(state.selected)) }
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                if (maxWidth >= 1100.dp && page != null) {
+                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.l)) {
+                        Column(Modifier.width(400.dp)) { DateStrip(state.selected, state.today, state.pages, visibleCount = 7, onQuickDay={ onEvent(ScheduleEvent.QuickDay(it)) }) { onEvent(ScheduleEvent.Select(it)) } }
+                        Box(Modifier.weight(1f)) { LessonList(page.copy(deadlines = emptyList()), state, onEvent, onOpenMap, onDiscuss) }
+                        LazyColumn(Modifier.width(320.dp), contentPadding = PaddingValues(Zapara.space.l)) {
+                            item { Text(uiText(R.string.space_day_23, page.deadlines.count { it.done }, page.deadlines.size), style = Zapara.typography.section) }
+                            itemsIndexed(page.deadlines, key = { _, row -> row.sharedId ?: row.id }) { _, row -> DeadlineRow(row, onEvent) }
+                        }
+                    }
+                } else Column(Modifier.fillMaxSize()) {
+                    DateStrip(state.selected, state.today, state.pages, onQuickDay={ onEvent(ScheduleEvent.QuickDay(it)) }) { onEvent(ScheduleEvent.Select(it)) }
+                    when {
+                        page == null -> Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
+                        else -> LessonList(page, state, onEvent, onOpenMap, onDiscuss)
+                    }
                 }
             }
             }
@@ -112,11 +127,27 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, on
         LessonActionsSheet(
             lesson,
             onRename = { onEvent(ScheduleEvent.Rename(lesson)) },
-            onHomework = { onEvent(ScheduleEvent.AddHomework(lesson)) },
+            onHomework = { onEvent(ScheduleEvent.SubjectHomework(lesson)) },
             onMap = { onOpenMap(lesson.classroomRaw); onEvent(ScheduleEvent.CloseActions) },
-            onDismiss = { onEvent(ScheduleEvent.CloseActions) }
+            onDismiss = { onEvent(ScheduleEvent.CloseActions) },
+            onDiscuss = { onEvent(ScheduleEvent.CloseActions); onDiscuss("${lesson.name} · ${state.selected} · ${lesson.timeStart}–${lesson.timeEnd} · ${lesson.room}") }, date = state.selected
         )
     }
+    state.subjectHomework?.let { lesson ->
+        ZBottomSheet(onDismiss = { onEvent(ScheduleEvent.CloseSubjectHomework) }, tag = "Schedule.SubjectHomework") {
+            Text(lesson.name, style = Zapara.typography.section)
+            state.subjectRows.forEach { row ->
+                ZCard(Modifier.fillMaxWidth(), onClick = { onEvent(ScheduleEvent.OpenHomework(row)) }) {
+                    Text(row.text, style = Zapara.typography.body); Text(row.label, style = Zapara.typography.caption)
+                }
+            }
+            ZButton(uiText(R.string.space_day_10), { onEvent(ScheduleEvent.CloseSubjectHomework); onEvent(ScheduleEvent.AddHomework(lesson)) })
+        }
+    }
+    state.sharedDetail?.let { row -> ZBottomSheet(onDismiss = { onEvent(ScheduleEvent.CloseSubjectHomework) }, tag = "Schedule.SharedHomework") {
+        Text(row.label, style = Zapara.typography.section); Text(row.text, style = Zapara.typography.body)
+        ZButton(uiText(R.string.space_day_11), { onEvent(ScheduleEvent.CloseSubjectHomework); onDiscuss("${row.label} · ${row.text}") }, ghost = true)
+    } }
     state.rename?.let { RenameSheet(it, onEvent) }
     state.homeworkEditor?.let { editor ->
         HomeworkEditorSheet(
@@ -129,41 +160,77 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, on
             onPick = { kind, uri -> onEvent(ScheduleEvent.HomeworkAttach(kind, uri)) },
             onRemove = { onEvent(ScheduleEvent.HomeworkRemoveFile(it)) },
             onShare = { onEvent(ScheduleEvent.HomeworkEditorShare(it)) },
-            isGuest = state.guest
+            isGuest = state.guest, onRecalculate = { onEvent(ScheduleEvent.RecalculateHomework) }
         )
     }
 }
 
 @Composable
-private fun LessonList(page: DayPage, refreshing: Boolean, onEvent: (ScheduleEvent) -> Unit, onOpenMap: (String) -> Unit) {
-    val list = rememberLazyListState()
-    val pull = remember {
-        object : NestedScrollConnection {
-            var pulled = 0f
-            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                if (available.y > 0 && list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset == 0) {
-                    pulled += available.y
-                    if (pulled > 140f) { pulled = 0f; onEvent(ScheduleEvent.Refresh) }
-                } else pulled = 0f
-                return Offset.Zero
+private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, onOpenMap: (String) -> Unit, onDiscuss: (String) -> Unit) {
+    val uiText = rememberUiText()
+    val breaks = remember(page.lessons) { ScheduleComposer.breaks(page.lessons) }
+    val featured = ScheduleComposer.featured(page, state.now)
+    val conflicts = remember(page.lessons) { ScheduleComposer.conflicts(page.lessons) }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        item {
+            state.sourceStatus?.let { Text(it, style = Zapara.typography.caption, color = Zapara.colors.text2) }
+            Text(page.caption, style = Zapara.typography.caption, color = Zapara.colors.text2)
+            Text(if (page.dataState != null) page.dataState else if (page.lessons.isEmpty()) uiText(R.string.space_day_12) else uiText(R.string.space_day_13, (page.lessons.size).toString(), (page.lessons.minOf { it.timeStart }).toString(), (page.lessons.maxOf { it.timeEnd }).toString()), style = Zapara.typography.section)
+            if (page.lessons.isEmpty() && page.dataState == null) {
+                Text(page.nextHint ?: uiText(R.string.space_day_14), style = Zapara.typography.body)
+                page.nextKnownDate?.let { date -> ZButton(date.toString(), { onEvent(ScheduleEvent.Select(date)) }, ghost = true) }
+            }
+            if (page.isToday && page.lessons.isNotEmpty() && featured == null) Text(uiText(R.string.space_day_15), style = Zapara.typography.body)
+            if (breaks.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable { onEvent(ScheduleEvent.FreeTime(!state.showFreeTime)) }, verticalAlignment = Alignment.CenterVertically) {
+                Text(uiText(R.string.space_day_16), modifier = Modifier.weight(1f), style = Zapara.typography.body)
+                ZSwitch(state.showFreeTime, { onEvent(ScheduleEvent.FreeTime(it)) }, "Schedule.FreeTime")
             }
         }
+        itemsIndexed(page.lessons, key = { _, it -> "${it.index}:${it.timeStart}:${it.subjectNorm}:${it.teacher}" }) { _, lesson ->
+            if (state.showFreeTime) breaks.filter { it.end.toString() == lesson.timeStart }.forEach { Text(uiText(R.string.space_day_17, (it.start).toString(), (it.end).toString(), (it.minutes / 60).toString(), (it.minutes % 60).toString()), style = Zapara.typography.caption, color = Zapara.colors.text2) }
+            if (lesson in conflicts) Text(uiText(R.string.space_day_overlap), style = Zapara.typography.caption, color = Zapara.colors.warn)
+            if (lesson == featured) {
+                Text(if (page.isToday) uiText(if (runCatching { java.time.LocalTime.parse(lesson.timeStart) <= state.now.toLocalTime() }.getOrDefault(false)) R.string.space_day_current_pair else R.string.space_day_next_pair) else uiText(R.string.space_day_19), style = Zapara.typography.caption)
+                LessonCard(lesson, onLongClick = { onEvent(ScheduleEvent.LongPress(lesson)) }, onRoom = { onOpenMap(lesson.classroomRaw) },
+                    onToggleDone = { onEvent(ScheduleEvent.ToggleDone(it)) }, onSubgroup = { stream, option -> onEvent(ScheduleEvent.PickSubgroup(stream, option)) })
+                Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    ZButton(uiText(R.string.space_day_20), { onOpenMap(lesson.classroomRaw) }, enabled = lesson.classroomRaw.isNotBlank(), modifier = Modifier.weight(1f))
+                    ZButton(uiText(R.string.space_day_21), { onEvent(ScheduleEvent.SubjectHomework(lesson)) }, ghost = true, modifier = Modifier.weight(1f))
+                }
+                ZButton(uiText(R.string.space_day_22), { onDiscuss("${lesson.name} · ${page.date} · ${lesson.timeStart}–${lesson.timeEnd} · ${lesson.room}") }, ghost = true, quiet = true)
+            } else ZCard(Modifier.fillMaxWidth(), onClick = { onEvent(ScheduleEvent.LongPress(lesson)) }) {
+                Text("${lesson.timeStart}–${lesson.timeEnd} · ${lesson.type}", style = Zapara.typography.caption, color = Zapara.colors.text2)
+                Text(lesson.name, style = Zapara.typography.bodyStrong)
+                Text("${lesson.room} · ${lesson.teacher}", style = Zapara.typography.caption, color = Zapara.colors.text2)
+            }
+        }
+        if (page.deadlines.isNotEmpty()) {
+            item { Text(uiText(R.string.space_day_23, (page.deadlines.count { it.done }).toString(), (page.deadlines.size).toString()), style = Zapara.typography.section) }
+            itemsIndexed(page.deadlines, key = { _, row -> "deadline:${row.sharedId ?: row.id}" }) { _, row ->
+                DeadlineRow(row, onEvent)
+            }
+        }
+        state.undoShared?.let { item { Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(uiText(R.string.space_day_26), Modifier.weight(1f), style = Zapara.typography.caption)
+            ZButton(uiText(R.string.space_day_27), { onEvent(ScheduleEvent.UndoShared) }, ghost = true, quiet = true)
+        } } }
+        state.undoDone?.let { item { Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(uiText(R.string.space_day_26), Modifier.weight(1f), style = Zapara.typography.caption)
+            ZButton(uiText(R.string.space_day_27), { onEvent(ScheduleEvent.UndoDone) }, ghost = true, quiet = true)
+        } } }
     }
-    LazyColumn(
-        state = list,
-        modifier = Modifier.fillMaxSize().nestedScroll(pull),
-        contentPadding = PaddingValues(Zapara.space.l),
-        verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
-    ) {
-        itemsIndexed(page.lessons, key = { _, it -> "${it.dayOfWeek}:${it.index}:${it.timeStart}:${it.subjectNorm}:${it.teacher}" }) { index, lesson ->
-            LessonCard(
-                lesson,
-                onLongClick = { onEvent(ScheduleEvent.LongPress(lesson)) },
-                onRoom = { onOpenMap(lesson.classroomRaw) },
-                onToggleDone = { onEvent(ScheduleEvent.ToggleDone(it)) },
-                onSubgroup = { stream, option -> onEvent(ScheduleEvent.PickSubgroup(stream, option)) },
-                modifier = Modifier.appear(index)
-            )
+}
+
+@Composable
+private fun DeadlineRow(row: HomeworkRowUi, onEvent: (ScheduleEvent) -> Unit) {
+    val uiText = rememberUiText()
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(row.done, { if (row.sharedId != null) onEvent(ScheduleEvent.ToggleShared(row.sharedId, !row.done)) else onEvent(ScheduleEvent.ToggleDone(row.id)) }, modifier = Modifier.semantics { contentDescription = uiText(R.string.space_day_24, row.text) })
+        Column(Modifier.weight(1f).clickable { onEvent(ScheduleEvent.OpenHomework(row)) }) {
+            Text(row.text, style = Zapara.typography.body, textDecoration = if (row.done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
+            Text(row.label, style = Zapara.typography.caption, color = Zapara.colors.text2)
+            Text(uiText(if (row.sharedId == null) R.string.space_day_local_source else R.string.space_day_group_source), style = Zapara.typography.caption, color = Zapara.colors.text2)
+            if (row.done) Text(uiText(R.string.space_day_25), style = Zapara.typography.caption)
         }
     }
 }

@@ -18,7 +18,8 @@ public sealed class CommunityMultilineTests
         await db.Accounts.Migrations.EnsureAsync(Ct);
         await using var host = new WebAccountHost(db.Accounts, moduleSettings: new()
         {
-            ["Communities:Enabled"] = "true", ["Communities:Schema"] = db.Schema
+            ["Communities:Enabled"] = "true",
+            ["Communities:Schema"] = db.Schema
         });
         await host.Bootstrap();
         await host.Send("POST", "/auth/register", 201, new Zapara.Contracts.Accounts.RegisterRequest("paragraph_browser", WebAccountHost.Password));
@@ -51,6 +52,7 @@ public sealed class CommunityMultilineTests
     {
         await using var db = await CommunityPostgresFixture.CreateAsync();
         await db.Migrations.EnsureAsync(Ct, targetVersion: 1);
+        await MessengerSchema.EnsureAsync(db.Accounts.DataSource, db.Configuration, Ct);
         var accounts = new Zapara.Server.Accounts.AccountService(db.Accounts.DataSource, db.Accounts.Configuration, new AccountClock());
         var staff = await Seed(accounts, "upgrade.paragraphs");
         var community = Guid.NewGuid();
@@ -95,6 +97,7 @@ public sealed class CommunityMultilineTests
     {
         await using var db = await CommunityPostgresFixture.CreateAsync();
         await db.Migrations.EnsureAsync(Ct, targetVersion: 1);
+        await MessengerSchema.EnsureAsync(db.Accounts.DataSource, db.Configuration, Ct);
         using var resource = typeof(CommunitiesMigrations).Assembly.GetManifestResourceStream("Zapara.Server.Communities.Sql.002_multiline_bodies.sql")!;
         using var reader = new StreamReader(resource);
         await db.Accounts.ExecuteAsync((await reader.ReadToEndAsync(Ct)).Replace("__COM__", db.QuotedSchema, StringComparison.Ordinal));

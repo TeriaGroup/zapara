@@ -65,7 +65,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         Register(SectionKey.Friends, () => new Features.Friends.FriendsViewModel(App, this));
         Register(SectionKey.Homework, () => new Features.Homeworks.HomeworkViewModel(App, this));
         Register(SectionKey.Community, () => new Features.Communities.CommunitiesViewModel(App, App.Communities, App.CommunityAccess));
-        Register(SectionKey.Group, () => new Features.Groups.GroupViewModel(App));
+        Register(SectionKey.Group, () => new Features.Groups.GroupViewModel(App,shell:this));
         Register(SectionKey.Chat, () => new Features.Chat.ChatInboxViewModel(App, this));
         Register(SectionKey.Settings, () => new Features.Preferences.SettingsViewModel(App, this));
 
@@ -94,6 +94,8 @@ public sealed partial class ShellViewModel : ViewModelBase
     public NavSection SettingsSection { get; }
     public IEnumerable<NavSection> AllSections => MainSections.Concat(ToolSections).Append(SettingsSection);
     public IRelayCommand<string> NavigateCommand { get; }
+    public IEnumerable<NavSection> StudySections=>MainSections.Concat(ToolSections.Where(x=>x.Key is SectionKey.Teachers or SectionKey.Maps or SectionKey.Friends or SectionKey.Homework));
+    public IEnumerable<NavSection> GroupSections=>ToolSections.Where(x=>x.Key is SectionKey.Community or SectionKey.Group or SectionKey.Chat);
     public ToastService Toasts => App.Toasts;
     public DialogHostViewModel Dialogs { get; }
 

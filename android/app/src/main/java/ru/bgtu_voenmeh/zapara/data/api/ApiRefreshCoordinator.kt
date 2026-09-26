@@ -111,6 +111,28 @@ class ApiRefreshCoordinator(
         }
     }
 
+    /** Downloads the group's actual timetable without changing the user's study selection. */
+    suspend fun ensureGroup(name: String): Boolean {
+        val ticket = work.enter()
+        try {
+            if (!ticket.isCurrent || stopped || !configured || store.settings().useUniversityXml) return false
+            val http = client ?: return false
+            return refreshLock.withLock {
+                ticket.throwIfStale()
+                val cache = TimetableApiCache(store)
+                val existing = store.groups().firstOrNull { it.name.equals(name, true) }
+                if (existing != null && cache.read(existing.id)?.sourceBase == sourceBase) return@withLock true
+                val snapshot = http.fetchResolved(listOf(TimetableGroupRequest(existing?.id, name)))
+                ticket.throwIfStale()
+                if (stopped || store.settings().useUniversityXml) return@withLock false
+                cache.apply(snapshot, sourceBase)
+                true
+            }
+        } catch (e: CancellationException) { if (stopped || !ticket.isCurrent) return false; throw e }
+        catch (_: Exception) { return false }
+        finally { ticket.close() }
+    }
+
     fun stop() {
         stopped = true
         work.stopAccepting()

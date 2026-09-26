@@ -11,8 +11,8 @@ export type GroupsPayload = { period: Period; meta: SnapshotMeta; groups: Group[
 export type TimetablePayload = GroupsPayload & { group: Group; lessons: Lesson[] };
 
 export type HomeworkFile = { id: string; kind: "photo" | "document"; name: string; mime: string };
-export type HomeworkItem = { id: string; subject: string; text: string; done: boolean; created: string; files?: HomeworkFile[] };
-export type GroupHomeworkCopy = { homeworkId: string; title: string; body: string; revision: number; completed: boolean; completionRevision: number };
+export type HomeworkItem = { id: string; subject: string; text: string; done: boolean; created: string; files?: HomeworkFile[]; deadlineAt?: string | null; targetNthOccurrence?: number; legacyCreatedLocalDate?: string | null };
+export type GroupHomeworkCopy = { homeworkId: string; title: string; body: string; revision: number; completed: boolean; completionRevision: number; topicId?: string | null; deadlineAt?: string | null };
 export type FriendItem = { id: string; groupName: string; members: string; enabled: boolean; color: string };
 
 export type SessionUser = { userId: string; username: string; displayName: string | null };
@@ -26,11 +26,11 @@ export type Session = {
 
 export type Community = { communityId: string; name: string; description: string; revision: number; role: string | null };
 export type Classmate = { userId: string; username: string; displayName: string | null; role: string; self: boolean };
-export type GroupRole = { roleId: string; name: string };
+export type GroupRole = { roleId: string; name: string; position?: number; icon?: string; revision?: number };
 export type GroupGrant = { roleId: string; userId: string };
 export type GroupApplicant = { requestId: string; userId: string; username: string; displayName: string | null };
 export type GroupPower = { roleId: string; power: string };
-export type GroupDesk = { headman: boolean; roles: GroupRole[]; grants: GroupGrant[]; applicants: GroupApplicant[]; powers: GroupPower[]; mine: string[] };
+export type GroupDesk = { headman: boolean; roles: GroupRole[]; grants: GroupGrant[]; applicants: GroupApplicant[]; powers: GroupPower[]; mine: string[]; capabilities?: GroupCapabilities };
 export type BallotOption = { optionId: string; label: string; votes: number; chosen: boolean };
 export type Ballot = {
   ballotId: string; question: string; origin: string; status: string; deadlineAt: string;
@@ -52,10 +52,21 @@ export type GroupTopicMetadata = {
   description: string; accent: ChannelAccent; pinned: boolean; writePolicy: ChannelWritePolicy;
 };
 export type GroupTopic = GroupTopicMetadata & {
-  topicId: string | null; title: string; icon: string; kind: "chat" | "ballots";
+  topicId: string | null; title: string; icon: string; kind: string;
   lastBody: string | null; lastAuthor: string | null; lastAt: string | null;
   unread: number; canDelete: boolean; activeBallots: number; canPost: boolean;
+  template?: string; categoryId?: string | null; position?: number; subject?: string | null; archived?: boolean; revision?: number; permissions?: string[]; supported?: boolean;
 };
+export type GroupCategory = { categoryId: string; title: string; position: number; revision: number };
+export type GroupCapabilities = { maxRoles: number; maxRolesPerMember: number; maxTopics: number; powers: string[]; templates: string[] };
+export type GroupSpace = { topics: GroupTopic[]; categories: GroupCategory[]; capabilities: GroupCapabilities; desk: GroupDesk };
+export type AccessRule = { roleId: string | null; power: string; state: "allow" | "deny" | "inherit" };
+export type TopicAccess = { topicId: string; revision: number; rules: AccessRule[] };
+export type GroupAuditEvent = { eventId: string; actorId: string | null; action: string; objectId: string; createdAt: string };
+export type FormQuestion = { questionId: string; title: string; kind: "shortText" | "longText" | "singleChoice" | "multipleChoice"; required: boolean; options: string[] };
+export type FormAnswer = { questionId: string; text: string | null; choices: string[] };
+export type FormResponse = { respondentId: string | null; answers: FormAnswer[]; updatedAt: string };
+export type GroupForm = { formId: string; topicId: string; title: string; description: string; deadlineAt: string | null; anonymous: boolean; questions: FormQuestion[]; createdBy: string; createdAt: string; canRespond: boolean; canViewResponses: boolean; ownResponse: FormResponse | null; responseCount: number };
 export type GroupTopicPage = { topics: GroupTopic[]; canManageChannels: boolean };
 export type ChatMessage = {
   messageId: string; conversationId: string; senderId: string; senderName: string; body: string; createdAt: string;

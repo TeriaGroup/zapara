@@ -782,6 +782,7 @@ class GroupViewModelChannelsTest {
         return FakeHttp { call ->
             val path = call.url.substringAfter("/communities")
             when {
+                call.method == "GET" && path == "/$community/space" -> HttpReply(404, """{"title":"Not found","status":404,"code":"not_found"}""".toByteArray())
                 call.method == "GET" && path.isEmpty() -> jsonReply("""[{"communityId":"$community","name":"O3313","description":"Группа","revision":1,"role":"member"}]""")
                 call.method == "GET" && path == "/$community/home" -> jsonReply("""{"communityId":"$community","name":"O3313","groupName":"O3313","groupChat":{"conversationId":"$conversation","kind":"group","communityId":"$community","title":"O3313","peerUserId":null,"lastBody":null,"lastAt":null,"unread":0},"classmates":[{"userId":"$user","username":"student","displayName":"Аня","role":"${if (headman) "headman" else "member"}","self":true},{"userId":"$newTopic","username":"other","displayName":"Друг","role":"member","self":false}],"directs":[]}""")
                 call.method == "GET" && path == "/$community/topics?typed=1" -> jsonReply(topicList(canManage, false, restrictedChat, pinnedBallot, restrictedBallot))

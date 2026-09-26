@@ -64,6 +64,7 @@ public sealed partial class CommunityHttpClient : IDisposable
         => SendAsync<GroupDeskResponse>(HttpMethod.Get, "/" + Id(communityId) + "/desk", null, Access(accessToken), 200, ct);
     public Task<GroupDeskResponse> CreateRoleAsync(string accessToken, Guid communityId, GroupRoleNameRequest request, CancellationToken ct = default)
         => SendAsync<GroupDeskResponse>(HttpMethod.Post, "/" + Id(communityId) + "/roles", Required(request), Access(accessToken), 201, ct);
+    public Task<GroupDeskResponse> DeleteRoleAsync(string accessToken, Guid communityId, Guid roleId, CancellationToken ct = default) => SendAsync<GroupDeskResponse>(HttpMethod.Post, "/" + Id(communityId) + "/roles/" + Id(roleId) + "/delete", null, Access(accessToken), 200, ct);
     public Task<GroupDeskResponse> SetRolePowerAsync(string accessToken, Guid communityId, Guid roleId, GroupPowerRequest request, CancellationToken ct = default)
         => SendAsync<GroupDeskResponse>(HttpMethod.Post, "/" + Id(communityId) + "/roles/" + Id(roleId) + "/powers", Required(request), Access(accessToken), 200, ct);
     public Task<GroupDeskResponse> GrantRoleAsync(string accessToken, Guid communityId, Guid roleId, GroupGrantRequest request, CancellationToken ct = default)

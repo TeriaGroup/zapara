@@ -7,6 +7,7 @@ internal static partial class WebEndpoints
     {
         if (!CommunitiesConfiguration.IsEnabled(configuration)) return;
         var group = root.MapGroup("/communities");
+        MapGroupSpace(group);
         Route(group, "GET", "", async context =>
         {
             CommunityHttpInput.Query(context, "groupId");
@@ -154,8 +155,8 @@ internal static partial class WebEndpoints
         });
         Route(group, "GET", "/{communityId}/homework/copies", async context =>
         {
-            CommunityHttpInput.Query(context);
-            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().ListHomeworkCopiesAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), context.RequestAborted));
+            CommunityHttpInput.Query(context,"topicId");
+            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().ListHomeworkCopiesAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), context.RequestAborted,CommunityHttpInput.Cursor(context,"topicId")));
         });
         Route(group, "POST", "/{communityId}/homework/share", async context =>
         {
@@ -265,25 +266,25 @@ internal static partial class WebEndpoints
         Route(group, "GET", "/{communityId}/topics", async context =>
         {
             CommunityHttpInput.Query(context);
-            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().TopicsAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), context.RequestAborted));
+            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().TopicsAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), context.RequestAborted,includeTyped:context.Request.Headers["X-Zapara-Group-Space"].ToString()=="1"));
         });
         Route(group, "POST", "/{communityId}/topics", async context =>
         {
             CommunityHttpInput.Query(context);
             var body = await CommunityHttpInput.Body<GroupTopicRequest>(context);
-            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().CreateTopicAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), body, context.RequestAborted), 201);
+            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().CreateTopicAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), body, context.RequestAborted,includeTyped:context.Request.Headers["X-Zapara-Group-Space"].ToString()=="1"), 201);
         });
         Route(group, "POST", "/{communityId}/topics/{topicId}", async context =>
         {
             CommunityHttpInput.Query(context);
             var body = await CommunityHttpInput.Body<GroupTopicRequest>(context);
-            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().RenameTopicAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), CommunityHttpInput.Id(context.Request.RouteValues["topicId"]), body, context.RequestAborted));
+            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().RenameTopicAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), CommunityHttpInput.Id(context.Request.RouteValues["topicId"]), body, context.RequestAborted,includeTyped:context.Request.Headers["X-Zapara-Group-Space"].ToString()=="1",modernMetadata:context.Request.Headers["X-Zapara-Group-Space"].ToString()=="1"));
         });
         Route(group, "POST", "/{communityId}/topics/{topicId}/delete", async context =>
         {
             CommunityHttpInput.Query(context);
             await CommunityHttpInput.Empty(context);
-            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().DeleteTopicAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), CommunityHttpInput.Id(context.Request.RouteValues["topicId"]), context.RequestAborted));
+            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().DeleteTopicAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), CommunityHttpInput.Id(context.Request.RouteValues["topicId"]), context.RequestAborted,includeTyped:context.Request.Headers["X-Zapara-Group-Space"].ToString()=="1"));
         });
         Route(group, "POST", "/direct", async context =>
         {

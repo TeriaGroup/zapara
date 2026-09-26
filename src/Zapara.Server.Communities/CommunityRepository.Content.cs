@@ -7,19 +7,21 @@ internal sealed partial class CommunityRepository
 {
     internal async Task<HomeworkResponse> PublishHomeworkAsync(Guid communityId, HomeworkUpsert request)
     {
-        await RequireStaffAsync(communityId);
+        await RequireHomeworkPublisherAsync(communityId,request.TopicId);
         if (request.ExpectedRevision != 0) throw CommunityServiceException.Conflict("revision_conflict");
         var id = Guid.NewGuid();
         await ExecuteAsync($"""
             INSERT INTO {Schema}.shared_homework(homework_id,community_id,title,body,revision,created_by,created_at,updated_at)
             VALUES(@p0,@p1,@p2,@p3,1,@p4,@p5,@p5)
             """, id, communityId, request.Title, request.Body, UserId, Now);
+        await SaveHomeworkDeadlineAsync(id,request.DeadlineAt,request.TopicId);
         await AuditAsync(communityId, "homework_published", "shared_homework", id);
-        return new(id, communityId, request.Title, request.Body, 1, Now, Now);
+        return new(id, communityId, request.Title, request.Body, 1, Now, Now,request.DeadlineAt,request.TopicId);
     }
     internal async Task<HomeworkResponse> ShareHomeworkAsync(Guid communityId, HomeworkUpsert request)
     {
         await RequireMemberAsync(communityId);
+        if(request.TopicId is Guid selected) await RequireTopicPermissionAsync(communityId,selected,"homework");
         if (request.ExpectedRevision != 0) throw CommunityServiceException.Conflict("revision_conflict");
         if (await ScalarAsync($"SELECT count(*)::int FROM {Schema}.shared_homework WHERE community_id=@p0", communityId) >= 40)
             throw CommunityServiceException.InvalidRequest();
@@ -30,16 +32,19 @@ internal sealed partial class CommunityRepository
             INSERT INTO {Schema}.shared_homework(homework_id,community_id,title,body,revision,created_by,created_at,updated_at)
             VALUES(@p0,@p1,@p2,@p3,1,@p4,@p5,@p5)
             """, id, communityId, request.Title, body, UserId, Now);
+        await SaveHomeworkDeadlineAsync(id,request.DeadlineAt,request.TopicId);
         await AuditAsync(communityId, "homework_published", "shared_homework", id);
-        return new(id, communityId, request.Title, body, 1, Now, Now);
+        return new(id, communityId, request.Title, body, 1, Now, Now,request.DeadlineAt,request.TopicId);
     }
-    internal async Task<IReadOnlyList<GroupHomeworkCopyResponse>> ListHomeworkCopiesAsync(Guid communityId)
+    internal async Task<IReadOnlyList<GroupHomeworkCopyResponse>> ListHomeworkCopiesAsync(Guid communityId,Guid? topicId = null)
     {
         await RequireMemberAsync(communityId);
+        if(topicId is Guid selected) await RequireTopicPermissionAsync(communityId,selected,"read");
         var list = new List<GroupHomeworkCopyResponse>();
+        var visible=await VisibleTopicIdsAsync(communityId);
         await using var command = Command($"""
             SELECT h.homework_id, h.title, h.body, h.revision,
-                   COALESCE(c.completed, false), COALESCE(c.revision, 0)
+                   COALESCE(c.completed, false), COALESCE(c.revision, 0), (SELECT d.deadline_at FROM {Msg}.group_homework_details d WHERE d.homework_id=h.homework_id), (SELECT d.topic_id FROM {Msg}.group_homework_details d WHERE d.homework_id=h.homework_id)
             FROM {Schema}.shared_homework h
             LEFT JOIN {Schema}.shared_homework_completion c ON c.homework_id=h.homework_id AND c.user_id=@p1
             WHERE h.community_id=@p0
@@ -47,33 +52,37 @@ internal sealed partial class CommunityRepository
             """, communityId, UserId);
         await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
-            list.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetInt64(3), reader.GetBoolean(4), reader.GetInt64(5)));
-        return list;
+            list.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetInt64(3), reader.GetBoolean(4), reader.GetInt64(5),reader.IsDBNull(6)?null:reader.GetFieldValue<DateTimeOffset>(6),reader.IsDBNull(7)?null:reader.GetGuid(7)));
+        return list.Where(h=>(topicId is null || h.TopicId==topicId) && (h.TopicId is null || visible.Contains(h.TopicId.Value))).ToArray();
     }
     internal async Task<HomeworkResponse> UpdateHomeworkAsync(Guid communityId, Guid homeworkId, HomeworkUpsert request)
     {
-        await RequireStaffAsync(communityId);
+        await RequireHomeworkPublisherAsync(communityId,request.TopicId);
         var current = await GetHomeworkRowAsync(communityId, homeworkId, true);
+        if(current.TopicId is Guid selected) await RequireTopicPermissionAsync(communityId,selected,"homework");
+        if(request.TopicId is not null && request.TopicId != current.TopicId) throw CommunityServiceException.InvalidRequest();
         if (request.ExpectedRevision != current.Revision) throw CommunityServiceException.Conflict("revision_conflict");
         var revision = current.Revision + 1;
         await ExecuteAsync($"""
             UPDATE {Schema}.shared_homework SET title=@p0,body=@p1,revision=@p2,updated_at=@p3
             WHERE homework_id=@p4
             """, request.Title, request.Body, revision, Now, homeworkId);
+        await SaveHomeworkDeadlineAsync(homeworkId,request.DeadlineAt,current.TopicId);
         await AuditAsync(communityId, "homework_updated", "shared_homework", homeworkId);
-        return new(homeworkId, communityId, request.Title, request.Body, revision, current.CreatedAt, Now);
+        return new(homeworkId, communityId, request.Title, request.Body, revision, current.CreatedAt, Now,request.DeadlineAt,current.TopicId);
     }
     internal async Task<IReadOnlyList<HomeworkResponse>> ListHomeworkAsync(Guid communityId)
     {
         await RequireMemberAsync(communityId);
         var list = new List<HomeworkResponse>();
+        var visible=await VisibleTopicIdsAsync(communityId);
         await using var command = Command($"""
-            SELECT homework_id,community_id,title,body,revision,created_at,updated_at
+            SELECT homework_id,community_id,title,body,revision,created_at,updated_at, (SELECT d.deadline_at FROM {Msg}.group_homework_details d WHERE d.homework_id=shared_homework.homework_id), (SELECT d.topic_id FROM {Msg}.group_homework_details d WHERE d.homework_id=shared_homework.homework_id)
             FROM {Schema}.shared_homework WHERE community_id=@p0 ORDER BY created_at, homework_id
             """, communityId);
         await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) list.Add(ReadHomework(reader));
-        return list;
+        return list.Where(h=>h.TopicId is null || visible.Contains(h.TopicId.Value)).ToArray();
     }
     internal async Task<HomeworkResponse> GetHomeworkAsync(Guid communityId, Guid homeworkId)
     {
@@ -83,17 +92,20 @@ internal sealed partial class CommunityRepository
     private async Task<HomeworkResponse> GetHomeworkRowAsync(Guid communityId, Guid homeworkId, bool locked)
     {
         await using var command = Command($"""
-            SELECT homework_id,community_id,title,body,revision,created_at,updated_at
+            SELECT homework_id,community_id,title,body,revision,created_at,updated_at, (SELECT d.deadline_at FROM {Msg}.group_homework_details d WHERE d.homework_id=shared_homework.homework_id), (SELECT d.topic_id FROM {Msg}.group_homework_details d WHERE d.homework_id=shared_homework.homework_id)
             FROM {Schema}.shared_homework WHERE homework_id=@p0 AND community_id=@p1
             {(locked ? "FOR UPDATE" : "")}
             """, homeworkId, communityId);
         await using var reader = await command.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) throw CommunityServiceException.NotFound();
-        return ReadHomework(reader);
+        var result=ReadHomework(reader);
+        await reader.DisposeAsync();
+        if(result.TopicId is Guid id) await RequireTopicPermissionAsync(communityId,id,"read");
+        return result;
     }
     private static HomeworkResponse ReadHomework(NpgsqlDataReader reader)
         => new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(4),
-            reader.GetFieldValue<DateTimeOffset>(5), reader.GetFieldValue<DateTimeOffset>(6));
+            reader.GetFieldValue<DateTimeOffset>(5), reader.GetFieldValue<DateTimeOffset>(6),reader.IsDBNull(7)?null:reader.GetFieldValue<DateTimeOffset>(7),reader.IsDBNull(8)?null:reader.GetGuid(8));
     internal async Task<CompletionResponse> UpsertCompletionAsync(Guid communityId, Guid homeworkId, CompletionUpsert request)
     {
         await RequireMemberAsync(communityId);
@@ -129,6 +141,14 @@ internal sealed partial class CommunityRepository
         await using var reader = await command.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) return new(homeworkId, false, 0, null);
         return new(homeworkId, reader.GetBoolean(0), reader.GetInt64(1), reader.GetFieldValue<DateTimeOffset>(2));
+    }
+    private Task SaveHomeworkDeadlineAsync(Guid homeworkId,DateTimeOffset? deadline,Guid? topicId)
+        => ExecuteAsync($"INSERT INTO {Msg}.group_homework_details(homework_id,deadline_at,topic_id) VALUES(@p0,@p1,@p2) ON CONFLICT(homework_id) DO UPDATE SET deadline_at=EXCLUDED.deadline_at",homeworkId,deadline,topicId);
+    private async Task RequireHomeworkPublisherAsync(Guid communityId,Guid? topicId)
+    {
+        var role=await RequireMemberAsync(communityId);
+        if(topicId is Guid id) { await RequireTopicPermissionAsync(communityId,id,"homework"); return; }
+        if(role is not ("headman" or "curator") && !await HasPowerAsync(communityId,"homework")) throw CommunityServiceException.Forbidden();
     }
     internal async Task<AnnouncementResponse> PublishAnnouncementAsync(Guid communityId, AnnouncementUpsert request)
     {

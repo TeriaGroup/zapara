@@ -46,4 +46,11 @@ class WeekComposerTest {
         val inverted = ctx.copy(invert = true)
         assertEquals(LocalDate.of(2026, 9, 21), WeekComposer.nearestDate(1, 1, inverted, today))
     }
+    @Test fun selected_week_keeps_all_seven_absolute_dates_including_weekend() {
+        val selected = LocalDate.of(2026, 9, 19)
+        val days = WeekComposer.compose(1, parsed.lessons, { _, _ -> "" }, ctx, today, XmlCopy, selected)
+        assertEquals((14L..20L).map { LocalDate.of(2026, 9, it.toInt()) }, days.map { it.date })
+        assertEquals(selected, days.first { it.dow == 6 }.date)
+    }
+
 }

@@ -44,7 +44,9 @@ internal sealed partial class CommunityRepository(TrustedAccountContext context,
     internal async Task<string> RequireMemberAsync(Guid communityId)
     {
         await LockCommunityAsync(communityId);
-        return await ActiveRoleAsync(communityId) ?? throw CommunityServiceException.Forbidden();
+        var role = await ActiveRoleAsync(communityId) ?? throw CommunityServiceException.Forbidden();
+        await EnsureStarterTopicsAsync(communityId);
+        return role;
     }
     internal async Task<string> RequireStaffAsync(Guid communityId)
     {

@@ -87,7 +87,9 @@ data class CommunityHomework(
     val body: String,
     val revision: Long,
     val createdAt: Instant,
-    val updatedAt: Instant
+    val updatedAt: Instant,
+    val deadlineAt: Instant? = null,
+    val topicId: String? = null
 )
 
 data class HomeworkCompletion(

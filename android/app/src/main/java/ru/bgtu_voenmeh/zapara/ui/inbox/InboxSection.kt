@@ -71,7 +71,7 @@ fun InboxSection(state: InboxUiState, onEvent: (InboxEvent) -> Unit, onOpenGroup
                 "Inbox.Refresh", { onEvent(InboxEvent.Refresh) })
         }
         if (state.guest) {
-            Text("Войдите в аккаунт, чтобы общаться с группой и друзьями. Расписание и карты доступны без входа.", Modifier.padding(Zapara.space.l), color = Zapara.colors.text2)
+            Text(stringResource(R.string.face_inbox_guest), Modifier.padding(Zapara.space.l), color = Zapara.colors.text2)
         } else {
             state.error?.let { Text(it, Modifier.padding(horizontal = Zapara.space.l, vertical = 8.dp).testTag("Inbox.Error"), color = Zapara.colors.bad) }
             if (state.active == null) InboxList(state, onEvent, onOpenGroup,
@@ -125,23 +125,23 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
             }, ghost = true, tag = "Inbox.Reset")
         }
         item {
-            ZButton(if (adding) "Закрыть приглашения" else "Новый личный чат", { adding = !adding }, modifier = Modifier.fillMaxWidth(), ghost = true)
+            ZButton(if (adding) stringResource(R.string.face_close_invites) else stringResource(R.string.face_new_direct), { adding = !adding }, modifier = Modifier.fillMaxWidth(), ghost = true)
         }
         if (adding) item {
             ZCard(modifier = Modifier.fillMaxWidth()) {
-                SelectionContainer { Text("Ваш код: ${state.code.ifEmpty { "загружается…" }}", color = Zapara.colors.text1) }
-                Text("Отправьте свой код другу или введите его код. Чат появится после принятия приглашения.", color = Zapara.colors.text2, style = Zapara.typography.caption)
-                OutlinedTextField(state.inviteCode, { onEvent(InboxEvent.Code(it)) }, label = { Text("Код друга") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                ZButton("Пригласить", { onEvent(InboxEvent.Invite) }, enabled = !state.loading && state.inviteCode.isNotBlank())
-                state.outgoing.forEach { Text("Приглашение отправлено: ${it.name}", color = Zapara.colors.text2) }
+                SelectionContainer { Text(stringResource(R.string.face_your_code, state.code.ifEmpty { stringResource(R.string.face_loading) }), color = Zapara.colors.text1) }
+                Text(stringResource(R.string.face_invite_hint), color = Zapara.colors.text2, style = Zapara.typography.caption)
+                OutlinedTextField(state.inviteCode, { onEvent(InboxEvent.Code(it)) }, label = { Text(stringResource(R.string.face_friend_code)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                ZButton(stringResource(R.string.face_invite), { onEvent(InboxEvent.Invite) }, enabled = !state.loading && state.inviteCode.isNotBlank())
+                state.outgoing.forEach { Text(stringResource(R.string.face_invite_sent, it.name), color = Zapara.colors.text2) }
             }
         }
         items(state.incoming, key = { "invite:${it.id}" }) { invite ->
             ZCard(modifier = Modifier.fillMaxWidth()) {
-                Text("${invite.name} приглашает в чат", color = Zapara.colors.text1)
+                Text(stringResource(R.string.face_invites_you, invite.name), color = Zapara.colors.text1)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ZButton("Принять", { onEvent(InboxEvent.Respond(invite.id, true)) }, enabled = !state.loading)
-                    ZButton("Отклонить", { onEvent(InboxEvent.Respond(invite.id, false)) }, enabled = !state.loading, ghost = true)
+                    ZButton(stringResource(R.string.face_accept), { onEvent(InboxEvent.Respond(invite.id, true)) }, enabled = !state.loading)
+                    ZButton(stringResource(R.string.face_decline), { onEvent(InboxEvent.Respond(invite.id, false)) }, enabled = !state.loading, ghost = true)
                 }
             }
         }
@@ -149,7 +149,7 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
             Text(stringResource(R.string.inbox_loading), color = Zapara.colors.text2, style = Zapara.typography.caption)
             SkeletonList()
         }
-        if (state.rows.isEmpty() && !state.loading && !filtered) item { Text("Здесь появятся ваши группы и личные чаты. Начните общение по коду друга.", color = Zapara.colors.text2) }
+        if (state.rows.isEmpty() && !state.loading && !filtered) item { Text(stringResource(R.string.face_inbox_empty), color = Zapara.colors.text2) }
         if (!state.loading && visible.isEmpty() && filtered) item {
             ZCard(modifier = Modifier.fillMaxWidth(), tag = "Empty.InboxSearch") {
                 Text(stringResource(R.string.inbox_no_results), color = Zapara.colors.text2)
@@ -177,7 +177,7 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
                     color = Zapara.colors.text2, style = Zapara.typography.caption)
                 row.lastAt?.let { Text(stringResource(R.string.inbox_last_at, formatInboxTime(it, ZoneId.systemDefault())),
                     color = Zapara.colors.text2, style = Zapara.typography.caption) }
-                Text(row.lastBody ?: "Сообщений пока нет", color = Zapara.colors.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(row.lastBody ?: stringResource(R.string.face_no_messages_yet), color = Zapara.colors.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -214,8 +214,8 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
         val showJump = state.messages.size > 4 && totalItems > 0 && lastVisible < totalItems - 2
         Box(Modifier.weight(1f).fillMaxWidth()) {
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (state.hasMore) item { ZButton("Ранние сообщения", { onEvent(InboxEvent.Older) }, enabled = !state.loading, ghost = true) }
-            if (state.messages.isEmpty() && !state.loading) item { Text("Напишите первое сообщение", color = Zapara.colors.text2) }
+            if (state.hasMore) item { ZButton(stringResource(R.string.face_earlier), { onEvent(InboxEvent.Older) }, enabled = !state.loading, ghost = true) }
+            if (state.messages.isEmpty() && !state.loading) item { Text(stringResource(R.string.face_write_first), color = Zapara.colors.text2) }
             items(state.messages, key = { it.id }) { message ->
                 val mine = message.senderId == state.userId
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
@@ -226,15 +226,15 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(message.senderName, color = Zapara.colors.text2, style = Zapara.typography.caption)
                             message.replyBody?.let { Text("↳ $it", color = Zapara.colors.text2, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                            if (message.deleted) Text("Сообщение удалено", color = Zapara.colors.text1)
+                            if (message.deleted) Text(stringResource(R.string.face_message_deleted), color = Zapara.colors.text1)
                             else if (message.kind in setOf("image", "voice", "circle") && message.attachmentId != null) {
                                 val attachment = message.attachmentId
                                 ChatMediaBubble(message.kind, state.mediaFiles[attachment], message.durationMs,
                                     attachment in state.mediaLoading, attachment in state.mediaErrors,
                                     onLoad = { onEvent(InboxEvent.LoadMedia(message)) })
-                            } else SelectionContainer { Text(message.body ?: message.fileName ?: "Вложение", color = Zapara.colors.text1) }
-                            if (!message.deleted && message.attachmentId != null) TextButton({ saving = message; save.launch(message.fileName ?: "attachment") }, enabled = !state.loading) { Text("Сохранить") }
-                            Text(message.createdAt.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm")) + (if (message.edited) " · изменено" else "") + (if (mine) if (message.read) " · прочитано" else " · отправлено" else ""), color = Zapara.colors.text2, style = Zapara.typography.caption)
+                            } else SelectionContainer { Text(message.body ?: message.fileName ?: stringResource(R.string.face_attachment), color = Zapara.colors.text1) }
+                            if (!message.deleted && message.attachmentId != null) TextButton({ saving = message; save.launch(message.fileName ?: "attachment") }, enabled = !state.loading) { Text(stringResource(R.string.face_save)) }
+                            Text(message.createdAt.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm")) + (if (message.edited) stringResource(R.string.face_edited) else "") + (if (mine) stringResource(if (message.read) R.string.face_read else R.string.face_sent) else ""), color = Zapara.colors.text2, style = Zapara.typography.caption)
                             if (message.reactions.isNotEmpty()) Row { message.reactions.forEach { reaction -> TextButton(onClick = { onEvent(InboxEvent.React(message, reaction.emoji)) }, enabled = !state.loading) { Text("${emoji(reaction.emoji)} ${reaction.count}${if (reaction.mine) " ✓" else ""}") } } }
                         }
                     }
@@ -254,27 +254,27 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                 modifier = Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l, vertical = 8.dp)) { startVoice, startCircle ->
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (state.reply != null || state.editing != null) Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text((if (state.editing != null) "Изменение: " else "Ответ: ") + (state.editing ?: state.reply)?.body.orEmpty(), Modifier.weight(1f), color = Zapara.colors.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        TextButton({ onEvent(InboxEvent.CancelCompose) }) { Text("Отмена") }
+                        Text((if (state.editing != null) stringResource(R.string.face_editing) else stringResource(R.string.face_replying)) + (state.editing ?: state.reply)?.body.orEmpty(), Modifier.weight(1f), color = Zapara.colors.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        TextButton({ onEvent(InboxEvent.CancelCompose) }) { Text(stringResource(R.string.face_cancel)) }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (state.editing == null) IconButton(onClick = { pickingFor = activeId; pick.launch(arrayOf("*/*")) }, enabled = !state.loading, modifier = Modifier.testTag("Inbox.Attach")) {
-                            Icon(painterResource(R.drawable.ic_paperclip), "Прикрепить фото или файл", tint = Zapara.colors.text1)
+                            Icon(painterResource(R.drawable.ic_paperclip), stringResource(R.string.face_attach_hint), tint = Zapara.colors.text1)
                         }
                         OutlinedTextField(state.draft, { onEvent(InboxEvent.Draft(it)) }, modifier = Modifier.weight(1f).testTag("Inbox.Draft"),
-                            placeholder = { Text("Сообщение") }, maxLines = 4, shape = RoundedCornerShape(Zapara.radii.control))
+                            placeholder = { Text(stringResource(R.string.face_message)) }, maxLines = 4, shape = RoundedCornerShape(Zapara.radii.control))
                         if (state.draft.isNotBlank() || state.editing != null) {
                             Surface(onClick = { onEvent(InboxEvent.Send) }, enabled = !state.loading && state.draft.isNotBlank(),
                                 shape = RoundedCornerShape(Zapara.radii.icon), color = Zapara.colors.accent, contentColor = Zapara.colors.onAccent,
                                 modifier = Modifier.size(Zapara.space.minTouch).testTag("Inbox.Send")) {
-                                Box(contentAlignment = Alignment.Center) { Icon(painterResource(R.drawable.ic_send), if (state.editing != null) "Сохранить" else "Отправить") }
+                                Box(contentAlignment = Alignment.Center) { Icon(painterResource(R.drawable.ic_send), if (state.editing != null) stringResource(R.string.face_save) else stringResource(R.string.face_send)) }
                             }
                         } else {
                             IconButton(onClick = startCircle, enabled = !state.loading, modifier = Modifier.testTag("Inbox.Circle")) {
-                                Icon(painterResource(R.drawable.ic_video_circle), "Записать кружок", tint = Zapara.colors.text1)
+                                Icon(painterResource(R.drawable.ic_video_circle), stringResource(R.string.face_record_circle), tint = Zapara.colors.text1)
                             }
                             IconButton(onClick = startVoice, enabled = !state.loading, modifier = Modifier.testTag("Inbox.Voice")) {
-                                Icon(painterResource(R.drawable.ic_mic), "Записать голосовое", tint = Zapara.colors.text1)
+                                Icon(painterResource(R.drawable.ic_mic), stringResource(R.string.face_record_voice), tint = Zapara.colors.text1)
                             }
                         }
                     }
@@ -283,17 +283,17 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
         }
     }
     selected?.let { message ->
-        AlertDialog(onDismissRequest = { selected = null }, title = { Text("Сообщение") }, text = {
+        AlertDialog(onDismissRequest = { selected = null }, title = { Text(stringResource(R.string.face_message)) }, text = {
             Column {
-                TextButton({ onEvent(InboxEvent.Reply(message)); selected = null }) { Text("Ответить") }
+                TextButton({ onEvent(InboxEvent.Reply(message)); selected = null }) { Text(stringResource(R.string.face_reply)) }
                 if (message.senderId == state.userId) {
-                    if (message.kind == "text") TextButton({ onEvent(InboxEvent.Edit(message)); selected = null }) { Text("Изменить") }
-                    TextButton({ deleting = message; selected = null }) { Text("Удалить") }
+                    if (message.kind == "text") TextButton({ onEvent(InboxEvent.Edit(message)); selected = null }) { Text(stringResource(R.string.face_edit)) }
+                    TextButton({ deleting = message; selected = null }) { Text(stringResource(R.string.face_delete)) }
                 }
                 Row { listOf("like", "heart", "laugh", "wow", "sad").forEach { code -> TextButton({ onEvent(InboxEvent.React(message, code)); selected = null }, contentPadding = PaddingValues(4.dp), modifier = Modifier.weight(1f)) { Text(emoji(code)) } } }
             }
-        }, confirmButton = { TextButton({ selected = null }) { Text("Закрыть") } })
+        }, confirmButton = { TextButton({ selected = null }) { Text(stringResource(R.string.face_close)) } })
     }
-    deleting?.let { message -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text("Удалить сообщение?") }, text = { Text("Сообщение будет удалено из переписки.") }, confirmButton = { TextButton({ onEvent(InboxEvent.Delete(message)); deleting = null }) { Text("Удалить") } }, dismissButton = { TextButton({ deleting = null }) { Text("Отмена") } }) }
+    deleting?.let { message -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text(stringResource(R.string.face_delete_message)) }, text = { Text(stringResource(R.string.face_delete_message_body)) }, confirmButton = { TextButton({ onEvent(InboxEvent.Delete(message)); deleting = null }) { Text(stringResource(R.string.face_delete)) } }, dismissButton = { TextButton({ deleting = null }) { Text(stringResource(R.string.face_cancel)) } }) }
 }
 private fun emoji(code: String) = when(code) { "like" -> "👍"; "heart" -> "❤️"; "laugh" -> "😂"; "wow" -> "😮"; "sad" -> "😢"; else -> code }

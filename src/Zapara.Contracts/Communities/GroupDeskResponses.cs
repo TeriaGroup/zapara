@@ -19,13 +19,18 @@ public sealed record GroupGrantRequest
 public sealed record GroupRoleResponse
 {
     [JsonConstructor]
-    public GroupRoleResponse(Guid roleId, string name)
+    public GroupRoleResponse(Guid roleId, string name, int position = 0, string icon = "user", long revision = 1)
     {
         RoleId = roleId;
         Name = name;
+        Position = position; Icon = icon; Revision = revision;
     }
     [JsonRequired, JsonInclude] public Guid RoleId { get; private init; }
     [JsonRequired, JsonInclude] public string Name { get; private init; }
+    [JsonInclude] public int Position { get; private init; }
+    [JsonInclude] public string Icon { get; private init; }
+    [JsonInclude] public long Revision { get; private init; }
+
 }
 
 public sealed record GroupGrantResponse
@@ -85,7 +90,7 @@ public sealed record GroupPowerRequest
 public sealed record GroupDeskResponse
 {
     [JsonConstructor]
-    public GroupDeskResponse(bool headman, IReadOnlyList<GroupRoleResponse> roles, IReadOnlyList<GroupGrantResponse> grants, IReadOnlyList<GroupApplicantResponse> applicants, IReadOnlyList<GroupPowerResponse> powers, IReadOnlyList<string> mine)
+    public GroupDeskResponse(bool headman, IReadOnlyList<GroupRoleResponse> roles, IReadOnlyList<GroupGrantResponse> grants, IReadOnlyList<GroupApplicantResponse> applicants, IReadOnlyList<GroupPowerResponse> powers, IReadOnlyList<string> mine, GroupCapabilitiesResponse? capabilities = null)
     {
         Headman = headman;
         Roles = roles ?? throw new ArgumentException();
@@ -93,7 +98,9 @@ public sealed record GroupDeskResponse
         Applicants = applicants ?? throw new ArgumentException();
         Powers = powers ?? throw new ArgumentException();
         Mine = mine ?? throw new ArgumentException();
+        Capabilities = capabilities ?? new();
     }
+    [JsonInclude] public GroupCapabilitiesResponse Capabilities { get; private init; }
     [JsonRequired, JsonInclude] public bool Headman { get; private init; }
     [JsonRequired, JsonInclude] public IReadOnlyList<GroupRoleResponse> Roles { get; private init; }
     [JsonRequired, JsonInclude] public IReadOnlyList<GroupGrantResponse> Grants { get; private init; }

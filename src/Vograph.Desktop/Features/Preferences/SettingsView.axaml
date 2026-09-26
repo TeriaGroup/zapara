@@ -19,11 +19,7 @@
     </Style>
   </UserControl.Styles>
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Margin="32,26" Spacing="6" MaxWidth="720" HorizontalAlignment="Left">
-      <TextBlock Classes="display" Text="{Binding Title}" />
-      <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,0,0,2" />
-      <Expander Classes="settings-row" AutomationProperties.AutomationId="Settings.AccountSection">
-        <Expander.Header>
+    <Grid Name="SettingsColumns" Margin="24,20" ColumnDefinitions="*" ColumnSpacing="20" MaxWidth="1160" HorizontalAlignment="Stretch"><StackPanel Name="SettingsOverview" Spacing="2" IsVisible="{Binding ShowOverview}"><TextBlock Classes="display" Text="Настройки" /><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="account" MinHeight="64">
           <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
             <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center">
               <c:Icon Data="{StaticResource Icon.Users}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -33,20 +29,41 @@
               <TextBlock Classes="muted caption" Text="{Binding AccountPanel.Status}" TextTrimming="CharacterEllipsis" MaxWidth="550" />
             </StackPanel>
           </StackPanel>
-        </Expander.Header>
-        <account:AccountPanelView DataContext="{Binding AccountPanel}" />
-      </Expander>
-      <TextBlock Classes="subject" Text="Основное" Margin="0,8,0,0" />
-
-
-      <!-- Schedule -->
-      <Expander Classes="settings-row" AutomationProperties.AutomationId="Settings.StudySection">
-        <Expander.Header>
+        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="study" MinHeight="64">
           <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
             <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Calendar}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
             <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Учёба" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding GroupName}" /></StackPanel>
           </StackPanel>
-        </Expander.Header>
+        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="appearance" MinHeight="64">
+          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
+            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Sun}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+            <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Оформление" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding ThemeSummary}" /></StackPanel>
+          </StackPanel>
+        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="notifications" MinHeight="64">
+          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
+            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Bell}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+            <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Уведомления" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding NotificationSummary}" /></StackPanel>
+          </StackPanel>
+        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="data" MinHeight="64">
+          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
+            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Refresh}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+            <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Данные и синхронизация" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="Локальная копия и связь" /></StackPanel>
+          </StackPanel>
+        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="help" MinHeight="64">
+          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
+            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center">
+              <c:Icon Data="{StaticResource Icon.File}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel Spacing="2" VerticalAlignment="Center">
+              <TextBlock Text="Помощь и обновления" FontWeight="Medium" />
+              <TextBlock Classes="muted caption" Text="Поддержка и документы" />
+            </StackPanel>
+          </StackPanel>
+        </Button></StackPanel><StackPanel Name="SettingsDetails" Spacing="8" IsVisible="{Binding !ShowOverview}">      <TextBlock Classes="display" Text="{Binding PanelTitle}" />
+<Button Classes="ghost" Content="Назад к настройкам" Command="{Binding BackToOverviewCommand}" IsVisible="{Binding !ShowOverview}" HorizontalAlignment="Left" />
+<StackPanel Spacing="10" IsVisible="{Binding ShowAccountPanel}">
+        <account:AccountPanelView DataContext="{Binding AccountPanel}" />
+      </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowStudyPanel}">
       <Border Classes="card">
         <StackPanel Spacing="10">
           <TextBlock Classes="micro" Text="{loc:TU setSchedule}" />
@@ -60,8 +77,14 @@
               </StackPanel>
             </Button>
           </Grid>
-          <c:Switch Content="{loc:T invertParity}" IsChecked="{Binding ParityInvert}" AutomationProperties.AutomationId="Settings.ParityInvert" />
+          <TextBlock Classes="muted caption" Text="Выбранная группа задаёт расписание на устройстве. Членство и роли в чате группы оформляются отдельно." TextWrapping="Wrap" />
+          <c:Switch Content="Свободное время" IsChecked="{Binding StudyShowFreeTime}" AutomationProperties.Name="Показывать перерывы от 30 минут" />
+          <TextBlock Classes="subject" Text="Подгруппы предметов" />
+          <TextBlock Classes="muted caption" Text="Если подгруппа не выбрана, показываются все занятия. Повторное нажатие снимает выбор." TextWrapping="Wrap" />
+          <ItemsControl ItemsSource="{Binding StudySubgroups}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="st:StudySubgroupRow"><StackPanel Spacing="6" Margin="0,4"><TextBlock Text="{Binding Title}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding Options}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" LineSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="st:StudySubgroupOption"><Button Content="{Binding Label}" Classes.primary="{Binding Selected}" Command="{Binding SelectCommand}" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+          <Expander Header="Дополнительно"><StackPanel Spacing="6">          <c:Switch Content="{loc:T invertParity}" IsChecked="{Binding ParityInvert}" AutomationProperties.AutomationId="Settings.ParityInvert" />
           <TextBlock Classes="faint caption" Text="{loc:T invertHint}" TextWrapping="Wrap" />
+</StackPanel></Expander>
           <StackPanel Orientation="Horizontal" Spacing="12">
             <Button Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsRefreshing}" ToolTip.Tip="{loc:T refreshTip}"
                     AutomationProperties.AutomationId="Settings.Refresh" AutomationProperties.Name="{loc:T refresh}">
@@ -77,16 +100,7 @@
           </StackPanel>
         </StackPanel>
       </Border>
-      </Expander>
-
-      <!-- Appearance -->
-      <Expander Classes="settings-row" AutomationProperties.AutomationId="Settings.AppearanceSection">
-        <Expander.Header>
-          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
-            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Sun}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-            <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Оформление" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding ThemeSummary}" /></StackPanel>
-          </StackPanel>
-        </Expander.Header>
+      </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowAppearancePanel}">
       <Border Classes="card">
         <StackPanel Spacing="10">
           <TextBlock Classes="micro" Text="{loc:TU setAppearance}" />
@@ -95,23 +109,16 @@
             <c:SegmentedControl Name="SettingsTheme" Grid.Column="1" Items="{Binding ThemeItems}" SelectedIndex="{Binding ThemeIndex}" />
           </Grid>
           <c:Switch Content="{loc:T setCompactSidebar}" IsChecked="{Binding CompactSidebar}" AutomationProperties.AutomationId="Settings.CompactSidebar" />
+          <Border Classes="card"><StackPanel Spacing="6"><TextBlock Classes="subject" Text="Образец карточки" /><TextBlock Text="Расписание и связанные задания" /><Button Classes="primary" Content="Открыть карту" HorizontalAlignment="Left" IsEnabled="False" /></StackPanel></Border>
           <c:Switch Content="{loc:T setAnimations}" IsChecked="{Binding Animations}" AutomationProperties.AutomationId="Settings.Animations" />
         </StackPanel>
       </Border>
-      </Expander>
-
-      <!-- Notifications -->
-      <Expander Classes="settings-row" AutomationProperties.AutomationId="Settings.NotificationsSection">
-        <Expander.Header>
-          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
-            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Bell}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-            <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Уведомления" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding NotificationSummary}" /></StackPanel>
-          </StackPanel>
-        </Expander.Header>
+      </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowNotificationsPanel}">
       <Border Classes="card">
         <StackPanel Spacing="10">
           <TextBlock Classes="micro" Text="{loc:TU setNotifications}" />
           <c:Switch Content="{loc:T notifEnabled}" IsChecked="{Binding NotificationsEnabled}" AutomationProperties.AutomationId="Settings.NotifyEnabled" />
+          <TextBlock Classes="muted caption" Text="Включите напоминания, чтобы изменить время." IsVisible="{Binding !NotificationsEnabled}" TextWrapping="Wrap" />
           <StackPanel Spacing="4" IsEnabled="{Binding NotificationsEnabled}">
             <Grid Classes="row" ColumnDefinitions="200,*">
               <TextBlock Text="{loc:T notifTime1Label}" />
@@ -123,7 +130,9 @@
             </Grid>
             <Button Classes="primary" Content="{loc:T notifSave}" Command="{Binding SaveTimesCommand}" HorizontalAlignment="Left" AutomationProperties.AutomationId="Settings.SaveTimes" />
           </StackPanel>
-          <Button Command="{Binding TestNotificationCommand}" HorizontalAlignment="Left"
+          <Button Content="Предпросмотр уведомления" Command="{Binding PreviewNotificationCommand}" HorizontalAlignment="Left" />
+          <Border Classes="card" IsVisible="{Binding NotificationPreviewVisible}"><StackPanel Spacing="6"><TextBlock Classes="subject" Text="Так будет выглядеть уведомление" /><TextBlock Text="{Binding NotificationPreview}" TextWrapping="Wrap" /></StackPanel></Border>
+          <Button Command="{Binding TestNotificationCommand}" HorizontalAlignment="Left" IsVisible="{Binding NotificationPreviewVisible}"
                   AutomationProperties.AutomationId="Settings.TestNotification" AutomationProperties.Name="{loc:T notifTest}">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <c:Icon Data="{StaticResource Icon.Bell}" Size="14" />
@@ -132,17 +141,8 @@
           </Button>
         </StackPanel>
       </Border>
-      </Expander>
-
-      <TextBlock Classes="subject" Text="Сервис" Margin="0,8,0,0" />
-      <!-- Sync -->
-      <Expander Classes="settings-row" IsVisible="{Binding LegacyTransferAvailable}" AutomationProperties.AutomationId="Settings.SyncSection">
-        <Expander.Header>
-          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
-            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Refresh}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-            <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Перенос данных" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="Экспорт и импорт" /></StackPanel>
-          </StackPanel>
-        </Expander.Header>
+      </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowDataPanel}">
+      <Border Classes="card"><StackPanel Spacing="8"><TextBlock Classes="subject" Text="Копия на устройстве" /><TextBlock Text="{Binding DataSummary}" TextWrapping="Wrap" /><Button Content="Синхронизировать сейчас" Command="{Binding SyncDataCommand}" IsEnabled="{Binding CanSyncData}" /><Button Content="{Binding SyncConflictSummary}" Command="{Binding ResolveDataConflictsCommand}" IsVisible="{Binding HasDataConflicts}" /><Button Content="Аккаунт и активные устройства" Command="{Binding OpenPanelCommand}" CommandParameter="account" /></StackPanel></Border>
       <Border Classes="card" IsVisible="{Binding LegacyTransferAvailable}">
         <StackPanel Spacing="10">
           <TextBlock Classes="micro" Text="{loc:TU setSync}" />
@@ -173,16 +173,7 @@
                      AutomationProperties.AutomationId="Settings.LanAddress" />
         </StackPanel>
       </Border>
-      </Expander>
-
-      <!-- Updates -->
-      <Expander Classes="settings-row" AutomationProperties.AutomationId="Settings.UpdatesSection">
-        <Expander.Header>
-          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
-            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Refresh}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-            <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Обновления" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding Updates.StatusText}" TextTrimming="CharacterEllipsis" MaxWidth="550" /></StackPanel>
-          </StackPanel>
-        </Expander.Header>
+      </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowHelpPanel}">
       <Border Classes="card">
         <StackPanel Spacing="10" DataContext="{Binding Updates}" x:DataType="st:UpdateCheckViewModel">
           <TextBlock Classes="micro" Text="{loc:TU setUpdates}" />
@@ -200,21 +191,7 @@
           </StackPanel>
         </StackPanel>
       </Border>
-      </Expander>
-
-
-      <Expander Classes="settings-row" AutomationProperties.AutomationId="Settings.SupportSection">
-        <Expander.Header>
-          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
-            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center">
-              <c:Icon Data="{StaticResource Icon.File}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
-            </Border>
-            <StackPanel Spacing="2" VerticalAlignment="Center">
-              <TextBlock Text="Помощь" FontWeight="Medium" />
-              <TextBlock Classes="muted caption" Text="Поддержка и документы" />
-            </StackPanel>
-          </StackPanel>
-        </Expander.Header>
+      </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowHelpPanel}">
       <Border Classes="card">
         <StackPanel Spacing="8">
           <TextBlock Classes="micro" Text="Поддержка" />
@@ -238,16 +215,7 @@
           </ItemsControl>
         </StackPanel>
       </Border>
-      </Expander>
-
-      <!-- About -->
-      <Expander Classes="settings-row" AutomationProperties.AutomationId="Settings.AboutSection">
-        <Expander.Header>
-          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
-            <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.File}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-            <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="О приложении" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding VersionText}" /></StackPanel>
-          </StackPanel>
-        </Expander.Header>
+      </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowHelpPanel}">
       <Border Classes="card">
         <StackPanel Spacing="8">
           <TextBlock Classes="micro" Text="{loc:TU setAbout}" />
@@ -265,7 +233,6 @@
           </Button>
         </StackPanel>
       </Border>
-      </Expander>
-    </StackPanel>
+      </StackPanel></StackPanel></Grid>
   </ScrollViewer>
 </UserControl>

@@ -1,3 +1,5 @@
+import { topicRules } from "./topic-policy.ts";
+import { canonicalUtc } from "./utc.ts";
 import { getGroupMedia, postGroupMedia, type GroupMediaDownload, type GroupMediaKind } from "./group-media.ts";
 import { groupMessageQuery, type GroupMessageCursor } from "./groupChat.ts";
 import type { BallotBoard, ChatMessage, Community, Conversation, GroupDesk, GroupHomeworkCopy, GroupHome, GroupTopicMetadata, GroupTopicPage, GroupsPayload, MapsManifest, Session, SocialHome, SocialMessage, SocialPage, Teacher, TeacherLesson, TimetablePayload } from "./types";
@@ -24,18 +26,18 @@ export function writeCache(cache: Cache) {
   localStorage.setItem(cacheKey, JSON.stringify(cache));
 }
 
-async function read<T>(url: string): Promise<T> {
-  const response = await fetch(url, { credentials: "same-origin", headers: authHeaders() });
+async function read<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(url, { signal, credentials: "same-origin", headers: authHeaders(false, url.startsWith("/web-api/communities")) });
   if (!response.ok) throw new Error(String(response.status));
   return response.json() as Promise<T>;
 }
 
-export function loadGroups() {
-  return read<GroupsPayload>("/api/v1/groups");
+export function loadGroups(signal?: AbortSignal) {
+  return read<GroupsPayload>("/api/v1/groups", signal);
 }
 
-export function loadTimetable(groupId: string) {
-  return read<TimetablePayload>("/api/v1/groups/" + encodeURIComponent(groupId) + "/timetable");
+export function loadTimetable(groupId: string, signal?: AbortSignal) {
+  return read<TimetablePayload>("/api/v1/groups/" + encodeURIComponent(groupId) + "/timetable", signal);
 }
 
 export function loadMaps() {
@@ -52,16 +54,19 @@ export function loadTeacher(id: string) {
 
 let csrf = "";
 let familyId = "";
+let signedInUser = "";
 
-function authHeaders(json = false): Record<string, string> {
+function authHeaders(json = false, groupSpace = false): Record<string, string> {
   const headers: Record<string, string> = { Accept: "application/json" };
+  if (groupSpace) headers["X-Zapara-Group-Space"] = "1";
   if (csrf) headers["X-Zapara-CSRF"] = csrf;
   if (familyId) headers["X-Zapara-Family"] = familyId;
   if (json) headers["Content-Type"] = "application/json";
   return headers;
 }
 
-function remember(value: { csrfToken?: string; familyId?: string | null }) {
+function remember(value: { csrfToken?: string; familyId?: string | null; user?: { userId: string } | null }) {
+  if ("user" in value) signedInUser = value.user?.userId || "";
   if (value.csrfToken) csrf = value.csrfToken;
   if (value.familyId) familyId = value.familyId;
 }
@@ -73,7 +78,7 @@ export async function session(): Promise<Session> {
 }
 
 async function send<T>(method: string, url: string, body?: unknown, empty = false): Promise<T> {
-  const headers = authHeaders(!empty && body !== undefined);
+  const headers = authHeaders(!empty && body !== undefined, url.startsWith("/web-api/communities"));
   if (!empty) headers["Content-Type"] = "application/json";
   const response = await fetch(url, {
     method,
@@ -147,12 +152,12 @@ export async function startExternal(provider: "vk" | "yandex") {
   window.location.assign(providerAddress(provider, started.authorizeUrl));
 }
 
-export function groupHomework(id: string) {
-  return read<GroupHomeworkCopy[]>(`/web-api/communities/${id}/homework/copies`);
+export function groupHomework(id: string, topicId?: string) {
+  return read<GroupHomeworkCopy[]>(`/web-api/communities/${id}/homework/copies` + (topicId ? `?topicId=${encodeURIComponent(topicId)}` : ""));
 }
 
-export function shareHomework(id: string, title: string, body: string) {
-  return send<{ homeworkId: string }>("POST", `/web-api/communities/${id}/homework/share`, { title, body, expectedRevision: 0 });
+export function shareHomework(id: string, title: string, body: string, deadlineAt: string | null = null, topicId: string | null = null) {
+  return send<{ homeworkId: string }>("POST", `/web-api/communities/${id}/homework/share`, { title, body, expectedRevision: 0, ...(deadlineAt ? { deadlineAt: canonicalUtc(deadlineAt) } : {}), ...(topicId ? { topicId } : {}) });
 }
 
 export function completeHomework(id: string, homeworkId: string, completed: boolean, expectedRevision: number) {
@@ -269,25 +274,29 @@ export function reactGroupMessage(id: string, messageId: string, emoji: string) 
 }
 
 export async function sendGroupMedia(id: string, kind: GroupMediaKind, name: string, file: Blob, replyTo?: string, durationMs?: number, topicId?: string): Promise<ChatMessage> {
-  const response = await postGroupMedia(id, kind, name, file, replyTo, fetch, authHeaders(), durationMs, topicId);
+  const response = await postGroupMedia(id, kind, name, file, replyTo, fetch, authHeaders(false, true), durationMs, topicId);
   if (!response.ok) throw new Error(String(response.status));
   return response.json() as Promise<ChatMessage>;
 }
 
 export function groupMedia(download: GroupMediaDownload): Promise<Blob> {
-  return getGroupMedia(download, fetch, authHeaders());
+  return getGroupMedia(download, fetch, authHeaders(false, true));
 }
 
 export function topics(id: string) {
   return read<GroupTopicPage>(`/web-api/communities/${id}/topics?typed=1`);
 }
 
-export function createTopic(id: string, title: string, icon: string, kind: "chat" | "ballots", metadata?: GroupTopicMetadata) {
-  return send<GroupTopicPage>("POST", `/web-api/communities/${id}/topics?typed=1`, { title, icon, kind, ...metadata });
+export function createTopic(id: string, title: string, icon: string, kind: string, metadata?: GroupTopicMetadata & { initialAccessRules?: AccessRule[] | null; template?: string; categoryId?: string | null; position?: number; subject?: string | null; expectedRevision?: number }) {
+  const {initialAccessRules,...settings}=metadata ?? {};
+  const initial=topicRules(initialAccessRules ?? []).filter(rule=>rule.state!=="inherit");
+  return send<GroupTopicPage>("POST", `/web-api/communities/${id}/topics?typed=1`, { title, icon, kind, ...settings, ...(initial.length?{initialAccessRules:initial}:{}) });
 }
 
-export function renameTopic(id: string, topicId: string, title: string, icon: string, kind: "chat" | "ballots", metadata?: GroupTopicMetadata) {
-  return send<GroupTopicPage>("POST", `/web-api/communities/${id}/topics/${topicId}?typed=1`, { title, icon, kind, ...metadata });
+export function renameTopic(id: string, topicId: string, title: string, icon: string, kind: string, metadata?: GroupTopicMetadata & { template?: string | null; categoryId?: string | null; position?: number; subject?: string | null; expectedRevision?: number }) {
+  const settings={...metadata};
+  delete (settings as {initialAccessRules?: unknown}).initialAccessRules;
+  return send<GroupTopicPage>("POST", `/web-api/communities/${id}/topics/${topicId}?typed=1`, { title, icon, kind, ...settings });
 }
 
 export function deleteTopic(id: string, topicId: string) {
@@ -362,3 +371,42 @@ export async function socialUpload(id: string, file: File, kind: "image" | "file
 export function socialAttachment(id: string) {
   return "/web-api/social/attachments/" + id;
 }
+import type { AccessRule, GroupAuditEvent, GroupForm, GroupSpace, TopicAccess, FormQuestion, FormAnswer, FormResponse } from "./types";
+const spacePath = (id: string) => `/web-api/communities/${id}/space`;
+export const groupSpace = (id: string) => read<GroupSpace>(spacePath(id));
+export const archivedTopics = (id: string) => read<GroupTopicPage>(`${spacePath(id)}/archive`);
+export const saveCategory = (id: string, categoryId: string | null, title: string, position: number, expectedRevision = 0) => send<GroupSpace>("POST", `${spacePath(id)}/categories`, { categoryId, title, position, expectedRevision });
+export const deleteCategory = (id: string, categoryId: string) => send<GroupSpace>("POST", `${spacePath(id)}/categories/${categoryId}/delete`, {});
+export const archiveTopic = (id: string, topicId: string, archived: boolean, expectedRevision: number) => send<GroupSpace>("POST", `${spacePath(id)}/topics/${topicId}/archive`, { archived, expectedRevision });
+export const topicAccess = (id: string, topicId: string) => read<TopicAccess>(`${spacePath(id)}/topics/${topicId}/access`);
+export const saveTopicAccess = (id: string, topicId: string, rules: AccessRule[], expectedRevision: number) => send<GroupSpace>("POST", `${spacePath(id)}/topics/${topicId}/access`, { rules:topicRules(rules), expectedRevision });
+export const previewPermissions = (id: string, target: { userId: string | null; roleId: string | null }) => send<{ topics: import("./types").GroupTopic[] }>("POST", `${spacePath(id)}/preview`, target);
+export const groupAudit = (id: string) => read<{ events: GroupAuditEvent[] }>(`${spacePath(id)}/audit`);
+export const saveRoleSettings = (id: string, roleId: string, name: string, icon: string, position: number, expectedRevision: number) => send<GroupDesk>("POST", `${spacePath(id)}/roles/${roleId}`, { name, icon, position, expectedRevision });
+export const roleImpact = (id: string, roleId: string) => read<{ roleId: string; assignments: number; accessRules: number }>(`${spacePath(id)}/roles/${roleId}/impact`);
+export const groupForms = (id: string, topicId: string) => read<{ forms: GroupForm[] }>(`${spacePath(id)}/topics/${topicId}/forms`);
+export const createGroupForm = (id: string, topicId: string, request: { title: string; description: string; deadlineAt: string | null; anonymous: boolean; questions: FormQuestion[] }) => send<{ forms: GroupForm[] }>("POST", `${spacePath(id)}/topics/${topicId}/forms`, request);
+export const submitGroupForm = (id: string, formId: string, answers: FormAnswer[]) => send<GroupForm>("POST", `${spacePath(id)}/forms/${formId}/response`, { answers });
+export const groupFormResponses = (id: string, formId: string, after?: string) => read<{ formId: string; responses: FormResponse[]; nextCursor: string | null; totalResponses: number }>(`${spacePath(id)}/forms/${formId}/responses` + (after ? `?after=${encodeURIComponent(after)}` : ""));
+export type AccountDevice = { familyId: string; deviceId: string; deviceName: string; platform: string; lastSeenAt: string; expiresAt: string; isCurrent: boolean };
+export const accountMe = () => read<{ user: import("./types").SessionUser; familyId: string; authenticationMethods: string[] }>("/web-api/account/me");
+export const accountDevices = (cursor?: string) => read<{ devices: AccountDevice[]; nextCursor: string | null }>("/web-api/account/devices" + (cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""));
+export const revokeDevice = (familyId: string) => send<void>("DELETE", `/web-api/account/devices/${familyId}`, undefined, true);
+export const syncMetadata = () => read<{ syncEpoch: string; currentSequence: number; minAfterSequence: number }>("/web-api/sync/metadata");
+import type { SyncRecord, SyncHomeworkValue, SyncSettingsValue } from "./private-sync";
+export const beginSyncSnapshot = () => send<{ manifestId: string; syncEpoch: string; highWater: number }>("POST", "/web-api/sync/resync", undefined, true);
+export const syncSnapshotPage = (manifestId: string, afterOrdinal: number) => read<{ nextAfterOrdinal: number; hasMore: boolean; items: { ordinal: number; record: SyncRecord }[] }>(`/web-api/sync/resync/${manifestId}?afterOrdinal=${afterOrdinal}&limit=200`);
+export async function mutatePrivate(epoch: string, opId: string, type: string, id: string, revision: number, value: SyncHomeworkValue | SyncSettingsValue | { done: boolean; doneAtUtc: string | null }, expectedUserId?: string) {
+  if (expectedUserId && signedInUser !== expectedUserId) throw new Error("stale-owner");
+  const response = await fetch("/web-api/sync/mutations", { method: "POST", credentials: "same-origin", headers: authHeaders(true), body: JSON.stringify({ syncEpoch: epoch, opId, entityType: type, entityId: id, expectedRevision: revision, action: "upsert", value }) });
+  if (response.status !== 409 && !response.ok) throw new Error(String(response.status));
+  return response.json() as Promise<{ status: number; code: string; serverRecord: SyncRecord | null }>;
+}
+export const privateChanges = (epoch: string, afterSequence: number) => read<{ metadata: { syncEpoch: string; currentSequence: number }; nextAfterSequence: number; hasMore: boolean; changes: { record: SyncRecord }[] }>(`/web-api/sync/changes?epoch=${encodeURIComponent(epoch)}&afterSequence=${afterSequence}&limit=200`);
+export const pushCapabilities = () => read<{ available: boolean; publicKey: string | null; reason: string | null }>("/web-api/notifications/capabilities");
+export const pushSubscriptions = () => read<{ subscriptionId: string; enabled: boolean; times: (string | null)[] }[]>("/web-api/notifications/subscriptions");
+export const savePushSubscription = (request: { endpoint: string; keys: { p256dh: string; auth: string }; enabled: boolean; timeZone: string }) => send<{ subscriptionId: string; enabled: boolean }>("POST", "/web-api/notifications/subscriptions", request);
+export const deletePushSubscription = (id: string) => send<void>("DELETE", `/web-api/notifications/subscriptions/${id}`, undefined, true);
+export const testPushSubscription = (subscriptionId: string) => send<{ status: string }>("POST", "/web-api/notifications/test", { subscriptionId });
+export type AccessPreview = { topicId: string; revision: number; affectedCount: number; beforeReaders: string[]; afterReaders: string[]; participants: { userId: string; beforePermissions: string[]; afterPermissions: string[]; sources: Record<string,string> }[] };
+export const previewTopicAccess = (id: string, topicId: string, rules: AccessRule[], expectedRevision: number) => send<AccessPreview>("POST", `${spacePath(id)}/topics/${topicId}/access-preview`, { rules:topicRules(rules), expectedRevision });

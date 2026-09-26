@@ -21,6 +21,7 @@ public sealed class UiPrefs
     public ThemeChoice Theme { get; set; } = ThemeChoice.System;
     public bool SidebarCollapsed { get; set; }
     public bool Animations { get; set; } = true;
+    public bool ShowFreeTime { get; set; } = true;
     public WindowBounds? Window { get; set; }
 
     /// <summary>The two daily lesson notifications; on by default, the times themselves live in Core's settings.</summary>

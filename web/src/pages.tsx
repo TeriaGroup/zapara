@@ -5,7 +5,7 @@ import * as api from "./api";
 import { followGroupCommunity, openGroupFace } from "./groupChoice";
 import { clearSentGroupDraft, createGroupPoller, groupMediaSelectionIsCurrent, mergeGroupMessages, newestUnseenIncoming } from "./groupChat";
 import { completeGroupCopy, saveEditorHomework } from "./groupHomework";
-import { addDays, dayTitle, isoDay, lessonsOn, longDate, sameSubject, weekday } from "./parity";
+import { addDays, dayTitle, isoDay, lessonsOn, sameSubject, weekday } from "./parity";
 import { forecastIntersections, intersectionPlace, markDescription, marksForLesson, resolveFriendSchedules, type FriendMark } from "./intersections";
 import { composeSummary } from "./summary";
 import { lessonsOfGroupTeacher, teacherCode, teacherRows, teacherWeek, type TeacherRow } from "./teachers";
@@ -18,13 +18,21 @@ import { canComposeChannel, canCreateBallot, isChatChannel, nextUnreadTopic, ord
 import { isNearLatest, matchesBrowseQuery, unreadBadgeDescription, unreadBadgeText } from "./groupBrowse";
 import { canCopyMessageText, filterMessages, messageDayKey, sameMessageCluster, type MessageBrowseFilter } from "./messageBrowse";
 import { buildGroupChatContext } from "./groupChatContext";
+import { advanceDraftEpoch, currentDraftEpoch, attachDiscussionContext, clearSentDiscussionContext, draftEpochMatches, reconcileGroupDrafts, revokeGroupDrafts, useStoredDraft } from "./draft-store";
 import { GroupComposer } from "./group-composer";
 import { GroupInlineMedia } from "./group-inline-media";
 import { legalDocument, type LegalId } from "./legal";
+import { registerGroupChatDraft, registerGroupConversation, scopeLease, scopeLeaseValid } from "./draft-revocation";
+import { selectedTopicAuthority } from "./topic-authority";
+import { topicAction } from "./topic-policy";
+import { useCommunityTimetable } from "./use-community-timetable";
 import { useApp } from "./store";
-import { homeworkCard, lessonFrom, placeCard, scheduleCard } from "./cards";
+import { absoluteDate, freeGaps, hasLessonOverlap, heroLesson, localDay, minuteClock, nearbyHomework, personalHomeworkDue } from "./planner";
+import { homeworkCard, lessonFrom, placeCard } from "./cards";
 import { BallotBoardView } from "./ballots";
 import { GroupTopics, TopicMark } from "./topics";
+import { AccountDetails, DataSettings, NotificationSettings, readReminders, StudyExtras, UpdateSettings } from "./settings-panels";
+import { SpecializedChannel, SubjectChannelContext } from "./group-panels";
 import { GroupAdmin, titlesOf } from "./group-admin";
 import { ShareMenu } from "./share";
 import { Icon } from "./icons";
@@ -96,66 +104,99 @@ function LessonCard({ lesson, marks = [], share, subgroup, onPick }: { lesson: L
 
 export function SchedulePage() {
   const app = useApp();
+  const navigate = useNavigate();
   const cache = api.readCache();
   const ownTimetable = cache.lessons[app.groupId];
   const period = ownTimetable?.period || app.catalog?.period;
   const choices = app.subgroups[app.groupId] || {};
   const index = useMemo(() => subgroupIndex(app.lessons), [app.lessons]);
   const shown = useMemo(() => visibleLessons(app.lessons, choices), [app.lessons, app.subgroups, app.groupId]);
-  const lessons = period ? lessonsOn(shown, app.date, period.start, period.weekCount, app.invert) : [];
+  const outsidePeriod = !!period && isoDay(app.date) < period.start.slice(0,10);
+  const lessons = period && !outsidePeriod ? lessonsOn(shown, app.date, period.start, period.weekCount, app.invert) : [];
+  const [now, setNow] = useState(() => new Date());
+  const [gapsOn, setGapsOn] = useState(localStorage.getItem("zapara.free-time") !== "0");
+  const [undo, setUndo] = useState<{ id: string; done: boolean } | null>(null);
+  const [calendar, setCalendar] = useState(false);
+  const calendarRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { const timer = window.setInterval(() => setNow(new Date()), 30_000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => { setUndo(null); }, [isoDay(app.date)]);
+  useEffect(() => { if (calendar) calendarRef.current?.focus(); }, [calendar]);
+  const gaps = freeGaps(lessons);
+  const hero = heroLesson(lessons, app.date, now);
   const friendSchedules = resolveFriendSchedules(app.friends, app.catalog?.groups || [], cache.lessons, ownTimetable);
   const groupName = app.catalog?.groups.find(group => group.id === app.groupId)?.name || "";
-  const dayCard = scheduleCard(groupName, app.date, period ? longDate(app.date, period.start, period.weekCount, app.invert) : dayTitle(app.date), lessons);
-  const today = new Date();
-  const strip = Array.from({ length: 7 }, (_, index) => addDays(addDays(app.date, -((weekday(app.date) + 6) % 7)), index));
+  const [sharedHomework, setSharedHomework] = useState<GroupHomeworkCopy[]>([]);
+  const [homeworkCommunity, setHomeworkCommunity] = useState("");
+  const [sharedUndo,setSharedUndo]=useState<{id:string;done:boolean}|null>(null);
+  const [sharedBusy,setSharedBusy]=useState(false);
+  const [deadlineError,setDeadlineError]=useState("");
+  useEffect(()=>{setSharedUndo(null);},[isoDay(app.date)]);
+  useEffect(() => { let stop = false; setSharedHomework([]); setHomeworkCommunity("");
+    if (app.session?.authenticated && app.groupId) void api.communities(app.groupId).then(rows => { const group=rows.find(row=>row.role); if(!group || stop) return; setHomeworkCommunity(group.communityId); return api.groupHomework(group.communityId).then(items=>{if(!stop)setSharedHomework(items);}); }).catch(()=>undefined);
+    return()=>{stop=true;};
+  }, [app.groupId,app.session?.user?.userId]);
+  const personal = app.homework.map(item=>({...item,deadlineAt: period ? personalHomeworkDue(item,shown,period,app.invert)?.toISOString() ?? null : null}));
+  const deadlines = nearbyHomework(personal, app.date, lessons.map(lesson => lesson.subjectRaw));
+  const sharedDeadlines = nearbyHomework(sharedHomework.map(item=>({id:item.homeworkId,subject:item.title,text:item.body,done:item.completed,created:"",deadlineAt:item.deadlineAt})),app.date,lessons.map(lesson=>lesson.subjectRaw));
+  const strip = Array.from({ length: 7 }, (_, i) => addDays(app.date, i - 2));
   const swipe = useSwipe(() => app.setDate(addDays(app.date, 1)), () => app.setDate(addDays(app.date, -1)));
-  const groupsUnavailable = !app.groupId && !app.catalog && !app.loading;
-  const timetableUnavailable = !!app.groupId && !app.timetableAvailable && !app.timetableLoading;
-  const emptyMessage = !app.groupId
-    ? app.loading ? "Загружаем список групп" : groupsUnavailable ? "Список групп не загрузился. Проверьте сеть и попробуйте ещё раз." : app.catalog?.groups.length === 0 ? "В списке пока нет групп" : "Группа ещё не выбрана. Расписание, карты и домашка останутся на этом устройстве."
-    : !app.timetableAvailable
-      ? app.timetableLoading ? "Загружаем расписание группы" : "Расписание группы не загрузилось. Проверьте сеть и попробуйте ещё раз."
-      : "В этот день пар нет";
-  return (
-    <section className="page">
-      <Head title={dayTitle(app.date, today)} text={period ? longDate(app.date, period.start, period.weekCount, app.invert) : app.timetableFailed ? "Расписание недоступно" : "Загружаем расписание"}>
-        <button className="icon-btn" type="button" aria-label="Предыдущий день" onClick={() => app.setDate(addDays(app.date, -1))}><Icon name="left" /></button>
-        <button className="btn" type="button" onClick={() => app.setDate(new Date())}>Сегодня</button>
-        <button className="icon-btn" type="button" aria-label="Следующий день" onClick={() => app.setDate(addDays(app.date, 1))}><Icon name="right" /></button>
-        <button className="btn" type="button" onClick={app.refresh} disabled={app.loading}><Icon name="refresh" size={16} />Обновить</button>
-        <ShareMenu card={app.timetableAvailable && period ? dayCard : null} label="День в чат" />
-      </Head>
-      <div className="dates">
-        {strip.map(date => (
-          <button key={isoDay(date)} className={"date" + (isoDay(date) === isoDay(app.date) ? " active" : "")} type="button" onClick={() => app.setDate(date)}>
-            <span>{["вс", "пн", "вт", "ср", "чт", "пт", "сб"][date.getDay()]}</span>
-            <strong>{date.getDate()}</strong>
-          </button>
-        ))}
+  const nextDate = app.timetableAvailable && period ? Array.from({ length: 21 }, (_, i) => addDays(app.date, i + 1)).find(date => lessonsOn(shown, date, period.start, period.weekCount, app.invert).length > 0) : null;
+  function actions(lesson: Lesson) {
+    const context = new URLSearchParams({ subject: lesson.subjectRaw, date: isoDay(app.date), time: lesson.timeStart });
+    return <div className="row lesson-actions">
+      <button className="btn primary" type="button" disabled={!lesson.roomRaw && !lesson.classroomRaw} title={!lesson.roomRaw && !lesson.classroomRaw ? "Аудитория не указана" : undefined}
+        onClick={() => { if (lesson.buildingRaw) sessionStorage.setItem("zapara.map.building", lesson.buildingRaw); const room = lesson.roomRaw || lesson.classroomRaw || ""; const floor = room.match(/\d/)?.[0]; if (floor) sessionStorage.setItem("zapara.map.floor", floor); navigate(`/maps?${context}&room=${encodeURIComponent(room)}`); }}>Открыть карту</button>
+      <Link className="btn" to={`/homework?${context}`}>Домашка</Link>
+      <Link className="btn quiet" to={`/group?${context}`}>Обсудить</Link>
+    </div>;
+  }
+  function renderLesson(lesson: Lesson) {
+    const marks = period ? marksForLesson(lesson, app.date, { mineLessons: shown, friends: friendSchedules, period, invert: app.invert, strictness: app.intersectionStrictness, now }, app.showAbsentFriends) : [];
+    return <Fragment key={lesson.index + lesson.timeStart + lesson.subjectRaw + lesson.teacherRaw}>
+      {gapsOn && gaps.filter(gap => minuteClock(gap.end) === lesson.timeStart).map(gap => <p className="free-gap" key={gap.start}>Перерыв {minuteClock(gap.start)}–{minuteClock(gap.end)} · {Math.floor(gap.duration / 60) ? `${Math.floor(gap.duration / 60)} ч ` : ""}{gap.duration % 60 ? `${gap.duration % 60} мин` : ""}</p>)}
+      <div className={hero === lesson ? "day-hero" : "day-row"}>
+        {hero === lesson && <p className="muted">{isoDay(app.date) > isoDay(now) ? "Первая пара" : lesson.timeStart <= minuteClock(now.getHours() * 60 + now.getMinutes()) ? "Сейчас" : "Следующая пара"}</p>}
+        <LessonCard lesson={lesson} marks={marks} share={lessonFrom(groupName, app.date, lesson)} subgroup={subgroupMark(lesson, lessons, index, choices)} onPick={app.pickSubgroup} />
+        {actions(lesson)}
       </div>
-      {app.timetableAvailable && <div className="section-overview">
-        <strong>{groupName || "Расписание группы"}</strong>
-        <span>Пар в этот день: {lessons.length}</span>
-      </div>}
-      <p className="swipe-hint">Смахните влево или вправо, чтобы сменить день</p>
-      <div className="stack swipe" {...swipe}>
-        {(!app.groupId || !app.timetableAvailable || lessons.length === 0) && (
-          <div className="card empty">
-            <p>{emptyMessage}</p>
-            {!app.groupId && !!app.catalog?.groups.length && <Link className="btn primary" to="/settings">Выбрать группу</Link>}
-            {(groupsUnavailable || timetableUnavailable) && <button className="btn primary" type="button" onClick={app.refresh}>Повторить</button>}
-          </div>
-        )}
-        {lessons.map(lesson => {
-          const marks = period ? marksForLesson(lesson, app.date, {
-            mineLessons: shown, friends: friendSchedules, period, invert: app.invert,
-            strictness: app.intersectionStrictness, now: today,
-          }, app.showAbsentFriends) : [];
-          return <LessonCard key={lesson.index + lesson.timeStart + lesson.subjectRaw + (lesson.teacherRaw || "")} lesson={lesson} marks={marks} share={lessonFrom(groupName, app.date, lesson)} subgroup={subgroupMark(lesson, lessons, index, choices)} onPick={app.pickSubgroup} />;
-        })}
-      </div>
-    </section>
-  );
+    </Fragment>;
+  }
+  return <section className="page day-page">
+    <Head title={isoDay(app.date) === isoDay(addDays(now, 2)) ? "Послезавтра" : dayTitle(app.date, now)} text={absoluteDate(app.date)}>
+      <button className="icon-btn quiet" type="button" title="Предыдущий день" aria-label="Предыдущий день" onClick={() => app.setDate(addDays(app.date, -1))}><Icon name="left" /></button>
+      <button className="btn quiet" type="button" aria-expanded={calendar} onClick={() => setCalendar(value => !value)}><Icon name="calendar" />Календарь</button>
+      <button className="icon-btn quiet" type="button" title="Следующий день" aria-label="Следующий день" onClick={() => app.setDate(addDays(app.date, 1))}><Icon name="right" /></button>
+      <Link className="btn" to="/week">Неделя</Link>
+    </Head>
+    <div className="seg quick-days" aria-label="Быстрый выбор дня">{["Сегодня", "Завтра", "Послезавтра"].map((title, i) => <button type="button" key={title} aria-pressed={isoDay(app.date) === isoDay(addDays(now, i))} className={isoDay(app.date) === isoDay(addDays(now, i)) ? "active" : ""} onClick={() => app.setDate(addDays(now, i))}>{title}</button>)}</div>
+    {calendar && <label className="field day-calendar">Выберите дату<input ref={calendarRef} type="date" value={isoDay(app.date)} onChange={event => { const value = localDay(event.target.value); if (value) app.setDate(value); }} /></label>}
+    <div className="dates day-strip">{strip.map(date => {
+      const count = app.timetableAvailable && period && isoDay(date) >= period.start.slice(0,10) ? lessonsOn(shown, date, period.start, period.weekCount, app.invert).length : null;
+      return <button className={"date" + (isoDay(date) === isoDay(app.date) ? " active" : "")} key={isoDay(date)} type="button" aria-pressed={isoDay(date) === isoDay(app.date)} onClick={() => app.setDate(date)}><span>{date.toLocaleDateString("ru-RU", { weekday: "short" })}</span><strong>{date.getDate()}</strong><small>{count === null ? "Нет данных" : count ? `${count} пар` : "Без пар"}</small></button>;
+    })}</div>
+    <div className="day-space">
+      <main className="stack swipe" {...swipe}>
+        <div className="section-overview"><strong>{groupName || "Группа не выбрана"}</strong><span>{app.timetableAvailable ? `${lessons.length} пар${lessons.length ? ` · ${lessons[0].timeStart}–${lessons.at(-1)?.timeEnd}` : ""}` : "Нет данных"}</span>
+          <button className="btn quiet" type="button" disabled={app.loading || app.timetableLoading} onClick={app.refresh}>{app.loading || app.timetableLoading ? "Обновляем…" : "Обновить"}</button></div>
+        {ownTimetable && <p className="muted">{!navigator.onLine ? "Нет сети · копия" : app.timetableFailed ? "Не обновилось · копия" : "Сохранено"} {new Date(ownTimetable.meta.fetchedAt).toLocaleString("ru-RU")}</p>}
+        {hasLessonOverlap(lessons) && <p className="banner">Записи пар пересекаются по времени. Проверьте выбранные подгруппы.</p>}
+        {gaps.length > 0 && <label className="switch-row"><span>Свободное время</span><input type="checkbox" role="switch" checked={gapsOn} onChange={event => { setGapsOn(event.target.checked); localStorage.setItem("zapara.free-time", event.target.checked ? "1" : "0"); }} /></label>}
+        {!app.timetableAvailable ? <div className="card empty"><p>{app.timetableLoading ? "Загружаем расписание" : app.groupId ? "Расписание не загружено. Нет сохранённой копии." : "Выберите учебную группу"}</p><Link className="btn" to="/settings?section=study">Выбрать группу</Link></div>
+          : outsidePeriod ? <div className="card empty"><h2>Дата вне известного учебного периода</h2><p>Сохранённое расписание начинается {period?.start.slice(0,10)}.</p></div> : lessons.length === 0 ? <div className="card empty"><h2>В этот день пар нет</h2>{nextDate && <button className="btn" type="button" onClick={() => app.setDate(nextDate)}>Следующие занятия: {absoluteDate(nextDate)}</button>}</div>
+          : <>{isoDay(app.date) === isoDay(now) && !hero && <p className="banner">Пары закончились</p>}{hero && renderLesson(hero)}{lessons.filter(lesson=>lesson!==hero).map(renderLesson)}</>}
+      </main>
+      <aside className="stack day-context"><h2>Ближайшие сроки · {deadlines.length + sharedDeadlines.length}</h2><p className="muted">{app.date.toLocaleDateString("ru-RU")}–{addDays(app.date, 2).toLocaleDateString("ru-RU")}</p>
+        {deadlines.length + sharedDeadlines.length === 0 && <p className="muted">На выбранные дни заданий нет</p>}
+        {deadlines.map(item => <article className="deadline" key={item.id}><label className="check"><input type="checkbox" checked={item.done} aria-label={`Готово у меня: ${item.text}`} onChange={() => { setSharedUndo(null); setUndo({ id: item.id, done: item.done }); app.saveHomework({ ...item, done: !item.done }); }} /><Link to={`/homework?id=${item.id}&subject=${encodeURIComponent(item.subject)}`}><span className={item.done ? "done-title" : ""}>{item.text}</span><small>{item.subject}</small></Link></label><p className="muted">{item.done ? "Готово у меня · " : ""}{item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}{!item.done && item.deadlineAt && Date.parse(item.deadlineAt) < now.getTime() ? " · Просрочено" : ""}</p></article>)}
+        {sharedDeadlines.map(item => <article className="deadline" key={item.id}><Link to={`/homework?subject=${encodeURIComponent(item.subject)}`}><b>{item.text}</b></Link><p className="muted">Группа · {item.subject} · {item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p><label className="check"><input type="checkbox" aria-label={`Готово у меня: ${item.text}`} checked={item.done} disabled={sharedBusy} onChange={() => { const copy=sharedHomework.find(row=>row.homeworkId===item.id); if(copy) { setSharedBusy(true); void api.completeHomework(homeworkCommunity,copy.homeworkId,!copy.completed,copy.completionRevision).then(value=>{setUndo(null);setSharedUndo({id:copy.homeworkId,done:copy.completed});setSharedHomework(rows=>rows.map(row=>row.homeworkId===copy.homeworkId?{...row,completed:value.completed,completionRevision:value.revision}:row));}).catch(()=>setDeadlineError("Личная готовность не сохранилась. Повторите после обновления домашки.")).finally(()=>setSharedBusy(false)); } }} />Готово у меня</label></article>)}
+        {deadlineError && <p role="alert">{deadlineError}</p>}
+        {sharedUndo && <div className="banner row" role="status"><span>{sharedUndo.done ? "Отметка снята" : "Отмечено готово"}</span><button className="btn quiet" type="button" disabled={sharedBusy} onClick={()=>{ const item=sharedHomework.find(row=>row.homeworkId===sharedUndo.id); if(!item)return;setSharedBusy(true);void api.completeHomework(homeworkCommunity,item.homeworkId,sharedUndo.done,item.completionRevision).then(value=>{setSharedHomework(rows=>rows.map(row=>row.homeworkId===item.homeworkId?{...row,completed:value.completed,completionRevision:value.revision}:row));setSharedUndo(null);}).catch(()=>setDeadlineError("Отмена не сохранилась")).finally(()=>setSharedBusy(false)); }}>Отменить</button></div>}
+        {undo && <div className="banner row" role="status"><span>{!undo.done ? "Отмечено готово" : "Отметка снята"}</span><button className="btn quiet" type="button" onClick={() => { const item = app.homework.find(row => row.id === undo.id); if (item) app.saveHomework({ ...item, done: undo.done }); setUndo(null); }}>Отменить</button></div>}
+        <Link className="btn" to="/homework">Вся домашка</Link>
+        <Link className="btn quiet" to={`/group?date=${isoDay(app.date)}`}>Обсуждение группы</Link>
+      </aside>
+    </div>
+  </section>;
 }
 
 export function WeekPage() {
@@ -164,7 +205,7 @@ export function WeekPage() {
   const period = app.catalog?.period;
   const shown = useMemo(() => visibleLessons(app.lessons, app.subgroups[app.groupId] || {}), [app.lessons, app.subgroups, app.groupId]);
   const monday = addDays(app.date, -((weekday(app.date) + 6) % 7));
-  const days = Array.from({ length: 6 }, (_, index) => addDays(monday, index));
+  const days = Array.from({ length: 7 }, (_, index) => addDays(monday, index));
   const weekDays = days.map(date => ({ date, lessons: period ? lessonsOn(shown, date, period.start, period.weekCount, app.invert) : [] }));
   const weekTotal = weekDays.reduce((total, day) => total + day.lessons.length, 0);
   const swipe = useSwipe(() => app.setDate(addDays(app.date, 7)), () => app.setDate(addDays(app.date, -7)));
@@ -177,7 +218,7 @@ export function WeekPage() {
       </Head>
       {app.timetableAvailable && period && <div className="section-overview">
         <strong>Пар за неделю: {weekTotal}</strong>
-        <span>{monday.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })} — {days[5].toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</span>
+        <span>{monday.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })} — {days[6].toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</span>
       </div>}
       <p className="swipe-hint">Смахните, чтобы сменить неделю</p>
       <div className="week swipe" {...swipe}>
@@ -342,6 +383,8 @@ export function TeachersPage() {
 }
 
 export function MapsPage() {
+  const location=useLocation();
+  const mapContext=new URLSearchParams(location.search);
   const [plans, setPlans] = useState<MapPlan[]>([]);
   const [plan, setPlan] = useState<MapPlan | null>(null);
   const [error, setError] = useState("");
@@ -372,7 +415,8 @@ export function MapsPage() {
   );
   return (
     <section className="page">
-      <Head title="Карты" text={error || "Планы Военмеха · ГК и УЛК"}>
+      <Head title="Карты" text={error || (mapContext.get("subject") ? `${mapContext.get("subject")} · ${mapContext.get("date")} · Аудитория ${mapContext.get("room") || "не указана"}` : "Планы Военмеха · ГК и УЛК")}>
+        {mapContext.get("date") && <Link className="btn quiet" to="/schedule">К выбранному дню</Link>}
         <ShareMenu card={plan ? placeCard(plan.building, String(plan.floor), "", `${plan.building}, ${plan.floor} этаж`) : null} label="Этаж в чат" />
       </Head>
       {plan && <div className="section-overview">
@@ -615,9 +659,14 @@ function HomeworkAttachments({ files }: { files: HomeworkFile[] }) {
 export function HomeworkPage() {
   const app = useApp();
   const [editorOpen, setEditorOpen] = useState(false);
-  const [subject, setSubject] = useState("");
+  const location = useLocation();
+  const chosenSubject = new URLSearchParams(location.search).get("subject");
+  const chosenId = new URLSearchParams(location.search).get("id");
+  const [subject, setSubject] = useState(() => new URLSearchParams(window.location.search).get("subject") || "");
   const [text, setText] = useState("");
   const [share, setShare] = useState(false);
+  const [nth,setNth]=useState(1);
+  const [sharedDeadline,setSharedDeadline]=useState("");
   const [pending, setPending] = useState<{ file: File; kind: "photo" | "document" }[]>([]);
   const [communityId, setCommunityId] = useState("");
   const [copies, setCopies] = useState<GroupHomeworkCopy[]>([]);
@@ -701,8 +750,8 @@ export function HomeworkPage() {
       { subject: title, text: body, share, isNew: true },
       !!app.session?.authenticated,
       communityId,
-      (subject, text) => { app.saveHomework({ id: crypto.randomUUID(), subject, text, done: false, created: new Date().toISOString(), files }); },
-      async (subject, text) => { await api.shareHomework(communityId, subject, text); },
+      (subject, text) => { app.saveHomework({ id: crypto.randomUUID(), subject, text, done: false, created: new Date().toISOString(), targetNthOccurrence:nth, files }); },
+      async (subject, text) => { await api.shareHomework(communityId, subject, text, sharedDeadline ? new Date(sharedDeadline).toISOString() : null); },
     );
     setText("");
     setPending([]);
@@ -760,6 +809,8 @@ export function HomeworkPage() {
           <input type="checkbox" checked={share} disabled={!app.session?.authenticated} onChange={event => setShare(event.target.checked)} />
           <span>Дублировать всей группе<span className="muted">{app.session?.authenticated ? " — одна и та же домашка появится у всех участников" : " — войдите в аккаунт, чтобы отправить группе"}</span></span>
         </label>
+        <label className="field">К следующему занятию по предмету<select value={nth} onChange={event=>setNth(Number(event.target.value))}>{Array.from({length:10},(_,i)=><option value={i+1} key={i+1}>{i+1}-е занятие</option>)}</select></label>
+        {share && <label className="field">Срок общей домашки<input type="datetime-local" value={sharedDeadline} onChange={event=>setSharedDeadline(event.target.value)} /></label>}
         <button className="btn primary" type="submit">Сохранить</button>
       </form>
       {!copiesLoading && !copiesFailed && app.homework.length === 0 && copies.length === 0 && !editorOpen &&
@@ -767,29 +818,30 @@ export function HomeworkPage() {
       {copiesFailed && <div className="card empty"><p>Общая домашка не загрузилась. Проверьте сеть и попробуйте ещё раз.</p><button className="btn primary" type="button" onClick={() => setCopiesRetry(value => value + 1)}>Повторить</button></div>}
       {copies.length > 0 && <h2 className="section-list-title">Всей группе <span className="chip">{copies.length}</span></h2>}
       <div className="stack" style={{ marginTop: copies.length > 0 ? 12 : 0 }}>
-        {copies.map(item => (
+        {copies.filter(item=>!chosenSubject||sameSubject(item.title,chosenSubject)).map(item => (
           <article className="card" key={item.homeworkId}>
             <div className="row" style={{ justifyContent: "space-between" }}>
               <span className="row"><b>{item.title}</b><span className="chip">Группа</span></span>
               <button className="btn" type="button" onClick={() => void toggleCopy(item)}>{item.completed ? "Снова открыть" : "Сделано"}</button>
             </div>
-            <p>{item.body}</p>
+            <p className={item.completed ? "done-title" : ""}>{item.body}</p><p className="muted">{item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p>
           </article>
         ))}
       </div>
       {app.homework.length > 0 && <h2 className="section-list-title">Мои задания <span className="chip">{app.homework.length}</span></h2>}
       <div className="stack" style={{ marginTop: 12 }}>
-        {app.homework.map(item => (
-          <article className="card" key={item.id}>
+        {app.homework.filter(item => !chosenSubject || sameSubject(item.subject, chosenSubject)).map(item => (
+          <article className="card" id={item.id} key={item.id} aria-current={chosenId === item.id ? "true" : undefined}>
             <div className="row" style={{ justifyContent: "space-between" }}>
               <b>{item.subject}</b>
               <button className="btn" type="button" onClick={() => app.saveHomework({ ...item, done: !item.done })}>{item.done ? "Снова открыть" : "Сделано"}</button>
             </div>
-            <p>{item.text}</p>
+            <p className={item.done ? "done-title" : ""}>{item.text}</p><p className="muted">{personalHomeworkDue(item,visibleLessons(app.lessons,app.subgroups[app.groupId]||{}),api.readCache().lessons[app.groupId]?.period||app.catalog?.period||{start:isoDay(app.date),weekCount:2,title:"",timeZone:""},app.invert)?.toLocaleDateString("ru-RU") || "Без срока"}</p>
             <HomeworkAttachments files={item.files || []} />
             <div className="row">
               {app.lessons.some(lesson => sameSubject(lesson.subjectRaw, item.subject)) && <span className="chip">есть в расписании</span>}
               <ShareMenu card={homeworkCard(item)} />
+              <Link className="btn quiet" to={`/group?homework=${encodeURIComponent(item.text)}&subject=${encodeURIComponent(item.subject)}&date=${isoDay(app.date)}`}>Обсудить задание</Link>
             </div>
           </article>
         ))}
@@ -901,7 +953,7 @@ export function GroupPage() {
   const [topicPageState, setTopicPageState] = useState<{ key: string; value: GroupTopicPage | null }>({ key: "", value: null });
   const [nextUnreadBusy, setNextUnreadBusy] = useState(false);
   const viewKey = chat && (chat.kind !== "group" || (thread !== "list" && isChatChannel(thread)))
-    ? `${chat.conversationId}:${chat.kind === "group" && thread !== "list" ? thread.topicId ?? "general" : "direct"}`
+    ? `${app.session?.user?.userId ?? "guest"}:${chat.conversationId}:${chat.kind === "group" && thread !== "list" ? thread.topicId ?? "general" : "direct"}`
     : "";
   const selectedTopicId = chat?.kind === "group" && thread !== "list" ? thread.topicId : undefined;
   const activeBallotTopicId = chat?.kind === "group" && thread !== "list" && thread.kind === "ballots" ? thread.topicId : null;
@@ -919,9 +971,23 @@ export function GroupPage() {
   const visibleLog = filterMessages(log, messageFilter, app.session?.user?.userId || "");
   const messageFiltered = !!messageFilter.query.trim() || messageFilter.author !== "all" || messageFilter.kind !== "all";
   const [copyNotice, setCopyNotice] = useState<{ key: string; text: string } | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [drafts,setDrafts] = useStoredDraft<Record<string,string>>("zapara.group.drafts",()=>({}));
   const draft = drafts[viewKey] ?? "";
-  const draftEpoch = useRef<Record<string, number>>({});
+  const [discussionContexts,setDiscussionContexts] = useStoredDraft<Record<string,string>>("zapara.group.contexts",()=>({}));
+  const context = discussionContexts[viewKey] ?? "";
+  const draftScope=home&&chat?.kind==="group"&&thread!=="list"?{owner:app.session?.user?.userId||"guest",community:home.communityId,topic:thread.topicId??"general"}:null;
+  const draftLease=draftScope?scopeLease(sessionStorage,draftScope):"";
+  useEffect(()=>{if(draftScope&&viewKey)registerGroupChatDraft(sessionStorage,viewKey,draftScope);},[viewKey,home?.communityId]);
+  const contextClaim = useRef<string | null>(sessionStorage.getItem("zapara.group.context-claim"));
+  useEffect(() => {
+    if(!viewKey || viewKeyRef.current!==viewKey || !location.search || draftScope&&!scopeLeaseValid(sessionStorage,draftScope,draftLease))return;
+    const params=new URLSearchParams(location.search);const subject=params.get("subject"),task=params.get("homework");if(!subject&&!task)return;
+    const claim=`${app.session?.user?.userId || "guest"}:${location.key}:${location.search}`;
+    if(contextClaim.current===claim)return;
+    contextClaim.current=claim;sessionStorage.setItem("zapara.group.context-claim",claim);
+    const caption=[task?`Домашка: ${task}`:`Пара: ${subject}`,params.get("date"),params.get("time")].filter(Boolean).join(" · ");
+    setDiscussionContexts(current=>attachDiscussionContext(current,viewKey,caption,true));
+  },[viewKey,location.key,location.search,app.session?.user?.userId]);
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [editing, setEditing] = useState<ChatMessage | null>(null);
   const editReturnDraft = useRef<{ key: string; messageId: string; value: string } | null>(null);
@@ -957,8 +1023,8 @@ export function GroupPage() {
   }
 
   function setDraft(value: string) {
-    if (!viewKey) return;
-    draftEpoch.current[viewKey] = (draftEpoch.current[viewKey] ?? 0) + 1;
+    if (!viewKey || viewKeyRef.current!==viewKey || draftScope&&!scopeLeaseValid(sessionStorage,draftScope,draftLease)) return;
+    advanceDraftEpoch(sessionStorage,viewKey);
     setDrafts(current => ({ ...current, [viewKey]: value }));
   }
 
@@ -1016,6 +1082,7 @@ export function GroupPage() {
     drop();
     const openHome = (id: string) => void api.groupHome(id).then(loaded => {
       if (stop) return;
+      registerGroupConversation(sessionStorage,app.session?.user?.userId||"guest",loaded.communityId,loaded.groupChat.conversationId);
       setHome(loaded);
       const requested = selectedConversationId === loaded.groupChat.conversationId
         ? loaded.groupChat : loaded.directs.find(item => item.conversationId === selectedConversationId);
@@ -1025,8 +1092,10 @@ export function GroupPage() {
           description: "", accent: "default", pinned: false, writePolicy: "all", canPost: true }
         : "list");
       setChat(requested ?? loaded.groupChat);
+      const savedTopic = sessionStorage.getItem(`zapara.group.selection.${app.session?.user?.userId}:${loaded.communityId}`);
+      if ((!requested || requested.kind === "group") && savedTopic && savedTopic !== "list") void selectedTopicAuthority(()=>api.topics(loaded.communityId),()=>api.archivedTopics(loaded.communityId),savedTopic==="general"?null:savedTopic).then(result=>{if(!stop&&result.selected)setThread(result.selected);}).catch(()=>undefined);
       setFocusChat(true);
-    }).catch(() => { if (!stop) { drop(); setError("Не удалось загрузить группу"); } });
+    }).catch(error => {if(error instanceof Error&&["401","403","404"].includes(error.message))revokeGroupDrafts(error.message==="401"?{owner:app.session?.user?.userId||"guest"}:{owner:app.session?.user?.userId||"guest",community:id});if (!stop) { drop(); setError("Не удалось загрузить группу"); } });
     if (app.session?.authenticated && selectedCommunityId) {
       openHome(selectedCommunityId);
       return () => { stop = true; };
@@ -1090,7 +1159,7 @@ export function GroupPage() {
           markDirectRead();
         }
       },
-      () => { if (viewKeyRef.current === viewKey) setError("Чат не обновился"); },
+      error => { if(error instanceof Error && ["401","403","404"].includes(error.message) && draftScope && scopeLeaseValid(sessionStorage,draftScope,draftLease))revokeGroupDrafts(error.message==="401"?{owner:draftScope.owner}:draftScope);if (viewKeyRef.current !== viewKey) return; if(error instanceof Error && ["401","403","404"].includes(error.message)){viewKeyRef.current="";selectionEpoch.current++;clearLog();setThread("list");setError("Доступ к каналу изменился");}else setError("Чат не обновился"); },
     );
     pollerRef.current = { key: viewKey, poller };
     void poller.poll();
@@ -1102,18 +1171,20 @@ export function GroupPage() {
     };
   }, [viewKey]);
   const communityId = home?.communityId ?? "";
+  useEffect(()=>{if(communityId && chat?.kind === "group") sessionStorage.setItem(`zapara.group.selection.${app.session?.user?.userId}:${communityId}`,thread === "list" ? "list" : thread.topicId ?? "general");},[communityId,chat?.kind,thread,app.session?.user?.userId]);
   const topicPage = topicPageState.key === communityId ? topicPageState.value : null;
-  const selectedAcademicGroup = app.catalog?.groups.find(group => group.id === app.groupId)?.name ?? null;
+  const communityTimetable = useCommunityTimetable(home?.groupName ?? null);
+  const communitySnapshot = communityTimetable.payload;
   const groupContext = buildGroupChatContext({
-    communityGroupName: home?.groupName ?? null,
-    selectedGroupName: selectedAcademicGroup,
-    timetableAvailable: app.timetableAvailable,
-    lessons: app.lessons,
-    subgroupChoices: app.subgroups[app.groupId] ?? {},
-    period: app.catalog?.period ?? null,
+    communityGroupName: communitySnapshot?.group.name ?? null,
+    selectedGroupName: communitySnapshot?.group.name ?? null,
+    timetableAvailable: !!communitySnapshot,
+    lessons: communitySnapshot?.lessons ?? [],
+    subgroupChoices: app.subgroups[communitySnapshot?.group.id ?? ""] ?? {},
+    period: communitySnapshot?.period ?? null,
     invert: app.invert,
     topics: topicPage?.topics ?? [],
-    now: new Date(),
+    now: app.date,
   });
   const contextExpanded = contextExpandedByGroup[communityId] !== false;
   const activeBallotTopic = topicPage?.topics.find(topic => topic.topicId !== null && topic.kind === "ballots" && topic.activeBallots > 0);
@@ -1126,35 +1197,18 @@ export function GroupPage() {
       const ticket = ++deskEpoch.current;
       void api.groupDesk(communityId).then(office => {
         if (!stop && ticket === deskEpoch.current) setDesk(office);
-      }).catch(() => { /* Keep the last good desk on a transient outage. */ });
+      }).catch(error => { if(!stop && ticket === deskEpoch.current && error instanceof Error && ["401","403","404"].includes(error.message)){ revokeGroupDrafts(error.message==="401"?{owner:app.session?.user?.userId||"guest"}:{owner:app.session?.user?.userId||"guest",community:communityId});viewKeyRef.current="";selectionEpoch.current++;clearLog();setHome(null);setChat(null);setDesk(null);setBoard(null);setError("Доступ к группе изменился"); } });
     };
     refresh();
     const timer = window.setInterval(refresh, 4000);
     return () => { stop = true; deskEpoch.current += 1; window.clearInterval(timer); };
   }, [app.session?.authenticated, communityId]);
-  useEffect(() => {
-    if (!communityId || selectedTopicId === undefined) return;
-    let stop = false;
-    const refresh = () => {
-      void api.topics(communityId).then(page => {
-        if (stop) return;
-        setTopicPageState({ key: communityId, value: page });
-        setCanManageChannels(page.canManageChannels);
-        const selected = page.topics.find(item => item.topicId === selectedTopicId);
-        if (selected) setThread(selected);
-        else {
-          selectionEpoch.current += 1;
-          clearLog();
-          setReplyTo(null);
-          setEditing(null);
-          setThread("list");
-        }
-      }).catch(() => { /* Current messages remain readable; the server still checks writes. */ });
-    };
-    refresh();
-    const timer = window.setInterval(refresh, 4000);
-    return () => { stop = true; window.clearInterval(timer); };
-  }, [communityId, selectedTopicId]);
+  useEffect(()=>{
+    if(!communityId||selectedTopicId===undefined)return;
+    const captured={owner:app.session?.user?.userId||"guest",community:communityId,topic:selectedTopicId??"general"};const capturedLease=scopeLease(sessionStorage,captured);let stopped=false,epoch=0;
+    const pull=()=>{const ticket=++epoch;void selectedTopicAuthority(()=>api.topics(communityId),()=>api.archivedTopics(communityId),selectedTopicId).then(({page,all,selected})=>{if(stopped||ticket!==epoch)return;reconcileGroupDrafts({owner:captured.owner,community:captured.community},all.map(topic=>topic.topicId));setTopicPageState({key:communityId,value:page});setCanManageChannels(page.canManageChannels);if(selected)setThread(selected);else{if(scopeLeaseValid(sessionStorage,captured,capturedLease))revokeGroupDrafts(captured);viewKeyRef.current="";selectionEpoch.current++;clearLog();setReplyTo(null);setEditing(null);setThread("list");setError("Доступ к каналу изменился");}}).catch(error=>{if(stopped||ticket!==epoch)return;if(error instanceof Error&&["401","403","404"].includes(error.message)){revokeGroupDrafts(error.message==="401"?{owner:captured.owner}:{owner:captured.owner,community:captured.community});viewKeyRef.current="";selectionEpoch.current++;clearLog();setReplyTo(null);setEditing(null);setThread("list");setTopicPageState({key:communityId,value:null});setError("Доступ к каналу изменился");}});};
+    pull();const timer=window.setInterval(pull,4000);return()=>{stopped=true;epoch++;window.clearInterval(timer);};
+  },[communityId,selectedTopicId,app.session?.user?.userId]);
   useEffect(() => {
     if (!app.session?.authenticated || !communityId) return;
     let stop = false;
@@ -1197,7 +1251,7 @@ export function GroupPage() {
       { key: viewKey, conversationId: chat.conversationId, epoch: selectionEpoch.current })) return;
     if (chat.kind === "group" && (thread === "list" || !canComposeChannel(thread))) return;
     await sendGroupAttachment(pick.key, pick.conversationId, pick.kind, file.name, file, pick.replyTo, pick.epoch,
-      undefined, chat.kind === "group" && thread !== "list" ? thread.topicId ?? undefined : undefined);
+      undefined, chat.kind === "group" && thread !== "list" ? thread.topicId ?? undefined : undefined).catch(() => undefined);
   }
   async function sendGroupAttachment(key: string, conversationId: string, kind: "image" | "video" | "file" | "voice" | "circle",
     name: string, blob: Blob, sentReply: string | null, epoch: number, durationMs?: number, topicId?: string) {
@@ -1210,6 +1264,7 @@ export function GroupPage() {
     } catch (reason) {
       if (viewKeyRef.current === key && selectionEpoch.current === epoch) setError(reason instanceof GroupMediaError && reason.code === "size" || reason instanceof Error && reason.message === "413"
         ? "Файл слишком большой." : reason instanceof GroupMediaError && reason.code === "format" ? "Формат записи не поддерживается" : "Сообщение не отправилось");
+      throw reason;
     }
   }
   async function downloadMedia(download: GroupMediaDownload) {
@@ -1273,8 +1328,10 @@ export function GroupPage() {
     if (!chat || !viewKey || !draft.trim() || sendPending.current.has(viewKey)) return;
     if (chat.kind === "group" && (thread === "list" || !canComposeChannel(thread))) return;
     const key = viewKey;
-    const body = draft;
-    const sentDraftEpoch = draftEpoch.current[key] ?? 0;
+    const originalDraft = draft;
+    const body = !editing && context ? `${context}\n\n${draft}` : draft;
+    if (body.length > 2000) { setError("Сообщение со связью длиннее 2000 знаков. Сократите текст или уберите связь."); return; }
+    const sentDraftEpoch = currentDraftEpoch(sessionStorage,key);
     const target = editing;
     const sentReply = replyTo;
     const previousDraft = target && editReturnDraft.current?.key === key && editReturnDraft.current.messageId === target.messageId
@@ -1287,15 +1344,19 @@ export function GroupPage() {
         : chat.kind === "group" && thread !== "list"
           ? await api.sendTopicMessage(chat.conversationId, body, thread.topicId, sentReply ?? undefined)
           : await api.sendMessage(chat.conversationId, body, sentReply ?? undefined);
+      if(draftScope&&!scopeLeaseValid(sessionStorage,draftScope,draftLease))return;
       markLogChanged(key);
       updateLog(key, [message]);
+      let acknowledgedDraft=false;
       setDrafts(current => {
-        const unchanged = draftEpoch.current[key] === sentDraftEpoch;
-        const cleared = clearSentGroupDraft(current, key, body, unchanged);
+        const unchanged = draftEpochMatches(currentDraftEpoch(sessionStorage,key),sentDraftEpoch);
+        acknowledgedDraft = unchanged && current[key] === originalDraft;
+        const cleared = clearSentGroupDraft(current, key, originalDraft, unchanged);
         return target && previousDraft !== null && unchanged ? { ...cleared, [key]: previousDraft } : cleared;
       });
       if (target && editReturnDraft.current?.key === key && editReturnDraft.current.messageId === target.messageId)
         editReturnDraft.current = null;
+      if (!target && acknowledgedDraft) setDiscussionContexts(current=>clearSentDiscussionContext(current,key,context));
       if (viewKeyRef.current === key) {
         if (target) setEditing(current => current?.messageId === target.messageId ? null : current);
         setReplyTo(current => current === sentReply ? null : current);
@@ -1343,6 +1404,7 @@ export function GroupPage() {
   return (
     <section className="page">
       <Head title="Группа" text={home ? `${home.name}${home.groupName ? " · " + home.groupName : ""}` : error || "Одногруппники и чат"} />
+      {error && <div className="banner row" role="alert"><span>{error}</span><button className="btn quiet" type="button" onClick={()=>setError("")}>Закрыть сообщение</button></div>}
       {!home && error && <button className="btn" type="button" onClick={() => setReloadEpoch(value => value + 1)}>Повторить загрузку группы</button>}
       {home && desk && desk.mine.length > 0 && <GroupAdmin communityId={home.communityId} classmates={home.classmates} desk={desk} onChange={updateDesk} onReload={async () => { const [loaded, office] = await Promise.all([api.groupHome(home.communityId), api.groupDesk(home.communityId)]); setHome(loaded); updateDesk(office); }} onError={setError} />}
       {home && !board && !votesOff && <p className="muted" role="status">Загрузка голосований…</p>}
@@ -1403,7 +1465,7 @@ export function GroupPage() {
           <section className="card chat split-detail">
             <button className="btn back-only" type="button" onClick={() => setFocusChat(false)}>К списку</button>
             {!chat && <p className="muted">{error || "Чат открывается…"}</p>}
-            {chat?.kind === "group" && thread === "list" && <GroupTopics key={home.communityId} communityId={home.communityId} onOpen={(next, allowed) => { selectionEpoch.current += 1; clearLog(); setCanManageChannels(allowed); setThread(next); }} onError={setError} />}
+            {chat?.kind === "group" && thread === "list" && <GroupTopics key={home.communityId} communityId={home.communityId} groupName={home.groupName} onOpen={(next, allowed) => { selectionEpoch.current += 1; clearLog(); setCanManageChannels(allowed); setThread(next); }} onError={setError} />}
             {chat?.kind === "group" && thread !== "list" && !isChatChannel(thread) && <>
               <div className="row">
                 <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; setThread("list"); }}>Все разделы</button>
@@ -1414,11 +1476,12 @@ export function GroupPage() {
               {thread.description && <p className="muted">{thread.description}</p>}
               {activeBallotTopicId && channelBoard && <BallotBoardView key={activeBallotTopicId} communityId={home.communityId} board={channelBoard}
                 classmates={home.classmates} roles={desk?.roles ?? []} topicId={activeBallotTopicId} title={thread.title}
-                canCreate={canCreateBallot(thread, canManageChannels)}
+                canCreate={canCreateBallot(thread, canManageChannels)} readOnly={!!thread.archived || !!thread.permissions && !thread.permissions.includes("vote")}
                 onChange={value => setChannelBoardState({ topicId: activeBallotTopicId, value, failed: false })} onError={setError} />}
               {channelBoardFailed && <div className="banner row" role="status"><span>{channelBoard ? "Голосования не обновились. Показана предыдущая доска." : "Голосования не открылись."}</span>
                 <button className="btn" type="button" onClick={() => setChannelVotesRetry(value => value + 1)}>Повторить</button></div>}
-              {!channelBoard && !channelBoardFailed && <p className="muted" role="status">Загрузка голосований…</p>}
+              {thread.kind === "ballots" && !channelBoard && !channelBoardFailed && <p className="muted" role="status">Загрузка голосований…</p>}
+              <SpecializedChannel communityId={home.communityId} conversationId={home.groupChat.conversationId} groupName={home.groupName} topic={thread} onError={setError} />
             </>}
             {chat && (chat.kind !== "group" || (thread !== "list" && isChatChannel(thread))) && <>
             <div className="row">
@@ -1463,6 +1526,7 @@ export function GroupPage() {
               </p>}
             </section>}
             {chat.kind === "group" && thread !== "list" && thread.description && <p className="muted">{thread.description}</p>}
+            {chat.kind === "group" && thread !== "list" && thread.subject && <SubjectChannelContext key={`${home.communityId}:${thread.topicId}`} communityId={home.communityId} groupName={home.groupName} topic={thread} onError={setError} />}
             <button className="btn message-browse-toggle" type="button" aria-expanded={messageBrowseOpen}
               onClick={() => setMessageBrowseOpen(value => !value)}>
               {messageBrowseOpen ? "Скрыть поиск" : messageFiltered ? `Поиск и фильтры · ${visibleLog.length} найдено` : "Поиск и фильтры"}
@@ -1501,9 +1565,12 @@ export function GroupPage() {
                 const mine = message.senderId === app.session?.user?.userId;
                 const kind = message.kind || "text";
                 const canWrite = chat.kind !== "group" || (thread !== "list" && canComposeChannel(thread));
+                const archived = chat.kind === "group" && thread !== "list" && !!thread.archived;
+                const moderate = chat.kind === "group" && thread !== "list" && !archived && topicAction(thread,"moderate",desk);
                 const actions = [...holdActions(kind, mine, !!message.deleted, menu === message.messageId),
+                  ...(menu === message.messageId && !mine && !message.deleted && moderate ? ["delete"] : []),
                   ...(menu === message.messageId && canCopyMessageText(message) ? ["copy"] : [])]
-                  .filter(action => canWrite || action !== "reply" && action !== "edit");
+                  .filter(action => (!archived || !["reply","edit","delete","reaction"].includes(action)) && (canWrite || action !== "reply" && action !== "edit"));
                 const download = chat && groupMediaDownload(chat.conversationId, message);
                 const previous = visibleLog[index - 1];
                 const newDay = !previous || messageDayKey(previous.createdAt) !== messageDayKey(message.createdAt);
@@ -1572,12 +1639,15 @@ export function GroupPage() {
               node?.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
               setAtLatest(true);
             }}>К новым сообщениям</button>}
+            {context && <div className="compose-context"><span>{context}</span><button className="btn quiet" type="button" onClick={()=>setDiscussionContexts(current=>({...current,[viewKey]:""}))}>Убрать связь</button></div>}
             <input ref={fileRef} type="file" hidden aria-label="Файл" onChange={event => void onPicked(event)} />
             {chat.kind === "group" && thread !== "list" && !canComposeChannel(thread)
-              ? <p className="muted channel-readonly">Писать здесь могут только управляющие разделами.</p>
+              ? <p className="muted channel-readonly">Публикация в этом канале недоступна для вашей роли или канал находится в архиве.</p>
               : <GroupComposer key={viewKey} draft={draft} editing={!!editing} replyTo={!!replyTo}
               contextText={editing?.body ?? (replyTo ? (repliedMessage ? `${repliedMessage.senderName}: ${repliedMessage.body || "Сообщение"}` : "Сообщение") : "")}
-              allowMedia={true}
+              allowMedia={chat.kind !== "group" || thread !== "list" && (!thread.permissions || thread.permissions.includes("media"))}
+              onPoll={chat.kind === "group" && topicPage?.topics.some(topic=>canCreateBallot(topic,canManageChannels)) ? () => { const topic=topicPage.topics.find(topic=>canCreateBallot(topic,canManageChannels)); if(topic){ selectionEpoch.current += 1; clearLog(); setThread(topic); } } : undefined}
+              onLesson={chat.kind === "group" && groupContext.nextLesson ? () => { const lesson=groupContext.nextLesson!; setDiscussionContexts(current=>({...current,[viewKey]:`Пара: ${lesson.subject} · ${isoDay(lesson.date)} · ${lesson.time}${lesson.room ? ` · ${lesson.room}` : ""}`})); } : undefined}
               onDraft={setDraft} onSubmit={event => void submit(event)} onCancelContext={cancelComposerContext} onChoose={choose}
               onRecorded={(kind, name, blob, durationMs) => sendGroupAttachment(viewKey, chat.conversationId, kind, name, blob, replyTo, selectionEpoch.current, durationMs,
                 chat.kind === "group" && thread !== "list" ? thread.topicId ?? undefined : undefined)}
@@ -1615,7 +1685,7 @@ export function SettingsPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const requestedSection = new URLSearchParams(location.search).get("section");
-  const section = requestedSection === "account" || requestedSection === "study" || requestedSection === "appearance" || requestedSection === "help"
+  const section = requestedSection === "account" || requestedSection === "study" || requestedSection === "appearance" || requestedSection === "notifications" || requestedSection === "data" || requestedSection === "help"
     ? requestedSection : null;
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -1630,8 +1700,10 @@ export function SettingsPage() {
   const sections = [
     { id: "account" as const, icon: "users" as const, title: "Аккаунт", summary: app.session?.authenticated ? (app.session.user?.displayName || app.session.user?.username || "Вход выполнен") : "Гостевой режим" },
     { id: "study" as const, icon: "calendar" as const, title: "Учёба", summary: chosenGroupName || "Группа не выбрана" },
-    { id: "appearance" as const, icon: "sun" as const, title: "Оформление", summary: app.theme === "dark" ? "Тёмная тема" : "Светлая тема" },
-    { id: "help" as const, icon: "file" as const, title: "Помощь", summary: "Поддержка и документы" },
+    { id: "appearance" as const, icon: "sun" as const, title: "Оформление", summary: app.theme === "system" ? "Как в системе" : app.theme === "dark" ? "Тёмная тема" : "Светлая тема" },
+    { id: "notifications" as const, icon: "calendar" as const, title: "Уведомления", summary: readReminders().enabled ? "Напоминания включены" : "Выключены" },
+    { id: "data" as const, icon: "refresh" as const, title: "Данные и синхронизация", summary: app.session?.authenticated ? "Аккаунт и локальная копия" : "Копия на устройстве" },
+    { id: "help" as const, icon: "file" as const, title: "Помощь и обновления", summary: "Поддержка, версия и документы" },
   ];
   async function external(provider: "vk" | "yandex") {
     if (busy) return;
@@ -1650,9 +1722,12 @@ export function SettingsPage() {
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (busy) return;
+    setBusy(true);
     setError("");
     if (mode === "register" && !accepted) {
       setError("Примите пользовательское соглашение и политику обработки персональных данных.");
+      setBusy(false);
       return;
     }
     try {
@@ -1662,7 +1737,7 @@ export function SettingsPage() {
       setPassword("");
     } catch {
       setError(mode === "login" ? "Не удалось войти" : "Не удалось зарегистрироваться");
-    }
+    } finally { setBusy(false); }
   }
   return (
     <section className="page">
@@ -1670,9 +1745,11 @@ export function SettingsPage() {
         text={section ? undefined : "Неофициальное приложение для студентов БГТУ «Военмех»."}>
         {section && <button className="btn" type="button" onClick={() => navigate("/settings")}>Все настройки</button>}
       </Head>
+      <div className={section ? "settings-space" : ""}>
+      {section && <nav className="settings-rail" aria-label="Категории настроек">{sections.map(item=><button type="button" className={section===item.id?"settings-overview-row active":"settings-overview-row"} key={item.id} onClick={()=>navigate(`/settings?section=${item.id}`)} aria-current={section===item.id?"page":undefined}><Icon name={item.icon} /><span className="settings-overview-copy"><strong>{item.title}</strong><span>{item.summary}</span></span></button>)}</nav>}
       {!section ? <div className="settings-overview" aria-label="Разделы настроек">
         {sections.map((item, index) => <Fragment key={item.id}>
-          {(index === 1 || index === 3) && <h2 className="settings-overview-title">{index === 1 ? "Основное" : "Сервис"}</h2>}
+          {(index === 1 || index === 4) && <h2 className="settings-overview-title">{index === 1 ? "Основное" : "Сервис"}</h2>}
           <button className={index === 0 ? "settings-overview-row account" : "settings-overview-row"}
             type="button" onClick={() => navigate(`/settings?section=${item.id}`)}>
             <span className="settings-overview-icon"><Icon name={item.icon} size={20} /></span>
@@ -1690,18 +1767,21 @@ export function SettingsPage() {
             </select>
           </label>
           {(app.catalog?.groups || []).length === 0 && <p className="muted">Список групп появится, когда расписание откроется. Пока можно пользоваться сохранённой копией.</p>}
-          <div className="row" style={{ marginTop: 12 }}>
-            <span>Инвертировать чётность</span>
-            <button className={"switch" + (app.invert ? " on" : "")} type="button" aria-label="Инвертировать чётность" onClick={() => app.setInvert(!app.invert)}><i /></button>
-          </div>
+          <details><summary>Дополнительно</summary><label className="switch-row"><span>Инвертировать чётность</span><input type="checkbox" role="switch" checked={app.invert} onChange={event => app.setInvert(event.target.checked)} /></label></details>
         </article>}
+        {section === "study" && <StudyExtras />}
+        {section === "notifications" && <NotificationSettings />}
+        {section === "data" && <DataSettings />}
         {section === "appearance" && <article className="card">
           <h2>Оформление</h2>
           <div className="seg">
-            <button type="button" className={app.theme === "light" ? "active" : ""} onClick={() => app.setTheme("light")}><Icon name="sun" size={16} />Светлая</button>
-            <button type="button" className={app.theme === "dark" ? "active" : ""} onClick={() => app.setTheme("dark")}><Icon name="moon" size={16} />Тёмная</button>
+            <button type="button" className={app.theme === "system" ? "active" : ""} aria-pressed={app.theme === "system"} onClick={() => app.setTheme("system")}>Системная</button>
+            <button type="button" className={app.theme === "light" ? "active" : ""} aria-pressed={app.theme === "light"} onClick={() => app.setTheme("light")}><Icon name="sun" size={16} />Светлая</button>
+            <button type="button" className={app.theme === "dark" ? "active" : ""} aria-pressed={app.theme === "dark"} onClick={() => app.setTheme("dark")}><Icon name="moon" size={16} />Тёмная</button>
           </div>
         </article>}
+        {section === "appearance" && <article className="card stack"><label className="switch-row"><span>Анимации</span><input type="checkbox" role="switch" checked={app.animations} onChange={event => app.setAnimations(event.target.checked)} /></label><p className="muted">Системное уменьшение движения имеет приоритет.</p><div className="lesson"><span className="muted">08:30–10:05 · Лекция · 312</span><h2>Предпросмотр карточки пары</h2><div className="row"><button className="btn primary" type="button">Открыть карту</button><button className="btn" type="button">Домашка</button></div></div></article>}
+        {section === "account" && app.session?.authenticated && <AccountDetails />}
         {section === "account" && <article className="card">
           <h2>Аккаунт</h2>
           {app.session?.authenticated ? (
@@ -1728,8 +1808,8 @@ export function SettingsPage() {
                 <button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setAccepted(false); }}>Вход</button>
                 <button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")} disabled={!app.session?.capabilities.registration}>Регистрация</button>
               </div>
-              <label className="field">Логин<input value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" /></label>
-              <label className="field">Пароль<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" /></label>
+              {app.session?.capabilities.password !== false && <><label className="field">Логин<input value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" /></label>
+              <label className="field">Пароль<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" /></label></>}
               {mode === "register" && <label className="field">Имя<input value={display} onChange={event => setDisplay(event.target.value)} /></label>}
               {mode === "register" && (
                 <label className="check">
@@ -1740,15 +1820,17 @@ export function SettingsPage() {
               )}
               {error && <div className="banner">{error}</div>}
               <LegalLinks />
-              <button className="btn primary" type="submit" disabled={mode === "register" && !accepted}>{mode === "login" ? "Войти" : "Создать аккаунт"}</button>
+              {app.session?.capabilities.password !== false && <button className="btn primary" type="submit" disabled={busy || (mode === "register" && !accepted)}>{busy ? "Входим…" : mode === "login" ? "Войти" : "Создать аккаунт"}</button>}
             </form>
           )}
         </article>}
         {section === "help" && <>
           <SupportCard />
+          <UpdateSettings />
           <article className="card"><h2>Документы</h2><LegalLinks /></article>
         </>}
       </div>}
+      </div>
     </section>
   );
 }

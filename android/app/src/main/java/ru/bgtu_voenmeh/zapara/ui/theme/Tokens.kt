@@ -19,7 +19,9 @@ data class ZaparaColors(
     val mapInkSoft: Color = Color(0x402B7FD9),
     val onMapInk: Color = Color(0xFFFFFFFF),
     val qrPaper: Color = Color(0xFFFFFFFF),
-    val closeHover: Color = Color(0xFFE81123)
+    val closeHover: Color = Color(0xFFE81123),
+    val idInk: Color = Color(0xFF111111),
+    val idLine: Color = Color(0xFFE6E6E6)
 )
 
 val DarkColors = ZaparaColors(

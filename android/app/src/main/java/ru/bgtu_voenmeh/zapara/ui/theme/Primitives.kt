@@ -18,6 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -71,12 +73,12 @@ fun ZCard(
 }
 
 @Composable
-fun ZButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, ghost: Boolean = false, tag: String? = null) {
+fun ZButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, ghost: Boolean = false, tag: String? = null, quiet: Boolean = false, busy: Boolean = false) {
     val c = Zapara.colors
     val shape = RoundedCornerShape(Zapara.radii.control)
     val interactions = remember { MutableInteractionSource() }
     val focused by interactions.collectIsFocusedAsState()
-    val border = if (ghost) BorderStroke(Zapara.space.hairline, c.lineStrong) else null
+    val border = if (ghost && !quiet) BorderStroke(Zapara.space.hairline, c.lineStrong) else null
     val focusGap = Zapara.space.xs
     val focusWidth = Zapara.space.hairline * 2
     val controlRadius = Zapara.radii.control
@@ -100,13 +102,20 @@ fun ZButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, en
             }.clickable(
                 interactionSource = interactions,
                 indication = if (Zapara.motion.enabled) LocalIndication.current else null,
-                enabled = enabled, role = Role.Button, onClick = onClick),
+                enabled = enabled && !busy, role = Role.Button, onClick = onClick),
         shape = shape, border = border,
-        color = if (!enabled) c.accent.copy(alpha = 0.45f) else if (ghost) Color.Transparent else c.accent,
-        contentColor = if (!enabled) c.onAccent.copy(alpha = 0.45f) else if (ghost) c.text1 else c.onAccent
+        color = if (ghost) Color.Transparent else if (!enabled) c.accent.copy(alpha = 0.45f) else c.accent,
+        contentColor = if (ghost) { if (enabled) c.text1 else c.text2 } else if (!enabled) c.onAccent.copy(alpha = 0.45f) else c.onAccent
     ) {
         Box(Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s), contentAlignment = Alignment.Center) {
-            Text(text, style = Zapara.typography.bodyStrong, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Box(contentAlignment = Alignment.Center) {
+                Text(text, style = Zapara.typography.bodyStrong,
+                    modifier = if (busy) Modifier.alpha(0f).clearAndSetSemantics { } else Modifier)
+                if (busy) Box(Modifier.matchParentSize(), contentAlignment = Alignment.Center) {
+                    Text(androidx.compose.ui.res.stringResource(ru.bgtu_voenmeh.zapara.R.string.space_day_busy), style = Zapara.typography.bodyStrong,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
     }
 }

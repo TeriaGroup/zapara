@@ -7,9 +7,10 @@ internal sealed partial class CommunityRepository
 {
     internal async Task<GroupDeskResponse> SetRolePowerAsync(Guid communityId, Guid roleId, GroupPowerRequest request)
     {
-        await RequireHeadmanAsync(communityId);
+        await RequireRoleAuthorityAsync(communityId,roleId,"roles",request?.Enabled==true?request.Power:null);
         if (request is null || !GroupChanges.KnownPower(request.Power)) throw CommunityServiceException.InvalidRequest();
         if (!await WritePowerAsync(communityId, roleId, request.Power, request.Enabled)) throw CommunityServiceException.NotFound();
+        await ManagementAuditAsync(communityId,"role.power",roleId);
         return await DeskAsync(communityId);
     }
 
@@ -28,6 +29,7 @@ internal sealed partial class CommunityRepository
         var payload = GroupChanges.Canonical(request.Kind, request.RoleId, request.UserId, request.Name, request.Power, request.Enabled)
             ?? throw CommunityServiceException.InvalidRequest();
         var change = GroupChanges.Read(payload) ?? throw CommunityServiceException.InvalidRequest();
+        await RequireChangeAuthorityAsync(communityId,change);
         var roleName = "";
         var personName = "";
         if (change.Kind is "power" or "grant" or "revoke_grant" or "rename_role" or "delete_role")
@@ -62,21 +64,21 @@ internal sealed partial class CommunityRepository
     private async Task ApplyDueAsync(Guid communityId)
     {
         var need = BallotRules.SupportersNeeded(await ScalarAsync($"SELECT count(*)::int FROM {Schema}.memberships WHERE community_id=@p0 AND status='active'", communityId));
-        var due = new List<(Guid Id, string Payload)>();
+        var due = new List<(Guid Id, string Payload, Guid? Author)>();
         await using (var command = Command($"""
-            SELECT effect.ballot_id, effect.payload
+            SELECT effect.ballot_id, effect.payload, ballot.created_by
             FROM {Msg}.ballot_effects AS effect
             JOIN {Msg}.ballots AS ballot ON ballot.ballot_id=effect.ballot_id
             WHERE ballot.community_id=@p0 AND ballot.origin='collective' AND ballot.status='closed' AND effect.applied_at IS NULL
             ORDER BY ballot.created_at, effect.ballot_id
             """, communityId))
         await using (var reader = await command.ExecuteReaderAsync(ct))
-            while (await reader.ReadAsync(ct)) due.Add((reader.GetGuid(0), reader.GetString(1)));
+            while (await reader.ReadAsync(ct)) due.Add((reader.GetGuid(0), reader.GetString(1),reader.IsDBNull(2)?null:reader.GetGuid(2)));
         foreach (var item in due)
         {
             var yes = await VotesAsync(item.Id, 0);
             var no = await VotesAsync(item.Id, 1);
-            var outcome = !GroupChanges.Passes(yes, no, need) ? "rejected" : await TryApplyAsync(communityId, item.Payload) ? "accepted" : "skipped";
+            var outcome = !GroupChanges.Passes(yes, no, need) ? "rejected" : item.Author is Guid author && await CanApplyChangeAsync(communityId,item.Payload,author) && await TryApplyAsync(communityId, item.Payload) ? "accepted" : "skipped";
             await ExecuteAsync($"""
                 UPDATE {Msg}.ballot_effects SET outcome=@p0, applied_at=@p1
                 WHERE ballot_id=@p2 AND applied_at IS NULL
@@ -84,10 +86,18 @@ internal sealed partial class CommunityRepository
         }
     }
 
+    private async Task<bool> CanApplyChangeAsync(Guid communityId,string payload,Guid author)
+    {
+        var change=GroupChanges.Read(payload); if(change is null) return false;
+        try { await RequireChangeAuthorityAsync(communityId,change,author); return true; }
+        catch(CommunityServiceException) { return false; }
+    }
+
     private async Task<bool> TryApplyAsync(Guid communityId, string payload)
     {
         var change = GroupChanges.Read(payload);
         if (change is null) return false;
+        await ManagementAuditAsync(communityId,"role.collective",change.RoleId == Guid.Empty ? communityId : change.RoleId);
         try
         {
             return change.Kind switch
@@ -110,12 +120,10 @@ internal sealed partial class CommunityRepository
         if (!GroupChanges.KnownPower(power)) return false;
         if (!await ExistsAsync($"SELECT role_id FROM {Msg}.group_roles WHERE role_id=@p0 AND community_id=@p1", roleId, communityId))
             return false;
-        if (enabled)
-            await ExecuteAsync($"""
-                INSERT INTO {Msg}.group_role_powers(role_id,power) VALUES(@p0,@p1) ON CONFLICT DO NOTHING
-                """, roleId, power);
-        else
-            await ExecuteAsync($"DELETE FROM {Msg}.group_role_powers WHERE role_id=@p0 AND power=@p1", roleId, power);
+        var changed = enabled
+            ? await ExecuteCountAsync($"INSERT INTO {Msg}.group_role_powers(role_id,power) VALUES(@p0,@p1) ON CONFLICT DO NOTHING", roleId, power)
+            : await ExecuteCountAsync($"DELETE FROM {Msg}.group_role_powers WHERE role_id=@p0 AND power=@p1", roleId, power);
+        if (changed != 0) await ExecuteAsync($"UPDATE {Msg}.group_roles SET revision=revision+1 WHERE role_id=@p0 AND community_id=@p1", roleId, communityId);
         return true;
     }
 
@@ -154,7 +162,7 @@ internal sealed partial class CommunityRepository
     private async Task<bool> RenameQuietAsync(Guid communityId, Guid roleId, string name)
     {
         if (GroupRoleNames.Clean(name) != name) return false;
-        return await ExecuteCountAsync($"UPDATE {Msg}.group_roles SET name=@p0 WHERE role_id=@p1 AND community_id=@p2", name, roleId, communityId) == 1;
+        return await ExecuteCountAsync($"UPDATE {Msg}.group_roles SET name=@p0,revision=revision+CASE WHEN name IS DISTINCT FROM @p0 THEN 1 ELSE 0 END WHERE role_id=@p1 AND community_id=@p2", name, roleId, communityId) == 1;
     }
 
     private async Task<bool> DeleteQuietAsync(Guid communityId, Guid roleId)

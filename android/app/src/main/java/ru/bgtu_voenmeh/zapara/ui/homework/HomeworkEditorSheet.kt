@@ -40,7 +40,8 @@ fun HomeworkEditorSheet(
     onPick: (String, Uri) -> Unit = { _, _ -> },
     onRemove: (String) -> Unit = {},
     onShare: (Boolean) -> Unit = {},
-    isGuest: Boolean = false
+    isGuest: Boolean = false,
+    onRecalculate: () -> Unit = {}
 ) {
     val photo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onPick("photo", uri)
@@ -76,6 +77,10 @@ fun HomeworkEditorSheet(
                 style = Zapara.typography.caption, color = c.text1,
                 modifier = Modifier.weight(1f).testTag("Editor.Count"))
             ZIconButton(R.drawable.ic_plus, stringResource(R.string.hw_due_increase), onInc, "Editor.Inc")
+        }
+        if(state.sourceChanged) {
+            Text(stringResource(R.string.review_homework_source_changed),style=Zapara.typography.caption,color=c.warn)
+            ZButton(stringResource(R.string.review_recalculate_due),onRecalculate,ghost=true)
         }
         Text(state.dueText(LocalUiCopy.current), style = Zapara.typography.body, color = c.text1,
             modifier = Modifier.fillMaxWidth().testTag("Editor.Due"))
@@ -122,7 +127,7 @@ fun HomeworkEditorSheet(
                     ),
                 )
                 Text(
-                    "Дублировать всей группе — одна и та же домашка появится у всех участников",
+                    stringResource(R.string.face_share_group),
                     style = Zapara.typography.body,
                     color = c.text1,
                     modifier = Modifier.weight(1f),

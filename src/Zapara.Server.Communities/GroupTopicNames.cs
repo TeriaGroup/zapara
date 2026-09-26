@@ -12,6 +12,7 @@ public static class GroupTopicNames
     {
         null or "" or ChatKind => ChatKind,
         BallotsKind => BallotsKind,
+        "forms" or "materials" or "homework" or "schedule" => raw,
         _ => null
     };
 
@@ -51,7 +52,7 @@ public static class GroupTopicNames
     {
         var icon = (raw ?? "").Trim();
         if (icon.Length == 0) return GeneralIcon;
-        if (icon.Length > 8 || icon.Any(char.IsControl)) return null;
+        if (icon.Length > 32 || icon.Any(char.IsControl) || icon.Length > 8 && !icon.All(c => c is >= 'a' and <= 'z' or >= '0' and <= '9' or '-')) return null;
         return icon;
     }
 }

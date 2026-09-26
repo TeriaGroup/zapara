@@ -6,6 +6,7 @@ namespace Zapara.Contracts.Communities;
 public static class CommunityValidation
 {
     public const int RequestBytes = 64 * 1024;
+    public const int ResponseBytes = 16 * 1024 * 1024;
     internal static ArgumentException Invalid() => new("Недопустимый контракт сообщества.");
     public static Guid Id(Guid value) => value != Guid.Empty ? value : throw Invalid();
     public static DateTimeOffset Utc(DateTimeOffset value)

@@ -6,12 +6,22 @@ public sealed record GroupChange(string Kind, Guid RoleId, Guid UserId, string N
 
 public static class GroupChanges
 {
-    public static readonly string[] Powers = ["joins", "exclude", "roles", "grants", "ballots", "close", "channels"];
-
-    public static bool KnownPower(string? power) => power is "joins" or "exclude" or "roles" or "grants" or "ballots" or "close" or "channels";
+    public static readonly string[] Powers = GroupPermissionRules.Powers;
+    public static bool KnownPower(string? power) => power is not null && Powers.Contains(power);
 
     public static string PowerTitle(string power) => power switch
     {
+        "read" => "Просматривать канал",
+        "post" => "Публиковать",
+        "media" => "Отправлять медиа",
+        "vote" => "Участвовать в опросах",
+        "formsRespond" => "Заполнять анкеты",
+        "forms" => "Создавать анкеты",
+        "pin" => "Закреплять",
+        "moderate" => "Модерировать сообщения",
+        "homework" => "Вести домашние задания",
+        "mentionAll" => "Упоминать группу",
+        "access" => "Управлять доступом к каналам",
         "joins" => "Принимать заявки",
         "exclude" => "Исключать участников",
         "roles" => "Менять роли",

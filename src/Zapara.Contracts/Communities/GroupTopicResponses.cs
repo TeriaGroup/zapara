@@ -6,7 +6,7 @@ namespace Zapara.Contracts.Communities;
 public sealed record GroupTopicRequest
 {
     [JsonConstructor]
-    public GroupTopicRequest(string title, string icon, string kind = "chat", string? description = null, string? accent = null, bool? pinned = null, string? writePolicy = null)
+    public GroupTopicRequest(string title, string icon, string kind = "chat", string? description = null, string? accent = null, bool? pinned = null, string? writePolicy = null, string? template = null, Guid? categoryId = null, int position = 0, string? subject = null, long? expectedRevision = null, IReadOnlyList<GroupAccessRule>? initialAccessRules = null)
     {
         Title = title ?? "";
         Icon = icon ?? "";
@@ -15,6 +15,8 @@ public sealed record GroupTopicRequest
         Accent = accent;
         Pinned = pinned;
         WritePolicy = writePolicy;
+        Template = template; CategoryId = categoryId; Position = position; Subject = subject; ExpectedRevision = expectedRevision;
+        InitialAccessRules = initialAccessRules;
     }
 
     [JsonRequired, JsonInclude] public string Title { get; private init; }
@@ -24,6 +26,13 @@ public sealed record GroupTopicRequest
     [JsonInclude] public string? Accent { get; private init; }
     [JsonInclude] public bool? Pinned { get; private init; }
     [JsonInclude] public string? WritePolicy { get; private init; }
+    [JsonInclude, JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public string? Template { get; private init; }
+    [JsonInclude, JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public Guid? CategoryId { get; private init; }
+    [JsonInclude, JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public int Position { get; private init; }
+    [JsonInclude, JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public string? Subject { get; private init; }
+    [JsonInclude, JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public long? ExpectedRevision { get; private init; }
+    [JsonInclude, JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public IReadOnlyList<GroupAccessRule>? InitialAccessRules { get; private init; }
+
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -46,7 +55,7 @@ public sealed record TopicMessageRequest
 public sealed record GroupTopicResponse
 {
     [JsonConstructor]
-    public GroupTopicResponse(Guid? topicId, string title, string icon, string? lastBody, string? lastAuthor, DateTimeOffset? lastAt, int unread, bool canDelete, string kind = "chat", int activeBallots = 0, string description = "", string accent = "default", bool pinned = false, string writePolicy = "all", bool canPost = true)
+    public GroupTopicResponse(Guid? topicId, string title, string icon, string? lastBody, string? lastAuthor, DateTimeOffset? lastAt, int unread, bool canDelete, string kind = "chat", int activeBallots = 0, string description = "", string accent = "default", bool pinned = false, string writePolicy = "all", bool canPost = true, string? template = null, Guid? categoryId = null, int position = 0, string? subject = null, bool archived = false, long revision = 1, IReadOnlyList<string>? permissions = null, bool supported = true)
     {
         TopicId = topicId;
         Title = title ?? "";
@@ -56,13 +65,23 @@ public sealed record GroupTopicResponse
         LastAt = lastAt;
         Unread = unread < 0 ? 0 : unread;
         CanDelete = canDelete;
-        Kind = kind == "ballots" ? "ballots" : "chat";
+        Kind = kind ?? "unknown";
         ActiveBallots = activeBallots < 0 ? 0 : activeBallots;
         Description = description ?? "";
         Accent = accent ?? "default";
         Pinned = pinned;
         WritePolicy = writePolicy ?? "all";
-        CanPost = canPost;
+        Template = template ?? (Kind == "ballots" ? "polls" : Kind);
+        Supported = supported && Template switch
+        {
+            "chat" or "announcements" or "subject" => Kind == "chat",
+            "polls" => Kind == "ballots",
+            "forms" or "materials" or "homework" or "schedule" => Kind == Template,
+            _ => false
+        };
+        CanPost = canPost && Supported && Kind is "chat" or "materials";
+        CategoryId = categoryId; Position = position; Subject = subject; Archived = archived; Revision = revision;
+        Permissions = permissions ?? Array.Empty<string>();
     }
 
     [JsonRequired, JsonInclude] public Guid? TopicId { get; private init; }
@@ -80,6 +99,15 @@ public sealed record GroupTopicResponse
     [JsonInclude] public bool Pinned { get; private init; }
     [JsonInclude] public string WritePolicy { get; private init; }
     [JsonInclude] public bool CanPost { get; private init; }
+    [JsonInclude] public string Template { get; private init; }
+    [JsonInclude] public Guid? CategoryId { get; private init; }
+    [JsonInclude] public int Position { get; private init; }
+    [JsonInclude] public string? Subject { get; private init; }
+    [JsonInclude] public bool Archived { get; private init; }
+    [JsonInclude] public long Revision { get; private init; }
+    [JsonInclude] public IReadOnlyList<string> Permissions { get; private init; }
+    [JsonInclude] public bool Supported { get; private init; }
+
 }
 
 public sealed record GroupTopicListResponse

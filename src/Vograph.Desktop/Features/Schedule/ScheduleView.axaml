@@ -5,43 +5,72 @@
              xmlns:s="using:Vograph.Desktop.Features.Schedule"
              x:Class="Vograph.Desktop.Features.Schedule.ScheduleView"
              x:DataType="s:ScheduleViewModel">
+  <UserControl.Styles><Style Selector="TextBlock.done"><Setter Property="TextDecorations" Value="Strikethrough" /></Style></UserControl.Styles>
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-    <StackPanel MaxWidth="760" Margin="32,26" Spacing="10">
+    <StackPanel MaxWidth="1280" Margin="32,26" Spacing="10">
 
-      <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="0,0,0,8" MinWidth="0">
+      <Grid ColumnDefinitions="*" RowDefinitions="Auto,Auto,Auto" Margin="0,0,0,8" MinWidth="0">
         <!-- Subtitle is its own row so the day controls cannot squeeze "4 пары" onto a leftover line. -->
         <TextBlock Grid.Row="0" Classes="display" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                    Margin="0,0,16,0" AutomationProperties.AutomationId="Schedule.Title" />
-        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" TextWrapping="Wrap"
+        <TextBlock Grid.Row="1" Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" TextWrapping="Wrap"
                    AutomationProperties.AutomationId="Schedule.Subtitle" />
-        <WrapPanel Grid.Row="0" Grid.Column="1" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center" HorizontalAlignment="Right">
-          <Button Classes="round" Command="{Binding PrevDayCommand}" ToolTip.Tip="{loc:T prevDay}"
+        <WrapPanel Grid.Row="2" ItemSpacing="8" LineSpacing="8" Margin="0,12,0,0" VerticalAlignment="Center">
+          <Button Classes="ghost icon" Command="{Binding PrevDayCommand}" ToolTip.Tip="{loc:T prevDay}"
                   AutomationProperties.AutomationId="Schedule.Prev" AutomationProperties.Name="{loc:T prevDay}">
             <c:Icon Data="{StaticResource Icon.ChevronLeft}" />
           </Button>
           <c:SegmentedControl Name="ScheduleSegment" Items="{Binding SegmentItems}" SelectedIndex="{Binding SegmentIndex}" />
-          <Button Classes="round" Command="{Binding NextDayCommand}" ToolTip.Tip="{loc:T nextDay}"
+          <Button Classes="ghost icon" Command="{Binding NextDayCommand}" ToolTip.Tip="{loc:T nextDay}"
                   AutomationProperties.AutomationId="Schedule.Next" AutomationProperties.Name="{loc:T nextDay}">
             <c:Icon Data="{StaticResource Icon.ChevronRight}" />
           </Button>
           <Button Classes="pill" Command="{Binding GoTodayCommand}" Content="{loc:T goToday}" IsVisible="{Binding ShowGoToday}"
                   AutomationProperties.AutomationId="Schedule.Today" />
+          <CalendarDatePicker SelectedDate="{Binding CalendarDate}" MinHeight="48" Width="180"
+                              AutomationProperties.Name="Выбрать дату расписания" AutomationProperties.AutomationId="Schedule.Calendar" />
         </WrapPanel>
       </Grid>
+
+      <Grid Name="PlannerColumns" ColumnDefinitions="*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="16" RowSpacing="12"><StackPanel Name="PlannerDates">      <ItemsControl ItemsSource="{Binding DateChoices}" Margin="0,0,0,8">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" LineSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="s:PlannerDayChoice">
+            <c:SelectionButton IsChecked="{Binding IsSelected,Mode=OneWay}" Classes="secondary" Classes.primary="{Binding IsSelected}" Command="{Binding SelectCommand}"
+                    Padding="10,8" MinWidth="72" AutomationProperties.Name="{Binding AccessibleName}">
+              <StackPanel Spacing="2" HorizontalAlignment="Center">
+                <TextBlock Text="{Binding DayLabel}" FontSize="12" HorizontalAlignment="Center" />
+                <TextBlock Text="{Binding DateLabel}" FontSize="17" FontWeight="Medium" HorizontalAlignment="Center" />
+                <TextBlock Text="{Binding Workload}" FontSize="12" HorizontalAlignment="Center" />
+              </StackPanel>
+            </c:SelectionButton>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+</StackPanel><StackPanel Name="PlannerMain" Grid.Row="1" Spacing="10">      <TextBlock Classes="muted caption" Text="{Binding DaySummary}" />
+      <TextBlock Classes="muted caption" Text="{Binding SourceSummary}" TextWrapping="Wrap" />
+      <TextBlock Classes="subject" Text="{Binding DayPriorityCaption}" IsVisible="{Binding ShowDayState}" />
+      <c:Switch Content="Свободное время" IsChecked="{Binding ShowFreeTime}" IsVisible="{Binding HasFreeTime}"
+                AutomationProperties.Name="Показывать перерывы от 30 минут" />
 
       <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,0,0,6" />
 
       <!-- One panel for the whole day's content: ScheduleView.axaml.cs crossfades and slides it on a day change. -->
       <Panel x:Name="Body">
-        <ItemsControl ItemsSource="{Binding Lessons}" c:Appear.CascadeHost="True">
+        <ItemsControl ItemsSource="{Binding DayRows}" c:Appear.CascadeHost="True">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="s:LessonRowViewModel">
+          <ItemsControl.DataTemplates>
+            <DataTemplate DataType="{x:Type s:LessonRowViewModel}" x:DataType="s:LessonRowViewModel">
               <s:LessonCardView />
             </DataTemplate>
-          </ItemsControl.ItemTemplate>
+            <DataTemplate DataType="{x:Type s:PlannerBreak}" x:DataType="s:PlannerBreak">
+              <Border Padding="12,8" Background="{DynamicResource Brush.Surface}" CornerRadius="8">
+                <TextBlock Classes="muted caption" Text="{Binding Label}" TextWrapping="Wrap" />
+              </Border>
+            </DataTemplate>
+          </ItemsControl.DataTemplates>
         </ItemsControl>
 
         <StackPanel IsVisible="{Binding IsEmpty}" Spacing="14" Margin="0,48,0,0">
@@ -52,6 +81,24 @@
           </StackPanel>
         </StackPanel>
       </Panel>
+      <Button Content="{Binding NextStudyCaption}" Command="{Binding OpenNextStudyDayCommand}" IsVisible="{Binding HasNextStudyDate}" HorizontalAlignment="Left" />
+</StackPanel>      <Border Name="PlannerDeadlines" Grid.Row="2" Classes="card"><StackPanel Spacing="8">
+        <TextBlock Classes="subject" Text="{Binding DeadlineTitle}" />
+        <ItemsControl ItemsSource="{Binding Deadlines}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="s:PlannerDeadlineRow">
+          <Grid ColumnDefinitions="48,*" Margin="0,4">
+            <CheckBox IsChecked="{Binding Done,Mode=OneWay}" Command="{Binding ToggleCommand}" AutomationProperties.Name="{Binding CompletionCaption}" VerticalAlignment="Top" />
+            <StackPanel Grid.Column="1" Spacing="4">
+              <Button Classes="ghost" Command="{Binding OpenCommand}" HorizontalContentAlignment="Left" HorizontalAlignment="Stretch"><TextBlock Text="{Binding Text}" TextWrapping="Wrap" Classes.done="{Binding Done}" /></Button>
+              <TextBlock Classes="muted caption" Text="{Binding Subject}" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding Deadline}" FontWeight="Medium" />
+              <TextBlock Classes="muted caption" Text="Готово у меня" IsVisible="{Binding Done}" />
+              <Button Content="Обсудить задание" Classes="ghost" Command="{Binding DiscussCommand}" HorizontalAlignment="Left" />
+            </StackPanel>
+          </Grid>
+        </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+        <WrapPanel ItemSpacing="8" IsVisible="{Binding HasDeadlineFeedback}"><TextBlock Text="{Binding DeadlineFeedback}" VerticalAlignment="Center" /><Button Content="Отменить" Command="{Binding UndoDeadlineCommand}" /></WrapPanel>
+      </StackPanel></Border>
+</Grid>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

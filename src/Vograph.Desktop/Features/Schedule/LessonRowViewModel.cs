@@ -14,21 +14,39 @@ public sealed partial class LessonRowViewModel : ObservableObject
     public LessonRowViewModel(LessonRow row, ScheduleViewModel owner, int index)
     {
         Row = row;
+        showDetails = row.IsNext;
         _owner = owner;
         Index = index;
-        Friends = row.Friends.Select(f => new FriendMarkViewModel(f)).ToList();
-        Homework = new ObservableCollection<HomeworkItemViewModel>(row.Homework.Select(h => new HomeworkItemViewModel(h, this)));
-        var mark = row.Subgroup;
-        SubgroupOptions = mark is { ShowChooser: true }
-            ? mark.Options.Select(option => new SubgroupOptionViewModel(option.Id, option.Label, option.Id == mark.ChosenId)).ToList()
-            : Array.Empty<SubgroupOptionViewModel>();
-        var chosen = mark?.Options.FirstOrDefault(option => option.Id == mark.ChosenId)?.Label;
-        SubgroupPrompt = mark is null
-            ? ""
-            : chosen is null ? Loc.Current.T("subgroupPick") : Loc.Current.T("subgroupYours") + " · " + chosen;
+        RefreshRelated(row);
     }
 
-    public LessonRow Row { get; }
+    public LessonRow Row { get; private set; }
+    public void Update(LessonRow row)
+    {
+        Row=row;
+        RefreshRelated(row);
+        foreach(var name in new[]{nameof(DisplayName),nameof(TeacherLine),nameof(Note),nameof(RoomText),nameof(TypeLabel),nameof(IsPast),nameof(IsNext),nameof(CanShowMap),nameof(PriorityCaption)})OnPropertyChanged(name);
+    }
+    private void RefreshRelated(LessonRow row)
+    {
+        Friends=row.Friends.Select(x=>new FriendMarkViewModel(x)).ToArray();OnPropertyChanged(nameof(Friends));OnPropertyChanged(nameof(HasFriends));
+        var ordered=row.Homework.Select(item=>{var existing=Homework.FirstOrDefault(x=>x.Id==item.Id);if(existing is null)return new HomeworkItemViewModel(item,this);existing.Update(item);return existing;}).ToArray();
+        for(var i=0;i<ordered.Length;i++){var old=Homework.IndexOf(ordered[i]);if(old<0)Homework.Insert(i,ordered[i]);else if(old!=i)Homework.Move(old,i);}
+        while(Homework.Count>ordered.Length)Homework.RemoveAt(Homework.Count-1);
+        OnPropertyChanged(nameof(HasHomework));OnPropertyChanged(nameof(ShowHomeworkDetails));
+        var mark=row.Subgroup;
+        var options=mark is {ShowChooser:true}?mark.Options.Select(x=>new SubgroupOptionViewModel(x.Id,x.Label,x.Id==mark.ChosenId)).ToArray():[];
+        if(!SubgroupOptions.Select(x=>(x.Id,x.Label,x.IsChosen)).SequenceEqual(options.Select(x=>(x.Id,x.Label,x.IsChosen)))){SubgroupOptions=options;OnPropertyChanged(nameof(SubgroupOptions));}
+        var chosen=mark?.Options.FirstOrDefault(x=>x.Id==mark.ChosenId)?.Label;
+        SubgroupPrompt=mark is null?"":chosen is null?Loc.Current.T("subgroupPick"):Loc.Current.T("subgroupYours")+" · "+chosen;
+        OnPropertyChanged(nameof(SubgroupPrompt));OnPropertyChanged(nameof(HasSubgroup));
+    }
+    public string PriorityCaption => IsNext ? Owner.DayPriorityCaption : "";
+    [ObservableProperty] private bool showDetails;
+    public bool ShowHomeworkDetails => ShowDetails && HasHomework;
+    public string DetailsCaption => ShowDetails ? "Свернуть" : "Подробнее";
+    partial void OnShowDetailsChanged(bool value){OnPropertyChanged(nameof(ShowHomeworkDetails));OnPropertyChanged(nameof(DetailsCaption));}
+    [RelayCommand] private void ToggleDetails()=>ShowDetails=!ShowDetails;
     public int Index { get; }
     public ScheduleViewModel Owner => _owner;
 
@@ -46,16 +64,17 @@ public sealed partial class LessonRowViewModel : ObservableObject
     public string? BuildingTag => Row.BuildingTag;
     public bool HasBuildingTag => Row.BuildingTag is not null;
     public bool IsRemote => Row.IsRemote;
+    public bool HasConflict=>Row.HasConflict;
     public bool IsPast => Row.IsPast;
     public bool IsNext => Row.IsNext;
-    public IReadOnlyList<FriendMarkViewModel> Friends { get; }
+    public IReadOnlyList<FriendMarkViewModel> Friends { get; private set; } = [];
     public bool HasFriends => Friends.Count > 0;
-    public ObservableCollection<HomeworkItemViewModel> Homework { get; }
+    public ObservableCollection<HomeworkItemViewModel> Homework { get; } = [];
     public bool HasHomework => Homework.Count > 0;
     public bool CanShowMap => Row.Map is { HasMap: true } && !Row.IsRemote;
     public bool HasSubgroup => Row.Subgroup is { ShowChooser: true };
-    public string SubgroupPrompt { get; }
-    public IReadOnlyList<SubgroupOptionViewModel> SubgroupOptions { get; }
+    public string SubgroupPrompt { get; private set; } = "";
+    public IReadOnlyList<SubgroupOptionViewModel> SubgroupOptions { get; private set; } = [];
 
     [RelayCommand]
     private Task PickSubgroup(string optionId) => _owner.PickSubgroupAsync(Row.Subgroup!.StreamId, optionId);
@@ -64,6 +83,8 @@ public sealed partial class LessonRowViewModel : ObservableObject
     private void ShowMap() => _owner.ShowMap(this);
 
     [RelayCommand] private Task Rename() => _owner.RenameAsync(this);
+    [RelayCommand] private void OpenHomeworks() => _owner.OpenSubjectHomeworks(this);
+    [RelayCommand] private void Discuss() => _owner.DiscussLesson(this);
     [RelayCommand] private Task AddHomework() => _owner.AddHomeworkAsync(this);
 }
 
@@ -99,7 +120,12 @@ public sealed partial class HomeworkItemViewModel : ObservableObject
         Row = row;
     }
 
-    public HomeworkItem Item { get; }
+    public HomeworkItem Item { get; private set; }
+    internal void Update(HomeworkItem item)
+    {
+        Item=item;
+        foreach(var name in new[]{nameof(Text),nameof(Label),nameof(Status),nameof(IsDone),nameof(IsApproaching),nameof(IsBurning),nameof(IsUrgent),nameof(IsOverdue),nameof(DoneLabel)})OnPropertyChanged(name);
+    }
     public LessonRowViewModel Row { get; }
     public long Id => Item.Id;
     public string Text => Item.Text;

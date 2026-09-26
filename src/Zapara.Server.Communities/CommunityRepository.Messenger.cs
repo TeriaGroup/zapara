@@ -87,11 +87,18 @@ internal sealed partial class CommunityRepository
         {
             cursor = await MessageNoAsync(conversationId, (before ?? after)!.Value);
             if (cursor is null) throw CommunityServiceException.InvalidRequest();
+            await RequireMessagePermissionAsync(conversationId, (before ?? after)!.Value, "read");
         }
         var older = before is not null;
         var order = cursor is null || older ? "DESC" : "ASC";
         var parameters = new List<object?> { conversationId };
+        var conversationInfo = await ConversationInfoAsync(conversationId);
         var topicClause = "";
+        if (!scoped && conversationInfo.Kind == "group")
+        {
+            topicClause = " AND (m.topic_id IS NULL OR m.topic_id=ANY(@p1))";
+            parameters.Add(await VisibleTopicIdsAsync(conversationInfo.CommunityId));
+        }
         if (scoped && topicId is null) topicClause = " AND m.topic_id IS NULL";
         else if (scoped)
         {
@@ -142,6 +149,7 @@ internal sealed partial class CommunityRepository
             var info = await ConversationInfoAsync(conversationId);
             if (info.Kind != "group") throw CommunityServiceException.InvalidRequest();
             await RequireWritableChatTopicAsync(info.CommunityId, selected);
+            if(kind != "text") await RequireTopicPermissionAsync(info.CommunityId,selected,"media");
         }
         if (replyTo is Guid parent && !await ReplyMatchesTopicAsync(conversationId, parent, topicId))
             throw CommunityServiceException.InvalidRequest();
@@ -192,19 +200,42 @@ internal sealed partial class CommunityRepository
     internal async Task<ChatMessageResponse> DeleteMessageAsync(Guid conversationId, Guid messageId)
     {
         await RequireConversationAsync(conversationId);
+        await RequireMessagePermissionAsync(conversationId,messageId,"read");
+        var info = await ConversationInfoAsync(conversationId);
+        if (info.Kind == "group")
+        {
+            await using var topicCommand = Command($"SELECT topic_id FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND message_id=@p1", conversationId, messageId);
+            var selected = await topicCommand.ExecuteScalarAsync(ct);
+            if (selected is Guid topicId && (await SpaceTopicAsync(info.CommunityId, topicId)).Archived)
+                throw CommunityServiceException.Forbidden();
+        }
+        var canModerate = await CanModerateMessageAsync(conversationId, messageId);
         await using (var command = Command($"""
             UPDATE {Msg}.chat_messages SET deleted=true, body='Сообщение удалено'
-            WHERE message_id=@p0 AND conversation_id=@p1 AND sender_id=@p2 AND deleted=false
-            """, messageId, conversationId, UserId))
+            WHERE message_id=@p0 AND conversation_id=@p1 AND (sender_id=@p2 OR @p3) AND deleted=false
+            """, messageId, conversationId, UserId, canModerate))
             if (await command.ExecuteNonQueryAsync(ct) != 1) throw CommunityServiceException.InvalidRequest();
         await ExecuteAsync($"DELETE FROM {Msg}.chat_reactions WHERE message_id=@p0", messageId);
         return await ReadOneAsync(conversationId, messageId);
+    }
+
+    private async Task<bool> CanModerateMessageAsync(Guid conversationId, Guid messageId)
+    {
+        var info = await ConversationInfoAsync(conversationId);
+        if (info.Kind != "group") return false;
+        Guid? topicId;
+        await using (var command = Command($"SELECT topic_id FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND message_id=@p1", conversationId, messageId))
+            topicId = await command.ExecuteScalarAsync(ct) is Guid id ? id : null;
+        if (topicId is Guid topic)
+            return (await TopicPermissionsAsync(info.CommunityId, await SpaceTopicAsync(info.CommunityId, topic))).Contains("moderate");
+        return await RequireMemberAsync(info.CommunityId) == "headman" || await HasPowerAsync(info.CommunityId, "moderate");
     }
 
     internal async Task<ChatMessageResponse> ReactMessageAsync(Guid conversationId, Guid messageId, string emoji)
     {
         if (emoji is not ("like" or "heart" or "laugh" or "wow" or "sad")) throw CommunityServiceException.InvalidRequest();
         await RequireConversationAsync(conversationId);
+        await RequireMessagePermissionAsync(conversationId,messageId,"post");
         if (!await ExistsAsync($"SELECT 1 FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND message_id=@p1 AND deleted=false", conversationId, messageId))
             throw CommunityServiceException.InvalidRequest();
         string? existing;
@@ -318,12 +349,15 @@ internal sealed partial class CommunityRepository
 
     private async Task<(string? Body, DateTimeOffset? At, int Unread)> PreviewAsync(Guid conversationId)
     {
+        var info = await ConversationInfoAsync(conversationId);
+        var visible = info.Kind == "group" ? await VisibleTopicIdsAsync(info.CommunityId) : Array.Empty<Guid>();
+        var scope = info.Kind == "group" ? " AND (topic_id IS NULL OR topic_id=ANY(@p1))" : "";
         string? body = null;
         DateTimeOffset? at = null;
         await using (var command = Command($"""
             SELECT CASE WHEN deleted THEN 'Сообщение удалено' ELSE body END, created_at FROM {Msg}.chat_messages
-            WHERE conversation_id=@p0 ORDER BY message_no DESC LIMIT 1
-            """, conversationId))
+            WHERE conversation_id=@p0{scope} ORDER BY message_no DESC LIMIT 1
+            """, conversationId, visible))
         await using (var reader = await command.ExecuteReaderAsync(ct))
             if (await reader.ReadAsync(ct))
             {
@@ -334,8 +368,8 @@ internal sealed partial class CommunityRepository
         await using (var command = Command($"""
             SELECT count(*) FROM {Msg}.chat_messages m
             JOIN {Msg}.conversation_members mine ON mine.conversation_id=m.conversation_id AND mine.user_id=@p1
-            WHERE m.conversation_id=@p0 AND m.sender_id<>@p1 AND m.message_no > mine.last_read_no
-            """, conversationId, UserId))
+            WHERE m.conversation_id=@p0 AND m.sender_id<>@p1 AND m.message_no > mine.last_read_no AND (@p2 OR m.topic_id IS NULL OR m.topic_id=ANY(@p3))
+            """, conversationId, UserId, info.Kind != "group", visible))
             unread = Convert.ToInt32(await command.ExecuteScalarAsync(ct));
         return (body, at, unread);
     }
@@ -380,8 +414,23 @@ internal sealed partial class CommunityRepository
         return (string)(await command.ExecuteScalarAsync(ct))!;
     }
 
+    private async Task RequireMessagePermissionAsync(Guid conversationId,Guid messageId,string permission)
+    {
+        var info=await ConversationInfoAsync(conversationId);
+        if(info.Kind!="group") return;
+        Guid? topic;
+        await using(var command=Command($"SELECT topic_id FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND message_id=@p1",conversationId,messageId))
+        await using(var reader=await command.ExecuteReaderAsync(ct))
+        {
+            if(!await reader.ReadAsync(ct)) throw CommunityServiceException.NotFound();
+            topic=reader.IsDBNull(0)?null:reader.GetGuid(0);
+        }
+        if(topic is Guid id) await RequireTopicPermissionAsync(info.CommunityId,id,permission);
+    }
+
     private async Task<ChatMessageResponse> ReadOneAsync(Guid conversationId, Guid messageId)
     {
+        await RequireMessagePermissionAsync(conversationId,messageId,"read");
         await using var command = Command($"""
             SELECT m.message_id, m.conversation_id, m.sender_id, coalesce(u.display_name, u.username),
                    CASE WHEN m.deleted THEN 'Сообщение удалено' ELSE m.body END,

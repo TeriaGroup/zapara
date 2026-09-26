@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import ru.bgtu_voenmeh.zapara.AppContainer
+import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.data.api.UrlConnectionTransport
 import ru.bgtu_voenmeh.zapara.data.social.*
 import java.io.File
@@ -53,7 +54,7 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                     event.file.delete()
                 } else if (state.value.guest || operation?.isActive == true) {
                     event.file.delete()
-                    mutable.update { it.copy(error = "Дождитесь завершения предыдущей отправки") }
+                    mutable.update { it.copy(error = container.app.getString(R.string.face_wait_send)) }
                 } else execute(event)
             }
             is InboxEvent.Draft -> mutable.update { it.copy(draft = event.value.take(4000)) }
@@ -73,7 +74,7 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
         operation = viewModelScope.launch {
             mutable.update { it.copy(loading = true, error = null) }
             try {
-                val api = social ?: error("Нет подключения")
+                val api = social ?: error(container.app.getString(R.string.face_no_connection))
                 withContext(Dispatchers.IO) {
                     val token = container.accessToken() ?: throw SocialFailure(401)
                     when(event) {
@@ -85,14 +86,14 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                                 val buffer = ByteArray(8192)
                                 while (true) { val count = input.read(buffer); if (count < 0) break; require(out.size() + count <= 20 * 1024 * 1024); out.write(buffer, 0, count) }
                                 out.toByteArray()
-                            } ?: error("Файл недоступен")
+                            } ?: error(container.app.getString(R.string.face_file_unavailable))
                             publishMessage(started, row.id, api.upload(token, row.id, name, bytes, resolver.getType(event.uri)?.startsWith("image/") == true, snapshot.reply?.id)) {
                                 it.copy(reply = if (it.reply?.id == snapshot.reply?.id) null else it.reply)
                             }
                         }
                         is InboxEvent.Save -> {
-                            val bytes = api.download(token, event.message.attachmentId ?: error("Нет вложения"))
-                            container.app.contentResolver.openOutputStream(event.uri)?.use { it.write(bytes) } ?: error("Не удалось сохранить")
+                            val bytes = api.download(token, event.message.attachmentId ?: error(container.app.getString(R.string.face_no_attachment)))
+                            container.app.contentResolver.openOutputStream(event.uri)?.use { it.write(bytes) } ?: error(container.app.getString(R.string.face_save_failed))
                         }
                         is InboxEvent.UploadRecorded -> snapshot.active?.takeIf { it.id == event.conversationId }?.let { row ->
                             try {
@@ -153,17 +154,17 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                                     rows = orderInbox((home?.friends ?: current.rows.filter { row -> row.communityId == null }) + groupRows),
                                     code = home?.code ?: current.code, incoming = home?.incoming ?: current.incoming,
                                     outgoing = home?.outgoing ?: current.outgoing,
-                                    error = if (partial) "Часть чатов недоступна. Обновите список позже." else null)
+                                    error = if (partial) container.app.getString(R.string.face_chats_partial) else null)
                             }
                         }
                     }
                 }
             } catch (cancel: CancellationException) { throw cancel }
             catch (e: Exception) { if (generation == started) mutable.update { it.copy(error = when {
-                e is SocialFailure && e.status == 401 -> "Сессия истекла. Войдите в аккаунт снова."
-                e is SocialFailure && e.status == 413 -> "Вложение превышает допустимый размер"
-                event is InboxEvent.UploadRecorded -> "Не удалось отправить запись. Проверьте подключение и повторите."
-                else -> "Не удалось обновить чаты. Проверьте подключение и повторите."
+                e is SocialFailure && e.status == 401 -> container.app.getString(R.string.face_session_expired)
+                e is SocialFailure && e.status == 413 -> container.app.getString(R.string.face_attachment_too_large)
+                event is InboxEvent.UploadRecorded -> container.app.getString(R.string.face_record_failed)
+                else -> container.app.getString(R.string.face_chats_failed)
             }) } }
             finally {
                 if (event is InboxEvent.UploadRecorded) event.file.delete()
@@ -192,7 +193,7 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                 ensureActive()
                 val cap = when (message.kind) { "voice" -> 2 * 1024 * 1024; "circle" -> 8 * 1024 * 1024; else -> 20 * 1024 * 1024 }
                 require(bytes.isNotEmpty() && bytes.size <= cap)
-                if (!mediaDirectory.isDirectory && !mediaDirectory.mkdirs()) error("Нет места для вложения")
+                if (!mediaDirectory.isDirectory && !mediaDirectory.mkdirs()) error(container.app.getString(R.string.face_no_space))
                 val suffix = when (message.kind) {
                     "voice" -> if (message.fileName?.endsWith(".webm", true) == true) ".webm" else if (message.fileName?.endsWith(".ogg", true) == true) ".ogg" else ".m4a"
                     "circle" -> if (message.fileName?.endsWith(".webm", true) == true) ".webm" else ".mp4"
@@ -203,7 +204,7 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                 try {
                     temporary.writeBytes(bytes)
                     ensureActive()
-                    if (!temporary.renameTo(destination)) error("Не удалось сохранить вложение")
+                    if (!temporary.renameTo(destination)) error(container.app.getString(R.string.face_save_attachment_failed))
                 } finally { temporary.delete() }
                 withContext(Dispatchers.Main.immediate) {
                     mutable.update { current ->

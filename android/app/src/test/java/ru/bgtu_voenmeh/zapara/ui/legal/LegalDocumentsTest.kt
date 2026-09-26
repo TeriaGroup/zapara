@@ -10,8 +10,8 @@ class LegalDocumentsTest {
     @Test fun both_documents_are_the_texts_the_account_entry_shows() {
         val legal = File("src/main").resolve("../../../../legal").canonicalFile
         fun open(name: String) = File(legal, name).inputStream()
-        val agreement = LegalDocuments.open(::open, "agreement")
-        val policy = LegalDocuments.open(::open, "policy")
+        val agreement = LegalDocuments.open(::open, "agreement", "Пользовательское соглашение")
+        val policy = LegalDocuments.open(::open, "policy", "Политика обработки персональных данных")
         assertEquals("Пользовательское соглашение", agreement.title)
         assertEquals("Политика обработки персональных данных", policy.title)
         for (doc in listOf(agreement, policy)) {

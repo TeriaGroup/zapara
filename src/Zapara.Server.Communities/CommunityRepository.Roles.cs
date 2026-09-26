@@ -10,9 +10,9 @@ internal sealed partial class CommunityRepository
         var role = await RequireMemberAsync(communityId);
         var headman = role == "headman";
         var roles = new List<GroupRoleResponse>();
-        await using (var command = Command($"SELECT role_id, name FROM {Msg}.group_roles WHERE community_id=@p0 ORDER BY name, role_id", communityId))
+        await using (var command = Command($"SELECT role_id, name, position, icon, revision FROM {Msg}.group_roles WHERE community_id=@p0 ORDER BY position DESC, name, role_id", communityId))
         await using (var reader = await command.ExecuteReaderAsync(ct))
-            while (await reader.ReadAsync(ct)) roles.Add(new(reader.GetGuid(0), reader.GetString(1)));
+            while (await reader.ReadAsync(ct)) roles.Add(new(reader.GetGuid(0), reader.GetString(1),reader.GetInt32(2),reader.GetString(3),reader.GetInt64(4)));
         var grants = new List<GroupGrantResponse>();
         await using (var command = Command($"""
             SELECT g.role_id, g.user_id FROM {Msg}.group_role_grants g
@@ -29,7 +29,7 @@ internal sealed partial class CommunityRepository
             """, communityId))
         await using (var reader = await command.ExecuteReaderAsync(ct))
             while (await reader.ReadAsync(ct)) powers.Add(new(reader.GetGuid(0), reader.GetString(1)));
-        var mine = new List<string>();
+        var mine = new List<string> { "read", "post", "media", "vote", "formsRespond" };
         if (headman) mine.AddRange(GroupChanges.Powers);
         else
         {
@@ -58,12 +58,14 @@ internal sealed partial class CommunityRepository
             while (await reader.ReadAsync(ct))
                 applicants.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3)));
         }
-        return new(headman, roles, grants, applicants, powers, mine);
+        return new(headman, roles, grants, applicants, powers, mine.Distinct().ToArray(),GroupPermissionRules.Capabilities);
     }
 
     internal async Task<GroupDeskResponse> CreateRoleAsync(Guid communityId, string? rawName)
     {
         await RequirePowerAsync(communityId, "roles");
+        var actor = await SpaceActorAsync(communityId,UserId);
+        if(actor.OfficialRole!="headman" && actor.Position<=0) throw CommunityServiceException.Forbidden();
         var name = GroupRoleNames.Clean(rawName) ?? throw CommunityServiceException.InvalidRequest();
         if (await ScalarAsync($"SELECT count(*)::int FROM {Msg}.group_roles WHERE community_id=@p0", communityId) is >= 12)
             throw CommunityServiceException.InvalidRequest();
@@ -74,37 +76,44 @@ internal sealed partial class CommunityRepository
         }
         catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
         { throw CommunityServiceException.Conflict("revision_conflict"); }
+        await ManagementAuditAsync(communityId,"role.created",id);
         return await DeskAsync(communityId);
     }
 
     internal async Task<GroupDeskResponse> RenameRoleAsync(Guid communityId, Guid roleId, string? rawName)
     {
         await RequirePowerAsync(communityId, "roles");
+        await RequireRoleAuthorityAsync(communityId,roleId,"roles");
         var name = GroupRoleNames.Clean(rawName) ?? throw CommunityServiceException.InvalidRequest();
         int updated;
         try
         {
             updated = await ExecuteCountAsync($"""
-                UPDATE {Msg}.group_roles SET name=@p0 WHERE role_id=@p1 AND community_id=@p2
+                UPDATE {Msg}.group_roles SET name=@p0,revision=revision+1 WHERE role_id=@p1 AND community_id=@p2
                 """, name, roleId, communityId);
         }
         catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
         { throw CommunityServiceException.Conflict("revision_conflict"); }
         if (updated != 1) throw CommunityServiceException.NotFound();
+        await ManagementAuditAsync(communityId,"role.updated",roleId);
         return await DeskAsync(communityId);
     }
 
     internal async Task<GroupDeskResponse> DeleteRoleAsync(Guid communityId, Guid roleId)
     {
         await RequirePowerAsync(communityId, "roles");
+        await RequireRoleAuthorityAsync(communityId,roleId,"roles");
         var updated = await ExecuteCountAsync($"DELETE FROM {Msg}.group_roles WHERE role_id=@p0 AND community_id=@p1", roleId, communityId);
         if (updated != 1) throw CommunityServiceException.NotFound();
+        await ManagementAuditAsync(communityId,"role.deleted",roleId);
         return await DeskAsync(communityId);
     }
 
     internal async Task<GroupDeskResponse> GrantRoleAsync(Guid communityId, Guid roleId, Guid userId)
     {
         await RequirePowerAsync(communityId, "grants");
+        await RequireRoleAuthorityAsync(communityId,roleId,"grants");
+        await RequireMemberAuthorityAsync(communityId,userId,"grants");
         if (!await ExistsAsync($"SELECT role_id FROM {Msg}.group_roles WHERE role_id=@p0 AND community_id=@p1", roleId, communityId))
             throw CommunityServiceException.NotFound();
         if (!await ExistsAsync($"SELECT user_id FROM {Schema}.memberships WHERE community_id=@p0 AND user_id=@p1 AND status='active'", communityId, userId))
@@ -118,22 +127,27 @@ internal sealed partial class CommunityRepository
         await ExecuteAsync($"""
             INSERT INTO {Msg}.group_role_grants(role_id,user_id) VALUES(@p0,@p1) ON CONFLICT DO NOTHING
             """, roleId, userId);
+        await ManagementAuditAsync(communityId,"role.granted",roleId);
         return await DeskAsync(communityId);
     }
 
     internal async Task<GroupDeskResponse> RevokeRoleAsync(Guid communityId, Guid roleId, Guid userId)
     {
         await RequirePowerAsync(communityId, "grants");
+        await RequireRoleAuthorityAsync(communityId,roleId,"grants");
+        await RequireMemberAuthorityAsync(communityId,userId,"grants");
         await ExecuteAsync($"""
             DELETE FROM {Msg}.group_role_grants g USING {Msg}.group_roles r
             WHERE g.role_id=r.role_id AND g.role_id=@p0 AND g.user_id=@p1 AND r.community_id=@p2
             """, roleId, userId, communityId);
+        await ManagementAuditAsync(communityId,"role.revoked",roleId);
         return await DeskAsync(communityId);
     }
 
     internal async Task<GroupDeskResponse> RemoveMemberAsync(Guid communityId, Guid userId)
     {
         await RequirePowerAsync(communityId, "exclude");
+        await RequireMemberAuthorityAsync(communityId,userId,"exclude");
         var updated = await ExecuteCountAsync($"""
             UPDATE {Schema}.memberships SET status='revoked', revoked_at=@p0
             WHERE community_id=@p1 AND user_id=@p2 AND status='active' AND role='member'
@@ -147,6 +161,7 @@ internal sealed partial class CommunityRepository
             DELETE FROM {Msg}.conversation_members m USING {Msg}.conversations c
             WHERE m.conversation_id=c.conversation_id AND c.kind='group' AND c.community_id=@p0 AND m.user_id=@p1
             """, communityId, userId);
+        await ManagementAuditAsync(communityId,"member.removed",userId);
         return await DeskAsync(communityId);
     }
 

@@ -28,6 +28,9 @@ public sealed record LessonRow(
     IReadOnlyList<FriendMark> Friends,
     IReadOnlyList<HomeworkItem> Homework,
     MapInfo? Map,
-    SubgroupChoice? Subgroup = null);
+    SubgroupChoice? Subgroup = null, bool HasConflict = false);
 
-public sealed record DayModel(DateTime Date, int Offset, string Title, string Subtitle, IReadOnlyList<LessonRow> Rows, string? EmptyTitle, string? EmptyHint, bool IsUnavailable = false);
+public sealed record PlannerDate(DateTime Date, int? LessonCount);
+
+public sealed record DayModel(DateTime Date, int Offset, string Title, string Subtitle, IReadOnlyList<LessonRow> Rows, string? EmptyTitle, string? EmptyHint, bool IsUnavailable = false,
+    IReadOnlyList<PlannerDate>? Dates = null, IReadOnlyList<Zapara.Client.Domain.FreeTimeInterval>? Breaks = null, string? Summary = null, DateTime? NextStudyDate = null, string SourceSummary = "");

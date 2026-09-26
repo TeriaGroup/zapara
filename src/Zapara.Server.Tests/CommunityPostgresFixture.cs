@@ -42,11 +42,25 @@ public sealed class CommunityPostgresFixture : IAsyncDisposable
         }
         catch { await db.DisposeAsync(); throw; }
     }
-    public async Task SeedCommunityAsync(Guid communityId, string name = "Группа О3313", string description = "Сообщество учебной группы")
-        => await Accounts.ExecuteAsync($"""
+    public async Task SeedCommunityAsync(Guid communityId, string name = "Группа О3313", string description = "Сообщество учебной группы", bool starterTopics = false)
+    {
+        await Accounts.ExecuteAsync($"""
             INSERT INTO {QuotedSchema}.communities(community_id,name,description,revision,created_at,updated_at)
             VALUES('{communityId}','{name}','{description}',1,TIMESTAMPTZ '2026-09-08 12:00:00+00',TIMESTAMPTZ '2026-09-08 12:00:00+00')
             """);
+        // Existing contract fixtures represent pre-upgrade communities. Tests of new
+        // group initialization opt in explicitly and leave the receipt absent.
+        if (!starterTopics) await Accounts.ExecuteAsync($"""
+            DO $legacy_fixture$
+            BEGIN
+                IF to_regclass('{Configuration.QuotedMessages}.group_space_state') IS NOT NULL THEN
+                    INSERT INTO {Configuration.QuotedMessages}.group_space_state(community_id,starter_set)
+                    VALUES('{communityId}',false) ON CONFLICT DO NOTHING;
+                END IF;
+            END
+            $legacy_fixture$;
+            """);
+    }
     public async Task SeedCatalogAsync(Guid communityId, string groupId = "O3313", string groupName = "О3313")
         => await Accounts.ExecuteAsync($"""
             INSERT INTO {QuotedSchema}.catalog_maps(map_id,community_id,group_id,group_name,created_at)

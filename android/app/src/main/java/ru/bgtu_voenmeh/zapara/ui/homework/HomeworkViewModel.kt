@@ -61,6 +61,11 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
             is HomeworkEvent.EditorShare -> mutable.update { s -> s.copy(editor = s.editor?.copy(share = event.on)) }
             HomeworkEvent.Inc -> mutable.update { s -> s.copy(editor = s.editor?.inc()) }
             HomeworkEvent.Dec -> mutable.update { s -> s.copy(editor = s.editor?.dec()) }
+            HomeworkEvent.Recalculate -> viewModelScope.launch {
+                val editor=mutable.value.editor ?: return@launch
+                val prepared=withContext(Dispatchers.IO) { snapshotDue(editor.subjectRaw,editor.id,editor.creationAnchor(container.clock().toLocalDate())) to container.repo.settings().myGroupId }
+                mutable.update { state -> if(state.editor?.draft==editor.draft) state.copy(editor=editor.copy(dueFor=prepared.first,scheduleGroupId=prepared.second,sourceChanged=false)) else state }
+            }
             HomeworkEvent.Save -> save()
             HomeworkEvent.Cancel -> cancelEditor()
             is HomeworkEvent.Attach -> attach(event.kind, event.uri)
@@ -158,8 +163,9 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
     private suspend fun showEditor(
         id: Long?, raw: String, display: String, text: String, n: Int, edit: Boolean, closePicker: Boolean
     ) {
+        val anchor = container.clock().toLocalDate()
         val prepared = withContext(Dispatchers.IO) {
-            snapshotDue(raw, id) to (if (id == null) emptyList() else container.homeworkFiles.list(id))
+            Triple(snapshotDue(raw, id, anchor), if (id == null) emptyList() else container.homeworkFiles.list(id), container.repo.settings().myGroupId)
         }
         mutable.update {
             it.copy(
@@ -167,18 +173,18 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                 editor = HomeworkEditorState(
                     id, raw, display, text, n, edit, prepared.first,
                     files = prepared.second,
-                    draft = java.util.UUID.randomUUID().toString()
+                    draft = java.util.UUID.randomUUID().toString(), anchorDate = anchor, scheduleGroupId = prepared.third
                 )
             )
         }
     }
 
-    private fun snapshotDue(raw: String, id: Long?): (Int, String) -> LocalDate? {
+    private fun snapshotDue(raw: String, id: Long?, anchor: LocalDate = container.clock().toLocalDate()): (Int, String) -> LocalDate? {
         val prefs = container.repo.settings()
         val gid = prefs.myGroupId.orEmpty()
         val c = SchedCtx(gid, prefs.periodStart, prefs.weekCount, prefs.parityInvert)
         val all = container.ownLessons()
-        val today = container.clock().toLocalDate()
+        val today = anchor
         val norm = Parity.normalizeSubject(raw)
         val existing = id?.let(container.homework::getById)
         return homeworkEditorDueFor(existing, today) { from, target ->
@@ -201,7 +207,7 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                     withContext(Dispatchers.IO) {
                         shareSavedHomework(container, editor) {
                             if (editor.id == null) {
-                                val id = container.homework.addHomework(editor.subjectRaw, editor.text.trim(), editor.n)
+                                val id = container.homework.addHomework(editor.subjectRaw, editor.text.trim(), editor.n, editor.creationAnchor(container.clock().toLocalDate()))
                                 if (editor.draft.isNotEmpty()) container.homeworkFiles.commit(editor.draft, id, editor.removed)
                             } else {
                                 val existing = container.homework.getById(editor.id)
@@ -221,8 +227,8 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                 throw e
             } catch (e: Exception) {
                 android.util.Log.w("ZaparaHomework", "save", e)
-                mutable.update { cur -> if (cur.editor == null) cur.copy(editor = editor) else cur }
-                container.toasts.show(container.app.getString(R.string.homework_save_failed), ToastKind.Bad)
+                mutable.update { cur -> if (cur.editor == null) cur.copy(editor = editor.copy(sourceChanged=e is HomeworkScheduleChanged)) else cur }
+                container.toasts.show(container.app.getString(if (e is HomeworkScheduleChanged) R.string.review_homework_source_changed else R.string.homework_save_failed), ToastKind.Bad)
             } finally {
                 saving = false
             }

@@ -10,6 +10,7 @@ public static class DayTitles
         -1 => loc.T("yesterday"),
         0 => loc.T("today"),
         1 => loc.T("tomorrow"),
+        2 => "Послезавтра",
         _ => loc.I18n.FormatDayFull(date)
     };
 

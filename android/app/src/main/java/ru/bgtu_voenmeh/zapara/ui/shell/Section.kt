@@ -29,7 +29,9 @@ enum class Section(
     val pattern: String get() = when (this) {
         Schedule -> "schedule?date={date}"
         Maps -> "maps?room={room}"
-        Group -> "group?communityId={communityId}&conversationId={conversationId}"
+        Week -> "week?date={date}"
+        Homework -> "homework?id={id}"
+        Group -> "group?communityId={communityId}&conversationId={conversationId}&context={context}"
         else -> route
     }
 

@@ -9,7 +9,8 @@ data class HomeworkRowUi(
     val text: String,
     val label: String,
     val status: String,
-    val done: Boolean
+    val done: Boolean,
+    val sharedId: String? = null
 )
 
 data class FriendDotUi(
@@ -56,7 +57,10 @@ data class DayPage(
     val caption: String,
     val lessons: List<LessonUi>,
     val nextHint: String?,
-    val isSunday: Boolean
+    val isSunday: Boolean,
+    val deadlines: List<HomeworkRowUi> = emptyList(),
+    val dataState: String? = null,
+    val nextKnownDate: LocalDate? = null
 )
 
 data class RenameUi(
@@ -80,15 +84,28 @@ data class ScheduleUiState(
     val rename: RenameUi? = null,
     val homeworkEditor: HomeworkEditorState? = null,
     val error: String? = null,
-    val guest: Boolean = false
+    val guest: Boolean = false,
+    val showFreeTime: Boolean = true,
+    val undoDone: Pair<Long, Boolean>? = null,
+    val now: java.time.LocalDateTime = java.time.LocalDateTime.now(),
+    val sourceStatus: String? = null,
+    val undoShared: Pair<String, Boolean>? = null,
+    val subjectHomework: LessonUi? = null,
+    val subjectRows: List<HomeworkRowUi> = emptyList(),
+    val sharedDetail: HomeworkRowUi? = null
 )
 
 sealed interface ScheduleEvent {
     data class Need(val date: LocalDate) : ScheduleEvent
     data class Select(val date: LocalDate) : ScheduleEvent
+    data class FreeTime(val on: Boolean) : ScheduleEvent
+    data object UndoShared : ScheduleEvent
+    data object UndoDone : ScheduleEvent
+    data class QuickDay(val offset: Int) : ScheduleEvent
     data object Today : ScheduleEvent
     data object SyncClock : ScheduleEvent
     data object Retry : ScheduleEvent
+    data object RefreshShared : ScheduleEvent
     data object Refresh : ScheduleEvent
     data class LongPress(val lesson: LessonUi) : ScheduleEvent
     data object CloseActions : ScheduleEvent
@@ -97,12 +114,17 @@ sealed interface ScheduleEvent {
     data object RenameSave : ScheduleEvent
     data object RenameReset : ScheduleEvent
     data object RenameCancel : ScheduleEvent
+    data class SubjectHomework(val lesson: LessonUi) : ScheduleEvent
+    data object CloseSubjectHomework : ScheduleEvent
+    data class OpenHomework(val row: HomeworkRowUi) : ScheduleEvent
+    data class ToggleShared(val id: String, val done: Boolean) : ScheduleEvent
     data class ToggleDone(val id: Long) : ScheduleEvent
     data class AddHomework(val lesson: LessonUi) : ScheduleEvent
     data class HomeworkEditorText(val text: String) : ScheduleEvent
     data class HomeworkEditorShare(val on: Boolean) : ScheduleEvent
     data object HomeworkEditorInc : ScheduleEvent
     data object HomeworkEditorDec : ScheduleEvent
+    data object RecalculateHomework : ScheduleEvent
     data object HomeworkEditorSave : ScheduleEvent
     data object HomeworkEditorCancel : ScheduleEvent
     data class HomeworkAttach(val kind: String, val uri: Uri) : ScheduleEvent

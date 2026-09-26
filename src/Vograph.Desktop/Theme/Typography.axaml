@@ -4,32 +4,34 @@
   <!-- Inter everywhere; inherited by every control inside the window. -->
   <Style Selector="Window">
     <Setter Property="FontFamily" Value="fonts:Inter#Inter" />
-    <Setter Property="FontSize" Value="13.5" />
+    <Setter Property="FontSize" Value="15" />
     <Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" />
     <Setter Property="Background" Value="{DynamicResource Brush.Canvas}" />
   </Style>
 
+  <Style Selector="ComboBox, CheckBox, NumericUpDown, CalendarDatePicker"><Setter Property="MinHeight" Value="48" /><Setter Property="FontSize" Value="15" /></Style>
+
   <!-- Text scale. Foreground is NOT set on plain TextBlock so it keeps inheriting (buttons, chips). -->
   <Style Selector="TextBlock.display">
-    <Setter Property="FontSize" Value="26" />
-    <Setter Property="FontWeight" Value="SemiBold" />
-    <Setter Property="LetterSpacing" Value="-0.5" />
+    <Setter Property="FontSize" Value="22" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="LetterSpacing" Value="0" />
   </Style>
   <Style Selector="TextBlock.title">
-    <Setter Property="FontSize" Value="18" />
-    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontSize" Value="17" />
+    <Setter Property="FontWeight" Value="Medium" />
   </Style>
   <Style Selector="TextBlock.subject">
-    <Setter Property="FontSize" Value="15" />
-    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontSize" Value="17" />
+    <Setter Property="FontWeight" Value="Medium" />
   </Style>
   <Style Selector="TextBlock.caption">
     <Setter Property="FontSize" Value="12" />
   </Style>
   <Style Selector="TextBlock.micro">
-    <Setter Property="FontSize" Value="10.5" />
+    <Setter Property="FontSize" Value="12" />
     <Setter Property="FontWeight" Value="Medium" />
-    <Setter Property="LetterSpacing" Value="0.8" />
+    <Setter Property="LetterSpacing" Value="0" />
     <Setter Property="Foreground" Value="{DynamicResource Brush.Text3}" />
   </Style>
   <Style Selector="TextBlock.muted">
@@ -56,8 +58,7 @@
   </Style>
   <Style Selector="Border.card.hoverable:pointerover">
     <Setter Property="Background" Value="{DynamicResource Brush.CardHover}" />
-    <Setter Property="BoxShadow" Value="{DynamicResource Shadow.Card}" />
-    <Setter Property="RenderTransform" Value="translateY(-1px)" />
+    <Setter Property="BoxShadow" Value="{DynamicResource Shadow.None}" />
   </Style>
   <Style Selector="Border.card.next">
     <Setter Property="BorderBrush" Value="{DynamicResource Brush.LineStrong}" />

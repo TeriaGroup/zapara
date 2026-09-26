@@ -44,6 +44,10 @@ public sealed partial class HomeworkViewModel : ViewModelBase
     public override Task ActivateAsync() => LoadAsync();
 
     public string Title => T("navHomework");
+    [ObservableProperty] private string subjectFilter = "";
+    public bool HasSubjectFilter => SubjectFilter.Length>0;
+    partial void OnSubjectFilterChanged(string value){OnPropertyChanged(nameof(HasSubjectFilter));}
+    [RelayCommand] private void ClearSubjectFilter(){SubjectFilter="";_=LoadAsync();}
     public ObservableCollection<HomeworkGroupViewModel> Groups { get; } = new();
 
     [ObservableProperty] private string _subtitle = "";
@@ -69,7 +73,10 @@ public sealed partial class HomeworkViewModel : ViewModelBase
         IsLoaded = true;
         Groups.Clear();
         foreach (var g in model.Groups)
-            Groups.Add(new HomeworkGroupViewModel(g, this, collapsed: g.Status == "done" && !_expanded.Contains(g.Status)));
+        {
+            var filtered = SubjectFilter.Length==0 ? g : g with { Items=g.Items.Where(x=>x.Homework.SubjectRawNormalized==ParityService.NormalizeSubject(SubjectFilter)).ToArray() };
+            if(filtered.Items.Count>0)Groups.Add(new HomeworkGroupViewModel(filtered, this, collapsed: g.Status == "done" && !_expanded.Contains(g.Status)));
+        }
         IsEmpty = model.HasGroup && model.Groups.Count == 0;
         Subtitle = $"{App.Loc.Plural(model.Open, "hwOpen1", "hwOpen2", "hwOpen5")} · {T("hwDoneCount", model.Done)}";
         OnPropertyChanged(nameof(Title));

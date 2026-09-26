@@ -8,46 +8,8 @@ internal sealed partial class CommunityRepository
     // Reads for the built-in general thread. This id is not a row in group_topics.
     private static readonly Guid GeneralRead = new("00000000-0000-0000-0000-000000000001");
 
-    internal async Task<GroupTopicListResponse> TopicsAsync(Guid communityId, bool includeTyped = false)
-    {
-        var role = await RequireMemberAsync(communityId);
-        var conversationId = await EnsureGroupConversationAsync(communityId);
-        var canManage = role == "headman" || await HasPowerAsync(communityId, "channels");
-        var topics = new List<GroupTopicResponse>
-        {
-            await DescribeTopicAsync(communityId, conversationId, null, GroupTopicNames.GeneralTitle, GroupTopicNames.GeneralIcon,
-                "", GroupTopicNames.DefaultAccent, false, GroupTopicNames.AllWriters, false)
-        };
-        var rows = new List<(Guid Id, string Title, string Icon, string Kind, string Description, string Accent, bool Pinned, string WritePolicy)>();
-        await using (var command = Command($"""
-            SELECT topic_id, title, icon, kind, description, accent, pinned, write_policy
-            FROM {Msg}.group_topics WHERE community_id=@p0
-            """, communityId))
-        await using (var reader = await command.ExecuteReaderAsync(ct))
-            while (await reader.ReadAsync(ct))
-                rows.Add((reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
-                    reader.GetString(4), reader.GetString(5), reader.GetBoolean(6), reader.GetString(7)));
-        foreach (var row in rows)
-        {
-            if (!includeTyped && row.Kind == GroupTopicNames.BallotsKind) continue;
-            topics.Add(row.Kind == GroupTopicNames.BallotsKind
-                ? await DescribeBallotTopicAsync(communityId, row.Id, row.Title, row.Icon,
-                    row.Description, row.Accent, row.Pinned, row.WritePolicy, canManage)
-                : await DescribeTopicAsync(communityId, conversationId, row.Id, row.Title, row.Icon,
-                    row.Description, row.Accent, row.Pinned, row.WritePolicy, canManage));
-        }
-        topics.Sort((left, right) =>
-        {
-            if (left.TopicId is null && right.TopicId is null) return 0;
-            if (left.TopicId is null) return -1;
-            if (right.TopicId is null) return 1;
-            var pinned = right.Pinned.CompareTo(left.Pinned);
-            if (pinned != 0) return pinned;
-            var activity = Nullable.Compare(right.LastAt, left.LastAt);
-            return activity != 0 ? activity : string.Compare(left.Title, right.Title, StringComparison.CurrentCulture);
-        });
-        return new(topics, canManage);
-    }
+    internal Task<GroupTopicListResponse> TopicsAsync(Guid communityId, bool includeTyped = false)
+        => SpaceTopicListAsync(communityId, includeTyped);
 
     internal async Task<GroupTopicListResponse> CreateTopicAsync(Guid communityId, GroupTopicRequest request, bool includeTyped = false)
     {
@@ -56,6 +18,8 @@ internal sealed partial class CommunityRepository
         var title = GroupTopicNames.Title(request.Title) ?? throw CommunityServiceException.InvalidRequest();
         var icon = GroupTopicNames.Icon(request.Icon) ?? throw CommunityServiceException.InvalidRequest();
         var kind = GroupTopicNames.Kind(request.Kind) ?? throw CommunityServiceException.InvalidRequest();
+        await ValidateTopicMetadataAsync(communityId, request, kind);
+        var id = Guid.NewGuid();
         var description = GroupTopicNames.Description(request.Description) ?? throw CommunityServiceException.InvalidRequest();
         var accent = GroupTopicNames.Accent(request.Accent) ?? throw CommunityServiceException.InvalidRequest();
         var pinned = request.Pinned ?? false;
@@ -64,23 +28,53 @@ internal sealed partial class CommunityRepository
             throw CommunityServiceException.InvalidRequest();
         try
         {
+            var accessSnapshot = await CurrentAccessSnapshotAsync(communityId);
             await ExecuteAsync($"""
-                INSERT INTO {Msg}.group_topics(topic_id,community_id,title,icon,kind,description,accent,pinned,write_policy,created_by,created_at)
-                VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10)
-                """, Guid.NewGuid(), communityId, title, icon, kind, description, accent, pinned, writePolicy, UserId, Now);
+                INSERT INTO {Msg}.group_topics(topic_id,community_id,title,icon,kind,description,accent,pinned,write_policy,created_by,created_at,access_snapshot)
+                VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,@p11)
+                """, id, communityId, title, icon, kind, description, accent, pinned, writePolicy, UserId, Now, accessSnapshot);
+            await SaveTopicMetadataAsync(communityId,id,request,kind);
+            await ApplyInitialTopicAccessAsync(communityId, id, request.InitialAccessRules);
+            await ManagementAuditAsync(communityId,"topic.created",id);
         }
         catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
         { throw CommunityServiceException.Conflict("revision_conflict"); }
         return await TopicsAsync(communityId, includeTyped);
     }
 
-    internal async Task<GroupTopicListResponse> RenameTopicAsync(Guid communityId, Guid topicId, GroupTopicRequest request, bool includeTyped = false)
+    private async Task ApplyInitialTopicAccessAsync(Guid communityId, Guid topicId, IReadOnlyList<GroupAccessRule>? rules)
     {
-        await RequirePowerAsync(communityId, "channels");
+        if (rules is null || rules.Count == 0) return;
+        // An existing topic's local access grant cannot authorize policy for a new one.
+        // Pure inheritance is the unchanged default and needs no extra capability.
+        if (rules.Any(rule => rule is null || rule.State != "inherit"))
+            await RequirePowerAsync(communityId, "access");
+        var actor = await SpaceActorAsync(communityId, UserId);
+        var topic = await SpaceTopicAsync(communityId, topicId);
+        await ValidateTopicAccessRulesAsync(communityId, topic, actor, Array.Empty<GroupAccessRule>(), rules);
+        foreach (var rule in rules.Where(rule => rule.State != "inherit" && !GroupPermissionRules.GroupOnlyPowers.Contains(rule.Power)))
+            await ExecuteAsync($"INSERT INTO {Msg}.group_topic_access(topic_id,role_id,power,state) VALUES(@p0,@p1,@p2,@p3)", topicId, rule.RoleId, rule.Power, rule.State);
+        // Do not re-authorize read after applying ACL: a delegate may intentionally
+        // create for another role and receive a successful, filtered topics list.
+    }
+
+    internal async Task<GroupTopicListResponse> RenameTopicAsync(Guid communityId, Guid topicId, GroupTopicRequest request, bool includeTyped = false, bool modernMetadata = true)
+    {
+        var officialRole = await RequireMemberAsync(communityId);
         if (request is null) throw CommunityServiceException.InvalidRequest();
+        if (request.InitialAccessRules is not null) throw CommunityServiceException.InvalidRequest();
         var title = GroupTopicNames.Title(request.Title) ?? throw CommunityServiceException.InvalidRequest();
         var icon = GroupTopicNames.Icon(request.Icon) ?? throw CommunityServiceException.InvalidRequest();
         var requestedKind = GroupTopicNames.Kind(request.Kind) ?? throw CommunityServiceException.InvalidRequest();
+        await RequireTopicPermissionAsync(communityId,topicId,"read");
+        var fullTopic = await SpaceTopicAsync(communityId,topicId);
+        if (!modernMetadata)
+            request = new(request.Title, request.Icon, request.Kind, request.Description, request.Accent, request.Pinned, request.WritePolicy,
+                fullTopic.Template, fullTopic.CategoryId, fullTopic.Position, fullTopic.Subject, request.ExpectedRevision);
+        if(request.Template is null) request = new(request.Title,request.Icon,request.Kind,request.Description,request.Accent,request.Pinned,request.WritePolicy,fullTopic.Template,request.CategoryId,request.Position,request.Subject??fullTopic.Subject,request.ExpectedRevision);
+        await ValidateTopicMetadataAsync(communityId,request,requestedKind);
+        if(request.Template != fullTopic.Template) await RequireTopicPermissionAsync(communityId,topicId,"access");
+        if(request.ExpectedRevision is long rev && rev != fullTopic.Revision) throw CommunityServiceException.Conflict("revision_conflict");
         var existing = await TopicSettingsAsync(communityId, topicId) ?? throw CommunityServiceException.NotFound();
         if (requestedKind != existing.Kind) throw CommunityServiceException.InvalidRequest();
         var description = request.Description is null ? existing.Description
@@ -88,16 +82,38 @@ internal sealed partial class CommunityRepository
         var accent = request.Accent is null ? existing.Accent
             : GroupTopicNames.Accent(request.Accent) ?? throw CommunityServiceException.InvalidRequest();
         var pinned = request.Pinned ?? existing.Pinned;
+        if(pinned != existing.Pinned) await RequireTopicPermissionAsync(communityId,topicId,"pin");
+        if(request.WritePolicy is not null && request.WritePolicy != existing.WritePolicy) await RequireTopicPermissionAsync(communityId,topicId,"access");
         var writePolicy = request.WritePolicy is null ? existing.WritePolicy
             : GroupTopicNames.WritePolicy(request.WritePolicy) ?? throw CommunityServiceException.InvalidRequest();
+        if (officialRole != "headman" && (request.Template != fullTopic.Template || writePolicy != fullTopic.WritePolicy))
+        {
+            var actor = await SpaceActorAsync(communityId, UserId);
+            var rules = await AccessRulesAsync(topicId);
+            // Compare the restored state too: archiving must not hide a privilege increase.
+            var currentRights = GroupPermissionRules.Calculate(true, false, officialRole == "curator", actor.Powers, actor.Roles, rules,
+                fullTopic.Kind, fullTopic.Template, false, fullTopic.WritePolicy);
+            var proposedRights = GroupPermissionRules.Calculate(true, false, officialRole == "curator", actor.Powers, actor.Roles, rules,
+                fullTopic.Kind, request.Template!, false, writePolicy);
+            if (proposedRights.Except(currentRights).Any()) throw CommunityServiceException.Forbidden();
+        }
+        if (!(await TopicPermissionsAsync(communityId, fullTopic)).Contains("channels"))
+        {
+            await RequireTopicPermissionAsync(communityId, topicId, "pin");
+            if (title != fullTopic.Title || icon != fullTopic.Icon || description != fullTopic.Description || accent != fullTopic.Accent
+                || writePolicy != fullTopic.WritePolicy || request.Template != fullTopic.Template || request.CategoryId != fullTopic.CategoryId
+                || request.Position != fullTopic.Position || request.Subject != fullTopic.Subject) throw CommunityServiceException.Forbidden();
+        }
         try
         {
             var updated = await ExecuteCountAsync($"""
                 UPDATE {Msg}.group_topics
-                SET title=@p0, icon=@p1, description=@p2, accent=@p3, pinned=@p4, write_policy=@p5
+                SET title=@p0, icon=@p1, description=@p2, accent=@p3, pinned=@p4, write_policy=@p5, revision=revision+1
                 WHERE topic_id=@p6 AND community_id=@p7
                 """, title, icon, description, accent, pinned, writePolicy, topicId, communityId);
             if (updated != 1) throw CommunityServiceException.NotFound();
+            await SaveTopicMetadataAsync(communityId,topicId,request,requestedKind);
+            await ManagementAuditAsync(communityId,"topic.updated",topicId);
         }
         catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
         { throw CommunityServiceException.Conflict("revision_conflict"); }
@@ -106,8 +122,9 @@ internal sealed partial class CommunityRepository
 
     internal async Task<(GroupTopicListResponse Page, IReadOnlyList<Guid> MessageIds)> DeleteTopicAsync(Guid communityId, Guid topicId, bool includeTyped = false)
     {
-        await RequirePowerAsync(communityId, "channels");
+        await RequireTopicPermissionAsync(communityId,topicId,"channels");
         if (await TopicKindAsync(communityId, topicId) is null) throw CommunityServiceException.NotFound();
+        if(await ExistsAsync($"SELECT 1 FROM {Msg}.group_topic_access WHERE topic_id=@p0",topicId) || await ExistsAsync($"SELECT 1 FROM {Msg}.group_homework_details WHERE topic_id=@p0",topicId)) throw CommunityServiceException.Conflict("revision_conflict");
         var conversationId = await EnsureGroupConversationAsync(communityId);
         var removed = new List<Guid>();
         await using (var command = Command($"SELECT message_id FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND topic_id=@p1", conversationId, topicId))
@@ -116,6 +133,7 @@ internal sealed partial class CommunityRepository
         await ExecuteAsync($"DELETE FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND topic_id=@p1", conversationId, topicId);
         await ExecuteAsync($"DELETE FROM {Msg}.group_topic_reads WHERE community_id=@p0 AND topic_id=@p1", communityId, topicId);
         await ExecuteAsync($"DELETE FROM {Msg}.group_topics WHERE topic_id=@p0 AND community_id=@p1", topicId, communityId);
+        await ManagementAuditAsync(communityId,"topic.deleted",topicId);
         return (await TopicsAsync(communityId, includeTyped), removed);
     }
 
@@ -227,21 +245,23 @@ internal sealed partial class CommunityRepository
 
     private async Task RequireChatTopicAsync(Guid communityId, Guid topicId)
     {
+        await RequireTopicPermissionAsync(communityId,topicId,"read");
         var settings = await TopicSettingsAsync(communityId, topicId) ?? throw CommunityServiceException.NotFound();
-        if (settings.Kind != GroupTopicNames.ChatKind) throw CommunityServiceException.InvalidRequest();
+        if (settings.Kind is not (GroupTopicNames.ChatKind or "materials")) throw CommunityServiceException.InvalidRequest();
     }
 
     private async Task RequireWritableChatTopicAsync(Guid communityId, Guid topicId)
     {
+        await RequireTopicPermissionAsync(communityId,topicId,"post");
         var settings = await TopicSettingsAsync(communityId, topicId) ?? throw CommunityServiceException.NotFound();
-        if (settings.Kind != GroupTopicNames.ChatKind) throw CommunityServiceException.InvalidRequest();
-        if (settings.WritePolicy == GroupTopicNames.ManagersOnly)
-            await RequirePowerAsync(communityId, "channels");
+        if (settings.Kind is not (GroupTopicNames.ChatKind or "materials")) throw CommunityServiceException.InvalidRequest();
+
     }
 
     private async Task ValidateBallotTopicAsync(Guid communityId, Guid? topicId)
     {
         if (topicId is not Guid selected) return;
+        await RequireTopicPermissionAsync(communityId,selected,"read");
         var settings = await TopicSettingsAsync(communityId, selected) ?? throw CommunityServiceException.NotFound();
         if (settings.Kind != GroupTopicNames.BallotsKind) throw CommunityServiceException.InvalidRequest();
     }
@@ -249,10 +269,11 @@ internal sealed partial class CommunityRepository
     private async Task RequireBallotPublishTopicAsync(Guid communityId, Guid? topicId)
     {
         if (topicId is not Guid selected) return;
+        await RequireTopicPermissionAsync(communityId,selected,"read");
         var settings = await TopicSettingsAsync(communityId, selected) ?? throw CommunityServiceException.NotFound();
         if (settings.Kind != GroupTopicNames.BallotsKind) throw CommunityServiceException.InvalidRequest();
-        if (settings.WritePolicy == GroupTopicNames.ManagersOnly)
-            await RequirePowerAsync(communityId, "channels");
+        await RequireTopicPermissionAsync(communityId,selected,"ballots");
+
     }
 
     private Task<bool> ReplyMatchesTopicAsync(Guid conversationId, Guid replyTo, Guid? topicId) => topicId is Guid selected

@@ -15,7 +15,8 @@ public partial class ScheduleView : UserControl
     public ScheduleView()
     {
         InitializeComponent();
-        DataContextChanged += (_, _) => Hook(DataContext as ScheduleViewModel);
+        DataContextChanged += (_, _) => {Hook(DataContext as ScheduleViewModel);ApplyPlanningLayout();};
+        SizeChanged+=(_,_)=>ApplyPlanningLayout();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -30,6 +31,16 @@ public partial class ScheduleView : UserControl
         if (_vm is not null) _vm.DayShown -= OnDayShown;
         _vm = vm;
         if (_vm is not null) _vm.DayShown += OnDayShown;
+    }
+
+    private void ApplyPlanningLayout()
+    {
+        var wide=Bounds.Width>=1150;
+        PlannerColumns.ColumnDefinitions=new ColumnDefinitions(wide?"150,*,300":"*");
+        PlannerColumns.RowDefinitions=new RowDefinitions(wide?"Auto":"Auto,Auto,Auto");
+        Grid.SetRow(PlannerMain,wide?0:1);Grid.SetColumn(PlannerMain,wide?1:0);
+        Grid.SetRow(PlannerDeadlines,wide?0:2);Grid.SetColumn(PlannerDeadlines,wide?2:0);
+        _vm?.SetDateStripCount(Bounds.Width>0 && Bounds.Width<720?5:7);
     }
 
     /// <summary>Spec §7 «контент дня — кроссфейд + сдвиг 12px в сторону листания», 200 ms.</summary>

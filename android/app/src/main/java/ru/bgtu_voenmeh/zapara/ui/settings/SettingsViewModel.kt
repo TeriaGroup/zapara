@@ -41,7 +41,29 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun onEvent(event: SettingsEvent) {
         when (event) {
+            is SettingsEvent.Subgroup -> viewModelScope.launch {
+                withContext(Dispatchers.IO) { val gid = container.repo.settings().myGroupId ?: return@withContext; container.subgroups.select(container.profile.databaseName, gid, event.streamId, event.optionId) }
+                container.events.emit(AppEvent.SubgroupChanged)
+            }
             is SettingsEvent.ResolveSync -> resolveSync(event)
+            is SettingsEvent.FreeTime -> {
+                container.app.getSharedPreferences("day-planner", 0).edit().putBoolean("free-time", event.on).apply()
+                mutable.update { it.copy(showFreeTime = event.on) }
+                viewModelScope.launch { container.events.emit(AppEvent.PersonalizationChanged) }
+            }
+            is SettingsEvent.Invert -> {
+                mutable.update { it.copy(parityInvert = event.on) }
+                save({ it.copy(parityInvert = event.on) }, after = { viewModelScope.launch { container.events.emit(AppEvent.ScheduleChanged) } })
+            }
+            SettingsEvent.SyncNow -> if (!container.profile.isGuest && !mutable.value.syncBusy) {
+                mutable.update { it.copy(syncBusy = true, syncError = null) }
+                viewModelScope.launch {
+                    try { withContext(Dispatchers.IO) { container.privateSync?.sync() }; reload() }
+                    catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { mutable.update { it.copy(syncError = container.app.getString(R.string.sync_choice_changed)) } }
+                    finally { mutable.update { it.copy(syncBusy = false) } }
+                }
+            }
             SettingsEvent.ChangeGroup -> { }
             SettingsEvent.Refresh -> refresh()
             is SettingsEvent.Theme -> {
@@ -208,8 +230,17 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 val prefs = container.repo.settings()
                 val groups = container.repo.groups()
                 val name = groups.firstOrNull { it.id == prefs.myGroupId }?.name.orEmpty()
+                val gid = prefs.myGroupId.orEmpty()
+                val own = container.ownLessons()
+                fun preview(date: java.time.LocalDate): String = if (gid.isBlank()) container.app.getString(R.string.pick_group_first) else {
+                    val lessons = ru.bgtu_voenmeh.zapara.data.Schedule.lessonsForDate(own, gid, date, prefs.periodStart, prefs.weekCount, prefs.parityInvert)
+                    if (lessons.isEmpty()) container.app.getString(R.string.no_lessons_day)
+                    else lessons.joinToString("\n") { "${it.timeStart} · ${ru.bgtu_voenmeh.zapara.ui.LessonFormat.stripType(it.subjectRaw, it.typeRaw)} · ${it.classroomRaw}" }
+                }
                 SettingsUiState(
                     loaded = true, groupName = name,
+                    subgroupStreams = ru.bgtu_voenmeh.zapara.data.Subgroups.index(container.repo.allForGroup(prefs.myGroupId.orEmpty())).streams,
+                    subgroupChoices = container.subgroupChoices(prefs.myGroupId.orEmpty()),
                     groupUpdated = SettingsLogic.updatedLine(
                         prefs.lastFetchedAt, now, container.copy,
                         hasLocal = !prefs.myGroupId.isNullOrEmpty() &&
@@ -218,6 +249,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     stale = ShellLogic.isStale(prefs.lastFetchedAt, now),
                     refreshing = mutable.value.refreshing,
                     theme = ThemeChoice.fromKey(prefs.theme), animations = prefs.animations,
+                    showFreeTime = container.app.getSharedPreferences("day-planner", 0).getBoolean("free-time", true), parityInvert = prefs.parityInvert,
+                    previewEvening = preview(now.toLocalDate().plusDays(1)), previewMorning = preview(now.toLocalDate()),
                     notifyEnabled = prefs.notifyEnabled,
                     time1 = prefs.notifyTime1 ?: "20:00", time2 = prefs.notifyTime2 ?: "07:30",
                     timeError = null,
@@ -278,12 +311,18 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun supportText(message: ru.bgtu_voenmeh.zapara.data.accounts.SupportMessage): String {
-        val extra = message.attachments.joinToString("\n") { if (it.kind == "photo") "Фото: ${it.name}" else "Лог: ${it.name}" }
+        val extra = message.attachments.joinToString("\n") {
+            container.app.getString(if (it.kind == "photo") R.string.face_photo_named else R.string.face_log_named, it.name)
+        }
         return if (extra.isEmpty()) message.body else message.body + "\n" + extra
     }
 
     private fun report(subject: String, body: String, photos: List<Pair<String, ByteArray>>, logs: List<Pair<String, ByteArray>>) {
-        val local = ru.bgtu_voenmeh.zapara.ui.chat.SupportForm.submit(mutable.value.signedIn, mutable.value.reportThread, subject, body)
+        val local = ru.bgtu_voenmeh.zapara.ui.chat.SupportForm.submit(
+            mutable.value.signedIn, mutable.value.reportThread, subject, body,
+            container.app.getString(R.string.face_support_sign_in),
+            container.app.getString(R.string.face_support_describe)
+        )
         if (local.error != null) {
             mutable.update { it.copy(reportNote = local.error) }
             return
@@ -292,7 +331,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             val token = container.accessToken()
             if (client == null || token.isNullOrEmpty()) {
-                mutable.update { it.copy(reportNote = "Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ.") }
+                mutable.update { it.copy(reportNote = container.app.getString(R.string.face_support_sign_in)) }
                 return@launch
             }
             try {
@@ -311,7 +350,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 android.util.Log.w("ZaparaSettings", "support send", e)
-                mutable.update { it.copy(reportNote = "Сообщение не отправилось") }
+                mutable.update { it.copy(reportNote = container.app.getString(R.string.face_support_failed)) }
             }
         }
     }

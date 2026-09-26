@@ -18,7 +18,7 @@
       <Setter Property="BorderThickness" Value="3,1,1,1" />
     </Style>
   </UserControl.Styles>
-  <Grid Margin="32,26" RowDefinitions="Auto,*" MaxWidth="880" HorizontalAlignment="Stretch">
+  <Grid Margin="32,26" RowDefinitions="Auto,*" MaxWidth="1160" HorizontalAlignment="Stretch">
     <StackPanel Spacing="4">
       <TextBlock Classes="display" Text="{Binding Title}" />
       <TextBlock Classes="muted" Text="{Binding Status}" TextWrapping="Wrap"
@@ -68,10 +68,11 @@
     </ScrollViewer>
 
     <!-- Roster and the open chat share one row: the list scrolls inside its card, the composer stays put. -->
-    <Grid Grid.Row="1" Margin="0,18,0,0" ColumnDefinitions="300,16,*" IsVisible="{Binding HasHome}">
-      <Border Classes="card" Padding="8,10" ClipToBounds="True">
+    <Grid Grid.Row="1" Margin="0,18,0,0" Name="SpaceColumns" ColumnDefinitions="280,12,*" IsVisible="{Binding HasHome}">
+      <Border Name="SpaceList" Classes="card" Padding="8,10" ClipToBounds="True">
         <DockPanel LastChildFill="True">
           <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="6,2,6,10">
+            <Button Content="Восстановить выбранную тему" Command="{Binding RestoreChannelCommand}" IsVisible="{Binding CanRestoreTopic}" />
             <Button Classes="ghost" Content="{loc:T groupList}" Command="{Binding BackCommand}"
                     HorizontalAlignment="Left" Padding="4,2" />
             <TextBlock Classes="subject" Text="{Binding HomeTitle}" TextWrapping="Wrap" />
@@ -82,7 +83,8 @@
           <ScrollViewer HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="12">
               <StackPanel Spacing="6">
-                <TextBlock Classes="micro" Text="Каналы группы" Margin="8,0,8,4" />
+                <g:GroupSpaceToolsView />
+                <TextBlock Classes="micro" Text="Темы группы" Margin="8,0,8,4" />
                 <TextBox Text="{Binding ChannelSearch, Mode=TwoWay}" PlaceholderText="Поиск по названию и описанию"
                          AutomationProperties.AutomationId="Group.ChannelSearch" />
                 <ComboBox SelectedIndex="{Binding ChannelKindIndex, Mode=TwoWay}" AutomationProperties.AutomationId="Group.ChannelKind">
@@ -97,15 +99,16 @@
                         IsVisible="{Binding HasChannelFilters}" HorizontalAlignment="Left" />
                 <TextBlock Classes="muted" Text="Разделы по запросу не найдены" IsVisible="{Binding NoChannelSearchResults}" />
                 <Button Classes="ghost" Content="{Binding ManagementCaption}" Command="{Binding ToggleChannelManagementCommand}"
-                        IsVisible="{Binding CanManageChannels}" HorizontalAlignment="Left"
+                        IsVisible="{Binding CanOpenChannelManagement}" HorizontalAlignment="Left"
                         AutomationProperties.AutomationId="Group.ChannelManage" />
-                <ItemsControl ItemsSource="{Binding FilteredChannels}" AutomationProperties.AutomationId="Group.Channels">
+<ItemsControl ItemsSource="{Binding ChannelCategories}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceCategoryBucket"><StackPanel Spacing="4"><Button Classes="ghost" Content="{Binding Title}" Command="{Binding ToggleCommand}" HorizontalContentAlignment="Left" HorizontalAlignment="Stretch" />                <ItemsControl ItemsSource="{Binding Topics}" IsVisible="{Binding Expanded}" AutomationProperties.AutomationId="Group.Channels">
                   <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="g:GroupChannelRow">
                       <Button Classes="ghost" Classes.on="{Binding IsSelected}" Padding="8,6" CornerRadius="8" HorizontalAlignment="Stretch"
                               HorizontalContentAlignment="Stretch" Command="{Binding OpenCommand}">
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                           <Grid Width="36" Height="36" VerticalAlignment="Center">
                             <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8">
                               <Grid>
@@ -133,8 +136,8 @@
                       </Button>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <StackPanel Spacing="5" Margin="8,4,8,0" IsVisible="{Binding ShowChannelManagement}">
+                </ItemsControl></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                <StackPanel Spacing="5" Margin="8,4,8,0" IsVisible="{Binding ShowNewChannelManagement}">
                   <TextBlock Classes="micro" Text="Новый канал" />
                   <TextBox Text="{Binding ChannelTitle}" PlaceholderText="Название" MaxLength="40" />
                   <TextBox Text="{Binding ChannelIcon}" PlaceholderText="Значок" MaxLength="8" />
@@ -153,15 +156,19 @@
                       <DataTemplate x:DataType="g:GroupChannelPolicyChoice"><TextBlock Text="{Binding Label}" /></DataTemplate>
                     </ComboBox.ItemTemplate>
                   </ComboBox>
-                  <StackPanel Orientation="Horizontal" Spacing="6">
-                    <Button Classes="ghost" Content="Чат" Command="{Binding CreateChannelCommand}" CommandParameter="chat"
-                            AutomationProperties.AutomationId="Group.CreateChatChannel" />
-                    <Button Classes="ghost" Content="Голосования" Command="{Binding CreateChannelCommand}" CommandParameter="ballots"
-                            AutomationProperties.AutomationId="Group.CreateBallotChannel" />
-                  </StackPanel>
+                  <ComboBox ItemsSource="{Binding TopicTemplates}" SelectedItem="{Binding SelectedTemplate}" AutomationProperties.Name="Тип новой темы" />
+                  <ComboBox ItemsSource="{Binding SubjectChoices}" SelectedItem="{Binding ChannelSubject}" AutomationProperties.Name="Предмет темы" />
+                  <NumericUpDown Value="{Binding ChannelPosition}" Minimum="0" Maximum="100" AutomationProperties.Name="Порядок темы" />
+                  <ComboBox ItemsSource="{Binding Categories}" SelectedItem="{Binding NewChannelCategory}" AutomationProperties.Name="Категория новой темы"><ComboBox.ItemTemplate><DataTemplate x:CompileBindings="False"><TextBlock Text="{Binding Title}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
+                  <TextBlock Text="Просмотр новой темы" /><ComboBox ItemsSource="{Binding CreationReadChoices}" SelectedItem="{Binding CreationReadPreset}" IsEnabled="{Binding CanSetInitialAccess}" />
+                  <TextBlock Text="Публикация в новой теме" /><ComboBox ItemsSource="{Binding CreationPostChoices}" SelectedItem="{Binding CreationPostPreset}" IsEnabled="{Binding CanSetInitialAccess}" />
+                  <ItemsControl ItemsSource="{Binding CreationRoles}" IsEnabled="{Binding CanSetInitialAccess}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SimpleAccessRole"><StackPanel><TextBlock Text="{Binding Name}" TextWrapping="Wrap" /><CheckBox Content="Разрешить читать" IsChecked="{Binding Read}" /><CheckBox Content="Разрешить публиковать" IsChecked="{Binding Post}" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                  <TextBlock Classes="muted caption" Text="{Binding InitialAccessHint}" TextWrapping="Wrap" />
+                  <Button Content="Новый черновик темы" Command="{Binding NewTopicDraftCommand}" />
+                  <Button Classes="primary" Content="Создать тему" Command="{Binding CreateChannelCommand}" IsEnabled="{Binding CanCreateTopic}" />
                 </StackPanel>
                 <StackPanel Spacing="5" Margin="8,4,8,0" IsVisible="{Binding ShowSelectedChannelManagement}">
-                  <TextBlock Classes="micro" Text="Изменить канал" />
+                  <TextBlock Classes="micro" Text="Изменить тему" /><NumericUpDown Value="{Binding RenamePosition}" Minimum="0" Maximum="100" AutomationProperties.Name="Порядок темы" /><ComboBox ItemsSource="{Binding SubjectChoices}" SelectedItem="{Binding RenameSubject}" AutomationProperties.Name="Предмет темы" />
                   <TextBox Text="{Binding RenameTitle}" PlaceholderText="Название" MaxLength="40" />
                   <TextBox Text="{Binding RenameIcon}" PlaceholderText="Значок" MaxLength="8" />
                   <TextBox Text="{Binding RenameDescription}" PlaceholderText="Описание" MaxLength="240"
@@ -182,7 +189,7 @@
                   <StackPanel Orientation="Horizontal" Spacing="6">
                     <Button Classes="ghost" Content="Сохранить" Command="{Binding RenameChannelCommand}"
                             IsEnabled="{Binding CanSaveChannelEdit}" />
-                    <Button Classes="ghost" Content="Удалить" Command="{Binding AskDeleteChannelCommand}" />
+                    <Button Classes="ghost" Content="В архив" Command="{Binding ArchiveChannelCommand}" />
                   </StackPanel>
                   <StackPanel Spacing="5" IsVisible="{Binding ChannelEditConflict}">
                     <TextBlock Classes="muted caption" Text="Канал изменился на другом устройстве. Загрузите свежие настройки перед сохранением." TextWrapping="Wrap" />
@@ -317,11 +324,11 @@
         </DockPanel>
       </Border>
 
-      <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
+      <Border Name="SpaceDetail" Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
         <DockPanel LastChildFill="True">
           <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,0,0,1" Padding="14,12">
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-              <TextBlock Classes="subject" Text="{Binding ChatTitle}" VerticalAlignment="Center" TextWrapping="Wrap" />
+              <StackPanel><Button Name="TopicListButton" Content="К темам группы" Click="ShowTopicList" IsVisible="False" HorizontalAlignment="Left" /><TextBlock Classes="subject" Text="{Binding ChatTitle}" VerticalAlignment="Center" TextWrapping="Wrap" /><Button Classes="ghost" Content="{Binding PinCaption}" Command="{Binding ToggleTopicPinCommand}" IsVisible="{Binding CanPinSelected}" HorizontalAlignment="Left" /></StackPanel>
               <Button Grid.Column="1" Classes="ghost" Content="{loc:T groupBack}" Command="{Binding BackToGroupCommand}"
                       Padding="8,4" VerticalAlignment="Center" IsVisible="{Binding IsDirect}" />
               <Button Grid.Column="2" Classes="ghost" Content="К новым" Click="JumpToLatest"
@@ -329,6 +336,9 @@
                       AutomationProperties.AutomationId="Group.JumpLatest" />
             </Grid>
           </Border>
+          <Border DockPanel.Dock="Top" Padding="12" IsVisible="{Binding ShowSubject}"><StackPanel Spacing="6"><TextBlock Text="{Binding SubjectLesson}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding SubjectHomeworks}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><WrapPanel ItemSpacing="8"><Button Content="Расписание предмета" Command="{Binding OpenSubjectScheduleCommand}" /><Button Content="Домашка предмета" Command="{Binding OpenSubjectHomeworkCommand}" /></WrapPanel><StackPanel Spacing="8" IsVisible="{Binding ShowSubjectSchedule}"><Button Content="Назад к обсуждению" Command="{Binding CloseSubjectPanelCommand}" /><CalendarDatePicker SelectedDate="{Binding SubjectScheduleDate}" AutomationProperties.Name="Дата расписания предмета группы" /><TextBlock Text="{Binding SubjectScheduleSummary}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding SubjectScheduleRows}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel>
+              <StackPanel Spacing="8" IsVisible="{Binding ShowSubjectHomework}"><Button Content="Назад к обсуждению" Command="{Binding CloseSubjectPanelCommand}" /><TextBlock Text="Домашка предмета этой группы" FontWeight="Medium" /><ItemsControl ItemsSource="{Binding SubjectSharedTasks}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceHomeworkRow"><Border Classes="card"><StackPanel Spacing="4"><TextBlock Text="{Binding Title}" TextWrapping="Wrap" /><TextBlock Text="{Binding Body}" TextWrapping="Wrap" /><TextBlock Text="{Binding Deadline}" /><Button Content="{Binding CompletionLabel}" Command="{Binding ToggleCommand}" IsEnabled="{Binding Writable}" /></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel>
+</StackPanel></Border>
           <Border DockPanel.Dock="Top" Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Line}"
                   BorderThickness="1" CornerRadius="12" Padding="12,8" Margin="12,8,12,0"
                   IsVisible="{Binding ShowGroupContext}" AutomationProperties.AutomationId="Group.Context">
@@ -398,11 +408,12 @@
           </Border>
           <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10"
                   IsVisible="{Binding IsRestrictedChat}">
-            <TextBlock Classes="muted caption" Text="В этом канале могут писать только управляющие." TextWrapping="Wrap" />
+            <TextBlock Classes="muted caption" Text="{Binding RestrictedCaption}" TextWrapping="Wrap" />
           </Border>
           <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10"
                   IsVisible="{Binding ShowComposer}">
             <StackPanel Spacing="8">
+            <StackPanel Spacing="4" IsVisible="{Binding HasDiscussionContext}"><TextBlock Text="{Binding DiscussionContext}" TextWrapping="Wrap" Classes="muted caption" /><Button Content="Убрать контекст" Command="{Binding ClearDiscussionContextCommand}" HorizontalAlignment="Left" /></StackPanel>
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding HasHoldAction}">
               <TextBlock Classes="muted caption" Text="{Binding HoldCaption}" VerticalAlignment="Center" />
               <Button Grid.Column="1" Classes="ghost" Content="Отменить" Command="{Binding CancelHoldActionCommand}"
@@ -410,11 +421,12 @@
             </Grid>
             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsRecording}">
               <TextBlock Text="{Binding RecordingCaption}" VerticalAlignment="Center" />
-              <Button Classes="primary" Content="Отправить запись" Command="{Binding FinishRecordingCommand}" />
+              <Button Classes="primary" Content="Завершить запись" Command="{Binding FinishRecordingCommand}" />
               <Button Classes="ghost" Content="Отменить" Command="{Binding CancelRecordingCommand}" />
             </StackPanel>
+            <StackPanel Spacing="6" IsVisible="{Binding HasRecordedDraft}"><TextBlock Text="{Binding RecordedDraftCaption}" TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Content="Просмотр или прослушивание" Command="{Binding PreviewRecordingCommand}" /><Button Classes="primary" Content="Отправить запись" Command="{Binding SendRecordingCommand}" IsEnabled="{Binding !IsBusy}" /><Button Content="Отменить запись" Command="{Binding DiscardRecordingCommand}" /></WrapPanel></StackPanel>
             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-              <Button Classes="ghost" Content="📎" ToolTip.Tip="Прикрепить" MinWidth="48" MinHeight="48"
+              <Button Classes="ghost" Content="📎" AutomationProperties.Name="Прикрепить фото, файл или запись" ToolTip.Tip="Прикрепить" MinWidth="48" MinHeight="48"
                       IsEnabled="{Binding CanAttachMedia}" AutomationProperties.AutomationId="Group.Attach">
                 <Button.Flyout>
                   <MenuFlyout Placement="Top">
@@ -423,7 +435,7 @@
                     <MenuItem Header="Документ" Command="{Binding AttachCommand}" CommandParameter="file" />
                     <Separator />
                     <MenuItem Header="Записать голосовое" Command="{Binding StartRecordingCommand}" CommandParameter="voice" />
-                    <MenuItem Header="Записать кружок" Command="{Binding StartRecordingCommand}" CommandParameter="circle" />
+                    <MenuItem Header="Записать кружок" Command="{Binding StartRecordingCommand}" CommandParameter="circle" /><Separator /><MenuItem Header="Опрос" Command="{Binding OpenTopicPollsCommand}" /><MenuItem Header="Карточка пары" Command="{Binding AttachLessonCardCommand}" />
                   </MenuFlyout>
                 </Button.Flyout>
               </Button>
@@ -434,6 +446,7 @@
             </Grid>
             </StackPanel>
           </Border>
+          <g:GroupSpecializedView IsVisible="{Binding ShowSpecialized}" />
           <ScrollViewer x:Name="MessagesScroll" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding ShowMessages}">
             <StackPanel Margin="12,10,12,8">
               <Button Classes="ghost" Content="{Binding OlderCaption}" Command="{Binding LoadOlderCommand}"

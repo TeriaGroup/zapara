@@ -62,6 +62,7 @@ sealed interface HomeworkEvent {
     data class EditorShare(val on: Boolean) : HomeworkEvent
     data object Inc : HomeworkEvent
     data object Dec : HomeworkEvent
+    data object Recalculate : HomeworkEvent
     data object Save : HomeworkEvent
     data object Cancel : HomeworkEvent
     data class AskDelete(val id: Long) : HomeworkEvent
@@ -84,9 +85,15 @@ data class HomeworkEditorState(
     val files: List<HomeworkStoredFile> = emptyList(),
     val draft: String = "",
     val removed: Set<String> = emptySet(),
-    val share: Boolean = false
+    val share: Boolean = false,
+    val anchorDate: LocalDate? = null,
+    val scheduleGroupId: String? = null,
+    val sourceChanged: Boolean = false
 ) {
-    val canSave: Boolean get() = text.trim().isNotEmpty()
+    fun creationAnchor(clockDate: LocalDate): LocalDate = anchorDate ?: clockDate
+    fun matchesSaveContext(groupId: String?, currentDue: LocalDate?): Boolean =
+        (scheduleGroupId == null || scheduleGroupId == groupId) && dueFor(n,text) == currentDue
+    val canSave: Boolean get() = text.trim().isNotEmpty() && !sourceChanged
     fun hasChanges(existing: Homework): Boolean = text.trim() != existing.text || n != existing.n
     fun withText(value: String) = copy(text = value)
     fun inc() = copy(n = (n + 1).coerceAtMost(10))

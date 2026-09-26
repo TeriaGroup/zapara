@@ -1,12 +1,15 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "./api";
+import { usePrivateHomework } from "./private-sync";
 import { resolveStoredGroup } from "./groupChoice";
-import { openingDate } from "./parity";
+
 import type { FriendItem, GroupsPayload, HomeworkItem, Lesson, Session, TimetablePayload } from "./types";
 
 type State = {
-  theme: "light" | "dark";
-  setTheme: (theme: "light" | "dark") => void;
+  theme: "light" | "dark" | "system";
+  setTheme: (theme: "light" | "dark" | "system") => void;
+  animations: boolean;
+  setAnimations: (value: boolean) => void;
   invert: boolean;
   setInvert: (value: boolean) => void;
   groupId: string;
@@ -21,6 +24,7 @@ type State = {
   refresh: () => void;
   session: Session | null;
   refreshSession: () => Promise<void>;
+  privateHomework: ReturnType<typeof usePrivateHomework>;
   homework: HomeworkItem[];
   saveHomework: (item: HomeworkItem) => void;
   friends: FriendItem[];
@@ -38,7 +42,7 @@ type State = {
 const Ctx = createContext<State | null>(null);
 const groupKey = "zapara.group";
 const invertKey = "zapara.invert";
-const homeworkKey = "zapara.homework";
+
 const friendsKey = "zapara.friends";
 const intersectionStrictnessKey = "zapara.intersectionStrictness";
 const showAbsentFriendsKey = "zapara.showAbsentFriends";
@@ -49,7 +53,8 @@ function readList<T>(key: string): T[] {
 }
 
 export function Provider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<"light" | "dark">((document.documentElement.dataset.theme as "light" | "dark") || "dark");
+  const [theme, setThemeState] = useState<"light" | "dark" | "system">(() => { const saved = localStorage.getItem("zapara.theme"); return saved === "light" || saved === "dark" ? saved : "system"; });
+  const [animations, setAnimations] = useState(localStorage.getItem("zapara.animations") !== "0");
   const [invert, setInvertState] = useState(localStorage.getItem(invertKey) === "1");
   const [groupId, setGroupState] = useState(() => localStorage.getItem(groupKey) ?? "");
   const groupReady = useRef(localStorage.getItem(groupKey) !== null);
@@ -63,21 +68,28 @@ export function Provider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [tick, setTick] = useState(0);
   const [session, setSession] = useState<Session | null>(null);
-  const [homework, setHomework] = useState<HomeworkItem[]>(() => readList(homeworkKey));
+  const privateHomework = usePrivateHomework(session?.authenticated ? session.user?.userId ?? null : null);
+  const homework = privateHomework.items;
   const [friends, setFriends] = useState<FriendItem[]>(() => readList(friendsKey));
   const [intersectionStrictness, setIntersectionStrictness] = useState(() => {
     const stored = Number(localStorage.getItem(intersectionStrictnessKey));
     return [25, 50, 75, 100].includes(stored) ? stored : 25;
   });
   const [showAbsentFriends, setShowAbsentFriends] = useState(localStorage.getItem(showAbsentFriendsKey) === "1");
-  const [date, setDateState] = useState(() => openingDate(new Date(), []));
-  const dateMoved = useRef(false);
-  const setDate = (value: Date) => { dateMoved.current = true; setDateState(value); };
+  const [date, setDateState] = useState(() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), now.getDate()); });
+  const setDate = (value: Date) => setDateState(new Date(value.getFullYear(), value.getMonth(), value.getDate()));
   const [subgroups, setSubgroups] = useState<Record<string, Record<string, string>>>(() => {
     try { return JSON.parse(localStorage.getItem(subgroupKey) || "{}"); } catch { return {}; }
   });
 
-  useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("zapara.theme", theme); }, [theme]);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => { document.documentElement.dataset.theme = theme === "system" ? media.matches ? "dark" : "light" : theme; };
+    update(); localStorage.setItem("zapara.theme", theme);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [theme]);
+  useEffect(() => { localStorage.setItem("zapara.animations", animations ? "1" : "0"); document.documentElement.dataset.motion = animations ? "on" : "off"; }, [animations]);
   useEffect(() => { localStorage.setItem(invertKey, invert ? "1" : "0"); }, [invert]);
   useEffect(() => { if (groupReady.current) localStorage.setItem(groupKey, groupId); }, [groupId]);
   const chooseGroup = (id: string) => {
@@ -88,8 +100,9 @@ export function Provider({ children }: { children: ReactNode }) {
     setTimetableStatus({ groupId: id, loading: !!id, failed: false });
     setNotice(catalog?.meta.stale ? "Расписание может быть устаревшим. Показана сохранённая копия." : "");
     setGroupState(id);
+    if (session?.authenticated) privateHomework.saveSettings({ selectedGroupId: id || null });
   };
-  useEffect(() => { localStorage.setItem(homeworkKey, JSON.stringify(homework)); }, [homework]);
+
   useEffect(() => { localStorage.setItem(friendsKey, JSON.stringify(friends)); }, [friends]);
   useEffect(() => { localStorage.setItem(intersectionStrictnessKey, String(intersectionStrictness)); }, [intersectionStrictness]);
   useEffect(() => { localStorage.setItem(showAbsentFriendsKey, showAbsentFriends ? "1" : "0"); }, [showAbsentFriends]);
@@ -148,27 +161,25 @@ export function Provider({ children }: { children: ReactNode }) {
   }, [groupId, tick]);
 
   useEffect(() => { void api.session().then(setSession).catch(() => setSession(null)); }, []);
+
   useEffect(() => {
-    if (dateMoved.current) return;
-    const current = bundle?.groupId === groupId ? bundle.payload : null;
-    const period = current?.period;
-    setDateState(openingDate(new Date(), current?.lessons || [], subgroups[groupId] || {}, period ? { start: period.start, weekCount: period.weekCount, invert } : undefined));
-  }, [bundle, subgroups, groupId, invert]);
+    const settings = privateHomework.settings;
+    if (!session?.authenticated || !settings) return;
+    if ((settings.selectedGroupId || "") !== groupId) setGroupState(settings.selectedGroupId || "");
+    setInvertState(settings.parityInvert); setIntersectionStrictness(settings.strictness); setShowAbsentFriends(settings.alwaysShow);
+  }, [privateHomework.settings, session?.authenticated]);
 
   const value = useMemo<State>(() => ({
-    theme, setTheme: setThemeState, invert, setInvert: setInvertState,
+    theme, setTheme: setThemeState, animations, setAnimations, invert, setInvert: value => { setInvertState(value); if (session?.authenticated) privateHomework.saveSettings({ parityInvert: value }); },
     groupId, setGroupId: chooseGroup, catalog, lessons: bundle?.groupId === groupId ? bundle.payload.lessons : [],
     timetableAvailable: bundle?.groupId === groupId,
     timetableLoading: !!groupId && (timetableStatus.groupId !== groupId || timetableStatus.loading),
     timetableFailed: timetableStatus.groupId === groupId && timetableStatus.failed,
     notice, loading, refresh: () => setTick(n => n + 1),
     session, refreshSession: async () => setSession(await api.session()),
-    homework, saveHomework: item => setHomework(list => {
-      const next = list.some(row => row.id === item.id) ? list.map(row => row.id === item.id ? item : row) : [item, ...list];
-      return next;
-    }),
+    privateHomework, homework, saveHomework: privateHomework.save,
     friends, saveFriends: setFriends,
-    intersectionStrictness, setIntersectionStrictness, showAbsentFriends, setShowAbsentFriends,
+    intersectionStrictness, setIntersectionStrictness: value => { setIntersectionStrictness(value); if (session?.authenticated) privateHomework.saveSettings({ strictness: value }); }, showAbsentFriends, setShowAbsentFriends: value => { setShowAbsentFriends(value); if (session?.authenticated) privateHomework.saveSettings({ alwaysShow: value }); },
     date, setDate,
     subgroups,
     pickSubgroup: (streamId, optionId) => setSubgroups(current => {
@@ -177,7 +188,7 @@ export function Provider({ children }: { children: ReactNode }) {
       else group[streamId] = optionId;
       return { ...current, [groupId]: group };
     }),
-  }), [theme, invert, groupId, catalog, bundle, timetableStatus, notice, loading, session, homework,
+  }), [theme, animations, invert, groupId, catalog, bundle, timetableStatus, notice, loading, session, privateHomework, homework,
     friends, intersectionStrictness, showAbsentFriends, date, subgroups]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

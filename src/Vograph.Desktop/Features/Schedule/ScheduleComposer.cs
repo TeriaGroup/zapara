@@ -2,6 +2,7 @@ using Vograph.Core.Models;
 using Vograph.Core.Services;
 using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
+using Zapara.Client.Domain;
 
 namespace Vograph.Desktop.Features.Schedule;
 
@@ -10,7 +11,15 @@ public sealed class ScheduleComposer
 {
     private readonly AppServices _app;
 
-    public ScheduleComposer(AppServices app) => _app = app;
+    private readonly string? groupOverride;
+    public ScheduleComposer(AppServices app,string? groupOverride=null){_app=app;this.groupOverride=groupOverride;}
+    private string? GroupId=>groupOverride??_app.Settings.MyGroupId;
+    private bool HasCopy(string groupId)
+    {
+        if(!_app.Api.Configured)return _app.Db.GetGroup(groupId) is not null;
+        var metadata=new TimetableApiCache(_app.Db).Read(groupId);
+        return metadata?.Source=="api" || metadata?.FetchedAt is not null || _app.Db.GetGroup(groupId)?.LastFetchedAt is not null || _app.Db.GetAllLessonsForGroup(groupId).Count>0;
+    }
 
     public int InitialOffset(DateTime now)
     {
@@ -19,18 +28,36 @@ public sealed class ScheduleComposer
         return SmartStart.InitialOffset(_app.Schedule.GetSchedule(now.Date, settings.MyGroupId), now.TimeOfDay, now.DayOfWeek);
     }
 
-    public DayModel Compose(int offset, DateTime now)
+    public DayModel Compose(int offset, DateTime now, int dateCount = 7)
+    {
+        var day = ComposeDay(offset, now);
+        var dates = DayPlanning.VisibleDates(DateOnly.FromDateTime(now), DateOnly.FromDateTime(day.Date), dateCount)
+            .Select(date => new PlannerDate(date.ToDateTime(TimeOnly.MinValue), string.IsNullOrEmpty(GroupId) || !HasCopy(GroupId!) || DateTime.TryParse(_app.Settings.PeriodStart,out var start) && date.ToDateTime(TimeOnly.MinValue)<start.Date
+                ? null : _app.Schedule.GetSchedule(date.ToDateTime(TimeOnly.MinValue), GroupId!).Count)).ToArray();
+        var intervals = day.Rows.Select(row => new DayInterval(ParseTime(row.TimeStart), ParseTime(row.TimeEnd))).ToArray();
+        var breaks = DayPlanning.FreeTime(intervals);
+        var summary = day.IsUnavailable || day.Rows.Count == 0 ? "" : $"{_app.Loc.Plural(day.Rows.Count, "lessons1", "lessons2", "lessons5")} · {intervals.Min(row => row.Start):hh\\:mm}–{intervals.Max(row => row.End):hh\\:mm}";
+        var copy = new TimetableApiCache(_app.Db).Read(GroupId??"")?.FetchedAt ?? _app.Settings.LastFetchedAt;
+        var source = DateTimeOffset.TryParse(copy,out var stamp) ? $"Копия {stamp.ToLocalTime():dd.MM.yyyy HH:mm}" : "Локальное расписание";
+        if(!_app.AllowNetwork || _app.Api.LastFailure==Vograph.Core.Models.TimetableApiFailure.Transport)source="Нет сети · "+source;
+        else if(_app.Api.LastError is not null)source="Обновление не удалось · "+source;
+        return day with { Dates = dates, Breaks = breaks, Summary = summary, SourceSummary=source };
+    }
+
+    private DayModel ComposeDay(int offset, DateTime now)
     {
         var loc = _app.Loc;
         var date = now.Date.AddDays(offset);
         var settings = _app.Settings;
         var title = DayTitles.Title(offset, date, loc);
 
-        if (string.IsNullOrEmpty(settings.MyGroupId))
+        if (string.IsNullOrEmpty(GroupId))
             return new DayModel(date, offset, title, "", Array.Empty<LessonRow>(), loc.T("noGroup"), loc.T("noGroupHint"));
 
-        var groupId = settings.MyGroupId;
-        if (_app.Api.Configured && !_app.Api.HasSelectedCache)
+        var groupId = GroupId!;
+        if(DateTime.TryParse(settings.PeriodStart,out var knownStart) && date.Date<knownStart.Date)
+            return new DayModel(date,offset,title,$"{date:dddd, dd.MM.yyyy}",[],"Дата вне известного учебного периода","Выберите дату начиная с "+knownStart.ToString("dd.MM.yyyy"),IsUnavailable:true);
+        if (!HasCopy(groupId))
             return new DayModel(date, offset, title, "", Array.Empty<LessonRow>(),
                 loc.T("bootstrapError"), loc.T("bootstrapHint"), IsUnavailable: true);
 
@@ -42,31 +69,31 @@ public sealed class ScheduleComposer
         var choices = _app.Db.GetSubgroupChoices(groupId);
         var subgroups = SubgroupRules.Build(allLessons);
         var lessons = _app.Schedule.GetSchedule(date, groupId).OrderBy(l => ParseTime(l.TimeStart)).ToList();
-        var subtitle = DayTitles.Subtitle(date, isOdd, weekNumber, lessons.Count, loc);
+        var subtitle = DayTitles.Subtitle(date, isOdd, weekNumber, lessons.Count, loc) + (date.Year != now.Year ? $" · {date.Year} год" : "");
 
         if (lessons.Count == 0)
         {
             var isSunday = date.DayOfWeek == DayOfWeek.Sunday;
             string? hint = null;
-            if (!isSunday)
+            DateTime? nextStudyDate = null;
             {
                 var (next, nextDate) = _app.Maps.GetNextLesson(groupId, date.AddDays(1));
                 if (next is not null)
-                    hint = loc.T("nextLessonHint", loc.I18n.FormatDayFull(nextDate).ToLowerInvariant(), next.TimeStart);
+                { nextStudyDate = nextDate; hint = loc.T("nextLessonHint", loc.I18n.FormatDayFull(nextDate).ToLowerInvariant(), next.TimeStart); }
             }
-            return new DayModel(date, offset, title, subtitle, Array.Empty<LessonRow>(), loc.T(isSunday ? "noLessonsSunday" : "noLessonsDay"), hint);
+            return new DayModel(date, offset, title, subtitle, Array.Empty<LessonRow>(), loc.T(isSunday ? "noLessonsSunday" : "noLessonsDay"), hint, NextStudyDate: nextStudyDate);
         }
 
         var friends = _app.Db.GetFriends().Where(f => f.Enabled).Take(5).ToList();
         var isToday = offset == 0;
-        var nextAssigned = false;
+        var priority = DayPlanning.PriorityIndex(lessons.Select(x=>new DayInterval(ParseTime(x.TimeStart),ParseTime(x.TimeEnd))).ToArray(),DateOnly.FromDateTime(date),DateOnly.FromDateTime(now),now.TimeOfDay);
+        var lessonIndex = 0;
         var rows = new List<LessonRow>(lessons.Count);
 
         foreach (var l in lessons)
         {
             var isPast = isToday && ParseTime(l.TimeEnd) <= now.TimeOfDay;
-            var isNext = isToday && !isPast && !nextAssigned;
-            if (isNext) nextAssigned = true;
+            var isNext = lessonIndex++ == priority;
 
             // Core keys overrides/homework by the FULL Discipline ("лек ВЫСШ. МАТЕМАТ"); the type token is stripped for display only.
             var shownName = LessonText.StripType(_app.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw);
@@ -98,7 +125,8 @@ public sealed class ScheduleComposer
                 Friends: FriendMarks.Compute(_app.Intersections, l, date, friends, settings, loc),
                 Homework: homework,
                 Map: map,
-                Subgroup: ToSubgroup(SubgroupRules.MarkOf(l, lessons, subgroups, choices))));
+                Subgroup: ToSubgroup(SubgroupRules.MarkOf(l, lessons, subgroups, choices)),
+                HasConflict: lessons.Any(other => !ReferenceEquals(l,other) && ParseTime(l.TimeStart)<ParseTime(other.TimeEnd) && ParseTime(l.TimeEnd)>ParseTime(other.TimeStart))));
         }
         return new DayModel(date, offset, title, subtitle, rows, null, null);
     }

@@ -5,7 +5,7 @@ import { App } from "./App";
 import "./styles.css";
 
 if ("serviceWorker" in navigator) {
-  void navigator.serviceWorker.getRegistrations().then(list => list.forEach(worker => void worker.unregister()));
+  void navigator.serviceWorker.register("/app/react-worker.js", { scope: "/app/" }).catch(() => undefined);
 }
 
 const saved = localStorage.getItem("zapara.theme");

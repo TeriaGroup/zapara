@@ -1,8 +1,10 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { normalizeHtmlLf } from "./src/html-normalization.ts";
 
 const webRoot = path.dirname(fileURLToPath(import.meta.url));
 const sharedRoot = path.resolve(webRoot, "../src/Zapara.Web/wwwroot");
@@ -30,7 +32,7 @@ function serveSharedFiles() {
 }
 
 export default defineConfig({
-  plugins: [react(), serveSharedFiles()],
+  plugins: [react(), serveSharedFiles(), {name:"public-html-lf", transformIndexHtml:{order:"post",handler:normalizeHtmlLf}}, { name: "react-offline-worker", generateBundle(_options, bundle) { const source=fs.readFileSync(path.join(webRoot, "react-worker.js"), "utf8"); const buildId=createHash("sha256").update(source + Object.keys(bundle).sort().join("|")).digest("hex").slice(0,20); this.emitFile({ type: "asset", fileName: "react-worker.js", source: source.replace("__ZAPARA_REACT_BUILD__",buildId) }); } }],
   base: "/app/",
   publicDir: false,
   build: {

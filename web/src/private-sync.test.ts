@@ -1,0 +1,7 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { homeworkSyncValue, projectHomework } from "./private-sync.ts";
+import type { HomeworkItem } from "./types";
+const item:HomeworkItem={id:"a",subject:"  Ёж\tТест  ",text:"ДЗ",done:true,created:"2026-09-26T12:00:00.000Z",targetNthOccurrence:3,legacyCreatedLocalDate:"2026-09-25",files:[{id:"blob",kind:"photo",name:"a.png",mime:"image/png"}]};
+test("private homework payload preserves occurrence and creation metadata without inventing a deadline",()=>{const value=homeworkSyncValue(item);assert.deepEqual(value,{subjectRaw:item.subject,subjectKey:"еж тест",text:"ДЗ",targetNthOccurrence:3,createdAtUtc:"2026-09-26T12:00:00Z",legacyCreatedLocalDate:"2026-09-25"});assert.equal("deadlineAt" in value,false);});
+test("server projection preserves local attachments, applies own completion and tombstones",()=>{const records=[{entityType:"homework",entityId:"a",revision:1,tombstone:false,changedAt:"2026-09-26T12:00:00Z",value:homeworkSyncValue(item)},{entityType:"completion",entityId:"a",revision:2,tombstone:false,changedAt:"2026-09-26T12:00:00Z",value:{done:false,doneAtUtc:null}}];const rows=projectHomework(records,[item]);assert.equal(rows[0].done,false);assert.equal(rows[0].targetNthOccurrence,3);assert.deepEqual(rows[0].files,item.files);assert.deepEqual(projectHomework([{...records[0],tombstone:true,value:null}],[]),[]);});

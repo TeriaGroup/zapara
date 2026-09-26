@@ -206,6 +206,78 @@ internal static class MessengerSchema
                 outcome text NULL CHECK (outcome IS NULL OR outcome IN ('accepted','rejected','skipped')),
                 applied_at timestamptz NULL
             );
+
+            CREATE TABLE IF NOT EXISTS __MSG__.group_categories (
+                category_id uuid PRIMARY KEY, community_id uuid NOT NULL REFERENCES __COM__.communities(community_id) ON DELETE CASCADE,
+                title text NOT NULL, position integer NOT NULL DEFAULT 0, revision bigint NOT NULL DEFAULT 1
+            );
+            ALTER TABLE __MSG__.group_topics ADD COLUMN IF NOT EXISTS template text NOT NULL DEFAULT 'chat';
+            UPDATE __MSG__.group_topics SET template='polls' WHERE kind='ballots' AND template='chat';
+            ALTER TABLE __MSG__.group_topics ADD COLUMN IF NOT EXISTS category_id uuid REFERENCES __MSG__.group_categories(category_id) ON DELETE SET NULL;
+            ALTER TABLE __MSG__.group_topics ADD COLUMN IF NOT EXISTS position integer NOT NULL DEFAULT 0;
+            ALTER TABLE __MSG__.group_topics ADD COLUMN IF NOT EXISTS subject text;
+            ALTER TABLE __MSG__.group_topics ADD COLUMN IF NOT EXISTS archived boolean NOT NULL DEFAULT false;
+            ALTER TABLE __MSG__.group_topics ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1;
+            ALTER TABLE __MSG__.group_topics ADD COLUMN IF NOT EXISTS access_snapshot bytea;
+            ALTER TABLE __MSG__.group_topics DROP CONSTRAINT IF EXISTS group_topics_kind_check;
+            ALTER TABLE __MSG__.group_topics ADD CONSTRAINT group_topics_kind_check CHECK(kind IN ('chat','ballots','forms','materials','homework','schedule'));
+            ALTER TABLE __MSG__.group_topics DROP CONSTRAINT IF EXISTS group_topics_icon_check;
+            ALTER TABLE __MSG__.group_topics ADD CONSTRAINT group_topics_icon_check CHECK(char_length(icon) BETWEEN 1 AND 32);
+            ALTER TABLE __MSG__.group_roles ADD COLUMN IF NOT EXISTS position integer NOT NULL DEFAULT 0;
+            ALTER TABLE __MSG__.group_roles ADD COLUMN IF NOT EXISTS icon text NOT NULL DEFAULT 'user';
+            ALTER TABLE __MSG__.group_roles ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1;
+            ALTER TABLE __MSG__.group_role_powers DROP CONSTRAINT IF EXISTS group_role_powers_power_check;
+            ALTER TABLE __MSG__.group_role_powers ADD CONSTRAINT group_role_powers_power_check CHECK(power IN ('read','post','media','vote','formsRespond','ballots','forms','close','pin','moderate','homework','mentionAll','joins','exclude','channels','access','roles','grants'));
+            CREATE TABLE IF NOT EXISTS __MSG__.group_topic_access (
+                topic_id uuid NOT NULL REFERENCES __MSG__.group_topics(topic_id) ON DELETE CASCADE,
+                role_id uuid REFERENCES __MSG__.group_roles(role_id) ON DELETE CASCADE,
+                power text NOT NULL, state text NOT NULL CHECK(state IN ('allow','deny'))
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS group_topic_access_key ON __MSG__.group_topic_access(topic_id,COALESCE(role_id,'00000000-0000-0000-0000-000000000000'::uuid),power);
+            CREATE TABLE IF NOT EXISTS __MSG__.group_management_audit (
+                event_id uuid PRIMARY KEY, community_id uuid NOT NULL REFERENCES __COM__.communities(community_id) ON DELETE CASCADE,
+                actor_id uuid REFERENCES __ACCOUNTS__.users(user_id) ON DELETE SET NULL,
+                action text NOT NULL, object_id uuid NOT NULL, created_at timestamptz NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS group_management_audit_page ON __MSG__.group_management_audit(community_id,created_at DESC);
+            CREATE TABLE IF NOT EXISTS __MSG__.group_homework_details (
+                homework_id uuid PRIMARY KEY REFERENCES __COM__.shared_homework(homework_id) ON DELETE CASCADE,
+                deadline_at timestamptz
+            );
+            ALTER TABLE __MSG__.group_homework_details ADD COLUMN IF NOT EXISTS topic_id uuid REFERENCES __MSG__.group_topics(topic_id);
+            CREATE TABLE IF NOT EXISTS __MSG__.group_forms (
+                form_id uuid PRIMARY KEY, community_id uuid NOT NULL REFERENCES __COM__.communities(community_id) ON DELETE CASCADE,
+                topic_id uuid NOT NULL REFERENCES __MSG__.group_topics(topic_id) ON DELETE CASCADE,
+                title text NOT NULL, description text NOT NULL, deadline_at timestamptz,
+                anonymous boolean NOT NULL, questions text NOT NULL,
+                created_by uuid NOT NULL REFERENCES __ACCOUNTS__.users(user_id) ON DELETE CASCADE, created_at timestamptz NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS __MSG__.group_form_answers (
+                form_id uuid NOT NULL REFERENCES __MSG__.group_forms(form_id) ON DELETE CASCADE,
+                user_id uuid NOT NULL REFERENCES __ACCOUNTS__.users(user_id) ON DELETE CASCADE,
+                answers text NOT NULL, updated_at timestamptz NOT NULL, PRIMARY KEY(form_id,user_id)
+            );
+            ALTER TABLE __MSG__.group_form_answers ADD COLUMN IF NOT EXISTS response_id uuid NOT NULL DEFAULT gen_random_uuid();
+            CREATE UNIQUE INDEX IF NOT EXISTS group_form_answers_cursor ON __MSG__.group_form_answers(form_id,response_id);
+            CREATE TABLE IF NOT EXISTS __MSG__.group_space_bootstrap (
+                singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
+                installed_at timestamptz NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS __MSG__.group_space_state (
+                community_id uuid PRIMARY KEY REFERENCES __COM__.communities(community_id) ON DELETE CASCADE,
+                starter_set boolean NOT NULL
+            );
+            WITH first_install AS (
+                INSERT INTO __MSG__.group_space_bootstrap(singleton,installed_at)
+                VALUES(true,clock_timestamp()) ON CONFLICT DO NOTHING RETURNING singleton
+            )
+            INSERT INTO __MSG__.group_space_state(community_id,starter_set)
+            SELECT c.community_id,false FROM __COM__.communities c CROSS JOIN first_install
+            WHERE EXISTS(SELECT 1 FROM __MSG__.group_topics t WHERE t.community_id=c.community_id)
+               OR EXISTS(SELECT 1 FROM __MSG__.conversations v WHERE v.community_id=c.community_id)
+               OR EXISTS(SELECT 1 FROM __MSG__.group_roles r WHERE r.community_id=c.community_id)
+               OR EXISTS(SELECT 1 FROM __MSG__.ballots b WHERE b.community_id=c.community_id)
+            ON CONFLICT DO NOTHING;
             """.Replace("__RAWMSG__", configuration.MessagesSchema, StringComparison.Ordinal)
             .Replace("__MSG__", configuration.QuotedMessages, StringComparison.Ordinal)
             .Replace("__COM__", configuration.QuotedSchema, StringComparison.Ordinal)

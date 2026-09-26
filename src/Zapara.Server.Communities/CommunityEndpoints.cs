@@ -8,7 +8,7 @@ using Zapara.Server.Accounts;
 
 namespace Zapara.Server.Communities;
 
-internal static class CommunityEndpoints
+internal static partial class CommunityEndpoints
 {
     internal static void Map(WebApplication app)
     {
@@ -18,6 +18,7 @@ internal static class CommunityEndpoints
     private static void MapVersion(WebApplication app, int version)
     {
         var group = app.MapGroup($"/api/v{version}/communities").RequireAuthorization("AccountUser").RequireRateLimiting("account-other");
+        MapGroupSpace(group);
         Route(group, "GET", "", async context =>
         {
             CommunityHttpInput.Query(context, "groupId");
@@ -172,8 +173,8 @@ internal static class CommunityEndpoints
         });
         Route(group, "GET", "/{communityId}/homework/copies", async context =>
         {
-            CommunityHttpInput.Query(context);
-            return CommunityHttpResult.Json(await Service(context).ListHomeworkCopiesAsync(Bearer(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), context.RequestAborted));
+            CommunityHttpInput.Query(context,"topicId");
+            return CommunityHttpResult.Json(await Service(context).ListHomeworkCopiesAsync(Bearer(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), context.RequestAborted,CommunityHttpInput.Cursor(context,"topicId")));
         });
         Route(group, "POST", "/{communityId}/homework/share", async context =>
         {
@@ -301,7 +302,7 @@ internal static class CommunityEndpoints
             var body = await CommunityHttpInput.Body<GroupTopicRequest>(context);
             return CommunityHttpResult.Json(await Service(context).RenameTopicAsync(Bearer(context),
                 CommunityHttpInput.Id(context.Request.RouteValues["communityId"]),
-                CommunityHttpInput.Id(context.Request.RouteValues["topicId"]), body, context.RequestAborted, typed));
+                CommunityHttpInput.Id(context.Request.RouteValues["topicId"]), body, context.RequestAborted, typed, modernMetadata: context.Request.Headers["X-Zapara-Group-Space"].ToString() == "1"));
         });
         Route(group, "POST", "/{communityId}/topics/{topicId}/delete", async context =>
         {

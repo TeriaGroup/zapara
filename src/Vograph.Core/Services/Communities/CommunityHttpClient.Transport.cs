@@ -33,6 +33,7 @@ public sealed partial class CommunityHttpClient
             ct.ThrowIfCancellationRequested();
             if (http.DefaultRequestHeaders.Any()) throw new CommunityClientException(CommunityClientFailure.InvalidRequest);
             request.Headers.Accept.Add(new("application/json"));
+            request.Headers.TryAddWithoutValidation("X-Zapara-Group-Space", "1");
             request.Headers.Authorization = new("Bearer", access);
             if (body is not null)
             {
@@ -43,7 +44,8 @@ public sealed partial class CommunityHttpClient
             }
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             var actual = (int)response.StatusCode;
-            received = await ReadAsync(response.Content, actual == status ? CommunityValidation.RequestBytes : 4096, ct).ConfigureAwait(false);
+            var modern = response.Headers.TryGetValues("X-Zapara-Group-Space", out var formats) && formats.SequenceEqual(["1"]);
+            received = await ReadAsync(response.Content, actual == status ? (modern ? CommunityValidation.ResponseBytes : CommunityValidation.RequestBytes) : 4096, ct).ConfigureAwait(false);
             if (actual != status) throw Error(response, received);
             if (response.Content.Headers.ContentType?.MediaType != "application/json")
                 throw new CommunityClientException(CommunityClientFailure.InvalidPayload);
@@ -71,12 +73,22 @@ public sealed partial class CommunityHttpClient
         if (content.Headers.ContentLength > limit) throw new CommunityClientException(CommunityClientFailure.BodyTooLarge);
         if (content.Headers.ContentEncoding.Count != 0) throw new CommunityClientException(CommunityClientFailure.InvalidPayload);
         using var stream = await content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        var buffer = new byte[limit + 1];
+        var initialSize = content.Headers.ContentLength is long length
+            ? (int)Math.Min(limit + 1L, Math.Max(1L, length + 1))
+            : Math.Min(limit + 1, 8192);
+        var buffer = new byte[initialSize];
         try
         {
             var count = 0;
             while (true)
             {
+                if (count == buffer.Length)
+                {
+                    var expanded = new byte[Math.Min(limit + 1, buffer.Length * 2)];
+                    buffer.AsSpan(0, count).CopyTo(expanded);
+                    CryptographicOperations.ZeroMemory(buffer);
+                    buffer = expanded;
+                }
                 var read = await stream.ReadAsync(buffer.AsMemory(count), ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
                 if (read == 0) break;
@@ -138,6 +150,7 @@ public sealed partial class CommunityHttpClient
     {
         var request = new HttpRequestMessage(HttpMethod.Post, new Uri(Scope.BaseUri, $"api/v{version}/communities" + path));
         request.Headers.Accept.Add(new("application/json"));
+        request.Headers.TryAddWithoutValidation("X-Zapara-Group-Space", "1");
         request.Headers.Authorization = new("Bearer", access);
         request.Headers.TryAddWithoutValidation("X-Zapara-Kind", kind);
         request.Headers.TryAddWithoutValidation("X-Zapara-Name", Uri.EscapeDataString(name));

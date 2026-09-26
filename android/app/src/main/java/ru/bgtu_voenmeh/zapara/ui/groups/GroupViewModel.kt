@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import ru.bgtu_voenmeh.zapara.AppContainer
+import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.data.Schedule
 import ru.bgtu_voenmeh.zapara.data.communities.ChatMessage
 import ru.bgtu_voenmeh.zapara.data.communities.ChatReaction
@@ -28,7 +29,7 @@ import ru.bgtu_voenmeh.zapara.data.communities.GroupHome
 import ru.bgtu_voenmeh.zapara.data.communities.GroupDesk
 import ru.bgtu_voenmeh.zapara.data.communities.GroupRole
 import ru.bgtu_voenmeh.zapara.data.communities.GroupTopic
-import ru.bgtu_voenmeh.zapara.data.communities.GroupTopicList
+import ru.bgtu_voenmeh.zapara.data.communities.*
 import java.time.ZoneId
 import java.time.Instant
 import java.time.LocalDateTime
@@ -43,12 +44,17 @@ internal class GroupRuntime(
     val openMedia: suspend (GroupMessageUi, ByteArray) -> Boolean = { _, _ -> false },
     val initialCommunityId: String? = null,
     val initialConversationId: String? = null,
+    val initialContext: String? = null,
     val mediaCacheDir: File? = null,
     val startInChannelList: Boolean = false,
-    val lessonContext: suspend (String?) -> GroupLessonHint? = { null }
+    val lessonContext: suspend (String?) -> GroupLessonHint? = { null },
+    val context: android.content.Context? = null,
+    val scheduleRows: suspend (String?, java.time.LocalDate) -> List<String> = { _, _ -> emptyList() },
+    val subjects: suspend (String?) -> List<String> = { emptyList() },
+    val subjectContext: suspend (String?, String, java.time.LocalDate) -> GroupSubjectContext = { _,_,_ -> GroupSubjectContext(null,emptyList()) }
 ) {
     companion object {
-        fun from(container: AppContainer, initialCommunityId: String? = null, initialConversationId: String? = null) = GroupRuntime(
+        fun from(container: AppContainer, initialCommunityId: String? = null, initialConversationId: String? = null, initialContext: String? = null) = GroupRuntime(
             guest = container.profile.isGuest,
             userId = container.profile.userId,
             client = container.communities,
@@ -57,8 +63,43 @@ internal class GroupRuntime(
             openMedia = { message, bytes -> GroupMediaViewer(container.app).open(message, bytes) },
             initialCommunityId = initialCommunityId,
             initialConversationId = initialConversationId,
+            initialContext = initialContext,
             mediaCacheDir = container.app.cacheDir,
             startInChannelList = true,
+            context = container.app,
+            subjects = { groupName -> withContext(Dispatchers.IO) {
+                if (!groupName.isNullOrBlank()) container.api.ensureGroup(groupName)
+                val group = container.repo.groups().firstOrNull { it.name.equals(groupName, true) }
+                group?.let { container.repo.allForGroup(it.id).map { row -> row.subjectRaw }.distinct().sorted() } ?: emptyList()
+            } },
+            scheduleRows = { groupName, date -> withContext(Dispatchers.IO) {
+                val prefs = container.repo.settings()
+                val group = container.repo.groups().firstOrNull { it.name.equals(groupName, true) }
+                if (!groupName.isNullOrBlank()) container.api.ensureGroup(groupName)
+                val resolved = container.repo.groups().firstOrNull { it.name.equals(groupName, true) } ?: group
+                if (resolved == null) emptyList()
+                else {
+                    val metadata = ru.bgtu_voenmeh.zapara.data.api.TimetableApiCache(container.repo.store).read(resolved.id)
+                    val choices = if (resolved.id == prefs.myGroupId) container.subgroupChoices(resolved.id) else emptyMap()
+                    val lessons = ru.bgtu_voenmeh.zapara.data.Subgroups.visible(container.repo.allForGroup(resolved.id), choices)
+                    Schedule.lessonsForDate(lessons, resolved.id, date, metadata?.period?.start ?: prefs.periodStart, metadata?.period?.weekCount ?: prefs.weekCount, prefs.parityInvert)
+                        .map { "${it.timeStart}–${it.timeEnd} · ${it.subjectRaw} · ${it.classroomRaw}" }
+                }
+            } },
+            subjectContext = { groupName, subject, date -> withContext(Dispatchers.IO) {
+                if (!groupName.isNullOrBlank()) container.api.ensureGroup(groupName)
+                val settings = container.repo.settings()
+                val group = container.repo.groups().firstOrNull { it.name.equals(groupName,true) }
+                if (group == null) GroupSubjectContext(null, emptyList()) else {
+                    val cache = ru.bgtu_voenmeh.zapara.data.api.TimetableApiCache(container.repo.store).read(group.id)
+                    val lessons = ru.bgtu_voenmeh.zapara.data.Subgroups.visible(container.repo.allForGroup(group.id), container.subgroupChoices(group.id))
+                    val now = container.clock()
+                    val reference = if (date == now.toLocalDate()) now else date.atStartOfDay()
+                    val lesson = GroupSubjectLogic.nextLesson(group.name, subject, reference) { day -> Schedule.lessonsForDate(lessons, group.id, day, cache?.period?.start ?: settings.periodStart, cache?.period?.weekCount ?: settings.weekCount, settings.parityInvert) }
+                    val personal = if (group.id != settings.myGroupId) emptyList() else container.homework.all().filter { GroupSubjectLogic.matches(subject,it.norm) }.map { GroupSubjectHomeworkUi(it.id,null,subject,it.text,it.due,it.done) }
+                    GroupSubjectContext(lesson,personal)
+                }
+            } },
             lessonContext = { communityName -> withContext(Dispatchers.IO) {
                 val settings = container.repo.settings()
                 val selectedId = settings.myGroupId.orEmpty()
@@ -110,20 +151,20 @@ internal object GroupMedia {
         kind == "circle" && bytes.size >= 4 && bytes.take(4) == listOf(0x1A, 0x45, 0xDF, 0xA3).map(Int::toByte) -> ".webm"
         else -> ".mp4"
     }
-    suspend fun place(api: ru.bgtu_voenmeh.zapara.data.communities.CommunityHttpClient, token: String, conversationId: String, kind: String, name: String, bytes: ByteArray, replyTo: String?, durationMs: Int? = null, topicId: String? = null): ru.bgtu_voenmeh.zapara.data.communities.ChatMessage {
+    suspend fun place(api: ru.bgtu_voenmeh.zapara.data.communities.CommunityHttpClient, token: String, conversationId: String, kind: String, name: String, bytes: ByteArray, replyTo: String?, durationMs: Int? = null, topicId: String? = null, blankLabel: (String) -> String = { "file" }): ru.bgtu_voenmeh.zapara.data.communities.ChatMessage {
         if (kind !in setOf("image", "video", "file", "voice", "circle")) throw ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.InvalidRequest)
         if (bytes.isEmpty() || bytes.size > (if (kind == "voice") 2 * 1024 * 1024 else maxBytes)) throw ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.PayloadTooLarge)
         if (kind in setOf("voice", "circle") && durationMs == null) throw ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.InvalidRequest)
         val clean = name.trim().substringAfterLast('/').substringAfterLast('\\').ifBlank {
-            when (kind) { "image" -> "Фото"; "video" -> "Видео"; "voice" -> "voice.m4a"; "circle" -> "circle.mp4"; else -> "Документ" }
+            when (kind) { "voice" -> "voice.m4a"; "circle" -> "circle.mp4"; else -> blankLabel(kind) }
         }
         return api.sendMedia(token, conversationId, kind, clean, bytes, replyTo, durationMs, topicId)
     }
 }
 
 internal object GroupHold {
-    suspend fun perform(message: GroupMessageUi, action: String, conversationId: String, token: String, api: GroupHoldApi, state: GroupHoldState): GroupHoldState {
-        if (!ru.bgtu_voenmeh.zapara.ui.chat.HoldDecision.actions(message.kind, message.mine, message.deleted, true).contains(action)) return state
+    suspend fun perform(message: GroupMessageUi, action: String, conversationId: String, token: String, api: GroupHoldApi, state: GroupHoldState, canModerate: Boolean = false): GroupHoldState {
+        if (!ru.bgtu_voenmeh.zapara.ui.chat.HoldDecision.actions(message.kind, message.mine, message.deleted, true, canModerate).contains(action)) return state
         return when (action) {
             "reply" -> state.copy(replyTo = message.id, editing = null, draft = "")
             "edit" -> state.copy(editing = message.id, replyTo = null, draft = message.body)
@@ -150,9 +191,14 @@ data class GroupUiState(
     val myRole: String = "",
     val channels: List<GroupTopic> = emptyList(),
     val contextLesson: GroupLessonHint? = null,
+    val subjectLesson: GroupLessonHint? = null,
+    val subjectHomework: List<GroupSubjectHomeworkUi> = emptyList(),
+    val subjectDetail: GroupSubjectHomeworkUi? = null,
+    val showSubjectTasks: Boolean = false,
     val canManageChannels: Boolean = false,
     val showChannels: Boolean = false,
     val activeTopicId: String? = null,
+    val activeArchivedTopic: GroupTopic? = null,
     val activeChannelKind: String = "chat",
     val canPost: Boolean = true,
     val board: BallotBoard? = null,
@@ -162,6 +208,10 @@ data class GroupUiState(
     val desk: GroupDesk? = null,
     val showTrusted: Boolean = false,
     val channelBusy: Boolean = false,
+    val channelSaveVersion: Int = 0,
+    val creationDraft: TopicCreationDraft? = null,
+    val creationNotice: String? = null,
+    val creationSubmitting: Boolean = false,
     val communities: List<GroupCommunityUi> = emptyList(),
     val people: List<GroupPersonUi> = emptyList(),
     val directs: List<GroupChatUi> = emptyList(),
@@ -184,23 +234,60 @@ data class GroupUiState(
     val mediaLoadingIds: Set<String> = emptySet(),
     val mediaFailedIds: Set<String> = emptySet(),
     val replyTo: String? = null,
-    val editing: String? = null
+    val editing: String? = null,
+    val space: GroupSpace? = null,
+    val spacePanel: String? = null,
+    val archived: List<GroupTopic> = emptyList(),
+    val access: GroupTopicAccess? = null,
+    val accessApproval: GroupAccessApproval? = null,
+    val audit: List<GroupAuditEvent> = emptyList(),
+    val preview: List<GroupTopic>? = null,
+    val previewSubject: String? = null,
+    val forms: List<GroupForm> = emptyList(),
+    val responses: Map<String, List<GroupFormResponse>> = emptyMap(),
+    val responseCursors: Map<String, String?> = emptyMap(),
+    val responseCounts: Map<String, Int> = emptyMap(),
+    val homework: List<CommunityHomework> = emptyList(),
+    val completions: Map<String, HomeworkCompletion> = emptyMap(),
+    val scheduleDate: java.time.LocalDate = java.time.LocalDate.now(),
+    val scheduleRows: List<String> = emptyList(),
+    val subjects: List<String> = emptyList(),
+    val spaceError: String? = null,
+    val accessRevoked: Boolean = false,
+    val composeContext: String? = null,
+    val roleImpact: GroupRoleImpact? = null,
+    val formCreateVersion: Int = 0,
+    val lastSavedHomework: CommunityHomework? = null,
+    val homeworkCreateVersion: Int = 0
 )
 
 sealed interface GroupEvent {
+    data object BeginCreation : GroupEvent
+    data class CreationChanged(val draft:TopicCreationDraft) : GroupEvent
+    data object CancelCreation : GroupEvent
+    data object SubmitCreation : GroupEvent
+
+    data class SpaceAction(val action: GroupSpaceAction) : GroupEvent
+    data class Context(val text: String?) : GroupEvent
+    data class Discuss(val text: String) : GroupEvent
+    data object SubjectTasks : GroupEvent
+    data class SubjectDetail(val task: GroupSubjectHomeworkUi) : GroupEvent
+    data object CloseSubjectTasks : GroupEvent
     data object Refresh : GroupEvent
     data class Open(val communityId: String) : GroupEvent
     data object Back : GroupEvent
     data class Direct(val userId: String) : GroupEvent
     data class OpenChat(val conversationId: String, val title: String) : GroupEvent
     data class OpenChannel(val topicId: String?) : GroupEvent
+    data class OpenArchived(val topicId: String) : GroupEvent
     data class GlobalBallots(val title: String) : GroupEvent
     data object Channels : GroupEvent
     data class CreateChannel(val title: String, val icon: String, val kind: String,
         val description: String = "", val accent: String = "default", val pinned: Boolean = false,
-        val writePolicy: String = "all") : GroupEvent
+        val writePolicy: String = "all", val template: String? = null, val categoryId: String? = null, val position: Int = 0, val subject: String? = null) : GroupEvent
     data class RenameChannel(val topicId: String, val title: String, val icon: String, val kind: String,
-        val description: String, val accent: String, val pinned: Boolean, val writePolicy: String) : GroupEvent
+        val description: String, val accent: String, val pinned: Boolean, val writePolicy: String, val template: String? = null, val categoryId: String? = null, val position: Int = 0, val subject: String? = null, val revision: Long? = null) : GroupEvent
+    data class PinChannel(val topic: GroupTopic, val pinned: Boolean) : GroupEvent
     data class DeleteChannel(val topicId: String) : GroupEvent
     data object Trusted : GroupEvent
     data object CloseTrusted : GroupEvent
@@ -229,8 +316,8 @@ sealed interface GroupEvent {
 }
 
 class GroupViewModel internal constructor(private val runtime: GroupRuntime) : ViewModel() {
-    constructor(container: AppContainer, initialCommunityId: String? = null, initialConversationId: String? = null) :
-        this(GroupRuntime.from(container, initialCommunityId, initialConversationId))
+    constructor(container: AppContainer, initialCommunityId: String? = null, initialConversationId: String? = null, initialContext: String? = null) :
+        this(GroupRuntime.from(container, initialCommunityId, initialConversationId, initialContext))
 
     private val mutable = MutableStateFlow(GroupUiState(guest = runtime.guest || runtime.client == null))
     val state: StateFlow<GroupUiState> = mutable.asStateFlow()
@@ -242,6 +329,9 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     private var poll: Job? = null
     private var generation = 0
     private var trustedRequest = 0
+    private var accessRequestSerial = 0L
+    private var archiveRequestSerial = 0L
+    private var archiveAuthorityLoaded = false
     private val sendingKeys = HashSet<String>()
     private var pendingKind: String? = null
     private var pendingName: String = ""
@@ -250,7 +340,12 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     private val cachedMedia = HashMap<String, File>()
     private val mediaCacheRoot = runtime.mediaCacheDir?.let { File(it, "group-chat-${java.util.UUID.randomUUID()}") }
     private val mediaJobs = HashMap<String, Job>()
+    private val creationDrafts=TopicCreationDrafts()
+    private var creationRequest = 0L
+    private val pendingCreations = HashSet<String>()
     private val drafts = HashMap<String, String>()
+    private val composeContexts = HashMap<String, String?>()
+    private var initialContextUsed = false
     private val plainDrafts = HashMap<String, String>()
     private val draftContexts = HashMap<String, GroupDraftContext>()
     private val draftVersions = HashMap<String, Long>()
@@ -260,7 +355,31 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     init { viewModelScope.launch { load() } }
 
     fun onEvent(event: GroupEvent) {
+        if (mutable.value.activeArchivedTopic != null && event in listOf(GroupEvent.Send)) return
+        if (mutable.value.activeArchivedTopic != null && (event is GroupEvent.Hold || event is GroupEvent.React || event is GroupEvent.Media || event is GroupEvent.Recorded || event is GroupEvent.CreateBallot || event is GroupEvent.VoteBallot || event is GroupEvent.CloseBallot || event is GroupEvent.SupportBallot)) return
+        if (mutable.value.preview != null && event !is GroupEvent.SpaceAction && event !is GroupEvent.OpenChannel && event != GroupEvent.Channels && event != GroupEvent.Back && event != GroupEvent.SubjectTasks && event != GroupEvent.CloseSubjectTasks && event !is GroupEvent.SubjectDetail) return
         when (event) {
+            GroupEvent.SubmitCreation -> submitCreation()
+            GroupEvent.BeginCreation -> home?.communityId?.takeIf { mutable.value.canManageChannels && !mutable.value.loading }?.let { id ->
+                val draft=creationDrafts.begin(id,runtime.userId.orEmpty())
+                mutable.value=mutable.value.copy(creationDraft=draft, creationNotice=null)
+            }
+            is GroupEvent.CreationChanged -> if(event.draft.communityId==home?.communityId && event.draft.ownerId==runtime.userId.orEmpty()) {
+                val draft=event.draft.snapshot(); creationDrafts.change(draft)
+                mutable.value=mutable.value.copy(creationDraft=draft)
+            }
+            GroupEvent.CancelCreation -> { home?.communityId?.let(creationDrafts::discard); mutable.value=mutable.value.copy(creationDraft=null) }
+            is GroupEvent.SpaceAction -> spaceAction(event.action)
+            GroupEvent.SubjectTasks -> mutable.value = mutable.value.copy(showSubjectTasks = true, subjectDetail = null)
+            is GroupEvent.SubjectDetail -> mutable.value = mutable.value.copy(showSubjectTasks = true, subjectDetail = event.task)
+            GroupEvent.CloseSubjectTasks -> mutable.value = mutable.value.copy(showSubjectTasks = false, subjectDetail = null)
+            is GroupEvent.Discuss -> viewModelScope.launch {
+                val loaded = home ?: return@launch
+                openChat(loaded.groupChat.conversationId, topics?.topics?.firstOrNull { it.topicId == null }?.title ?: loaded.groupChat.title, false)
+                mutable.value = mutable.value.copy(composeContext = event.text)
+                draftKey?.let { composeContexts[it] = event.text }
+            }
+            is GroupEvent.Context -> { mutable.value = mutable.value.copy(composeContext = event.text); draftKey?.let { composeContexts[it] = event.text } }
             GroupEvent.Refresh -> viewModelScope.launch {
                 val current = mutable.value
                 val loaded = home
@@ -292,14 +411,20 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 viewModelScope.launch { openChat(loaded.groupChat.conversationId,
                     topics?.topics?.firstOrNull { it.topicId == null }?.title ?: loaded.groupChat.title, false) }
             }
-            is GroupEvent.OpenChannel -> viewModelScope.launch { openChannel(event.topicId) }
+            is GroupEvent.OpenChannel -> viewModelScope.launch { mutable.value=mutable.value.copy(activeArchivedTopic=null); openChannel(event.topicId) }
+            is GroupEvent.OpenArchived -> viewModelScope.launch { openArchived(event.topicId) }
             is GroupEvent.GlobalBallots -> viewModelScope.launch { openBallots(null, event.title) }
             GroupEvent.Channels -> showHomePane(false)
             is GroupEvent.CreateChannel -> manageChannel { api, token, id -> api.createTopic(token, id, event.title, event.icon, event.kind,
-                event.description, event.accent, event.pinned, event.writePolicy) }
-            is GroupEvent.RenameChannel -> manageChannel { api, token, id -> api.renameTopic(token, id, event.topicId, event.title, event.icon, event.kind,
-                event.description, event.accent, event.pinned, event.writePolicy) }
-            is GroupEvent.DeleteChannel -> manageChannel { api, token, id -> api.deleteTopic(token, id, event.topicId) }
+                event.description, event.accent, event.pinned, event.writePolicy, event.template, event.categoryId, event.position, event.subject) }
+            is GroupEvent.RenameChannel -> if (mutable.value.channels.firstOrNull { it.topicId==event.topicId }?.let { GroupActions.canManageTopic(mutable.value,it) }==true) manageChannel(requireChannels=false) { api, token, id -> api.renameTopic(token, id, event.topicId, event.title, event.icon, event.kind,
+                event.description, event.accent, event.pinned, event.writePolicy, event.template, event.categoryId, event.position, event.subject, event.revision) }
+            is GroupEvent.PinChannel -> if (event.topic.topicId != null && GroupActions.canPin(mutable.value, event.topic)) manageChannel(requireChannels = false) { api, token, id ->
+                val row = event.topic
+                api.renameTopic(token, id, row.topicId!!,
+                    row.title, row.icon, row.kind, row.description, row.accent, event.pinned, row.writePolicy, row.template, row.categoryId, row.position, row.subject, row.revision)
+            }
+            is GroupEvent.DeleteChannel -> if (mutable.value.channels.firstOrNull { it.topicId==event.topicId }?.let { GroupActions.canManageTopic(mutable.value,it) }==true) manageChannel(requireChannels=false) { api, token, id -> api.deleteTopic(token, id, event.topicId) }
             GroupEvent.Trusted -> viewModelScope.launch { openTrusted() }
             GroupEvent.CloseTrusted -> {
                 trustedRequest++
@@ -314,8 +439,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 if (event.headman) api.openHeadmanBallot(token, id, event.question, event.options, event.days, topic)
                 else api.proposeBallot(token, id, event.question, event.options, event.days, topic)
             }
-            is GroupEvent.SupportBallot -> ballotAction { api, token, id, _ -> api.supportBallot(token, id, event.ballotId) }
-            is GroupEvent.VoteBallot -> ballotAction { api, token, id, _ -> api.voteBallot(token, id, event.ballotId, event.optionId) }
+            is GroupEvent.SupportBallot -> if (voteAllowed(event.ballotId)) ballotAction { api, token, id, _ -> api.supportBallot(token, id, event.ballotId) }
+            is GroupEvent.VoteBallot -> if (voteAllowed(event.ballotId)) ballotAction { api, token, id, _ -> api.voteBallot(token, id, event.ballotId, event.optionId) }
             is GroupEvent.CloseBallot -> if (mutable.value.board?.canClose == true) ballotAction { api, token, id, _ -> api.closeBallot(token, id, event.ballotId) }
             GroupEvent.Older -> viewModelScope.launch { older() }
             is GroupEvent.Draft -> if (mutable.value.canPost) {
@@ -364,7 +489,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             val rows = api.list(token).filter { it.role != null }
             val wanted = runtime.groupName()
             val preferred = rows.firstOrNull { it.communityId == runtime.initialCommunityId }
-                ?: rows.firstOrNull { it.name == wanted || it.name == "Группа $wanted" } ?: rows.singleOrNull()
+                ?: rows.firstOrNull { it.name == wanted || it.name == wanted?.let { name -> runtime.context?.getString(R.string.face_named_group, name) } } ?: rows.singleOrNull()
             mutable.value = mutable.value.copy(
                 loading = false,
                 empty = rows.isEmpty(),
@@ -381,8 +506,14 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
 
     private suspend fun open(communityId: String) {
         val api = runtime.client ?: return
+        resetArchiveAuthority()
+        val openTicket=++generation
+        accessRequestSerial++
+        poll?.cancel(); mediaJobs.values.forEach { it.cancel() }; mediaJobs.clear()
+        rememberDraft(); conversationId=null; draftKey=null
         contextLesson = null
-        mutable.value = mutable.value.copy(loading = true, failed = false, contextLesson = null)
+        mutable.value = mutable.value.copy(loading = true, failed = false, creationDraft=null, creationNotice=null, creationSubmitting=false, channelBusy=false, contextLesson = null, spacePanel=null,access=null,accessApproval=null,preview=null,previewSubject=null,activeArchivedTopic=null,
+            activeConversationId=null,activeTopicId=null,messages=emptyList(),board=null,forms=emptyList(),homework=emptyList(),responses=emptyMap(),subjectHomework=emptyList(),subjectDetail=null,showSubjectTasks=false)
         try {
             val token = runtime.accessToken()
             if (token.isNullOrEmpty()) {
@@ -390,18 +521,27 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 return
             }
             val loaded = api.groupHome(token, communityId)
-            topics = try { api.topics(token, communityId) } catch (error: CommunityClientException) {
+            if(openTicket!=generation) return
+            val space = try { api.space(token, communityId) } catch (e: CommunityClientException) {
+                if (e.failure != CommunityClientFailure.NotFound) throw e
+                null
+            }
+            if(openTicket!=generation) return
+            mutable.value = mutable.value.copy(space = space, desk = space?.desk, subjects = runtime.subjects(loaded.groupName), spaceError = null)
+            topics = if (space != null) GroupTopicList(space.topics, space.desk.headman || "channels" in space.desk.mine) else try { api.topics(token, communityId) } catch (error: CommunityClientException) {
                 if (error.failure !in setOf(CommunityClientFailure.NotFound, CommunityClientFailure.InvalidRequest)) throw error
                 null
             }
+            if(openTicket!=generation) return
             contextLesson = try { runtime.lessonContext(loaded.groupName) }
             catch (error: CancellationException) { throw error }
             catch (_: Exception) { null }
+            if(openTicket!=generation) return
             home = loaded
             publishHome(loaded)
             val requested = if (communityId == runtime.initialCommunityId)
                 loaded.directs.firstOrNull { it.conversationId == runtime.initialConversationId } else null
-            if (requested == null && runtime.startInChannelList) {
+            if (requested == null && runtime.startInChannelList && runtime.initialContext == null) {
                 mutable.value = mutable.value.copy(showChannels = true, showPeople = false)
                 armChannels()
             } else if (requested == null) openChat(loaded.groupChat.conversationId,
@@ -409,7 +549,10 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             else openChat(requested.conversationId, requested.title, true)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: CommunityClientException) {
+            if(openTicket==generation) { reconcileForbidden(e,openTicket); mutable.value=mutable.value.copy(loading=false,failed=true) }
         } catch (e: Exception) {
+            if(openTicket!=generation) return
             mutable.value = mutable.value.copy(loading = false, failed = true)
             runCatching { android.util.Log.w("ZaparaGroup", "open", e) }
         }
@@ -423,7 +566,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             loading = false,
             hasHome = true,
             empty = false,
-            communityId = loaded.communityId,
+            communityId = loaded.communityId, creationDraft=creationDrafts.get(loaded.communityId)?.takeIf { it.ownerId==runtime.userId.orEmpty() }, creationNotice=null, creationSubmitting=loaded.communityId in pendingCreations,
             title = loaded.groupName ?: loaded.name,
             myRole = me?.role ?: "member",
             channels = available,
@@ -432,15 +575,44 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             people = loaded.classmates.map { person(it) },
             directs = loaded.directs.map { chat(it) },
             groupUnread = if (topics == null) loaded.groupChat.unread else available.sumOf { it.unread },
-            failed = false
+            failed = false, accessRevoked = false
         )
     }
 
-    private fun orderedChannels(rows: List<GroupTopic>): List<GroupTopic> = browseChannels(rows)
+    private fun voteAllowed(ballotId: String): Boolean {
+        val topicId = mutable.value.board?.ballots?.firstOrNull { it.ballotId == ballotId }?.topicId
+        val topic = GroupActions.topic(mutable.value,topicId)
+        return mutable.value.activeArchivedTopic == null && mutable.value.preview == null && (topic == null || topic.permissions.isEmpty() || "vote" in topic.permissions)
+    }
+
+    private fun orderedChannels(rows: List<GroupTopic>): List<GroupTopic> = browseChannels(rows,
+        categoryOrder = mutable.value.space?.categories.orEmpty().associate { it.categoryId to it.position })
 
     private suspend fun openChannel(topicId: String?) {
         val loaded = home ?: return
-        val topic = mutable.value.channels.firstOrNull { it.topicId == topicId } ?: return
+        val topic = (mutable.value.preview ?: mutable.value.channels).firstOrNull { it.topicId == topicId } ?: return
+        openTopic(topic)
+    }
+
+    private suspend fun openArchived(topicId: String) {
+        val loaded=home ?: return
+        if(mutable.value.space==null || (archiveAuthorityLoaded && mutable.value.archived.none { it.topicId==topicId })) return
+        val ticket=generation
+        try {
+            val token=runtime.accessToken() ?: return
+            if(!refreshArchiveAuthority(token,ticket) || home?.communityId!=loaded.communityId) return
+            val topic=mutable.value.archived.firstOrNull { it.topicId==topicId } ?: return
+            mutable.value=mutable.value.copy(activeArchivedTopic=topic,spacePanel=null)
+            openTopic(topic)
+        } catch(e:CancellationException) { throw e } catch(e:CommunityClientException) { reconcileForbidden(e,ticket) }
+    }
+
+    private suspend fun openTopic(topic:GroupTopic) {
+        val loaded=home ?: return
+        if (!topic.supported || topic.kind in setOf("forms", "homework", "schedule")) {
+            openSpecialized(topic)
+            return
+        }
         if (topic.kind == "ballots") openBallots(topic.topicId, topic.title)
         else openChat(loaded.groupChat.conversationId, "${topic.icon} ${topic.title}", false, topic.topicId)
     }
@@ -465,6 +637,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     }
 
     private suspend fun openChat(id: String, title: String, direct: Boolean, topicId: String? = null) {
+        accessRequestSerial++
         rememberDraft()
         val ticket = ++generation
         poll?.cancel()
@@ -478,9 +651,12 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         pendingName = ""
         pendingDurationMs = null
         mutable.value = mutable.value.copy(
-            chatTitle = title, activeConversationId = id, activeTopicId = topicId, activeChannelKind = if (direct) "direct" else "chat",
-            canPost = direct || topics == null || topics?.topics?.firstOrNull { it.topicId == topicId }?.canPost == true,
+            chatTitle = title, activeConversationId = id, activeTopicId = topicId, activeChannelKind = if (direct) "direct" else GroupActions.topic(mutable.value,topicId)?.kind ?: "chat",
+            activeArchivedTopic=mutable.value.activeArchivedTopic?.takeIf { !direct && it.topicId==topicId },
+            subjectLesson = null, subjectHomework = emptyList(), subjectDetail = null, showSubjectTasks = false, access = null, accessApproval = null, spacePanel = null,
+            canPost = mutable.value.activeArchivedTopic==null && mutable.value.preview == null && (direct || topics == null || topics?.topics?.firstOrNull { it.topicId == topicId }?.canPost == true),
             board = null, ballotRefreshFailed = false, showTrusted = false, channelBusy = false, direct = direct, showPeople = false, showChannels = false, messages = emptyList(), hasMore = false, olderLoading = false,
+            composeContext = if (!initialContextUsed && runtime.initialContext != null) runtime.initialContext else composeContexts[draftKey],
             draft = drafts[draftKey] ?: plainDrafts[draftKey].orEmpty(),
             replyTo = context?.replyTo, editing = context?.editing,
             sending = draftKey in sendingKeys,
@@ -489,6 +665,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             mediaLoadingId = null, mediaError = false,
             mediaFiles = emptyMap(), mediaLoadingIds = emptySet(), mediaFailedIds = emptySet()
         )
+        if (runtime.initialContext != null && !initialContextUsed) { initialContextUsed = true; composeContexts[draftKey!!] = runtime.initialContext }
         val api = runtime.client
         if (api == null) {
             if (current(ticket, id)) mutable.value = mutable.value.copy(chatLoading = false, failed = true)
@@ -507,31 +684,104 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 messages = page.messages.map { row(it) }, hasMore = page.hasMore, failed = false, chatLoading = false
             )
             if (direct || topics == null) acknowledge(token, id, ticket) else refreshTopics(token, ticket)
+            if (current(ticket,id)) loadSubjectContext(token,ticket,topicId)
             if (current(ticket, id)) arm(id)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: CommunityClientException) {
+            reconcileForbidden(e, ticket)
+            if (current(ticket, id)) mutable.value = mutable.value.copy(chatLoading = false, failed = true)
         } catch (e: Exception) {
             android.util.Log.w("ZaparaGroup", "openChat", e)
             if (current(ticket, id)) mutable.value = mutable.value.copy(chatLoading = false, failed = true)
         }
     }
 
+    private suspend fun loadSubjectContext(token: String, ticket: Int, topicId: String?) {
+        val loaded = home ?: return
+        val api = runtime.client ?: return
+        val topic = GroupActions.topic(mutable.value,topicId) ?: return
+        val subject = topic.subject?.takeIf { topic.template == "subject" } ?: return
+        val context = runtime.subjectContext(loaded.groupName,subject,mutable.value.scheduleDate)
+        val shared = api.listHomework(token,loaded.communityId).filter { hw -> GroupSubjectLogic.matches(subject,hw.title) &&
+            (mutable.value.preview == null || hw.topicId == null || mutable.value.preview.orEmpty().any { it.topicId == hw.topicId && "read" in it.permissions }) }
+        val done = if (mutable.value.preview == null) shared.associate { it.homeworkId to api.getCompletion(token,loaded.communityId,it.homeworkId) } else emptyMap()
+        if (ticket != generation || mutable.value.activeTopicId != topicId) return
+        val tasks = (if (mutable.value.preview == null) context.personal else emptyList()) + shared.map { GroupSubjectHomeworkUi(null,it.homeworkId,it.title,it.body,it.deadlineAt?.atZone(ZoneId.systemDefault())?.toLocalDate(),done[it.homeworkId]?.completed == true) }
+        mutable.value = mutable.value.copy(subjectLesson = context.lesson, subjectHomework = tasks, completions = mutable.value.completions + done,
+            subjectDetail = mutable.value.subjectDetail?.let { old -> tasks.firstOrNull { it.localId == old.localId && it.sharedId == old.sharedId } })
+    }
+
     private fun topicQuery(direct: Boolean, topicId: String?): String? =
         if (direct || topics == null) null else topicId ?: "general"
+
+    private fun forgetArchivedDrafts(ids: Set<String>) {
+        val keys=(drafts.keys+plainDrafts.keys+draftContexts.keys+composeContexts.keys+draftVersions.keys).filter { key -> ids.any { key.endsWith(":$it") } }
+        keys.forEach { key -> drafts.remove(key); plainDrafts.remove(key); draftContexts.remove(key); composeContexts.remove(key); draftVersions.remove(key) }
+    }
+
+    private fun resetArchiveAuthority() {
+        archiveRequestSerial++
+        archiveAuthorityLoaded=false
+        forgetArchivedDrafts(mutable.value.archived.mapNotNull { it.topicId }.toSet())
+        mutable.value=mutable.value.copy(archived=emptyList())
+    }
+
+    private suspend fun refreshArchiveAuthority(token: String, ticket: Int, freshActiveTopics: List<GroupTopic> = emptyList()): Boolean {
+        if(mutable.value.space==null || ticket!=generation) return false
+        val loaded=home ?: return false
+        val api=runtime.client ?: return false
+        val owner=runtime.userId
+        val request=++archiveRequestSerial
+        fun current()=ticket==generation && request==archiveRequestSerial && home?.communityId==loaded.communityId && owner==runtime.userId && mutable.value.space!=null
+        val rows=try { api.archivedTopics(token,loaded.communityId) }
+            catch(e:CancellationException) { throw e }
+            catch(e:CommunityClientException) { if(current() && runtime.accessToken()==token && current()) throw e else return false }
+        if(!current() || runtime.accessToken()!=token || !current()) return false
+        val retained=rows.mapNotNull { it.topicId }.toSet()
+        val removed=mutable.value.archived.mapNotNull { it.topicId }.toSet()-retained-freshActiveTopics.mapNotNull { it.topicId }.toSet()
+        forgetArchivedDrafts(removed)
+        archiveAuthorityLoaded=true
+        val previousActive=mutable.value.activeArchivedTopic
+        val active=previousActive?.let { old -> rows.firstOrNull { it.topicId==old.topicId } }
+        val restored=previousActive?.let { old -> freshActiveTopics.firstOrNull { it.topicId==old.topicId } }
+        val closedAccess=mutable.value.access?.topicId in removed
+        mutable.value=mutable.value.copy(archived=rows,activeArchivedTopic=active,
+            access=if(closedAccess) null else mutable.value.access,accessApproval=if(closedAccess) null else mutable.value.accessApproval,
+            spacePanel=if(closedAccess && mutable.value.spacePanel=="access") null else mutable.value.spacePanel)
+        if(previousActive!=null && active==null && restored==null) {
+            mutable.value=mutable.value.copy(draft="",replyTo=null,editing=null,composeContext=null)
+            reconcileForbidden(CommunityClientException(CommunityClientFailure.NotFound),ticket);return false
+        }
+        if(active!=null) mutable.value=mutable.value.copy(canPost=false)
+        return true
+    }
 
     private suspend fun refreshTopics(token: String, ticket: Int) {
         val loaded = home ?: return
         val api = runtime.client ?: return
         try {
-            val result = api.topics(token, loaded.communityId)
+            val space = if (mutable.value.space != null) api.space(token, loaded.communityId) else null
+            val result = space?.let { GroupTopicList(it.topics, it.desk.headman || "channels" in it.desk.mine) } ?: api.topics(token, loaded.communityId)
             if (ticket != generation) return
+            mutable.value = mutable.value.copy(space = space ?: mutable.value.space, desk = space?.desk ?: mutable.value.desk)
+            if(mutable.value.space!=null && (archiveAuthorityLoaded || mutable.value.spacePanel=="archive" || mutable.value.activeArchivedTopic!=null)) {
+                if(!refreshArchiveAuthority(token,ticket,result.topics) || ticket!=generation) return
+            }
+            if (!mutable.value.direct && !mutable.value.showChannels && mutable.value.activeArchivedTopic==null && result.topics.none { it.topicId == mutable.value.activeTopicId }) {
+                rememberDraft()
+                showHomePane(false)
+                mutable.value = mutable.value.copy(messages = emptyList(), forms = emptyList(), homework = emptyList(), spaceError = uiText(R.string.space_day_55))
+            }
             topics = result
             mutable.value = mutable.value.copy(channels = orderedChannels(result.topics), canManageChannels = result.canManageChannels,
-                canPost = mutable.value.direct || result.topics.firstOrNull { it.topicId == mutable.value.activeTopicId }?.canPost == true,
+                canPost = mutable.value.activeArchivedTopic==null && (mutable.value.direct || result.topics.firstOrNull { it.topicId == mutable.value.activeTopicId }?.let { if (mutable.value.activeChannelKind == "ballots" && it.permissions.isNotEmpty()) "ballots" in it.permissions else it.canPost } == true),
                 groupUnread = result.topics.sumOf { it.unread })
         } catch (e: CancellationException) {
             throw e
-        } catch (_: CommunityClientException) { }
+        } catch (e: CommunityClientException) {
+            if (isAccessFailure(e)) reconcileForbidden(e, ticket)
+        }
     }
 
     private suspend fun openBallots(topicId: String?, title: String) {
@@ -546,7 +796,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         pendingBytes = null
         pendingKind = null
         mutable.value = mutable.value.copy(activeConversationId = null, activeTopicId = topicId, activeChannelKind = "ballots",
-            canPost = topicId == null || topics?.topics?.firstOrNull { it.topicId == topicId }?.canPost == true,
+            canPost = mutable.value.activeArchivedTopic==null && mutable.value.preview == null && (topicId == null || topics?.topics?.firstOrNull { it.topicId == topicId }?.let { if (it.permissions.isEmpty()) it.canPost else "ballots" in it.permissions } == true),
             chatTitle = title, direct = false, showPeople = false, showChannels = false, showTrusted = false,
             messages = emptyList(), hasMore = false, olderLoading = false, board = null,
             ballotRefreshFailed = false, ballotCreateFailed = false,
@@ -569,6 +819,9 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             armBallots(topicId)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: CommunityClientException) {
+            reconcileForbidden(e, ticket)
+            if (currentBallots(ticket, topicId)) mutable.value = mutable.value.copy(chatLoading = false, failed = true)
         } catch (e: Exception) {
             if (currentBallots(ticket, topicId)) mutable.value = mutable.value.copy(chatLoading = false, failed = true)
         }
@@ -594,6 +847,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                         refreshTopics(token, ticket)
                     }
                 } catch (e: CancellationException) { throw e }
+                catch (e: CommunityClientException) { reconcileForbidden(e, ticket); if (currentBallots(ticket, topicId)) mutable.value = mutable.value.copy(ballotRefreshFailed = true) }
                 catch (_: Exception) { if (currentBallots(ticket, topicId)) mutable.value = mutable.value.copy(ballotRefreshFailed = true) }
             }
         }
@@ -616,8 +870,48 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         }
     }
 
-    private fun manageChannel(action: suspend (CommunityHttpClient, String, String) -> GroupTopicList) {
-        if (!mutable.value.canManageChannels || mutable.value.channelBusy) return
+    private fun submitCreation() {
+        val submitted = mutable.value.creationDraft?.snapshot() ?: return
+        if (submitted.ownerId != runtime.userId.orEmpty() || !submitted.canSubmit(mutable.value)) return
+        val loaded = home ?: return
+        val api = runtime.client ?: return
+        if (!pendingCreations.add(submitted.communityId)) return
+        val ticket = generation
+        val serial = ++creationRequest
+        val modern = mutable.value.space != null
+        mutable.value = mutable.value.copy(channelBusy=true, creationSubmitting=true, failed=false, spaceError=null, creationNotice=null)
+        viewModelScope.launch {
+            try {
+                val token = runtime.accessToken() ?: return@launch
+                val result = api.createTopic(token,submitted.communityId,submitted.title,submitted.icon,GroupTemplates.kind(submitted.template),
+                    submitted.description,submitted.accent,submitted.pinned,submitted.writePolicy,
+                    if(modern) submitted.template else null,submitted.categoryId,submitted.position.toInt(),submitted.subject,
+                    if(modern) submitted.initialRules() else null)
+                // A filtered 201 list may omit the new topic when its creator has no read.
+                // ACK applies only to the exact submitted draft, even after navigation.
+                val cleared = creationDrafts.acknowledge(submitted)
+                if (cleared && mutable.value.creationDraft == submitted) mutable.value=mutable.value.copy(creationDraft=null)
+                if (serial!=creationRequest || ticket!=generation || home?.communityId!=loaded.communityId) return@launch
+                topics=result
+                mutable.value=mutable.value.copy(channels=orderedChannels(result.topics),canManageChannels=result.canManageChannels,
+                    creationDraft=creationDrafts.get(submitted.communityId),failed=false,creationNotice=uiText(R.string.creation_success))
+            } catch (e: CancellationException) { throw e }
+            catch (e: CommunityClientException) {
+                if(serial!=creationRequest || ticket!=generation || home?.communityId!=loaded.communityId) return@launch
+                reconcileForbidden(e,ticket)
+                if(home?.communityId==loaded.communityId) mutable.value=mutable.value.copy(failed=true,spaceError=uiText(if(e.failure==CommunityClientFailure.Forbidden) R.string.space_day_57 else R.string.space_day_59))
+            } catch (_: Exception) {
+                if(serial==creationRequest && ticket==generation && home?.communityId==loaded.communityId) mutable.value=mutable.value.copy(failed=true,spaceError=uiText(R.string.space_day_60))
+            } finally {
+                pendingCreations.remove(submitted.communityId)
+                if (mutable.value.communityId==submitted.communityId) mutable.value=mutable.value.copy(creationSubmitting=false)
+                if(serial==creationRequest && ticket==generation && home?.communityId==loaded.communityId) mutable.value=mutable.value.copy(channelBusy=false)
+            }
+        }
+    }
+
+    private fun manageChannel(requireChannels: Boolean = true, action: suspend (CommunityHttpClient, String, String) -> GroupTopicList) {
+        if ((requireChannels && !mutable.value.canManageChannels) || mutable.value.channelBusy) return
         val loaded = home ?: return
         val api = runtime.client ?: return
         val ticket = generation
@@ -628,14 +922,22 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 val result = action(api, token, loaded.communityId)
                 if (home?.communityId != loaded.communityId) return@launch
                 topics = result
-                mutable.value = mutable.value.copy(channels = orderedChannels(result.topics), canManageChannels = result.canManageChannels, failed = false)
+                mutable.value = mutable.value.copy(channels = orderedChannels(result.topics), canManageChannels = result.canManageChannels, failed = false, channelSaveVersion = mutable.value.channelSaveVersion + 1)
                 val active = mutable.value.activeTopicId
+                if (mutable.value.space != null) {
+                    val fresh = api.space(token, loaded.communityId)
+                    mutable.value = mutable.value.copy(space = fresh, desk = fresh.desk)
+                }
                 if (active != null && result.topics.none { it.topicId == active }) showHomePane(false)
                 else if (active != null) mutable.value = mutable.value.copy(chatTitle = result.topics.first { it.topicId == active }.let { "${it.icon} ${it.title}" })
             } catch (e: CancellationException) {
                 throw e
             } catch (e: CommunityClientException) {
-                reconcileForbidden(e, ticket)
+                if (e.failure in setOf(CommunityClientFailure.Conflict, CommunityClientFailure.RevisionConflict)) {
+                    val token = runtime.accessToken()
+                    if (token != null) refreshTopics(token, ticket)
+                    mutable.value = mutable.value.copy(spaceError = uiText(R.string.space_day_58))
+                } else reconcileForbidden(e, ticket)
                 if (home?.communityId == loaded.communityId) mutable.value = mutable.value.copy(failed = true)
             } catch (_: Exception) {
                 if (home?.communityId == loaded.communityId) mutable.value = mutable.value.copy(failed = true)
@@ -645,14 +947,215 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         }
     }
 
+    private fun isAccessFailure(error: CommunityClientException): Boolean = error.failure in setOf(
+        CommunityClientFailure.InvalidSession, CommunityClientFailure.Forbidden, CommunityClientFailure.NotFound)
+
+    /** Never retain protected content while a second request is in flight. Drafts stay scoped separately. */
     private suspend fun reconcileForbidden(error: CommunityClientException, ticket: Int) {
-        if (error.failure != CommunityClientFailure.Forbidden || ticket != generation || topics == null || mutable.value.direct) return
-        mutable.value = mutable.value.copy(canManageChannels = false, canPost = false)
-        try {
-            val token = runtime.accessToken() ?: return
-            refreshTopics(token, ticket)
-        } catch (e: CancellationException) { throw e }
-        catch (_: Exception) { }
+        if (!isAccessFailure(error) || ticket != generation) return
+        val loaded = home ?: return
+        val modern = mutable.value.space != null
+        val legacyWithoutTopics = !modern && topics == null
+        resetArchiveAuthority()
+        rememberDraft()
+        accessRequestSerial++
+        poll?.cancel()
+        mediaJobs.values.forEach { it.cancel() }; mediaJobs.clear()
+        generation++
+        val nextTicket = generation
+        conversationId = null; draftKey = null
+        pendingBytes = null; pendingKind = null; pendingName = ""; pendingDurationMs = null
+        cachedMedia.values.forEach { runCatching { it.delete() } }; cachedMedia.clear()
+        mutable.value = mutable.value.copy(accessRevoked = true, showChannels = true, showPeople = false, showTrusted = false,
+            activeConversationId = null, activeTopicId = null, activeArchivedTopic=null, activeChannelKind = "chat", chatTitle = "", canPost = false,
+            messages = emptyList(), board = null, subjectLesson = null, subjectHomework = emptyList(), subjectDetail = null, showSubjectTasks = false, forms = emptyList(), homework = emptyList(), completions = emptyMap(),
+            responses = emptyMap(), responseCursors = emptyMap(), responseCounts = emptyMap(), channels = emptyList(),
+            space = null, desk = null, spacePanel = null, accessApproval = null, lastSavedHomework = null, preview = null, previewSubject = null, archived = emptyList(), access = null, audit = emptyList(),
+            people = emptyList(), directs = emptyList(), mediaFiles = emptyMap(), mediaLoadingIds = emptySet(), mediaFailedIds = emptySet(),
+            mediaLoadingId = null, mediaError = false, channelBusy = false, chatLoading = false, sending = false, attachmentPending = false,
+            replyTo = null, editing = null, draft = "", composeContext = null, hasMore = false, olderLoading = false,
+            canManageChannels = false, failed = true, spaceError = uiText(R.string.space_day_55))
+        if (error.failure == CommunityClientFailure.InvalidSession) return
+        viewModelScope.launch {
+            try {
+                val api = runtime.client ?: return@launch
+                val token = runtime.accessToken() ?: return@launch
+                if (legacyWithoutTopics) {
+                    val refreshed = api.groupHome(token,loaded.communityId)
+                    val page = api.messages(token,refreshed.groupChat.conversationId)
+                    if (nextTicket!=generation || home?.communityId!=loaded.communityId) return@launch
+                    home=refreshed
+                    conversationId=refreshed.groupChat.conversationId
+                    draftKey=conversationId
+                    mutable.value=mutable.value.copy(messages=page.messages.map(::row),hasMore=page.hasMore,hasHome=true,
+                        activeConversationId=conversationId,activeTopicId=null,activeChannelKind="chat",showChannels=false,
+                        chatTitle=refreshed.groupChat.title,accessRevoked=false,canPost=false,failed=true,
+                        draft=drafts[draftKey].orEmpty(),people=refreshed.classmates.map(::person),directs=refreshed.directs.map(::chat))
+                    arm(conversationId!!)
+                    return@launch
+                }
+                val space = if (modern) api.space(token, loaded.communityId) else null
+                val rows = space?.let { GroupTopicList(it.topics, it.desk.headman || "channels" in it.desk.mine) } ?: api.topics(token, loaded.communityId)
+                if (nextTicket != generation || home?.communityId != loaded.communityId) return@launch
+                topics = rows
+                mutable.value = mutable.value.copy(space = space, desk = space?.desk, channels = orderedChannels(rows.topics),
+                    canManageChannels = rows.canManageChannels, people = loaded.classmates.map(::person), directs = loaded.directs.map(::chat),
+                    accessRevoked = false, canPost = false)
+                armChannels()
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { /* The already cleared neutral surface is retained. */ }
+        }
+    }
+
+    private fun uiText(id: Int, vararg args: Any): String = runtime.context?.getString(id, *args) ?: ""
+
+    private suspend fun openSpecialized(topic: GroupTopic) {
+        accessRequestSerial++
+        rememberDraft(); ++generation; poll?.cancel(); conversationId = null; draftKey = null
+        mutable.value = mutable.value.copy(activeTopicId = topic.topicId, activeConversationId = null, activeChannelKind = topic.kind,
+            chatTitle = topic.title, access = null, accessApproval = null, spacePanel = null, showChannels = false, showPeople = false, canPost = false, channelBusy = false, messages = emptyList(), forms = emptyList(), homework = emptyList(), responses = emptyMap(), spaceError = null)
+        if (!topic.supported) { mutable.value = mutable.value.copy(spaceError = uiText(R.string.space_day_56)); return }
+        spaceAction(GroupSpaceAction.ReloadContent)
+        val ticket = generation
+        poll = viewModelScope.launch {
+            while (isActive && ticket == generation) {
+                delay(8_000)
+                try {
+                    val token = runtime.accessToken() ?: continue
+                    refreshTopics(token, ticket)
+                    if (ticket == generation && !mutable.value.showChannels && mutable.value.activeTopicId == topic.topicId) spaceAction(GroupSpaceAction.ReloadContent)
+                } catch (e: CancellationException) { throw e } catch (_: Exception) { }
+            }
+        }
+    }
+
+    private fun spaceAction(rawAction: GroupSpaceAction) {
+        val action = when(rawAction) {
+            is GroupSpaceAction.Access -> rawAction.copy(rules=GroupAccessPresets.topicRules(rawAction.rules).toList())
+            is GroupSpaceAction.PreviewAccess -> rawAction.copy(rules=GroupAccessPresets.topicRules(rawAction.rules).toList())
+            else -> rawAction
+        }
+        if (action is GroupSpaceAction.Panel) {
+            if(action.name=="archive" && mutable.value.space==null) return
+            accessRequestSerial++
+            mutable.value = mutable.value.copy(spacePanel = action.name, access = null, accessApproval = null, channelBusy = false, spaceError = null)
+            if (action.name == "archive") spaceAction(GroupSpaceAction.LoadArchive)
+            if (action.name == "audit") spaceAction(GroupSpaceAction.LoadAudit)
+            return
+        }
+        if (action == GroupSpaceAction.EndPreview) { mutable.value = mutable.value.copy(preview = null, previewSubject = null); showHomePane(false); return }
+        if (mutable.value.preview != null && action !is GroupSpaceAction.Preview && action != GroupSpaceAction.ReloadContent && action !is GroupSpaceAction.ScheduleDate) return
+        if (mutable.value.channelBusy) return
+        if((action==GroupSpaceAction.LoadArchive || action is GroupSpaceAction.Archive) && mutable.value.space==null) return
+        if(action is GroupSpaceAction.Archive && !action.archived) {
+            val fresh=mutable.value.archived.firstOrNull { it.topicId==action.topic.topicId } ?: return
+            if(!archiveAuthorityLoaded || fresh.revision!=action.topic.revision || !GroupActions.canManageTopic(mutable.value,fresh)) return
+        }
+        if (action is GroupSpaceAction.Access && mutable.value.accessApproval?.matches(action.topicId, action.revision, action.rules) != true) return
+        val api = runtime.client ?: return
+        val loaded = home ?: return
+        val ticket = generation
+        val activeTopic = mutable.value.activeTopicId
+        val accessBound = action is GroupSpaceAction.LoadAccess || action is GroupSpaceAction.PreviewAccess || action is GroupSpaceAction.Access
+        val accessTicket = if (accessBound) ++accessRequestSerial else accessRequestSerial
+        mutable.value = mutable.value.copy(channelBusy = true, spaceError = null)
+        fun update(block: (GroupUiState) -> GroupUiState) {
+            if (ticket == generation && home?.communityId == loaded.communityId && (!accessBound || accessTicket == accessRequestSerial)) mutable.value = block(mutable.value)
+        }
+        viewModelScope.launch {
+            try {
+                val token = runtime.accessToken() ?: return@launch
+                var result: GroupSpace? = null
+                var desk: GroupDesk? = null
+                when (action) {
+                    is GroupSpaceAction.Category -> result = api.saveCategory(token, loaded.communityId, action.id, action.title, action.position, action.revision)
+                    is GroupSpaceAction.DeleteCategory -> result = api.deleteCategory(token, loaded.communityId, action.id)
+                    is GroupSpaceAction.Archive -> {
+                        result = api.archiveTopic(token, loaded.communityId, action.topic.topicId ?: return@launch, action.archived, action.topic.revision)
+                        refreshArchiveAuthority(token,ticket,result.topics)
+                    }
+                    GroupSpaceAction.LoadArchive -> { refreshArchiveAuthority(token,ticket) }
+                    is GroupSpaceAction.LoadAccess -> { val access = api.topicAccess(token, loaded.communityId, action.topicId); update { it.copy(access = access, spacePanel = "access", accessApproval = null) } }
+                    is GroupSpaceAction.PreviewAccess -> {
+                        val preview = api.topicAccessPreview(token, loaded.communityId, action.topicId, action.rules, action.revision)
+                        update { it.copy(accessApproval = GroupAccessApproval(action.rules.toList(), preview)) }
+                    }
+                    is GroupSpaceAction.Access -> {
+                        result = api.setTopicAccess(token, loaded.communityId, action.topicId, action.rules, action.revision)
+                        val access = api.topicAccess(token, loaded.communityId, action.topicId)
+                        update { it.copy(access = access, accessApproval = null) }
+                    }
+                    GroupSpaceAction.LoadAudit -> { val audit = api.groupAudit(token, loaded.communityId); update { it.copy(audit = audit) } }
+                    is GroupSpaceAction.Preview -> { val preview = api.previewPermissions(token, loaded.communityId, action.userId, action.roleId); update { it.copy(preview = preview, showChannels = true, previewSubject = action.userId?.let { id -> it.people.firstOrNull { person -> person.id == id }?.name }
+                            ?: action.roleId?.let { id -> it.desk?.roles?.firstOrNull { role -> role.roleId == id }?.name } ?: uiText(R.string.space_day_148)) } }
+                    is GroupSpaceAction.Role -> desk = api.saveRoleSettings(token, loaded.communityId, action.role)
+                    is GroupSpaceAction.CreateRole -> desk = api.createRole(token, loaded.communityId, action.name)
+                    is GroupSpaceAction.DeleteRole -> desk = api.deleteRole(token, loaded.communityId, action.roleId)
+                    is GroupSpaceAction.RoleImpact -> { val impact = api.roleImpact(token, loaded.communityId, action.roleId); update { it.copy(roleImpact = impact) } }
+                    is GroupSpaceAction.Power -> desk = api.setPower(token, loaded.communityId, action.roleId, action.power, action.on)
+                    is GroupSpaceAction.Grant -> desk = if (action.on) api.grantRole(token, loaded.communityId, action.roleId, action.userId) else api.revokeRole(token, loaded.communityId, action.roleId, action.userId)
+                    is GroupSpaceAction.CreateForm -> {
+                        val forms = api.createForm(token, loaded.communityId, activeTopic ?: return@launch, action.title, action.description, action.deadline, action.anonymous, action.questions)
+                        update { it.copy(forms = forms, formCreateVersion = it.formCreateVersion + 1) }
+                    }
+                    is GroupSpaceAction.SubmitForm -> { api.submitForm(token, loaded.communityId, action.formId, action.answers); val forms = api.forms(token, loaded.communityId, activeTopic ?: return@launch); update { it.copy(forms = forms) } }
+                    is GroupSpaceAction.Responses -> {
+                        if (action.after != null && mutable.value.responseCursors[action.formId] != action.after) return@launch
+                        val page = api.formResponsesPage(token, loaded.communityId, action.formId, action.after)
+                        if (page.nextCursor != null && page.nextCursor == action.after) throw CommunityClientException(CommunityClientFailure.InvalidPayload)
+                        update { it.copy(responses = it.responses + (action.formId to (if (action.after == null) page.responses else it.responses[action.formId].orEmpty() + page.responses)), responseCursors = it.responseCursors + (action.formId to page.nextCursor), responseCounts = it.responseCounts + (action.formId to page.totalResponses)) }
+                    }
+                    is GroupSpaceAction.SaveHomework -> {
+                        val saved = if (action.id == null) api.shareHomework(token, loaded.communityId, action.title, action.body, 0, action.deadline, activeTopic)
+                            else api.updateHomework(token, loaded.communityId, action.id, action.title, action.body, action.revision, action.deadline, activeTopic)
+                        update { state -> state.copy(homework = state.homework.filterNot { it.homeworkId == saved.homeworkId } + saved,
+                            lastSavedHomework = saved, homeworkCreateVersion = state.homeworkCreateVersion + 1) }
+                    }
+                    is GroupSpaceAction.CompleteHomework -> {
+                        val completed = api.upsertCompletion(token, loaded.communityId, action.id, action.on, mutable.value.completions[action.id]?.revision ?: 0)
+                        update { state -> state.copy(completions = state.completions + (action.id to completed), subjectHomework = state.subjectHomework.map { if (it.sharedId == action.id) it.copy(done = completed.completed) else it }, subjectDetail = state.subjectDetail?.let { if (it.sharedId == action.id) it.copy(done = completed.completed) else it }) }
+                    }
+                    is GroupSpaceAction.ScheduleDate -> { val rows = runtime.scheduleRows(loaded.groupName, action.date); update { it.copy(scheduleDate = action.date, scheduleRows = rows) } }
+                    GroupSpaceAction.ReloadContent -> when (mutable.value.activeChannelKind) {
+                        "forms" -> { val forms = api.forms(token, loaded.communityId, activeTopic ?: return@launch); update { state -> state.copy(forms = if (state.preview == null) forms else forms.map { it.copy(canRespond = false, canViewResponses = false, ownResponse = null) }) } }
+                        "homework" -> { val rows = api.listHomework(token, loaded.communityId).filter { it.topicId == activeTopic }; val done = if (mutable.value.preview == null) rows.associate { it.homeworkId to api.getCompletion(token, loaded.communityId, it.homeworkId) } else emptyMap(); update { it.copy(homework = rows, completions = done) } }
+                        "schedule" -> { val rows = runtime.scheduleRows(loaded.groupName, mutable.value.scheduleDate); update { it.copy(scheduleRows = rows) } }
+                    }
+                    else -> Unit
+                }
+                if (home?.communityId != loaded.communityId || ticket != generation || (accessBound && accessTicket != accessRequestSerial)) return@launch
+                result?.let { topics = GroupTopicList(it.topics, it.desk.headman || "channels" in it.desk.mine); if (ticket == generation && home?.communityId == loaded.communityId) mutable.value = mutable.value.copy(space = it, desk = it.desk, channels = orderedChannels(it.topics), canManageChannels = topics?.canManageChannels == true) }
+                desk?.let { if (ticket == generation && home?.communityId == loaded.communityId) mutable.value = mutable.value.copy(desk = it, space = mutable.value.space?.copy(desk = it)) }
+                if (result != null && activeTopic != null && result.topics.none { it.topicId == activeTopic } && !mutable.value.showChannels) {
+                    showHomePane(false)
+                    mutable.value = mutable.value.copy(spaceError = uiText(R.string.space_day_57))
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: CommunityClientException) {
+                if (ticket == generation) {
+                    if (ticket == generation && home?.communityId == loaded.communityId) mutable.value = mutable.value.copy(spaceError = if (e.failure == CommunityClientFailure.Forbidden) uiText(R.string.space_day_57) else if (e.failure in setOf(CommunityClientFailure.Conflict, CommunityClientFailure.RevisionConflict)) uiText(R.string.space_day_58) else uiText(R.string.space_day_59))
+                    if (e.failure in setOf(CommunityClientFailure.Conflict, CommunityClientFailure.RevisionConflict)) {
+                        if (accessBound) update { it.copy(accessApproval = null) }
+                        try {
+                        val token = runtime.accessToken()
+                        if (token != null) {
+                            if (action is GroupSpaceAction.SaveHomework) {
+                                val rows = api.listHomework(token, loaded.communityId).filter { it.topicId == activeTopic }
+                                update { it.copy(homework = rows) }
+                            } else if (action is GroupSpaceAction.Access || action is GroupSpaceAction.PreviewAccess) {
+                                val id = if (action is GroupSpaceAction.Access) action.topicId else (action as GroupSpaceAction.PreviewAccess).topicId
+                                val access = api.topicAccess(token, loaded.communityId, id)
+                                update { it.copy(access = access, accessApproval = null) }
+                            } else refreshTopics(token, ticket)
+                        }
+                                            } catch (error: CancellationException) { throw error }
+                        catch (_: Exception) { update { it.copy(spaceError=uiText(R.string.space_day_60),accessApproval=null) } }
+                    }
+                    if (isAccessFailure(e)) reconcileForbidden(e, ticket)
+                }
+            } catch (_: Exception) { if (ticket == generation && home?.communityId == loaded.communityId) mutable.value = mutable.value.copy(spaceError = uiText(R.string.space_day_60)) }
+            finally { update { it.copy(channelBusy = false) } }
+        }
     }
 
     private suspend fun openTrusted() {
@@ -785,6 +1288,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                     val fresh = api.ballots(token, loaded.communityId, topicId)
                     if (currentBallots(ticket, topicId)) mutable.value = mutable.value.copy(board = fresh, ballotRefreshFailed = false)
                 } catch (e: CancellationException) { throw e }
+                catch (e: CommunityClientException) { reconcileForbidden(e, ticket); if (currentBallots(ticket, topicId)) mutable.value = mutable.value.copy(ballotRefreshFailed = true) }
                 catch (_: Exception) { if (currentBallots(ticket, topicId)) mutable.value = mutable.value.copy(ballotRefreshFailed = true) }
             } catch (e: CancellationException) {
                 throw e
@@ -819,6 +1323,9 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             mutable.value = mutable.value.copy(messages = older + mutable.value.messages, hasMore = page.hasMore, failed = false)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: CommunityClientException) {
+            reconcileForbidden(e, ticket)
+            if (current(ticket, id)) mutable.value = mutable.value.copy(failed = true)
         } catch (e: Exception) {
             android.util.Log.w("ZaparaGroup", "older", e)
             if (current(ticket, id)) mutable.value = mutable.value.copy(failed = true)
@@ -831,7 +1338,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         val ticket = generation
         if (!current(ticket, id)) return
         val api = runtime.client ?: return
-        val token = runtime.accessToken() ?: return
+        val token = runtime.accessToken() ?: run { reconcileForbidden(CommunityClientException(CommunityClientFailure.InvalidSession),ticket); return }
         if (!current(ticket, id)) return
         val last = mutable.value.messages.lastOrNull()
         val topic = topicQuery(mutable.value.direct, mutable.value.activeTopicId)
@@ -841,7 +1348,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             api.messages(token, id, topic = topic).messages
         } catch (e: CancellationException) {
             throw e
-        } catch (_: CommunityClientException) {
+        } catch (e: CommunityClientException) {
+            if (isAccessFailure(e)) throw e
             emptyList()
         }
         if (!current(ticket, id)) return
@@ -861,7 +1369,10 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         )
         if (mutable.value.direct || topics == null) {
             if (page.messages.isNotEmpty()) acknowledge(token, id, ticket)
-        } else refreshTopics(token, ticket)
+        } else {
+            refreshTopics(token,ticket)
+            if (current(ticket,id)) loadSubjectContext(token,ticket,mutable.value.activeTopicId)
+        }
     }
 
     private suspend fun acknowledge(token: String, id: String, ticket: Int) {
@@ -876,7 +1387,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (_: CommunityClientException) { }
+        } catch (e: CommunityClientException) { reconcileForbidden(e,ticket) }
     }
 
     private fun attach(kind: String, name: String, bytes: ByteArray, durationMs: Int? = null) {
@@ -939,7 +1450,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             mutable.value = mutable.value.copy(mediaLoadingIds = mutable.value.mediaLoadingIds + messageId,
                 mediaFailedIds = mutable.value.mediaFailedIds - messageId)
             try {
-                val token = runtime.accessToken() ?: error("Сессия недоступна")
+                val token = runtime.accessToken() ?: error(runtime.context?.getString(R.string.face_session_unavailable) ?: "session")
                 val bytes = withContext(Dispatchers.IO) { api.downloadMedia(token, id, messageId) }
                 if (!current(ticket, id)) return@launch
                 val file = withContext(Dispatchers.IO) {
@@ -952,6 +1463,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 mutable.value = mutable.value.copy(mediaFiles = mutable.value.mediaFiles + (messageId to file))
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: CommunityClientException) {
+                reconcileForbidden(e,ticket)
             } catch (_: Exception) {
                 if (current(ticket, id)) mutable.value = mutable.value.copy(mediaFailedIds = mutable.value.mediaFailedIds + messageId)
             } finally {
@@ -982,6 +1495,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 if (current(ticket, id)) mutable.value = mutable.value.copy(mediaError = !opened)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: CommunityClientException) {
+                reconcileForbidden(e,ticket)
             } catch (_: Exception) {
                 if (current(ticket, id)) mutable.value = mutable.value.copy(mediaError = true)
             } finally {
@@ -1015,7 +1530,14 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                     return
                 }
                 val saved = GroupMedia.place(api, token, id, fileKind, name, file, mutable.value.replyTo, durationMs,
-                    if (topics == null || mutable.value.direct) null else mutable.value.activeTopicId)
+                    if (topics == null || mutable.value.direct) null else mutable.value.activeTopicId,
+                    blankLabel = { kind ->
+                        runtime.context?.getString(when (kind) {
+                            "image" -> R.string.face_photo
+                            "video" -> R.string.face_video
+                            else -> R.string.face_document
+                        }) ?: "file"
+                    })
                 delivered = true
                 draftContexts.remove(key)
                 if (!current(ticket, id)) return
@@ -1048,8 +1570,10 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             }
             return
         }
-        val body = mutable.value.draft.trim()
-        if (body.isEmpty()) return
+        val plainBody = mutable.value.draft.trim()
+        val composeContext = mutable.value.composeContext
+        val body = if (composeContext != null && mutable.value.editing == null) "$composeContext\n\n$plainBody" else plainBody
+        if (plainBody.isEmpty()) return
         if (mutable.value.activeChannelKind == "ballots" || !mutable.value.canPost) return
         val selectedTopicId = mutable.value.activeTopicId
         val selectedDirect = mutable.value.direct
@@ -1068,7 +1592,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             val api = runtime.client
             val token = if (api == null) null else runtime.accessToken()
             if (api == null || token.isNullOrEmpty() || !current(ticket, id) || !mutable.value.canPost) {
-                restoreDraft(id, key, draftVersion, body, replyTo, editing)
+                restoreDraft(id, key, draftVersion, plainBody, replyTo, editing)
                 return
             }
             val message = when {
@@ -1093,17 +1617,19 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                     failed = false,
                     replyTo = if (unchanged) null else mutable.value.replyTo,
                     editing = if (unchanged) null else mutable.value.editing,
-                    messages = messages
+                    messages = messages,
+                    composeContext = if (unchanged) null else mutable.value.composeContext
                 )
+                if (unchanged) composeContexts.remove(key)
             }
         } catch (e: CancellationException) {
-            restoreDraft(id, key, draftVersion, body, replyTo, editing)
+            restoreDraft(id, key, draftVersion, plainBody, replyTo, editing)
             throw e
         } catch (e: CommunityClientException) {
-            restoreDraft(id, key, draftVersion, body, replyTo, editing)
+            restoreDraft(id, key, draftVersion, plainBody, replyTo, editing)
             reconcileForbidden(e, ticket)
         } catch (e: Exception) {
-            restoreDraft(id, key, draftVersion, body, replyTo, editing)
+            restoreDraft(id, key, draftVersion, plainBody, replyTo, editing)
             runCatching { android.util.Log.w("ZaparaGroup", "send", e) }
         } finally {
             sendingKeys.remove(key)
@@ -1132,6 +1658,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     private fun rememberDraft() {
         val key = draftKey ?: return
         drafts[key] = mutable.value.draft
+        composeContexts[key] = mutable.value.composeContext
         if (mutable.value.replyTo == null && mutable.value.editing == null) plainDrafts[key] = mutable.value.draft
         setDraftContext(key, mutable.value.replyTo, mutable.value.editing)
     }
@@ -1168,6 +1695,9 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                     pull(id)
                 } catch (e: CancellationException) {
                     throw e
+                } catch (e: CommunityClientException) {
+                    reconcileForbidden(e, ticket)
+                    if (current(ticket, id)) mutable.value = mutable.value.copy(failed = true)
                 } catch (e: Exception) {
                     android.util.Log.w("ZaparaGroup", "pull", e)
                     if (current(ticket, id)) mutable.value = mutable.value.copy(failed = true)
@@ -1177,6 +1707,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     }
 
     private fun leave() {
+        resetArchiveAuthority()
+        accessRequestSerial++
         poll?.cancel()
         mediaJobs.values.forEach { it.cancel() }
         mediaJobs.clear()
@@ -1194,8 +1726,10 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         home = null
         topics = null
         mutable.value = mutable.value.copy(
-            hasHome = false, communityId = null, messages = emptyList(), hasMore = false, olderLoading = false,
-            activeConversationId = null, activeTopicId = null, activeChannelKind = "chat", canPost = true,
+            hasHome = false, communityId = null, creationDraft=null, creationNotice=null, creationSubmitting=false, messages = emptyList(), subjectLesson = null, subjectHomework = emptyList(), subjectDetail = null, showSubjectTasks = false,
+            space = null, spacePanel = null, preview = null, previewSubject = null, forms = emptyList(), responses = emptyMap(), responseCursors = emptyMap(), responseCounts = emptyMap(),
+            archived = emptyList(), access = null, audit = emptyList(), homework = emptyList(), completions = emptyMap(), scheduleRows = emptyList(), subjects = emptyList(), spaceError = null, composeContext = null, hasMore = false, olderLoading = false,
+            activeConversationId = null, activeTopicId = null, activeArchivedTopic=null, activeChannelKind = "chat", canPost = true,
             channels = emptyList(), canManageChannels = false, board = null, ballotRefreshFailed = false, desk = null,
             channelBusy = false, direct = false, failed = false, attachmentPending = false,
             showPeople = false, showChannels = false, showTrusted = false, chatLoading = false, sending = false,
@@ -1206,6 +1740,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     }
 
     private fun showHomePane(people: Boolean) {
+        accessRequestSerial++
         poll?.cancel()
         mediaJobs.values.forEach { it.cancel() }
         mediaJobs.clear()
@@ -1218,8 +1753,10 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         pendingKind = null
         pendingName = ""
         pendingDurationMs = null
-        mutable.value = mutable.value.copy(showPeople = people, showChannels = !people, showTrusted = false, desk = null,
-            activeConversationId = null, activeTopicId = null, activeChannelKind = "chat", canPost = true, direct = false,
+        mutable.value = mutable.value.copy(showPeople = people, showChannels = !people, showTrusted = false, desk = mutable.value.space?.desk, spacePanel = null, access = null, accessApproval = null,
+            forms = emptyList(), homework = emptyList(), completions = emptyMap(), responses = emptyMap(), composeContext = null,
+            subjectLesson = null, subjectHomework = emptyList(), subjectDetail = null, showSubjectTasks = false,
+            activeConversationId = null, activeTopicId = null, activeArchivedTopic=null, activeChannelKind = "chat", canPost = true, direct = false,
             messages = emptyList(), hasMore = false, olderLoading = false,
             board = null, ballotRefreshFailed = false, draft = "", replyTo = null, editing = null, sending = false,
             chatLoading = false, channelBusy = false, attachmentPending = false,
@@ -1261,16 +1798,19 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                         api.reactMessage(token, conversationId, messageId, emoji)
                     }
                 }
-                val next = GroupHold.perform(message, action, id, token, port, GroupHoldState(mutable.value.draft, mutable.value.replyTo, mutable.value.editing))
+                val next = GroupHold.perform(message, action, id, token, port, GroupHoldState(mutable.value.draft, mutable.value.replyTo, mutable.value.editing), GroupActions.canModerate(mutable.value))
                 if (!current(ticket, id)) return@launch
                 if (mutable.value.replyTo == null && mutable.value.editing == null &&
                     (next.replyTo != null || next.editing != null)) draftKey?.let { plainDrafts[it] = mutable.value.draft }
-                val messages = if (next.removed) mutable.value.messages.map { if (it.id == messageId) it.copy(deleted = true) else it } else mutable.value.messages
+                val messages = if (next.removed) mutable.value.messages.map { if (it.id == messageId) it.copy(deleted = true, body = "", reactions = emptyList()) else it } else mutable.value.messages
                 mutable.value = mutable.value.copy(draft = next.draft, replyTo = next.replyTo, editing = next.editing, messages = messages)
                 rememberDraft()
                 if (next.replyTo != null || next.editing != null) draftKey?.let(::bumpDraftVersion)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: CommunityClientException) {
+                reconcileForbidden(e,ticket)
+                if (current(ticket,id)) mutable.value = mutable.value.copy(failed=true)
             } catch (e: Exception) {
                 if (current(ticket, id)) mutable.value = mutable.value.copy(failed = true)
             }
@@ -1291,6 +1831,9 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 mutable.value = mutable.value.copy(messages = mutable.value.messages.map { if (it.id == messageId) updated else it }, failed = false)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: CommunityClientException) {
+                reconcileForbidden(e,ticket)
+                if (current(ticket,id)) mutable.value = mutable.value.copy(failed=true)
             } catch (e: Exception) {
                 if (current(ticket, id)) mutable.value = mutable.value.copy(failed = true)
                 runCatching { android.util.Log.w("ZaparaGroup", "reaction", e) }
@@ -1305,10 +1848,10 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     )
 
     companion object {
-        fun factory(container: AppContainer, initialCommunityId: String? = null, initialConversationId: String? = null) = object : ViewModelProvider.Factory {
+        fun factory(container: AppContainer, initialCommunityId: String? = null, initialConversationId: String? = null, initialContext: String? = null) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                GroupViewModel(container, initialCommunityId, initialConversationId) as T
+                GroupViewModel(container, initialCommunityId, initialConversationId, initialContext) as T
         }
     }
 }

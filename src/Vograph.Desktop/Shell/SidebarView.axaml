@@ -20,7 +20,7 @@
     <Panel x:Name="Root">
       <DockPanel LastChildFill="True">
 
-        <StackPanel DockPanel.Dock="Bottom" Spacing="4">
+        <StackPanel DockPanel.Dock="Bottom" Spacing="4"><TextBlock Classes="micro" Text="Приложение" IsVisible="{Binding !SidebarCollapsed}" Margin="10,8" />
           <!-- Only while an update is waiting; the badge repeats it on the collapsed rail. -->
           <c:NavItem Content="{loc:T updTitle}" Icon="{StaticResource Icon.Download}" Badge="{Binding Updates.BadgeText}"
                      IsCompact="{Binding SidebarCollapsed}" IsVisible="{Binding Updates.IsAvailable}"
@@ -48,9 +48,9 @@
                   AutomationProperties.AutomationId="Shell.GroupCard" AutomationProperties.Name="{Binding GroupName}">
             <Border Classes="card hoverable" Padding="12,10">
               <StackPanel Spacing="4">
-                <TextBlock Text="{Binding GroupName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
-                <TextBlock Text="{Binding GroupRailLabel}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" IsVisible="{Binding SidebarCollapsed}" />
-                <TextBlock Classes="muted" Text="{Binding GroupSubtitle}" FontSize="11.5" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
+                <TextBlock Text="{Binding GroupName}" FontSize="15" FontWeight="Medium" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
+                <TextBlock Text="{Binding GroupRailLabel}" FontSize="15" FontWeight="Medium" HorizontalAlignment="Center" IsVisible="{Binding SidebarCollapsed}" />
+                <TextBlock Classes="muted" Text="{Binding GroupSubtitle}" FontSize="12" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
                 <Border Classes="chip stale" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Stretch" Padding="8,5" IsVisible="{Binding ShowStaleChip}">
                   <TextBlock Text="{Binding StaleText}" TextWrapping="Wrap" />
                 </Border>
@@ -59,14 +59,15 @@
             </Border>
           </Button>
 
-          <ItemsControl ItemsSource="{Binding MainSections}" ItemTemplate="{StaticResource NavTemplate}">
+          <TextBlock Classes="micro" Text="Учёба" IsVisible="{Binding !SidebarCollapsed}" Margin="10,6" />
+          <ItemsControl ItemsSource="{Binding StudySections}" ItemTemplate="{StaticResource NavTemplate}">
             <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
           </ItemsControl>
 
-          <TextBlock Classes="micro" Text="{loc:TU navTools}" Margin="10,14,10,4" IsVisible="{Binding !SidebarCollapsed}" />
+          <TextBlock Classes="micro" Text="Группа" Margin="10,14,10,4" IsVisible="{Binding !SidebarCollapsed}" />
           <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="8,12" IsVisible="{Binding SidebarCollapsed}" />
 
-          <ItemsControl ItemsSource="{Binding ToolSections}" ItemTemplate="{StaticResource NavTemplate}">
+          <ItemsControl ItemsSource="{Binding GroupSections}" ItemTemplate="{StaticResource NavTemplate}">
             <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
           </ItemsControl>
         </StackPanel>

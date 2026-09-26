@@ -10,7 +10,7 @@ internal sealed partial class CommunityRepository
     internal async Task<BallotBoardResponse> OpenHeadmanBallotAsync(Guid communityId, BallotDraftRequest request)
     {
         if (request is null) throw CommunityServiceException.InvalidRequest();
-        await RequirePowerAsync(communityId, "ballots");
+        if (request.TopicId is null) await RequirePowerAsync(communityId, "ballots");
         await RequireBallotPublishTopicAsync(communityId, request.TopicId);
         await CloseExpiredAsync(communityId);
         if (await ActiveCountAsync(communityId) >= BallotRules.ActiveLimit) throw CommunityServiceException.InvalidRequest();
@@ -40,6 +40,7 @@ internal sealed partial class CommunityRepository
 
     internal async Task<BallotBoardResponse> SupportBallotAsync(Guid communityId, Guid ballotId)
     {
+        await RequireBallotPermissionAsync(communityId,ballotId,"vote");
         await RequireMemberAsync(communityId);
         await CloseExpiredAsync(communityId);
         var row = await FindBallotAsync(communityId, ballotId) ?? throw CommunityServiceException.NotFound();
@@ -54,6 +55,7 @@ internal sealed partial class CommunityRepository
 
     internal async Task<BallotBoardResponse> VoteBallotAsync(Guid communityId, Guid ballotId, Guid optionId)
     {
+        await RequireBallotPermissionAsync(communityId,ballotId,"vote");
         await RequireMemberAsync(communityId);
         await CloseExpiredAsync(communityId);
         var row = await FindBallotAsync(communityId, ballotId) ?? throw CommunityServiceException.NotFound();
@@ -72,7 +74,8 @@ internal sealed partial class CommunityRepository
 
     internal async Task<BallotBoardResponse> CloseBallotAsync(Guid communityId, Guid ballotId)
     {
-        await RequirePowerAsync(communityId, "close");
+        var topicId = await RequireBallotPermissionAsync(communityId,ballotId,"close");
+        if (topicId is null) await RequirePowerAsync(communityId, "close");
         if (await FindBallotAsync(communityId, ballotId) is null) throw CommunityServiceException.NotFound();
         if (await ExistsAsync($"SELECT ballot_id FROM {Msg}.ballot_effects WHERE ballot_id=@p0", ballotId))
             throw CommunityServiceException.Forbidden();
@@ -135,6 +138,8 @@ internal sealed partial class CommunityRepository
             """, filterArguments))
         await using (var reader = await command.ExecuteReaderAsync(ct))
             while (await reader.ReadAsync(ct)) rows.Add(ReadRow(reader));
+        var visible = await VisibleTopicIdsAsync(communityId);
+        rows.RemoveAll(row => row.TopicId is Guid id && !visible.Contains(id));
         var support = new Dictionary<Guid, (int Count, bool Mine)>();
         var options = new Dictionary<Guid, List<BallotOptionResponse>>();
         var effects = new Dictionary<Guid, (string Kind, string Outcome)>();
@@ -194,7 +199,24 @@ internal sealed partial class CommunityRepository
         }
         var canOpen = role == "headman" || await HasPowerAsync(communityId, "ballots");
         var canClose = role == "headman" || await HasPowerAsync(communityId, "close");
+        if(topicId is Guid scopedTopic)
+        {
+            var permissions=await TopicPermissionsAsync(communityId,await SpaceTopicAsync(communityId,scopedTopic));
+            canOpen=permissions.Contains("ballots"); canClose=permissions.Contains("close");
+        }
         return new(role == "headman", canOpen, canClose, members, need, ballots);
+    }
+
+    private async Task<Guid?> RequireBallotPermissionAsync(Guid communityId,Guid ballotId,string permission)
+    {
+        await RequireMemberAsync(communityId);
+        await using var command=Command($"SELECT topic_id FROM {Msg}.ballots WHERE community_id=@p0 AND ballot_id=@p1",communityId,ballotId);
+        await using var reader=await command.ExecuteReaderAsync(ct);
+        if(!await reader.ReadAsync(ct)) throw CommunityServiceException.NotFound();
+        var topic=reader.IsDBNull(0)?(Guid?)null:reader.GetGuid(0);
+        await reader.DisposeAsync();
+        if(topic is Guid id) await RequireTopicPermissionAsync(communityId,id,permission);
+        return topic;
     }
 
     private Task CloseExpiredAsync(Guid communityId) => ExecuteAsync($"""

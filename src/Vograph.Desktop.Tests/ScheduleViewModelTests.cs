@@ -15,7 +15,7 @@ public class ScheduleViewModelTests
     }
 
     [Fact]
-    public async Task Initialize_Applies_Smart_Start_And_Segment()
+    public async Task Initialize_Opens_Today_And_The_First_Fast_Day()
     {
         using var db = TestDb.Create();
         var vm = Make(db, new DateTime(2026, 9, 14, 8, 0, 0));
@@ -23,7 +23,7 @@ public class ScheduleViewModelTests
         await vm.InitializeAsync();
 
         Assert.Equal(0, vm.DayOffset);
-        Assert.Equal(1, vm.SegmentIndex);
+        Assert.Equal(0, vm.SegmentIndex);
         Assert.Equal("Сегодня", vm.Title);
         Assert.Equal(2, vm.Lessons.Count);
         Assert.False(vm.ShowGoToday);
@@ -43,7 +43,7 @@ public class ScheduleViewModelTests
         vm.PrevDayCommand.Execute(null);
         await vm.ReloadAsync();
         Assert.Equal(-1, vm.DayOffset);
-        Assert.Equal(0, vm.SegmentIndex);
+        Assert.Equal(-1, vm.SegmentIndex);
         Assert.Equal("Вчера", vm.Title);
         Assert.True(vm.IsEmpty);
         Assert.Equal("Воскресенье — пар нет", vm.EmptyTitle);
@@ -61,7 +61,7 @@ public class ScheduleViewModelTests
         Assert.Equal(0, vm.DayOffset);
         Assert.False(vm.ShowGoToday);
 
-        vm.SegmentIndex = 2;                          // user clicks "Завтра"
+        vm.SegmentIndex = 1;                          // user clicks "Завтра"
         await vm.ReloadAsync();
         Assert.Equal(1, vm.DayOffset);
         Assert.Equal("Завтра", vm.Title);
@@ -80,7 +80,7 @@ public class ScheduleViewModelTests
         await vm.ReloadAsync();
 
         Assert.Equal("ru", db.Services.Loc.Language);
-        Assert.Equal(new[] { "Вчера", "Сегодня", "Завтра" }, vm.SegmentItems);
+        Assert.Equal(new[] { "Сегодня", "Завтра", "Послезавтра" }, vm.SegmentItems);
         Assert.Equal("Сегодня", vm.Title);
         Assert.Equal("Матан", vm.Lessons[0].DisplayName);
     }

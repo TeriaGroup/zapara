@@ -28,9 +28,14 @@ object WeekComposer {
         displayName: (norm: String, dow: Int) -> String,
         ctx: SchedCtx,
         today: LocalDate,
-        copy: UiCopy
-    ): List<WeekDayUi> = (1..6).map { dow ->
-        val date = nearestDate(dow, parity, ctx, today)
+        copy: UiCopy,
+        anchorDate: LocalDate? = null
+    ): List<WeekDayUi> = (1..if (anchorDate == null) 6 else 7).map { dow ->
+        val date = if (anchorDate == null) nearestDate(dow, parity, ctx, today) else {
+            val monday = anchorDate.minusDays((anchorDate.dayOfWeek.value - 1).toLong())
+            val week = if (Parity.isOddWeek(anchorDate, ctx.periodStart, ctx.weekCount, ctx.invert) == (parity == 1)) monday else monday.plusWeeks(1)
+            week.plusDays((dow - 1).toLong())
+        }
         val dayLessons = Schedule.lessonsForDate(lessons, ctx.groupId, date, ctx.periodStart, ctx.weekCount, ctx.invert)
         val rows = dayLessons.map { lesson ->
             val shown = displayName(lesson.subjectNormalized, lesson.dayOfWeek).ifBlank {

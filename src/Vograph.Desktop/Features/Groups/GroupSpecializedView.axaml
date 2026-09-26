@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:g="using:Vograph.Desktop.Features.Groups" xmlns:c="using:Vograph.Desktop.Controls" x:Class="Vograph.Desktop.Features.Groups.GroupSpecializedView" x:DataType="g:GroupViewModel">
+ <ScrollViewer HorizontalScrollBarVisibility="Disabled"><StackPanel Margin="16" Spacing="12">
+  <TextBlock Text="{Binding SpecializedHint}" TextWrapping="Wrap" />
+  <StackPanel Spacing="8" IsVisible="{Binding ShowMaterials}"><TextBlock Classes="subject" Text="Материалы темы" /><TextBlock Classes="muted caption" Text="Файлы и ссылки из этой темы. Прикрепить материал можно скрепкой внизу." TextWrapping="Wrap" />
+   <Button Content="Загрузить ещё материалы" Command="{Binding LoadOlderCommand}" IsVisible="{Binding HasMore}" IsEnabled="{Binding CanLoadOlder}" />
+   <ItemsControl ItemsSource="{Binding Messages}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:GroupMessageRow"><Border Classes="card" Margin="0,4"><StackPanel Spacing="6"><TextBlock Text="{Binding Body}" TextWrapping="Wrap" /><TextBlock Classes="muted caption" Text="{Binding Author}" /><Button Content="Скачать материал" Command="{Binding DownloadCommand}" IsVisible="{Binding CanDownload}" /><Button Content="Открыть ссылку" Command="{Binding OpenLinkCommand}" IsVisible="{Binding HasLink}" /></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+  </StackPanel>
+  <StackPanel Spacing="10" IsVisible="{Binding ShowForms}">
+   <StackPanel Spacing="8" IsVisible="{Binding CanCreateForm}">
+    <TextBlock Classes="subject" Text="Новая анкета" />
+    <TextBox Text="{Binding FormTitle}" PlaceholderText="Название анкеты" MaxLength="120" />
+    <TextBox Text="{Binding FormDescription}" PlaceholderText="Описание" AcceptsReturn="True" TextWrapping="Wrap" />
+    <TextBox Text="{Binding FormDeadline}" PlaceholderText="Срок: дд.мм.гггг чч:мм (необязательно)" />
+    <CheckBox Content="Анонимные ответы" IsChecked="{Binding FormAnonymous}" />
+    <TextBlock Classes="muted caption" Text="Вопросы и анонимность после публикации неизменны. Ответы доступны автору анкеты." TextWrapping="Wrap" />
+    <ItemsControl ItemsSource="{Binding FormQuestions}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceQuestionEditor">
+     <Border Classes="card" Margin="0,4"><StackPanel Spacing="6">
+      <TextBox Text="{Binding Title}" PlaceholderText="Вопрос" />
+      <ComboBox ItemsSource="{Binding QuestionKinds}" SelectedItem="{Binding Kind}" />
+      <CheckBox Content="Обязательный вопрос" IsChecked="{Binding Required}" />
+      <TextBox Text="{Binding OptionsText}" PlaceholderText="Каждый вариант с новой строки" AcceptsReturn="True" TextWrapping="Wrap" IsVisible="{Binding HasChoices}" />
+      <Button Content="Убрать вопрос" Command="{Binding $parent[UserControl].((g:GroupViewModel)DataContext).RemoveFormQuestionCommand}" CommandParameter="{Binding}" />
+     </StackPanel></Border>
+    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    <WrapPanel ItemSpacing="8"><Button Content="Добавить вопрос" Command="{Binding AddFormQuestionCommand}" /><Button Classes="primary" Content="Опубликовать анкету" Command="{Binding PublishFormCommand}" IsEnabled="{Binding !IsBusy}" /></WrapPanel>
+   </StackPanel>
+   <ItemsControl ItemsSource="{Binding Forms}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceFormRow">
+    <Border Classes="card" Margin="0,4"><StackPanel Spacing="8">
+     <TextBlock Classes="subject" Text="{Binding Title}" TextWrapping="Wrap" /><TextBlock Text="{Binding Description}" TextWrapping="Wrap" /><TextBlock Classes="muted caption" Text="{Binding Summary}" TextWrapping="Wrap" />
+     <ItemsControl ItemsSource="{Binding Questions}" IsEnabled="{Binding CanRespond}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceAnswerRow"><StackPanel Spacing="6" Margin="0,6">
+      <TextBlock Text="{Binding Title}" TextWrapping="Wrap" /><TextBox Text="{Binding Text}" IsVisible="{Binding IsText}" AcceptsReturn="{Binding IsLong}" TextWrapping="Wrap" />
+      <ItemsControl ItemsSource="{Binding Options}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceAnswerChoice"><CheckBox Content="{Binding Label}" IsChecked="{Binding Selected}" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+     </StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+     <Button Classes="primary" Content="Сохранить мой ответ" Command="{Binding SubmitCommand}" IsVisible="{Binding CanRespond}" HorizontalAlignment="Left" />
+     <WrapPanel IsVisible="{Binding CanViewResponses}" ItemSpacing="8"><Button Content="Ответы участников" Command="{Binding ResponsesCommand}" /><Button Content="Экспорт CSV" Command="{Binding ExportCommand}" /></WrapPanel>
+     <TextBlock Text="Загружаем ответы…" IsVisible="{Binding ResponseLoading}" /><TextBlock Text="Все ответы загружены" IsVisible="{Binding ResponsesComplete}" Classes="muted caption" /><ItemsControl ItemsSource="{Binding Responses}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,6" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    </StackPanel></Border>
+   </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+  </StackPanel>
+  <StackPanel IsVisible="{Binding ShowChannelHomework}" Spacing="10">
+   <StackPanel IsVisible="{Binding CanCreateChannelHomework}" Spacing="6"><TextBlock Classes="subject" Text="Общая домашка" />
+    <TextBox Text="{Binding SharedHomeworkTitle}" PlaceholderText="Название" /><TextBox Text="{Binding SharedHomeworkBody}" PlaceholderText="Задание" AcceptsReturn="True" TextWrapping="Wrap" />
+    <TextBox Text="{Binding SharedHomeworkDeadline}" PlaceholderText="Срок: дд.мм.гггг чч:мм (необязательно)" />
+    <WrapPanel ItemSpacing="8"><Button Classes="primary" Content="Сохранить задание" Command="{Binding SaveSharedHomeworkCommand}" IsEnabled="{Binding !IsBusy}" /><Button Content="Новое задание" Command="{Binding NewSharedHomeworkCommand}" /></WrapPanel>
+   </StackPanel>
+   <ItemsControl ItemsSource="{Binding ChannelHomeworks}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceHomeworkRow"><Border Classes="card" Margin="0,4"><StackPanel Spacing="6">
+    <TextBlock Classes="subject" Text="{Binding Title}" TextWrapping="Wrap" /><TextBlock Text="{Binding Body}" TextWrapping="Wrap" /><TextBlock Classes="muted caption" Text="{Binding Deadline}" />
+    <WrapPanel ItemSpacing="8"><Button Content="{Binding CompletionLabel}" Command="{Binding ToggleCommand}" IsEnabled="{Binding Writable}" /><Button Content="Изменить" Command="{Binding EditCommand}" IsVisible="{Binding $parent[UserControl].((g:GroupViewModel)DataContext).CanCreateChannelHomework}" /></WrapPanel>
+   </StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+  </StackPanel>
+  <StackPanel IsVisible="{Binding ShowChannelSchedule}" Spacing="10"><WrapPanel ItemSpacing="6"><Button Content="Назад" Command="{Binding ChannelPreviousCommand}" /><Button Content="Сегодня" Command="{Binding ChannelTodayCommand}" /><Button Content="Завтра" Command="{Binding ChannelTomorrowCommand}" /><Button Content="Послезавтра" Command="{Binding ChannelAfterTomorrowCommand}" /><Button Content="Вперёд" Command="{Binding ChannelNextCommand}" /></WrapPanel><CalendarDatePicker SelectedDate="{Binding ChannelScheduleDate}" AutomationProperties.Name="Дата расписания группы" /><TextBlock Text="{Binding ChannelScheduleSummary}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding ChannelScheduleDates}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" LineSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceScheduleDate"><c:SelectionButton Content="{Binding Label}" IsChecked="{Binding Selected,Mode=OneWay}" Command="{Binding SelectCommand}" Classes.primary="{Binding Selected}" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><Button Content="{Binding ChannelScheduleNextCaption}" Command="{Binding ChannelNextStudyCommand}" IsVisible="{Binding ChannelScheduleNextCaption,Converter={x:Static StringConverters.IsNotNullOrEmpty}}" /><ItemsControl ItemsSource="{Binding ChannelSchedule}"><ItemsControl.ItemTemplate><DataTemplate><Border Classes="card" Margin="0,4"><TextBlock Text="{Binding}" TextWrapping="Wrap" /></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel>
+ </StackPanel></ScrollViewer>
+</UserControl>

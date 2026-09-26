@@ -119,4 +119,18 @@ class ApiRefreshCoordinatorTest {
         assertFalse(task.await())
         assertEquals(before, store.dump())
     }
+    @Test fun channel_group_download_does_not_change_study_group_or_settings() = runBlocking {
+        val http = FakeHttp { call -> jsonReply(if (call.url.substringBefore('?').endsWith("/groups")) catalogJson(PIN, "a") else scheduleJson()) }
+        val store = MemoryTimetableStore()
+        store.saveSettings(store.settings().copy(myGroupId = "other"))
+        val before = store.settings()
+        val api = ApiRefreshCoordinator(store, ProfileWork(), "https://example.invalid/", http)
+        assertTrue(api.ensureGroup("ТЕСТ-ГРУППА"))
+        assertEquals(before, store.settings())
+        assertNotNull(store.readMetadata("a"))
+        val requests = http.requests.size
+        assertTrue(api.ensureGroup("ТЕСТ-ГРУППА"))
+        assertEquals(requests, http.requests.size)
+    }
+
 }

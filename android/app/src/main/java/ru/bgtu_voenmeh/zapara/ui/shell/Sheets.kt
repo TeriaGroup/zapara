@@ -16,6 +16,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import ru.bgtu_voenmeh.zapara.ui.components.rememberUiText
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -31,30 +32,27 @@ import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
 
 @Composable
 fun SectionsSheet(current: Section, onPick: (Section) -> Unit, onDismiss: () -> Unit) {
+    val uiText = rememberUiText()
     val c = Zapara.colors
-    val grid = Section.sheet.filter { it != Section.Settings }
+    val sectionGroups = listOf(
+        uiText(R.string.space_day_167) to listOf(Section.Schedule, Section.Week, Section.Homework, Section.Maps, Section.Teachers, Section.Summary),
+        uiText(R.string.space_day_168) to listOf(Section.Group, Section.Chat, Section.Friends, Section.Community),
+        uiText(R.string.space_day_169) to listOf(Section.Settings)
+    )
     ZBottomSheet(onDismiss = onDismiss, tag = "Sheet.Sections") {
-        Text(stringResource(R.string.sections_title), style = Zapara.typography.caption, color = c.text2)
-        Spacer(Modifier.height(Zapara.space.s))
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
-            verticalArrangement = Arrangement.spacedBy(Zapara.space.s),
-            modifier = Modifier.heightIn(max = 280.dp)
-        ) {
-            items(grid, key = { it.route }) { section ->
-                SectionCard(section, current == section) { onPick(section) }
+        Text(stringResource(R.string.sections_title), style = Zapara.typography.section, color = c.text1)
+        LazyColumn(Modifier.heightIn(max = 600.dp), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            sectionGroups.forEach { (title, sections) ->
+                item { Text(title, style = Zapara.typography.caption, color = c.text2, modifier = Modifier.padding(top = Zapara.space.m)) }
+                items(sections, key = { it.route }) { section -> SectionCard(section, current == section) { onPick(section) } }
             }
-        }
-        Spacer(Modifier.height(Zapara.space.s))
-        SectionCard(Section.Settings, current == Section.Settings) {
-            onPick(Section.Settings)
         }
     }
 }
 
 @Composable
 private fun SectionCard(section: Section, active: Boolean, onClick: () -> Unit) {
+    val uiText = rememberUiText()
     val c = Zapara.colors
     ZCard(
         Modifier
@@ -88,6 +86,7 @@ fun GroupPickerSheet(
     onPick: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val uiText = rememberUiText()
     val c = Zapara.colors
     var query by remember { mutableStateOf("") }
     val filtered = remember(groups, query) {

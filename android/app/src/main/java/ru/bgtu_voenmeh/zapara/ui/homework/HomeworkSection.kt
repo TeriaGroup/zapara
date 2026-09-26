@@ -153,7 +153,7 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
             { kind, uri -> onEvent(HomeworkEvent.Attach(kind, uri)) },
             { onEvent(HomeworkEvent.RemoveFile(it)) },
             { onEvent(HomeworkEvent.EditorShare(it)) },
-            isGuest = state.guest
+            isGuest = state.guest, onRecalculate = { onEvent(HomeworkEvent.Recalculate) }
         )
     }
     state.confirmDelete?.let {

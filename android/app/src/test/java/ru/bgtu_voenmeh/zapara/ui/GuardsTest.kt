@@ -41,7 +41,7 @@ class GuardsTest {
 
     @Test fun ui_kotlin_has_no_raw_user_facing_cyrillic() {
         val dataTokens = setOf("ГК", "УЛК", "ВЦ", "лек", "пр", "лаб", "конс", "зач", "экз", "курс", "практика", "дистанционно")
-        val quote = Regex("\"((?:\\\\.|[^\"\\\\])*)\"")
+        val quote = Regex("\"((?:\\\\.|[^\"\\\\])*+)\"")
         val cyrillic = Regex("[А-Яа-яЁё]")
         val offenders = mutableListOf<String>()
         File(main, "java/ru/bgtu_voenmeh/zapara/ui").walkTopDown().filter { it.extension == "kt" }.forEach { file ->

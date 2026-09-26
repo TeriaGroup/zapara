@@ -15,7 +15,7 @@ import ru.bgtu_voenmeh.zapara.AppContainer
 import ru.bgtu_voenmeh.zapara.data.Parity
 import ru.bgtu_voenmeh.zapara.data.SchedCtx
 
-class WeekViewModel(private val container: AppContainer) : ViewModel() {
+class WeekViewModel(private val container: AppContainer, private val initialDateArg: String? = null) : ViewModel() {
     private val mutable = MutableStateFlow(WeekUiState())
     val state: StateFlow<WeekUiState> = mutable.asStateFlow()
     private var reloadTicket = 0
@@ -41,15 +41,16 @@ class WeekViewModel(private val container: AppContainer) : ViewModel() {
                 val gid = prefs.myGroupId.orEmpty()
                 val today = container.clock().toLocalDate()
                 val current = if (Parity.isOddWeek(today, prefs.periodStart, prefs.weekCount, prefs.parityInvert)) 1 else 2
-                val parity = requested ?: current
+                val selectedDate = initialDateArg?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() } ?: today
+                val parity = requested ?: selectedDate?.let { if (Parity.isOddWeek(it, prefs.periodStart, prefs.weekCount, prefs.parityInvert)) 1 else 2 } ?: current
                 val ctx = SchedCtx(gid, prefs.periodStart, prefs.weekCount, prefs.parityInvert)
                 val lessons = if (gid.isEmpty()) emptyList() else container.ownLessons()
                 val days = if (gid.isEmpty()) emptyList() else WeekComposer.compose(
                     parity, lessons,
                     { norm, dow -> container.overrides.displayNameByNorm(norm, dow) },
-                    ctx, today, container.copy
+                    ctx, today, container.copy, selectedDate
                 )
-                WeekUiState(true, gid.isNotEmpty(), parity, current, days)
+                WeekUiState(true, gid.isNotEmpty(), parity, current, days, selectedDate ?: today)
             }
             if (ticket != reloadTicket) return
             mutable.value = snap
@@ -61,9 +62,9 @@ class WeekViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     companion object {
-        fun factory(container: AppContainer) = object : ViewModelProvider.Factory {
+        fun factory(container: AppContainer, dateArg: String? = null) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T = WeekViewModel(container) as T
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = WeekViewModel(container, dateArg) as T
         }
     }
 }

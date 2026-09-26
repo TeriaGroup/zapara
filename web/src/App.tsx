@@ -1,8 +1,9 @@
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Provider, useApp } from "./store";
 import { ChatInboxPage, PersonalChatPage } from "./chat";
 import { CommunityPage, FriendsPage, GroupPage, HomeworkPage, LegalPage, MapsPage, SchedulePage, SettingsPage, SummaryPage, TeachersPage, WeekPage } from "./pages";
+import { useReminders } from "./settings-panels";
 import { Icon, IconName } from "./icons";
 
 const items: [string, string, IconName][] = [
@@ -21,9 +22,11 @@ const items: [string, string, IconName][] = [
 
 function Shell() {
   const app = useApp();
+  useReminders();
   const location = useLocation();
   const navigate = useNavigate();
   const [menu, setMenu] = useState(false);
+  useEffect(()=>{if(!menu)return;const close=(event:KeyboardEvent)=>{if(event.key==="Escape"){event.preventDefault();setMenu(false);}};window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close);},[menu]);
   const group = app.catalog?.groups.find(item => item.id === app.groupId);
   const chatActive = location.pathname === "/chat" || location.pathname.startsWith("/chat/") || location.pathname === "/group";
   const bar = new Set(["/schedule", "/maps", "/homework", "/"]);
@@ -38,7 +41,7 @@ function Shell() {
           <span>{app.session?.authenticated ? "Аккаунт" : "На этом устройстве"}</span>
         </button>
         <nav className="nav">
-          {items.map(([path, title, icon]) => <NavLink key={path} to={"/" + path} className={({ isActive }) => "nav-btn" + (isActive ? " active" : "")}><Icon name={icon} size={18} />{title}</NavLink>)}
+          {items.map(([path, title, icon], index) => <div key={path}>{[0, 7, 10].includes(index) && <h2 className="nav-section">{index === 0 ? "Учёба" : index === 7 ? "Группа" : "Приложение"}</h2>}<NavLink key={path} to={"/" + path} className={({ isActive }) => "nav-btn" + (isActive ? " active" : "")}><Icon name={icon} size={18} />{title}</NavLink></div>)}
         </nav>
         <div className="side-foot">
           <div>{app.session?.authenticated ? app.session.user?.displayName || app.session.user?.username : "Гостевой режим"}</div>
@@ -80,13 +83,13 @@ function Shell() {
         </nav>
       </div>
       {menu && (
-        <div className="sheet" onClick={() => setMenu(false)}>
+        <div className="sheet" role="dialog" aria-modal="true" aria-label="Разделы" onClick={() => setMenu(false)}>
           <div className="card" onClick={event => event.stopPropagation()}>
-            <h2>Разделы</h2>
+            <div className="row"><h2>Разделы</h2><button className="btn quiet" type="button" autoFocus onClick={()=>setMenu(false)}>Закрыть</button></div>
             <div className="tiles">
-              {items.filter(([path]) => !["schedule", "maps", "homework", "chat"].includes(path)).map(([path, title, icon]) => (
+              {([ ["Учёба", ["week", "summary", "teachers", "friends"]], ["Группа", ["group", "community"]], ["Приложение", ["settings"]] ] as [string, string[]][]).map(([label, paths]) => <section className="section-group" key={label}><h2>{label}</h2>{items.filter(([path]) => paths.includes(path)).map(([path, title, icon]) => (
                 <NavLink key={path} to={"/" + path} className="tile" onClick={() => setMenu(false)}><Icon name={icon} />{title}</NavLink>
-              ))}
+              ))}</section>)}
             </div>
           </div>
         </div>

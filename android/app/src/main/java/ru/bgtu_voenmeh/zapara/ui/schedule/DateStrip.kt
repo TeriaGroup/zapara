@@ -1,92 +1,55 @@
 package ru.bgtu_voenmeh.zapara.ui.schedule
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import android.app.DatePickerDialog
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.testTag
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
-import ru.bgtu_voenmeh.zapara.ui.theme.Durations
+import ru.bgtu_voenmeh.zapara.ui.components.rememberUiText
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
+import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
-import ru.bgtu_voenmeh.zapara.ui.theme.ZaparaEase
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Composable
-fun DateStrip(selected: LocalDate, today: LocalDate, onPick: (LocalDate) -> Unit) {
-    val dates = remember(today) {
-        (0 until ScheduleComposer.PAGE_COUNT).map { ScheduleComposer.dateAt(it, today) }
-    }
-    val selectedIndex = ScheduleComposer.pageIndex(selected, today)
-    val list = rememberLazyListState(selectedIndex)
-    val motionOn = Zapara.motion.enabled
-    LaunchedEffect(selected, today) {
-        val idx = ScheduleComposer.pageIndex(selected, today)
-        if (list.firstVisibleItemIndex != idx) {
-            if (motionOn) list.animateScrollToItem(idx) else list.scrollToItem(idx)
+fun DateStrip(selected: LocalDate, today: LocalDate, pages: Map<LocalDate, DayPage> = emptyMap(), visibleCount: Int = 5, onQuickDay: ((Int)->Unit)? = null, onPick: (LocalDate) -> Unit) {
+    val uiText = rememberUiText()
+    val context = LocalContext.current
+    var calendarOpen by remember { mutableStateOf(false) }
+    val labels = listOf(uiText(R.string.space_day_1), uiText(R.string.space_day_2), uiText(R.string.space_day_3))
+    Column(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+        ZSegmented(labels, (0..2).firstOrNull { today.plusDays(it.toLong()) == selected } ?: -1,
+            { offset -> onQuickDay?.invoke(offset) ?: onPick(LocalDate.now().plusDays(offset.toLong())) }, "Schedule.QuickDays")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            ZIconButton(R.drawable.ic_chevron_left, uiText(R.string.space_day_4), { onPick(selected.minusDays(1)) }, "Schedule.Previous")
+            ZButton(uiText(R.string.space_day_5), {
+                calendarOpen = true
+                DatePickerDialog(context, { _, year, month, day -> onPick(LocalDate.of(year, month + 1, day)) },
+                    selected.year, selected.monthValue - 1, selected.dayOfMonth).also { dialog -> dialog.setOnDismissListener { calendarOpen = false }; dialog.show() }
+            }, ghost = !calendarOpen, quiet = true)
+            ZIconButton(R.drawable.ic_chevron_right, uiText(R.string.space_day_6), { onPick(selected.plusDays(1)) }, "Schedule.Next")
         }
-    }
-    val c = Zapara.colors
-    LazyRow(
-        state = list,
-        modifier = Modifier.testTag("Schedule.DateStrip"),
-        contentPadding = PaddingValues(horizontal = Zapara.space.l),
-        horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)
-    ) {
-        items(dates, key = { it }) { date ->
-            val on = date == selected
-            val bg by animateColorAsState(if (on) c.accent else c.chip, tween(Zapara.motion.ms(Durations.indicator), easing = ZaparaEase), label = "dateChip")
-            val label by animateColorAsState(if (on) c.onAccent else c.text2, tween(Zapara.motion.ms(Durations.indicator), easing = ZaparaEase), label = "dateLabel")
-            val day by animateColorAsState(if (on) c.onAccent else c.text1, tween(Zapara.motion.ms(Durations.indicator), easing = ZaparaEase), label = "dateDay")
-            Column(
-                Modifier
-                    .defaultMinSize(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch)
-                    .clip(RoundedCornerShape(Zapara.radii.control))
-                    .background(bg)
-                    .clickable { onPick(date) }
-                    .padding(horizontal = Zapara.space.s, vertical = Zapara.space.s)
-                    .testTag("Schedule.Date.${date.format(DateTimeFormatter.BASIC_ISO_DATE)}"),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs, Alignment.CenterVertically)
-            ) {
-                Text(stringResource(weekdayRes(date.dayOfWeek.value)), style = Zapara.typography.caption, color = label)
-                Text("${date.dayOfMonth}", style = Zapara.typography.bodyStrong, color = day)
-                if (date == today) {
-                    Box(Modifier.size(4.dp).clip(CircleShape).background(if (on) c.onAccent else c.text2))
-                }
+        Text(selected.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", Locale("ru"))), style = Zapara.typography.section)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            (0L until visibleCount.toLong()).forEach { offset ->
+                val date = selected.plusDays(offset)
+                val page = pages[date]
+                val count = when { page == null || page.dataState != null -> uiText(R.string.space_day_7); page.lessons.isEmpty() -> uiText(R.string.space_day_8); else -> uiText(R.string.space_day_9, (page.lessons.size).toString()) }
+                ZButton("${date.format(DateTimeFormatter.ofPattern("EE d", Locale("ru")))}\n$count", { onPick(date) },
+                    modifier = Modifier.weight(1f).semantics { this.selected = date == selected }, ghost = date != selected, tag = "Schedule.Date.$date")
             }
         }
     }
-}
-
-private fun weekdayRes(dow: Int) = when (dow) {
-    1 -> R.string.weekday_1
-    2 -> R.string.weekday_2
-    3 -> R.string.weekday_3
-    4 -> R.string.weekday_4
-    5 -> R.string.weekday_5
-    6 -> R.string.weekday_6
-    else -> R.string.weekday_7
 }

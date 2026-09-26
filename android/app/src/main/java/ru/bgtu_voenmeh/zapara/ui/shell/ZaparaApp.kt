@@ -171,7 +171,7 @@ private fun ZaparaAppBody(
                                         vm.onEvent(ru.bgtu_voenmeh.zapara.ui.schedule.ScheduleEvent.Select(it))
                                     }
                                 }
-                                ScheduleSection(s, vm::onEvent) { room -> nav.openSection(Section.Maps, room) }
+                                ScheduleSection(s, vm::onEvent, onDiscuss = { context -> nav.navigate("group?context=${android.net.Uri.encode(context)}") }, onWeek = { selected -> nav.navigate("week?date=$selected") }) { room -> nav.openSection(Section.Maps, room) }
                                 }
                             }
                             composable(
@@ -189,16 +189,17 @@ private fun ZaparaAppBody(
                                 MapsSection(s, vm::onEvent)
                                 }
                             }
-                            composable(Section.Homework.route) {
+                            composable(Section.Homework.pattern, arguments = listOf(navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null })) { dest ->
                                 ProvideSectionEntry {
                                 val vm: HomeworkViewModel = viewModel(factory = HomeworkViewModel.factory(container))
                                 val s by vm.state.collectAsStateWithLifecycle()
+                                LaunchedEffect(dest.arguments?.getString("id")) { dest.arguments?.getString("id")?.toLongOrNull()?.let { vm.onEvent(ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEvent.Edit(it)) } }
                                 HomeworkSection(s, vm::onEvent)
                                 }
                             }
-                            composable(Section.Week.route) {
+                            composable(Section.Week.pattern, arguments = listOf(navArgument("date") { type = NavType.StringType; nullable = true; defaultValue = null })) { dest ->
                                 ProvideSectionEntry {
-                                val vm: WeekViewModel = viewModel(factory = WeekViewModel.factory(container))
+                                val vm: WeekViewModel = viewModel(factory = WeekViewModel.factory(container, dest.arguments?.getString("date")))
                                 val s by vm.state.collectAsStateWithLifecycle()
                                 WeekSection(s, vm::onEvent) { date -> nav.openSection(Section.Schedule, date.toString()) }
                                 }
@@ -242,14 +243,15 @@ private fun ZaparaAppBody(
                             }
                             composable(Section.Group.pattern, arguments = listOf(
                                 navArgument("communityId") { type = NavType.StringType; nullable = true; defaultValue = null },
-                                navArgument("conversationId") { type = NavType.StringType; nullable = true; defaultValue = null }
+                                navArgument("conversationId") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                navArgument("context") { type = NavType.StringType; nullable = true; defaultValue = null }
                             )) { dest ->
                                 ProvideSectionEntry {
                                 val communityId = dest.arguments?.getString("communityId")?.takeIf { it.isNotBlank() }
                                 val conversationId = dest.arguments?.getString("conversationId")?.takeIf { it.isNotBlank() }
-                                val vm: GroupViewModel = viewModel(factory = GroupViewModel.factory(container, communityId, conversationId))
+                                val vm: GroupViewModel = viewModel(factory = GroupViewModel.factory(container, communityId, conversationId, dest.arguments?.getString("context")))
                                 val s by vm.state.collectAsStateWithLifecycle()
-                                GroupSection(s, vm::onEvent)
+                                GroupSection(s, vm::onEvent) { id -> nav.navigate("homework?id=$id") }
                                 }
                             }
                             composable(Section.Settings.route) {

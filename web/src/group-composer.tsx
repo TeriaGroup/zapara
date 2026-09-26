@@ -24,12 +24,14 @@ function clock(ms: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia, onDraft, onSubmit, onCancelContext, onChoose, onRecorded, onError }: {
+export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia, onPoll, onLesson, onDraft, onSubmit, onCancelContext, onChoose, onRecorded, onError }: {
   draft: string;
   editing: boolean;
   replyTo: boolean;
   contextText: string;
   allowMedia: boolean;
+  onPoll?: () => void;
+  onLesson?: () => void;
   onDraft: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onCancelContext: () => void;
@@ -41,6 +43,7 @@ export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia
   const [recording, setRecording] = useState<RecordingKind | null>(null);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
+  const [captured, setCaptured] = useState<{ kind: RecordingKind; blob: Blob; durationMs: number; url: string } | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const active = useRef<Capture | null>(null);
   const preview = useRef<HTMLVideoElement>(null);
@@ -83,6 +86,7 @@ export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia
       requestEpoch.current += 1;
       setPanel(false);
       stop(false);
+      setCaptured(null);
     }
   }, [allowMedia, editing]);
 
@@ -149,10 +153,7 @@ export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia
         }
         if (blob.size > (kind === "voice" ? groupVoiceLimit : groupMediaLimit)) { onError("Запись слишком большая"); return; }
         const durationMs = Math.max(1, Math.min(kind === "voice" ? 180_000 : 60_000, Date.now() - capture.startedAt));
-        setSending(true);
-        void onRecorded(kind, recordingFilename(kind, blob.type), blob, durationMs)
-          .catch(() => { if (mounted.current) onError("Сообщение не отправилось"); })
-          .finally(() => { if (mounted.current) setSending(false); });
+        setCaptured({ kind, blob, durationMs, url: URL.createObjectURL(blob) });
       };
       recorder.start(250);
       capture.timer = window.setInterval(() => {
@@ -173,13 +174,17 @@ export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia
     }
   }
 
+  useEffect(() => () => { if (captured) URL.revokeObjectURL(captured.url); }, [captured]);
+
+  if (captured) return <div className="card stack"><h2>{captured.kind === "voice" ? "Прослушать запись" : "Просмотреть кружок"}</h2>{captured.kind === "voice" ? <audio controls src={captured.url} /> : <video className="record-preview" controls playsInline src={captured.url} />}<div className="row"><button className="btn quiet" disabled={sending} type="button" onClick={() => setCaptured(null)}>Отменить</button><button className="btn primary" type="button" disabled={sending || !allowMedia} onClick={() => { if (sending) return; setSending(true); void onRecorded(captured.kind, recordingFilename(captured.kind,captured.blob.type),captured.blob,captured.durationMs).then(() => setCaptured(null)).catch(() => onError("Сообщение не отправилось. Запись сохранена для повторения.")).finally(() => setSending(false)); }}>{sending ? "Отправляем…" : "Отправить запись"}</button></div></div>;
+
   if (recording) return (
     <div className="group-recording">
       {recording === "circle" && <div className="circle live"><video ref={preview} muted playsInline autoPlay /><span className="time">{clock(elapsed)}</span></div>}
       <div className="compose">
         {recording === "voice" && <span>Запись {clock(elapsed)}</span>}
         <button className="btn" type="button" onClick={() => stop(false)}>Отменить</button>
-        <button className="btn primary" type="button" onClick={() => stop(true)}>Отправить</button>
+        <button className="btn primary" type="button" onClick={() => stop(true)}>Завершить запись</button>
       </div>
     </div>
   );
@@ -206,7 +211,10 @@ export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia
         <button type="button" onClick={() => { setPanel(false); onChoose("image"); }}>Фото</button>
         <button type="button" onClick={() => { setPanel(false); onChoose("video"); }}>Видео</button>
         <button type="button" onClick={() => { setPanel(false); onChoose("file"); }}>Документ</button>
+        <button type="button" onClick={() => void begin("voice")}>Голосовое сообщение</button>
         <button type="button" onClick={() => void begin("circle")}>Кружок</button>
+        {onPoll && <button type="button" onClick={() => { setPanel(false); onPoll(); }}>Опрос</button>}
+        {onLesson && <button type="button" onClick={() => { setPanel(false); onLesson(); }}>Карточка пары</button>}
       </div>}
     </>
   );

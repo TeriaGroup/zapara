@@ -129,8 +129,7 @@ internal object SyncJson {
     fun utcText(instant: Instant): String {
         val odt = instant.atOffset(ZoneOffset.UTC)
         val base = DATE.format(odt.toLocalDate()) + "T" + TIME.format(odt.toLocalTime())
-        val nano = odt.nano
-        if (nano % 100 != 0) SyncValidation.invalid()
+        val nano = (odt.nano / 100) * 100
         if (nano == 0) return base + "Z"
         val seven = String.format(Locale.ROOT, "%07d", nano / 100).trimEnd('0')
         return "$base.${seven}Z"

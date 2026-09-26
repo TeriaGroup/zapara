@@ -63,14 +63,15 @@ public class ScheduleComposerTests
     }
 
     [Fact]
-    public void Sunday_Is_Empty_Without_Hint()
+    public void Sunday_Is_Empty_And_Offers_The_Next_Known_Study_Day()
     {
         using var db = TestDb.Create();
         var day = new ScheduleComposer(db.Services).Compose(-1, MonMorning);
         Assert.Empty(day.Rows);
         Assert.Equal("Вчера", day.Title);
         Assert.Equal("Воскресенье — пар нет", day.EmptyTitle);
-        Assert.Null(day.EmptyHint);
+        Assert.NotNull(day.EmptyHint);
+        Assert.NotNull(day.NextStudyDate);
     }
 
     [Fact]
