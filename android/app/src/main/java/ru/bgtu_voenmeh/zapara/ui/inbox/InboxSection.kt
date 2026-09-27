@@ -23,7 +23,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -38,6 +37,7 @@ import ru.bgtu_voenmeh.zapara.ui.media.ChatMediaBubble
 import ru.bgtu_voenmeh.zapara.ui.media.ChatMediaCaptureHost
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
+import ru.bgtu_voenmeh.zapara.ui.components.ZTextField
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.theme.*
 import java.time.ZoneId
@@ -83,9 +83,7 @@ fun InboxSection(state: InboxUiState, onEvent: (InboxEvent) -> Unit, onOpenGroup
 
 @Composable
 private fun ChatHeaderAction(icon: Int, description: String, enabled: Boolean, tag: String, onClick: () -> Unit) {
-    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(Zapara.space.minTouch).testTag(tag)) {
-        Icon(painterResource(icon), description, tint = if (enabled) Zapara.colors.text1 else Zapara.colors.text2)
-    }
+    ZIconButton(icon, description, onClick, tag, enabled = enabled)
 }
 
 @Composable
@@ -99,7 +97,7 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
     val filtered = query.isNotBlank() || sourceFilter != InboxSourceFilter.All
     LazyColumn(modifier, contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         item {
-            OutlinedTextField(query, onQuery, label = { Text(stringResource(R.string.inbox_search)) },
+            ZTextField(query, onQuery, label = { Text(stringResource(R.string.inbox_search)) },
                 singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Inbox.Search"))
         }
         item {
@@ -131,7 +129,7 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
             ZCard(modifier = Modifier.fillMaxWidth()) {
                 SelectionContainer { Text(stringResource(R.string.face_your_code, state.code.ifEmpty { stringResource(R.string.face_loading) }), color = Zapara.colors.text1) }
                 Text(stringResource(R.string.face_invite_hint), color = Zapara.colors.text2, style = Zapara.typography.caption)
-                OutlinedTextField(state.inviteCode, { onEvent(InboxEvent.Code(it)) }, label = { Text(stringResource(R.string.face_friend_code)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                ZTextField(state.inviteCode, { onEvent(InboxEvent.Code(it)) }, label = { Text(stringResource(R.string.face_friend_code)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 ZButton(stringResource(R.string.face_invite), { onEvent(InboxEvent.Invite) }, enabled = !state.loading && state.inviteCode.isNotBlank())
                 state.outgoing.forEach { Text(stringResource(R.string.face_invite_sent, it.name), color = Zapara.colors.text2) }
             }
@@ -139,7 +137,8 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
         items(state.incoming, key = { "invite:${it.id}" }) { invite ->
             ZCard(modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.face_invites_you, invite.name), color = Zapara.colors.text1)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                    verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                     ZButton(stringResource(R.string.face_accept), { onEvent(InboxEvent.Respond(invite.id, true)) }, enabled = !state.loading)
                     ZButton(stringResource(R.string.face_decline), { onEvent(InboxEvent.Respond(invite.id, false)) }, enabled = !state.loading, ghost = true)
                 }
@@ -233,9 +232,19 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                                     attachment in state.mediaLoading, attachment in state.mediaErrors,
                                     onLoad = { onEvent(InboxEvent.LoadMedia(message)) })
                             } else SelectionContainer { Text(message.body ?: message.fileName ?: stringResource(R.string.face_attachment), color = Zapara.colors.text1) }
-                            if (!message.deleted && message.attachmentId != null) TextButton({ saving = message; save.launch(message.fileName ?: "attachment") }, enabled = !state.loading) { Text(stringResource(R.string.face_save)) }
+                            if (!message.deleted && message.attachmentId != null) ZButton(stringResource(R.string.face_save),
+                                { saving = message; save.launch(message.fileName ?: "attachment") },
+                                enabled = !state.loading, ghost = true, quiet = true)
                             Text(message.createdAt.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm")) + (if (message.edited) stringResource(R.string.face_edited) else "") + (if (mine) stringResource(if (message.read) R.string.face_read else R.string.face_sent) else ""), color = Zapara.colors.text2, style = Zapara.typography.caption)
-                            if (message.reactions.isNotEmpty()) Row { message.reactions.forEach { reaction -> TextButton(onClick = { onEvent(InboxEvent.React(message, reaction.emoji)) }, enabled = !state.loading) { Text("${emoji(reaction.emoji)} ${reaction.count}${if (reaction.mine) " ✓" else ""}") } } }
+                            if (message.reactions.isNotEmpty()) FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+                                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                                message.reactions.forEach { reaction ->
+                                    ZButton("${emoji(reaction.emoji)} ${reaction.count}${if (reaction.mine) " ✓" else ""}",
+                                        { onEvent(InboxEvent.React(message, reaction.emoji)) },
+                                        enabled = !state.loading, ghost = true)
+                                }
+                            }
                         }
                     }
                 }
@@ -252,31 +261,33 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                 onRecorded = { kind, file, duration -> onEvent(InboxEvent.UploadRecorded(activeId, kind, file, duration)) },
                 onError = { onEvent(InboxEvent.LocalError(it)) },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l, vertical = 8.dp)) { startVoice, startCircle ->
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                     if (state.reply != null || state.editing != null) Row(verticalAlignment = Alignment.CenterVertically) {
                         Text((if (state.editing != null) stringResource(R.string.face_editing) else stringResource(R.string.face_replying)) + (state.editing ?: state.reply)?.body.orEmpty(), Modifier.weight(1f), color = Zapara.colors.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        TextButton({ onEvent(InboxEvent.CancelCompose) }) { Text(stringResource(R.string.face_cancel)) }
+                        ZButton(stringResource(R.string.face_cancel), { onEvent(InboxEvent.CancelCompose) },
+                            ghost = true, quiet = true)
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (state.editing == null) IconButton(onClick = { pickingFor = activeId; pick.launch(arrayOf("*/*")) }, enabled = !state.loading, modifier = Modifier.testTag("Inbox.Attach")) {
-                            Icon(painterResource(R.drawable.ic_paperclip), stringResource(R.string.face_attach_hint), tint = Zapara.colors.text1)
-                        }
-                        OutlinedTextField(state.draft, { onEvent(InboxEvent.Draft(it)) }, modifier = Modifier.weight(1f).testTag("Inbox.Draft"),
-                            placeholder = { Text(stringResource(R.string.face_message)) }, maxLines = 4, shape = RoundedCornerShape(Zapara.radii.control))
+                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        ZTextField(state.draft, { onEvent(InboxEvent.Draft(it)) },
+                            modifier = Modifier.weight(1f).testTag("Inbox.Draft"),
+                            placeholder = { Text(stringResource(R.string.face_message)) }, maxLines = 4)
                         if (state.draft.isNotBlank() || state.editing != null) {
-                            Surface(onClick = { onEvent(InboxEvent.Send) }, enabled = !state.loading && state.draft.isNotBlank(),
-                                shape = RoundedCornerShape(Zapara.radii.icon), color = Zapara.colors.accent, contentColor = Zapara.colors.onAccent,
-                                modifier = Modifier.size(Zapara.space.minTouch).testTag("Inbox.Send")) {
-                                Box(contentAlignment = Alignment.Center) { Icon(painterResource(R.drawable.ic_send), if (state.editing != null) stringResource(R.string.face_save) else stringResource(R.string.face_send)) }
-                            }
+                            ZIconButton(R.drawable.ic_send,
+                                if (state.editing != null) stringResource(R.string.face_save) else stringResource(R.string.face_send),
+                                { onEvent(InboxEvent.Send) }, "Inbox.Send",
+                                enabled = !state.loading && state.draft.isNotBlank(), primary = true)
                         } else {
-                            IconButton(onClick = startCircle, enabled = !state.loading, modifier = Modifier.testTag("Inbox.Circle")) {
-                                Icon(painterResource(R.drawable.ic_video_circle), stringResource(R.string.face_record_circle), tint = Zapara.colors.text1)
-                            }
-                            IconButton(onClick = startVoice, enabled = !state.loading, modifier = Modifier.testTag("Inbox.Voice")) {
-                                Icon(painterResource(R.drawable.ic_mic), stringResource(R.string.face_record_voice), tint = Zapara.colors.text1)
-                            }
+                            ZIconButton(R.drawable.ic_mic, stringResource(R.string.face_record_voice),
+                                startVoice, "Inbox.Voice", enabled = !state.loading)
                         }
+                    }
+                    if (state.editing == null) FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                        verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                        ZIconButton(R.drawable.ic_paperclip, stringResource(R.string.face_attach_hint),
+                            { pickingFor = activeId; pick.launch(arrayOf("*/*")) }, "Inbox.Attach", enabled = !state.loading)
+                        if (state.draft.isBlank()) ZIconButton(R.drawable.ic_video_circle,
+                            stringResource(R.string.face_record_circle), startCircle, "Inbox.Circle", enabled = !state.loading)
                     }
                 }
             }
@@ -285,15 +296,20 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
     selected?.let { message ->
         AlertDialog(onDismissRequest = { selected = null }, title = { Text(stringResource(R.string.face_message)) }, text = {
             Column {
-                TextButton({ onEvent(InboxEvent.Reply(message)); selected = null }) { Text(stringResource(R.string.face_reply)) }
+                ZButton(stringResource(R.string.face_reply), { onEvent(InboxEvent.Reply(message)); selected = null }, ghost = true, quiet = true)
                 if (message.senderId == state.userId) {
-                    if (message.kind == "text") TextButton({ onEvent(InboxEvent.Edit(message)); selected = null }) { Text(stringResource(R.string.face_edit)) }
-                    TextButton({ deleting = message; selected = null }) { Text(stringResource(R.string.face_delete)) }
+                    if (message.kind == "text") ZButton(stringResource(R.string.face_edit), { onEvent(InboxEvent.Edit(message)); selected = null }, ghost = true, quiet = true)
+                    ZButton(stringResource(R.string.face_delete), { deleting = message; selected = null }, ghost = true, quiet = true)
                 }
-                Row { listOf("like", "heart", "laugh", "wow", "sad").forEach { code -> TextButton({ onEvent(InboxEvent.React(message, code)); selected = null }, contentPadding = PaddingValues(4.dp), modifier = Modifier.weight(1f)) { Text(emoji(code)) } } }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+                    verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                    listOf("like", "heart", "laugh", "wow", "sad").forEach { code ->
+                        ZButton(emoji(code), { onEvent(InboxEvent.React(message, code)); selected = null }, ghost = true)
+                    }
+                }
             }
-        }, confirmButton = { TextButton({ selected = null }) { Text(stringResource(R.string.face_close)) } })
+        }, confirmButton = { ZButton(stringResource(R.string.face_close), { selected = null }, ghost = true, quiet = true) })
     }
-    deleting?.let { message -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text(stringResource(R.string.face_delete_message)) }, text = { Text(stringResource(R.string.face_delete_message_body)) }, confirmButton = { TextButton({ onEvent(InboxEvent.Delete(message)); deleting = null }) { Text(stringResource(R.string.face_delete)) } }, dismissButton = { TextButton({ deleting = null }) { Text(stringResource(R.string.face_cancel)) } }) }
+    deleting?.let { message -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text(stringResource(R.string.face_delete_message)) }, text = { Text(stringResource(R.string.face_delete_message_body)) }, confirmButton = { ZButton(stringResource(R.string.face_delete), { onEvent(InboxEvent.Delete(message)); deleting = null }) }, dismissButton = { ZButton(stringResource(R.string.face_cancel), { deleting = null }, ghost = true, quiet = true) }) }
 }
 private fun emoji(code: String) = when(code) { "like" -> "👍"; "heart" -> "❤️"; "laugh" -> "😂"; "wow" -> "😮"; "sad" -> "😢"; else -> code }

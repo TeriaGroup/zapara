@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -32,6 +33,7 @@ import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
+import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
 import ru.bgtu_voenmeh.zapara.ui.theme.breath
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -42,7 +44,9 @@ fun LessonCard(
     onRoom: () -> Unit,
     onToggleDone: (Long) -> Unit,
     onSubgroup: (String, String) -> Unit = { _, _ -> },
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    eyebrow: String? = null,
+    actions: (@Composable ColumnScope.() -> Unit)? = null
 ) {
     val c = Zapara.colors
     var expanded by remember { mutableStateOf(false) }
@@ -54,22 +58,23 @@ fun LessonCard(
         onLongClick = onLongClick,
         tag = "Lesson.Card.${lesson.index}"
     ) {
-        Row(
+        eyebrow?.let { Text(it, style = Zapara.typography.caption, color = c.text2) }
+        FlowRow(
             Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)
+            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+            verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)
         ) {
             Text(
                 "${lesson.timeStart} – ${lesson.timeEnd}",
-                style = Zapara.typography.caption,
-                color = c.text2,
-                modifier = Modifier.weight(1f)
+                style = Zapara.typography.bodyStrong,
+                color = c.text1,
+                modifier = Modifier.align(Alignment.CenterVertically)
             )
             if (lesson.type.isNotBlank()) {
-                LessonTypeChip(lesson.type, "Lesson.Type.${lesson.index}")
+                LessonTypeChip(lesson.type, "Lesson.Type.${lesson.index}", Modifier.align(Alignment.CenterVertically))
             }
             if (lesson.room.isNotBlank() && !lesson.remote) {
-                ZChip(lesson.room, onClick = onRoom, tag = "Lesson.Room.${lesson.index}")
+                ZChip(lesson.room, modifier = Modifier.align(Alignment.CenterVertically), onClick = onRoom, leading = { ZIcon(R.drawable.ic_map_pin, null) }, tag = "Lesson.Room.${lesson.index}")
             }
         }
         Text(lesson.name, style = Zapara.typography.section, color = c.text1)
@@ -138,6 +143,7 @@ fun LessonCard(
             }
             friendHint?.let { ZChip(it, onClick = { friendHint = null }) }
         }
+        actions?.invoke(this)
     }
 }
 

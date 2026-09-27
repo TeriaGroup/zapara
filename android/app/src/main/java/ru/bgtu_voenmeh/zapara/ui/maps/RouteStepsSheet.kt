@@ -8,6 +8,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
@@ -25,14 +26,13 @@ fun RouteStepsSheet(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
     val steps = state.presentation?.steps.orEmpty()
     val index = steps.indexOfFirst { it.id == state.activeStepId }
     val scroll = rememberLazyListState()
-    val keepControls = androidx.compose.ui.platform.LocalDensity.current.fontScale < 1.5f &&
-        androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp >= MapsLayout.ShortHeightDp
     LaunchedEffect(state.stepsOpen, state.activeStepId) {
-        if (index >= 0) scroll.scrollToItem(if (index == 0 && keepControls) 0 else index + 1)
+        if (index >= 0) scroll.scrollToItem(if (index == 0) 0 else index + 1)
     }
     ZBottomSheet({ onEvent(MapsEvent.CloseRouteSteps) }, "Maps.StepsSheet") {
         Text(stringResource(R.string.maps_all_steps), style = Zapara.typography.section, color = Zapara.colors.text1)
-        LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false), state = scroll,
+        Spacer(Modifier.height(Zapara.space.s))
+        LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).clipToBounds(), state = scroll,
             verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             item(key = "plan-controls") {
                 RoutePresentationProblems(state)

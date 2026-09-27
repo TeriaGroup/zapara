@@ -6,20 +6,26 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -32,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -40,10 +47,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -55,6 +64,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.ZaparaEase
 import ru.bgtu_voenmeh.zapara.ui.theme.rememberPulse
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
+import ru.bgtu_voenmeh.zapara.ui.theme.controlFocusRing
 
 @Composable
 fun Modifier.pressScale(interactionSource: MutableInteractionSource? = null): Modifier {
@@ -66,6 +76,61 @@ fun Modifier.pressScale(interactionSource: MutableInteractionSource? = null): Mo
 }
 
 @Composable
+fun ZTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    label: (@Composable () -> Unit)? = null,
+    placeholder: (@Composable () -> Unit)? = null,
+    enabled: Boolean = true,
+    readOnly: Boolean = false,
+    singleLine: Boolean = false,
+    minLines: Int = 1,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
+    isError: Boolean = false,
+    supportingText: (@Composable () -> Unit)? = null,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    leadingIcon: (@Composable () -> Unit)? = null,
+    trailingIcon: (@Composable () -> Unit)? = null
+) {
+    val c = Zapara.colors
+    OutlinedTextField(
+        value = value, onValueChange = onValueChange, modifier = modifier,
+        enabled = enabled, readOnly = readOnly, singleLine = singleLine,
+        minLines = minLines, maxLines = maxLines, isError = isError,
+        textStyle = Zapara.typography.body,
+        label = label?.let { content -> { ProvideTextStyle(Zapara.typography.caption, content) } },
+        placeholder = placeholder,
+        supportingText = supportingText,
+        visualTransformation = visualTransformation,
+        keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
+        leadingIcon = leadingIcon, trailingIcon = trailingIcon,
+        shape = RoundedCornerShape(Zapara.radii.control),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = c.chip, unfocusedContainerColor = c.chip,
+            disabledContainerColor = c.chip.copy(alpha = 0.5f), errorContainerColor = c.chip,
+            focusedBorderColor = c.lineStrong, unfocusedBorderColor = c.chip,
+            disabledBorderColor = Color.Transparent, errorBorderColor = c.bad,
+            focusedTextColor = c.text1, unfocusedTextColor = c.text1,
+            disabledTextColor = c.text2, errorTextColor = c.text1,
+            cursorColor = c.text1, errorCursorColor = c.bad,
+            focusedLabelColor = c.text2, unfocusedLabelColor = c.text2,
+            disabledLabelColor = c.text2, errorLabelColor = c.bad,
+            focusedPlaceholderColor = c.text2, unfocusedPlaceholderColor = c.text2,
+            disabledPlaceholderColor = c.text2, errorPlaceholderColor = c.text2,
+            focusedLeadingIconColor = c.text2, unfocusedLeadingIconColor = c.text2,
+            disabledLeadingIconColor = c.text2, errorLeadingIconColor = c.text2,
+            focusedTrailingIconColor = c.text2, unfocusedTrailingIconColor = c.text2,
+            disabledTrailingIconColor = c.text2, errorTrailingIconColor = c.bad,
+            focusedSupportingTextColor = c.text2, unfocusedSupportingTextColor = c.text2,
+            disabledSupportingTextColor = c.text2, errorSupportingTextColor = c.bad
+        )
+    )
+}
+
+@Composable
 fun ZChip(
     text: String,
     modifier: Modifier = Modifier,
@@ -73,22 +138,29 @@ fun ZChip(
     onClick: (() -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
     tag: String? = null,
-    textStyle: TextStyle = Zapara.typography.caption
+    textStyle: TextStyle = if (onClick != null) Zapara.typography.bodyStrong else Zapara.typography.caption
 ) {
     val c = Zapara.colors
     val source = remember { MutableInteractionSource() }
-    val shape = RoundedCornerShape(Zapara.radii.chip)
+    val pressed by source.collectIsPressedAsState()
+    val focused by source.collectIsFocusedAsState()
+    val radius = if (onClick != null) Zapara.radii.control else Zapara.radii.chip
+    val shape = RoundedCornerShape(radius)
+    val restingColor = if (selected) c.accent else c.chip
+    val contentColor = if (selected) c.onAccent else c.text1
     Row(
         modifier
             .then(if (tag != null) Modifier.testTag(tag) else Modifier)
-            .sizeIn(minWidth = if (onClick != null) Zapara.space.minTouch else 0.dp, minHeight = Zapara.space.minTouch)
+            .sizeIn(minWidth = if (onClick != null) Zapara.space.minTouch else 0.dp, minHeight = if (onClick != null) Zapara.space.minTouch else 0.dp)
             .then(if (onClick != null) Modifier.pressScale(source) else Modifier)
             .clip(shape)
-            .background(if (selected) c.accent else c.chip)
+            .background(if (pressed) contentColor.copy(alpha = 0.12f).compositeOver(restingColor) else restingColor)
+            .controlFocusRing(onClick != null && focused, contentColor, radius)
+            .then(if (onClick != null) Modifier.semantics { this.selected = selected } else Modifier)
             .then(
                 if (onClick != null) Modifier.clickable(
                     interactionSource = source,
-                    indication = null,
+                    indication = if (Zapara.motion.enabled) LocalIndication.current else null,
                     role = Role.Button,
                     onClick = onClick
                 ) else Modifier
@@ -101,7 +173,7 @@ fun ZChip(
         Text(
             text,
             style = textStyle,
-            color = if (selected) c.onAccent else c.text1
+            color = contentColor
         )
     }
 }
@@ -109,18 +181,21 @@ fun ZChip(
 @Composable
 fun ZSegmented(items: List<String>, selected: Int, onSelect: (Int) -> Unit, tag: String, modifier: Modifier = Modifier) {
     val c = Zapara.colors
-    val vertical = LocalDensity.current.fontScale >= 1.5f
     val container = modifier.testTag(tag).selectableGroup()
         .clip(RoundedCornerShape(Zapara.radii.control)).background(c.chip).padding(Zapara.space.xs)
     @Composable fun segment(index: Int, label: String, itemModifier: Modifier) {
         val active = index == selected
         val interactions = remember { MutableInteractionSource() }
+        val focused by interactions.collectIsFocusedAsState()
+        val pressed by interactions.collectIsPressedAsState()
+        val restingColor = if (active) c.segThumb else Color.Transparent
         Box(
             itemModifier
                 .sizeIn(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch)
                 .testTag("$tag.$index")
                 .clip(RoundedCornerShape(Zapara.radii.control))
-                .background(if (active) c.segThumb else Color.Transparent)
+                .background(if (pressed) c.selection.compositeOver(restingColor) else restingColor)
+                .controlFocusRing(focused, c.text1, Zapara.radii.control)
                 .selectable(selected = active, role = Role.Tab, interactionSource = interactions,
                     indication = if (Zapara.motion.enabled) LocalIndication.current else null,
                     onClick = { onSelect(index) })
@@ -129,16 +204,16 @@ fun ZSegmented(items: List<String>, selected: Int, onSelect: (Int) -> Unit, tag:
         ) {
             Text(
                 label,
-                style = if (active) Zapara.typography.bodyStrong else Zapara.typography.caption,
-                color = if (active) c.text1 else c.text2
+                style = if (active) Zapara.typography.bodyStrong else Zapara.typography.body,
+                color = if (active) c.text1 else c.text2,
+                softWrap = false
             )
         }
     }
-    if (vertical) {
-        Column(container) { items.forEachIndexed { index, label -> segment(index, label, Modifier.fillMaxWidth()) } }
-    } else {
-        Row(container.height(IntrinsicSize.Min)) {
-            items.forEachIndexed { index, label -> segment(index, label, Modifier.weight(1f).fillMaxHeight()) }
+    BoxWithConstraints(container) {
+        val itemWidth = if (constraints.hasBoundedWidth && items.isNotEmpty()) (maxWidth / items.size).coerceAtLeast(Zapara.space.minTouch) else Zapara.space.minTouch
+        Row(Modifier.horizontalScroll(rememberScrollState()).height(IntrinsicSize.Min)) {
+            items.forEachIndexed { index, label -> segment(index, label, Modifier.widthIn(min = itemWidth).fillMaxHeight()) }
         }
     }
 }

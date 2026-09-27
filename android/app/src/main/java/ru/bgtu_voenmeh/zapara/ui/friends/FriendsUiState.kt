@@ -31,7 +31,7 @@ data class FriendsUiState(
     val editor: FriendEditorUi? = null,
     val editorError: String? = null,
     val confirmDelete: Long? = null,
-    val strictness: Int = 25,
+    val strictness: Int = 50,
     val alwaysShow: Boolean = false,
     val invert: Boolean = false,
     val groups: List<GroupInfo> = emptyList(),

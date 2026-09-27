@@ -176,8 +176,8 @@ public class FriendsTests : UiTest
         var vm = new FriendsViewModel(db.Services, shell, () => Sun6);
         await vm.LoadAsync();
 
-        Assert.Equal(25, vm.Strictness);
-        Assert.Equal(new[] { "в вузе", "корпус", "этаж", "аудитория" }, vm.TickLabels);
+        Assert.Equal(50, vm.Strictness);
+        Assert.Equal(new[] { "корпус", "этаж", "аудитория" }, vm.TickLabels);
         Assert.True(vm.HasPreview);
         Assert.StartsWith("Пн 14.09 · 09:00 · Матан", vm.PreviewLine);   // nearest odd Monday: friend sits in 493 too
         Assert.Single(vm.PreviewMarks);                                   // the absent friend is hidden

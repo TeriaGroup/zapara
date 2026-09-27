@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -79,15 +80,7 @@ fun ZoomableMap(
     var lastEmitted by remember { mutableFloatStateOf(zoom) }
     val animatedZoom by animateFloatAsState(targetValue = zoom, animationSpec = tween(motion.ms(Durations.zoom), easing = ZaparaEase), label = "mapZoom")
     val shown = MapZoom.shown(gesture, scale, animatedZoom)
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    val transform = rememberTransformableState { zoomChange, panChange, _ ->
-        val next = MapZoom.pinch(shown, zoomChange)
-        gesture = true
-        scale = next
-        lastEmitted = next
-        offset += panChange
-        onTransform(next)
-    }
+    var requestedOffset by remember { mutableStateOf(Offset.Zero) }
     LaunchedEffect(zoom) {
         if (MapZoom.isButtonZoom(zoom, lastEmitted)) {
             gesture = false
@@ -100,7 +93,7 @@ fun ZoomableMap(
         gesture = false
         scale = 1f
         lastEmitted = 1f
-        offset = Offset.Zero
+        requestedOffset = Offset.Zero
         onTransform(1f)
     }
     val glow by rememberPulse(highlight != null, Durations.map, 0.4f, 0.8f)
@@ -133,12 +126,38 @@ fun ZoomableMap(
     val density = LocalDensity.current
     var layout by remember { mutableStateOf(IntSize.Zero) }
     var prevSize by remember { mutableStateOf(IntSize.Zero) }
+    val boundedPan = MapZoom.clampPan(
+        requestedOffset.x, requestedOffset.y,
+        layout.width.toFloat(), layout.height.toFloat(),
+        bitmap?.width?.toFloat() ?: 0f, bitmap?.height?.toFloat() ?: 0f,
+        shown
+    )
+    val offset = Offset(boundedPan.first, boundedPan.second)
+    SideEffect {
+        requestedOffset = offset
+    }
     val press = remember { PlanPressState() }
     press.shown = shown
     press.offset = offset
     press.layout = layout
     press.bitmap = bitmap
     press.onLongPress = onLongPress
+    val transform = rememberTransformableState { zoomChange, panChange, _ ->
+        val next = MapZoom.pinch(press.shown, zoomChange)
+        val nextPan = MapZoom.clampPan(
+            press.offset.x + panChange.x, press.offset.y + panChange.y,
+            press.layout.width.toFloat(), press.layout.height.toFloat(),
+            press.bitmap?.width?.toFloat() ?: 0f, press.bitmap?.height?.toFloat() ?: 0f,
+            next
+        )
+        gesture = true
+        scale = next
+        lastEmitted = next
+        requestedOffset = Offset(nextPan.first, nextPan.second)
+        press.shown = next
+        press.offset = requestedOffset
+        onTransform(next)
+    }
     Box(
         modifier
             .fillMaxSize()
@@ -148,7 +167,7 @@ fun ZoomableMap(
                     gesture = false
                     scale = 1f
                     lastEmitted = 1f
-                    offset = Offset.Zero
+                    requestedOffset = Offset.Zero
                     onTransform(1f)
                 }
                 prevSize = new
@@ -161,7 +180,7 @@ fun ZoomableMap(
                         gesture = false
                         scale = 1f
                         lastEmitted = 1f
-                        offset = Offset.Zero
+                        requestedOffset = Offset.Zero
                         onTransform(1f)
                     },
                     onLongPress = { tap ->

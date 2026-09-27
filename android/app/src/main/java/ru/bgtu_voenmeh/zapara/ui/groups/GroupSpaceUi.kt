@@ -21,6 +21,7 @@ import ru.bgtu_voenmeh.zapara.data.communities.*
 import ru.bgtu_voenmeh.zapara.ui.theme.*
 import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
+import ru.bgtu_voenmeh.zapara.ui.components.ZTextField
 import ru.bgtu_voenmeh.zapara.ui.components.RevisionGuard
 import java.time.*
 import java.time.format.DateTimeFormatter
@@ -40,7 +41,7 @@ private val answerSaver = Saver<List<GroupFormAnswer>, ArrayList<ArrayList<Any>>
 private fun dispatch(onEvent: (GroupEvent) -> Unit, action: GroupSpaceAction) = onEvent(GroupEvent.SpaceAction(action))
 @Composable private fun Field(label: String, value: String, change: (String) -> Unit, enabled: Boolean = true) {
     val uiText = rememberUiText()
-    OutlinedTextField(value, change, label = { Text(label) }, enabled = enabled, modifier = Modifier.fillMaxWidth())
+    ZTextField(value, change, label = { Text(label) }, enabled = enabled, modifier = Modifier.fillMaxWidth())
 }
 private fun displayDeadlineValue(value: Instant?): String = value?.atZone(ZoneId.systemDefault())?.toLocalDate()?.toString() ?: ""
 private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null else LocalDate.parse(value).atStartOfDay(ZoneId.systemDefault()).plusDays(1).minusNanos(1).toInstant()

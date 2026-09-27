@@ -2,6 +2,7 @@ import { createContext, ReactNode, useContext, useEffect, useMemo, useRef, useSt
 import * as api from "./api";
 import { usePrivateHomework } from "./private-sync";
 import { resolveStoredGroup } from "./groupChoice";
+import { normalizeIntersectionStrictness } from "./intersectionStrictness";
 
 import type { FriendItem, GroupsPayload, HomeworkItem, Lesson, Session, TimetablePayload } from "./types";
 
@@ -72,8 +73,7 @@ export function Provider({ children }: { children: ReactNode }) {
   const homework = privateHomework.items;
   const [friends, setFriends] = useState<FriendItem[]>(() => readList(friendsKey));
   const [intersectionStrictness, setIntersectionStrictness] = useState(() => {
-    const stored = Number(localStorage.getItem(intersectionStrictnessKey));
-    return [25, 50, 75, 100].includes(stored) ? stored : 25;
+    return normalizeIntersectionStrictness(localStorage.getItem(intersectionStrictnessKey));
   });
   const [showAbsentFriends, setShowAbsentFriends] = useState(localStorage.getItem(showAbsentFriendsKey) === "1");
   const [date, setDateState] = useState(() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), now.getDate()); });
@@ -166,7 +166,7 @@ export function Provider({ children }: { children: ReactNode }) {
     const settings = privateHomework.settings;
     if (!session?.authenticated || !settings) return;
     if ((settings.selectedGroupId || "") !== groupId) setGroupState(settings.selectedGroupId || "");
-    setInvertState(settings.parityInvert); setIntersectionStrictness(settings.strictness); setShowAbsentFriends(settings.alwaysShow);
+    setInvertState(settings.parityInvert); setIntersectionStrictness(normalizeIntersectionStrictness(settings.strictness)); setShowAbsentFriends(settings.alwaysShow);
   }, [privateHomework.settings, session?.authenticated]);
 
   const value = useMemo<State>(() => ({
@@ -179,7 +179,7 @@ export function Provider({ children }: { children: ReactNode }) {
     session, refreshSession: async () => setSession(await api.session()),
     privateHomework, homework, saveHomework: privateHomework.save,
     friends, saveFriends: setFriends,
-    intersectionStrictness, setIntersectionStrictness: value => { setIntersectionStrictness(value); if (session?.authenticated) privateHomework.saveSettings({ strictness: value }); }, showAbsentFriends, setShowAbsentFriends: value => { setShowAbsentFriends(value); if (session?.authenticated) privateHomework.saveSettings({ alwaysShow: value }); },
+    intersectionStrictness, setIntersectionStrictness: value => { const strictness = normalizeIntersectionStrictness(value); setIntersectionStrictness(strictness); if (session?.authenticated) privateHomework.saveSettings({ strictness }); }, showAbsentFriends, setShowAbsentFriends: value => { setShowAbsentFriends(value); if (session?.authenticated) privateHomework.saveSettings({ alwaysShow: value }); },
     date, setDate,
     subgroups,
     pickSubgroup: (streamId, optionId) => setSubgroups(current => {

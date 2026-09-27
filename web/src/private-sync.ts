@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "./api.ts";
 import { canonicalUtc, syncSubjectKey } from "./utc.ts";
+import { normalizeIntersectionStrictness } from "./intersectionStrictness.ts";
 import type { HomeworkItem } from "./types";
 export type SyncHomeworkValue = {
     subjectRaw: string;
@@ -238,8 +239,9 @@ export function usePrivateHomework(userId: string | null) {
         const id = "00000000-0000-0000-0000-000000000001";
         const pending = local.pending.find(row => row.type === "settings");
         const record = local.records.find(row => row.entityType === "settings" && !row.tombstone);
-        const defaults: SyncSettingsValue = { selectedGroupId: null, parityInvert: false, notifyTime1: null, notifyTime2: null, strictness: 25, alwaysShow: false };
+        const defaults: SyncSettingsValue = { selectedGroupId: null, parityInvert: false, notifyTime1: null, notifyTime2: null, strictness: 50, alwaysShow: false };
         const value = { ...defaults, ...(pending?.value ?? record?.value), ...patch } as SyncSettingsValue;
+        value.strictness = normalizeIntersectionStrictness(value.strictness);
         commit({ ...local, pending: [...local.pending.filter(row => row.type !== "settings"), { opId: crypto.randomUUID(), id, type: "settings", revision: pending?.revision ?? record?.revision ?? 0, value }] });
         setTick(value => value + 1);
         return true;

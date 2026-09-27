@@ -1,7 +1,9 @@
 package ru.bgtu_voenmeh.zapara.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -66,6 +68,13 @@ fun ZaparaTheme(
     val ctx = LocalContext.current
     val copy = remember(ctx) { AndroidUiCopy(ctx) }
     CompositionLocalProvider(LocalColors provides colors, LocalMotion provides effectiveMotion, LocalUiCopy provides copy) {
-        MaterialTheme(colorScheme = scheme, typography = ZaparaTypography, content = content)
+        MaterialTheme(colorScheme = scheme, typography = ZaparaTypography,
+            shapes = Shapes(
+                extraSmall = RoundedCornerShape(ZaparaRadius.control),
+                small = RoundedCornerShape(ZaparaRadius.control),
+                medium = RoundedCornerShape(ZaparaRadius.control),
+                large = RoundedCornerShape(ZaparaRadius.card),
+                extraLarge = RoundedCornerShape(ZaparaRadius.dialog)
+            ), content = content)
     }
 }

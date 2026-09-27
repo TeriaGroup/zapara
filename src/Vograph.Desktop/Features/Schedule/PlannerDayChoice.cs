@@ -14,8 +14,8 @@ public sealed class PlannerDayChoice
         IsSelected = Date.Date == selectedDate.Date;
         DayLabel = Date.ToString("ddd", Russian);
         DateLabel = Date.Day.ToString(Russian);
-        Workload = day.LessonCount switch { null => "Нет данных", 0 => "Без пар", var count => $"{count} пар" };
-        AccessibleName = $"{Date:d MMMM yyyy}, {Workload}";
+        Workload = day.LessonCount switch { null => "Нет данных", 0 => "Без пар", var count => owner.App.Loc.Plural(count.Value, "lessons1", "lessons2", "lessons5") };
+        AccessibleName = $"{Date.ToString("d MMMM yyyy", Russian)}, {Workload}";
         SelectCommand = new RelayCommand(() => owner.SelectDate(Date));
     }
 

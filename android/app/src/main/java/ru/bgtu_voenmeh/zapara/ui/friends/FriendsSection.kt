@@ -152,7 +152,6 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
                     val strictnessLabel = stringResource(R.string.friends_strictness)
                     val active = Strictness.nearest(state.strictness)
                     val steps = listOf(
-                        25 to R.string.strict_uni,
                         50 to R.string.strict_building,
                         75 to R.string.strict_floor,
                         100 to R.string.strict_room

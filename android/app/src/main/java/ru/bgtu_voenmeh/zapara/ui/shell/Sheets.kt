@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -41,7 +42,8 @@ fun SectionsSheet(current: Section, onPick: (Section) -> Unit, onDismiss: () -> 
     )
     ZBottomSheet(onDismiss = onDismiss, tag = "Sheet.Sections") {
         Text(stringResource(R.string.sections_title), style = Zapara.typography.section, color = c.text1)
-        LazyColumn(Modifier.heightIn(max = 600.dp), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+        Spacer(Modifier.height(Zapara.space.s))
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 600.dp).clipToBounds(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             sectionGroups.forEach { (title, sections) ->
                 item { Text(title, style = Zapara.typography.caption, color = c.text2, modifier = Modifier.padding(top = Zapara.space.m)) }
                 items(sections, key = { it.route }) { section -> SectionCard(section, current == section) { onPick(section) } }

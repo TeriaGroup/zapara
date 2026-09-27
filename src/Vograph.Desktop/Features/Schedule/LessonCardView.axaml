@@ -21,7 +21,7 @@
         <TextBlock Text="Пересечение времени занятий" IsVisible="{Binding HasConflict}" Classes="muted caption" />
         <TextBlock Classes="muted caption" Text="{Binding PriorityCaption}" IsVisible="{Binding IsNext}" />
         <WrapPanel>
-          <TextBlock Classes="subject" Text="{Binding DisplayName}" VerticalAlignment="Center" AutomationProperties.AutomationId="Lesson.Title" />
+          <TextBlock Classes="subject" FontSize="17" FontWeight="Medium" TextWrapping="Wrap" Text="{Binding DisplayName}" VerticalAlignment="Center" AutomationProperties.AutomationId="Lesson.Title" />
           <Border Classes="chip type" Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding HasType}">
             <TextBlock Text="{Binding TypeLabel}" />
           </Border>

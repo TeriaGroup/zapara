@@ -22,7 +22,7 @@ public sealed partial class ScheduleViewModel
     private bool deadlineUndoShared;
     public bool HasDeadlineFeedback=>DeadlineFeedback.Length>0;
     public bool HasNextStudyDate=>NextStudyDate is not null;
-    public string NextStudyCaption=>NextStudyDate is {} date?$"К занятиям {date:dd.MM.yyyy}":"";
+    public string NextStudyCaption=>NextStudyDate is {} date?$"Следующий учебный день · {date.ToString("d MMMM", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))}" : "";
     public string DeadlineTitle=>$"Ближайшие сроки · {Deadlines.Count} заданий · готово {Deadlines.Count(x=>x.Done)}";
     public string DayPriorityCaption=>Date.Date==_clock().Date && Lessons.Count>0 && Lessons.All(x=>x.IsPast)?"Пары закончились":Date.Date>_clock().Date?"Первая пара":"Текущая или следующая пара";
     public bool HasPriority=>Lessons.Any(x=>x.IsNext);

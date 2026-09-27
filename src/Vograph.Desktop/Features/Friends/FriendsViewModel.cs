@@ -36,7 +36,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
         _shell = shell;
         _clock = clock ?? (() => DateTime.Now);
         _tickLabels = BuildTicks();
-        _strictnessLabel = LabelFor(25);
+        _strictnessLabel = LabelFor(50);
         _reload = () => { if (!_suppressReload) _ = LoadAsync(); };
         _forecastTimer.Tick += OnForecastTick;
         shell.GroupChanged += _reload;
@@ -67,7 +67,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
 
     [ObservableProperty] private bool _canAdd = true;
     [ObservableProperty] private string _countText = "";
-    [ObservableProperty] private double _strictness = 25;
+    [ObservableProperty] private double _strictness = 50;
     [ObservableProperty] private string _strictnessLabel;
     [ObservableProperty] private IList<string> _tickLabels;
     [ObservableProperty] private bool _alwaysShowAll;
@@ -78,17 +78,16 @@ public sealed partial class FriendsViewModel : ViewModelBase
     [ObservableProperty] private string _forecastStatus = "";
     [ObservableProperty] private string _missingSchedulesText = "";
 
-    // Short tick labels for the slider (strictTick25..100) are their own keys, distinct from the long
-    // inter25..100 texts the schedule's dot tooltips use ("в том же корпусе" etc. would not fit under a tick).
-    private IList<string> BuildTicks() => new[] { T("strictTick25"), T("strictTick50"), T("strictTick75"), T("strictTick100") };
-    private string LabelFor(double v) => T(v >= 100 ? "strictTick100" : v >= 75 ? "strictTick75" : v >= 50 ? "strictTick50" : "strictTick25");
+    // Short choice labels remain separate from the schedule's diagnostic dot descriptions.
+    private IList<string> BuildTicks() => new[] { T("strictTick50"), T("strictTick75"), T("strictTick100") };
+    private string LabelFor(double v) => T(v >= 100 ? "strictTick100" : v >= 75 ? "strictTick75" : "strictTick50");
     public int StrictnessIndex
     {
-        get => Strictness >= 100 ? 3 : Strictness >= 75 ? 2 : Strictness >= 50 ? 1 : 0;
+        get => Strictness >= 100 ? 2 : Strictness >= 75 ? 1 : 0;
         set
         {
-            if (value is < 0 or > 3) return;
-            Strictness = 25 + value * 25;
+            if (value is < 0 or > 2) return;
+            Strictness = 50 + value * 25;
         }
     }
 
@@ -122,7 +121,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
         }, "friends");
         if (data is null || version != _version || !operation.IsCurrent) return;
         _suppress = true;
-        Strictness = Math.Clamp(data.Settings.IntersectionStrictness, 25, 100);
+        Strictness = data.Settings.IntersectionStrictness;
         AlwaysShowAll = data.Settings.AlwaysShowAllTrafficLights;
         _suppress = false;
         TickLabels = BuildTicks();

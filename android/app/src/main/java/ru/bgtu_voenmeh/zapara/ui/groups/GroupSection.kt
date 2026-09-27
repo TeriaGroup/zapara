@@ -43,6 +43,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.HorizontalDivider
+import ru.bgtu_voenmeh.zapara.ui.components.ZTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.AlertDialog
@@ -89,6 +90,7 @@ import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
 import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.components.RevisionGuard
+import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
@@ -176,7 +178,7 @@ private fun CommunityList(state: GroupUiState, onEvent: (GroupEvent) -> Unit, qu
         verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
     ) {
         item {
-            OutlinedTextField(query, onQuery, label = { Text(stringResource(R.string.group_search)) },
+            ZTextField(query, onQuery, label = { Text(stringResource(R.string.group_search)) },
                 singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Group.Search"))
         }
         item { Text(stringResource(R.string.channel_results, visible.size, state.communities.size),
@@ -473,7 +475,7 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
             }
         }
         if (searchOpen || query.isNotBlank()) item {
-            OutlinedTextField(query, onQuery, label = { Text(stringResource(R.string.channel_search)) },
+            ZTextField(query, onQuery, label = { Text(stringResource(R.string.channel_search)) },
                 placeholder = { Text(stringResource(R.string.channel_search_hint)) }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("Group.ChannelSearch"))
         }
@@ -697,7 +699,7 @@ private fun TrustedPanel(state: GroupUiState, onEvent: (GroupEvent) -> Unit, mod
         else if (enabledRoles.isEmpty()) item {
             ZCard(Modifier.fillMaxWidth(), tag = "Group.TrustedRoleEditor") {
                 Text(stringResource(R.string.channel_trusted_empty), style = Zapara.typography.body, color = c.text1)
-                OutlinedTextField(roleName, { roleName = it.take(32) },
+                ZTextField(roleName, { roleName = it.take(32) },
                     label = { Text(stringResource(R.string.channel_trusted_role_name)) }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("Group.TrustedRoleName"))
                 ZButton(stringResource(R.string.channel_trusted_create_role),
@@ -774,11 +776,11 @@ private fun ChannelEditor(initial: GroupTopic?, state: GroupUiState,
             ZButton(uiText(R.string.review_keep_draft), { revisions = revisions.reload() },enabled=!busy,ghost=true)
         }
         Text(stringResource(if (initial == null) R.string.channel_new else R.string.channel_change), style = Zapara.typography.bodyStrong)
-        OutlinedTextField(title, { title = it.take(40) }, label = { Text(stringResource(R.string.channel_name)) }, singleLine = true,
+        ZTextField(title, { title = it.take(40) }, label = { Text(stringResource(R.string.channel_name)) }, singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("Group.ChannelTitle"))
-        OutlinedTextField(icon, { icon = it.take(8) }, label = { Text(stringResource(R.string.channel_icon)) }, singleLine = true,
+        ZTextField(icon, { icon = it.take(8) }, label = { Text(stringResource(R.string.channel_icon)) }, singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("Group.ChannelIcon"))
-        OutlinedTextField(description, { description = it.take(240) }, label = { Text(stringResource(R.string.channel_description)) },
+        ZTextField(description, { description = it.take(240) }, label = { Text(stringResource(R.string.channel_description)) },
             modifier = Modifier.fillMaxWidth().testTag("Group.ChannelDescription"))
         if (initial == null) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             GroupTemplates.titles.filterKeys { value -> if (state.space == null) value in setOf("chat", "polls") else value in state.space.capabilities.templates }.forEach { (value, label) ->
@@ -793,7 +795,7 @@ private fun ChannelEditor(initial: GroupTopic?, state: GroupUiState,
             ZChip(uiText(R.string.space_day_47), selected = category == null, onClick = { category = null })
             state.space?.categories.orEmpty().sortedBy { it.position }.forEach { value -> ZChip(value.title, selected = category == value.categoryId, onClick = { category = value.categoryId }) }
         }
-        OutlinedTextField(position, { position = it }, label = { Text(uiText(R.string.space_day_48)) }, modifier = Modifier.fillMaxWidth())
+        ZTextField(position, { position = it }, label = { Text(uiText(R.string.space_day_48)) }, modifier = Modifier.fillMaxWidth())
         Text(stringResource(R.string.channel_accent), style = Zapara.typography.caption)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             listOf("default" to R.string.channel_accent_default, "blue" to R.string.channel_accent_blue,
@@ -859,7 +861,7 @@ private fun BallotChannel(state: GroupUiState, onEvent: (GroupEvent) -> Unit, mo
                     tag = "Group.BallotRetry")
             }
         } else {
-            OutlinedTextField(query, { query = it }, label = { Text(stringResource(R.string.group_ballot_search)) },
+            ZTextField(query, { query = it }, label = { Text(stringResource(R.string.group_ballot_search)) },
                 singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Group.BallotSearch"))
             Text(stringResource(R.string.group_ballot_scope), style = Zapara.typography.caption, color = c.text2)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -1051,10 +1053,10 @@ private fun BallotEditor(busy: Boolean, canOpen: Boolean, canSubmit: Boolean, fa
             color = Zapara.colors.text2)
         if (!canSubmit) Text(stringResource(R.string.group_ballot_write_revoked), style = Zapara.typography.caption,
             color = Zapara.colors.warn)
-        OutlinedTextField(question, { onQuestion(it.take(400)) }, label = { Text(stringResource(R.string.channel_ballot_question)) },
+        ZTextField(question, { onQuestion(it.take(400)) }, label = { Text(stringResource(R.string.channel_ballot_question)) },
             modifier = Modifier.fillMaxWidth().testTag("Group.BallotQuestion"))
         options.forEachIndexed { index, option ->
-            OutlinedTextField(option, { next -> onOptions(options.mapIndexed { i, value -> if (i == index) next.take(80) else value }) },
+            ZTextField(option, { next -> onOptions(options.mapIndexed { i, value -> if (i == index) next.take(80) else value }) },
                 label = { Text(stringResource(R.string.channel_ballot_option, index + 1)) }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("Group.BallotOption.$index"))
         }
@@ -1086,7 +1088,7 @@ private fun People(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     val visible = browsePeople(state.people, query)
     LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         item {
-            OutlinedTextField(query, onQuery, label = { Text(stringResource(R.string.channel_people_search)) },
+            ZTextField(query, onQuery, label = { Text(stringResource(R.string.channel_people_search)) },
                 placeholder = { Text(stringResource(R.string.channel_people_search_hint)) }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("Group.PeopleSearch"))
         }
@@ -1183,7 +1185,7 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
         }
     }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-        OutlinedTextField(query, { query = it }, label = { Text(stringResource(R.string.group_message_search)) },
+        ZTextField(query, { query = it }, label = { Text(stringResource(R.string.group_message_search)) },
             singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Group.MessageSearch"))
         Text(stringResource(R.string.group_message_scope), style = Zapara.typography.caption, color = c.text2)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -1473,13 +1475,28 @@ private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-                if (state.editing == null) Box {
-                    IconButton(onClick = { attachOpen = true }, enabled = !state.sending,
-                        modifier = Modifier.testTag("Group.Attach")) {
-                        Icon(painterResource(R.drawable.ic_paperclip), stringResource(R.string.group_attach), tint = c.text1)
-                    }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZTextField(value = state.draft, onValueChange = { onEvent(GroupEvent.Draft(it)) },
+                    enabled = !state.sending, modifier = Modifier.weight(1f).testTag("Group.Draft"),
+                    placeholder = { Text(stringResource(R.string.group_message)) }, maxLines = 4)
+                if (state.draft.isNotBlank() || state.attachmentPending || state.editing != null) {
+                    if (state.attachmentPending) ZButton(stringResource(R.string.group_retry), { onEvent(GroupEvent.Send) },
+                        enabled = !state.sending, tag = "Group.Send")
+                    else ZIconButton(R.drawable.ic_send, stringResource(R.string.group_send),
+                        { onEvent(GroupEvent.Send) }, "Group.Send",
+                        enabled = !state.sending && state.draft.isNotBlank(), primary = true)
+                } else {
+                    ZIconButton(R.drawable.ic_mic, stringResource(R.string.group_record_voice),
+                        startVoice, "Group.Voice", enabled = !state.sending && canMedia)
+                }
+            }
+            if (state.editing == null) FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                Box {
+                    ZIconButton(R.drawable.ic_paperclip, stringResource(R.string.group_attach),
+                        { attachOpen = true }, "Group.Attach", enabled = !state.sending)
                     DropdownMenu(expanded = attachOpen, onDismissRequest = { attachOpen = false }) {
                         DropdownMenuItem(enabled = canMedia, text = { Text(uiText(R.string.space_day_50)) }, onClick = { attachOpen = false; startVoice() })
                         DropdownMenuItem(enabled = canMedia, text = { Text(uiText(R.string.space_day_51)) }, onClick = { attachOpen = false; startCircle() })
@@ -1497,36 +1514,9 @@ private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
                             modifier = Modifier.testTag("Group.File"))
                     }
                 }
-                OutlinedTextField(value = state.draft, onValueChange = { onEvent(GroupEvent.Draft(it)) },
-                    enabled = !state.sending, modifier = Modifier.weight(1f).testTag("Group.Draft"),
-                    placeholder = { Text(stringResource(R.string.group_message), style = Zapara.typography.caption, color = c.text3) },
-                    maxLines = 4, shape = RoundedCornerShape(Zapara.radii.control),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = c.chip, unfocusedContainerColor = c.chip,
-                        focusedBorderColor = c.lineStrong, unfocusedBorderColor = c.chip,
-                        focusedTextColor = c.text1, unfocusedTextColor = c.text1
-                    ))
-                if (state.draft.isNotBlank() || state.attachmentPending || state.editing != null) {
-                    if (state.attachmentPending) ZButton(stringResource(R.string.group_retry), { onEvent(GroupEvent.Send) },
-                        enabled = !state.sending, tag = "Group.Send")
-                    else Surface(onClick = { onEvent(GroupEvent.Send) },
-                        enabled = !state.sending && state.draft.isNotBlank(),
-                        shape = RoundedCornerShape(Zapara.radii.icon), color = c.accent, contentColor = c.onAccent,
-                        modifier = Modifier.size(Zapara.space.minTouch).testTag("Group.Send")) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(painterResource(R.drawable.ic_send), stringResource(R.string.group_send))
-                        }
-                    }
-                } else {
-                    IconButton(onClick = startCircle, enabled = !state.sending && canMedia,
-                        modifier = Modifier.testTag("Group.Circle")) {
-                        Icon(painterResource(R.drawable.ic_video_circle), stringResource(R.string.group_record_circle), tint = c.text1)
-                    }
-                    IconButton(onClick = startVoice, enabled = !state.sending && canMedia,
-                        modifier = Modifier.testTag("Group.Voice")) {
-                        Icon(painterResource(R.drawable.ic_mic), stringResource(R.string.group_record_voice), tint = c.text1)
-                    }
-                }
+                if (state.draft.isBlank() && !state.attachmentPending) ZIconButton(
+                    R.drawable.ic_video_circle, stringResource(R.string.group_record_circle),
+                    startCircle, "Group.Circle", enabled = !state.sending && canMedia)
             }
         }
     }

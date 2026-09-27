@@ -5,6 +5,12 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.unit.dp
@@ -47,6 +53,8 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
@@ -84,9 +92,6 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, on
     Column(Modifier.fillMaxSize()) {
         ZTopBar(stringResource(R.string.nav_schedule)) {
             ZButton(stringResource(R.string.nav_week), { onWeek(state.selected) }, ghost = true, quiet = true)
-            if (state.selected != state.today) {
-                ZButton(stringResource(R.string.today), { onEvent(ScheduleEvent.Today) }, ghost = true, tag = "Top.Today")
-            }
         }
         when (ScheduleComposer.pane(state)) {
             ScheduleComposer.SchedulePane.Loading -> Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
@@ -165,6 +170,7 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, on
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, onOpenMap: (String) -> Unit, onDiscuss: (String) -> Unit) {
     val uiText = rememberUiText()
@@ -173,15 +179,29 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
     val conflicts = remember(page.lessons) { ScheduleComposer.conflicts(page.lessons) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         item {
+            Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             state.sourceStatus?.let { Text(it, style = Zapara.typography.caption, color = Zapara.colors.text2) }
-            Text(page.caption, style = Zapara.typography.caption, color = Zapara.colors.text2)
-            Text(if (page.dataState != null) page.dataState else if (page.lessons.isEmpty()) uiText(R.string.space_day_12) else uiText(R.string.space_day_13, (page.lessons.size).toString(), (page.lessons.minOf { it.timeStart }).toString(), (page.lessons.maxOf { it.timeEnd }).toString()), style = Zapara.typography.section)
+            Text(page.caption.substringAfter(" · ", page.caption), style = Zapara.typography.caption, color = Zapara.colors.text2)
+            if (page.dataState != null) Text(page.dataState, style = Zapara.typography.body, color = Zapara.colors.text2)
+            else if (page.lessons.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                Text(pluralStringResource(R.plurals.schedule_pair_count, page.lessons.size, page.lessons.size), modifier = Modifier.align(Alignment.CenterVertically), style = Zapara.typography.section, color = Zapara.colors.text1)
+                ZChip("${page.lessons.minOf { it.timeStart }}–${page.lessons.maxOf { it.timeEnd }}")
+            }
+            }
             if (page.lessons.isEmpty() && page.dataState == null) {
-                Text(page.nextHint ?: uiText(R.string.space_day_14), style = Zapara.typography.body)
-                page.nextKnownDate?.let { date -> ZButton(date.toString(), { onEvent(ScheduleEvent.Select(date)) }, ghost = true) }
+                ZCard(Modifier.fillMaxWidth().padding(top = Zapara.space.l), tag = "Schedule.EmptyDay") {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.m)) {
+                        Box(Modifier.size(40.dp).background(Zapara.colors.chip, RoundedCornerShape(Zapara.radii.control)), contentAlignment = Alignment.Center) {
+                            ZIcon(R.drawable.ic_calendar, null)
+                        }
+                        Text(stringResource(R.string.schedule_empty_title), modifier = Modifier.weight(1f), style = Zapara.typography.section)
+                    }
+                    Text(page.nextHint ?: uiText(R.string.space_day_121), style = Zapara.typography.body, color = Zapara.colors.text2)
+                    page.nextKnownDate?.let { date -> ZButton(stringResource(R.string.schedule_next_day, date.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM", java.util.Locale("ru")))), { onEvent(ScheduleEvent.Select(date)) }, modifier = Modifier.fillMaxWidth(), tag = "Schedule.NextStudyDay", leadingIcon = R.drawable.ic_calendar) }
+                }
             }
             if (page.isToday && page.lessons.isNotEmpty() && featured == null) Text(uiText(R.string.space_day_15), style = Zapara.typography.body)
-            if (breaks.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable { onEvent(ScheduleEvent.FreeTime(!state.showFreeTime)) }, verticalAlignment = Alignment.CenterVertically) {
+            if (breaks.isNotEmpty()) Row(Modifier.fillMaxWidth().heightIn(min = Zapara.space.minTouch).clickable { onEvent(ScheduleEvent.FreeTime(!state.showFreeTime)) }, verticalAlignment = Alignment.CenterVertically) {
                 Text(uiText(R.string.space_day_16), modifier = Modifier.weight(1f), style = Zapara.typography.body)
                 ZSwitch(state.showFreeTime, { onEvent(ScheduleEvent.FreeTime(it)) }, "Schedule.FreeTime")
             }
@@ -190,14 +210,16 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
             if (state.showFreeTime) breaks.filter { it.end.toString() == lesson.timeStart }.forEach { Text(uiText(R.string.space_day_17, (it.start).toString(), (it.end).toString(), (it.minutes / 60).toString(), (it.minutes % 60).toString()), style = Zapara.typography.caption, color = Zapara.colors.text2) }
             if (lesson in conflicts) Text(uiText(R.string.space_day_overlap), style = Zapara.typography.caption, color = Zapara.colors.warn)
             if (lesson == featured) {
-                Text(if (page.isToday) uiText(if (runCatching { java.time.LocalTime.parse(lesson.timeStart) <= state.now.toLocalTime() }.getOrDefault(false)) R.string.space_day_current_pair else R.string.space_day_next_pair) else uiText(R.string.space_day_19), style = Zapara.typography.caption)
                 LessonCard(lesson, onLongClick = { onEvent(ScheduleEvent.LongPress(lesson)) }, onRoom = { onOpenMap(lesson.classroomRaw) },
-                    onToggleDone = { onEvent(ScheduleEvent.ToggleDone(it)) }, onSubgroup = { stream, option -> onEvent(ScheduleEvent.PickSubgroup(stream, option)) })
-                Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                    ZButton(uiText(R.string.space_day_20), { onOpenMap(lesson.classroomRaw) }, enabled = lesson.classroomRaw.isNotBlank(), modifier = Modifier.weight(1f))
-                    ZButton(uiText(R.string.space_day_21), { onEvent(ScheduleEvent.SubjectHomework(lesson)) }, ghost = true, modifier = Modifier.weight(1f))
-                }
-                ZButton(uiText(R.string.space_day_22), { onDiscuss("${lesson.name} · ${page.date} · ${lesson.timeStart}–${lesson.timeEnd} · ${lesson.room}") }, ghost = true, quiet = true)
+                    onToggleDone = { onEvent(ScheduleEvent.ToggleDone(it)) }, onSubgroup = { stream, option -> onEvent(ScheduleEvent.PickSubgroup(stream, option)) },
+                    eyebrow = if (page.isToday) uiText(if (runCatching { java.time.LocalTime.parse(lesson.timeStart) <= state.now.toLocalTime() }.getOrDefault(false)) R.string.space_day_current_pair else R.string.space_day_next_pair) else uiText(R.string.space_day_19),
+                    actions = {
+                        FlowRow(Modifier.fillMaxWidth().padding(top = Zapara.space.xs), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                            ZButton(uiText(R.string.space_day_20), { onOpenMap(lesson.classroomRaw) }, enabled = lesson.classroomRaw.isNotBlank(), ghost = true, leadingIcon = R.drawable.ic_map)
+                            ZButton(uiText(R.string.space_day_21), { onEvent(ScheduleEvent.SubjectHomework(lesson)) }, ghost = true, leadingIcon = R.drawable.ic_homework)
+                            ZButton(uiText(R.string.space_day_22), { onDiscuss("${lesson.name} · ${page.date} · ${lesson.timeStart}–${lesson.timeEnd} · ${lesson.room}") }, ghost = true, quiet = true, leadingIcon = R.drawable.ic_chat)
+                        }
+                    })
             } else ZCard(Modifier.fillMaxWidth(), onClick = { onEvent(ScheduleEvent.LongPress(lesson)) }) {
                 Text("${lesson.timeStart}–${lesson.timeEnd} · ${lesson.type}", style = Zapara.typography.caption, color = Zapara.colors.text2)
                 Text(lesson.name, style = Zapara.typography.bodyStrong)

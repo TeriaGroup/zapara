@@ -36,7 +36,7 @@ public sealed class ScheduleComposer
                 ? null : _app.Schedule.GetSchedule(date.ToDateTime(TimeOnly.MinValue), GroupId!).Count)).ToArray();
         var intervals = day.Rows.Select(row => new DayInterval(ParseTime(row.TimeStart), ParseTime(row.TimeEnd))).ToArray();
         var breaks = DayPlanning.FreeTime(intervals);
-        var summary = day.IsUnavailable || day.Rows.Count == 0 ? "" : $"{_app.Loc.Plural(day.Rows.Count, "lessons1", "lessons2", "lessons5")} · {intervals.Min(row => row.Start):hh\\:mm}–{intervals.Max(row => row.End):hh\\:mm}";
+        var summary = day.IsUnavailable || day.Rows.Count == 0 ? "" : $"Занятия {intervals.Min(row => row.Start):hh\\:mm}–{intervals.Max(row => row.End):hh\\:mm}";
         var copy = new TimetableApiCache(_app.Db).Read(GroupId??"")?.FetchedAt ?? _app.Settings.LastFetchedAt;
         var source = DateTimeOffset.TryParse(copy,out var stamp) ? $"Копия {stamp.ToLocalTime():dd.MM.yyyy HH:mm}" : "Локальное расписание";
         if(!_app.AllowNetwork || _app.Api.LastFailure==Vograph.Core.Models.TimetableApiFailure.Transport)source="Нет сети · "+source;

@@ -22,16 +22,18 @@ object FriendPalette {
 }
 
 object Strictness {
-    val steps = listOf(25, 50, 75, 100)
+    val steps = listOf(50, 75, 100)
 
     fun label(value: Int, copy: ru.bgtu_voenmeh.zapara.ui.UiCopy): String = copy.get(
         when (nearest(value)) {
-            25 -> "strict_uni"
             50 -> "strict_building"
             75 -> "strict_floor"
             else -> "strict_room"
         }
     )
 
-    fun nearest(value: Int): Int = steps.minBy { kotlin.math.abs(it - value) }
+    fun nearest(value: Int): Int {
+        val clamped = value.coerceIn(50, 100)
+        return steps.minBy { kotlin.math.abs(it - clamped) }
+    }
 }

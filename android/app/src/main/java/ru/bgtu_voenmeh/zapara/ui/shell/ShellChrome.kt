@@ -170,7 +170,8 @@ fun ZBottomBar(
             val inlineWidths = labelWidths.map { with(density) { it.toDp() } + 22.dp + Zapara.space.s + Zapara.space.l }
             val inline = short && maxWidth > LocalConfiguration.current.screenHeightDp.dp &&
                 inlineWidths.maxOrNull()!! <= maxWidth / (Section.bar.size + 1)
-            val columns = if (!inline && density.fontScale >= 1.5f) 2 else Section.bar.size + 1
+            val iconOnly = density.fontScale >= 1.3f
+            val columns = Section.bar.size + 1
             val cell = maxWidth / columns
             val target = cell * (activeIndex % columns) + (cell - 18.dp) / 2
             val offsetX by animateDpAsState(targetValue = target, animationSpec = tween(motion.ms(Durations.indicator), easing = ZaparaEase), label = "indicator")
@@ -190,6 +191,7 @@ fun ZBottomBar(
                                 indicatorX = offsetX,
                                 indicatorShift = offsetX - target,
                                 inline = inline,
+                                iconOnly = iconOnly,
                                 onClick = { if (section != null) onSection(section) else onSections() }
                             )
                         }
@@ -212,13 +214,17 @@ private fun BarItem(
     indicatorX: Dp,
     indicatorShift: Dp,
     inline: Boolean,
+    iconOnly: Boolean,
     onClick: () -> Unit
 ) {
     val c = Zapara.colors
     val source = remember { MutableInteractionSource() }
     TextButton(
         onClick = onClick,
-        modifier = modifier.heightIn(min = 64.dp).testTag(tag).semantics { selected = active }.pressScale(source),
+        modifier = modifier.heightIn(min = 64.dp).testTag(tag).semantics {
+            selected = active
+            if (iconOnly) contentDescription = label
+        }.pressScale(source),
         interactionSource = source,
         contentPadding = PaddingValues(0.dp)
     ) {
@@ -252,7 +258,7 @@ private fun BarItem(
                         )
                     }
                 }
-                Text(
+                if (!iconOnly) Text(
                     label,
                     style = Zapara.typography.caption,
                     color = if (active) c.text1 else c.text3

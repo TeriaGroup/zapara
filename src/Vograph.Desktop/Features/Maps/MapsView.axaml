@@ -5,7 +5,8 @@
              xmlns:m="using:Vograph.Desktop.Features.Maps"
              x:Class="Vograph.Desktop.Features.Maps.MapsView"
              x:DataType="m:MapsViewModel">
-  <Grid RowDefinitions="Auto,Auto,*" Margin="32,26">
+  <UserControl.Styles><Style Selector="TextBlock.display"><Setter Property="FontSize" Value="22" /><Setter Property="FontWeight" Value="Medium" /></Style></UserControl.Styles>
+  <Grid RowDefinitions="Auto,Auto,*" Margin="24">
     <Grid ColumnDefinitions="*,Auto">
       <StackPanel Margin="0,0,16,0">
         <TextBlock Classes="display" Text="{Binding Title}" />
@@ -76,7 +77,7 @@
       </StackPanel>
     </WrapPanel>
 
-    <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
+    <Grid Grid.Row="2" RowDefinitions="*,Auto" RowSpacing="8">
       <Border Classes="card" Padding="0" ClipToBounds="True"
               AutomationProperties.AutomationId="Maps.Plan" AutomationProperties.AccessibilityView="Content">
         <Panel>
@@ -101,13 +102,13 @@
                              AutomationProperties.AutomationId="Maps.StackView" />
           <Border x:Name="HighlightLabel" Classes="chip" Background="{DynamicResource Brush.MapInk}" HorizontalAlignment="Left" VerticalAlignment="Top"
                   IsVisible="{Binding ShowHighlightChrome}" IsHitTestVisible="False">
-            <TextBlock Text="{Binding HighlightLabel}" Foreground="{DynamicResource Brush.OnMapInk}" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding HighlightLabel}" Foreground="{DynamicResource Brush.OnMapInk}" FontWeight="Medium" />
           </Border>
           <c:EmptyState IsVisible="{Binding ShowEmpty}" Title="{Binding ContextLine}" Hint="{loc:T mapRemoteHint}" Icon="{StaticResource Icon.Map}" VerticalAlignment="Center" />
           <TextBlock Classes="muted caption" Text="{Binding ImageError}" IsVisible="{Binding ImageError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                      HorizontalAlignment="Center" VerticalAlignment="Center" />
           <Border Classes="chip" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12" IsVisible="{Binding HasNote}">
-            <TextBlock Text="{Binding Note}" />
+            <TextBlock Text="{Binding Note}" TextWrapping="Wrap" />
           </Border>
           <Border Classes="chip" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="12">
             <Panel>
@@ -117,19 +118,18 @@
           </Border>
         </Panel>
       </Border>
-      <ScrollViewer Grid.Column="1" Width="260" Margin="12,0,0,0" HorizontalScrollBarVisibility="Disabled"
-                    IsVisible="{Binding HasRouteSteps}">
+      <Expander Grid.Row="1" Header="Шаги маршрута" IsExpanded="False" Padding="0" HorizontalAlignment="Stretch" IsVisible="{Binding HasRouteSteps}" AutomationProperties.AutomationId="Maps.RouteDetails"><ScrollViewer MaxHeight="128" HorizontalScrollBarVisibility="Disabled">
         <ItemsControl ItemsSource="{Binding RouteSteps}">
           <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="m:RouteStepItem">
-              <Button Classes="pill" Classes.on="{Binding IsSelected}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Content="{Binding Text}"
+              <Button Classes="pill" Classes.on="{Binding IsSelected}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                       Command="{Binding $parent[ItemsControl].((m:MapsViewModel)DataContext).SelectRouteStepCommand}" CommandParameter="{Binding}"
-                      AutomationProperties.AutomationId="Maps.RouteStep" AutomationProperties.Name="{Binding Text}" />
+                      AutomationProperties.AutomationId="Maps.RouteStep" AutomationProperties.Name="{Binding Text}"><TextBlock Text="{Binding Text}" TextWrapping="Wrap" /></Button>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-      </ScrollViewer>
+      </ScrollViewer></Expander>
     </Grid>
   </Grid>
 </UserControl>

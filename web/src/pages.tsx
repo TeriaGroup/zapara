@@ -36,6 +36,8 @@ import { SpecializedChannel, SubjectChannelContext } from "./group-panels";
 import { GroupAdmin, titlesOf } from "./group-admin";
 import { ShareMenu } from "./share";
 import { Icon } from "./icons";
+import { MapViewer } from "./map-viewer";
+import { pairCount } from "./map-viewport";
 import { VkMark, YandexMark } from "./brands";
 import type { BallotBoard, ChatMessage, Community, Conversation, FriendItem, GroupDesk, GroupHome, GroupHomeworkCopy, GroupTopic, GroupTopicPage, HomeworkFile, Lesson, MapPlan, Teacher, TeacherLesson } from "./types";
 
@@ -172,17 +174,17 @@ export function SchedulePage() {
     {calendar && <label className="field day-calendar">Выберите дату<input ref={calendarRef} type="date" value={isoDay(app.date)} onChange={event => { const value = localDay(event.target.value); if (value) app.setDate(value); }} /></label>}
     <div className="dates day-strip">{strip.map(date => {
       const count = app.timetableAvailable && period && isoDay(date) >= period.start.slice(0,10) ? lessonsOn(shown, date, period.start, period.weekCount, app.invert).length : null;
-      return <button className={"date" + (isoDay(date) === isoDay(app.date) ? " active" : "")} key={isoDay(date)} type="button" aria-pressed={isoDay(date) === isoDay(app.date)} onClick={() => app.setDate(date)}><span>{date.toLocaleDateString("ru-RU", { weekday: "short" })}</span><strong>{date.getDate()}</strong><small>{count === null ? "Нет данных" : count ? `${count} пар` : "Без пар"}</small></button>;
+      return <button className={"date" + (isoDay(date) === isoDay(app.date) ? " active" : "")} key={isoDay(date)} type="button" aria-pressed={isoDay(date) === isoDay(app.date)} aria-label={`${absoluteDate(date)}, ${count === null ? "нет данных" : pairCount(count)}`} onClick={() => app.setDate(date)}><span>{date.toLocaleDateString("ru-RU", { weekday: "short" })}</span><strong>{date.getDate()}</strong><small>{count === null ? "Нет данных" : count ? pairCount(count) : "Без пар"}</small></button>;
     })}</div>
     <div className="day-space">
       <main className="stack swipe" {...swipe}>
-        <div className="section-overview"><strong>{groupName || "Группа не выбрана"}</strong><span>{app.timetableAvailable ? `${lessons.length} пар${lessons.length ? ` · ${lessons[0].timeStart}–${lessons.at(-1)?.timeEnd}` : ""}` : "Нет данных"}</span>
+        <div className="section-overview"><strong>{groupName || "Группа не выбрана"}</strong><span>{app.timetableAvailable ? `${pairCount(lessons.length)}${lessons.length ? ` · ${lessons[0].timeStart}–${lessons.at(-1)?.timeEnd}` : ""}` : "Нет данных"}</span>
           <button className="btn quiet" type="button" disabled={app.loading || app.timetableLoading} onClick={app.refresh}>{app.loading || app.timetableLoading ? "Обновляем…" : "Обновить"}</button></div>
-        {ownTimetable && <p className="muted">{!navigator.onLine ? "Нет сети · копия" : app.timetableFailed ? "Не обновилось · копия" : "Сохранено"} {new Date(ownTimetable.meta.fetchedAt).toLocaleString("ru-RU")}</p>}
+        {ownTimetable && <p className="schedule-cache muted">{!navigator.onLine ? "Нет сети · сохранённая копия" : app.timetableFailed ? "Не удалось обновить · сохранённая копия" : "Обновлено"} {new Date(ownTimetable.meta.fetchedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
         {hasLessonOverlap(lessons) && <p className="banner">Записи пар пересекаются по времени. Проверьте выбранные подгруппы.</p>}
         {gaps.length > 0 && <label className="switch-row"><span>Свободное время</span><input type="checkbox" role="switch" checked={gapsOn} onChange={event => { setGapsOn(event.target.checked); localStorage.setItem("zapara.free-time", event.target.checked ? "1" : "0"); }} /></label>}
         {!app.timetableAvailable ? <div className="card empty"><p>{app.timetableLoading ? "Загружаем расписание" : app.groupId ? "Расписание не загружено. Нет сохранённой копии." : "Выберите учебную группу"}</p><Link className="btn" to="/settings?section=study">Выбрать группу</Link></div>
-          : outsidePeriod ? <div className="card empty"><h2>Дата вне известного учебного периода</h2><p>Сохранённое расписание начинается {period?.start.slice(0,10)}.</p></div> : lessons.length === 0 ? <div className="card empty"><h2>В этот день пар нет</h2>{nextDate && <button className="btn" type="button" onClick={() => app.setDate(nextDate)}>Следующие занятия: {absoluteDate(nextDate)}</button>}</div>
+          : outsidePeriod ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>Дата вне учебного периода</h2><p>Сохранённое расписание начинается {period && localDay(period.start.slice(0,10)) ? absoluteDate(localDay(period.start.slice(0,10))!) : "позже выбранной даты"}.</p></div> : lessons.length === 0 ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>В этот день пар нет</h2><p>{nextDate ? `Ближайшие занятия — ${absoluteDate(nextDate)}.` : "В ближайшие три недели в сохранённом расписании занятий нет."}</p>{nextDate && <button className="btn" type="button" onClick={() => app.setDate(nextDate)}>Открыть {nextDate.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}<Icon name="right" /></button>}</div>
           : <>{isoDay(app.date) === isoDay(now) && !hero && <p className="banner">Пары закончились</p>}{hero && renderLesson(hero)}{lessons.filter(lesson=>lesson!==hero).map(renderLesson)}</>}
       </main>
       <aside className="stack day-context"><h2>Ближайшие сроки · {deadlines.length + sharedDeadlines.length}</h2><p className="muted">{app.date.toLocaleDateString("ru-RU")}–{addDays(app.date, 2).toLocaleDateString("ru-RU")}</p>
@@ -409,32 +411,26 @@ export function MapsPage() {
   const buildings = [...new Set(plans.map(item => item.building))];
   const floors = plans.filter(item => item.building === plan?.building).sort((a, b) => a.floor - b.floor);
   const floorAt = floors.findIndex(item => item.id === plan?.id);
-  const swipe = useSwipe(
-    () => { if (floorAt >= 0 && floorAt < floors.length - 1) setPlan(floors[floorAt + 1]); },
-    () => { if (floorAt > 0) setPlan(floors[floorAt - 1]); },
-  );
+  const contextDate = localDay(mapContext.get("date") || "");
   return (
-    <section className="page">
-      <Head title="Карты" text={error || (mapContext.get("subject") ? `${mapContext.get("subject")} · ${mapContext.get("date")} · Аудитория ${mapContext.get("room") || "не указана"}` : "Планы Военмеха · ГК и УЛК")}>
+    <section className="page maps-page">
+      <Head title="Карты" text="Планы корпусов Военмеха">
         {mapContext.get("date") && <Link className="btn quiet" to="/schedule">К выбранному дню</Link>}
         <ShareMenu card={plan ? placeCard(plan.building, String(plan.floor), "", `${plan.building}, ${plan.floor} этаж`) : null} label="Этаж в чат" />
       </Head>
-      {plan && <div className="section-overview">
-        <strong>{plan.building} · {plan.floor} этаж</strong>
-        <span>Выбранный план</span>
-      </div>}
+      {(mapContext.get("subject") || mapContext.get("room")) && <div className="map-context"><Icon name="pin" /><div><strong>{mapContext.get("room") ? `Аудитория ${mapContext.get("room")}` : "Аудитория не указана"}</strong><p>{[mapContext.get("subject"), contextDate ? absoluteDate(contextDate) : null, mapContext.get("time")].filter(Boolean).join(" · ")}</p><small>Найдите аудиторию на плане выбранного этажа.</small></div></div>}
+      {error && <p className="banner" role="alert">{error}</p>}
       <div className="map-tools map-selectors" role="group" aria-label="Выбор корпуса и этажа">
-        {buildings.map(building => <button key={building} className={"btn" + (plan?.building === building ? " primary" : "")} type="button" onClick={() => setPlan(plans.find(item => item.building === building) || null)}>{building}</button>)}
-        {floors.map(item => (
-          <button key={item.id} className={"btn" + (item.id === plan?.id ? " primary" : "")} type="button" onClick={() => setPlan(item)}>{item.floor} этаж</button>
-        ))}
+        {buildings.length > 0 && <div className="seg" role="group" aria-label="Корпус">{buildings.map(building => <button key={building} className={plan?.building === building ? "active" : ""} aria-pressed={plan?.building === building} type="button" onClick={() => setPlan(plans.find(item => item.building === building) || null)}>{building}</button>)}</div>}
+        {floors.length > 0 && <div className="map-floors" role="group" aria-label="Этаж"><span className="muted">Этаж</span>{floors.map(item => (
+          <button key={item.id} className={"icon-btn" + (item.id === plan?.id ? " selected" : "")} aria-label={`${item.floor} этаж`} aria-pressed={item.id === plan?.id} type="button" onClick={() => setPlan(item)}>{item.floor}</button>
+        ))}</div>}
       </div>
       <div className="map-tools map-navigation" role="group" aria-label="Переход между этажами">
         <button className="btn" type="button" disabled={floorAt <= 0} onClick={() => floorAt > 0 && setPlan(floors[floorAt - 1])}><Icon name="down" size={16} />Ниже</button>
         <button className="btn" type="button" disabled={floorAt < 0 || floorAt >= floors.length - 1} onClick={() => floorAt >= 0 && floorAt < floors.length - 1 && setPlan(floors[floorAt + 1])}><Icon name="up" size={16} />Выше</button>
       </div>
-      <p className="swipe-hint">Смахните по плану, чтобы сменить этаж</p>
-      <div className="map-frame swipe" {...swipe}>{plan ? <img src={plan.url} alt={`${plan.building}, ${plan.floor} этаж`} /> : <span className="muted">{loading ? "Загружаем карты" : error ? "Карты недоступны" : "Планов пока нет"}</span>}</div>
+      {plan ? <><h2 className="map-plan-title">{plan.building} · {plan.floor} этаж</h2><MapViewer key={plan.id} plan={plan} onNextFloor={() => { if (floorAt >= 0 && floorAt < floors.length - 1) setPlan(floors[floorAt + 1]); }} onPreviousFloor={() => { if (floorAt > 0) setPlan(floors[floorAt - 1]); }} /></> : <div className="map-frame"><div className="map-status" role="status"><Icon name="map" size={32} /><h2>{loading ? "Загружаем карты" : error ? "Карты недоступны" : "Планов пока нет"}</h2></div></div>}
       {error && <button className="btn primary" type="button" onClick={() => setRetry(value => value + 1)}>Повторить</button>}
     </section>
   );
@@ -527,7 +523,7 @@ export function FriendsPage() {
       <div className="card stack intersection-settings">
         <div><h2>Насколько близко</h2><p className="sub">Показываем совпадение времени и аудитории по расписанию, а не фактическое местоположение.</p></div>
         <div className="seg intersection-presets" role="group" aria-label="Точность пересечений">
-          {([[25, "В вузе"], [50, "В корпусе"], [75, "На этаже"], [100, "В аудитории"]] as const).map(([value, label]) =>
+          {([[50, "В корпусе"], [75, "На этаже"], [100, "В аудитории"]] as const).map(([value, label]) =>
             <button key={value} type="button" className={app.intersectionStrictness === value ? "active" : ""}
               aria-pressed={app.intersectionStrictness === value} onClick={() => app.setIntersectionStrictness(value)}>{label}</button>)}
         </div>

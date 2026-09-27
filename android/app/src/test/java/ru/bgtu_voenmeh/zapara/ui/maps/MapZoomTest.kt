@@ -6,6 +6,31 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MapZoomTest {
+    @Test fun wide_fitted_plan_stays_centered_in_tall_viewport() {
+        assertEquals(0f to 0f, MapZoom.clampPan(900f, -900f, 400f, 800f, 1600f, 400f, 1f))
+    }
+
+    @Test fun zoomed_wide_plan_pans_only_along_overflowing_axis() {
+        assertEquals(200f to 0f, MapZoom.clampPan(900f, -900f, 400f, 800f, 1600f, 400f, 2f))
+        assertEquals(-200f to 0f, MapZoom.clampPan(-900f, 900f, 400f, 800f, 1600f, 400f, 2f))
+    }
+
+    @Test fun both_overflow_axes_clamp_at_image_edges() {
+        assertEquals(400f to -400f, MapZoom.clampPan(900f, -900f, 400f, 400f, 1000f, 1000f, 3f))
+        assertEquals(75f to -90f, MapZoom.clampPan(75f, -90f, 400f, 400f, 1000f, 1000f, 3f))
+    }
+
+    @Test fun shrinking_zoom_reclamps_previous_pan() {
+        val large = MapZoom.clampPan(900f, -900f, 400f, 400f, 1000f, 1000f, 4f)
+        assertEquals(100f to -100f, MapZoom.clampPan(large.first, large.second, 400f, 400f, 1000f, 1000f, 1.5f))
+        assertEquals(0f to 0f, MapZoom.clampPan(large.first, large.second, 400f, 400f, 1000f, 1000f, MapZoom.Min))
+    }
+
+    @Test fun missing_image_or_viewport_cannot_pan() {
+        assertEquals(0f to 0f, MapZoom.clampPan(100f, 100f, 0f, 800f, 1600f, 400f, 2f))
+        assertEquals(0f to 0f, MapZoom.clampPan(100f, 100f, 400f, 800f, 0f, 0f, 2f))
+    }
+
     @Test fun pinch_uses_local_scale() {
         assertEquals(1.6f, MapZoom.shown(gesture = true, pinchScale = 1.6f, animatedZoom = 1f), 0.001f)
     }

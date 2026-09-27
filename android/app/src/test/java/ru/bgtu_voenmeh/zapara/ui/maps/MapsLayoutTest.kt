@@ -41,7 +41,7 @@ class MapsLayoutTest {
         assertTrue(fullscreen.contains("MapsLayout.compact(maxWidth.value.toInt(), maxHeight.value.toInt())"))
         assertTrue(fullscreen.contains("systemBarsPadding()"))
         assertTrue(fullscreen.contains(".fillMaxHeight().verticalScroll(rememberScrollState())"))
-        assertTrue(fullscreen.contains("MapsZoomRow(onEvent, showFullscreen = false)"))
+        assertTrue(fullscreen.contains("MapsZoomRow(onEvent, showFullscreen = false,"))
         assertTrue(fullscreen.contains("Modifier.weight(1f).fillMaxHeight(), compact = true"))
         assertFalse(fullscreen.contains("ZoomableMap("))
         assertTrue(section.contains("heightIn(min = minStep, max = maxOf(stepHeight, minStep))"))

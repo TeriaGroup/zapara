@@ -32,7 +32,7 @@ fun MapFullscreen(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
                         .fillMaxHeight().verticalScroll(rememberScrollState()).padding(Zapara.space.s),
                         verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                         FullscreenClose(onEvent)
-                        if (!state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = false)
+                        if (!state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = false, zoom = state.zoom, enabled = state.planFile != null)
                     }
                     MapsPlanPane(state, onEvent, Modifier.weight(1f).fillMaxHeight(), compact = true, compactSteps = compactSteps)
                 }
