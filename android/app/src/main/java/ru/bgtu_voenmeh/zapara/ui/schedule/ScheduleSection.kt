@@ -67,6 +67,8 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.ZaparaEase
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
+import ru.bgtu_voenmeh.zapara.ui.gestures.plannerSwipe
+import ru.bgtu_voenmeh.zapara.ui.theme.plannerContentReveal
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -111,17 +113,25 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, on
                 if (maxWidth >= 1100.dp && page != null) {
                     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.l)) {
                         Column(Modifier.width(400.dp)) { DateStrip(state.selected, state.today, state.pages, visibleCount = 7, onQuickDay={ onEvent(ScheduleEvent.QuickDay(it)) }) { onEvent(ScheduleEvent.Select(it)) } }
-                        Box(Modifier.weight(1f)) { LessonList(page.copy(deadlines = emptyList()), state, onEvent, onOpenMap, onDiscuss) }
-                        LazyColumn(Modifier.width(320.dp), contentPadding = PaddingValues(Zapara.space.l)) {
+                        Box(Modifier.weight(1f)
+                            .plannerSwipe(state.selected) { onEvent(ScheduleEvent.Select(state.selected.plusDays(it.dayDelta))) }
+                            .plannerContentReveal(state.selected)) { LessonList(page.copy(deadlines = emptyList()), state, onEvent, onOpenMap, onDiscuss) }
+                        LazyColumn(Modifier.width(320.dp)
+                            .plannerSwipe(state.selected) { onEvent(ScheduleEvent.Select(state.selected.plusDays(it.dayDelta))) }
+                            .plannerContentReveal(state.selected), contentPadding = PaddingValues(Zapara.space.l)) {
                             item { Text(uiText(R.string.space_day_23, page.deadlines.count { it.done }, page.deadlines.size), style = Zapara.typography.section) }
                             itemsIndexed(page.deadlines, key = { _, row -> row.sharedId ?: row.id }) { _, row -> DeadlineRow(row, onEvent) }
                         }
                     }
                 } else Column(Modifier.fillMaxSize()) {
                     DateStrip(state.selected, state.today, state.pages, onQuickDay={ onEvent(ScheduleEvent.QuickDay(it)) }) { onEvent(ScheduleEvent.Select(it)) }
-                    when {
-                        page == null -> Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
-                        else -> LessonList(page, state, onEvent, onOpenMap, onDiscuss)
+                    Box(Modifier.weight(1f).fillMaxWidth()
+                        .plannerSwipe(state.selected) { onEvent(ScheduleEvent.Select(state.selected.plusDays(it.dayDelta))) }
+                        .plannerContentReveal(state.selected)) {
+                        when {
+                            page == null -> Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
+                            else -> LessonList(page, state, onEvent, onOpenMap, onDiscuss)
+                        }
                     }
                 }
             }

@@ -31,6 +31,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.DialogWindowProvider
 import android.view.WindowManager
 import androidx.compose.ui.Alignment
@@ -65,6 +67,10 @@ import ru.bgtu_voenmeh.zapara.ui.theme.rememberPulse
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
 import ru.bgtu_voenmeh.zapara.ui.theme.controlFocusRing
+import ru.bgtu_voenmeh.zapara.R
+import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
+import ru.bgtu_voenmeh.zapara.ui.gestures.rememberSheetMotion
+import ru.bgtu_voenmeh.zapara.ui.gestures.sheetDragHandle
 
 @Composable
 fun Modifier.pressScale(interactionSource: MutableInteractionSource? = null): Modifier {
@@ -239,10 +245,14 @@ fun ZSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, tag: String, m
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun ZBottomSheet(onDismiss: () -> Unit, tag: String, scrollable: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+fun ZBottomSheet(onDismiss: () -> Unit, tag: String, scrollable: Boolean = false, canDismiss: () -> Boolean = { true }, content: @Composable ColumnScope.() -> Unit) {
     val c = Zapara.colors
+    val sheetMotion = rememberSheetMotion(onDismiss, canDismiss)
+    val entryOffset = with(LocalDensity.current) { 16.dp.toPx() }
+    val dragDescription = stringResource(R.string.sheet_drag_down_to_close)
+    val requestDismiss = { sheetMotion.requestDismiss() }
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = requestDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
     val window = (LocalView.current.parent as DialogWindowProvider).window
@@ -250,13 +260,14 @@ fun ZBottomSheet(onDismiss: () -> Unit, tag: String, scrollable: Boolean = false
         window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
     }
-    BackHandler(onBack = onDismiss)
+    BackHandler(onBack = requestDismiss)
     Box(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
         Box(
             Modifier
                 .fillMaxSize()
+                .graphicsLayer { alpha = sheetMotion.visibility.value }
                 .background(c.backdrop)
-                .clickable(onClick = onDismiss)
+                .clickable(onClick = requestDismiss)
         )
         BoxWithConstraints(
             Modifier
@@ -269,6 +280,10 @@ fun ZBottomSheet(onDismiss: () -> Unit, tag: String, scrollable: Boolean = false
                 Modifier
                     .fillMaxWidth()
                     .heightIn(max = maxHeight)
+                    .graphicsLayer {
+                        alpha = sheetMotion.visibility.value
+                        translationY = (1f - sheetMotion.visibility.value) * entryOffset + sheetMotion.offset
+                    }
                     .clip(RoundedCornerShape(topStart = Zapara.radii.dialog, topEnd = Zapara.radii.dialog))
                     .background(c.surface)
                     .clickable(
@@ -280,12 +295,35 @@ fun ZBottomSheet(onDismiss: () -> Unit, tag: String, scrollable: Boolean = false
             ) {
                 Box(
                     Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .padding(bottom = Zapara.space.s)
-                        .size(width = 28.dp, height = 3.dp)
-                        .clip(RoundedCornerShape(Zapara.radii.pill))
-                        .background(c.lineStrong)
-                )
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 48.dp)
+                            .sheetDragHandle(sheetMotion)
+                            .testTag("$tag.Handle")
+                            .semantics { contentDescription = dragDescription },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            Modifier
+                                .size(width = 28.dp, height = 3.dp)
+                                .clip(RoundedCornerShape(Zapara.radii.pill))
+                                .background(c.lineStrong)
+                        )
+                    }
+                    ZIconButton(
+                        R.drawable.ic_x,
+                        stringResource(R.string.sheet_close_panel),
+                        requestDismiss,
+                        "$tag.Close",
+                        modifier = Modifier.align(Alignment.CenterEnd).size(48.dp),
+                        enabled = !sheetMotion.closing
+                    )
+                }
+                Spacer(Modifier.height(Zapara.space.s))
                 if (scrollable) {
                     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), content = content)
                 } else content()

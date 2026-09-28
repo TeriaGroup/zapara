@@ -328,27 +328,21 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         if (dues is null) return;
         var dlg = new HomeworkDialogViewModel(row.DisplayName, nth => dues[Math.Clamp(nth, 1, 10) - 1]);
         dlg.Bind(App);
-        if (!await _shell.Dialogs.ShowAsync(dlg)) { App.HomeworkFiles.Discard(dlg.DraftId); return; }
-        long id = 0;
-        HomeworkShareOutcome outcome;
-        try
+        dlg.PersistAsync = async () =>
         {
-            outcome = await HomeworkShare.SaveNewAsync(
-                App, l.SubjectRaw, dlg.Text, dlg.Share && !dlg.IsEdit,
+            operation.ThrowIfStale();
+            var outcome = await HomeworkShare.SaveNewAsync(
+                App, l.SubjectRaw, dlg,
                 () => RunAsync(() => App.Db.GetSettings().MyGroupId ?? "", "homework group"),
-                async (_, body) =>
+                async (subject, body) =>
                 {
-                    var added = await RunAsync(() => { id = App.Homework.AddHomework(l.SubjectRaw, body, dlg.Nth, createdAt: today); }, "homework add");
-                    if (!added) throw new LocalHomeworkNotStoredException();
-                    await RunAsync(() => { App.HomeworkFiles.Commit(dlg.DraftId, id, dlg.Removed); }, "homework files");
+                    if (!await RunAsync(() =>
+                        HomeworkShare.SaveLocal(App, dlg, subject, body, today), "homework add"))
+                        throw new LocalHomeworkNotStoredException();
                 });
-        }
-        catch (LocalHomeworkNotStoredException)
-        {
-            App.HomeworkFiles.Discard(dlg.DraftId);
-            return;
-        }
-        if (!string.IsNullOrEmpty(outcome.Note)) App.Toasts.Info(outcome.Note);
+            if (!string.IsNullOrEmpty(outcome.Note)) App.Toasts.Info(outcome.Note);
+        };
+        if (!await _shell.Dialogs.ShowAsync(dlg)) { App.HomeworkFiles.Discard(dlg.DraftId); return; }
         await ReloadAsync();
         await RaiseHomeworkAsync();
     }
@@ -367,16 +361,15 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         if (stored is not null)
             foreach (var file in stored) dlg.Files.Add(new HomeworkAttachment(file.Id, file.Kind, file.Name, false));
         dlg.Bind(App);
-        if (!await _shell.Dialogs.ShowAsync(dlg)) { App.HomeworkFiles.Discard(dlg.DraftId); return; }
-        if (!await RunAsync(() =>
-            {
-                App.Homework.UpdateHomework(hw.Id, dlg.Text.Trim(), dlg.Nth);
-                App.HomeworkFiles.Commit(dlg.DraftId, existing.Id, dlg.Removed);
-            }, "homework edit"))
+        dlg.SavedId = existing.Id;
+        dlg.PersistAsync = async () =>
         {
-            App.HomeworkFiles.Discard(dlg.DraftId);
-            return;
-        }
+            operation.ThrowIfStale();
+            if (!await RunAsync(() =>
+                HomeworkShare.SaveLocal(App, dlg, existing.SubjectRawNormalized, dlg.Text.Trim(), existing.CreatedAt), "homework edit"))
+                throw new LocalHomeworkNotStoredException();
+        };
+        if (!await _shell.Dialogs.ShowAsync(dlg)) { App.HomeworkFiles.Discard(dlg.DraftId); return; }
         await ReloadAsync();
         await RaiseHomeworkAsync();
     }

@@ -8,12 +8,20 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Text
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import ru.bgtu_voenmeh.zapara.R
@@ -21,9 +29,11 @@ import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.data.Parity
 import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
+import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.shell.LocalShellChrome
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
+import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
 
@@ -48,16 +58,25 @@ fun SummarySection(state: SummaryUiState, onEvent: (SummaryEvent) -> Unit) {
             LazyColumn(Modifier.fillMaxSize().testTag("Summary.List"), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 item {
                     ZCard(Modifier.fillMaxWidth().appear(0)) {
-                        Text(stringResource(R.string.summary_total), style = Zapara.typography.caption, color = c.text2)
-                        Text("${state.tiles.total}", style = Zapara.typography.title, color = c.text1, modifier = Modifier.testTag("Summary.Total"))
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Zapara.space.m)) {
+                            Box(Modifier.size(40.dp).background(c.chip, RoundedCornerShape(Zapara.radii.control)), contentAlignment = Alignment.Center) {
+                                ZIcon(R.drawable.ic_summary, null)
+                            }
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                                Text(stringResource(R.string.panels_summary_total), style = Zapara.typography.bodyStrong, color = c.text1)
+                                Text(stringResource(R.string.panels_summary_period), style = Zapara.typography.caption, color = c.text2)
+                            }
+                            Text("${state.tiles.total}", style = Zapara.typography.title, color = c.text1, modifier = Modifier.testTag("Summary.Total"))
+                        }
                     }
                 }
                 item {
                     CountCard(stringResource(R.string.summary_by_day),
                         state.tiles.byDay.map { Parity.dayNumberToTitle(it.first) to it.second }, 1,
-                        "Summary.ByDay", state.tiles.byDay.map { "Summary.Day.${it.first}" })
+                        "Summary.ByDay", state.tiles.byDay.map { "Summary.Day.${it.first}" }, showBars = true)
                 }
-                item { CountCard(stringResource(R.string.summary_by_type), state.tiles.byType, 2) }
+                item { CountCard(stringResource(R.string.summary_by_type), state.tiles.byType, 2, showBars = true) }
                 item { CountCard(stringResource(R.string.summary_by_subject), state.tiles.bySubject, 3) }
                 item { CountCard(stringResource(R.string.summary_by_teacher), state.tiles.byTeacher, 4) }
                 item {
@@ -72,17 +91,24 @@ fun SummarySection(state: SummaryUiState, onEvent: (SummaryEvent) -> Unit) {
 
 @Composable
 private fun CountCard(title: String, rows: List<Pair<String, Int>>, index: Int,
-    tag: String? = null, rowTags: List<String> = emptyList(), emptyText: String? = null) {
+    tag: String? = null, rowTags: List<String> = emptyList(), emptyText: String? = null, showBars: Boolean = false) {
     val c = Zapara.colors
+    val maximum = rows.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1
     ZCard(Modifier.fillMaxWidth().appear(index).then(if (tag == null) Modifier else Modifier.testTag(tag))) {
         Text(title, style = Zapara.typography.section, color = c.text1)
-        if (rows.isEmpty() && emptyText != null) Text(emptyText, style = Zapara.typography.body, color = c.text2)
+        if (rows.isEmpty()) Text(emptyText ?: stringResource(R.string.panels_summary_empty), style = Zapara.typography.body, color = c.text2)
         rows.forEachIndexed { rowIndex, (name, n) ->
             val rowTag = rowTags.getOrNull(rowIndex)
-            Row(Modifier.fillMaxWidth().then(if (rowTag == null) Modifier else Modifier.testTag(rowTag)),
-                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                Text(name, style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
-                Text("$n", style = Zapara.typography.bodyStrong, color = c.text1)
+            Column(Modifier.fillMaxWidth().then(if (rowTag == null) Modifier else Modifier.testTag(rowTag)),
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    Text(name, style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
+                    ZChip("$n")
+                }
+                if (showBars) LinearProgressIndicator(progress = { (n.toFloat() / maximum).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(Zapara.radii.pill)).clearAndSetSemantics { },
+                    color = c.accent, trackColor = c.chip)
+                else if (rowIndex < rows.lastIndex) HorizontalDivider(Modifier.padding(top = Zapara.space.xs), thickness = Zapara.space.hairline, color = c.line)
             }
         }
     }

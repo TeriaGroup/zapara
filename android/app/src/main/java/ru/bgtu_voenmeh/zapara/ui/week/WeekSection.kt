@@ -31,6 +31,8 @@ import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
+import ru.bgtu_voenmeh.zapara.ui.gestures.plannerSwipe
+import ru.bgtu_voenmeh.zapara.ui.theme.plannerContentReveal
 import java.time.LocalDate
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -55,7 +57,9 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
             Text(stringResource(R.string.next_week_total, state.days.sumOf { it.rows.size }),
                 style = Zapara.typography.caption, color = c.text2,
                 modifier = Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s))
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            LazyColumn(Modifier.fillMaxSize()
+                .plannerSwipe(state.parity) { direction -> direction.weekIndex(state.parity)?.let { onEvent(WeekEvent.Parity(it)) } }
+                .plannerContentReveal(state.parity), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 itemsIndexed(state.days, key = { _, it -> it.dow }) { index, day ->
                     ZCard(onClick = { onOpenDay(day.date) }, tag = "Week.Day.${day.dow}", modifier = Modifier.fillMaxWidth().appear(index)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,

@@ -7,8 +7,12 @@
              x:DataType="d:SubjectPickerDialogViewModel">
   <StackPanel Spacing="12" Width="460">
     <TextBlock Classes="micro" Text="{Binding Title}" />
-    <TextBox Name="SearchBox" Text="{Binding Query}" PlaceholderText="{loc:T hwPickSubjectHint}" AutomationProperties.AutomationId="Dialog.Search" />
-    <ListBox ItemsSource="{Binding Filtered}" SelectedItem="{Binding Selected}" MaxHeight="320" AutomationProperties.AutomationId="Dialog.List">
+    <Grid ColumnDefinitions="*,Auto">
+      <TextBox Name="SearchBox" Text="{Binding Query}" KeyDown="OnSearchKeyDown" PlaceholderText="{loc:T hwPickSubjectHint}" AutomationProperties.AutomationId="Dialog.Search" />
+      <Button Grid.Column="1" Margin="8,0,0,0" IsVisible="{Binding HasQuery}" Content="Сбросить" Command="{Binding ClearQueryCommand}" AutomationProperties.AutomationId="Dialog.ClearSearch" />
+    </Grid>
+    <TextBlock IsVisible="{Binding NoResults}" Text="Предметы не найдены. Попробуйте другое название или сбросьте поиск." Classes="muted caption" TextWrapping="Wrap" />
+    <ListBox Name="List" ItemsSource="{Binding Filtered}" SelectedItem="{Binding Selected}" MaxHeight="320" AutomationProperties.AutomationId="Dialog.List">
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="h:SubjectOption">
           <StackPanel Orientation="Horizontal" Spacing="8">

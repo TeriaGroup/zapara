@@ -10,6 +10,8 @@ import { useApp } from "./store";
 import { Icon } from "./icons";
 import { holdActions, runHold } from "./hold";
 import { createSocialPoller, mergeSocialMessages } from "./socialChat";
+import { emptyChatState, personalText, personalTextCount, personalTextLimit, personalTextValid, sendOnEnter } from "./personal-composer";
+import { usePersonalComposer } from "./personal-composer-context";
 import type { SocialFriend, SocialHome, SocialMessage } from "./types";
 
 function personName(username: string, displayName: string | null) {
@@ -308,12 +310,16 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   const [more, setMore] = useState(false);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [showLatestJump, setShowLatestJump] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
-  const [reply, setReply] = useState<SocialMessage | null>(null);
+  const { store: composerStore, refresh: refreshComposer, composer } = usePersonalComposer(friend.conversationId);
+  const { text: draft, reply, editing, busy: sending } = composer;
+  const draftCount = personalTextCount(draft);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
+  const [desktopKeyboard] = useState(() => window.matchMedia("(hover: hover) and (pointer: fine)").matches);
+  const composingRef = useRef(false);
+  function setDraft(value: string) { composerStore.text(friend.conversationId, value); refreshComposer(); }
   const holdTimer = useRef<number | null>(null);
   const heldOpen = useRef(false);
-  const [editing, setEditing] = useState<SocialMessage | null>(null);
   const [recording, setRecording] = useState(false);
   const [circling, setCircling] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -321,7 +327,7 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [reactFor, setReactFor] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const stick = useRef(true);
   const photoRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -335,7 +341,6 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   const chunks = useRef<Blob[]>([]);
   const cancelVoice = useRef(false);
   const elapsedRef = useRef(0);
-  const replyRef = useRef<string | undefined>(undefined);
   const messagesRef = useRef<SocialMessage[]>([]);
   const pollerRef = useRef<ReturnType<typeof createSocialPoller> | null>(null);
   const aliveRef = useRef(false);
@@ -343,7 +348,6 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   const earlierRef = useRef(false);
   const voiceStartingRef = useRef(false);
   const circleStartingRef = useRef(false);
-  replyRef.current = reply?.messageId;
 
   function addMessages(incoming: SocialMessage[], older = false) {
     const next = older
@@ -357,17 +361,19 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
     if (aliveRef.current) onError(value);
   }
 
-  function beginSend() {
-    if (!aliveRef.current || sendingRef.current) return false;
+  function beginSend(kind: "text" | "attachment" = "attachment") {
+    if (!aliveRef.current || sendingRef.current) return null;
+    const ticket = composerStore.begin(friend.conversationId, kind);
+    if (!ticket) return null;
     sendingRef.current = true;
-    setSending(true);
+    refreshComposer();
     pollerRef.current?.changed();
-    return true;
+    return ticket;
   }
 
   function endSend() {
     sendingRef.current = false;
-    if (aliveRef.current) setSending(false);
+    refreshComposer();
   }
 
   useEffect(() => {
@@ -377,9 +383,8 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
     messagesRef.current = [];
     setMessages([]);
     setMore(false);
-    setDraft("");
-    setReply(null);
-    setEditing(null);
+    setHistoryLoading(true);
+    setHistoryError("");
     setPanel(null);
     setOpenMenu(null);
     setReactFor(null);
@@ -387,10 +392,12 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
       before => api.socialMessages(friend.conversationId, before),
       () => messagesRef.current,
       (page, firstLoad) => {
+        setHistoryLoading(false);
+        setHistoryError("");
         if (firstLoad) setMore(page.hasMore);
         addMessages(page.messages);
       },
-      () => reportError("Чат не обновился"),
+      () => { setHistoryLoading(false); setHistoryError("Сообщения не загрузились. Повторите обновление."); },
     );
     pollerRef.current = poller;
     void poller.poll();
@@ -408,6 +415,13 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
       else circleStream.current?.getTracks().forEach(track => track.stop());
     };
   }, [friend.conversationId, onError]);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(144, Math.max(48, input.scrollHeight))}px`;
+  }, [draft, recording, circling]);
 
   useEffect(() => {
     if (stick.current && logRef.current) {
@@ -472,40 +486,41 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const body = draft.trim();
-    if (!body || !beginSend()) return;
-    const sentDraft = draft;
-    const target = editing;
-    const replyTo = reply?.messageId;
+    const current = composerStore.read(friend.conversationId);
+    const body = personalText(current.text);
+    if (!personalTextValid(current.text)) return;
+    const ticket = beginSend("text");
+    if (!ticket) return;
+    const target = ticket.state.editing;
+    const replyTo = ticket.state.reply?.messageId;
     try {
       const message = target
         ? await api.socialEdit(friend.conversationId, target.messageId, body)
         : await api.socialText(friend.conversationId, body, replyTo);
+      composerStore.finish(ticket, "", true);
       if (!aliveRef.current) return;
       pollerRef.current?.changed();
       addMessages([message]);
-      setDraft(current => current === sentDraft ? "" : current);
-      setReply(current => current?.messageId === replyTo ? null : current);
-      if (target) setEditing(current => current?.messageId === target.messageId ? null : current);
       stick.current = true;
     } catch {
-      reportError(target ? "Изменение не сохранилось" : "Сообщение не отправилось");
+      composerStore.finish(ticket, target ? "Ответ об изменении не получен. Текст сохранён; проверьте историю перед повтором." : "Ответ об отправке не получен. Текст сохранён; проверьте историю перед повтором.", false);
     } finally { endSend(); }
   }
 
   async function sendFile(file: File | undefined, kind: "image" | "file" | "voice" | "circle", durationMs?: number) {
-    if (!file || !beginSend()) return;
-    const replyTo = replyRef.current;
-    reportError("");
+    if (!file) return;
+    const ticket = beginSend();
+    if (!ticket) return;
+    const replyTo = ticket.state.reply?.messageId;
     try {
       const message = await api.socialUpload(friend.conversationId, file, kind, { replyTo, durationMs });
+      composerStore.finish(ticket, "", true);
       if (!aliveRef.current) return;
       pollerRef.current?.changed();
-      setReply(current => current?.messageId === replyTo ? null : current);
       addMessages([message]);
       stick.current = true;
     } catch (reason) {
-      reportError(explain(reason, kind === "image" ? "Фото не отправилось" : kind === "voice" ? "Голосовое не отправилось" : kind === "circle" ? "Кружок не отправился" : "Документ не отправился"));
+      composerStore.finish(ticket, explain(reason, "Ответ об отправке не получен. Проверьте историю перед повтором."), false);
     } finally { endSend(); }
   }
 
@@ -514,7 +529,6 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
     const start = input?.selectionStart ?? draft.length;
     const end = input?.selectionEnd ?? draft.length;
     const next = draft.slice(0, start) + emoji + draft.slice(end);
-    if (next.length > 2000) return;
     setDraft(next);
     const caret = start + emoji.length;
     requestAnimationFrame(() => { input?.focus(); input?.setSelectionRange(caret, caret); });
@@ -522,32 +536,34 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
 
   async function sendCard(body: string | null) {
     if (!body) { reportError("Нечего отправить"); return; }
-    if (!beginSend()) return;
-    const replyTo = replyRef.current;
+    const ticket = beginSend();
+    if (!ticket) return;
+    const replyTo = ticket.state.reply?.messageId;
     setPanel(null);
     try {
       const message = await api.socialCard(friend.conversationId, body, replyTo);
+      composerStore.finish(ticket, "", true);
       if (!aliveRef.current) return;
       pollerRef.current?.changed();
       addMessages([message]);
-      setReply(current => current?.messageId === replyTo ? null : current);
       stick.current = true;
-    } catch { reportError("Карточка не отправилась"); }
+    } catch { composerStore.finish(ticket, "Ответ об отправке карточки не получен. Проверьте историю перед повтором.", false); }
     finally { endSend(); }
   }
 
   async function sendSticker(id: string) {
-    if (!beginSend()) return;
-    const replyTo = replyRef.current;
+    const ticket = beginSend();
+    if (!ticket) return;
+    const replyTo = ticket.state.reply?.messageId;
     setPanel(null);
     try {
       const message = await api.socialSticker(friend.conversationId, id, replyTo);
+      composerStore.finish(ticket, "", true);
       if (!aliveRef.current) return;
       pollerRef.current?.changed();
       addMessages([message]);
-      setReply(current => current?.messageId === replyTo ? null : current);
       stick.current = true;
-    } catch { reportError("Стикер не отправился"); }
+    } catch { composerStore.finish(ticket, "Ответ об отправке стикера не получен. Проверьте историю перед повтором.", false); }
     finally { endSend(); }
   }
 
@@ -574,7 +590,7 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
 
   async function toggleVoice() {
     if (recording) { recorder.current?.stop(); return; }
-    if (circling || sendingRef.current || voiceStartingRef.current) return;
+    if (circling || sendingRef.current || composerStore.read(friend.conversationId).busy || voiceStartingRef.current) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") { reportError("Этот браузер не записывает голос"); return; }
     voiceStartingRef.current = true;
     try {
@@ -630,7 +646,7 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
   }
 
   async function startCircle() {
-    if (circling || recording || sendingRef.current || circleStartingRef.current) return;
+    if (circling || recording || sendingRef.current || composerStore.read(friend.conversationId).busy || circleStartingRef.current) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") { reportError("Этот браузер не снимает кружочки"); return; }
     circleStartingRef.current = true;
     setPanel(null);
@@ -733,8 +749,8 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
               {holdActions(message.kind, mine, message.deleted, openMenu === message.messageId).length > 0 && (
                 <div className="actions">
                   {holdActions(message.kind, mine, message.deleted, true).includes("reaction") && <button type="button" onClick={() => runHold("reaction", { reply() {}, reaction() { setReactFor(reactFor === message.messageId ? null : message.messageId); }, edit() {}, delete() {} })}>Реакция</button>}
-                  {holdActions(message.kind, mine, message.deleted, true).includes("reply") && <button type="button" onClick={() => runHold("reply", { reply() { setOpenMenu(null); setEditing(null); setReply(message); }, reaction() {}, edit() {}, delete() {} })}>Ответить</button>}
-                  {holdActions(message.kind, mine, message.deleted, true).includes("edit") && <button type="button" onClick={() => runHold("edit", { reply() {}, reaction() {}, edit() { setOpenMenu(null); setReply(null); setPanel(null); setEditing(message); setDraft(message.body || ""); }, delete() {} })}>Изменить</button>}
+                  {holdActions(message.kind, mine, message.deleted, true).includes("reply") && <button type="button" onClick={() => runHold("reply", { reply() { setOpenMenu(null); composerStore.reply(friend.conversationId, message); refreshComposer(); }, reaction() {}, edit() {}, delete() {} })}>Ответить</button>}
+                  {holdActions(message.kind, mine, message.deleted, true).includes("edit") && <button type="button" onClick={() => runHold("edit", { reply() {}, reaction() {}, edit() { setOpenMenu(null); setPanel(null); composerStore.edit(friend.conversationId, message); refreshComposer(); }, delete() {} })}>Изменить</button>}
                   {holdActions(message.kind, mine, message.deleted, true).includes("delete") && <button type="button" onClick={() => runHold("delete", { reply() {}, reaction() {}, edit() {}, delete() { setOpenMenu(null); void remove(message); } })}>Удалить</button>}
                 </div>
               )}
@@ -746,9 +762,13 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
             </article>
           );
         })}
-        {messages.length === 0 && <p className="muted">Напишите сообщение, отправьте стикер или кружок.</p>}
+        {historyError && <div className="banner" role="status">{historyError} <button className="btn" type="button" onClick={() => void pollerRef.current?.poll()}>Обновить</button></div>}
+        {emptyChatState(historyLoading, historyError, messages.length) === "loading" && <p className="muted" role="status">Загружаем сообщения…</p>}
+        {emptyChatState(historyLoading, historyError, messages.length) === "empty" && <p className="muted">Напишите сообщение, отправьте стикер или кружок.</p>}
       </div>
       {showLatestJump && <button className="btn latest-jump" type="button" onClick={jumpToLatest}>К новым сообщениям</button>}
+      {composer.error && <div className="banner composer-error" role="status">{composer.error}</div>}
+      {sending && <p className="muted composer-status" role="status">{editing ? "Сохраняем изменение…" : "Отправляем…"}</p>}
       {circling ? (
         <div className="circle-record">
           <div className="circle live">
@@ -771,20 +791,27 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
           {(reply || editing) && (
             <div className="row" style={{ justifyContent: "space-between" }}>
               <span className="muted">{editing ? "Редактирование" : `Ответ · ${reply ? snippet(reply) : ""}`}</span>
-              <button className="btn" type="button" onClick={() => { setReply(null); setEditing(null); if (editing) setDraft(""); }}>Отмена</button>
+              <button className="btn" type="button" onClick={() => { composerStore.cancel(friend.conversationId); refreshComposer(); }}>Отмена</button>
             </div>
           )}
-          <form className="compose" onSubmit={event => void submit(event)}>
+          <form className="compose personal-compose" onSubmit={event => void submit(event)}>
             {!editing && <button className="btn tool" type="button" aria-label="Вложения" onClick={() => setPanel(panel === "attach" ? null : "attach")}><Icon name="paperclip" size={18} /></button>}
             {!editing && <button className={"btn tool" + (panel === "emoji" ? " primary" : "")} type="button" aria-label="Смайлы" onClick={() => setPanel(panel === "emoji" ? null : "emoji")}><Icon name="smile" size={18} /></button>}
-            <input ref={inputRef} value={draft} onChange={event => setDraft(event.target.value)} placeholder={editing ? "Новый текст" : "Сообщение"} aria-label="Сообщение" maxLength={2000} />
+            <textarea ref={inputRef} rows={1} value={draft} onChange={event => setDraft(event.target.value)} placeholder={editing ? "Новый текст" : "Сообщение"} aria-label="Сообщение" aria-describedby="personal-compose-help" aria-invalid={!!draft.trim() && !personalTextValid(draft)}
+              onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; }}
+              onKeyDown={event => { if (sendOnEnter(event.key, event.shiftKey, composingRef.current || event.nativeEvent.isComposing, event.keyCode === 229, desktopKeyboard)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
             {draft.trim() || editing
-              ? <button className="btn primary" type="submit" disabled={sending || !draft.trim()}>{editing ? "Сохранить" : "Отправить"}</button>
+              ? <button className="btn primary" type="submit" disabled={sending || !personalTextValid(draft)}>{sending ? "Отправляем…" : editing ? "Сохранить" : "Отправить"}</button>
               : <>
                   <button className="btn tool" type="button" aria-label="Кружок" disabled={sending} onClick={() => void startCircle()}><Icon name="circle" size={18} /></button>
                   <button className="btn primary tool" type="button" aria-label="Голосовое" disabled={sending} onClick={() => { setPanel(null); void toggleVoice(); }}><Icon name="mic" size={18} /></button>
                 </>}
           </form>
+          <div className="composer-help muted" id="personal-compose-help">
+            {desktopKeyboard && <span>Enter — отправить · Shift+Enter — новая строка</span>}
+            {draftCount >= 1800 && <span className={draftCount > personalTextLimit ? "composer-limit-error" : ""} role="status">{draftCount}/{personalTextLimit}{draftCount > personalTextLimit ? " · сократите текст" : ""}</span>}
+            {!!draft.trim() && draftCount <= personalTextLimit && !personalTextValid(draft) && <span role="status">Уберите недопустимые символы из текста.</span>}
+          </div>
           {panel === "attach" && (
             <div className="actions">
               <button type="button" onClick={() => { setPanel(null); photoRef.current?.click(); }}>Фото</button>

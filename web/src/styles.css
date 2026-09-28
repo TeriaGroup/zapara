@@ -202,6 +202,10 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .compose-context-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .compose-context .btn { flex: none; }
 .compose input { flex: 1 1 160px; min-width: 0; min-height: 48px; }
+.personal-compose textarea { flex: 1 1 160px; min-width: 0; min-height: 48px; max-height: 144px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); outline: none; resize: none; line-height: 1.4; overflow-y: auto; }
+.composer-help { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-size: 12px; }
+.composer-limit-error { color: var(--text); font-weight: 600; }
+.composer-status { margin: 0; }
 .bubble { max-width: min(78%, 460px); padding: 10px 12px; }
 .bubble.grouped { margin-top: -5px; }
 .bubble.grouped:not(.mine) { border-top-left-radius: 6px; }
@@ -349,6 +353,13 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .tile { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 12px 14px; font-weight: 500; text-decoration: none; }
 .stage { animation: rise .18s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.sheet-heading { touch-action: pan-x pinch-zoom; }
+.sheet-handle { display: block; width: 36px; height: 4px; margin: 0 auto 12px; border-radius: 2px; background: var(--line-strong); }
+:root[data-motion="off"] .nav-btn:active, :root[data-motion="off"] .btn:active, :root[data-motion="off"] .icon-btn:active, :root[data-motion="off"] .date:active, :root[data-motion="off"] .tile:active, :root[data-motion="off"] .bottom a:active, :root[data-motion="off"] .bottom button:active { transform: none; }
+.date-reveal[data-date-reveal="a"] { animation: date-reveal-a 180ms ease-out; }
+.date-reveal[data-date-reveal="b"] { animation: date-reveal-b 180ms ease-out; }
+@keyframes date-reveal-a { from { opacity: .65; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes date-reveal-b { from { opacity: .65; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .stack.swipe > .lesson { animation: rise .2s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .stack.swipe > .lesson:nth-child(2) { animation-delay: 30ms; }
 .stack.swipe > .lesson:nth-child(3) { animation-delay: 60ms; }
@@ -571,4 +582,70 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
   .map-fullscreen { margin-left: 0; }
   .day-page .controls { grid-template-columns: 48px minmax(0, 1fr) 48px; }
   .day-empty { min-height: 240px; }
+}
+/* Secondary pages share the Android surfaces and type scale. */
+.summary-page > .stack, .teachers-page > .stack { max-width: 960px; margin-inline: auto; }
+.summary-hero { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 16px; }
+.summary-hero .summary-total { grid-column: 2; grid-row: 1 / 3; font-variant-numeric: tabular-nums; }
+.summary-hero > .muted { font-size: 12px; }
+.summary-count-card { gap: 16px; }
+.summary-count-row { display: flex; flex-direction: column; gap: 8px; }
+.summary-count-row .count { align-items: baseline; }
+.summary-count-row .count span { min-width: 0; overflow-wrap: anywhere; }
+.summary-count-row .count b { flex: none; font-weight: 500; font-variant-numeric: tabular-nums; }
+.summary-count-track { height: 4px; background: var(--chip); border-radius: 8px; overflow: hidden; }
+.summary-count-track > span { display: block; height: 100%; background: var(--text); border-radius: inherit; }
+.teacher-filter-card .section-overview { margin: 12px 0 0; padding: 12px 0 0; border-top: 1px solid var(--line); border-bottom: 0; background: transparent; }
+.teacher-profile { display: flex; flex-direction: column; gap: 8px; }
+.teacher-profile h2, .teacher-profile p { margin: 0; }
+.teacher-profile > .muted:first-child { font-size: 12px; }
+.teacher-lesson-row { padding-block: 12px; border-top: 1px solid var(--line); }
+.teacher-lesson-row .time, .teacher-lesson-row .subject { margin-bottom: 8px; display: block; }
+.teacher-lesson-row .muted { font-size: 12px; }
+.teachers-page .teacher-person { border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-height: 72px; background: var(--card); }
+.teacher-person-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; overflow-wrap: anywhere; }
+.teacher-person-copy b { font-size: 15px; font-weight: 500; }
+.teacher-person-copy .muted { font-size: 12px; }
+.teacher-person > svg { flex: none; color: var(--muted); }
+.teacher-empty h2, .teacher-empty p { margin: 0; }
+.teacher-empty { display: flex; align-items: center; flex-direction: column; gap: 12px; padding: 32px 16px; }
+.homework-editor-group { display: flex; flex-direction: column; gap: 12px; }
+.homework-editor-group + .homework-editor-group { padding-top: 16px; border-top: 1px solid var(--line); }
+.homework-editor-group h2 { margin: 0; display: flex; align-items: baseline; gap: 8px; }
+.homework-editor-group h2 .muted { font-size: 12px; font-weight: 400; }
+.homework-page .homework-compose { margin-block: 16px; }
+.homework-editor-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.homework-editor-footer > .muted { font-size: 12px; }
+.homework-page .homework-task { overflow-wrap: anywhere; }
+.homework-task > .row:first-child { align-items: flex-start; }
+.homework-task b { font-weight: 500; }
+.homework-task > p:not(.homework-deadline) { white-space: pre-wrap; line-height: 1.5; }
+.homework-deadline { font-size: 12px; padding: 8px 0; }
+.homework-task-footer { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.homework-completed { border-style: dashed; }
+.homework-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
+.homework-filter { margin-bottom: 16px; }
+.homework-fields:disabled .btn { opacity: .6; }
+.homework-page .chip > button { min-width: 48px; min-height: 48px; }
+.settings-page .settings-overview { display: flex; flex-direction: column; gap: 16px; }
+.settings-page .settings-overview-title { font-size: 12px; font-weight: 500; color: var(--muted); margin: 0 12px 8px; }
+.settings-category-card { padding: 0 12px; overflow: hidden; }
+.settings-category-card .settings-overview-row { padding-block: 12px; min-height: 72px; gap: 12px; }
+.settings-category-card .settings-overview-row:last-child { border-bottom: 0; }
+.settings-page .settings-rail { border: 1px solid var(--line); background: var(--card); padding: 8px; border-radius: 12px; }
+.settings-page .settings-rail .settings-overview-row { padding: 12px 8px; }
+.settings-page .settings-rail .settings-overview-row:last-child { border-bottom: 0; }
+.settings-page .notification-time { padding-top: 16px; border-top: 1px solid var(--line); }
+.settings-page .notification-time .field { max-width: 240px; }
+.settings-page .notification-preview { background: var(--chip); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.notification-preview > .muted { font-size: 12px; }
+.notification-preview h2, .notification-preview p { margin: 0; }
+@media (max-width: 600px) {
+  .teacher-filter-card .teacher-search-bar { flex-wrap: wrap; }
+  .teacher-filter-card .search { width: 100%; min-width: 0; }
+  .homework-editor-footer { align-items: stretch; flex-direction: column; gap: 8px; }
+  .homework-task > .row:first-child { flex-direction: column; gap: 12px; }
+  .homework-task > .row:first-child > .btn { width: 100%; }
+  .homework-task-footer > .btn { width: 100%; }
+  .settings-page .notification-time .field { max-width: none; }
 }

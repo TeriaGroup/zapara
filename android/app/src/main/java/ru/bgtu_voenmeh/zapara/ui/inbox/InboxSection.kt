@@ -148,8 +148,8 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
             Text(stringResource(R.string.inbox_loading), color = Zapara.colors.text2, style = Zapara.typography.caption)
             SkeletonList()
         }
-        if (state.rows.isEmpty() && !state.loading && !filtered) item { Text(stringResource(R.string.face_inbox_empty), color = Zapara.colors.text2) }
-        if (!state.loading && visible.isEmpty() && filtered) item {
+        if (state.rows.isEmpty() && state.inboxLoaded && state.error == null && !state.loading && !filtered) item { Text(stringResource(R.string.face_inbox_empty), color = Zapara.colors.text2) }
+        if (state.inboxLoaded && state.error == null && !state.loading && visible.isEmpty() && filtered) item {
             ZCard(modifier = Modifier.fillMaxWidth(), tag = "Empty.InboxSearch") {
                 Text(stringResource(R.string.inbox_no_results), color = Zapara.colors.text2)
                 ZButton(stringResource(R.string.inbox_search_reset), {
@@ -214,7 +214,10 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
         Box(Modifier.weight(1f).fillMaxWidth()) {
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (state.hasMore) item { ZButton(stringResource(R.string.face_earlier), { onEvent(InboxEvent.Older) }, enabled = !state.loading, ghost = true) }
-            if (state.messages.isEmpty() && !state.loading) item { Text(stringResource(R.string.face_write_first), color = Zapara.colors.text2) }
+            if (state.messages.isEmpty() && state.loading) item {
+                Text(stringResource(R.string.inbox_loading), color = Zapara.colors.text2)
+            }
+            if (state.messages.isEmpty() && state.historyLoaded && state.error == null && !state.loading) item { Text(stringResource(R.string.face_write_first), color = Zapara.colors.text2) }
             items(state.messages, key = { it.id }) { message ->
                 val mine = message.senderId == state.userId
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
@@ -257,37 +260,51 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
             ghost = true, tag = "Inbox.JumpLatest")
         }
         key(activeId) {
-            ChatMediaCaptureHost(enabled = !state.loading && state.editing == null,
+            ChatMediaCaptureHost(enabled = !state.loading && !state.sending && state.editing == null,
                 onRecorded = { kind, file, duration -> onEvent(InboxEvent.UploadRecorded(activeId, kind, file, duration)) },
                 onError = { onEvent(InboxEvent.LocalError(it)) },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l, vertical = 8.dp)) { startVoice, startCircle ->
                 Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    state.composer.error?.let {
+                        Text(it, Modifier.testTag("Inbox.ComposeError"), color = Zapara.colors.bad,
+                            style = Zapara.typography.caption)
+                    }
+                    if (state.sending) Text(stringResource(R.string.personal_sending),
+                        Modifier.testTag("Inbox.Sending"), color = Zapara.colors.text2,
+                        style = Zapara.typography.caption)
                     if (state.reply != null || state.editing != null) Row(verticalAlignment = Alignment.CenterVertically) {
                         Text((if (state.editing != null) stringResource(R.string.face_editing) else stringResource(R.string.face_replying)) + (state.editing ?: state.reply)?.body.orEmpty(), Modifier.weight(1f), color = Zapara.colors.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         ZButton(stringResource(R.string.face_cancel), { onEvent(InboxEvent.CancelCompose) },
-                            ghost = true, quiet = true)
+                            ghost = true, quiet = true, tag = "Inbox.CancelCompose")
                     }
                     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                         ZTextField(state.draft, { onEvent(InboxEvent.Draft(it)) },
                             modifier = Modifier.weight(1f).testTag("Inbox.Draft"),
-                            placeholder = { Text(stringResource(R.string.face_message)) }, maxLines = 4)
+                            placeholder = { Text(stringResource(R.string.face_message)) }, maxLines = 4,
+                            isError = state.composer.messageLength > PERSONAL_MESSAGE_LIMIT,
+                            supportingText = if (state.composer.messageLength >= 1800) ({
+                                Text(stringResource(if (state.composer.messageLength > PERSONAL_MESSAGE_LIMIT)
+                                    R.string.personal_message_too_long else R.string.personal_message_count,
+                                    state.composer.messageLength, PERSONAL_MESSAGE_LIMIT),
+                                    Modifier.testTag("Inbox.Length"))
+                            }) else null)
                         if (state.draft.isNotBlank() || state.editing != null) {
                             ZIconButton(R.drawable.ic_send,
                                 if (state.editing != null) stringResource(R.string.face_save) else stringResource(R.string.face_send),
                                 { onEvent(InboxEvent.Send) }, "Inbox.Send",
-                                enabled = !state.loading && state.draft.isNotBlank(), primary = true)
+                                enabled = !state.loading && !state.sending && state.composer.canSend, primary = true)
                         } else {
                             ZIconButton(R.drawable.ic_mic, stringResource(R.string.face_record_voice),
-                                startVoice, "Inbox.Voice", enabled = !state.loading)
+                                startVoice, "Inbox.Voice", enabled = !state.loading && !state.sending)
                         }
                     }
                     if (state.editing == null) FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                         verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                         ZIconButton(R.drawable.ic_paperclip, stringResource(R.string.face_attach_hint),
-                            { pickingFor = activeId; pick.launch(arrayOf("*/*")) }, "Inbox.Attach", enabled = !state.loading)
+                            { pickingFor = activeId; pick.launch(arrayOf("*/*")) }, "Inbox.Attach", enabled = !state.loading && !state.sending)
                         if (state.draft.isBlank()) ZIconButton(R.drawable.ic_video_circle,
-                            stringResource(R.string.face_record_circle), startCircle, "Inbox.Circle", enabled = !state.loading)
+                            stringResource(R.string.face_record_circle), startCircle, "Inbox.Circle", enabled = !state.loading && !state.sending)
                     }
                 }
             }

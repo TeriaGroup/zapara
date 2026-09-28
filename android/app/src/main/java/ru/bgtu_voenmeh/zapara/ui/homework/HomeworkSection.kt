@@ -1,6 +1,5 @@
 package ru.bgtu_voenmeh.zapara.ui.homework
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,14 +13,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
@@ -43,7 +41,6 @@ import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
-import ru.bgtu_voenmeh.zapara.ui.theme.breath
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -88,8 +85,9 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                                 .semantics { stateDescription = expandedLabel }) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                                Text("${group.title} · ${group.items.size}", style = Zapara.typography.bodyStrong,
+                                Text(group.title, style = Zapara.typography.bodyStrong,
                                     color = c.text1, modifier = Modifier.weight(1f))
+                                Text(group.items.size.toString(), style = Zapara.typography.caption, color = c.text2)
                                 Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null,
                                     tint = c.text2, modifier = Modifier.size(20.dp).rotate(if (group.collapsed) 0f else 90f))
                             }
@@ -105,25 +103,26 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                                 modifier = Modifier.fillMaxWidth().appear(cascade["i-${item.id}"] ?: 0)
                             ) {
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                                    if (burning) {
-                                        Box(Modifier.size(8.dp).clip(CircleShape).background(c.warn).breath(true))
-                                    }
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                                         Text(item.subject, style = Zapara.typography.bodyStrong, color = c.text1)
                                         Text(item.text, style = Zapara.typography.body, color = if (item.done) c.text2 else c.text1, textDecoration = if (item.done) TextDecoration.LineThrough else null)
+                                        Text(item.dueLabel, style = Zapara.typography.body, color = c.text1, modifier = Modifier.fillMaxWidth().testTag("Homework.Due.${item.id}"))
+                                        Text(item.statusLabel, style = Zapara.typography.caption, color = if (burning) c.warn else c.text2, modifier = Modifier.fillMaxWidth().testTag("Homework.Status.${item.id}"))
                                         if (item.files.isNotEmpty()) {
-                                            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                                            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                                                verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                                                 item.files.forEach { file ->
                                                     ZChip(file.name, onClick = { onEvent(HomeworkEvent.OpenFile(item.id, file.id)) }, tag = "Homework.File.${item.id}.${file.id}")
                                                 }
                                             }
                                         }
-                                        Text(item.dueLabel, style = Zapara.typography.caption, color = c.text2, modifier = Modifier.fillMaxWidth().testTag("Homework.Due.${item.id}"))
-                                        Text(item.statusLabel, style = Zapara.typography.caption, color = c.text1, modifier = Modifier.fillMaxWidth().testTag("Homework.Status.${item.id}"))
                                     }
                                 }
+                                HorizontalDivider(color = c.line)
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.End) {
+                                    horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                                    Text(stringResource(R.string.polish_homework_completion),
+                                        style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f))
                                     ZIconButton(R.drawable.ic_pencil,
                                         stringResource(R.string.ux_homework_edit_label, item.subject, item.text),
                                         { onEvent(HomeworkEvent.Edit(item.id)) }, "Homework.Edit.${item.id}")

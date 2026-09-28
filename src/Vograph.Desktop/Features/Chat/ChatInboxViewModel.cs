@@ -92,6 +92,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         });
         NeedAccount = (Social is null && Communities is null) || Access is null;
         Chats.CollectionChanged += (_, _) => RefreshInboxBrowse();
+        Messages.CollectionChanged += (_, _) => OnPropertyChanged(nameof(NoMessages));
     }
 
     public ObservableCollection<ChatInboxRow> Chats { get; } = [];
@@ -104,8 +105,8 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
     public string UnreadSummary => UnreadTotal == 0 ? "Нет непрочитанных" : $"Непрочитанных: {UnreadTotal}";
     public string InboxResultCount => $"Показано {filteredChats.Count} из {Chats.Count}";
     public bool HasInboxFilters => InboxSearch.Trim().Length > 0 || InboxSourceIndex is >= 1 and <= 3;
-    public bool NoInboxMatches => !LoadingInbox && HasInboxFilters && filteredChats.Count == 0;
-    public bool NoChats => !LoadingInbox && Chats.Count == 0 && !HasInboxFilters;
+    public bool NoInboxMatches => InboxLoaded && !LoadingInbox && !InboxLoadFailed && HasInboxFilters && filteredChats.Count == 0;
+    public bool NoChats => InboxLoaded && !LoadingInbox && !InboxLoadFailed && Chats.Count == 0 && !HasInboxFilters;
     partial void OnInboxSearchChanged(string value) => RefreshInboxBrowse();
     partial void OnInboxSourceIndexChanged(int value) => RefreshInboxBrowse();
     partial void OnLoadingInboxChanged(bool value)
@@ -145,18 +146,22 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
     [ObservableProperty] private bool isFinalizingRecording;
     [ObservableProperty] private string recordingCaption = "";
     public bool HasConversation => conversationId is not null;
-    public bool CanAttachMedia => !IsRecording && !IsFinalizingRecording;
+    public bool CanAttachMedia => !Sending && !IsRecording && !IsFinalizingRecording && editing is null;
 
     partial void OnIsRecordingChanged(bool value)
     {
         StartRecordingCommand.NotifyCanExecuteChanged();
+        AttachCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanAttachMedia));
+        SendCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnIsFinalizingRecordingChanged(bool value)
     {
         StartRecordingCommand.NotifyCanExecuteChanged();
+        AttachCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanAttachMedia));
+        SendCommand.NotifyCanExecuteChanged();
     }
 
     public override Task ActivateAsync() => RefreshCoreAsync(background: false);
@@ -169,7 +174,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         var ticket = background ? generation : ++generation;
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent || (Social is null && Communities is null) || Access is null) { NeedAccount = true; return; }
-        if (!background) { IsBusy = true; LoadingInbox = true; }
+        if (!background) { IsBusy = true; LoadingInbox = true; InboxLoadFailed = false; }
         try
         {
             var token = await Access(operation.Token);
@@ -217,6 +222,8 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
             if (socialUnavailable)
                 foreach (var previous in Chats.Where(row => row.Personal)) rows.Add(previous);
             NeedAccount = false;
+            InboxLoadFailed = groupsUnavailable || socialUnavailable;
+            InboxLoaded = true;
             if (home is not null) MyCode = home.Code;
             Chats.Clear();
             foreach (var row in rows.OrderByDescending(r => r.LastAt)) Chats.Add(row);
@@ -238,7 +245,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is SocialClientException or CommunityClientException or AccountClientException)
-        { if (operation.IsCurrent && ticket == generation) Status = "Не удалось загрузить чаты."; }
+        { if (operation.IsCurrent && ticket == generation) { InboxLoadFailed = true; Status = "Не удалось загрузить чаты."; } }
         finally { if (!background && operation.IsCurrent) { IsBusy = false; LoadingInbox = false; } }
     }
 
@@ -264,16 +271,17 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         StopPlayback();
         Messages.Clear();
         ClearPreviews();
+        SaveComposer();
         conversationId = friend.ConversationId;
         StartRecordingCommand.NotifyCanExecuteChanged();
         peerId = friend.UserId;
         ChatTitle = friend.DisplayName ?? friend.Username;
-        Draft = "";
-        replyTo = null;
-        editing = null;
-        ActionCaption = "";
+        RestoreComposer(friend.ConversationId);
+        MessagesLoaded = false;
+        MessageLoadFailed = false;
         HasMore = false;
         OnPropertyChanged(nameof(HasConversation));
+        OnPropertyChanged(nameof(NoConversation));
         await LoadMessagesAsync(ticket);
     }
 
@@ -281,12 +289,16 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
     {
         if (conversationId is not Guid id || Social is null || Access is null) return;
         using var operation = App.Work.Enter();
+        var request = ++messageLoadSerial;
+        var historyVersion = AdvanceMessageHistory(id);
+        LoadingMessages = true;
+        MessageLoadFailed = false;
         try
         {
             var token = await Access(operation.Token);
             if (string.IsNullOrEmpty(token) || !operation.IsCurrent || ticket != generation) return;
             var page = await Social.MessagesAsync(token, id, before, operation.Token);
-            if (!operation.IsCurrent || ticket != generation) return;
+            if (!operation.IsCurrent || ticket != generation || !CurrentMessageHistory(id, historyVersion)) return;
             if (before is null) Messages.Clear();
             var olderIndex = 0;
             foreach (var message in page.Messages)
@@ -296,24 +308,27 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
                 else Messages.Insert(olderIndex++, Row(message));
             }
             HasMore = page.HasMore;
+            MessagesLoaded = true;
             Status = "";
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is SocialClientException or AccountClientException)
-        { if (operation.IsCurrent && ticket == generation) Status = "Не удалось загрузить сообщения."; }
+        { if (operation.IsCurrent && ticket == generation && CurrentMessageHistory(id, historyVersion)) { MessageLoadFailed = true; Status = "Не удалось загрузить сообщения."; } }
+        finally { if (operation.IsCurrent && request == messageLoadSerial) LoadingMessages = false; }
     }
 
     private async Task PullLatestAsync()
     {
         if (!watching || conversationId is not Guid id || Social is null || Access is null) return;
         var ticket = generation;
+        var historyVersion = AdvanceMessageHistory(id);
         using var operation = App.Work.Enter();
         try
         {
             var token = await Access(operation.Token);
             if (string.IsNullOrEmpty(token) || !operation.IsCurrent || !watching || ticket != generation || conversationId != id) return;
             var page = await Social.MessagesAsync(token, id, ct: operation.Token);
-            if (!operation.IsCurrent || !watching || ticket != generation || conversationId != id) return;
+            if (!operation.IsCurrent || !watching || ticket != generation || conversationId != id || !CurrentMessageHistory(id, historyVersion)) return;
             var fresh = page.Messages.ToList();
             var known = Messages.Select(row => row.Id).ToHashSet();
             var cursors = new HashSet<Guid>();
@@ -322,7 +337,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
                 if (page.Messages.Count == 0 || !cursors.Add(page.Messages[0].MessageId))
                     throw new SocialClientException(0);
                 page = await Social.MessagesAsync(token, id, page.Messages[0].MessageId, operation.Token);
-                if (!operation.IsCurrent || !watching || ticket != generation || conversationId != id) return;
+                if (!operation.IsCurrent || !watching || ticket != generation || conversationId != id || !CurrentMessageHistory(id, historyVersion)) return;
                 fresh.InsertRange(0, page.Messages);
             }
             for (var position = 0; position < fresh.Count; position++)
@@ -335,10 +350,12 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
                 Messages.Insert(insertAt, Row(message));
             }
             if (known.Count == 0) HasMore = page.HasMore;
+            MessagesLoaded = true;
+            MessageLoadFailed = false;
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is SocialClientException or AccountClientException)
-        { if (operation.IsCurrent && watching && ticket == generation) Status = "Не удалось обновить сообщения."; }
+        { if (operation.IsCurrent && watching && ticket == generation && CurrentMessageHistory(id, historyVersion)) Status = "Не удалось обновить сообщения."; }
     }
 
     [RelayCommand]
@@ -399,39 +416,55 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         { if (operation.IsCurrent) Status = "Не удалось отклонить приглашение."; }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSend))]
     private async Task SendAsync()
     {
-        if (conversationId is not Guid id || Social is null || Access is null || string.IsNullOrWhiteSpace(Draft)) return;
-        var ticket = generation;
-        var body = Draft.Trim();
-        var selectedEdit = editing;
+        if (!CanSend() || conversationId is not Guid id || Social is null || Access is null || !sendingConversations.Add(id)) return;
+        SaveComposer();
+        var submitted = CurrentComposer();
+        Sending = true;
         using var operation = App.Work.Enter();
         try
         {
             var token = await Access(operation.Token);
-            if (string.IsNullOrEmpty(token) || !operation.IsCurrent || ticket != generation) return;
-            var response = selectedEdit is Guid messageId
-                ? await Social.EditAsync(token, id, messageId, body, operation.Token)
-                : await Social.SendTextAsync(token, id, body, replyTo, operation.Token);
-            if (!operation.IsCurrent || ticket != generation) return;
-            var previous = Messages.ToList().FindIndex(row => row.Id == response.MessageId);
-            if (previous >= 0) Messages[previous] = Row(response);
-            else Messages.Add(Row(response));
-            if (Draft == body) Draft = "";
-            editing = null;
-            replyTo = null;
-            ActionCaption = "";
-            Status = "";
-            await RefreshAsync();
+            if (string.IsNullOrEmpty(token) || !operation.IsCurrent) return;
+            var response = submitted.Edit is Guid messageId
+                ? await Social.EditAsync(token, id, messageId, NormalizeBody(submitted.Text), operation.Token)
+                : await Social.SendTextAsync(token, id, NormalizeBody(submitted.Text), submitted.Reply, operation.Token);
+            if (!operation.IsCurrent) return;
+            AdvanceMessageHistory(id);
+            if (composers.TryGetValue(id, out var current) && current.Revision == submitted.Revision && current == submitted)
+            {
+                composers[id] = new(submitted.Edit is not null ? submitted.Ordinary : "", submitted.Edit is not null ? submitted.OrdinaryReply : null,
+                    null, "", null, submitted.Revision + 1, "");
+                if (conversationId == id) RestoreComposer(id);
+            }
+            if (conversationId == id)
+            {
+                var previous = Messages.ToList().FindIndex(row => row.Id == response.MessageId);
+                if (previous >= 0) Messages[previous] = Row(response); else Messages.Add(Row(response));
+                ComposerError = ""; SaveComposer();
+            }
+            await RefreshCoreAsync(background: true);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is SocialClientException or AccountClientException)
-        { if (operation.IsCurrent && ticket == generation) Status = "Не удалось отправить сообщение."; }
+        {
+            if (operation.IsCurrent && composers.TryGetValue(id, out var current))
+            {
+                composers[id] = current with { Error = "Не удалось отправить сообщение. Текст сохранён; повторите отправку." };
+                if (conversationId == id) ComposerError = composers[id].Error;
+            }
+        }
+        finally
+        {
+            sendingConversations.Remove(id);
+            if (conversationId == id) Sending = false;
+        }
     }
 
     private bool CanStartRecording(string? kind) => (kind is "voice" or "circle")
-        && !IsRecording && !IsFinalizingRecording && conversationId is not null;
+        && !Sending && !IsRecording && !IsFinalizingRecording && editing is null && conversationId is not null;
 
     [RelayCommand(CanExecute = nameof(CanStartRecording))]
     private async Task StartRecordingAsync(string? kind)
@@ -505,9 +538,10 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
             var submittedReply = replyTo;
             var message = await Social.SendMediaAsync(token, id, media.Kind, media.FileName, media.Bytes,
                 submittedReply, operation.Token, media.DurationMs);
+            if (operation.IsCurrent) AdvanceMessageHistory(id);
             if (!operation.IsCurrent || ticket != generation || conversationId != id) return;
             Messages.Add(Row(message));
-            if (replyTo == submittedReply) { replyTo = null; ActionCaption = ""; }
+            if (submittedReply is not null && replyTo == submittedReply) { replyTo = null; ActionCaption = ""; composerRevision++; SaveComposer(); NotifyComposer(); }
             Status = "";
             await RefreshAsync();
         }
@@ -537,17 +571,20 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         catch (Exception ex) when (ex is IOException or System.Runtime.InteropServices.COMException) { }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanAttach))]
     private async Task AttachAsync(string? kind)
     {
-        if (IsFinalizingRecording || kind is not ("image" or "file") || conversationId is not Guid id || Social is null || Access is null) return;
+        if (!CanAttach(kind) || conversationId is not Guid id || Social is null || Access is null || !sendingConversations.Add(id)) return;
         var ticket = generation;
-        var path = await App.FileDialogs.OpenChatMediaAsync(kind);
-        if (string.IsNullOrWhiteSpace(path) || ticket != generation || conversationId != id) return;
+        SaveComposer();
+        var submitted = CurrentComposer();
+        Sending = true;
         byte[]? bytes = null;
         using var operation = App.Work.Enter();
         try
         {
+            var path = await App.FileDialogs.OpenChatMediaAsync(kind!);
+            if (string.IsNullOrWhiteSpace(path) || !operation.IsCurrent || ticket != generation || conversationId != id) return;
             var file = new FileInfo(path);
             var limit = kind == "image" ? 25L * 1024 * 1024 : 20L * 1024 * 1024;
             if (!file.Exists || file.Length is < 1 || file.Length > limit)
@@ -559,26 +596,32 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
             if (!operation.IsCurrent || ticket != generation || conversationId != id) return;
             var token = await Access(operation.Token);
             if (string.IsNullOrEmpty(token) || !operation.IsCurrent || ticket != generation) return;
-            var submittedReply = replyTo;
-            var message = await Social.SendMediaAsync(token, id, kind, file.Name, bytes, submittedReply, operation.Token);
+            var message = await Social.SendMediaAsync(token, id, kind!, file.Name, bytes, submitted.Reply, operation.Token);
+            if (operation.IsCurrent) AdvanceMessageHistory(id);
             if (!operation.IsCurrent || ticket != generation || conversationId != id) return;
             Messages.Add(Row(message));
-            if (replyTo == submittedReply) { replyTo = null; ActionCaption = ""; }
+            if (submitted.Reply is not null && composerRevision == submitted.Revision && replyTo == submitted.Reply)
+            { replyTo = null; ActionCaption = ""; composerRevision++; SaveComposer(); NotifyComposer(); }
             Status = "";
             await RefreshAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is SocialClientException or AccountClientException or IOException or UnauthorizedAccessException)
         { if (operation.IsCurrent && ticket == generation) Status = "Не удалось отправить файл."; }
-        finally { if (bytes is not null) CryptographicOperations.ZeroMemory(bytes); }
+        finally
+        {
+            if (bytes is not null) CryptographicOperations.ZeroMemory(bytes);
+            sendingConversations.Remove(id);
+            if (operation.IsCurrent && conversationId == id) Sending = false;
+        }
     }
 
     private ChatMessageRow Row(SocialMessageResponse message)
     {
         var row = new ChatMessageRow(message,
             message.SenderId != peerId,
-            new RelayCommand(() => { replyTo = message.MessageId; editing = null; Draft = ""; ActionCaption = "Ответ"; }),
-            new RelayCommand(() => { editing = message.MessageId; replyTo = null; Draft = message.Body ?? ""; ActionCaption = "Редактирование"; }),
+            new RelayCommand(() => BeginReply(message.MessageId)),
+            new RelayCommand(() => BeginEdit(message.MessageId, message.Body ?? "")),
             new AsyncRelayCommand(() => ChangeMessageAsync(message.MessageId, true)),
             new AsyncRelayCommand(() => ChangeMessageAsync(message.MessageId, false)),
             message.AttachmentId is Guid && !message.Deleted && message.Kind is "image" or "file" or "voice" or "circle"
@@ -729,6 +772,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
             if (string.IsNullOrEmpty(token) || !operation.IsCurrent || ticket != generation) return;
             var changed = delete ? await Social.DeleteAsync(token, id, messageId, operation.Token)
                 : await Social.ReactAsync(token, id, messageId, "like", operation.Token);
+            if (operation.IsCurrent) AdvanceMessageHistory(id);
             if (!operation.IsCurrent || ticket != generation) return;
             var index = Messages.ToList().FindIndex(row => row.Id == messageId);
             if (index >= 0) Messages[index] = Row(changed);

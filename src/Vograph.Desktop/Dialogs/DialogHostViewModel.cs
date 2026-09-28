@@ -29,6 +29,7 @@ public sealed partial class DialogHostViewModel : ObservableObject
         using var operation = work?.Enter();
         if (operation is { IsCurrent: false }) return false;
         Current?.Cancel(); // one at a time: the dialog on screen completes as cancelled and hands the host over
+        if (Current is { Completion.IsCompleted: false }) return false;
         Current = dialog;
         IsOpen = true;
         var result = await dialog.Completion;
@@ -51,7 +52,9 @@ public sealed partial class DialogHostViewModel : ObservableObject
     [RelayCommand]
     private void Dismiss()
     {
-        if (IsOpen) Current?.Cancel();
+        if (!IsOpen) return;
+        if (work is { IsAccepting: false }) Current?.Abort();
+        else Current?.Cancel();
     }
 
     /// <summary>Enter.</summary>

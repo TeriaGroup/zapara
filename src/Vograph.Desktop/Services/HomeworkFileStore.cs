@@ -57,7 +57,9 @@ public sealed class HomeworkFileStore
                 var path = Inside(dir, id);
                 if (path is not null && File.Exists(path)) File.Delete(path);
             }
-            var moving = Read(DraftDir(draft)).Take(Math.Max(0, HomeworkFileRules.MaxFiles - kept.Count)).ToList();
+            var keptIds = kept.Select(file => file.Id).ToHashSet(StringComparer.Ordinal);
+            var moving = Read(DraftDir(draft)).Where(file => !keptIds.Contains(file.Id))
+                .Take(Math.Max(0, HomeworkFileRules.MaxFiles - kept.Count)).ToList();
             Directory.CreateDirectory(dir);
             foreach (var file in moving)
             {

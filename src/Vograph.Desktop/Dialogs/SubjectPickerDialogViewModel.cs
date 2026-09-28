@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Vograph.Desktop.Features.Homeworks;
 using Vograph.Desktop.Services;
 
@@ -21,6 +22,9 @@ public sealed partial class SubjectPickerDialogViewModel : DialogViewModelBase
 
     [ObservableProperty] private string _query = "";
     [ObservableProperty] private SubjectOption? _selected;
+    public bool HasQuery => Query.Length > 0;
+    public bool NoResults => Filtered.Count == 0;
+    [RelayCommand] private void ClearQuery() => Query = "";
 
     partial void OnQueryChanged(string value) => ApplyFilter();
     partial void OnSelectedChanged(SubjectOption? value) => RefreshCanConfirm();
@@ -35,5 +39,7 @@ public sealed partial class SubjectPickerDialogViewModel : DialogViewModelBase
             Filtered.Add(s);
         if (keep is not null && !Filtered.Contains(keep)) Selected = Filtered.Count == 1 ? Filtered[0] : null;
         else if (Selected is null && Filtered.Count == 1) Selected = Filtered[0];
+        OnPropertyChanged(nameof(HasQuery));
+        OnPropertyChanged(nameof(NoResults));
     }
 }

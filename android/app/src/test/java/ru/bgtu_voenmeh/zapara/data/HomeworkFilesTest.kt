@@ -8,6 +8,23 @@ import java.io.File
 import java.nio.file.Files
 
 class HomeworkFilesTest {
+    @Test fun retry_after_manifest_write_does_not_duplicate_files_or_consume_free_slots() {
+        val root = Files.createTempDirectory("zapara-hw-retry").toFile()
+        try {
+            val store = HomeworkFileStore(root)
+            val first = store.stage("retry", "document", "первое.txt", "one".toByteArray())
+            val draft = File(root, "drafts/retry")
+            val beforeCleanup = File(root, "before-cleanup")
+            draft.copyRecursively(beforeCleanup)
+            store.commit("retry", 7, emptySet())
+            beforeCleanup.copyRecursively(draft)
+            val second = store.stage("retry", "document", "второе.txt", "two".toByteArray())
+            store.commit("retry", 7, emptySet())
+            assertEquals(listOf(first.id, second.id), store.list(7).map { it.id })
+            assertEquals("two", store.savedFile(7, second.id)!!.first.readText())
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun names_keep_one_extension_and_drop_a_path() {
         assertEquals("конспект.pdf", HomeworkFileRules.cleanName("C:\\папка\\конспект.pdf"))
         assertEquals("секрет.pdf", HomeworkFileRules.cleanName("../секрет.pdf"))

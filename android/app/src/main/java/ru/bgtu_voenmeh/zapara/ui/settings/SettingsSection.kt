@@ -60,6 +60,7 @@ import ru.bgtu_voenmeh.zapara.data.AutoUpdate
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
 import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
+import ru.bgtu_voenmeh.zapara.ui.components.ZTextField
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.account.AccountCard
 import ru.bgtu_voenmeh.zapara.ui.legal.LegalDocumentPage
@@ -77,8 +78,8 @@ private fun GroupActions(refreshing: Boolean, onChangeGroup: () -> Unit, onRefre
     Layout(
         modifier = Modifier.fillMaxWidth(),
         content = {
-            ZButton(stringResource(R.string.ux_settings_change), onChangeGroup, ghost = true, tag = "Settings.GroupChange")
-            ZButton(stringResource(R.string.ux_settings_refresh), onRefresh, enabled = !refreshing, tag = "Settings.Refresh")
+            ZButton(stringResource(R.string.ux_settings_change), onChangeGroup, ghost = true, tag = "Settings.GroupChange", leadingIcon = R.drawable.ic_calendar)
+            ZButton(stringResource(R.string.ux_settings_refresh), onRefresh, enabled = !refreshing, tag = "Settings.Refresh", leadingIcon = R.drawable.ic_refresh)
         }
     ) { measurables, constraints ->
         val gap = spacing.roundToPx()
@@ -109,6 +110,7 @@ private fun SettingsOverviewRow(
     summary: String,
     tag: String,
     emphasized: Boolean = false,
+    divider: Boolean = true,
     onClick: () -> Unit
 ) {
     val uiText = rememberUiText()
@@ -118,11 +120,11 @@ private fun SettingsOverviewRow(
             onClick = onClick,
             modifier = Modifier.fillMaxWidth().testTag(tag),
             shape = RoundedCornerShape(if (emphasized) Zapara.radii.card else 0.dp),
-            color = if (emphasized) c.card else c.canvas,
+            color = c.card,
             border = if (emphasized) BorderStroke(Zapara.space.hairline, c.line) else null
         ) {
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = Zapara.space.s, vertical = Zapara.space.s),
+                Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = Zapara.space.m, vertical = Zapara.space.m),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)
             ) {
@@ -130,7 +132,7 @@ private fun SettingsOverviewRow(
                     contentAlignment = Alignment.Center) {
                     Icon(painterResource(icon), contentDescription = null, tint = c.text1, modifier = Modifier.size(20.dp))
                 }
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                     Text(title, style = Zapara.typography.bodyStrong, color = c.text1)
                     Text(summary, style = Zapara.typography.caption, color = c.text2)
                 }
@@ -138,7 +140,7 @@ private fun SettingsOverviewRow(
                     tint = c.text2, modifier = Modifier.size(20.dp))
             }
         }
-        if (!emphasized) HorizontalDivider(color = c.line, thickness = Zapara.space.hairline)
+        if (!emphasized && divider) HorizontalDivider(Modifier.padding(start = 56.dp, end = Zapara.space.m), color = c.line, thickness = Zapara.space.hairline)
     }
 }
 
@@ -162,25 +164,33 @@ private fun SettingsOverview(state: SettingsUiState, account: AccountUiState, on
         }
         item { Text(stringResource(R.string.settings_overview_core), style = Zapara.typography.section,
             color = c.text1, modifier = Modifier.padding(top = Zapara.space.l, bottom = Zapara.space.xs)) }
-        item { SettingsOverviewRow(R.drawable.ic_calendar, stringResource(R.string.settings_overview_study),
-            state.groupName.ifBlank { stringResource(R.string.group_pick) }, "Settings.Overview.Study") { onOpen("study") } }
-        item { SettingsOverviewRow(R.drawable.ic_sun, stringResource(R.string.theme_appearance),
-            listOf(stringResource(R.string.theme_system), stringResource(R.string.theme_light), stringResource(R.string.theme_dark))[state.theme.ordinal],
-            "Settings.Overview.Appearance") { onOpen("appearance") } }
-        item { SettingsOverviewRow(R.drawable.ic_notification, stringResource(R.string.settings_notify),
-            if (state.notifyEnabled) stringResource(R.string.settings_overview_notify_on, state.time1, state.time2)
-            else stringResource(R.string.settings_overview_notify_off),
-            "Settings.Overview.Notifications") { onOpen("notifications") } }
-        item { SettingsOverviewRow(R.drawable.ic_map, stringResource(R.string.settings_maps),
-            stringResource(R.string.settings_maps_routes), "Settings.Overview.Maps") { onOpen("maps") } }
+        item("core") { ZCard(Modifier.fillMaxWidth(), padded = false) {
+            Column {
+                SettingsOverviewRow(R.drawable.ic_calendar, stringResource(R.string.settings_overview_study),
+                    state.groupName.ifBlank { stringResource(R.string.group_pick) }, "Settings.Overview.Study") { onOpen("study") }
+                SettingsOverviewRow(R.drawable.ic_sun, stringResource(R.string.theme_appearance),
+                    listOf(stringResource(R.string.theme_system), stringResource(R.string.theme_light), stringResource(R.string.theme_dark))[state.theme.ordinal],
+                    "Settings.Overview.Appearance") { onOpen("appearance") }
+                SettingsOverviewRow(R.drawable.ic_notification, stringResource(R.string.settings_notify),
+                    if (state.notifyEnabled) stringResource(R.string.settings_overview_notify_on, state.time1, state.time2)
+                    else stringResource(R.string.settings_overview_notify_off),
+                    "Settings.Overview.Notifications") { onOpen("notifications") }
+                SettingsOverviewRow(R.drawable.ic_map, stringResource(R.string.settings_maps),
+                    stringResource(R.string.settings_maps_routes), "Settings.Overview.Maps", divider = false) { onOpen("maps") }
+            }
+        } }
         item { Text(stringResource(R.string.settings_overview_service), style = Zapara.typography.section,
             color = c.text1, modifier = Modifier.padding(top = Zapara.space.l, bottom = Zapara.space.xs)) }
-        item { SettingsOverviewRow(R.drawable.ic_refresh, uiText(R.string.space_day_153),
-            if (state.syncBusy) uiText(R.string.space_day_154) else if (state.signedIn) uiText(R.string.space_day_155) else uiText(R.string.space_day_156), "Settings.Overview.Data") { onOpen("data") } }
-        item { SettingsOverviewRow(R.drawable.ic_refresh, stringResource(R.string.settings_updates),
-            stringResource(R.string.settings_version, state.version), "Settings.Overview.Updates") { onOpen("updates") } }
-        item { SettingsOverviewRow(R.drawable.ic_file, stringResource(R.string.settings_overview_help),
-            stringResource(R.string.settings_overview_help_summary), "Settings.Overview.Help") { onOpen("help") } }
+        item("service") { ZCard(Modifier.fillMaxWidth(), padded = false) {
+            Column {
+                SettingsOverviewRow(R.drawable.ic_refresh, uiText(R.string.space_day_153),
+                    if (state.syncBusy) uiText(R.string.space_day_154) else if (state.signedIn) uiText(R.string.space_day_155) else uiText(R.string.space_day_156), "Settings.Overview.Data") { onOpen("data") }
+                SettingsOverviewRow(R.drawable.ic_download, stringResource(R.string.settings_updates),
+                    stringResource(R.string.settings_version, state.version), "Settings.Overview.Updates") { onOpen("updates") }
+                SettingsOverviewRow(R.drawable.ic_file, stringResource(R.string.settings_overview_help),
+                    stringResource(R.string.settings_overview_help_summary), "Settings.Overview.Help", divider = false) { onOpen("help") }
+            }
+        } }
     }
 }
 
@@ -221,7 +231,7 @@ fun SettingsSection(
         else Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.l)) {
             if (wideSettings) Box(Modifier.width(320.dp)) { SettingsOverview(state, account) { section = it } }
             LazyColumn(if (wideSettings) Modifier.widthIn(max = 720.dp).fillMaxSize() else Modifier.weight(1f).fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            item { ZButton(stringResource(R.string.settings_overview_all), { section = null }, ghost = true, tag = "Settings.Overview.Back") }
+            item { ZButton(stringResource(R.string.settings_overview_all), { section = null }, ghost = true, quiet = true, tag = "Settings.Overview.Back", leadingIcon = R.drawable.ic_chevron_left) }
             if (section == "account") {
             item { AccountCard(account, onAccount) { legalId = it } }
             }
@@ -331,10 +341,8 @@ fun SettingsSection(
                     TimeField(state.time2, stringResource(R.string.settings_time_morning), "Settings.Time2", state.notifyEnabled) { onEvent(SettingsEvent.Time2(it)) }
                     Text(if (state.notifyEnabled) uiText(R.string.space_day_165, (state.time1).toString(), (state.time2).toString()) else uiText(R.string.space_day_166), style = Zapara.typography.caption, color = c.text2)
                     Text(uiText(R.string.space_day_notification_preview), style = Zapara.typography.section)
-                    Text(uiText(R.string.space_day_preview_tomorrow), style = Zapara.typography.bodyStrong)
-                    Text(state.previewEvening, style = Zapara.typography.caption)
-                    Text(uiText(R.string.space_day_preview_today), style = Zapara.typography.bodyStrong)
-                    Text(state.previewMorning, style = Zapara.typography.caption)
+                    NotificationPreview(uiText(R.string.space_day_preview_tomorrow), state.time1, state.previewEvening)
+                    NotificationPreview(uiText(R.string.space_day_preview_today), state.time2, state.previewMorning)
                     state.timeError?.let { Text(it, style = Zapara.typography.caption, color = c.bad) }
                     ZButton(stringResource(R.string.settings_notify_test), { onEvent(SettingsEvent.TestNotification) }, ghost = true, tag = "Settings.NotifyTest")
                     if (state.permissionMissing) {
@@ -368,20 +376,27 @@ fun SettingsSection(
 
 @Composable
 private fun TimeField(value: String, label: String, tag: String, enabled: Boolean = true, onChange: (String) -> Unit) {
-    val uiText = rememberUiText()
-    val c = Zapara.colors
-    OutlinedTextField(enabled = enabled,
+    ZTextField(enabled = enabled,
         value = value, onValueChange = onChange,
         modifier = Modifier.fillMaxWidth().testTag(tag),
         label = { Text(label, style = Zapara.typography.caption) },
-        singleLine = true,
-        shape = RoundedCornerShape(Zapara.radii.control),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = c.chip, unfocusedContainerColor = c.chip,
-            focusedBorderColor = c.lineStrong, unfocusedBorderColor = c.chip,
-            focusedTextColor = c.text1, unfocusedTextColor = c.text1
-        )
+        singleLine = true
     )
+}
+
+@Composable
+private fun NotificationPreview(title: String, time: String, text: String) {
+    val c = Zapara.colors
+    Column(Modifier.fillMaxWidth().background(c.canvas, RoundedCornerShape(Zapara.radii.control)).padding(Zapara.space.m),
+        verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            Icon(painterResource(R.drawable.ic_notification), contentDescription = null, tint = c.text1, modifier = Modifier.size(20.dp))
+            Text(title, modifier = Modifier.weight(1f), style = Zapara.typography.bodyStrong, color = c.text1)
+            Text(time, style = Zapara.typography.caption, color = c.text2)
+        }
+        Text(text, style = Zapara.typography.caption, color = c.text2)
+    }
 }
 
 @Composable

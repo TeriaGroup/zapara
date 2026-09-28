@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import * as api from "./api";
 import { filterChatInbox, mergeChatInbox, sortChatInbox, unreadChatTotal, type ChatInboxItem } from "./chatInbox";
 import { PeoplePanel } from "./people";
 import { useApp } from "./store";
 import type { GroupHome, SocialHome } from "./types";
+import { emptyChatState } from "./personal-composer";
 
 function destination(item: ChatInboxItem): string {
   if (item.kind === "personal") return `/chat/person/${encodeURIComponent(item.conversationId)}`;
@@ -36,12 +37,17 @@ export function ChatInboxPage() {
   const [retry, setRetry] = useState(0);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<ChatInboxItem["kind"] | "all">("all");
+  const ownerRef = useRef<string | null | undefined>(undefined);
   const accountId = app.session?.authenticated ? app.session.user?.userId : null;
   const visible = filterChatInbox(rows, query, kind);
   const unread = unreadChatTotal(rows);
   const filtered = !!query.trim() || kind !== "all";
 
   useEffect(() => {
+    if (ownerRef.current !== accountId) {
+      ownerRef.current = accountId;
+      setRows([]); setError(""); setQuery(""); setKind("all");
+    }
     if (!accountId) { setRows([]); setLoading(false); return; }
     let stopped = false;
     let running = false;
@@ -63,7 +69,8 @@ export function ChatInboxPage() {
             : memberships.status === "rejected" || !!item.communityId && failedGroups.has(item.communityId)),
         ]));
         const missing = memberships.status === "rejected" || social.status === "rejected" || homes.some(item => item.status === "rejected");
-        setError(missing ? "Часть бесед не загрузилась. Можно повторить." : "");
+        const allFailed = memberships.status === "rejected" && social.status === "rejected";
+        setError(missing ? allFailed ? "Беседы не загрузились. Можно повторить." : "Часть бесед не загрузилась. Можно повторить." : "");
         setLoading(false);
       }
       running = false;
@@ -99,8 +106,8 @@ export function ChatInboxPage() {
         {filtered && <button className="btn" type="button" onClick={() => { setQuery(""); setKind("all"); }}>Сбросить</button>}
       </div>
     </div>}
-    {loading && rows.length === 0 && <p className="muted">Загружаем беседы…</p>}
-    {!loading && rows.length === 0 && <div className="card empty">Пока нет бесед. Вступите в учебную группу или добавьте человека по коду.</div>}
+    {emptyChatState(loading, error, rows.length) === "loading" && <p className="muted">Загружаем беседы…</p>}
+    {emptyChatState(loading, error, rows.length) === "empty" && <div className="card empty">Пока нет бесед. Вступите в учебную группу или добавьте человека по коду.</div>}
     {rows.length > 0 && visible.length === 0 && <div className="card empty">По запросу бесед нет.
       <button className="btn" type="button" onClick={() => { setQuery(""); setKind("all"); }}>Показать все</button>
     </div>}

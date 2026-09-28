@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,9 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -25,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -32,7 +34,9 @@ import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.LocalUiCopy
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
+import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
+import ru.bgtu_voenmeh.zapara.ui.components.ZTextField
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
@@ -50,22 +54,20 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
     val onlyMineLabel = stringResource(R.string.teachers_only_mine)
     Column(Modifier.fillMaxSize()) {
         ZTopBar(stringResource(R.string.nav_teachers))
-        OutlinedTextField(
+        Column(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
+            verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        ZTextField(
             value = state.query, onValueChange = { onEvent(TeachersEvent.Query(it)) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).testTag("Teachers.Search"),
+            modifier = Modifier.fillMaxWidth().testTag("Teachers.Search"),
             placeholder = { Text(stringResource(R.string.teachers_search_hint), style = Zapara.typography.caption, color = c.text3) },
             singleLine = true,
-            shape = RoundedCornerShape(Zapara.radii.control),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = c.chip, unfocusedContainerColor = c.chip,
-                focusedBorderColor = c.lineStrong, unfocusedBorderColor = c.chip,
-                focusedTextColor = c.text1, unfocusedTextColor = c.text1
-            )
+            leadingIcon = { Icon(painterResource(R.drawable.ic_search), null, Modifier.size(24.dp), tint = c.text2) }
         )
-        Row(Modifier.fillMaxWidth().padding(Zapara.space.l), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.teachers_only_mine), style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
             ZSwitch(state.onlyMine, { onEvent(TeachersEvent.OnlyMine(it)) }, "Teachers.OnlyMine",
                 Modifier.semantics { contentDescription = onlyMineLabel })
+        }
         }
         if (!state.loaded) {
             Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
@@ -100,10 +102,12 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
                 ZCard(onClick = { onEvent(TeachersEvent.Open(row.id)) }, tag = "Teachers.Row.${row.id}", modifier = Modifier.fillMaxWidth().appear(index)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                         if (row.isMine) Box(Modifier.size(6.dp).clip(CircleShape).background(c.text1))
-                        Column(Modifier.weight(1f)) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                             Text(row.name, style = Zapara.typography.bodyStrong, color = c.text1)
                             Text(row.subjects, style = Zapara.typography.caption, color = c.text2)
                         }
+                        Icon(painterResource(R.drawable.ic_chevron_right), null,
+                            Modifier.size(24.dp), tint = c.text2)
                     }
                 }
             }
@@ -111,6 +115,7 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
     val selected = state.selected ?: return
@@ -147,12 +152,17 @@ fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
         }
             itemsIndexed(state.details, key = { _, it -> it.dow }) { index, day ->
                 ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).appear(index), tag = "Teacher.Day.${day.dow}") {
-                    Text(day.title, style = Zapara.typography.section, color = c.text1)
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                        verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                        Text(day.title, style = Zapara.typography.section, color = c.text1)
+                        ZChip(stringResource(R.string.polish_teacher_day_count, day.rows.size))
+                    }
                     day.rows.forEachIndexed { rowIndex, row ->
+                        if (rowIndex > 0) HorizontalDivider(color = c.line)
                         Column(Modifier.fillMaxWidth().testTag("Teacher.Row.${day.dow}.$rowIndex")
                             .padding(vertical = Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-                            Text(row.time, style = Zapara.typography.caption, color = c.text2)
-                                Text(row.subject, style = Zapara.typography.body, color = c.text1)
+                            Text(row.time, style = Zapara.typography.bodyStrong, color = c.text1)
+                                Text(row.subject, style = Zapara.typography.bodyStrong, color = c.text1)
                                 Text(row.groups, style = Zapara.typography.caption, color = c.text2)
                             Text(row.room, style = Zapara.typography.caption, color = c.text2)
                             Text(TeacherDetailsComposer.parityLabel(row.parity, copy),

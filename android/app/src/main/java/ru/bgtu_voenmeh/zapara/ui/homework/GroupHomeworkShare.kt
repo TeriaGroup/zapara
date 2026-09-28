@@ -11,6 +11,7 @@ internal class HomeworkScheduleChanged : IllegalStateException("homework_schedul
 internal suspend fun shareSavedHomework(
     container: AppContainer,
     editor: HomeworkEditorState,
+    onShareAttempt: () -> Unit = {},
     persist: suspend () -> Unit,
 ): HomeworkShareOutcome {
     val expectedDue = editor.dueFor(editor.n,editor.text)
@@ -44,6 +45,33 @@ internal suspend fun shareSavedHomework(
     ) { sentSubject, sentText ->
         val client = container.communities ?: error("communities")
         val access = token ?: error("token")
+        onShareAttempt()
         client.shareHomework(access, communityId, sentSubject, sentText, 0, expectedDue?.atStartOfDay(java.time.ZoneId.systemDefault())?.plusDays(1)?.minusNanos(1)?.toInstant())
     }
+}
+
+internal suspend fun saveHomeworkEditor(
+    container: AppContainer,
+    editor: HomeworkEditorState,
+    onProgress: (HomeworkEditorState) -> Unit
+): HomeworkShareOutcome {
+    var current = editor
+    fun progress(value: HomeworkEditorState) { current = value; onProgress(value) }
+    val outcome = shareSavedHomework(container, editor.copy(share = editor.share && !editor.shareAttempted),
+        onShareAttempt = { progress(current.copy(shareAttempted = true)) }) {
+        persistHomeworkEditor(current, ::progress, saveLocal = { existingId ->
+            if (existingId == null) {
+                container.homework.addHomework(editor.subjectRaw, editor.text.trim(), editor.n, editor.creationAnchor(container.clock().toLocalDate()))
+            } else {
+                val existing = container.homework.getById(existingId) ?: error("homework_missing")
+                if (editor.hasChanges(existing)) container.homework.updateHomework(existingId, editor.text.trim(), editor.n)
+                existingId
+            }
+        }, saveFiles = { id ->
+            if (editor.draft.isNotEmpty()) container.homeworkFiles.commit(editor.draft, id, editor.removed)
+            container.homeworkFiles.list(id)
+        })
+    }
+    return if (editor.share && editor.shareAttempted)
+        outcome.copy(note = container.app.getString(ru.bgtu_voenmeh.zapara.R.string.homework_ux_share_check)) else outcome
 }

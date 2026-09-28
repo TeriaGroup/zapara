@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Vograph.Desktop.Services;
+using Vograph.Desktop.Controls;
 
 namespace Vograph.Desktop.Features.Schedule;
 
@@ -11,10 +12,18 @@ public partial class ScheduleView : UserControl
 {
     private ScheduleViewModel? _vm;
     private int _generation;
+    private readonly PlannerTouchNavigation _swipe;
 
     public ScheduleView()
     {
         InitializeComponent();
+        _swipe = new PlannerTouchNavigation(Body, () => _vm is { IsBusy: false },
+            () => (_vm, _vm?.CalendarDate), direction =>
+            {
+                if (_vm is not { } vm) return;
+                var command = direction > 0 ? vm.NextDayCommand : vm.PrevDayCommand;
+                if (command.CanExecute(null)) command.Execute(null);
+            });
         DataContextChanged += (_, _) => {Hook(DataContext as ScheduleViewModel);ApplyPlanningLayout();};
         SizeChanged+=(_,_)=>ApplyPlanningLayout();
     }
@@ -22,12 +31,20 @@ public partial class ScheduleView : UserControl
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
+        _swipe.Reset();
         Hook(null);
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Hook(DataContext as ScheduleViewModel);
     }
 
     private void Hook(ScheduleViewModel? vm)
     {
         if (ReferenceEquals(_vm, vm)) return;
+        _swipe?.Reset();
         if (_vm is not null) _vm.DayShown -= OnDayShown;
         _vm = vm;
         if (_vm is not null) _vm.DayShown += OnDayShown;

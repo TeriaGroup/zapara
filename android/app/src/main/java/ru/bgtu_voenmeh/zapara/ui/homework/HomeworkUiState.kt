@@ -74,6 +74,10 @@ sealed interface HomeworkEvent {
     data class OpenFile(val homeworkId: Long, val fileId: String) : HomeworkEvent
 }
 
+enum class HomeworkEditorWork { Idle, Saving, Attachment, Recalculating }
+
+data class HomeworkDraftSnapshot(val text: String, val n: Int, val share: Boolean, val files: Set<String>)
+
 data class HomeworkEditorState(
     val id: Long?,
     val subjectRaw: String,
@@ -88,16 +92,24 @@ data class HomeworkEditorState(
     val share: Boolean = false,
     val anchorDate: LocalDate? = null,
     val scheduleGroupId: String? = null,
-    val sourceChanged: Boolean = false
+    val sourceChanged: Boolean = false,
+    val initial: HomeworkDraftSnapshot = HomeworkDraftSnapshot(text.trim(), n, share, files.map { it.id }.toSet()),
+    val work: HomeworkEditorWork = HomeworkEditorWork.Idle,
+    val error: String? = null,
+    val persistedId: Long? = null,
+    val shareAttempted: Boolean = false
 ) {
+    val busy: Boolean get() = work != HomeworkEditorWork.Idle
+    val hasDraftChanges: Boolean get() = initial != HomeworkDraftSnapshot(text.trim(), n, share, files.map { it.id }.toSet())
     fun creationAnchor(clockDate: LocalDate): LocalDate = anchorDate ?: clockDate
     fun matchesSaveContext(groupId: String?, currentDue: LocalDate?): Boolean =
         (scheduleGroupId == null || scheduleGroupId == groupId) && dueFor(n,text) == currentDue
-    val canSave: Boolean get() = text.trim().isNotEmpty() && !sourceChanged
+    val canSave: Boolean get() = text.trim().isNotEmpty() && !sourceChanged && !busy
     fun hasChanges(existing: Homework): Boolean = text.trim() != existing.text || n != existing.n
-    fun withText(value: String) = copy(text = value)
-    fun inc() = copy(n = (n + 1).coerceAtMost(10))
-    fun dec() = copy(n = (n - 1).coerceAtLeast(1))
+    fun withText(value: String) = if (busy) this else copy(text = value, error = null)
+    fun withShare(value: Boolean) = if (busy) this else copy(share = value, error = null)
+    fun inc() = if (busy) this else copy(n = (n + 1).coerceAtMost(10), error = null)
+    fun dec() = if (busy) this else copy(n = (n - 1).coerceAtLeast(1), error = null)
     fun dueText(copy: UiCopy): String {
         val due = dueFor(n, text) ?: return copy.get("hw_due_prefix", "—")
         return copy.get("hw_due_prefix", "${LessonFormat.dayMonth(due)} (${LessonFormat.weekdayShort(due, copy)})")

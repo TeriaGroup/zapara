@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -154,9 +155,9 @@ private fun ZaparaAppBody(
                             navController = nav,
                             startDestination = Section.Schedule.pattern,
                             enterTransition = { fadeIn(tween(motion.ms(Durations.section), easing = ZaparaEase)) + slideInHorizontally(tween(motion.ms(Durations.section), easing = ZaparaEase)) { slidePx } },
-                            exitTransition = { fadeOut(tween(motion.ms(Durations.section), easing = ZaparaEase)) },
-                            popEnterTransition = { fadeIn(tween(motion.ms(Durations.section), easing = ZaparaEase)) + slideInHorizontally(tween(motion.ms(Durations.section), easing = ZaparaEase)) { slidePx } },
-                            popExitTransition = { fadeOut(tween(motion.ms(Durations.section), easing = ZaparaEase)) }
+                            exitTransition = { fadeOut(tween(motion.ms(Durations.section), easing = ZaparaEase)) + slideOutHorizontally(tween(motion.ms(Durations.section), easing = ZaparaEase)) { -slidePx } },
+                            popEnterTransition = { fadeIn(tween(motion.ms(Durations.section), easing = ZaparaEase)) + slideInHorizontally(tween(motion.ms(Durations.section), easing = ZaparaEase)) { -slidePx } },
+                            popExitTransition = { fadeOut(tween(motion.ms(Durations.section), easing = ZaparaEase)) + slideOutHorizontally(tween(motion.ms(Durations.section), easing = ZaparaEase)) { slidePx } }
                         ) {
                             composable(
                                 Section.Schedule.pattern,

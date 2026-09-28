@@ -1,10 +1,13 @@
 import { ChangeEvent, FormEvent, Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useSwipe } from "./swipe";
+import { useDateReveal, useSwipe } from "./swipe";
 import * as api from "./api";
 import { followGroupCommunity, openGroupFace } from "./groupChoice";
 import { clearSentGroupDraft, createGroupPoller, groupMediaSelectionIsCurrent, mergeGroupMessages, newestUnseenIncoming } from "./groupChat";
-import { completeGroupCopy, saveEditorHomework } from "./groupHomework";
+import { completeGroupCopy } from "./groupHomework";
+import { useHomeworkDraft } from "./homework-draft-context";
+import { homeworkSaveError, validateHomeworkDraft } from "./homework-draft";
+import { checkHomeworkUpload, runHomeworkSave } from "./homework-save";
 import { addDays, dayTitle, isoDay, lessonsOn, sameSubject, weekday } from "./parity";
 import { forecastIntersections, intersectionPlace, markDescription, marksForLesson, resolveFriendSchedules, type FriendMark } from "./intersections";
 import { composeSummary } from "./summary";
@@ -141,7 +144,8 @@ export function SchedulePage() {
   const deadlines = nearbyHomework(personal, app.date, lessons.map(lesson => lesson.subjectRaw));
   const sharedDeadlines = nearbyHomework(sharedHomework.map(item=>({id:item.homeworkId,subject:item.title,text:item.body,done:item.completed,created:"",deadlineAt:item.deadlineAt})),app.date,lessons.map(lesson=>lesson.subjectRaw));
   const strip = Array.from({ length: 7 }, (_, i) => addDays(app.date, i - 2));
-  const swipe = useSwipe(() => app.setDate(addDays(app.date, 1)), () => app.setDate(addDays(app.date, -1)));
+  const swipe = useSwipe(() => app.setDate(addDays(app.date, 1)), () => app.setDate(addDays(app.date, -1)), isoDay(app.date));
+  const dateReveal = useDateReveal(isoDay(app.date));
   const nextDate = app.timetableAvailable && period ? Array.from({ length: 21 }, (_, i) => addDays(app.date, i + 1)).find(date => lessonsOn(shown, date, period.start, period.weekCount, app.invert).length > 0) : null;
   function actions(lesson: Lesson) {
     const context = new URLSearchParams({ subject: lesson.subjectRaw, date: isoDay(app.date), time: lesson.timeStart });
@@ -176,7 +180,7 @@ export function SchedulePage() {
       const count = app.timetableAvailable && period && isoDay(date) >= period.start.slice(0,10) ? lessonsOn(shown, date, period.start, period.weekCount, app.invert).length : null;
       return <button className={"date" + (isoDay(date) === isoDay(app.date) ? " active" : "")} key={isoDay(date)} type="button" aria-pressed={isoDay(date) === isoDay(app.date)} aria-label={`${absoluteDate(date)}, ${count === null ? "нет данных" : pairCount(count)}`} onClick={() => app.setDate(date)}><span>{date.toLocaleDateString("ru-RU", { weekday: "short" })}</span><strong>{date.getDate()}</strong><small>{count === null ? "Нет данных" : count ? pairCount(count) : "Без пар"}</small></button>;
     })}</div>
-    <div className="day-space">
+    <div className="day-space date-reveal" ref={dateReveal}>
       <main className="stack swipe" {...swipe}>
         <div className="section-overview"><strong>{groupName || "Группа не выбрана"}</strong><span>{app.timetableAvailable ? `${pairCount(lessons.length)}${lessons.length ? ` · ${lessons[0].timeStart}–${lessons.at(-1)?.timeEnd}` : ""}` : "Нет данных"}</span>
           <button className="btn quiet" type="button" disabled={app.loading || app.timetableLoading} onClick={app.refresh}>{app.loading || app.timetableLoading ? "Обновляем…" : "Обновить"}</button></div>
@@ -210,7 +214,8 @@ export function WeekPage() {
   const days = Array.from({ length: 7 }, (_, index) => addDays(monday, index));
   const weekDays = days.map(date => ({ date, lessons: period ? lessonsOn(shown, date, period.start, period.weekCount, app.invert) : [] }));
   const weekTotal = weekDays.reduce((total, day) => total + day.lessons.length, 0);
-  const swipe = useSwipe(() => app.setDate(addDays(app.date, 7)), () => app.setDate(addDays(app.date, -7)));
+  const swipe = useSwipe(() => app.setDate(addDays(app.date, 7)), () => app.setDate(addDays(app.date, -7)), isoDay(app.date));
+  const dateReveal = useDateReveal(isoDay(monday));
   return (
     <section className="page">
       <Head title="Неделя" text={period?.title}>
@@ -223,7 +228,7 @@ export function WeekPage() {
         <span>{monday.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })} — {days[6].toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</span>
       </div>}
       <p className="swipe-hint">Смахните, чтобы сменить неделю</p>
-      <div className="week swipe" {...swipe}>
+      <div className="week swipe date-reveal" {...swipe} ref={node => { swipe.ref(node); dateReveal.current = node; }}>
         {weekDays.map(({ date, lessons: dayLessons }) => (
           <article className="card" key={isoDay(date)}>
             <h2 className="week-day-head">{dayTitle(date)} <span className="muted">{date.getDate()}</span><span className="chip">Пар: {dayLessons.length}</span></h2>
@@ -251,7 +256,7 @@ export function SummaryPage() {
     [app.lessons, app.subgroups, app.groupId, segment, app.invert],
   );
   return (
-    <section className="page">
+    <section className="page summary-page">
       <Head title="Сводка" text={app.groupId ? "Сколько пар в выбранной группе" : "Группа не выбрана"} />
       {!app.groupId ? (
         <div className="card empty">
@@ -265,10 +270,9 @@ export function SummaryPage() {
               <button key={label} className={segment === index ? "active" : ""} type="button" aria-pressed={segment === index} onClick={() => setSegment(index)}>{label}</button>
             ))}
           </div>
-          <div className="section-divider" aria-hidden="true" />
-          <article className="card">
-            <div className="muted">Пар в неделю</div>
-            <b className="summary-total">{summary.total}</b>
+          <article className="card summary-hero">
+            <div className="muted">Всего занятий</div>
+            <b className="summary-total">{summary.total}</b><span className="muted">{summarySegments[segment]} · выбранная группа</span>
           </article>
           <CountCard title="По дням" rows={summary.byDay} />
           <CountCard title="По типам" rows={summary.byType} />
@@ -282,14 +286,15 @@ export function SummaryPage() {
 }
 
 function CountCard({ title, rows, empty }: { title: string; rows: { name: string; count: number }[]; empty?: string }) {
+  const largest = Math.max(1, ...rows.map(row => row.count));
   return (
-    <article className="card stack">
+    <article className="card stack summary-count-card">
       <h2>{title}</h2>
-      {rows.length === 0 && empty && <p className="muted">{empty}</p>}
+      {rows.length === 0 && <p className="muted">{empty ?? "В выбранном расписании занятий нет."}</p>}
       {rows.map(row => (
-        <div className="count" key={title + row.name}>
-          <span>{row.name}</span>
-          <b>{row.count}</b>
+        <div className="summary-count-row" key={title + row.name}>
+          <div className="count"><span>{row.name}</span><b>{row.count}</b></div>
+          <div className="summary-count-track" aria-hidden="true"><span style={{ width: `${row.count / largest * 100}%` }} /></div>
         </div>
       ))}
     </article>
@@ -328,12 +333,12 @@ export function TeachersPage() {
     catch { setError("Полное расписание преподавателя не открылось. Показаны пары вашей группы."); }
   }
   return (
-    <section className="page">
+    <section className="page teachers-page">
       <Head title="Преподаватели" text={selected ? selected.name : error || "Поиск по фамилии или предмету"} />
       {selected ? (
         <div className="stack">
           <button className="btn teacher-back" type="button" onClick={() => setSelected(null)}>Назад</button>
-          <h2>{selected.name}</h2>
+          <div className="card teacher-profile"><span className="muted">Преподаватель</span><h2>{selected.name}</h2><p className="muted">{selected.detail}</p></div>
           <div className="seg" role="tablist" aria-label="Неделя преподавателя">
             {teacherFilters.map((label, index) => (
               <button key={label} className={filter === index ? "active" : ""} type="button" aria-pressed={filter === index} onClick={() => setFilter(index)}>{label}</button>
@@ -345,7 +350,7 @@ export function TeachersPage() {
             <article className="card stack" key={day.day}>
               <h2>{day.title}</h2>
               {day.rows.map((row, index) => (
-                <div key={day.day + row.time + row.subject + index}>
+                <div className="teacher-lesson-row" key={day.day + row.time + row.subject + index}>
                   <div className="time">{row.time}</div>
                   <strong className="subject">{row.subject}</strong>
                   {row.groups && <div className="muted">{row.groups}</div>}
@@ -359,7 +364,7 @@ export function TeachersPage() {
         </div>
       ) : (
         <div className="stack">
-          <div className="teacher-search-bar">
+          <div className="card teacher-filter-card"><div className="teacher-search-bar">
             <input className="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Фамилия или предмет" aria-label="Поиск преподавателя" />
             {!!query.trim() && <button className="btn" type="button" onClick={() => setQuery("")}>Сбросить поиск</button>}
           </div>
@@ -369,13 +374,14 @@ export function TeachersPage() {
               <button className={"switch" + (onlyMine ? " on" : "")} type="button" aria-pressed={onlyMine} aria-label="Только мои" onClick={() => setOnlyMine(value => !value)}><i /></button>
             </div>
           </div>
-          {found.rows.length === 0 && <div className="card empty"><p>{!query.trim() && onlyMine ? "У выбранной группы преподаватели пока не найдены" : "Никого не нашлось"}</p>
+          </div>
+          {found.rows.length === 0 && <div className="card empty teacher-empty"><h2>Преподаватели не найдены</h2><p>{!query.trim() && onlyMine ? "У выбранной группы преподаватели пока не найдены" : "Никого не нашлось"}</p>
             {!!query.trim() ? <button className="btn" type="button" onClick={() => setQuery("")}>Сбросить поиск</button>
               : onlyMine && <button className="btn" type="button" onClick={() => setOnlyMine(false)}>Показать всех</button>}</div>}
           {found.rows.map(row => (
             <button className="person teacher-person" key={row.id} type="button" onClick={() => void open(row)}>
               {row.mine && <i className="mine-mark" />}
-              <span><b>{row.name}</b><div className="muted">{row.detail}</div></span>
+              <span className="teacher-person-copy"><b>{row.name}</b><span className="muted">{row.detail}</span></span><Icon name="right" size={20} />
             </button>
           ))}
         </div>
@@ -654,24 +660,27 @@ function HomeworkAttachments({ files }: { files: HomeworkFile[] }) {
 
 export function HomeworkPage() {
   const app = useApp();
+  const { controller, refresh, readLocal, field, draft, busy, note } = useHomeworkDraft();
+  const { subject, text, share, nth, sharedDeadline, pending } = draft;
+  const setNote = (value: string) => { controller.note = value; refresh(); };
   const [editorOpen, setEditorOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const location = useLocation();
+  const navigate = useNavigate();
   const chosenSubject = new URLSearchParams(location.search).get("subject");
   const chosenId = new URLSearchParams(location.search).get("id");
-  const [subject, setSubject] = useState(() => new URLSearchParams(window.location.search).get("subject") || "");
-  const [text, setText] = useState("");
-  const [share, setShare] = useState(false);
-  const [nth,setNth]=useState(1);
-  const [sharedDeadline,setSharedDeadline]=useState("");
-  const [pending, setPending] = useState<{ file: File; kind: "photo" | "document" }[]>([]);
   const [communityId, setCommunityId] = useState("");
   const [copies, setCopies] = useState<GroupHomeworkCopy[]>([]);
   const [copiesLoading, setCopiesLoading] = useState(false);
-  const [note, setNote] = useState("");
   const [copiesFailed, setCopiesFailed] = useState(false);
   const [copiesRetry, setCopiesRetry] = useState(0);
   const subjects = [...new Set(app.lessons.map(lesson => lesson.subjectRaw))];
-  useEffect(() => { if (!app.session?.authenticated) setShare(false); }, [app.session?.authenticated]);
+  const visibleCopies = copies.filter(item => !chosenSubject || sameSubject(item.title, chosenSubject));
+  const visibleHomework = app.homework.filter(item => !chosenSubject || sameSubject(item.subject, chosenSubject));
+  useEffect(() => { controller.preload(chosenSubject || ""); refresh(); }, [controller, chosenSubject, app.groupId, app.session?.authenticated, app.session?.user?.userId]);
+  useEffect(() => { setDiscardOpen(false); setEditorOpen(false); }, [app.groupId, app.session?.authenticated, app.session?.user?.userId]);
   useEffect(() => {
     let stop = false;
     setCopiesLoading(!!app.session?.authenticated && !!app.groupId);
@@ -695,6 +704,7 @@ export function HomeworkPage() {
     return () => { stop = true; };
   }, [app.session, app.groupId, copiesRetry]);
   function addPending(list: FileList | null, kind: "photo" | "document") {
+    if (controller.busy) return;
     const file = list?.[0];
     if (!file) return;
     if (pending.length >= HOMEWORK_FILE_LIMIT) {
@@ -703,7 +713,7 @@ export function HomeworkPage() {
     }
     try {
       checkHomeworkFile(kind, file.name, file.size);
-      setPending(current => current.length >= HOMEWORK_FILE_LIMIT ? current : [...current, { file, kind }]);
+      field("pending", [...pending, { file, kind }]);
       setNote("");
     } catch (error) {
       const code = error instanceof Error ? error.message : "";
@@ -712,56 +722,53 @@ export function HomeworkPage() {
   }
   async function add(event: FormEvent) {
     event.preventDefault();
-    const title = subject.trim();
-    const body = text.trim();
-    if (!title || !body) return;
-    const files: HomeworkFile[] = [];
-    const stored: string[] = [];
+    if (controller.busy) return;
+    const validation = validateHomeworkDraft(controller.draft);
+    if (validation) { setNote(validation); return; }
+    const ticket = controller.begin();
+    if (!ticket) return;
+    refresh();
+    setDiscardOpen(false);
     try {
-      for (const item of pending.slice(0, HOMEWORK_FILE_LIMIT)) {
-        const name = checkHomeworkFile(item.kind, item.file.name, item.file.size);
-        const blob = item.kind === "photo" ? await compressHomeworkPhoto(item.file) : item.file;
-        const id = crypto.randomUUID();
-        await putHomeworkBlob(id, blob);
-        if (app.session?.authenticated) {
+      const { outcome, success } = await runHomeworkSave(ticket, {
+        signedIn: !!app.session?.authenticated, communityId,
+        isCurrent: value => controller.current(value),
+        prepare: async item => {
+          const name = checkHomeworkFile(item.kind, item.file.name, item.file.size);
+          const blob = item.kind === "photo" ? await compressHomeworkPhoto(item.file) : item.file;
+          return { blob, name: item.kind === "photo" ? name.replace(/\.[^.]+$/, ".jpg") : name,
+            mime: item.kind === "photo" ? "image/jpeg" : item.file.type || "application/octet-stream" };
+        },
+        put: putHomeworkBlob, remove: deleteHomeworkBlob, readLocal, saveLocal: app.saveHomework,
+        upload: async item => {
           const data = new FormData();
-          data.append("file", blob, name);
+          data.append("file", item.blob, item.file.name);
           if (app.groupId) data.append("groupId", app.groupId);
           const uploaded = await fetch("/web-api/files", { method: "POST", credentials: "same-origin", body: data });
-          if (uploaded.status === 413) {
-            await deleteHomeworkBlob(id);
-            throw new Error("quota");
-          }
-        }
-        stored.push(id);
-        files.push({ id, kind: item.kind, name: item.kind === "photo" ? name.replace(/\.[^.]+$/, ".jpg") : name, mime: item.kind === "photo" ? "image/jpeg" : item.file.type || "application/octet-stream" });
+          checkHomeworkUpload(uploaded);
+        },
+        share: async (title, body, deadline) => { await api.shareHomework(communityId, title, body, deadline); },
+      });
+      if (!controller.current(ticket)) return;
+      controller.finish(ticket, outcome.note || "Задание сохранено на этом устройстве", success);
+      refresh();
+      if (mounted.current && success) setEditorOpen(false);
+      if (outcome.sent && mounted.current) {
+        try {
+          const loaded = await api.groupHomework(communityId);
+          if (mounted.current && controller.sameScope(ticket)) setCopies(loaded);
+        } catch { if (mounted.current && controller.sameScope(ticket)) setCopiesFailed(true); }
       }
     } catch (error) {
-      await Promise.all(stored.map(id => deleteHomeworkBlob(id).catch(() => undefined)));
-      const code = error instanceof Error ? error.message : "";
-      setNote(code === "quota" ? "Превышен лимит трафика." : code === "big" ? "Файл слишком большой" : code === "full" ? "Можно приложить не больше шести файлов" : "Такой файл приложить нельзя");
-      return;
-    }
-    const outcome = await saveEditorHomework(
-      { subject: title, text: body, share, isNew: true },
-      !!app.session?.authenticated,
-      communityId,
-      (subject, text) => { app.saveHomework({ id: crypto.randomUUID(), subject, text, done: false, created: new Date().toISOString(), targetNthOccurrence:nth, files }); },
-      async (subject, text) => { await api.shareHomework(communityId, subject, text, sharedDeadline ? new Date(sharedDeadline).toISOString() : null); },
-    );
-    setText("");
-    setPending([]);
-    setNote(outcome.note);
-    setEditorOpen(false);
-    if (outcome.sent) {
-      try { setCopies(await api.groupHomework(communityId)); }
-      catch { setCopies([]); setCopiesFailed(true); }
+      controller.finish(ticket, homeworkSaveError(error, ticket.operation.localSaved), false);
+      refresh();
     }
   }
   async function toggleCopy(item: GroupHomeworkCopy) {
     if (!communityId) return;
     const actor = app.session?.user?.userId ?? "";
     if (!actor) return;
+    const currentScope = controller.captureScope();
     const next = completeGroupCopy(
       app.homework.map(row => ({ id: row.id, done: row.done })),
       copies.map(row => ({ homeworkId: row.homeworkId, memberId: actor, completed: row.completed })),
@@ -772,69 +779,77 @@ export function HomeworkPage() {
     if (next.local.some((row, index) => row.done !== app.homework[index]?.done)) return;
     try {
       const saved = await api.completeHomework(communityId, item.homeworkId, next.copies.find(row => row.homeworkId === item.homeworkId)?.completed ?? !item.completed, item.completionRevision);
+      if (!mounted.current || !currentScope()) return;
       const completed = next.copies.find(row => row.homeworkId === item.homeworkId && row.memberId === actor)?.completed ?? saved.completed;
       setCopies(list => list.map(row => row.homeworkId === item.homeworkId ? { ...row, completed, completionRevision: saved.revision } : row));
     }
-    catch { setNote("Отметку у общей домашки сохранить не получилось"); }
+    catch { if (mounted.current && currentScope()) setNote("Отметку у общей домашки сохранить не получилось"); }
   }
   return (
-    <section className="page">
-      <Head title="Домашка" text={note || "Хранится на этом устройстве. Галочка отправляет ту же домашку всей группе."}>
-        <button className="btn primary" type="button" aria-expanded={editorOpen} aria-controls="homework-editor"
-          onClick={() => setEditorOpen(value => !value)}>{editorOpen ? "Скрыть редактор" : "Добавить задание"}</button>
+    <section className="page homework-page">
+      <Head title="Домашка" text="Хранится на этом устройстве. Галочка отправляет ту же домашку всей группе.">
+        <button className="btn primary" type="button" disabled={busy} aria-expanded={editorOpen} aria-controls="homework-editor"
+          onClick={() => setEditorOpen(value => !value)}>{editorOpen ? "Скрыть редактор" : controller.dirty ? "Продолжить задание" : "Добавить задание"}</button>
       </Head>
+      <p id="homework-save-status" className="muted" role="status" aria-live="polite" aria-atomic="true">{note || (controller.dirty ? "Черновик сохранится при переходе в другой раздел. При перезагрузке страницы он будет потерян." : "")}</p>
+      {chosenSubject && <div className="row homework-filter" role="region" aria-label="Фильтр домашки"><span>Предмет: <strong>{chosenSubject}</strong></span><button className="btn" type="button" onClick={() => { const query = new URLSearchParams(location.search); query.delete("subject"); navigate({ pathname: location.pathname, search: query.toString() }); }}>Показать все предметы</button></div>}
       <div className="section-overview">
         <strong>Мои задания: {app.homework.length} · Общие: {copiesLoading ? "загрузка…" : copies.length}</strong>
         <span>Выполнено: {app.homework.filter(item => item.done).length + copies.filter(item => item.completed).length}</span>
       </div>
-      <form id="homework-editor" className="card stack homework-compose" hidden={!editorOpen} onSubmit={event => void add(event)}>
-        <label className="field">Предмет<input list="subjects" value={subject} onChange={event => setSubject(event.target.value)} /></label>
+      <form id="homework-editor" className="card stack homework-compose" hidden={!editorOpen} aria-busy={busy} aria-describedby="homework-save-status" onInvalid={() => setNote(validateHomeworkDraft(controller.draft) || "Проверьте поля задания")} onSubmit={event => void add(event)}>
+        <fieldset className="stack homework-fields" disabled={busy}>
+        <legend className="sr">Новое задание</legend>
+        <div className="homework-editor-group"><h2>Задание</h2><label className="field">Предмет (обязательно)<input required list="subjects" value={subject} onChange={event => field("subject", event.target.value)} /></label>
         <datalist id="subjects">{subjects.map(item => <option key={item} value={item} />)}</datalist>
-        <label className="field">Задание<textarea value={text} onChange={event => setText(event.target.value)} /></label>
-        <div className="row">
+        <label className="field">Задание (обязательно)<textarea required value={text} onChange={event => field("text", event.target.value)} /></label>
+        </div><div className="homework-editor-group"><h2>Вложения <span className="muted">{pending.length} / {HOMEWORK_FILE_LIMIT}</span></h2><div className="row">
           <label className="btn" style={{ position: "relative" }}>Фото<input className="sr" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={event => { addPending(event.target.files, "photo"); event.target.value = ""; }} /></label>
           <label className="btn" style={{ position: "relative" }}>Документ<input className="sr" type="file" accept=".pdf,.txt,.csv,.rtf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.zip" onChange={event => { addPending(event.target.files, "document"); event.target.value = ""; }} /></label>
         </div>
         {pending.map((item, index) => (
           <span className="chip" style={{ alignSelf: "flex-start" }} key={`${item.file.name}-${item.file.size}-${index}`}>
             {item.file.name}
-            <button type="button" style={{ border: 0, background: "transparent", color: "inherit", padding: 0 }} onClick={() => setPending(current => current.filter((_, at) => at !== index))}>Убрать</button>
+            <button type="button" aria-label={`Убрать файл ${item.file.name}`} style={{ border: 0, background: "transparent", color: "inherit", padding: 0 }} onClick={() => field("pending", pending.filter((_, at) => at !== index))}>Убрать</button>
           </span>
         ))}
-        <label className="check">
-          <input type="checkbox" checked={share} disabled={!app.session?.authenticated} onChange={event => setShare(event.target.checked)} />
+        </div><div className="homework-editor-group"><h2>Срок и получатели</h2><label className="check">
+          <input type="checkbox" checked={share} disabled={!app.session?.authenticated} onChange={event => field("share", event.target.checked)} />
           <span>Дублировать всей группе<span className="muted">{app.session?.authenticated ? " — одна и та же домашка появится у всех участников" : " — войдите в аккаунт, чтобы отправить группе"}</span></span>
         </label>
-        <label className="field">К следующему занятию по предмету<select value={nth} onChange={event=>setNth(Number(event.target.value))}>{Array.from({length:10},(_,i)=><option value={i+1} key={i+1}>{i+1}-е занятие</option>)}</select></label>
-        {share && <label className="field">Срок общей домашки<input type="datetime-local" value={sharedDeadline} onChange={event=>setSharedDeadline(event.target.value)} /></label>}
-        <button className="btn primary" type="submit">Сохранить</button>
+        <label className="field">К следующему занятию по предмету<select value={nth} onChange={event=>field("nth", Number(event.target.value))}>{Array.from({length:10},(_,i)=><option value={i+1} key={i+1}>{i+1}-е занятие</option>)}</select></label>
+        {share && <label className="field">Срок общей домашки<input type="datetime-local" value={sharedDeadline} onChange={event=>field("sharedDeadline", event.target.value)} /></label>}
+        </div><div className="homework-editor-footer"><span className="muted">{pending.length ? `Вложений: ${pending.length}` : "Без вложений"}</span><button className="btn" type="button" disabled={!controller.dirty} onClick={() => setDiscardOpen(true)}>Очистить черновик</button><button className="btn primary" type="submit">{busy ? "Сохраняем…" : "Сохранить"}</button></div>
+        {discardOpen && <div className="banner stack" role="group" aria-label="Очистка черновика"><p>Очистить введённые поля и выбранные файлы? Уже сохранённое задание останется на устройстве.</p><div className="row"><button className="btn" type="button" onClick={() => setDiscardOpen(false)}>Продолжить редактирование</button><button className="btn" type="button" onClick={() => { controller.clear(chosenSubject || ""); refresh(); setDiscardOpen(false); }}>Очистить</button></div></div>}
+        </fieldset>
       </form>
-      {!copiesLoading && !copiesFailed && app.homework.length === 0 && copies.length === 0 && !editorOpen &&
+      {chosenSubject && !copiesLoading && !copiesFailed && visibleHomework.length === 0 && visibleCopies.length === 0 && <div className="card empty">По предмету «{chosenSubject}» заданий нет. Вы можете добавить задание или показать все предметы.</div>}
+      {!chosenSubject && !copiesLoading && !copiesFailed && app.homework.length === 0 && copies.length === 0 && !editorOpen &&
         <div className="card empty">Заданий пока нет. <button className="btn" type="button" onClick={() => setEditorOpen(true)}>Добавить первое</button></div>}
       {copiesFailed && <div className="card empty"><p>Общая домашка не загрузилась. Проверьте сеть и попробуйте ещё раз.</p><button className="btn primary" type="button" onClick={() => setCopiesRetry(value => value + 1)}>Повторить</button></div>}
-      {copies.length > 0 && <h2 className="section-list-title">Всей группе <span className="chip">{copies.length}</span></h2>}
+      {visibleCopies.length > 0 && <h2 className="section-list-title">Всей группе <span className="chip">{visibleCopies.length}</span></h2>}
       <div className="stack" style={{ marginTop: copies.length > 0 ? 12 : 0 }}>
-        {copies.filter(item=>!chosenSubject||sameSubject(item.title,chosenSubject)).map(item => (
-          <article className="card" key={item.homeworkId}>
+        {visibleCopies.map(item => (
+          <article className={"card homework-task" + (item.completed ? " homework-completed" : "")} key={item.homeworkId}>
             <div className="row" style={{ justifyContent: "space-between" }}>
-              <span className="row"><b>{item.title}</b><span className="chip">Группа</span></span>
+              <span className="row"><b>{item.title}</b><span className="chip">{item.completed ? "Выполнено" : "Группа"}</span></span>
               <button className="btn" type="button" onClick={() => void toggleCopy(item)}>{item.completed ? "Снова открыть" : "Сделано"}</button>
             </div>
-            <p className={item.completed ? "done-title" : ""}>{item.body}</p><p className="muted">{item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p>
+            <p className={item.completed ? "done-title" : ""}>{item.body}</p><p className="muted homework-deadline">Срок: {item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p>
           </article>
         ))}
       </div>
-      {app.homework.length > 0 && <h2 className="section-list-title">Мои задания <span className="chip">{app.homework.length}</span></h2>}
+      {visibleHomework.length > 0 && <h2 className="section-list-title">Мои задания <span className="chip">{visibleHomework.length}</span></h2>}
       <div className="stack" style={{ marginTop: 12 }}>
-        {app.homework.filter(item => !chosenSubject || sameSubject(item.subject, chosenSubject)).map(item => (
-          <article className="card" id={item.id} key={item.id} aria-current={chosenId === item.id ? "true" : undefined}>
+        {visibleHomework.map(item => (
+          <article className={"card homework-task" + (item.done ? " homework-completed" : "")} id={item.id} key={item.id} aria-current={chosenId === item.id ? "true" : undefined}>
             <div className="row" style={{ justifyContent: "space-between" }}>
-              <b>{item.subject}</b>
+              <span className="row"><b>{item.subject}</b><span className="chip">{item.done ? "Выполнено" : "Личное"}</span></span>
               <button className="btn" type="button" onClick={() => app.saveHomework({ ...item, done: !item.done })}>{item.done ? "Снова открыть" : "Сделано"}</button>
             </div>
-            <p className={item.done ? "done-title" : ""}>{item.text}</p><p className="muted">{personalHomeworkDue(item,visibleLessons(app.lessons,app.subgroups[app.groupId]||{}),api.readCache().lessons[app.groupId]?.period||app.catalog?.period||{start:isoDay(app.date),weekCount:2,title:"",timeZone:""},app.invert)?.toLocaleDateString("ru-RU") || "Без срока"}</p>
+            <p className={item.done ? "done-title" : ""}>{item.text}</p><p className="muted homework-deadline">Срок: {personalHomeworkDue(item,visibleLessons(app.lessons,app.subgroups[app.groupId]||{}),api.readCache().lessons[app.groupId]?.period||app.catalog?.period||{start:isoDay(app.date),weekCount:2,title:"",timeZone:""},app.invert)?.toLocaleDateString("ru-RU") || "Без срока"}</p>
             <HomeworkAttachments files={item.files || []} />
-            <div className="row">
+            <div className="row homework-task-footer">
               {app.lessons.some(lesson => sameSubject(lesson.subjectRaw, item.subject)) && <span className="chip">есть в расписании</span>}
               <ShareMenu card={homeworkCard(item)} />
               <Link className="btn quiet" to={`/group?homework=${encodeURIComponent(item.text)}&subject=${encodeURIComponent(item.subject)}&date=${isoDay(app.date)}`}>Обсудить задание</Link>
@@ -1736,7 +1751,7 @@ export function SettingsPage() {
     } finally { setBusy(false); }
   }
   return (
-    <section className="page">
+    <section className="page settings-page">
       <Head title={section ? sections.find(item => item.id === section)?.title || "Настройки" : "Настройки"}
         text={section ? undefined : "Неофициальное приложение для студентов БГТУ «Военмех»."}>
         {section && <button className="btn" type="button" onClick={() => navigate("/settings")}>Все настройки</button>}
@@ -1744,15 +1759,17 @@ export function SettingsPage() {
       <div className={section ? "settings-space" : ""}>
       {section && <nav className="settings-rail" aria-label="Категории настроек">{sections.map(item=><button type="button" className={section===item.id?"settings-overview-row active":"settings-overview-row"} key={item.id} onClick={()=>navigate(`/settings?section=${item.id}`)} aria-current={section===item.id?"page":undefined}><Icon name={item.icon} /><span className="settings-overview-copy"><strong>{item.title}</strong><span>{item.summary}</span></span></button>)}</nav>}
       {!section ? <div className="settings-overview" aria-label="Разделы настроек">
-        {sections.map((item, index) => <Fragment key={item.id}>
-          {(index === 1 || index === 4) && <h2 className="settings-overview-title">{index === 1 ? "Основное" : "Сервис"}</h2>}
-          <button className={index === 0 ? "settings-overview-row account" : "settings-overview-row"}
-            type="button" onClick={() => navigate(`/settings?section=${item.id}`)}>
-            <span className="settings-overview-icon"><Icon name={item.icon} size={20} /></span>
-            <span className="settings-overview-copy"><strong>{item.title}</strong><span>{item.summary}</span></span>
-            <Icon name="right" size={20} />
-          </button>
-        </Fragment>)}
+        {[[0], [1, 2, 3], [4, 5]].map((indices, groupIndex) => <div className="settings-category" key={groupIndex}>
+          <h2 className="settings-overview-title">{["Профиль", "Основное", "Сервис"][groupIndex]}</h2>
+          <div className="card settings-category-card">{indices.map(index => {
+            const item = sections[index];
+            return <button className="settings-overview-row" key={item.id} type="button" onClick={() => navigate(`/settings?section=${item.id}`)}>
+              <span className="settings-overview-icon"><Icon name={item.icon} size={20} /></span>
+              <span className="settings-overview-copy"><strong>{item.title}</strong><span>{item.summary}</span></span>
+              <Icon name="right" size={20} />
+            </button>;
+          })}</div>
+        </div>)}
       </div> : <div className="stack settings-detail">
         {section === "study" && <article className="card">
           <h2>Группа</h2>

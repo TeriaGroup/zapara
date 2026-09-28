@@ -19,7 +19,7 @@
     </Style>
   </UserControl.Styles>
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-    <Grid Name="SettingsColumns" Margin="24,20" ColumnDefinitions="*" ColumnSpacing="20" MaxWidth="1160" HorizontalAlignment="Stretch"><StackPanel Name="SettingsOverview" Spacing="2" IsVisible="{Binding ShowOverview}"><TextBlock Classes="display" Text="Настройки" /><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="account" MinHeight="64">
+    <Grid Name="SettingsColumns" Margin="24,20" ColumnDefinitions="*" ColumnSpacing="20" MaxWidth="960" HorizontalAlignment="Stretch"><StackPanel Name="SettingsOverview" Spacing="6" IsVisible="{Binding ShowOverview}"><TextBlock Classes="display" Text="Настройки" /><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="account" MinHeight="64">
           <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
             <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center">
               <c:Icon Data="{StaticResource Icon.Users}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -59,8 +59,10 @@
               <TextBlock Classes="muted caption" Text="Поддержка и документы" />
             </StackPanel>
           </StackPanel>
-        </Button></StackPanel><StackPanel Name="SettingsDetails" Spacing="8" IsVisible="{Binding !ShowOverview}">      <TextBlock Classes="display" Text="{Binding PanelTitle}" />
-<Button Classes="ghost" Content="Назад к настройкам" Command="{Binding BackToOverviewCommand}" IsVisible="{Binding !ShowOverview}" HorizontalAlignment="Left" />
+        </Button></StackPanel><StackPanel Name="SettingsDetails" Spacing="12" IsVisible="{Binding !ShowOverview}">      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+  <TextBlock Classes="display" Text="{Binding PanelTitle}" TextWrapping="Wrap" VerticalAlignment="Center" />
+  <Button Grid.Column="1" Classes="ghost" Content="Назад к настройкам" Command="{Binding BackToOverviewCommand}" IsVisible="{Binding !ShowOverview}" HorizontalAlignment="Right" MinHeight="48" />
+</Grid>
 <StackPanel Spacing="10" IsVisible="{Binding ShowAccountPanel}">
         <account:AccountPanelView DataContext="{Binding AccountPanel}" />
       </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowStudyPanel}">

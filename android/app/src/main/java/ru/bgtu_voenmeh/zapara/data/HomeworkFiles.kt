@@ -111,9 +111,10 @@ class HomeworkFileStore(private val root: File) {
 
     fun commit(draft: String, homeworkId: Long, drop: Set<String>) = synchronized(gate) {
         val dir = itemDir(homeworkId)
-        val kept = readIndex(dir).filter { it.id !in drop }
+        val kept = readIndex(dir).filter { it.id !in drop }.distinctBy { it.id }
         drop.forEach { id -> inside(dir, id)?.takeIf { it.isFile }?.delete() }
-        val staged = readIndex(draftDir(draft)).filter { it.id !in drop }
+        val keptIds = kept.map { it.id }.toSet()
+        val staged = readIndex(draftDir(draft)).filter { it.id !in drop && it.id !in keptIds }.distinctBy { it.id }
         val room = (HomeworkFileRules.MAX_FILES - kept.size).coerceAtLeast(0)
         val moving = staged.take(room)
         dir.mkdirs()

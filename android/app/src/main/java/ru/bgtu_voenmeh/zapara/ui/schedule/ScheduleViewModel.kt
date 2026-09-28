@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,7 +31,8 @@ import ru.bgtu_voenmeh.zapara.ui.components.ToastKind
 import ru.bgtu_voenmeh.zapara.ui.homework.fileMessage
 import ru.bgtu_voenmeh.zapara.ui.friends.FriendPalette
 import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEditorState
-import ru.bgtu_voenmeh.zapara.ui.homework.shareSavedHomework
+import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEditorWork
+import ru.bgtu_voenmeh.zapara.ui.homework.saveHomeworkEditor
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -128,22 +130,28 @@ class ScheduleViewModel(
                 s.copy(homeworkEditor = s.homeworkEditor?.withText(event.text))
             }
             is ScheduleEvent.HomeworkEditorShare -> mutable.update { s ->
-                s.copy(homeworkEditor = s.homeworkEditor?.copy(share = event.on))
+                s.copy(homeworkEditor = s.homeworkEditor?.withShare(event.on))
             }
             ScheduleEvent.HomeworkEditorInc -> mutable.update { s -> s.copy(homeworkEditor = s.homeworkEditor?.inc()) }
             ScheduleEvent.HomeworkEditorDec -> mutable.update { s -> s.copy(homeworkEditor = s.homeworkEditor?.dec()) }
             ScheduleEvent.RecalculateHomework -> viewModelScope.launch {
                 val editor=mutable.value.homeworkEditor ?: return@launch
+                if (editor.busy) return@launch
+                mutable.update { it.copy(homeworkEditor = editor.copy(work = HomeworkEditorWork.Recalculating, error = null)) }
+                try {
                 val prepared=withContext(Dispatchers.IO) {
                     val prefs=container.repo.settings(); val gid=prefs.myGroupId.orEmpty()
                     val context=SchedCtx(gid,prefs.periodStart,prefs.weekCount,prefs.parityInvert)
-                    val lessons=container.ownLessons(); val existing=editor.id?.let(container.homework::getById)
+                    val lessons=container.ownLessons(); val existing=(editor.persistedId ?: editor.id)?.let(container.homework::getById)
                     val anchor=existing?.createdAt ?: editor.creationAnchor(container.clock().toLocalDate())
                     val norm=ru.bgtu_voenmeh.zapara.data.Parity.normalizeSubject(editor.subjectRaw)
                     val due:(Int,String)->LocalDate? = { n,_ -> container.homework.dueDateIn({ g,dow,parity -> lessons.filter { it.groupId==g && it.dayOfWeek==dow && (it.parity==0 || it.parity==parity) } },context,norm,anchor,n) }
                     due to gid
                 }
-                mutable.update { state -> if(state.homeworkEditor?.draft==editor.draft) state.copy(homeworkEditor=editor.copy(dueFor=prepared.first,scheduleGroupId=prepared.second,sourceChanged=false)) else state }
+                mutable.update { state -> if(state.homeworkEditor?.draft==editor.draft) state.copy(homeworkEditor=state.homeworkEditor.copy(dueFor=prepared.first,scheduleGroupId=prepared.second,sourceChanged=false)) else state }
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { homeworkEditorError(editor.draft, container.app.getString(R.string.review_homework_source_changed)) }
+                finally { finishHomeworkEditorWork(editor.draft) }
             }
             ScheduleEvent.HomeworkEditorSave -> saveHomework()
             ScheduleEvent.HomeworkEditorCancel -> cancelHomework()
@@ -500,6 +508,7 @@ class ScheduleViewModel(
     }
 
     private fun openExistingHomework(row: HomeworkRowUi) {
+        if (mutable.value.homeworkEditor != null) return
         if (row.sharedId != null) {
             val current=projection.shared.rows.firstOrNull { it.homeworkId==row.sharedId } ?: return
             mutable.update { it.copy(subjectHomework=null,sharedDetail=sharedRow(current)) }
@@ -508,6 +517,7 @@ class ScheduleViewModel(
         viewModelScope.launch {
             val hw = withContext(Dispatchers.IO) { container.homework.all().firstOrNull { it.id == row.id } } ?: return@launch
             val files = withContext(Dispatchers.IO) { container.homeworkFiles.list(hw.id) }
+            if (mutable.value.homeworkEditor != null) return@launch
             val lesson = mutable.value.subjectHomework
             val context = ctx
             val snapshot = allLessons
@@ -532,6 +542,7 @@ class ScheduleViewModel(
     }
 
     private fun openHomework(lesson: LessonUi) {
+        if (mutable.value.homeworkEditor != null) return
         val c = ctx
         val anchor = mutable.value.selected
         val snapshotLessons = allLessons
@@ -570,39 +581,40 @@ class ScheduleViewModel(
         val editor = mutable.value.homeworkEditor ?: return
         if (!editor.canSave) return
         savingHomework = true
-        mutable.update { it.copy(homeworkEditor = null) }
+        mutable.update { it.copy(homeworkEditor = editor.copy(work = HomeworkEditorWork.Saving, error = null)) }
         viewModelScope.launch {
             try {
                 val outcome = writes.withLock {
                     withContext(Dispatchers.IO) {
-                        shareSavedHomework(container, editor) {
-                            val id = if (editor.id == null) container.homework.addHomework(editor.subjectRaw, editor.text.trim(), editor.n, editor.creationAnchor(container.clock().toLocalDate()))
-                            else {
-                                container.homework.updateHomework(editor.id, editor.text.trim(), editor.n)
-                                editor.id
-                            }
-                            if (editor.draft.isNotEmpty()) container.homeworkFiles.commit(editor.draft, id, editor.removed)
+                        saveHomeworkEditor(container, editor) { progress ->
+                            mutable.update { current -> if (current.homeworkEditor?.draft == editor.draft)
+                                current.copy(homeworkEditor = progress.copy(work = HomeworkEditorWork.Saving)) else current }
                         }
                     }
                 }
+                mutable.update { current -> if (current.homeworkEditor?.draft == editor.draft) current.copy(homeworkEditor = null) else current }
                 val note = outcome.note.ifBlank { container.app.getString(R.string.hw_saved) }
                 container.toasts.show(note, ToastKind.Ok)
                 container.events.emit(AppEvent.PersonalizationChanged)
             } catch (e: CancellationException) {
-                mutable.update { cur -> if (cur.homeworkEditor == null) cur.copy(homeworkEditor = editor) else cur }
                 throw e
             } catch (e: Exception) {
                 android.util.Log.w("ZaparaSchedule", "homework", e)
-                mutable.update { cur -> if (cur.homeworkEditor == null) cur.copy(homeworkEditor = editor.copy(sourceChanged=e is ru.bgtu_voenmeh.zapara.ui.homework.HomeworkScheduleChanged)) else cur }
-                container.toasts.show(container.app.getString(if (e is ru.bgtu_voenmeh.zapara.ui.homework.HomeworkScheduleChanged) R.string.review_homework_source_changed else R.string.homework_save_failed), ToastKind.Bad)
+                val changed = e is ru.bgtu_voenmeh.zapara.ui.homework.HomeworkScheduleChanged
+                val message = container.app.getString(if (changed) R.string.review_homework_source_changed
+                    else if (mutable.value.homeworkEditor?.persistedId != null) R.string.homework_ux_partial_save_failed else R.string.homework_ux_save_failed)
+                mutable.update { cur -> if (cur.homeworkEditor?.draft == editor.draft) cur.copy(homeworkEditor = cur.homeworkEditor.copy(error = message,
+                    sourceChanged = cur.homeworkEditor.sourceChanged || changed)) else cur }
             } finally {
                 savingHomework = false
+                finishHomeworkEditorWork(editor.draft)
             }
         }
     }
 
     private fun cancelHomework() {
         val editor = mutable.value.homeworkEditor
+        if (editor?.busy == true) return
         mutable.update { it.copy(homeworkEditor = null) }
         if (editor != null && editor.draft.isNotEmpty()) {
             viewModelScope.launch(Dispatchers.IO) { container.homeworkFiles.discard(editor.draft) }
@@ -611,40 +623,60 @@ class ScheduleViewModel(
 
     private fun attachHomework(kind: String, uri: Uri) {
         val editor = mutable.value.homeworkEditor ?: return
-        if (editor.draft.isEmpty()) return
+        if (editor.draft.isEmpty() || editor.busy) return
+        mutable.update { it.copy(homeworkEditor = editor.copy(work = HomeworkEditorWork.Attachment, error = null)) }
         viewModelScope.launch {
+            var imported: ru.bgtu_voenmeh.zapara.data.HomeworkStoredFile? = null
+            var adopted = false
             try {
-                val saved = withContext(Dispatchers.IO) {
-                    container.homeworkFiles.importUri(container.app, uri, editor.draft, kind, editor.files.count { !it.staged })
-                }
+                val saved = writes.withLock { withContext(Dispatchers.IO) {
+                    container.homeworkFiles.importUri(container.app, uri, editor.draft, kind, editor.files.count { !it.staged }).also { imported = it }
+                } }
                 mutable.update { state ->
                     val current = state.homeworkEditor?.takeIf { it.draft == editor.draft } ?: return@update state
                     state.copy(homeworkEditor = current.copy(files = current.files + saved))
                 }
+                adopted = mutable.value.homeworkEditor?.let { it.draft == editor.draft && it.files.any { file -> file.id == saved.id } } == true
             } catch (e: HomeworkFileException) {
-                container.toasts.show(container.app.getString(fileMessage(e.code)), ToastKind.Bad)
+                homeworkEditorError(editor.draft, container.app.getString(fileMessage(e.code)))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 android.util.Log.w("ZaparaSchedule", "attach", e)
-                container.toasts.show(container.app.getString(R.string.hw_attach_bad), ToastKind.Bad)
+                homeworkEditorError(editor.draft, container.app.getString(R.string.hw_attach_bad))
+            } finally {
+                if (!adopted) imported?.let { file -> withContext(NonCancellable + Dispatchers.IO) {
+                    runCatching { container.homeworkFiles.discardFile(editor.draft, file.id) }
+                } }
+                finishHomeworkEditorWork(editor.draft)
             }
         }
     }
 
     private fun removeHomeworkFile(id: String) {
         val editor = mutable.value.homeworkEditor ?: return
+        if (editor.busy) return
         val file = editor.files.firstOrNull { it.id == id } ?: return
-        mutable.update { state ->
-            val current = state.homeworkEditor ?: return@update state
-            state.copy(homeworkEditor = current.copy(
-                files = current.files.filter { it.id != id },
-                removed = current.removed + id
-            ))
+        mutable.update { it.copy(homeworkEditor = editor.copy(work = HomeworkEditorWork.Attachment, error = null)) }
+        viewModelScope.launch {
+            try {
+                if (file.staged && editor.draft.isNotEmpty()) writes.withLock { withContext(Dispatchers.IO) { container.homeworkFiles.discardFile(editor.draft, id) } }
+                mutable.update { state ->
+                    val current = state.homeworkEditor?.takeIf { it.draft == editor.draft } ?: return@update state
+                    state.copy(homeworkEditor = current.copy(files = current.files.filter { it.id != id }, removed = current.removed + id))
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { homeworkEditorError(editor.draft, container.app.getString(R.string.hw_attach_bad)) }
+            finally { finishHomeworkEditorWork(editor.draft) }
         }
-        if (file.staged && editor.draft.isNotEmpty()) {
-            viewModelScope.launch(Dispatchers.IO) { container.homeworkFiles.discardFile(editor.draft, id) }
-        }
+    }
+
+    private fun finishHomeworkEditorWork(draft: String) {
+        mutable.update { current -> if (current.homeworkEditor?.draft == draft) current.copy(homeworkEditor = current.homeworkEditor.copy(work = HomeworkEditorWork.Idle)) else current }
+    }
+
+    private fun homeworkEditorError(draft: String, message: String) {
+        mutable.update { current -> if (current.homeworkEditor?.draft == draft) current.copy(homeworkEditor = current.homeworkEditor.copy(error = message)) else current }
     }
 
     companion object {

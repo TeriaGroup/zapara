@@ -5,6 +5,9 @@ import { ChatInboxPage, PersonalChatPage } from "./chat";
 import { CommunityPage, FriendsPage, GroupPage, HomeworkPage, LegalPage, MapsPage, SchedulePage, SettingsPage, SummaryPage, TeachersPage, WeekPage } from "./pages";
 import { useReminders } from "./settings-panels";
 import { Icon, IconName } from "./icons";
+import { Sheet } from "./sheet";
+import { HomeworkDraftProvider } from "./homework-draft-context";
+import { PersonalComposerProvider } from "./personal-composer-context";
 
 const items: [string, string, IconName][] = [
   ["schedule", "Расписание", "calendar"],
@@ -83,21 +86,18 @@ function Shell() {
         </nav>
       </div>
       {menu && (
-        <div className="sheet" role="dialog" aria-modal="true" aria-label="Разделы" onClick={() => setMenu(false)}>
-          <div className="card" onClick={event => event.stopPropagation()}>
-            <div className="row"><h2>Разделы</h2><button className="btn quiet" type="button" autoFocus onClick={()=>setMenu(false)}>Закрыть</button></div>
+        <Sheet title="Разделы" onClose={() => setMenu(false)}>
             <div className="tiles">
               {([ ["Учёба", ["week", "summary", "teachers", "friends"]], ["Группа", ["group", "community"]], ["Приложение", ["settings"]] ] as [string, string[]][]).map(([label, paths]) => <section className="section-group" key={label}><h2>{label}</h2>{items.filter(([path]) => paths.includes(path)).map(([path, title, icon]) => (
                 <NavLink key={path} to={"/" + path} className="tile" onClick={() => setMenu(false)}><Icon name={icon} />{title}</NavLink>
               ))}</section>)}
             </div>
-          </div>
-        </div>
+        </Sheet>
       )}
     </div>
   );
 }
 
 export function App() {
-  return <Provider><Shell /></Provider>;
+  return <Provider><HomeworkDraftProvider><PersonalComposerProvider><Shell /></PersonalComposerProvider></HomeworkDraftProvider></Provider>;
 }

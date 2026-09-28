@@ -2,8 +2,6 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Services;
-using Vograph.Core.Services.Communities;
-using Zapara.Contracts.Communities;
 using Vograph.Desktop.Dialogs;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
@@ -109,57 +107,21 @@ public sealed partial class HomeworkViewModel : ViewModelBase
         if (dues is null) return;
         var dlg = new HomeworkDialogViewModel(subject.Display, nth => dues[Math.Clamp(nth, 1, 10) - 1]);
         dlg.Bind(App);
-        if (!await _shell.Dialogs.ShowAsync(dlg)) { App.HomeworkFiles.Discard(dlg.DraftId); return; }
-        long id = 0;
-        var signedIn = false;
-        var communityId = "";
-        string? token = null;
-        if (dlg.Share && !dlg.IsEdit && App.Communities is not null && App.CommunityAccess is not null)
+        dlg.PersistAsync = async () =>
         {
-            try
-            {
-                token = await App.CommunityAccess(CancellationToken.None);
-                signedIn = !string.IsNullOrWhiteSpace(token);
-                if (signedIn)
-                {
-                    var groupId = await RunAsync(() => App.Db.GetSettings().MyGroupId ?? "", "homework group");
-                    if (!string.IsNullOrEmpty(groupId))
-                    {
-                        var list = await App.Communities.ListAsync(token!, groupId);
-                        communityId = list.FirstOrDefault(item => !string.IsNullOrEmpty(item.Role))?.CommunityId.ToString("D") ?? "";
-                    }
-                }
-            }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception)
-            {
-                communityId = "";
-            }
-        }
-        HomeworkShareOutcome outcome;
-        try
-        {
-            outcome = await GroupHomework.SaveEditorAsync(
-                new(subject.SubjectRaw, dlg.Text.Trim(), dlg.Share, !dlg.IsEdit),
-                signedIn,
-                communityId,
+            operation.ThrowIfStale();
+            var outcome = await HomeworkShare.SaveNewAsync(
+                App, subject.SubjectRaw, dlg,
+                () => RunAsync(() => App.Db.GetSettings().MyGroupId ?? "", "homework group"),
                 async (savedSubject, savedText) =>
                 {
-                    var added = await RunAsync(() => { id = App.Homework.AddHomework(savedSubject, savedText, dlg.Nth, createdAt: today); }, "homework add");
-                    if (!added) throw new LocalHomeworkNotStoredException();
-                    await RunAsync(() => { App.HomeworkFiles.Commit(dlg.DraftId, id, dlg.Removed); }, "homework files");
-                },
-                async (savedSubject, savedText) =>
-                {
-                    await App.Communities!.ShareHomeworkAsync(token!, Guid.Parse(communityId), new HomeworkUpsert(savedSubject, savedText, 0));
+                    if (!await RunAsync(() =>
+                        HomeworkShare.SaveLocal(App, dlg, savedSubject, savedText, today), "homework add"))
+                        throw new LocalHomeworkNotStoredException();
                 });
-        }
-        catch (LocalHomeworkNotStoredException)
-        {
-            App.HomeworkFiles.Discard(dlg.DraftId);
-            return;
-        }
-        if (!string.IsNullOrEmpty(outcome.Note)) App.Toasts.Info(outcome.Note);
+            if (!string.IsNullOrEmpty(outcome.Note)) App.Toasts.Info(outcome.Note);
+        };
+        if (!await _shell.Dialogs.ShowAsync(dlg)) { App.HomeworkFiles.Discard(dlg.DraftId); return; }
         await ChangedAsync();
     }
 
@@ -176,14 +138,16 @@ public sealed partial class HomeworkViewModel : ViewModelBase
         if (stored is not null)
             foreach (var file in stored) dlg.Files.Add(new HomeworkAttachment(file.Id, file.Kind, file.Name, false));
         dlg.Bind(App);
+        dlg.SavedId = existing.Id;
+        dlg.PersistAsync = async () =>
+        {
+            operation.ThrowIfStale();
+            if (!await RunAsync(() =>
+                HomeworkShare.SaveLocal(App, dlg, existing.SubjectRawNormalized, dlg.Text.Trim(), existing.CreatedAt), "homework edit"))
+                throw new LocalHomeworkNotStoredException();
+        };
         if (!await _shell.Dialogs.ShowAsync(dlg)) { App.HomeworkFiles.Discard(dlg.DraftId); return; }
-        if (await RunAsync(() =>
-            {
-                App.Homework.UpdateHomework(existing.Id, dlg.Text.Trim(), dlg.Nth);
-                App.HomeworkFiles.Commit(dlg.DraftId, existing.Id, dlg.Removed);
-            }, "homework edit"))
-            await ChangedAsync();
-        else App.HomeworkFiles.Discard(dlg.DraftId);
+        await ChangedAsync();
     }
 
     public async Task ToggleDoneAsync(HomeworkRowViewModel row)

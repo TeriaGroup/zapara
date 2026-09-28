@@ -15,16 +15,21 @@ public abstract partial class DialogViewModelBase : ObservableObject
     public event Action<DialogViewModelBase>? Closed;
 
     [RelayCommand]
-    public void Cancel() => Close(false);
+    public virtual void Cancel() => Close(false);
+
+    /// <summary>Lifecycle invalidation, distinct from a user asking to dismiss a changed draft.</summary>
+    public virtual void Abort() => Close(false);
 
     [RelayCommand(CanExecute = nameof(CanConfirm))]
     public void Confirm()
     {
-        if (!Validate()) return;
-        Close(true);
+        if (!CanConfirm() || !Validate()) return;
+        OnConfirm();
     }
 
     protected virtual bool CanConfirm() => true;
+
+    protected virtual void OnConfirm() => Close(true);
 
     /// <summary>Last-moment check when the user presses Enter/Confirm; return false to keep the dialog open.</summary>
     protected virtual bool Validate() => true;

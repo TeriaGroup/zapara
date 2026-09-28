@@ -12,6 +12,11 @@ namespace Vograph.Desktop.Dialogs;
 public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
 {
     private readonly Func<int, DateTime?> _computeDue;
+    private string _initialText;
+    private int _initialNth;
+    private bool _initialShare;
+    private string[] _initialFiles = [];
+    private bool _aborting;
 
     public HomeworkDialogViewModel(string subjectDisplay, Func<int, DateTime?> computeDue, string? existingText = null, int existingNth = 1)
     {
@@ -21,6 +26,8 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
         SubjectLine = Loc.Current.T("hwSubject", subjectDisplay);
         _text = existingText ?? "";
         _nth = Math.Clamp(existingNth, 1, 10);
+        _initialText = _text;
+        _initialNth = _nth;
         UpdateDue();
     }
 
@@ -34,48 +41,154 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
     public Func<bool, Task<HomeworkAttachment?>>? Import { get; set; }
     public Action<string>? DiscardStaged { get; set; }
     public Action? OnTooMany { get; set; }
+    public Func<Task>? PersistAsync { get; set; }
+    public long SavedId { get; set; }
+    internal bool ShareStarted { get; set; }
 
-    [ObservableProperty] private bool _share;
+    public bool IsDirty => Text != _initialText || Nth != _initialNth || Share != _initialShare ||
+        !Files.Select(file => file.Id).Order(StringComparer.Ordinal).SequenceEqual(_initialFiles);
+    public bool CanEdit => !_aborting && !IsSaving && !IsImporting && !Completion.IsCompleted;
+    public bool CanShareNow => CanEdit && CanShare;
+    public string SaveLabel => IsSaving ? "Сохраняем…" : Loc.Current.T("save");
+
+    public void CaptureInitialState()
+    {
+        _initialText = Text;
+        _initialNth = Nth;
+        _initialShare = Share;
+        _initialFiles = Files.Select(file => file.Id).Order(StringComparer.Ordinal).ToArray();
+    }
+
+    [ObservableProperty] private bool _isSaving;
+    [ObservableProperty] private bool _isImporting;
+    [ObservableProperty] private bool _showDiscardConfirmation;
+    [ObservableProperty] private string _error = "";
+    public bool HasError => Error.Length > 0;
+    partial void OnErrorChanged(string value) => OnPropertyChanged(nameof(HasError));
+    partial void OnIsSavingChanged(bool value) => RefreshEditing();
+    partial void OnIsImportingChanged(bool value) => RefreshEditing();
+    partial void OnShowDiscardConfirmationChanged(bool value) => RefreshCanConfirm();
+
+    private void RefreshEditing()
+    {
+        OnPropertyChanged(nameof(CanEdit));
+        OnPropertyChanged(nameof(CanShareNow));
+        OnPropertyChanged(nameof(SaveLabel));
+        RefreshCanConfirm();
+        IncCommand.NotifyCanExecuteChanged();
+        DecCommand.NotifyCanExecuteChanged();
+        AddPhotoCommand.NotifyCanExecuteChanged();
+        AddDocumentCommand.NotifyCanExecuteChanged();
+        RemoveFileCommand.NotifyCanExecuteChanged();
+        DiscardCommand.NotifyCanExecuteChanged();
+        KeepEditingCommand.NotifyCanExecuteChanged();
+    }
+
+    public override void Cancel()
+    {
+        if (!CanEdit) return;
+        if (IsDirty) ShowDiscardConfirmation = true;
+        else base.Cancel();
+    }
+
+    public override void Abort()
+    {
+        _aborting = true;
+        RefreshEditing();
+        if (!IsSaving && !IsImporting) base.Abort();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanEdit))]
+    private void Discard() { if (CanEdit) base.Cancel(); }
+
+    [RelayCommand(CanExecute = nameof(CanEdit))]
+    private void KeepEditing() { if (CanEdit) ShowDiscardConfirmation = false; }
+
+    protected override void OnConfirm() => _ = SaveAsync();
+
+    public async Task SaveAsync()
+    {
+        if (!CanConfirm()) return;
+        IsSaving = true;
+        Error = "";
+        try
+        {
+            if (PersistAsync is not null) await PersistAsync();
+            Close(!_aborting);
+        }
+        catch (Exception)
+        {
+            Error = "Не удалось сохранить домашку. Текст и файлы остались здесь — попробуйте ещё раз.";
+        }
+        finally
+        {
+            IsSaving = false;
+            if (_aborting) base.Abort();
+        }
+    }
+
+    private bool _share;
+    public bool Share { get => _share; set { if (CanEdit && (!value || CanShare)) SetProperty(ref _share, value); } }
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowShareSignInHint))]
     private bool _canShare;
-    [ObservableProperty] private string _text = "";
-    [ObservableProperty] private int _nth = 1;
+    private string _text = "";
+    public string Text { get => _text; set { if (CanEdit && SetProperty(ref _text, value)) RefreshCanConfirm(); } }
+    private int _nth = 1;
+    public int Nth { get => _nth; set { if (CanEdit && SetProperty(ref _nth, Math.Clamp(value, 1, 10))) UpdateDue(); } }
     [ObservableProperty] private string _dueText = "";
 
-    partial void OnTextChanged(string value) => RefreshCanConfirm();
-    partial void OnNthChanged(int value) => UpdateDue();
     partial void OnCanShareChanged(bool value)
     {
         if (!value) Share = false;
+        OnPropertyChanged(nameof(CanShareNow));
     }
 
-    protected override bool CanConfirm() => !string.IsNullOrWhiteSpace(Text);
+    protected override bool CanConfirm() => CanEdit && !ShowDiscardConfirmation && !string.IsNullOrWhiteSpace(Text);
 
-    [RelayCommand] private void Inc() => Nth = Math.Min(10, Nth + 1);
-    [RelayCommand] private void Dec() => Nth = Math.Max(1, Nth - 1);
+    [RelayCommand(CanExecute = nameof(CanEdit))] private void Inc() => Nth = Math.Min(10, Nth + 1);
+    [RelayCommand(CanExecute = nameof(CanEdit))] private void Dec() => Nth = Math.Max(1, Nth - 1);
 
-    [RelayCommand] private Task AddPhoto() => ImportOne(true);
-    [RelayCommand] private Task AddDocument() => ImportOne(false);
+    [RelayCommand(CanExecute = nameof(CanEdit))] private Task AddPhoto() => ImportOne(true);
+    [RelayCommand(CanExecute = nameof(CanEdit))] private Task AddDocument() => ImportOne(false);
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanEdit))]
     private void RemoveFile(HomeworkAttachment file)
     {
+        if (!CanEdit) return;
         if (file.Staged) DiscardStaged?.Invoke(file.Id);
-        else Removed.Add(file.Id);
+        // A failed save can leave this staged ID already committed to the saved row.
+        Removed.Add(file.Id);
         Files.Remove(file);
     }
 
     private async Task ImportOne(bool photo)
     {
-        if (Import is null) return;
+        if (!CanEdit || Import is null) return;
         if (Files.Count >= HomeworkFileRules.MaxFiles)
         {
             OnTooMany?.Invoke();
             return;
         }
-        var file = await Import(photo);
-        if (file is not null) Files.Add(file);
+        IsImporting = true;
+        Error = "";
+        try
+        {
+            var file = await Import(photo);
+            if (file is null) return;
+            if (_aborting || Completion.IsCompleted || Files.Count >= HomeworkFileRules.MaxFiles)
+            {
+                if (file.Staged) DiscardStaged?.Invoke(file.Id);
+                return;
+            }
+            Files.Add(file);
+        }
+        catch (Exception) { Error = "Не удалось добавить файл. Попробуйте ещё раз."; }
+        finally
+        {
+            IsImporting = false;
+            if (_aborting) base.Abort();
+        }
     }
 
     private void UpdateDue()
@@ -95,6 +208,7 @@ public static class HomeworkFilePrompt
     public static void Bind(this HomeworkDialogViewModel dialog, AppServices app)
     {
         dialog.CanShare = !app.Profile.IsGuest;
+        dialog.CaptureInitialState();
         dialog.DiscardStaged = id => app.HomeworkFiles.DiscardFile(dialog.DraftId, id);
         dialog.OnTooMany = () => app.Toasts.Info(app.Loc.T("hwFileFull"));
         dialog.Import = async photo =>

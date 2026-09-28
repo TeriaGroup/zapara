@@ -15,7 +15,7 @@
         <c:SegmentedControl Name="WeekSegment" Grid.Column="1" VerticalAlignment="Bottom" Items="{Binding SegmentItems}" SelectedIndex="{Binding ParityIndex}" />
       </Grid>
 
-      <ItemsControl ItemsSource="{Binding Days}" IsVisible="{Binding HasGroup}" c:Appear.CascadeHost="True">
+      <ItemsControl Name="WeekContent" ItemsSource="{Binding Days}" IsVisible="{Binding HasGroup}" c:Appear.CascadeHost="True">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
