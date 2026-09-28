@@ -34,6 +34,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
+import ru.bgtu_voenmeh.zapara.data.communities.HomeworkAudience
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -47,6 +48,8 @@ fun HomeworkEditorSheet(
     onPick: (String, Uri) -> Unit = { _, _ -> },
     onRemove: (String) -> Unit = {},
     onShare: (Boolean) -> Unit = {},
+    onAudience: (HomeworkAudience) -> Unit = {},
+    onRetryShare: () -> Unit = {},
     isGuest: Boolean = false,
     onRecalculate: () -> Unit = {}
 ) {
@@ -153,6 +156,19 @@ fun HomeworkEditorSheet(
                     modifier = Modifier.weight(1f),
                 )
             }
+            if (state.share) {
+                val context = state.shareContext
+                Text(stringResource(R.string.homework_share_group, context?.groupName ?: stringResource(R.string.homework_share_group_loading)), style = Zapara.typography.bodyStrong, color = c.text1)
+                Text(stringResource(R.string.homework_share_context, state.dueText(LocalUiCopy.current)), style = Zapara.typography.caption, color = c.text2)
+                if (state.shareLoading) Text(stringResource(R.string.homework_share_loading), style = Zapara.typography.caption, color = c.text2)
+                else if (context == null) Text(stringResource(R.string.homework_share_unavailable), style = Zapara.typography.caption, color = c.warn)
+                else if (context.supported) HomeworkAudiencePicker(state.draft, state.audience,
+                    context.desk.roles.map { AudienceChoice(it.roleId, it.name) },
+                    context.people.filterNot { it.self }.map { AudienceChoice(it.userId, it.displayName ?: it.username) },
+                    !state.busy, onAudience)
+                else Text(stringResource(R.string.homework_share_old_server), style = Zapara.typography.caption, color = c.text2)
+                Text(stringResource(R.string.homework_share_files_local), style = Zapara.typography.caption, color = c.text2)
+            }
         }
         Spacer(Modifier.height(Zapara.space.m))
         val status = when (state.work) {
@@ -165,6 +181,11 @@ fun HomeworkEditorSheet(
             Text(status, style = Zapara.typography.caption, color = if (state.error != null && !state.busy) c.bad else c.text2,
                 modifier = Modifier.fillMaxWidth().testTag("Editor.Status").semantics { liveRegion = LiveRegionMode.Polite })
             Spacer(Modifier.height(Zapara.space.s))
+        }
+        if (state.shareRequest != null) {
+            Text(stringResource(R.string.homework_share_uncertain), style = Zapara.typography.caption, color = c.warn)
+            if (state.shareRequest.operationId != null) ZButton(stringResource(R.string.homework_share_retry), onRetryShare, enabled = !state.busy, ghost = true)
+            else Text(stringResource(R.string.homework_share_retry_old_server), style = Zapara.typography.caption, color = c.warn)
         }
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {

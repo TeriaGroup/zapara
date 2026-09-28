@@ -2,7 +2,7 @@ package ru.bgtu_voenmeh.zapara.data.communities
 
 import java.time.Instant
 
-data class GroupCapabilities(val maxRoles: Int = 12, val maxRolesPerMember: Int = 3, val maxTopics: Int = 24, val powers: List<String> = emptyList(), val templates: List<String> = emptyList())
+data class GroupCapabilities(val maxRoles: Int = 12, val maxRolesPerMember: Int = 3, val maxTopics: Int = 24, val powers: List<String> = emptyList(), val templates: List<String> = emptyList(), val homeworkAudience: Boolean = false)
 data class GroupCategory(val categoryId: String, val title: String, val position: Int, val revision: Long)
 data class GroupSpace(val topics: List<GroupTopic>, val categories: List<GroupCategory>, val capabilities: GroupCapabilities, val desk: GroupDesk)
 data class GroupAccessRule(val roleId: String?, val power: String, val state: String)

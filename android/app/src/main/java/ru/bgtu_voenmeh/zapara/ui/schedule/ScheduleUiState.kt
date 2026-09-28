@@ -10,7 +10,9 @@ data class HomeworkRowUi(
     val label: String,
     val status: String,
     val done: Boolean,
-    val sharedId: String? = null
+    val sharedId: String? = null,
+    val canComplete: Boolean = true,
+    val audienceLabel: String = ""
 )
 
 data class FriendDotUi(
@@ -122,6 +124,8 @@ sealed interface ScheduleEvent {
     data class AddHomework(val lesson: LessonUi) : ScheduleEvent
     data class HomeworkEditorText(val text: String) : ScheduleEvent
     data class HomeworkEditorShare(val on: Boolean) : ScheduleEvent
+    data class HomeworkEditorAudience(val audience: ru.bgtu_voenmeh.zapara.data.communities.HomeworkAudience) : ScheduleEvent
+    data object HomeworkRetryShare : ScheduleEvent
     data object HomeworkEditorInc : ScheduleEvent
     data object HomeworkEditorDec : ScheduleEvent
     data object RecalculateHomework : ScheduleEvent

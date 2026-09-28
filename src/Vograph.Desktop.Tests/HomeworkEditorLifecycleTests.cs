@@ -207,6 +207,58 @@ public class HomeworkEditorLifecycleTests
         Assert.Equal("исправленные задачи", Assert.Single(db.Services.Homework.GetAll()).Text);
     }
 
+    [Avalonia.Headless.XUnit.AvaloniaFact]
+    public async Task Targeted_publication_retries_the_same_request_with_its_deadline_and_local_row()
+    {
+        using var db = TestDb.Create(seedPersonalization: false);
+        using var handler = new AccountClientHandler();
+        using var http = new HttpClient(handler);
+        using var communities = new CommunityHttpClient(http, Root);
+        db.Services.UseCommunities(communities, _ => Task.FromResult<string?>(Access));
+        var requests = new List<Zapara.Contracts.Communities.HomeworkUpsert>();
+        var recipient = Guid.NewGuid();
+        var published = Guid.NewGuid();
+        handler.Send = async (request, _) =>
+        {
+            Assert.Equal("1", Assert.Single(request.Headers.GetValues("X-Zapara-Homework")));
+            if (request.Method == HttpMethod.Get) return Payload(new[] { Membership });
+            var input = System.Text.Json.JsonSerializer.Deserialize<Zapara.Contracts.Communities.HomeworkUpsert>(
+                await request.Content!.ReadAsStringAsync(), new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
+            requests.Add(input);
+            if (requests.Count == 1) throw new HttpRequestException("response lost");
+            return Payload(new Zapara.Contracts.Communities.HomeworkResponse(published, Membership.CommunityId,
+                input.Title, input.Body, 1, Now, Now, input.DeadlineAt, input.TopicId, input.Audience, true, false), System.Net.HttpStatusCode.Created);
+        };
+        var due = new DateTime(2026, 10, 1);
+        var dialog = new HomeworkDialogViewModel("Матан", _ => due) { Text = "1. Решить\n2. Проверить", CanShare = true, Share = true };
+        dialog.Recipients.Load(Membership.CommunityId, "Учебная группа", new(false, [], [], [], [], [], new(HomeworkAudience: true)),
+            [new(recipient, "recipient_one", "Получатель", "member", false)]);
+        dialog.Recipients.Mode = 1;
+        dialog.Recipients.People[0].Selected = true;
+        dialog.PersistAsync = async () =>
+        {
+            await HomeworkShare.SaveNewAsync(db.Services, TestDb.MathSubject, dialog,
+                () => Task.FromResult<string?>(TestDb.MyGroupId), (subject, text) =>
+                {
+                    HomeworkShare.SaveLocal(db.Services, dialog, subject, text, new DateTime(2026, 9, 6));
+                    return Task.CompletedTask;
+                });
+        };
+        await dialog.SaveAsync();
+        Assert.True(dialog.PublicationPending);
+        Assert.False(dialog.Completion.IsCompleted);
+        dialog.Text = "Нельзя подменить уже отправленный запрос";
+        await dialog.SaveAsync();
+        Assert.True(await dialog.Completion);
+        Assert.Single(db.Services.Homework.GetAll());
+        Assert.Equal(requests[0].OperationId, requests[1].OperationId);
+        Assert.NotNull(requests[0].OperationId);
+        Assert.Equal("selected", requests[1].Audience!.Kind);
+        Assert.Equal(new[] { recipient }, requests[1].Audience!.UserIds);
+        Assert.Equal(due, requests[1].DeadlineAt!.Value.LocalDateTime.Date);
+        Assert.Equal("1. Решить\n2. Проверить", requests[1].Body);
+    }
+
     [Fact]
     public void Subject_Search_Empty_Result_Clears_Selection_And_Reset_Restores_Choices()
     {

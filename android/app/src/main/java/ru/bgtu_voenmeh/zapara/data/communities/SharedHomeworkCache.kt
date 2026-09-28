@@ -32,7 +32,7 @@ class SharedHomeworkCache {
         try {
             val community = api.list(token, groupId).firstOrNull { !it.role.isNullOrBlank() } ?: return finish(null, true)
             val rows = api.listHomework(token, community.communityId)
-            val done = rows.associate { it.homeworkId to api.getCompletion(token, community.communityId, it.homeworkId) }
+            val done = api.homeworkCompletions(token, community.communityId, rows)
             return finish(SharedHomeworkSnapshot(groupId, community.communityId, rows, done), false)
         } catch (e: CancellationException) { throw e }
         catch (e: CommunityClientException) {

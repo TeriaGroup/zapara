@@ -33,6 +33,8 @@ import ru.bgtu_voenmeh.zapara.ui.friends.FriendPalette
 import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEditorState
 import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEditorWork
 import ru.bgtu_voenmeh.zapara.ui.homework.saveHomeworkEditor
+import ru.bgtu_voenmeh.zapara.ui.homework.loadHomeworkShareContext
+import ru.bgtu_voenmeh.zapara.ui.homework.retryHomeworkPublication
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -129,9 +131,12 @@ class ScheduleViewModel(
             is ScheduleEvent.HomeworkEditorText -> mutable.update { s ->
                 s.copy(homeworkEditor = s.homeworkEditor?.withText(event.text))
             }
-            is ScheduleEvent.HomeworkEditorShare -> mutable.update { s ->
-                s.copy(homeworkEditor = s.homeworkEditor?.withShare(event.on))
+            is ScheduleEvent.HomeworkEditorShare -> {
+                mutable.update { s -> s.copy(homeworkEditor = s.homeworkEditor?.withShare(event.on)) }
+                if (event.on) loadHomeworkShareOptions()
             }
+            is ScheduleEvent.HomeworkEditorAudience -> mutable.update { s -> s.copy(homeworkEditor = s.homeworkEditor?.withAudience(event.audience)) }
+            ScheduleEvent.HomeworkRetryShare -> retryHomeworkShare()
             ScheduleEvent.HomeworkEditorInc -> mutable.update { s -> s.copy(homeworkEditor = s.homeworkEditor?.inc()) }
             ScheduleEvent.HomeworkEditorDec -> mutable.update { s -> s.copy(homeworkEditor = s.homeworkEditor?.dec()) }
             ScheduleEvent.RecalculateHomework -> viewModelScope.launch {
@@ -444,7 +449,8 @@ class ScheduleViewModel(
 
     private fun sharedRow(hw: ru.bgtu_voenmeh.zapara.data.communities.CommunityHomework, completions: Map<String,ru.bgtu_voenmeh.zapara.data.communities.HomeworkCompletion> = projection.shared.completions) = HomeworkRowUi(
         0, hw.body, container.app.getString(R.string.space_day_35, (hw.title).toString(), (hw.deadlineAt?.atZone(java.time.ZoneId.systemDefault())?.toLocalDate() ?: container.app.getString(R.string.space_day_34)).toString()),
-        if (hw.deadlineAt?.isBefore(java.time.Instant.now()) == true) "overdue" else "active", completions[hw.homeworkId]?.completed == true, hw.homeworkId)
+        if (hw.deadlineAt?.isBefore(java.time.Instant.now()) == true) "overdue" else "active", completions[hw.homeworkId]?.completed == true, hw.homeworkId,
+        hw.canComplete, container.app.getString(if (hw.audience?.selected == true) R.string.homework_audience_selected else R.string.homework_audience_all))
 
     private fun purgeShared() {
         sharedCache.clear(); projection.purge()
@@ -476,6 +482,7 @@ class ScheduleViewModel(
         if (sharedBusy) return
         val api = container.communities ?: return
         val operation=projection.shared
+        if (operation.rows.firstOrNull { it.homeworkId == id }?.canComplete != true) return
         val community = operation.communityId ?: return
         val group = ctx?.groupId ?: return
         val operationScope=ScheduleProjectionController.CompletionScope(container.profile,group,community)
@@ -498,6 +505,21 @@ class ScheduleViewModel(
             } catch (e: CancellationException) { throw e }
             catch (e: ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException) {
                 val currentScope=completionScope()
+                if (e.failure in setOf(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.Conflict, ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.RevisionConflict) && operationScope == currentScope && operationToken != null) {
+                    try {
+                        val latest = api.getCompletion(operationToken, community, id)
+                        if (operationScope == completionScope() && projection.isCurrent(operation)) {
+                            val corrected = projection.complete(latest)
+                            mutable.value.pages.keys.toList().forEach { ensurePage(it, force = true) }
+                            if (projection.isCurrent(corrected)) mutable.update { state -> state.copy(subjectRows = state.subjectRows.map { row ->
+                                if (row.sharedId == id) row.copy(done = latest.completed) else row
+                            }) }
+                        }
+                    } catch (cancel: CancellationException) { throw cancel }
+                    catch (_: Exception) { }
+                    container.toasts.show(container.app.getString(R.string.homework_completion_conflict), ToastKind.Bad)
+                    return@launch
+                }
                 val purged=projection.completionDenied(operationScope,currentScope,e.failure,
                     invalidateCache={sharedCache.invalidate(group,community,operationToken)},purgeCurrent=::purgeShared)
                 if(purged || operationScope==currentScope) container.toasts.show(container.app.getString(R.string.homework_save_failed), ToastKind.Bad)
@@ -592,7 +614,8 @@ class ScheduleViewModel(
                         }
                     }
                 }
-                mutable.update { current -> if (current.homeworkEditor?.draft == editor.draft) current.copy(homeworkEditor = null) else current }
+                mutable.update { current -> if (current.homeworkEditor?.draft != editor.draft) current else if (!outcome.sent && current.homeworkEditor.shareRequest != null)
+                    current.copy(homeworkEditor = current.homeworkEditor.copy(error = outcome.note)) else current.copy(homeworkEditor = null) }
                 val note = outcome.note.ifBlank { container.app.getString(R.string.hw_saved) }
                 container.toasts.show(note, ToastKind.Ok)
                 container.events.emit(AppEvent.PersonalizationChanged)
@@ -667,6 +690,37 @@ class ScheduleViewModel(
                 }
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { homeworkEditorError(editor.draft, container.app.getString(R.string.hw_attach_bad)) }
+            finally { finishHomeworkEditorWork(editor.draft) }
+        }
+    }
+
+    private fun loadHomeworkShareOptions() {
+        val editor = mutable.value.homeworkEditor?.takeIf { it.share && !it.isEdit } ?: return
+        if (editor.shareContext != null || editor.shareLoading) return
+        mutable.update { s -> if (s.homeworkEditor?.draft == editor.draft) s.copy(homeworkEditor = s.homeworkEditor.copy(shareLoading = true, error = null)) else s }
+        viewModelScope.launch {
+            val result = try { withContext(Dispatchers.IO) { loadHomeworkShareContext(container, editor.scheduleGroupId) } }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { null }
+            mutable.update { s ->
+                val current = s.homeworkEditor
+                if (current?.draft == editor.draft && current.share) s.copy(homeworkEditor = current.copy(shareContext = result, shareLoading = false)) else s
+            }
+        }
+    }
+
+    private fun retryHomeworkShare() {
+        val editor = mutable.value.homeworkEditor ?: return
+        val request = editor.shareRequest?.takeIf { it.operationId != null } ?: return
+        if (editor.busy) return
+        mutable.update { s -> if (s.homeworkEditor?.draft == editor.draft) s.copy(homeworkEditor = s.homeworkEditor.copy(work = HomeworkEditorWork.Saving, error = null)) else s }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { retryHomeworkPublication(container, request) }
+                mutable.update { s -> if (s.homeworkEditor?.draft == editor.draft) s.copy(homeworkEditor = null) else s }
+                container.toasts.show(container.app.getString(R.string.homework_share_selected_success), ToastKind.Ok)
+            } catch (cancel: CancellationException) { throw cancel }
+            catch (_: Exception) { homeworkEditorError(editor.draft, container.app.getString(R.string.homework_share_retry_failed)) }
             finally { finishHomeworkEditorWork(editor.draft) }
         }
     }

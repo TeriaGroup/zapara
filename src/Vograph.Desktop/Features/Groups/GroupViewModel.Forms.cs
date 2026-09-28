@@ -149,16 +149,21 @@ public sealed partial class GroupViewModel
         var lines=new[]{string.Join(";",new[]{"Участник","Дата"}.Concat(row.Form.Questions.Select(x=>x.Title)).Select(Cell))}.Concat(row.RawResponses.Select(response=>string.Join(";",new[]{response.RespondentId?.ToString()??"Анонимно",response.UpdatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")}.Concat(row.Form.Questions.Select(q=>{var a=response.Answers.FirstOrDefault(x=>x.QuestionId==q.QuestionId);return a?.Text??string.Join(", ",a?.Choices??[]);})).Select(Cell))));
         try{await File.WriteAllLinesAsync(path,lines,new System.Text.UTF8Encoding(true),operation.Token);Status="Ответы сохранены.";}catch(IOException){Status="Не удалось сохранить файл.";}catch(OperationCanceledException){}
     }
-    private sealed record HomeworkDraft(int Serial,Guid? Id,long Revision,string Title,string Body,string Deadline);
+    private sealed record HomeworkDraft(int Serial,Guid? Id,long Revision,string Title,string Body,string Deadline,
+        Features.Homeworks.HomeworkAudienceSnapshot Audience,Guid OperationId,bool Pending);
     private readonly Dictionary<(Guid Community,Guid Topic),HomeworkDraft> homeworkDrafts=[];
     private (Guid Community,Guid Topic)? activeHomeworkDraft;
-    private HomeworkDraft CurrentHomeworkDraft()=>new(homeworkEditorSerial,editingSharedHomework,sharedHomeworkRevision,SharedHomeworkTitle,SharedHomeworkBody,SharedHomeworkDeadline);
-    private void SaveHomeworkDraft(){if(activeHomeworkDraft is {} key)homeworkDrafts[key]=CurrentHomeworkDraft();}
+    private HomeworkDraft CurrentHomeworkDraft()=>new(homeworkEditorSerial,editingSharedHomework,sharedHomeworkRevision,SharedHomeworkTitle,SharedHomeworkBody,SharedHomeworkDeadline,HomeworkRecipients.Snapshot,sharedHomeworkOperationId,sharedHomeworkPending);
+    private void SaveHomeworkDraft(){if(activeHomeworkDraft is {} key && !updatingHomeworkRecipients)homeworkDrafts[key]=CurrentHomeworkDraft();NotifyChannelHomeworkState();}
+    private static bool SameHomeworkInput(HomeworkDraft a,HomeworkDraft b) => a with{Pending=false} == b with{Pending=false};
     private void SelectHomeworkDraft(Guid? topic)
     {
         SaveHomeworkDraft();activeHomeworkDraft=topic is {} id && communityId is {} community?(community,id):null;
         var draft=activeHomeworkDraft is {} key?homeworkDrafts.GetValueOrDefault(key):null;
+        updatingHomeworkRecipients=true;channelHomeworkLoaded=false;
         homeworkEditorSerial=draft?.Serial??++homeworkSerialCounter;editingSharedHomework=draft?.Id;sharedHomeworkRevision=draft?.Revision??0;SharedHomeworkTitle=draft?.Title??"";SharedHomeworkBody=draft?.Body??"";SharedHomeworkDeadline=draft?.Deadline??"";
+        sharedHomeworkOperationId=draft?.OperationId??Guid.NewGuid();sharedHomeworkPending=draft?.Pending??false;
+        RestoreHomeworkAudience(draft?.Audience??new(0,"",""));
     }
     private void ClearSpecializedDrafts()
     {
@@ -166,9 +171,11 @@ public sealed partial class GroupViewModel
         activeFormsScope=null;activeFormDraft=null;activeHomeworkDraft=null;editingSharedHomework=null;sharedHomeworkRevision=0;
         FormQuestions.Clear();FormTitle="";FormDescription="";FormDeadline="";FormAnonymous=false;
         SharedHomeworkTitle="";SharedHomeworkBody="";SharedHomeworkDeadline="";
+        sharedHomeworkPending=false;ClearHomeworkRecipients();
     }
     private async Task LoadSpecializedAsync(Guid conversation,int ticket)
     {
+        RefreshHomeworkRecipients();
         if(ShowMaterials)
         {
             await LoadLatestAsync(conversation,ticket);
@@ -180,33 +187,46 @@ public sealed partial class GroupViewModel
         else if(ShowChannelSchedule) await RefreshChannelSchedule();
     }
     private void ApplyChannelHomeworks(IReadOnlyList<GroupHomeworkCopyResponse> result)
-    { if(!CurrentSpace())return;ChannelHomeworks.Clear();foreach(var item in result)ChannelHomeworks.Add(new(item,!PreviewMode && SelectedChannel?.Archived!=true,ToggleChannelHomework,EditChannelHomework)); }
-    private Task ToggleChannelHomework(SpaceHomeworkRow row) => PreviewMode ? Task.CompletedTask : SpaceAction(async(api,t,c,ct)=>
+    { if(!CurrentSpace())return;channelHomeworkLoaded=true;ChannelHomeworks.Clear();foreach(var item in result)ChannelHomeworks.Add(new(item,!PreviewMode && item.CanComplete,ToggleChannelHomework,EditChannelHomework,
+        !PreviewMode && (space?.Capabilities.HomeworkAudience==true?item.CanEdit:CanCreateChannelHomework),HomeworkAudienceLabel(item.Audience)));NotifyChannelHomeworkState(); }
+    private Task ToggleChannelHomework(SpaceHomeworkRow row) => PreviewMode || !row.Writable || IsBusy ? Task.CompletedTask : SpaceAction(async(api,t,c,ct)=>
     {
-        var changed=await api.UpsertCompletionAsync(t,c,row.Item.HomeworkId,new(!row.Item.Completed,row.Item.CompletionRevision),ct);
-        if(ShowSingleHomework){var item=row.Item;ApplyChannelHomeworks([new(item.HomeworkId,item.Title,item.Body,item.Revision,changed.Completed,changed.Revision,item.DeadlineAt,item.TopicId)]);}
-        else ApplyChannelHomeworks(await api.ListHomeworkCopiesAsync(t,c,ct,selectedTopicId));
+        var topic=selectedTopicId;var single=ShowSingleHomework;
+        CompletionResponse changed;
+        try { changed=await api.UpsertCompletionAsync(t,c,row.Item.HomeworkId,new(!row.Item.Completed,row.Item.CompletionRevision),ct); }
+        catch(Vograph.Core.Services.Communities.CommunityClientException ex) when(ex.Failure==Vograph.Core.Services.Communities.CommunityClientFailure.RevisionConflict)
+        { if(CurrentSpace()){var latest=await api.ListHomeworkCopiesAsync(t,c,ct,topic);if(CurrentSpace()){ApplyChannelHomeworks(single?latest.Where(x=>x.HomeworkId==row.Item.HomeworkId).ToArray():latest);Status="Отметка изменилась на другом устройстве. Показано актуальное состояние.";}}return; }
+        if(!CurrentSpace())return;
+        if(single){var item=row.Item;ApplyChannelHomeworks([new(item.HomeworkId,item.Title,item.Body,item.Revision,changed.Completed,changed.Revision,item.DeadlineAt,item.TopicId,item.Audience,item.CanEdit,item.CanComplete)]);}
+        else ApplyChannelHomeworks(await api.ListHomeworkCopiesAsync(t,c,ct,topic));
     },true);
     private void EditChannelHomework(SpaceHomeworkRow row)
-    {if(!CanCreateChannelHomework)return;homeworkEditorSerial=++homeworkSerialCounter;editingSharedHomework=row.Item.HomeworkId;sharedHomeworkRevision=row.Item.Revision;SharedHomeworkTitle=row.Item.Title;SharedHomeworkBody=row.Item.Body;SharedHomeworkDeadline=row.Item.DeadlineAt?.ToLocalTime().ToString("dd.MM.yyyy HH:mm")??"";}
-    [RelayCommand] private void NewSharedHomework() {homeworkEditorSerial=++homeworkSerialCounter;editingSharedHomework=null;sharedHomeworkRevision=0;SharedHomeworkTitle="";SharedHomeworkBody="";SharedHomeworkDeadline="";}
+    {if(!row.Editable||IsBusy||sharedHomeworkPending)return;activeHomeworkDraft ??= communityId is {} c?(c,row.Item.TopicId??Guid.Empty):null;
+        updatingHomeworkRecipients=true;homeworkEditorSerial=++homeworkSerialCounter;editingSharedHomework=row.Item.HomeworkId;sharedHomeworkRevision=row.Item.Revision;SharedHomeworkTitle=row.Item.Title;SharedHomeworkBody=row.Item.Body;SharedHomeworkDeadline=row.Item.DeadlineAt?.ToLocalTime().ToString("dd.MM.yyyy HH:mm")??"";
+        sharedHomeworkOperationId=Guid.NewGuid();RestoreHomeworkAudience(new(row.Item.Audience.Kind=="selected"?1:0,string.Join(',',row.Item.Audience.RoleIds),string.Join(',',row.Item.Audience.UserIds)));SaveHomeworkDraft();}
+    [RelayCommand] private void NewSharedHomework() {if(IsBusy||sharedHomeworkPending)return;ResetSharedHomework();}
+    private void ResetSharedHomework() {updatingHomeworkRecipients=true;homeworkEditorSerial=++homeworkSerialCounter;editingSharedHomework=null;sharedHomeworkRevision=0;SharedHomeworkTitle=SelectedChannel?.Subject??"";SharedHomeworkBody="";SharedHomeworkDeadline="";sharedHomeworkOperationId=Guid.NewGuid();sharedHomeworkPending=false;RestoreHomeworkAudience(new(0,"",""));SaveHomeworkDraft();}
     [RelayCommand] private Task SaveSharedHomework()
     {
-        if(!CanCreateChannelHomework || activeHomeworkDraft is not {} key)return Task.CompletedTask;
+        if(!CanSaveSharedHomework || activeHomeworkDraft is not {} key)return Task.CompletedTask;
         var submitted=CurrentHomeworkDraft();var serial=homeworkEditorSerial;homeworkDrafts[key]=submitted;HomeworkUpsert request;
-        try{request=new(submitted.Title.Trim(),submitted.Body.Trim(),submitted.Revision,ParseDeadline(submitted.Deadline),key.Topic);}catch(ArgumentException){Status="Проверьте название, текст и срок: дд.мм.гггг чч:мм.";return Task.CompletedTask;}
+        try{request=new(submitted.Title.Trim(),submitted.Body.Trim(),submitted.Revision,ParseDeadline(submitted.Deadline),key.Topic==Guid.Empty?null:key.Topic,
+            Features.Homeworks.HomeworkAudienceSelection.PayloadFor(submitted.Audience,HomeworkRecipients.Supported),submitted.Id is null&&HomeworkRecipients.Supported?submitted.OperationId:null);}
+        catch(Exception ex) when(ex is ArgumentException or InvalidOperationException){Status="Проверьте название, текст, получателей и срок: дд.мм.гггг чч:мм.";return Task.CompletedTask;}
         return SpaceAction(async(api,t,c,ct)=>
         {
-            var saved=submitted.Id is {} id?await api.UpdateHomeworkAsync(t,c,id,request,ct):await api.ShareHomeworkAsync(t,c,request,ct);
+            HomeworkResponse saved;
+            if(submitted.Id is null&&request.OperationId is not null){sharedHomeworkPending=true;SaveHomeworkDraft();}
+            saved=submitted.Id is {} id?await api.UpdateHomeworkAsync(t,c,id,request,ct):await api.ShareHomeworkAsync(t,c,request,ct);
             if(homeworkDrafts.TryGetValue(key,out var stored) && stored.Serial==submitted.Serial && stored.Id==submitted.Id && stored.Revision==submitted.Revision)
             {
-                if(stored==submitted)homeworkDrafts.Remove(key);
+                if(SameHomeworkInput(stored,submitted))homeworkDrafts.Remove(key);
                 else homeworkDrafts[key]=stored with{Id=saved.HomeworkId,Revision=saved.Revision};
             }
             if(!CurrentSpace() || activeHomeworkDraft!=key)return;
             var copies=await api.ListHomeworkCopiesAsync(t,c,ct,key.Topic);
             if(!CurrentSpace() || activeHomeworkDraft!=key)return;ApplyChannelHomeworks(copies);
-            if(homeworkEditorSerial==serial){if(CurrentHomeworkDraft()==submitted)NewSharedHomework();else{editingSharedHomework=saved.HomeworkId;sharedHomeworkRevision=saved.Revision;}}SaveHomeworkDraft();
+            if(homeworkEditorSerial==serial){if(SameHomeworkInput(CurrentHomeworkDraft(),submitted)){sharedHomeworkPending=false;ResetSharedHomework();}else{editingSharedHomework=saved.HomeworkId;sharedHomeworkRevision=saved.Revision;sharedHomeworkPending=false;}}SaveHomeworkDraft();
         },true);
     }
     private int channelScheduleGeneration;
@@ -309,14 +329,17 @@ public sealed partial class SpaceAnswerChoice(string label,bool selected,Action 
     [ObservableProperty] private bool selected=selected;
     partial void OnSelectedChanged(bool value){if(value&&single)changed();}
 }
-public sealed class SpaceHomeworkRow(GroupHomeworkCopyResponse item,bool writable,Func<SpaceHomeworkRow,Task> toggle,Action<SpaceHomeworkRow> edit)
+public sealed class SpaceHomeworkRow(GroupHomeworkCopyResponse item,bool writable,Func<SpaceHomeworkRow,Task> toggle,Action<SpaceHomeworkRow> edit,bool editable=false,string audience="")
 {
     public GroupHomeworkCopyResponse Item{get;}=item;public string Title=>Item.Title;public string Body=>Item.Body;public bool Completed=>Item.Completed;
     public string Deadline=>Item.DeadlineAt is {} date?$"Срок: {date.ToLocalTime():dd.MM.yyyy HH:mm}":"Без срока";
     public string CompletionLabel=>Item.Completed?"Готово у меня · снять отметку":"Отметить готово у меня";
-    public bool Writable=>writable;
-    public IAsyncRelayCommand ToggleCommand{get;}=new AsyncRelayCommand(()=>toggle(new SpaceHomeworkRow(item,writable,toggle,edit)));
-    public IRelayCommand EditCommand{get;}=new RelayCommand(()=>edit(new SpaceHomeworkRow(item,writable,toggle,edit)));
+    public bool Writable=>writable&&Item.CanComplete;
+    public bool Editable=>editable;
+    public string AudienceLabel=>audience.Length>0?audience:Item.Audience.Kind=="all"?"Вся учебная группа":$"Подгрупп: {Item.Audience.RoleIds.Count} · участников: {Item.Audience.UserIds.Count}";
+    public string CompletionHint=>Item.CanComplete?"Отметка видна только вам":"Задание назначено другим участникам";
+    public IAsyncRelayCommand ToggleCommand{get;}=new AsyncRelayCommand(()=>toggle(new SpaceHomeworkRow(item,writable,toggle,edit,editable,audience)),()=>writable&&item.CanComplete);
+    public IRelayCommand EditCommand{get;}=new RelayCommand(()=>edit(new SpaceHomeworkRow(item,writable,toggle,edit,editable,audience)),()=>editable);
 }
 
 public sealed class SpaceScheduleDate(DateTime date,int? count,bool selected,Action select)

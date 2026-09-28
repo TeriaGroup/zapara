@@ -21,8 +21,8 @@ public sealed partial class GroupViewModel
     [ObservableProperty] private GroupTrustedPersonRow? selectedTrustCandidate;
 
     public string ChannelPowerAction => SelectedTrustedRole?.HasChannelsPower == true ? "Отозвать право управления" : "Разрешить управлять каналами";
-    public bool CanGrantTrusted => CanManageGrants && SelectedTrustedRole is not null
-        && SelectedTrustCandidate is { } person && (desk?.Grants.Count(x=>x.UserId==person.UserId)??0)<(space?.Capabilities.MaxRolesPerMember??3) && desk?.Grants.All(grant => grant.RoleId != SelectedTrustedRole.RoleId || grant.UserId != person.UserId) == true;
+    public bool CanGrantTrusted => !IsBusy && CanManageGrants && SelectedTrustedRole is { } role
+        && SelectedTrustCandidate is { } person && MemberActionReason(role.RoleId, person.UserId, removing: false).Length == 0;
     public bool HasTrustedRole => SelectedTrustedRole is not null;
     public bool SelectedRoleHasOtherPowers => SelectedTrustedRole?.HasOtherPowers == true;
 
@@ -36,7 +36,8 @@ public sealed partial class GroupViewModel
         OnPropertyChanged(nameof(SelectedRoleHasOtherPowers));
         OnPropertyChanged(nameof(CanGrantTrusted));
     }
-    partial void OnSelectedTrustCandidateChanged(GroupTrustedPersonRow? value) => OnPropertyChanged(nameof(CanGrantTrusted));
+    partial void OnSelectedTrustCandidateChanged(GroupTrustedPersonRow? value)
+    { OnPropertyChanged(nameof(CanGrantTrusted)); OnPropertyChanged(nameof(TrustedGrantHint)); }
     partial void OnIsHeadmanChanged(bool value)
     {
         OnPropertyChanged(nameof(CanGrantTrusted));
@@ -80,8 +81,9 @@ public sealed partial class GroupViewModel
     private void ApplyDesk(GroupDeskResponse value)
     {
         if(!CurrentSpace())return;
-        if(desk is not null && System.Text.Json.JsonSerializer.Serialize(desk)==System.Text.Json.JsonSerializer.Serialize(value) && TrustCandidates.Select(x=>(x.UserId,x.Name)).SequenceEqual(trustClassmates.Select(x=>(x.UserId,x.DisplayName??x.Username))))return;
+        if(desk is not null && System.Text.Json.JsonSerializer.Serialize(desk)==System.Text.Json.JsonSerializer.Serialize(value) && TrustCandidates.Select(x=>(x.UserId,x.Name,x.OfficialRole,x.Self)).SequenceEqual(trustClassmates.Select(x=>(x.UserId,x.DisplayName??x.Username,x.Role,x.Self))))return;
         InvalidateAccessPreview();
+        ConfirmRemoveRole = false; RoleImpact = "";
         desk = value;
         IsHeadman = value.Headman;
         var selectedRoleId = SelectedTrustedRole?.RoleId;
@@ -89,17 +91,19 @@ public sealed partial class GroupViewModel
         TrustedRoles.Clear();
         foreach (var role in value.Roles.OrderByDescending(x => x.Position))
             TrustedRoles.Add(new(role.RoleId, role.Name,
-                value.Powers.Where(power => power.RoleId == role.RoleId).Select(power => power.Power).ToArray()));
+                value.Powers.Where(power => power.RoleId == role.RoleId).Select(power => power.Power).ToArray(), role.Position,
+                value.Grants.Count(grant => grant.RoleId == role.RoleId)));
         SelectedTrustedRole = TrustedRoles.FirstOrDefault(role => role.RoleId == selectedRoleId) ?? TrustedRoles.FirstOrDefault();
         TrustCandidates.Clear();
         foreach (var person in trustClassmates)
-            TrustCandidates.Add(new(person.UserId, person.DisplayName ?? person.Username));
+            TrustCandidates.Add(new(person.UserId, person.DisplayName ?? person.Username, person.Role, person.Self));
         SelectedTrustCandidate = TrustCandidates.FirstOrDefault(person => person.UserId == selectedUserId)
             ?? TrustCandidates.FirstOrDefault();
         RefreshTrustedGrants();
         LoadRoleEditor();
         ReconcileCreationRoles();
         NotifySpace();
+        RefreshHomeworkRecipients();
     }
 
     private void RefreshTrustedGrants()
@@ -118,15 +122,17 @@ public sealed partial class GroupViewModel
 
     private async Task<GroupDeskResponse?> MutateDeskAsync(Func<CommunityHttpClient, string, Guid, CancellationToken, Task<GroupDeskResponse>> action)
     {
-        if (PreviewMode || !(CanManageRoles || CanManageGrants) || communityId is not Guid community || Api is null || Access is null) return null;
+        if (PreviewMode || IsBusy || !(CanManageRoles || CanManageGrants) || communityId is not Guid community || Api is null || Access is null) return null;
+        var ticket = navigationGeneration;
         using var operation = App.Work.Enter();
         Busy(true);
         try
         {
             var token = await Access(operation.Token);
+            if (!operation.IsCurrent || communityId != community || navigationGeneration != ticket || PreviewMode) return null;
             if (string.IsNullOrWhiteSpace(token)) { ShowAccount(); return null; }
             var result = await action(Api, token, community, operation.Token);
-            if (!operation.IsCurrent || communityId != community) return null;
+            if (!operation.IsCurrent || communityId != community || navigationGeneration != ticket) return null;
             ApplyDesk(result);
             Status = "";
             return result;
@@ -144,7 +150,8 @@ public sealed partial class GroupViewModel
         if (!CanCreateRole || string.IsNullOrWhiteSpace(TrustedRoleName)) return;
         var name = TrustedRoleName.Trim();
         var result = await MutateDeskAsync((api, token, community, ct) =>
-            api.CreateRoleAsync(token, community, new GroupRoleNameRequest(name), ct));
+            !CanManageRoles || (desk?.Roles.Count ?? 0) >= RoleLimit || !IsHeadman && GroupRoleManagement.Position(desk, me) <= 0
+                ? Task.FromResult(desk!) : api.CreateRoleAsync(token, community, new GroupRoleNameRequest(name), ct));
         if (result is null) return;
         SelectedTrustedRole = TrustedRoles.FirstOrDefault(role => role.Name == name);
         TrustedRoleName = "";
@@ -153,29 +160,28 @@ public sealed partial class GroupViewModel
     [RelayCommand]
     private Task ToggleChannelPower()
     {
-        if (!IsHeadman || SelectedTrustedRole is not { } role) return Task.CompletedTask;
+        if (PreviewMode || IsBusy || !IsHeadman || SelectedTrustedRole is not { } role) return Task.CompletedTask;
         var enabled = !role.HasChannelsPower;
         return MutateDeskAsync((api, token, community, ct) =>
-            api.SetRolePowerAsync(token, community, role.RoleId, new GroupPowerRequest("channels", enabled), ct));
+            !IsHeadman || PreviewMode ? Task.FromResult(desk!) : api.SetRolePowerAsync(token, community, role.RoleId, new GroupPowerRequest("channels", enabled), ct));
     }
 
     [RelayCommand]
     private Task GrantTrusted()
     {
         if (!CanGrantTrusted || SelectedTrustedRole is not { } role || SelectedTrustCandidate is not { } person) return Task.CompletedTask;
-        return MutateDeskAsync((api, token, community, ct) =>
-            api.GrantRoleAsync(token, community, role.RoleId, new GroupGrantRequest(person.UserId), ct));
+        return ChangeRoleMemberAsync(role.RoleId, person.UserId, removing: false);
     }
 
     private Task RevokeTrustedAsync(Guid roleId, Guid userId)
     {
-        if (!CanManageGrants || desk?.Grants.Any(grant => grant.RoleId == roleId && grant.UserId == userId) != true) return Task.CompletedTask;
-        return MutateDeskAsync((api, token, community, ct) => api.RevokeRoleAsync(token, community, roleId, userId, ct));
+        return ChangeRoleMemberAsync(roleId, userId, removing: true);
     }
 
     private void ClearDesk()
     {
         desk = null;
+        ClearHomeworkRecipients();
         trustClassmates = [];
         IsHeadman = false;
         TrustedRoles.Clear();
@@ -183,22 +189,29 @@ public sealed partial class GroupViewModel
         TrustCandidates.Clear();
         SelectedTrustedRole = null;
         SelectedTrustCandidate = null;
+        RoleMembers.Clear(); RoleMemberSearch = ""; RoleAssignedOnly = false; rolePanelId = null;
+        RefreshRoleManager();
     }
 }
 
-public sealed class GroupTrustedRoleRow(Guid roleId, string name, IReadOnlyList<string> powers)
+public sealed class GroupTrustedRoleRow(Guid roleId, string name, IReadOnlyList<string> powers, int position = 0, int assignments = 0)
 {
     public Guid RoleId { get; } = roleId;
     public string Name { get; } = name;
+    public int Position { get; } = position;
+    public int Assignments { get; } = assignments;
+    public string Summary => $"Возможностей: {powers.Count} · участников: {Assignments} · уровень: {Position}";
     public bool HasChannelsPower => powers.Contains("channels");
     public bool HasOtherPowers => powers.Any(power => power != "channels");
     public string Display => Name + (HasChannelsPower ? " · управляет каналами" : "") + (HasOtherPowers ? " · есть другие права" : "");
 }
 
-public sealed class GroupTrustedPersonRow(Guid userId, string name)
+public sealed class GroupTrustedPersonRow(Guid userId, string name, string officialRole = "member", bool self = false)
 {
     public Guid UserId { get; } = userId;
     public string Name { get; } = name;
+    public string OfficialRole { get; } = officialRole;
+    public bool Self { get; } = self;
 }
 
 public sealed class GroupTrustedGrantRow(Guid roleId, Guid userId, string name, IAsyncRelayCommand revoke)

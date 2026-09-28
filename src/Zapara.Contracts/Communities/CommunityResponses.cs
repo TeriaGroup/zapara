@@ -51,8 +51,12 @@ public sealed record HomeworkResponse
 {
     [JsonConstructor]
     public HomeworkResponse(Guid homeworkId, Guid communityId, string title, string body, long revision,
-        DateTimeOffset createdAt, DateTimeOffset updatedAt, DateTimeOffset? deadlineAt = null, Guid? topicId = null)
+        DateTimeOffset createdAt, DateTimeOffset updatedAt, DateTimeOffset? deadlineAt = null, Guid? topicId = null,
+        HomeworkAudience? audience = null, bool canEdit = false, bool canComplete = true)
     {
+        Audience = audience ?? HomeworkAudience.All;
+        CanEdit = canEdit;
+        CanComplete = canComplete;
         DeadlineAt = deadlineAt is null ? null : CommunityValidation.Utc(deadlineAt.Value);
         TopicId = topicId;
         HomeworkId = CommunityValidation.Id(homeworkId);
@@ -63,6 +67,9 @@ public sealed record HomeworkResponse
         CreatedAt = CommunityValidation.Utc(createdAt);
         UpdatedAt = CommunityValidation.Utc(updatedAt);
     }
+    [JsonInclude] public HomeworkAudience Audience { get; private init; }
+    [JsonInclude] public bool CanEdit { get; private init; }
+    [JsonInclude] public bool CanComplete { get; private init; }
     [JsonInclude] public Guid? TopicId { get; private init; }
     [JsonInclude] public DateTimeOffset? DeadlineAt { get; private init; }
     [JsonRequired, JsonInclude] public Guid HomeworkId { get; private init; }

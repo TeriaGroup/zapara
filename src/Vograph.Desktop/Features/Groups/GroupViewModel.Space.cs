@@ -93,16 +93,13 @@ public sealed partial class GroupViewModel
     public bool CanManageGrants => !PreviewMode && (IsHeadman || desk?.Mine.Contains("grants") == true);
     public string CapabilitySummary=>$"Тем: {Channels.Count(x=>x.TopicId is not null)} из {space?.Capabilities.MaxTopics??24} · ролей: {desk?.Roles.Count??0} из {space?.Capabilities.MaxRoles??12} · ролей у человека: до {space?.Capabilities.MaxRolesPerMember??3}";
     public bool CanCreateTopic=>!PreviewMode && CanManageChannels && Channels.Count(x=>x.TopicId is not null)<(space?.Capabilities.MaxTopics??24);
-    public bool CanCreateRole=>CanManageRoles && (desk?.Roles.Count??0)<(space?.Capabilities.MaxRoles??12);
+    public bool CanCreateRole=>!IsBusy && CanManageRoles && (desk?.Roles.Count??0)<RoleLimit && (IsHeadman || GroupRoleManagement.Position(desk,me)>0);
     public bool CanEditSelectedRole
     {
         get
         {
-            if(!CanManageRoles||SelectedTrustedRole is not {} selected||desk is null)return false;
-            if(IsHeadman)return true;
-            var mine=desk.Grants.Where(x=>x.UserId==me).Select(x=>x.RoleId).ToHashSet();
-            var highest=desk.Roles.Where(x=>mine.Contains(x.RoleId)).Select(x=>x.Position).DefaultIfEmpty(-1).Max();
-            return !mine.Contains(selected.RoleId) && desk.Roles.FirstOrDefault(x=>x.RoleId==selected.RoleId)?.Position<highest;
+            return !IsBusy && CanManageRoles && SelectedTrustedRole is {} selected
+                && GroupRoleManagement.RoleReason(desk,me,selected.RoleId,"roles").Length==0;
         }
     }
     public bool ShowMaterials => !IsDirect && SelectedChannel is { Kind: "materials", Supported: true };
@@ -121,6 +118,7 @@ public sealed partial class GroupViewModel
     private void NotifySpace()
     {
         foreach (var name in new[] { nameof(CanPinSelected), nameof(PinCaption), nameof(CanSaveRoleSettings), nameof(CanSaveProposedAccess), nameof(CanCreateTopic), nameof(CanCreateRole), nameof(CanEditSelectedRole), nameof(CapabilitySummary), nameof(CanRestoreTopic), nameof(CanSetInitialAccess), nameof(InitialAccessHint), nameof(CanManageGroupAudit), nameof(CanManageGroupAccess), nameof(CanOpenChannelManagement), nameof(ShowNewChannelManagement), nameof(CanManageAccess), nameof(CanManageRoles), nameof(CanManageGrants), nameof(ShowMaterials), nameof(ShowSubject), nameof(ShowForms), nameof(ShowChannelHomework), nameof(ShowChannelSchedule), nameof(ShowUnsupported), nameof(ShowSpecialized), nameof(CanCreateForm), nameof(CanCreateChannelHomework), nameof(SpecializedHint), nameof(ShowComposer), nameof(ShowMessages), nameof(CanAttachMedia), nameof(CanManageSelectedChannel) }) OnPropertyChanged(name);
+        RefreshRoleManager();
     }
     private void ApplySpace(GroupSpaceResponse response)
     {
@@ -259,13 +257,18 @@ public sealed partial class GroupViewModel
     [RelayCommand] private Task LoadAudit() => !CanManageGroupAudit ? Task.CompletedTask : SpaceAction(async (api,t,c,ct) =>
     { var result=await api.GroupAuditAsync(t,c,ct); if(!CurrentSpace())return; AuditEvents.Clear(); foreach(var x in result.Events) AuditEvents.Add($"{x.CreatedAt.ToLocalTime():dd.MM.yyyy HH:mm} · {AuditLabel(x.Action)} · {x.ObjectId}"); });
     private static string AuditLabel(string action) => action switch { "topic.create"=>"Создана тема", "topic.update"=>"Изменена тема", "topic.archive"=>"Тема в архиве", "topic.restore"=>"Тема восстановлена", "topic.access"=>"Изменён доступ", "role.create"=>"Создана роль", "role.delete"=>"Удалена роль", "role.grant"=>"Назначена роль", "role.revoke"=>"Снята роль", _=>"Изменение структуры группы" };
-    [RelayCommand] private Task RemoveRole() => !CanEditSelectedRole || !ConfirmRemoveRole || SelectedTrustedRole is not { } role ? Task.CompletedTask : SpaceAction(async(api,t,c,ct) => { ApplyDesk(await api.DeleteRoleAsync(t,c,role.RoleId,ct)); ConfirmRemoveRole=false; },true);
+    [RelayCommand] private Task RemoveRole() => !CanEditSelectedRole || !ConfirmRemoveRole || SelectedTrustedRole is not { } role ? Task.CompletedTask : SpaceAction(async(api,t,c,ct) =>
+    {
+        if(PreviewMode || !ConfirmRemoveRole || SelectedTrustedRole?.RoleId!=role.RoleId || GroupRoleManagement.RoleReason(desk,me,role.RoleId,"roles").Length>0)return;
+        ApplyDesk(await api.DeleteRoleAsync(t,c,role.RoleId,ct)); ConfirmRemoveRole=false;
+    },true);
     private static readonly string[] GroupOnlyPowers=["joins","exclude","roles","grants"];
     private static readonly string[] KnownPowers = ["read","post","media","vote","formsRespond","ballots","forms","close","pin","moderate","homework","mentionAll","joins","exclude","channels","access","roles","grants"];
     internal static string PowerLabel(string power) => power switch { "read"=>"Читать", "post"=>"Писать", "media"=>"Вложения", "vote"=>"Голосовать", "formsRespond"=>"Заполнять анкеты", "ballots"=>"Создавать опросы", "forms"=>"Создавать анкеты", "close"=>"Завершать опросы", "pin"=>"Закреплять", "moderate"=>"Удалять сообщения", "homework"=>"Общая домашка", "mentionAll"=>"Упоминать всех", "joins"=>"Принимать участников", "exclude"=>"Исключать участников", "channels"=>"Управлять темами", "access"=>"Настраивать доступ", "roles"=>"Управлять ролями", "grants"=>"Назначать роли", _=>"Неизвестное право" };
     private GroupRoleResponse? roleEditBaseline;
     [ObservableProperty] private bool roleEditConflict;
-    public bool CanSaveRoleSettings=>CanEditSelectedRole && !RoleEditConflict && roleEditBaseline?.RoleId==SelectedTrustedRole?.RoleId;
+    public bool CanSaveRoleSettings=>CanEditSelectedRole && !RoleEditConflict && !string.IsNullOrWhiteSpace(RoleEditName)
+        && roleEditBaseline?.RoleId==SelectedTrustedRole?.RoleId && RoleSettingsHint.Length==0;
     partial void OnRoleEditConflictChanged(bool value)=>OnPropertyChanged(nameof(CanSaveRoleSettings));
     private bool RoleEditorDirty=>roleEditBaseline is {} baseline &&
         (RoleEditName!=baseline.Name || RoleEditIcon!=baseline.Icon || RoleEditPosition!=baseline.Position);
@@ -285,23 +288,32 @@ public sealed partial class GroupViewModel
     private void RefreshRolePowerRows(GroupRoleResponse? role)
     {
         RolePowers.Clear();if(role is null)return;
-        foreach(var power in space?.Capabilities.Powers ?? KnownPowers)RolePowers.Add(new(power,desk!.Powers.Any(x=>x.RoleId==role.RoleId&&x.Power==power)));
+        foreach(var power in space?.Capabilities.Powers ?? desk?.Capabilities.Powers ?? KnownPowers)
+        {
+            var enabled=desk!.Powers.Any(x=>x.RoleId==role.RoleId&&x.Power==power);
+            var reason=PreviewMode?"В режиме просмотра изменения отключены.":IsBusy?"Дождитесь завершения действия."
+                :GroupRoleManagement.RoleReason(desk,me,role.RoleId,"roles",addedPower:enabled?null:power);
+            RolePowers.Add(new(power,enabled,reason.Length==0,reason));
+        }
     }
-    [RelayCommand] private void ReloadRoleSettings(){roleEditBaseline=null;LoadRoleEditor();}
+    [RelayCommand] private void ReloadRoleSettings(){if(IsBusy)return;roleEditBaseline=null;LoadRoleEditor();}
     [RelayCommand] private Task SaveRoleSettings()
     {
         if(!CanSaveRoleSettings || roleEditBaseline is not {} baseline)return Task.CompletedTask;
         var request=new GroupRoleSettingsRequest(RoleEditName.Trim(),RoleEditIcon.Trim(),RoleEditPosition,baseline.Revision);
         return SpaceAction(async(api,t,c,ct)=>
         {
+            if(PreviewMode || SelectedTrustedRole?.RoleId!=baseline.RoleId || GroupRoleManagement.RoleReason(desk,me,baseline.RoleId,"roles",newPosition:request.Position).Length>0)return;
             var result=await api.SaveRoleSettingsAsync(t,c,baseline.RoleId,request,ct);
             if(!CurrentSpace())return;
             if(SelectedTrustedRole?.RoleId==baseline.RoleId)roleEditBaseline=result.Roles.FirstOrDefault(x=>x.RoleId==baseline.RoleId);
             ApplyDesk(result);LoadRoleEditor();
         },true);
     }
-    [RelayCommand] private Task ToggleRolePower(SpacePowerRow row) => !CanEditSelectedRole || SelectedTrustedRole is not { } role ? Task.CompletedTask : SpaceAction(async(api,t,c,ct)=>
+    [RelayCommand] private Task ToggleRolePower(SpacePowerRow row) => !CanEditSelectedRole || SelectedTrustedRole is not { } role
+        || GroupRoleManagement.RoleReason(desk,me,role.RoleId,"roles",addedPower:row.Enabled?null:row.Power).Length>0 ? Task.CompletedTask : SpaceAction(async(api,t,c,ct)=>
     {
+        if(PreviewMode || SelectedTrustedRole?.RoleId!=role.RoleId || GroupRoleManagement.RoleReason(desk,me,role.RoleId,"roles",addedPower:row.Enabled?null:row.Power).Length>0)return;
         var result=await api.SetRolePowerAsync(t,c,role.RoleId,new(row.Power,!row.Enabled),ct);
         if(!CurrentSpace())return;
         var latest=result.Roles.FirstOrDefault(x=>x.RoleId==role.RoleId);
@@ -310,7 +322,7 @@ public sealed partial class GroupViewModel
         ApplyDesk(result);
     },true);
     [RelayCommand] private Task InspectRoleImpact() => !CanEditSelectedRole || SelectedTrustedRole is not { } role ? Task.CompletedTask : SpaceAction(async(api,t,c,ct)=>
-    { var impact=await api.RoleImpactAsync(t,c,role.RoleId,ct); if(SelectedTrustedRole?.RoleId!=role.RoleId)return; RoleImpact=$"Назначений: {impact.Assignments} · правил доступа: {impact.AccessRules}. Удаление изменит права этих участников."; ConfirmRemoveRole=true; });
+    { if(PreviewMode || GroupRoleManagement.RoleReason(desk,me,role.RoleId,"roles").Length>0)return;var impact=await api.RoleImpactAsync(t,c,role.RoleId,ct); if(SelectedTrustedRole?.RoleId!=role.RoleId || !CurrentSpace())return; RoleImpact=$"Назначений: {impact.Assignments} · правил доступа: {impact.AccessRules}. Удаление изменит права этих участников."; ConfirmRemoveRole=true; });
 }
 
 public sealed record SpaceChoice(string Code,string Label) { public override string ToString()=>Label; }
@@ -322,4 +334,4 @@ public sealed partial class SpaceAccessRow : ObservableObject
     public IReadOnlyList<SpaceChoice> Choices=>States;
     [ObservableProperty] private SpaceChoice state;
 }
-public sealed record SpacePowerRow(string Power,bool Enabled) { public string Label=>GroupViewModel.PowerLabel(Power)+(Enabled?" · разрешено":" · выключено"); }
+public sealed record SpacePowerRow(string Power,bool Enabled,bool CanToggle=true,string DisabledReason="") { public string Label=>GroupViewModel.PowerLabel(Power)+(Enabled?" · разрешено":" · выключено"); }

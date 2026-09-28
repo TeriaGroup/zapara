@@ -1,6 +1,6 @@
 import { saveEditorHomework, shareFailedNote } from "./groupHomework.ts";
 import { HOMEWORK_FILE_LIMIT } from "./homework-files.ts";
-import type { HomeworkItem } from "./types";
+import type { HomeworkAudience, HomeworkItem } from "./types";
 import type { HomeworkSaveTicket, PendingHomeworkFile, PreparedHomeworkFile } from "./homework-draft";
 
 type SaveDependencies = {
@@ -12,10 +12,12 @@ type SaveDependencies = {
   readLocal: (id: string) => HomeworkItem | undefined;
   saveLocal: (row: HomeworkItem) => void;
   upload: (item: PreparedHomeworkFile) => Promise<void>;
-  share: (subject: string, text: string, deadline: string | null) => Promise<void>;
+  personalDue?: (ticket: HomeworkSaveTicket) => string | null;
+  audienceSupported?: boolean;
+  share: (subject: string, text: string, deadline: string | null, topicId: string | null, audience: HomeworkAudience | undefined, operationId: string) => Promise<void>;
 };
 
-const shareUnconfirmedNote = "На устройстве сохранено. Отправка группе не подтверждена. Проверьте общую домашку перед новой отправкой.";
+const shareUnconfirmedNote = "На устройстве сохранено. Отправка группе не подтверждена. Проверьте общую домашку; повтор использует прежний номер публикации на обновлённом сервере.";
 
 export function checkHomeworkUpload(response: { ok: boolean; status: number }) {
   if (response.status === 413) throw new Error("quota");
@@ -25,12 +27,17 @@ export function checkHomeworkUpload(response: { ok: boolean; status: number }) {
 /** Retry an unfinished operation with its existing local row and attachment checkpoints. */
 export async function runHomeworkSave(ticket: HomeworkSaveTicket, dependencies: SaveDependencies) {
   const { draft, operation } = ticket;
-  const previousShareAttempt = !!operation.shareAttempted;
+  const shareDeadline = operation.shareAttempted ? operation.shareDeadline ?? null : draft.deadlineMode === "none" ? null : draft.deadlineMode === "custom" ? draft.sharedDeadline ? new Date(draft.sharedDeadline).toISOString() : null : dependencies.personalDue?.(ticket) ?? null;
+  const audience = draft.audience.kind === "selected" ? draft.audience : undefined;
+  const shareSignature = JSON.stringify([draft.subject.trim(), draft.text.trim(), draft.deadlineMode, draft.sharedDeadline, draft.nth, draft.topicId, audience]);
   const assertCurrent = () => { if (!dependencies.isCurrent(ticket)) throw new Error("scope"); };
   const created: string[] = [];
   let committedNewFiles = false;
   try {
     assertCurrent();
+    if (draft.share && audience && !dependencies.audienceSupported) throw new Error("audience-unsupported");
+    if (operation.shareAttempted && operation.shareSignature !== shareSignature) throw new Error("share-changed");
+    if (draft.share && operation.shareAttempted && !dependencies.audienceSupported) return { outcome: { stored: true as const, sent: false, note: "На устройстве сохранено. Отправка группе не подтверждена. Проверьте общую домашку перед новой отправкой." }, success: true };
     if (draft.pending.length > HOMEWORK_FILE_LIMIT) throw new Error("full");
     const selected: PreparedHomeworkFile[] = [];
     for (const source of draft.pending) {
@@ -53,7 +60,7 @@ export async function runHomeworkSave(ticket: HomeworkSaveTicket, dependencies: 
     assertCurrent();
     const files = selected.map(item => item.file);
     const outcome = await saveEditorHomework(
-      { subject: draft.subject, text: draft.text, share: draft.share && !previousShareAttempt, isNew: true },
+      { subject: draft.subject, text: draft.text, share: draft.share, isNew: true },
       dependencies.signedIn, dependencies.communityId,
       async (subject, text) => {
         assertCurrent();
@@ -78,13 +85,15 @@ export async function runHomeworkSave(ticket: HomeworkSaveTicket, dependencies: 
         assertCurrent();
         // A rejected response may follow a server commit. Never create another copy on local retry.
         operation.shareAttempted = true;
-        await dependencies.share(subject, text, draft.sharedDeadline ? new Date(draft.sharedDeadline).toISOString() : null);
+        operation.shareSignature = shareSignature;
+        operation.shareDeadline = shareDeadline;
+        await dependencies.share(subject, text, shareDeadline, draft.topicId || null, audience, operation.id);
       },
     );
     assertCurrent();
     const shareUnconfirmed = outcome.note === shareFailedNote;
     return {
-      outcome: previousShareAttempt || shareUnconfirmed ? { ...outcome, sent: false, note: shareUnconfirmedNote } : outcome,
+      outcome: shareUnconfirmed ? { ...outcome, sent: false, note: shareUnconfirmedNote } : outcome,
       success: !shareUnconfirmed,
     };
   } catch (error) {

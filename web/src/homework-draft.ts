@@ -1,14 +1,15 @@
-import type { HomeworkFile } from "./types";
+import type { HomeworkAudience, HomeworkFile } from "./types";
 
 export type PendingHomeworkFile = { file: File; kind: "photo" | "document" };
 export type HomeworkDraft = {
   subject: string; text: string; share: boolean; nth: number; sharedDeadline: string;
+  deadlineMode: "personal" | "custom" | "none"; audience: HomeworkAudience; topicId: string;
   pending: PendingHomeworkFile[];
 };
 export type PreparedHomeworkFile = { source: PendingHomeworkFile; file: HomeworkFile; blob: Blob; uploaded: boolean };
-export type HomeworkSaveOperation = { id: string; created: string; localSaved: boolean; savedSignature?: string; shareAttempted?: boolean; prepared: PreparedHomeworkFile[] };
+export type HomeworkSaveOperation = { id: string; created: string; localSaved: boolean; savedSignature?: string; shareAttempted?: boolean; shareSignature?: string; shareDeadline?: string | null; prepared: PreparedHomeworkFile[] };
 export type HomeworkSaveTicket = { epoch: number; draft: HomeworkDraft; operation: HomeworkSaveOperation };
-const emptyDraft = (subject = ""): HomeworkDraft => ({ subject, text: "", share: false, nth: 1, sharedDeadline: "", pending: [] });
+const emptyDraft = (subject = ""): HomeworkDraft => ({ subject, text: "", share: false, nth: 1, sharedDeadline: "", deadlineMode: "personal", audience: { kind: "all", roleIds: [], userIds: [] }, topicId: "", pending: [] });
 
 /** Files stay in memory above the routes; a scope change invalidates every previous async ticket. */
 export class HomeworkDraftController {
@@ -33,7 +34,7 @@ export class HomeworkDraftController {
   get dirty() {
     const row = this.draft;
     return !!this.operation?.localSaved || row.subject.trim() !== this.baseline.trim() || !!row.text.trim()
-      || row.share || row.nth !== 1 || !!row.sharedDeadline || row.pending.length > 0;
+      || row.share || row.nth !== 1 || !!row.sharedDeadline || row.deadlineMode !== "personal" || row.audience.kind !== "all" || !!row.topicId || row.pending.length > 0;
   }
   field<K extends keyof HomeworkDraft>(name: K, value: HomeworkDraft[K]) {
     if (this.busy) return;
@@ -76,7 +77,8 @@ export class HomeworkDraftController {
 export function validateHomeworkDraft(draft: HomeworkDraft) {
   if (!draft.subject.trim()) return "Укажите предмет";
   if (!draft.text.trim()) return "Напишите задание";
-  if (draft.share && draft.sharedDeadline && Number.isNaN(new Date(draft.sharedDeadline).getTime())) return "Укажите корректный срок общей домашки";
+  if (draft.share && draft.deadlineMode === "custom" && draft.sharedDeadline && Number.isNaN(new Date(draft.sharedDeadline).getTime())) return "Укажите корректный срок общей домашки";
+  if (draft.share && draft.audience.kind === "selected" && !draft.audience.roleIds.length && !draft.audience.userIds.length) return "Выберите получателей общей домашки";
   return "";
 }
 export function homeworkSaveError(error: unknown, localSaved: boolean) {
@@ -86,6 +88,8 @@ export function homeworkSaveError(error: unknown, localSaved: boolean) {
     : code === "full" ? "Можно приложить не больше шести файлов."
     : code === "bad" ? "Такой файл приложить нельзя."
     : code === "upload" || error instanceof TypeError ? "Вложения не отправились. Проверьте сеть и повторите сохранение."
+    : code === "audience-unsupported" ? "Адресная домашка недоступна на этом сервере. Выберите всю группу или повторите позже."
+    : code === "share-changed" ? "Предыдущая отправка ещё не подтверждена. Для безопасного повтора верните прежние текст, срок и получателей либо очистите черновик и создайте новую публикацию."
     : "Сохранить не получилось. Повторите попытку.";
   return (localSaved ? "На устройстве сохранено. " : "") + detail;
 }

@@ -46,10 +46,10 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
     internal bool ShareStarted { get; set; }
 
     public bool IsDirty => Text != _initialText || Nth != _initialNth || Share != _initialShare ||
-        !Files.Select(file => file.Id).Order(StringComparer.Ordinal).SequenceEqual(_initialFiles);
-    public bool CanEdit => !_aborting && !IsSaving && !IsImporting && !Completion.IsCompleted;
+        Recipients.Snapshot != initialRecipients || !Files.Select(file => file.Id).Order(StringComparer.Ordinal).SequenceEqual(_initialFiles);
+    public bool CanEdit => CanDismissEditor && !PublicationPending;
     public bool CanShareNow => CanEdit && CanShare;
-    public string SaveLabel => IsSaving ? "Сохраняем…" : Loc.Current.T("save");
+    public string SaveLabel => IsSaving ? "Сохраняем…" : PublicationPending ? "Повторить публикацию" : Loc.Current.T("save");
 
     public void CaptureInitialState()
     {
@@ -57,6 +57,7 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
         _initialNth = Nth;
         _initialShare = Share;
         _initialFiles = Files.Select(file => file.Id).Order(StringComparer.Ordinal).ToArray();
+        initialRecipients = Recipients.Snapshot;
     }
 
     [ObservableProperty] private bool _isSaving;
@@ -72,6 +73,7 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
     private void RefreshEditing()
     {
         OnPropertyChanged(nameof(CanEdit));
+        OnPropertyChanged(nameof(CanDismissEditor));
         OnPropertyChanged(nameof(CanShareNow));
         OnPropertyChanged(nameof(SaveLabel));
         RefreshCanConfirm();
@@ -82,11 +84,12 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
         RemoveFileCommand.NotifyCanExecuteChanged();
         DiscardCommand.NotifyCanExecuteChanged();
         KeepEditingCommand.NotifyCanExecuteChanged();
+        Recipients.Enabled = CanEdit;
     }
 
     public override void Cancel()
     {
-        if (!CanEdit) return;
+        if (!CanDismissEditor) return;
         if (IsDirty) ShowDiscardConfirmation = true;
         else base.Cancel();
     }
@@ -98,11 +101,11 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
         if (!IsSaving && !IsImporting) base.Abort();
     }
 
-    [RelayCommand(CanExecute = nameof(CanEdit))]
-    private void Discard() { if (CanEdit) base.Cancel(); }
+    [RelayCommand(CanExecute = nameof(CanDismissEditor))]
+    private void Discard() { if (CanDismissEditor) base.Cancel(); }
 
-    [RelayCommand(CanExecute = nameof(CanEdit))]
-    private void KeepEditing() { if (CanEdit) ShowDiscardConfirmation = false; }
+    [RelayCommand(CanExecute = nameof(CanDismissEditor))]
+    private void KeepEditing() { if (CanDismissEditor) ShowDiscardConfirmation = false; }
 
     protected override void OnConfirm() => _ = SaveAsync();
 
@@ -114,11 +117,13 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
         try
         {
             if (PersistAsync is not null) await PersistAsync();
+            PublicationPending = false;
             Close(!_aborting);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            Error = "Не удалось сохранить домашку. Текст и файлы остались здесь — попробуйте ещё раз.";
+            if (ex is HomeworkPublicationException) PublicationPending = PublicationRequest is not null;
+            Error = ex is HomeworkPublicationException ? ex.Message : "Не удалось сохранить домашку. Текст и файлы остались здесь — попробуйте ещё раз.";
         }
         finally
         {
@@ -128,7 +133,7 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
     }
 
     private bool _share;
-    public bool Share { get => _share; set { if (CanEdit && (!value || CanShare)) SetProperty(ref _share, value); } }
+    public bool Share { get => _share; set { if (CanEdit && (!value || CanShare) && SetProperty(ref _share, value)) { OnPropertyChanged(nameof(ShowRecipients)); RefreshCanConfirm(); } } }
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowShareSignInHint))]
     private bool _canShare;
@@ -144,7 +149,8 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
         OnPropertyChanged(nameof(CanShareNow));
     }
 
-    protected override bool CanConfirm() => CanEdit && !ShowDiscardConfirmation && !string.IsNullOrWhiteSpace(Text);
+    protected override bool CanConfirm() => CanDismissEditor && !ShowDiscardConfirmation && !string.IsNullOrWhiteSpace(Text)
+        && (!Share || !LoadingRecipients && Recipients.Valid);
 
     [RelayCommand(CanExecute = nameof(CanEdit))] private void Inc() => Nth = Math.Min(10, Nth + 1);
     [RelayCommand(CanExecute = nameof(CanEdit))] private void Dec() => Nth = Math.Max(1, Nth - 1);
@@ -198,6 +204,7 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
         DueText = due is null
             ? loc.T("hwNoDate")
             : loc.T("hwDue", $"{DayTitles.ShortDate(due.Value, loc)} ({loc.I18n.FormatDay(due.Value)})");
+        OnPropertyChanged(nameof(PublicationDeadlineLabel));
     }
 }
 
@@ -209,6 +216,7 @@ public static class HomeworkFilePrompt
     {
         dialog.CanShare = !app.Profile.IsGuest;
         dialog.CaptureInitialState();
+        dialog.ConfigurePublication(app);
         dialog.DiscardStaged = id => app.HomeworkFiles.DiscardFile(dialog.DraftId, id);
         dialog.OnTooMany = () => app.Toasts.Info(app.Loc.T("hwFileFull"));
         dialog.Import = async photo =>

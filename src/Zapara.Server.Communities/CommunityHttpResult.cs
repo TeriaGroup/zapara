@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using System.Text.Json.Nodes;
 using Zapara.Contracts.Communities;
 using Zapara.Server.Accounts;
 
@@ -39,7 +40,7 @@ internal static class CommunityHttpResult
     // stored content and modern/native-v2/browser responses retain the original paragraphs.
     private static object? Legacy(object? value) => value switch
     {
-        HomeworkResponse h => new HomeworkResponse(h.HomeworkId, h.CommunityId, h.Title, SingleLine(h.Body), h.Revision, h.CreatedAt, h.UpdatedAt, h.DeadlineAt, h.TopicId),
+        HomeworkResponse h => new HomeworkResponse(h.HomeworkId, h.CommunityId, h.Title, SingleLine(h.Body), h.Revision, h.CreatedAt, h.UpdatedAt, h.DeadlineAt, h.TopicId, h.Audience, h.CanEdit, h.CanComplete),
         AnnouncementResponse a => new AnnouncementResponse(a.AnnouncementId, a.CommunityId, a.Title, SingleLine(a.Body), a.Revision, a.CreatedAt, a.UpdatedAt),
         IEnumerable<HomeworkResponse> homework => homework.Select(h => Legacy(h)).ToArray(),
         IEnumerable<AnnouncementResponse> announcements => announcements.Select(a => Legacy(a)).ToArray(),
@@ -66,12 +67,33 @@ internal static class CommunityHttpResult
         public Task ExecuteAsync(HttpContext context)
         {
             object? shown = context.Request.Path.StartsWithSegments("/api/v1/communities") ? Legacy(value) : value;
-            var modern = context.Request.Headers["X-Zapara-Group-Space"].ToString() == "1"
+            var homework = context.Request.Headers["X-Zapara-Homework"].ToString() == "1";
+            var modern = homework || context.Request.Headers["X-Zapara-Group-Space"].ToString() == "1"
                 || (context.Request.Path.Value?.Split('/').Contains("space", StringComparer.Ordinal) ?? false);
             if (!modern) shown = LegacyGroupSpace(shown);
             else context.Response.Headers["X-Zapara-Group-Space"] = "1";
-            return new FrozenJson(CommunityJson.Serialize(shown), status, "application/json; charset=utf-8").ExecuteAsync(context);
+            var bytes = CommunityJson.Serialize(shown);
+            if (homework) context.Response.Headers["X-Zapara-Homework"] = "1";
+            else
+            {
+                // Native clients reject unknown fields. Preserve both earlier negotiated shapes.
+                var legacy = JsonNode.Parse(bytes);
+                RemoveHomeworkMetadata(legacy);
+                bytes = CommunityJson.Serialize(legacy);
+            }
+            return new FrozenJson(bytes, status, "application/json; charset=utf-8").ExecuteAsync(context);
         }
+    }
+    private static void RemoveHomeworkMetadata(JsonNode? node)
+    {
+        if (node is JsonObject obj)
+        {
+            if (obj.ContainsKey("homeworkId") && obj.ContainsKey("title"))
+            { obj.Remove("audience"); obj.Remove("canEdit"); obj.Remove("canComplete"); }
+            if (obj.ContainsKey("maxRoles")) obj.Remove("homeworkAudience");
+            foreach (var child in obj.ToArray()) RemoveHomeworkMetadata(child.Value);
+        }
+        else if (node is JsonArray list) foreach (var item in list) RemoveHomeworkMetadata(item);
     }
     private sealed class FrozenJson(byte[] body, int status, string contentType) : IResult
     {

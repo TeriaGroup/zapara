@@ -23,6 +23,8 @@ import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.ZTextField
 import ru.bgtu_voenmeh.zapara.ui.components.RevisionGuard
+import ru.bgtu_voenmeh.zapara.ui.homework.AudienceChoice
+import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkAudiencePicker
 import java.time.*
 import java.time.format.DateTimeFormatter
 import java.util.UUID
@@ -67,11 +69,37 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
                         ZButton(uiText(R.string.space_day_68), { dispatch(onEvent, GroupSpaceAction.Archive(topic, false)) }, enabled = !state.channelBusy && GroupActions.canManageTopic(state,topic), ghost = true) }
                 }
                 "roles" -> {
-                    item { Text(uiText(R.string.space_day_69), style = Zapara.typography.caption)
-                        var name by rememberSaveable { mutableStateOf("") }
-                        Field(uiText(R.string.space_day_70), name, { name = it.take(32) })
-                        ZButton(uiText(R.string.space_day_71), { dispatch(onEvent, GroupSpaceAction.CreateRole(name)); name = "" }, enabled = !state.channelBusy && (state.desk?.headman == true || "roles" in state.desk?.mine.orEmpty()) && name.trim().length >= 2 && state.desk?.roles.orEmpty().size < (state.space?.capabilities?.maxRoles ?: 12)) }
-                    items(state.desk?.roles.orEmpty().sortedByDescending { it.position }, key = { it.roleId }) { RoleEditor(it, state, onEvent) }
+                    item {
+                        val roles = state.desk?.roles.orEmpty().sortedByDescending { it.position }
+                        var selectedRoleId by rememberSaveable(state.communityId) { mutableStateOf<String?>(null) }
+                        var name by rememberSaveable(state.communityId) { mutableStateOf("") }
+                        val selected = roles.firstOrNull { it.roleId == selectedRoleId }
+                        val previousIds = remember(state.communityId) { mutableStateOf(roles.map { it.roleId }.toSet()) }
+                        LaunchedEffect(roles.map { it.roleId }) {
+                            if (selectedRoleId != null && selected == null) selectedRoleId = null
+                            val added = roles.firstOrNull { it.roleId !in previousIds.value }
+                            if (added != null && added.name.equals(name.trim(), ignoreCase = true)) { selectedRoleId = added.roleId; name = "" }
+                            previousIds.value = roles.map { it.roleId }.toSet()
+                        }
+                        Text(uiText(R.string.space_day_69), style = Zapara.typography.caption)
+                        Text(uiText(R.string.group_roles_scope), style = Zapara.typography.caption)
+                        Text(uiText(R.string.group_roles_count, roles.size, state.space?.capabilities?.maxRoles ?: 12), style = Zapara.typography.caption)
+                        if (state.desk?.headman == true || "roles" in state.desk?.mine.orEmpty()) {
+                            Field(uiText(R.string.space_day_70), name, { name = it.take(32) })
+                            val mayCreate = state.desk?.headman == true || state.desk?.let { RoleManagementPolicy.actorPosition(it, state.people) > 0 } == true
+                            if (!mayCreate) Text(uiText(R.string.group_roles_create_level), style = Zapara.typography.caption)
+                            ZButton(uiText(R.string.space_day_71), { dispatch(onEvent, GroupSpaceAction.CreateRole(name.trim())) }, enabled = mayCreate && !state.channelBusy && name.trim().length >= 2 && roles.size < (state.space?.capabilities?.maxRoles ?: 12))
+                        }
+                        roles.forEach { role ->
+                            val grants = state.desk?.grants.orEmpty().count { it.roleId == role.roleId }
+                            val powers = state.desk?.powers.orEmpty().filter { it.roleId == role.roleId }.map { powerTitle(it.power) }
+                            ZCard(Modifier.fillMaxWidth()) {
+                                ZButton(uiText(R.string.group_roles_card, role.icon, role.name, role.position, grants), { selectedRoleId = if (selectedRoleId == role.roleId) null else role.roleId }, modifier = Modifier.fillMaxWidth(), ghost = selectedRoleId != role.roleId)
+                                Text(powers.take(3).joinToString(" · ").ifBlank { uiText(R.string.group_roles_no_powers) } + if (powers.size > 3) uiText(R.string.group_roles_more_powers, powers.size - 3) else "", style = Zapara.typography.caption)
+                            }
+                        }
+                        if (selected != null) RoleEditor(selected, state, onEvent)
+                    }
                 }
                 "access" -> state.access?.let { access -> item { AccessEditor(access, state, onEvent) } }
                 "preview" -> {
@@ -103,34 +131,79 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
 
 @Composable private fun RoleEditor(role: GroupRole, state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
     val uiText = rememberUiText()
-    val canSettings = state.desk?.headman == true || "roles" in state.desk?.mine.orEmpty()
-    val canGrant = state.desk?.headman == true || "grants" in state.desk?.mine.orEmpty()
+    val desk = state.desk ?: return
+    val settingReason = RoleManagementPolicy.roleReason(desk, state.people, role, "roles")
+    val grantReason = RoleManagementPolicy.roleReason(desk, state.people, role, "grants")
+    val canSettings = settingReason == null
+    val canGrant = grantReason == null
     var initialRevision by remember(role.roleId) { mutableStateOf(role.revision) }
     var name by rememberSaveable(role.roleId) { mutableStateOf(role.name) }
     var icon by rememberSaveable(role.roleId) { mutableStateOf(role.icon) }
     var position by rememberSaveable(role.roleId) { mutableStateOf(role.position.toString()) }
-    var expanded by rememberSaveable(role.roleId) { mutableStateOf(false) }
+    var section by rememberSaveable(role.roleId) { mutableStateOf("settings") }
+    var query by rememberSaveable(role.roleId) { mutableStateOf("") }
+    var assignedOnly by rememberSaveable(role.roleId) { mutableStateOf(true) }
     var delete by remember { mutableStateOf(false) }
     LaunchedEffect(role.revision) { if (role.name == name && role.icon == icon && role.position.toString() == position) initialRevision = role.revision }
     ZCard(Modifier.fillMaxWidth()) {
-        ZButton("${role.icon} ${role.name} · ${role.position}", { expanded = !expanded }, ghost = true, quiet = true)
-        if (expanded) {
-            if (role.revision != initialRevision) ZButton(uiText(R.string.space_day_reload_changes), { name = role.name; icon = role.icon; position = role.position.toString(); initialRevision = role.revision }, ghost = true)
-            Field(uiText(R.string.space_day_81), name, { name = it.take(32) }); Field(uiText(R.string.space_day_82), icon, { icon = it.take(16) }); Field(uiText(R.string.space_day_83), position, { position = it })
-            ZButton(uiText(R.string.space_day_84), { dispatch(onEvent, GroupSpaceAction.Role(role.copy(name = name.trim(), icon = icon, position = position.toInt(), revision = initialRevision))) }, enabled = canSettings && !state.channelBusy && name.trim().length >= 2 && position.toIntOrNull() != null)
-            Text(uiText(R.string.space_day_85), style = Zapara.typography.section)
-            state.space?.capabilities?.powers.orEmpty().forEach { power ->
-                val on = state.desk?.powers?.any { it.roleId == role.roleId && it.power == power } == true
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Checkbox(on, { dispatch(onEvent, GroupSpaceAction.Power(role.roleId, power, it)) }, enabled = canSettings && !state.channelBusy); Text(powerTitle(power), style = Zapara.typography.body) }
+        Text("${role.icon} ${role.name}", style = Zapara.typography.section)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            listOf("settings" to R.string.group_roles_settings, "powers" to R.string.group_roles_powers, "people" to R.string.group_roles_people).forEach { (key, label) ->
+                ZChip(uiText(label), selected = section == key, onClick = { section = key })
             }
-            Text(uiText(R.string.space_day_86, (state.space?.capabilities?.maxRolesPerMember ?: 3).toString()), style = Zapara.typography.section)
-            state.people.forEach { person ->
-                val grants = state.desk?.grants.orEmpty()
-                val on = grants.any { it.roleId == role.roleId && it.userId == person.id }
-                val count = grants.count { it.userId == person.id }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Checkbox(on, { dispatch(onEvent, GroupSpaceAction.Grant(role.roleId, person.id, it)) }, enabled = canGrant && !state.channelBusy && (on || count < (state.space?.capabilities?.maxRolesPerMember ?: 3))); Text("${person.name} · ${officialRoleTitle(person.role)}", style = Zapara.typography.body) }
+        }
+        when (section) {
+            "settings" -> {
+                settingReason?.let { Text(uiText(it), style = Zapara.typography.caption, color = Zapara.colors.warn) }
+                if (role.revision != initialRevision) {
+                    Text(uiText(R.string.group_roles_conflict), style = Zapara.typography.caption, color = Zapara.colors.warn)
+                    ZButton(uiText(R.string.space_day_reload_changes), { name = role.name; icon = role.icon; position = role.position.toString(); initialRevision = role.revision }, ghost = true)
+                }
+                Field(uiText(R.string.space_day_81), name, { name = it.take(32) }, canSettings)
+                Field(uiText(R.string.space_day_82), icon, { icon = it.take(16) }, canSettings)
+                Field(uiText(R.string.space_day_83), position, { position = it }, canSettings)
+                Text(uiText(R.string.group_roles_level_hint), style = Zapara.typography.caption)
+                val maxPosition = if (desk.headman) 10000 else (RoleManagementPolicy.actorPosition(desk, state.people) - 1).coerceAtLeast(0)
+                ZButton(uiText(R.string.space_day_84), { dispatch(onEvent, GroupSpaceAction.Role(role.copy(name = name.trim(), icon = icon, position = position.toInt(), revision = initialRevision))) }, enabled = canSettings && !state.channelBusy && role.revision == initialRevision && name.trim().length >= 2 && (position.toIntOrNull()?.let { it in 0..maxPosition } == true))
+                ZButton(uiText(R.string.space_day_87), { delete = true; dispatch(onEvent, GroupSpaceAction.RoleImpact(role.roleId)) }, enabled = canSettings && !state.channelBusy, ghost = true)
             }
-            ZButton(uiText(R.string.space_day_87), { delete = true; dispatch(onEvent, GroupSpaceAction.RoleImpact(role.roleId)) }, enabled = canSettings && !state.channelBusy, ghost = true)
+            "powers" -> {
+                settingReason?.let { Text(uiText(it), style = Zapara.typography.caption, color = Zapara.colors.warn) }
+                (state.space?.capabilities?.powers ?: desk.capabilities.powers).forEach { power ->
+                    val on = desk.powers.any { it.roleId == role.roleId && it.power == power }
+                    val allowed = canSettings && (desk.headman || power in desk.mine)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(on, { dispatch(onEvent, GroupSpaceAction.Power(role.roleId, power, it)) }, enabled = allowed && !state.channelBusy)
+                        Text(powerTitle(power), style = Zapara.typography.body)
+                    }
+                    if (!allowed && !desk.headman && power !in desk.mine) Text(uiText(R.string.group_roles_power_unavailable), style = Zapara.typography.caption)
+                }
+            }
+            "people" -> {
+                val grants = desk.grants
+                val limit = state.space?.capabilities?.maxRolesPerMember ?: 3
+                Text(uiText(R.string.space_day_86, limit.toString()), style = Zapara.typography.section)
+                grantReason?.let { Text(uiText(it), style = Zapara.typography.caption, color = Zapara.colors.warn) }
+                Field(uiText(R.string.group_roles_person_search), query, { query = it })
+                ZChip(uiText(R.string.group_roles_assigned_only), selected = assignedOnly, onClick = { assignedOnly = !assignedOnly })
+                val filtered = state.people.filter { person ->
+                    (!assignedOnly || grants.any { it.userId == person.id && it.roleId == role.roleId }) &&
+                        (query.isBlank() || person.name.contains(query, true) || person.handle.contains(query, true))
+                }
+                Text(uiText(R.string.group_roles_shown, minOf(filtered.size, 40), filtered.size), style = Zapara.typography.caption)
+                filtered.take(40).forEach { person ->
+                    val on = grants.any { it.roleId == role.roleId && it.userId == person.id }
+                    val count = grants.count { it.userId == person.id }
+                    val reason = RoleManagementPolicy.personReason(desk, state.people, person)
+                        ?: if (!on && count >= limit) R.string.group_roles_limit else null
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(on, { dispatch(onEvent, GroupSpaceAction.Grant(role.roleId, person.id, it)) }, enabled = canGrant && reason == null && !state.channelBusy)
+                        Text(uiText(R.string.group_roles_person_count, person.name, officialRoleTitle(person.role), count, limit), style = Zapara.typography.body)
+                    }
+                    reason?.let { Text(uiText(it), style = Zapara.typography.caption, color = Zapara.colors.text2) }
+                }
+                if (filtered.isEmpty()) Text(uiText(R.string.group_roles_people_empty), style = Zapara.typography.caption)
+            }
         }
     }
     if (delete) AlertDialog(onDismissRequest = { delete = false }, title = { Text(uiText(R.string.space_day_88, (role.name).toString())) },
@@ -239,6 +312,7 @@ fun powerResource(power: String): Int = when(power) {
     val nativeContext = LocalContext.current
     val topic = GroupActions.topic(state, state.activeTopicId)
     val permissions = topic?.permissions.orEmpty()
+    var completedFilter by rememberSaveable(state.activeTopicId) { mutableStateOf(false) }
     LazyColumn(modifier, contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         item { state.spaceError?.let { Text(it, color = Zapara.colors.bad) }; if (state.channelBusy) LinearProgressIndicator(Modifier.fillMaxWidth()); ZButton(uiText(R.string.space_day_116), { dispatch(onEvent, GroupSpaceAction.ReloadContent) }, enabled = !state.channelBusy, ghost = true) }
         when(state.activeChannelKind) {
@@ -249,21 +323,33 @@ fun powerResource(power: String): Int = when(power) {
             }
             "homework" -> {
                 if ("homework" in permissions && state.preview == null) item { SharedHomeworkEditor(state, onEvent) }
-                items(state.homework, key = { it.homeworkId }) { homework -> ZCard(Modifier.fillMaxWidth()) {
+                val finished = state.homework.filter { state.completions[it.homeworkId]?.completed == true }
+                val active = state.homework.filterNot { state.completions[it.homeworkId]?.completed == true }
+                item {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                        ZChip(uiText(R.string.group_homework_active_filter, active.size), selected = !completedFilter, onClick = { completedFilter = false })
+                        ZChip(uiText(R.string.group_homework_done_filter, finished.size), selected = completedFilter, onClick = { completedFilter = true })
+                    }
+                }
+                val shown = if (completedFilter) finished else active
+                items(shown, key = { it.homeworkId }) { homework -> ZCard(Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(state.completions[homework.homeworkId]?.completed == true, { dispatch(onEvent, GroupSpaceAction.CompleteHomework(homework.homeworkId, it)) }, enabled = !state.channelBusy && state.preview == null)
+                        Checkbox(state.completions[homework.homeworkId]?.completed == true, { dispatch(onEvent, GroupSpaceAction.CompleteHomework(homework.homeworkId, it)) }, enabled = !state.channelBusy && state.preview == null && (state.space?.capabilities?.homeworkAudience != true || homework.canComplete))
                         Text(homework.title, style = Zapara.typography.bodyStrong)
                     }
-                    Text(homework.body, style = Zapara.typography.body); Text(displayDeadline(homework.deadlineAt), style = Zapara.typography.caption)
+                    Text(homework.body, style = Zapara.typography.body); Text(uiText(R.string.group_homework_due, displayDeadline(homework.deadlineAt)), style = Zapara.typography.caption)
+                    Text(uiText(if (homework.audience?.selected == true) R.string.group_homework_selected else R.string.group_homework_all), style = Zapara.typography.caption)
+                    Text(uiText(if (homework.canComplete || state.space?.capabilities?.homeworkAudience != true) R.string.group_homework_my_done else R.string.group_homework_manager_only), style = Zapara.typography.caption)
                     Text(uiText(R.string.space_day_118), style = Zapara.typography.caption)
                     ZButton(uiText(R.string.space_day_22), { onEvent(GroupEvent.Discuss("${homework.title} · ${homework.deadlineAt?.atZone(ZoneId.systemDefault())?.toLocalDate() ?: uiText(R.string.space_day_61)} · ${homework.body}")) }, ghost = true, enabled = state.preview == null)
-                    if ("homework" in permissions && state.preview == null) {
+                    if ("homework" in permissions && state.preview == null && (state.space?.capabilities?.homeworkAudience != true || homework.canEdit)) {
                         var editing by rememberSaveable(homework.homeworkId) { mutableStateOf(false) }
                         ZButton(uiText(R.string.space_day_edit_homework), { editing = !editing }, ghost = true)
                         if (editing) SharedHomeworkEditor(state, onEvent, homework)
                     }
 
                 } }
+                if (shown.isEmpty()) item { Text(uiText(R.string.group_homework_filter_empty), style = Zapara.typography.caption) }
             }
             "schedule" -> {
                 item {
@@ -357,8 +443,12 @@ fun powerResource(power: String): Int = when(power) {
 
 @Composable private fun SharedHomeworkEditor(state: GroupUiState, onEvent: (GroupEvent) -> Unit, initial: CommunityHomework? = null) {
     val uiText = rememberUiText()
-    var title by rememberSaveable(state.activeTopicId, initial?.homeworkId) { mutableStateOf(initial?.title ?: "") }; var body by rememberSaveable(state.activeTopicId, initial?.homeworkId) { mutableStateOf(initial?.body ?: "") }; var deadline by rememberSaveable(state.activeTopicId, initial?.homeworkId) { mutableStateOf(initial?.deadlineAt?.atZone(ZoneId.systemDefault())?.toLocalDate()?.toString() ?: "") }
-    var revisions by rememberSaveable(initial?.homeworkId, stateSaver = RevisionGuard.Saver) { mutableStateOf(RevisionGuard(initial?.revision ?: 0)) }
+    val editorScope = GroupHomeworkDraftRules.scope(state.communityId, state.activeTopicId, initial?.homeworkId)
+    var title by rememberSaveable(editorScope) { mutableStateOf(initial?.title ?: "") }; var body by rememberSaveable(editorScope) { mutableStateOf(initial?.body ?: "") }; var deadline by rememberSaveable(editorScope) { mutableStateOf(initial?.deadlineAt?.atZone(ZoneId.systemDefault())?.toLocalDate()?.toString() ?: "") }
+    var revisions by rememberSaveable(editorScope, stateSaver = RevisionGuard.Saver) { mutableStateOf(RevisionGuard(initial?.revision ?: 0)) }
+    var audience by rememberSaveable(editorScope, stateSaver = GroupHomeworkDraftRules.AudienceSaver) { mutableStateOf(initial?.audience ?: HomeworkAudience()) }
+    var operationId by rememberSaveable(editorScope) { mutableStateOf(UUID.randomUUID().toString()) }
+    val targetedSupported = state.space?.capabilities?.homeworkAudience == true
     LaunchedEffect(initial?.revision) {
         initial?.let { current ->
             revisions = revisions.observed(current.revision)
@@ -369,15 +459,37 @@ fun powerResource(power: String): Int = when(power) {
             revisions = revisions.observed(initial?.revision ?: saved.revision).acknowledgedOwn(saved.revision)
         }
     }
-    val initialVersion = remember(state.activeTopicId) { state.homeworkCreateVersion }
-    LaunchedEffect(state.homeworkCreateVersion) { if (initial == null && state.homeworkCreateVersion > initialVersion) { title = ""; body = ""; deadline = "" } }
+    val initialVersion = remember(editorScope) { state.homeworkCreateVersion }
+    LaunchedEffect(state.homeworkCreateVersion, state.lastCreatedHomeworkOperationId) {
+        if (initial == null && state.homeworkCreateVersion > initialVersion && state.lastCreatedHomeworkOperationId == operationId) {
+            title = ""; body = ""; deadline = ""; audience = HomeworkAudience()
+            operationId = GroupHomeworkDraftRules.nextOperation(operationId, state.lastCreatedHomeworkOperationId) { UUID.randomUUID().toString() }
+        }
+    }
     ZCard(Modifier.fillMaxWidth()) {
         if (initial != null && revisions.conflict) {
+            val audienceConflict = GroupHomeworkDraftRules.conflict(audience, initial.audience)
             Text(uiText(R.string.review_homework_conflict), color = Zapara.colors.warn)
             Text("${initial.title} · ${initial.body} · ${displayDeadline(initial.deadlineAt)} · ${initial.revision}", style = Zapara.typography.caption)
-            ZButton(uiText(R.string.space_day_reload_changes), { title = initial.title; body = initial.body; deadline = displayDeadlineValue(initial.deadlineAt); revisions = revisions.reload() }, ghost = true)
-            ZButton(uiText(R.string.review_keep_draft), { revisions = revisions.reload() }, ghost = true)
+            Text(uiText(R.string.group_homework_server_audience, homeworkAudienceDescription(audienceConflict.server, state)), style = Zapara.typography.caption)
+            Text(uiText(R.string.group_homework_draft_audience, homeworkAudienceDescription(audienceConflict.draft, state)), style = Zapara.typography.caption)
+            ZButton(uiText(R.string.space_day_reload_changes), { title = initial.title; body = initial.body; deadline = displayDeadlineValue(initial.deadlineAt); audience = audienceConflict.reloadAudience(); revisions = revisions.reload() }, ghost = true)
+            ZButton(uiText(R.string.review_keep_draft), { audience = audienceConflict.keepDraftAudience(); revisions = revisions.reload() }, ghost = true)
         }
-        Field(uiText(R.string.space_day_149), title, { title = it }); Field(uiText(R.string.space_day_150), body, { body = it }); Field(uiText(R.string.space_day_151), deadline, { deadline = it })
-        ZButton(if (initial == null) uiText(R.string.space_day_152) else uiText(R.string.space_day_save_homework), { dispatch(onEvent, GroupSpaceAction.SaveHomework(initial?.homeworkId, title, body, revisions.base, if (initial != null && displayDeadlineValue(initial.deadlineAt) == deadline) initial.deadlineAt else parseDeadline(deadline))) }, enabled = !state.channelBusy && title.trim().length >= 2 && body.isNotBlank() && runCatching { parseDeadline(deadline) }.isSuccess) }
+        Field(uiText(R.string.space_day_149), title, { title = it }, !state.channelBusy); Field(uiText(R.string.space_day_150), body, { body = it }, !state.channelBusy); Field(uiText(R.string.space_day_151), deadline, { deadline = it }, !state.channelBusy)
+        Text(uiText(R.string.group_homework_editor_context, state.title, GroupActions.topic(state, state.activeTopicId)?.title ?: uiText(R.string.group_homework_no_topic), deadline.ifBlank { uiText(R.string.group_homework_no_deadline) }), style = Zapara.typography.caption)
+        if (targetedSupported) HomeworkAudiencePicker(editorScope, audience,
+            state.desk?.roles.orEmpty().map { AudienceChoice(it.roleId, it.name) },
+            state.people.filterNot { it.self }.map { AudienceChoice(it.id, it.name) }, !state.channelBusy, { audience = it })
+        else Text(uiText(R.string.group_homework_old_server), style = Zapara.typography.caption)
+        Text(uiText(R.string.group_homework_text_only), style = Zapara.typography.caption)
+        ZButton(if (initial == null) uiText(R.string.space_day_152) else uiText(R.string.space_day_save_homework), { dispatch(onEvent, GroupSpaceAction.SaveHomework(initial?.homeworkId, title, body, revisions.base, if (initial != null && displayDeadlineValue(initial.deadlineAt) == deadline) initial.deadlineAt else parseDeadline(deadline), audience, operationId.takeIf { initial == null })) }, enabled = !state.channelBusy && !revisions.conflict && title.trim().length >= 2 && body.isNotBlank() && runCatching { parseDeadline(deadline) }.isSuccess && (!audience.selected || targetedSupported) && (!targetedSupported || audience.valid())) }
+}
+
+@Composable private fun homeworkAudienceDescription(value: HomeworkAudience, state: GroupUiState): String {
+    val uiText = rememberUiText()
+    if (!value.selected) return uiText(R.string.homework_audience_all)
+    val roles = value.roleIds.map { id -> state.desk?.roles?.firstOrNull { it.roleId == id }?.name ?: id }
+    val people = value.userIds.map { id -> state.people.firstOrNull { it.id == id }?.name ?: id }
+    return uiText(R.string.homework_audience_selected) + ": " + (roles + people).joinToString(", ")
 }

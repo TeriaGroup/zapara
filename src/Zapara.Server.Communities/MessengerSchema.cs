@@ -245,6 +245,15 @@ internal static class MessengerSchema
                 deadline_at timestamptz
             );
             ALTER TABLE __MSG__.group_homework_details ADD COLUMN IF NOT EXISTS topic_id uuid REFERENCES __MSG__.group_topics(topic_id);
+            ALTER TABLE __MSG__.group_homework_details ADD COLUMN IF NOT EXISTS audience text NOT NULL DEFAULT '{"kind":"all","roleIds":[],"userIds":[]}';
+            CREATE TABLE IF NOT EXISTS __MSG__.group_homework_operations (
+                community_id uuid NOT NULL REFERENCES __COM__.communities(community_id) ON DELETE CASCADE,
+                author_id uuid NOT NULL REFERENCES __ACCOUNTS__.users(user_id) ON DELETE CASCADE,
+                operation_id uuid NOT NULL,
+                homework_id uuid NOT NULL REFERENCES __COM__.shared_homework(homework_id) ON DELETE CASCADE,
+                payload_hash text NOT NULL,
+                PRIMARY KEY(community_id,author_id,operation_id)
+            );
             CREATE TABLE IF NOT EXISTS __MSG__.group_forms (
                 form_id uuid PRIMARY KEY, community_id uuid NOT NULL REFERENCES __COM__.communities(community_id) ON DELETE CASCADE,
                 topic_id uuid NOT NULL REFERENCES __MSG__.group_topics(topic_id) ON DELETE CASCADE,

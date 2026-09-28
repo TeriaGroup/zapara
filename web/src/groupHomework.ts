@@ -8,7 +8,7 @@ export type GroupHomeworkBook = { local: LocalHomeworkMark[]; copies: GroupCopyM
 export const shareSignInNote = "Войдите в аккаунт, чтобы отправить домашку группе.";
 export const shareLocalOnlyNote = "Вы ещё не в группе. Домашка сохранена только на этом устройстве.";
 export const shareFailedNote = "На устройстве сохранено. Группе отправить не получилось.";
-export const shareSharedNote = "Домашка продублирована всей группе.";
+export const shareSharedNote = "Домашка опубликована выбранным получателям.";
 
 /** Store the editor's subject and text first. The group call gets that same pair and starts only after the local row. */
 export async function saveEditorHomework(

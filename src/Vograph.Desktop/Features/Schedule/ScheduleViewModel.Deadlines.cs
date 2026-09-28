@@ -63,6 +63,7 @@ public sealed partial class ScheduleViewModel
                 foreach(var community in communities.Where(x=>eligibleCommunities.Contains(x.CommunityId)))
                 foreach(var item in await api.ListHomeworkCopiesAsync(token,community.CommunityId,operation.Token))
                 {
+                    if(!item.CanComplete)continue;
                     var localDue=item.DeadlineAt?.LocalDateTime;
                     // Unscheduled shared homework has a subject in its title, following the existing share contract.
                     var subjectIsVisible=visible.Contains(ParityService.NormalizeSubject(item.Title));
@@ -120,7 +121,7 @@ public sealed partial class ScheduleViewModel
     }
     private async Task ToggleSharedDeadline(Guid community,GroupHomeworkCopyResponse item,PlannerDeadlineRow row)
     {
-        if(App.Communities is not {} api||App.CommunityAccess is not {} access)return;
+        if(!item.CanComplete || App.Communities is not {} api||App.CommunityAccess is not {} access)return;
         try{var token=await access(CancellationToken.None);if(string.IsNullOrWhiteSpace(token))return;var before=row.Done;var state=await api.GetCompletionAsync(token,community,item.HomeworkId);var changed=await api.UpsertCompletionAsync(token,community,item.HomeworkId,new(!before,state.Revision));row.Done=!before;OnPropertyChanged(nameof(DeadlineTitle));deadlineUndoShared=true;deadlineUndo=async()=>{await api.UpsertCompletionAsync(token,community,item.HomeworkId,new(before,changed.Revision));row.Done=before;};DeadlineFeedback=before?"Отметка снята":"Отмечено готово";}
         catch(Exception ex)when(ex is AccountClientException || ex is CommunityClientException e && e.Failure is CommunityClientFailure.InvalidSession or CommunityClientFailure.Forbidden or CommunityClientFailure.NotFound){PurgeSharedDeadlines(community);App.Toasts.Error("Доступ к заданию изменился.");}
         catch(CommunityClientException){App.Toasts.Error("Не удалось сохранить готовность.");}

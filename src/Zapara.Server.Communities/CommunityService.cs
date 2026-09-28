@@ -64,7 +64,7 @@ public sealed partial class CommunityService(IAccountUnitOfWork trustedAccounts,
         return list.Select(item =>
         {
             var body = ReadText(ContentNames.Homework(item.HomeworkId), item.Body);
-            return body == item.Body ? item : new GroupHomeworkCopyResponse(item.HomeworkId, item.Title, body, item.Revision, item.Completed, item.CompletionRevision,item.DeadlineAt,item.TopicId);
+            return body == item.Body ? item : new GroupHomeworkCopyResponse(item.HomeworkId, item.Title, body, item.Revision, item.Completed, item.CompletionRevision,item.DeadlineAt,item.TopicId,item.Audience,item.CanEdit,item.CanComplete);
         }).ToArray();
     }
     public async Task<HomeworkResponse> UpdateHomeworkAsync(string bearer, Guid communityId, Guid homeworkId, HomeworkUpsert request, CancellationToken ct = default)
@@ -176,7 +176,7 @@ public sealed partial class CommunityService(IAccountUnitOfWork trustedAccounts,
     private HomeworkResponse LoadHomework(HomeworkResponse item)
     {
         var body = ReadText(ContentNames.Homework(item.HomeworkId), item.Body);
-        return body == item.Body ? item : new HomeworkResponse(item.HomeworkId, item.CommunityId, item.Title, body, item.Revision, item.CreatedAt, item.UpdatedAt,item.DeadlineAt,item.TopicId);
+        return body == item.Body ? item : new HomeworkResponse(item.HomeworkId, item.CommunityId, item.Title, body, item.Revision, item.CreatedAt, item.UpdatedAt,item.DeadlineAt,item.TopicId,item.Audience,item.CanEdit,item.CanComplete);
     }
 
     private static string MediaName(string kind, string? name)

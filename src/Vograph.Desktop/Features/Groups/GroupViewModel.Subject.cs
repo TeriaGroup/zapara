@@ -65,15 +65,17 @@ public sealed partial class GroupViewModel
         SubjectSharedTasks.Clear();
         foreach(var original in copies.Where(x=>CopyMatchesSubject(x,key)))
         {
-            var item=key.Preview?new Zapara.Contracts.Communities.GroupHomeworkCopyResponse(original.HomeworkId,original.Title,original.Body,original.Revision,false,0,original.DeadlineAt,original.TopicId):original;
-            var writable=!key.Preview && (item.TopicId is null || Channels.First(x=>x.TopicId==item.TopicId).Archived==false);
+            var item=key.Preview?new Zapara.Contracts.Communities.GroupHomeworkCopyResponse(original.HomeworkId,original.Title,original.Body,original.Revision,false,0,original.DeadlineAt,original.TopicId,original.Audience,false,false):original;
+            var writable=!key.Preview && item.CanComplete;
             SubjectSharedTasks.Add(new(item,writable,row=>ToggleSubjectHomework(key,row),_=>{}));
         }
     });
     private Task ToggleSubjectHomework(SubjectKey key,SpaceHomeworkRow row)
     {
-        if(key.Preview||!SubjectCurrent(key)||!SubjectSharedTasks.Any(x=>x.Item.HomeworkId==row.Item.HomeworkId))return Task.CompletedTask;
-        return SpaceAction(async(api,t,c,ct)=>{await api.UpsertCompletionAsync(t,key.Community,row.Item.HomeworkId,new(!row.Item.Completed,row.Item.CompletionRevision),ct);if(CurrentSpace()&&SubjectCurrent(key))await LoadSubjectContext();},true);
+        if(key.Preview||!row.Writable||IsBusy||!SubjectCurrent(key)||!SubjectSharedTasks.Any(x=>x.Item.HomeworkId==row.Item.HomeworkId))return Task.CompletedTask;
+        return SpaceAction(async(api,t,c,ct)=>{try{await api.UpsertCompletionAsync(t,key.Community,row.Item.HomeworkId,new(!row.Item.Completed,row.Item.CompletionRevision),ct);}
+            catch(Vograph.Core.Services.Communities.CommunityClientException ex)when(ex.Failure==Vograph.Core.Services.Communities.CommunityClientFailure.RevisionConflict){if(CurrentSpace()&&SubjectCurrent(key))await LoadSubjectContext();return;}
+            if(CurrentSpace()&&SubjectCurrent(key))await LoadSubjectContext();},true);
     }
     [RelayCommand] private async Task OpenSubjectSchedule()
     {

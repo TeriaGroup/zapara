@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:g="using:Vograph.Desktop.Features.Groups" x:Class="Vograph.Desktop.Features.Groups.GroupRolesView" x:DataType="g:GroupViewModel">
+ <StackPanel Spacing="10" IsVisible="{Binding ShowRoleManager}">
+  <TextBlock Classes="subject" Text="Роли и подгруппы" />
+  <TextBlock Classes="muted caption" Text="Старосту и куратора назначает администрация приложения. Дополнительные роли действуют только в этой группе." TextWrapping="Wrap" />
+  <TextBlock Text="{Binding RoleCountSummary}" TextWrapping="Wrap" />
+  <Expander Header="Добавить роль или подгруппу" IsVisible="{Binding CanManageRoles}">
+   <StackPanel Spacing="6">
+    <TextBox Text="{Binding TrustedRoleName}" PlaceholderText="Например, подгруппа 1" AutomationProperties.Name="Название новой роли" IsEnabled="{Binding !IsBusy}" />
+    <TextBlock Classes="muted caption" Text="{Binding RoleCreateHint}" TextWrapping="Wrap" />
+    <Button Content="Создать роль" Command="{Binding CreateTrustedRoleCommand}" IsEnabled="{Binding CanCreateRole}" />
+   </StackPanel>
+  </Expander>
+  <ListBox ItemsSource="{Binding TrustedRoles}" SelectedItem="{Binding SelectedTrustedRole}" MaxHeight="190" AutomationProperties.Name="Выберите роль для управления" IsEnabled="{Binding !IsBusy}">
+   <ListBox.ItemTemplate><DataTemplate x:DataType="g:GroupTrustedRoleRow">
+    <StackPanel Spacing="3" Margin="0,4"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock Text="{Binding Summary}" Classes="muted caption" TextWrapping="Wrap" /></StackPanel>
+   </DataTemplate></ListBox.ItemTemplate>
+  </ListBox>
+  <StackPanel Spacing="10" IsVisible="{Binding HasTrustedRole}">
+   <TextBlock Text="{Binding SelectedRoleHeading}" Classes="subject" TextWrapping="Wrap" />
+   <WrapPanel ItemSpacing="6" LineSpacing="6">
+    <Button Content="Настройки" Command="{Binding ShowRoleSettingsPanelCommand}" />
+    <Button Content="Возможности" Command="{Binding ShowRolePowersPanelCommand}" />
+    <Button Content="Участники" Command="{Binding ShowRoleMembersPanelCommand}" />
+   </WrapPanel>
+   <StackPanel Spacing="6" IsVisible="{Binding ShowRoleSettings}">
+    <TextBlock Text="Настройки выбранной роли" FontWeight="SemiBold" />
+    <TextBlock Classes="muted caption" Text="{Binding RoleSettingsHint}" TextWrapping="Wrap" />
+    <TextBlock Text="Название" /><TextBox Text="{Binding RoleEditName}" IsEnabled="{Binding CanEditSelectedRole}" AutomationProperties.Name="Название выбранной роли" />
+    <TextBlock Text="Значок" /><TextBox Text="{Binding RoleEditIcon}" IsEnabled="{Binding CanEditSelectedRole}" AutomationProperties.Name="Значок выбранной роли" />
+    <TextBlock Text="Уровень в иерархии" /><NumericUpDown Value="{Binding RoleEditPosition}" Minimum="0" Maximum="10000" IsEnabled="{Binding CanEditSelectedRole}" AutomationProperties.Name="Уровень выбранной роли" />
+    <TextBlock Classes="muted caption" Text="Ответственный управляет только ролями ниже своего уровня и передаёт только доступные ему возможности." TextWrapping="Wrap" />
+    <Button Content="Сохранить настройки" Command="{Binding SaveRoleSettingsCommand}" IsEnabled="{Binding CanSaveRoleSettings}" />
+    <StackPanel Spacing="6" IsVisible="{Binding RoleEditConflict}"><TextBlock Text="Роль изменена на другом устройстве. Ваши правки остались в редакторе. Загрузите актуальную роль перед сохранением." TextWrapping="Wrap" /><Button Content="Загрузить актуальную роль" Command="{Binding ReloadRoleSettingsCommand}" IsEnabled="{Binding !IsBusy}" /></StackPanel>
+    <Expander Header="Удаление роли"><StackPanel Spacing="6"><Button Content="Проверить последствия удаления" Command="{Binding InspectRoleImpactCommand}" IsEnabled="{Binding CanEditSelectedRole}" /><TextBlock Text="{Binding RoleImpact}" TextWrapping="Wrap" /><Button Content="Удалить выбранную роль" Command="{Binding RemoveRoleCommand}" IsVisible="{Binding ConfirmRemoveRole}" IsEnabled="{Binding CanEditSelectedRole}" /></StackPanel></Expander>
+   </StackPanel>
+   <StackPanel Spacing="6" IsVisible="{Binding ShowRolePowers}">
+    <TextBlock Text="Возможности выбранной роли" FontWeight="SemiBold" />
+    <TextBlock Classes="muted caption" Text="Для подгруппы можно оставить все дополнительные возможности выключенными. Назначение роли также учитывает доступ к каналам группы." TextWrapping="Wrap" />
+    <ItemsControl ItemsSource="{Binding RolePowers}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpacePowerRow">
+     <StackPanel Spacing="3" Margin="0,3"><Button Content="{Binding Label}" HorizontalContentAlignment="Left" HorizontalAlignment="Stretch" Command="{Binding $parent[UserControl].((g:GroupViewModel)DataContext).ToggleRolePowerCommand}" CommandParameter="{Binding}" IsEnabled="{Binding CanToggle}" /><TextBlock Text="{Binding DisabledReason}" Classes="muted caption" TextWrapping="Wrap" /></StackPanel>
+    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+   </StackPanel>
+   <StackPanel Spacing="6" IsVisible="{Binding ShowRoleMembers}">
+    <TextBlock Text="Участники выбранной роли" FontWeight="SemiBold" />
+    <TextBox Text="{Binding RoleMemberSearch}" PlaceholderText="Найти участника" AutomationProperties.Name="Поиск участников роли" />
+    <CheckBox Content="Только с этой ролью" IsChecked="{Binding RoleAssignedOnly}" />
+    <TextBlock Text="{Binding RoleMemberSummary}" Classes="muted caption" />
+    <ItemsControl ItemsSource="{Binding RoleMembers}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:GroupRoleMemberRow">
+     <Border Classes="card" Padding="10" Margin="0,3"><StackPanel Spacing="4">
+      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding Summary}" Classes="muted caption" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding AssignmentLabel}" TextWrapping="Wrap" />
+      <Button Content="{Binding ActionLabel}" Command="{Binding ActionCommand}" IsEnabled="{Binding CanAct}" HorizontalAlignment="Left" />
+      <TextBlock Text="{Binding DisabledReason}" Classes="muted caption" TextWrapping="Wrap" />
+     </StackPanel></Border>
+    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+   </StackPanel>
+  </StackPanel>
+ </StackPanel>
+</UserControl>

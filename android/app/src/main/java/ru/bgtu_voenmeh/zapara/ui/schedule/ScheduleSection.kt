@@ -161,6 +161,8 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, on
     }
     state.sharedDetail?.let { row -> ZBottomSheet(onDismiss = { onEvent(ScheduleEvent.CloseSubjectHomework) }, tag = "Schedule.SharedHomework") {
         Text(row.label, style = Zapara.typography.section); Text(row.text, style = Zapara.typography.body)
+        Text(stringResource(R.string.schedule_homework_shared_context, row.audienceLabel), style = Zapara.typography.caption)
+        if (row.canComplete) Text(stringResource(R.string.schedule_homework_my_done, stringResource(if (row.done) R.string.schedule_homework_yes else R.string.schedule_homework_no)), style = Zapara.typography.caption)
         ZButton(uiText(R.string.space_day_11), { onEvent(ScheduleEvent.CloseSubjectHomework); onDiscuss("${row.label} · ${row.text}") }, ghost = true)
     } }
     state.rename?.let { RenameSheet(it, onEvent) }
@@ -175,6 +177,8 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, on
             onPick = { kind, uri -> onEvent(ScheduleEvent.HomeworkAttach(kind, uri)) },
             onRemove = { onEvent(ScheduleEvent.HomeworkRemoveFile(it)) },
             onShare = { onEvent(ScheduleEvent.HomeworkEditorShare(it)) },
+            onAudience = { onEvent(ScheduleEvent.HomeworkEditorAudience(it)) },
+            onRetryShare = { onEvent(ScheduleEvent.HomeworkRetryShare) },
             isGuest = state.guest, onRecalculate = { onEvent(ScheduleEvent.RecalculateHomework) }
         )
     }
@@ -257,11 +261,11 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
 private fun DeadlineRow(row: HomeworkRowUi, onEvent: (ScheduleEvent) -> Unit) {
     val uiText = rememberUiText()
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(row.done, { if (row.sharedId != null) onEvent(ScheduleEvent.ToggleShared(row.sharedId, !row.done)) else onEvent(ScheduleEvent.ToggleDone(row.id)) }, modifier = Modifier.semantics { contentDescription = uiText(R.string.space_day_24, row.text) })
+        Checkbox(row.done, { if (row.sharedId != null) onEvent(ScheduleEvent.ToggleShared(row.sharedId, !row.done)) else onEvent(ScheduleEvent.ToggleDone(row.id)) }, enabled = row.canComplete, modifier = Modifier.semantics { contentDescription = uiText(R.string.space_day_24, row.text) })
         Column(Modifier.weight(1f).clickable { onEvent(ScheduleEvent.OpenHomework(row)) }) {
             Text(row.text, style = Zapara.typography.body, textDecoration = if (row.done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
             Text(row.label, style = Zapara.typography.caption, color = Zapara.colors.text2)
-            Text(uiText(if (row.sharedId == null) R.string.space_day_local_source else R.string.space_day_group_source), style = Zapara.typography.caption, color = Zapara.colors.text2)
+            Text(if (row.sharedId == null) stringResource(R.string.schedule_homework_personal) else stringResource(R.string.schedule_homework_shared_row, row.audienceLabel), style = Zapara.typography.caption, color = Zapara.colors.text2)
             if (row.done) Text(uiText(R.string.space_day_25), style = Zapara.typography.caption)
         }
     }

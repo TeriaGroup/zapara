@@ -24,7 +24,8 @@
       <WrapPanel IsVisible="{Binding HasSubjectFilter}"><TextBlock Text="{Binding SubjectFilter}" VerticalAlignment="Center" /><Button Content="Все предметы" Command="{Binding ClearSubjectFilterCommand}" /></WrapPanel>
       <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,0,0,2" />
       <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Homework}" Margin="0,24" />
-      <c:EmptyState IsVisible="{Binding IsEmpty}" Title="{loc:T hwEmpty}" Hint="{loc:T hwEmptyHint}" Icon="{StaticResource Icon.Homework}" Margin="0,24" />
+      <TextBlock Text="Личные задания" Classes="subject" IsVisible="{Binding HasGroup}" />
+      <c:EmptyState IsVisible="{Binding IsEmpty}" Title="Личных заданий в этом списке нет" Hint="{loc:T hwEmptyHint}" Icon="{StaticResource Icon.Homework}" Margin="0,12" />
 
       <ItemsControl ItemsSource="{Binding Groups}" c:Appear.CascadeHost="True">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="14" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -79,6 +80,31 @@
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
+      <StackPanel IsVisible="{Binding ShowSharedTasks}" Spacing="10" Margin="0,16,0,0">
+        <TextBlock Text="Задания группы" Classes="subject" />
+        <TextBlock Text="{Binding SharedSummary}" Classes="muted caption" TextWrapping="Wrap" />
+        <c:SegmentedControl Items="{Binding SharedFilters}" SelectedIndex="{Binding SharedFilter}" />
+        <Button Content="Обновить задания группы" Command="{Binding RefreshSharedTasksCommand}" IsEnabled="{Binding !SharedBusy}" HorizontalAlignment="Left" />
+        <TextBlock Text="Загружаем задания…" IsVisible="{Binding SharedLoading}" Classes="muted caption" />
+        <TextBlock Text="{Binding SharedFeedback}" TextWrapping="Wrap" />
+        <TextBlock Text="В этом списке заданий группы пока нет" IsVisible="{Binding SharedEmpty}" Classes="muted caption" />
+        <ItemsControl ItemsSource="{Binding VisibleSharedTasks}"><ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="h:SharedHomeworkListRow"><Border Classes="card" Padding="14" Margin="0,4">
+            <StackPanel Spacing="8">
+              <TextBlock Text="{Binding Item.Title}" Classes="subject" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding Item.Body}" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding GroupName}" Classes="muted caption" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding AudienceLabel}" Classes="muted caption" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding Deadline}" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding OwnershipHint}" Classes="muted caption" TextWrapping="Wrap" />
+              <WrapPanel ItemSpacing="8">
+                <Button Content="{Binding CompleteLabel}" Command="{Binding ToggleCommand}" IsVisible="{Binding Item.CanComplete}" IsEnabled="{Binding !$parent[UserControl].((h:HomeworkViewModel)DataContext).SharedBusy}" />
+                <Button Content="Открыть задание" Command="{Binding OpenCommand}" />
+              </WrapPanel>
+            </StackPanel>
+          </Border></DataTemplate>
+        </ItemsControl.ItemTemplate></ItemsControl>
+      </StackPanel>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

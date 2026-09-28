@@ -6,7 +6,7 @@ public static class GroupPermissionRules
     public static readonly string[] Powers = ["read", "post", "media", "vote", "formsRespond", "ballots", "forms", "close", "pin", "moderate", "homework", "mentionAll", "joins", "exclude", "channels", "access", "roles", "grants"];
     public static readonly string[] GroupOnlyPowers = ["joins", "exclude", "roles", "grants"];
     public static readonly string[] Templates = ["chat", "announcements", "polls", "forms", "subject", "materials", "homework", "schedule"];
-    public static GroupCapabilitiesResponse Capabilities => new(12, 3, 24, Powers, Templates);
+    public static GroupCapabilitiesResponse Capabilities => new(12, 3, 24, Powers, Templates, HomeworkAudience: true);
     public static bool Supported(string kind, string template) => template switch
     {
         "chat" or "announcements" or "subject" => kind == "chat",

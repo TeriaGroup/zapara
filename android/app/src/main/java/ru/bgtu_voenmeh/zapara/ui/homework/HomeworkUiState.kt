@@ -5,6 +5,7 @@ import ru.bgtu_voenmeh.zapara.ui.LessonFormat
 import ru.bgtu_voenmeh.zapara.ui.UiCopy
 import ru.bgtu_voenmeh.zapara.data.Homework
 import ru.bgtu_voenmeh.zapara.data.HomeworkStoredFile
+import ru.bgtu_voenmeh.zapara.data.communities.HomeworkAudience
 import java.time.LocalDate
 
 enum class GroupStatus { Overdue, Burning, Soon, Later, Done }
@@ -60,6 +61,8 @@ sealed interface HomeworkEvent {
     data object ClosePicker : HomeworkEvent
     data class EditorText(val text: String) : HomeworkEvent
     data class EditorShare(val on: Boolean) : HomeworkEvent
+    data class EditorAudience(val audience: HomeworkAudience) : HomeworkEvent
+    data object RetryShare : HomeworkEvent
     data object Inc : HomeworkEvent
     data object Dec : HomeworkEvent
     data object Recalculate : HomeworkEvent
@@ -97,17 +100,24 @@ data class HomeworkEditorState(
     val work: HomeworkEditorWork = HomeworkEditorWork.Idle,
     val error: String? = null,
     val persistedId: Long? = null,
-    val shareAttempted: Boolean = false
+    val shareAttempted: Boolean = false,
+    val shareContext: HomeworkShareContext? = null,
+    val shareLoading: Boolean = false,
+    val audience: HomeworkAudience = HomeworkAudience(),
+    val operationId: String = java.util.UUID.randomUUID().toString(),
+    val shareRequest: HomeworkPublishSnapshot? = null
 ) {
     val busy: Boolean get() = work != HomeworkEditorWork.Idle
     val hasDraftChanges: Boolean get() = initial != HomeworkDraftSnapshot(text.trim(), n, share, files.map { it.id }.toSet())
     fun creationAnchor(clockDate: LocalDate): LocalDate = anchorDate ?: clockDate
     fun matchesSaveContext(groupId: String?, currentDue: LocalDate?): Boolean =
         (scheduleGroupId == null || scheduleGroupId == groupId) && dueFor(n,text) == currentDue
-    val canSave: Boolean get() = text.trim().isNotEmpty() && !sourceChanged && !busy
+    val canSave: Boolean get() = text.trim().isNotEmpty() && !sourceChanged && !busy && shareRequest == null &&
+        (!share || !shareLoading && shareContext != null && (!audience.selected || shareContext.supported && audience.valid()))
     fun hasChanges(existing: Homework): Boolean = text.trim() != existing.text || n != existing.n
     fun withText(value: String) = if (busy) this else copy(text = value, error = null)
     fun withShare(value: Boolean) = if (busy) this else copy(share = value, error = null)
+    fun withAudience(value: HomeworkAudience) = if (busy) this else copy(audience = value, error = null)
     fun inc() = if (busy) this else copy(n = (n + 1).coerceAtMost(10), error = null)
     fun dec() = if (busy) this else copy(n = (n - 1).coerceAtLeast(1), error = null)
     fun dueText(copy: UiCopy): String {

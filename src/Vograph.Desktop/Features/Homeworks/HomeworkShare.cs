@@ -28,7 +28,10 @@ public static class HomeworkShare
         ArgumentNullException.ThrowIfNull(saveLocal);
         var text = dialog.Text;
         var share = dialog.Share && dialog.CanShare && !dialog.IsEdit;
-        if (dialog.ShareStarted)
+        var modern = dialog.Recipients.Supported;
+        if (share && !dialog.Recipients.Valid)
+            throw new HomeworkPublicationException(dialog.Recipients.Validation);
+        if (dialog.ShareStarted && !modern)
         {
             await saveLocal(subject.Trim(), text.Trim()).ConfigureAwait(false);
             return new(true, false, UncertainShareNote);
@@ -45,6 +48,8 @@ public static class HomeworkShare
                 if (signedIn)
                 {
                     var groupId = await readGroupId().ConfigureAwait(false) ?? "";
+                    if (dialog.PublicationGroupId is not null && groupId != dialog.PublicationGroupId)
+                        throw new HomeworkPublicationException("Учебная группа изменилась. Закройте редактор и проверьте получателей перед публикацией.");
                     if (groupId.Length > 0)
                     {
                         var list = await app.Communities.ListAsync(token!, groupId).ConfigureAwait(false);
@@ -52,6 +57,7 @@ public static class HomeworkShare
                     }
                 }
             }
+            catch (HomeworkPublicationException) { throw; }
             catch (OperationCanceledException) { throw; }
             catch (Exception)
             {
@@ -71,13 +77,30 @@ public static class HomeworkShare
                     if (app.Communities is null || string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(communityId))
                         throw new InvalidOperationException("group");
                     // Set before dispatch: a timeout/cancellation may occur after the server created the copy.
+                    var community = Guid.Parse(communityId);
+                    if (dialog.PublicationCommunity is { } expected && expected != community)
+                        throw new HomeworkPublicationException("Получатель изменился. Проверьте учебную группу перед публикацией.");
+                    var request = modern
+                        ? dialog.PublicationRequest ??= new HomeworkUpsert(sentSubject, sentText, 0, dialog.PublicationDeadline,
+                            audience: dialog.Recipients.Payload, operationId: dialog.PublicationOperationId)
+                        : new HomeworkUpsert(sentSubject, sentText, 0, dialog.PublicationDeadline);
                     dialog.ShareStarted = true;
-                    await app.Communities.ShareHomeworkAsync(token, Guid.Parse(communityId), new HomeworkUpsert(sentSubject, sentText, 0)).ConfigureAwait(false);
+                    await app.Communities.ShareHomeworkAsync(token, community, request).ConfigureAwait(false);
                 }).ConfigureAwait(false);
+            if (modern && dialog.ShareStarted && !outcome.Sent)
+                throw new HomeworkPublicationException("Личная копия сохранена. Публикация группе не подтверждена — повторите её. Второе задание не создастся.");
             return dialog.ShareStarted && !outcome.Sent ? outcome with { Note = UncertainShareNote } : outcome;
+        }
+        catch (HomeworkPublicationException) when (modern && dialog.ShareStarted)
+        {
+            throw;
         }
         catch (OperationCanceledException) when (dialog.ShareStarted)
         {
+            if (modern)
+            {
+                throw new HomeworkPublicationException("Личная копия сохранена. Повторите публикацию, чтобы получить её результат.");
+            }
             return new(true, false, UncertainShareNote);
         }
     }

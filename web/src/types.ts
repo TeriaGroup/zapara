@@ -12,7 +12,8 @@ export type TimetablePayload = GroupsPayload & { group: Group; lessons: Lesson[]
 
 export type HomeworkFile = { id: string; kind: "photo" | "document"; name: string; mime: string };
 export type HomeworkItem = { id: string; subject: string; text: string; done: boolean; created: string; files?: HomeworkFile[]; deadlineAt?: string | null; targetNthOccurrence?: number; legacyCreatedLocalDate?: string | null };
-export type GroupHomeworkCopy = { homeworkId: string; title: string; body: string; revision: number; completed: boolean; completionRevision: number; topicId?: string | null; deadlineAt?: string | null };
+export type HomeworkAudience = { kind: "all" | "selected"; roleIds: string[]; userIds: string[] };
+export type GroupHomeworkCopy = { homeworkId: string; title: string; body: string; revision: number; completed: boolean; completionRevision: number; topicId?: string | null; deadlineAt?: string | null; audience?: HomeworkAudience | null; canEdit?: boolean; canComplete?: boolean };
 export type FriendItem = { id: string; groupName: string; members: string; enabled: boolean; color: string };
 
 export type SessionUser = { userId: string; username: string; displayName: string | null };
@@ -58,7 +59,7 @@ export type GroupTopic = GroupTopicMetadata & {
   template?: string; categoryId?: string | null; position?: number; subject?: string | null; archived?: boolean; revision?: number; permissions?: string[]; supported?: boolean;
 };
 export type GroupCategory = { categoryId: string; title: string; position: number; revision: number };
-export type GroupCapabilities = { maxRoles: number; maxRolesPerMember: number; maxTopics: number; powers: string[]; templates: string[] };
+export type GroupCapabilities = { maxRoles: number; maxRolesPerMember: number; maxTopics: number; powers: string[]; templates: string[]; homeworkAudience?: boolean };
 export type GroupSpace = { topics: GroupTopic[]; categories: GroupCategory[]; capabilities: GroupCapabilities; desk: GroupDesk };
 export type AccessRule = { roleId: string | null; power: string; state: "allow" | "deny" | "inherit" };
 export type TopicAccess = { topicId: string; revision: number; rules: AccessRule[] };

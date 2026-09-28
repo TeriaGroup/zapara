@@ -89,14 +89,34 @@ data class CommunityHomework(
     val createdAt: Instant,
     val updatedAt: Instant,
     val deadlineAt: Instant? = null,
-    val topicId: String? = null
+    val topicId: String? = null,
+    val audience: HomeworkAudience? = null,
+    val canEdit: Boolean = false,
+    val canComplete: Boolean = true
 )
+
+data class HomeworkAudience(
+    val kind: String = "all",
+    val roleIds: List<String> = emptyList(),
+    val userIds: List<String> = emptyList()
+) {
+    val selected: Boolean get() = kind == "selected"
+    fun valid(): Boolean = (kind == "all" && roleIds.isEmpty() && userIds.isEmpty()) ||
+        (kind == "selected" && (roleIds.isNotEmpty() || userIds.isNotEmpty()))
+}
 
 data class HomeworkCompletion(
     val homeworkId: String,
     val completed: Boolean,
     val revision: Long,
     val updatedAt: Instant?
+)
+
+data class GroupHomeworkCopy(
+    val homeworkId: String,
+    val completed: Boolean,
+    val completionRevision: Long,
+    val canComplete: Boolean = true
 )
 
 data class CommunityAnnouncement(

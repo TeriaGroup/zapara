@@ -2,7 +2,7 @@ import { topicRules } from "./topic-policy.ts";
 import { canonicalUtc } from "./utc.ts";
 import { getGroupMedia, postGroupMedia, type GroupMediaDownload, type GroupMediaKind } from "./group-media.ts";
 import { groupMessageQuery, type GroupMessageCursor } from "./groupChat.ts";
-import type { BallotBoard, ChatMessage, Community, Conversation, GroupDesk, GroupHomeworkCopy, GroupHome, GroupTopicMetadata, GroupTopicPage, GroupsPayload, MapsManifest, Session, SocialHome, SocialMessage, SocialPage, Teacher, TeacherLesson, TimetablePayload } from "./types";
+import type { BallotBoard, ChatMessage, Community, Conversation, GroupDesk, GroupHomeworkCopy, GroupHome, GroupTopicMetadata, GroupTopicPage, GroupsPayload, HomeworkAudience, MapsManifest, Session, SocialHome, SocialMessage, SocialPage, Teacher, TeacherLesson, TimetablePayload } from "./types";
 
 const cacheKey = "zapara.react.cache.v1";
 
@@ -58,7 +58,7 @@ let signedInUser = "";
 
 function authHeaders(json = false, groupSpace = false): Record<string, string> {
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (groupSpace) headers["X-Zapara-Group-Space"] = "1";
+  if (groupSpace) { headers["X-Zapara-Group-Space"] = "1"; headers["X-Zapara-Homework"] = "1"; }
   if (csrf) headers["X-Zapara-CSRF"] = csrf;
   if (familyId) headers["X-Zapara-Family"] = familyId;
   if (json) headers["Content-Type"] = "application/json";
@@ -156,8 +156,13 @@ export function groupHomework(id: string, topicId?: string) {
   return read<GroupHomeworkCopy[]>(`/web-api/communities/${id}/homework/copies` + (topicId ? `?topicId=${encodeURIComponent(topicId)}` : ""));
 }
 
-export function shareHomework(id: string, title: string, body: string, deadlineAt: string | null = null, topicId: string | null = null) {
-  return send<{ homeworkId: string }>("POST", `/web-api/communities/${id}/homework/share`, { title, body, expectedRevision: 0, ...(deadlineAt ? { deadlineAt: canonicalUtc(deadlineAt) } : {}), ...(topicId ? { topicId } : {}) });
+export type HomeworkPublication = { title: string; body: string; deadlineAt?: string | null; topicId?: string | null; audience?: HomeworkAudience; operationId?: string };
+export function shareHomework(id: string, title: string, body: string, deadlineAt: string | null = null, topicId: string | null = null, audience?: HomeworkAudience, operationId?: string) {
+  return send<{ homeworkId: string }>("POST", `/web-api/communities/${id}/homework/share`, { title, body, expectedRevision: 0, ...(deadlineAt ? { deadlineAt: canonicalUtc(deadlineAt) } : {}), ...(topicId ? { topicId } : {}), ...(audience?.kind === "selected" ? { audience } : {}), ...(operationId ? { operationId } : {}) });
+}
+
+export function editHomework(id: string, homeworkId: string, update: HomeworkPublication, expectedRevision: number) {
+  return send<{ homeworkId: string; revision: number }>("PUT", `/web-api/communities/${id}/homework/${homeworkId}`, { ...update, expectedRevision });
 }
 
 export function completeHomework(id: string, homeworkId: string, completed: boolean, expectedRevision: number) {

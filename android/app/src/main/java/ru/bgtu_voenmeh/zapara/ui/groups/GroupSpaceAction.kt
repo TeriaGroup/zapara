@@ -25,7 +25,7 @@ sealed interface GroupSpaceAction {
     data class CreateForm(val title: String, val description: String, val deadline: Instant?, val anonymous: Boolean, val questions: List<GroupFormQuestion>) : GroupSpaceAction
     data class SubmitForm(val formId: String, val answers: List<GroupFormAnswer>) : GroupSpaceAction
     data class Responses(val formId: String, val after: String? = null) : GroupSpaceAction
-    data class SaveHomework(val id: String?, val title: String, val body: String, val revision: Long, val deadline: Instant?) : GroupSpaceAction
+    data class SaveHomework(val id: String?, val title: String, val body: String, val revision: Long, val deadline: Instant?, val audience: HomeworkAudience? = null, val operationId: String? = null) : GroupSpaceAction
     data class CompleteHomework(val id: String, val on: Boolean) : GroupSpaceAction
     data class ScheduleDate(val date: LocalDate) : GroupSpaceAction
     data object ReloadContent : GroupSpaceAction

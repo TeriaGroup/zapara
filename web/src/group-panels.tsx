@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useRef, useState, type SetStateAction } from "react";
 import * as api from "./api";
-import { canonicalUtc } from "./utc";
+import { canonicalUtc, localDateTimeInput } from "./utc";
+import { HomeworkRequestScope, scopedValue, subjectHomework } from "./homework-request-scope";
+import { HomeworkRecipients, audienceLabel, allHomeworkAudience, useHomeworkAudienceData } from "./homework-audience";
 import { createMaterialHistory, type MaterialHistory } from "./material-history";
 import { draftKey, revokeGroupDrafts, useStoredDraft } from "./draft-store";
 import { scopeLease, scopeLeaseValid } from "./draft-revocation";
@@ -14,7 +16,7 @@ import { groupMediaDownload } from "./group-media";
 import { GroupInlineMedia } from "./group-inline-media";
 import { formResponsesCsv } from "./form-export";
 import { validateFormAnswers, validateFormQuestions } from "./forms";
-import type { ChatMessage, FormAnswer, FormQuestion, FormResponse, GroupForm, GroupHomeworkCopy, GroupTopic } from "./types";
+import type { ChatMessage, FormAnswer, FormQuestion, FormResponse, GroupForm, GroupHomeworkCopy, GroupTopic, HomeworkAudience } from "./types";
 export function SpecializedChannel({ communityId, conversationId, groupName, topic, onError }: {
     communityId: string;
     conversationId: string;
@@ -228,42 +230,84 @@ function HomeworkChannel({ communityId, topic, onError }: {
 }) {
     const [items, setItems] = useState<GroupHomeworkCopy[] | null>(null);
     const app = useApp();
-    const [homeworkDraft, , clearHomeworkDraft, setHomeworkField] = useStoredDraft(draftKey(app.session?.user?.userId, communityId, topic.topicId!, "homework-create"), () => ({ title: topic.subject || "", body: "", deadline: "" }));
+    const recipients = useHomeworkAudienceData(communityId);
+    type ChannelDraft = { title: string; body: string; deadline: string; audience: HomeworkAudience; operationId: string; attemptedSnapshot: string };
+    const [homeworkDraft, setHomeworkDraft, clearHomeworkDraft, setHomeworkField] = useStoredDraft<ChannelDraft>(draftKey(app.session?.user?.userId, communityId, topic.topicId!, "homework-create"), () => ({ title: topic.subject || "", body: "", deadline: "", audience: allHomeworkAudience(), operationId: "", attemptedSnapshot: "" }));
     const { title, body, deadline } = homeworkDraft;
+    const draftAudience = homeworkDraft.audience || allHomeworkAudience();
     const setTitle = (next: string) => setHomeworkField("title", next);
     const setBody = (next: string) => setHomeworkField("body", next);
     const setDeadline = (next: string) => setHomeworkField("deadline", next);
     const [busy, setBusy] = useState(false);
+    const busyRef = useRef(false);
+    const requestRef = useRef(0);
+    const [error, setError] = useState("");
+    const [filter, setFilter] = useState<"active" | "done" | "all">("active");
+    const [editing, setEditing] = useState<{ id: string; revision: number; title: string; body: string; deadline: string; audience: HomeworkAudience } | null>(null);
+    const [editConflict, setEditConflict] = useState(false);
+    function refresh() {
+        const request = ++requestRef.current;
+        return api.groupHomework(communityId, topic.topicId!).then(value => {
+            if (request === requestRef.current && !busyRef.current) setItems(value);
+        }).catch(error => {
+            if (request !== requestRef.current) return;
+            if (error instanceof Error && ["401", "403", "404"].includes(error.message))
+                revokeGroupDrafts(error.message === "401" ? { owner: app.session?.user?.userId || "guest" } : { owner: app.session?.user?.userId || "guest", community: communityId, topic: topic.topicId! });
+            setError("Задания не загрузились. Повторите запрос.");
+            onError(problem(error));
+        });
+    }
     useEffect(() => {
         let stop = false;
-        const pull = () => void api.groupHomework(communityId, topic.topicId!).then(value => {
-            if (!stop)
-                setItems(value);
-        }).catch(error => {
-            if (!stop) {
-                if (error instanceof Error && ["401", "403", "404"].includes(error.message))
-                    revokeGroupDrafts(error.message === "401" ? { owner: app.session?.user?.userId || "guest" } : { owner: app.session?.user?.userId || "guest", community: communityId, topic: topic.topicId! });
-                onError(problem(error));
-            }
-        });
-        pull();
-        const timer = window.setInterval(pull, 4000);
-        return () => { stop = true; window.clearInterval(timer); };
-    }, [communityId]);
-    return <div className="stack">{can(topic, "homework") && <form className="card stack" onSubmit={event => {
-                event.preventDefault();
-                if (busy)
-                    return;
-                const sentDraft = homeworkDraft;
-                setBusy(true);
-                void api.shareHomework(communityId, title, body, deadline ? canonicalUtc(deadline) : null, topic.topicId).then(() => { clearHomeworkDraft(sentDraft); return api.groupHomework(communityId, topic.topicId!); }).then(value => { setItems(value); }).catch(error => onError(problem(error))).finally(() => setBusy(false));
-            }}><h2>Задание группе</h2><label className="field">Предмет<input required value={title} onChange={event => setTitle(event.target.value)}/></label><label className="field">Задание<textarea required value={body} onChange={event => setBody(event.target.value)}/></label><label className="field">Срок<input type="datetime-local" value={deadline} onChange={event => setDeadline(event.target.value)}/></label><button className="btn primary" disabled={busy}>{busy ? "Сохраняем…" : "Добавить задание"}</button><button className="btn quiet" type="button" disabled={busy} onClick={() => clearHomeworkDraft(homeworkDraft)}>Удалить черновик</button></form>}
-    {items === null ? <p role="status">Загрузка заданий…</p> : items.filter(item => item.topicId === topic.topicId && (!topic.subject || sameSubject(item.title, topic.subject))).map(item => <article className="card" key={item.homeworkId}><h2>{item.title}</h2><p className={item.completed ? "done-title" : ""}>{item.body}</p><p className="muted">{item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p><label className="check"><input type="checkbox" checked={item.completed} disabled={busy || !!topic.archived} onChange={() => {
-                if (busy)
-                    return;
-                setBusy(true);
-                void api.completeHomework(communityId, item.homeworkId, !item.completed, item.completionRevision).then(saved => setItems(rows => rows?.map(row => row.homeworkId === item.homeworkId ? { ...row, completed: saved.completed, completionRevision: saved.revision } : row) ?? [])).catch(error => onError(problem(error))).finally(() => setBusy(false));
-            }}/>Готово у меня</label></article>)}
+        setItems(null);
+        void refresh();
+        const timer = window.setInterval(() => { if (!stop && !busyRef.current) void refresh(); }, 4000);
+        return () => { stop = true; ++requestRef.current; window.clearInterval(timer); };
+    }, [communityId, topic.topicId]);
+    const visible = (items ?? []).filter(item => item.topicId === topic.topicId && (item.homeworkId === editing?.id || filter === "all" || item.completed === (filter === "done")));
+    async function publish(event: FormEvent) {
+        event.preventDefault();
+        if (busyRef.current || recipients.loading) return;
+        if (draftAudience.kind === "selected" && (!recipients.supported || !draftAudience.roleIds.length && !draftAudience.userIds.length)) { setError("Выберите получателей. Адресная отправка требует обновлённый сервер."); return; }
+        const snapshot = JSON.stringify([title.trim(), body.trim(), deadline ? canonicalUtc(deadline) : null, topic.topicId, draftAudience]);
+        if (homeworkDraft.attemptedSnapshot && homeworkDraft.attemptedSnapshot !== snapshot) { setError("Предыдущая отправка не подтверждена. Верните прежний текст, срок и получателей для повтора либо удалите черновик и создайте новую публикацию."); return; }
+        if (homeworkDraft.attemptedSnapshot && !recipients.supported) { setError("Предыдущая отправка не подтверждена. Проверьте общую домашку перед новой публикацией на этом сервере."); return; }
+        const sentDraft = { ...homeworkDraft, audience: draftAudience, operationId: homeworkDraft.operationId || crypto.randomUUID(), attemptedSnapshot: snapshot };
+        setHomeworkDraft(sentDraft);
+        busyRef.current = true; ++requestRef.current; setBusy(true); setError("");
+        try {
+            await api.shareHomework(communityId, title.trim(), body.trim(), deadline ? canonicalUtc(deadline) : null, topic.topicId, draftAudience.kind === "selected" ? draftAudience : undefined, recipients.supported ? sentDraft.operationId : undefined);
+            clearHomeworkDraft(sentDraft);
+            busyRef.current = false;
+            await refresh();
+        } catch (cause) { setError(cause instanceof Error && cause.message === "409" ? "Публикация с этим номером отличается от сохранённой. Проверьте исходный черновик." : "Отправка не подтверждена. Повторите сохранение — номер публикации сохранён."); }
+        finally { busyRef.current = false; setBusy(false); }
+    }
+    async function mark(item: GroupHomeworkCopy) {
+        if (busyRef.current || item.canComplete === false) return;
+        busyRef.current = true; ++requestRef.current; setBusy(true); setError("");
+        try {
+            const saved = await api.completeHomework(communityId, item.homeworkId, !item.completed, item.completionRevision);
+            setItems(rows => rows?.map(row => row.homeworkId === item.homeworkId ? { ...row, completed: saved.completed, completionRevision: saved.revision } : row) ?? []);
+        } catch (cause) { setError(cause instanceof Error && cause.message === "409" ? "Отметка изменилась. Загрузите актуальное состояние." : "Отметку не удалось сохранить."); if (cause instanceof Error && cause.message === "409") { busyRef.current = false; await refresh(); } }
+        finally { busyRef.current = false; setBusy(false); }
+    }
+    async function saveEdit(event: FormEvent) {
+        event.preventDefault();
+        if (!editing || busyRef.current || editConflict) return;
+        if (editing.audience.kind === "selected" && !recipients.supported) { setError("Адресная домашка недоступна на этом сервере."); return; }
+        busyRef.current = true; ++requestRef.current; setBusy(true); setError("");
+        try {
+            await api.editHomework(communityId, editing.id, { title: editing.title.trim(), body: editing.body.trim(), deadlineAt: editing.deadline ? canonicalUtc(editing.deadline) : null, topicId: topic.topicId, ...(recipients.supported ? { audience: editing.audience } : {}) }, editing.revision);
+            setEditing(null); busyRef.current = false; await refresh();
+        } catch (cause) { if (cause instanceof Error && cause.message === "409") { setEditConflict(true); busyRef.current = false; await refresh(); setError("Задание изменилось на сервере. Ваш черновик сохранён; сверьте его с актуальной версией."); } else setError("Изменения не сохранились. Черновик сохранён."); }
+        finally { busyRef.current = false; setBusy(false); }
+    }
+    return <div className="stack">{can(topic, "homework") && <form className="card stack" onSubmit={event => void publish(event)}><h2>Задание в канале</h2><fieldset className="stack" disabled={busy}><label className="field">Предмет<input required value={title} onChange={event => setTitle(event.target.value)}/></label><label className="field">Задание<textarea required value={body} onChange={event => setBody(event.target.value)}/></label><label className="field">Срок<input type="datetime-local" value={deadline} onChange={event => setDeadline(event.target.value)}/></label><HomeworkRecipients communityId={communityId} value={draftAudience} onChange={audience => setHomeworkField("audience", audience)} data={recipients}/><p className="muted">Канал: {topic.title} · {audienceLabel(draftAudience)} · {deadline ? new Date(deadline).toLocaleString("ru-RU") : "Без срока"}</p><div className="row"><button className="btn primary">{busy ? "Сохраняем…" : "Опубликовать"}</button><button className="btn quiet" type="button" onClick={() => { clearHomeworkDraft(homeworkDraft); setError(""); }}>Удалить черновик</button></div></fieldset></form>}
+    {error && <div className="banner row" role="alert"><span>{error}</span><button className="btn" type="button" disabled={busy} onClick={() => void refresh()}>Обновить задания</button></div>}
+    <div className="row homework-filters" role="group" aria-label="Показать задания"><button className="btn" type="button" aria-pressed={filter === "active"} onClick={() => setFilter("active")}>Активные</button><button className="btn" type="button" aria-pressed={filter === "done"} onClick={() => setFilter("done")}>Готово у меня</button><button className="btn" type="button" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>Все</button></div>
+    {items === null ? <p role="status">Загрузка заданий…</p> : visible.length === 0 ? <p className="muted">Заданий в этом разделе пока нет.</p> : visible.map(item => <article className="card stack" key={item.homeworkId}><div className="row"><h2>{item.title}</h2><span className="chip">{audienceLabel(item.audience)}</span></div><p className={item.completed ? "done-title" : ""}>{item.body}</p><p className="muted">{item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p><div className="row">{item.canComplete !== false && <button className="btn" type="button" disabled={busy || !!topic.archived} onClick={() => void mark(item)}>{item.completed ? "Снять отметку" : "Готово у меня"}</button>}{item.canEdit && !topic.archived && <button className="btn quiet" type="button" disabled={busy} onClick={() => { setEditing({ id: item.homeworkId, revision: item.revision, title: item.title, body: item.body, deadline: localDateTimeInput(item.deadlineAt), audience: item.audience || allHomeworkAudience() }); setEditConflict(false); }}>Изменить публикацию</button>}</div>
+      {editing?.id === item.homeworkId && <form className="stack" onSubmit={event => void saveEdit(event)}><label className="field">Предмет<input required value={editing.title} onChange={event => setEditing({ ...editing, title: event.target.value })}/></label><label className="field">Задание<textarea required value={editing.body} onChange={event => setEditing({ ...editing, body: event.target.value })}/></label><label className="field">Срок<input type="datetime-local" value={editing.deadline} onChange={event => setEditing({ ...editing, deadline: event.target.value })}/></label><HomeworkRecipients communityId={`${communityId}-edit`} value={editing.audience} onChange={audience => setEditing({ ...editing, audience })} disabled={busy} data={recipients}/>{editConflict && <div className="banner" role="alert">Актуальная ревизия: {items.find(row => row.homeworkId === item.homeworkId)?.revision}. Сверьте поля и подтвердите использование новой ревизии.<button className="btn" type="button" onClick={() => { setEditing({ ...editing, revision: items.find(row => row.homeworkId === item.homeworkId)?.revision ?? editing.revision }); setEditConflict(false); }}>Использовать актуальную ревизию</button></div>}<div className="row"><button className="btn primary" disabled={busy || editConflict}>Сохранить изменения</button><button className="btn quiet" type="button" onClick={() => { setEditing(null); setEditConflict(false); }}>Отмена</button></div></form>}</article>)}
   </div>;
 }
 function MaterialsChannel({ communityId, conversationId, topic, onError }: {
@@ -343,25 +387,54 @@ export function SubjectChannelContext({ communityId, groupName, topic, onError }
     const selected = localDay(selectedIso) ?? app.date;
     const [panel, setPanel] = useState<"overview" | "schedule" | "homework">("overview");
     const [homework, setHomework] = useState<GroupHomeworkCopy[] | null>(null);
+    const [homeworkScopeTag, setHomeworkScopeTag] = useState("");
     const [homeworkError, setHomeworkError] = useState("");
+    const [markBusy, setMarkBusy] = useState(false);
+    const subjectScopeKey = JSON.stringify([app.session?.user?.userId, app.groupId, communityId, topic.topicId, topic.subject]);
+    const subjectRequests = useRef(new HomeworkRequestScope()).current;
+    subjectRequests.scope(subjectScopeKey);
+    const visibleSubjectHomework = scopedValue(homework, homeworkScopeTag, subjectScopeKey, null);
+    const subjectRead = useRef(0);
+    const subjectBusy = useRef(false);
+    useEffect(() => { subjectBusy.current = false; setMarkBusy(false); setHomework(null); setHomeworkScopeTag(""); }, [subjectScopeKey]);
+    async function refreshSubject(force = false) {
+        const ticket = subjectRequests.capture();
+        const serial = ++subjectRead.current;
+        try {
+            const rows = await api.groupHomework(communityId);
+            if (!subjectRequests.owns(ticket) || serial !== subjectRead.current || subjectBusy.current && !force) return;
+            setHomeworkScopeTag(subjectScopeKey);
+            setHomework(subjectHomework(rows, topic.subject));
+            setHomeworkError("");
+        } catch (error) {
+            if (!subjectRequests.owns(ticket) || serial !== subjectRead.current) return;
+            if (error instanceof Error && ["401", "403", "404"].includes(error.message)) { setHomeworkScopeTag(subjectScopeKey); setHomework([]); }
+            setHomeworkError(problem(error));
+        }
+    }
     useEffect(() => {
         let stopped = false;
-        const pull = () => void api.groupHomework(communityId).then(rows => {
-            if (!stopped) {
-                setHomework(rows.filter(item => !!topic.subject && sameSubject(item.title, topic.subject)));
-                setHomeworkError("");
-            }
-        }).catch(error => {
-            if (stopped)
-                return;
-            if (error instanceof Error && ["401", "403", "404"].includes(error.message))
-                setHomework([]);
-            setHomeworkError(problem(error));
-        });
-        pull();
-        const timer = window.setInterval(pull, 4000);
-        return () => { stopped = true; window.clearInterval(timer); };
-    }, [communityId, topic.subject]);
+        void refreshSubject();
+        const timer = window.setInterval(() => { if (!stopped && !subjectBusy.current) void refreshSubject(); }, 4000);
+        return () => { stopped = true; ++subjectRead.current; window.clearInterval(timer); };
+    }, [subjectScopeKey]);
+    async function markSubjectCopy(item: GroupHomeworkCopy) {
+        if (subjectBusy.current || item.canComplete === false) return;
+        const action = subjectRequests.begin();
+        ++subjectRead.current;
+        subjectBusy.current = true;
+        setMarkBusy(true);
+        setHomeworkError("");
+        try {
+            const saved = await api.completeHomework(communityId, item.homeworkId, !item.completed, item.completionRevision);
+            if (subjectRequests.active(action)) setHomework(rows => rows?.map(row => row.homeworkId === item.homeworkId ? { ...row, completed: saved.completed, completionRevision: saved.revision } : row) ?? []);
+        } catch (error) {
+            if (!subjectRequests.active(action)) return;
+            setHomeworkError(error instanceof Error && error.message === "409" ? "Отметка изменилась. Загружаем актуальное состояние." : problem(error));
+            if (error instanceof Error && error.message === "409") { subjectBusy.current = false; await refreshSubject(true); }
+            if (subjectRequests.active(action) && !(error instanceof Error && error.message === "409")) onError(problem(error));
+        } finally { if (subjectRequests.active(action)) { subjectBusy.current = false; setMarkBusy(false); } }
+    }
     const payload = timetable.payload;
     const source = payload ? visibleLessons(payload.lessons, app.subgroups[payload.group.id] ?? {}) : [];
     const lessons = payload ? lessonsOn(source, selected, payload.period.start, payload.period.weekCount, app.invert).filter(lesson => !!topic.subject && sameSubject(lesson.subjectRaw, topic.subject)) : [];
@@ -373,6 +446,6 @@ export function SubjectChannelContext({ communityId, groupName, topic, onError }
       <div className="row"><button className="btn" type="button" aria-pressed={panel === "overview"} onClick={() => setPanel("overview")}>Обзор предмета</button><button className="btn" type="button" aria-pressed={panel === "homework"} onClick={() => setPanel("homework")}>Домашка предмета</button><button className="btn quiet" type="button" aria-pressed={panel === "schedule"} onClick={() => setPanel("schedule")}>Расписание группы</button></div>
       {panel === "overview" && <>{!payload ? <div><p role="status">{timetable.error || "Загружаем расписание группы…"}</p><button className="btn quiet" type="button" disabled={timetable.loading} onClick={timetable.reload}>Повторить</button></div> : <>{timetable.error && <p className="banner">{timetable.error}</p>}<p className="muted">Копия группы: {new Date(payload.meta.fetchedAt).toLocaleString("ru-RU")}</p>{lessons.length === 0 && <p className="muted">На выбранную дату пар по этому предмету нет</p>}{lessons.map((lesson, i) => <p key={i}>{lesson.timeStart}–{lesson.timeEnd} · {lesson.typeRaw} · {lesson.roomRaw || "Аудитория не указана"}</p>)}{context.nextLesson && <div className="card"><h2>Ближайшее занятие по выбранной дате</h2><p>{absoluteDate(context.nextLesson.date)} · {context.nextLesson.time} · {context.nextLesson.room}</p></div>}</>}</>}
       {panel === "schedule" && <ScheduleChannel groupName={groupName} topic={topic} initialDate={selected}/>}
-      {panel === "homework" && <div className="stack">{homeworkError && <p role="alert">{homeworkError}</p>}{homework === null ? <p role="status">Загружаем домашку группы…</p> : homework.length === 0 ? <p className="muted">Заданий группы по этому предмету нет</p> : homework.map(item => <article className="card" key={item.homeworkId}><h2>{item.title}</h2><p>{item.body}</p><p className="muted">{groupName} · {item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p><button className="btn quiet" type="button" onClick={() => { setHomeworkError(""); void api.completeHomework(communityId, item.homeworkId, !item.completed, item.completionRevision).then(saved => setHomework(rows => rows?.map(row => row.homeworkId === item.homeworkId ? { ...row, completed: saved.completed, completionRevision: saved.revision } : row) ?? [])).catch(error => { setHomeworkError(problem(error)); onError(problem(error)); }); }}>{item.completed ? "Готово у меня · снять отметку" : "Отметить готово у меня"}</button></article>)}</div>}
+      {panel === "homework" && <div className="stack">{homeworkError && <p role="alert">{homeworkError}</p>}{visibleSubjectHomework === null ? <p role="status">Загружаем домашку группы…</p> : visibleSubjectHomework.length === 0 ? <p className="muted">Заданий группы по этому предмету нет</p> : visibleSubjectHomework.map(item => <article className="card" key={item.homeworkId}><h2>{item.title}</h2><p>{item.body}</p><p className="muted">{groupName} · {audienceLabel(item.audience)} · {item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p>{item.canComplete !== false && <button className="btn quiet" type="button" disabled={markBusy} onClick={() => void markSubjectCopy(item)}>{item.completed ? "Готово у меня · снять отметку" : "Отметить готово у меня"}</button>}</article>)}</div>}
     </section>;
 }

@@ -47,6 +47,54 @@ class GroupSpaceClientTest {
         val row = client(FakeHttp { jsonReply(data) }).listHomework(token, id).single()
         assertEquals(topicId, row.topicId); assertEquals(java.time.Instant.parse(time), row.deadlineAt)
     }
+    @Test fun audience_contract_reads_capability_permissions_and_sends_selected_targets_with_stable_operation() = runBlocking {
+        val roleId = "11111111-1111-4111-8111-111111111111"
+        val personId = "22222222-2222-4222-8222-222222222222"
+        val operationId = "33333333-3333-4333-8333-333333333333"
+        val selected = HomeworkAudience("selected", listOf(roleId), listOf(personId))
+        val reply = """{"homeworkId":"$formId","communityId":"$id","title":"Task","body":"Body","revision":1,"createdAt":"$time","updatedAt":"$time","audience":{"kind":"selected","roleIds":["$roleId"],"userIds":["$personId"]},"canEdit":true,"canComplete":false}"""
+        val http = FakeHttp { call ->
+            assertEquals("1", call.headers["X-Zapara-Homework"])
+            if (call.method == "POST") {
+                val body = StrictJson.parse(String(call.body!!)).obj()
+                assertEquals(operationId, body.text("operationId", 36))
+                assertEquals("selected", body.field("audience").obj().text("kind", 16))
+                HttpReply(201, reply.toByteArray())
+            } else jsonReply(space(topic("homework", "homework")).replace("\"templates\":[\"forms\"]", "\"templates\":[\"forms\"],\"homeworkAudience\":true"))
+        }
+        val api = client(http)
+        assertTrue(api.space(token, id).capabilities.homeworkAudience)
+        val row = api.shareHomework(token, id, "Task", "Body", 0, audience = selected, operationId = operationId)
+        assertEquals(selected, row.audience)
+        assertTrue(row.canEdit)
+        assertFalse(row.canComplete)
+    }
+    @Test fun legacy_homework_preserves_completion_default_and_omits_new_fields() = runBlocking {
+        val data = """{"homeworkId":"$formId","communityId":"$id","title":"Task","body":"Body","revision":1,"createdAt":"$time","updatedAt":"$time"}"""
+        val http = FakeHttp { call ->
+            assertFalse(String(call.body!!).contains("audience"))
+            assertFalse(String(call.body!!).contains("operationId"))
+            HttpReply(201, data.toByteArray())
+        }
+        val row = client(http).shareHomework(token, id, "Task", "Body", 0)
+        assertTrue(row.canComplete)
+        assertFalse(row.canEdit)
+        assertNull(row.audience)
+    }
+    @Test fun aggregate_homework_copies_avoid_one_completion_request_per_task() = runBlocking {
+        val second = "99999999-9999-4999-8999-999999999999"
+        val data = """{"homeworkId":"$formId","communityId":"$id","title":"Task","body":"Body","revision":1,"createdAt":"$time","updatedAt":"$time"}"""
+        val http = FakeHttp { call -> when {
+            call.url.endsWith("/homework/copies") -> jsonReply("""[{"homeworkId":"$formId","title":"Task","body":"Body","revision":1,"completed":true,"completionRevision":2}]""")
+            call.url.endsWith("/homework/$formId/completion") -> throw AssertionError("N+1 completion request")
+            else -> throw AssertionError(call.url)
+        } }
+        val api = client(http)
+        val row = CommunityHomework(formId, id, "Task", "Body", 1, java.time.Instant.parse(time), java.time.Instant.parse(time))
+        val result = api.homeworkCompletions(token, id, listOf(row, row.copy(homeworkId = second, canComplete = false)))
+        assertTrue(result.getValue(formId).completed)
+        assertFalse(second in result)
+    }
     @Test fun utc_writers_trim_zero_fraction_and_truncate_to_seven_digits() {
         val milli = java.time.Instant.parse("2026-09-26T12:00:00.120Z")
         assertEquals("2026-09-26T12:00:00.12Z", CommunityUtc.format(milli))

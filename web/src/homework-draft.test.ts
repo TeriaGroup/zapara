@@ -56,6 +56,7 @@ test("validation explains whitespace and invalid dates; network errors never cla
   assert.match(validateHomeworkDraft(store.draft), /задание/);
   store.field("text", " Задачи ");
   store.field("share", true);
+  store.field("deadlineMode", "custom");
   store.field("sharedDeadline", "not-a-date");
   assert.match(validateHomeworkDraft(store.draft), /срок/);
   assert.match(homeworkSaveError(new Error("upload"), true), /На устройстве сохранено/);

@@ -258,7 +258,8 @@ data class GroupUiState(
     val roleImpact: GroupRoleImpact? = null,
     val formCreateVersion: Int = 0,
     val lastSavedHomework: CommunityHomework? = null,
-    val homeworkCreateVersion: Int = 0
+    val homeworkCreateVersion: Int = 0,
+    val lastCreatedHomeworkOperationId: String? = null
 )
 
 sealed interface GroupEvent {
@@ -705,7 +706,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         val context = runtime.subjectContext(loaded.groupName,subject,mutable.value.scheduleDate)
         val shared = api.listHomework(token,loaded.communityId).filter { hw -> GroupSubjectLogic.matches(subject,hw.title) &&
             (mutable.value.preview == null || hw.topicId == null || mutable.value.preview.orEmpty().any { it.topicId == hw.topicId && "read" in it.permissions }) }
-        val done = if (mutable.value.preview == null) shared.associate { it.homeworkId to api.getCompletion(token,loaded.communityId,it.homeworkId) } else emptyMap()
+        val done = if (mutable.value.preview == null) api.homeworkCompletions(token,loaded.communityId,shared) else emptyMap()
         if (ticket != generation || mutable.value.activeTopicId != topicId) return
         val tasks = (if (mutable.value.preview == null) context.personal else emptyList()) + shared.map { GroupSubjectHomeworkUi(null,it.homeworkId,it.title,it.body,it.deadlineAt?.atZone(ZoneId.systemDefault())?.toLocalDate(),done[it.homeworkId]?.completed == true) }
         mutable.value = mutable.value.copy(subjectLesson = context.lesson, subjectHomework = tasks, completions = mutable.value.completions + done,
@@ -970,7 +971,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             activeConversationId = null, activeTopicId = null, activeArchivedTopic=null, activeChannelKind = "chat", chatTitle = "", canPost = false,
             messages = emptyList(), board = null, subjectLesson = null, subjectHomework = emptyList(), subjectDetail = null, showSubjectTasks = false, forms = emptyList(), homework = emptyList(), completions = emptyMap(),
             responses = emptyMap(), responseCursors = emptyMap(), responseCounts = emptyMap(), channels = emptyList(),
-            space = null, desk = null, spacePanel = null, accessApproval = null, lastSavedHomework = null, preview = null, previewSubject = null, archived = emptyList(), access = null, audit = emptyList(),
+            space = null, desk = null, spacePanel = null, accessApproval = null, lastSavedHomework = null, lastCreatedHomeworkOperationId = null, preview = null, previewSubject = null, archived = emptyList(), access = null, audit = emptyList(),
             people = emptyList(), directs = emptyList(), mediaFiles = emptyMap(), mediaLoadingIds = emptySet(), mediaFailedIds = emptySet(),
             mediaLoadingId = null, mediaError = false, channelBusy = false, chatLoading = false, sending = false, attachmentPending = false,
             replyTo = null, editing = null, draft = "", composeContext = null, hasMore = false, olderLoading = false,
@@ -1106,10 +1107,15 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                         update { it.copy(responses = it.responses + (action.formId to (if (action.after == null) page.responses else it.responses[action.formId].orEmpty() + page.responses)), responseCursors = it.responseCursors + (action.formId to page.nextCursor), responseCounts = it.responseCounts + (action.formId to page.totalResponses)) }
                     }
                     is GroupSpaceAction.SaveHomework -> {
-                        val saved = if (action.id == null) api.shareHomework(token, loaded.communityId, action.title, action.body, 0, action.deadline, activeTopic)
-                            else api.updateHomework(token, loaded.communityId, action.id, action.title, action.body, action.revision, action.deadline, activeTopic)
+                        val audienceSupported = mutable.value.space?.capabilities?.homeworkAudience == true
+                        if (action.audience?.selected == true && !audienceSupported) throw CommunityClientException(CommunityClientFailure.InvalidRequest)
+                        val audience = action.audience.takeIf { audienceSupported }
+                        val saved = if (action.id == null) api.shareHomework(token, loaded.communityId, action.title, action.body, 0, action.deadline, activeTopic, audience, action.operationId.takeIf { audienceSupported })
+                            else api.updateHomework(token, loaded.communityId, action.id, action.title, action.body, action.revision, action.deadline, activeTopic, audience)
                         update { state -> state.copy(homework = state.homework.filterNot { it.homeworkId == saved.homeworkId } + saved,
-                            lastSavedHomework = saved, homeworkCreateVersion = state.homeworkCreateVersion + 1) }
+                            lastSavedHomework = saved,
+                            homeworkCreateVersion = state.homeworkCreateVersion + if (action.id == null) 1 else 0,
+                            lastCreatedHomeworkOperationId = if (action.id == null) action.operationId else state.lastCreatedHomeworkOperationId) }
                     }
                     is GroupSpaceAction.CompleteHomework -> {
                         val completed = api.upsertCompletion(token, loaded.communityId, action.id, action.on, mutable.value.completions[action.id]?.revision ?: 0)
@@ -1118,7 +1124,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                     is GroupSpaceAction.ScheduleDate -> { val rows = runtime.scheduleRows(loaded.groupName, action.date); update { it.copy(scheduleDate = action.date, scheduleRows = rows) } }
                     GroupSpaceAction.ReloadContent -> when (mutable.value.activeChannelKind) {
                         "forms" -> { val forms = api.forms(token, loaded.communityId, activeTopic ?: return@launch); update { state -> state.copy(forms = if (state.preview == null) forms else forms.map { it.copy(canRespond = false, canViewResponses = false, ownResponse = null) }) } }
-                        "homework" -> { val rows = api.listHomework(token, loaded.communityId).filter { it.topicId == activeTopic }; val done = if (mutable.value.preview == null) rows.associate { it.homeworkId to api.getCompletion(token, loaded.communityId, it.homeworkId) } else emptyMap(); update { it.copy(homework = rows, completions = done) } }
+                        "homework" -> { val rows = api.listHomework(token, loaded.communityId).filter { it.topicId == activeTopic }; val done = if (mutable.value.preview == null) api.homeworkCompletions(token, loaded.communityId, rows, activeTopic) else emptyMap(); update { it.copy(homework = rows, completions = done) } }
                         "schedule" -> { val rows = runtime.scheduleRows(loaded.groupName, mutable.value.scheduleDate); update { it.copy(scheduleRows = rows) } }
                     }
                     else -> Unit
@@ -1139,7 +1145,12 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                         try {
                         val token = runtime.accessToken()
                         if (token != null) {
-                            if (action is GroupSpaceAction.SaveHomework) {
+                            if (action is GroupSpaceAction.CompleteHomework) {
+                                val current = api.getCompletion(token, loaded.communityId, action.id)
+                                update { state -> state.copy(completions = state.completions + (action.id to current),
+                                    subjectHomework = state.subjectHomework.map { if (it.sharedId == action.id) it.copy(done = current.completed) else it },
+                                    subjectDetail = state.subjectDetail?.let { if (it.sharedId == action.id) it.copy(done = current.completed) else it }) }
+                            } else if (action is GroupSpaceAction.SaveHomework) {
                                 val rows = api.listHomework(token, loaded.communityId).filter { it.topicId == activeTopic }
                                 update { it.copy(homework = rows) }
                             } else if (action is GroupSpaceAction.Access || action is GroupSpaceAction.PreviewAccess) {

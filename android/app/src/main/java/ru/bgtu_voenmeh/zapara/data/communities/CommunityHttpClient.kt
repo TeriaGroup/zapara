@@ -74,6 +74,32 @@ class CommunityHttpClient(
         return read("GET", "/$id/homework", null, accessToken, 200) { it.arr().items.map { row -> homework(row.obj()) } }
     }
 
+    suspend fun listHomeworkCopies(accessToken: String, communityId: String, topicId: String? = null): List<GroupHomeworkCopy> {
+        val id = CommunityValidation.id(communityId)
+        val path = "/$id/homework/copies" + (topicId?.let { "?topicId=${CommunityValidation.id(it)}" } ?: "")
+        return read("GET", path, null, accessToken, 200) { json -> json.arr().items.map { item ->
+            val row = item.obj()
+            row.requireBaseKeys("homeworkId", "title", "body", "revision", "completed", "completionRevision")
+            GroupHomeworkCopy(CommunityValidation.id(row.text("homeworkId", 36)), row.bool("completed"), CommunityValidation.revision(row.long("completionRevision")),
+                if ("canComplete" in row.fields) row.bool("canComplete") else true)
+        } }
+    }
+
+    suspend fun homeworkCompletions(accessToken: String, communityId: String, rows: List<CommunityHomework>, topicId: String? = null): Map<String, HomeworkCompletion> {
+        val eligible = rows.filter { it.canComplete }
+        if (eligible.isEmpty()) return emptyMap()
+        val known = eligible.map { it.homeworkId }.toSet()
+        try {
+            val aggregate = listHomeworkCopies(accessToken, communityId, topicId)
+                .filter { it.homeworkId in known && it.canComplete }
+                .associate { it.homeworkId to HomeworkCompletion(it.homeworkId, it.completed, it.completionRevision, null) }
+            if (aggregate.keys.containsAll(known)) return aggregate
+            return aggregate + eligible.filterNot { it.homeworkId in aggregate }.associate { it.homeworkId to getCompletion(accessToken, communityId, it.homeworkId) }
+        } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+        catch (_: Exception) { /* Earlier servers may not serve copies. */ }
+        return eligible.associate { it.homeworkId to getCompletion(accessToken, communityId, it.homeworkId) }
+    }
+
     suspend fun publishHomework(
         accessToken: String,
         communityId: String,
@@ -81,10 +107,12 @@ class CommunityHttpClient(
         body: String,
         expectedRevision: Long,
         deadlineAt: Instant? = null,
-        topicId: String? = null
+        topicId: String? = null,
+        audience: HomeworkAudience? = null,
+        operationId: String? = null
     ): CommunityHomework {
         val id = CommunityValidation.id(communityId)
-        return read("POST", "/$id/homework", homeworkBody(title, body, expectedRevision, deadlineAt, topicId), accessToken, 201) { homework(it.obj()) }
+        return read("POST", "/$id/homework", homeworkBody(title, body, expectedRevision, deadlineAt, topicId, audience, operationId), accessToken, 201) { homework(it.obj()) }
     }
 
     suspend fun shareHomework(
@@ -94,10 +122,12 @@ class CommunityHttpClient(
         body: String,
         expectedRevision: Long,
         deadlineAt: Instant? = null,
-        topicId: String? = null
+        topicId: String? = null,
+        audience: HomeworkAudience? = null,
+        operationId: String? = null
     ): CommunityHomework {
         val id = CommunityValidation.id(communityId)
-        return read("POST", "/$id/homework/share", homeworkBody(title, body, expectedRevision, deadlineAt, topicId), accessToken, 201) { homework(it.obj()) }
+        return read("POST", "/$id/homework/share", homeworkBody(title, body, expectedRevision, deadlineAt, topicId, audience, operationId), accessToken, 201) { homework(it.obj()) }
     }
 
     suspend fun getHomework(accessToken: String, communityId: String, homeworkId: String): CommunityHomework {
@@ -114,11 +144,12 @@ class CommunityHttpClient(
         body: String,
         expectedRevision: Long,
         deadlineAt: Instant? = null,
-        topicId: String? = null
+        topicId: String? = null,
+        audience: HomeworkAudience? = null
     ): CommunityHomework {
         val id = CommunityValidation.id(communityId)
         val hid = CommunityValidation.id(homeworkId)
-        return read("PUT", "/$id/homework/$hid", homeworkBody(title, body, expectedRevision, deadlineAt, topicId), accessToken, 200) { homework(it.obj()) }
+        return read("PUT", "/$id/homework/$hid", homeworkBody(title, body, expectedRevision, deadlineAt, topicId, audience), accessToken, 200) { homework(it.obj()) }
     }
 
     suspend fun getCompletion(accessToken: String, communityId: String, homeworkId: String): HomeworkCompletion {
@@ -364,7 +395,7 @@ class CommunityHttpClient(
         val target = CommunityValidation.id(messageId)
         val token = AccountValidation.token(accessToken, "za_")
         val path = "/conversations/$id/messages/$target/media"
-        val headers = mapOf("Accept" to "application/octet-stream", "Authorization" to "Bearer $token", "X-Zapara-Group-Space" to "1")
+        val headers = mapOf("Accept" to "application/octet-stream", "Authorization" to "Bearer $token", "X-Zapara-Group-Space" to "1", "X-Zapara-Homework" to "1")
         val limit = 8 * 1024 * 1024
         val reply = try {
             val version = if (legacyRoutes) 1 else 2
@@ -476,7 +507,7 @@ class CommunityHttpClient(
 
     private suspend fun send(method: String, path: String, body: String?, access: String, expected: Int): JsonValue {
         val token = AccountValidation.token(access, "za_")
-        val headers = linkedMapOf("Accept" to "application/json", "X-Zapara-Group-Space" to "1")
+        val headers = linkedMapOf("Accept" to "application/json", "X-Zapara-Group-Space" to "1", "X-Zapara-Homework" to "1")
         headers["Authorization"] = "Bearer $token"
         val bytes = body?.toByteArray(Charsets.UTF_8)
         if (bytes != null) {
@@ -611,7 +642,7 @@ class CommunityHttpClient(
     }
     private suspend fun spacePost(token: String, communityId: String, path: String, body: String): GroupSpace = read("POST", "/${CommunityValidation.id(communityId)}/space$path", body, token, 200) { spaceModel(it.obj()) }
     private fun stringsJson(values: List<String>): String = "[" + values.joinToString(",", transform = ::q) + "]"
-    private fun capabilities(o: JsonValue.Obj): GroupCapabilities = GroupCapabilities(o.int("maxRoles"), o.int("maxRolesPerMember"), o.int("maxTopics"), o.optionalStrings("powers"), o.optionalStrings("templates"))
+    private fun capabilities(o: JsonValue.Obj): GroupCapabilities = GroupCapabilities(o.int("maxRoles"), o.int("maxRolesPerMember"), o.int("maxTopics"), o.optionalStrings("powers"), o.optionalStrings("templates"), o.optionalBool("homeworkAudience"))
     private fun spaceModel(o: JsonValue.Obj): GroupSpace = GroupSpace(o.array("topics", 100).items.map { topic(it.obj()) }, o.array("categories", 100).items.map { row -> val c = row.obj(); GroupCategory(c.text("categoryId", 36), c.text("title", 80), c.int("position"), c.long("revision")) }, capabilities(o.field("capabilities").obj()), groupDesk(o.field("desk").obj()))
     private fun form(o: JsonValue.Obj): GroupForm = GroupForm(o.text("formId", 36), o.text("topicId", 36), o.text("title", 240), o.text("description", 4000), o.nullableText("deadlineAt", 40)?.let(CommunityUtc::parse), o.bool("anonymous"), o.array("questions", 100).items.map { row -> val q = row.obj(); GroupFormQuestion(q.text("questionId", 36), q.text("title", 400), q.text("kind", 32), q.bool("required"), q.optionalStrings("options")) }, o.text("createdBy", 36), CommunityUtc.parse(o.text("createdAt", 40)), o.bool("canRespond"), o.bool("canViewResponses"), o.fields["ownResponse"]?.takeUnless { it == JsonValue.Null }?.let { formAnswer(it.obj()) }, o.int("responseCount"))
     private fun formAnswer(o: JsonValue.Obj): GroupFormResponse = GroupFormResponse(o.nullableText("respondentId", 36), o.array("answers", 100).items.map { row -> val a = row.obj(); GroupFormAnswer(a.text("questionId", 36), a.nullableText("text", 8000), a.optionalStrings("choices")) }, CommunityUtc.parse(o.text("updatedAt", 40)))
@@ -846,7 +877,14 @@ class CommunityHttpClient(
             CommunityUtc.parse(obj.text("createdAt", 40)),
             CommunityUtc.parse(obj.text("updatedAt", 40)),
             obj.optionalText("deadlineAt")?.let(CommunityUtc::parse),
-            obj.optionalText("topicId")
+            obj.optionalText("topicId"),
+            obj.fields["audience"]?.let { value ->
+                if (value == JsonValue.Null) null else value.obj().let { audience ->
+                    HomeworkAudience(audience.text("kind", 16), audience.optionalStrings("roleIds").map(CommunityValidation::id), audience.optionalStrings("userIds").map(CommunityValidation::id)).also { if (!it.valid()) throw JsonFail() }
+                }
+            },
+            obj.optionalBool("canEdit"),
+            if ("canComplete" in obj.fields) obj.bool("canComplete") else true
         )
     }
 
@@ -938,10 +976,17 @@ class CommunityHttpClient(
 
     private fun baseItemBody(title: String, body: String, expectedRevision: Long): String = "{\"title\":${q(CommunityValidation.title(title))},\"body\":${q(CommunityValidation.body(body))},\"expectedRevision\":${CommunityValidation.revision(expectedRevision)}}"
 
-    private fun homeworkBody(title: String, body: String, expectedRevision: Long, deadlineAt: Instant?, topicId: String?): String {
+    private fun homeworkBody(title: String, body: String, expectedRevision: Long, deadlineAt: Instant?, topicId: String?, audience: HomeworkAudience? = null, operationId: String? = null): String {
         val base = baseItemBody(title, body, expectedRevision)
-        if (deadlineAt == null && topicId == null) return base
-        return base.dropLast(1) + ",\"deadlineAt\":${deadlineAt?.let(CommunityUtc::format)?.let(::q) ?: "null"},\"topicId\":${topicId?.let(::q) ?: "null"}}"
+        if (audience != null && !audience.valid()) throw CommunityClientException(CommunityClientFailure.InvalidRequest)
+        val fields = mutableListOf<String>()
+        if (deadlineAt != null || topicId != null) {
+            fields += "\"deadlineAt\":${deadlineAt?.let(CommunityUtc::format)?.let(::q) ?: "null"}"
+            fields += "\"topicId\":${topicId?.let { q(CommunityValidation.id(it)) } ?: "null"}"
+        }
+        audience?.let { value -> fields += "\"audience\":{\"kind\":${q(value.kind)},\"roleIds\":${stringsJson(value.roleIds.map(CommunityValidation::id))},\"userIds\":${stringsJson(value.userIds.map(CommunityValidation::id))}}" }
+        operationId?.let { fields += "\"operationId\":${q(CommunityValidation.id(it))}" }
+        return if (fields.isEmpty()) base else base.dropLast(1) + "," + fields.joinToString(",") + "}"
     }
 
     private inline fun <T> payload(block: () -> T): T = try {
@@ -986,7 +1031,7 @@ private fun JsonValue.Obj.requireBaseKeys(vararg names: String) {
         "headman" -> setOf("capabilities")
         "roleId" -> setOf("position", "icon", "revision")
         "topicId" -> setOf("template", "categoryId", "position", "subject", "archived", "revision", "permissions", "supported")
-        "homeworkId" -> setOf("deadlineAt", "topicId")
+        "homeworkId" -> setOf("deadlineAt", "topicId", "audience", "canEdit", "canComplete")
         else -> emptySet()
     }
     if (fields.keys.any { it !in names && it !in extensions }) throw JsonFail()

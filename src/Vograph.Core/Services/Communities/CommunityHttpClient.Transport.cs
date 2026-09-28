@@ -34,6 +34,7 @@ public sealed partial class CommunityHttpClient
             if (http.DefaultRequestHeaders.Any()) throw new CommunityClientException(CommunityClientFailure.InvalidRequest);
             request.Headers.Accept.Add(new("application/json"));
             request.Headers.TryAddWithoutValidation("X-Zapara-Group-Space", "1");
+            request.Headers.TryAddWithoutValidation("X-Zapara-Homework", "1");
             request.Headers.Authorization = new("Bearer", access);
             if (body is not null)
             {

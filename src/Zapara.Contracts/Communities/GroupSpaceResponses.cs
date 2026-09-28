@@ -1,7 +1,7 @@
 namespace Zapara.Contracts.Communities;
 
 public sealed record GroupCapabilitiesResponse(int MaxRoles = 12, int MaxRolesPerMember = 3, int MaxTopics = 24,
-    IReadOnlyList<string>? Powers = null, IReadOnlyList<string>? Templates = null);
+    IReadOnlyList<string>? Powers = null, IReadOnlyList<string>? Templates = null, bool HomeworkAudience = false);
 public sealed record GroupCategoryRequest(Guid? CategoryId, string Title, int Position, long ExpectedRevision = 0);
 public sealed record GroupCategoryResponse(Guid CategoryId, string Title, int Position, long Revision);
 public sealed record GroupSpaceResponse(IReadOnlyList<GroupTopicResponse> Topics, IReadOnlyList<GroupCategoryResponse> Categories,

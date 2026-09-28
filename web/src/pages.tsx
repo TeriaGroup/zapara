@@ -6,6 +6,9 @@ import { followGroupCommunity, openGroupFace } from "./groupChoice";
 import { clearSentGroupDraft, createGroupPoller, groupMediaSelectionIsCurrent, mergeGroupMessages, newestUnseenIncoming } from "./groupChat";
 import { completeGroupCopy } from "./groupHomework";
 import { useHomeworkDraft } from "./homework-draft-context";
+import { HomeworkRequestScope, loadScopedHomework, scopedValue } from "./homework-request-scope";
+import { HomeworkRecipients, allHomeworkAudience, audienceLabel, useHomeworkAudienceData } from "./homework-audience";
+import { canonicalUtc, localDateTimeInput } from "./utc";
 import { homeworkSaveError, validateHomeworkDraft } from "./homework-draft";
 import { checkHomeworkUpload, runHomeworkSave } from "./homework-save";
 import { addDays, dayTitle, isoDay, lessonsOn, sameSubject, weekday } from "./parity";
@@ -42,7 +45,7 @@ import { Icon } from "./icons";
 import { MapViewer } from "./map-viewer";
 import { pairCount } from "./map-viewport";
 import { VkMark, YandexMark } from "./brands";
-import type { BallotBoard, ChatMessage, Community, Conversation, FriendItem, GroupDesk, GroupHome, GroupHomeworkCopy, GroupTopic, GroupTopicPage, HomeworkFile, Lesson, MapPlan, Teacher, TeacherLesson } from "./types";
+import type { BallotBoard, ChatMessage, Community, Conversation, FriendItem, GroupDesk, GroupHome, GroupHomeworkCopy, GroupTopic, GroupTopicPage, HomeworkAudience, HomeworkFile, Lesson, MapPlan, Teacher, TeacherLesson } from "./types";
 
 function Head({ title, text, children }: { title: string; text?: string; children?: ReactNode }) {
   return (
@@ -131,18 +134,46 @@ export function SchedulePage() {
   const friendSchedules = resolveFriendSchedules(app.friends, app.catalog?.groups || [], cache.lessons, ownTimetable);
   const groupName = app.catalog?.groups.find(group => group.id === app.groupId)?.name || "";
   const [sharedHomework, setSharedHomework] = useState<GroupHomeworkCopy[]>([]);
+  const [sharedHomeworkOwner, setSharedHomeworkOwner] = useState("");
   const [homeworkCommunity, setHomeworkCommunity] = useState("");
   const [sharedUndo,setSharedUndo]=useState<{id:string;done:boolean}|null>(null);
   const [sharedBusy,setSharedBusy]=useState(false);
   const [deadlineError,setDeadlineError]=useState("");
+  const sharedScopeKey = JSON.stringify([!!app.session?.authenticated, app.session?.user?.userId, app.groupId, homeworkCommunity]);
+  const sharedRequests = useRef(new HomeworkRequestScope()).current;
+  sharedRequests.scope(sharedScopeKey);
+  const sharedOwnerKey = JSON.stringify([!!app.session?.authenticated, app.session?.user?.userId, app.groupId]);
+  const sharedOwnerRef = useRef(sharedOwnerKey);
+  sharedOwnerRef.current = sharedOwnerKey;
+  useEffect(() => { setSharedBusy(false); setSharedUndo(null); setDeadlineError(""); }, [sharedScopeKey]);
   useEffect(()=>{setSharedUndo(null);},[isoDay(app.date)]);
-  useEffect(() => { let stop = false; setSharedHomework([]); setHomeworkCommunity("");
-    if (app.session?.authenticated && app.groupId) void api.communities(app.groupId).then(rows => { const group=rows.find(row=>row.role); if(!group || stop) return; setHomeworkCommunity(group.communityId); return api.groupHomework(group.communityId).then(items=>{if(!stop)setSharedHomework(items);}); }).catch(()=>undefined);
+  useEffect(() => { let stop = false; const owner = sharedOwnerKey; const current = () => !stop && sharedOwnerRef.current === owner; setSharedHomework([]); setSharedHomeworkOwner(owner); setHomeworkCommunity("");
+    if (app.session?.authenticated && app.groupId) void api.communities(app.groupId).then(rows => { const group=rows.find(row=>row.role); if(!group || !current()) return; setHomeworkCommunity(group.communityId); return api.groupHomework(group.communityId).then(items=>{if(current()){setSharedHomeworkOwner(owner);setSharedHomework(items);}}); }).catch(()=>undefined);
     return()=>{stop=true;};
   }, [app.groupId,app.session?.user?.userId]);
   const personal = app.homework.map(item=>({...item,deadlineAt: period ? personalHomeworkDue(item,shown,period,app.invert)?.toISOString() ?? null : null}));
   const deadlines = nearbyHomework(personal, app.date, lessons.map(lesson => lesson.subjectRaw));
-  const sharedDeadlines = nearbyHomework(sharedHomework.map(item=>({id:item.homeworkId,subject:item.title,text:item.body,done:item.completed,created:"",deadlineAt:item.deadlineAt})),app.date,lessons.map(lesson=>lesson.subjectRaw));
+  const visibleSharedHomework = scopedValue(sharedHomework, sharedHomeworkOwner, sharedOwnerKey, []);
+  const sharedDeadlines = nearbyHomework(visibleSharedHomework.map(item=>({id:item.homeworkId,subject:item.title,text:item.body,done:item.completed,created:"",deadlineAt:item.deadlineAt})),app.date,lessons.map(lesson=>lesson.subjectRaw));
+  async function changeSharedCompletion(copy: GroupHomeworkCopy, completed: boolean, undoAction = false) {
+    if (!homeworkCommunity || sharedBusy || copy.canComplete === false) return;
+    const action = sharedRequests.begin();
+    const community = homeworkCommunity;
+    setSharedBusy(true);
+    setDeadlineError("");
+    try {
+      const value = await api.completeHomework(community, copy.homeworkId, completed, copy.completionRevision);
+      if (!sharedRequests.active(action)) return;
+      if (undoAction) setSharedUndo(null);
+      else { setUndo(null); setSharedUndo({ id: copy.homeworkId, done: copy.completed }); }
+      setSharedHomework(rows => rows.map(row => row.homeworkId === copy.homeworkId ? { ...row, completed: value.completed, completionRevision: value.revision } : row));
+    } catch (error) {
+      if (!sharedRequests.active(action)) return;
+      setDeadlineError(undoAction ? "Отмена не сохранилась" : "Личная готовность не сохранилась. Повторите после обновления домашки.");
+      if (error instanceof Error && error.message === "409")
+        await loadScopedHomework(sharedRequests, action, () => api.groupHomework(community), rows => { if (sharedRequests.active(action)) setSharedHomework(rows); });
+    } finally { if (sharedRequests.active(action)) setSharedBusy(false); }
+  }
   const strip = Array.from({ length: 7 }, (_, i) => addDays(app.date, i - 2));
   const swipe = useSwipe(() => app.setDate(addDays(app.date, 1)), () => app.setDate(addDays(app.date, -1)), isoDay(app.date));
   const dateReveal = useDateReveal(isoDay(app.date));
@@ -194,9 +225,9 @@ export function SchedulePage() {
       <aside className="stack day-context"><h2>Ближайшие сроки · {deadlines.length + sharedDeadlines.length}</h2><p className="muted">{app.date.toLocaleDateString("ru-RU")}–{addDays(app.date, 2).toLocaleDateString("ru-RU")}</p>
         {deadlines.length + sharedDeadlines.length === 0 && <p className="muted">На выбранные дни заданий нет</p>}
         {deadlines.map(item => <article className="deadline" key={item.id}><label className="check"><input type="checkbox" checked={item.done} aria-label={`Готово у меня: ${item.text}`} onChange={() => { setSharedUndo(null); setUndo({ id: item.id, done: item.done }); app.saveHomework({ ...item, done: !item.done }); }} /><Link to={`/homework?id=${item.id}&subject=${encodeURIComponent(item.subject)}`}><span className={item.done ? "done-title" : ""}>{item.text}</span><small>{item.subject}</small></Link></label><p className="muted">{item.done ? "Готово у меня · " : ""}{item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}{!item.done && item.deadlineAt && Date.parse(item.deadlineAt) < now.getTime() ? " · Просрочено" : ""}</p></article>)}
-        {sharedDeadlines.map(item => <article className="deadline" key={item.id}><Link to={`/homework?subject=${encodeURIComponent(item.subject)}`}><b>{item.text}</b></Link><p className="muted">Группа · {item.subject} · {item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p><label className="check"><input type="checkbox" aria-label={`Готово у меня: ${item.text}`} checked={item.done} disabled={sharedBusy} onChange={() => { const copy=sharedHomework.find(row=>row.homeworkId===item.id); if(copy) { setSharedBusy(true); void api.completeHomework(homeworkCommunity,copy.homeworkId,!copy.completed,copy.completionRevision).then(value=>{setUndo(null);setSharedUndo({id:copy.homeworkId,done:copy.completed});setSharedHomework(rows=>rows.map(row=>row.homeworkId===copy.homeworkId?{...row,completed:value.completed,completionRevision:value.revision}:row));}).catch(()=>setDeadlineError("Личная готовность не сохранилась. Повторите после обновления домашки.")).finally(()=>setSharedBusy(false)); } }} />Готово у меня</label></article>)}
+        {sharedDeadlines.map(item => { const copy = visibleSharedHomework.find(row => row.homeworkId === item.id); return <article className="deadline" key={item.id}><Link to={`/homework?subject=${encodeURIComponent(item.subject)}`}><b>{item.text}</b></Link><p className="muted">{audienceLabel(copy?.audience)} · {item.subject} · {item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p>{copy?.canComplete !== false && <label className="check"><input type="checkbox" aria-label={`Готово у меня: ${item.text}`} checked={item.done} disabled={sharedBusy} onChange={() => { if (copy) void changeSharedCompletion(copy, !copy.completed); }} />Готово у меня</label>}</article>; })}
         {deadlineError && <p role="alert">{deadlineError}</p>}
-        {sharedUndo && <div className="banner row" role="status"><span>{sharedUndo.done ? "Отметка снята" : "Отмечено готово"}</span><button className="btn quiet" type="button" disabled={sharedBusy} onClick={()=>{ const item=sharedHomework.find(row=>row.homeworkId===sharedUndo.id); if(!item)return;setSharedBusy(true);void api.completeHomework(homeworkCommunity,item.homeworkId,sharedUndo.done,item.completionRevision).then(value=>{setSharedHomework(rows=>rows.map(row=>row.homeworkId===item.homeworkId?{...row,completed:value.completed,completionRevision:value.revision}:row));setSharedUndo(null);}).catch(()=>setDeadlineError("Отмена не сохранилась")).finally(()=>setSharedBusy(false)); }}>Отменить</button></div>}
+        {sharedUndo && <div className="banner row" role="status"><span>{sharedUndo.done ? "Отметка снята" : "Отмечено готово"}</span><button className="btn quiet" type="button" disabled={sharedBusy} onClick={()=>{ const item=visibleSharedHomework.find(row=>row.homeworkId===sharedUndo.id); if (item) void changeSharedCompletion(item, sharedUndo.done, true); }}>Отменить</button></div>}
         {undo && <div className="banner row" role="status"><span>{!undo.done ? "Отмечено готово" : "Отметка снята"}</span><button className="btn quiet" type="button" onClick={() => { const item = app.homework.find(row => row.id === undo.id); if (item) app.saveHomework({ ...item, done: undo.done }); setUndo(null); }}>Отменить</button></div>}
         <Link className="btn" to="/homework">Вся домашка</Link>
         <Link className="btn quiet" to={`/group?date=${isoDay(app.date)}`}>Обсуждение группы</Link>
@@ -661,7 +692,7 @@ function HomeworkAttachments({ files }: { files: HomeworkFile[] }) {
 export function HomeworkPage() {
   const app = useApp();
   const { controller, refresh, readLocal, field, draft, busy, note } = useHomeworkDraft();
-  const { subject, text, share, nth, sharedDeadline, pending } = draft;
+  const { subject, text, share, nth, sharedDeadline, deadlineMode, audience, topicId, pending } = draft;
   const setNote = (value: string) => { controller.note = value; refresh(); };
   const [editorOpen, setEditorOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
@@ -673,32 +704,51 @@ export function HomeworkPage() {
   const chosenId = new URLSearchParams(location.search).get("id");
   const [communityId, setCommunityId] = useState("");
   const [copies, setCopies] = useState<GroupHomeworkCopy[]>([]);
+  const [copiesScopeTag, setCopiesScopeTag] = useState("");
   const [copiesLoading, setCopiesLoading] = useState(false);
   const [copiesFailed, setCopiesFailed] = useState(false);
   const [copiesRetry, setCopiesRetry] = useState(0);
+  const [copyBusy, setCopyBusy] = useState<string | null>(null);
+  const [editingCopy, setEditingCopy] = useState<{ id: string; revision: number; title: string; body: string; deadline: string; audience: HomeworkAudience; topicId: string | null } | null>(null);
+  const [copyEditConflict, setCopyEditConflict] = useState(false);
+  const [taskFilter, setTaskFilter] = useState<"active" | "done" | "all">("active");
+  const copyScopeKey = JSON.stringify([!!app.session?.authenticated, app.session?.user?.userId, app.groupId, communityId]);
+  const copyRequests = useRef(new HomeworkRequestScope()).current;
+  copyRequests.scope(copyScopeKey);
+  const copyOwnerKey = JSON.stringify([!!app.session?.authenticated, app.session?.user?.userId, app.groupId]);
+  const copyOwnerRef = useRef(copyOwnerKey);
+  copyOwnerRef.current = copyOwnerKey;
+  const safeCopies = scopedValue(copies, copiesScopeTag, copyScopeKey, []);
+  useEffect(() => { setCopyBusy(null); setEditingCopy(null); setCopyEditConflict(false); }, [copyScopeKey]);
+  const recipients = useHomeworkAudienceData(communityId);
   const subjects = [...new Set(app.lessons.map(lesson => lesson.subjectRaw))];
-  const visibleCopies = copies.filter(item => !chosenSubject || sameSubject(item.title, chosenSubject));
-  const visibleHomework = app.homework.filter(item => !chosenSubject || sameSubject(item.subject, chosenSubject));
+  const visibleCopies = safeCopies.filter(item => item.homeworkId === editingCopy?.id || (!chosenSubject || sameSubject(item.title, chosenSubject)) && (taskFilter === "all" || item.completed === (taskFilter === "done")));
+  const visibleHomework = app.homework.filter(item => (!chosenSubject || sameSubject(item.subject, chosenSubject)) && (taskFilter === "all" || item.done === (taskFilter === "done")));
+  const duePeriod = api.readCache().lessons[app.groupId]?.period || app.catalog?.period || { start: isoDay(app.date), weekCount: 2, title: "", timeZone: "" };
+  const previewDue = personalHomeworkDue({ id: "preview", subject, text, done: false, created: new Date().toISOString(), targetNthOccurrence: nth }, visibleLessons(app.lessons, app.subgroups[app.groupId] || {}), duePeriod, app.invert);
   useEffect(() => { controller.preload(chosenSubject || ""); refresh(); }, [controller, chosenSubject, app.groupId, app.session?.authenticated, app.session?.user?.userId]);
   useEffect(() => { setDiscardOpen(false); setEditorOpen(false); }, [app.groupId, app.session?.authenticated, app.session?.user?.userId]);
   useEffect(() => {
     let stop = false;
+    const owner = copyOwnerKey;
+    const current = () => !stop && copyOwnerRef.current === owner;
     setCopiesLoading(!!app.session?.authenticated && !!app.groupId);
     setCommunityId("");
     setCopies([]);
+    setCopiesScopeTag("");
     setCopiesFailed(false);
     void followGroupCommunity(
       { authenticated: !!app.session?.authenticated, groupId: app.groupId },
       groupId => api.communities(groupId),
       state => {
-        if (stop) return;
+        if (!current()) return;
         setCommunityId(state.communityId);
-        if (!state.communityId) { setCopies([]); setCopiesLoading(false); }
+        if (!state.communityId) { setCopies([]); setCopiesScopeTag(""); setCopiesLoading(false); }
         if (state.failed) { setCopiesFailed(true); setCopiesLoading(false); }
         else if (state.communityId) void api.groupHomework(state.communityId)
-          .then(loaded => { if (!stop) setCopies(loaded); })
-          .catch(() => { if (!stop) setCopiesFailed(true); })
-          .finally(() => { if (!stop) setCopiesLoading(false); });
+          .then(loaded => { if (current()) { setCopiesScopeTag(JSON.stringify([!!app.session?.authenticated, app.session?.user?.userId, app.groupId, state.communityId])); setCopies(loaded); } })
+          .catch(() => { if (current()) setCopiesFailed(true); })
+          .finally(() => { if (current()) setCopiesLoading(false); });
       },
     );
     return () => { stop = true; };
@@ -723,15 +773,19 @@ export function HomeworkPage() {
   async function add(event: FormEvent) {
     event.preventDefault();
     if (controller.busy) return;
+    if (controller.draft.share && communityId && recipients.loading) { setNote("Загружаем возможности группы. Повторите сохранение через несколько секунд."); return; }
     const validation = validateHomeworkDraft(controller.draft);
     if (validation) { setNote(validation); return; }
     const ticket = controller.begin();
     if (!ticket) return;
+    const saveCopyScope = copyRequests.capture();
     refresh();
     setDiscardOpen(false);
     try {
       const { outcome, success } = await runHomeworkSave(ticket, {
         signedIn: !!app.session?.authenticated, communityId,
+        audienceSupported: recipients.supported,
+        personalDue: saved => personalHomeworkDue({ id: saved.operation.id, subject: saved.draft.subject, text: saved.draft.text, done: false, created: saved.operation.created, targetNthOccurrence: saved.draft.nth }, visibleLessons(app.lessons, app.subgroups[app.groupId] || {}), duePeriod, app.invert)?.toISOString() || null,
         isCurrent: value => controller.current(value),
         prepare: async item => {
           const name = checkHomeworkFile(item.kind, item.file.name, item.file.size);
@@ -747,17 +801,16 @@ export function HomeworkPage() {
           const uploaded = await fetch("/web-api/files", { method: "POST", credentials: "same-origin", body: data });
           checkHomeworkUpload(uploaded);
         },
-        share: async (title, body, deadline) => { await api.shareHomework(communityId, title, body, deadline); },
+        share: async (title, body, deadline, destinationTopic, selectedAudience, operationId) => { await api.shareHomework(communityId, title, body, deadline, destinationTopic, selectedAudience, recipients.supported ? operationId : undefined); },
       });
       if (!controller.current(ticket)) return;
       controller.finish(ticket, outcome.note || "Задание сохранено на этом устройстве", success);
       refresh();
       if (mounted.current && success) setEditorOpen(false);
       if (outcome.sent && mounted.current) {
-        try {
-          const loaded = await api.groupHomework(communityId);
-          if (mounted.current && controller.sameScope(ticket)) setCopies(loaded);
-        } catch { if (mounted.current && controller.sameScope(ticket)) setCopiesFailed(true); }
+        await loadScopedHomework(copyRequests, saveCopyScope, () => api.groupHomework(communityId),
+          loaded => { if (mounted.current && controller.sameScope(ticket)) { setCopiesScopeTag(copyScopeKey); setCopies(loaded); } },
+          () => { if (mounted.current && controller.sameScope(ticket)) setCopiesFailed(true); });
       }
     } catch (error) {
       controller.finish(ticket, homeworkSaveError(error, ticket.operation.localSaved), false);
@@ -765,38 +818,65 @@ export function HomeworkPage() {
     }
   }
   async function toggleCopy(item: GroupHomeworkCopy) {
-    if (!communityId) return;
+    if (!communityId || item.canComplete === false || copyBusy) return;
     const actor = app.session?.user?.userId ?? "";
     if (!actor) return;
-    const currentScope = controller.captureScope();
+    const action = copyRequests.begin();
+    const current = () => mounted.current && copyRequests.active(action);
     const next = completeGroupCopy(
       app.homework.map(row => ({ id: row.id, done: row.done })),
-      copies.map(row => ({ homeworkId: row.homeworkId, memberId: actor, completed: row.completed })),
+      safeCopies.map(row => ({ homeworkId: row.homeworkId, memberId: actor, completed: row.completed })),
       actor,
       item.homeworkId,
       !item.completed,
     );
     if (next.local.some((row, index) => row.done !== app.homework[index]?.done)) return;
     try {
+      setCopyBusy(item.homeworkId);
       const saved = await api.completeHomework(communityId, item.homeworkId, next.copies.find(row => row.homeworkId === item.homeworkId)?.completed ?? !item.completed, item.completionRevision);
-      if (!mounted.current || !currentScope()) return;
+      if (!current()) return;
       const completed = next.copies.find(row => row.homeworkId === item.homeworkId && row.memberId === actor)?.completed ?? saved.completed;
       setCopies(list => list.map(row => row.homeworkId === item.homeworkId ? { ...row, completed, completionRevision: saved.revision } : row));
     }
-    catch { if (mounted.current && currentScope()) setNote("Отметку у общей домашки сохранить не получилось"); }
+    catch (error) { if (current()) { setNote(error instanceof Error && error.message === "409" ? "Отметка изменилась. Загружаем актуальное состояние…" : "Отметку у общей домашки сохранить не получилось"); if (error instanceof Error && error.message === "409") await loadScopedHomework(copyRequests, action, () => api.groupHomework(communityId), rows => { if (current()) { setCopiesScopeTag(copyScopeKey); setCopies(rows); } }, () => { if (current()) setCopiesFailed(true); }); } }
+    finally { if (current()) setCopyBusy(null); }
+  }
+  async function saveCopyEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editingCopy || copyBusy || copyEditConflict || recipients.loading) return;
+    if (editingCopy.audience.kind === "selected" && !recipients.supported) { setNote("Адресная домашка недоступна на этом сервере."); return; }
+    const item = editingCopy;
+    const action = copyRequests.begin();
+    const current = () => mounted.current && copyRequests.active(action);
+    setCopyBusy(item.id);
+    try {
+      await api.editHomework(communityId, item.id, { title: item.title.trim(), body: item.body.trim(), deadlineAt: item.deadline ? canonicalUtc(item.deadline) : null, topicId: item.topicId, ...(recipients.supported ? { audience: item.audience } : {}) }, item.revision);
+      if (!current()) return;
+      setEditingCopy(null); setCopyEditConflict(false);
+      await loadScopedHomework(copyRequests, action, () => api.groupHomework(communityId), rows => { if (current()) { setCopiesScopeTag(copyScopeKey); setCopies(rows); } }, () => { if (current()) setCopiesFailed(true); });
+    } catch (error) {
+      if (!current()) return;
+      if (error instanceof Error && error.message === "409") {
+        setCopyEditConflict(true);
+        await loadScopedHomework(copyRequests, action, () => api.groupHomework(communityId), rows => { if (current()) { setCopiesScopeTag(copyScopeKey); setCopies(rows); } }, () => { if (current()) setCopiesFailed(true); });
+        if (!current()) return;
+        setNote("Публикация изменилась на сервере. Ваш черновик сохранён; сверьте его с актуальной версией.");
+      } else setNote("Изменения публикации не сохранились. Черновик сохранён.");
+    } finally { if (current()) setCopyBusy(null); }
   }
   return (
     <section className="page homework-page">
-      <Head title="Домашка" text="Хранится на этом устройстве. Галочка отправляет ту же домашку всей группе.">
+      <Head title="Домашка" text="Личное задание хранится на устройстве. Общая публикация содержит текст и срок; вложения остаются личными.">
         <button className="btn primary" type="button" disabled={busy} aria-expanded={editorOpen} aria-controls="homework-editor"
           onClick={() => setEditorOpen(value => !value)}>{editorOpen ? "Скрыть редактор" : controller.dirty ? "Продолжить задание" : "Добавить задание"}</button>
       </Head>
       <p id="homework-save-status" className="muted" role="status" aria-live="polite" aria-atomic="true">{note || (controller.dirty ? "Черновик сохранится при переходе в другой раздел. При перезагрузке страницы он будет потерян." : "")}</p>
       {chosenSubject && <div className="row homework-filter" role="region" aria-label="Фильтр домашки"><span>Предмет: <strong>{chosenSubject}</strong></span><button className="btn" type="button" onClick={() => { const query = new URLSearchParams(location.search); query.delete("subject"); navigate({ pathname: location.pathname, search: query.toString() }); }}>Показать все предметы</button></div>}
       <div className="section-overview">
-        <strong>Мои задания: {app.homework.length} · Общие: {copiesLoading ? "загрузка…" : copies.length}</strong>
-        <span>Выполнено: {app.homework.filter(item => item.done).length + copies.filter(item => item.completed).length}</span>
+        <strong>Мои задания: {app.homework.length} · Общие: {copiesLoading ? "загрузка…" : safeCopies.length}</strong>
+        <span>Выполнено: {app.homework.filter(item => item.done).length + safeCopies.filter(item => item.completed).length}</span>
       </div>
+      <div className="row homework-filters" role="group" aria-label="Показать задания"><button type="button" className="btn" aria-pressed={taskFilter === "active"} onClick={() => setTaskFilter("active")}>Активные</button><button type="button" className="btn" aria-pressed={taskFilter === "done"} onClick={() => setTaskFilter("done")}>Готово у меня</button><button type="button" className="btn" aria-pressed={taskFilter === "all"} onClick={() => setTaskFilter("all")}>Все</button></div>
       <form id="homework-editor" className="card stack homework-compose" hidden={!editorOpen} aria-busy={busy} aria-describedby="homework-save-status" onInvalid={() => setNote(validateHomeworkDraft(controller.draft) || "Проверьте поля задания")} onSubmit={event => void add(event)}>
         <fieldset className="stack homework-fields" disabled={busy}>
         <legend className="sr">Новое задание</legend>
@@ -815,27 +895,35 @@ export function HomeworkPage() {
         ))}
         </div><div className="homework-editor-group"><h2>Срок и получатели</h2><label className="check">
           <input type="checkbox" checked={share} disabled={!app.session?.authenticated} onChange={event => field("share", event.target.checked)} />
-          <span>Дублировать всей группе<span className="muted">{app.session?.authenticated ? " — одна и та же домашка появится у всех участников" : " — войдите в аккаунт, чтобы отправить группе"}</span></span>
+          <span>Опубликовать общую домашку<span className="muted">{app.session?.authenticated ? " — текст и срок получат выбранные участники; вложения останутся в личном задании" : " — войдите в аккаунт, чтобы отправить группе"}</span></span>
         </label>
         <label className="field">К следующему занятию по предмету<select value={nth} onChange={event=>field("nth", Number(event.target.value))}>{Array.from({length:10},(_,i)=><option value={i+1} key={i+1}>{i+1}-е занятие</option>)}</select></label>
-        {share && <label className="field">Срок общей домашки<input type="datetime-local" value={sharedDeadline} onChange={event=>field("sharedDeadline", event.target.value)} /></label>}
+        {share && <><HomeworkRecipients communityId={communityId} value={audience} onChange={value => field("audience", value)} disabled={busy} data={recipients}/>
+          {!!recipients.space?.topics.length && <label className="field">Канал публикации<select value={topicId} onChange={event => field("topicId", event.target.value)}><option value="">Общая домашка группы</option>{recipients.space.topics.filter(topic => topic.kind === "homework" && !topic.archived && topic.topicId && (topic.canPost || topic.permissions?.includes("homework"))).map(topic => <option key={topic.topicId!} value={topic.topicId!}>{topic.title}</option>)}</select></label>}
+          <p className="muted">Группа: {recipients.home?.name || "загрузка…"} · {topicId ? recipients.space?.topics.find(topic => topic.topicId === topicId)?.title || "Канал" : "Общая домашка"} · {audienceLabel(audience)}</p>
+          <label className="field">Срок публикации<select value={deadlineMode} onChange={event => field("deadlineMode", event.target.value as typeof deadlineMode)}><option value="personal">Как у личного задания</option><option value="custom">Указать вручную</option><option value="none">Без срока</option></select></label>
+          {deadlineMode === "personal" && <p className="muted">{previewDue ? `Срок: ${previewDue.toLocaleString("ru-RU")}` : "Следующее занятие не найдено — публикация будет без срока."}</p>}
+          {deadlineMode === "custom" && <label className="field">Срок общей домашки<input type="datetime-local" value={sharedDeadline} onChange={event=>field("sharedDeadline", event.target.value)} /></label>}</>}
         </div><div className="homework-editor-footer"><span className="muted">{pending.length ? `Вложений: ${pending.length}` : "Без вложений"}</span><button className="btn" type="button" disabled={!controller.dirty} onClick={() => setDiscardOpen(true)}>Очистить черновик</button><button className="btn primary" type="submit">{busy ? "Сохраняем…" : "Сохранить"}</button></div>
         {discardOpen && <div className="banner stack" role="group" aria-label="Очистка черновика"><p>Очистить введённые поля и выбранные файлы? Уже сохранённое задание останется на устройстве.</p><div className="row"><button className="btn" type="button" onClick={() => setDiscardOpen(false)}>Продолжить редактирование</button><button className="btn" type="button" onClick={() => { controller.clear(chosenSubject || ""); refresh(); setDiscardOpen(false); }}>Очистить</button></div></div>}
         </fieldset>
       </form>
       {chosenSubject && !copiesLoading && !copiesFailed && visibleHomework.length === 0 && visibleCopies.length === 0 && <div className="card empty">По предмету «{chosenSubject}» заданий нет. Вы можете добавить задание или показать все предметы.</div>}
-      {!chosenSubject && !copiesLoading && !copiesFailed && app.homework.length === 0 && copies.length === 0 && !editorOpen &&
+      {!chosenSubject && !copiesLoading && !copiesFailed && app.homework.length === 0 && safeCopies.length === 0 && !editorOpen &&
         <div className="card empty">Заданий пока нет. <button className="btn" type="button" onClick={() => setEditorOpen(true)}>Добавить первое</button></div>}
       {copiesFailed && <div className="card empty"><p>Общая домашка не загрузилась. Проверьте сеть и попробуйте ещё раз.</p><button className="btn primary" type="button" onClick={() => setCopiesRetry(value => value + 1)}>Повторить</button></div>}
-      {visibleCopies.length > 0 && <h2 className="section-list-title">Всей группе <span className="chip">{visibleCopies.length}</span></h2>}
-      <div className="stack" style={{ marginTop: copies.length > 0 ? 12 : 0 }}>
+      {!copiesLoading && !copiesFailed && visibleCopies.length === 0 && visibleHomework.length === 0 && (safeCopies.length > 0 || app.homework.length > 0) && <div className="card empty">В выбранном разделе заданий нет.</div>}
+      {visibleCopies.length > 0 && <h2 className="section-list-title">Общая домашка <span className="chip">{visibleCopies.length}</span></h2>}
+      <div className="stack" style={{ marginTop: safeCopies.length > 0 ? 12 : 0 }}>
         {visibleCopies.map(item => (
           <article className={"card homework-task" + (item.completed ? " homework-completed" : "")} key={item.homeworkId}>
             <div className="row" style={{ justifyContent: "space-between" }}>
-              <span className="row"><b>{item.title}</b><span className="chip">{item.completed ? "Выполнено" : "Группа"}</span></span>
-              <button className="btn" type="button" onClick={() => void toggleCopy(item)}>{item.completed ? "Снова открыть" : "Сделано"}</button>
+              <span className="row"><b>{item.title}</b><span className="chip">{audienceLabel(item.audience)}</span></span>
+              {item.canComplete !== false && <button className="btn" type="button" disabled={!!copyBusy} onClick={() => void toggleCopy(item)}>{copyBusy === item.homeworkId ? "Сохраняем…" : item.completed ? "Снять отметку" : "Готово у меня"}</button>}
+              {item.canEdit && <button className="btn quiet" type="button" disabled={!!copyBusy} onClick={() => { setEditingCopy({ id: item.homeworkId, revision: item.revision, title: item.title, body: item.body, deadline: localDateTimeInput(item.deadlineAt), audience: item.audience || allHomeworkAudience(), topicId: item.topicId || null }); setCopyEditConflict(false); }}>Изменить</button>}
             </div>
             <p className={item.completed ? "done-title" : ""}>{item.body}</p><p className="muted homework-deadline">Срок: {item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p>
+            {editingCopy?.id === item.homeworkId && <form className="stack" onSubmit={event => void saveCopyEdit(event)}><label className="field">Предмет<input required value={editingCopy.title} onChange={event => setEditingCopy({ ...editingCopy, title: event.target.value })}/></label><label className="field">Задание<textarea required value={editingCopy.body} onChange={event => setEditingCopy({ ...editingCopy, body: event.target.value })}/></label><label className="field">Срок<input type="datetime-local" value={editingCopy.deadline} onChange={event => setEditingCopy({ ...editingCopy, deadline: event.target.value })}/></label><HomeworkRecipients communityId={`${communityId}-copy`} value={editingCopy.audience} onChange={audience => setEditingCopy({ ...editingCopy, audience })} data={recipients}/>{copyEditConflict && <div className="banner" role="alert">Актуальная ревизия: {safeCopies.find(row => row.homeworkId === item.homeworkId)?.revision}. Сверьте поля перед повторной отправкой.<button className="btn" type="button" onClick={() => { setEditingCopy({ ...editingCopy, revision: safeCopies.find(row => row.homeworkId === item.homeworkId)?.revision ?? editingCopy.revision }); setCopyEditConflict(false); }}>Использовать актуальную ревизию</button></div>}<div className="row"><button className="btn primary" disabled={!!copyBusy || copyEditConflict}>Сохранить изменения</button><button className="btn quiet" type="button" onClick={() => { setEditingCopy(null); setCopyEditConflict(false); }}>Отмена</button></div></form>}
           </article>
         ))}
       </div>
@@ -1417,7 +1505,7 @@ export function GroupPage() {
       <Head title="Группа" text={home ? `${home.name}${home.groupName ? " · " + home.groupName : ""}` : error || "Одногруппники и чат"} />
       {error && <div className="banner row" role="alert"><span>{error}</span><button className="btn quiet" type="button" onClick={()=>setError("")}>Закрыть сообщение</button></div>}
       {!home && error && <button className="btn" type="button" onClick={() => setReloadEpoch(value => value + 1)}>Повторить загрузку группы</button>}
-      {home && desk && desk.mine.length > 0 && <GroupAdmin communityId={home.communityId} classmates={home.classmates} desk={desk} onChange={updateDesk} onReload={async () => { const [loaded, office] = await Promise.all([api.groupHome(home.communityId), api.groupDesk(home.communityId)]); setHome(loaded); updateDesk(office); }} onError={setError} />}
+      {home && desk && (desk.mine.length > 0 || desk.headman) && <GroupAdmin communityId={home.communityId} classmates={home.classmates} desk={desk} onChange={updateDesk} onReload={async () => { const [loaded, office] = await Promise.all([api.groupHome(home.communityId), api.groupDesk(home.communityId)]); setHome(loaded); updateDesk(office); }} onError={setError} />}
       {home && !board && !votesOff && <p className="muted" role="status">Загрузка голосований…</p>}
       {home && votesOff && <div className="banner row" role="status"><span>{board ? "Голосования не обновились. Показана предыдущая доска." : "Голосования сейчас не открылись. Чат группы на месте."}</span>
         <button className="btn" type="button" onClick={() => setVotesRetry(value => value + 1)}>Повторить</button></div>}

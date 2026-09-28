@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:g="using:Vograph.Desktop.Features.Groups" xmlns:c="using:Vograph.Desktop.Controls" x:Class="Vograph.Desktop.Features.Groups.GroupSpecializedView" x:DataType="g:GroupViewModel">
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:g="using:Vograph.Desktop.Features.Groups" xmlns:c="using:Vograph.Desktop.Controls" xmlns:d="using:Vograph.Desktop.Dialogs" x:Class="Vograph.Desktop.Features.Groups.GroupSpecializedView" x:DataType="g:GroupViewModel">
  <ScrollViewer HorizontalScrollBarVisibility="Disabled"><StackPanel Margin="16" Spacing="12">
   <TextBlock Text="{Binding SpecializedHint}" TextWrapping="Wrap" />
   <StackPanel Spacing="8" IsVisible="{Binding ShowMaterials}"><TextBlock Classes="subject" Text="Материалы темы" /><TextBlock Classes="muted caption" Text="Файлы и ссылки из этой темы. Прикрепить материал можно скрепкой внизу." TextWrapping="Wrap" />
@@ -38,14 +38,24 @@
    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
   </StackPanel>
   <StackPanel IsVisible="{Binding ShowChannelHomework}" Spacing="10">
-   <StackPanel IsVisible="{Binding CanCreateChannelHomework}" Spacing="6"><TextBlock Classes="subject" Text="Общая домашка" />
-    <TextBox Text="{Binding SharedHomeworkTitle}" PlaceholderText="Название" /><TextBox Text="{Binding SharedHomeworkBody}" PlaceholderText="Задание" AcceptsReturn="True" TextWrapping="Wrap" />
-    <TextBox Text="{Binding SharedHomeworkDeadline}" PlaceholderText="Срок: дд.мм.гггг чч:мм (необязательно)" />
-    <WrapPanel ItemSpacing="8"><Button Classes="primary" Content="Сохранить задание" Command="{Binding SaveSharedHomeworkCommand}" IsEnabled="{Binding !IsBusy}" /><Button Content="Новое задание" Command="{Binding NewSharedHomeworkCommand}" /></WrapPanel>
+   <StackPanel IsVisible="{Binding ShowSharedHomeworkEditor}" Spacing="10"><TextBlock Classes="subject" Text="Задание участникам группы" />
+    <TextBlock Classes="muted caption" Text="Укажите задание и получателей. Каждый отмечает выполнение только у себя." TextWrapping="Wrap" />
+    <StackPanel Spacing="8" IsEnabled="{Binding CanEditSharedHomework}">
+     <TextBox Text="{Binding SharedHomeworkTitle}" PlaceholderText="Предмет или название задания" AutomationProperties.Name="Название задания" />
+     <TextBox Text="{Binding SharedHomeworkBody}" PlaceholderText="Что нужно сделать" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="88" AutomationProperties.Name="Текст задания" />
+     <TextBox Text="{Binding SharedHomeworkDeadline}" PlaceholderText="Срок: дд.мм.гггг чч:мм (необязательно)" AutomationProperties.Name="Срок задания" />
+     <d:HomeworkAudienceView DataContext="{Binding HomeworkRecipients}" />
+    </StackPanel>
+    <WrapPanel ItemSpacing="8"><Button Classes="primary" Content="{Binding SharedHomeworkSaveLabel}" Command="{Binding SaveSharedHomeworkCommand}" IsEnabled="{Binding CanSaveSharedHomework}" /><Button Content="Новое задание" Command="{Binding NewSharedHomeworkCommand}" IsEnabled="{Binding CanEditSharedHomework}" /></WrapPanel>
    </StackPanel>
-   <ItemsControl ItemsSource="{Binding ChannelHomeworks}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceHomeworkRow"><Border Classes="card" Margin="0,4"><StackPanel Spacing="6">
+   <TextBlock Text="{Binding ChannelHomeworkSummary}" Classes="muted caption" TextWrapping="Wrap" />
+   <c:SegmentedControl Items="{Binding HomeworkFilters}" SelectedIndex="{Binding HomeworkFilter}" />
+   <Button Content="Обновить задания" Command="{Binding ReloadChannelHomeworkCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
+   <TextBlock IsVisible="{Binding NoVisibleHomework}" Text="В этом списке заданий пока нет" Classes="muted caption" />
+   <ItemsControl ItemsSource="{Binding VisibleChannelHomeworks}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceHomeworkRow"><Border Classes="card" Margin="0,4"><StackPanel Spacing="6">
     <TextBlock Classes="subject" Text="{Binding Title}" TextWrapping="Wrap" /><TextBlock Text="{Binding Body}" TextWrapping="Wrap" /><TextBlock Classes="muted caption" Text="{Binding Deadline}" />
-    <WrapPanel ItemSpacing="8"><Button Content="{Binding CompletionLabel}" Command="{Binding ToggleCommand}" IsEnabled="{Binding Writable}" /><Button Content="Изменить" Command="{Binding EditCommand}" IsVisible="{Binding $parent[UserControl].((g:GroupViewModel)DataContext).CanCreateChannelHomework}" /></WrapPanel>
+    <TextBlock Classes="muted caption" Text="{Binding AudienceLabel}" TextWrapping="Wrap" /><TextBlock Classes="muted caption" Text="{Binding CompletionHint}" TextWrapping="Wrap" />
+    <WrapPanel ItemSpacing="8"><Button Content="{Binding CompletionLabel}" Command="{Binding ToggleCommand}" IsEnabled="{Binding Writable}" IsVisible="{Binding Item.CanComplete}" /><Button Content="Изменить" Command="{Binding EditCommand}" IsVisible="{Binding Editable}" /></WrapPanel>
    </StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
   </StackPanel>
   <StackPanel IsVisible="{Binding ShowChannelSchedule}" Spacing="10"><WrapPanel ItemSpacing="6"><Button Content="Назад" Command="{Binding ChannelPreviousCommand}" /><Button Content="Сегодня" Command="{Binding ChannelTodayCommand}" /><Button Content="Завтра" Command="{Binding ChannelTomorrowCommand}" /><Button Content="Послезавтра" Command="{Binding ChannelAfterTomorrowCommand}" /><Button Content="Вперёд" Command="{Binding ChannelNextCommand}" /></WrapPanel><CalendarDatePicker SelectedDate="{Binding ChannelScheduleDate}" AutomationProperties.Name="Дата расписания группы" /><TextBlock Text="{Binding ChannelScheduleSummary}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding ChannelScheduleDates}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" LineSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceScheduleDate"><c:SelectionButton Content="{Binding Label}" IsChecked="{Binding Selected,Mode=OneWay}" Command="{Binding SelectCommand}" Classes.primary="{Binding Selected}" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><Button Content="{Binding ChannelScheduleNextCaption}" Command="{Binding ChannelNextStudyCommand}" IsVisible="{Binding ChannelScheduleNextCaption,Converter={x:Static StringConverters.IsNotNullOrEmpty}}" /><ItemsControl ItemsSource="{Binding ChannelSchedule}"><ItemsControl.ItemTemplate><DataTemplate><Border Classes="card" Margin="0,4"><TextBlock Text="{Binding}" TextWrapping="Wrap" /></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel>

@@ -71,6 +71,34 @@ test("a lost share response is checkpointed before the request and local retry c
   assert.equal(f.events.filter(event => event === "local").length, 1);
 });
 
+test("updated server retry reuses one operation and rejects changed publication", async () => {
+  const f = fixture();
+  const attempts: string[] = [];
+  const deadlines: (string | null)[] = [];
+  let first = true;
+  let dueCalls = 0;
+  const dependencies = { ...f.dependencies, audienceSupported: true, personalDue: () => { dueCalls++; return dueCalls === 1 ? "2026-10-01T12:00:00.000Z" : "2026-10-08T12:00:00.000Z"; }, share: async (_title: string, _body: string, deadline: string | null, _topic: string | null, _audience: unknown, operationId: string) => {
+    attempts.push(operationId);
+    deadlines.push(deadline);
+    if (first) { first = false; throw new TypeError("lost response"); }
+  } };
+  const initial = f.controller.begin()!;
+  const uncertain = await runHomeworkSave(initial, dependencies);
+  assert.equal(uncertain.success, false);
+  f.controller.finish(initial, uncertain.outcome.note, false);
+  f.controller.field("text", "Новая версия");
+  const changed = f.controller.begin()!;
+  await assert.rejects(runHomeworkSave(changed, dependencies), /share-changed/);
+  f.controller.finish(changed, "Сохраните прежний текст", false);
+  f.controller.field("text", "Задачи");
+  const retried = await runHomeworkSave(f.controller.begin()!, dependencies);
+  assert.equal(retried.outcome.sent, true);
+  assert.deepEqual(attempts, [initial.operation.id, initial.operation.id]);
+  assert.deepEqual(deadlines, ["2026-10-01T12:00:00.000Z", "2026-10-01T12:00:00.000Z"]);
+  assert.equal(dueCalls, 1);
+  assert.equal(f.events.filter(row => row === "upload").length, 1);
+});
+
 test("a failed local write cleans every prepared blob including the last one", async () => {
   const f = fixture();
   await assert.rejects(runHomeworkSave(f.controller.begin()!, { ...f.dependencies, saveLocal: () => { throw new Error("disk"); } }), /disk/);

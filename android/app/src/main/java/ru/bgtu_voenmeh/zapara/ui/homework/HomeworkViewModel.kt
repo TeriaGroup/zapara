@@ -59,7 +59,12 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
             is HomeworkEvent.PickSubject -> openNew(event.raw)
             HomeworkEvent.ClosePicker -> mutable.update { it.copy(subjectPicker = null) }
             is HomeworkEvent.EditorText -> mutable.update { s -> s.copy(editor = s.editor?.withText(event.text)) }
-            is HomeworkEvent.EditorShare -> mutable.update { s -> s.copy(editor = s.editor?.withShare(event.on)) }
+            is HomeworkEvent.EditorShare -> {
+                mutable.update { s -> s.copy(editor = s.editor?.withShare(event.on)) }
+                if (event.on) loadShareOptions()
+            }
+            is HomeworkEvent.EditorAudience -> mutable.update { s -> s.copy(editor = s.editor?.withAudience(event.audience)) }
+            HomeworkEvent.RetryShare -> retryShare()
             HomeworkEvent.Inc -> mutable.update { s -> s.copy(editor = s.editor?.inc()) }
             HomeworkEvent.Dec -> mutable.update { s -> s.copy(editor = s.editor?.dec()) }
             HomeworkEvent.Recalculate -> viewModelScope.launch {
@@ -220,7 +225,8 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                         }
                     }
                 }
-                mutable.update { current -> if (current.editor?.draft == editor.draft) current.copy(editor = null) else current }
+                mutable.update { current -> if (current.editor?.draft != editor.draft) current else if (!outcome.sent && current.editor.shareRequest != null)
+                    current.copy(editor = current.editor.copy(error = outcome.note)) else current.copy(editor = null) }
                 val note = outcome.note.ifBlank { container.app.getString(R.string.hw_saved) }
                 container.toasts.show(note, ToastKind.Ok)
                 container.events.emit(AppEvent.PersonalizationChanged)
@@ -295,6 +301,37 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { editorError(editor.draft, container.app.getString(R.string.hw_attach_bad)) }
             finally { finishEditorWork(editor.draft) }
+        }
+    }
+
+    private fun retryShare() {
+        val editor = mutable.value.editor ?: return
+        val request = editor.shareRequest?.takeIf { it.operationId != null } ?: return
+        if (editor.busy) return
+        mutable.update { s -> if (s.editor?.draft == editor.draft) s.copy(editor = s.editor.copy(work = HomeworkEditorWork.Saving, error = null)) else s }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { retryHomeworkPublication(container, request) }
+                mutable.update { s -> if (s.editor?.draft == editor.draft) s.copy(editor = null) else s }
+                container.toasts.show(container.app.getString(R.string.homework_share_selected_success), ToastKind.Ok)
+            } catch (cancel: CancellationException) { throw cancel }
+            catch (_: Exception) { editorError(editor.draft, container.app.getString(R.string.homework_share_retry_failed)) }
+            finally { finishEditorWork(editor.draft) }
+        }
+    }
+
+    private fun loadShareOptions() {
+        val editor = mutable.value.editor?.takeIf { it.share && !it.isEdit } ?: return
+        if (editor.shareContext != null || editor.shareLoading) return
+        mutable.update { s -> if (s.editor?.draft == editor.draft) s.copy(editor = s.editor.copy(shareLoading = true, error = null)) else s }
+        viewModelScope.launch {
+            val result = try { withContext(Dispatchers.IO) { loadHomeworkShareContext(container, editor.scheduleGroupId) } }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { null }
+            mutable.update { s ->
+                val current = s.editor
+                if (current?.draft == editor.draft && current.share) s.copy(editor = current.copy(shareContext = result, shareLoading = false)) else s
+            }
         }
     }
 

@@ -14,26 +14,7 @@
    </StackPanel>
     <Button Content="Открыть архив" Command="{Binding LoadArchiveCommand}" />
     <ItemsControl ItemsSource="{Binding ArchivedChannels}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:GroupChannelRow"><Button Content="{Binding Title}" Command="{Binding OpenCommand}" ToolTip.Tip="Открыть архивную тему" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-   <StackPanel Spacing="6" IsVisible="{Binding CanManageRoles}">
-    <TextBlock Classes="subject" Text="Роли приложения" />
-    <TextBlock Classes="muted caption" Text="Старосту и куратора назначает администрация приложения. Дополнительные роли не меняют эти статусы." TextWrapping="Wrap" />
-    <TextBox Text="{Binding TrustedRoleName}" PlaceholderText="Новая роль" /><Button Content="Создать роль" Command="{Binding CreateTrustedRoleCommand}" IsEnabled="{Binding CanCreateRole}" />
-    <ComboBox ItemsSource="{Binding TrustedRoles}" SelectedItem="{Binding SelectedTrustedRole}"><ComboBox.ItemTemplate><DataTemplate x:DataType="g:GroupTrustedRoleRow"><TextBlock Text="{Binding Display}" TextWrapping="Wrap" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
-    <TextBox Text="{Binding RoleEditName}" PlaceholderText="Название роли" /><TextBox Text="{Binding RoleEditIcon}" PlaceholderText="Значок роли" />
-    <NumericUpDown Value="{Binding RoleEditPosition}" Minimum="0" Maximum="100" AutomationProperties.Name="Уровень роли" />
-    <Button Content="Сохранить роль" Command="{Binding SaveRoleSettingsCommand}" IsEnabled="{Binding CanSaveRoleSettings}" />
-    <StackPanel Spacing="6" IsVisible="{Binding RoleEditConflict}"><TextBlock Text="Роль изменена на другом устройстве. Ваши правки сохранены в редакторе. Загрузите актуальную роль перед сохранением." TextWrapping="Wrap" Classes="muted caption" /><Button Content="Загрузить актуальную роль" Command="{Binding ReloadRoleSettingsCommand}" /></StackPanel>
-    <ItemsControl ItemsSource="{Binding RolePowers}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpacePowerRow"><Button Content="{Binding Label}" HorizontalContentAlignment="Left" HorizontalAlignment="Stretch" Command="{Binding $parent[UserControl].((g:GroupViewModel)DataContext).ToggleRolePowerCommand}" CommandParameter="{Binding}" IsEnabled="{Binding $parent[UserControl].((g:GroupViewModel)DataContext).CanEditSelectedRole}" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-    <Button Content="Проверить последствия удаления" Command="{Binding InspectRoleImpactCommand}" IsEnabled="{Binding CanEditSelectedRole}" />
-    <TextBlock Text="{Binding RoleImpact}" TextWrapping="Wrap" /><Button Content="Удалить роль" Command="{Binding RemoveRoleCommand}" IsVisible="{Binding ConfirmRemoveRole}" />
-   </StackPanel>
-   <StackPanel Spacing="6" IsVisible="{Binding CanManageGrants}">
-    <TextBlock Classes="subject" Text="Назначения" /><TextBlock Classes="muted caption" Text="До трёх дополнительных ролей у участника. Их права объединяются; запреты и ограничения темы проверяет сервер." TextWrapping="Wrap" />
-    <ComboBox ItemsSource="{Binding TrustedRoles}" SelectedItem="{Binding SelectedTrustedRole}"><ComboBox.ItemTemplate><DataTemplate x:DataType="g:GroupTrustedRoleRow"><TextBlock Text="{Binding Display}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
-    <ComboBox ItemsSource="{Binding TrustCandidates}" SelectedItem="{Binding SelectedTrustCandidate}"><ComboBox.ItemTemplate><DataTemplate x:DataType="g:GroupTrustedPersonRow"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
-    <Button Content="Назначить выбранную роль" Command="{Binding GrantTrustedCommand}" IsEnabled="{Binding CanGrantTrusted}" />
-    <ItemsControl ItemsSource="{Binding TrustedGrants}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:GroupTrustedGrantRow"><StackPanel><TextBlock Text="{Binding Name}" TextWrapping="Wrap" /><Button Content="Снять роль" Command="{Binding RevokeCommand}" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-   </StackPanel>
+   <g:GroupRolesView />
    <StackPanel Spacing="6" IsVisible="{Binding CanManageAccess}">
     <TextBlock Classes="subject" Text="Доступ к выбранной теме" /><Button Content="Загрузить правила доступа" Command="{Binding LoadAccessCommand}" />
     <TextBlock Text="Просмотр" /><ComboBox ItemsSource="{Binding SimpleReadChoices}" SelectedItem="{Binding SimpleReadPreset}" />

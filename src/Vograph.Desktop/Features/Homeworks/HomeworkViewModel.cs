@@ -33,6 +33,7 @@ public sealed partial class HomeworkViewModel : ViewModelBase
 
     public override void Detach()
     {
+        sharedRequestSerial++; sharedMutationSerial++; SharedTasks.Clear();
         _shell.GroupChanged -= _reload;
         _shell.ScheduleChanged -= _reload;
         _shell.HomeworkChanged -= _reload;
@@ -44,7 +45,7 @@ public sealed partial class HomeworkViewModel : ViewModelBase
     public string Title => T("navHomework");
     [ObservableProperty] private string subjectFilter = "";
     public bool HasSubjectFilter => SubjectFilter.Length>0;
-    partial void OnSubjectFilterChanged(string value){OnPropertyChanged(nameof(HasSubjectFilter));}
+    partial void OnSubjectFilterChanged(string value){OnPropertyChanged(nameof(HasSubjectFilter));NotifySharedTasks();}
     [RelayCommand] private void ClearSubjectFilter(){SubjectFilter="";_=LoadAsync();}
     public ObservableCollection<HomeworkGroupViewModel> Groups { get; } = new();
 
@@ -61,6 +62,7 @@ public sealed partial class HomeworkViewModel : ViewModelBase
 
     public async Task LoadAsync()
     {
+        ResetSharedScope();
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
         var version = ++_version;
@@ -75,9 +77,11 @@ public sealed partial class HomeworkViewModel : ViewModelBase
             var filtered = SubjectFilter.Length==0 ? g : g with { Items=g.Items.Where(x=>x.Homework.SubjectRawNormalized==ParityService.NormalizeSubject(SubjectFilter)).ToArray() };
             if(filtered.Items.Count>0)Groups.Add(new HomeworkGroupViewModel(filtered, this, collapsed: g.Status == "done" && !_expanded.Contains(g.Status)));
         }
-        IsEmpty = model.HasGroup && model.Groups.Count == 0;
+        IsEmpty = model.HasGroup && Groups.Count == 0;
         Subtitle = $"{App.Loc.Plural(model.Open, "hwOpen1", "hwOpen2", "hwOpen5")} · {T("hwDoneCount", model.Done)}";
         OnPropertyChanged(nameof(Title));
+        NotifySharedTasks();
+        _ = RefreshSharedTasks();
     }
 
     internal void Toggled(HomeworkGroupViewModel g)
