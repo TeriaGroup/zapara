@@ -90,9 +90,10 @@ public sealed class GroupMediaTests
         var box = new HoldBox { DataContext = row };
         box.Choose("reply");
         box.Choose("reaction");
+        box.Choose("reaction:like");
         box.Choose("edit");
         box.Choose("delete");
-        Assert.Equal(["reply", "reaction", "delete"], called);
+        Assert.Equal(["reply", "reaction:like", "delete"], called);
         var clipBytes = new byte[] { 9, 8, 7 };
         var clip = await GroupMedia.Place(client, AccountClientTestSupport.Token("za_"), Guid.Parse("22222222-2222-4222-8222-222222222222"),
             "video", "ролик.mp4", clipBytes, null, CancellationToken.None);
