@@ -278,7 +278,7 @@ public sealed class GroupViewModelConversationTests
         await Waits.Until(() => vm.Messages.Count == 3 && vm.Messages[0].Body == "Новое содержание", "edited and new messages", 6500);
         Assert.Equal([FirstId, SecondId, DirectMessageId], vm.Messages.Select(item => item.Id).ToArray());
         await Waits.Until(() => topicReads >= 2, "general topic read on polling");
-        Assert.Equal(0, reads);
+        Assert.True(reads >= 2); // opening and receiving a new visible message send bounded read receipts
         vm.Detach();
     }
 
@@ -361,6 +361,127 @@ public sealed class GroupViewModelConversationTests
         await Waits.Until(() => vm.Messages.Count == 6, "missing group messages caught up", 6500);
         Assert.Equal([FirstId, SecondId, DirectMessageId, FourthId, FifthId, SixthId], vm.Messages.Select(item => item.Id).ToArray());
         Assert.Equal(["?topic=general", $"?topic=general&after={SecondId:D}", $"?topic=general&after={FourthId:D}"], cursors.Take(3).ToArray());
+        vm.Detach();
+    }
+
+    [AvaloniaFact]
+    public async Task Confirmed_direct_read_clears_the_visible_unread_badge()
+    {
+        using var directory = new ProfileTestDirectory();
+        using var services = AppServices.Create(directory.Root, () => false);
+        services.AllowNetwork = false;
+        using var handler = new AccountClientHandler();
+        using var http = new HttpClient(handler);
+        using var client = new CommunityHttpClient(http, Root);
+        services.UseCommunities(client, _ => Task.FromResult<string?>(Access));
+        Guid? readTarget = null;
+        handler.Send = async (request, ct) =>
+        {
+            if (request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath.EndsWith("/home", StringComparison.Ordinal))
+            {
+                var home = Home(direct: true);
+                return Payload(new GroupHomeResponse(home.CommunityId, home.Name, home.GroupName, home.GroupChat,
+                    home.Classmates, [new ConversationResponse(DirectChatId, "direct", CommunityId, "Борис", PromotedId,
+                        "Лично", CommunityClientTestSupport.Now, 4)]));
+            }
+            if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath.EndsWith("/read", StringComparison.Ordinal))
+            {
+                using var json = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+                readTarget = json.RootElement.GetProperty("throughMessageId").GetGuid();
+            }
+            return Respond(request, direct: true);
+        };
+        var vm = new GroupViewModel(services);
+        vm.RequestConversation(CommunityId, DirectChatId);
+        await vm.ActivateAsync();
+        Assert.Equal(DirectMessageId, readTarget);
+        Assert.Equal(0, Assert.Single(vm.Directs).UnreadCount);
+        vm.Detach();
+    }
+
+    [AvaloniaFact]
+    public async Task Visible_group_refreshes_remote_member_name_without_resetting_a_draft()
+    {
+        using var directory = new ProfileTestDirectory();
+        using var services = AppServices.Create(directory.Root, () => false);
+        services.AllowNetwork = false;
+        using var handler = new AccountClientHandler();
+        using var http = new HttpClient(handler);
+        using var client = new CommunityHttpClient(http, Root);
+        services.UseCommunities(client, _ => Task.FromResult<string?>(Access));
+        var changed = false;
+        handler.Send = (request, _) =>
+        {
+            if (changed && request.Method == HttpMethod.Get
+                && request.RequestUri!.AbsolutePath.EndsWith("/home", StringComparison.Ordinal))
+            {
+                var old = Home(direct: true);
+                return Task.FromResult(Payload(new GroupHomeResponse(old.CommunityId, old.Name, "О3313 новое",
+                    old.GroupChat, [new ClassmateResponse(UserId, "student", "Анна Новая", "member", true)],
+                    [new ConversationResponse(DirectChatId, "direct", CommunityId, "Борис Новое имя", PromotedId,
+                        "Новое сообщение", CommunityClientTestSupport.Now, 4)])));
+            }
+            return Task.FromResult(Respond(request, direct: true));
+        };
+        var vm = new GroupViewModel(services) { IdentityRefreshInterval = TimeSpan.Zero };
+        await vm.ActivateAsync();
+        vm.Draft = "Неотправленный текст";
+        changed = true;
+        vm.Watch(true);
+        await Waits.Until(() => vm.HomeTitle == "О3313 новое" && vm.Messages[0].Author == "Анна Новая"
+            && vm.Directs.Single().UnreadCount == 4,
+            "visible group identity revalidated", 6500);
+        Assert.Equal("Неотправленный текст", vm.Draft);
+        vm.Detach();
+    }
+
+    [AvaloniaFact]
+    public async Task Local_send_receipt_does_not_skip_unfetched_remote_messages_or_ack_a_future_id()
+    {
+        using var directory = new ProfileTestDirectory();
+        using var services = AppServices.Create(directory.Root, () => false);
+        services.AllowNetwork = false;
+        using var handler = new AccountClientHandler();
+        using var http = new HttpClient(handler);
+        using var client = new CommunityHttpClient(http, Root);
+        services.UseCommunities(client, _ => Task.FromResult<string?>(Access));
+        var changed = false;
+        var cursors = new List<string>();
+        Guid? readTarget = null;
+        ChatMessageResponse Item(Guid id, int minute) => new(id, GroupChatId, PromotedId, "Борис",
+            id.ToString("N"), CommunityClientTestSupport.Now.AddMinutes(minute), "text");
+        handler.Send = async (request, ct) =>
+        {
+            if (changed && request.Method == HttpMethod.Get
+                && request.RequestUri!.AbsolutePath.EndsWith("/messages", StringComparison.Ordinal))
+            {
+                cursors.Add(request.RequestUri.Query);
+                return request.RequestUri.Query switch
+                {
+                    "?topic=general" => Payload(new ChatPageResponse([Item(FifthId, 5), Item(SixthId, 6)], true)),
+                    var query when query == $"?topic=general&after={SecondId:D}"
+                        => Payload(new ChatPageResponse([Item(DirectMessageId, 3), Item(FourthId, 4), Item(FifthId, 5), Item(SixthId, 6)], false)),
+                    _ => Problem(400, "invalid_request")
+                };
+            }
+            if (changed && request.Method == HttpMethod.Post
+                && request.RequestUri!.AbsolutePath.EndsWith("/read", StringComparison.Ordinal))
+            {
+                using var json = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+                readTarget = json.RootElement.GetProperty("throughMessageId").GetGuid();
+            }
+            return Respond(request);
+        };
+        var vm = new GroupViewModel(services);
+        await vm.ActivateAsync();
+        vm.Messages.Add(new GroupMessageRow(SixthId, "Аня", "Моё отправлено", "", true,
+            senderId: UserId, createdAt: CommunityClientTestSupport.Now.AddMinutes(6)));
+        changed = true;
+        vm.Watch(true);
+        await Waits.Until(() => vm.Messages.Count == 6 && readTarget is not null, "remote gap filled despite local receipt", 6500);
+        Assert.Equal([FirstId, SecondId, DirectMessageId, FourthId, FifthId, SixthId], vm.Messages.Select(row => row.Id));
+        Assert.Contains($"?topic=general&after={SecondId:D}", cursors);
+        Assert.Equal(FifthId, readTarget);
         vm.Detach();
     }
 

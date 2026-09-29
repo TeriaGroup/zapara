@@ -34,7 +34,11 @@ public sealed partial class GroupViewModel : ViewModelBase
     private int polling;
     private Guid me;
     private Guid? conversationId;
+    private Guid? lastPulledMessageId;
     private Guid? communityId;
+    private DateTimeOffset lastGroupIdentityCheck;
+    private DateTimeOffset lastGroupAvatarCheck;
+    internal TimeSpan IdentityRefreshInterval { get; set; } = TimeSpan.FromSeconds(12);
     private Guid? requestedCommunityId;
     private (Guid Community,string? ChannelKey,Guid? Direct)? lastNavigation;
     private readonly Dictionary<Guid,string> lastGroupChannels=[];
@@ -93,7 +97,7 @@ public sealed partial class GroupViewModel : ViewModelBase
     public bool CanAttachMedia => !HasRecordedDraft && ShowComposer && (IsDirect || SelectedChannel?.Permissions.Contains("media") == true || legacySpace) && !IsBusy && !IsRecording && !IsFinalizingRecording;
     public void SetClipboardWriter(Func<string, Task>? writer) => clipboardWriter = writer;
 
-    public override void Detach() => Watch(false);
+    public override void Detach() { Watch(false); ReleaseVisibleAvatars(); }
     public override Task ActivateAsync() => LoadAsync();
     public void Watch(bool visible)
     {
@@ -113,7 +117,9 @@ public sealed partial class GroupViewModel : ViewModelBase
         RaiseList();
         if (!value) ResetGroupContext();
         OnPropertyChanged(nameof(ShowGroupContext));
+        OnPropertyChanged(nameof(CanEditGroupAvatar));
     }
+    partial void OnHomeTitleChanged(string value) => OnPropertyChanged(nameof(GroupInitials));
     partial void OnIsRecordingChanged(bool value)
     {
         SendCommand.NotifyCanExecuteChanged();
@@ -170,8 +176,9 @@ public sealed partial class GroupViewModel : ViewModelBase
             if (!operation.IsCurrent || ticket != navigationGeneration) return;
             Communities.Clear();
             foreach (var row in rows)
-                Communities.Add(new(row.Name, Role(row.Role), new RelayCommand(() => _ = OpenAsync(row.CommunityId))));
+                Communities.Add(new(row.Name, Role(row.Role), new RelayCommand(() => _ = OpenAsync(row.CommunityId)), row.CommunityId));
             RefreshCommunityBrowse();
+            _ = LoadListAvatarsAsync(rows.Select(row => row.CommunityId).ToArray(), ticket);
             var preferred = rows.FirstOrDefault(item => item.CommunityId == requestedConversation?.CommunityId)
                 ?? rows.FirstOrDefault(item => item.CommunityId == requestedCommunityId)
                 ?? rows.FirstOrDefault(item => item.CommunityId == lastNavigation?.Community)
@@ -261,6 +268,7 @@ public sealed partial class GroupViewModel : ViewModelBase
 
     private void Show(GroupHomeResponse home)
     {
+        ReleaseVisibleAvatars();
         SaveAnswerDrafts();SaveHomeworkDraft();SaveFormDraft();SaveCreationDraft();
         if(communityId!=home.CommunityId){ClearDesk();ArchivedChannels.Clear();archiveCommunity=null;archiveLoaded=false;archiveRequestVersion++;AuditEvents.Clear();}
         conversationId=null;groupConversationId=null;SelectedChannel=null;IsDirect=false;ChatTitle="";
@@ -271,6 +279,8 @@ public sealed partial class GroupViewModel : ViewModelBase
         trustClassmates=home.Classmates;
         me = home.Classmates.FirstOrDefault(person => person.Self)?.UserId ?? Guid.Empty;
         HomeTitle = home.GroupName ?? home.Name;
+        lastGroupIdentityCheck = DateTimeOffset.UtcNow;
+        lastGroupAvatarCheck = DateTimeOffset.UtcNow;
         HasHome = true;
         IsEmpty = false;
         MemberSearch = "";
@@ -281,12 +291,13 @@ public sealed partial class GroupViewModel : ViewModelBase
         People.Clear();
         foreach (var person in home.Classmates)
             People.Add(new(person.DisplayName ?? person.Username, "@" + person.Username, Role(person.Role), "", "", person.Self,
-                person.Self ? null : new RelayCommand(() => _ = OpenDirectAsync(person.UserId, person.DisplayName ?? person.Username))));
+                person.Self ? null : new RelayCommand(() => _ = OpenDirectAsync(person.UserId, person.DisplayName ?? person.Username)), person.UserId));
         RefreshPeopleBrowse();
         Directs.Clear();
         foreach (var chat in home.Directs)
             Directs.Add(new(chat.Title, chat.LastBody ?? "", "", chat.LastBody ?? "", chat.Unread > 0 ? chat.Unread.ToString() : "", false,
-                new RelayCommand(() => _ = OpenConversationAsync(chat.ConversationId, chat.Title, true))));
+                new RelayCommand(() => _ = OpenConversationAsync(chat.ConversationId, chat.Title, true)), chat.PeerUserId ?? Guid.Empty, chat.ConversationId));
+        _ = LoadCurrentAvatarsAsync(home.CommunityId, home.Classmates.Select(person => person.UserId).ToArray(), navigationGeneration);
         OnPropertyChanged(nameof(HasDirects));
         RaiseList();
     }
@@ -326,6 +337,7 @@ public sealed partial class GroupViewModel : ViewModelBase
         ClearSubjectPanels();
         SaveAnswerDrafts();SaveHomeworkDraft();
         Messages.Clear();
+        lastPulledMessageId = null;
         Forms.Clear(); ChannelHomeworks.Clear(); ChannelSchedule.Clear();
         ballotRequestSerial++;
         Ballots.Clear();
@@ -367,18 +379,6 @@ public sealed partial class GroupViewModel : ViewModelBase
             else if (ShowBallots) await LoadBallotsAsync(id, ticket);
             else await LoadLatestAsync(id, ticket);
             if (!CurrentChat(id, ticket)) return;
-            if (direct && Api is not null && Access is not null)
-            {
-                try
-                {
-                    using var operation = App.Work.Enter();
-                    var token = await Access(operation.Token);
-                    if (string.IsNullOrEmpty(token)) { if (operation.IsCurrent && CurrentChat(id, ticket)) ShowAccount(); }
-                    else if (operation.IsCurrent && CurrentChat(id, ticket)) await Api.MarkReadAsync(token, id, operation.Token);
-                }
-                catch (CommunityClientException) { }
-                catch (AccountClientException ex) { if (CurrentChat(id, ticket)) FailSession(ex); }
-            }
             if (CurrentChat(id, ticket)) RestartTimer();
         }
         catch (OperationCanceledException) { }
@@ -398,7 +398,13 @@ public sealed partial class GroupViewModel : ViewModelBase
         if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
         Messages.Clear();
         foreach (var message in page.Messages) Messages.Add(Row(message));
+        lastPulledMessageId = page.Messages.LastOrDefault()?.MessageId;
         HasMore = page.HasMore;
+        if (Messages.Count > 0 && operation.IsCurrent && CurrentChat(id, ticket))
+        {
+            await Api.MarkReadAsync(token, id, Messages[^1].Id, operation.Token);
+            if (operation.IsCurrent && CurrentChat(id, ticket)) MarkVisibleRead(id);
+        }
     }
 
     [RelayCommand]
@@ -443,10 +449,10 @@ public sealed partial class GroupViewModel : ViewModelBase
         if (!operation.IsCurrent || !CurrentChat(id, ticket)) return;
         if (Messages.Count == 0) HasMore = page.HasMore;
         var incoming = new List<ChatMessageResponse>();
-        var reachedLatest = true;
-        if (Messages.Count > 0 && page.Messages.Count > 0 && page.Messages.All(item => item.MessageId != Messages[^1].Id))
+        if (lastPulledMessageId is Guid pulled && page.Messages.Count > 0
+            && page.Messages.All(item => item.MessageId != pulled))
         {
-            var cursor = Messages[^1].Id;
+            var cursor = pulled;
             var seen = new HashSet<Guid> { cursor };
             var caughtUp = false;
             for (var count = 0; count < 8; count++)
@@ -460,24 +466,33 @@ public sealed partial class GroupViewModel : ViewModelBase
                 if (!next.HasMore) { caughtUp = true; break; }
             }
             if (caughtUp) incoming.AddRange(page.Messages);
-            else reachedLatest = false;
         }
         else incoming.AddRange(page.Messages);
         var receivedFromOther = false;
+        Guid? lastPublishedId = null;
+        var anchorIndex = lastPulledMessageId is Guid anchor
+            ? Messages.ToList().FindIndex(row => row.Id == anchor) : -1;
+        var insertAt = anchorIndex >= 0 ? anchorIndex + 1 : Messages.Count;
         foreach (var message in incoming)
         {
             var index = Messages.ToList().FindIndex(item => item.Id == message.MessageId);
             if (index < 0)
             {
-                Messages.Add(Row(message));
+                Messages.Insert(insertAt++, Row(message));
                 receivedFromOther |= message.SenderId != me;
+                lastPublishedId = message.MessageId;
             }
             else if (Messages[index].Body != message.Body || Messages[index].Deleted != message.Deleted
                 || Messages[index].Kind != message.Kind || !Messages[index].ReactionSummaries.SequenceEqual(message.Reactions))
                 Messages[index] = Row(message);
+            if (index >= insertAt) insertAt = index + 1;
         }
-        if (IsDirect && receivedFromOther && reachedLatest && operation.IsCurrent && CurrentChat(id, ticket))
-            await Api.MarkReadAsync(token, id, operation.Token);
+        if (incoming.Count > 0) lastPulledMessageId = incoming[^1].MessageId;
+        if (receivedFromOther && lastPublishedId is Guid lastRead && operation.IsCurrent && CurrentChat(id, ticket))
+        {
+            await Api.MarkReadAsync(token, id, lastRead, operation.Token);
+            if (operation.IsCurrent && CurrentChat(id, ticket)) MarkVisibleRead(id);
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanSend))]
@@ -771,6 +786,9 @@ public sealed partial class GroupViewModel : ViewModelBase
         {
             if (id is Guid current && CurrentChat(current, ticket)) await RefreshChannelsAsync(current, ticket);
             if (id is Guid currentDesk && CurrentChat(currentDesk, ticket)) await RefreshDeskAsync(currentDesk, ticket);
+            if (id is Guid currentIdentity && CurrentChat(currentIdentity, ticket)
+                && DateTimeOffset.UtcNow - lastGroupIdentityCheck >= IdentityRefreshInterval)
+                await RefreshGroupIdentitiesAsync(currentIdentity, ticket);
             if (id is Guid selected && CurrentChat(selected, ticket))
             {
                 if (PreviewMode) return;
@@ -861,6 +879,11 @@ public sealed partial class GroupViewModel : ViewModelBase
         {
             if (previewCache.TryGetValue(message.MessageId, out var cached)) row.Preview = cached;
             else Dispatcher.UIThread.Post(() => _ = LoadPhotoPreviewAsync(message.ConversationId, message.MessageId));
+        }
+        if (message.SenderId != me)
+        {
+            if (authorAvatars.TryGetValue(message.SenderId, out var avatar)) row.Avatar = avatar;
+            else Dispatcher.UIThread.Post(() => _ = LoadMessageAvatarAsync(message.SenderId, navigationGeneration));
         }
         return row;
     }
@@ -988,6 +1011,8 @@ public sealed partial class GroupViewModel : ViewModelBase
 
     private void ShowAccount()
     {
+        App.Avatars?.Clear();
+        ReleaseVisibleAvatars();
         ClearRevokedContent();
         navigationGeneration++;
         _ = CancelRecordingAsync();
@@ -1028,6 +1053,49 @@ public sealed partial class GroupViewModel : ViewModelBase
     }
 
     private void RaiseList() => OnPropertyChanged(nameof(ShowList));
+    private async Task RefreshGroupIdentitiesAsync(Guid id, int ticket)
+    {
+        if (communityId is not Guid community || Api is null || Access is null) return;
+        lastGroupIdentityCheck = DateTimeOffset.UtcNow;
+        using var operation = App.Work.Enter();
+        try
+        {
+            var token = await Access(operation.Token);
+            if (string.IsNullOrWhiteSpace(token) || !operation.IsCurrent || !CurrentChat(id, ticket)) return;
+            var home = await Api.GroupHomeAsync(token, community, operation.Token);
+            if (!operation.IsCurrent || !CurrentChat(id, ticket) || communityId != community) return;
+            HomeTitle = home.GroupName ?? home.Name;
+            foreach (var member in home.Classmates)
+            {
+                var name = member.DisplayName ?? member.Username;
+                foreach (var row in People.Where(row => row.UserId == member.UserId)) row.Rename(name);
+                foreach (var row in Messages.Where(row => row.SenderId == member.UserId)) row.RenameAuthor(name);
+            }
+            foreach (var direct in home.Directs)
+            {
+                foreach (var row in Directs.Where(row => row.ConversationId == direct.ConversationId))
+                { row.Rename(direct.Title); row.SetUnread(direct.Unread); }
+                if (IsDirect && conversationId == direct.ConversationId) ChatTitle = direct.Title;
+            }
+            if (DateTimeOffset.UtcNow - lastGroupAvatarCheck >= TimeSpan.FromMinutes(2))
+            {
+                lastGroupAvatarCheck = DateTimeOffset.UtcNow;
+                _ = LoadCurrentAvatarsAsync(community, home.Classmates.Select(member => member.UserId).ToArray(), ticket);
+            }
+        }
+        catch (CommunityClientException) { }
+        catch (AccountClientException ex) { if (CurrentChat(id, ticket)) FailSession(ex); }
+        catch (OperationCanceledException) { }
+    }
+    private void MarkVisibleRead(Guid id)
+    {
+        if (IsDirect)
+        {
+            foreach (var row in Directs.Where(row => row.ConversationId == id)) row.MarkRead();
+        }
+        else SelectedChannel?.ClearUnread();
+        RefreshChannelBrowse();
+    }
     private bool CurrentChat(Guid id, int ticket) => conversationId == id && navigationGeneration == ticket;
     private string Role(string? role) => role switch
     {
@@ -1037,20 +1105,43 @@ public sealed partial class GroupViewModel : ViewModelBase
     };
 }
 
-public sealed class GroupCommunityRow(string name, string role, IRelayCommand open)
+public sealed partial class GroupCommunityRow(string name, string role, IRelayCommand open, Guid communityId = default) : ObservableObject
 {
+    public Guid CommunityId { get; } = communityId;
     public string Name { get; } = name;
     public string Role { get; } = role;
     public IRelayCommand OpenCommand { get; } = open;
 }
 
-public sealed class GroupPersonRow(string name, string detail, string role, string preview, string unread, bool self, IRelayCommand? open)
+public sealed partial class GroupPersonRow(string name, string detail, string role, string preview, string unread, bool self, IRelayCommand? open, Guid userId = default, Guid conversationId = default) : ObservableObject
 {
-    public string Name { get; } = name;
+    public Guid UserId { get; } = userId;
+    public Guid ConversationId { get; } = conversationId;
+    public string Name { get; private set; } = name;
+    internal void Rename(string value)
+    {
+        if (Name == value) return;
+        Name = value;
+        OnPropertyChanged(nameof(Name));
+        OnPropertyChanged(nameof(Initials));
+    }
     public string Detail { get; } = detail;
     public string Role { get; } = role;
     public string Preview { get; } = preview;
-    public int UnreadCount { get; } = int.TryParse(unread, out var count) ? count : 0;
+    public int UnreadCount { get; private set; } = int.TryParse(unread, out var count) ? count : 0;
+    internal void MarkRead()
+    {
+        SetUnread(0);
+    }
+    internal void SetUnread(int value)
+    {
+        if (UnreadCount == value) return;
+        UnreadCount = value;
+        OnPropertyChanged(nameof(UnreadCount));
+        OnPropertyChanged(nameof(Unread));
+        OnPropertyChanged(nameof(UnreadDescription));
+    }
+
     public string Unread => UnreadBadge.Label(UnreadCount);
     public string UnreadDescription => UnreadBadge.Description(UnreadCount);
     public bool Self { get; } = self;
@@ -1060,7 +1151,14 @@ public sealed class GroupPersonRow(string name, string detail, string role, stri
 public sealed partial class GroupMessageRow(Guid id, string author, string body, string when, bool mine, string kind = "text", bool deleted = false, Action<string>? apply = null, Func<Task>? download = null, IReadOnlyList<ChatReactionSummary>? reactions = null, string? replyPreview = null, Func<Task>? play = null, Guid senderId = default, DateTimeOffset createdAt = default, Func<Task>? copy = null, Func<IReadOnlyList<string>>? actions = null) : ObservableObject
 {
     public Guid Id { get; } = id;
-    public string Author { get; } = author;
+    public string Author { get; private set; } = author;
+    internal void RenameAuthor(string value)
+    {
+        if (Author == value) return;
+        Author = value;
+        OnPropertyChanged(nameof(Author));
+        OnPropertyChanged(nameof(Initials));
+    }
     public Guid SenderId { get; } = senderId;
     public DateTimeOffset CreatedAt { get; } = createdAt;
     public string Body { get; } = body;

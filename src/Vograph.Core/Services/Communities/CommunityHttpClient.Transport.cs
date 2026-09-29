@@ -35,6 +35,9 @@ public sealed partial class CommunityHttpClient
             request.Headers.Accept.Add(new("application/json"));
             request.Headers.TryAddWithoutValidation("X-Zapara-Group-Space", "1");
             request.Headers.TryAddWithoutValidation("X-Zapara-Homework", "1");
+            if (method == HttpMethod.Get && path.StartsWith("/conversations/", StringComparison.Ordinal)
+                && path.Contains("/messages", StringComparison.Ordinal))
+                request.Headers.TryAddWithoutValidation("X-Zapara-Read-Cursor", "1");
             request.Headers.Authorization = new("Bearer", access);
             if (body is not null)
             {
@@ -104,12 +107,12 @@ public sealed partial class CommunityHttpClient
 
     private async Task<ChatMessageResponse> SendMediaCoreAsync(string access, string conversationId, string kind, string name, byte[] bytes, Guid? replyTo, CancellationToken caller, int? durationMs, Guid? topicId)
     {
-        var maxBytes = kind == "voice" ? 2 * 1024 * 1024 : 8 * 1024 * 1024;
+        var maxBytes = kind switch { "voice" => 4 * 1024 * 1024, "circle" => 24 * 1024 * 1024, _ => 8 * 1024 * 1024 };
         if (kind is not ("image" or "video" or "file" or "voice" or "circle") || bytes is null || bytes.Length < 1 || bytes.Length > maxBytes || string.IsNullOrWhiteSpace(name)
             || kind is ("voice" or "circle") && durationMs is null
             || durationMs is int ms && (kind is not ("voice" or "circle") || ms < 1 || ms > (kind == "voice" ? 180_000 : 60_000)))
             throw new CommunityClientException(CommunityClientFailure.InvalidRequest);
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30), clock);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(180), clock);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(caller, timeout.Token);
         var ct = deadline.Token;
         var path = "/conversations/" + conversationId + "/media";

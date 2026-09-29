@@ -99,10 +99,10 @@ public sealed partial class CommunityService(IAccountUnitOfWork trustedAccounts,
         => Run(bearer, db => db.GroupHomeAsync(CommunityValidation.Id(communityId)), ct);
     public Task<ConversationResponse> OpenDirectAsync(string bearer, OpenDirectRequest request, CancellationToken ct = default)
         => Run(bearer, db => db.OpenDirectAsync(CommunityValidation.Id(request.CommunityId), CommunityValidation.Id(request.UserId)), ct);
-    public async Task<ChatPageResponse> ListMessagesAsync(string bearer, Guid conversationId, Guid? before, Guid? after, string? topic = null, CancellationToken ct = default)
+    public async Task<ChatPageResponse> ListMessagesAsync(string bearer, Guid conversationId, Guid? before, Guid? after, string? topic = null, CancellationToken ct = default, bool explicitReadCursor = false)
     {
         var page = await Run(bearer, db => db.ListMessagesAsync(CommunityValidation.Id(conversationId),
-            before is null ? null : CommunityValidation.Id(before.Value), after is null ? null : CommunityValidation.Id(after.Value), topic), ct);
+            before is null ? null : CommunityValidation.Id(before.Value), after is null ? null : CommunityValidation.Id(after.Value), topic, explicitReadCursor), ct);
         return new(page.Messages.Select(LoadMessage).ToArray(), page.HasMore);
     }
     public async Task<ChatMessageResponse> SendMessageAsync(string bearer, Guid conversationId, SendMessageRequest request, CancellationToken ct = default)
@@ -110,8 +110,8 @@ public sealed partial class CommunityService(IAccountUnitOfWork trustedAccounts,
     public async Task<ChatMessageResponse> SendMediaAsync(string bearer, Guid conversationId, string kind, string name, byte[] content, Guid? replyTo, int? durationMs = null, CancellationToken ct = default, Guid? topicId = null)
     {
         if (kind is not ("image" or "video" or "file" or "voice" or "circle")) throw CommunityServiceException.InvalidRequest();
-        if (content is null || content.Length is < 1 or > CommunityMedia.MaxBytes ||
-            kind == "voice" && content.Length > CommunityMedia.MaxVoiceBytes)
+        var maximum = kind switch { "voice" => CommunityMedia.MaxVoiceBytes, "circle" => CommunityMedia.MaxCircleBytes, _ => CommunityMedia.MaxBytes };
+        if (content is null || content.Length < 1 || content.Length > maximum)
             throw new CommunityServiceException(413, "payload_too_large");
         CommunityMedia.ValidateRecording(kind, content, durationMs);
         var label = MediaName(kind, name);
@@ -163,8 +163,8 @@ public sealed partial class CommunityService(IAccountUnitOfWork trustedAccounts,
         foreach (var messageId in result.MessageIds) Drop(messageId);
         return result.Page;
     }
-    public Task<ConversationResponse> MarkReadAsync(string bearer, Guid conversationId, CancellationToken ct = default)
-        => Run(bearer, db => db.MarkReadAsync(CommunityValidation.Id(conversationId)), ct);
+    public Task<ConversationResponse> MarkReadAsync(string bearer, Guid conversationId, CancellationToken ct = default, Guid? throughMessageId = null)
+        => Run(bearer, db => db.MarkReadAsync(CommunityValidation.Id(conversationId), throughMessageId is Guid target ? CommunityValidation.Id(target) : null), ct);
 
     private HomeworkResponse StoreHomework(HomeworkResponse item)
     {

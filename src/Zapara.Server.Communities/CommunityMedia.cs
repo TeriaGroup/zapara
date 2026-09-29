@@ -9,7 +9,8 @@ namespace Zapara.Server.Communities;
 internal static class CommunityMedia
 {
     internal const int MaxBytes = 8 * 1024 * 1024;
-    internal const int MaxVoiceBytes = 2 * 1024 * 1024;
+    internal const int MaxVoiceBytes = 4 * 1024 * 1024;
+    internal const int MaxCircleBytes = 24 * 1024 * 1024;
     private const int MaxVoiceDurationMs = 180_000;
     private const int MaxCircleDurationMs = 60_000;
 
@@ -67,7 +68,7 @@ internal static class CommunityMedia
             durationMs = parsed;
         }
         if (!ValidDuration(kind, durationMs)) throw new CommunityInputException();
-        var maximum = kind == "voice" ? MaxVoiceBytes : MaxBytes;
+        var maximum = kind switch { "voice" => MaxVoiceBytes, "circle" => MaxCircleBytes, _ => MaxBytes };
         var feature = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
         if (feature is { IsReadOnly: false }) feature.MaxRequestBodySize = maximum + 1024;
         if (context.Request.ContentLength > maximum) throw new CommunityInputException(413);

@@ -2,7 +2,7 @@ namespace Zapara.Server.Social;
 
 public static class CirclePolicy
 {
-    public const int MaxBytes = 8 * 1024 * 1024;
+    public const int MaxBytes = 24 * 1024 * 1024;
     public const int MaxDurationMs = 60_000;
 
     public static (string Type, string Extension) Inspect(ReadOnlySpan<byte> bytes)

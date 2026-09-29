@@ -150,7 +150,10 @@ public sealed partial class CommunityHttpClient : IDisposable
     public Task<ChatMessageResponse> ReactMessageAsync(string accessToken, Guid conversationId, Guid messageId, string emoji, CancellationToken ct = default)
         => SendAsync<ChatMessageResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/messages/" + Id(messageId) + "/react", new ReactMessageRequest(emoji), Access(accessToken), 200, ct);
     public Task<ConversationResponse> MarkReadAsync(string accessToken, Guid conversationId, CancellationToken ct = default)
-        => SendAsync<ConversationResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/read", null, Access(accessToken), 200, ct);
+        => MarkReadAsync(accessToken, conversationId, null, ct);
+    public Task<ConversationResponse> MarkReadAsync(string accessToken, Guid conversationId, Guid? throughMessageId, CancellationToken ct = default)
+        => SendAsync<ConversationResponse>(HttpMethod.Post, "/conversations/" + Id(conversationId) + "/read",
+            throughMessageId is Guid target ? new MarkChatReadRequest(target) : null, Access(accessToken), 200, ct);
 
     private async Task<IReadOnlyList<T>> SendList<T>(HttpMethod method, string path, object? body, string access, int status, CancellationToken ct)
         => await SendAsync<T[]>(method, path, body, access, status, ct).ConfigureAwait(false);

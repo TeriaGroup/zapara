@@ -24,7 +24,7 @@ public sealed partial class CommunityHttpClient
 
     private async Task<byte[]> ReadMediaVersionAsync(string access, string path, int version, CancellationToken caller)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30), clock);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(180), clock);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(caller, timeout.Token);
         var ct = deadline.Token;
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(Scope.BaseUri, $"api/v{version}/communities" + path));
@@ -44,7 +44,7 @@ public sealed partial class CommunityHttpClient
             if (response.Content.Headers.ContentType?.MediaType != "application/octet-stream" ||
                 response.Content.Headers.ContentEncoding.Count != 0)
                 throw new CommunityClientException(CommunityClientFailure.InvalidPayload);
-            const int limit = 8 * 1024 * 1024;
+            const int limit = 24 * 1024 * 1024;
             if (response.Content.Headers.ContentLength is > limit or 0)
                 throw new CommunityClientException(response.Content.Headers.ContentLength == 0
                     ? CommunityClientFailure.InvalidPayload : CommunityClientFailure.BodyTooLarge);

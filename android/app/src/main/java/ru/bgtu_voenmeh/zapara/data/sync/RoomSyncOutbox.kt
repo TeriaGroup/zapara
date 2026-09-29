@@ -41,6 +41,8 @@ class RoomSyncOutbox(
     projection: SyncRecordProjection? = null
 ) {
     var beforeCommit: (() -> Unit)? = null
+    /** A coalesced wake-up hint; the coordinator re-reads committed state on its IO worker. */
+    var onPendingChanged: (() -> Unit)? = null
     private val transactionGate = Any()
     private var transactionDepth = 0
     val inbox = RoomSyncInbox(this, projection)
@@ -159,9 +161,11 @@ class RoomSyncOutbox(
     }
 
     fun cancelPending(entityType: String, entityId: UUID) {
-        for (row in pending().filter { it.entityType == entityType && it.entityId == entityId && it.status == "pending" }) {
+        val removed = pending().filter { it.entityType == entityType && it.entityId == entityId && it.status == "pending" }
+        for (row in removed) {
             deleteOp(row.opId)
         }
+        if (removed.isNotEmpty()) onPendingChanged?.invoke()
     }
 
     fun enqueue(
@@ -190,6 +194,7 @@ class RoomSyncOutbox(
             if (row.syncEpoch != null) { revision = row.expectedRevision; continue }
             if (!hasSubmitted && action == "delete" && row.expectedRevision == 0L && row.action == "upsert") {
                 deleteOp(row.opId)
+                onPendingChanged?.invoke()
                 return
             }
             revision = row.expectedRevision
@@ -222,6 +227,7 @@ class RoomSyncOutbox(
                 prev?.legacyCreatedLocalDate
             )
         }
+        onPendingChanged?.invoke()
     }
 
     fun sameIntent(existing: PrivateSyncOutboxEntry, entityType: String, action: String, value: SyncValue?): Boolean {

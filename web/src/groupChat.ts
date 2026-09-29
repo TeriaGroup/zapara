@@ -1,7 +1,7 @@
 import type { ChatMessage } from "./types";
 
 type GroupPage = { messages: ChatMessage[]; hasMore: boolean };
-export type GroupUpdates = { messages: ChatMessage[]; hasOlder: boolean };
+export type GroupUpdates = { messages: ChatMessage[]; hasOlder: boolean; throughMessageId: string | null };
 export type GroupMessageCursor = { after?: string; before?: string };
 
 export function groupMessageQuery(topic?: string, cursor?: GroupMessageCursor): string {
@@ -22,19 +22,21 @@ export function mergeGroupMessages(current: ChatMessage[], incoming: ChatMessage
 export async function loadGroupUpdates(
   known: ChatMessage[],
   load: (after?: string) => Promise<GroupPage>,
+  pulledCursor?: string | null,
 ): Promise<GroupUpdates> {
   const latest = await load();
-  if (known.length === 0) return { messages: latest.messages, hasOlder: latest.hasMore };
+  const throughMessageId = latest.messages.at(-1)?.messageId ?? null;
+  if (known.length === 0) return { messages: latest.messages, hasOlder: latest.hasMore, throughMessageId };
   const knownIds = new Set(known.map(item => item.messageId));
-  if (latest.messages.some(item => knownIds.has(item.messageId))) return { messages: latest.messages, hasOlder: latest.hasMore };
+  if (latest.messages.some(item => knownIds.has(item.messageId))) return { messages: latest.messages, hasOlder: latest.hasMore, throughMessageId };
 
-  let after = known.at(-1)!.messageId;
+  let after = pulledCursor ?? known.at(-1)!.messageId;
   const cursors = new Set([after]);
   let updates: ChatMessage[] = [];
   while (true) {
     const page = await load(after);
     updates = mergeGroupMessages(updates, page.messages);
-    if (!page.hasMore) return { messages: mergeGroupMessages(updates, latest.messages), hasOlder: latest.hasMore };
+    if (!page.hasMore) return { messages: mergeGroupMessages(updates, latest.messages), hasOlder: latest.hasMore, throughMessageId: throughMessageId ?? page.messages.at(-1)?.messageId ?? null };
     const next = page.messages.at(-1)?.messageId;
     if (!next || cursors.has(next)) throw new Error("Group pagination did not advance");
     cursors.add(next);
@@ -52,15 +54,24 @@ export function createGroupPoller(
   let revision = 0;
   let loaded = false;
   let disposed = false;
+  let serverKnown = known().slice(-100);
+  let pulledCursor: string | null = serverKnown.at(-1)?.messageId ?? null;
   return {
     poll(): Promise<void> {
       if (disposed) return Promise.resolve();
       if (inFlight) return inFlight;
       const startedAt = revision;
-      const task = loadGroupUpdates(known(), load)
+      const task = loadGroupUpdates(serverKnown, load, pulledCursor)
         .then(updates => {
-          if (disposed || startedAt !== revision) return;
-          publish(updates, !loaded);
+          if (disposed) return;
+          serverKnown = mergeGroupMessages(serverKnown, updates.messages).slice(-100);
+          if (updates.throughMessageId) pulledCursor = updates.throughMessageId;
+          if (startedAt === revision) publish(updates, !loaded);
+          else {
+            const currentIds = new Set(known().map(item => item.messageId));
+            const unknown = updates.messages.filter(item => !currentIds.has(item.messageId));
+            if (unknown.length) publish({ ...updates, messages: unknown }, !loaded);
+          }
           loaded = true;
         })
         .catch(error => { if (!disposed && startedAt === revision) onError(error); })

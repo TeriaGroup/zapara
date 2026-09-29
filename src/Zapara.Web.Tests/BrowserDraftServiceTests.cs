@@ -194,6 +194,25 @@ public sealed class BrowserDraftServiceTests
             if (id == "import") return (T)(object)this;
             if (id == "tabId") return (T)(object)tabId;
             if (id == "read") return (T)(object?)Disk.GetValueOrDefault(args![0] + ":" + args[1])!;
+            if (id == "writeProfilePreference")
+            {
+                var owner = (string)args![0]!;
+                var expectedResetEpoch = Convert.ToInt64(args[1]);
+                var key = (string)args[2]!;
+                var value = (string)args[3]!;
+                var profile = Disk.GetValueOrDefault("profiles:" + owner);
+                var resetEpoch = profile is null ? 0 : JsonDocument.Parse(profile).RootElement.GetProperty("resetEpoch").GetInt64();
+                if (resetEpoch != expectedResetEpoch) return (T)(object)false;
+                if (key.StartsWith("draft:", StringComparison.Ordinal))
+                {
+                    if (FailDraftWrites) throw new JSException("QuotaExceededError");
+                    DraftWrites++; active++; MaximumConcurrentWrites = Math.Max(active, MaximumConcurrentWrites);
+                    try { if (HoldDraftWrite) { HoldDraftWrite = false; WriteStarted.TrySetResult(); await ReleaseWrite.Task.WaitAsync(Ct); } Disk["preferences:" + key] = value; }
+                    finally { active--; }
+                }
+                else Disk["preferences:" + key] = value;
+                return (T)(object)true;
+            }
             if (id == "write")
             {
                 var key = args![0] + ":" + args[1];

@@ -20,6 +20,7 @@ public static class SocialRegistration
         services.AddSingleton<IUploadQuota>(provider => provider.GetRequiredService<StudentUpload>());
         services.AddSingleton<IAccountUnitOfWork>(provider => provider.GetRequiredService<AccountService>());
         services.AddSingleton<SocialService>();
+        services.AddSingleton<IAvatarService, AvatarService>();
         services.AddHostedService<SocialSchemaService>();
         services.AddHostedService<SocialFileSweeper>();
         services.AddSingleton<IAccountLifecycleParticipant, SocialLifecycleParticipant>();

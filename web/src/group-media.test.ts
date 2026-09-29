@@ -121,9 +121,9 @@ test("group voice and circle use bounded raw uploads with duration headers", asy
     { kind: "voice", name: "voice.m4a", duration: "180000", type: "application/octet-stream" },
     { kind: "circle", name: "circle.mp4", duration: "60000", type: "application/octet-stream" },
   ]);
-  await assert.rejects(() => postGroupMedia(id, "voice", "voice.m4a", new Blob([new Uint8Array(2 * 1024 * 1024 + 1)]), undefined, post, {}, 1),
+  await assert.rejects(() => postGroupMedia(id, "voice", "voice.m4a", new Blob([new Uint8Array(4 * 1024 * 1024 + 1)]), undefined, post, {}, 1),
     (error: unknown) => error instanceof GroupMediaError && error.code === "size");
-  await assert.rejects(() => postGroupMedia(id, "circle", "circle.mp4", new Blob([new Uint8Array(8 * 1024 * 1024 + 1)]), undefined, post, {}, 1),
+  await assert.rejects(() => postGroupMedia(id, "circle", "circle.mp4", new Blob([new Uint8Array(24 * 1024 * 1024 + 1)]), undefined, post, {}, 1),
     (error: unknown) => error instanceof GroupMediaError && error.code === "size");
   await assert.rejects(() => postGroupMedia(id, "voice", "voice.m4a", new Blob([new Uint8Array(12)]), undefined, post, {}),
     (error: unknown) => error instanceof GroupMediaError && error.code === "duration");

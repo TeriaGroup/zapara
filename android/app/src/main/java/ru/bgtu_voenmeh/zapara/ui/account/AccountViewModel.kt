@@ -81,6 +81,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
 
     private var exportId: String? = null
     private var identityRevision = 0
+    private var profileRefresh: kotlinx.coroutines.Job? = null
     private val mutable = MutableStateFlow(
         AccountUiState(
             configured = runtime.client != null,
@@ -153,6 +154,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
 
     fun onEvent(event: AccountEvent) {
         when (event) {
+            AccountEvent.RefreshProfile -> refreshProfile()
             AccountEvent.Submit -> submit()
             AccountEvent.ConfirmLogout -> logout()
             AccountEvent.LoadDevices -> loadDevices()
@@ -169,6 +171,29 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
             AccountEvent.LinkYandex -> startExternal("yandex", login = false)
             is AccountEvent.Unlink -> unlink(event.provider)
             else -> mutable.update { it.reduce(event) }
+        }
+    }
+
+    private fun refreshProfile() {
+        val client = runtime.client ?: return
+        if (!mutable.value.showAccount || mutable.value.busy || profileRefresh?.isActive == true) return
+        val revision = identityRevision
+        profileRefresh = viewModelScope.launch {
+            try {
+                val user = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val session = requireSession()
+                    val fresh = client.me(session.accessToken)
+                    val current = runtime.vault.acquire().use { it.read() }
+                    if (current == null || current.userId != session.user.userId || current.familyId != session.familyId ||
+                        fresh.userId != session.user.userId) null else fresh
+                }
+                if (user != null && identityRevision == revision && !runtime.isGuest())
+                    mutable.update { if (it.busy) it else it.copy(accountName = user.accountName()) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: AccountClientException) {
+                if (identityRevision == revision && error.failure in setOf(AccountClientFailure.InvalidSession, AccountClientFailure.ReauthenticationRequired))
+                    mutable.update { if (it.busy) it else it.copy(status = runtime.strings(R.string.account_reauth)) }
+            } catch (_: Exception) { /* A temporary outage keeps the last known profile. */ }
         }
     }
 

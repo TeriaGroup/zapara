@@ -10,6 +10,15 @@ internal sealed class SocialLifecycleParticipant(SocialConfiguration configurati
     public async Task ContributeExportAsync(AccountLifecycleContext context, CancellationToken ct)
     {
         if (!await ReadyAsync(context, ct)) return;
+        await using (var avatar = context.Command($"SELECT revision,updated_at FROM {configuration.QuotedSchema}.user_avatars WHERE owner_id=@p0", context.UserId))
+        await using (var avatarReader = await avatar.ExecuteReaderAsync(ct))
+            if (await avatarReader.ReadAsync(ct))
+                context.Export.Contributions.Add(new JsonObject
+                {
+                    ["type"] = "profile_avatar",
+                    ["revision"] = AccountExportDocument.Id(avatarReader.GetGuid(0)),
+                    ["updatedAt"] = AccountExportDocument.Utc(avatarReader.GetFieldValue<DateTimeOffset>(1))
+                });
         await using var command = context.Command($"""
             SELECT m.message_id, m.kind, m.body, a.original_name, m.created_at
             FROM {configuration.QuotedSchema}.messages m
@@ -34,6 +43,12 @@ internal sealed class SocialLifecycleParticipant(SocialConfiguration configurati
     {
         if (!await ReadyAsync(context, ct)) return;
         var schema = configuration.QuotedSchema;
+        await context.ExecuteAsync($"""
+            INSERT INTO {schema}.file_purge(stored_name,created_at)
+            SELECT stored_name,@p1 FROM {schema}.user_avatars WHERE owner_id=@p0
+            ON CONFLICT DO NOTHING
+            """, context.UserId, context.UtcNow);
+        await context.ExecuteAsync($"DELETE FROM {schema}.user_avatars WHERE owner_id=@p0", context.UserId);
         await context.ExecuteAsync($"""
             INSERT INTO {schema}.file_purge(stored_name, created_at)
             SELECT a.stored_name, @p1 FROM {schema}.attachments a

@@ -2,12 +2,25 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using Xunit;
+using Zapara.Server.Communities;
 using Zapara.Server.Social;
 
 namespace Zapara.Server.Tests;
 
 public sealed class SocialMediaTests
 {
+    [Fact]
+    public void Recording_limits_fit_full_length_high_quality_profiles()
+    {
+        const long voiceBits = 96_000L * 180;
+        const long circleBits = (2_000_000L + 96_000L) * 60;
+        Assert.True(VoicePolicy.MaxBytes * 8L >= voiceBits * 5 / 4);
+        Assert.True(CirclePolicy.MaxBytes * 8L >= circleBits * 5 / 4);
+        Assert.Equal(VoicePolicy.MaxBytes, CommunityMedia.MaxVoiceBytes);
+        Assert.Equal(CirclePolicy.MaxBytes, CommunityMedia.MaxCircleBytes);
+        Assert.Equal(8 * 1024 * 1024, CommunityMedia.MaxBytes);
+    }
+
     [Fact]
     public void Photo_is_reencoded_to_webp_and_large_edge_is_capped()
     {

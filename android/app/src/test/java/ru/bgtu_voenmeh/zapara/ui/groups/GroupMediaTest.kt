@@ -46,6 +46,10 @@ class GroupMediaTest {
         val circle = voice + byteArrayOf(1, 2, 3)
         assertEquals("circle", GroupMedia.place(client, token, id, "circle", "circle.mp4", circle, null, 12000).kind)
         assertEquals("12000", calls.last().headers["X-Zapara-Duration-Ms"])
+        val hdCircle = ByteArray(8 * 1024 * 1024 + 1)
+        assertEquals("circle", GroupMedia.place(client, token, id, "circle", "hd-circle.mp4", hdCircle, null, 60_000).kind)
+        assertEquals(hdCircle.size, calls.last().body!!.size)
+        assertEquals(180_000, calls.last().readTimeoutMs)
         try {
             GroupMedia.place(client, token, id, "voice", "missing-duration.m4a", voice, null)
             fail("Voice without a declared duration must be rejected")
@@ -53,12 +57,21 @@ class GroupMediaTest {
             assertEquals(CommunityClientFailure.InvalidRequest, expected.failure)
         }
         try {
-            GroupMedia.place(client, token, id, "voice", "too-long.m4a", ByteArray(2 * 1024 * 1024 + 1), null, 1000)
-            fail("Voice over 2 MiB must be rejected before upload")
+            GroupMedia.place(client, token, id, "voice", "too-long.m4a", ByteArray(4 * 1024 * 1024 + 1), null, 1000)
+            fail("Voice over 4 MiB must be rejected before upload")
         } catch (expected: CommunityClientException) {
             assertEquals(CommunityClientFailure.PayloadTooLarge, expected.failure)
         }
-        assertEquals(2, calls.size)
+        for ((kind, limit) in listOf("circle" to 24 * 1024 * 1024, "image" to 8 * 1024 * 1024)) {
+            try {
+                GroupMedia.place(client, token, id, kind, "oversized.bin", ByteArray(limit + 1), null,
+                    if (kind == "circle") 1000 else null)
+                fail("$kind over its limit must be rejected before upload")
+            } catch (expected: CommunityClientException) {
+                assertEquals(CommunityClientFailure.PayloadTooLarge, expected.failure)
+            }
+        }
+        assertEquals(3, calls.size)
     }
 
     @Test

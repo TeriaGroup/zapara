@@ -46,6 +46,7 @@ type Profile = {
     items: HomeworkItem[];
     records: SyncRecord[];
     pending: Pending[];
+    settingsIntent?: Partial<SyncSettingsValue>;
 };
 const guestKey = "zapara.homework";
 const accountKey = (owner: string) => `zapara.private-homework.${owner}`;
@@ -54,7 +55,7 @@ function read(owner: string): Profile {
         if (owner === "guest")
             return { owner, items: JSON.parse(localStorage.getItem(guestKey) || "[]"), records: [], pending: [] };
         const raw = JSON.parse(localStorage.getItem(accountKey(owner)) || "{}");
-        return { owner, items: raw.items ?? [], records: raw.records ?? [], pending: raw.pending ?? [] };
+        return { owner, items: raw.items ?? [], records: raw.records ?? [], pending: raw.pending ?? [], settingsIntent: raw.settingsIntent ?? undefined };
     }
     catch {
         return { owner, items: [], records: [], pending: [] };
@@ -79,7 +80,7 @@ export function usePrivateHomework(userId: string | null) {
     expectedOwner.current = owner;
     const [status, setStatus] = useState("");
     const [tick, setTick] = useState(0);
-    const running = useRef(false);
+    const running = useRef<object | null>(null);
     const cursor = useRef<{
         owner: string;
         epoch: string;
@@ -98,10 +99,11 @@ export function usePrivateHomework(userId: string | null) {
         if (owner === "guest")
             return;
         let stop = false;
+        const runToken = {};
         async function pull() {
-            if (running.current)
+            if (running.current === runToken)
                 return;
-            running.current = true;
+            running.current = runToken;
             try {
                 let epoch: string;
                 let records: SyncRecord[];
@@ -151,9 +153,22 @@ export function usePrivateHomework(userId: string | null) {
                 if (stop || expectedOwner.current !== owner)
                     return;
                 let local = current.current;
+                let pendingQueue = local.pending;
+                if (local.settingsIntent && Object.keys(local.settingsIntent).length > 0) {
+                    const settingsId = "00000000-0000-0000-0000-000000000001";
+                    const pendingSettings = pendingQueue.find(row => row.type === "settings");
+                    const serverSettings = records.find(row => row.entityType === "settings" && !row.tombstone);
+                    const defaults: SyncSettingsValue = { selectedGroupId: null, parityInvert: false, notifyTime1: null, notifyTime2: null, strictness: 50, alwaysShow: false };
+                    const value = { ...defaults, ...(pendingSettings?.value ?? serverSettings?.value), ...local.settingsIntent } as SyncSettingsValue;
+                    value.strictness = normalizeIntersectionStrictness(value.strictness);
+                    pendingQueue = [...pendingQueue.filter(row => row.type !== "settings"), {
+                        opId: crypto.randomUUID(), id: settingsId, type: "settings", revision: pendingSettings?.revision ?? serverSettings?.revision ?? 0, value,
+                    }];
+                }
                 // Pending edits remain visible until acknowledged or explicitly resolved.
-                const ids = new Set(local.pending.map(row => row.id));
-                if (!commit({ ...local, records, items: [...projectHomework(records, local.items).filter(row => !ids.has(row.id)), ...local.items.filter(row => ids.has(row.id))] }))
+                const ids = new Set(pendingQueue.map(row => row.id));
+                if (!commit({ ...local, records, pending: pendingQueue, settingsIntent: undefined,
+                    items: [...projectHomework(records, local.items).filter(row => !ids.has(row.id)), ...local.items.filter(row => ids.has(row.id))] }))
                     return;
                 cursor.current = nextCursor;
                 const queue = [...current.current.pending];
@@ -187,12 +202,16 @@ export function usePrivateHomework(userId: string | null) {
                     setStatus("Нет связи с синхронизацией. Локальные изменения сохранены.");
             }
             finally {
-                running.current = false;
+                if (running.current === runToken) running.current = null;
             }
         }
         void pull();
         const timer = window.setInterval(() => void pull(), 10000);
-        return () => { stop = true; window.clearInterval(timer); };
+        const wake = () => { if (!document.hidden) void pull(); };
+        window.addEventListener("online", wake);
+        window.addEventListener("focus", wake);
+        document.addEventListener("visibilitychange", wake);
+        return () => { stop = true; window.clearInterval(timer); window.removeEventListener("online", wake); window.removeEventListener("focus", wake); document.removeEventListener("visibilitychange", wake); };
     }, [owner, tick]);
     function save(item: HomeworkItem) {
         const local = current.current;
@@ -218,7 +237,8 @@ export function usePrivateHomework(userId: string | null) {
                 pending = [...pending.filter(row => row.type !== update.type || row.id !== item.id), { opId: crypto.randomUUID(), id: item.id, type: update.type, revision, value: update.value }];
             }
         }
-        commit({ ...local, items, pending });
+        if (!commit({ ...local, items, pending })) return;
+        if (owner !== "guest" && pending.length) setStatus("Есть несохранённые изменения");
         setTick(value => value + 1);
     }
     function resolve(opId: string, choice: "local" | "server") {
@@ -229,20 +249,28 @@ export function usePrivateHomework(userId: string | null) {
         const records = pending.conflict ? [...local.records.filter(row => row.entityType !== pending.type || row.entityId !== pending.id), pending.conflict] : local.records;
         const queue = choice === "server" ? local.pending.filter(row => row.opId !== opId) : local.pending.map(row => row.opId === opId ? { ...row, opId: crypto.randomUUID(), revision: pending.conflict?.revision ?? 0, conflict: undefined } : row);
         const ids = new Set(queue.map(row => row.id));
-        commit({ ...local, records, pending: queue, items: [...projectHomework(records, local.items).filter(row => !ids.has(row.id)), ...local.items.filter(row => ids.has(row.id))] });
+        if (!commit({ ...local, records, pending: queue, items: [...projectHomework(records, local.items).filter(row => !ids.has(row.id)), ...local.items.filter(row => ids.has(row.id))] })) return;
+        setStatus(queue.length ? "Есть несохранённые изменения" : "Синхронизация ожидается");
         setTick(value => value + 1);
     }
     function saveSettings(patch: Partial<SyncSettingsValue>) {
         const local = current.current;
-        if (owner === "guest" || local.owner !== owner || (cursor.current?.owner !== owner && !local.records.some(row => row.entityType === "settings")))
+        if (owner === "guest" || local.owner !== owner)
             return false;
+        if (cursor.current?.owner !== owner) {
+            if (!commit({ ...local, settingsIntent: { ...local.settingsIntent, ...patch } })) return false;
+            setStatus("Изменения настроек ожидают синхронизации");
+            setTick(value => value + 1);
+            return true;
+        }
         const id = "00000000-0000-0000-0000-000000000001";
         const pending = local.pending.find(row => row.type === "settings");
         const record = local.records.find(row => row.entityType === "settings" && !row.tombstone);
         const defaults: SyncSettingsValue = { selectedGroupId: null, parityInvert: false, notifyTime1: null, notifyTime2: null, strictness: 50, alwaysShow: false };
         const value = { ...defaults, ...(pending?.value ?? record?.value), ...patch } as SyncSettingsValue;
         value.strictness = normalizeIntersectionStrictness(value.strictness);
-        commit({ ...local, pending: [...local.pending.filter(row => row.type !== "settings"), { opId: crypto.randomUUID(), id, type: "settings", revision: pending?.revision ?? record?.revision ?? 0, value }] });
+        if (!commit({ ...local, pending: [...local.pending.filter(row => row.type !== "settings"), { opId: crypto.randomUUID(), id, type: "settings", revision: pending?.revision ?? record?.revision ?? 0, value }] })) return false;
+        setStatus("Есть несохранённые изменения");
         setTick(value => value + 1);
         return true;
     }
@@ -253,5 +281,12 @@ export function usePrivateHomework(userId: string | null) {
         for (const item of guest.items)
             save({ ...item, id: crypto.randomUUID() });
     }
-    return { items: profile.owner === owner ? profile.items : [], save, status, saveSettings, settings: (profile.pending.find(row => row.type === "settings")?.value ?? profile.records.find(row => row.entityType === "settings" && !row.tombstone)?.value) as SyncSettingsValue | undefined, ready: cursor.current?.owner === owner, pending: profile.owner === owner ? profile.pending : [], resolve, refresh: () => setTick(value => value + 1), importGuest };
+    const settingsBase = profile.pending.find(row => row.type === "settings")?.value ?? profile.records.find(row => row.entityType === "settings" && !row.tombstone)?.value;
+    const settings = profile.owner === owner && settingsBase
+        ? profile.settingsIntent ? { ...settingsBase, ...profile.settingsIntent } as SyncSettingsValue : settingsBase as SyncSettingsValue
+        : undefined;
+    return { items: profile.owner === owner ? profile.items : [], save,
+        status: profile.owner === owner ? status : owner === "guest" ? "Гостевые данные на устройстве" : "Синхронизация ожидается",
+        saveSettings, settings,
+        ready: cursor.current?.owner === owner, pending: profile.owner === owner ? profile.pending : [], resolve, refresh: () => setTick(value => value + 1), importGuest };
 }

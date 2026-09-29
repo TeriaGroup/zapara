@@ -2,7 +2,7 @@ namespace Zapara.Server.Social;
 
 public static class VoicePolicy
 {
-    public const int MaxBytes = 2 * 1024 * 1024;
+    public const int MaxBytes = 4 * 1024 * 1024;
     public const int MaxDurationMs = 180_000;
 
     public static (string Type, string Extension) Inspect(ReadOnlySpan<byte> bytes)

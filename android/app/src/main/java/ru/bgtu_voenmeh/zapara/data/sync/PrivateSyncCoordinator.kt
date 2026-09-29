@@ -10,22 +10,36 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork
 import java.util.UUID
+import java.time.Instant
 
 class PrivateSyncCoordinator(
     private val outbox: RoomSyncOutbox,
     private val work: ProfileWork,
+    private val beforeApply: () -> Unit = {},
     private val onApplied: () -> Unit = {}
 ) {
     private val gate = Mutex()
+    private val cycleGate = Mutex()
     private val job = SupervisorJob()
     private val scope = CoroutineScope(job + Dispatchers.IO)
     private var client: PrivateSyncHttpClient? = null
     private var access: (suspend () -> String?)? = null
     private var loop: Job? = null
+    private val wake = Channel<Unit>(Channel.CONFLATED)
+    private val mutableStatus = MutableStateFlow(CloudSyncStatus())
+    val status = mutableStatus.asStateFlow()
+    private var issue: PrivateSyncState? = null
+    private val retryWindow = SyncRetryWindow()
+    private val pendingChanged: () -> Unit = { requestSync() }
     var attached: Boolean = false
         private set
 
@@ -34,36 +48,82 @@ class PrivateSyncCoordinator(
         client = http
         access = accessToken
         attached = true
+        mutableStatus.value = mutableStatus.value.copy(attached = true)
+        outbox.onPendingChanged = pendingChanged
         if (background) start()
     }
 
+    fun requestSync() {
+        if (attached && job.isActive) {
+            mutableStatus.update { it.copy(waiting = true) }
+            wake.trySend(Unit)
+        }
+    }
+
     fun start() {
-        if (loop != null) return
+        if (loop?.isActive == true || !attached) return
         loop = scope.launch {
+            var failures = 0
             while (isActive) {
+                val cooldown = retryWindow.remainingMillis()
+                if (cooldown > 0) delay(cooldown)
                 try {
                     sync()
                 } catch (e: CancellationException) {
                     throw e
-                } catch (e: Exception) {
-                    android.util.Log.w("ZaparaSync", "private sync", e)
-                }
-                delay(30_000)
+                } catch (_: Exception) { }
+                failures = if (status.value.failure == null) 0 else (failures + 1).coerceAtMost(3)
+                val waitMs = if (failures == 0) 30_000L else (15_000L shl failures).coerceAtMost(120_000L)
+                // Local edits and explicit resume wake a sleeping worker; one burst is one cycle.
+                if (withTimeoutOrNull(waitMs) { wake.receive(); true } == true) delay(250)
             }
         }
     }
 
     /** Establish the full snapshot before sending local edits from a new/expired profile. */
-    suspend fun sync() {
+    suspend fun sync() = cycleGate.withLock {
+        if (!attached || !outbox.enabled || !job.isActive) return@withLock
         // Keep the profile database open between the individual serialized phases too.
         val cycle = work.enter()
         try {
-            if (!cycle.isCurrent) return
+            if (!cycle.isCurrent) return@withLock
+            if (retryWindow.remainingMillis() > 0) {
+                publishStatus(running = false)
+                return@withLock
+            }
+            issue = null
+            publishStatus(running = true)
             pull()
-            if (!cycle.isCurrent) return
-            if (outbox.inbox.initialized) pushPending()
-            if (cycle.isCurrent) pull()
-        } finally { cycle.close() }
+            if (!cycle.isCurrent) return@withLock
+            if (issue == null && outbox.inbox.initialized) pushPending()
+            if (cycle.isCurrent && issue == null) pull()
+            if (cycle.isCurrent) publishStatus(running = false, succeeded = issue == null && outbox.inbox.initialized)
+        } catch (cancelled: CancellationException) {
+            if (cycle.isCurrent) publishStatus(running = false)
+            throw cancelled
+        } catch (error: Exception) {
+            issue = PrivateSyncState.Unavailable
+            if (cycle.isCurrent) publishStatus(running = false)
+            throw error
+        } finally {
+            mutableStatus.update { it.copy(running = false) }
+            cycle.close()
+        }
+    }
+
+    private fun publishStatus(running: Boolean, succeeded: Boolean = false) {
+        val rows = outbox.pending()
+        val pending = rows.count { it.status == "pending" }
+        val conflicts = rows.count { it.status == "conflict" }
+        mutableStatus.update { previous -> CloudSyncStatus(attached, running, pending, conflicts,
+            if (succeeded && pending == 0 && conflicts == 0) Instant.now() else previous.lastSuccess,
+            issue, waiting = !running && previous.waiting) }
+    }
+
+    private fun failed(result: PrivateSyncResult<*>) {
+        issue = result.state
+        val cooldown = result.retryAfter ?: if (result.state == PrivateSyncState.RateLimited) java.time.Duration.ofSeconds(30) else null
+        cooldown?.let(retryWindow::defer)
     }
 
     suspend fun pushPending() = gate.withLock {
@@ -72,7 +132,8 @@ class PrivateSyncCoordinator(
             if (!ticket.isCurrent) return@withLock
             val http = client ?: return@withLock
             val token = access?.invoke().orEmpty()
-            if (token.isEmpty() || !ticket.isCurrent) return@withLock
+            if (token.isEmpty()) { issue = PrivateSyncState.NeedsReauthentication; return@withLock }
+            if (!ticket.isCurrent) return@withLock
             val pending = outbox.pending().filter { it.status == "pending" }
                 .sortedWith(compareBy<PrivateSyncOutboxEntry> { if (it.syncEpoch != null) 0 else 1 }
                     .thenBy { if (it.entityType == "completion" && it.action == "upsert") 1 else 0 }
@@ -99,6 +160,7 @@ class PrivateSyncCoordinator(
                         }
                     }
                     PrivateSyncState.Conflict -> {
+                        beforeApply()
                         outbox.inTransaction {
                             ticket.throwIfStale()
                             outbox.markConflict(current, result.mutationOutcome)
@@ -107,10 +169,11 @@ class PrivateSyncCoordinator(
                         onApplied()
                     }
                     PrivateSyncState.ResetRequired -> {
+                        failed(result)
                         outbox.abortIfReset(result.state)
                         return@withLock
                     }
-                    else -> return@withLock
+                    else -> { failed(result); return@withLock }
                 }
             }
         } catch (e: CancellationException) {
@@ -126,13 +189,14 @@ class PrivateSyncCoordinator(
         try {
             if (!ticket.isCurrent) return@withLock false
             val context = currentCoroutineContext()
+            beforeApply()
             val result = outbox.inTransaction {
                 context.ensureActive(); ticket.throwIfStale()
                 val changed = outbox.inbox.resolve(shown, keepLocal)
                 context.ensureActive(); ticket.throwIfStale()
                 changed
             }
-            if (result) onApplied()
+            if (result) { onApplied(); requestSync() }
             result
         } finally { ticket.close() }
     }
@@ -144,7 +208,8 @@ class PrivateSyncCoordinator(
             if (!ticket.isCurrent) return@withLock
             val http = client ?: return@withLock
             val token = access?.invoke().orEmpty()
-            if (token.isEmpty() || !ticket.isCurrent) return@withLock
+            if (token.isEmpty()) { issue = PrivateSyncState.NeedsReauthentication; return@withLock }
+            if (!ticket.isCurrent) return@withLock
             val context = currentCoroutineContext()
             val checkCurrent = { context.ensureActive(); ticket.throwIfStale() }
             val inbox = outbox.inbox
@@ -156,7 +221,7 @@ class PrivateSyncCoordinator(
                     if (inbox.manifest == null) {
                         val begin = http.beginResync(token)
                         checkCurrent()
-                        if (begin.state != PrivateSyncState.Success) return@withLock
+                        if (begin.state != PrivateSyncState.Success) { failed(begin); return@withLock }
                         outbox.inTransaction { checkCurrent(); inbox.begin(begin.value!!); checkCurrent() }
                     }
                     val manifest = inbox.manifest!!
@@ -169,13 +234,14 @@ class PrivateSyncCoordinator(
                             expired = true
                             break
                         }
-                        if (result.state != PrivateSyncState.Success) return@withLock
+                        if (result.state != PrivateSyncState.Success) { failed(result); return@withLock }
                         outbox.inTransaction { checkCurrent(); inbox.stage(result.value!!); checkCurrent() }
                     }
                     if (expired) {
-                        if (restarts++ > 0) return@withLock
+                        if (restarts++ > 0) { issue = PrivateSyncState.ManifestExpired; return@withLock }
                         continue
                     }
+                    beforeApply()
                     inbox.publish(checkCurrent)
                     onApplied()
                 }
@@ -183,11 +249,12 @@ class PrivateSyncCoordinator(
                 checkCurrent()
                 if (result.state == PrivateSyncState.ResetRequired) {
                     outbox.abortExpiredEpoch()
-                    if (restarts++ > 0) return@withLock
+                    if (restarts++ > 0) { issue = PrivateSyncState.ResetRequired; return@withLock }
                     continue
                 }
-                if (result.state != PrivateSyncState.Success) return@withLock
+                if (result.state != PrivateSyncState.Success) { failed(result); return@withLock }
                 val page = result.value!!
+                beforeApply()
                 if (inbox.applyChanges(page, checkCurrent)) onApplied()
                 if (!page.hasMore) return@withLock
             }
@@ -204,6 +271,9 @@ class PrivateSyncCoordinator(
         loop = null
         job.cancel()
         attached = false
+        if (outbox.onPendingChanged === pendingChanged) outbox.onPendingChanged = null
+        wake.close()
+        mutableStatus.value = mutableStatus.value.copy(attached = false, running = false, waiting = false)
         client = null
         access = null
     }
@@ -216,8 +286,8 @@ class PrivateSyncCoordinator(
         outbox.syncEpoch?.let { return it }
         val meta = http.metadata(token)
         if (!ticket.isCurrent) return null
-        val value = meta.value ?: return null
-        if (meta.state != PrivateSyncState.Success) return null
+        val value = meta.value ?: run { failed(meta); return null }
+        if (meta.state != PrivateSyncState.Success) { failed(meta); return null }
         outbox.setEpoch(value.syncEpoch, value.minAfterSequence)
         return value.syncEpoch
     }

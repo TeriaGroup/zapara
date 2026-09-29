@@ -62,7 +62,7 @@ class WidgetLaunchNavigationTest {
                             selected.set(state.selected)
                             ScheduleSection(state, { event ->
                                 if (event is ScheduleEvent.Select) state = state.copy(selected = event.date)
-                            }, {})
+                            }, onOpenMap = {})
                         }
                     }
                 }

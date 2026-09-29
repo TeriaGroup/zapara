@@ -299,7 +299,7 @@ internal static partial class WebEndpoints
             var after = CommunityHttpInput.Cursor(context, "after");
             if (before is not null && after is not null) throw new CommunityInputException();
             var topic = context.Request.Query.TryGetValue("topic", out var topicRaw) ? topicRaw.ToString() : null;
-            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().ListMessagesAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), before, after, topic, context.RequestAborted));
+            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().ListMessagesAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), before, after, topic, context.RequestAborted, CommunityHttpInput.ExplicitReadCursor(context)));
         });
         Route(group, "POST", "/conversations/{conversationId}/media", context => CommunityMedia.Post(context, Token(context)));
         Route(group, "GET", "/conversations/{conversationId}/messages/{messageId}/media", context => CommunityMedia.Get(context, Token(context)));
@@ -336,8 +336,8 @@ internal static partial class WebEndpoints
         Route(group, "POST", "/conversations/{conversationId}/read", async context =>
         {
             CommunityHttpInput.Query(context);
-            await CommunityHttpInput.Empty(context);
-            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().MarkReadAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), context.RequestAborted));
+            var through = await CommunityHttpInput.ReadThroughMessage(context);
+            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().MarkReadAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), context.RequestAborted, through));
         });
     }
 }

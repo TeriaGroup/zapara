@@ -18,6 +18,7 @@ public sealed partial class GroupViewModel
     private static bool ReadDenied(CommunityClientException ex)=>ex.Failure is CommunityClientFailure.InvalidSession or CommunityClientFailure.Forbidden or CommunityClientFailure.NotFound;
     private void ClearRevokedContent()
     {
+        ReleaseVisibleAvatars();
         navigationGeneration++;contextRequestGeneration++;ballotRequestSerial++;archiveRequestVersion++;archiveLoaded=false;
         conversationId=null;selectedTopicId=null;groupConversationId=null;SelectedChannel=null;
         ClearSubjectPanels();

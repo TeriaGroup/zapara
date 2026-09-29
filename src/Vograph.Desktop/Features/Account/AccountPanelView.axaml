@@ -82,7 +82,20 @@
           </StackPanel>
         </StackPanel>
         <StackPanel Spacing="10" IsVisible="{Binding IsAccount}">
-          <TextBlock Text="{Binding AccountName}" Classes="subject" AutomationProperties.AutomationId="Account.Name" />
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <Border Width="56" Height="56" CornerRadius="28" Background="{DynamicResource Brush.Chip}" ClipToBounds="True"
+                    AutomationProperties.Name="Фото профиля">
+              <Grid><TextBlock Text="{Binding AvatarInitials}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding NoAvatar}" />
+                <Image Source="{Binding Avatar}" Stretch="UniformToFill" IsVisible="{Binding HasAvatar}" /></Grid>
+            </Border>
+            <StackPanel Spacing="4" VerticalAlignment="Center">
+              <TextBlock Text="{Binding AccountName}" Classes="subject" AutomationProperties.AutomationId="Account.Name" />
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Classes="ghost" Content="Изменить фото" Command="{Binding ChangeAvatarCommand}" AutomationProperties.Name="Изменить фото профиля" />
+                <Button Classes="ghost" Content="Удалить фото" Command="{Binding RemoveAvatarCommand}" IsVisible="{Binding HasAvatar}" AutomationProperties.Name="Удалить фото профиля" />
+              </StackPanel>
+            </StackPanel>
+          </StackPanel>
           <TextBlock Text="{loc:T accountDisplayName}" />
           <TextBox Text="{Binding DisplayName}" AutomationProperties.Name="{loc:T accountDisplayName}" AutomationProperties.AutomationId="Account.DisplayName" />
           <StackPanel Orientation="Horizontal" Spacing="8">

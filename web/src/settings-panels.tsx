@@ -5,13 +5,7 @@ import { useApp } from "./store";
 import { subgroupIndex, visibleLessons } from "./subgroups";
 import { lessonsOn, addDays, isoDay } from "./parity";
 import { clockMinutes } from "./planner";
-export type ReminderPreferences = {
-    enabled: boolean;
-    morning: boolean;
-    evening: boolean;
-    morningAt: string;
-    eveningAt: string;
-};
+import { projectAccountReminders, type ReminderPreferences } from "./reminder-settings";
 const key = "zapara.reminders";
 export function readReminders(): ReminderPreferences { try {
     const value = JSON.parse(localStorage.getItem(key) || "{}");
@@ -22,20 +16,28 @@ catch {
 } }
 export function useReminders() {
     const app = useApp();
-    useEffect(() => { const run = () => { const prefs = readReminders(); if (!prefs.enabled || typeof Notification === "undefined" || Notification.permission !== "granted")
+    useEffect(() => { const run = () => { const guest = readReminders(); const prefs = app.session?.authenticated
+        ? app.privateHomework.settings ? projectAccountReminders(app.privateHomework.settings, guest) : { ...guest, enabled: false }
+        : guest; if (!prefs.enabled || typeof Notification === "undefined" || Notification.permission !== "granted")
         return; const now = new Date(); const minute = now.getHours() * 60 + now.getMinutes(); const tomorrow = prefs.evening && clockMinutes(prefs.eveningAt) === minute; const morning = prefs.morning && clockMinutes(prefs.morningAt) === minute; if (!tomorrow && !morning)
-        return; const fired = `${isoDay(now)}:${tomorrow ? "evening" : "morning"}`; if (localStorage.getItem("zapara.reminder-fired") === fired)
+        return; const fired = `${app.session?.user?.userId || "guest"}:${isoDay(now)}:${tomorrow ? "evening" : "morning"}`; if (localStorage.getItem("zapara.reminder-fired") === fired)
         return; const period = api.readCache().lessons[app.groupId]?.period; if (!period || !app.timetableAvailable)
-        return; const date = tomorrow ? addDays(now, 1) : now; const lessons = lessonsOn(visibleLessons(app.lessons, app.subgroups[app.groupId] || {}), date, period.start, period.weekCount, app.invert); localStorage.setItem("zapara.reminder-fired", fired); new Notification("Расписание военмех", { body: `${tomorrow ? "Завтра" : "Сегодня"}: ${lessons.length} пар${lessons.length ? `, начало в ${lessons[0].timeStart}` : ""}.`, tag: "zapara-study-reminder", icon: "/app/icons/icon-512.png" }); }; run(); const timer = window.setInterval(run, 15000); return () => window.clearInterval(timer); }, [app.groupId, app.lessons, app.subgroups, app.invert, app.timetableAvailable]);
+        return; const date = tomorrow ? addDays(now, 1) : now; const lessons = lessonsOn(visibleLessons(app.lessons, app.subgroups[app.groupId] || {}), date, period.start, period.weekCount, app.invert); localStorage.setItem("zapara.reminder-fired", fired); new Notification("Расписание военмех", { body: `${tomorrow ? "Завтра" : "Сегодня"}: ${lessons.length} пар${lessons.length ? `, начало в ${lessons[0].timeStart}` : ""}.`, tag: "zapara-study-reminder", icon: "/app/icons/icon-512.png" }); }; run(); const timer = window.setInterval(run, 15000); return () => window.clearInterval(timer); }, [app.groupId, app.lessons, app.subgroups, app.invert, app.timetableAvailable, app.session?.authenticated, app.session?.user?.userId, app.privateHomework.settings]);
 }
 export function NotificationSettings() {
     const app = useApp();
     const [prefs, setPrefs] = useState(readReminders);
     const [times, setTimes] = useState({ morningAt: prefs.morningAt, eveningAt: prefs.eveningAt });
     const [notice, setNotice] = useState("");
-    function save(next: ReminderPreferences) { localStorage.setItem(key, JSON.stringify(next)); setPrefs(next); const synced = app.session?.authenticated ? app.privateHomework.saveSettings({ notifyTime1: next.enabled && next.evening ? next.eveningAt : null, notifyTime2: next.enabled && next.morning ? next.morningAt : null }) : false; setNotice(app.session?.authenticated && !synced ? "Сохранено на устройстве. Синхронизация пока недоступна." : "Сохранено на устройстве"); }
+    function save(next: ReminderPreferences, patch: { notifyTime1?: string | null; notifyTime2?: string | null }) {
+        setPrefs(next);
+        if (!app.session?.authenticated) { localStorage.setItem(key, JSON.stringify(next)); setNotice("Сохранено на устройстве"); return; }
+        const queued = app.privateHomework.saveSettings(patch);
+        setNotice(queued ? "Изменение ожидает синхронизации" : "Не удалось сохранить изменение для аккаунта. Повторите попытку.");
+    }
+    useEffect(() => { const guest = readReminders(); setPrefs(guest); setTimes({ morningAt: guest.morningAt, eveningAt: guest.eveningAt }); setNotice(""); }, [app.session?.authenticated, app.session?.user?.userId, app.session?.familyId]);
     useEffect(() => { const settings = app.privateHomework.settings; if (!app.session?.authenticated || !settings)
-        return; const next = { ...readReminders(), morning: !!settings.notifyTime2, evening: !!settings.notifyTime1, morningAt: settings.notifyTime2 || prefs.morningAt, eveningAt: settings.notifyTime1 || prefs.eveningAt }; localStorage.setItem(key, JSON.stringify(next)); setPrefs(next); setTimes({ morningAt: next.morningAt, eveningAt: next.eveningAt }); }, [app.privateHomework.settings, app.session?.authenticated]);
+        return; const next = projectAccountReminders(settings, readReminders()); setPrefs(next); setTimes({ morningAt: next.morningAt, eveningAt: next.eveningAt }); }, [app.privateHomework.settings, app.session?.authenticated, app.session?.user?.userId]);
     async function enable(value: boolean) { if (value) {
         if (typeof Notification === "undefined") {
             setNotice("Этот браузер не поддерживает уведомления");
@@ -46,14 +48,14 @@ export function NotificationSettings() {
             setNotice("Разрешите уведомления в настройках браузера");
             return;
         }
-    } save({ ...prefs, enabled: value }); }
+    } const next = { ...prefs, enabled: value }; save(next, { notifyTime1: value && next.evening ? next.eveningAt : null, notifyTime2: value && next.morning ? next.morningAt : null }); }
     function saveTime(field: "morningAt" | "eveningAt", value: string) { setTimes(rows => ({ ...rows, [field]: value })); if (clockMinutes(value) === null) {
         setNotice("Укажите корректное время. Последнее сохранённое значение не изменилось.");
         return;
-    } save({ ...prefs, [field]: value }); }
+    } save({ ...prefs, [field]: value }, field === "morningAt" ? { notifyTime2: value } : { notifyTime1: value }); }
     const period = api.readCache().lessons[app.groupId]?.period;
     const lessons = period ? lessonsOn(visibleLessons(app.lessons, app.subgroups[app.groupId] || {}), addDays(new Date(), 1), period.start, period.weekCount, app.invert) : null;
-    return <article className="card stack notification-settings"><h2>Напоминания</h2><label className="switch-row"><span>Уведомления</span><input type="checkbox" role="switch" checked={prefs.enabled} onChange={event => void enable(event.target.checked)}/></label><p className="muted">В браузере напоминания приходят, пока приложение открыто. {prefs.enabled ? "Разрешение получено." : "Время недоступно, пока уведомления выключены."}</p>{([["morning", "morningAt", "Утром о сегодняшнем дне"], ["evening", "eveningAt", "Вечером о завтрашнем дне"]] as const).map(([flag, time, title]) => <div className="stack notification-time" key={flag}><label className="switch-row"><span>{title}</span><input type="checkbox" role="switch" checked={prefs[flag]} disabled={!prefs.enabled} onChange={event => save({ ...prefs, [flag]: event.target.checked })}/></label><label className="field">Время<input type="time" value={times[time]} disabled={!prefs.enabled || !prefs[flag]} onChange={event => saveTime(time, event.target.value)}/></label></div>)}<div className="notification-preview"><span className="muted">Предпросмотр уведомления</span><h2>Расписание военмех</h2><p>{lessons === null ? "Расписание ещё не загружено" : `Завтра: ${lessons.length} пар${lessons.length ? `, начало в ${lessons[0].timeStart}` : ""}.`}</p></div>{app.session?.authenticated && <BackgroundDelivery />}
+    return <article className="card stack notification-settings"><h2>Напоминания</h2>{app.session?.authenticated && !app.privateHomework.ready && !app.privateHomework.settings && <p className="muted" role="status">Настройки аккаунта загружаются. Ваши изменения будут отправлены после подключения.</p>}<label className="switch-row"><span>Уведомления</span><input type="checkbox" role="switch" checked={prefs.enabled} onChange={event => void enable(event.target.checked)}/></label><p className="muted">В браузере напоминания приходят, пока приложение открыто. {prefs.enabled ? "Разрешение получено." : "Время недоступно, пока уведомления выключены."}</p>{([["morning", "morningAt", "Утром о сегодняшнем дне"], ["evening", "eveningAt", "Вечером о завтрашнем дне"]] as const).map(([flag, time, title]) => <div className="stack notification-time" key={flag}><label className="switch-row"><span>{title}</span><input type="checkbox" role="switch" checked={prefs[flag]} disabled={!prefs.enabled} onChange={event => { const checked = event.target.checked; save({ ...prefs, [flag]: checked }, time === "morningAt" ? { notifyTime2: checked ? times[time] : null } : { notifyTime1: checked ? times[time] : null }); }}/></label><label className="field">Время<input type="time" value={times[time]} disabled={!prefs.enabled || !prefs[flag]} onChange={event => saveTime(time, event.target.value)}/></label></div>)}<div className="notification-preview"><span className="muted">Предпросмотр уведомления</span><h2>Расписание военмех</h2><p>{lessons === null ? "Расписание ещё не загружено" : `Завтра: ${lessons.length} пар${lessons.length ? `, начало в ${lessons[0].timeStart}` : ""}.`}</p></div>{app.session?.authenticated && <BackgroundDelivery />}
     {notice && <p role="status">{notice}</p>}</article>;
 }
 export function StudyExtras() { const app = useApp(); const index = subgroupIndex(app.lessons); const [gaps, setGaps] = useState(localStorage.getItem("zapara.free-time") !== "0"); return <article className="card stack"><h2>Планирование</h2><label className="switch-row"><span>Свободное время между парами</span><input type="checkbox" role="switch" checked={gaps} onChange={event => { setGaps(event.target.checked); localStorage.setItem("zapara.free-time", event.target.checked ? "1" : "0"); }}/></label><p className="muted">Показываем перерывы от 30 минут. Выбор учебной группы не меняет членство в чате.</p><h2>Подгруппы по предметам</h2>{index.streams.map(stream => <div key={stream.id}><b>{stream.title}</b><div className="row">{stream.options.map(option => <button className={(app.subgroups[app.groupId]?.[stream.id] === option.id) ? "btn primary" : "btn"} type="button" key={option.id} onClick={() => app.pickSubgroup(stream.id, option.id)}>{option.label}</button>)}</div></div>)}{index.streams.length === 0 && <p className="muted">В сохранённом расписании разделения на подгруппы нет.</p>}</article>; }

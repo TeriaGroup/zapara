@@ -17,6 +17,18 @@ internal static class SocialSchema
         var name = accounts.Schema == "accounts" ? "social" : accounts.Schema + "_social";
         var sql = """
             CREATE SCHEMA IF NOT EXISTS __SCHEMA__;
+            CREATE TABLE IF NOT EXISTS __SCHEMA__.user_avatars (
+                owner_id uuid PRIMARY KEY REFERENCES __ACCOUNTS__.users(user_id) ON DELETE CASCADE,
+                stored_name text NOT NULL UNIQUE CHECK (stored_name ~ '^avatar-[a-f0-9]{32}\.webp$'),
+                revision uuid NOT NULL,
+                updated_at timestamptz NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS __SCHEMA__.group_avatars (
+                owner_id uuid PRIMARY KEY,
+                stored_name text NOT NULL UNIQUE CHECK (stored_name ~ '^avatar-[a-f0-9]{32}\.webp$'),
+                revision uuid NOT NULL,
+                updated_at timestamptz NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS __SCHEMA__.codes (
                 user_id uuid PRIMARY KEY REFERENCES __ACCOUNTS__.users(user_id) ON DELETE CASCADE,
                 code text NOT NULL UNIQUE CHECK (code ~ '^[A-Z2-9]{8}$')

@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Icon } from "./icons";
-import { groupMediaLimit, groupVoiceLimit, recordingFilename } from "./group-media";
+import { groupCircleLimit, groupVoiceLimit, recordingFilename } from "./group-media";
 
 type RecordingKind = "voice" | "circle";
 type AttachmentKind = "image" | "video" | "file";
@@ -108,9 +108,10 @@ export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia
     const epoch = ++requestEpoch.current;
     let stream: MediaStream | null = null;
     try {
-      stream = await navigator.mediaDevices.getUserMedia(kind === "voice" ? { audio: true } : {
-        audio: true,
-        video: { facingMode: "user", width: { ideal: 480, max: 640 }, height: { ideal: 480, max: 640 }, frameRate: { ideal: 24, max: 30 } },
+      const audio = { sampleRate: { ideal: 48_000 }, channelCount: { ideal: 1 } };
+      stream = await navigator.mediaDevices.getUserMedia(kind === "voice" ? { audio } : {
+        audio,
+        video: { facingMode: "user", width: { ideal: 720, max: 1280 }, height: { ideal: 720, max: 1280 }, frameRate: { ideal: 24, max: 30 } },
       });
       if (!mounted.current || requestEpoch.current !== epoch || !canRecord.current) {
         stream.getTracks().forEach(track => track.stop());
@@ -118,9 +119,14 @@ export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia
       }
       const mime = (kind === "voice" ? voiceTypes : circleTypes).find(value => MediaRecorder.isTypeSupported(value));
       if (!mime) throw new Error("unsupported format");
-      const recorder = new MediaRecorder(stream, kind === "voice"
-        ? { mimeType: mime, audioBitsPerSecond: 24_000 }
-        : { mimeType: mime, videoBitsPerSecond: 450_000, audioBitsPerSecond: 24_000 });
+      let recorder: MediaRecorder;
+      try {
+        recorder = new MediaRecorder(stream, kind === "voice"
+          ? { mimeType: mime, audioBitsPerSecond: 96_000 }
+          : { mimeType: mime, videoBitsPerSecond: 2_000_000, audioBitsPerSecond: 96_000 });
+      } catch {
+        recorder = new MediaRecorder(stream, { mimeType: mime });
+      }
       recordingFilename(kind, recorder.mimeType || mime);
       const capture: Capture = { kind, recorder, stream, chunks: [], bytes: 0, startedAt: Date.now(), timer: null, send: false, failed: false };
       active.current = capture;
@@ -128,7 +134,7 @@ export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia
         if (!event.data.size) return;
         capture.chunks.push(event.data);
         capture.bytes += event.data.size;
-        if (capture.bytes > (kind === "voice" ? groupVoiceLimit : groupMediaLimit)) {
+        if (capture.bytes > (kind === "voice" ? groupVoiceLimit : groupCircleLimit)) {
           capture.send = false;
           if (!capture.failed && mounted.current) onError("Запись слишком большая");
           capture.failed = true;
@@ -151,7 +157,7 @@ export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia
           onError(kind === "voice" ? "Слишком короткое сообщение" : "Слишком короткий кружок");
           return;
         }
-        if (blob.size > (kind === "voice" ? groupVoiceLimit : groupMediaLimit)) { onError("Запись слишком большая"); return; }
+        if (blob.size > (kind === "voice" ? groupVoiceLimit : groupCircleLimit)) { onError("Запись слишком большая"); return; }
         const durationMs = Math.max(1, Math.min(kind === "voice" ? 180_000 : 60_000, Date.now() - capture.startedAt));
         setCaptured({ kind, blob, durationMs, url: URL.createObjectURL(blob) });
       };

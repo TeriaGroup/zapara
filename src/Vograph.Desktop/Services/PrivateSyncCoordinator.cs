@@ -25,6 +25,17 @@ public sealed partial class PrivateSyncCoordinator : IDisposable
     private CancellationTokenSource? background;
     private Task? loop;
     private bool disposed;
+    private readonly SemaphoreSlim wake = new(0, 1);
+    private readonly SemaphoreSlim cycleGate = new(1, 1);
+    private readonly AsyncLocal<int> ownSync = new();
+    private readonly object healthGate = new();
+    private DateTimeOffset? lastSuccessAt;
+    private string? lastFailure;
+    private bool exchanging;
+    private int failureVersion;
+    private int failedCycles;
+    internal TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(30);
+    internal TimeSpan RetryInterval { get; set; } = TimeSpan.FromSeconds(5);
 
     public PrivateSyncCoordinator(AppServices app)
     {
@@ -34,11 +45,16 @@ public sealed partial class PrivateSyncCoordinator : IDisposable
 
     public event Action<PrivateSyncConflict>? Conflict;
     public event Action? Applied;
+    public event Action? HealthChanged;
     private readonly SemaphoreSlim syncGate = new(1, 1);
     public int AppliedCallbacks { get; private set; }
     public int IgnoredCallbacks { get; private set; }
     public bool IsAttached => client is not null && access is not null;
-    public bool IsBackgroundRunning => background is not null;
+    public bool IsBackgroundRunning => loop is { IsCompleted: false };
+    public PrivateSyncHealth Health
+    {
+        get { lock (healthGate) return new(IsAttached, exchanging, lastSuccessAt, lastFailure); }
+    }
     public Uri? AttachedBaseUri => client?.Scope.BaseUri;
 
     public void Attach(PrivateSyncHttpClient http, Func<CancellationToken, Task<string>> accessToken, bool background = false)
@@ -60,13 +76,92 @@ public sealed partial class PrivateSyncCoordinator : IDisposable
 
     private void Signal()
     {
-        // Background loop wakes on the next wait; tests call PushPendingAsync directly.
+        if (ownSync.Value == 0 && Volatile.Read(ref failedCycles) == 0) Wake();
     }
+
+    public void Wake()
+    {
+        if (disposed || background is null) return;
+        try { wake.Release(); }
+        catch (SemaphoreFullException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void ReportFailure(PrivateSyncState state)
+    {
+        lock (healthGate)
+        {
+            lastFailure = state switch
+            {
+                PrivateSyncState.NeedsReauthentication => "Нужен повторный вход в аккаунт.",
+                PrivateSyncState.RateLimited => "Сервер временно ограничил запросы.",
+                PrivateSyncState.Unavailable or PrivateSyncState.TimedOut => "Сервер или сеть недоступны.",
+                PrivateSyncState.Conflict => "Есть конфликт данных.",
+                PrivateSyncState.ResetRequired => "Сервер запросил повторную загрузку данных.",
+                _ => "Обмен данными не завершён."
+            };
+            failureVersion++;
+        }
+        HealthChanged?.Invoke();
+    }
+
+    private void ReportSuccess()
+    {
+        lock (healthGate) lastSuccessAt = DateTimeOffset.UtcNow;
+        HealthChanged?.Invoke();
+    }
+
+    private async Task RunCycleAsync(bool followupPull, CancellationToken ct)
+    {
+        if (!app.Work.IsAccepting) return;
+        await cycleGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (!app.Work.IsAccepting) return;
+            int failureAtStart;
+            lock (healthGate) { failureAtStart = failureVersion; exchanging = true; }
+            HealthChanged?.Invoke();
+            try
+            {
+                await PullAsync(ct).ConfigureAwait(false);
+                if (!app.Work.IsAccepting) return;
+                bool ready;
+                await app.CoreGate.WaitAsync(ct).ConfigureAwait(false);
+                try { ready = app.Outbox.SnapshotReady; }
+                finally { app.CoreGate.Release(); }
+                if (ready) await PushPendingAsync(ct).ConfigureAwait(false);
+                if (followupPull && app.Work.IsAccepting) await PullAsync(ct).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                if (app.Work.IsAccepting && !ct.IsCancellationRequested && failureAtStart == Volatile.Read(ref failureVersion))
+                    ReportFailure(PrivateSyncState.Unavailable);
+                throw;
+            }
+            finally
+            {
+                lock (healthGate)
+                {
+                    exchanging = false;
+                    if (failureAtStart == failureVersion && app.Work.IsAccepting)
+                    {
+                        lastFailure = null;
+                        if (followupPull) Interlocked.Exchange(ref failedCycles, 0);
+                    }
+                }
+                HealthChanged?.Invoke();
+            }
+        }
+        finally { cycleGate.Release(); }
+    }
+
+    public Task SyncNowAsync(CancellationToken ct = default) => RunCycleAsync(followupPull: true, ct);
 
     public async Task PushPendingAsync(CancellationToken ct = default)
     {
         using var work = app.Work.Enter();
         if (!work.IsCurrent || client is null || access is null) return;
+        ownSync.Value++;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, work.Token);
         var entered = false;
         try
@@ -79,7 +174,13 @@ public sealed partial class PrivateSyncCoordinator : IDisposable
         {
             IgnoredCallbacks++;
         }
-        finally { if (entered) syncGate.Release(); }
+        catch (AccountClientException ex)
+        {
+            ReportFailure(ex.Failure is AccountClientFailure.InvalidSession or AccountClientFailure.ReauthenticationRequired
+                ? PrivateSyncState.NeedsReauthentication : PrivateSyncState.Unavailable);
+            throw;
+        }
+        finally { if (entered) syncGate.Release(); ownSync.Value--; }
     }
 
     private async Task PushBodyAsync(Profiles.ProfileWorkLifetime.Work work, CancellationToken token)
@@ -108,6 +209,17 @@ public sealed partial class PrivateSyncCoordinator : IDisposable
             catch (OperationCanceledException) when (!work.IsCurrent) { IgnoredCallbacks++; return; }
 
             var result = await client!.MutateAsync(accessToken, mutation, token).ConfigureAwait(false);
+            if (!work.IsCurrent || result.State == PrivateSyncState.Cancelled)
+            {
+                IgnoredCallbacks++;
+                return;
+            }
+            if (result.State is not (PrivateSyncState.Success or PrivateSyncState.Conflict or PrivateSyncState.ResetRequired)
+                || result.State == PrivateSyncState.Success && result.Value?.ServerRecord is null)
+            {
+                ReportFailure(result.State == PrivateSyncState.Success ? PrivateSyncState.InvalidResponse : result.State);
+                return;
+            }
             await app.CoreGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             try
             {
@@ -118,6 +230,8 @@ public sealed partial class PrivateSyncCoordinator : IDisposable
                 }
                 app.Outbox.InTransaction(() => { ApplyPush(row, result); return 0; },
                     () => { token.ThrowIfCancellationRequested(); work.ThrowIfStale(); });
+                if (result.State == PrivateSyncState.Success) ReportSuccess();
+                else ReportFailure(result.State);
                 if (result.State == PrivateSyncState.ResetRequired) return;
             }
             finally { app.CoreGate.Release(); }
@@ -160,7 +274,8 @@ public sealed partial class PrivateSyncCoordinator : IDisposable
         catch (OperationCanceledException) when (!work.IsCurrent) { IgnoredCallbacks++; return null; }
         var meta = await client.MetadataAsync(token, ct).ConfigureAwait(false);
         if (!work.IsCurrent) { IgnoredCallbacks++; return null; }
-        if (meta.State != PrivateSyncState.Success || meta.Value is null) return null;
+        if (meta.State != PrivateSyncState.Success || meta.Value is null)
+        { ReportFailure(meta.State); return null; }
         await app.CoreGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
@@ -175,19 +290,26 @@ public sealed partial class PrivateSyncCoordinator : IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
+            var failedAtStart = Volatile.Read(ref failureVersion);
             try
             {
-                await PullAsync(ct).ConfigureAwait(false);
-                bool ready;
-                await app.CoreGate.WaitAsync(ct).ConfigureAwait(false);
-                try { ready = app.Outbox.SnapshotReady; }
-                finally { app.CoreGate.Release(); }
-                if (ready) await PushPendingAsync(ct).ConfigureAwait(false);
-                await Task.Delay(TimeSpan.FromSeconds(30), ct).ConfigureAwait(false);
+                await RunCycleAsync(followupPull: false, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
-            catch (Exception ex) when (ex is AccountClientException or HttpRequestException)
-            { app.Log.Warn("private sync: " + ex.GetType().Name); }
+            catch (Exception ex)
+            {
+                app.Log.Warn("private sync: " + ex.GetType().Name);
+                if (failedAtStart == Volatile.Read(ref failureVersion))
+                    ReportFailure(ex is AccountClientException account
+                        && account.Failure is AccountClientFailure.InvalidSession or AccountClientFailure.ReauthenticationRequired
+                            ? PrivateSyncState.NeedsReauthentication : PrivateSyncState.Unavailable);
+            }
+            failedCycles = failedAtStart == Volatile.Read(ref failureVersion) ? 0 : Math.Min(4, failedCycles + 1);
+            var delay = failedCycles == 0 ? PollInterval
+                : TimeSpan.FromMilliseconds(Math.Min(PollInterval.TotalMilliseconds,
+                    RetryInterval.TotalMilliseconds * (1 << (failedCycles - 1))));
+            try { await wake.WaitAsync(delay, ct).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
         }
     }
 
@@ -201,7 +323,10 @@ public sealed partial class PrivateSyncCoordinator : IDisposable
         catch (OperationCanceledException) { }
         background?.Dispose();
         client?.Dispose();
+        wake.Dispose();
         client = null;
         access = null;
     }
 }
+
+public sealed record PrivateSyncHealth(bool Attached, bool Exchanging, DateTimeOffset? LastSuccessAt, string? LastFailure);

@@ -18,7 +18,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getAllSemanticsNodes
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
@@ -35,6 +38,7 @@ import ru.bgtu_voenmeh.zapara.ui.shell.Section
 import ru.bgtu_voenmeh.zapara.ui.shell.ZBottomBar
 import ru.bgtu_voenmeh.zapara.ui.theme.LocalMotion
 import ru.bgtu_voenmeh.zapara.ui.theme.MotionSettings
+import ru.bgtu_voenmeh.zapara.ui.theme.ShineXKey
 import ru.bgtu_voenmeh.zapara.ui.theme.ThemeChoice
 import ru.bgtu_voenmeh.zapara.ui.theme.ThemeCrossfade
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
@@ -73,10 +77,10 @@ class MotionOffTest {
             }
         }) { _, device ->
             assertTrue(device.wait(Until.hasObject(By.res("Nav.Indicator").pkg(pkg)), 5000))
-            val before = descFloat(device, "Nav.Indicator")
+            val before = indicatorCenterX(device, "Nav.Indicator")
             val maps = requireNotNull(device.wait(Until.findObject(By.res("Nav.Maps").pkg(pkg)), 5000))
             maps.click()
-            val after = descFloat(device, "Nav.Indicator")
+            val after = indicatorCenterX(device, "Nav.Indicator")
             assertTrue("IndicatorX $before -> $after", after > before)
         }
     }
@@ -84,11 +88,11 @@ class MotionOffTest {
     @Test fun skeleton_shine_still() {
         launch(content = {
             Skeleton(Modifier.testTag("Skeleton"))
-        }) { _, device ->
+        }) { activity, device ->
             assertTrue(device.wait(Until.hasObject(By.res("Skeleton").pkg(pkg)), 5000))
-            val a = descFloat(device, "Skeleton")
+            val a = semanticFloat(activity, "Skeleton", ShineXKey)
             SystemClock.sleep(300)
-            val b = descFloat(device, "Skeleton")
+            val b = semanticFloat(activity, "Skeleton", ShineXKey)
             assertEquals(a, b, 0.05f)
         }
     }
@@ -139,9 +143,25 @@ class MotionOffTest {
         }
     }
 
-    private fun descFloat(device: UiDevice, res: String): Float {
-        val obj = requireNotNull(device.findObject(By.res(res).pkg(pkg))) { "missing $res" }
-        val raw = obj.contentDescription
-        return requireNotNull(raw?.replace(',', '.')?.toFloatOrNull()) { "no numeric description on $res ($raw)" }
+    private fun indicatorCenterX(device: UiDevice, res: String): Float {
+        val bounds = requireNotNull(device.findObject(By.res(res).pkg(pkg))) { "missing $res" }.visibleBounds
+        return bounds.centerX().toFloat()
+    }
+
+    private fun semanticFloat(activity: ComponentActivity, tag: String, key: androidx.compose.ui.semantics.SemanticsPropertyKey<Float>): Float {
+        var value: Float? = null
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            fun visit(view: android.view.View) {
+                if (view is ViewRootForTest) {
+                    val node = view.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false).singleOrNull {
+                        it.config.contains(SemanticsProperties.TestTag) && it.config[SemanticsProperties.TestTag] == tag
+                    }
+                    if (node != null) value = node.config[key]
+                }
+                if (view is android.view.ViewGroup) repeat(view.childCount) { visit(view.getChildAt(it)) }
+            }
+            visit(activity.window.decorView)
+        }
+        return requireNotNull(value) { "missing semantics value $key on $tag" }
     }
 }

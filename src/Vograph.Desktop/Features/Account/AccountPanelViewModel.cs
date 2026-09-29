@@ -20,6 +20,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     private readonly CancellationTokenSource lifetime = new();
     private ProfileSnapshot? snapshot;
     private bool disposed;
+    private string lastPresentedDisplayName = "";
     private string? cursor;
     [ObservableProperty] private bool registrationAvailable;
     [ObservableProperty] private bool hasPassword;
@@ -163,12 +164,15 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         if (disposed) return;
         if (snapshot?.Identity != value.Identity)
         {
+            StopObservingAvatars();
+            Avatar = null;
             Devices.Clear(); Identities.Clear(); cursor = null; HasMore = false; AccountName = ""; DisplayName = "";
             ClearSecrets(); ConfirmLogout = false; ConfirmDelete = false;
             HasPassword = false;
             ExportJob = null; ExportPayload = null; ExportPath = null; ExportFileName = null; AuthorizeUrl = null;
         }
         snapshot = value;
+        if (value.ReauthRequired) Avatar = null;
         Status = value.Phase == ProfilePhase.RecoveryRequired ? T("accountRecovery")
             : value.AccountFailure is { } failure ? FailureText(failure)
             : value.Failure is not null ? T("accountTransitionFailed")
@@ -190,6 +194,34 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     {
         AccountName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Username : user.DisplayName;
         DisplayName = user.DisplayName ?? "";
+        lastPresentedDisplayName = DisplayName;
+        OnPropertyChanged(nameof(AvatarInitials));
+        _ = LoadProfileAvatarAsync(user.UserId);
+    }
+
+    public async Task RefreshRemoteAsync()
+    {
+        if (!CanAct || IsGuest || profiles?.Snapshot.Identity is not { } expected || service is null) return;
+        var current = profiles.Current;
+        using var work = current.Services.Work.Enter();
+        if (!work.IsCurrent) return;
+        try
+        {
+            var me = await service.MeAsync(work.Token);
+            if (!work.IsCurrent || disposed || !ReferenceEquals(profiles.Current, current)
+                || profiles.Snapshot.Identity != expected || profiles.Snapshot.ReauthRequired) return;
+            var draft = DisplayName;
+            var preserveDraft = draft != lastPresentedDisplayName;
+            PresentAuthentication(me);
+            if (preserveDraft) DisplayName = draft;
+        }
+        catch (AccountClientException ex) when (ex.Failure is AccountClientFailure.InvalidSession or AccountClientFailure.ReauthenticationRequired)
+        {
+            if (!disposed && work.IsCurrent && ReferenceEquals(profiles.Current, current)
+                && profiles.Snapshot.Identity == expected)
+                Apply(profiles.Snapshot with { ReauthRequired = true });
+        }
+        catch (Exception ex) when (ex is AccountClientException or OperationCanceledException) { }
     }
 
     private async Task RefreshAuthenticationAsync()
@@ -321,6 +353,8 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         if (profiles is not null) profiles.Changed -= Apply;
         Identities.CollectionChanged -= OnIdentitiesChanged;
         lifetime.Cancel(); ClearSecrets(); Devices.Clear(); Identities.Clear();
+        StopObservingAvatars();
+        Avatar = null;
         ExportPayload = null; lifetime.Dispose();
     }
 }

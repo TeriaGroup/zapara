@@ -1,0 +1,13 @@
+<resources>
+    <string name="cloud_sync_title">Облачный аккаунт</string>
+    <string name="cloud_sync_running">Синхронизируем данные…</string>
+    <string name="cloud_sync_waiting">Ожидаем синхронизацию</string>
+    <string name="cloud_sync_ready">Все изменения синхронизированы</string>
+    <string name="cloud_sync_needs_choice">Выберите, какие изменения сохранить</string>
+    <string name="cloud_sync_unavailable">Обмен пока недоступен. Данные сохранены на устройстве.</string>
+    <string name="cloud_sync_login">Для продолжения синхронизации нужен повторный вход.</string>
+    <string name="cloud_sync_conflicts">Есть изменения, требующие вашего решения: %1$d</string>
+    <string name="cloud_sync_pending">Ожидают отправки: %1$d</string>
+    <string name="cloud_sync_last">Последний успешный обмен: %1$s</string>
+    <string name="cloud_sync_scope">Домашка и настройки синхронизируются с вашим аккаунтом. Чаты и фото профиля обновляются отдельно.</string>
+</resources>

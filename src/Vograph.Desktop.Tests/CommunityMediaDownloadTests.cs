@@ -33,12 +33,24 @@ public sealed class CommunityMediaDownloadTests
     }
 
     [Fact]
+    public async Task Circle_larger_than_old_limit_downloads_through_bounded_media_reader()
+    {
+        var bytes = new byte[8 * 1024 * 1024 + 1];
+        bytes[^1] = 0x7f;
+        using var handler = new AccountClientHandler { Send = (_, _) => Task.FromResult(Binary(bytes)) };
+        using var http = new HttpClient(handler);
+        using var client = new CommunityHttpClient(http, Root);
+
+        Assert.Equal(bytes, await client.ReadMediaAsync(Access, ConversationId, MessageId, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task Oversized_media_is_rejected_before_it_reaches_the_view_model()
     {
         using var handler = new AccountClientHandler();
         using var http = new HttpClient(handler);
         using var client = new CommunityHttpClient(http, Root);
-        handler.Send = (_, _) => Task.FromResult(Binary(new byte[8 * 1024 * 1024 + 1]));
+        handler.Send = (_, _) => Task.FromResult(Binary(new byte[24 * 1024 * 1024 + 1]));
 
         var error = await Assert.ThrowsAsync<CommunityClientException>(() =>
             client.ReadMediaAsync(Access, ConversationId, MessageId, TestContext.Current.CancellationToken));

@@ -77,10 +77,12 @@ internal sealed class SocialRepository(TrustedAccountContext context, string sch
         var more = rows.Count > 50;
         if (more) rows.RemoveAt(rows.Count - 1);
         rows.Reverse();
-        await ExecuteAsync($"""
-            UPDATE {schema}.reads SET last_read_no=COALESCE((SELECT MAX(message_no) FROM {schema}.messages WHERE conversation_id=@p0),0)
-            WHERE conversation_id=@p0 AND user_id=@p1
-            """, conversationId, Me);
+        if (before is null && rows.Count > 0)
+            await ExecuteAsync($"""
+                UPDATE {schema}.reads SET last_read_no=GREATEST(last_read_no,COALESCE((
+                    SELECT message_no FROM {schema}.messages WHERE conversation_id=@p0 AND message_id=@p2),0))
+                WHERE conversation_id=@p0 AND user_id=@p1
+                """, conversationId, Me, rows[^1].Id);
         return new(await MaterializeAsync(rows), more);
     }
 

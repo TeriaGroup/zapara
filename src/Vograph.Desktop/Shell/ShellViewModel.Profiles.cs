@@ -83,6 +83,7 @@ public sealed partial class ShellViewModel
         if (!suspended || _stopped) return;
         suspended = false;
         App.Work.Resume();
+        App.PrivateSync?.Wake();
         if (App.PrivateSync is not null) _ = RefreshSyncConflictsAsync();
         ResolveSyncConflictsCommand.NotifyCanExecuteChanged();
         if (resumeAuto) StartAutoCheck();

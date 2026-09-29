@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { filterChatInbox, mergeChatInbox, unreadChatTotal } from "./chatInbox.ts";
+import { chatInboxTime, filterChatInbox, mergeChatInbox, unreadChatTotal } from "./chatInbox.ts";
 import type { Conversation, GroupHome, SocialHome } from "./types.ts";
 
 function conversation(id: string, kind: "group" | "direct", lastAt: string | null, unread: number): Conversation {
@@ -21,6 +21,8 @@ test("one inbox orders group, classmate and account chats by the newest message"
     ["classmate", "classmate-chat", 1], ["personal", "personal-chat", 3], ["group", "group-chat", 2],
   ]);
   assert.equal(rows[0].communityId, "study-a");
+  assert.equal(rows[0].peerUserId, "peer-a");
+  assert.equal(rows[1].peerUserId, "peer-b");
   assert.equal(rows[1].title, "Борис");
 });
 
@@ -47,4 +49,11 @@ test("inbox search, source filter and unread total preserve original rows", () =
   assert.deepEqual(filterChatInbox(rows, "", "classmate").map(row => row.conversationId), ["classmate"]);
   assert.equal(filterChatInbox(rows, "никто", "all").length, 0);
   assert.equal(rows.length, 3);
+});
+
+test("inbox time shows a clock today and a date for older activity", () => {
+  const now = new Date("2026-09-28T15:00:00+03:00");
+  assert.match(chatInboxTime("2026-09-28T12:30:00+03:00", now), /12:30/);
+  assert.match(chatInboxTime("2026-09-26T12:30:00+03:00", now), /26/);
+  assert.equal(chatInboxTime("bad-date", now), "");
 });

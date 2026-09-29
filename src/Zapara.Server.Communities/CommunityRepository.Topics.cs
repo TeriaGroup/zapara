@@ -288,17 +288,16 @@ internal sealed partial class CommunityRepository
         return (reader.GetString(0), reader.GetGuid(1));
     }
 
-    private async Task MarkTopicReadAsync(Guid communityId, Guid conversationId, Guid? topicId)
+    private async Task MarkTopicReadAsync(Guid communityId, Guid conversationId, Guid? topicId, Guid throughMessageId)
     {
         var readKey = topicId ?? GeneralRead;
-        var maxSql = topicId is null
-            ? $"SELECT COALESCE(MAX(message_no),0) FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND topic_id IS NULL"
-            : $"SELECT COALESCE(MAX(message_no),0) FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND topic_id=@p1";
+        var maxSql = $"SELECT message_no FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND message_id=@p1 AND " +
+            (topicId is null ? "topic_id IS NULL" : "topic_id=@p2");
         long max;
-        await using (var command = topicId is null ? Command(maxSql, conversationId) : Command(maxSql, conversationId, topicId))
+        await using (var command = topicId is null ? Command(maxSql, conversationId, throughMessageId) : Command(maxSql, conversationId, throughMessageId, topicId))
         {
             var value = await command.ExecuteScalarAsync(ct);
-            max = value is long number ? number : value is int small ? small : 0;
+            max = value is long number ? number : throw CommunityServiceException.InvalidRequest();
         }
         await ExecuteAsync($"""
             INSERT INTO {Msg}.group_topic_reads(community_id,topic_id,user_id,last_read_no)

@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useDateReveal, useSwipe } from "./swipe";
 import * as api from "./api";
 import { followGroupCommunity, openGroupFace } from "./groupChoice";
-import { clearSentGroupDraft, createGroupPoller, groupMediaSelectionIsCurrent, mergeGroupMessages, newestUnseenIncoming } from "./groupChat";
+import { clearSentGroupDraft, createGroupPoller, groupMediaSelectionIsCurrent, mergeGroupMessages } from "./groupChat";
 import { completeGroupCopy } from "./groupHomework";
 import { useHomeworkDraft } from "./homework-draft-context";
 import { HomeworkRequestScope, loadScopedHomework, scopedValue } from "./homework-request-scope";
@@ -40,6 +40,8 @@ import { GroupTopics, TopicMark } from "./topics";
 import { AccountDetails, DataSettings, NotificationSettings, readReminders, StudyExtras, UpdateSettings } from "./settings-panels";
 import { SpecializedChannel, SubjectChannelContext } from "./group-panels";
 import { GroupAdmin, titlesOf } from "./group-admin";
+import { reconcileGroupHomeChat } from "./group-home-refresh";
+import { Avatar, AvatarEditor } from "./avatar-view";
 import { ShareMenu } from "./share";
 import { Icon } from "./icons";
 import { MapViewer } from "./map-viewer";
@@ -752,7 +754,7 @@ export function HomeworkPage() {
       },
     );
     return () => { stop = true; };
-  }, [app.session, app.groupId, copiesRetry]);
+  }, [app.session?.authenticated, app.session?.user?.userId, app.session?.familyId, app.groupId, copiesRetry]);
   function addPending(list: FileList | null, kind: "photo" | "document") {
     if (controller.busy) return;
     const file = list?.[0];
@@ -969,7 +971,7 @@ export function CommunityPage() {
     api.communities(app.groupId).then(rows => { if (!stopped) { setList(rows); setLoading(false); } })
       .catch(() => { if (!stopped) { setError("Сообщества не открылись"); setLoading(false); } });
     return () => { stopped = true; };
-  }, [app.session, app.groupId, reloadEpoch]);
+  }, [app.session?.authenticated, app.session?.user?.userId, app.session?.familyId, app.groupId, reloadEpoch]);
   const visible = list.filter(item => matchesBrowseQuery(search, item.name, item.description));
   if (!app.session?.authenticated) return <section className="page"><div className="card empty"><h1>Сообщество</h1><p>Войдите в аккаунт, чтобы видеть сообщества своей группы.</p><Link className="btn primary" to="/settings">Открыть настройки</Link></div></section>;
   return (
@@ -1210,7 +1212,31 @@ export function GroupPage() {
       },
     );
     return () => { stop = true; };
-  }, [app.session, app.groupId, selectedCommunityId, selectedConversationId, reloadEpoch]);
+  }, [app.session?.authenticated, app.session?.user?.userId, app.session?.familyId, app.groupId, selectedCommunityId, selectedConversationId, reloadEpoch]);
+  useEffect(() => {
+    if (!app.session?.authenticated || !home?.communityId) return;
+    const currentCommunity = home.communityId;
+    let stopped = false;
+    let running = false;
+    const refreshHome = async () => {
+      if (stopped || running || document.hidden) return;
+      running = true;
+      try {
+        const next = await api.groupHome(currentCommunity);
+        if (!stopped && groupViewKeyRef.current === groupViewKey) {
+          setHomeState(current => current.key === groupViewKey && current.value?.communityId === currentCommunity ? { key: current.key, value: next } : current);
+          setChat(current => current?.communityId === currentCommunity ? reconcileGroupHomeChat(current, next) : current);
+        }
+      } catch { /* Keep the last good list; the existing group access poll reports authorization changes. */ }
+      finally { running = false; }
+    };
+    const wake = () => { void refreshHome(); };
+    const timer = window.setInterval(wake, 10_000);
+    window.addEventListener("focus", wake);
+    window.addEventListener("online", wake);
+    document.addEventListener("visibilitychange", wake);
+    return () => { stopped = true; window.clearInterval(timer); window.removeEventListener("focus", wake); window.removeEventListener("online", wake); document.removeEventListener("visibilitychange", wake); };
+  }, [home?.communityId, app.session?.user?.userId]);
   useEffect(() => {
     const previousEdit = editReturnDraft.current;
     if (previousEdit) {
@@ -1236,27 +1262,23 @@ export function GroupPage() {
     let wantedReadId: string | null = null;
     let markedReadId: string | null = null;
     let markingRead = false;
-    const markDirectRead = () => {
-      if (!wantedReadId || wantedReadId === markedReadId || markingRead) return;
+    let stopped = false;
+    const markPublishedRead = () => {
+      if (stopped || !wantedReadId || wantedReadId === markedReadId || markingRead) return;
       const target = wantedReadId;
       markingRead = true;
-      void api.markRead(chat.conversationId)
-        .then(() => { markedReadId = target; })
-        .catch(() => undefined)
-        .finally(() => { markingRead = false; });
+      void api.markRead(chat.conversationId, target)
+        .then(() => { if (!stopped) { markedReadId = target; setError(current => current === "Отметка о прочтении не сохранилась" ? "" : current); } })
+        .catch(() => { if (!stopped) setError(current => current || "Отметка о прочтении не сохранилась"); })
+        .finally(() => { markingRead = false; if (!stopped && wantedReadId !== target) markPublishedRead(); });
     };
     const poller = createGroupPoller(
       after => api.messages(chat.conversationId, topic, after ? { after } : undefined),
       () => logRef.current.key === viewKey ? logRef.current.messages : [],
       (updates, firstLoad) => {
-        const known = logRef.current.key === viewKey ? logRef.current.messages : [];
-        const incoming = chat.kind !== "group" ? newestUnseenIncoming(known, updates.messages, app.session?.user?.userId || "") : null;
         updateLog(viewKey, updates.messages, firstLoad ? updates.hasOlder : undefined);
-        if (chat.kind !== "group") {
-          if (firstLoad) wantedReadId = updates.messages.at(-1)?.messageId ?? "open";
-          if (incoming) wantedReadId = incoming.messageId;
-          markDirectRead();
-        }
+        if (updates.throughMessageId) wantedReadId = updates.throughMessageId;
+        markPublishedRead();
       },
       error => { if(error instanceof Error && ["401","403","404"].includes(error.message) && draftScope && scopeLeaseValid(sessionStorage,draftScope,draftLease))revokeGroupDrafts(error.message==="401"?{owner:draftScope.owner}:draftScope);if (viewKeyRef.current !== viewKey) return; if(error instanceof Error && ["401","403","404"].includes(error.message)){viewKeyRef.current="";selectionEpoch.current++;clearLog();setThread("list");setError("Доступ к каналу изменился");}else setError("Чат не обновился"); },
     );
@@ -1264,11 +1286,12 @@ export function GroupPage() {
     void poller.poll();
     const timer = window.setInterval(() => void poller.poll(), 4000);
     return () => {
+      stopped = true;
       poller.dispose();
       if (pollerRef.current?.poller === poller) pollerRef.current = null;
       window.clearInterval(timer);
     };
-  }, [viewKey]);
+  }, [viewKey, app.session?.familyId]);
   const communityId = home?.communityId ?? "";
   useEffect(()=>{if(communityId && chat?.kind === "group") sessionStorage.setItem(`zapara.group.selection.${app.session?.user?.userId}:${communityId}`,thread === "list" ? "list" : thread.topicId ?? "general");},[communityId,chat?.kind,thread,app.session?.user?.userId]);
   const topicPage = topicPageState.key === communityId ? topicPageState.value : null;
@@ -1502,10 +1525,10 @@ export function GroupPage() {
   if (!app.session?.authenticated) return <section className="page"><div className="card empty"><h1>Группа</h1><p>Войдите в аккаунт, чтобы открыть группу, разделы чата и голосования.</p><Link className="btn primary" to="/settings">Открыть настройки</Link></div></section>;
   return (
     <section className="page">
-      <Head title="Группа" text={home ? `${home.name}${home.groupName ? " · " + home.groupName : ""}` : error || "Одногруппники и чат"} />
+      <Head title="Группа" text={home ? `${home.name}${home.groupName ? " · " + home.groupName : ""}` : error || "Одногруппники и чат"}>{home && <Avatar kind="group" id={home.communityId} name={home.groupName || home.name} />}</Head>
       {error && <div className="banner row" role="alert"><span>{error}</span><button className="btn quiet" type="button" onClick={()=>setError("")}>Закрыть сообщение</button></div>}
       {!home && error && <button className="btn" type="button" onClick={() => setReloadEpoch(value => value + 1)}>Повторить загрузку группы</button>}
-      {home && desk && (desk.mine.length > 0 || desk.headman) && <GroupAdmin communityId={home.communityId} classmates={home.classmates} desk={desk} onChange={updateDesk} onReload={async () => { const [loaded, office] = await Promise.all([api.groupHome(home.communityId), api.groupDesk(home.communityId)]); setHome(loaded); updateDesk(office); }} onError={setError} />}
+      {home && desk && (desk.mine.length > 0 || desk.headman) && <GroupAdmin communityId={home.communityId} groupName={home.groupName || home.name} classmates={home.classmates} desk={desk} onChange={updateDesk} onReload={async () => { const [loaded, office] = await Promise.all([api.groupHome(home.communityId), api.groupDesk(home.communityId)]); setHome(loaded); updateDesk(office); }} onError={setError} />}
       {home && !board && !votesOff && <p className="muted" role="status">Загрузка голосований…</p>}
       {home && votesOff && <div className="banner row" role="status"><span>{board ? "Голосования не обновились. Показана предыдущая доска." : "Голосования сейчас не открылись. Чат группы на месте."}</span>
         <button className="btn" type="button" onClick={() => setVotesRetry(value => value + 1)}>Повторить</button></div>}
@@ -1520,7 +1543,7 @@ export function GroupPage() {
               <input type="search" value={memberSearch} onChange={event => setMemberSearch(event.target.value)}
                 placeholder="Имя или логин" />
             </label>
-            <button className="person" type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setChat(home.groupChat); setThread("list"); setFocusChat(true); }}><span><b>Чат группы</b><div className="muted">Разделы и общий поток</div></span>{home.groupChat.unread > 0 && <span className="chip" aria-label={unreadBadgeDescription(home.groupChat.unread)}>{unreadBadgeText(home.groupChat.unread)}</span>}</button>
+            <button className="person" type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setChat(home.groupChat); setThread("list"); setFocusChat(true); }}><Avatar kind="group" id={home.communityId} name={home.groupName || home.name} /><span className="person-main"><b>Чат группы</b><span className="muted">Разделы и общий поток</span></span>{home.groupChat.unread > 0 && <span className="chip" aria-label={unreadBadgeDescription(home.groupChat.unread)}>{unreadBadgeText(home.groupChat.unread)}</span>}</button>
             {chat?.kind === "group" && thread !== "list" && topicPage && <div className="group-quick-topics">
               <h2>Каналы группы</h2>
               {orderedTopics(topicPage.topics).filter(topic => topic.topicId !== null || topic.kind === "chat").map(topic => {
@@ -1553,13 +1576,13 @@ export function GroupPage() {
                   .then(next => { if (selectionEpoch.current === epoch) setChat(next); })
                   .catch(() => { if (selectionEpoch.current === epoch) setError("Личный чат не открылся"); });
               }}>
-                <span><b>{person.displayName || person.username}</b><div className="muted">@{person.username}</div></span>
+                <Avatar kind="user" id={person.userId} name={person.displayName || person.username} /><span className="person-main"><b>{person.displayName || person.username}</b><span className="muted">@{person.username}</span></span>
                 <span className="row">{[person.role === "headman" ? "Староста" : person.role === "curator" ? "Куратор" : "Участник", ...titlesOf(desk, person.userId)].map(title => <span className="chip" key={title}>{title}</span>)}</span>
               </button>
             ))}
             {!!memberSearch.trim() && !home.classmates.some(person => matchesBrowseQuery(memberSearch, person.displayName, person.username)) &&
               <div className="empty">Участник не найден <button className="btn" type="button" onClick={() => setMemberSearch("")}>Сбросить поиск</button></div>}
-            {home.directs.map(item => <button className="person" key={item.conversationId} type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setChat(item); setThread("list"); setFocusChat(true); }}><span><b>{item.title}</b><div className="muted">{item.lastBody}</div></span></button>)}
+            {home.directs.map(item => <button className="person" key={item.conversationId} type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setChat(item); setThread("list"); setFocusChat(true); }}><Avatar kind="user" id={item.peerUserId} name={item.title} /><span className="person-main"><b>{item.title}</b><span className="muted preview-line">{item.lastBody || "Нет сообщений"}</span></span></button>)}
           </div>
           <section className="card chat split-detail">
             <button className="btn back-only" type="button" onClick={() => setFocusChat(false)}>К списку</button>
@@ -1585,6 +1608,7 @@ export function GroupPage() {
             {chat && (chat.kind !== "group" || (thread !== "list" && isChatChannel(thread))) && <>
             <div className="row">
               {chat?.kind === "group" && <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setThread("list"); }}>Все разделы</button>}
+              <Avatar kind={chat.kind === "group" ? "group" : "user"} id={chat.kind === "group" ? home.communityId : chat.peerUserId} name={chat.kind === "group" ? home.groupName || home.name : chat.title} />
               <h2>{chat?.kind === "group" && thread !== "list" ? `${thread.icon} ${thread.title}` : (chat?.title || "Чат")}</h2>
               {chat.kind === "group" && <button className="btn" type="button" disabled={!nextUnread || nextUnreadBusy} onClick={() => void openNextUnread()}
                 title={nextUnread ? `Открыть: ${nextUnread.title}` : "Непрочитанных каналов нет"}>{nextUnreadBusy ? "Проверяем…" : "Следующий непрочитанный"}</button>}
@@ -1677,12 +1701,13 @@ export function GroupPage() {
                 return (
                   <Fragment key={message.messageId}>
                   {newDay && <div className="message-day" role="separator">{groupMessageDay(message.createdAt)}</div>}
-                  <article data-hold={kind} className={"bubble" + (mine ? " mine" : "") + (grouped ? " grouped" : "") + (kind === "circle" && !message.deleted ? " round" : "")}
+                  <article data-hold={kind} className={"bubble" + (mine ? " mine" : " chat-incoming") + (grouped ? " grouped" : "") + (kind === "circle" && !message.deleted ? " round" : "")}
                     aria-label={`Сообщение: ${message.senderName}`}
                     onPointerDown={event => { heldOpen.current = false; if (holdTimer.current) window.clearTimeout(holdTimer.current); if (event.target instanceof Element && event.target.closest(".actions, .react, .react-chips, .group-inline-media, .group-media-download, .message-action-toggle")) return; holdTimer.current = window.setTimeout(() => { holdTimer.current = 0; heldOpen.current = true; setMenu(message.messageId); }, 450); }}
                     onPointerUp={event => { if (holdTimer.current) window.clearTimeout(holdTimer.current); if (heldOpen.current && !(event.target instanceof Element && event.target.closest(".actions, .group-inline-media, .group-media-download, .message-action-toggle"))) event.preventDefault(); }}
                     onPointerLeave={() => { if (holdTimer.current) window.clearTimeout(holdTimer.current); }}
                     onClickCapture={event => { if (event.target instanceof Element && event.target.closest(".actions, .group-inline-media, .message-action-toggle")) return; if (event.target instanceof Element && event.target.closest(".group-media-download") && !heldOpen.current) return; if (heldOpen.current || menu === message.messageId) { event.preventDefault(); event.stopPropagation(); } }}>
+                    {!mine && !grouped && <Avatar kind="user" id={message.senderId} name={message.senderName} className="message-avatar" />}
                     {!mine && !grouped && <b>{message.senderName}</b>}
                     {message.replyTo && <div className="muted">↳ {log.find(item => item.messageId === message.replyTo)?.body || "Сообщение"}</div>}
                     <div>{download
@@ -1882,9 +1907,10 @@ export function SettingsPage() {
           </div>
         </article>}
         {section === "appearance" && <article className="card stack"><label className="switch-row"><span>Анимации</span><input type="checkbox" role="switch" checked={app.animations} onChange={event => app.setAnimations(event.target.checked)} /></label><p className="muted">Системное уменьшение движения имеет приоритет.</p><div className="lesson"><span className="muted">08:30–10:05 · Лекция · 312</span><h2>Предпросмотр карточки пары</h2><div className="row"><button className="btn primary" type="button">Открыть карту</button><button className="btn" type="button">Домашка</button></div></div></article>}
-        {section === "account" && app.session?.authenticated && <AccountDetails />}
+        {section === "account" && app.session?.authenticated && <><article className="card stack"><h2>Фото профиля</h2><AvatarEditor kind="user" id={app.session.user!.userId} name={app.session.user!.displayName || app.session.user!.username} /></article><AccountDetails /></>}
         {section === "account" && <article className="card">
           <h2>Аккаунт</h2>
+          {app.sessionStatus && <p className="muted" role="status">{app.sessionStatus}</p>}
           {app.session?.authenticated ? (
             <div className="stack">
               <div className="row">

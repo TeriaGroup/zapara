@@ -26,7 +26,8 @@ class CommunityMediaDownloadTest {
             )
             assertEquals("Bearer $token", call.headers["Authorization"])
             assertEquals("application/octet-stream", call.headers["Accept"])
-            assertEquals(8 * 1024 * 1024, call.maxBytes)
+            assertEquals(24 * 1024 * 1024, call.maxBytes)
+            assertEquals(180_000, call.readTimeoutMs)
             assertEquals(null, call.body)
             HttpReply(200, content, "application/octet-stream")
         }
@@ -37,7 +38,7 @@ class CommunityMediaDownloadTest {
     @Test
     fun deniesOversizedEmptyAndWrongContentTypeResponses() = runBlocking {
         for ((reply, expected) in listOf(
-            HttpReply(200, ByteArray(8 * 1024 * 1024 + 1), "application/octet-stream") to CommunityClientFailure.PayloadTooLarge,
+            HttpReply(200, ByteArray(24 * 1024 * 1024 + 1), "application/octet-stream") to CommunityClientFailure.PayloadTooLarge,
             HttpReply(200, ByteArray(0), "application/octet-stream") to CommunityClientFailure.InvalidPayload,
             HttpReply(200, byteArrayOf(1), "text/html") to CommunityClientFailure.InvalidPayload,
             HttpReply(200, byteArrayOf(1), "application/octet-stream", mapOf("Content-Encoding" to "gzip")) to CommunityClientFailure.InvalidPayload

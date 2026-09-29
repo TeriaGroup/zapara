@@ -5,6 +5,7 @@ using Vograph.Core.Services.Communities;
 using Vograph.Core.Services.Social;
 using Vograph.Core.Services.Sync;
 using Vograph.Desktop.Services.Accounts;
+using Vograph.Desktop.Features.Chat;
 using Vograph.Desktop.Services.Profiles;
 using Vograph.Desktop.Shell;
 
@@ -92,22 +93,27 @@ public partial class App
         var root = Profiles?.Current ?? CurrentRoot;
         if (root is null || ReferenceEquals(root, startedRoot) || !root.Services.Work.IsAccepting) return;
         startedRoot = root;
-        StartCurrentProfile(root, accountClient, accountSessions, communities: communityClient, social: socialClient);
+        StartCurrentProfile(root, accountClient, accountSessions, communities: communityClient, social: socialClient,
+            avatarsFactory: uri => new AvatarImages(AvatarHttpClient.CreateOwned(uri)));
         root.Services.Work.Post(a => Dispatcher.UIThread.Post(a), () => root.Shell.StartAsync(root.Services.AllowNetwork),
             ex => root.Services.Log.Error("profile startup callback", ex));
     }
 
     /// <summary>Guest may start LAN. Account never does; it attaches private sync with the vault session instead.</summary>
     internal static void StartCurrentProfile(ProfileRoot root, AccountHttpClient? accounts, AccountSessionManager? sessions,
-        Func<Uri, PrivateSyncHttpClient>? syncHttp = null, CommunityHttpClient? communities = null, SocialHttpClient? social = null)
+        Func<Uri, PrivateSyncHttpClient>? syncHttp = null, CommunityHttpClient? communities = null, SocialHttpClient? social = null,
+        Func<Uri, AvatarImages>? avatarsFactory = null)
     {
+        var avatarUri = social?.Scope.BaseUri ?? communities?.Scope.BaseUri;
+        var avatars = !root.Services.Profile.IsGuest && sessions is not null && avatarUri is not null
+            ? avatarsFactory?.Invoke(avatarUri) : null;
         if (!root.Services.Profile.IsGuest && communities is not null && sessions is not null)
         {
-            root.Services.UseCommunities(communities, async ct => (await sessions.GetValidSessionAsync(ct).ConfigureAwait(false)).AccessToken);
+            root.Services.UseCommunities(communities, async ct => (await sessions.GetValidSessionAsync(ct).ConfigureAwait(false)).AccessToken, avatars);
             root.Shell.ReloadAccountSections();
         }
         if (!root.Services.Profile.IsGuest && social is not null && sessions is not null)
-            root.Services.UseSocial(social, async ct => (await sessions.GetValidSessionAsync(ct).ConfigureAwait(false)).AccessToken);
+            root.Services.UseSocial(social, async ct => (await sessions.GetValidSessionAsync(ct).ConfigureAwait(false)).AccessToken, avatars);
         root.Services.NotificationScheduler.Start();
         if (root.Services.Profile.IsGuest && root.Services.Prefs.LanSync)
         {

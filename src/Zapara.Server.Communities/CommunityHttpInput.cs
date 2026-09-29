@@ -42,6 +42,23 @@ internal static class CommunityHttpInput
     {
         if ((await Bytes(context)).Any(b => b is not (0x20 or 0x09 or 0x0a or 0x0d))) throw new CommunityInputException();
     }
+    internal static bool ExplicitReadCursor(HttpContext context)
+    {
+        if (!context.Request.Headers.TryGetValue("X-Zapara-Read-Cursor", out var values)) return false;
+        if (values.Count != 1 || values[0] != "1") throw new CommunityInputException();
+        return true;
+    }
+    internal static async Task<Guid?> ReadThroughMessage(HttpContext context)
+    {
+        var bytes = await Bytes(context);
+        if (bytes.All(b => b is 0x20 or 0x09 or 0x0a or 0x0d)) return null;
+        if (!MediaTypeHeaderValue.TryParse(context.Request.ContentType, out var media) ||
+            !string.Equals(media.MediaType.Value, "application/json", StringComparison.OrdinalIgnoreCase) ||
+            (media.Charset.HasValue && !string.Equals(media.Charset.Value.Trim('"'), "utf-8", StringComparison.OrdinalIgnoreCase)))
+            throw new CommunityInputException(415);
+        try { return CommunityJson.Parse<MarkChatReadRequest>(bytes).ThroughMessageId; }
+        catch (ArgumentException) { throw new CommunityInputException(); }
+    }
     private static async Task<byte[]> Bytes(HttpContext context)
     {
         const int maximum = CommunityValidation.RequestBytes;

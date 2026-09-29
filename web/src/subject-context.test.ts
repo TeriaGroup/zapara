@@ -8,6 +8,7 @@ import * as planner from "./planner.ts";
 import * as subgroups from "./subgroups.ts";
 import * as groupContext from "./groupChatContext.ts";
 import { draftKey } from "./draft-store.ts";
+import { HomeworkRequestScope, scopedValue, subjectHomework } from "./homework-request-scope.ts";
 import type { GroupTopic, TimetablePayload } from "./types";
 const source=ts.transpileModule(await readFile(new URL("./group-panels.tsx",import.meta.url),"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
 test("actual subject panel reads community B and opens its local schedule/homework when personal group is A",async()=>{
@@ -16,7 +17,7 @@ test("actual subject panel reads community B and opens its local schedule/homewo
     const states:any[]=[],effects:(()=>void)[]=[],requests:string[]=[];let index=0;let first=true;
     const react={useState:(initial:any)=>{const slot=index++;if(!(slot in states))states[slot]=typeof initial==="function"?initial():initial;return[states[slot],(value:any)=>{states[slot]=typeof value==="function"?value(states[slot]):value;}];},useEffect:(effect:any)=>{if(first)effects.push(effect);},useRef:(value:any)=>({current:value})};
     const jsx=(type:any,props:any)=>({type,props});
-    const modules:any={react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"fragment"},"./store":{useApp:()=>app},"./use-community-timetable":{useCommunityTimetable:(name:string)=>{assert.equal(name,"Б162");return{payload,error:"",loading:false,reload:()=>{}};}},"./draft-store":{draftKey,useStoredDraft:(_key:string,initial:any)=>react.useState(initial)},"./api":{groupHomework:async(id:string)=>{requests.push(id);return[{homeworkId:"homework-B",title:"Предмет Б",body:"Задание группы Б",revision:1,completed:false,completionRevision:0,deadlineAt:null}];}},"./parity":parity,"./planner":planner,"./subgroups":subgroups,"./groupChatContext":groupContext};
+    const modules:any={react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"fragment"},"./store":{useApp:()=>app},"./use-community-timetable":{useCommunityTimetable:(name:string)=>{assert.equal(name,"Б162");return{payload,error:"",loading:false,reload:()=>{}};}},"./draft-store":{draftKey,useStoredDraft:(_key:string,initial:any)=>react.useState(initial)},"./homework-request-scope":{HomeworkRequestScope,scopedValue,subjectHomework},"./homework-audience":{audienceLabel:()=>"Вся группа"},"./api":{groupHomework:async(id:string)=>{requests.push(id);return[{homeworkId:"homework-B",title:"Предмет Б",body:"Задание группы Б",revision:1,completed:false,completionRevision:0,deadlineAt:null}];}},"./parity":parity,"./planner":planner,"./subgroups":subgroups,"./groupChatContext":groupContext};
     const context={exports:{} as any,require:(id:string)=>modules[id]??{},window:{setInterval:()=>1,clearInterval:()=>{}},Date};runInNewContext(source,context);
     const topic:GroupTopic={topicId:"subject-B",title:"Предмет Б",subject:"Предмет Б",kind:"chat",icon:"",description:"",accent:"default",pinned:false,writePolicy:"all",lastBody:null,lastAuthor:null,lastAt:null,unread:0,canDelete:false,activeBallots:0,canPost:true};
     const render=()=>{index=0;const tree=context.exports.SubjectChannelContext({communityId:"community-B",groupName:"Б162",topic,onError:()=>{}});first=false;return tree;};

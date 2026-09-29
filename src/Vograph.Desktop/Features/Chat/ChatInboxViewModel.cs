@@ -34,6 +34,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
     private Guid? replyTo;
     private Guid? editing;
     private Guid? peerId;
+    private DateTimeOffset lastChatIdentityCheck;
     private DispatcherTimer? timer;
     private bool watching;
     private int polling;
@@ -55,6 +56,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         Watch(false);
         _ = CancelRecordingAsync();
         StopPlayback();
+        ReleaseVisibleAvatars();
     }
 
     private async void OnTick(object? sender, EventArgs e)
@@ -92,7 +94,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         });
         NeedAccount = (Social is null && Communities is null) || Access is null;
         Chats.CollectionChanged += (_, _) => RefreshInboxBrowse();
-        Messages.CollectionChanged += (_, _) => OnPropertyChanged(nameof(NoMessages));
+        Messages.CollectionChanged += (_, _) => { OnPropertyChanged(nameof(NoMessages)); GroupMessages(); };
     }
 
     public ObservableCollection<ChatInboxRow> Chats { get; } = [];
@@ -138,6 +140,13 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
     [ObservableProperty] private string myCode = "";
     [ObservableProperty] private string inviteCode = "";
     [ObservableProperty] private string chatTitle = "";
+    [ObservableProperty] private Bitmap? chatAvatar;
+    public string ChatInitials => AvatarInitials.FromName(ChatTitle);
+    public bool HasChatAvatar => ChatAvatar is not null;
+    public bool NoChatAvatar => ChatAvatar is null;
+    partial void OnChatTitleChanged(string value) => OnPropertyChanged(nameof(ChatInitials));
+    partial void OnChatAvatarChanged(Bitmap? value)
+    { OnPropertyChanged(nameof(HasChatAvatar)); OnPropertyChanged(nameof(NoChatAvatar)); }
     [ObservableProperty] private string draft = "";
     [ObservableProperty] private string actionCaption = "";
     [ObservableProperty] private bool hasMore;
@@ -179,7 +188,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         {
             var token = await Access(operation.Token);
             if (!operation.IsCurrent || ticket != generation) return;
-            if (string.IsNullOrWhiteSpace(token)) { NeedAccount = true; return; }
+            if (string.IsNullOrWhiteSpace(token)) { ClearVisibleAvatars(); NeedAccount = true; return; }
             SocialHomeResponse? home = null;
             var socialUnavailable = Social is null;
             if (Social is not null)
@@ -199,13 +208,13 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
                             var chat = detail.GroupChat;
                             rows.Add(new(chat.ConversationId, group.CommunityId, false, detail.GroupName ?? group.Name,
                                 chat.LastBody ?? "Пока нет сообщений", chat.LastAt, chat.Unread,
-                                new RelayCommand(() => OpenGroup(group.CommunityId))));
+                                new RelayCommand(() => OpenGroup(group.CommunityId)), avatarId: group.CommunityId, groupAvatar: true));
                             foreach (var direct in detail.Directs)
                                 rows.Add(new(direct.ConversationId, group.CommunityId, false,
                                     $"{detail.GroupName ?? group.Name} · {direct.Title}",
                                     direct.LastBody ?? "Пока нет сообщений", direct.LastAt, direct.Unread,
                                     new RelayCommand(() => OpenGroupDirect(group.CommunityId, direct.ConversationId)),
-                                    "Личный в группе"));
+                                    "Личный в группе", direct.PeerUserId));
                         }
                         catch (CommunityClientException) { groupsUnavailable = true; }
                     }
@@ -214,7 +223,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
             foreach (var friend in home?.Friends ?? [])
                 rows.Add(new(friend.ConversationId, null, true, friend.DisplayName ?? friend.Username,
                     friend.LastBody ?? "Пока нет сообщений", friend.LastAt, friend.Unread,
-                    new RelayCommand(() => _ = OpenPersonalAsync(friend))));
+                    new RelayCommand(() => _ = OpenPersonalAsync(friend)), avatarId: friend.UserId));
             if (!operation.IsCurrent || ticket != generation) return;
             if (groupsUnavailable)
                 foreach (var previous in Chats.Where(row => !row.Personal && rows.All(next => next.ConversationId != row.ConversationId)))
@@ -225,8 +234,23 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
             InboxLoadFailed = groupsUnavailable || socialUnavailable;
             InboxLoaded = true;
             if (home is not null) MyCode = home.Code;
+            if (home is not null && peerId is Guid selectedPeer
+                && home.Friends.FirstOrDefault(friend => friend.UserId == selectedPeer) is { } selectedFriend)
+            {
+                var currentTitle = selectedFriend.DisplayName ?? selectedFriend.Username;
+                if (ChatTitle != currentTitle) ChatTitle = currentTitle;
+                if (DateTimeOffset.UtcNow - lastChatIdentityCheck >= TimeSpan.FromMinutes(2))
+                {
+                    lastChatIdentityCheck = DateTimeOffset.UtcNow;
+                    _ = LoadChatAvatarAsync(selectedPeer, ticket);
+                }
+            }
+            var oldImages = Chats.Where(old => !rows.Contains(old)).Select(row => row.Avatar)
+                .OfType<Bitmap>().Distinct<Bitmap>(ReferenceEqualityComparer.Instance).ToArray();
             Chats.Clear();
             foreach (var row in rows.OrderByDescending(r => r.LastAt)) Chats.Add(row);
+            foreach (var old in oldImages) AvatarImages.Retire(old);
+            _ = LoadInboxAvatarsAsync(rows, ticket);
             if (home is not null)
             {
                 Incoming.Clear();
@@ -269,6 +293,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         await CancelRecordingAsync();
         if (ticket != generation) return;
         StopPlayback();
+        ReleaseConversationAvatar();
         Messages.Clear();
         ClearPreviews();
         SaveComposer();
@@ -276,6 +301,8 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         StartRecordingCommand.NotifyCanExecuteChanged();
         peerId = friend.UserId;
         ChatTitle = friend.DisplayName ?? friend.Username;
+        lastChatIdentityCheck = DateTimeOffset.UtcNow;
+        _ = LoadChatAvatarAsync(friend.UserId, ticket);
         RestoreComposer(friend.ConversationId);
         MessagesLoaded = false;
         MessageLoadFailed = false;
@@ -309,6 +336,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
             }
             HasMore = page.HasMore;
             MessagesLoaded = true;
+            MarkCurrentChatRead(id);
             Status = "";
         }
         catch (OperationCanceledException) { }
@@ -352,6 +380,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
             if (known.Count == 0) HasMore = page.HasMore;
             MessagesLoaded = true;
             MessageLoadFailed = false;
+            MarkCurrentChatRead(id);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is SocialClientException or AccountClientException)
@@ -636,6 +665,98 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         return row;
     }
 
+    private void GroupMessages()
+    {
+        ChatMessageRow? previous = null;
+        foreach (var row in Messages)
+        {
+            var day = row.CreatedAt.ToLocalTime().Date;
+            var newDay = previous is null || previous.CreatedAt.ToLocalTime().Date != day;
+            row.DayHeader = newDay ? day.ToString("d MMMM yyyy", System.Globalization.CultureInfo.GetCultureInfo("ru-RU")) : "";
+            row.ShowAuthor = !row.Mine && (previous is null || newDay || previous.Mine);
+            row.Avatar = !row.Mine ? ChatAvatar : null;
+            previous = row;
+        }
+    }
+
+    private void MarkCurrentChatRead(Guid id)
+    {
+        foreach (var row in Chats.Where(row => row.ConversationId == id)) row.MarkRead();
+        RefreshInboxBrowse();
+    }
+
+    private async Task LoadInboxAvatarsAsync(IReadOnlyList<ChatInboxRow> rows, int ticket)
+    {
+        if (App.Avatars is null || Access is null) return;
+        using var operation = App.Work.Enter();
+        try
+        {
+            var token = await Access(operation.Token);
+            if (string.IsNullOrWhiteSpace(token) || !operation.IsCurrent || ticket != generation) return;
+            foreach (var row in rows.Where(row => row.AvatarId is not null))
+            {
+                var image = row.GroupAvatar
+                    ? await App.Avatars.GroupAsync(token, row.AvatarId!.Value, operation.Token)
+                    : await App.Avatars.UserAsync(token, row.AvatarId!.Value, operation.Token);
+                if (!operation.IsCurrent || ticket != generation || !Chats.Contains(row)) { image?.Dispose(); return; }
+                var old = row.Avatar;
+                row.Avatar = image;
+                if (!ReferenceEquals(old, image)) AvatarImages.Retire(old);
+            }
+        }
+        catch (AvatarClientException ex) when (ex.Status is 401 or 403) { ClearVisibleAvatars(); }
+        catch (Exception ex) when (ex is AvatarClientException or AccountClientException or InvalidDataException or OperationCanceledException) { }
+    }
+
+    private async Task LoadChatAvatarAsync(Guid userId, int ticket)
+    {
+        if (App.Avatars is null || Access is null) return;
+        using var operation = App.Work.Enter();
+        try
+        {
+            var token = await Access(operation.Token);
+            if (string.IsNullOrWhiteSpace(token) || !operation.IsCurrent || ticket != generation) return;
+            var image = await App.Avatars.UserAsync(token, userId, operation.Token);
+            if (operation.IsCurrent && ticket == generation && peerId == userId)
+            {
+                var old = ChatAvatar;
+                ChatAvatar = image;
+                GroupMessages();
+                if (!ReferenceEquals(old, image)) AvatarImages.Retire(old);
+            }
+            else image?.Dispose();
+        }
+        catch (AvatarClientException ex) when (ex.Status is 401 or 403) { ClearVisibleAvatars(); }
+        catch (Exception ex) when (ex is AvatarClientException or AccountClientException or InvalidDataException or OperationCanceledException) { }
+    }
+
+    private void ClearVisibleAvatars()
+    {
+        App.Avatars?.Clear();
+        ReleaseVisibleAvatars();
+    }
+
+    private void ReleaseVisibleAvatars()
+    {
+        var images = new[] { ChatAvatar }
+            .Concat(Chats.Select(row => row.Avatar))
+            .Concat(Messages.Select(row => row.Avatar))
+            .OfType<Bitmap>().Distinct<Bitmap>(ReferenceEqualityComparer.Instance).ToArray();
+        ChatAvatar = null;
+        foreach (var row in Chats) row.Avatar = null;
+        foreach (var row in Messages) row.Avatar = null;
+        foreach (var image in images) AvatarImages.Retire(image);
+    }
+
+    private void ReleaseConversationAvatar()
+    {
+        var images = new[] { ChatAvatar }.Concat(Messages.Select(row => row.Avatar))
+            .OfType<Bitmap>().Distinct<Bitmap>(ReferenceEqualityComparer.Instance).ToArray();
+        ChatAvatar = null;
+        foreach (var row in Messages) row.Avatar = null;
+        foreach (var image in images) AvatarImages.Retire(image);
+    }
+
     private async Task LoadPhotoPreviewAsync(Guid attachmentId)
     {
         if (!previewLoading.Add(attachmentId) || Social is null || Access is null) return;
@@ -783,9 +904,18 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
     }
 }
 
-public sealed class ChatInboxRow(Guid conversationId, Guid? communityId, bool personal, string title,
-    string preview, DateTimeOffset? lastAt, int unread, IRelayCommand open, string? kind = null)
+public sealed partial class ChatInboxRow(Guid conversationId, Guid? communityId, bool personal, string title,
+    string preview, DateTimeOffset? lastAt, int unread, IRelayCommand open, string? kind = null,
+    Guid? avatarId = null, bool groupAvatar = false) : ObservableObject
 {
+    public Guid? AvatarId { get; } = avatarId;
+    public bool GroupAvatar { get; } = groupAvatar;
+    public string Initials => AvatarInitials.FromName(Title);
+    [ObservableProperty] private Bitmap? avatar;
+    public bool HasAvatar => Avatar is not null;
+    public bool NoAvatar => Avatar is null;
+    partial void OnAvatarChanged(Bitmap? value)
+    { OnPropertyChanged(nameof(HasAvatar)); OnPropertyChanged(nameof(NoAvatar)); }
     public Guid ConversationId { get; } = conversationId;
     public Guid? CommunityId { get; } = communityId;
     public bool Personal { get; } = personal;
@@ -804,9 +934,17 @@ public sealed class ChatInboxRow(Guid conversationId, Guid? communityId, bool pe
             return local.ToString(local.Year == DateTime.Now.Year ? "dd.MM HH:mm" : "dd.MM.yyyy HH:mm");
         }
     }
-    public string Unread => UnreadBadge.Label(unread);
-    public int UnreadCount => unread;
-    public string UnreadDescription => UnreadBadge.Description(unread);
+    public string Unread => UnreadBadge.Label(UnreadCount);
+    public int UnreadCount { get; private set; } = unread;
+    public string UnreadDescription => UnreadBadge.Description(UnreadCount);
+    internal void MarkRead()
+    {
+        if (UnreadCount == 0) return;
+        UnreadCount = 0;
+        OnPropertyChanged(nameof(UnreadCount));
+        OnPropertyChanged(nameof(Unread));
+        OnPropertyChanged(nameof(UnreadDescription));
+    }
     public IRelayCommand OpenCommand { get; } = open;
 }
 
@@ -822,6 +960,15 @@ public sealed partial class ChatMessageRow(SocialMessageResponse response, bool 
     IAsyncRelayCommand? play) : ObservableObject
 {
     public Guid Id => response.MessageId;
+    public DateTimeOffset CreatedAt => response.CreatedAt;
+    [ObservableProperty] private string dayHeader = "";
+    [ObservableProperty] private bool showAuthor;
+    [ObservableProperty] private Bitmap? avatar;
+    public bool HasAvatar => Avatar is not null;
+    public bool NoAvatar => Avatar is null;
+    partial void OnAvatarChanged(Bitmap? value)
+    { OnPropertyChanged(nameof(HasAvatar)); OnPropertyChanged(nameof(NoAvatar)); }
+    public string Initials => AvatarInitials.FromName(Author);
     public Guid? AttachmentId => response.AttachmentId;
     public string Author => response.SenderName;
     public string Display => response.Deleted ? "Сообщение удалено" : response.Kind switch

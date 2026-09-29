@@ -35,6 +35,7 @@ test("a gap larger than the recent page is filled through the after cursor", asy
   assert.deepEqual(calls, [undefined, "two", "four"]);
   assert.deepEqual(mergeGroupMessages(known, updates.messages).map(item => item.messageId),
     ["one", "two", "three", "four", "five", "six"]);
+  assert.equal(updates.throughMessageId, "six");
   assert.equal(updates.hasOlder, true);
 });
 
@@ -53,14 +54,22 @@ test("cursor pages retain server order when several messages share a timestamp",
   assert.deepEqual(updates.messages.map(item => item.messageId), ["three", "four", "five", "six"]);
 });
 
+test("an incomplete gap never publishes a read cursor from the latest page", async () => {
+  await assert.rejects(loadGroupUpdates([message("one", 1)], async after => {
+    if (!after) return { messages: [message("five", 5)], hasMore: true };
+    throw new Error("catch-up unavailable");
+  }), /catch-up unavailable/);
+});
+
 test("the first page exposes older history and prepending retains cursor order", async () => {
   const initial = await loadGroupUpdates([], async () => ({ messages: [message("three", 1), message("four", 1)], hasMore: true }));
   assert.equal(initial.hasOlder, true);
+  assert.equal(initial.throughMessageId, "four");
   assert.deepEqual(mergeGroupMessages([message("one", 1), message("two", 1)], initial.messages).map(item => item.messageId),
     ["one", "two", "three", "four"]);
 });
 
-test("overlapping polls share a request and a pre-send response is ignored", async () => {
+test("overlapping polls share a request and preserve unknown pre-send messages", async () => {
   let finish: (page: { messages: ChatMessage[]; hasMore: boolean }) => void = () => {};
   let calls = 0;
   const published: { ids: string[]; first: boolean; hasOlder: boolean }[] = [];
@@ -80,11 +89,37 @@ test("overlapping polls share a request and a pre-send response is ignored", asy
   poller.changed();
   finish({ messages: [message("stale", 1)], hasMore: false });
   await Promise.all([first, duplicate]);
-  assert.deepEqual(published, []);
-  await poller.poll();
-  assert.deepEqual(published, [{ ids: ["saved"], first: true, hasOlder: false }]);
+  assert.deepEqual(published, [{ ids: ["stale"], first: true, hasOlder: false }]);
   await poller.poll();
   assert.deepEqual(published.at(-1), { ids: ["saved"], first: false, hasOlder: false });
+  await poller.poll();
+  assert.deepEqual(published.at(-1), { ids: ["saved"], first: false, hasOlder: false });
+  poller.dispose();
+});
+
+test("a local send during failed gap catch-up cannot move the server cursor past inbound history", async () => {
+  const mine = { ...message("mine", 9), senderId: "me" };
+  let ui = [message("one", 1)];
+  let round = 0;
+  let rejectFirst!: (error: Error) => void;
+  const poller = createGroupPoller(async after => {
+    if (!after) {
+      round++;
+      return round === 1 ? { messages: [message("five", 5), message("six", 6)], hasMore: true }
+        : { messages: [mine], hasMore: true };
+    }
+    assert.equal(after, "one");
+    if (round === 1) return new Promise((_, reject) => { rejectFirst = reject; });
+    return { messages: [message("two", 2), message("three", 3), message("four", 4), message("five", 5), message("six", 6), mine], hasMore: false };
+  }, () => ui, updates => { ui = mergeGroupMessages(ui, updates.messages); }, () => {});
+  const first = poller.poll();
+  await new Promise(resolve => setImmediate(resolve));
+  ui = mergeGroupMessages(ui, [mine]);
+  poller.changed();
+  rejectFirst(new Error("offline"));
+  await first;
+  await poller.poll();
+  assert.deepEqual(ui.map(row => row.messageId), ["one", "two", "three", "four", "five", "six", "mine"]);
   poller.dispose();
 });
 

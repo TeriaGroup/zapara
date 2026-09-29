@@ -23,6 +23,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -140,6 +141,7 @@ data class AccountUiState(
 }
 
 sealed interface AccountEvent {
+    data object RefreshProfile : AccountEvent
     data class Username(val value: String) : AccountEvent
     data class Password(val value: String) : AccountEvent
     data class DisplayName(val value: String) : AccountEvent
@@ -195,6 +197,13 @@ internal suspend fun readUiCapabilities(transport: HttpExchange, baseUri: String
 @Composable
 fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLegal: (String) -> Unit = {}) {
     val c = Zapara.colors
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+    val currentEvent = androidx.compose.runtime.rememberUpdatedState(onEvent)
+    androidx.compose.runtime.LaunchedEffect(lifecycle, state.showAccount) {
+        if (state.showAccount) lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) { currentEvent.value(AccountEvent.RefreshProfile); kotlinx.coroutines.delay(60_000) }
+        }
+    }
     ZCard(Modifier.fillMaxWidth().testTag("Account.Card")) {
         Text(stringResource(R.string.account_title), style = Zapara.typography.section, color = c.text1)
         Text(state.status, style = Zapara.typography.body, color = c.text1, modifier = Modifier.testTag("Account.Status"))
@@ -257,6 +266,11 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
             }
         } else {
             Text(state.accountName, style = Zapara.typography.section, color = c.text1, modifier = Modifier.testTag("Account.Name"))
+            ru.bgtu_voenmeh.zapara.ui.chat.LocalAvatarStore.current?.let { avatars ->
+                ru.bgtu_voenmeh.zapara.ui.chat.AvatarEditor(state.accountName,
+                    ru.bgtu_voenmeh.zapara.data.avatars.AvatarTarget(ru.bgtu_voenmeh.zapara.data.avatars.AvatarKind.User, avatars.userId),
+                    enabled = !state.busy)
+            }
             if (!state.confirmLogout) {
                 ZButton(stringResource(R.string.account_logout), { onEvent(AccountEvent.RequestLogout) }, ghost = true, enabled = !state.busy, tag = "Account.Logout")
             } else {

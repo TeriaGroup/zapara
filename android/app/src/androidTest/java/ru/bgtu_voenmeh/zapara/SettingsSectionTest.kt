@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit
 class SettingsSectionTest {
     @Test fun theme_segment_and_about() {
         val events = CopyOnWriteArrayList<SettingsEvent>()
-        val state = SettingsUiState(true, "А863С", "Обновлено 08.09 12:00 · сегодня", false, false, ThemeChoice.System, true, version = "2.0.0", selfUpdate = true)
+        val state = SettingsUiState(loaded = true, groupName = "А863С", groupUpdated = "Обновлено 08.09 12:00 · сегодня", theme = ThemeChoice.System, animations = true, version = "2.0.0", selfUpdate = true)
         val ins = InstrumentationRegistry.getInstrumentation()
         val ready = CountDownLatch(1)
         ActivityScenario.launch(ComponentActivity::class.java).use { scenario ->

@@ -10,7 +10,7 @@ internal static class GroupMedia
     public static Task<ChatMessageResponse> Place(CommunityHttpClient api, string token, Guid conversationId, string kind, string name, byte[] bytes, Guid? replyTo, CancellationToken ct, int? durationMs = null, Guid? topicId = null)
     {
         if (api is null || kind is not ("image" or "video" or "file" or "voice" or "circle") || bytes is null
-            || bytes.Length < 1 || bytes.Length > (kind == "voice" ? 2 * 1024 * 1024 : MaxBytes)
+            || bytes.Length < 1 || bytes.Length > (kind switch { "voice" => 4 * 1024 * 1024, "circle" => 24 * 1024 * 1024, _ => MaxBytes })
             || kind is ("voice" or "circle") && durationMs is null
             || durationMs is int ms && (kind is not ("voice" or "circle") || ms < 1 || ms > (kind == "voice" ? 180_000 : 60_000)))
             throw new CommunityClientException(CommunityClientFailure.InvalidRequest);

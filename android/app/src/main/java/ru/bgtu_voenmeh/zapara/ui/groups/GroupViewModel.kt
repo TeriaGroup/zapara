@@ -125,7 +125,7 @@ internal fun trustedChannelRoles(desk: GroupDesk): List<GroupRole> = desk.roles.
 
 data class GroupCommunityUi(val id: String, val name: String, val role: String)
 data class GroupPersonUi(val id: String, val name: String, val handle: String, val role: String, val self: Boolean)
-data class GroupChatUi(val id: String, val title: String, val preview: String, val unread: Int)
+data class GroupChatUi(val id: String, val title: String, val preview: String, val unread: Int, val peerUserId: String? = null)
 data class GroupMessageUi(val id: String, val author: String, val body: String, val time: String, val mine: Boolean,
     val kind: String = "text", val deleted: Boolean = false, val replyTo: String? = null,
     val reactions: List<ChatReaction> = emptyList(), val day: String = "",
@@ -153,7 +153,8 @@ internal object GroupMedia {
     }
     suspend fun place(api: ru.bgtu_voenmeh.zapara.data.communities.CommunityHttpClient, token: String, conversationId: String, kind: String, name: String, bytes: ByteArray, replyTo: String?, durationMs: Int? = null, topicId: String? = null, blankLabel: (String) -> String = { "file" }): ru.bgtu_voenmeh.zapara.data.communities.ChatMessage {
         if (kind !in setOf("image", "video", "file", "voice", "circle")) throw ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.InvalidRequest)
-        if (bytes.isEmpty() || bytes.size > (if (kind == "voice") 2 * 1024 * 1024 else maxBytes)) throw ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.PayloadTooLarge)
+        val maximum = when (kind) { "voice" -> 4 * 1024 * 1024; "circle" -> 24 * 1024 * 1024; else -> maxBytes }
+        if (bytes.isEmpty() || bytes.size > maximum) throw ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.PayloadTooLarge)
         if (kind in setOf("voice", "circle") && durationMs == null) throw ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException(ru.bgtu_voenmeh.zapara.data.communities.CommunityClientFailure.InvalidRequest)
         val clean = name.trim().substringAfterLast('/').substringAfterLast('\\').ifBlank {
             when (kind) { "voice" -> "voice.m4a"; "circle" -> "circle.mp4"; else -> blankLabel(kind) }
@@ -326,6 +327,8 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     private var contextLesson: GroupLessonHint? = null
     private var topics: GroupTopicList? = null
     private var conversationId: String? = null
+    // Sending an own message must not jump over an inbound catch-up gap.
+    private var pulledCursor: String? = null
     private var draftKey: String? = null
     private var poll: Job? = null
     private var generation = 0
@@ -645,6 +648,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         mediaJobs.values.forEach { it.cancel() }
         mediaJobs.clear()
         conversationId = id
+        pulledCursor = null
         draftKey = if (direct || topics == null) id else "$id:${topicId ?: "general"}"
         val context = draftContexts[draftKey]
         pendingBytes = null
@@ -681,10 +685,13 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             if (!current(ticket, id)) return
             val page = api.messages(token, id, topic = topicQuery(direct, topicId))
             if (!current(ticket, id)) return
+            pulledCursor = page.messages.lastOrNull()?.messageId
             mutable.value = mutable.value.copy(
-                messages = page.messages.map { row(it) }, hasMore = page.hasMore, failed = false, chatLoading = false
+                messages = mergeGroupHistory(mutable.value.messages, emptyList(), page.messages.map { row(it) }, emptyList()),
+                hasMore = page.hasMore, failed = false, chatLoading = false
             )
-            if (direct || topics == null) acknowledge(token, id, ticket) else refreshTopics(token, ticket)
+            acknowledge(token, id, ticket)
+            if (!direct && topics != null) refreshTopics(token, ticket)
             if (current(ticket,id)) loadSubjectContext(token,ticket,topicId)
             if (current(ticket, id)) arm(id)
         } catch (e: CancellationException) {
@@ -1351,11 +1358,16 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         val api = runtime.client ?: return
         val token = runtime.accessToken() ?: run { reconcileForbidden(CommunityClientException(CommunityClientFailure.InvalidSession),ticket); return }
         if (!current(ticket, id)) return
-        val last = mutable.value.messages.lastOrNull()
+        val atRequest = mutable.value.messages
+        val last = pulledCursor
         val topic = topicQuery(mutable.value.direct, mutable.value.activeTopicId)
-        val page = if (last == null) api.messages(token, id, topic = topic) else api.messages(token, id, after = last.id, topic = topic)
+        val page = ru.bgtu_voenmeh.zapara.data.communities.loadGroupChatUpdates(last) { after ->
+            val result = api.messages(token, id, after = after, topic = topic)
+            if (!current(ticket, id)) throw CancellationException("Conversation changed")
+            result
+        }
         if (!current(ticket, id)) return
-        val recent = if (last == null) page.messages else try {
+        val recent = if (last == null) page.messages else if (page.hasMore) emptyList() else try {
             api.messages(token, id, topic = topic).messages
         } catch (e: CancellationException) {
             throw e
@@ -1364,32 +1376,29 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             emptyList()
         }
         if (!current(ticket, id)) return
-        val have = mutable.value.messages.map { it.id }.toSet()
-        val added = page.messages.map { row(it) }.filter { it.id !in have }
-        val pageIds = page.messages.map { it.messageId }.toSet()
-        val kept = if (last == null) mutable.value.messages.filter { it.id !in pageIds } else mutable.value.messages
-        val recentById = recent.associateBy { it.messageId }
-        val merged = (if (last == null) page.messages.map { row(it) } + kept else kept + added).map { existing ->
-            recentById[existing.id]?.let { row(it) } ?: existing
-        }
+        val merged = mergeGroupHistory(mutable.value.messages, atRequest,
+            page.messages.map { row(it) }, recent.map { row(it) })
+        pulledCursor = page.messages.lastOrNull()?.messageId ?: pulledCursor
         mutable.value = mutable.value.copy(
             messages = merged,
             hasMore = if (last == null) page.hasMore else mutable.value.hasMore,
             failed = false,
             chatLoading = false
         )
-        if (mutable.value.direct || topics == null) {
-            if (page.messages.isNotEmpty()) acknowledge(token, id, ticket)
-        } else {
+        // Latest-page refresh above only amends existing rows. Acknowledge the published
+        // contiguous cursor, never a newer row that was not added to this conversation.
+        pulledCursor?.let { acknowledge(token, id, ticket, it) }
+        if (!mutable.value.direct && topics != null) {
             refreshTopics(token,ticket)
             if (current(ticket,id)) loadSubjectContext(token,ticket,mutable.value.activeTopicId)
         }
     }
 
-    private suspend fun acknowledge(token: String, id: String, ticket: Int) {
+    private suspend fun acknowledge(token: String, id: String, ticket: Int, throughMessageId: String? = null) {
         val api = runtime.client ?: return
+        val target = throughMessageId ?: pulledCursor ?: return
         try {
-            val read = api.markRead(token, id)
+            val read = api.markRead(token, id, target)
             if (!current(ticket, id)) return
             mutable.value = if (read.kind == "group") {
                 mutable.value.copy(groupUnread = read.unread)
@@ -1407,7 +1416,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             mutable.value = mutable.value.copy(failed = true)
             return
         }
-        val maxBytes = if (kind == "voice") 2 * 1024 * 1024 else GroupMedia.maxBytes
+        val maxBytes = when (kind) { "voice" -> 4 * 1024 * 1024; "circle" -> 24 * 1024 * 1024; else -> GroupMedia.maxBytes }
         val maxDuration = if (kind == "voice") 180_000 else 60_000
         if (bytes.isEmpty() || bytes.size > maxBytes || kind !in setOf("image", "video", "file", "voice", "circle") ||
             (durationMs != null && (kind !in setOf("voice", "circle") || durationMs !in 1..maxDuration))) {
@@ -1428,7 +1437,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             val ticket = generation
             if (!current(ticket, id) || event.topicId != mutable.value.activeTopicId || mutable.value.activeChannelKind == "ballots" || !mutable.value.canPost) return
             val bytes = withContext(Dispatchers.IO) {
-                val limit = if (event.kind == "voice") 2L * 1024 * 1024 else 8L * 1024 * 1024
+                val limit = if (event.kind == "voice") 4L * 1024 * 1024 else 24L * 1024 * 1024
                 if (!event.file.isFile || event.file.length() !in 1L..limit) error("recording_unavailable")
                 event.file.readBytes()
             }
@@ -1787,7 +1796,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     }
 
     private fun person(item: Classmate) = GroupPersonUi(item.userId, item.displayName ?: item.username, item.username, item.role, item.self)
-    private fun chat(item: Conversation) = GroupChatUi(item.conversationId, item.title, item.lastBody ?: "", item.unread)
+    private fun chat(item: Conversation) = GroupChatUi(item.conversationId, item.title, item.lastBody ?: "", item.unread, item.peerUserId)
     private fun hold(messageId: String, action: String) {
         if (!mutable.value.canPost && action in setOf("reply", "edit")) return
         val message = mutable.value.messages.find { it.id == messageId } ?: return

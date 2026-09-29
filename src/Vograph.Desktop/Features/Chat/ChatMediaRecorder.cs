@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Windows.Media.Capture;
 using Windows.Media.MediaProperties;
@@ -20,8 +21,8 @@ internal static class ChatMediaLimits
 {
     public static int MaxBytes(string kind) => kind switch
     {
-        "voice" => 2 * 1024 * 1024,
-        "circle" => 8 * 1024 * 1024,
+        "voice" => 4 * 1024 * 1024,
+        "circle" => 24 * 1024 * 1024,
         _ => throw new ArgumentException("Неизвестный вид записи.", nameof(kind))
     };
 
@@ -66,41 +67,64 @@ internal sealed class WindowsChatMediaRecorder : IChatMediaRecorder
         try
         {
             if (capture is not null) throw new InvalidOperationException("Запись уже идёт.");
-            var temporary = Path.Combine(Path.GetTempPath(), $"zapara-chat-{Guid.NewGuid():N}" +
-                (mediaKind == "voice" ? ".m4a" : ".mp4"));
-            using (File.Create(temporary)) { }
-            var candidate = new MediaCapture();
-            var started = false;
-            try
-            {
-                await candidate.InitializeAsync(new MediaCaptureInitializationSettings
+            var profiles = mediaKind == "voice"
+                ? new (VideoEncodingQuality? Video, uint? SampleRate)[] { (null, 48_000), (null, 44_100), (null, null) }
+                : new (VideoEncodingQuality? Video, uint? SampleRate)[]
                 {
-                    StreamingCaptureMode = mediaKind == "voice" ? StreamingCaptureMode.Audio : StreamingCaptureMode.AudioAndVideo
-                });
-                ct.ThrowIfCancellationRequested();
-                var file = await StorageFile.GetFileFromPathAsync(temporary);
-                var profile = mediaKind == "voice"
-                    ? MediaEncodingProfile.CreateM4a(AudioEncodingQuality.Low)
-                    : MediaEncodingProfile.CreateMp4(VideoEncodingQuality.Qvga);
-                profile.Audio.Bitrate = 24_000;
-                if (mediaKind == "circle") profile.Video.Bitrate = 450_000;
-                await candidate.StartRecordToStorageFileAsync(profile, file);
-                started = true;
-                ct.ThrowIfCancellationRequested();
-                capture = candidate;
-                path = temporary;
-                kind = mediaKind;
-                watch = Stopwatch.StartNew();
-            }
-            catch
+                    (VideoEncodingQuality.HD720p, 48_000), (VideoEncodingQuality.HD720p, 44_100),
+                    (VideoEncodingQuality.HD720p, null), (VideoEncodingQuality.Vga, 48_000),
+                    (VideoEncodingQuality.Vga, 44_100), (VideoEncodingQuality.Vga, null),
+                    (VideoEncodingQuality.Qvga, null)
+                };
+            Exception? unsupported = null;
+            foreach (var (videoQuality, sampleRate) in profiles)
             {
-                if (started)
-                    try { await candidate.StopRecordAsync(); }
-                    catch (Exception ex) when (ex is IOException or System.Runtime.InteropServices.COMException) { }
-                candidate.Dispose();
-                DeleteTemporary(temporary);
-                throw;
+                var temporary = Path.Combine(Path.GetTempPath(), $"zapara-chat-{Guid.NewGuid():N}" +
+                    (mediaKind == "voice" ? ".m4a" : ".mp4"));
+                using (File.Create(temporary)) { }
+                var candidate = new MediaCapture();
+                var started = false;
+                try
+                {
+                    await candidate.InitializeAsync(new MediaCaptureInitializationSettings
+                    {
+                        StreamingCaptureMode = mediaKind == "voice" ? StreamingCaptureMode.Audio : StreamingCaptureMode.AudioAndVideo
+                    });
+                    ct.ThrowIfCancellationRequested();
+                    var file = await StorageFile.GetFileFromPathAsync(temporary);
+                    var profile = mediaKind == "voice"
+                        ? MediaEncodingProfile.CreateM4a(AudioEncodingQuality.High)
+                        : MediaEncodingProfile.CreateMp4(videoQuality!.Value);
+                    profile.Audio.Bitrate = 96_000;
+                    if (sampleRate is uint rate) profile.Audio.SampleRate = rate;
+                    profile.Audio.ChannelCount = 1;
+                    if (mediaKind == "circle") profile.Video.Bitrate = 2_000_000;
+                    await candidate.StartRecordToStorageFileAsync(profile, file);
+                    started = true;
+                    ct.ThrowIfCancellationRequested();
+                    capture = candidate;
+                    path = temporary;
+                    kind = mediaKind;
+                    watch = Stopwatch.StartNew();
+                    return;
+                }
+                catch (Exception ex) when (!ct.IsCancellationRequested && ex is (COMException or ArgumentException or NotSupportedException))
+                {
+                    unsupported = ex;
+                }
+                finally
+                {
+                    if (capture != candidate)
+                    {
+                        if (started)
+                            try { await candidate.StopRecordAsync(); }
+                            catch (Exception ex) when (ex is IOException or COMException) { }
+                        candidate.Dispose();
+                        DeleteTemporary(temporary);
+                    }
+                }
             }
+            throw new IOException("Не удалось начать запись с доступными настройками камеры или микрофона.", unsupported);
         }
         finally { gate.Release(); }
     }

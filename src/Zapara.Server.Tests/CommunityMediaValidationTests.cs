@@ -88,4 +88,40 @@ public sealed class CommunityMediaValidationTests
         Assert.Equal(0, context.Request.Body.Position);
     }
 
+    [Fact]
+    public async Task Group_circle_reader_accepts_more_than_eight_mebibytes_and_rejects_more_than_twenty_four()
+    {
+        var acceptedBytes = new byte[8 * 1024 * 1024 + 1];
+        "ftypisom"u8.CopyTo(acceptedBytes.AsSpan(4));
+        var accepted = CircleRequest(acceptedBytes);
+        var reachedService = await Assert.ThrowsAsync<ReadCompletedException>(() => CommunityMedia.Post(accepted, "unused"));
+        Assert.NotNull(reachedService);
+        Assert.Equal(acceptedBytes.Length, accepted.Request.Body.Position);
+
+        var rejected = CircleRequest(new byte[24 * 1024 * 1024 + 1]);
+        rejected.Request.ContentLength = null; // Exercise the streaming bound, not just Content-Length.
+        var problem = await Assert.ThrowsAsync<CommunityInputException>(() => CommunityMedia.Post(rejected, "unused"));
+        Assert.Equal(413, problem.Status);
+    }
+
+    private static DefaultHttpContext CircleRequest(byte[] bytes)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = "application/octet-stream";
+        context.Request.ContentLength = bytes.Length;
+        context.Request.Headers["X-Zapara-Kind"] = "circle";
+        context.Request.Headers["X-Zapara-Name"] = "circle.mp4";
+        context.Request.Headers["X-Zapara-Duration-Ms"] = "60000";
+        context.Request.Body = new MemoryStream(bytes);
+        context.RequestServices = new ReadCompletedServiceProvider();
+        return context;
+    }
+
+    private sealed class ReadCompletedException : Exception { }
+
+    private sealed class ReadCompletedServiceProvider : IServiceProvider
+    {
+        public object? GetService(Type serviceType) => throw new ReadCompletedException();
+    }
+
 }

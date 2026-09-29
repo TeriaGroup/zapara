@@ -33,10 +33,16 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val state: StateFlow<SettingsUiState> = mutable.asStateFlow()
     private val saves = Mutex()
     private var reloadTicket = 0
+    private var syncActionBusy = false
 
     init {
         viewModelScope.launch { reload() }
         viewModelScope.launch { container.events.events.collect { reload() } }
+        container.privateSync?.let { coordinator ->
+            viewModelScope.launch { coordinator.status.collect { status ->
+                mutable.update { it.copy(cloudSync = status, syncBusy = syncActionBusy || status.running) }
+            } }
+        }
     }
 
     fun onEvent(event: SettingsEvent) {
@@ -56,12 +62,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 save({ it.copy(parityInvert = event.on) }, after = { viewModelScope.launch { container.events.emit(AppEvent.ScheduleChanged) } })
             }
             SettingsEvent.SyncNow -> if (!container.profile.isGuest && !mutable.value.syncBusy) {
+                syncActionBusy = true
                 mutable.update { it.copy(syncBusy = true, syncError = null) }
                 viewModelScope.launch {
                     try { withContext(Dispatchers.IO) { container.privateSync?.sync() }; reload() }
                     catch (e: CancellationException) { throw e }
                     catch (_: Exception) { mutable.update { it.copy(syncError = container.app.getString(R.string.sync_choice_changed)) } }
-                    finally { mutable.update { it.copy(syncBusy = false) } }
+                    finally { syncActionBusy = false; mutable.update { it.copy(syncBusy = it.cloudSync.running) } }
                 }
             }
             SettingsEvent.ChangeGroup -> { }
@@ -138,6 +145,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     private fun resolveSync(event: SettingsEvent.ResolveSync) {
         if (mutable.value.syncBusy) return
+        syncActionBusy = true
         mutable.update { it.copy(syncBusy = true, syncError = null) }
         viewModelScope.launch {
             try {
@@ -153,7 +161,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             catch (e: Exception) {
                 mutable.update { it.copy(syncError = container.app.getString(R.string.sync_choice_failed)) }
             } finally {
-                mutable.update { it.copy(syncBusy = false) }
+                syncActionBusy = false
+                mutable.update { it.copy(syncBusy = it.cloudSync.running) }
             }
         }
     }
@@ -279,6 +288,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     refreshing = cur.refreshing,
                     syncBusy = cur.syncBusy,
                     syncError = cur.syncError,
+                    cloudSync = cur.cloudSync,
                     time1 = if (editingTimes) cur.time1 else snap.time1,
                     time2 = if (editingTimes) cur.time2 else snap.time2,
                     timeError = if (editingTimes) cur.timeError else snap.timeError,

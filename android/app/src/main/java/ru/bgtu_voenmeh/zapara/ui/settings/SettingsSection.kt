@@ -234,13 +234,23 @@ fun SettingsSection(
             item { ZButton(stringResource(R.string.settings_overview_all), { section = null }, ghost = true, quiet = true, tag = "Settings.Overview.Back", leadingIcon = R.drawable.ic_chevron_left) }
             if (section == "account") {
             item { AccountCard(account, onAccount) { legalId = it } }
+            if (state.signedIn) item { ZCard(Modifier.fillMaxWidth()) {
+                CloudSyncSummary(state.cloudSync)
+                ZButton(uiText(R.string.space_day_sync_now), { onEvent(SettingsEvent.SyncNow) },
+                    enabled = !state.syncBusy && state.cloudSync.attached, busy = state.syncBusy)
+            } }
             }
             if (section == "data") {
             item { ZCard(Modifier.fillMaxWidth()) {
-                Text(if (state.signedIn) uiText(R.string.space_day_158) else uiText(R.string.space_day_159), style = Zapara.typography.body)
+                if (state.signedIn) CloudSyncSummary(state.cloudSync)
+                else Text(uiText(R.string.space_day_159), style = Zapara.typography.body)
                 Text(uiText(R.string.space_day_160), style = Zapara.typography.caption)
                 Text(state.groupUpdated, style = Zapara.typography.caption)
-                if (state.signedIn) ZButton(uiText(R.string.space_day_sync_now), { onEvent(SettingsEvent.SyncNow) }, enabled = !state.syncBusy, busy = state.syncBusy)
+                if (state.signedIn) {
+                    Text(stringResource(R.string.cloud_sync_scope), style = Zapara.typography.caption, color = c.text2)
+                    ZButton(uiText(R.string.space_day_sync_now), { onEvent(SettingsEvent.SyncNow) },
+                        enabled = !state.syncBusy && state.cloudSync.attached, busy = state.syncBusy)
+                }
             } }
             if (state.syncConflicts.isNotEmpty() || state.syncError != null) item {
                 ZCard(Modifier.fillMaxWidth().testTag("Sync.Conflicts")) {

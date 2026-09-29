@@ -272,11 +272,29 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .hidden-file { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .people { display: flex; flex-direction: column; gap: 8px; max-height: min(62dvh, 640px); overflow: auto; }
 .person { display: flex; justify-content: space-between; gap: 10px; width: 100%; text-align: left; }
+.person { align-items: center; }
+.person-main, .inbox-main { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
+.person-main b, .inbox-main b, .preview-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avatar { display: inline-grid; place-items: center; width: 40px; height: 40px; flex: none; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 50%; background: var(--chip); color: var(--text); font-size: 14px; font-weight: 600; line-height: 1; }
+.avatar img, .bubble .avatar img { display: block; width: 100%; height: 100%; margin: 0; border-radius: 50%; object-fit: cover; background: transparent; }
+.avatar-large { width: 72px; height: 72px; font-size: 23px; }
+.avatar-editor p { margin: 4px 0 0; }
+.avatar-upload { position: relative; cursor: pointer; }
+.avatar-upload input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.avatar-upload:focus-within { outline: 2px solid var(--text); outline-offset: 2px; }
+.chat-title { display: flex; align-items: center; gap: 10px; }
+.chat-title h2 { margin: 0; }
+.bubble.chat-incoming { position: relative; margin-left: 44px; }
+.bubble .avatar.message-avatar { position: absolute; left: -44px; top: 0; width: 32px; height: 32px; font-size: 11px; }
 .inbox .person { text-decoration: none; }
 .inbox-browse { margin-bottom: 12px; }
-.inbox-source { font-size: 12px; }
+.inbox-heading, .inbox-preview { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.inbox-heading b, .inbox-preview .preview-line { min-width: 0; }
+.inbox-heading time, .inbox-preview .chip { flex: none; }
+.inbox-heading time { font-size: 12px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .inbox-total { align-self: center; }
-.inbox .person > span:first-child, .inbox-meta { display: flex; flex-direction: column; gap: 4px; }
+.inbox-meta { display: flex; flex-direction: column; gap: 4px; }
 .inbox-meta { align-items: flex-end; flex-shrink: 0; }
 .group-quick-topics { display: flex; flex-direction: column; gap: 0; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .group-quick-topics h2 { margin: 0; }

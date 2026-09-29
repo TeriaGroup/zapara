@@ -68,15 +68,20 @@
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="chat:ChatInboxRow">
                   <Button Classes="ghost" Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,8" Margin="0,2">
-                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
-                      <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                      <Border Grid.Column="1" Classes="badge" AutomationProperties.Name="{Binding UnreadDescription}"
+                    <Grid ColumnDefinitions="40,*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10">
+                      <Border Grid.RowSpan="3" Width="38" Height="38" CornerRadius="19" Background="{DynamicResource Brush.Chip}" ClipToBounds="True"
+                              AutomationProperties.Name="{Binding Title}">
+                        <Grid><TextBlock Text="{Binding Initials}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding NoAvatar}" />
+                          <Image Source="{Binding Avatar}" Stretch="UniformToFill" IsVisible="{Binding HasAvatar}" /></Grid>
+                      </Border>
+                      <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                      <Border Grid.Column="2" Classes="badge" AutomationProperties.Name="{Binding UnreadDescription}"
                               IsVisible="{Binding Unread, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                         <TextBlock Text="{Binding Unread}" />
                       </Border>
-                      <TextBlock Grid.Row="1" Classes="muted caption" Text="{Binding SourceTitle}" />
-                      <TextBlock Grid.Row="1" Grid.Column="1" Classes="muted caption" Text="{Binding When}" />
-                      <TextBlock Grid.Row="2" Classes="muted caption" Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Row="1" Grid.Column="1" Classes="muted caption" Text="{Binding SourceTitle}" />
+                      <TextBlock Grid.Row="1" Grid.Column="2" Classes="muted caption" Text="{Binding When}" />
+                      <TextBlock Grid.Row="2" Grid.Column="1" Classes="muted caption" Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
                     </Grid>
                   </Button>
                 </DataTemplate>
@@ -90,12 +95,17 @@
       <Border Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True" IsVisible="{Binding HasConversation}">
         <DockPanel LastChildFill="True">
           <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,0,0,1" Padding="14,12">
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-              <TextBlock Classes="subject" Text="{Binding ChatTitle}" />
-              <Button Grid.Column="1" Classes="ghost" Content="К новым" Click="JumpToLatest" MinHeight="48"
+            <Grid ColumnDefinitions="40,*,Auto,Auto" ColumnSpacing="8">
+              <Border Width="38" Height="38" CornerRadius="19" Background="{DynamicResource Brush.Chip}" ClipToBounds="True"
+                      AutomationProperties.Name="{Binding ChatTitle}">
+                <Grid><TextBlock Text="{Binding ChatInitials}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding NoChatAvatar}" />
+                  <Image Source="{Binding ChatAvatar}" Stretch="UniformToFill" IsVisible="{Binding HasChatAvatar}" /></Grid>
+              </Border>
+              <TextBlock Grid.Column="1" Classes="subject" Text="{Binding ChatTitle}" VerticalAlignment="Center" />
+              <Button Grid.Column="2" Classes="ghost" Content="К новым" Click="JumpToLatest" MinHeight="48"
                       IsVisible="{Binding ShowJumpLatest}"
                       AutomationProperties.AutomationId="Chat.JumpLatest" />
-              <Button Grid.Column="2" Classes="ghost" Content="Обновить" Command="{Binding ReloadMessagesCommand}" />
+              <Button Grid.Column="3" Classes="ghost" Content="Обновить" Command="{Binding ReloadMessagesCommand}" />
             </Grid>
           </Border>
           <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="12,10">
@@ -142,12 +152,20 @@
               <ItemsControl ItemsSource="{Binding Messages}" AutomationProperties.AutomationId="Chat.Messages">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="chat:ChatMessageRow">
-                    <Border Classes="card chat-message" Classes.mine="{Binding Mine}" Margin="0,0,0,6" Padding="12,8"
+                    <StackPanel>
+                    <TextBlock Classes="muted caption" Text="{Binding DayHeader}" HorizontalAlignment="Center" Margin="0,10,0,12"
+                               IsVisible="{Binding DayHeader, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <Border Classes="card chat-message" Classes.mine="{Binding Mine}" Margin="0,0,0,4" Padding="12,8"
                             MaxWidth="440" HorizontalAlignment="{Binding Mine, Converter={x:Static loc:Converters.ChatAlign}}">
                       <StackPanel Spacing="4">
-                        <Grid ColumnDefinitions="*,Auto">
-                          <TextBlock Classes="caption" Text="{Binding Author}" IsVisible="{Binding !Mine}" />
-                          <TextBlock Grid.Column="1" Classes="muted caption" Text="{Binding When}" />
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                          <Border Width="26" Height="26" CornerRadius="13" Background="{DynamicResource Brush.Chip}" ClipToBounds="True" IsVisible="{Binding ShowAuthor}"
+                                  AutomationProperties.Name="{Binding Author}">
+                            <Grid><TextBlock Text="{Binding Initials}" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding NoAvatar}" />
+                              <Image Source="{Binding Avatar}" Stretch="UniformToFill" IsVisible="{Binding HasAvatar}" /></Grid>
+                          </Border>
+                          <TextBlock Grid.Column="1" Classes="caption" Text="{Binding Author}" IsVisible="{Binding ShowAuthor}" VerticalAlignment="Center" />
+                          <TextBlock Grid.Column="2" Classes="muted caption" Text="{Binding When}" />
                         </Grid>
                         <TextBlock Classes="muted caption" Text="{Binding Detail}" />
                         <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
@@ -170,6 +188,7 @@
                         </Button>
                       </StackPanel>
                     </Border>
+                    </StackPanel>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>

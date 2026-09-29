@@ -35,6 +35,7 @@ public sealed partial class PrivateSyncCoordinator
     {
         using var work = app.Work.Enter();
         if (!work.IsCurrent || client is null || access is null) return;
+        ownSync.Value++;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, work.Token);
         var entered = false;
         var changed = false;
@@ -59,12 +60,13 @@ public sealed partial class PrivateSyncCoordinator
                 if (result.State == PrivateSyncState.ResetRequired)
                 {
                     await Locked(() => { app.Outbox.RequireSnapshot(); return 0; });
-                    if (restarts++ > 0) return;
+                    if (restarts++ > 0) { ReportFailure(PrivateSyncState.ResetRequired); return; }
                     continue;
                 }
-                if (result.State != PrivateSyncState.Success || result.Value is null) return;
+                if (result.State != PrivateSyncState.Success || result.Value is null)
+                { ReportFailure(result.State); return; }
                 changed |= await Locked(() => app.Outbox.ApplyChanges(result.Value, Check));
-                if (!result.Value.HasMore) return;
+                if (!result.Value.HasMore) { ReportSuccess(); return; }
             }
 
             void Check() { linked.Token.ThrowIfCancellationRequested(); work.ThrowIfStale(); }
@@ -83,7 +85,8 @@ public sealed partial class PrivateSyncCoordinator
                     {
                         var begin = await client.BeginResyncAsync(token, linked.Token).ConfigureAwait(false);
                         Check();
-                        if (begin.State != PrivateSyncState.Success || begin.Value is null) return false;
+                        if (begin.State != PrivateSyncState.Success || begin.Value is null)
+                        { ReportFailure(begin.State); return false; }
                         manifest = begin.Value;
                         await Locked(() => { app.Outbox.BeginSnapshot(manifest); return 0; });
                     }
@@ -99,20 +102,29 @@ public sealed partial class PrivateSyncCoordinator
                             expired = true;
                             break;
                         }
-                        if (page.State != PrivateSyncState.Success || page.Value is null) return false;
+                        if (page.State != PrivateSyncState.Success || page.Value is null)
+                        { ReportFailure(page.State); return false; }
                         await Locked(() => { app.Outbox.StageSnapshot(page.Value, Check); return 0; });
                         after = page.Value.NextAfterOrdinal;
                     }
-                    if (expired) { if (restarts++ > 0) return false; continue; }
+                    if (expired) { if (restarts++ > 0) { ReportFailure(PrivateSyncState.ManifestExpired); return false; } continue; }
                     await Locked(() => { app.Outbox.PublishSnapshot(Check); return 0; });
                     return true;
                 }
             }
         }
         catch (OperationCanceledException) when (!work.IsCurrent) { IgnoredCallbacks++; }
+        catch (Vograph.Core.Services.Accounts.AccountClientException ex)
+        {
+            ReportFailure(ex.Failure is Vograph.Core.Services.Accounts.AccountClientFailure.InvalidSession
+                or Vograph.Core.Services.Accounts.AccountClientFailure.ReauthenticationRequired
+                ? PrivateSyncState.NeedsReauthentication : PrivateSyncState.Unavailable);
+            throw;
+        }
         finally
         {
             if (entered) syncGate.Release();
+            ownSync.Value--;
             // UI posts only after the DB/cycle gates are released and under the same profile lease.
             if (work.IsCurrent)
             {

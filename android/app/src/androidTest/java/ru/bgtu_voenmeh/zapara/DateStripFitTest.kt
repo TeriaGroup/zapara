@@ -37,7 +37,7 @@ class DateStripFitTest(private val width: Int, private val scale: Float, private
 
     @Test fun selected_today_digits_keep_vertical_inset() {
         val today = LocalDate.of(2026, 9, 16)
-        show { DateStrip(today, today, {}) }
+        show { DateStrip(today, today, onPick = {}) }
         val cell = rule.onNodeWithTag("Schedule.Date.20260916").assertIsDisplayed().fetchSemanticsNode()
         assertTrue("48dp height", cell.boundsInRoot.height + .5f >= 48 * density)
         val day = rule.onNode(hasText("16") and hasAnyAncestor(hasTestTag("Schedule.Date.20260916")), true)

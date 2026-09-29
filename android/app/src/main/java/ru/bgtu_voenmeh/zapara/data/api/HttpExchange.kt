@@ -14,7 +14,8 @@ data class HttpCall(
     val url: String,
     val headers: Map<String, String> = emptyMap(),
     val body: ByteArray? = null,
-    val maxBytes: Int = 16 * 1024 * 1024
+    val maxBytes: Int = 16 * 1024 * 1024,
+    val readTimeoutMs: Int = 30_000
 )
 
 data class HttpReply(
@@ -53,7 +54,7 @@ class UrlConnectionTransport : HttpExchange {
             conn.instanceFollowRedirects = false
             conn.useCaches = false
             conn.connectTimeout = 20_000
-            conn.readTimeout = 30_000
+            conn.readTimeout = call.readTimeoutMs
             conn.requestMethod = call.method
             conn.setRequestProperty("Accept", "application/json")
             conn.setRequestProperty("Accept-Encoding", "identity")

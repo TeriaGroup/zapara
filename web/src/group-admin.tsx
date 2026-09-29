@@ -3,10 +3,12 @@ import * as api from "./api";
 import { canReadAudit } from "./topic-policy";
 import { groupPowers } from "./powers";
 import { powerTitles } from "./topics";
+import { AvatarEditor } from "./avatar-view";
 import type { Classmate, GroupDesk, GroupRole, GroupAuditEvent } from "./types";
 export function titlesOf(desk: GroupDesk | null, userId: string) { return desk?.grants.filter(grant => grant.userId === userId).map(grant => desk.roles.find(role => role.roleId === grant.roleId)?.name).filter((name): name is string => !!name) ?? []; }
-export function GroupAdmin({ communityId, classmates, desk, onChange, onReload, onError }: {
+export function GroupAdmin({ communityId, groupName, classmates, desk, onChange, onReload, onError }: {
     communityId: string;
+    groupName: string;
     classmates: Classmate[];
     desk: GroupDesk;
     onChange: (desk: GroupDesk) => void;
@@ -60,6 +62,7 @@ export function GroupAdmin({ communityId, classmates, desk, onChange, onReload, 
     if (!desk.mine.length && !desk.headman)
         return null;
     return <details className="group-admin-panel" open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary>Управление группой</summary><section className="card stack"><p className="muted">Роли действуют внутри приложения. Старосту и куратора назначает администрация приложения; их статусы защищены.</p>
+    {can("channels") && <AvatarEditor kind="group" id={communityId} name={groupName} />}
     {can("roles") && <form className="row" onSubmit={create}><input aria-label="Название новой роли" value={name} onChange={event => setName(event.target.value)} maxLength={32} placeholder="Название роли"/><button className="btn primary" disabled={busy || name.trim().length < 2 || desk.roles.length >= (desk.capabilities?.maxRoles ?? 12)}>Создать роль</button></form>}
     <div className="group-role-picker" role="group" aria-label="Роли группы">{[...desk.roles].sort((a, b) => (b.position ?? 0) - (a.position ?? 0)).map(role => <button className="btn group-role-card" type="button" key={role.roleId} aria-pressed={selectedRole?.roleId === role.roleId} onClick={() => { setSelectedRoleId(role.roleId); setEditing(null); setRoleConflict(null); setTab("settings"); }}><strong>{role.icon} {role.name}</strong><span className="muted">Уровень {role.position ?? 0} · Назначений: {desk.grants.filter(grant => grant.roleId === role.roleId).length}</span></button>)}</div>
     {selectedRole && <><div className="row group-role-tabs" role="tablist" aria-label={`Роль ${selectedRole.name}`}><button type="button" className="btn" role="tab" aria-selected={tab === "settings"} onClick={() => setTab("settings")}>Настройки</button><button type="button" className="btn" role="tab" aria-selected={tab === "powers"} onClick={() => setTab("powers")}>Возможности</button><button type="button" className="btn" role="tab" aria-selected={tab === "members"} onClick={() => setTab("members")}>Участники</button></div>

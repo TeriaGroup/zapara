@@ -1,23 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import * as api from "./api";
-import { filterChatInbox, mergeChatInbox, sortChatInbox, unreadChatTotal, type ChatInboxItem } from "./chatInbox";
+import { chatInboxTime, filterChatInbox, mergeChatInbox, sortChatInbox, unreadChatTotal, type ChatInboxItem } from "./chatInbox";
 import { PeoplePanel } from "./people";
 import { useApp } from "./store";
 import type { GroupHome, SocialHome } from "./types";
 import { emptyChatState } from "./personal-composer";
+import { Avatar } from "./avatar-view";
 
 function destination(item: ChatInboxItem): string {
   if (item.kind === "personal") return `/chat/person/${encodeURIComponent(item.conversationId)}`;
   return `/group?communityId=${encodeURIComponent(item.communityId || "")}&conversationId=${encodeURIComponent(item.conversationId)}`;
-}
-
-function inboxTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toDateString() === new Date().toDateString()
-    ? date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
-    : date.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" });
 }
 
 const inboxKinds: { value: ChatInboxItem["kind"] | "all"; label: string }[] = [
@@ -113,10 +106,11 @@ export function ChatInboxPage() {
     </div>}
     <div className="people">
       {visible.map(item => <Link className="person" key={`${item.kind}:${item.conversationId}`} to={destination(item)}>
-        <span><span className="muted inbox-source">{inboxSource(item.kind)}</span><b>{item.title}</b>
-          <span className="muted">{item.preview || (item.kind === "group" ? "Чат группы" : "Нет сообщений")}</span></span>
-        <span className="inbox-meta">{item.lastAt && <span className="muted" title={new Date(item.lastAt).toLocaleString("ru-RU")}>{inboxTime(item.lastAt)}</span>}
-          {item.unread > 0 && <span className="chip" aria-label={`Непрочитанных сообщений: ${item.unread}`}>{item.unread > 99 ? "99+" : item.unread}</span>}</span>
+        <Avatar kind={item.kind === "group" ? "group" : "user"} id={item.kind === "group" ? item.communityId : item.peerUserId} name={item.kind === "classmate" ? item.title.split(" · ")[0] : item.title} />
+        <span className="inbox-main"><span className="inbox-heading"><b>{item.title}</b>{item.lastAt && <time className="muted" dateTime={item.lastAt} title={new Date(item.lastAt).toLocaleString("ru-RU")}>{chatInboxTime(item.lastAt)}</time>}</span>
+          <span className="inbox-preview"><span className="muted preview-line">{item.preview || (item.kind === "group" ? "Чат группы" : "Нет сообщений")}</span>
+            {item.unread > 0 && <span className="chip" aria-label={`Непрочитанных сообщений: ${item.unread}`}>{item.unread > 99 ? "99+" : item.unread}</span>}</span>
+          <span className="sr-only">{inboxSource(item.kind)}</span></span>
       </Link>)}
     </div>
   </section>;

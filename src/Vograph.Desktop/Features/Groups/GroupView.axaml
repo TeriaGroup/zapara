@@ -52,12 +52,17 @@
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="g:GroupCommunityRow">
               <Border Classes="card">
-                <Grid ColumnDefinitions="*,Auto">
-                  <StackPanel Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0">
+                <Grid ColumnDefinitions="44,*,Auto" ColumnSpacing="10">
+                  <Border Width="40" Height="40" CornerRadius="20" Background="{DynamicResource Brush.Chip}" ClipToBounds="True"
+                          AutomationProperties.Name="{Binding Name}">
+                    <Grid><TextBlock Text="{Binding Initials}" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding NoAvatar}" />
+                      <Image Source="{Binding Avatar}" Stretch="UniformToFill" IsVisible="{Binding HasAvatar}" /></Grid>
+                  </Border>
+                  <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center" Margin="0,0,16,0">
                     <TextBlock Classes="subject" Text="{Binding Name}" TextWrapping="Wrap" />
                     <TextBlock Classes="muted caption" Text="{Binding Role}" />
                   </StackPanel>
-                  <Button Grid.Column="1" Classes="primary" Content="{loc:T groupOpen}" Command="{Binding OpenCommand}"
+                  <Button Grid.Column="2" Classes="primary" Content="{loc:T groupOpen}" Command="{Binding OpenCommand}"
                           VerticalAlignment="Center" AutomationProperties.AutomationId="Group.Open" />
                 </Grid>
               </Border>
@@ -75,7 +80,18 @@
             <Button Content="Восстановить выбранную тему" Command="{Binding RestoreChannelCommand}" IsVisible="{Binding CanRestoreTopic}" />
             <Button Classes="ghost" Content="{loc:T groupList}" Command="{Binding BackCommand}"
                     HorizontalAlignment="Left" Padding="4,2" />
-            <TextBlock Classes="subject" Text="{Binding HomeTitle}" TextWrapping="Wrap" />
+            <Grid ColumnDefinitions="42,*" ColumnSpacing="8">
+              <Border Width="38" Height="38" CornerRadius="19" Background="{DynamicResource Brush.Chip}" ClipToBounds="True"
+                      AutomationProperties.Name="{Binding HomeTitle}">
+                <Grid><TextBlock Text="{Binding GroupInitials}" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding NoGroupAvatar}" />
+                  <Image Source="{Binding GroupAvatar}" Stretch="UniformToFill" IsVisible="{Binding HasGroupAvatar}" /></Grid>
+              </Border>
+              <TextBlock Grid.Column="1" Classes="subject" Text="{Binding HomeTitle}" TextWrapping="Wrap" VerticalAlignment="Center" />
+            </Grid>
+            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding CanEditGroupAvatar}">
+              <Button Classes="ghost" Content="Изменить фото" Command="{Binding ChangeGroupAvatarCommand}" AutomationProperties.Name="Изменить фото группы" />
+              <Button Classes="ghost" Content="Удалить фото" Command="{Binding RemoveGroupAvatarCommand}" AutomationProperties.Name="Удалить фото группы" />
+            </StackPanel>
             <Button Classes="ghost" Content="Следующий непрочитанный" Command="{Binding NextUnreadChannelCommand}"
                     IsEnabled="{Binding HasUnreadChannel}" HorizontalAlignment="Stretch" MinHeight="48"
                     AutomationProperties.AutomationId="Group.NextUnread" />
@@ -261,13 +277,18 @@
                       <Panel>
                         <Button Classes="ghost" Padding="8,7" CornerRadius="8" HorizontalAlignment="Stretch"
                                 HorizontalContentAlignment="Stretch" Command="{Binding OpenCommand}" IsVisible="{Binding !Self}">
-                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                            <StackPanel Spacing="1">
+                          <Grid ColumnDefinitions="34,*,Auto" ColumnSpacing="8">
+                            <Border Width="32" Height="32" CornerRadius="16" Background="{DynamicResource Brush.Chip}" ClipToBounds="True"
+                                    AutomationProperties.Name="{Binding Name}">
+                              <Grid><TextBlock Text="{Binding Initials}" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding NoAvatar}" />
+                                <Image Source="{Binding Avatar}" Stretch="UniformToFill" IsVisible="{Binding HasAvatar}" /></Grid>
+                            </Border>
+                            <StackPanel Grid.Column="1" Spacing="1">
                               <TextBlock Text="{Binding Name}" FontWeight="Medium" TextWrapping="Wrap" />
                               <TextBlock Classes="muted caption" Text="{Binding Detail}" TextWrapping="Wrap"
                                          IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                               <TextBlock Classes="muted caption" Text="{Binding Role}" VerticalAlignment="Center"
                                          IsVisible="{Binding Role, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                               <Border Classes="badge" VerticalAlignment="Center"
@@ -279,13 +300,18 @@
                           </Grid>
                         </Button>
                         <Border Padding="8,7" IsVisible="{Binding Self}" IsHitTestVisible="False">
-                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                            <StackPanel Spacing="1">
+                          <Grid ColumnDefinitions="34,*,Auto" ColumnSpacing="8">
+                            <Border Width="32" Height="32" CornerRadius="16" Background="{DynamicResource Brush.Chip}" ClipToBounds="True"
+                                    AutomationProperties.Name="{Binding Name}">
+                              <Grid><TextBlock Text="{Binding Initials}" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding NoAvatar}" />
+                                <Image Source="{Binding Avatar}" Stretch="UniformToFill" IsVisible="{Binding HasAvatar}" /></Grid>
+                            </Border>
+                            <StackPanel Grid.Column="1" Spacing="1">
                               <TextBlock Text="{Binding Name}" FontWeight="Medium" TextWrapping="Wrap" />
                               <TextBlock Classes="muted caption" Text="{Binding Detail}" TextWrapping="Wrap"
                                          IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             </StackPanel>
-                            <TextBlock Grid.Column="1" Classes="muted caption" Text="{Binding Role}" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Classes="muted caption" Text="{Binding Role}" VerticalAlignment="Center" />
                           </Grid>
                         </Border>
                       </Panel>
@@ -302,13 +328,18 @@
                     <DataTemplate x:DataType="g:GroupPersonRow">
                       <Button Classes="ghost" Padding="8,7" CornerRadius="8" HorizontalAlignment="Stretch"
                               HorizontalContentAlignment="Stretch" Command="{Binding OpenCommand}">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                          <StackPanel Spacing="1">
+                        <Grid ColumnDefinitions="34,*,Auto" ColumnSpacing="8">
+                          <Border Width="32" Height="32" CornerRadius="16" Background="{DynamicResource Brush.Chip}" ClipToBounds="True"
+                                  AutomationProperties.Name="{Binding Name}">
+                            <Grid><TextBlock Text="{Binding Initials}" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding NoAvatar}" />
+                              <Image Source="{Binding Avatar}" Stretch="UniformToFill" IsVisible="{Binding HasAvatar}" /></Grid>
+                          </Border>
+                          <StackPanel Grid.Column="1" Spacing="1">
                             <TextBlock Text="{Binding Name}" FontWeight="Medium" TextWrapping="Wrap" />
                             <TextBlock Classes="muted caption" Text="{Binding Detail}" TextWrapping="Wrap"
                                        IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                           </StackPanel>
-                          <Border Grid.Column="1" Classes="badge" VerticalAlignment="Center"
+                          <Border Grid.Column="2" Classes="badge" VerticalAlignment="Center"
                                   AutomationProperties.Name="{Binding UnreadDescription}"
                                   IsVisible="{Binding Unread, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                             <TextBlock Text="{Binding Unread}" />
@@ -328,7 +359,7 @@
         <DockPanel LastChildFill="True">
           <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,0,0,1" Padding="14,12">
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-              <StackPanel><Button Name="TopicListButton" Content="К темам группы" Click="ShowTopicList" IsVisible="False" HorizontalAlignment="Left" /><TextBlock Classes="subject" Text="{Binding ChatTitle}" VerticalAlignment="Center" TextWrapping="Wrap" /><Button Classes="ghost" Content="{Binding PinCaption}" Command="{Binding ToggleTopicPinCommand}" IsVisible="{Binding CanPinSelected}" HorizontalAlignment="Left" /></StackPanel>
+              <StackPanel><Button Name="TopicListButton" Content="К темам группы" Click="ShowTopicList" IsVisible="False" HorizontalAlignment="Left" /><StackPanel Orientation="Horizontal" Spacing="8"><Border Width="32" Height="32" CornerRadius="16" Background="{DynamicResource Brush.Chip}" ClipToBounds="True" AutomationProperties.Name="{Binding HomeTitle}"><Grid><TextBlock Text="{Binding GroupInitials}" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding NoGroupAvatar}" /><Image Source="{Binding GroupAvatar}" Stretch="UniformToFill" IsVisible="{Binding HasGroupAvatar}" /></Grid></Border><TextBlock Classes="subject" Text="{Binding ChatTitle}" VerticalAlignment="Center" TextWrapping="Wrap" /></StackPanel><Button Classes="ghost" Content="{Binding PinCaption}" Command="{Binding ToggleTopicPinCommand}" IsVisible="{Binding CanPinSelected}" HorizontalAlignment="Left" /></StackPanel>
               <Button Grid.Column="1" Classes="ghost" Content="{loc:T groupBack}" Command="{Binding BackToGroupCommand}"
                       Padding="8,4" VerticalAlignment="Center" IsVisible="{Binding IsDirect}" />
               <Button Grid.Column="2" Classes="ghost" Content="К новым" Click="JumpToLatest"
@@ -469,10 +500,15 @@
                             CornerRadius="12" Padding="12,8" Margin="0,0,0,8" MaxWidth="440"
                             HorizontalAlignment="{Binding Mine, Converter={x:Static loc:Converters.ChatAlign}}">
                       <StackPanel Spacing="2">
-                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
-                          <TextBlock Classes="caption" Text="{Binding Author}" TextTrimming="CharacterEllipsis" IsVisible="{Binding ShowAuthor}" />
-                          <TextBlock Grid.Column="1" Classes="muted caption" Text="{Binding When}" />
-                          <Button Grid.Column="2" Classes="ghost" Content="Действия" Click="OpenMessageActions"
+                         <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                          <Border Width="26" Height="26" CornerRadius="13" Background="{DynamicResource Brush.Chip}" ClipToBounds="True" IsVisible="{Binding ShowAuthor}"
+                                  AutomationProperties.Name="{Binding Author}">
+                            <Grid><TextBlock Text="{Binding Initials}" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding NoAvatar}" />
+                              <Image Source="{Binding Avatar}" Stretch="UniformToFill" IsVisible="{Binding HasAvatar}" /></Grid>
+                          </Border>
+                          <TextBlock Grid.Column="1" Classes="caption" Text="{Binding Author}" TextTrimming="CharacterEllipsis" IsVisible="{Binding ShowAuthor}" VerticalAlignment="Center" />
+                          <TextBlock Grid.Column="2" Classes="muted caption" Text="{Binding When}" />
+                          <Button Grid.Column="3" Classes="ghost" Content="Действия" Click="OpenMessageActions"
                                   IsVisible="{Binding !Deleted}" MinHeight="48" AutomationProperties.AutomationId="Group.MessageActions" />
                         </Grid>
                         <TextBlock Classes="muted caption" Text="{Binding ReplyPreview}" IsVisible="{Binding IsReply}" TextWrapping="Wrap" />

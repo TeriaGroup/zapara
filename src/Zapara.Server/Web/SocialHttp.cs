@@ -7,7 +7,7 @@ using Zapara.Server.Social;
 
 namespace Zapara.Server.Web;
 
-internal static class SocialHttp
+internal static partial class SocialHttp
 {
     internal static void MapNative(WebApplication app)
     {
@@ -24,6 +24,7 @@ internal static class SocialHttp
             _ => exception.Status switch
             {
                 400 or 413 or 415 => "Некорректный запрос",
+                403 => "Недостаточно прав",
                 404 => "Не найдено",
                 503 => "Сервис временно недоступен",
                 _ => "Внутренняя ошибка сервера"
@@ -125,6 +126,12 @@ internal static class SocialHttp
     {
         var group = app.MapGroup($"/api/v{version}/social").RequireAuthorization("AccountUser").RequireRateLimiting("account-other");
         Route(group, "GET", "/home", Home);
+        Route(group, "GET", "/avatars/users/{userId}", UserAvatar);
+        Route(group, "PUT", "/avatars/me", PutUserAvatar);
+        Route(group, "DELETE", "/avatars/me", DeleteUserAvatar);
+        Route(group, "GET", "/avatars/groups/{communityId}", GroupAvatar);
+        Route(group, "PUT", "/avatars/groups/{communityId}", PutGroupAvatar);
+        Route(group, "DELETE", "/avatars/groups/{communityId}", DeleteGroupAvatar);
         Route(group, "POST", "/invites", Invite);
         Route(group, "POST", "/invites/{friendshipId}/accept", Accept);
         Route(group, "POST", "/invites/{friendshipId}/decline", Decline);

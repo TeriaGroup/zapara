@@ -1,4 +1,17 @@
-import type { SocialMessage, SocialPage } from "./types";
+import type { SocialFriend, SocialMessage, SocialPage } from "./types";
+
+export function reconcileActiveFriend(active: SocialFriend | null, friends: SocialFriend[]): SocialFriend | null {
+  return active ? friends.find(friend => friend.conversationId === active.conversationId && friend.userId === active.userId) ?? null : null;
+}
+
+export function sameSocialCluster(before: SocialMessage, after: SocialMessage): boolean {
+  if (before.senderId !== after.senderId) return false;
+  const first = new Date(before.createdAt);
+  const second = new Date(after.createdAt);
+  if (first.toDateString() !== second.toDateString()) return false;
+  const gap = second.getTime() - first.getTime();
+  return gap >= 0 && gap <= 5 * 60 * 1000;
+}
 
 export function mergeSocialMessages(current: SocialMessage[], incoming: SocialMessage[]): SocialMessage[] {
   const map = new Map(current.map(item => [item.messageId, item]));

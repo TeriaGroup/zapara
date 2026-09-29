@@ -7,7 +7,9 @@ export class GroupMediaError extends Error {
 }
 
 export const groupMediaLimit = 8 * 1024 * 1024;
-export const groupVoiceLimit = 2 * 1024 * 1024;
+export const groupVoiceLimit = 4 * 1024 * 1024;
+export const groupCircleLimit = 24 * 1024 * 1024;
+const groupDownloadLimit = groupCircleLimit;
 export type GroupMediaKind = "image" | "video" | "file" | "voice" | "circle";
 
 const mediaId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -44,9 +46,9 @@ export async function getGroupMedia(download: GroupMediaDownload, get: typeof fe
     headers: { ...headers, Accept: "application/octet-stream" },
   });
   if (!response.ok) throw new Error(String(response.status));
-  if (Number(response.headers.get("Content-Length")) > groupMediaLimit) throw new GroupMediaError("size");
+  if (Number(response.headers.get("Content-Length")) > groupDownloadLimit) throw new GroupMediaError("size");
   const blob = await response.blob();
-  if (blob.size > groupMediaLimit) throw new GroupMediaError("size");
+  if (blob.size > groupDownloadLimit) throw new GroupMediaError("size");
   const signature = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
   return blob.slice(0, blob.size, mediaMime(download.kind, download.filename, signature));
 }
@@ -99,7 +101,8 @@ export async function postGroupMedia(id: string, kind: GroupMediaKind, name: str
 
 export function groupMediaRequest(kind: string, name: string, bytes: number, replyTo?: string, durationMs?: number, topicId?: string): { name: string; headers: Record<string, string> } {
   if (kind !== "image" && kind !== "video" && kind !== "file" && kind !== "voice" && kind !== "circle") throw new GroupMediaError("kind");
-  if (!Number.isFinite(bytes) || bytes < 1 || bytes > (kind === "voice" ? groupVoiceLimit : groupMediaLimit)) throw new GroupMediaError("size");
+  const maximum = kind === "voice" ? groupVoiceLimit : kind === "circle" ? groupCircleLimit : groupMediaLimit;
+  if (!Number.isFinite(bytes) || bytes < 1 || bytes > maximum) throw new GroupMediaError("size");
   if ((kind === "voice" || kind === "circle") && durationMs === undefined) throw new GroupMediaError("duration");
   if (durationMs !== undefined && (kind !== "voice" && kind !== "circle" || !Number.isInteger(durationMs) || durationMs < 1 || durationMs > (kind === "voice" ? 180_000 : 60_000)))
     throw new GroupMediaError("duration");

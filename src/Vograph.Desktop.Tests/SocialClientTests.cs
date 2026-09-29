@@ -156,7 +156,7 @@ public sealed class SocialClientTests
         handler.Send = (_, _) => throw new Xunit.Sdk.XunitException("Invalid media reached the server");
 
         await Assert.ThrowsAsync<SocialClientException>(() => client.SendMediaAsync(Access, Conversation,
-            "voice", "voice.m4a", new byte[2 * 1024 * 1024 + 1], ct: TestContext.Current.CancellationToken, durationMs: 1000));
+            "voice", "voice.m4a", new byte[4 * 1024 * 1024 + 1], ct: TestContext.Current.CancellationToken, durationMs: 1000));
         await Assert.ThrowsAsync<SocialClientException>(() => client.SendMediaAsync(Access, Conversation,
             "circle", "circle.mp4", [1, 2, 3], ct: TestContext.Current.CancellationToken, durationMs: 60_001));
     }

@@ -24,6 +24,7 @@ class GroupSpaceViewModelTest {
         call.url.endsWith("/communities") -> jsonReply("""[{"communityId":"$group","name":"O3313","description":"","revision":1,"role":"member"}]""")
         call.url.endsWith("/$group/home") -> jsonReply("""{"communityId":"$group","name":"O3313","groupName":"O3313","groupChat":{"conversationId":"$conversation","kind":"group","communityId":"$group","title":"O3313","peerUserId":null,"lastBody":null,"lastAt":null,"unread":0},"classmates":[],"directs":[]}""")
         call.url.endsWith("/$group/space") -> jsonReply(space(false))
+        call.url.endsWith("/$conversation/read") -> jsonReply("""{"conversationId":"$conversation","kind":"group","communityId":"$group","title":"O3313","peerUserId":null,"lastBody":null,"lastAt":null,"unread":0}""")
         call.url.endsWith("/forms") -> jsonReply("""{"forms":[]}""")
         else -> error(call.url)
     } }

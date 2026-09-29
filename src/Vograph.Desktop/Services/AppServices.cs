@@ -71,7 +71,7 @@ public sealed partial class AppServices : IDisposable
     public bool AllowNetwork
     {
         get => _allowNetwork;
-        set { if (_allowNetwork != value) { _allowNetwork = value; Api?.NetworkPolicyChanged(value); } }
+        set { if (_allowNetwork != value) { _allowNetwork = value; Api?.NetworkPolicyChanged(value); if (value) PrivateSync?.Wake(); } }
     }
 
     private readonly string? _apiBaseUrl;

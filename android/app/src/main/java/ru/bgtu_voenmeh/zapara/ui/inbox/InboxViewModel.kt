@@ -58,7 +58,7 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
             is InboxEvent.UploadRecorded -> {
                 if (state.value.active?.id != event.conversationId) {
                     event.file.delete()
-                } else if (state.value.guest || operation?.isActive == true || state.value.sending) {
+                } else if (state.value.guest || state.value.sending) {
                     event.file.delete()
                     mutable.update { it.copy(error = container.app.getString(R.string.face_wait_send)) }
                 } else execute(event)
@@ -92,7 +92,7 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
     }
     private fun execute(event: InboxEvent) {
         val composing = event == InboxEvent.Send || event is InboxEvent.Upload || event is InboxEvent.UploadRecorded
-        if (state.value.guest || operation?.isActive == true || (composing && state.value.sending)) return
+        if (state.value.guest || !canStartPersonalOperation(composing, operation?.isActive == true, state.value.sending)) return
         if (event == InboxEvent.Send && (!state.value.composer.canSend || state.value.active == null)) return
         val started = generation
         val snapshot = state.value
@@ -126,7 +126,7 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                         }
                         is InboxEvent.UploadRecorded -> snapshot.active?.takeIf { it.id == event.conversationId }?.let { row ->
                             try {
-                                val cap = if (event.kind == "voice") 2 * 1024 * 1024 else 8 * 1024 * 1024
+                                val cap = if (event.kind == "voice") 4 * 1024 * 1024 else 24 * 1024 * 1024
                                 require(event.file.length() in 1..cap.toLong())
                                 val bytes = event.file.readBytes()
                                 val result = api.uploadRecording(token, row.id, event.kind, bytes, event.durationMs, snapshot.reply?.id)
@@ -149,7 +149,7 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                             acknowledge(row.id, result, snapshot.composer)
                         }
                         is InboxEvent.Delete -> snapshot.active?.let { publishMessage(started, it.id, api.delete(token, it.id, event.message.id)) }
-                        is InboxEvent.React -> snapshot.active?.let { publishMessage(started, it.id, api.react(token, it.id, event.message.id, event.emoji)) }
+                        is InboxEvent.React -> snapshot.active?.let { publishMessage(started, it.id, api.react(token, it.id, event.message.id, event.emoji), reactionOnly = true) }
                         else -> Unit
                     }
                     if (snapshot.active != null) {
@@ -158,12 +158,23 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                         else loadSocialUpdates(snapshot.messages.map { it.id }.toSet()) { before -> api.messages(token, snapshot.active.id, before) }
                         withContext(Dispatchers.Main.immediate) {
                             if (generation == started) mutable.update { current ->
-                                if (current.active?.id == snapshot.active.id && historyVersions.isCurrent(snapshot.active.id, historyVersion)) current.copy(
-                                    messages = if (event == InboxEvent.Older) merge(page.messages, current.messages) else merge(current.messages, page.messages),
+                                if (current.active?.id == snapshot.active.id) current.copy(
+                                    messages = mergePersonalHistory(current.messages, page.messages,
+                                        event != InboxEvent.Older && historyVersions.isCurrent(snapshot.active.id, historyVersion)),
                                     hasMore = if (event == InboxEvent.Older || snapshot.messages.isEmpty()) page.hasMore else current.hasMore,
                                     historyLoaded = true)
                                 else current
                             }
+                        }
+                        if (event != InboxEvent.Older) {
+                            val fresh = try { api.home(token) } catch (cancel: CancellationException) { throw cancel } catch (_: Exception) { null }
+                            fresh?.let { home -> withContext(Dispatchers.Main.immediate) {
+                                if (generation == started) mutable.update { current ->
+                                    current.copy(active = home.friends.firstOrNull { it.id == current.active?.id } ?: current.active,
+                                        rows = orderInbox(home.friends + current.rows.filter { it.communityId != null }),
+                                        code = home.code, incoming = home.incoming, outgoing = home.outgoing)
+                                }
+                            } }
                         }
                     } else {
                         var partial = false
@@ -220,17 +231,18 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
         val next = if (attachment) current.acknowledgeAttachment(sent) else current.acknowledge(sent)
         composers.save(conversationId, next)
         mutable.update { if (it.active?.id == conversationId) it.copy(composer = next,
-            messages = merge(it.messages, listOf(message))) else it }
+            messages = mergePersonalHistory(it.messages, listOf(personalReceipt(it.messages.firstOrNull { row -> row.id == message.id },
+                message, editing = sent.editing != null)), true)) else it }
     }
     private suspend fun publishMessage(started: Int, conversationId: String, message: SocialMessage,
-        amend: (InboxUiState) -> InboxUiState = { it }) = withContext(Dispatchers.Main.immediate) {
+        reactionOnly: Boolean = false) = withContext(Dispatchers.Main.immediate) {
         historyVersions.acknowledge(conversationId)
         if (generation == started) mutable.update { current ->
-            if (current.active?.id == conversationId) amend(current.copy(messages = merge(current.messages, listOf(message))))
+            if (current.active?.id == conversationId) current.copy(messages = mergePersonalHistory(current.messages,
+                listOf(personalReceipt(current.messages.firstOrNull { it.id == message.id }, message, reactionOnly = reactionOnly)), true))
             else current
         }
     }
-    private fun merge(a: List<SocialMessage>, b: List<SocialMessage>) = (a + b).associateBy { it.id }.values.sortedBy { it.createdAt }
     private fun loadMedia(message: SocialMessage) {
         val attachment = message.attachmentId ?: return
         if (message.deleted || message.kind !in setOf("image", "voice", "circle")) return
@@ -242,7 +254,7 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                 val token = container.accessToken() ?: throw SocialFailure(401)
                 val bytes = api.download(token, attachment)
                 ensureActive()
-                val cap = when (message.kind) { "voice" -> 2 * 1024 * 1024; "circle" -> 8 * 1024 * 1024; else -> 20 * 1024 * 1024 }
+                val cap = when (message.kind) { "voice" -> 4 * 1024 * 1024; "circle" -> 24 * 1024 * 1024; else -> 20 * 1024 * 1024 }
                 require(bytes.isNotEmpty() && bytes.size <= cap)
                 if (!mediaDirectory.isDirectory && !mediaDirectory.mkdirs()) error(container.app.getString(R.string.face_no_space))
                 val suffix = when (message.kind) {

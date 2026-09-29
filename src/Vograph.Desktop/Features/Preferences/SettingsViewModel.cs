@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Text;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
@@ -26,8 +27,36 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private readonly Action _reload;
     private readonly PropertyChangedEventHandler _onShell;
     private readonly Action _onTheme;
+    private readonly Action _onSyncHealth;
     private bool _suppress;
     private int _version;
+    private DispatcherTimer? profileRefreshTimer;
+    private bool settingsVisible;
+    private int profileRefreshBusy;
+
+    public void Watch(bool visible)
+    {
+        settingsVisible = visible;
+        RefreshProfileTimer();
+    }
+
+    private void RefreshProfileTimer()
+    {
+        profileRefreshTimer?.Stop();
+        profileRefreshTimer = null;
+        if (!settingsVisible || ActivePanel != "account" || AccountPanel.IsGuest) return;
+        _ = RefreshVisibleProfileAsync();
+        profileRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(2) };
+        profileRefreshTimer.Tick += async (_, _) => await RefreshVisibleProfileAsync();
+        profileRefreshTimer.Start();
+    }
+
+    private async Task RefreshVisibleProfileAsync()
+    {
+        if (Interlocked.Exchange(ref profileRefreshBusy, 1) != 0) return;
+        try { if (settingsVisible && ActivePanel == "account") await AccountPanel.RefreshRemoteAsync(); }
+        finally { Interlocked.Exchange(ref profileRefreshBusy, 0); }
+    }
 
     public SettingsViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null) : base(app)
     {
@@ -46,10 +75,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
             if (e.PropertyName == nameof(ShellViewModel.IsRefreshing)) IsRefreshing = shell.IsRefreshing;
         };
         _onTheme = () => { if (App.Theme is { } t) Suppressed(() => ThemeIndex = (int)t.Choice); };
+        _onSyncHealth = () => Dispatcher.UIThread.Post(() =>
+        {
+            if (ActivePanel == "data" && App.Work.CanPublish) _ = ReadDataSummary();
+        });
         shell.PropertyChanged += _onShell;
         shell.GroupChanged += _reload;
         shell.ScheduleChanged += _reload;
         app.Loc.LanguageChanged += Relabel;
+        app.Outbox.Changed += _onSyncHealth;
+        if (app.PrivateSync is { } sync) sync.HealthChanged += _onSyncHealth;
         // LanSync.Imported is the shell's to handle (NotifyImportedAsync): a LAN push has to refresh the app
         // whether or not this section was ever built, and ScheduleChanged brings this card along with it.
         if (app.Theme is { } theme) theme.Changed += _onTheme; // mirrors the sidebar's quick-toggle back into ThemeIndex
@@ -57,10 +92,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public override void Detach()
     {
+        Watch(false);
         _shell.PropertyChanged -= _onShell;
         _shell.GroupChanged -= _reload;
         _shell.ScheduleChanged -= _reload;
         App.Loc.LanguageChanged -= Relabel;
+        App.Outbox.Changed -= _onSyncHealth;
+        if (App.PrivateSync is { } sync) sync.HealthChanged -= _onSyncHealth;
         if (App.Theme is { } theme) theme.Changed -= _onTheme;
         QrVisible = false;
         QrImage?.Dispose(); // the section is going away: the decoded QR goes with it (T10 #2)

@@ -6,6 +6,12 @@ internal static partial class WebEndpoints
     {
         var group = root.MapGroup("/social");
         Route(group, "GET", "/home", SocialHttp.Home);
+        Route(group, "GET", "/avatars/users/{userId}", SocialHttp.UserAvatar, bootstrap: true);
+        Route(group, "PUT", "/avatars/me", SocialHttp.PutUserAvatar);
+        Route(group, "DELETE", "/avatars/me", SocialHttp.DeleteUserAvatar);
+        Route(group, "GET", "/avatars/groups/{communityId}", SocialHttp.GroupAvatar, bootstrap: true);
+        Route(group, "PUT", "/avatars/groups/{communityId}", SocialHttp.PutGroupAvatar);
+        Route(group, "DELETE", "/avatars/groups/{communityId}", SocialHttp.DeleteGroupAvatar);
         Route(group, "POST", "/invites", SocialHttp.Invite);
         Route(group, "POST", "/invites/{friendshipId}/accept", SocialHttp.Accept);
         Route(group, "POST", "/invites/{friendshipId}/decline", SocialHttp.Decline);

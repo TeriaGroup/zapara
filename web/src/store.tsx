@@ -3,6 +3,7 @@ import * as api from "./api";
 import { usePrivateHomework } from "./private-sync";
 import { resolveStoredGroup } from "./groupChoice";
 import { normalizeIntersectionStrictness } from "./intersectionStrictness";
+import { createSessionRefresher } from "./session-refresh";
 
 import type { FriendItem, GroupsPayload, HomeworkItem, Lesson, Session, TimetablePayload } from "./types";
 
@@ -24,6 +25,7 @@ type State = {
   loading: boolean;
   refresh: () => void;
   session: Session | null;
+  sessionStatus: string;
   refreshSession: () => Promise<void>;
   privateHomework: ReturnType<typeof usePrivateHomework>;
   homework: HomeworkItem[];
@@ -69,6 +71,12 @@ export function Provider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [tick, setTick] = useState(0);
   const [session, setSession] = useState<Session | null>(null);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState("Проверяем аккаунт…");
+  const sessionRefresher = useRef<(() => Promise<void>) | null>(null);
+  if (!sessionRefresher.current) sessionRefresher.current = createSessionRefresher(api.authGeneration, api.session,
+    value => { setSession(value); setSessionLoaded(true); setSessionStatus(""); },
+    () => { setSessionLoaded(true); setSessionStatus("Не удалось обновить аккаунт. Показаны последние данные."); });
   const privateHomework = usePrivateHomework(session?.authenticated ? session.user?.userId ?? null : null);
   const homework = privateHomework.items;
   const [friends, setFriends] = useState<FriendItem[]>(() => readList(friendsKey));
@@ -76,6 +84,9 @@ export function Provider({ children }: { children: ReactNode }) {
     return normalizeIntersectionStrictness(localStorage.getItem(intersectionStrictnessKey));
   });
   const [showAbsentFriends, setShowAbsentFriends] = useState(localStorage.getItem(showAbsentFriendsKey) === "1");
+  const guestPreferences = useRef({ groupId, invert, strictness: intersectionStrictness, showAbsentFriends });
+  const sessionIdentity = session?.authenticated && session.user ? `${session.user.userId}:${session.familyId || ""}` : "guest";
+  const previousIdentity = useRef<string | null>(null);
   const [date, setDateState] = useState(() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), now.getDate()); });
   const setDate = (value: Date) => setDateState(new Date(value.getFullYear(), value.getMonth(), value.getDate()));
   const [subgroups, setSubgroups] = useState<Record<string, Record<string, string>>>(() => {
@@ -90,11 +101,11 @@ export function Provider({ children }: { children: ReactNode }) {
     return () => media.removeEventListener("change", update);
   }, [theme]);
   useEffect(() => { localStorage.setItem("zapara.animations", animations ? "1" : "0"); document.documentElement.dataset.motion = animations ? "on" : "off"; }, [animations]);
-  useEffect(() => { localStorage.setItem(invertKey, invert ? "1" : "0"); }, [invert]);
-  useEffect(() => { if (groupReady.current) localStorage.setItem(groupKey, groupId); }, [groupId]);
+  useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity) localStorage.setItem(invertKey, invert ? "1" : "0"); }, [invert, sessionLoaded, sessionIdentity]);
+  useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity && groupReady.current) localStorage.setItem(groupKey, groupId); }, [groupId, sessionLoaded, sessionIdentity]);
   const chooseGroup = (id: string) => {
     groupReady.current = true;
-    localStorage.setItem(groupKey, id);
+    if (!session?.authenticated) { guestPreferences.current.groupId = id; localStorage.setItem(groupKey, id); }
     const cached = id ? api.readCache().lessons[id] : null;
     setBundle(cached ? { groupId: id, payload: cached } : null);
     setTimetableStatus({ groupId: id, loading: !!id, failed: false });
@@ -104,8 +115,8 @@ export function Provider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => { localStorage.setItem(friendsKey, JSON.stringify(friends)); }, [friends]);
-  useEffect(() => { localStorage.setItem(intersectionStrictnessKey, String(intersectionStrictness)); }, [intersectionStrictness]);
-  useEffect(() => { localStorage.setItem(showAbsentFriendsKey, showAbsentFriends ? "1" : "0"); }, [showAbsentFriends]);
+  useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity) localStorage.setItem(intersectionStrictnessKey, String(intersectionStrictness)); }, [intersectionStrictness, sessionLoaded, sessionIdentity]);
+  useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity) localStorage.setItem(showAbsentFriendsKey, showAbsentFriends ? "1" : "0"); }, [showAbsentFriends, sessionLoaded, sessionIdentity]);
   useEffect(() => { localStorage.setItem(subgroupKey, JSON.stringify(subgroups)); }, [subgroups]);
 
   useEffect(() => {
@@ -117,13 +128,14 @@ export function Provider({ children }: { children: ReactNode }) {
       const cache = api.readCache();
       cache.groups = payload;
       api.writeCache(cache);
-      const next = resolveStoredGroup(groupReady.current ? localStorage.getItem(groupKey) : null, payload.groups);
+      const next = resolveStoredGroup(session?.authenticated ? groupId : groupReady.current ? localStorage.getItem(groupKey) : null, payload.groups);
       const cached = next ? api.readCache().lessons[next] : null;
       setBundle(cached ? { groupId: next, payload: cached } : null);
       setTimetableStatus({ groupId: next, loading: !!next, failed: false });
-      if (!groupReady.current) {
+      if (!groupReady.current && !session?.authenticated) {
         groupReady.current = true;
         localStorage.setItem(groupKey, next);
+        guestPreferences.current.groupId = next;
       }
       setGroupState(next);
       setNotice(payload.meta.stale ? "Расписание может быть устаревшим. Показана сохранённая копия." : "");
@@ -160,26 +172,49 @@ export function Provider({ children }: { children: ReactNode }) {
     return () => { stop = true; };
   }, [groupId, tick]);
 
-  useEffect(() => { void api.session().then(setSession).catch(() => setSession(null)); }, []);
+  useEffect(() => {
+    const refresh = () => { void sessionRefresher.current?.().catch(() => undefined); };
+    const visibleRefresh = () => { if (!document.hidden) refresh(); };
+    refresh();
+    const timer = window.setInterval(visibleRefresh, 60_000);
+    window.addEventListener("focus", visibleRefresh);
+    window.addEventListener("online", visibleRefresh);
+    document.addEventListener("visibilitychange", visibleRefresh);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", visibleRefresh); window.removeEventListener("online", visibleRefresh); document.removeEventListener("visibilitychange", visibleRefresh); };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionLoaded || previousIdentity.current === sessionIdentity) return;
+    if (previousIdentity.current === "guest" && sessionIdentity !== "guest")
+      guestPreferences.current = { groupId, invert, strictness: intersectionStrictness, showAbsentFriends };
+    if (previousIdentity.current && previousIdentity.current !== "guest") {
+      const guest = guestPreferences.current;
+      setGroupState(guest.groupId);
+      setInvertState(guest.invert);
+      setIntersectionStrictness(guest.strictness);
+      setShowAbsentFriends(guest.showAbsentFriends);
+    }
+    previousIdentity.current = sessionIdentity;
+  }, [sessionLoaded, sessionIdentity]);
 
   useEffect(() => {
     const settings = privateHomework.settings;
     if (!session?.authenticated || !settings) return;
     if ((settings.selectedGroupId || "") !== groupId) setGroupState(settings.selectedGroupId || "");
     setInvertState(settings.parityInvert); setIntersectionStrictness(normalizeIntersectionStrictness(settings.strictness)); setShowAbsentFriends(settings.alwaysShow);
-  }, [privateHomework.settings, session?.authenticated]);
+  }, [privateHomework.settings, sessionIdentity]);
 
   const value = useMemo<State>(() => ({
-    theme, setTheme: setThemeState, animations, setAnimations, invert, setInvert: value => { setInvertState(value); if (session?.authenticated) privateHomework.saveSettings({ parityInvert: value }); },
+    theme, setTheme: setThemeState, animations, setAnimations, invert, setInvert: value => { setInvertState(value); if (session?.authenticated) privateHomework.saveSettings({ parityInvert: value }); else guestPreferences.current.invert = value; },
     groupId, setGroupId: chooseGroup, catalog, lessons: bundle?.groupId === groupId ? bundle.payload.lessons : [],
     timetableAvailable: bundle?.groupId === groupId,
     timetableLoading: !!groupId && (timetableStatus.groupId !== groupId || timetableStatus.loading),
     timetableFailed: timetableStatus.groupId === groupId && timetableStatus.failed,
     notice, loading, refresh: () => setTick(n => n + 1),
-    session, refreshSession: async () => setSession(await api.session()),
+    session, sessionStatus, refreshSession: () => sessionRefresher.current!(),
     privateHomework, homework, saveHomework: privateHomework.save,
     friends, saveFriends: setFriends,
-    intersectionStrictness, setIntersectionStrictness: value => { const strictness = normalizeIntersectionStrictness(value); setIntersectionStrictness(strictness); if (session?.authenticated) privateHomework.saveSettings({ strictness }); }, showAbsentFriends, setShowAbsentFriends: value => { setShowAbsentFriends(value); if (session?.authenticated) privateHomework.saveSettings({ alwaysShow: value }); },
+    intersectionStrictness, setIntersectionStrictness: value => { const strictness = normalizeIntersectionStrictness(value); setIntersectionStrictness(strictness); if (session?.authenticated) privateHomework.saveSettings({ strictness }); else guestPreferences.current.strictness = strictness; }, showAbsentFriends, setShowAbsentFriends: value => { setShowAbsentFriends(value); if (session?.authenticated) privateHomework.saveSettings({ alwaysShow: value }); else guestPreferences.current.showAbsentFriends = value; },
     date, setDate,
     subgroups,
     pickSubgroup: (streamId, optionId) => setSubgroups(current => {
@@ -188,7 +223,7 @@ export function Provider({ children }: { children: ReactNode }) {
       else group[streamId] = optionId;
       return { ...current, [groupId]: group };
     }),
-  }), [theme, animations, invert, groupId, catalog, bundle, timetableStatus, notice, loading, session, privateHomework, homework,
+  }), [theme, animations, invert, groupId, catalog, bundle, timetableStatus, notice, loading, session, sessionStatus, privateHomework, homework,
     friends, intersectionStrictness, showAbsentFriends, date, subgroups]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

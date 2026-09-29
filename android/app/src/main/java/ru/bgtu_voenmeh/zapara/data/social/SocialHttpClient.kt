@@ -15,14 +15,16 @@ data class InboxRow(
     val lastAt: Instant? = null,
     val unread: Int = 0,
     val subtitle: String = if (communityId == null) "Личный чат" else "Учебная группа",
-    val source: InboxSource = if (communityId == null) InboxSource.Friend else InboxSource.Group
+    val source: InboxSource = if (communityId == null) InboxSource.Friend else InboxSource.Group,
+    val peerUserId: String? = null
 )
 fun orderInbox(rows: List<InboxRow>): List<InboxRow> = rows.distinctBy { it.id }.sortedWith(compareByDescending<InboxRow> { it.lastAt }.thenByDescending { it.unread > 0 }.thenBy { it.title })
 fun groupInboxRows(home: ru.bgtu_voenmeh.zapara.data.communities.GroupHome): List<InboxRow> =
     (listOf(home.groupChat) + home.directs).map { conversation ->
         InboxRow(conversation.conversationId, conversation.title, home.communityId, conversation.lastBody, conversation.lastAt, conversation.unread,
             if (conversation.kind == "direct") "Личный чат · ${home.groupName ?: home.name}" else "Учебная группа",
-            if (conversation.kind == "direct") InboxSource.GroupDirect else InboxSource.Group)
+            if (conversation.kind == "direct") InboxSource.GroupDirect else InboxSource.Group,
+            peerUserId = conversation.peerUserId)
     }
 data class SocialInvite(val id: String, val name: String)
 data class SocialHome(val code: String, val friends: List<InboxRow>, val incoming: List<SocialInvite>, val outgoing: List<SocialInvite>)
@@ -71,7 +73,7 @@ class SocialHttpClient(private val transport: HttpExchange, private val scope: A
         val voice = kind == "voice"
         require(durationMs in 1..(if (voice) 180_000 else 60_000))
         return uploadMultipart(token, conversation, if (voice) "voice" else "circles", if (voice) "voice.m4a" else "circle.mp4", bytes,
-            if (voice) "audio/mp4" else "video/mp4", if (voice) 2 * 1024 * 1024 else 8 * 1024 * 1024, durationMs, reply)
+            if (voice) "audio/mp4" else "video/mp4", if (voice) 4 * 1024 * 1024 else 24 * 1024 * 1024, durationMs, reply)
     }
     private suspend fun uploadMultipart(token: String, conversation: String, route: String, name: String, bytes: ByteArray, mime: String, maxBytes: Int, durationMs: Int?, reply: String?): SocialMessage {
         require(bytes.isNotEmpty() && bytes.size <= maxBytes)
@@ -83,12 +85,12 @@ class SocialHttpClient(private val transport: HttpExchange, private val scope: A
         if (durationMs != null) part("--$boundary\r\nContent-Disposition: form-data; name=\"durationMs\"\r\n\r\n$durationMs\r\n")
         part("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$safeName\"\r\nContent-Type: $mime\r\n\r\n")
         body.write(bytes); part("\r\n--$boundary--\r\n")
-        val response = transport.exchange(HttpCall("POST", scope.baseUri.toString() + "api/v1/social/conversations/${id(conversation)}/$route", mapOf("Authorization" to "Bearer ${AccountValidation.token(token, "za_")}", "Content-Type" to "multipart/form-data; boundary=$boundary", "Accept" to "application/json"), body.toByteArray(), 1024 * 1024))
+        val response = transport.exchange(HttpCall("POST", scope.baseUri.toString() + "api/v1/social/conversations/${id(conversation)}/$route", mapOf("Authorization" to "Bearer ${AccountValidation.token(token, "za_")}", "Content-Type" to "multipart/form-data; boundary=$boundary", "Accept" to "application/json"), body.toByteArray(), 1024 * 1024, readTimeoutMs = if (durationMs != null) 180_000 else 30_000))
         if (response.status != 201) throw SocialFailure(response.status)
         return message(StrictJson.parse(response.body, 16).obj())
     }
     suspend fun download(token: String, attachment: String): ByteArray {
-        val response = transport.exchange(HttpCall("GET", scope.baseUri.toString() + "api/v1/social/attachments/${id(attachment)}", mapOf("Authorization" to "Bearer ${AccountValidation.token(token, "za_")}"), maxBytes = 25 * 1024 * 1024))
+        val response = transport.exchange(HttpCall("GET", scope.baseUri.toString() + "api/v1/social/attachments/${id(attachment)}", mapOf("Authorization" to "Bearer ${AccountValidation.token(token, "za_")}"), maxBytes = 25 * 1024 * 1024, readTimeoutMs = 180_000))
         if (response.status != 200) throw SocialFailure(response.status)
         return response.body
     }
@@ -103,7 +105,8 @@ class SocialHttpClient(private val transport: HttpExchange, private val scope: A
     private fun parseHome(obj: JsonValue.Obj): SocialHome = SocialHome(obj.text("code", 64), obj.array("friends", 1000).items.map {
         val row = it.obj()
         val unread = row.int("unread"); require(unread >= 0)
-        InboxRow(id(row.text("conversationId", 36)), row.nullableText("displayName", 80)?.takeIf { it.isNotBlank() } ?: row.text("username", 80), lastBody = row.nullableText("lastBody", 4000), lastAt = row.nullableText("lastAt", 40)?.let(Instant::parse), unread = unread)
+        InboxRow(id(row.text("conversationId", 36)), row.nullableText("displayName", 80)?.takeIf { it.isNotBlank() } ?: row.text("username", 80), lastBody = row.nullableText("lastBody", 4000), lastAt = row.nullableText("lastAt", 40)?.let(Instant::parse), unread = unread,
+            peerUserId = if (row.fields.containsKey("userId")) row.nullableText("userId", 36)?.let(::id) else null)
     }, invites(obj, "incoming"), invites(obj, "outgoing"))
     private fun invites(obj: JsonValue.Obj, key: String) = obj.array(key, 1000).items.map { val row = it.obj(); SocialInvite(id(row.text("friendshipId", 36)), row.nullableText("displayName", 80)?.takeIf { it.isNotBlank() } ?: row.text("username", 80)) }
     private fun message(row: JsonValue.Obj) = SocialMessage(id(row.text("messageId", 36)), id(row.text("senderId", 36)), row.text("senderName", 80), row.nullableText("body", 16000), row.text("kind", 24), Instant.parse(row.text("createdAt", 40)), row.nullableText("replyTo", 36)?.let(::id), row.nullableText("replyBody", 16000), row.bool("deleted"), row.nullableText("editedAt", 40) != null, row.bool("read"), row.array("reactions", 32).items.map { val r = it.obj(); SocialReaction(r.text("emoji", 32), r.int("count"), r.bool("mine")) }, row.nullableText("attachmentId", 36)?.let(::id), row.nullableText("fileName", 255),

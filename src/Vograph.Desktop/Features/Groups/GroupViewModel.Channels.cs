@@ -541,6 +541,7 @@ public sealed class GroupChannelRow(GroupTopicResponse initial, IRelayCommand op
     private static readonly Geometry BallotGlyph = Geometry.Parse("M8 6h13 M8 12h13 M8 18h13 M3 6l1 1 2-2 M3 12l1 1 2-2 M3 18l1 1 2-2");
     private static readonly Geometry HomeworkGlyph = Geometry.Parse("M4 4h12l4 4v12H4z M8 12h8 M8 16h5");
     private GroupTopicResponse row = initial;
+    private int? unreadOverride;
     private bool isSelected;
     public bool IsSelected { get => isSelected; set => SetProperty(ref isSelected, value); }
     internal string Key => IsGlobalBallots ? "global-ballots" : row.TopicId?.ToString("D") ?? "general";
@@ -598,15 +599,23 @@ public sealed class GroupChannelRow(GroupTopicResponse initial, IRelayCommand op
                 + local.ToString(local.Year == DateTime.Now.Year ? "dd.MM HH:mm" : "dd.MM.yyyy HH:mm");
         }
     }
-    public string Unread => UnreadBadge.Label(row.Unread);
-    public int UnreadCount => row.Unread;
+    public string Unread => UnreadBadge.Label(UnreadCount);
+    public int UnreadCount => unreadOverride ?? row.Unread;
     public int ActiveBallots => row.ActiveBallots;
-    public string UnreadDescription => UnreadBadge.Description(row.Unread);
+    public string UnreadDescription => UnreadBadge.Description(UnreadCount);
+    internal void ClearUnread()
+    {
+        unreadOverride = 0;
+        OnPropertyChanged(nameof(Unread));
+        OnPropertyChanged(nameof(UnreadCount));
+        OnPropertyChanged(nameof(UnreadDescription));
+    }
     public bool CanDelete => row.CanDelete;
     public IRelayCommand OpenCommand { get; } = open;
     internal void Update(GroupTopicResponse next)
     {
         row = next;
+        unreadOverride = null;
         foreach(var name in new[] { nameof(Archived), nameof(Template), nameof(CategoryId), nameof(Position), nameof(Revision), nameof(Subject), nameof(Supported), nameof(Permissions) }) OnPropertyChanged(name);
         OnPropertyChanged(nameof(Kind));
         OnPropertyChanged(nameof(Title));

@@ -98,7 +98,7 @@ class SocialHttpClientTest {
         val api = SocialHttpClient(http, AccountServerScope.parse("https://example.test"))
         val token = "za_" + "A".repeat(43)
         val conversation = "22222222-2222-4222-8222-222222222222"
-        try { api.uploadRecording(token, conversation, "voice", ByteArray(2 * 1024 * 1024 + 1), 1000, null); fail() } catch (_: IllegalArgumentException) { }
+        try { api.uploadRecording(token, conversation, "voice", ByteArray(4 * 1024 * 1024 + 1), 1000, null); fail() } catch (_: IllegalArgumentException) { }
         try { api.uploadRecording(token, conversation, "circle", byteArrayOf(1), 60_001, null); fail() } catch (_: IllegalArgumentException) { }
         assertTrue(http.requests.isEmpty())
     }

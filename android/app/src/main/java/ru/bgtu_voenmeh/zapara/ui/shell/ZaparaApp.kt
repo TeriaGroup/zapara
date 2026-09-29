@@ -9,8 +9,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -102,6 +100,14 @@ private fun ZaparaAppBody(
     val shellVm: ShellViewModel = viewModel(owner, factory = ShellViewModel.factory(container))
     val state by shellVm.state.collectAsStateWithLifecycle()
     val update by container.update.state.collectAsStateWithLifecycle()
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+    androidx.compose.runtime.DisposableEffect(lifecycle, container) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) container.privateSync?.requestSync()
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     ZaparaTheme(choice = state.theme, motion = MotionSettings(state.animations, 1f)) {
         val motion = Zapara.motion
         val slidePx = with(LocalDensity.current) { 8.dp.roundToPx() }
@@ -128,14 +134,15 @@ private fun ZaparaAppBody(
                 else -> nav.openSection(Section.Schedule)
             }
         }
-        CompositionLocalProvider(LocalShellChrome provides chrome) {
+        CompositionLocalProvider(LocalShellChrome provides chrome,
+            ru.bgtu_voenmeh.zapara.ui.chat.LocalAvatarStore provides container.avatars) {
             Box(Modifier.fillMaxSize()) {
-                Scaffold(
+                ZAppScaffold(
                     modifier = Modifier.semantics {
                         testTagsAsResourceId = true
                         stateDescription = themeDesc
                     },
-                    containerColor = Zapara.colors.canvas,
+                    conversation = current == Section.Chat || current == Section.Group,
                     bottomBar = {
                         ZBottomBar(
                             current = barCurrent,
@@ -149,8 +156,7 @@ private fun ZaparaAppBody(
                             onSections = { shellVm.onEvent(ShellEvent.Overlay(ShellOverlay.Sections)) }
                         )
                     }
-                ) { padding ->
-                    Box(Modifier.padding(padding).fillMaxSize()) {
+                ) {
                         NavHost(
                             navController = nav,
                             startDestination = Section.Schedule.pattern,
@@ -276,7 +282,6 @@ private fun ZaparaAppBody(
                             }
                         }
                         ToastHost(container.toasts.items, onDismiss = container.toasts::dismiss, Modifier.align(Alignment.BottomCenter))
-                    }
                 }
                 if (state.overlay == ShellOverlay.Sections) {
                     SectionsSheet(

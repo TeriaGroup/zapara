@@ -107,6 +107,9 @@ class AndroidProfileHost(val app: Application) : ViewModelStoreOwner {
             communities = accountScope?.let { CommunityHttpClient(transport, it) },
             accounts = if (descriptor.isGuest) null else accounts,
             readAccessToken = { readAccessToken(descriptor) },
+            avatarHttp = if (descriptor.isGuest) null else accountScope?.let {
+                ru.bgtu_voenmeh.zapara.data.avatars.AvatarHttpClient(transport, it)
+            },
             syncHttp = if (descriptor.isGuest) null else accountScope?.let { PrivateSyncHttpClient(transport, it.baseUri) }
         )
         created.repo.outbox = created.outbox
@@ -167,16 +170,28 @@ class AppContainer(
     val communities: CommunityHttpClient? = null,
     val accounts: AccountHttpClient? = null,
     private val readAccessToken: (suspend () -> String?)? = null,
-    private val syncHttp: PrivateSyncHttpClient? = null
+    private val syncHttp: PrivateSyncHttpClient? = null,
+    avatarHttp: ru.bgtu_voenmeh.zapara.data.avatars.AvatarHttpClient? = null
 ) {
     val timetable = TimetableSource(api, repo.store, { repo.refresh() }) { repo.applyBundled(app) }
     var closed: Boolean = false
         private set
+    val avatars = if (avatarHttp != null && profile.userId != null && !profile.isGuest)
+        ru.bgtu_voenmeh.zapara.data.avatars.AvatarStore(profile.userId, avatarHttp,
+            accessToken = { accessToken() }, active = { !closed }) else null
     val outbox = RoomSyncOutbox.from(db, enabled = !profile.isGuest)
+    private var reminderBeforeSync: Triple<Boolean, String?, String?>? = null
+    private fun reminderSettings() = repo.settings().let { Triple(it.notifyEnabled, it.notifyTime1, it.notifyTime2) }
     val privateSync: PrivateSyncCoordinator? =
-        if (profile.isGuest) null else PrivateSyncCoordinator(outbox, work) {
+        if (profile.isGuest) null else PrivateSyncCoordinator(outbox, work,
+            beforeApply = { reminderBeforeSync = reminderSettings() }) {
+            val remindersChanged = reminderBeforeSync?.let { it != reminderSettings() } == true
+            reminderBeforeSync = null
             homework.recomputeAll()
             notifyDataChanged()
+            // The sync cycle holds a profile ticket; only the published profile owns alarms.
+            if (remindersChanged && !closed && runCatching { (app as? ZaparaApplication)?.container === this }.getOrDefault(false))
+                runCatching { ru.bgtu_voenmeh.zapara.data.Notifications.schedule(app) }
         }
     val mapStore by lazy { MapStore(app) }
     val lecturerStore by lazy { LecturerStore(app) }
@@ -233,6 +248,7 @@ class AppContainer(
     fun close() {
         if (closed) return
         closed = true
+        avatars?.close()
         privateSync?.close()
         api.stop()
         runCatching { db.close() }

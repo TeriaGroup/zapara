@@ -66,7 +66,7 @@ internal sealed partial class CommunityRepository
         return await DescribeAsync(id, await DisplayNameAsync(peerId), peerId);
     }
 
-    internal async Task<ChatPageResponse> ListMessagesAsync(Guid conversationId, Guid? before, Guid? after, string? topic = null)
+    internal async Task<ChatPageResponse> ListMessagesAsync(Guid conversationId, Guid? before, Guid? after, string? topic = null, bool explicitReadCursor = false)
     {
         if (before is not null && after is not null) throw CommunityServiceException.InvalidRequest();
         await RequireConversationAsync(conversationId);
@@ -130,10 +130,10 @@ internal sealed partial class CommunityRepository
         var hasMore = list.Count > PageSize;
         if (hasMore) list.RemoveAt(list.Count - 1);
         if (order == "DESC") list.Reverse();
-        if (scoped)
+        if (scoped && !explicitReadCursor && before is null && list.Count > 0)
         {
             var info = await ConversationInfoAsync(conversationId);
-            await MarkTopicReadAsync(info.CommunityId, conversationId, topicId);
+            await MarkTopicReadAsync(info.CommunityId, conversationId, topicId, list[^1].MessageId);
         }
         return new(list, hasMore);
     }
@@ -251,14 +251,29 @@ internal sealed partial class CommunityRepository
         return await ReadOneAsync(conversationId, messageId);
     }
 
-    internal async Task<ConversationResponse> MarkReadAsync(Guid conversationId)
+    internal async Task<ConversationResponse> MarkReadAsync(Guid conversationId, Guid? throughMessageId = null)
     {
         await RequireConversationAsync(conversationId);
-        await ExecuteAsync($"""
-            UPDATE {Msg}.conversation_members
-            SET last_read_no=COALESCE((SELECT MAX(message_no) FROM {Msg}.chat_messages WHERE conversation_id=@p0),0)
-            WHERE conversation_id=@p0 AND user_id=@p1
-            """, conversationId, UserId);
+        if (throughMessageId is Guid target)
+        {
+            var number = await MessageNoAsync(conversationId, target) ?? throw CommunityServiceException.InvalidRequest();
+            await RequireMessagePermissionAsync(conversationId, target, "read");
+            var info = await ConversationInfoAsync(conversationId);
+            if (info.Kind == "group")
+            {
+                await using var command = Command($"SELECT topic_id FROM {Msg}.chat_messages WHERE conversation_id=@p0 AND message_id=@p1", conversationId, target);
+                var topic = await command.ExecuteScalarAsync(ct);
+                await MarkTopicReadAsync(info.CommunityId, conversationId, topic is Guid id ? id : null, target);
+            }
+            else
+                await ExecuteAsync($"UPDATE {Msg}.conversation_members SET last_read_no=GREATEST(last_read_no,@p2) WHERE conversation_id=@p0 AND user_id=@p1", conversationId, UserId, number);
+        }
+        else
+            await ExecuteAsync($"""
+                UPDATE {Msg}.conversation_members
+                SET last_read_no=GREATEST(last_read_no,COALESCE((SELECT MAX(message_no) FROM {Msg}.chat_messages WHERE conversation_id=@p0),0))
+                WHERE conversation_id=@p0 AND user_id=@p1
+                """, conversationId, UserId);
         return await DescribeAsync(conversationId, await TitleAsync(conversationId), await PeerAsync(conversationId));
     }
 
@@ -368,8 +383,12 @@ internal sealed partial class CommunityRepository
         await using (var command = Command($"""
             SELECT count(*) FROM {Msg}.chat_messages m
             JOIN {Msg}.conversation_members mine ON mine.conversation_id=m.conversation_id AND mine.user_id=@p1
-            WHERE m.conversation_id=@p0 AND m.sender_id<>@p1 AND m.message_no > mine.last_read_no AND (@p2 OR m.topic_id IS NULL OR m.topic_id=ANY(@p3))
-            """, conversationId, UserId, info.Kind != "group", visible))
+            WHERE m.conversation_id=@p0 AND m.sender_id<>@p1
+              AND m.message_no > GREATEST(mine.last_read_no, CASE WHEN @p2 THEN 0 ELSE COALESCE((
+                  SELECT r.last_read_no FROM {Msg}.group_topic_reads r
+                  WHERE r.community_id=@p4 AND r.topic_id=COALESCE(m.topic_id,@p5) AND r.user_id=@p1),0) END)
+              AND (@p2 OR m.topic_id IS NULL OR m.topic_id=ANY(@p3))
+            """, conversationId, UserId, info.Kind != "group", visible, info.CommunityId, GeneralRead))
             unread = Convert.ToInt32(await command.ExecuteScalarAsync(ct));
         return (body, at, unread);
     }

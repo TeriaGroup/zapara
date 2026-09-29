@@ -40,6 +40,7 @@ public sealed partial class GroupViewModel
     { OnPropertyChanged(nameof(CanGrantTrusted)); OnPropertyChanged(nameof(TrustedGrantHint)); }
     partial void OnIsHeadmanChanged(bool value)
     {
+        OnPropertyChanged(nameof(CanEditGroupAvatar));
         OnPropertyChanged(nameof(CanGrantTrusted));
         OnPropertyChanged(nameof(ShowTrustedManagement));
     }
@@ -85,6 +86,7 @@ public sealed partial class GroupViewModel
         InvalidateAccessPreview();
         ConfirmRemoveRole = false; RoleImpact = "";
         desk = value;
+        OnPropertyChanged(nameof(CanEditGroupAvatar));
         IsHeadman = value.Headman;
         var selectedRoleId = SelectedTrustedRole?.RoleId;
         var selectedUserId = SelectedTrustCandidate?.UserId;

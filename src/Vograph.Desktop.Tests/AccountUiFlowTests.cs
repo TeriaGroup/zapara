@@ -100,6 +100,34 @@ public sealed partial class AccountUiFlowTests
         Assert.Equal("Глеб Иванов", f.Vm.AccountName);
     }
 
+    [Fact]
+    public async Task Remote_refresh_updates_name_without_erasing_unsaved_display_name()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        f.Vm.DisplayName = "Мой черновик имени";
+        var previous = f.Handler.Send;
+        f.Handler.Send = (request, token) => request.RequestUri!.AbsolutePath == "/api/v1/account/me"
+            ? Task.FromResult(Json(new MeResponse(new(User.UserId, User.Username, "Новое имя", User.CreatedAt), FamilyId, ["password"])))
+            : previous(request, token);
+        await f.Vm.RefreshRemoteAsync();
+        Assert.Equal("Новое имя", f.Vm.AccountName);
+        Assert.Equal("Мой черновик имени", f.Vm.DisplayName);
+    }
+
+    [Fact]
+    public async Task Remote_refresh_requiring_login_does_not_keep_showing_an_authenticated_profile()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        var previous = f.Handler.Send;
+        f.Handler.Send = (request, token) => request.RequestUri!.AbsolutePath == "/api/v1/account/me"
+            ? Task.FromResult(Json(new AccountError("ignored", 401, "invalid_session"), HttpStatusCode.Unauthorized))
+            : previous(request, token);
+        await f.Vm.RefreshRemoteAsync();
+        Assert.True(f.Vm.ShowLogin);
+    }
+
     [Theory]
     [InlineData(401, "invalid_credentials", "Неверный")]
     [InlineData(429, "rate_limited", "Слишком")]

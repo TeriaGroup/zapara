@@ -390,7 +390,7 @@ export function SubjectChannelContext({ communityId, groupName, topic, onError }
     const [homeworkScopeTag, setHomeworkScopeTag] = useState("");
     const [homeworkError, setHomeworkError] = useState("");
     const [markBusy, setMarkBusy] = useState(false);
-    const subjectScopeKey = JSON.stringify([app.session?.user?.userId, app.groupId, communityId, topic.topicId, topic.subject]);
+    const subjectScopeKey = JSON.stringify([app.session?.user?.userId, communityId, topic.topicId, topic.subject]);
     const subjectRequests = useRef(new HomeworkRequestScope()).current;
     subjectRequests.scope(subjectScopeKey);
     const visibleSubjectHomework = scopedValue(homework, homeworkScopeTag, subjectScopeKey, null);

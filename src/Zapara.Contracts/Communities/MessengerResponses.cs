@@ -105,7 +105,7 @@ public sealed record SendMessageRequest
     [JsonConstructor]
     public SendMessageRequest(string body, Guid? replyTo = null, string? kind = null)
     {
-        Body = body ?? throw CommunityValidation.Invalid();
+        Body = CommunityValidation.Message(body);
         ReplyTo = replyTo is null || replyTo == Guid.Empty ? null : CommunityValidation.Id(replyTo.Value);
         var value = string.IsNullOrEmpty(kind) ? "text" : kind;
         Kind = value is "text" or "image" or "video" or "file" or "voice" or "circle" ? value : throw CommunityValidation.Invalid();

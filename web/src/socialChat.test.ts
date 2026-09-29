@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createSocialPoller, loadSocialUpdates, mergeSocialMessages } from "./socialChat.ts";
+import { createSocialPoller, loadSocialUpdates, mergeSocialMessages, reconcileActiveFriend, sameSocialCluster } from "./socialChat.ts";
 import type { SocialMessage, SocialPage } from "./types.ts";
 
 function message(id: string, number: number, body = id): SocialMessage {
@@ -12,6 +12,20 @@ function message(id: string, number: number, body = id): SocialMessage {
     durationMs: null, reactions: [],
   };
 }
+
+test("personal messages cluster only for the same sender within five minutes", () => {
+  const first = message("one", 1);
+  assert.equal(sameSocialCluster(first, message("two", 5)), true);
+  assert.equal(sameSocialCluster(first, message("three", 7)), false);
+  assert.equal(sameSocialCluster(first, { ...message("other", 2), senderId: "other" }), false);
+});
+
+test("friend refresh changes the active header without switching conversations", () => {
+  const old = { userId: "peer", username: "peer", displayName: "Старое имя", conversationId: "chat", lastBody: null, lastAt: null, unread: 0 };
+  const fresh = { ...old, displayName: "Новое имя", unread: 2 };
+  assert.equal(reconcileActiveFriend(old, [fresh]), fresh);
+  assert.equal(reconcileActiveFriend(old, []), null);
+});
 
 test("a latest page updates known messages without dropping previously loaded history", () => {
   const known = [message("one", 1), message("two", 2)];

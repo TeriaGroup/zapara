@@ -326,7 +326,7 @@ internal static partial class CommunityEndpoints
             var after = CommunityHttpInput.Cursor(context, "after");
             if (before is not null && after is not null) throw new CommunityInputException();
             var topic = context.Request.Query.TryGetValue("topic", out var topicRaw) ? topicRaw.ToString() : null;
-            return CommunityHttpResult.Json(await Service(context).ListMessagesAsync(Bearer(context), CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), before, after, topic, context.RequestAborted));
+            return CommunityHttpResult.Json(await Service(context).ListMessagesAsync(Bearer(context), CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), before, after, topic, context.RequestAborted, CommunityHttpInput.ExplicitReadCursor(context)));
         });
         Route(group, "POST", "/conversations/{conversationId}/media", context => CommunityMedia.Post(context, Bearer(context)));
         Route(group, "GET", "/conversations/{conversationId}/messages/{messageId}/media", context => CommunityMedia.Get(context, Bearer(context)));
@@ -363,8 +363,8 @@ internal static partial class CommunityEndpoints
         Route(group, "POST", "/conversations/{conversationId}/read", async context =>
         {
             CommunityHttpInput.Query(context);
-            await CommunityHttpInput.Empty(context);
-            return CommunityHttpResult.Json(await Service(context).MarkReadAsync(Bearer(context), CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), context.RequestAborted));
+            var through = await CommunityHttpInput.ReadThroughMessage(context);
+            return CommunityHttpResult.Json(await Service(context).MarkReadAsync(Bearer(context), CommunityHttpInput.Id(context.Request.RouteValues["conversationId"]), context.RequestAborted, through));
         });
     }
     private static void Route(RouteGroupBuilder group, string method, string path, Func<HttpContext, Task<IResult>> handler)

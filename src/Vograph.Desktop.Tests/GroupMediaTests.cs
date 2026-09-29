@@ -39,11 +39,19 @@ public sealed class GroupMediaTests
         Assert.Equal("circle", (await GroupMedia.Place(client, token, conversation, "circle", "circle.mp4", m4a, null,
             TestContext.Current.CancellationToken, 12_000)).Kind);
         Assert.Equal("12000", seen.Last().Duration);
+        var hdCircle = new byte[8 * 1024 * 1024 + 1];
+        Assert.Equal("circle", (await GroupMedia.Place(client, token, conversation, "circle", "hd-circle.mp4", hdCircle, null,
+            TestContext.Current.CancellationToken, 60_000)).Kind);
+        Assert.Equal(hdCircle.Length, seen.Last().Body.Length);
         await Assert.ThrowsAsync<CommunityClientException>(() => GroupMedia.Place(client, token, conversation,
             "voice", "missing-duration.m4a", m4a, null, TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<CommunityClientException>(() => GroupMedia.Place(client, token, conversation,
-            "voice", "too-large.m4a", new byte[2 * 1024 * 1024 + 1], null, TestContext.Current.CancellationToken, 1000));
-        Assert.Equal(2, seen.Count);
+            "voice", "too-large.m4a", new byte[4 * 1024 * 1024 + 1], null, TestContext.Current.CancellationToken, 1000));
+        await Assert.ThrowsAsync<CommunityClientException>(() => GroupMedia.Place(client, token, conversation,
+            "circle", "too-large.mp4", new byte[24 * 1024 * 1024 + 1], null, TestContext.Current.CancellationToken, 1000));
+        await Assert.ThrowsAsync<CommunityClientException>(() => GroupMedia.Place(client, token, conversation,
+            "image", "too-large.png", new byte[8 * 1024 * 1024 + 1], null, TestContext.Current.CancellationToken));
+        Assert.Equal(3, seen.Count);
     }
 
     [AvaloniaFact]

@@ -137,6 +137,7 @@ public sealed class ChatInboxTests
         await inbox.ActivateAsync();
         Assert.Single(inbox.Chats).OpenCommand.Execute(null);
         await Waits.Until(() => inbox.Messages.Count == 2, "personal chat opened");
+        Assert.Equal(0, inbox.UnreadTotal);
         await inbox.LoadOlderCommand.ExecuteAsync(null);
 
         Assert.Equal([First, Second, Third, Fourth], inbox.Messages.Select(item => item.Id).ToArray());
@@ -203,7 +204,13 @@ public sealed class ChatInboxTests
                         : new SocialPageResponse([Message(Second, "Второе"), Message(Third, "Третье")], true)),
             _ => new HttpResponseMessage(System.Net.HttpStatusCode.NotFound)
         });
-        HttpResponseMessage Home() { homeReads++; return AccountClientTestSupport.Json(FriendHome()); }
+        HttpResponseMessage Home()
+        {
+            homeReads++;
+            return AccountClientTestSupport.Json(latest
+                ? new SocialHomeResponse("ABCD1234", [new SocialFriendResponse(PromotedId, "friend", "Друг новое имя", SocialDirect, "Привет", Now, 3)], [], [])
+                : FriendHome());
+        }
 
         var inbox = new ChatInboxViewModel(services, new ShellViewModel(services)) { PollInterval = TimeSpan.FromMilliseconds(100) };
         await inbox.ActivateAsync();
@@ -211,11 +218,14 @@ public sealed class ChatInboxTests
         await Waits.Until(() => inbox.Messages.Count == 2, "personal chat opened");
         await inbox.LoadOlderCommand.ExecuteAsync(null);
         Assert.Equal([First, Second, Third], inbox.Messages.Select(row => row.Id).ToArray());
+        inbox.Draft = "Мой неотправленный текст";
         latest = true;
         inbox.Watch(true);
         await Waits.Until(() => inbox.Messages.Count == 4 && inbox.Messages[1].Display == "Второе изменено",
             "inbox and active chat polled");
         Assert.Equal([First, Second, Third, Fourth], inbox.Messages.Select(row => row.Id).ToArray());
+        Assert.Equal("Друг новое имя", inbox.ChatTitle);
+        Assert.Equal("Мой неотправленный текст", inbox.Draft);
         Assert.True(homeReads >= 2);
         inbox.Watch(false);
         var readsAfterStop = homeReads;

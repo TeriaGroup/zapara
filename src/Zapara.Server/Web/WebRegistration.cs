@@ -8,6 +8,9 @@ public static class WebRegistration
 {
     public static IServiceCollection AddWebClient(this IServiceCollection services, IConfiguration configuration)
     {
+        // The bridge also serves native clients when the browser shell is disabled.
+        if (Zapara.Server.Communities.CommunitiesConfiguration.IsEnabled(configuration))
+            services.AddSingleton<Zapara.Server.Social.IAvatarCommunityAccess, AvatarCommunityAccess>();
         if (!WebConfiguration.Enabled(configuration)) return services;
         services.AddDataProtection(); // No application-name/key-ring override: admin isolation is preserved.
         services.AddKeyedSingleton<IDataProtectionProvider>(WebProtection.Key, (provider, _) => WebProtection.Create(provider));

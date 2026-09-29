@@ -2,6 +2,7 @@ import { topicRules } from "./topic-policy.ts";
 import { canonicalUtc } from "./utc.ts";
 import { getGroupMedia, postGroupMedia, type GroupMediaDownload, type GroupMediaKind } from "./group-media.ts";
 import { groupMessageQuery, type GroupMessageCursor } from "./groupChat.ts";
+import { avatarPath, type AvatarKind } from "./avatar.ts";
 import type { BallotBoard, ChatMessage, Community, Conversation, GroupDesk, GroupHomeworkCopy, GroupHome, GroupTopicMetadata, GroupTopicPage, GroupsPayload, HomeworkAudience, MapsManifest, Session, SocialHome, SocialMessage, SocialPage, Teacher, TeacherLesson, TimetablePayload } from "./types";
 
 const cacheKey = "zapara.react.cache.v1";
@@ -26,8 +27,8 @@ export function writeCache(cache: Cache) {
   localStorage.setItem(cacheKey, JSON.stringify(cache));
 }
 
-async function read<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(url, { signal, credentials: "same-origin", headers: authHeaders(false, url.startsWith("/web-api/communities")) });
+async function read<T>(url: string, signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<T> {
+  const response = await fetch(url, { signal, credentials: "same-origin", headers: { ...authHeaders(false, url.startsWith("/web-api/communities")), ...extraHeaders } });
   if (!response.ok) throw new Error(String(response.status));
   return response.json() as Promise<T>;
 }
@@ -55,6 +56,10 @@ export function loadTeacher(id: string) {
 let csrf = "";
 let familyId = "";
 let signedInUser = "";
+let authEpoch = 0;
+let sessionSerial = 0;
+export const authGeneration = () => authEpoch;
+function authChanging() { authEpoch++; sessionSerial++; }
 
 function authHeaders(json = false, groupSpace = false): Record<string, string> {
   const headers: Record<string, string> = { Accept: "application/json" };
@@ -67,12 +72,15 @@ function authHeaders(json = false, groupSpace = false): Record<string, string> {
 
 function remember(value: { csrfToken?: string; familyId?: string | null; user?: { userId: string } | null }) {
   if ("user" in value) signedInUser = value.user?.userId || "";
-  if (value.csrfToken) csrf = value.csrfToken;
-  if (value.familyId) familyId = value.familyId;
+  if ("csrfToken" in value) csrf = value.csrfToken || "";
+  if ("familyId" in value) familyId = value.familyId || "";
 }
 
 export async function session(): Promise<Session> {
+  const generation = authEpoch;
+  const request = ++sessionSerial;
   const value = await read<Session>("/web-api/session");
+  if (generation !== authEpoch || request !== sessionSerial) throw new Error("stale-session");
   remember(value);
   return value;
 }
@@ -126,15 +134,73 @@ async function supportSend(path: string, fields: Record<string, string>, photos:
 }
 
 export function login(username: string, password: string) {
+  authChanging();
   return send<Session>("POST", "/web-api/auth/login", { username, password, deviceName: "Браузер «Расписание военмех»" });
 }
 
 export function register(username: string, password: string, displayName: string) {
+  authChanging();
   return send<Session>("POST", "/web-api/auth/register", { username, password, displayName });
 }
 
 export function logout() {
+  authChanging();
   return send<void>("POST", "/web-api/auth/logout", undefined, true);
+}
+
+export async function avatarImage(kind: AvatarKind, id: string, etag: string | null = null): Promise<{ url: string | null; etag: string | null; notModified?: boolean }> {
+  const response = await fetch(avatarPath(kind, id), {
+    credentials: "same-origin", cache: "no-store",
+    headers: { ...authHeaders(false, kind === "group"), Accept: "image/webp", ...(etag ? { "If-None-Match": etag } : {}) },
+  });
+  if (response.status === 304) return { url: null, etag, notModified: true };
+  if (response.status === 404 || response.status === 401 || response.status === 403) return { url: null, etag: null };
+  if (!response.ok || !response.headers.get("Content-Type")?.toLowerCase().startsWith("image/webp")) throw new Error(String(response.status));
+  const limit = 512 * 1024;
+  if (Number(response.headers.get("Content-Length")) > limit) {
+    void response.body?.cancel().catch(() => undefined);
+    throw new Error("invalid-avatar-image");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("invalid-avatar-image");
+  const chunks: ArrayBuffer[] = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) { void reader.cancel().catch(() => undefined); throw new Error("invalid-avatar-image"); }
+    const copy = new Uint8Array(value.byteLength);
+    copy.set(value);
+    chunks.push(copy.buffer);
+  }
+  if (size === 0) throw new Error("invalid-avatar-image");
+  const image = new Blob(chunks, { type: "image/webp" });
+  return { url: URL.createObjectURL(image), etag: response.headers.get("ETag") };
+}
+
+export type AvatarMutationScope = { userId: string; familyId: string };
+
+function avatarMutationHeaders(expected: AvatarMutationScope, group: boolean): Record<string, string> {
+  if (!expected.userId || !expected.familyId || signedInUser !== expected.userId || familyId !== expected.familyId) throw new Error("avatar-scope-changed");
+  return { ...authHeaders(false, group), "X-Zapara-Family": expected.familyId };
+}
+
+export async function saveAvatar(kind: AvatarKind, id: string, file: File, expected: AvatarMutationScope): Promise<{ revision: string }> {
+  if (kind === "user" && id !== expected.userId) throw new Error("avatar-scope-changed");
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const path = kind === "user" ? "/web-api/social/avatars/me" : avatarPath("group", id);
+  const response = await fetch(path, { method: "PUT", credentials: "same-origin", headers: avatarMutationHeaders(expected, kind === "group"), body: form });
+  if (!response.ok) throw new Error(String(response.status));
+  return response.json() as Promise<{ revision: string }>;
+}
+
+export async function deleteAvatar(kind: AvatarKind, id: string, expected: AvatarMutationScope): Promise<void> {
+  if (kind === "user" && id !== expected.userId) throw new Error("avatar-scope-changed");
+  const path = kind === "user" ? "/web-api/social/avatars/me" : avatarPath("group", id);
+  const response = await fetch(path, { method: "DELETE", credentials: "same-origin", headers: avatarMutationHeaders(expected, kind === "group") });
+  if (!response.ok) throw new Error(String(response.status));
 }
 
 function providerAddress(provider: "vk" | "yandex", target: string) {
@@ -148,6 +214,7 @@ function providerAddress(provider: "vk" | "yandex", target: string) {
 }
 
 export async function startExternal(provider: "vk" | "yandex") {
+  authChanging();
   const started = await send<{ authorizeUrl: string }>("POST", "/web-api/auth/external/" + provider + "/start", { purpose: "login" });
   window.location.assign(providerAddress(provider, started.authorizeUrl));
 }
@@ -255,7 +322,7 @@ export function setRolePower(id: string, roleId: string, power: string, enabled:
 }
 
 export function messages(id: string, topic?: string, cursor?: GroupMessageCursor) {
-  return read<{ messages: ChatMessage[]; hasMore: boolean }>(`/web-api/communities/conversations/${id}/messages` + groupMessageQuery(topic, cursor));
+  return read<{ messages: ChatMessage[]; hasMore: boolean }>(`/web-api/communities/conversations/${id}/messages` + groupMessageQuery(topic, cursor), undefined, { "X-Zapara-Read-Cursor": "1" });
 }
 
 export function sendMessage(id: string, body: string, replyTo?: string) {
@@ -308,8 +375,10 @@ export function deleteTopic(id: string, topicId: string) {
   return send<GroupTopicPage>("POST", `/web-api/communities/${id}/topics/${topicId}/delete?typed=1`, undefined, true);
 }
 
-export function markRead(id: string) {
-  return send("POST", `/web-api/communities/conversations/${id}/read`, undefined, true);
+export function markRead(id: string, throughMessageId?: string) {
+  return throughMessageId
+    ? send("POST", `/web-api/communities/conversations/${id}/read`, { throughMessageId })
+    : send("POST", `/web-api/communities/conversations/${id}/read`, undefined, true);
 }
 
 export function socialHome() {

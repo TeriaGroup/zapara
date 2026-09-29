@@ -64,7 +64,7 @@ public sealed class SocialHttpClient : IDisposable
     {
         token = AccountValidation.Token(token, "za_");
         var limit = kind switch { "image" => 25 * 1024 * 1024, "file" => 20 * 1024 * 1024,
-            "voice" => 2 * 1024 * 1024, "circle" => 8 * 1024 * 1024, _ => 0 };
+            "voice" => 4 * 1024 * 1024, "circle" => 24 * 1024 * 1024, _ => 0 };
         var maxDuration = kind switch { "voice" => 180_000, "circle" => 60_000, _ => 0 };
         if (limit == 0 || bytes is null || bytes.Length is 0 || bytes.Length > limit || string.IsNullOrWhiteSpace(fileName)
             || (maxDuration == 0 && durationMs is not null)
@@ -73,7 +73,7 @@ public sealed class SocialHttpClient : IDisposable
         var name = Path.GetFileName(fileName.Replace('\\', '/'));
         if (string.IsNullOrWhiteSpace(name)) throw new SocialClientException(400);
         var route = kind switch { "image" => "images", "file" => "files", "voice" => "voice", _ => "circles" };
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(180));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
         using var request = new HttpRequestMessage(HttpMethod.Post,
             new Uri(Scope.BaseUri, $"api/v2/social/conversations/{Id(conversationId)}/{route}"));
@@ -110,7 +110,7 @@ public sealed class SocialHttpClient : IDisposable
     public async Task<byte[]> ReadAttachmentAsync(string token, Guid attachmentId, CancellationToken ct = default)
     {
         token = AccountValidation.Token(token, "za_");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(180));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
         using var request = new HttpRequestMessage(HttpMethod.Get,
             new Uri(Scope.BaseUri, $"api/v2/social/attachments/{Id(attachmentId)}"));

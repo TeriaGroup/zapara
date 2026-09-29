@@ -33,7 +33,8 @@ data class SettingsUiState(
     val syncError: String? = null,
     val signedIn: Boolean = false,
     val reportNote: String = "",
-    val reportThread: List<ru.bgtu_voenmeh.zapara.ui.chat.SupportForm.Note> = emptyList()
+    val reportThread: List<ru.bgtu_voenmeh.zapara.ui.chat.SupportForm.Note> = emptyList(),
+    val cloudSync: ru.bgtu_voenmeh.zapara.data.sync.CloudSyncStatus = ru.bgtu_voenmeh.zapara.data.sync.CloudSyncStatus()
 )
 
 sealed interface SettingsEvent {

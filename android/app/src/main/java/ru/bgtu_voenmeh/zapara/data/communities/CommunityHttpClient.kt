@@ -369,7 +369,7 @@ class CommunityHttpClient(
 
     suspend fun sendMedia(accessToken: String, conversationId: String, kind: String, name: String, bytes: ByteArray, replyTo: String? = null, durationMs: Int? = null, topicId: String? = null): ChatMessage {
         if (kind !in setOf("image", "video", "file", "voice", "circle")) throw CommunityClientException(CommunityClientFailure.InvalidRequest)
-        val maxBytes = if (kind == "voice") 2 * 1024 * 1024 else 8 * 1024 * 1024
+        val maxBytes = when (kind) { "voice" -> 4 * 1024 * 1024; "circle" -> 24 * 1024 * 1024; else -> 8 * 1024 * 1024 }
         if (bytes.isEmpty() || bytes.size > maxBytes) throw CommunityClientException(CommunityClientFailure.PayloadTooLarge)
         if (kind in setOf("voice", "circle") && durationMs == null) throw CommunityClientException(CommunityClientFailure.InvalidRequest)
         if (durationMs != null && (kind !in setOf("voice", "circle") || durationMs !in 1..(if (kind == "voice") 180_000 else 60_000)))
@@ -396,14 +396,14 @@ class CommunityHttpClient(
         val token = AccountValidation.token(accessToken, "za_")
         val path = "/conversations/$id/messages/$target/media"
         val headers = mapOf("Accept" to "application/octet-stream", "Authorization" to "Bearer $token", "X-Zapara-Group-Space" to "1", "X-Zapara-Homework" to "1")
-        val limit = 8 * 1024 * 1024
+        val limit = 24 * 1024 * 1024
         val reply = try {
             val version = if (legacyRoutes) 1 else 2
-            val first = transport.exchange(HttpCall("GET", scope.baseUri.toString() + "api/v$version/communities" + path, headers, maxBytes = limit))
+            val first = transport.exchange(HttpCall("GET", scope.baseUri.toString() + "api/v$version/communities" + path, headers, maxBytes = limit, readTimeoutMs = 180_000))
             val code = if (first.status == 404) runCatching { StrictJson.parse(first.body, 16).obj().text("code", 64) }.getOrNull() else null
             if (version == 2 && first.status == 404 && code != "not_found") {
                 legacyRoutes = true
-                transport.exchange(HttpCall("GET", scope.baseUri.toString() + "api/v1/communities" + path, headers, maxBytes = limit))
+                transport.exchange(HttpCall("GET", scope.baseUri.toString() + "api/v1/communities" + path, headers, maxBytes = limit, readTimeoutMs = 180_000))
             } else first
         } catch (_: HttpBodyTooLargeException) {
             throw CommunityClientException(CommunityClientFailure.PayloadTooLarge)
@@ -456,9 +456,10 @@ class CommunityHttpClient(
         return read("POST", "/conversations/$id/messages/$target/react", """{"emoji":${q(emoji)}}""", accessToken, 200) { message(it.obj()) }
     }
 
-    suspend fun markRead(accessToken: String, conversationId: String): Conversation {
+    suspend fun markRead(accessToken: String, conversationId: String, throughMessageId: String? = null): Conversation {
         val id = CommunityValidation.id(conversationId)
-        return read("POST", "/conversations/$id/read", null, accessToken, 200) { conversation(it.obj()) }
+        val body = throughMessageId?.let { "{\"throughMessageId\":\"${CommunityValidation.id(it)}\"}" }
+        return read("POST", "/conversations/$id/read", body, accessToken, 200) { conversation(it.obj()) }
     }
 
     suspend fun results(accessToken: String, communityId: String, pollId: String): PollResults {
@@ -482,11 +483,11 @@ class CommunityHttpClient(
     private suspend fun exchange(method: String, path: String, headers: Map<String, String>, bytes: ByteArray, expected: Int): JsonValue {
         val reply = try {
             val version = if (legacyRoutes) 1 else 2
-            val first = transport.exchange(HttpCall(method, scope.baseUri.toString() + "api/v$version/communities" + path, headers, bytes, 16 * 1024 * 1024))
+            val first = transport.exchange(HttpCall(method, scope.baseUri.toString() + "api/v$version/communities" + path, headers, bytes, 16 * 1024 * 1024, readTimeoutMs = 180_000))
             val code = if (first.status == 404) runCatching { StrictJson.parse(first.body, 16).obj().text("code", 64) }.getOrNull() else null
             if (version == 2 && first.status == 404 && code != "not_found") {
                 legacyRoutes = true
-                transport.exchange(HttpCall(method, scope.baseUri.toString() + "api/v1/communities" + path, headers, bytes, 16 * 1024 * 1024))
+                transport.exchange(HttpCall(method, scope.baseUri.toString() + "api/v1/communities" + path, headers, bytes, 16 * 1024 * 1024, readTimeoutMs = 180_000))
             } else first
         } catch (_: HttpBodyTooLargeException) {
             throw CommunityClientException(CommunityClientFailure.BodyTooLarge)
@@ -508,6 +509,8 @@ class CommunityHttpClient(
     private suspend fun send(method: String, path: String, body: String?, access: String, expected: Int): JsonValue {
         val token = AccountValidation.token(access, "za_")
         val headers = linkedMapOf("Accept" to "application/json", "X-Zapara-Group-Space" to "1", "X-Zapara-Homework" to "1")
+        if (method == "GET" && path.substringBefore('?').endsWith("/messages"))
+            headers["X-Zapara-Read-Cursor"] = "1"
         headers["Authorization"] = "Bearer $token"
         val bytes = body?.toByteArray(Charsets.UTF_8)
         if (bytes != null) {

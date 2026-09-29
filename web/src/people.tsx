@@ -1,4 +1,4 @@
-import { FormEvent, UIEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, Fragment, UIEvent, useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./api";
 import { emojiGroups } from "./emoji";
 import { cardLabel, homeworkCard, lessonFrom, placeFromLesson, scheduleCard, tasksCard } from "./cards";
@@ -9,17 +9,23 @@ import { Sticker, stickerPack, stickerTitle } from "./stickers";
 import { useApp } from "./store";
 import { Icon } from "./icons";
 import { holdActions, runHold } from "./hold";
-import { createSocialPoller, mergeSocialMessages } from "./socialChat";
+import { createSocialPoller, mergeSocialMessages, reconcileActiveFriend, sameSocialCluster } from "./socialChat";
+import { Avatar } from "./avatar-view";
+import { chatInboxTime } from "./chatInbox";
 import { emptyChatState, personalText, personalTextCount, personalTextLimit, personalTextValid, sendOnEnter } from "./personal-composer";
 import { usePersonalComposer } from "./personal-composer-context";
 import type { SocialFriend, SocialHome, SocialMessage } from "./types";
+
+const voiceRecordingLimit = 4 * 1024 * 1024;
+const circleRecordingLimit = 24 * 1024 * 1024;
 
 function personName(username: string, displayName: string | null) {
   return displayName?.trim() || username;
 }
 
 function when(value: string) {
-  return value.slice(0, 16).replace("T", " ");
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 }
 
 function size(bytes: number | null) {
@@ -65,6 +71,11 @@ export function PeoplePanel({ initialConversationId }: { initialConversationId?:
         const value = await api.socialHome();
         if (!stop && revision === homeRevision.current) {
           setHome(value);
+          setActive(current => {
+            const next = reconcileActiveFriend(current, value.friends);
+            if (current && !next) activeIdRef.current = null;
+            return next;
+          });
           if (initialConversationId && openedFromRoute.current !== initialConversationId) {
             openedFromRoute.current = initialConversationId;
             const selected = value.friends.find(item => item.conversationId === initialConversationId);
@@ -79,7 +90,7 @@ export function PeoplePanel({ initialConversationId }: { initialConversationId?:
     void pull();
     const timer = window.setInterval(pull, 4000);
     return () => { stop = true; window.clearInterval(timer); };
-  }, [app.session, initialConversationId]);
+  }, [app.session?.authenticated, app.session?.user?.userId, app.session?.familyId, initialConversationId]);
 
   async function invite(event: FormEvent) {
     event.preventDefault();
@@ -127,7 +138,7 @@ export function PeoplePanel({ initialConversationId }: { initialConversationId?:
           <h2>Входящие запросы</h2>
           {home.incoming.map(item => (
             <article className="card row" key={item.friendshipId} style={{ justifyContent: "space-between" }}>
-              <div><b>{personName(item.username, item.displayName)}</b><div className="muted">@{item.username}</div></div>
+              <div className="row"><Avatar kind="user" id={null} name={personName(item.username, item.displayName)} /><div><b>{personName(item.username, item.displayName)}</b><div className="muted">@{item.username}</div></div></div>
               <div className="row">
                 <button className="btn primary" type="button" onClick={() => void answer(item.friendshipId, true)}>Принять</button>
                 <button className="btn" type="button" onClick={() => void answer(item.friendshipId, false)}>Отклонить</button>
@@ -140,7 +151,7 @@ export function PeoplePanel({ initialConversationId }: { initialConversationId?:
         <div className="stack">
           <h2>Ожидают ответа</h2>
           {home.outgoing.map(item => (
-            <article className="card" key={item.friendshipId}><b>{personName(item.username, item.displayName)}</b><div className="muted">Запрос отправлен · @{item.username}</div></article>
+            <article className="card row" key={item.friendshipId}><Avatar kind="user" id={null} name={personName(item.username, item.displayName)} /><div><b>{personName(item.username, item.displayName)}</b><div className="muted">Запрос отправлен · @{item.username}</div></div></article>
           ))}
         </div>
       )}
@@ -163,14 +174,15 @@ export function PeoplePanel({ initialConversationId }: { initialConversationId?:
           <div className="people">
           {(home?.friends || []).map(friend => (
             <button className="person" key={friend.userId} type="button" onClick={() => { activeIdRef.current = friend.conversationId; setError(""); setActive(friend); }}>
-              <span><b>{personName(friend.username, friend.displayName)}</b><div className="muted">{friend.lastBody || "Нет сообщений"}</div></span>
-              {friend.unread > 0 && <span className="chip">{friend.unread}</span>}
+              <Avatar kind="user" id={friend.userId} name={personName(friend.username, friend.displayName)} />
+              <span className="person-main"><b>{personName(friend.username, friend.displayName)}</b><span className="muted preview-line">{friend.lastBody || "Нет сообщений"}</span></span>
+              <span className="inbox-meta">{friend.lastAt && <time className="muted" dateTime={friend.lastAt}>{chatInboxTime(friend.lastAt)}</time>}{friend.unread > 0 && <span className="chip" aria-label={`Непрочитанных сообщений: ${friend.unread}`}>{friend.unread > 99 ? "99+" : friend.unread}</span>}</span>
             </button>
           ))}
           {home && home.friends.length === 0 && <div className="empty">Пока никого нет. Добавьте человека по коду.</div>}
           </div>
         </div>
-        {active ? <section className="split-detail"><button className="btn back-only" type="button" onClick={() => { activeIdRef.current = null; setError(""); setActive(null); }}>К списку</button><Chat key={active.conversationId} friend={active} self={app.session.user?.userId || ""} onError={chatError} /></section> : <section className="card chat split-detail"><h2>Чат</h2><p className="muted">Выберите человека в списке.</p></section>}
+        {active ? <section className="split-detail"><button className="btn back-only" type="button" onClick={() => { activeIdRef.current = null; setError(""); setActive(null); }}>К списку</button><Chat key={active.conversationId} friend={active} self={app.session.user?.userId || ""} familyId={app.session.familyId} onError={chatError} /></section> : <section className="card chat split-detail"><h2>Чат</h2><p className="muted">Выберите человека в списке.</p></section>}
       </div>
     </div>
   );
@@ -305,7 +317,7 @@ function StudyShelf({ onSend }: { onSend: (body: string | null) => void }) {
   );
 }
 
-function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; onError: (text: string) => void }) {
+function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self: string; familyId?: string | null; onError: (text: string) => void }) {
   const [messages, setMessages] = useState<SocialMessage[]>([]);
   const [more, setMore] = useState(false);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
@@ -414,7 +426,7 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
       if (circleRecorder.current && circleRecorder.current.state !== "inactive") circleRecorder.current.stop();
       else circleStream.current?.getTracks().forEach(track => track.stop());
     };
-  }, [friend.conversationId, onError]);
+  }, [friend.conversationId, familyId, onError]);
 
   useEffect(() => {
     const input = inputRef.current;
@@ -594,10 +606,10 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") { reportError("Этот браузер не записывает голос"); return; }
     voiceStartingRef.current = true;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: { ideal: 48_000 }, channelCount: { ideal: 1 } } });
       if (!aliveRef.current) { stream.getTracks().forEach(track => track.stop()); return; }
       const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"].find(item => MediaRecorder.isTypeSupported(item)) || "";
-      const options: MediaRecorderOptions = mime ? { mimeType: mime, audioBitsPerSecond: 24000 } : { audioBitsPerSecond: 24000 };
+      const options: MediaRecorderOptions = mime ? { mimeType: mime, audioBitsPerSecond: 96_000 } : { audioBitsPerSecond: 96_000 };
       let media: MediaRecorder;
       try { media = new MediaRecorder(stream, options); }
       catch { media = new MediaRecorder(stream); }
@@ -605,14 +617,28 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
       cancelVoice.current = false;
       elapsedRef.current = 0;
       setElapsed(0);
-      media.ondataavailable = event => { if (event.data.size) chunks.current.push(event.data); };
+      let recordedBytes = 0;
+      media.ondataavailable = event => {
+        if (!event.data.size) return;
+        recordedBytes += event.data.size;
+        if (recordedBytes > voiceRecordingLimit) {
+          if (!cancelVoice.current) reportError("Запись слишком большая");
+          cancelVoice.current = true;
+          if (media.state !== "inactive") media.stop();
+          return;
+        }
+        chunks.current.push(event.data);
+      };
       media.onstop = () => {
         stream.getTracks().forEach(track => track.stop());
         window.clearInterval(tick);
         setRecording(false);
         const blob = new Blob(chunks.current, { type: media.mimeType || "audio/webm" });
         const duration = Math.max(1, elapsedRef.current) * 1000;
-        if (cancelVoice.current || blob.size < 200) { if (!cancelVoice.current) reportError("Слишком короткое сообщение"); return; }
+        if (cancelVoice.current || blob.size < 200 || blob.size > voiceRecordingLimit) {
+          if (!cancelVoice.current) reportError(blob.size > voiceRecordingLimit ? "Запись слишком большая" : "Слишком короткое сообщение");
+          return;
+        }
         const extension = blob.type.includes("mp4") ? "m4a" : blob.type.includes("ogg") ? "ogg" : "webm";
         void sendFile(new File([blob], `voice.${extension}`, { type: blob.type || "audio/webm" }), "voice", duration);
       };
@@ -652,13 +678,13 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
     setPanel(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: { facingMode: "user", width: { ideal: 480, max: 640 }, height: { ideal: 480, max: 640 }, frameRate: { ideal: 24, max: 30 } }
+        audio: { sampleRate: { ideal: 48_000 }, channelCount: { ideal: 1 } },
+        video: { facingMode: "user", width: { ideal: 720, max: 1280 }, height: { ideal: 720, max: 1280 }, frameRate: { ideal: 24, max: 30 } }
       });
       if (!aliveRef.current) { stream.getTracks().forEach(track => track.stop()); return; }
       circleStream.current = stream;
       const mime = ["video/webm;codecs=vp8,opus", "video/webm;codecs=vp9,opus", "video/webm", "video/mp4"].find(item => MediaRecorder.isTypeSupported(item)) || "";
-      const options: MediaRecorderOptions = mime ? { mimeType: mime, videoBitsPerSecond: 450000, audioBitsPerSecond: 24000 } : { videoBitsPerSecond: 450000, audioBitsPerSecond: 24000 };
+      const options: MediaRecorderOptions = mime ? { mimeType: mime, videoBitsPerSecond: 2_000_000, audioBitsPerSecond: 96_000 } : { videoBitsPerSecond: 2_000_000, audioBitsPerSecond: 96_000 };
       let media: MediaRecorder;
       try { media = new MediaRecorder(stream, options); }
       catch { media = new MediaRecorder(stream); }
@@ -666,13 +692,27 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
       circleCancel.current = false;
       elapsedRef.current = 0;
       setElapsed(0);
-      media.ondataavailable = event => { if (event.data.size) circleChunks.current.push(event.data); };
+      let recordedBytes = 0;
+      media.ondataavailable = event => {
+        if (!event.data.size) return;
+        recordedBytes += event.data.size;
+        if (recordedBytes > circleRecordingLimit) {
+          if (!circleCancel.current) reportError("Запись слишком большая");
+          circleCancel.current = true;
+          if (media.state !== "inactive") media.stop();
+          return;
+        }
+        circleChunks.current.push(event.data);
+      };
       media.onstop = () => {
         stopCircleStream();
         setCircling(false);
         const blob = new Blob(circleChunks.current, { type: media.mimeType || "video/webm" });
         const duration = Math.min(60, Math.max(1, elapsedRef.current)) * 1000;
-        if (circleCancel.current || blob.size < 1000) { if (!circleCancel.current) reportError("Слишком короткий кружок"); return; }
+        if (circleCancel.current || blob.size < 1000 || blob.size > circleRecordingLimit) {
+          if (!circleCancel.current) reportError(blob.size > circleRecordingLimit ? "Запись слишком большая" : "Слишком короткий кружок");
+          return;
+        }
         const extension = blob.type.includes("mp4") ? "mp4" : "webm";
         void sendFile(new File([blob], `circle.${extension}`, { type: blob.type || "video/webm" }), "circle", duration);
       };
@@ -711,20 +751,25 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
 
   return (
     <section className="card chat">
-      <h2>{personName(friend.username, friend.displayName)}</h2>
+      <div className="chat-title"><Avatar kind="user" id={friend.userId} name={personName(friend.username, friend.displayName)} /><h2>{personName(friend.username, friend.displayName)}</h2></div>
       <div className="log" ref={logRef} onScroll={onScroll}>
         {more && <button className="btn" type="button" disabled={loadingEarlier} onClick={() => void earlier()}>{loadingEarlier ? "Загрузка…" : "Раньше"}</button>}
-        {messages.map(message => {
+        {messages.map((message, index) => {
           const mine = message.senderId === self;
           const sticker = message.kind === "sticker" && !message.deleted;
           const round = message.kind === "circle" && !message.deleted;
+          const previous = messages[index - 1];
+          const grouped = !!previous && sameSocialCluster(previous, message);
+          const newDay = !previous || new Date(previous.createdAt).toDateString() !== new Date(message.createdAt).toDateString();
           return (
-            <article key={message.messageId} data-hold={message.kind} className={"bubble" + (mine ? " mine" : "") + (sticker ? " sticker" : "") + (round ? " round" : "")}
+            <Fragment key={message.messageId}>
+            {newDay && <div className="message-day" role="separator">{new Date(message.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}</div>}
+            <article data-hold={message.kind} className={"bubble" + (mine ? " mine" : " chat-incoming") + (grouped ? " grouped" : "") + (sticker ? " sticker" : "") + (round ? " round" : "")}
               onPointerDown={() => { heldOpen.current = false; if (holdTimer.current) window.clearTimeout(holdTimer.current); holdTimer.current = window.setTimeout(() => { holdTimer.current = 0; heldOpen.current = true; setOpenMenu(message.messageId); }, 450); }}
               onPointerUp={event => { if (holdTimer.current) window.clearTimeout(holdTimer.current); if (heldOpen.current && !(event.target instanceof Element && event.target.closest(".actions"))) event.preventDefault(); }}
               onPointerLeave={() => { if (holdTimer.current) window.clearTimeout(holdTimer.current); }}
               onClickCapture={event => { if (event.target instanceof Element && event.target.closest(".actions")) return; if (heldOpen.current || openMenu === message.messageId) { event.preventDefault(); event.stopPropagation(); } }}>
-              {!mine && !sticker && !round && <b>{message.senderName}</b>}
+              {!mine && !grouped && <Avatar kind="user" id={message.senderId} name={message.senderName} className="message-avatar" />}
               {message.replyTo && <div className="quote">{message.replyBody || "Сообщение"}</div>}
               {message.deleted ? <div>Сообщение удалено</div> : (
                 <>
@@ -738,7 +783,7 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
                 </>
               )}
               <div className="meta">
-                <span className="muted">{when(message.createdAt)}{message.editedAt && !message.deleted ? " · изменено" : ""}{mine && message.read ? " · прочитано" : ""}</span>
+                <span className="muted" title={new Date(message.createdAt).toLocaleString("ru-RU")}>{when(message.createdAt)}{message.editedAt && !message.deleted ? " · изменено" : ""}{mine && message.read ? " · прочитано" : ""}</span>
                 {!message.deleted && <button className="tool" type="button" aria-label="Действия" onClick={() => { setReactFor(null); setOpenMenu(openMenu === message.messageId ? null : message.messageId); }}><Icon name="more" size={16} /></button>}
               </div>
               {message.reactions.length > 0 && (
@@ -760,6 +805,7 @@ function Chat({ friend, self, onError }: { friend: SocialFriend; self: string; o
                 </div>
               )}
             </article>
+            </Fragment>
           );
         })}
         {historyError && <div className="banner" role="status">{historyError} <button className="btn" type="button" onClick={() => void pollerRef.current?.poll()}>Обновить</button></div>}
