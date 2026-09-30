@@ -15,8 +15,10 @@
     <string name="space_day_13">%1$s пар · %2$s–%3$s</string>
     <string name="space_day_14">В этот день занятий нет</string>
     <string name="space_day_15">Пары закончились</string>
-    <string name="space_day_16">Свободное время</string>
-    <string name="space_day_17">Перерыв %1$s–%2$s · %3$s ч %4$s мин</string>
+    <string name="schedule_break_time">Перерыв %1$s–%2$s</string>
+    <string name="schedule_break_minutes">%1$d мин</string>
+    <string name="schedule_break_hours">%1$d ч</string>
+    <string name="schedule_break_hours_minutes">%1$d ч %2$d мин</string>
     <string name="space_day_18">Текущая или следующая пара</string>
     <string name="space_day_19">Первая пара</string>
     <string name="space_day_20">Открыть карту</string>

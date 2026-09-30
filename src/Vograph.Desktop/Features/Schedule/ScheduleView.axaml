@@ -50,8 +50,6 @@
 </StackPanel><StackPanel Name="PlannerMain" Grid.Row="1" Spacing="12">      <TextBlock Classes="muted caption" Text="{Binding DaySummary}" IsVisible="{Binding DaySummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       <TextBlock Classes="muted caption" Text="{Binding SourceSummary}" TextWrapping="Wrap" />
       <TextBlock Classes="subject" Text="{Binding DayPriorityCaption}" IsVisible="{Binding ShowDayState}" />
-      <c:Switch Content="Свободное время" IsChecked="{Binding ShowFreeTime}" IsVisible="{Binding HasFreeTime}"
-                AutomationProperties.Name="Показывать перерывы от 30 минут" />
 
       <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,0,0,6" />
 
@@ -67,7 +65,12 @@
             </DataTemplate>
             <DataTemplate DataType="{x:Type s:PlannerBreak}" x:DataType="s:PlannerBreak">
               <Border Padding="12,8" Background="{DynamicResource Brush.Surface}" CornerRadius="8">
-                <TextBlock Classes="muted caption" Text="{Binding Label}" TextWrapping="Wrap" />
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Classes="muted caption" Text="{Binding TimeLabel}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                  <Border Grid.Column="1" Margin="8,0,0,0" Padding="8,4" Background="{DynamicResource Brush.Chip}" CornerRadius="6">
+                    <TextBlock Classes="muted caption" Text="{Binding Duration}" />
+                  </Border>
+                </Grid>
               </Border>
             </DataTemplate>
           </ItemsControl.DataTemplates>

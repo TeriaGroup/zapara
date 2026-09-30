@@ -26,19 +26,39 @@ class NotificationReceiver : BroadcastReceiver() {
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED && intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
         val pending = goAsync()
         Thread {
             try {
-                restoreHost(context)
-                Notifications.schedule(context.applicationContext)
-                WidgetUpdater.reboot(context.applicationContext)
-            } catch (e: Exception) {
-                Log.w("ZaparaNotify", "boot", e)
+                runStartupRecovery(
+                    restoreProfile = { restoreHost(context) },
+                    restartWidgets = { WidgetUpdater.reboot(context.applicationContext) },
+                    restoreNotifications = { Notifications.schedule(context.applicationContext) },
+                    onFailure = { step, error -> Log.w("ZaparaStartup", step, error) }
+                )
             } finally {
                 pending.finish()
             }
         }.start()
+    }
+}
+
+internal fun runStartupRecovery(
+    restoreProfile: () -> Unit,
+    restartWidgets: () -> Unit,
+    restoreNotifications: () -> Unit,
+    onFailure: (String, Exception) -> Unit
+) {
+    for ((step, restore) in listOf(
+        "profile" to restoreProfile,
+        "widgets" to restartWidgets,
+        "notifications" to restoreNotifications
+    )) {
+        try {
+            restore()
+        } catch (error: Exception) {
+            onFailure(step, error)
+        }
     }
 }
 

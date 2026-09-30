@@ -6,11 +6,78 @@ import org.junit.Test
 class WidgetMotionTest {
     private val a = WidgetJobIdentity("account-A", "db-a", 1)
 
+    @Test fun schedule_room_edit_and_new_row_highlight_once_without_a_toss() {
+        val lesson = ScheduleWidgetRow("Физика", "09:00 · 201", false, 1)
+        val before = ScheduleWidgetSnapshot(a, "Расписание", "", null, listOf(lesson))
+        val policy = WidgetMotionPolicy.of(true, 1f, true)
+        val edited = before.copy(rows = listOf(lesson.copy(meta = "09:00 · 302")))
+        assertEquals(WidgetMotionKind.ScheduleUpdated, WidgetRowEffects.schedule(before, edited, policy)?.kind)
+        assertNull(WidgetRowEffects.schedule(edited, edited, policy))
+        val added = before.copy(rows = before.rows + lesson.copy(number = 2, name = "Математика"))
+        assertNotNull(WidgetRowEffects.schedule(before, added, policy))
+        assertNull(WidgetRowEffects.schedule(added, added, policy))
+    }
+
+    @Test fun homework_edit_and_first_added_item_highlight_once() {
+        val task = HomeworkWidgetRow("Физика", "Читать §1", "text2", 41)
+        val before = HomeworkWidgetSnapshot(a, "Домашка", "", null, listOf(task))
+        val policy = WidgetMotionPolicy.of(true, 1f, true)
+        val edited = before.copy(rows = listOf(task.copy(detail = "Читать §2")))
+        assertEquals(WidgetMotionKind.HomeworkUpdated, WidgetRowEffects.homework(before, edited, emptySet(), policy)?.kind)
+        assertNull(WidgetRowEffects.homework(edited, edited, emptySet(), policy))
+        assertNotNull(WidgetRowEffects.homework(before.copy(rows = emptyList()), before, emptySet(), policy))
+    }
+
+    @Test fun row_content_changes_respect_identity_clear_and_motion_policy() {
+        val row = HomeworkWidgetRow("Физика", "Читать", "text2", 41)
+        val before = HomeworkWidgetSnapshot(a, "Домашка", "", null, listOf(row))
+        val changed = before.copy(rows = listOf(row.copy(detail = "Решить")))
+        val policy = WidgetMotionPolicy.of(true, 1f, true)
+        listOf(a.copy(profileId = "B"), a.copy(databaseName = "db-b"), a.copy(generation = 2)).forEach {
+            assertNull(WidgetRowEffects.homework(before, changed.copy(identity = it), emptySet(), policy))
+        }
+        assertNull(WidgetRowEffects.homework(before.copy(cleared = true), changed, emptySet(), policy))
+        assertNull(WidgetRowEffects.homework(before, changed.copy(cleared = true), emptySet(), policy))
+        listOf(WidgetMotionPolicy.of(false, 1f, true), WidgetMotionPolicy.of(true, 0f, true),
+            WidgetMotionPolicy.of(true, 1f, false)).forEach {
+            assertNull(WidgetRowEffects.homework(before, changed, emptySet(), it))
+        }
+    }
+
     @Test fun phase_arc_finishes_old_arc_then_settles_to_new_with_finite_halo() {
         assertEquals(PhaseArcFrame(0.25f, 0f), phaseArc(0.25f, 0.75f, 0f))
         assertEquals(1f, phaseArc(0.25f, 0.75f, 0.35f).fraction, 0.001f)
         assertTrue(phaseArc(0.25f, 0.75f, 0.35f).haloAlpha > 0f)
         assertEquals(PhaseArcFrame(0.75f, 0f), phaseArc(0.25f, 0.75f, 1f))
+    }
+
+    @Test fun invalid_phase_fractions_never_produce_nonfinite_ring_geometry() {
+        val start = phaseArc(Float.NaN, 0.75f, 0f)
+        assertEquals(0f, start.fraction, 0f)
+        val end = phaseArc(0.5f, Float.NaN, 1f)
+        assertEquals(0f, end.fraction, 0f)
+        assertEquals(0f, end.haloAlpha, 0f)
+    }
+
+    @Test fun phase_comet_travels_once_and_is_invisible_at_both_endpoints() {
+        assertEquals(PhaseCometFrame(-90f, 0f), phaseComet(-1f))
+        assertEquals(PhaseCometFrame(270f, 0f), phaseComet(2f))
+        assertEquals(PhaseCometFrame(270f, 0f), phaseComet(Float.NaN))
+        val frames = WidgetMotionPolicy.of(true, 1f, true).frames().map { phaseComet(it.progress) }
+        assertEquals(0f, frames.first().alpha, 0f)
+        assertEquals(0f, frames.last().alpha, 0f)
+        assertTrue(frames.drop(1).dropLast(1).all { it.alpha > 0f && it.alpha <= 1f })
+        assertTrue(frames.zipWithNext().all { (left, right) -> right.angleDegrees > left.angleDegrees })
+    }
+
+    @Test fun week_count_changes_stagger_but_all_finish_on_the_same_final_face() {
+        assertEquals(widgetMotionPose(0f), weekCountPose(0f, 0))
+        assertTrue(weekCountPose(0.2f, 0).newAlpha > weekCountPose(0.2f, 3).newAlpha)
+        (0..6).forEach { assertEquals(widgetMotionPose(1f), weekCountPose(1f, it)) }
+        assertEquals(widgetMotionPose(1f), weekCountPose(Float.NaN, 6))
+        assertEquals(0f, weekMarkerInset(0f), 0f)
+        assertTrue(weekMarkerInset(0.5f) in 0.01f..0.06f)
+        assertEquals(0f, weekMarkerInset(1f), 0f)
     }
 
     @Test fun room_with_letters_leaves_up_and_enters_from_below_and_heartbeat_is_still() {

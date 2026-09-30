@@ -260,7 +260,7 @@ public class I18nService
             ["setAppearance"] = "Внешний вид", ["setTheme"] = "Тема", ["themeSystem"] = "Как в системе", ["themeLight"] = "Светлая", ["themeDark"] = "Тёмная",
             ["setCompactSidebar"] = "Компактный сайдбар", ["setAnimations"] = "Анимации", ["setSchedule"] = "Расписание", ["setChange"] = "изменить",
             ["setAutoCheckAt"] = "автопроверка {0}", ["setNever"] = "ещё не было", ["setAbout"] = "О программе", ["setVersion"] = "Версия {0}",
-            ["setReleases"] = "Страница релизов", ["setSources"] = "Источники данных", ["setSourceTimetable"] = "Расписание студентов — voenmeh.ru",
+            ["setReleases"] = "Страница релизов", ["setSources"] = "Источники данных", ["setSourceTimetable"] = "Расписание студентов — voenmeh.su",
             ["setSourceMaps"] = "Планы корпусов — voenmeh.ru/openmap", ["setDataFolder"] = "Открыть папку данных",
             ["setNotifications"] = "Уведомления", ["notifEnabled"] = "Показывать уведомления о парах",
             ["notifTime1Label"] = "Вечером — про завтра", ["notifTime2Label"] = "Утром — про сегодня",

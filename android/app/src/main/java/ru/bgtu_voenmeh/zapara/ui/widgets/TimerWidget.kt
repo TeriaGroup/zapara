@@ -74,7 +74,7 @@ object TimerWidgetComposer {
     fun cleared(identity: WidgetJobIdentity, copy: UiCopy, isDark: Boolean = false) = TimerWidgetSnapshot(
         identity = identity,
         timeText = "",
-        phaseText = "",
+        phaseText = copy.get("widget_loading"),
         subject = "",
         detail = "",
         kind = TimerPhaseKind.EmptyDay,
@@ -146,11 +146,11 @@ object TimerWidgetComposer {
         if (next != null) {
             return quiet(
                 identity,
-                copy.get("widget_timer_idle"),
+                copy.get("widget_timer_starts_at", next.lesson.timeStart),
                 TimerPhaseKind.Waiting,
                 isDark,
                 today.atTime(next.start),
-                subject = copy.get("widget_timer_next", shown(next.lesson, displayName), next.lesson.timeStart)
+                subject = shown(next.lesson, displayName)
             )
         }
         return quiet(

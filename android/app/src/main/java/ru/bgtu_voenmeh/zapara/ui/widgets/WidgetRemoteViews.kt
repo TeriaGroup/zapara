@@ -35,16 +35,31 @@ object WidgetRemoteViews {
 
     fun schedule(context: Context, snapshot: ScheduleWidgetSnapshot, heightDp: Int = 160): RemoteViews {
         val compact = heightDp < 120
+        val capacity = ScheduleWidgetComposer.rowsForHeightDp(heightDp, context.resources.configuration.fontScale)
+        val visibleRows = if (snapshot.cleared) emptyList() else snapshot.rows.take(capacity)
         val views = RemoteViews(context.packageName, if (compact) R.layout.widget_schedule_compact else R.layout.widget_schedule)
         val colors = WidgetPalette.of(context, snapshot.isDark)
-        paintChrome(views, R.id.widget_schedule_root, R.id.widget_schedule_title, R.id.widget_schedule_subtitle, R.id.widget_schedule_empty, snapshot.title, if (compact) "" else snapshot.subtitle, snapshot.empty, snapshot.cleared, colors)
-        views.setContentDescription(R.id.widget_schedule_root, snapshot.title.ifBlank { context.getString(R.string.nav_schedule) })
+        val title = if (compact && !snapshot.cleared && snapshot.dayLabel.isNotBlank())
+            context.getString(R.string.widget_schedule_short_title, snapshot.dayLabel) else snapshot.title
+        paintChrome(context, views, R.id.widget_schedule_root, R.id.widget_schedule_title, R.id.widget_schedule_subtitle, R.id.widget_schedule_empty, title, if (compact) "" else snapshot.subtitle, snapshot.empty, snapshot.cleared, colors)
+        views.setViewVisibility(R.id.widget_schedule_title, if (compact && heightDp <= 90 &&
+            context.resources.configuration.fontScale >= 1.25f) View.GONE else View.VISIBLE)
+        val spoken = if (snapshot.cleared) listOf(snapshot.title, context.getString(R.string.widget_loading)).joinToString(", ") else buildList {
+            add(snapshot.title)
+            add(snapshot.subtitle)
+            add(snapshot.empty.orEmpty())
+            visibleRows.forEach {
+                add(it.name)
+                add(it.meta)
+            }
+        }.filter { it.isNotBlank() }.joinToString(", ")
+        views.setContentDescription(R.id.widget_schedule_root, spoken.ifBlank { context.getString(R.string.nav_schedule) })
         views.setViewVisibility(R.id.widget_schedule_toss, View.GONE)
         scheduleRows.forEachIndexed { index, slot ->
-            val row = snapshot.rows.getOrNull(index).takeIf { index < ScheduleWidgetComposer.rowsForHeightDp(heightDp) }
+            val row = visibleRows.getOrNull(index)
             val bind = WidgetRowBind.of(row)
-            views.setTextViewText(slot.name, if (compact && row != null && index == 0) "${row.name} · ${row.meta.substringBefore(" · ")}" else bind.primary)
-            views.setTextViewText(slot.meta, if (compact) "" else bind.secondary)
+            views.setTextViewText(slot.name, bind.primary)
+            views.setTextViewText(slot.meta, bind.secondary)
             views.setTextViewText(slot.number, if (!compact && row != null && row.number > 0) row.number.toString() else "")
             views.setViewVisibility(slot.row, if (bind.visible) View.VISIBLE else View.GONE)
             if (bind.visible && row != null) {
@@ -62,28 +77,40 @@ object WidgetRemoteViews {
 
     fun homework(context: Context, snapshot: HomeworkWidgetSnapshot, heightDp: Int = 160): RemoteViews {
         val compact = heightDp < 120
+        val visibleRows = if (snapshot.cleared) emptyList() else snapshot.rows.take(
+            HomeworkWidgetComposer.rowsForHeightDp(heightDp, context.resources.configuration.fontScale))
         val views = RemoteViews(context.packageName, if (compact) R.layout.widget_homework_compact else R.layout.widget_homework)
         val colors = WidgetPalette.of(context, snapshot.isDark)
-        paintChrome(views, R.id.widget_homework_root, R.id.widget_homework_title, R.id.widget_homework_subtitle, R.id.widget_homework_empty, snapshot.title, if (compact) "" else snapshot.subtitle, snapshot.empty, snapshot.cleared, colors)
+        paintChrome(context, views, R.id.widget_homework_root, R.id.widget_homework_title, R.id.widget_homework_subtitle, R.id.widget_homework_empty, snapshot.title, if (compact) "" else snapshot.subtitle, snapshot.empty, snapshot.cleared, colors)
+        views.setViewVisibility(R.id.widget_homework_title, if (compact && heightDp <= 90 &&
+            context.resources.configuration.fontScale >= 1.25f) View.GONE else View.VISIBLE)
         homeworkRows.forEachIndexed { index, ids ->
-            val row = snapshot.rows.getOrNull(index).takeIf {
-                index < HomeworkWidgetComposer.rowsForHeightDp(heightDp, context.resources.configuration.fontScale)
-            }
+            val row = visibleRows.getOrNull(index)
             val bind = WidgetRowBind.of(row)
-            views.setTextViewText(ids.second, if (compact && row != null && index == 0) "${row.subject} · ${row.detail.substringAfterLast(" · ")}" else bind.primary)
-            views.setTextViewText(ids.third, if (compact) "" else bind.secondary)
+            views.setTextViewText(ids.second, bind.primary)
+            views.setTextViewText(ids.third, if (compact && row != null) row.detail.substringAfterLast(" · ") else bind.secondary)
             views.setViewVisibility(ids.first, if (bind.visible) View.VISIBLE else View.GONE)
             if (bind.visible) {
                 views.setTextColor(ids.second, colors.text1)
                 views.setTextColor(ids.third, colors.tone(bind.tone))
             }
         }
+        val spoken = if (snapshot.cleared) listOf(snapshot.title, context.getString(R.string.widget_loading)) else buildList {
+            add(snapshot.title)
+            add(snapshot.subtitle)
+            add(snapshot.empty.orEmpty())
+            visibleRows.forEach {
+                add(it.subject)
+                add(it.detail)
+            }
+        }
+        views.setContentDescription(R.id.widget_homework_root, spoken.filter(String::isNotBlank).joinToString(", "))
         views.setOnClickPendingIntent(R.id.widget_homework_root, openApp(context, 4102, "homework"))
         return views
     }
 
     fun timer(context: Context, snapshot: TimerWidgetSnapshot, widthDp: Int = 110,
-              liveCountdown: Boolean = canUseExactCountdown(context)): RemoteViews {
+              liveCountdown: Boolean = canUseExactCountdown(context), heightDp: Int = 140): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_timer)
         val colors = WidgetPalette.of(context, snapshot.isDark)
         views.setInt(R.id.widget_timer_root, "setBackgroundResource",
@@ -101,15 +128,22 @@ object WidgetRemoteViews {
             TimerPhaseKind.Break -> colors.warn
             else -> colors.text2
         }
-        bindLine(views, R.id.widget_timer_phase, snapshot.phaseText, phaseColor)
-        bindLine(views, R.id.widget_timer_subject, snapshot.subject, colors.text1)
-        bindLine(views, R.id.widget_timer_detail, snapshot.detail, colors.text2)
+        bindLine(views, R.id.widget_timer_phase,
+            if (snapshot.cleared) context.getString(R.string.widget_loading) else snapshot.phaseText, phaseColor)
+        bindLine(views, R.id.widget_timer_subject, if (snapshot.cleared) "" else snapshot.subject, colors.text1)
+        bindLine(views, R.id.widget_timer_detail,
+            if (snapshot.cleared || heightDp <= 110 || context.resources.configuration.fontScale >= 1.2f) "" else snapshot.detail, colors.text2)
         bindTimerDescription(context, views, snapshot)
         views.setOnClickPendingIntent(R.id.widget_timer_root, openApp(context, 4104, "schedule"))
         return views
     }
 
     private fun bindTimerDescription(context: Context, views: RemoteViews, snapshot: TimerWidgetSnapshot) {
+        if (snapshot.cleared) {
+            views.setContentDescription(R.id.widget_timer_root,
+                context.getString(R.string.widget_loading))
+            return
+        }
         val spoken = listOf(snapshot.phaseText, snapshot.subject, snapshot.detail,
             absoluteEndText(context, snapshot))
             .map { it.trim() }
@@ -165,7 +199,7 @@ object WidgetRemoteViews {
             val opts = mgr.getAppWidgetOptions(id)
             val height = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 160).let { if (it > 0) it else 160 }
             val width = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 180).let { if (it > 0) it else 180 }
-            val cap = ScheduleWidgetComposer.rowsForHeightDp(height)
+            val cap = ScheduleWidgetComposer.rowsForHeightDp(height, context.resources.configuration.fontScale)
             val rows = snapshot.rows.take(cap)
             val shown = snapshot.copy(rows = rows)
             val previous = scheduleFaces.previous(id, snapshot.identity)
@@ -278,21 +312,23 @@ object WidgetRemoteViews {
         val live = ids.toSet()
         timerFaces.keys.retainAll(live)
         ids.forEach { id ->
-            val width = mgr.getAppWidgetOptions(id).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 110)
+            val options = mgr.getAppWidgetOptions(id)
+            val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 110)
             val dp = if (width > 0) width else 110
-            val face = timerFace(snapshot, dp)
+            val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 110).takeIf { it > 0 } ?: 110
+            val face = timerFace(snapshot, dp, height, context.resources.configuration.fontScale)
             val previous = timerSnapshots.previous(id, snapshot.identity)
             if (timerFaces[id] == face) {
                 // Do not cancel/restart a phase scene, and do not paint a static ring over its frame.
-                WidgetMotionPlayer.refreshFinal(id, snapshot.identity, timer(context, snapshot, dp))
+                WidgetMotionPlayer.refreshFinal(id, snapshot.identity, timer(context, snapshot, dp, heightDp = height))
                 mgr.partiallyUpdateAppWidget(id, moving(context, snapshot, dp, !WidgetMotionPlayer.isRunning(id)))
             } else {
                 WidgetMotionPlayer.publishFinal(context, id, R.layout.widget_timer, R.id.widget_timer_overlay, snapshot.identity, policy,
-                    timer(context, snapshot, dp), snapshot.cleared)
+                    timer(context, snapshot, dp, heightDp = height), snapshot.cleared)
                 timerFaces[id] = face
                 val scene = previous?.let { WidgetFaceEffects.timer(it, snapshot, policy) }
                 playFace(context, id, R.layout.widget_timer, R.id.widget_timer_overlay, snapshot.identity,
-                    policy, scene, dp, 110)
+                    policy, scene, dp, height)
             }
             if (snapshot.cleared) timerSnapshots.forget(id) else timerSnapshots.remember(id, snapshot.identity, snapshot)
         }
@@ -313,8 +349,9 @@ object WidgetRemoteViews {
         }
     }
 
-    private fun timerFace(snapshot: TimerWidgetSnapshot, widthDp: Int): String =
-        listOf(snapshot.identity, snapshot.kind, snapshot.endsAt, snapshot.phaseText, snapshot.subject, snapshot.detail, snapshot.cleared, snapshot.isDark, widthDp)
+    private fun timerFace(snapshot: TimerWidgetSnapshot, widthDp: Int, heightDp: Int, fontScale: Float): String =
+        listOf(snapshot.identity, snapshot.kind, snapshot.endsAt, snapshot.phaseText, snapshot.subject, snapshot.detail,
+            snapshot.cleared, snapshot.isDark, widthDp, heightDp, fontScale)
             .joinToString("|")
 
     private fun ring(context: Context, snapshot: TimerWidgetSnapshot, widthDp: Int): RemoteViews {
@@ -335,6 +372,7 @@ object WidgetRemoteViews {
     }
 
     private fun paintChrome(
+        context: Context,
         views: RemoteViews,
         root: Int,
         titleId: Int,
@@ -349,10 +387,10 @@ object WidgetRemoteViews {
         views.setInt(root, "setBackgroundResource", colors.background)
         views.setTextViewText(titleId, title)
         views.setTextColor(titleId, colors.text1)
-        views.setTextViewText(subtitleId, subtitle)
+        views.setTextViewText(subtitleId, if (cleared) "" else subtitle)
         views.setTextColor(subtitleId, colors.text2)
-        views.setViewVisibility(subtitleId, if (subtitle.isEmpty()) View.GONE else View.VISIBLE)
-        val emptyText = if (cleared) "" else empty.orEmpty()
+        views.setViewVisibility(subtitleId, if (cleared || subtitle.isEmpty()) View.GONE else View.VISIBLE)
+        val emptyText = if (cleared) context.getString(R.string.widget_loading) else empty.orEmpty()
         views.setTextViewText(emptyId, emptyText)
         if (emptyText.isEmpty()) {
             views.setViewVisibility(emptyId, View.GONE)

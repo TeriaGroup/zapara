@@ -138,7 +138,7 @@ public class SettingsTests : UiTest
         await vm.OpenTimetableSourceCommand.ExecuteAsync(null);
         await vm.OpenMapsSourceCommand.ExecuteAsync(null);
         await vm.OpenDataFolderCommand.ExecuteAsync(null);
-        Assert.Equal(new[] { "https://github.com/TeriaGroup/zapara/releases", "https://voenmeh.ru/obrazovanie/timetables/", "https://voenmeh.ru/openmap/" }, launcher.Urls);
+        Assert.Equal(new[] { "https://github.com/TeriaGroup/zapara/releases", "https://voenmeh.su/schedule", "https://voenmeh.ru/openmap/" }, launcher.Urls);
         Assert.Equal(db.Services.DataDir, Assert.Single(launcher.Folders));
     }
 

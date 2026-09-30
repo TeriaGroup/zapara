@@ -87,7 +87,6 @@ data class ScheduleUiState(
     val homeworkEditor: HomeworkEditorState? = null,
     val error: String? = null,
     val guest: Boolean = false,
-    val showFreeTime: Boolean = true,
     val undoDone: Pair<Long, Boolean>? = null,
     val now: java.time.LocalDateTime = java.time.LocalDateTime.now(),
     val sourceStatus: String? = null,
@@ -100,7 +99,6 @@ data class ScheduleUiState(
 sealed interface ScheduleEvent {
     data class Need(val date: LocalDate) : ScheduleEvent
     data class Select(val date: LocalDate) : ScheduleEvent
-    data class FreeTime(val on: Boolean) : ScheduleEvent
     data object UndoShared : ScheduleEvent
     data object UndoDone : ScheduleEvent
     data class QuickDay(val offset: Int) : ScheduleEvent

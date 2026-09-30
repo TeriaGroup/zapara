@@ -21,6 +21,7 @@ public sealed class UiPrefs
     public ThemeChoice Theme { get; set; } = ThemeChoice.System;
     public bool SidebarCollapsed { get; set; }
     public bool Animations { get; set; } = true;
+    // Retained for old preference files; breaks are always visible now.
     public bool ShowFreeTime { get; set; } = true;
     public WindowBounds? Window { get; set; }
 

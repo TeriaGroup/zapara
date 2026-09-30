@@ -80,7 +80,6 @@
             </Button>
           </Grid>
           <TextBlock Classes="muted caption" Text="Выбранная группа задаёт расписание на устройстве. Членство и роли в чате группы оформляются отдельно." TextWrapping="Wrap" />
-          <c:Switch Content="Свободное время" IsChecked="{Binding StudyShowFreeTime}" AutomationProperties.Name="Показывать перерывы от 30 минут" />
           <TextBlock Classes="subject" Text="Подгруппы предметов" />
           <TextBlock Classes="muted caption" Text="Если подгруппа не выбрана, показываются все занятия. Повторное нажатие снимает выбор." TextWrapping="Wrap" />
           <ItemsControl ItemsSource="{Binding StudySubgroups}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="st:StudySubgroupRow"><StackPanel Spacing="6" Margin="0,4"><TextBlock Text="{Binding Title}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding Options}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" LineSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="st:StudySubgroupOption"><Button Content="{Binding Label}" Classes.primary="{Binding Selected}" Command="{Binding SelectCommand}" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>

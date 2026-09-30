@@ -113,7 +113,7 @@ class WeekWidgetComposerTest {
         )
 
         assertEquals("Выберите группу, чтобы открыть расписание", noGroup.empty)
-        assertEquals(List(7) { 0 }, noGroup.days.map { it.lessonCount })
+        assertTrue(noGroup.days.isEmpty())
         assertTrue(noGroup.subtitle.isNotBlank())
 
         val cleared = WeekWidgetComposer.cleared(identity, WidgetCopy, true)
@@ -121,6 +121,6 @@ class WeekWidgetComposerTest {
         assertTrue(cleared.isDark)
         assertEquals("", cleared.subtitle)
         assertTrue(cleared.days.isEmpty())
-        assertEquals("", cleared.empty.orEmpty())
+        assertEquals("Обновляем…", cleared.empty)
     }
 }

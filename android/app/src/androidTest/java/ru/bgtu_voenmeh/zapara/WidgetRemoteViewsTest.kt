@@ -435,11 +435,11 @@ class WidgetRemoteViewsTest {
         }
     }
 
-    @Test fun compact_schedule_and_homework_show_one_line_inside_80dp_and_clear_hidden_rows() {
+    @Test fun compact_schedule_and_homework_keep_separate_details_inside_80dp_and_clear_hidden_rows() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val copy = AndroidUiCopy(ctx)
         val schedule = ru.bgtu_voenmeh.zapara.ui.widgets.ScheduleWidgetSnapshot(extraIdentity, "Расписание", "Гость", null,
-            (1..4).map { ru.bgtu_voenmeh.zapara.ui.widgets.ScheduleWidgetRow("Предмет $it", "09:00 – 10:35 · 493 ГК", false, it) })
+            (1..4).map { ru.bgtu_voenmeh.zapara.ui.widgets.ScheduleWidgetRow("Предмет $it", "09:00 – 10:35 · 493 ГК", false, it) }, dayLabel = "Сегодня")
         val homework = ru.bgtu_voenmeh.zapara.ui.widgets.HomeworkWidgetSnapshot(extraIdentity, "Домашка", "Гость", null,
             (1..4).map { ru.bgtu_voenmeh.zapara.ui.widgets.HomeworkWidgetRow("Предмет $it", "Задание · завтра", "text2", it.toLong()) })
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
@@ -450,24 +450,42 @@ class WidgetRemoteViewsTest {
                 tree.layout(0, 0, tree.measuredWidth, tree.measuredHeight)
                 return tree
             }
+            fun assertInside(tree: View, name: String) {
+                val child = tree.named(name)
+                val bounds = android.graphics.Rect()
+                child.getDrawingRect(bounds)
+                (tree as android.view.ViewGroup).offsetDescendantRectToMyCoords(child, bounds)
+                assertTrue("$name must fit in the widget", bounds.top >= 0 && bounds.bottom <= tree.height)
+            }
             val scheduleTree = measured(WidgetRemoteViews.schedule(ctx, schedule, 80).apply(ctx, FrameLayout(ctx)))
             assertEquals(View.GONE, scheduleTree.named("widget_schedule_subtitle").visibility)
-            assertTrue((scheduleTree.named("widget_schedule_name1") as TextView).text.contains("09:00"))
+            assertEquals("Предмет 1", (scheduleTree.named("widget_schedule_name1") as TextView).text.toString())
+            assertTrue((scheduleTree.named("widget_schedule_meta1") as TextView).text.contains("09:00"))
+            assertTrue((scheduleTree.named("widget_schedule_title") as TextView).text.contains("Сегодня"))
             assertEquals(View.VISIBLE, scheduleTree.named("widget_schedule_row1").visibility)
-            assertTrue(scheduleTree.named("widget_schedule_row1").bottom <= scheduleTree.height)
+            assertInside(scheduleTree, "widget_schedule_row1")
+            assertInside(scheduleTree, "widget_schedule_meta1")
             (2..4).forEach { assertEquals(View.GONE, scheduleTree.named("widget_schedule_row$it").visibility) }
             WidgetRemoteViews.schedule(ctx, ScheduleWidgetComposer.cleared(extraIdentity.copy(generation = 1), copy), 80).reapply(ctx, scheduleTree)
-            (1..4).forEach { assertEquals("", (scheduleTree.named("widget_schedule_name$it") as TextView).text.toString()) }
+            (1..4).forEach {
+                assertEquals("", (scheduleTree.named("widget_schedule_name$it") as TextView).text.toString())
+                assertEquals("", (scheduleTree.named("widget_schedule_meta$it") as TextView).text.toString())
+            }
             val scheduleOverlay = scheduleTree.named("widget_schedule_toss")
             assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO, scheduleOverlay.importantForAccessibility)
 
             val homeworkTree = measured(WidgetRemoteViews.homework(ctx, homework, 80).apply(ctx, FrameLayout(ctx)))
             assertEquals(View.GONE, homeworkTree.named("widget_homework_subtitle").visibility)
-            assertTrue((homeworkTree.named("widget_homework_subject1") as TextView).text.contains("завтра"))
-            assertTrue(homeworkTree.named("widget_homework_row1").bottom <= homeworkTree.height)
+            assertEquals("Предмет 1", (homeworkTree.named("widget_homework_subject1") as TextView).text.toString())
+            assertTrue((homeworkTree.named("widget_homework_detail1") as TextView).text.contains("завтра"))
+            assertInside(homeworkTree, "widget_homework_row1")
+            assertInside(homeworkTree, "widget_homework_detail1")
             (2..4).forEach { assertEquals(View.GONE, homeworkTree.named("widget_homework_row$it").visibility) }
             WidgetRemoteViews.homework(ctx, HomeworkWidgetComposer.cleared(extraIdentity.copy(generation = 1), copy), 80).reapply(ctx, homeworkTree)
-            (1..4).forEach { assertEquals("", (homeworkTree.named("widget_homework_subject$it") as TextView).text.toString()) }
+            (1..4).forEach {
+                assertEquals("", (homeworkTree.named("widget_homework_subject$it") as TextView).text.toString())
+                assertEquals("", (homeworkTree.named("widget_homework_detail$it") as TextView).text.toString())
+            }
             val homeworkOverlay = homeworkTree.named("widget_homework_overlay")
             assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO, homeworkOverlay.importantForAccessibility)
         }

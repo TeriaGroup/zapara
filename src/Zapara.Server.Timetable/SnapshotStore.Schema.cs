@@ -35,7 +35,7 @@ public sealed partial class SnapshotStore
             }
             command.CommandText = $"SELECT version FROM {quotedSchema}.schema_version";
             var version = (int)(await command.ExecuteScalarAsync(ct) ?? throw SchemaRejected());
-            if (version is not (1 or 2)) throw SchemaRejected();
+            if (version is not (1 or 2 or 3)) throw SchemaRejected();
             await VerifySchemaAsync(connection, transaction, version, ct);
             if (version == 1)
             {
@@ -43,9 +43,20 @@ public sealed partial class SnapshotStore
                 using var reader = new StreamReader(stream);
                 command.CommandText = (await reader.ReadToEndAsync(ct)).Replace("{{schema}}", quotedSchema)
                     .Replace("{{xml_url}}", "'" + TimetableParser.DefaultUrl.Replace("'", "''") + "'")
-                    .Replace("{{json_url}}", "'" + VoenmehScheduleClient.MetaUrl.Replace("'", "''") + "'");
+                    .Replace("{{json_url}}", "'" + VoenmehScheduleClient.LegacyMetaUrl.Replace("'", "''") + "'");
                 await command.ExecuteNonQueryAsync(ct);
                 await VerifySchemaAsync(connection, transaction, 2, ct);
+            }
+            if (version is 1 or 2)
+            {
+                using var stream = typeof(SnapshotStore).Assembly.GetManifestResourceStream("Zapara.Server.Timetable.Sql.003_new_schedule_origin.sql")!;
+                using var reader = new StreamReader(stream);
+                command.CommandText = (await reader.ReadToEndAsync(ct)).Replace("{{schema}}", quotedSchema)
+                    .Replace("{{xml_url}}", "'" + TimetableParser.DefaultUrl.Replace("'", "''") + "'")
+                    .Replace("{{old_json_url}}", "'" + VoenmehScheduleClient.LegacyMetaUrl.Replace("'", "''") + "'")
+                    .Replace("{{new_json_url}}", "'" + VoenmehScheduleClient.MetaUrl.Replace("'", "''") + "'");
+                await command.ExecuteNonQueryAsync(ct);
+                await VerifySchemaAsync(connection, transaction, 3, ct);
             }
             await transaction.CommitAsync(ct);
         }
@@ -114,12 +125,14 @@ public sealed partial class SnapshotStore
     private static IReadOnlyDictionary<string, string> Definitions(int version)
     {
         if (version == 1) return ExpectedDefinitions;
-        return new Dictionary<string, string>(ExpectedDefinitions)
+        var definitions = new Dictionary<string, string>(ExpectedDefinitions)
         {
-            ["schema_version_one"] = "CHECK ((version = 2))",
+            ["schema_version_one"] = $"CHECK ((version = {version}))",
             ["snapshot_provenance"] = "CHECK ((((source_kind = 'file'::text) AND (source_url IS NULL) AND (source_modified_at IS NULL)) OR ((source_kind = 'http'::text) AND (source_url IS NOT NULL) AND (source_url = ANY (ARRAY['"
-                + TimetableParser.DefaultUrl.Replace("'", "''") + "'::text, '" + VoenmehScheduleClient.MetaUrl.Replace("'", "''") + "'::text])))))"
+                + TimetableParser.DefaultUrl.Replace("'", "''") + "'::text, '" + VoenmehScheduleClient.LegacyMetaUrl.Replace("'", "''") + "'::text"
+                + (version == 3 ? ", '" + VoenmehScheduleClient.MetaUrl.Replace("'", "''") + "'::text" : "") + "])))))"
         };
+        return definitions;
     }
 
     private static readonly string[] ExpectedConstraints =

@@ -26,7 +26,8 @@ object VoenmehScheduleParser {
 
     fun parseLessons(json: String, groupId: String): List<Lesson> {
         val obj = payloadObject(json)
-        val rows = (obj.fields["lessons"] as? JsonValue.Arr)?.items.orEmpty()
+        val rows = (obj.fields["lessons"] as? JsonValue.Arr)?.items
+            ?: throw IllegalStateException(TimetablePayload.NOT_XML)
         val parsed = ArrayList<Lesson>(rows.size)
         for (item in rows) {
             val row = try { item.obj() } catch (_: JsonFail) { continue }

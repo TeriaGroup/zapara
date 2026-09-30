@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using Vograph.Core.Services;
 using Vograph.Timetable;
 
@@ -58,8 +57,6 @@ public sealed class ScheduleRefresher : IDisposable
         req.Headers.Accept.ParseAdd("application/json");
         using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseContentRead, ct).ConfigureAwait(false);
         var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-        if (resp.StatusCode == HttpStatusCode.NotFound && url.Contains("/lessons", StringComparison.Ordinal))
-            return """{"lessons":[]}""";
         if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"HTTP {(int)resp.StatusCode}");
         if (TimetableParser.IsHtml(body) || body.TrimStart().StartsWith('<'))
             throw new InvalidOperationException(TimetableParser.NotTimetable);

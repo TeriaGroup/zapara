@@ -260,7 +260,7 @@ public sealed partial class GroupViewModel
         var gapIndex=0;var gaps=(model.Breaks??[]).OrderBy(x=>x.End).ToArray();
         foreach(var row in model.Rows)
         {
-            if(App.Prefs.ShowFreeTime && TimeSpan.TryParse(row.TimeStart,out var start))while(gapIndex<gaps.Length && gaps[gapIndex].End<=start)ChannelSchedule.Add(new Features.Schedule.PlannerBreak(gaps[gapIndex++]).Label);
+            if(TimeSpan.TryParse(row.TimeStart,out var start))while(gapIndex<gaps.Length && gaps[gapIndex].End<=start)ChannelSchedule.Add(new Features.Schedule.PlannerBreak(gaps[gapIndex++]).Label);
             ChannelSchedule.Add((row.IsNext?(day.Date>DateTime.Today?"Первая пара · ":"Текущая или следующая · "):"")+$"{row.TimeStart}–{row.TimeEnd} · {row.DisplayName}\n{row.TypeLabel} · {row.RoomText} · {row.Teacher}"+(row.HasConflict?" · Пересечение времени":""));
         }
     }

@@ -25,7 +25,7 @@ data class WidgetMotionPose(
     val newAlpha: Float
 )
 
-enum class WidgetMotionKind { ScheduleShift, HomeworkCompleted, HomeworkShift, Phase, Room, Day }
+enum class WidgetMotionKind { ScheduleShift, ScheduleUpdated, HomeworkCompleted, HomeworkShift, HomeworkUpdated, Phase, Room, Day }
 
 /** Revision is reserved before IO starts. Preference writes block all reads until completion. */
 internal class WidgetMotionPolicies {

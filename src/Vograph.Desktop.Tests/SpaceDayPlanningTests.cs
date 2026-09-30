@@ -36,4 +36,27 @@ public sealed class SpaceDayPlanningTests
         await vm.InitializeAsync();Assert.False(vm.HasPriority);Assert.True(vm.ShowDayState);Assert.Equal("Пары закончились",vm.DayPriorityCaption);vm.Detach();shell.Detach();
     }
 
+    [Fact] public async Task Every_break_is_in_the_timeline_even_if_the_old_preference_was_disabled()
+    {
+        using var db = TestDb.Create(false);
+        db.Services.Prefs.ShowFreeTime = false;
+        foreach (var (index, start, end, teacher) in new[] {
+            (20, "18:00", "18:35", "Иванов"), (21, "18:45", "19:20", "Петров"), (22, "18:45", "19:20", "Сидоров") })
+            db.Services.Db.InsertLesson(new() { GroupId = TestDb.MyGroupId, DayOfWeek = 1, Parity = 0, Index = index,
+                TimeStart = start, TimeEnd = end, SubjectRaw = "пр Вечерний предмет", SubjectNormalized = "вечерний предмет", TeacherRaw = teacher });
+        var shell = new ShellViewModel(db.Services);
+        var vm = new ScheduleViewModel(db.Services, shell, () => new DateTime(2026, 9, 14, 8, 0, 0));
+        try
+        {
+            await vm.InitializeAsync();
+            var gap = Assert.Single(vm.DayRows.OfType<PlannerBreak>(), row => row.Label.Contains("18:35–18:45"));
+            Assert.Equal("10 мин", gap.Duration);
+            var next = vm.Lessons.First(row => row.TimeStart == "18:45");
+            Assert.Equal(vm.DayRows.IndexOf(next) - 1, vm.DayRows.IndexOf(gap));
+            await vm.ReloadAsync();
+            Assert.Single(vm.DayRows.OfType<PlannerBreak>(), row => row.Label.Contains("18:35–18:45"));
+        }
+        finally { vm.Detach(); shell.Detach(); }
+    }
+
 }

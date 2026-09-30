@@ -47,7 +47,7 @@ public static class VoenmehScheduleParser
         var root = PayloadObject(json);
         var parsed = new List<Lesson>();
         if (!root.TryGetProperty("lessons", out var rows) || rows.ValueKind != JsonValueKind.Array)
-            return NumberByTime(parsed);
+            throw new InvalidOperationException(TimetableParser.NotTimetable);
         foreach (var item in rows.EnumerateArray())
         {
             if (item.ValueKind != JsonValueKind.Object) continue;

@@ -15,23 +15,27 @@ object WidgetExtraViews {
     )
 
     fun wayfinder(context: Context, snapshot: WayfinderWidgetSnapshot, widgetId: Int): RemoteViews {
+        val face = if (snapshot.cleared) snapshot.copy(
+            status = "", subject = "", time = "", room = "", classroomRaw = "",
+            targetDate = null, opensMap = false, empty = context.getString(R.string.widget_loading)
+        ) else snapshot
         val views = RemoteViews(context.packageName, R.layout.widget_wayfinder)
         val colors = WidgetPalette.of(context, snapshot.isDark)
         views.setInt(R.id.widget_wayfinder_root, "setBackgroundResource", colors.background)
-        line(views, R.id.widget_wayfinder_title, snapshot.title, colors.text1)
-        line(views, R.id.widget_wayfinder_status, snapshot.status, colors.text2)
-        line(views, R.id.widget_wayfinder_room, snapshot.room, colors.text1)
-        line(views, R.id.widget_wayfinder_subject, snapshot.subject, colors.text1)
-        line(views, R.id.widget_wayfinder_time, snapshot.time, colors.text2)
-        line(views, R.id.widget_wayfinder_empty, if (snapshot.cleared) "" else snapshot.empty.orEmpty(), colors.text2)
+        line(views, R.id.widget_wayfinder_title, face.title, colors.text1)
+        line(views, R.id.widget_wayfinder_status, face.status, colors.text2)
+        line(views, R.id.widget_wayfinder_room, face.room, colors.text1)
+        line(views, R.id.widget_wayfinder_subject, face.subject, colors.text1)
+        line(views, R.id.widget_wayfinder_time, face.time, colors.text2)
+        line(views, R.id.widget_wayfinder_empty, face.empty.orEmpty(), colors.text2)
         views.setViewVisibility(R.id.widget_wayfinder_overlay, View.GONE)
-        val spoken = listOf(snapshot.title, snapshot.status, snapshot.targetDate?.format(spokenDate).orEmpty(),
-            snapshot.subject, snapshot.time, snapshot.room, snapshot.empty.orEmpty())
+        val spoken = listOf(face.title, face.status, face.targetDate?.format(spokenDate).orEmpty(),
+            face.subject, face.time, face.room, face.empty.orEmpty())
             .filter(String::isNotBlank).joinToString(", ")
         views.setContentDescription(R.id.widget_wayfinder_root, spoken)
         views.setOnClickPendingIntent(R.id.widget_wayfinder_root, WidgetIntents.open(context, widgetId, 0,
-            if (snapshot.opensMap) "maps" else "schedule",
-            if (snapshot.opensMap) snapshot.classroomRaw else snapshot.targetDate?.toString()))
+            if (face.opensMap) "maps" else "schedule",
+            if (face.opensMap) face.classroomRaw else face.targetDate?.toString()))
         return views
     }
 
@@ -40,11 +44,16 @@ object WidgetExtraViews {
         val colors = WidgetPalette.of(context, snapshot.isDark)
         views.setInt(R.id.widget_week_root, "setBackgroundResource", colors.background)
         line(views, R.id.widget_week_title, snapshot.title, colors.text1)
-        val empty = if (snapshot.cleared) "" else snapshot.empty.orEmpty()
-        line(views, R.id.widget_week_subtitle, snapshot.subtitle.takeIf { empty.isEmpty() }.orEmpty(), colors.text2)
+        val empty = if (snapshot.cleared) context.getString(R.string.widget_loading) else snapshot.empty.orEmpty()
+        val showSubtitle = empty.isBlank() && context.resources.configuration.fontScale < 1.2f
+        line(views, R.id.widget_week_subtitle, snapshot.subtitle.takeIf { showSubtitle }.orEmpty(), colors.text2)
         line(views, R.id.widget_week_empty, empty, colors.text2)
+        val showDays = !snapshot.cleared && empty.isBlank() && snapshot.days.isNotEmpty()
+        views.setViewVisibility(R.id.widget_week_row_top, if (showDays) View.VISIBLE else View.GONE)
+        views.setViewVisibility(R.id.widget_week_row_bottom, if (showDays) View.VISIBLE else View.GONE)
         views.setContentDescription(R.id.widget_week_root,
-            listOf(snapshot.title, snapshot.subtitle, empty).filter(String::isNotBlank).joinToString(", "))
+            listOf(snapshot.title, snapshot.subtitle.takeUnless { snapshot.cleared }.orEmpty(), empty)
+                .filter(String::isNotBlank).joinToString(", "))
         views.setViewVisibility(R.id.widget_week_overlay, View.GONE)
         weekCells.forEachIndexed { index, id ->
             val day = snapshot.days.getOrNull(index).takeUnless { snapshot.cleared }

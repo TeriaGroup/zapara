@@ -31,7 +31,7 @@ public sealed class JsonTimetableInput(TimeProvider clock)
                 await concurrency.WaitAsync(token);
                 try
                 {
-                    var json = await FetchDocumentAsync($"{VoenmehScheduleClient.LessonsUrl}?name={Uri.EscapeDataString(name)}&type=group");
+                    var json = await FetchDocumentAsync($"{VoenmehScheduleClient.LessonsUrl}?name={Uri.EscapeDataString(name)}&kind=group");
                     return (Name: name, Json: json, Lessons: ValidateLessons(json, name));
                 }
                 finally { concurrency.Release(); }

@@ -52,6 +52,8 @@ class ScheduleWidgetComposerTest {
         assertEquals(2, ScheduleWidgetComposer.rowsForHeightDp(160))
         assertEquals(4, ScheduleWidgetComposer.rowsForHeightDp(280))
         assertEquals(ScheduleWidgetComposer.MAX_ROWS, ScheduleWidgetComposer.rowsForHeightDp(400))
+        assertEquals(1, ScheduleWidgetComposer.rowsForHeightDp(160, 1.3f))
+        assertEquals(2, ScheduleWidgetComposer.rowsForHeightDp(220, 1.3f))
     }
 
     @Test fun small_widget_slides_to_later_pairs_after_the_visible_ones_end() {
@@ -112,7 +114,8 @@ class ScheduleWidgetComposerTest {
     @Test fun guest_monday_shows_local_lessons_in_russian() {
         val snap = build(now = LocalDateTime.of(2026, 9, 14, 10, 0))
         assertEquals("Расписание", snap.title)
-        assertEquals("Гость · А863С", snap.subtitle)
+        assertEquals("Сегодня", snap.dayLabel)
+        assertEquals("Сегодня · Гость · А863С", snap.subtitle)
         assertTrue(snap.empty == null)
         assertEquals(2, snap.rows.size)
         assertEquals("Матан", snap.rows[0].name)
@@ -128,7 +131,8 @@ class ScheduleWidgetComposerTest {
         assertEquals(1, snap.rows.size)
         assertTrue(snap.rows[0].name.contains("ФК"))
         assertTrue(snap.rows.none { it.name == "Матан" })
-        assertTrue(snap.subtitle.contains("А863С"))
+        assertEquals("Завтра", snap.dayLabel)
+        assertEquals("Завтра · Гость · А863С", snap.subtitle)
         assertEquals(LocalDateTime.of(2026, 9, 15, 0, 0), snap.nextRefreshAt)
     }
 
@@ -187,6 +191,7 @@ class ScheduleWidgetComposerTest {
         assertTrue(cleared.rows.isEmpty())
         assertTrue(cleared.rows.none { it.name.contains("Матан") })
         assertEquals("Расписание", cleared.title)
+        assertEquals("Обновляем…", cleared.empty)
         assertEquals(b, cleared.identity)
     }
 }

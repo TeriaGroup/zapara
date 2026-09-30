@@ -20,7 +20,7 @@ class VoenmehScheduleClient(
         val loaded = fetchList.map { name ->
             async {
                 slots.withPermit {
-                    val url = "$LESSONS_URL?name=${encode(name)}&type=group"
+                    val url = "$LESSONS_URL?name=${encode(name)}&kind=group"
                     name to VoenmehScheduleParser.parseLessons(get(url), name)
                 }
             }
@@ -29,9 +29,9 @@ class VoenmehScheduleClient(
     }
 
     companion object {
-        const val ORIGIN = "https://voenmeh.ru/schedule"
-        const val META_URL = "https://voenmeh.ru/api/schedule/meta"
-        const val LESSONS_URL = "https://voenmeh.ru/api/schedule/lessons"
+        const val ORIGIN = "https://voenmeh.su/schedule"
+        const val META_URL = "https://voenmeh.su/api/schedule/meta"
+        const val LESSONS_URL = "https://voenmeh.su/api/schedule/lessons"
 
         fun encode(value: String): String =
             URLEncoder.encode(value, StandardCharsets.UTF_8.name()).replace("+", "%20")
@@ -46,7 +46,6 @@ class VoenmehScheduleClient(
                 conn.connect()
                 val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream
                 val body = stream?.bufferedReader(Charsets.UTF_8)?.readText().orEmpty()
-                if (conn.responseCode == HttpURLConnection.HTTP_NOT_FOUND) return """{"lessons":[]}"""
                 if (conn.responseCode != HttpURLConnection.HTTP_OK) {
                     throw IllegalStateException("HTTP ${conn.responseCode}")
                 }

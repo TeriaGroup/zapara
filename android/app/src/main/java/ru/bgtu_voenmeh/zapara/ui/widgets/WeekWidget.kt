@@ -36,7 +36,7 @@ object WeekWidgetComposer {
             title = copy.get("widget_week_title"),
             subtitle = "",
             days = emptyList(),
-            empty = null,
+            empty = copy.get("widget_loading"),
             cleared = true,
             isDark = isDark
         )
@@ -60,7 +60,7 @@ object WeekWidgetComposer {
                 identity = identity,
                 title = title,
                 subtitle = subtitle,
-                days = days(monday, emptyMap(), today, copy),
+                days = emptyList(),
                 empty = copy.get("widget_week_no_group"),
                 isDark = isDark
             )

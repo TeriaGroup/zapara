@@ -17,6 +17,8 @@ import java.time.Duration
 import java.time.LocalDateTime
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlin.math.cos
+import kotlin.math.sin
 
 fun timerFaceChanged(previous: TimerWidgetSnapshot, current: TimerWidgetSnapshot): Boolean =
     previous.identity != current.identity || previous.kind != current.kind || previous.endsAt != current.endsAt ||
@@ -25,11 +27,30 @@ fun timerFaceChanged(previous: TimerWidgetSnapshot, current: TimerWidgetSnapshot
 
 data class PhaseArcFrame(val fraction: Float, val haloAlpha: Float)
 data class WeekMarkerFrame(val oldAlpha: Float, val newAlpha: Float, val offsetXDp: Float)
+data class PhaseCometFrame(val angleDegrees: Float, val alpha: Float)
+
+/** One lap, including a transparent start and finish; never driven by the countdown heartbeat. */
+fun phaseComet(progress: Float): PhaseCometFrame {
+    val p = progress.takeUnless(Float::isNaN)?.coerceIn(0f, 1f) ?: 1f
+    val alpha = if (p == 0f || p == 1f) 0f else sin(Math.PI * p).toFloat().let { it * it }
+    return PhaseCometFrame(-90f + 360f * widgetMotionEase(p), alpha)
+}
+
+fun weekMarkerInset(progress: Float): Float {
+    val p = progress.takeUnless(Float::isNaN)?.coerceIn(0f, 1f) ?: 1f
+    return 0.06f * 4f * p * (1f - p)
+}
+
+fun weekCountPose(progress: Float, order: Int): WidgetMotionPose {
+    val p = progress.takeUnless(Float::isNaN)?.coerceIn(0f, 1f) ?: 1f
+    val delay = order.coerceIn(0, 6) * 0.045f
+    return widgetMotionPose(((p - delay) / (1f - delay)).coerceIn(0f, 1f))
+}
 
 fun phaseArc(oldFraction: Float, newFraction: Float, progress: Float): PhaseArcFrame {
     val p = progress.takeUnless(Float::isNaN)?.coerceIn(0f, 1f) ?: 1f
-    val old = oldFraction.coerceIn(0f, 1f)
-    val next = newFraction.coerceIn(0f, 1f)
+    val old = oldFraction.takeUnless(Float::isNaN)?.coerceIn(0f, 1f) ?: 0f
+    val next = newFraction.takeUnless(Float::isNaN)?.coerceIn(0f, 1f) ?: 0f
     val fraction = if (p <= 0.35f) old + (1f - old) * widgetMotionEase(p / 0.35f)
         else 1f + (next - 1f) * widgetMotionEase((p - 0.35f) / 0.65f)
     val halo = if (p <= 0.35f) widgetMotionEase(p / 0.35f) else 1f - widgetMotionEase((p - 0.35f) / 0.65f)
@@ -59,7 +80,8 @@ object WidgetFaceEffects {
 
     fun week(old: WeekWidgetSnapshot, next: WeekWidgetSnapshot, policy: WidgetMotionPolicy): WidgetFaceScene.Week? {
         if (!policy.enabled || old.identity != next.identity || old.cleared || next.cleared ||
-            old.isDark != next.isDark || old.days.size != 7 || next.days.size != 7) return null
+            old.isDark != next.isDark || old.days.size != 7 || next.days.size != 7 ||
+            !old.empty.isNullOrBlank() || !next.empty.isNullOrBlank()) return null
         val counts = next.days.indices.filter { old.days[it].lessonCount != next.days[it].lessonCount }.toSet()
         val from = old.days.indexOfFirst { it.isToday }
         val to = next.days.indexOfFirst { it.isToday }
@@ -81,7 +103,7 @@ sealed class WidgetFaceScene(val kind: WidgetMotionKind) {
 
     fun bitmapAt(context: Context, widgetId: Int, widthDp: Int, heightDp: Int, progress: Float): Bitmap {
         if (this is Timer && old.isDark != next.isDark) {
-            val source = oldThemeFace ?: FaceCanvas(context, WidgetRemoteViews.timer(context, old, widthDp),
+            val source = oldThemeFace ?: FaceCanvas(context, WidgetRemoteViews.timer(context, old, widthDp, heightDp = heightDp),
                 widthDp, heightDp).full().also { oldThemeFace = it }
             val frame = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
             val themeProgress = progress.coerceIn(0f, 1f)
@@ -92,7 +114,7 @@ sealed class WidgetFaceScene(val kind: WidgetMotionKind) {
             return frame
         }
         val face = measured ?: FaceCanvas(context, when (this) {
-            is Timer -> WidgetRemoteViews.timer(context, next, widthDp)
+            is Timer -> WidgetRemoteViews.timer(context, next, widthDp, heightDp = heightDp)
             is Room -> WidgetExtraViews.wayfinder(context, next, widgetId)
             is Week -> WidgetExtraViews.week(context, next, widgetId)
         }, widthDp, heightDp).also { measured = it }
@@ -185,6 +207,26 @@ private class FaceCanvas(private val context: Context, views: RemoteViews, width
         val newColor = arcTone(scene.next.kind)
         TimerRing.draw(canvas, rect, arc.fraction, colors.text3,
             TimerRing.blend(oldColor, newColor, widgetMotionEase(progress)), card(scene.next.isDark), arc.haloAlpha)
+        if (scene.old.kind != scene.next.kind || scene.old.endsAt != scene.next.endsAt) {
+            val comet = phaseComet(progress)
+            if (comet.alpha > 0f) {
+                val oval = RectF(rect).apply { inset(size * 0.10f, size * 0.10f) }
+                paint.style = Paint.Style.STROKE
+                paint.strokeCap = Paint.Cap.ROUND
+                paint.strokeWidth = size * 0.035f
+                paint.color = TimerRing.blend(newColor, colors.text1, 0.65f)
+                // A short tail stays on the ring and away from the timer text.
+                repeat(5) { segment ->
+                    paint.alpha = (comet.alpha * (5 - segment) * 32).roundToInt()
+                    canvas.drawArc(oval, comet.angleDegrees - (segment + 1) * 6f, 5f, false, paint)
+                }
+                paint.style = Paint.Style.FILL
+                paint.alpha = (comet.alpha * 230).roundToInt()
+                val radians = Math.toRadians(comet.angleDegrees.toDouble())
+                canvas.drawCircle(oval.centerX() + oval.width() / 2f * cos(radians).toFloat(),
+                    oval.centerY() + oval.height() / 2f * sin(radians).toFloat(), size * 0.028f, paint)
+            }
+        }
 
         // Mask the final host text for this short scene; the live Chronometer resumes afterward.
         val pose = widgetMotionPose(progress)
@@ -245,6 +287,7 @@ private class FaceCanvas(private val context: Context, views: RemoteViews, width
             affected.addAll(minOf(scene.from, scene.to)..maxOf(scene.from, scene.to))
         affected.forEach { index ->
             paint.color = card(scene.next.isDark)
+            paint.alpha = 255
             // RemoteViews scales a <=640 px bitmap. Cover the sampling fringe too, otherwise
             // bilinear filtering exposes a thin outline of the static final marker underneath.
             canvas.drawRect(bounds(ids[index]).apply { inset(-2 * density, -2 * density) }, paint)
@@ -252,7 +295,11 @@ private class FaceCanvas(private val context: Context, views: RemoteViews, width
         }
         fun marker(index: Int, alpha: Float, dx: Float = 0f) {
             if (index !in ids.indices || alpha <= 0f) return
-            val rect = bounds(ids[index]).apply { offset(dx, 0f) }
+            val rect = bounds(ids[index]).apply {
+                offset(dx, 0f)
+                val shrink = weekMarkerInset(progress)
+                inset(width() * shrink, height() * shrink)
+            }
             paint.color = colors.text1
             paint.alpha = (alpha * 255).roundToInt()
             canvas.drawRoundRect(rect, 8 * density, 8 * density, paint)
@@ -280,7 +327,7 @@ private class FaceCanvas(private val context: Context, views: RemoteViews, width
                 canvas.restoreToCount(save)
                 save = canvas.save()
                 canvas.clipRect(rect.left, split, rect.right, rect.bottom)
-                val pose = widgetMotionPose(progress)
+                val pose = weekCountPose(progress, scene.changedCountIndices.sorted().indexOf(index))
                 val oldCount = scene.old.days[index].lessonCount
                 val oldText = "${day.shortName} ${day.date.dayOfMonth}\n" +
                     context.resources.getQuantityString(R.plurals.widget_week_pairs, oldCount, oldCount)

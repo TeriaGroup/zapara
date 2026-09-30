@@ -33,7 +33,7 @@ import { selectedTopicAuthority } from "./topic-authority";
 import { topicAction } from "./topic-policy";
 import { useCommunityTimetable } from "./use-community-timetable";
 import { useApp } from "./store";
-import { absoluteDate, freeGaps, hasLessonOverlap, heroLesson, localDay, minuteClock, nearbyHomework, personalHomeworkDue } from "./planner";
+import { absoluteDate, gapsBeforeLessons, hasLessonOverlap, heroLesson, localDay, minuteClock, nearbyHomework, personalHomeworkDue } from "./planner";
 import { homeworkCard, lessonFrom, placeCard } from "./cards";
 import { BallotBoardView } from "./ballots";
 import { GroupTopics, TopicMark } from "./topics";
@@ -124,14 +124,13 @@ export function SchedulePage() {
   const outsidePeriod = !!period && isoDay(app.date) < period.start.slice(0,10);
   const lessons = period && !outsidePeriod ? lessonsOn(shown, app.date, period.start, period.weekCount, app.invert) : [];
   const [now, setNow] = useState(() => new Date());
-  const [gapsOn, setGapsOn] = useState(localStorage.getItem("zapara.free-time") !== "0");
   const [undo, setUndo] = useState<{ id: string; done: boolean } | null>(null);
   const [calendar, setCalendar] = useState(false);
   const calendarRef = useRef<HTMLInputElement>(null);
   useEffect(() => { const timer = window.setInterval(() => setNow(new Date()), 30_000); return () => window.clearInterval(timer); }, []);
   useEffect(() => { setUndo(null); }, [isoDay(app.date)]);
   useEffect(() => { if (calendar) calendarRef.current?.focus(); }, [calendar]);
-  const gaps = freeGaps(lessons);
+  const gaps = gapsBeforeLessons(lessons);
   const hero = heroLesson(lessons, app.date, now);
   const friendSchedules = resolveFriendSchedules(app.friends, app.catalog?.groups || [], cache.lessons, ownTimetable);
   const groupName = app.catalog?.groups.find(group => group.id === app.groupId)?.name || "";
@@ -189,10 +188,11 @@ export function SchedulePage() {
       <Link className="btn quiet" to={`/group?${context}`}>Обсудить</Link>
     </div>;
   }
-  function renderLesson(lesson: Lesson) {
+  function renderLesson(lesson: Lesson, lessonIndex: number) {
+    const gap = gaps.get(lessonIndex);
     const marks = period ? marksForLesson(lesson, app.date, { mineLessons: shown, friends: friendSchedules, period, invert: app.invert, strictness: app.intersectionStrictness, now }, app.showAbsentFriends) : [];
-    return <Fragment key={lesson.index + lesson.timeStart + lesson.subjectRaw + lesson.teacherRaw}>
-      {gapsOn && gaps.filter(gap => minuteClock(gap.end) === lesson.timeStart).map(gap => <p className="free-gap" key={gap.start}>Перерыв {minuteClock(gap.start)}–{minuteClock(gap.end)} · {Math.floor(gap.duration / 60) ? `${Math.floor(gap.duration / 60)} ч ` : ""}{gap.duration % 60 ? `${gap.duration % 60} мин` : ""}</p>)}
+    return <Fragment key={`${lesson.index}:${lesson.timeStart}:${lesson.subjectRaw}:${lesson.teacherRaw}:${lessonIndex}`}>
+      {gap && <p className="free-gap"><span>Перерыв {minuteClock(gap.start)}–{minuteClock(gap.end)}</span><span className="free-gap-duration">{Math.floor(gap.duration / 60) ? `${Math.floor(gap.duration / 60)} ч ` : ""}{gap.duration % 60 ? `${gap.duration % 60} мин` : ""}</span></p>}
       <div className={hero === lesson ? "day-hero" : "day-row"}>
         {hero === lesson && <p className="muted">{isoDay(app.date) > isoDay(now) ? "Первая пара" : lesson.timeStart <= minuteClock(now.getHours() * 60 + now.getMinutes()) ? "Сейчас" : "Следующая пара"}</p>}
         <LessonCard lesson={lesson} marks={marks} share={lessonFrom(groupName, app.date, lesson)} subgroup={subgroupMark(lesson, lessons, index, choices)} onPick={app.pickSubgroup} />
@@ -219,10 +219,9 @@ export function SchedulePage() {
           <button className="btn quiet" type="button" disabled={app.loading || app.timetableLoading} onClick={app.refresh}>{app.loading || app.timetableLoading ? "Обновляем…" : "Обновить"}</button></div>
         {ownTimetable && <p className="schedule-cache muted">{!navigator.onLine ? "Нет сети · сохранённая копия" : app.timetableFailed ? "Не удалось обновить · сохранённая копия" : "Обновлено"} {new Date(ownTimetable.meta.fetchedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
         {hasLessonOverlap(lessons) && <p className="banner">Записи пар пересекаются по времени. Проверьте выбранные подгруппы.</p>}
-        {gaps.length > 0 && <label className="switch-row"><span>Свободное время</span><input type="checkbox" role="switch" checked={gapsOn} onChange={event => { setGapsOn(event.target.checked); localStorage.setItem("zapara.free-time", event.target.checked ? "1" : "0"); }} /></label>}
         {!app.timetableAvailable ? <div className="card empty"><p>{app.timetableLoading ? "Загружаем расписание" : app.groupId ? "Расписание не загружено. Нет сохранённой копии." : "Выберите учебную группу"}</p><Link className="btn" to="/settings?section=study">Выбрать группу</Link></div>
           : outsidePeriod ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>Дата вне учебного периода</h2><p>Сохранённое расписание начинается {period && localDay(period.start.slice(0,10)) ? absoluteDate(localDay(period.start.slice(0,10))!) : "позже выбранной даты"}.</p></div> : lessons.length === 0 ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>В этот день пар нет</h2><p>{nextDate ? `Ближайшие занятия — ${absoluteDate(nextDate)}.` : "В ближайшие три недели в сохранённом расписании занятий нет."}</p>{nextDate && <button className="btn" type="button" onClick={() => app.setDate(nextDate)}>Открыть {nextDate.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}<Icon name="right" /></button>}</div>
-          : <>{isoDay(app.date) === isoDay(now) && !hero && <p className="banner">Пары закончились</p>}{hero && renderLesson(hero)}{lessons.filter(lesson=>lesson!==hero).map(renderLesson)}</>}
+          : <>{isoDay(app.date) === isoDay(now) && !hero && <p className="banner">Пары закончились</p>}{lessons.map(renderLesson)}</>}
       </main>
       <aside className="stack day-context"><h2>Ближайшие сроки · {deadlines.length + sharedDeadlines.length}</h2><p className="muted">{app.date.toLocaleDateString("ru-RU")}–{addDays(app.date, 2).toLocaleDateString("ru-RU")}</p>
         {deadlines.length + sharedDeadlines.length === 0 && <p className="muted">На выбранные дни заданий нет</p>}

@@ -270,10 +270,6 @@ fun SettingsSection(
                     Text(state.groupName.ifBlank { stringResource(R.string.group_pick) }, style = Zapara.typography.section, color = c.text1)
                     Text(state.groupUpdated, style = Zapara.typography.caption, color = if (state.stale) c.warn else c.text2)
                     Text(uiText(R.string.space_day_study_selection), style = Zapara.typography.caption)
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(uiText(R.string.space_day_16), Modifier.weight(1f), style = Zapara.typography.body)
-                        ZSwitch(state.showFreeTime, { onEvent(SettingsEvent.FreeTime(it)) }, "Settings.FreeTime")
-                    }
                     var advanced by rememberSaveable { mutableStateOf(false) }
                     ZButton(uiText(R.string.space_day_advanced), { advanced = !advanced }, ghost = true, quiet = true)
                     if (advanced) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

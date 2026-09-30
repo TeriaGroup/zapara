@@ -9,6 +9,8 @@ import ru.bgtu_voenmeh.zapara.ui.UiCopy
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 data class WayfinderWidgetSnapshot(
     val identity: WidgetJobIdentity,
@@ -28,6 +30,7 @@ data class WayfinderWidgetSnapshot(
 
 object WayfinderWidgetComposer {
     private const val PAIR_MINUTES = 95L
+    private val futureDate = DateTimeFormatter.ofPattern("d MMM", Locale.forLanguageTag("ru"))
 
     fun cleared(identity: WidgetJobIdentity, copy: UiCopy, isDark: Boolean = false) = WayfinderWidgetSnapshot(
         identity = identity,
@@ -39,7 +42,7 @@ object WayfinderWidgetComposer {
         classroomRaw = "",
         targetDate = null,
         opensMap = false,
-        empty = null,
+        empty = copy.get("widget_loading"),
         cleared = true,
         isDark = isDark
     )
@@ -79,7 +82,12 @@ object WayfinderWidgetComposer {
             return WayfinderWidgetSnapshot(
                 identity = identity,
                 title = title,
-                status = copy.get(if (current != null) "widget_wayfinder_now" else "widget_wayfinder_next"),
+                status = when {
+                    current != null -> copy.get("widget_wayfinder_now")
+                    offset == 0 -> copy.get("widget_wayfinder_next")
+                    offset == 1 -> copy.get("widget_schedule_tomorrow")
+                    else -> date.format(futureDate)
+                },
                 subject = displayName(lesson).ifBlank { LessonFormat.stripType(lesson.subjectRaw, lesson.typeRaw) },
                 time = "${lesson.timeStart} – ${selected.endText}",
                 room = room,

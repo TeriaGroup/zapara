@@ -4,9 +4,10 @@ namespace Vograph.Timetable;
 
 public sealed class VoenmehScheduleClient
 {
-    public const string Origin = "https://voenmeh.ru/schedule";
-    public const string MetaUrl = "https://voenmeh.ru/api/schedule/meta";
-    public const string LessonsUrl = "https://voenmeh.ru/api/schedule/lessons";
+    public const string Origin = "https://voenmeh.su/schedule";
+    public const string MetaUrl = "https://voenmeh.su/api/schedule/meta";
+    public const string LessonsUrl = "https://voenmeh.su/api/schedule/lessons";
+    public const string LegacyMetaUrl = "https://voenmeh.ru/api/schedule/meta";
 
     private readonly Func<string, CancellationToken, Task<string>> _get;
 
@@ -26,7 +27,7 @@ public sealed class VoenmehScheduleClient
             await gate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                var url = $"{LessonsUrl}?name={Uri.EscapeDataString(name)}&type=group";
+                var url = $"{LessonsUrl}?name={Uri.EscapeDataString(name)}&kind=group";
                 var lessons = VoenmehScheduleParser.ParseLessons(await _get(url, ct).ConfigureAwait(false), name);
                 return (name, lessons);
             }

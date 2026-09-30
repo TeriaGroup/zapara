@@ -21,6 +21,7 @@ class VoenmehScheduleClientTest {
         assertEquals("А863С", parsed.groups.single().name)
         assertEquals("09:00", parsed.lessons.single().timeStart)
         assertTrue(http.any { it.contains("/api/schedule/meta") })
+        assertTrue(http.any { it == VoenmehScheduleClient.LESSONS_URL + "?name=" + VoenmehScheduleClient.encode("А863С") + "&kind=group" })
         assertTrue(http.none { it.contains("TimetableGroup50.xml") })
     }
 

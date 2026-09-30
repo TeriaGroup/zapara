@@ -5,12 +5,12 @@ namespace Vograph.Desktop.Tests;
 
 public sealed class SettingsPanelsPureTests
 {
-    [Fact] public async Task Study_subgroups_and_free_time_use_the_actual_saved_preferences()
+    [Fact] public async Task Study_subgroups_use_the_actual_saved_preferences()
     {
         using var db=TestDb.Create(false);
         foreach(var (teacher,index) in new[]{("Иванов",7),("Петров",8)})db.Services.Db.InsertLesson(new(){GroupId=TestDb.MyGroupId,DayOfWeek=1,Parity=0,Index=index,TimeStart="15:00",TimeEnd="16:35",SubjectRaw="пр ИН. ЯЗ.",SubjectNormalized="ин. яз.",TeacherRaw=teacher,ClassroomRaw="100"});
         var shell=new ShellViewModel(db.Services);var settings=new SettingsViewModel(db.Services,shell);await settings.ActivateAsync();var stream=Assert.Single(settings.StudySubgroups);
-        await stream.Options[0].SelectCommand.ExecuteAsync(null);Assert.Single(db.Services.Db.GetSubgroupChoices(TestDb.MyGroupId));settings.StudyShowFreeTime=false;Assert.False(db.Services.Prefs.ShowFreeTime);settings.Detach();shell.Detach();
+        await stream.Options[0].SelectCommand.ExecuteAsync(null);Assert.Single(db.Services.Db.GetSubgroupChoices(TestDb.MyGroupId));settings.Detach();shell.Detach();
     }
     [Fact] public async Task Notification_preview_has_real_content_and_does_not_show_a_notification()
     {

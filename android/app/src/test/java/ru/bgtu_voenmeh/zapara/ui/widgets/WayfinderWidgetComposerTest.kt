@@ -114,6 +114,7 @@ class WayfinderWidgetComposerTest {
         ))
 
         assertEquals("Завтра", snap.subject)
+        assertEquals("Завтра", snap.status)
         assertEquals(today.plusDays(1), snap.targetDate)
         assertEquals(today.plusDays(1).atTime(8, 0), snap.nextRefreshAt)
     }
@@ -125,6 +126,7 @@ class WayfinderWidgetComposerTest {
         val snap = at(today.atTime(18, 0), listOf(selected, outside))
 
         assertEquals("Через шесть дней", snap.subject)
+        assertTrue(snap.status.contains(nextWeek.dayOfMonth.toString()))
         assertEquals(nextWeek, snap.targetDate)
         assertEquals(nextWeek.atTime(9, 0), snap.nextRefreshAt)
         val empty = at(today.atTime(18, 0), listOf(outside))
@@ -153,6 +155,7 @@ class WayfinderWidgetComposerTest {
         assertTrue(cleared.cleared)
         assertTrue(cleared.isDark)
         assertEquals("", cleared.subject)
+        assertEquals("Обновляем…", cleared.empty)
         assertNull(cleared.targetDate)
         assertNull(cleared.nextRefreshAt)
         assertFalse(cleared.opensMap)

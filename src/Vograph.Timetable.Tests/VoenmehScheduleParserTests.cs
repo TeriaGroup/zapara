@@ -109,6 +109,22 @@ public sealed class VoenmehScheduleParserTests
     }
 
     [Fact]
+    public void Current_university_origin_and_json_endpoints_are_used()
+    {
+        Assert.Equal("https://voenmeh.su/schedule", VoenmehScheduleClient.Origin);
+        Assert.Equal("https://voenmeh.su/api/schedule/meta", VoenmehScheduleClient.MetaUrl);
+        Assert.Equal("https://voenmeh.su/api/schedule/lessons", VoenmehScheduleClient.LessonsUrl);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"lessons\":null}")]
+    public void Missing_lessons_array_cannot_be_interpreted_as_empty_timetable(string json)
+    {
+        Assert.Throws<InvalidOperationException>(() => VoenmehScheduleParser.ParseLessons(json, "А863С"));
+    }
+
+    [Fact]
     public async Task Client_fetches_only_named_groups()
     {
         var http = new List<string>();
@@ -125,6 +141,7 @@ public sealed class VoenmehScheduleParserTests
         Assert.Equal(2, parsed.Groups.Count);
         Assert.Equal(4, parsed.Lessons.Count);
         Assert.Equal(1, http.Count(u => u.Contains("/api/schedule/lessons", StringComparison.Ordinal)));
+        Assert.Contains(VoenmehScheduleClient.LessonsUrl + "?name=" + Uri.EscapeDataString("А863С") + "&kind=group", http);
         Assert.DoesNotContain(http, u => u.Contains(Uri.EscapeDataString("09С33")));
     }
 

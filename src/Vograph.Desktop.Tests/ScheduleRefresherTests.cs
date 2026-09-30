@@ -101,7 +101,7 @@ public class ScheduleRefresherTests
     }
 
     [Fact]
-    public async Task Lessons_404_is_empty_not_failure()
+    public async Task Lessons_404_fails_the_refresh()
     {
         var handler = new FakeHttpHandler
         {
@@ -111,10 +111,7 @@ public class ScheduleRefresherTests
         };
         using var refresher = new ScheduleRefresher(handler);
 
-        var check = await refresher.CheckAsync(new[] { "А863С" }, null, TestContext.Current.CancellationToken);
-
-        Assert.True(check.Modified);
-        Assert.Empty(check.Parsed!.Lessons);
-        Assert.Equal(new[] { "А863С" }, check.Parsed.FetchedGroupNames);
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            refresher.CheckAsync(new[] { "А863С" }, null, TestContext.Current.CancellationToken));
     }
 }

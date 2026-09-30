@@ -161,4 +161,17 @@ class VoenmehScheduleParserTest {
         } catch (t: Throwable) { t.message.orEmpty() }
         assertEquals(TimetablePayload.NOT_XML, hummingbird)
     }
+
+    @Test fun current_university_origin_and_json_endpoints_are_used() {
+        assertEquals("https://voenmeh.su/schedule", VoenmehScheduleClient.ORIGIN)
+        assertEquals("https://voenmeh.su/api/schedule/meta", VoenmehScheduleClient.META_URL)
+        assertEquals("https://voenmeh.su/api/schedule/lessons", VoenmehScheduleClient.LESSONS_URL)
+    }
+
+    @Test fun missing_lessons_array_cannot_be_interpreted_as_empty_timetable() {
+        for (json in listOf("{}", "{\"lessons\":null}")) {
+            val failure = runCatching { VoenmehScheduleParser.parseLessons(json, "А863С") }.exceptionOrNull()
+            assertTrue(failure is IllegalStateException)
+        }
+    }
 }

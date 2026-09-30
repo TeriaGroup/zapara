@@ -12,7 +12,6 @@ data class SettingsUiState(
     val refreshing: Boolean = false,
     val theme: ThemeChoice = ThemeChoice.System,
     val animations: Boolean = true,
-    val showFreeTime: Boolean = true,
     val parityInvert: Boolean = false,
     val previewEvening: String = "",
     val previewMorning: String = "",
@@ -39,7 +38,6 @@ data class SettingsUiState(
 
 sealed interface SettingsEvent {
     data class Subgroup(val streamId: String, val optionId: String) : SettingsEvent
-    data class FreeTime(val on: Boolean) : SettingsEvent
     data class Invert(val on: Boolean) : SettingsEvent
     data object SyncNow : SettingsEvent
     data object ChangeGroup : SettingsEvent

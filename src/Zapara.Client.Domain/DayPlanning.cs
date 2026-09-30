@@ -18,7 +18,7 @@ public static class DayPlanning
         return Enumerable.Range(0, count).Select(offset => DateOnly.FromDayNumber(start + offset)).ToArray();
     }
 
-    public static IReadOnlyList<FreeTimeInterval> FreeTime(IEnumerable<DayInterval> intervals, int minimumMinutes = 30)
+    public static IReadOnlyList<FreeTimeInterval> FreeTime(IEnumerable<DayInterval> intervals, int minimumMinutes = 1)
     {
         if (minimumMinutes < 1) throw new ArgumentOutOfRangeException(nameof(minimumMinutes));
         var sorted = intervals.Where(x => x.Start >= TimeSpan.Zero && x.End <= TimeSpan.FromDays(1) && x.End > x.Start)

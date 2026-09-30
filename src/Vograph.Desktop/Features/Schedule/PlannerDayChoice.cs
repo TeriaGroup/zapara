@@ -35,10 +35,12 @@ public sealed class PlannerBreak
         End = gap.End;
         var hours = gap.Minutes / 60;
         var minutes = gap.Minutes % 60;
-        var duration = hours > 0 ? $"{hours} ч" + (minutes > 0 ? $" {minutes} мин" : "") : $"{minutes} мин";
-        Label = $"Перерыв {gap.Start:hh\\:mm}–{gap.End:hh\\:mm} · {duration}";
+        Duration = hours > 0 ? $"{hours} ч" + (minutes > 0 ? $" {minutes} мин" : "") : $"{minutes} мин";
+        TimeLabel = $"Перерыв {gap.Start:hh\\:mm}–{gap.End:hh\\:mm}";
     }
 
-    public string Label { get; }
+    public string Label => $"{TimeLabel} · {Duration}";
+    public string TimeLabel { get; }
+    public string Duration { get; }
     public TimeSpan End { get; }
 }

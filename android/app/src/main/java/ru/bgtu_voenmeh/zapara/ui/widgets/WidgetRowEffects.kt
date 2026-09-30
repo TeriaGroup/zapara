@@ -4,7 +4,12 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.util.TypedValue
+import android.graphics.Rect
+import android.graphics.RectF
+import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.RemoteViews
 import ru.bgtu_voenmeh.zapara.R
 import kotlin.math.roundToInt
 
@@ -26,20 +31,19 @@ internal fun widgetRowBitmapGeometry(widthDp: Int, heightDp: Int, density: Float
 /** A decorative overlay. The final RemoteViews text remains visible and accessible underneath. */
 class WidgetMotionScene internal constructor(
     val kind: WidgetMotionKind,
-    private val departed: String,
-    private val departedIndex: Int,
-    private val arriving: List<String>,
+    private val rowIndices: List<Int>,
     private val durationMs: Long,
     private val dark: Boolean,
-    private val compact: Boolean = false,
+    private val schedule: ScheduleWidgetSnapshot? = null,
+    private val homework: HomeworkWidgetSnapshot? = null,
     private val widthDp: Int = 180,
     private val heightDp: Int = 160
 ) {
-    val accentCount: Int get() = arriving.size
+    val accentCount: Int get() = rowIndices.size
+    private var measured: List<RectF>? = null
 
     fun sized(widthDp: Int, heightDp: Int): WidgetMotionScene = WidgetMotionScene(
-        kind, departed, departedIndex, arriving, durationMs, dark, heightDp < 120,
-        widthDp, heightDp
+        kind, rowIndices, durationMs, dark, schedule, homework, widthDp, heightDp
     )
 
     fun poseAt(progress: Float): WidgetMotionPose = widgetMotionPose(progress)
@@ -51,9 +55,41 @@ class WidgetMotionScene internal constructor(
     }
 
     fun rowAlphaAt(progress: Float, index: Int): Float {
-        if (index !in arriving.indices) return 0f
-        val delay = (index + 1) * 40f / durationMs.coerceAtLeast(1)
+        if (index !in rowIndices.indices) return 0f
+        val delay = ((index + 1) * 40f / durationMs.coerceAtLeast(1)).coerceAtMost(0.8f)
         return widgetMotionEase(((progress - delay) / (1f - delay)).coerceIn(0f, 1f))
+    }
+
+    /** Resolve row containers from the same layout and bindings the launcher receives. */
+    private fun measure(context: Context): List<RectF> {
+        val views: RemoteViews
+        val ids: List<Int>
+        val emptyId: Int
+        if (schedule != null) {
+            views = WidgetRemoteViews.schedule(context, schedule, heightDp)
+            ids = listOf(R.id.widget_schedule_row1, R.id.widget_schedule_row2,
+                R.id.widget_schedule_row3, R.id.widget_schedule_row4)
+            emptyId = R.id.widget_schedule_empty
+        } else {
+            views = WidgetRemoteViews.homework(context, requireNotNull(homework), heightDp)
+            ids = listOf(R.id.widget_homework_row1, R.id.widget_homework_row2,
+                R.id.widget_homework_row3, R.id.widget_homework_row4)
+            emptyId = R.id.widget_homework_empty
+        }
+        val density = context.resources.displayMetrics.density
+        val root = views.apply(context, FrameLayout(context)) as ViewGroup
+        root.measure(View.MeasureSpec.makeMeasureSpec((widthDp * density).roundToInt(), View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec((heightDp * density).roundToInt(), View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, root.measuredWidth, root.measuredHeight)
+        return rowIndices.ifEmpty { listOf(-1) }.map { index ->
+            val child = root.findViewById<View>(ids.getOrElse(index) { emptyId })
+            if (child.visibility != View.VISIBLE) RectF() else {
+                val bounds = Rect()
+                child.getDrawingRect(bounds)
+                root.offsetDescendantRectToMyCoords(child, bounds)
+                RectF(bounds.left / density, bounds.top / density, bounds.right / density, bounds.bottom / density)
+            }
+        }
     }
 
     fun bitmapAt(context: Context, progress: Float): Bitmap {
@@ -63,38 +99,39 @@ class WidgetMotionScene internal constructor(
         val canvas = Canvas(image)
         canvas.scale(geometry.pixelsPerDp, geometry.pixelsPerDp)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        val top = (if (compact) 40f else 64f) + departedIndex * 44f
-        val pose = poseAt(progress)
-        val color = context.getColor(if (dark) R.color.widget_dark_text1 else R.color.widget_light_text1)
-        paint.color = color
-        paint.alpha = (pose.oldAlpha * 230).roundToInt().coerceIn(0, 255)
-        paint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 15f, metrics) / metrics.density
-        paint.typeface = context.resources.getFont(R.font.inter_medium)
-        canvas.drawText(departed.take(32), 12f, top + pose.oldOffsetYDp, paint)
-        if (kind == WidgetMotionKind.HomeworkCompleted) {
-            paint.color = context.getColor(if (dark) R.color.widget_dark_ok else R.color.widget_light_ok)
-            paint.alpha = (accentAlphaAt(progress) * 255).roundToInt()
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 2f
-            val x = widthDp - 30f
-            val y = top - 4f - 3f * widgetMotionEase(progress)
-            val path = android.graphics.Path().apply {
-                moveTo(x - 5f, y)
-                lineTo(x - 1f, y + 4f)
-                lineTo(x + 6f, y - 5f)
-            }
-            canvas.drawPath(path, paint)
-            paint.style = Paint.Style.FILL
-            canvas.drawCircle(x - 12f, y - 5f, 1.5f, paint)
-            canvas.drawCircle(x + 11f, y + 4f, 1.5f, paint)
-        }
-        if (arriving.isNotEmpty()) {
-            paint.color = color
-            arriving.forEachIndexed { index, title ->
-                val arrival = rowAlphaAt(progress, index)
-                paint.alpha = (arrival * (1f - progress) * 100).roundToInt()
-                val y = top + index * 44f + (1f - arrival) * 12f
-                if (y in 0f..heightDp.toFloat()) canvas.drawText(title.take(30), 12f, y, paint)
+        val areas = measured ?: measure(context).also { measured = it }
+        val colors = WidgetPalette.of(context, dark)
+        val p = progress.takeUnless(Float::isNaN)?.coerceIn(0f, 1f) ?: 1f
+        areas.forEachIndexed { index, area ->
+            if (area.isEmpty) return@forEachIndexed
+            val travel = if (rowIndices.isEmpty()) widgetMotionEase(p) else rowAlphaAt(p, index)
+            val pulse = 4f * travel * (1f - travel)
+            paint.color = if (kind == WidgetMotionKind.HomeworkCompleted) colors.ok else colors.text1
+            // The text stays live: tint at <= 7% opacity, with a moving underline below it.
+            paint.alpha = (pulse * 18).roundToInt()
+            canvas.drawRoundRect(area, 6f, 6f, paint)
+            val save = canvas.save()
+            canvas.clipRect(area.left, area.top, area.right, minOf(area.bottom + 2f, heightDp.toFloat()))
+            paint.alpha = (pulse * 150).roundToInt()
+            paint.strokeWidth = 1.5f
+            paint.strokeCap = Paint.Cap.ROUND
+            val head = area.left + (area.width() + 24f) * travel
+            canvas.drawLine(maxOf(area.left, head - 24f), area.bottom + 0.5f,
+                minOf(area.right, head), area.bottom + 0.5f, paint)
+            canvas.restoreToCount(save)
+            if (kind == WidgetMotionKind.HomeworkCompleted && index == 0) {
+                // Completion feedback sits in the outer padding, never over the next task.
+                paint.alpha = (accentAlphaAt(p) * 255).roundToInt()
+                paint.style = Paint.Style.STROKE
+                val x = (area.left - 6f).coerceAtLeast(3f)
+                val y = area.centerY() + poseAt(p).oldOffsetYDp / 4f
+                val path = android.graphics.Path().apply {
+                    moveTo(x - 2f, y)
+                    lineTo(x, y + 2f)
+                    lineTo(x + 3f, y - 3f)
+                }
+                canvas.drawPath(path, paint)
+                paint.style = Paint.Style.FILL
             }
         }
         return image
@@ -104,25 +141,34 @@ class WidgetMotionScene internal constructor(
 object WidgetRowEffects {
     fun schedule(previous: ScheduleWidgetSnapshot, current: ScheduleWidgetSnapshot, policy: WidgetMotionPolicy): WidgetMotionScene? {
         if (!policy.enabled || previous.identity != current.identity || previous.cleared || current.cleared) return null
-        val ended = current.toss ?: return null
-        val index = previous.rows.indexOfFirst { it.faceKey() == ended.faceKey() }
-        if (index < 0 || current.rows.any { it.faceKey() == ended.faceKey() }) return null
-        return WidgetMotionScene(WidgetMotionKind.ScheduleShift, ended.name, index,
-            current.rows.drop(index).take(3).map { it.name }, policy.durationMs, current.isDark)
+        if (previous.isDark != current.isDark || previous.rows == current.rows) return null
+        val ended = current.toss
+        val index = ended?.let { row -> previous.rows.indexOfFirst { it.faceKey() == row.faceKey() } } ?: -1
+        val shifted = index >= 0 && current.rows.none { it.faceKey() == ended?.faceKey() }
+        val changed = if (shifted) current.rows.indices.drop(index).take(3)
+            else current.rows.indices.filter { previous.rows.getOrNull(it) != current.rows[it] }.take(4)
+        return WidgetMotionScene(if (shifted) WidgetMotionKind.ScheduleShift else WidgetMotionKind.ScheduleUpdated,
+            changed, policy.durationMs, current.isDark, schedule = current)
     }
 
     fun homework(previous: HomeworkWidgetSnapshot, current: HomeworkWidgetSnapshot,
                  doneIds: Set<Long>, policy: WidgetMotionPolicy): WidgetMotionScene? {
         if (!policy.enabled || previous.identity != current.identity || previous.cleared || current.cleared) return null
+        if (previous.isDark != current.isDark || previous.rows == current.rows) return null
         val missing = previous.rows.withIndex().firstOrNull { (_, row) ->
             row.id != 0L && current.rows.none { it.id == row.id }
         }
-        val changed = missing ?: previous.rows.withIndex().firstOrNull { (index, row) ->
+        val reordered = previous.rows.withIndex().firstOrNull { (index, row) ->
             row.id != 0L && current.rows.getOrNull(index)?.id != row.id
-        } ?: return null
+        }
         val completed = missing != null && missing.value.id in doneIds
-        return WidgetMotionScene(if (completed) WidgetMotionKind.HomeworkCompleted else WidgetMotionKind.HomeworkShift,
-            changed.value.subject, changed.index, current.rows.drop(changed.index).take(1).map { it.subject },
-            policy.durationMs, current.isDark)
+        val kind = when {
+            completed -> WidgetMotionKind.HomeworkCompleted
+            missing != null || reordered != null -> WidgetMotionKind.HomeworkShift
+            else -> WidgetMotionKind.HomeworkUpdated
+        }
+        val changed = current.rows.indices.filter { previous.rows.getOrNull(it) != current.rows[it] }.take(4)
+            .ifEmpty { current.rows.indices.toList().takeLast(1) }
+        return WidgetMotionScene(kind, changed, policy.durationMs, current.isDark, homework = current)
     }
 }

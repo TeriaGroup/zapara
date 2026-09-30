@@ -34,7 +34,7 @@ public sealed class JsonTimetableInputTests
         Assert.Equal(VoenmehScheduleClient.MetaUrl, snapshot.Source.SourceUrl);
         Assert.Equal(SourceKind.Http, snapshot.Source.SourceKind);
         Assert.Equal(2, calls.Count(url => url == VoenmehScheduleClient.MetaUrl));
-        Assert.Contains(VoenmehScheduleClient.LessonsUrl + "?name=" + Uri.EscapeDataString("А863С") + "&type=group", calls);
+        Assert.Contains(VoenmehScheduleClient.LessonsUrl + "?name=" + Uri.EscapeDataString("А863С") + "&kind=group", calls);
     }
 
     [Theory]

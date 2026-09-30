@@ -17,7 +17,10 @@
         android:id="@+id/widget_homework_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:ellipsize="end"
         android:fontFamily="@font/inter_medium"
+        android:includeFontPadding="false"
+        android:maxLines="1"
         android:text="@string/nav_homework"
         android:textColor="@color/widget_text1"
         android:textSize="17sp" />
@@ -27,7 +30,10 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
+        android:ellipsize="end"
         android:fontFamily="@font/inter_regular"
+        android:includeFontPadding="false"
+        android:maxLines="1"
         android:textColor="@color/widget_text2"
         android:textSize="12sp" />
 
@@ -144,7 +150,9 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
+        android:ellipsize="end"
         android:fontFamily="@font/inter_regular"
+        android:maxLines="2"
         android:textColor="@color/widget_text2"
         android:textSize="15sp"
         android:visibility="gone" />

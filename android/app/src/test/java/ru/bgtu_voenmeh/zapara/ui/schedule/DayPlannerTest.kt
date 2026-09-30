@@ -8,18 +8,25 @@ import java.time.*
 class DayPlannerTest {
     private val date = LocalDate.of(2026, 9, 26)
     private fun lesson(start: String, end: String) = LessonUi(1, start, end, "", "Subject", null, "", "", "", null, emptyList(), emptyList(), false, "Subject", "subject")
-    @Test fun overlap_is_merged_before_long_breaks_are_calculated() {
+    @Test fun overlap_is_merged_before_all_breaks_are_calculated() {
         val breaks = ScheduleComposer.breaks(listOf(lesson("09:00", "11:00"), lesson("10:00", "12:00"), lesson("12:20", "13:00"), lesson("14:00", "15:00")))
-        assertEquals(1, breaks.size)
-        assertEquals(LocalTime.of(13, 0), breaks.single().start)
-        assertEquals(60, breaks.single().minutes)
+        assertEquals(listOf(20L, 60L), breaks.map { it.minutes })
+        assertEquals(listOf(LocalTime.of(12, 0), LocalTime.of(13, 0)), breaks.map { it.start })
     }
-    @Test fun exactly_thirty_minutes_is_a_break_and_shorter_intervals_are_not() {
-        assertEquals(30, ScheduleComposer.breaks(listOf(lesson("09:00", "10:00"), lesson("10:30", "11:00"))).single().minutes)
-        assertTrue(ScheduleComposer.breaks(listOf(lesson("09:00", "10:00"), lesson("10:29", "11:00"))).isEmpty())
+    @Test fun every_positive_break_is_visible_including_one_minute() {
+        assertEquals(30L, ScheduleComposer.breaks(listOf(lesson("09:00", "10:00"), lesson("10:30", "11:00"))).single().minutes)
+        assertEquals(10L, ScheduleComposer.breaks(listOf(lesson("09:00", "10:00"), lesson("10:10", "11:00"))).single().minutes)
+        assertEquals(1L, ScheduleComposer.breaks(listOf(lesson("09:00", "10:00"), lesson("10:01", "11:00"))).single().minutes)
+        assertTrue(ScheduleComposer.breaks(listOf(lesson("09:00", "10:00"), lesson("10:00", "11:00"))).isEmpty())
     }
     @Test fun malformed_and_reversed_intervals_do_not_create_free_time() {
         assertTrue(ScheduleComposer.breaks(listOf(lesson("bad", "11:00"), lesson("12:00", "10:00"))).isEmpty())
+    }
+    @Test fun parallel_subgroups_show_a_break_only_once_before_a_valid_lesson() {
+        val rows = listOf(lesson("09:00", "10:35"), lesson("10:45", "bad"), lesson("10:45", "12:20"), lesson("10:45", "12:20"))
+        val gaps = ScheduleComposer.breaksBeforeLessons(rows)
+        assertEquals(setOf(2), gaps.keys)
+        assertEquals(10L, gaps.getValue(2).minutes)
     }
     @Test fun deadline_window_includes_three_absolute_days_and_undated_day_subjects() {
         fun hw(id: Long, norm: String, due: LocalDate?) = Homework(id, norm, "task", date, 1, due, "active", false)

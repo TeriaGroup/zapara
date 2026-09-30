@@ -36,16 +36,19 @@
         <TextView
             android:id="@+id/widget_week_empty"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="0dp"
+            android:layout_weight="1"
             android:fontFamily="@font/inter_regular"
             android:includeFontPadding="false"
             android:ellipsize="end"
-            android:maxLines="1"
-            android:textSize="12sp"
-            android:textColor="@color/widget_text1"
+            android:gravity="center_vertical"
+            android:maxLines="3"
+            android:textSize="15sp"
+            android:textColor="@color/widget_text2"
             android:layout_marginTop="4dp"
             android:visibility="gone" />
         <LinearLayout
+            android:id="@+id/widget_week_row_top"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_marginTop="8dp"
@@ -63,7 +66,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:minWidth="48dp"
-                    android:minHeight="56dp"
+                    android:minHeight="48dp"
                     android:gravity="center"
                     android:fontFamily="@font/inter_regular"
                     android:includeFontPadding="false"
@@ -71,7 +74,7 @@
                     android:ellipsize="end"
                     android:textSize="12sp"
                     android:textColor="@color/widget_text1"
-                    android:maxHeight="56dp"
+                    android:maxHeight="48dp"
                     android:layout_gravity="center" />
             </FrameLayout>
             <FrameLayout
@@ -85,7 +88,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:minWidth="48dp"
-                    android:minHeight="56dp"
+                    android:minHeight="48dp"
                     android:gravity="center"
                     android:fontFamily="@font/inter_regular"
                     android:includeFontPadding="false"
@@ -93,7 +96,7 @@
                     android:ellipsize="end"
                     android:textSize="12sp"
                     android:textColor="@color/widget_text1"
-                    android:maxHeight="56dp"
+                    android:maxHeight="48dp"
                     android:layout_gravity="center" />
             </FrameLayout>
             <FrameLayout
@@ -108,7 +111,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:minWidth="48dp"
-                    android:minHeight="56dp"
+                    android:minHeight="48dp"
                     android:gravity="center"
                     android:fontFamily="@font/inter_regular"
                     android:includeFontPadding="false"
@@ -116,7 +119,7 @@
                     android:ellipsize="end"
                     android:textSize="12sp"
                     android:textColor="@color/widget_canvas"
-                    android:maxHeight="56dp"
+                    android:maxHeight="48dp"
                     android:layout_gravity="center" />
             </FrameLayout>
             <FrameLayout
@@ -130,7 +133,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:minWidth="48dp"
-                    android:minHeight="56dp"
+                    android:minHeight="48dp"
                     android:gravity="center"
                     android:fontFamily="@font/inter_regular"
                     android:includeFontPadding="false"
@@ -138,11 +141,12 @@
                     android:ellipsize="end"
                     android:textSize="12sp"
                     android:textColor="@color/widget_text1"
-                    android:maxHeight="56dp"
+                    android:maxHeight="48dp"
                     android:layout_gravity="center" />
             </FrameLayout>
         </LinearLayout>
         <LinearLayout
+            android:id="@+id/widget_week_row_bottom"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_marginTop="4dp"
@@ -160,7 +164,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:minWidth="48dp"
-                    android:minHeight="56dp"
+                    android:minHeight="48dp"
                     android:gravity="center"
                     android:fontFamily="@font/inter_regular"
                     android:includeFontPadding="false"
@@ -168,7 +172,7 @@
                     android:ellipsize="end"
                     android:textSize="12sp"
                     android:textColor="@color/widget_text1"
-                    android:maxHeight="56dp"
+                    android:maxHeight="48dp"
                     android:layout_gravity="center" />
             </FrameLayout>
             <FrameLayout
@@ -182,7 +186,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:minWidth="48dp"
-                    android:minHeight="56dp"
+                    android:minHeight="48dp"
                     android:gravity="center"
                     android:fontFamily="@font/inter_regular"
                     android:includeFontPadding="false"
@@ -190,7 +194,7 @@
                     android:ellipsize="end"
                     android:textSize="12sp"
                     android:textColor="@color/widget_text1"
-                    android:maxHeight="56dp"
+                    android:maxHeight="48dp"
                     android:layout_gravity="center" />
             </FrameLayout>
             <FrameLayout
@@ -204,7 +208,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:minWidth="48dp"
-                    android:minHeight="56dp"
+                    android:minHeight="48dp"
                     android:gravity="center"
                     android:fontFamily="@font/inter_regular"
                     android:includeFontPadding="false"
@@ -212,7 +216,7 @@
                     android:ellipsize="end"
                     android:textSize="12sp"
                     android:textColor="@color/widget_text1"
-                    android:maxHeight="56dp"
+                    android:maxHeight="48dp"
                     android:layout_gravity="center" />
             </FrameLayout>
             <TextView

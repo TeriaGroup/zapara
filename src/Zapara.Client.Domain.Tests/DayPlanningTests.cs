@@ -36,11 +36,25 @@ public sealed class DayPlanningTests
     }
 
     [Fact]
-    public void OnlyBreaksOfAtLeastThirtyMinutesAppear()
+    public void EveryPositiveBreakAppearsBetweenLessons()
     {
         DayInterval[] lessons = [new(Hm(9, 0), Hm(10, 0)), new(Hm(10, 29), Hm(11, 0)), new(Hm(11, 30), Hm(12, 0))];
-        Assert.Equal(30, Assert.Single(DayPlanning.FreeTime(lessons)).Minutes);
+        Assert.Equal(new[] { 29, 30 }, DayPlanning.FreeTime(lessons).Select(gap => gap.Minutes));
         Assert.Empty(DayPlanning.FreeTime([new(Hm(9, 0), Hm(10, 0))]));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(5)]
+    [InlineData(10)]
+    [InlineData(20)]
+    [InlineData(60)]
+    public void ShortAndLongBreaksUseTheSameRule(int minutes)
+    {
+        Assert.Equal(minutes, Assert.Single(DayPlanning.FreeTime([
+            new(Hm(9, 0), Hm(10, 0)), new(Hm(10, 0).Add(TimeSpan.FromMinutes(minutes)), Hm(12, 0))
+        ])).Minutes);
+        Assert.Empty(DayPlanning.FreeTime([new(Hm(9, 0), Hm(10, 0)), new(Hm(10, 0), Hm(11, 0))]));
     }
 
     [Fact]

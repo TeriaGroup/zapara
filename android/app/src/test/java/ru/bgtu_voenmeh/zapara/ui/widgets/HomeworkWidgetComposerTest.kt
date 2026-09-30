@@ -100,6 +100,7 @@ class HomeworkWidgetComposerTest {
         assertTrue(cleared.rows.isEmpty())
         assertTrue(cleared.rows.none { it.detail.contains("secret-account-A-homework") })
         assertEquals("Домашка", cleared.title)
+        assertEquals("Обновляем…", cleared.empty)
         val loadedB = build(identity = b, items = listOf(hw(3, "задание Б", "approaching", today.plusDays(3))), groupName = "09С31")
         assertTrue(loadedB.rows.any { it.detail.contains("задание Б") })
         assertTrue(loadedB.rows.none { it.detail.contains("secret-account-A-homework") })

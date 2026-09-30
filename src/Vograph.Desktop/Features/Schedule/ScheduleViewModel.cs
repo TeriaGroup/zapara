@@ -78,13 +78,10 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     [ObservableProperty] private int _dayOffset;
     [ObservableProperty] private int _segmentIndex;
     [ObservableProperty] private DateTime? _calendarDate;
-    [ObservableProperty] private bool _showFreeTime;
-    [ObservableProperty] private bool _hasFreeTime;
     [ObservableProperty] private string _daySummary = "";
     public ObservableCollection<PlannerDayChoice> DateChoices { get; } = [];
     public ObservableCollection<PlannerBreak> FreeTime { get; } = [];
     public ObservableCollection<object> DayRows { get; } = [];
-    public bool ShowBreaks => HasFreeTime && ShowFreeTime;
     [ObservableProperty] private string _title = "";
     [ObservableProperty] private string _subtitle = "";
     [ObservableProperty] private bool _isEmpty;
@@ -113,7 +110,6 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         var version = ++_reloadVersion; // a reload already queued behind the gate must not overwrite the smart-start result
         var now = _clock();
         _selectedDay = now.Date;
-        ShowFreeTime = App.Prefs.ShowFreeTime;
         var model = await ComposeAsync(() => _composer.Compose(0, now, _dateStripCount));
         _loaded = true;
         if (model is null || version != _reloadVersion) return;
@@ -133,7 +129,6 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
         if (!_loaded) return;
-        ShowFreeTime=App.Prefs.ShowFreeTime;
         var version = ++_reloadVersion;
         var now = _clock();
         var offset = (_selectedDay - now.Date).Days;
@@ -187,7 +182,6 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         foreach (var day in model.Dates ?? []) DateChoices.Add(new PlannerDayChoice(day, model.Date, this));
         FreeTime.Clear();
         foreach (var gap in model.Breaks ?? []) FreeTime.Add(new PlannerBreak(gap));
-        HasFreeTime = FreeTime.Count > 0;
         DaySummary = model.Summary ?? "";
         RebuildDayRows();
         DayShown?.Invoke(direction);
@@ -232,25 +226,6 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         if (!_applyingCalendar && value is { } day) SelectDate(day);
     }
 
-    partial void OnHasFreeTimeChanged(bool value) => OnPropertyChanged(nameof(ShowBreaks));
-    partial void OnShowFreeTimeChanged(bool value)
-    {
-        OnPropertyChanged(nameof(ShowBreaks));
-        RebuildDayRows();
-        if (App.Prefs.ShowFreeTime == value) return;
-        var previous = App.Prefs.ShowFreeTime;
-        App.Prefs.ShowFreeTime = value;
-        if (!App.Prefs.Save())
-        {
-            App.Prefs.ShowFreeTime = previous;
-            _showFreeTime = previous;
-            OnPropertyChanged(nameof(ShowFreeTime));
-            OnPropertyChanged(nameof(ShowBreaks));
-            RebuildDayRows();
-            App.Toasts.Error("Не удалось сохранить настройку свободного времени.");
-        }
-    }
-
     private void OnPlanningClock(object? sender, EventArgs args)
     {
         if (_loaded && ReferenceEquals(_shell.Current, this)) _ = ReloadAsync();
@@ -263,7 +238,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         var nextGap = 0;
         foreach (var row in Lessons)
         {
-            if (ShowFreeTime && TimeSpan.TryParse(row.TimeStart, out var start))
+            if (TimeSpan.TryParse(row.TimeStart, out var start))
                 while (nextGap < gaps.Length && gaps[nextGap].End <= start) orderedRows.Add(gaps[nextGap++]);
             orderedRows.Add(row);
         }

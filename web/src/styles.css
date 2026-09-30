@@ -528,7 +528,9 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
 .day-row .lesson { border: 0; padding: 12px 0 8px; background: transparent; }
 .day-row .lesson .subject { font-size: 15px; }
 .lesson-actions { margin-top: 8px; }
-.free-gap { color: var(--muted); border-block: 1px dashed var(--line); padding: 12px; margin: 0; font-size: 12px; }
+.free-gap { display: flex; align-items: center; gap: 8px; color: var(--muted); background: var(--surface); border-radius: 8px; padding: 8px 12px; margin: 0; font-size: 12px; }
+.free-gap > span:first-child { flex: 1; min-width: 0; }
+.free-gap-duration { flex: none; white-space: nowrap; border-radius: 6px; background: var(--chip); padding: 4px 8px; }
 .template-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .template-grid .channel-kind { min-height: 80px; text-align: left; display: flex; flex-direction: column; padding: 12px; gap: 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .template-grid .channel-kind.selected { border-color: var(--text); background: var(--selection); }

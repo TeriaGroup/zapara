@@ -44,7 +44,15 @@ object ScheduleComposer {
             if (previous != null && interval.first <= previous.second) merged[merged.lastIndex] = previous.first to maxOf(previous.second, interval.second)
             else merged.add(interval)
         }
-        return merged.zipWithNext().map { Break(it.first.second, it.second.first) }.filter { it.minutes >= 30 }
+        return merged.zipWithNext().map { Break(it.first.second, it.second.first) }.filter { it.minutes > 0 }
+    }
+
+    /** Put a break before the first valid lesson at its end, once for parallel subgroups. */
+    fun breaksBeforeLessons(rows: List<LessonUi>): Map<Int, Break> = breaks(rows).associateBy { gap ->
+        rows.indexOfFirst { row -> runCatching {
+            val start = LocalTime.parse(row.timeStart)
+            start == gap.end && LocalTime.parse(row.timeEnd) > start
+        }.getOrDefault(false) }
     }
 
     fun conflicts(rows: List<LessonUi>): Set<LessonUi> = rows.filter { first ->

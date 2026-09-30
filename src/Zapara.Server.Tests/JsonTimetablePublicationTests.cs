@@ -25,7 +25,7 @@ public sealed class JsonTimetablePublicationTests(ITestOutputHelper output)
         Assert.Equal(VoenmehScheduleClient.MetaUrl, current.Meta.SourceUrl);
         Assert.Equal("http", current.Meta.SourceKind);
         Assert.Equal(2, current.Payload.Groups.Length);
-        Assert.Equal(2, await db.ScalarAsync<int>($"SELECT version FROM {db.QuotedSchema}.schema_version", Ct));
+        Assert.Equal(3, await db.ScalarAsync<int>($"SELECT version FROM {db.QuotedSchema}.schema_version", Ct));
         await lease.DisposeAsync();
         await db.Store.EnsureSchemaAsync(Ct);
     }
@@ -43,8 +43,49 @@ public sealed class JsonTimetablePublicationTests(ITestOutputHelper output)
             before = await db.Store.PublishAsync(Assert.IsType<RefreshLease>(lease), TestSnapshotFactory.Create(db.Clock), Ct);
         await db.Store.EnsureSchemaAsync(Ct);
         Assert.Equal(before, (await db.Store.ReadCurrentAsync(Ct))!.Meta.SnapshotId);
-        Assert.Equal(2, await db.ScalarAsync<int>($"SELECT version FROM {db.QuotedSchema}.schema_version", Ct));
+        Assert.Equal(3, await db.ScalarAsync<int>($"SELECT version FROM {db.QuotedSchema}.schema_version", Ct));
         await Assert.ThrowsAsync<Npgsql.PostgresException>(() => db.ExecuteAsync($"UPDATE {db.QuotedSchema}.snapshots SET source_kind='http', source_url='http://127.0.0.1/private'", Ct));
         output.WriteLine(await db.ScalarAsync<string>($"SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE connamespace='{db.Schema}'::regnamespace AND conname='snapshot_provenance'", Ct));
+    }
+
+    [Fact]
+    public void Source_url_extension_preserves_both_historical_endpoints()
+    {
+        using var stream = typeof(SnapshotStore).Assembly.GetManifestResourceStream("Zapara.Server.Timetable.Sql.003_new_schedule_origin.sql");
+        Assert.NotNull(stream);
+        using var reader = new StreamReader(stream);
+        var sql = reader.ReadToEnd();
+        Assert.Contains("{{old_json_url}}", sql);
+        Assert.Contains("{{new_json_url}}", sql);
+        Assert.Contains("{{xml_url}}", sql);
+        Assert.Contains("version=3", sql);
+        Assert.Equal("https://voenmeh.ru/api/schedule/meta", VoenmehScheduleClient.LegacyMetaUrl);
+        Assert.Equal("https://voenmeh.su/api/schedule/meta", VoenmehScheduleClient.MetaUrl);
+    }
+
+    [Fact]
+    public async Task Upgrade_from_v2_preserves_historical_json_source_url()
+    {
+        await using var db = await PostgresFixture.CreateAsync(output.WriteLine, initialize: false, ct: Ct);
+        using (var stream = typeof(SnapshotStore).Assembly.GetManifestResourceStream("Zapara.Server.Timetable.Sql.001_timetable.sql")!)
+        using (var reader = new StreamReader(stream))
+            await db.ExecuteAsync((await reader.ReadToEndAsync(Ct)).Replace("{{schema}}", db.QuotedSchema)
+                .Replace("{{url}}", "'" + TimetableParser.DefaultUrl + "'"), Ct);
+        Guid before;
+        await using (var lease = await db.Store.TryAcquireAsync(Ct))
+            before = await db.Store.PublishAsync(Assert.IsType<RefreshLease>(lease), TestSnapshotFactory.Create(db.Clock, kind: SourceKind.Http), Ct);
+        using (var stream = typeof(SnapshotStore).Assembly.GetManifestResourceStream("Zapara.Server.Timetable.Sql.002_json_source.sql")!)
+        using (var reader = new StreamReader(stream))
+            await db.ExecuteAsync((await reader.ReadToEndAsync(Ct)).Replace("{{schema}}", db.QuotedSchema)
+                .Replace("{{xml_url}}", "'" + TimetableParser.DefaultUrl + "'")
+                .Replace("{{json_url}}", "'" + VoenmehScheduleClient.LegacyMetaUrl + "'"), Ct);
+        await db.ExecuteAsync($"UPDATE {db.QuotedSchema}.snapshots SET source_url='{VoenmehScheduleClient.LegacyMetaUrl}' WHERE snapshot_id='{before}'", Ct);
+
+        await db.Store.EnsureSchemaAsync(Ct);
+
+        var current = Assert.IsType<SnapshotRead>(await db.Store.ReadCurrentAsync(Ct));
+        Assert.Equal(before, current.Meta.SnapshotId);
+        Assert.Equal(VoenmehScheduleClient.LegacyMetaUrl, current.Meta.SourceUrl);
+        Assert.Equal(3, await db.ScalarAsync<int>($"SELECT version FROM {db.QuotedSchema}.schema_version", Ct));
     }
 }

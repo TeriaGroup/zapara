@@ -97,10 +97,6 @@ class ScheduleViewModel(
                 mutable.update { it.copy(today = today, selected = today) }
                 ensureAround(today)
             }
-            is ScheduleEvent.FreeTime -> {
-                container.app.getSharedPreferences("day-planner", 0).edit().putBoolean("free-time", event.on).apply()
-                mutable.update { it.copy(showFreeTime = event.on) }
-            }
             ScheduleEvent.UndoShared -> mutable.value.undoShared?.let { (id, previous) -> toggleShared(id, previous, undo = true) }
             ScheduleEvent.UndoDone -> mutable.value.undoDone?.let { (id, previous) -> viewModelScope.launch {
                 withContext(Dispatchers.IO) { container.homework.markDone(id, previous) }
@@ -204,7 +200,7 @@ class ScheduleViewModel(
             val parsedArg = initialDateArg?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             val visible = ru.bgtu_voenmeh.zapara.data.Subgroups.visible(all, container.subgroupChoices(gid))
             val selected = if (mutable.value.loaded) mutable.value.selected else parsedArg ?: today
-            mutable.update { it.copy(loaded = true, hasGroup = gid.isNotEmpty(), today = today, selected = selected, pages = emptyMap(), error = null, now = now, sourceStatus = ru.bgtu_voenmeh.zapara.ui.settings.SettingsLogic.updatedLine(prefs.lastFetchedAt, now, container.copy, allLessons.isNotEmpty()), showFreeTime = container.app.getSharedPreferences("day-planner", 0).getBoolean("free-time", true)) }
+            mutable.update { it.copy(loaded = true, hasGroup = gid.isNotEmpty(), today = today, selected = selected, pages = emptyMap(), error = null, now = now, sourceStatus = ru.bgtu_voenmeh.zapara.ui.settings.SettingsLogic.updatedLine(prefs.lastFetchedAt, now, container.copy, allLessons.isNotEmpty())) }
             if (ensureError != null && gid.isNotEmpty()) {
                 container.toasts.show(container.app.getString(R.string.refresh_fail, ensureError), ToastKind.Bad)
             }
@@ -235,7 +231,7 @@ class ScheduleViewModel(
             allLessons = all
             val rolled = ScheduleComposer.syncToday(today, mutable.value.today, mutable.value.selected)
             val dates = (mutable.value.pages.keys + rolled.second).distinct()
-            mutable.update { it.copy(hasGroup = gid.isNotEmpty(), today = rolled.first, selected = rolled.second, error = null, showFreeTime = container.app.getSharedPreferences("day-planner", 0).getBoolean("free-time", true)) }
+            mutable.update { it.copy(hasGroup = gid.isNotEmpty(), today = rolled.first, selected = rolled.second, error = null) }
             dates.forEach { ensurePage(it, force = true) }
             loadShared(gid)
         } catch (e: CancellationException) { throw e }

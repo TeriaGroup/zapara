@@ -42,7 +42,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
-import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.components.rememberUiText
 import androidx.compose.ui.Modifier
@@ -188,7 +187,7 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, on
 @Composable
 private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit, onOpenMap: (String) -> Unit, onDiscuss: (String) -> Unit) {
     val uiText = rememberUiText()
-    val breaks = remember(page.lessons) { ScheduleComposer.breaks(page.lessons) }
+    val breaks = remember(page.lessons) { ScheduleComposer.breaksBeforeLessons(page.lessons) }
     val featured = ScheduleComposer.featured(page, state.now)
     val conflicts = remember(page.lessons) { ScheduleComposer.conflicts(page.lessons) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
@@ -215,13 +214,25 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                 }
             }
             if (page.isToday && page.lessons.isNotEmpty() && featured == null) Text(uiText(R.string.space_day_15), style = Zapara.typography.body)
-            if (breaks.isNotEmpty()) Row(Modifier.fillMaxWidth().heightIn(min = Zapara.space.minTouch).clickable { onEvent(ScheduleEvent.FreeTime(!state.showFreeTime)) }, verticalAlignment = Alignment.CenterVertically) {
-                Text(uiText(R.string.space_day_16), modifier = Modifier.weight(1f), style = Zapara.typography.body)
-                ZSwitch(state.showFreeTime, { onEvent(ScheduleEvent.FreeTime(it)) }, "Schedule.FreeTime")
-            }
         }
-        itemsIndexed(page.lessons, key = { _, it -> "${it.index}:${it.timeStart}:${it.subjectNorm}:${it.teacher}" }) { _, lesson ->
-            if (state.showFreeTime) breaks.filter { it.end.toString() == lesson.timeStart }.forEach { Text(uiText(R.string.space_day_17, (it.start).toString(), (it.end).toString(), (it.minutes / 60).toString(), (it.minutes % 60).toString()), style = Zapara.typography.caption, color = Zapara.colors.text2) }
+        itemsIndexed(page.lessons, key = { index, it -> "${it.index}:${it.timeStart}:${it.subjectNorm}:${it.teacher}:$index" }) { index, lesson ->
+            breaks[index]?.let { gap ->
+                val hours = (gap.minutes / 60).toInt()
+                val minutes = (gap.minutes % 60).toInt()
+                val duration = when {
+                    hours == 0 -> stringResource(R.string.schedule_break_minutes, minutes)
+                    minutes == 0 -> stringResource(R.string.schedule_break_hours, hours)
+                    else -> stringResource(R.string.schedule_break_hours_minutes, hours, minutes)
+                }
+                Row(Modifier.fillMaxWidth().padding(bottom = Zapara.space.s)
+                    .background(Zapara.colors.surface, RoundedCornerShape(Zapara.radii.control))
+                    .padding(horizontal = Zapara.space.m, vertical = Zapara.space.s),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    Text(stringResource(R.string.schedule_break_time, gap.start.toString(), gap.end.toString()),
+                        modifier = Modifier.weight(1f), style = Zapara.typography.caption, color = Zapara.colors.text2)
+                    ZChip(duration)
+                }
+            }
             if (lesson in conflicts) Text(uiText(R.string.space_day_overlap), style = Zapara.typography.caption, color = Zapara.colors.warn)
             if (lesson == featured) {
                 LessonCard(lesson, onLongClick = { onEvent(ScheduleEvent.LongPress(lesson)) }, onRoom = { onOpenMap(lesson.classroomRaw) },

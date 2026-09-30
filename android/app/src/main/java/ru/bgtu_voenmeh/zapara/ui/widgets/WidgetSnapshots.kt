@@ -14,6 +14,8 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 data class ScheduleWidgetRow(
     val name: String,
@@ -33,7 +35,8 @@ data class ScheduleWidgetSnapshot(
     val cleared: Boolean = false,
     val isDark: Boolean = false,
     val nextRefreshAt: java.time.LocalDateTime? = null,
-    val toss: ScheduleWidgetRow? = null
+    val toss: ScheduleWidgetRow? = null,
+    val dayLabel: String = ""
 )
 
 data class HomeworkWidgetRow(
@@ -66,11 +69,14 @@ internal fun widgetSubtitle(identity: WidgetJobIdentity, groupName: String?, cop
 
 object ScheduleWidgetComposer {
     const val MAX_ROWS = 4
-    const val CHROME_DP = 56
-    const val ROW_DP = 40
+    private val upcomingDate = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.forLanguageTag("ru"))
 
-    fun rowsForHeightDp(heightDp: Int): Int =
-        ((heightDp - CHROME_DP) / ROW_DP).coerceIn(1, MAX_ROWS)
+    fun rowsForHeightDp(heightDp: Int, fontScale: Float = 1f): Int {
+        val scale = fontScale.coerceAtLeast(1f)
+        val chrome = 24 + 40 * scale
+        val row = 8 + 36 * scale
+        return if (heightDp < 120) 1 else ((heightDp - chrome) / row).toInt().coerceIn(1, MAX_ROWS)
+    }
 
     internal fun stillOn(lesson: Lesson, now: LocalTime): Boolean {
         val end = runCatching { LocalTime.parse(lesson.timeEnd) }.getOrNull() ?: return true
@@ -103,18 +109,24 @@ object ScheduleWidgetComposer {
     ): ScheduleWidgetSnapshot {
         val title = copy.get("nav_schedule")
         if (cleared) {
-            return ScheduleWidgetSnapshot(identity, title, "", null, emptyList(), true, isDark)
+            return ScheduleWidgetSnapshot(identity, title, "", copy.get("widget_loading"), emptyList(), true, isDark)
         }
         val gid = settings.myGroupId.orEmpty()
-        val subtitle = widgetSubtitle(identity, groupName, copy)
+        val groupSubtitle = widgetSubtitle(identity, groupName, copy)
         if (gid.isEmpty()) {
-            return ScheduleWidgetSnapshot(identity, title, subtitle, copy.get("empty_no_group"), emptyList(), false, isDark)
+            return ScheduleWidgetSnapshot(identity, title, groupSubtitle, copy.get("empty_no_group"), emptyList(), false, isDark)
         }
         val today = now.toLocalDate()
         val todayLessons = Schedule.lessonsForDate(
             allLessons, gid, today, settings.periodStart, settings.weekCount, settings.parityInvert
         )
         val date = SmartStart.initialDate(now, todayLessons)
+        val dayLabel = when (date) {
+            today -> copy.get("widget_schedule_today")
+            today.plusDays(1) -> copy.get("widget_schedule_tomorrow")
+            else -> date.format(upcomingDate)
+        }
+        val subtitle = "$dayLabel · $groupSubtitle"
         val lessons = if (date == today) todayLessons else Schedule.lessonsForDate(
             allLessons, gid, date, settings.periodStart, settings.weekCount, settings.parityInvert
         )
@@ -155,7 +167,7 @@ object ScheduleWidgetComposer {
             date == today && lessons.isNotEmpty() -> copy.get("widget_timer_done")
             else -> copy.get("no_lessons_day")
         }
-        return ScheduleWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark, nextRefreshAt, toss)
+        return ScheduleWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark, nextRefreshAt, toss, dayLabel)
     }
 
     private fun justEnded(
@@ -216,7 +228,7 @@ object HomeworkWidgetComposer {
     ): HomeworkWidgetSnapshot {
         val title = copy.get("nav_homework")
         if (cleared) {
-            return HomeworkWidgetSnapshot(identity, title, "", null, emptyList(), true, isDark)
+            return HomeworkWidgetSnapshot(identity, title, "", copy.get("widget_loading"), emptyList(), true, isDark)
         }
         val gid = settings.myGroupId.orEmpty()
         val subtitle = widgetSubtitle(identity, groupName, copy)

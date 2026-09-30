@@ -52,11 +52,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 container.events.emit(AppEvent.SubgroupChanged)
             }
             is SettingsEvent.ResolveSync -> resolveSync(event)
-            is SettingsEvent.FreeTime -> {
-                container.app.getSharedPreferences("day-planner", 0).edit().putBoolean("free-time", event.on).apply()
-                mutable.update { it.copy(showFreeTime = event.on) }
-                viewModelScope.launch { container.events.emit(AppEvent.PersonalizationChanged) }
-            }
             is SettingsEvent.Invert -> {
                 mutable.update { it.copy(parityInvert = event.on) }
                 save({ it.copy(parityInvert = event.on) }, after = { viewModelScope.launch { container.events.emit(AppEvent.ScheduleChanged) } })
@@ -258,7 +253,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     stale = ShellLogic.isStale(prefs.lastFetchedAt, now),
                     refreshing = mutable.value.refreshing,
                     theme = ThemeChoice.fromKey(prefs.theme), animations = prefs.animations,
-                    showFreeTime = container.app.getSharedPreferences("day-planner", 0).getBoolean("free-time", true), parityInvert = prefs.parityInvert,
+                    parityInvert = prefs.parityInvert,
                     previewEvening = preview(now.toLocalDate().plusDays(1)), previewMorning = preview(now.toLocalDate()),
                     notifyEnabled = prefs.notifyEnabled,
                     time1 = prefs.notifyTime1 ?: "20:00", time2 = prefs.notifyTime2 ?: "07:30",

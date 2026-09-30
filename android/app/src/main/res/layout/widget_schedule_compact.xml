@@ -10,13 +10,16 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:padding="12dp">
+        android:padding="8dp">
 
         <TextView
             android:id="@+id/widget_schedule_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:ellipsize="end"
             android:fontFamily="@font/inter_medium"
+            android:includeFontPadding="false"
+            android:maxLines="1"
             android:text="@string/nav_schedule"
             android:textColor="@color/widget_text1"
             android:textSize="17sp" />
@@ -34,7 +37,7 @@
             android:id="@+id/widget_schedule_row1"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="0dp"
+            android:layout_marginTop="4dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:visibility="gone">
@@ -51,6 +54,7 @@
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
                     android:fontFamily="@font/inter_medium"
+                    android:includeFontPadding="false"
                     android:maxLines="1"
                     android:textColor="@color/widget_text1"
                     android:textSize="15sp" />
@@ -61,6 +65,7 @@
                     android:layout_height="wrap_content"
                     android:ellipsize="end"
                     android:fontFamily="@font/inter_regular"
+                    android:includeFontPadding="false"
                     android:maxLines="1"
                     android:textColor="@color/widget_text2"
                     android:textSize="12sp" />
@@ -227,7 +232,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
+            android:ellipsize="end"
             android:fontFamily="@font/inter_regular"
+            android:includeFontPadding="false"
+            android:maxLines="2"
             android:textColor="@color/widget_text2"
             android:textSize="15sp"
             android:visibility="gone" />

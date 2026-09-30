@@ -13,13 +13,14 @@ using Vograph.Desktop.Services;
 using Zapara.Client.Domain;
 using Vograph.Desktop.Shell;
 using Vograph.Desktop.ViewModels;
+using Vograph.Timetable;
 
 namespace Vograph.Desktop.Features.Preferences;
 
 public sealed partial class SettingsViewModel : ViewModelBase
 {
     public const string ReleasesUrl = "https://github.com/TeriaGroup/zapara/releases";
-    public const string TimetableSourceUrl = "https://voenmeh.ru/obrazovanie/timetables/";
+    public const string TimetableSourceUrl = VoenmehScheduleClient.Origin;
     public const string MapsSourceUrl = "https://voenmeh.ru/openmap/";
 
     private readonly ShellViewModel _shell;

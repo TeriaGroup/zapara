@@ -30,8 +30,14 @@ export function freeGaps(lessons: Pick<Lesson, "timeStart" | "timeEnd">[]) {
         else
             merged.push({ ...range });
     }
-    return merged.flatMap((range, i) => i && range.start - merged[i - 1].end >= 30
+    return merged.flatMap((range, i) => i && range.start - merged[i - 1].end > 0
         ? [{ start: merged[i - 1].end, end: range.start, duration: range.start - merged[i - 1].end }] : []);
+}
+export function gapsBeforeLessons(lessons: Pick<Lesson, "timeStart" | "timeEnd">[]) {
+    return new Map(freeGaps(lessons).map(gap => [lessons.findIndex(lesson => {
+        const start = clockMinutes(lesson.timeStart), end = clockMinutes(lesson.timeEnd);
+        return start === gap.end && end !== null && end > start;
+    }), gap]));
 }
 export function heroLesson(lessons: Lesson[], date: Date, now: Date) {
     if (isoDay(date) < isoDay(now))
