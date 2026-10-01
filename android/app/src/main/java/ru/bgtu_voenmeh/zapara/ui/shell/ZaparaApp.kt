@@ -301,7 +301,11 @@ private fun ZaparaAppBody(
                                     runCatching { java.time.LocalDate.parse(it) }.getOrNull()
                                 }
                                 MapsSection(s, vm::onEvent, onBackToLesson = sourceDate?.let { date ->
-                                    { nav.openSection(Section.Schedule, date.toString()) }
+                                    {
+                                        if (Section.byRoute(nav.previousBackStackEntry?.destination?.route) == Section.Schedule)
+                                            nav.popBackStack()
+                                        else nav.openSection(Section.Schedule, date.toString(), fresh = true)
+                                    }
                                 })
                                 }
                             }

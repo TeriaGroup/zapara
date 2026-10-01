@@ -19,6 +19,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
@@ -112,6 +113,7 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
     query: String, onQuery: (String) -> Unit, source: String, onSource: (String) -> Unit,
     unreadOnly: Boolean, onUnreadOnly: (Boolean) -> Unit, modifier: Modifier) {
     var adding by remember { mutableStateOf(false) }
+    val largeText = LocalDensity.current.fontScale >= 1.5f
     val sourceFilter = InboxSourceFilter.entries.firstOrNull { it.name == source } ?: InboxSourceFilter.All
     val visible = browseInbox(state.rows, query, sourceFilter, unreadOnly)
     val filtered = query.isNotBlank() || sourceFilter != InboxSourceFilter.All || unreadOnly
@@ -192,26 +194,40 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(row.title, Modifier.weight(1f), color = Zapara.colors.text1,
-                                style = Zapara.typography.bodyStrong, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            row.lastAt?.let { Text(chatListTime(it, java.time.LocalDate.now(), ZoneId.systemDefault(), stringResource(R.string.yesterday)),
+                                style = Zapara.typography.bodyStrong, maxLines = if (largeText) 2 else 1,
+                                overflow = TextOverflow.Ellipsis)
+                            if (!largeText) row.lastAt?.let { Text(chatListTime(it, java.time.LocalDate.now(), ZoneId.systemDefault(), stringResource(R.string.yesterday)),
                                 color = Zapara.colors.text2, style = Zapara.typography.caption) }
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            state.draftPreviews[row.id]?.let { draft ->
-                                Text(stringResource(R.string.ux60_chat_draft_preview, draft),
-                                    color = Zapara.colors.accent, maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            }
-                            Text(row.lastBody?.takeIf { it.isNotBlank() } ?: stringResource(R.string.face_no_messages_yet),
-                                Modifier.weight(1f), color = Zapara.colors.text2, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            if (row.unread > 0) {
+                            if (!largeText && row.unread > 0) {
                                 val description = stringResource(R.string.group_unread_count, row.unread)
                                 ZChip(if (row.unread > 99) "99+" else row.unread.toString(), selected = true,
                                     modifier = Modifier.semantics { contentDescription = description })
                             }
                         }
+                        state.draftPreviews[row.id]?.let { draft ->
+                            Text(stringResource(R.string.ux60_chat_draft_preview, draft),
+                                color = Zapara.colors.accent, maxLines = if (largeText) 2 else 1,
+                                overflow = TextOverflow.Ellipsis)
+                        }
+                        Text(row.lastBody?.takeIf { it.isNotBlank() } ?: stringResource(R.string.face_no_messages_yet),
+                            color = Zapara.colors.text2, maxLines = if (largeText) 3 else 2,
+                            overflow = TextOverflow.Ellipsis)
                         if (row.source != InboxSource.Friend) Text(row.subtitle,
                             color = Zapara.colors.text2, style = Zapara.typography.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (largeText && (row.lastAt != null || row.unread > 0)) {
+                            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                if (largeText) row.lastAt?.let {
+                                    Text(chatListTime(it, java.time.LocalDate.now(), ZoneId.systemDefault(), stringResource(R.string.yesterday)),
+                                        color = Zapara.colors.text2, style = Zapara.typography.caption)
+                                }
+                                if (row.unread > 0) {
+                                    val description = stringResource(R.string.group_unread_count, row.unread)
+                                    ZChip(if (row.unread > 99) "99+" else row.unread.toString(), selected = true,
+                                        modifier = Modifier.semantics { contentDescription = description })
+                                }
+                            }
+                        }
                     }
                 }
             }

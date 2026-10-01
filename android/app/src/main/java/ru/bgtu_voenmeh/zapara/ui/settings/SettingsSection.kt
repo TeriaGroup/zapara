@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.PaddingValues
@@ -54,6 +56,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -174,7 +177,6 @@ private fun SettingsOverview(state: SettingsUiState, account: AccountUiState,
         if (visible.isEmpty()) item("search-empty") {
             ZCard(Modifier.fillMaxWidth(), tag = "Settings.SearchEmpty") {
                 Text(stringResource(R.string.uxnext_settings_no_result), style = Zapara.typography.body)
-                ZButton(stringResource(R.string.next_teachers_clear), { onQuery("") }, ghost = true)
             }
         }
         if ("account" in visible) item {
@@ -224,6 +226,7 @@ private fun SettingsOverview(state: SettingsUiState, account: AccountUiState,
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsSection(
     state: SettingsUiState,
@@ -369,10 +372,22 @@ fun SettingsSection(
             item {
                 ZCard(Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.theme_appearance), style = Zapara.typography.section, color = c.text1)
-                    ZSegmented(
-                        listOf(stringResource(R.string.theme_system), stringResource(R.string.theme_light), stringResource(R.string.theme_dark)),
-                        state.theme.ordinal, { onEvent(SettingsEvent.Theme(it)) }, "Settings.Theme"
-                    )
+                    val themes = listOf(stringResource(R.string.theme_system),
+                        stringResource(R.string.theme_light), stringResource(R.string.theme_dark))
+                    if (LocalDensity.current.fontScale >= 1.5f) {
+                        FlowRow(Modifier.fillMaxWidth().testTag("Settings.Theme"),
+                            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                            verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                            themes.forEachIndexed { index, label ->
+                                ZChip(label, selected = state.theme.ordinal == index,
+                                    onClick = { onEvent(SettingsEvent.Theme(index)) },
+                                    tag = "Settings.Theme.$index")
+                            }
+                        }
+                    } else {
+                        ZSegmented(themes, state.theme.ordinal, { onEvent(SettingsEvent.Theme(it)) },
+                            "Settings.Theme")
+                    }
                     PreferenceFeedback(state, "theme", onEvent)
                     ZCard(Modifier.fillMaxWidth()) {
                         Text(uiText(R.string.space_day_161), style = Zapara.typography.section)

@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +23,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -75,7 +77,32 @@ fun HomeworkEditorSheet(
         in 2..4 -> R.string.ux_homework_due_few
         else -> R.string.ux_homework_due_many
     }
-    ZBottomSheet(onCancel, "Sheet.Homework", scrollable = true, canDismiss = canClose) {
+    val largeText = LocalDensity.current.fontScale >= 1.5f
+    val saveLabel = stringResource(if (state.work == HomeworkEditorWork.Saving)
+        R.string.homework_ux_saving else R.string.theme_save)
+    val status = when (state.work) {
+        HomeworkEditorWork.Saving -> stringResource(R.string.homework_ux_saving)
+        HomeworkEditorWork.Attachment -> stringResource(R.string.homework_ux_attachment)
+        HomeworkEditorWork.Recalculating -> stringResource(R.string.homework_ux_recalculating)
+        HomeworkEditorWork.Idle -> state.error
+    }
+    ZBottomSheet(onCancel, "Sheet.Homework", scrollable = true, canDismiss = canClose, footer = {
+        if (largeText) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZButton(saveLabel, onSave, enabled = state.canSave, tag = "Editor.Save",
+                    modifier = Modifier.fillMaxWidth())
+                ZButton(stringResource(R.string.theme_cancel), requestCancel, ghost = true,
+                    enabled = !state.busy, tag = "Editor.Cancel", modifier = Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZButton(stringResource(R.string.theme_cancel), requestCancel, ghost = true,
+                    enabled = !state.busy, tag = "Editor.Cancel")
+                ZButton(saveLabel, onSave, enabled = state.canSave, tag = "Editor.Save",
+                    modifier = Modifier.weight(1f))
+            }
+        }
+    }) {
         Text(state.subjectDisplay, style = Zapara.typography.section, color = c.text1)
         Spacer(Modifier.height(Zapara.space.s))
         ZTextField(
@@ -183,15 +210,11 @@ fun HomeworkEditorSheet(
             }
         }
         Spacer(Modifier.height(Zapara.space.m))
-        val status = when (state.work) {
-            HomeworkEditorWork.Saving -> stringResource(R.string.homework_ux_saving)
-            HomeworkEditorWork.Attachment -> stringResource(R.string.homework_ux_attachment)
-            HomeworkEditorWork.Recalculating -> stringResource(R.string.homework_ux_recalculating)
-            HomeworkEditorWork.Idle -> state.error
-        }
         if (status != null) {
-            Text(status, style = Zapara.typography.caption, color = if (state.error != null && !state.busy) c.bad else c.text2,
-                modifier = Modifier.fillMaxWidth().testTag("Editor.Status").semantics { liveRegion = LiveRegionMode.Polite })
+            Text(status, style = Zapara.typography.caption,
+                color = if (state.error != null && !state.busy) c.bad else c.text2,
+                modifier = Modifier.fillMaxWidth().testTag("Editor.Status")
+                    .semantics { liveRegion = LiveRegionMode.Polite })
             Spacer(Modifier.height(Zapara.space.s))
         }
         if (state.shareRequest != null) {
@@ -199,20 +222,19 @@ fun HomeworkEditorSheet(
             if (state.shareRequest.operationId != null) ZButton(stringResource(R.string.homework_share_retry), onRetryShare, enabled = !state.busy, ghost = true)
             else Text(stringResource(R.string.homework_share_retry_old_server), style = Zapara.typography.caption, color = c.warn)
         }
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
-            verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            ZButton(stringResource(R.string.theme_cancel), requestCancel, ghost = true, enabled = !state.busy, tag = "Editor.Cancel")
-            ZButton(stringResource(if (state.work == HomeworkEditorWork.Saving) R.string.homework_ux_saving else R.string.theme_save),
-                onSave, enabled = state.canSave, tag = "Editor.Save")
-        }
     }
     if (confirmDiscard) AlertDialog(
         onDismissRequest = { confirmDiscard = false },
         title = { Text(stringResource(R.string.homework_ux_discard_title), style = Zapara.typography.section) },
         text = { Text(stringResource(if (state.persistedId == null) R.string.homework_ux_discard_hint else R.string.homework_ux_partial_discard_hint)) },
-        confirmButton = { ZButton(stringResource(R.string.homework_ux_keep_editing), { confirmDiscard = false }, tag = "Editor.KeepEditing") },
-        dismissButton = { ZButton(stringResource(R.string.homework_ux_discard), { confirmDiscard = false; onCancel() }, ghost = true,
-            enabled = !state.busy, tag = "Editor.Discard") },
+        confirmButton = {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZButton(stringResource(R.string.homework_ux_keep_editing), { confirmDiscard = false },
+                    tag = "Editor.KeepEditing", modifier = Modifier.fillMaxWidth())
+                ZButton(stringResource(R.string.homework_ux_discard), { confirmDiscard = false; onCancel() },
+                    ghost = true, enabled = !state.busy, tag = "Editor.Discard", modifier = Modifier.fillMaxWidth())
+            }
+        },
         containerColor = c.card
     )
 }

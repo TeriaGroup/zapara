@@ -88,15 +88,26 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
             }
         }
         val currentResults = state.appliedQuery == state.query && state.appliedOnlyMine == state.onlyMine
+        val resultsLabel = if (state.searching) stringResource(R.string.ux60_teacher_searching)
+            else if (currentResults) stringResource(R.string.teachers_found, state.list.size, state.total)
+            else stringResource(R.string.ux60_teacher_search_failed)
+        if (LocalDensity.current.fontScale >= 1.5f) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                Text(resultsLabel, style = Zapara.typography.caption, color = c.text2,
+                    modifier = Modifier.fillMaxWidth())
+                if (state.query.isNotBlank()) ZButton(stringResource(R.string.next_teachers_clear),
+                    { onEvent(TeachersEvent.Query("")) }, ghost = true, tag = "Teachers.ClearSearch")
+            }
+        } else {
         Row(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            Text(if (state.searching) stringResource(R.string.ux60_teacher_searching)
-                else if (currentResults) stringResource(R.string.teachers_found, state.list.size, state.total)
-                else stringResource(R.string.ux60_teacher_search_failed),
+            Text(resultsLabel,
                 style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f))
             if (state.query.isNotBlank()) ZButton(stringResource(R.string.next_teachers_clear),
                 { onEvent(TeachersEvent.Query("")) }, ghost = true, tag = "Teachers.ClearSearch")
+        }
         }
         if (state.searching) {
             Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
@@ -169,11 +180,19 @@ fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
                 style = Zapara.typography.caption, color = c.text2)
         }
         item(key = "filters") {
-        ZSegmented(
-            listOf(stringResource(R.string.parity_both), stringResource(R.string.teacher_filter_odd), stringResource(R.string.teacher_filter_even)),
-            state.parityFilter, { onEvent(TeachersEvent.Parity(it)) }, "Teacher.Segment",
-            Modifier.padding(horizontal = Zapara.space.l)
-        )
+            val parityLabels = listOf(stringResource(R.string.parity_both),
+                stringResource(R.string.teacher_filter_odd), stringResource(R.string.teacher_filter_even))
+            if (LocalDensity.current.fontScale >= 1.5f) {
+                FlowRow(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).testTag("Teacher.Segment"),
+                    horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                    verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                    parityLabels.forEachIndexed { index, label ->
+                        ZChip(label, selected = index == state.parityFilter,
+                            onClick = { onEvent(TeachersEvent.Parity(index)) }, tag = "Teacher.Segment.$index")
+                    }
+                }
+            } else ZSegmented(parityLabels, state.parityFilter, { onEvent(TeachersEvent.Parity(it)) },
+                "Teacher.Segment", Modifier.padding(horizontal = Zapara.space.l))
         }
         item(key = "count") {
             Text(stringResource(R.string.teacher_detail_lessons, state.details.sumOf { it.rows.size }),

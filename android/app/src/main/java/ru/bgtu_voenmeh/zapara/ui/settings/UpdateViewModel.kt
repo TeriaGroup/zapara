@@ -12,7 +12,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ru.bgtu_voenmeh.zapara.data.AutoUpdate
 import java.io.File
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.time.LocalTime
+import javax.net.ssl.SSLException
 
 data class UpdateUiState(
     val checking: Boolean = false,
@@ -92,7 +98,11 @@ class UpdateViewModel(
                 throw e
             } catch (e: Exception) {
                 val raw = e.message ?: e.javaClass.simpleName
-                val friendly = if ("403" in raw) copy.get("upd_err_403") else copy.get("upd_err", raw)
+                val friendly = when {
+                    "403" in raw -> copy.get("upd_err_403")
+                    e.isConnectionFailure() -> copy.get("load_fail_network")
+                    else -> copy.get("upd_log_fail")
+                }
                 mutable.update { it.copy(checking = false, updateStale = it.hasUpdate,
                     error = friendly, log = copy.get("upd_log_fail"), checkedAt = stamp()) }
             }
@@ -130,7 +140,8 @@ class UpdateViewModel(
             } catch (e: Exception) {
                 if (current()) {
                     mutable.update { state -> if (generation == downloadGeneration && state.tag == tag)
-                        state.copy(downloading = false, error = copy.get("upd_err_dl", e.message ?: e.javaClass.simpleName),
+                        state.copy(downloading = false,
+                            error = if (e.isConnectionFailure()) copy.get("load_fail_network") else copy.get("upd_log_dl_fail"),
                             log = copy.get("upd_log_dl_fail")) else state }
                 }
             }
@@ -171,3 +182,9 @@ class UpdateViewModel(
         ""
     }
 }
+
+private fun Throwable.isConnectionFailure(): Boolean =
+    generateSequence(this) { it.cause }.any { cause ->
+        cause is UnknownHostException || cause is ConnectException || cause is NoRouteToHostException ||
+            cause is SocketTimeoutException || cause is SocketException || cause is SSLException
+    }

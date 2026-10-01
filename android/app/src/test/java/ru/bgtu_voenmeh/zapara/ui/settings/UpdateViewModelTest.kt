@@ -20,6 +20,7 @@ import org.junit.Test
 import ru.bgtu_voenmeh.zapara.ui.XmlCopy
 import java.io.File
 import java.io.IOException
+import java.net.UnknownHostException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class UpdateViewModelTest {
@@ -80,6 +81,25 @@ class UpdateViewModelTest {
         assertTrue(vm.state.value.updateStale)
         assertEquals("android-v2.1.0", vm.state.value.tag)
         assertTrue(vm.state.value.error != null)
+    }
+
+    @Test fun network_and_other_failures_do_not_expose_exception_messages() = runTest(dispatcher) {
+        val source = FakeUpdateSource(latestResult = UpdateInfo("android-v2.1.0", "h", "https://example.invalid/app.apk", "p"))
+        val vm = UpdateViewModel(source, { true }, { _, _ -> true }, scope = this, copy = XmlCopy)
+        source.latestError = IllegalStateException("wrapped", UnknownHostException("api.github.com"))
+        vm.check(true); advanceUntilIdle()
+        assertEquals(XmlCopy.get("load_fail_network"), vm.state.value.error)
+
+        source.latestError = IllegalArgumentException("internal parser details")
+        vm.check(true); advanceUntilIdle()
+        assertEquals(XmlCopy.get("upd_log_fail"), vm.state.value.error)
+
+        source.latestError = null
+        vm.check(true); advanceUntilIdle()
+        source.downloadOverride = { _, _, _ -> throw UnknownHostException("download.example.invalid") }
+        vm.download(); advanceUntilIdle()
+        assertEquals(XmlCopy.get("load_fail_network"), vm.state.value.error)
+        assertFalse(vm.state.value.downloading)
     }
 
     @Test fun a_new_release_or_missing_file_cannot_install_an_old_download() = runTest(dispatcher) {

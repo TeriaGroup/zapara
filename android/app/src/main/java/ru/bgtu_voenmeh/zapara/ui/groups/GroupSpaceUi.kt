@@ -92,7 +92,6 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
                             if (added != null && added.name.equals(name.trim(), ignoreCase = true)) { selectedRoleId = added.roleId; name = "" }
                             previousIds.value = roles.map { it.roleId }.toSet()
                         }
-                        Text(uiText(R.string.space_day_69), style = Zapara.typography.caption)
                         Text(uiText(R.string.group_roles_scope), style = Zapara.typography.caption)
                         Text(uiText(R.string.group_roles_count, roles.size, state.space?.capabilities?.maxRoles ?: 12), style = Zapara.typography.caption)
                         if (state.desk?.headman == true || "roles" in state.desk?.mine.orEmpty()) {
@@ -231,15 +230,17 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
             }
             "powers" -> {
                 settingReason?.let { Text(uiText(it), style = Zapara.typography.caption, color = Zapara.colors.warn) }
-                (state.space?.capabilities?.powers ?: desk.capabilities.powers).forEach { power ->
+                val powers = state.space?.capabilities?.powers ?: desk.capabilities.powers
+                powers.forEach { power ->
                     val on = desk.powers.any { it.roleId == role.roleId && it.power == power }
                     val allowed = canSettings && (desk.headman || power in desk.mine)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(on, { dispatch(onEvent, GroupSpaceAction.Power(role.roleId, power, it)) }, enabled = allowed && !state.channelBusy)
                         Text(powerTitle(power), style = Zapara.typography.body)
                     }
-                    if (!allowed && !desk.headman && power !in desk.mine) Text(uiText(R.string.group_roles_power_unavailable), style = Zapara.typography.caption)
                 }
+                if (!desk.headman && powers.any { it !in desk.mine })
+                    Text(uiText(R.string.group_roles_power_unavailable), style = Zapara.typography.caption)
             }
             "people" -> {
                 val grants = desk.grants
@@ -375,6 +376,7 @@ fun powerResource(power: String): Int = when(power) {
 @Composable fun SpecializedChannel(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifier: Modifier) {
     val uiText = rememberUiText()
     val nativeContext = LocalContext.current
+    val calendarTheme = if (Zapara.colors.isDark) R.style.Zapara_DatePicker_Dark else R.style.Zapara_DatePicker_Light
     val topic = GroupActions.topic(state, state.activeTopicId)
     val permissions = topic?.permissions.orEmpty()
     var completedFilter by rememberSaveable(state.activeTopicId) { mutableStateOf(false) }
@@ -425,7 +427,8 @@ fun powerResource(power: String): Int = when(power) {
                         }
                         ZButton(uiText(R.string.space_day_5),{
                             val date=state.scheduleDate
-                            DatePickerDialog(nativeContext,{ _,year,month,day -> dispatch(onEvent,GroupSpaceAction.ScheduleDate(LocalDate.of(year,month+1,day))) },date.year,date.monthValue-1,date.dayOfMonth).show()
+                            DatePickerDialog(nativeContext, calendarTheme,
+                                { _,year,month,day -> dispatch(onEvent,GroupSpaceAction.ScheduleDate(LocalDate.of(year,month+1,day))) },date.year,date.monthValue-1,date.dayOfMonth).show()
                         },ghost=true)
                     }
                     Row { ZButton(uiText(R.string.space_day_119), { dispatch(onEvent, GroupSpaceAction.ScheduleDate(state.scheduleDate.minusDays(1))) }, ghost = true); ZButton(uiText(R.string.space_day_120), { dispatch(onEvent, GroupSpaceAction.ScheduleDate(state.scheduleDate.plusDays(1))) }, ghost = true) }

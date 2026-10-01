@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -23,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
@@ -39,6 +42,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SummarySection(state: SummaryUiState, onEvent: (SummaryEvent) -> Unit,
     onOpenDay: (java.time.LocalDate) -> Unit = {},
@@ -64,11 +68,19 @@ fun SummarySection(state: SummaryUiState, onEvent: (SummaryEvent) -> Unit,
                 ru.bgtu_voenmeh.zapara.ui.theme.ZButton(stringResource(R.string.repeat),
                     { onEvent(SummaryEvent.Retry) }, ghost = true, enabled = !state.refreshing)
             } }
-            ZSegmented(
-                listOf(stringResource(R.string.week_odd), stringResource(R.string.week_even), stringResource(R.string.summary_both)),
-                state.segment, { onEvent(SummaryEvent.Segment(it)) }, "Summary.Segment",
-                Modifier.padding(horizontal = Zapara.space.l)
-            )
+            val parityLabels = listOf(stringResource(R.string.week_odd), stringResource(R.string.week_even),
+                stringResource(R.string.summary_both))
+            if (LocalDensity.current.fontScale >= 1.5f) {
+                FlowRow(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).testTag("Summary.Segment"),
+                    horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                    verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                    parityLabels.forEachIndexed { index, label ->
+                        ZChip(label, selected = index == state.segment,
+                            onClick = { onEvent(SummaryEvent.Segment(index)) }, tag = "Summary.Segment.$index")
+                    }
+                }
+            } else ZSegmented(parityLabels, state.segment, { onEvent(SummaryEvent.Segment(it)) },
+                "Summary.Segment", Modifier.padding(horizontal = Zapara.space.l))
             HorizontalDivider(Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
                 thickness = Zapara.space.hairline, color = c.line)
             LazyColumn(Modifier.fillMaxSize().testTag("Summary.List"), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {

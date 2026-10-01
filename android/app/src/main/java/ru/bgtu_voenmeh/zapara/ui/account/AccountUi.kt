@@ -11,6 +11,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -260,6 +263,7 @@ internal suspend fun readUiCapabilities(transport: HttpExchange, baseUri: String
     return AccountUiCapabilities(flag("registration"), flag("vk"), flag("yandex"), flag("recovery"))
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLegal: (String) -> Unit = {}) {
     val c = Zapara.colors
@@ -298,25 +302,25 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
                 onEvent(AccountEvent.Username(it))
             }
             if (!state.usernameValid) Text(stringResource(R.string.ux60_account_username_hint),
-                style = Zapara.typography.caption, color = c.warn)
+                style = Zapara.typography.caption, color = if (state.username.isBlank()) c.text2 else c.text1)
             AccountField(state.password, stringResource(R.string.account_password), "Account.Password", password = true) {
                 onEvent(AccountEvent.Password(it))
             }
             if (!state.passwordValid) Text(stringResource(R.string.ux60_account_password_hint),
-                style = Zapara.typography.caption, color = c.warn)
+                style = Zapara.typography.caption, color = if (state.password.isEmpty()) c.text2 else c.text1)
             if (state.registration) {
                 AccountField(state.displayName, stringResource(R.string.account_display_name), "Account.DisplayName") {
                     onEvent(AccountEvent.DisplayName(it))
                 }
                 if (!state.registrationNameValid) Text(stringResource(R.string.ux60_account_name_hint),
-                    style = Zapara.typography.caption, color = c.warn)
+                    style = Zapara.typography.caption, color = if (state.displayName.isBlank()) c.text2 else c.text1)
                 AcceptDocuments(
                     checked = state.documentsAccepted,
                     onChange = { onEvent(AccountEvent.AcceptDocuments(it)) }
                 )
             }
-            Text(stringResource(R.string.account_validation), style = Zapara.typography.caption, color = c.text2)
-            Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 if (state.registration) {
                     ZButton(stringResource(R.string.account_register), { onEvent(AccountEvent.Submit) }, enabled = state.canSubmitCredentials, tag = "Account.Register")
                 } else {
@@ -352,7 +356,8 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
                     AccountField(state.newPassword, stringResource(R.string.account_new_password), "Account.NewPassword", password = true) {
                         onEvent(AccountEvent.NewPassword(it))
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                        verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                         ZButton(stringResource(R.string.ux30_recovery_set), { onEvent(AccountEvent.ConfirmReset) },
                             enabled = !state.busy && state.canConfirmRecovery, tag = "Account.ConfirmReset")
                         ZButton(stringResource(R.string.ux30_recovery_back), { onEvent(AccountEvent.BackToRecoveryRequest) },
@@ -368,7 +373,8 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
             state.profileError?.let { Text(it, style = Zapara.typography.caption, color = c.bad,
                 modifier = Modifier.testTag("Account.ProfileError")) }
             if (state.displayName.trim() != state.profileNameBaseline.trim()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                    verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                     ZButton(stringResource(R.string.uxnext_profile_save), { onEvent(AccountEvent.SaveProfile) },
                         enabled = state.canSaveProfile, busy = state.busy, tag = "Account.ProfileSave")
                     ZButton(stringResource(R.string.uxnext_profile_cancel), { onEvent(AccountEvent.CancelProfile) },
@@ -384,9 +390,11 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
                 ZButton(stringResource(R.string.account_logout), { onEvent(AccountEvent.RequestLogout) }, ghost = true, enabled = !state.busy, tag = "Account.Logout")
             } else {
                 Text(stringResource(R.string.account_confirm_logout), style = Zapara.typography.body, color = c.text1)
-                Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                    ZButton(stringResource(R.string.account_logout), { onEvent(AccountEvent.ConfirmLogout) }, enabled = !state.busy, tag = "Account.ConfirmLogout")
-                    ZButton(stringResource(R.string.account_cancel), { onEvent(AccountEvent.CancelLogout) }, ghost = true, tag = "Account.CancelLogout")
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    ZButton(stringResource(R.string.account_logout), { onEvent(AccountEvent.ConfirmLogout) },
+                        modifier = Modifier.fillMaxWidth(), enabled = !state.busy, tag = "Account.ConfirmLogout")
+                    ZButton(stringResource(R.string.account_cancel), { onEvent(AccountEvent.CancelLogout) },
+                        modifier = Modifier.fillMaxWidth(), ghost = true, tag = "Account.CancelLogout")
                 }
             }
             AccountLifecyclePanel(state, onEvent)
@@ -422,11 +430,11 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
             Text(if (device.current) stringResource(R.string.ux30_devices_current_confirm)
                 else stringResource(R.string.ux30_devices_other_confirm, device.label),
                 style = Zapara.typography.body, color = Zapara.colors.text1)
-            Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 ZButton(stringResource(R.string.account_revoke), { onEvent(AccountEvent.ConfirmRevoke) },
-                    enabled = enabled, tag = "Account.ConfirmRevoke")
+                    modifier = Modifier.fillMaxWidth(), enabled = enabled, tag = "Account.ConfirmRevoke")
                 ZButton(stringResource(R.string.account_cancel), { onEvent(AccountEvent.CancelRevoke) },
-                    ghost = true, enabled = enabled)
+                    modifier = Modifier.fillMaxWidth(), ghost = true, enabled = enabled, tag = "Account.CancelRevoke")
             }
         } else {
             ZButton(stringResource(R.string.account_revoke), { onEvent(AccountEvent.RequestRevoke(device.familyId)) },
@@ -438,11 +446,11 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
     if (state.devices.isNotEmpty()) {
         if (state.confirmRevoke == "all") {
             Text(stringResource(R.string.ux30_devices_all_confirm), style = Zapara.typography.body, color = Zapara.colors.text1)
-            Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 ZButton(stringResource(R.string.ux30_devices_all), { onEvent(AccountEvent.ConfirmRevoke) },
-                    enabled = enabled, tag = "Account.ConfirmRevokeAll")
+                    modifier = Modifier.fillMaxWidth(), enabled = enabled, tag = "Account.ConfirmRevokeAll")
                 ZButton(stringResource(R.string.account_cancel), { onEvent(AccountEvent.CancelRevoke) },
-                    ghost = true, enabled = enabled)
+                    modifier = Modifier.fillMaxWidth(), ghost = true, enabled = enabled, tag = "Account.CancelRevoke")
             }
         } else ZButton(stringResource(R.string.ux30_devices_all),
             { onEvent(AccountEvent.RequestRevokeAll) }, ghost = true, enabled = enabled, tag = "Account.RevokeAll")
@@ -499,9 +507,11 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
         ZButton(stringResource(R.string.account_delete), { onEvent(AccountEvent.RequestDelete) }, ghost = true, enabled = enabled, tag = "Account.Delete")
     } else {
         Text(stringResource(R.string.account_delete_confirm), style = Zapara.typography.body, color = Zapara.colors.text1)
-        Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            ZButton(stringResource(R.string.account_delete), { onEvent(AccountEvent.ConfirmDelete) }, enabled = enabled, tag = "Account.ConfirmDelete")
-            ZButton(stringResource(R.string.account_cancel), { onEvent(AccountEvent.CancelDelete) }, ghost = true, tag = "Account.CancelDelete")
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            ZButton(stringResource(R.string.account_delete), { onEvent(AccountEvent.ConfirmDelete) },
+                modifier = Modifier.fillMaxWidth(), enabled = enabled, tag = "Account.ConfirmDelete")
+            ZButton(stringResource(R.string.account_cancel), { onEvent(AccountEvent.CancelDelete) },
+                modifier = Modifier.fillMaxWidth(), ghost = true, tag = "Account.CancelDelete")
         }
     }
 }
@@ -585,11 +595,13 @@ private fun IdButton(
 @Composable
 private fun AccountField(value: String, label: String, tag: String, password: Boolean = false, onChange: (String) -> Unit) {
     val c = Zapara.colors
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+    Text(label, style = Zapara.typography.caption, color = c.text2)
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
-        modifier = Modifier.fillMaxWidth().testTag(tag),
-        label = { Text(label, style = Zapara.typography.caption) },
+        modifier = Modifier.fillMaxWidth().testTag(tag).semantics { contentDescription = label },
+        textStyle = Zapara.typography.body,
         singleLine = true,
         visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
         shape = RoundedCornerShape(Zapara.radii.control),
@@ -599,4 +611,5 @@ private fun AccountField(value: String, label: String, tag: String, password: Bo
             focusedTextColor = c.text1, unfocusedTextColor = c.text1
         )
     )
+    }
 }

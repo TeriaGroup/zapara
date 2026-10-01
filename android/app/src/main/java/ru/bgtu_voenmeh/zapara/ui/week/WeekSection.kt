@@ -17,7 +17,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.constrainHeight
 import ru.bgtu_voenmeh.zapara.R
@@ -44,6 +46,7 @@ import java.util.Locale
 fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (LocalDate) -> Unit) {
     val chrome = LocalShellChrome.current
     val c = Zapara.colors
+    val largeText = LocalDensity.current.fontScale >= 1.5f
     Column(Modifier.fillMaxSize()) {
         ZTopBar(stringResource(R.string.nav_week)) { ZButton(stringResource(R.string.nav_schedule), { onOpenDay(state.selectedDate) }, ghost = true, quiet = true) }
         if (!state.loaded) {
@@ -58,18 +61,38 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
                 state.error ?: stringResource(R.string.ux30_week_no_saved_hint),
                 stringResource(R.string.ux30_week_load), { onEvent(WeekEvent.Retry) }, "Week.NoSavedSchedule")
         } else {
-            Row(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                ZIconButton(R.drawable.ic_chevron_left, stringResource(R.string.ux30_week_previous),
-                    { onEvent(WeekEvent.Shift(-1)) }, "Week.Previous")
-                val rangeFormat = DateTimeFormatter.ofPattern("d MMM", Locale("ru"))
-                Text(stringResource(R.string.ux30_week_range,
-                    state.days.firstOrNull()?.date?.format(rangeFormat).orEmpty(),
-                    state.days.lastOrNull()?.date?.format(rangeFormat).orEmpty()),
-                    style = Zapara.typography.bodyStrong, color = c.text1, modifier = Modifier.weight(1f))
-                ZIconButton(R.drawable.ic_chevron_right, stringResource(R.string.ux30_week_next),
-                    { onEvent(WeekEvent.Shift(1)) }, "Week.Next")
-                ZButton(stringResource(R.string.ux30_week_today), { onEvent(WeekEvent.Today) }, ghost = true, quiet = true)
+            val rangeFormat = DateTimeFormatter.ofPattern("d MMM", Locale("ru"))
+            val range = stringResource(R.string.ux30_week_range,
+                state.days.firstOrNull()?.date?.format(rangeFormat).orEmpty(),
+                state.days.lastOrNull()?.date?.format(rangeFormat).orEmpty())
+            if (largeText) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
+                    verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                    Text(range, style = Zapara.typography.bodyStrong, color = c.text1,
+                        modifier = Modifier.fillMaxWidth())
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                        verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                        ZIconButton(R.drawable.ic_chevron_left, stringResource(R.string.ux30_week_previous),
+                            { onEvent(WeekEvent.Shift(-1)) }, "Week.Previous")
+                        ZIconButton(R.drawable.ic_chevron_right, stringResource(R.string.ux30_week_next),
+                            { onEvent(WeekEvent.Shift(1)) }, "Week.Next")
+                        ZButton(stringResource(R.string.ux30_week_today), { onEvent(WeekEvent.Today) },
+                            ghost = true, quiet = true)
+                    }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    ZIconButton(R.drawable.ic_chevron_left, stringResource(R.string.ux30_week_previous),
+                        { onEvent(WeekEvent.Shift(-1)) }, "Week.Previous")
+                    Text(range, style = Zapara.typography.bodyStrong, color = c.text1,
+                        modifier = Modifier.weight(1f))
+                    ZIconButton(R.drawable.ic_chevron_right, stringResource(R.string.ux30_week_next),
+                        { onEvent(WeekEvent.Shift(1)) }, "Week.Next")
+                    ZButton(stringResource(R.string.ux30_week_today), { onEvent(WeekEvent.Today) },
+                        ghost = true, quiet = true)
+                }
             }
             state.error?.let { error ->
                 ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l), tag = "Week.LoadError") {
@@ -84,7 +107,20 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
                 if (state.currentParity == 1) stringResource(R.string.week_current, odd) else odd,
                 if (state.currentParity == 2) stringResource(R.string.week_current, even) else even
             )
-            ZSegmented(labels, (state.parity - 1).coerceIn(0, 1), { onEvent(WeekEvent.Parity(it)) }, "Week.Segment", Modifier.padding(horizontal = Zapara.space.l))
+            val selectedParity = (state.parity - 1).coerceIn(0, 1)
+            if (largeText) {
+                FlowRow(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).testTag("Week.Segment"),
+                    horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                    verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                    labels.forEachIndexed { index, label ->
+                        ZChip(label, selected = index == selectedParity,
+                            onClick = { onEvent(WeekEvent.Parity(index)) }, tag = "Week.Segment.$index")
+                    }
+                }
+            } else {
+                ZSegmented(labels, selectedParity, { onEvent(WeekEvent.Parity(it)) },
+                    "Week.Segment", Modifier.padding(horizontal = Zapara.space.l))
+            }
             Text(stringResource(R.string.next_week_total, state.days.sumOf { it.rows.size }),
                 style = Zapara.typography.caption, color = c.text2,
                 modifier = Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s))
@@ -93,13 +129,26 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
                 .plannerContentReveal(state.parity), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 itemsIndexed(state.days, key = { _, it -> it.dow }) { index, day ->
                     ZCard(onClick = { onOpenDay(day.date) }, tag = "Week.Day.${day.dow}", modifier = Modifier.fillMaxWidth().appear(index)) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        if (largeText) {
                             Text(day.title, style = Zapara.typography.section, color = c.text1,
-                                modifier = Modifier.weight(1f))
-                            if (day.isToday) ZChip(stringResource(R.string.ux30_week_today), tag = "Week.Today.${day.dow}")
-                            ZChip(stringResource(R.string.next_week_day_count, day.rows.size),
-                                tag = "Week.Count.${day.dow}")
+                                modifier = Modifier.fillMaxWidth())
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                                if (day.isToday) ZChip(stringResource(R.string.ux30_week_today),
+                                    tag = "Week.Today.${day.dow}")
+                                ZChip(stringResource(R.string.next_week_day_count, day.rows.size),
+                                    tag = "Week.Count.${day.dow}")
+                            }
+                        } else {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                                Text(day.title, style = Zapara.typography.section, color = c.text1,
+                                    modifier = Modifier.weight(1f))
+                                if (day.isToday) ZChip(stringResource(R.string.ux30_week_today),
+                                    tag = "Week.Today.${day.dow}")
+                                ZChip(stringResource(R.string.next_week_day_count, day.rows.size),
+                                    tag = "Week.Count.${day.dow}")
+                            }
                         }
                         if (day.rows.isEmpty()) {
                             Text(stringResource(R.string.week_no_lessons), style = Zapara.typography.caption, color = c.text2)

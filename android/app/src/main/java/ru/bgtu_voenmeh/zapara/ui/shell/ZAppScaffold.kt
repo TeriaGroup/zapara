@@ -10,8 +10,16 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 
 /** One inset owner for conversation screens, also used by the offline keyboard fixture. */
@@ -22,9 +30,21 @@ internal fun ZAppScaffold(
     bottomBar: @Composable () -> Unit,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val view = LocalView.current
+    var platformKeyboardVisible by remember(view) { mutableStateOf(false) }
+    DisposableEffect(view) {
+        // adjustResize may consume the IME inset before it reaches Compose.
+        val listener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            platformKeyboardVisible = ViewCompat.getRootWindowInsets(view)
+                ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        }
+        view.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        listener.onGlobalLayout()
+        onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(listener) }
+    }
+    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0 || platformKeyboardVisible
     Scaffold(modifier = modifier, containerColor = Zapara.colors.canvas,
-        bottomBar = { if (!conversation || !keyboardVisible) bottomBar() }) { padding ->
+        bottomBar = { if (!keyboardVisible) bottomBar() }) { padding ->
         val frame = Modifier.padding(padding).consumeWindowInsets(padding)
         Box((if (conversation) frame.imePadding() else frame).fillMaxSize(), content = content)
     }

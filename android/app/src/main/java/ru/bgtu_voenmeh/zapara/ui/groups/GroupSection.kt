@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -89,6 +90,8 @@ import ru.bgtu_voenmeh.zapara.ui.chat.KeepLatestVisible
 import ru.bgtu_voenmeh.zapara.ui.chat.ChatAvatar
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import ru.bgtu_voenmeh.zapara.ui.chat.AvatarEditor
 import ru.bgtu_voenmeh.zapara.data.avatars.AvatarKind
 import ru.bgtu_voenmeh.zapara.data.avatars.AvatarTarget
@@ -124,7 +127,7 @@ fun GroupSection(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
         }
     }
     Column(Modifier.fillMaxSize()) {
-        if (!isConversation(state)) ZTopBar(stringResource(R.string.group_title))
+    if (!isChannelDetail(state)) ZTopBar(stringResource(R.string.group_title))
         when {
             state.accessRevoked -> EmptyState(R.drawable.ic_chat, uiText(R.string.space_day_55), actionText = stringResource(R.string.group_retry), onAction = { onEvent(GroupEvent.Refresh) })
             state.guest -> EmptyState(R.drawable.ic_chat, stringResource(R.string.group_need_account), tag = "Empty.GroupAccount")
@@ -180,9 +183,9 @@ fun GroupSection(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     }
 }
 
-private fun isConversation(state: GroupUiState): Boolean = state.hasHome &&
+private fun isChannelDetail(state: GroupUiState): Boolean = state.hasHome &&
     !state.showChannels && !state.showPeople && !state.guest && !state.accessRevoked &&
-    state.activeChannelKind in setOf("chat", "materials") &&
+    state.activeChannelKind in setOf("chat", "materials", "forms", "ballots", "homework", "schedule") &&
     state.channels.firstOrNull { it.topicId == state.activeTopicId }?.supported != false
 
 @Composable
@@ -237,7 +240,7 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     val uiText = rememberUiText()
     val c = Zapara.colors
     val channelState = rememberSaveableStateHolder()
-    val conversation = isConversation(state)
+    val conversation = isChannelDetail(state)
     var detailsOpen by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(false) }
     var searchOpen by rememberSaveable(state.activeConversationId, state.activeTopicId) { mutableStateOf(false) }
     var avatarOpen by rememberSaveable(state.communityId) { mutableStateOf(false) }
@@ -539,9 +542,14 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     val c = Zapara.colors
     val allBallotsTitle = stringResource(R.string.channel_all_ballots)
     val categories = state.space?.categories.orEmpty()
+    val largeText = LocalDensity.current.fontScale >= 1.5f
     val visible = browseChannels(state.preview ?: state.channels, query, kind, unreadOnly,
         categories.associate { it.categoryId to it.position }, categories.associate { it.categoryId to it.title })
     val filtered = query.isNotBlank() || kind != "all" || unreadOnly
+    val kindScroll = rememberScrollState()
+    LaunchedEffect(state.communityId, kind, unreadOnly) {
+        if (kind == "all" && !unreadOnly) kindScroll.scrollTo(0)
+    }
     var collapsed by rememberSaveable(state.communityId) { mutableStateOf(arrayListOf<String>()) }
     val showAllBallots = !unreadOnly && kind in setOf("all", "ballots") &&
         (query.isBlank() || allBallotsTitle.contains(query.trim(), ignoreCase = true))
@@ -570,8 +578,8 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                 modifier = Modifier.fillMaxWidth().testTag("Group.ChannelSearch"))
         }
         item {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
-                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(kindScroll).testTag("Group.ChannelKinds"),
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             listOf("all" to R.string.channel_filter_all, "chat" to R.string.channel_filter_chats,
                 "ballots" to R.string.channel_filter_ballots,
                 "materials" to R.string.ux60_chat_kind_materials,
@@ -586,6 +594,15 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
             }
         }
         if (filtered) item {
+            if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    Text(stringResource(R.string.channel_results, visible.size, state.channels.size),
+                        style = Zapara.typography.caption, color = c.text2, modifier = Modifier.fillMaxWidth())
+                    ZButton(stringResource(R.string.channel_reset_filters), {
+                        onQuery(""); onKind("all"); onUnreadOnly(false)
+                    }, ghost = true, tag = "Group.ChannelReset")
+                }
+            } else {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 Text(stringResource(R.string.channel_results, visible.size, state.channels.size),
@@ -593,6 +610,7 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                 if (filtered) ZButton(stringResource(R.string.channel_reset_filters), {
                     onQuery(""); onKind("all"); onUnreadOnly(false)
                 }, ghost = true, tag = "Group.ChannelReset")
+            }
             }
         }
         if (state.space != null) item {
@@ -666,7 +684,9 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
             Column {
                 Surface(onClick = { onEvent(GroupEvent.OpenChannel(channel.topicId)) }, color = c.canvas,
                     modifier = Modifier.fillMaxWidth().testTag("Group.Channel.${channel.topicId ?: "general"}")) {
-                    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(vertical = Zapara.space.s),
+                    Column {
+                    Row(Modifier.fillMaxWidth().heightIn(min = if (largeText) 64.dp else 48.dp)
+                        .padding(vertical = Zapara.space.s),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                         Surface(shape = RoundedCornerShape(Zapara.radii.control), color = c.chip,
@@ -681,23 +701,36 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                             Row(verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                                 Text(channel.title, style = Zapara.typography.bodyStrong, color = c.text1,
-                                    modifier = Modifier.weight(1f, fill = false))
+                                    modifier = Modifier.weight(1f, fill = false), maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis)
                                 if (channel.pinned) Icon(painterResource(R.drawable.ic_pin),
                                     stringResource(R.string.channel_pinned), tint = c.text2, modifier = Modifier.size(14.dp))
                                 if (accent != null) Surface(shape = CircleShape, color = accent,
                                     modifier = Modifier.size(6.dp)) {}
                             }
-                            Text(preview, style = Zapara.typography.caption, color = c.text2,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (channel.writePolicy == "managers") Text(stringResource(R.string.channel_writes_managers),
+                            if (largeText) Text(preview, style = Zapara.typography.caption, color = c.text2,
+                                maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            if (largeText && channel.writePolicy == "managers") Text(stringResource(R.string.channel_writes_managers),
                                 style = Zapara.typography.caption, color = c.text2)
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            channel.lastAt?.let { lastAt ->
-                                Text(DateTimeFormatter.ofPattern("dd.MM HH:mm").withZone(ZoneId.systemDefault()).format(lastAt),
-                                    style = Zapara.typography.caption, color = c.text2)
+                            if (largeText && (channel.lastAt != null || channel.unread > 0)) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                                    verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                                    channel.lastAt?.let { lastAt ->
+                                        Text(DateTimeFormatter.ofPattern("dd.MM HH:mm").withZone(ZoneId.systemDefault()).format(lastAt),
+                                            style = Zapara.typography.caption, color = c.text2)
+                                    }
+                                    UnreadBadge(channel.unread)
+                                }
                             }
-                            UnreadBadge(channel.unread)
+                        }
+                        if (!largeText && (channel.lastAt != null || channel.unread > 0)) {
+                            Column(horizontalAlignment = Alignment.End) {
+                                channel.lastAt?.let { lastAt ->
+                                    Text(DateTimeFormatter.ofPattern("dd.MM HH:mm").withZone(ZoneId.systemDefault()).format(lastAt),
+                                        style = Zapara.typography.caption, color = c.text2)
+                                }
+                                UnreadBadge(channel.unread)
+                            }
                         }
                         if (channel.topicId != null && state.preview == null && (GroupActions.canManageTopic(state,channel) || GroupActions.canAccess(state, channel) || GroupActions.canPin(state, channel))) {
                             var menuOpen by remember(channel.topicId) { mutableStateOf(false) }
@@ -721,6 +754,13 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                                 }
                             }
                         }
+                    }
+                    if (!largeText) {
+                        Text(preview, style = Zapara.typography.caption, color = c.text2,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (channel.writePolicy == "managers") Text(stringResource(R.string.channel_writes_managers),
+                            style = Zapara.typography.caption, color = c.text2)
+                    }
                     }
                 }
                 HorizontalDivider(color = c.line, thickness = Zapara.space.hairline)
@@ -919,6 +959,7 @@ private fun ChannelEditor(initial: GroupTopic?, state: GroupUiState,
 private fun BallotChannel(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifier: Modifier) {
     val uiText = rememberUiText()
     val c = Zapara.colors
+    val largeText = LocalDensity.current.fontScale >= 1.5f
     val board = state.board
     var query by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf("") }
     var status by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(BallotStatus.All.name) }
@@ -947,12 +988,21 @@ private fun BallotChannel(state: GroupUiState, onEvent: (GroupEvent) -> Unit, mo
             ZTextField(query, { query = it }, label = { Text(stringResource(R.string.group_ballot_search)) },
                 singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Group.BallotSearch"))
             Text(stringResource(R.string.group_ballot_scope), style = Zapara.typography.caption, color = c.text2)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                Text(stringResource(R.string.group_ballot_results, visible.size, board.ballots.size),
-                    style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f))
-                ZChip(stringResource(R.string.group_ballot_filters), selected = filtered,
-                    onClick = { filtersOpen = true }, tag = "Group.BallotFilters")
+            if (largeText) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                    Text(stringResource(R.string.group_ballot_results, visible.size, board.ballots.size),
+                        style = Zapara.typography.caption, color = c.text2, modifier = Modifier.fillMaxWidth())
+                    ZChip(stringResource(R.string.group_ballot_filters), selected = filtered,
+                        onClick = { filtersOpen = true }, tag = "Group.BallotFilters")
+                }
+            } else {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    Text(stringResource(R.string.group_ballot_results, visible.size, board.ballots.size),
+                        style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f))
+                    ZChip(stringResource(R.string.group_ballot_filters), selected = filtered,
+                        onClick = { filtersOpen = true }, tag = "Group.BallotFilters")
+                }
             }
             if (filtered) ZButton(stringResource(R.string.group_ballot_reset), {
                 query = ""; status = BallotStatus.All.name; sort = BallotSort.Original.name
@@ -1031,12 +1081,18 @@ private fun BallotChannel(state: GroupUiState, onEvent: (GroupEvent) -> Unit, mo
         AlertDialog(onDismissRequest = { pendingDiscardKey = null },
             title = { Text(stringResource(R.string.ux60_chat_ballot_discard_title)) },
             text = { Text(stringResource(R.string.ux60_chat_ballot_discard_body)) },
-            confirmButton = { ZButton(stringResource(R.string.ux60_chat_ballot_discard_confirm), {
-                if (!state.channelBusy && target == state.ballotDraftKey)
-                    onEvent(GroupEvent.BallotDraftEdit(target, clear = true))
-                pendingDiscardKey = null
-            }, enabled = !state.channelBusy) },
-            dismissButton = { ZButton(stringResource(R.string.channel_cancel), { pendingDiscardKey = null }, ghost = true) })
+            confirmButton = {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    ZButton(stringResource(R.string.ux60_chat_ballot_discard_confirm), {
+                        if (!state.channelBusy && target == state.ballotDraftKey)
+                            onEvent(GroupEvent.BallotDraftEdit(target, clear = true))
+                        pendingDiscardKey = null
+                    }, modifier = Modifier.fillMaxWidth(), enabled = !state.channelBusy,
+                        tag = "Group.BallotDiscardConfirm")
+                    ZButton(stringResource(R.string.channel_cancel), { pendingDiscardKey = null },
+                        modifier = Modifier.fillMaxWidth(), ghost = true, tag = "Group.BallotDiscardCancel")
+                }
+            })
     }
 }
 

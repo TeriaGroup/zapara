@@ -288,7 +288,10 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                     eyebrow = if (page.isToday) uiText(if (runCatching { java.time.LocalTime.parse(lesson.timeStart) <= state.now.toLocalTime() }.getOrDefault(false)) R.string.space_day_current_pair else R.string.space_day_next_pair) else uiText(R.string.space_day_19),
                     actions = {
                         FlowRow(Modifier.fillMaxWidth().padding(top = Zapara.space.xs), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                            ZButton(uiText(R.string.space_day_20), { onOpenMap(lesson.classroomRaw) }, enabled = lesson.classroomRaw.isNotBlank(), ghost = true, leadingIcon = R.drawable.ic_map)
+                            // The room chip already opens the map. Keep the primary actions in one row.
+                            if (lesson.remote || lesson.room.isBlank()) ZButton(uiText(R.string.space_day_20),
+                                { onOpenMap(lesson.classroomRaw) }, enabled = lesson.classroomRaw.isNotBlank(),
+                                ghost = true, leadingIcon = R.drawable.ic_map)
                             ZButton(uiText(R.string.space_day_21), { onEvent(ScheduleEvent.SubjectHomework(lesson)) }, ghost = true, leadingIcon = R.drawable.ic_homework)
                             ZButton(uiText(R.string.space_day_22), { onDiscuss("${lesson.name} · ${page.date} · ${lesson.timeStart}–${lesson.timeEnd} · ${lesson.room}") }, ghost = true, quiet = true, leadingIcon = R.drawable.ic_chat)
                         }

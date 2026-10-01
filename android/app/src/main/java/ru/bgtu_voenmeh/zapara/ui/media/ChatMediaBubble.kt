@@ -218,7 +218,10 @@ private fun Playback(kind: String, file: File, suppliedDuration: Int?) {
                     }
                 } }, update = { centerCrop(it, controller.videoWidth, controller.videoHeight) }, modifier = Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().clickable { controller.toggle() }.testTag("Chat.CirclePlayback"), contentAlignment = Alignment.Center) {
-                    if (!controller.playing) Text("▶", color = Zapara.colors.qrPaper, style = Zapara.typography.title)
+                    if (!controller.playing) Box(Modifier.size(48.dp).clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.68f)), contentAlignment = Alignment.Center) {
+                        Text("▶", color = Color.White, style = Zapara.typography.title)
+                    }
                 }
             }
             Text("${chatClock(controller.positionMs)} / ${chatClock(duration)}", color = contentColor.copy(alpha = 0.72f), style = Zapara.typography.caption)

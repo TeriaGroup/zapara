@@ -1,5 +1,10 @@
 package ru.bgtu_voenmeh.zapara.ui.theme
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.os.Build
+
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -9,8 +14,12 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.view.WindowCompat
 import ru.bgtu_voenmeh.zapara.ui.AndroidUiCopy
 import ru.bgtu_voenmeh.zapara.ui.LocalUiCopy
 
@@ -66,6 +75,18 @@ fun ZaparaTheme(
         outline = colors.lineStrong, outlineVariant = colors.line, scrim = colors.backdrop
     )
     val ctx = LocalContext.current
+    val view = LocalView.current
+    SideEffect {
+        ctx.activityOrNull()?.window?.let { window ->
+            window.statusBarColor = colors.canvas.toArgb()
+            window.navigationBarColor = colors.surface.toArgb()
+            if (Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !colors.isDark
+                isAppearanceLightNavigationBars = !colors.isDark
+            }
+        }
+    }
     val copy = remember(ctx) { AndroidUiCopy(ctx) }
     CompositionLocalProvider(LocalColors provides colors, LocalMotion provides effectiveMotion, LocalUiCopy provides copy) {
         MaterialTheme(colorScheme = scheme, typography = ZaparaTypography,
@@ -77,4 +98,10 @@ fun ZaparaTheme(
                 extraLarge = RoundedCornerShape(ZaparaRadius.dialog)
             ), content = content)
     }
+}
+
+private fun Context.activityOrNull(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> if (baseContext !== this) baseContext.activityOrNull() else null
+    else -> null
 }

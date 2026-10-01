@@ -23,6 +23,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.ProvideTextStyle
@@ -245,7 +246,14 @@ fun ZSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, tag: String, m
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun ZBottomSheet(onDismiss: () -> Unit, tag: String, scrollable: Boolean = false, canDismiss: () -> Boolean = { true }, content: @Composable ColumnScope.() -> Unit) {
+fun ZBottomSheet(
+    onDismiss: () -> Unit,
+    tag: String,
+    scrollable: Boolean = false,
+    canDismiss: () -> Boolean = { true },
+    footer: (@Composable ColumnScope.() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
     val c = Zapara.colors
     val sheetMotion = rememberSheetMotion(onDismiss, canDismiss)
     val entryOffset = with(LocalDensity.current) { 16.dp.toPx() }
@@ -276,6 +284,16 @@ fun ZBottomSheet(onDismiss: () -> Unit, tag: String, scrollable: Boolean = false
                 .systemBarsPadding()
                 .imePadding()
         ) {
+            val inlineFooter = scrollable && footer != null &&
+                maxHeight < maxOf(320.dp, 210.dp * LocalDensity.current.fontScale)
+            val footerContent: @Composable ColumnScope.() -> Unit = {
+                footer?.let { actions ->
+                    Spacer(Modifier.height(Zapara.space.m))
+                    HorizontalDivider(color = c.line, thickness = Zapara.space.hairline)
+                    Spacer(Modifier.height(Zapara.space.s))
+                    actions()
+                }
+            }
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -325,8 +343,12 @@ fun ZBottomSheet(onDismiss: () -> Unit, tag: String, scrollable: Boolean = false
                 }
                 Spacer(Modifier.height(Zapara.space.s))
                 if (scrollable) {
-                    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), content = content)
+                    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+                        content()
+                        if (inlineFooter) footerContent()
+                    }
                 } else content()
+                if (!inlineFooter) footerContent()
             }
         }
     }

@@ -41,6 +41,7 @@ import java.util.Locale
 fun DateStrip(selected: LocalDate, today: LocalDate, pages: Map<LocalDate, DayPage> = emptyMap(), visibleCount: Int = 5, onQuickDay: ((Int)->Unit)? = null, onPick: (LocalDate) -> Unit) {
     val uiText = rememberUiText()
     val context = LocalContext.current
+    val calendarTheme = if (Zapara.colors.isDark) R.style.Zapara_DatePicker_Dark else R.style.Zapara_DatePicker_Light
     var calendarOpen by remember { mutableStateOf(false) }
     val largeText = LocalDensity.current.fontScale >= 1.5f
     val labels = listOf(uiText(R.string.space_day_1), uiText(R.string.space_day_2), uiText(R.string.space_day_3))
@@ -54,7 +55,7 @@ fun DateStrip(selected: LocalDate, today: LocalDate, pages: Map<LocalDate, DayPa
             ZIconButton(R.drawable.ic_chevron_left, uiText(R.string.space_day_4), { onPick(selected.minusDays(1)) }, "Schedule.Previous")
             ZButton(selected.format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale("ru"))), {
                 calendarOpen = true
-                DatePickerDialog(context, { _, year, month, day -> onPick(LocalDate.of(year, month + 1, day)) },
+                DatePickerDialog(context, calendarTheme, { _, year, month, day -> onPick(LocalDate.of(year, month + 1, day)) },
                     selected.year, selected.monthValue - 1, selected.dayOfMonth).also { dialog -> dialog.setOnDismissListener { calendarOpen = false }; dialog.show() }
             }, modifier = Modifier.weight(1f), ghost = true, quiet = !calendarOpen, tag = "Schedule.Calendar", leadingIcon = R.drawable.ic_calendar)
             ZIconButton(R.drawable.ic_chevron_right, uiText(R.string.space_day_6), { onPick(selected.plusDays(1)) }, "Schedule.Next")

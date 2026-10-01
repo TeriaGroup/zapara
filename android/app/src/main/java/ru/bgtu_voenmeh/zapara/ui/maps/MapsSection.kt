@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.size
@@ -66,8 +67,8 @@ fun MapsSection(state: MapsUiState, onEvent: (MapsEvent) -> Unit,
         val controlsWidth = minOf(MapsLayout.SideChromeWidth.dp, maxWidth / 2)
         Column(Modifier.fillMaxSize()) {
             if (!compact) ZTopBar(stringResource(R.string.nav_maps)) {
-                if (onBackToLesson != null) ZButton(stringResource(R.string.ux30_maps_back_to_lesson),
-                    onBackToLesson, ghost = true, quiet = true, tag = "Maps.BackToLesson")
+                if (onBackToLesson != null) ZIconButton(R.drawable.ic_chevron_left,
+                    stringResource(R.string.ux30_maps_back_to_lesson), onBackToLesson, "Maps.BackToLesson")
                 if (state.alphaMaps) {
                     ZIconButton(R.drawable.ic_map_pin, stringResource(R.string.maps_to_next), { onEvent(MapsEvent.ToNext) }, "Maps.ToNext")
                 }
@@ -153,7 +154,7 @@ private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifie
                     LocalShellChrome.current.onGroupChip, ghost = true)
             }
         }
-        state.mapError?.let { error ->
+        state.mapError?.takeUnless { state.hasUnavailablePlan }?.let { error ->
             ZCard(Modifier.fillMaxWidth(), tag = "Maps.LoadError") {
                 Text(error, style = Zapara.typography.body, color = c.text1)
                 ZButton(stringResource(R.string.maps_retry), { onEvent(MapsEvent.RetryMaps) }, ghost = true)
@@ -161,6 +162,9 @@ private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifie
         }
     }
 }
+
+private val MapsUiState.hasUnavailablePlan: Boolean
+    get() = !remote && !(alphaMaps && showStack) && planFile == null && loaded && !routeLoading
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -202,11 +206,15 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
     BoxWithConstraints(modifier) {
         val stepHeight = maxHeight * MapsLayout.StepsFraction
         val narrowRoute = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f || maxWidth < 360.dp
-        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-        ZCard(Modifier.fillMaxWidth().weight(1f), padded = false) {
-        Column(Modifier.fillMaxSize()) {
+        // Let portrait route explanations use natural height; keep the fullscreen plan filling its pane.
+        val scrollPlan = !compact && (!state.fullscreen || androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f)
+        val planHeight = maxOf(MapsLayout.MinPlanHeight.dp, maxWidth * 0.75f)
+        Column(Modifier.fillMaxSize().then(if (scrollPlan) Modifier.verticalScroll(rememberScrollState()) else Modifier),
+            verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+        ZCard(Modifier.fillMaxWidth().then(if (scrollPlan) Modifier else Modifier.weight(1f)), padded = false) {
+        Column(if (scrollPlan) Modifier.fillMaxWidth() else Modifier.fillMaxSize()) {
         MapsPlanHeading(state)
-        Box(Modifier.fillMaxWidth().weight(1f).background(Zapara.colors.canvas)) {
+        Box(Modifier.fillMaxWidth().then(if (scrollPlan) Modifier.height(planHeight) else Modifier.weight(1f)).background(Zapara.colors.canvas)) {
             when {
                 state.remote -> EmptyState(
                     R.drawable.ic_map,
@@ -220,11 +228,15 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
                         onEvent(MapsEvent.PickFloor(floor))
                         onEvent(MapsEvent.ToggleStack)
                     }, onRetry = { onEvent(MapsEvent.RetryMaps) })
-                state.planFile == null && state.loaded && !state.routeLoading -> Column(
+                state.hasUnavailablePlan -> Column(
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Zapara.space.l).testTag("Maps.MapUnavailable"),
                     verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
                 ) {
                     Text(stringResource(R.string.maps_map_unavailable), style = Zapara.typography.bodyStrong, color = Zapara.colors.text1)
+                    state.mapError?.let { error ->
+                        Text(error, style = Zapara.typography.body, color = Zapara.colors.text1,
+                            modifier = Modifier.testTag("Maps.LoadError"))
+                    }
                     Text(stringResource(if (state.alphaMaps && state.presentation != null) R.string.maps_text_steps_available else R.string.maps_unavailable_hint), style = Zapara.typography.body, color = Zapara.colors.text2)
                     ZButton(stringResource(R.string.maps_retry), { onEvent(MapsEvent.RetryMaps) }, tag = "Maps.Retry")
                 }
@@ -249,13 +261,15 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
         }
         }
         }
+        if (scrollPlan && !state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = !state.fullscreen, zoom = state.zoom, enabled = state.planFile != null)
         if (!sideSteps && state.alphaMaps) {
             val minStep = if (state.presentation != null || !state.fullscreen) Zapara.space.minTouch else 0.dp
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(min = minStep, max = maxOf(stepHeight, minStep))
-                    .verticalScroll(rememberScrollState())
+                    .then(if (scrollPlan) Modifier else Modifier
+                        .heightIn(min = minStep, max = maxOf(stepHeight, minStep))
+                        .verticalScroll(rememberScrollState()))
             ) {
                 if (!state.fullscreen) MapsRouteCard(state, onEvent, compact = narrowRoute)
                 if (state.presentation != null || state.routeLoading || state.routeFailure != null || state.showStack || state.roomUnmarked) {
@@ -263,7 +277,7 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
                 }
             }
         }
-        if (!compact && !state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = !state.fullscreen, zoom = state.zoom, enabled = state.planFile != null)
+        if (!compact && !scrollPlan && !state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = !state.fullscreen, zoom = state.zoom, enabled = state.planFile != null)
         }
     }
 }
