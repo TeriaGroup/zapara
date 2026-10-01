@@ -10,6 +10,24 @@ import ru.bgtu_voenmeh.zapara.data.campus.Node
 import ru.bgtu_voenmeh.zapara.ui.XmlCopy
 
 class MapRouteStateTest {
+    @Test fun cleared_route_returns_to_manual_map_without_losing_local_raster() {
+        val file = File("cached-floor.jpg")
+        val old = MapsUiState(mode = MapMode.NextLesson, contextLine = "Следующая пара", planFile = file,
+            floor = 3, building = "ГК", routeFailure = "Ошибка", showStack = true, stepsOpen = true,
+            fromLabel = "Вход", toLabel = "Аудитория", automaticNote = "Следующая пара",
+            highlight = HighlightUi(CoordsRect(.1, .1, .1, .1), "101"))
+        val cleared = old.clearedRouteDisplay()
+        assertEquals(MapMode.Manual, cleared.mode)
+        assertEquals("", cleared.contextLine)
+        assertNull(cleared.automaticNote)
+        assertNull(cleared.highlight)
+        assertNull(cleared.routeFailure)
+        assertFalse(cleared.showStack)
+        assertFalse(cleared.stepsOpen)
+        assertEquals("", cleared.toLabel)
+        assertSame(file, cleared.planFile)
+        assertEquals(3, cleared.floor)
+    }
     @Test fun success_clears_prior_failure_and_display_projection_retains_route_identity() {
         val node = Node("a", "room", "ГК", 1, .1, .2, room = "101")
         val graph = CampusGraph(1, listOf("ГК"), listOf(node), emptyList())

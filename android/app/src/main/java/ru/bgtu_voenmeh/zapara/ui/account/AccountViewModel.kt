@@ -336,6 +336,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
             }
             captured.copy(
                 devices = if (append) mergeAccountDevices(captured.devices, fetched) else fetched,
+                devicesLoaded = true,
                 deviceCursor = page.nextCursor?.takeUnless { it == cursor },
                 status = statusText(false)
             )
@@ -745,6 +746,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
             profileNameBaseline = "",
             profileError = null,
             devices = emptyList(),
+            devicesLoaded = false,
             deviceCursor = null,
             confirmRevoke = null,
             identities = emptyList(),
@@ -817,7 +819,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                             accountName = session.user.accountName(), identities = identities,
                             displayName = session.user.displayName.orEmpty(),
                             profileNameBaseline = session.user.displayName.orEmpty(),
-                            hasPassword = hasPassword, devices = emptyList(),
+                            hasPassword = hasPassword, devices = emptyList(), devicesLoaded = false,
                             exportReady = false, exportPending = false, exportSaveName = null,
                             exportSaveToken = null,
                             status = runtime.strings(R.string.account_external_signed_in)

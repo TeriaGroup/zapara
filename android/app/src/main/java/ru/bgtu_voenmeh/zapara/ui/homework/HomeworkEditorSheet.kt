@@ -141,6 +141,9 @@ fun HomeworkEditorSheet(
         Spacer(Modifier.height(Zapara.space.m))
         Text(stringResource(R.string.polish_homework_attachments), style = Zapara.typography.bodyStrong, color = c.text1)
         Text(stringResource(R.string.homework_ux_files_count, state.files.size), style = Zapara.typography.caption, color = c.text2)
+        if (state.files.size >= 6) Text(stringResource(R.string.ux30_study_attachment_limit),
+            style = Zapara.typography.caption, color = c.warn,
+            modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite })
         Spacer(Modifier.height(Zapara.space.s))
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {

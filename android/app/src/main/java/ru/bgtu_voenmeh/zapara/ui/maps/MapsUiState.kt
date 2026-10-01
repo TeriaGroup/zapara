@@ -34,7 +34,8 @@ data class RoutePickerUi(
     val buildings: List<String> = listOf("ГК", "УЛК"),
     val floors: List<Int> = emptyList(),
     val epoch: Long = 0,
-    val error: String? = null
+    val error: String? = null,
+    val searchCampus: Boolean = true
 )
 
 data class MapsUiState(
@@ -90,11 +91,22 @@ internal fun RoutePickerUi.withBuilding(next: String?): RoutePickerUi {
 }
 
 internal fun RoutePickerUi.clearFilters(): RoutePickerUi = copy(
-    query = "", building = null, floor = null,
+    query = "", building = null, floor = null, searchCampus = true,
     floors = buildings.flatMap(MapsComposer::floors).distinct().sorted(), error = null)
 
 internal fun RoutePickerUi.accepts(pick: MapsEvent.PickPlace): Boolean =
     epoch == pick.epoch && field == pick.field && items.any { it.id == pick.id }
+
+/** Return to a local manual map after both route endpoints have been cleared. */
+internal fun MapsUiState.clearedRouteDisplay(): MapsUiState = copy(
+    mode = MapMode.Manual, contextLine = "", note = null, remoteNote = null, remote = false,
+    automaticNote = null, highlight = null, roomUnmarked = false,
+    route = null, presentation = null, path = emptyList(), stairMarkers = emptyList(),
+    routeSteps = emptyList(), activeStepId = null, routeLoading = false,
+    routeFailure = null, routeUnmarked = "", unmarked = true,
+    showStack = false, stepsOpen = false, picker = null, planPick = null,
+    fromLabel = "", toLabel = "", durationLabel = "", canSwap = false
+)
 
 fun MapsUiState.withoutRouting(): MapsUiState = copy(
     alphaMaps = false,
@@ -146,6 +158,8 @@ sealed interface MapsEvent {
     data class FilterPickerBuilding(val building: String?) : MapsEvent
     data class FilterPickerFloor(val floor: Int?) : MapsEvent
     data object ResetPickerFilters : MapsEvent
+    data class SearchCampus(val enabled: Boolean) : MapsEvent
+    data class ClearEndpoint(val field: RouteField) : MapsEvent
     data class PlanPress(val nx: Double, val ny: Double) : MapsEvent
     data class PlanPickAs(val field: RouteField) : MapsEvent
     data object ClosePlanPick : MapsEvent

@@ -207,10 +207,11 @@ object MapsComposer {
         places: List<RoutePlaceUi>,
         query: String,
         building: String?,
-        floor: Int?
+        floor: Int?,
+        searchCampus: Boolean = true
     ): List<RoutePlaceUi> {
-        if (query.trim().isNotEmpty()) return filterPlaces(places, query)
-        return places.filter { place ->
+        if (query.trim().isNotEmpty() && searchCampus) return filterPlaces(places, query)
+        return filterPlaces(places, query).filter { place ->
             when {
                 place.kind == "entrance" -> building == null || place.building == building
                 building != null && place.building != building -> false

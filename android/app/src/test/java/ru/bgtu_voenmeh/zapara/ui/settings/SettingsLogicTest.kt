@@ -10,6 +10,11 @@ import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
 import java.time.LocalDateTime
 
 class SettingsLogicTest {
+    @Test fun notification_navigation_waits_for_save_but_other_sections_remain_available() {
+        assertFalse(SettingsLogic.canLeaveSection("notifications", true))
+        assertTrue(SettingsLogic.canLeaveSection("notifications", false))
+        assertTrue(SettingsLogic.canLeaveSection("study", true))
+    }
     private val now = LocalDateTime.of(2026, 9, 8, 12, 0)
 
     @Test fun updated_line() {

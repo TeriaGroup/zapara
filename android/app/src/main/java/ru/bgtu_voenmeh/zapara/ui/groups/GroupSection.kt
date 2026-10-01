@@ -101,6 +101,7 @@ import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
+import ru.bgtu_voenmeh.zapara.ui.chat.chatMessagePreview
 import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.components.RevisionGuard
@@ -1394,8 +1395,14 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
         if (showSearchAction) ZButton(stringResource(R.string.group_message_search), onSearchOpen,
             ghost = true, tag = "Group.MessageFilters")
-        if (filtered) Text(stringResource(R.string.chat_filter_active),
-            style = Zapara.typography.caption, color = c.text2, modifier = Modifier.testTag("Group.SearchActive"))
+        if (filtered) FlowRow(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            Text(stringResource(R.string.ux30_chat_result_count, visible.size, state.messages.size),
+                style = Zapara.typography.caption, color = c.text2, modifier = Modifier.testTag("Group.SearchActive"))
+            ZButton(stringResource(R.string.group_message_reset), {
+                query = ""; author = MessageAuthor.All.name; senderId = ""; kind = MessageKind.All.name
+            }, ghost = true, tag = "Group.InlineMessageReset")
+        }
         if (quoteNotice != null) Text(stringResource(when {
             quoteNotice == QuoteTarget.Deleted -> R.string.next_quote_deleted
             state.hasMore -> R.string.next_quote_earlier
@@ -1447,7 +1454,7 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
                                     when (val found = quoteTarget(state.messages, id)) {
                                         QuoteTarget.Loaded -> {
                                             quoteNotice = null
-                                            query = ""; author = MessageAuthor.All.name; kind = MessageKind.All.name
+                                            query = ""; author = MessageAuthor.All.name; senderId = ""; kind = MessageKind.All.name
                                             pendingQuote = id
                                         }
                                         else -> quoteNotice = found
@@ -1465,7 +1472,7 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
         }
     }
     if (searchOpen) ZBottomSheet(onDismiss = onSearchDismiss, tag = "Group.MessageFilterSheet", scrollable = true) {
-        ZTextField(query, { query = it }, label = { Text(stringResource(R.string.group_message_search)) },
+        ZTextField(query, { query = it }, label = { Text(stringResource(R.string.ux30_chat_group_search)) },
             singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Group.MessageSearch"))
         Text(stringResource(R.string.group_message_scope), style = Zapara.typography.caption, color = c.text2)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -1691,7 +1698,12 @@ private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaL
     }
     if (deleting) AlertDialog(onDismissRequest = { deleting = false },
         title = { Text(stringResource(R.string.group_message_delete_title)) },
-        text = { Text(stringResource(R.string.group_message_delete_warning)) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            Text("${message.author} · ${message.time}", style = Zapara.typography.bodyStrong)
+            Text(chatMessagePreview(message.kind, message.body, fileName = message.body.takeIf { message.kind != "text" }, deleted = message.deleted),
+                maxLines = 4, overflow = TextOverflow.Ellipsis)
+            Text(stringResource(R.string.group_message_delete_warning))
+        } },
         confirmButton = { ZButton(stringResource(R.string.group_message_delete), {
             onEvent(GroupEvent.Hold(message.id, "delete")); deleting = false
         }, tag = "Group.DeleteConfirm.${message.id}") },
@@ -1734,15 +1746,21 @@ private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
                 ZButton(uiText(R.string.space_day_49), { onEvent(GroupEvent.Context(null)) }, ghost = true, quiet = true)
             } }
             if (state.editing != null || state.replyTo != null) {
-                val preview = state.messages.firstOrNull { it.id == state.replyTo }?.body?.take(60)
+                val target = state.messages.firstOrNull { it.id == (state.editing ?: state.replyTo) }
                 Surface(shape = RoundedCornerShape(Zapara.radii.control), color = c.chip,
                     border = BorderStroke(Zapara.space.hairline, c.lineStrong),
                     modifier = Modifier.fillMaxWidth().testTag("Group.ComposeContext")) {
                     Row(Modifier.padding(Zapara.space.s), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                        Text(if (state.editing != null) stringResource(R.string.group_edit_context)
-                            else stringResource(R.string.group_reply_context, preview ?: stringResource(R.string.group_message)),
-                            style = Zapara.typography.caption, color = c.text1, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Column(Modifier.weight(1f)) {
+                            Text(if (state.editing != null) stringResource(R.string.group_edit_context)
+                                else stringResource(R.string.ux30_chat_reply_author, target?.author ?: stringResource(R.string.group_message)),
+                                style = Zapara.typography.caption, color = c.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(target?.let { message -> chatMessagePreview(message.kind, message.body,
+                                fileName = message.body.takeIf { message.kind != "text" }, deleted = message.deleted) }
+                                ?: stringResource(R.string.group_message), color = c.text1,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
                         ZButton(stringResource(R.string.channel_cancel), { onEvent(GroupEvent.CancelContext) }, ghost = true,
                             tag = "Group.CancelContext")
                     }

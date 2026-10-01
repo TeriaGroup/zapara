@@ -247,6 +247,16 @@ class MapsComposerTest {
             MapsComposer.pickerItems(places, "", null, null).map { it.id }
         )
     }
+    @Test fun picker_search_scope_is_explicit_and_filters_rooms_without_hiding_building_entrances() {
+        val places = listOf(
+            RoutePlaceUi("gk.enter", "Вход ГК", "ГК, 1", "entrance", "ГК", 1, "вход гк"),
+            RoutePlaceUi("ulk.enter", "Вход УЛК", "УЛК, 1", "entrance", "УЛК", 1, "вход улк"),
+            RoutePlaceUi("gk.101", "Аудитория 101", "ГК, 1", "room", "ГК", 1, "аудитория 101"),
+            RoutePlaceUi("gk.201", "Аудитория 201", "ГК, 2", "room", "ГК", 2, "аудитория 201"))
+        assertEquals(listOf("gk.101", "gk.201"), MapsComposer.pickerItems(places, "аудитория", "ГК", 1).map { it.id })
+        assertEquals(listOf("gk.101"), MapsComposer.pickerItems(places, "аудитория", "ГК", 1, false).map { it.id })
+        assertEquals(listOf("gk.enter"), MapsComposer.pickerItems(places, "вход", "ГК", 2, false).map { it.id })
+    }
 
     @Test fun duration_label_rounds_to_minutes() {
         assertEquals("меньше минуты", MapsComposer.durationLabel(45.0, XmlCopy))

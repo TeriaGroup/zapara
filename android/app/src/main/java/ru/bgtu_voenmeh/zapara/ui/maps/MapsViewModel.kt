@@ -102,6 +102,8 @@ class MapsViewModel internal constructor(
             is MapsEvent.FilterPickerBuilding -> refreshPicker { it.withBuilding(event.building) }
             is MapsEvent.FilterPickerFloor -> refreshPicker { it.copy(floor = event.floor) }
             MapsEvent.ResetPickerFilters -> refreshPicker { it.clearFilters() }
+            is MapsEvent.SearchCampus -> refreshPicker { it.copy(searchCampus = event.enabled) }
+            is MapsEvent.ClearEndpoint -> if (routingOn()) launchMap { clearEndpoint(event.field) }
             is MapsEvent.PlanPress -> onPlanPress(event.nx, event.ny)
             is MapsEvent.PlanPickAs -> if (routingOn()) launchMap { pickPlanAs(event.field) }
             MapsEvent.ClosePlanPick -> mutable.update { it.copy(planPick = null) }
@@ -351,7 +353,7 @@ class MapsViewModel internal constructor(
         mutable.update {
             it.copy(
                 picker = next.copy(error = null,
-                    items = MapsComposer.pickerItems(allPlaces, next.query, next.building, next.floor)
+                    items = MapsComposer.pickerItems(allPlaces, next.query, next.building, next.floor, next.searchCampus)
                 )
             )
         }
@@ -429,6 +431,25 @@ class MapsViewModel internal constructor(
         destRoomKey = oldPrev
         val focus = node(fromId) ?: node(toId) ?: return
         revealNode(focus)
+    }
+
+    private suspend fun clearEndpoint(field: RouteField) {
+        if (field == RouteField.From) {
+            fromId = null
+            lastEntranceId = null
+            prevRoomKey = null
+        } else {
+            toId = null
+            destRoomKey = null
+        }
+        mutable.update { it.copy(picker = null, planPick = null) }
+        val focus = node(toId) ?: node(fromId)
+        if (focus != null) revealNode(focus) else {
+            routeResult = null
+            mutable.update { it.clearedRouteDisplay() }
+            applyManual(mutable.value.building, mutable.value.floor)
+            mutable.update { it.clearedRouteDisplay() }
+        }
     }
 
     private fun node(id: String?) = id?.let { key -> graph.nodes.firstOrNull { it.id == key } }

@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
@@ -25,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -59,6 +63,7 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
         return
     }
     val c = Zapara.colors
+    val keyboard = LocalSoftwareKeyboardController.current
     val onlyMineLabel = stringResource(R.string.teachers_only_mine)
     Column(Modifier.fillMaxSize()) {
         ZTopBar(stringResource(R.string.nav_teachers))
@@ -69,6 +74,8 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
             modifier = Modifier.fillMaxWidth().testTag("Teachers.Search"),
             placeholder = { Text(stringResource(R.string.teachers_search_hint), style = Zapara.typography.caption, color = c.text3) },
             singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
             leadingIcon = { Icon(painterResource(R.drawable.ic_search), null, Modifier.size(24.dp), tint = c.text2) }
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -210,6 +217,8 @@ fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
         } else if (state.details.isEmpty() && state.loadError == null) item(key = "empty") {
             ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l), tag = "Teacher.EmptyWeek") {
                 Text(stringResource(R.string.ux30_teacher_no_week), style = Zapara.typography.body, color = c.text2)
+                if (state.parityFilter != 0) ZButton(stringResource(R.string.ux30_study_teacher_all_weeks),
+                    { onEvent(TeachersEvent.Parity(0)) }, ghost = true, tag = "Teacher.ShowAllWeeks")
             }
         }
             itemsIndexed(state.details, key = { _, it -> it.dow }) { index, day ->

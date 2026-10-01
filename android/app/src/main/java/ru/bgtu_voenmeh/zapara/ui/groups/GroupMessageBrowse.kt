@@ -3,6 +3,7 @@ package ru.bgtu_voenmeh.zapara.ui.groups
 import java.time.Duration
 import ru.bgtu_voenmeh.zapara.data.communities.GroupTopic
 import ru.bgtu_voenmeh.zapara.ui.chat.normalizeChatSearch
+import ru.bgtu_voenmeh.zapara.ui.chat.chatSearchWords
 
 internal enum class MessageAuthor { All, Mine, Others }
 internal enum class MessageKind { All, Text, PhotoVideo, Documents, VoiceCircle }
@@ -25,11 +26,11 @@ internal fun browseMessages(
     kind: MessageKind = MessageKind.All,
     senderId: String? = null
 ): List<GroupMessageUi> {
-    val needle = normalizeChatSearch(query)
-    val filtered = needle.isNotEmpty() || author != MessageAuthor.All || kind != MessageKind.All || senderId != null
+    val words = chatSearchWords(query)
+    val filtered = words.isNotEmpty() || author != MessageAuthor.All || kind != MessageKind.All || senderId != null
     return rows.filter { message ->
         if (message.deleted) return@filter !filtered
-        (needle.isEmpty() || normalizeChatSearch(message.body).contains(needle)) &&
+        words.all(normalizeChatSearch("${message.author} ${message.body}")::contains) &&
             (author == MessageAuthor.All || message.mine == (author == MessageAuthor.Mine)) &&
             (senderId == null || message.senderId == senderId) &&
             when (kind) {

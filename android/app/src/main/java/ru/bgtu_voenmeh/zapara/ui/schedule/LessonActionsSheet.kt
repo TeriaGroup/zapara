@@ -16,6 +16,8 @@ import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Composable
 fun LessonActionsSheet(
@@ -34,7 +36,13 @@ fun LessonActionsSheet(
             verticalArrangement = Arrangement.spacedBy(Zapara.space.m)
         ) {
             Text(lesson.name, style = Zapara.typography.section, color = Zapara.colors.text1)
-            Text("${date ?: ""} · ${lesson.timeStart}–${lesson.timeEnd} · ${lesson.type} · ${lesson.room}", style = Zapara.typography.caption, color = Zapara.colors.text2)
+            val details = listOfNotNull(
+                date?.format(DateTimeFormatter.ofPattern(stringResource(R.string.ux30_study_lessons_date), Locale("ru"))),
+                "${lesson.timeStart}–${lesson.timeEnd}",
+                lesson.type.takeIf { it.isNotBlank() },
+                lesson.room.takeIf { it.isNotBlank() && !lesson.remote }
+            )
+            Text(details.joinToString(" · "), style = Zapara.typography.caption, color = Zapara.colors.text2)
             ActionRow(R.drawable.ic_pencil, stringResource(R.string.action_rename), "Actions.Rename", onRename)
             ActionRow(R.drawable.ic_plus, stringResource(R.string.action_homework), "Actions.Homework", onHomework)
             ActionRow(R.drawable.ic_chat, uiText(R.string.space_day_28), "Actions.Discuss", onDiscuss)

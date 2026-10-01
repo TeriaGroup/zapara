@@ -366,6 +366,7 @@ private fun RouteEnd(title: String, value: String, hint: String, onClick: () -> 
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MapsRouteCard(state: MapsUiState, onEvent: (MapsEvent) -> Unit, compact: Boolean) {
     ZCard(Modifier.fillMaxWidth(), tag = "Maps.Route") {
@@ -386,6 +387,12 @@ private fun MapsRouteCard(state: MapsUiState, onEvent: (MapsEvent) -> Unit, comp
                         }
                     }
                     if (expanded) RouteMeta(state, onEvent)
+                }
+                if (expanded) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    if (state.fromLabel.isNotBlank()) ZButton(stringResource(R.string.ux30_platform_clear_start),
+                        { onEvent(MapsEvent.ClearEndpoint(RouteField.From)) }, ghost = true, tag = "Maps.ClearFrom")
+                    if (state.toLabel.isNotBlank()) ZButton(stringResource(R.string.ux30_platform_clear_destination),
+                        { onEvent(MapsEvent.ClearEndpoint(RouteField.To)) }, ghost = true, tag = "Maps.ClearTo")
                 }
             }
         }

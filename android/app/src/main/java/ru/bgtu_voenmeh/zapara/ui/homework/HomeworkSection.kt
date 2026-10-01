@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -24,6 +26,8 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
@@ -48,6 +52,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.appear
 fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
     val chrome = LocalShellChrome.current
     val c = Zapara.colors
+    val keyboard = LocalSoftwareKeyboardController.current
     val browse = HomeworkBrowse.filter(state.groups, state.browseQuery, state.browseFilter)
     val visibleShared = HomeworkBrowse.shared(state.sharedRows, state.browseQuery, state.browseFilter)
     Column(Modifier.fillMaxSize()) {
@@ -86,7 +91,13 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                     Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                         ZTextField(state.browseQuery, { onEvent(HomeworkEvent.BrowseQuery(it)) },
                             modifier = Modifier.fillMaxWidth().testTag("Homework.Search"),
-                            placeholder = { Text(stringResource(R.string.homework_browse_search)) }, singleLine = true)
+                            placeholder = { Text(stringResource(R.string.homework_browse_search)) }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+                            trailingIcon = if (state.browseQuery.isNotEmpty()) {{
+                                ZIconButton(R.drawable.ic_x, stringResource(R.string.ux30_study_clear_homework_search),
+                                    { onEvent(HomeworkEvent.BrowseQuery("")) }, "Homework.ClearSearch")
+                            }} else null)
                         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                             verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                             HomeworkCompletionFilter.entries.forEach { filter ->
@@ -102,12 +113,16 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                     }
                 }
                 item("summary") {
+                    Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                         verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                         ZChip(stringResource(R.string.other_homework_open,
                             browse.totalActive + state.sharedRows.count { !it.completed }), tag = "Homework.OpenCount")
                         ZChip(stringResource(R.string.other_homework_done,
                             browse.totalDone + state.sharedRows.count { it.completed }), tag = "Homework.DoneCount")
+                    }
+                    Text(stringResource(R.string.ux30_study_browse_count, browse.visibleCount + visibleShared.size),
+                        style = Zapara.typography.caption, color = c.text2)
                     }
                 }
                 if (browse.visibleCount + visibleShared.size == 0 && state.loadError == null && !state.sharedLoading && state.sharedError == null) {

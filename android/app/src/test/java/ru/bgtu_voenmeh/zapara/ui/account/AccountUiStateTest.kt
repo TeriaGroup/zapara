@@ -33,6 +33,21 @@ import java.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountUiStateTest {
+    @Test fun changing_password_requires_both_valid_distinct_values() {
+        val account = AccountUiState(ready = true, configured = true, guest = false, hasPassword = true)
+        assertFalse(account.canChangePassword)
+        assertFalse(account.copy(currentPassword = "long-password-12", newPassword = "short").canChangePassword)
+        assertFalse(account.copy(currentPassword = "long-password-12", newPassword = "long-password-12").canChangePassword)
+        assertTrue(account.copy(currentPassword = "long-password-12", newPassword = "different-password-12").canChangePassword)
+        assertFalse(account.copy(currentPassword = "long-password-12", newPassword = "different-password-12", busy = true).canChangePassword)
+    }
+    @Test fun protected_actions_wait_for_password_proof_but_external_identity_can_start_its_own_proof() {
+        val passwordAccount = AccountUiState(ready = true, configured = true, guest = false, hasPassword = true)
+        assertFalse(passwordAccount.canPerformProtectedAction)
+        assertFalse(passwordAccount.copy(proof = "short").canPerformProtectedAction)
+        assertTrue(passwordAccount.copy(proof = "password-proof").canPerformProtectedAction)
+        assertTrue(passwordAccount.copy(hasPassword = false).canPerformProtectedAction)
+    }
     @Test fun login_and_registration_readiness_uses_the_existing_account_contract() {
         val empty = AccountUiState(ready = true, configured = true, guest = true)
         assertFalse(empty.canSubmitCredentials)

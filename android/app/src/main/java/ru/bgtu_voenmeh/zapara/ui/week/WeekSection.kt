@@ -127,6 +127,15 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
             LazyColumn(Modifier.fillMaxSize()
                 .plannerSwipe(state.parity) { direction -> direction.weekIndex(state.parity)?.let { onEvent(WeekEvent.Parity(it)) } }
                 .plannerContentReveal(state.parity), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                if (state.days.isNotEmpty() && state.days.all { it.rows.isEmpty() }) item("empty-week") {
+                    ZCard(Modifier.fillMaxWidth(), tag = "Week.EmptyWeek") {
+                        Text(stringResource(R.string.ux30_study_empty_week),
+                            style = Zapara.typography.body, color = c.text2)
+                        ZButton(stringResource(R.string.ux30_study_other_week),
+                            { onEvent(WeekEvent.Parity(1 - selectedParity)) }, ghost = true,
+                            tag = "Week.OtherParity")
+                    }
+                }
                 itemsIndexed(state.days, key = { _, it -> it.dow }) { index, day ->
                     ZCard(onClick = { onOpenDay(day.date) }, tag = "Week.Day.${day.dow}", modifier = Modifier.fillMaxWidth().appear(index)) {
                         if (largeText) {
@@ -152,6 +161,8 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
                         }
                         if (day.rows.isEmpty()) {
                             Text(stringResource(R.string.week_no_lessons), style = Zapara.typography.caption, color = c.text2)
+                            ZButton(stringResource(R.string.ux30_study_week_empty_day),
+                                { onOpenDay(day.date) }, ghost = true, tag = "Week.OpenEmptyDay.${day.dow}")
                         } else {
                             day.rows.forEachIndexed { rowIndex, row ->
                                 val spacing = Zapara.space.s

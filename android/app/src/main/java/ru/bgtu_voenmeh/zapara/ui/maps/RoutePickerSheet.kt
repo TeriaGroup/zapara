@@ -56,7 +56,16 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
             )
         )
         Spacer(Modifier.height(Zapara.space.s))
-        FlowRow(
+        if (state.query.isNotBlank()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZChip(stringResource(R.string.ux30_platform_search_everywhere), selected = state.searchCampus,
+                    onClick = { onEvent(MapsEvent.SearchCampus(true)) }, tag = "Picker.SearchCampus")
+                ZChip(stringResource(R.string.ux30_platform_search_selected), selected = !state.searchCampus,
+                    onClick = { onEvent(MapsEvent.SearchCampus(false)) }, tag = "Picker.SearchSelected")
+            }
+            Spacer(Modifier.height(Zapara.space.s))
+        }
+        if (state.query.isBlank() || !state.searchCampus) FlowRow(
             horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
         ) {
@@ -84,6 +93,12 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
             }
         }
         Spacer(Modifier.height(Zapara.space.s))
+        Text(stringResource(R.string.ux30_platform_places_count, state.items.size),
+            style = Zapara.typography.caption, color = c.text2,
+            modifier = Modifier.testTag("Picker.ResultCount"))
+        if (state.items.isNotEmpty() && (state.query.isNotBlank() || state.building != null || state.floor != null))
+            ZButton(stringResource(R.string.ux60_picker_reset_filters),
+                { onEvent(MapsEvent.ResetPickerFilters) }, ghost = true, tag = "Picker.ResetFilters")
         state.error?.let { Text(it, style = Zapara.typography.caption, color = c.bad) }
         val entrances = state.items.filter { it.kind == "entrance" }
         val rooms = state.items.filter { it.kind == "room" }

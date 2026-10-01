@@ -38,6 +38,7 @@ import ru.bgtu_voenmeh.zapara.ui.media.ChatMediaBubble
 import ru.bgtu_voenmeh.zapara.ui.media.ChatMediaCaptureHost
 import ru.bgtu_voenmeh.zapara.ui.chat.KeepLatestVisible
 import ru.bgtu_voenmeh.zapara.ui.chat.ChatAvatar
+import ru.bgtu_voenmeh.zapara.ui.chat.chatMessagePreview
 import ru.bgtu_voenmeh.zapara.ui.chat.chatDayLabel
 import ru.bgtu_voenmeh.zapara.ui.chat.chatListTime
 import ru.bgtu_voenmeh.zapara.ui.chat.samePersonalCluster
@@ -48,6 +49,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.ZTextField
+import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.theme.*
 import java.time.ZoneId
@@ -60,6 +62,8 @@ fun InboxSection(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
     var inboxQuery by rememberSaveable(state.userId) { mutableStateOf("") }
     var inboxSource by rememberSaveable(state.userId) { mutableStateOf(InboxSourceFilter.All.name) }
     var unreadOnly by rememberSaveable(state.userId) { mutableStateOf(false) }
+    var draftsOnly by rememberSaveable(state.userId) { mutableStateOf(false) }
+    var unreadFirst by rememberSaveable(state.userId) { mutableStateOf(false) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val currentEvent by rememberUpdatedState(onEvent)
     LaunchedEffect(lifecycle, state.guest) {
@@ -96,7 +100,8 @@ fun InboxSection(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
             state.error?.let { Text(it, Modifier.padding(horizontal = Zapara.space.l, vertical = 8.dp).testTag("Inbox.Error"), color = Zapara.colors.bad, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             if (state.active == null) InboxList(state, onEvent, onOpenGroup,
                 inboxQuery, { inboxQuery = it }, inboxSource, { inboxSource = it },
-                unreadOnly, { unreadOnly = it }, Modifier.weight(1f))
+                unreadOnly, { unreadOnly = it }, draftsOnly, { draftsOnly = it },
+                unreadFirst, { unreadFirst = it }, Modifier.weight(1f))
             else PersonalChat(state, onEvent, Modifier.weight(1f))
         }
     }
@@ -111,15 +116,17 @@ private fun ChatHeaderAction(icon: Int, description: String, enabled: Boolean, t
 private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
     onOpenGroup: (communityId: String, conversationId: String) -> Unit,
     query: String, onQuery: (String) -> Unit, source: String, onSource: (String) -> Unit,
-    unreadOnly: Boolean, onUnreadOnly: (Boolean) -> Unit, modifier: Modifier) {
+    unreadOnly: Boolean, onUnreadOnly: (Boolean) -> Unit,
+    draftsOnly: Boolean, onDraftsOnly: (Boolean) -> Unit,
+    unreadFirst: Boolean, onUnreadFirst: (Boolean) -> Unit, modifier: Modifier) {
     var adding by remember { mutableStateOf(false) }
     val largeText = LocalDensity.current.fontScale >= 1.5f
     val sourceFilter = InboxSourceFilter.entries.firstOrNull { it.name == source } ?: InboxSourceFilter.All
-    val visible = browseInbox(state.rows, query, sourceFilter, unreadOnly)
-    val filtered = query.isNotBlank() || sourceFilter != InboxSourceFilter.All || unreadOnly
+    val visible = browseInbox(state.rows, query, sourceFilter, unreadOnly, state.draftPreviews.keys, draftsOnly, unreadFirst)
+    val filtered = query.isNotBlank() || sourceFilter != InboxSourceFilter.All || unreadOnly || draftsOnly
     LazyColumn(modifier, contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         item {
-            ZTextField(query, onQuery, label = { Text(stringResource(R.string.inbox_search)) },
+            ZTextField(query, onQuery, label = { Text(stringResource(R.string.ux30_chat_inbox_search)) },
                 singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Inbox.Search"))
         }
         item {
@@ -135,6 +142,10 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
                 }
                 ZChip(stringResource(R.string.ux30_inbox_unread_only), selected = unreadOnly,
                     onClick = { onUnreadOnly(!unreadOnly) }, tag = "Inbox.UnreadOnly")
+                ZChip(stringResource(R.string.ux30_chat_drafts_only), selected = draftsOnly,
+                    onClick = { onDraftsOnly(!draftsOnly) }, tag = "Inbox.DraftsOnly")
+                ZChip(stringResource(R.string.ux30_chat_unread_first), selected = unreadFirst,
+                    onClick = { onUnreadFirst(!unreadFirst) }, tag = "Inbox.UnreadFirst")
             }
         }
         item {
@@ -145,7 +156,7 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
             Text(stringResource(R.string.ux30_inbox_unread_chats, unreadInboxConversations(state.rows)),
                 color = Zapara.colors.text2, style = Zapara.typography.caption)
             if (filtered) ZButton(stringResource(R.string.inbox_search_reset), {
-                onQuery(""); onSource(InboxSourceFilter.All.name); onUnreadOnly(false)
+                onQuery(""); onSource(InboxSourceFilter.All.name); onUnreadOnly(false); onDraftsOnly(false)
             }, ghost = true, tag = "Inbox.Reset")
         }
         item {
@@ -183,7 +194,7 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
             ZCard(modifier = Modifier.fillMaxWidth(), tag = "Empty.InboxSearch") {
                 Text(stringResource(R.string.inbox_no_results), color = Zapara.colors.text2)
                 ZButton(stringResource(R.string.inbox_search_reset), {
-                    onQuery(""); onSource(InboxSourceFilter.All.name); onUnreadOnly(false)
+                    onQuery(""); onSource(InboxSourceFilter.All.name); onUnreadOnly(false); onDraftsOnly(false)
                 }, ghost = true)
             }
         }
@@ -245,7 +256,14 @@ private fun InboxRow.avatarTarget(): AvatarTarget? = when {
 private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, modifier: Modifier) {
     val activeId = state.active?.id ?: return
     var historyQuery by rememberSaveable(activeId) { mutableStateOf("") }
-    val visibleMessages = browseLoadedPersonalHistory(state.messages, historyQuery)
+    var historyKind by rememberSaveable(state.userId, state.profileDatabaseName, activeId) { mutableStateOf(PersonalHistoryKind.All.name) }
+    var historyAuthor by rememberSaveable(state.userId, state.profileDatabaseName, activeId) { mutableStateOf(PersonalHistoryAuthor.All.name) }
+    var historyFiltersOpen by rememberSaveable(state.userId, state.profileDatabaseName, activeId) { mutableStateOf(false) }
+    val kindFilter = PersonalHistoryKind.entries.firstOrNull { it.name == historyKind } ?: PersonalHistoryKind.All
+    val authorFilter = PersonalHistoryAuthor.entries.firstOrNull { it.name == historyAuthor } ?: PersonalHistoryAuthor.All
+    val historyFiltered = historyQuery.isNotBlank() || kindFilter != PersonalHistoryKind.All || authorFilter != PersonalHistoryAuthor.All
+    fun clearHistoryFilters() { historyQuery = ""; historyKind = PersonalHistoryKind.All.name; historyAuthor = PersonalHistoryAuthor.All.name }
+    val visibleMessages = browseLoadedPersonalHistory(state.messages, historyQuery, kindFilter, authorFilter, state.userId)
     var saving by remember { mutableStateOf<SocialMessage?>(null) }
     var pickingFor by remember { mutableStateOf<String?>(null) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -262,7 +280,8 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
     var pendingQuote by remember(activeId) { mutableStateOf<String?>(null) }
     var highlightedQuote by remember(activeId) { mutableStateOf<String?>(null) }
     var quoteNotice by remember(activeId) { mutableStateOf<PersonalQuoteTarget?>(null) }
-    KeepLatestVisible(list, activeId, enabled = historyQuery.isBlank() && pendingQuote == null && highlightedQuote == null)
+    KeepLatestVisible(list, activeId, enabled = !historyFiltered && pendingQuote == null && highlightedQuote == null)
+    LaunchedEffect(historyQuery, historyKind, historyAuthor) { if (historyFiltered) list.scrollToItem(0) }
     var lastId by remember(state.active?.id) { mutableStateOf<String?>(null) }
     discardPending?.let { pending ->
         AlertDialog(
@@ -278,8 +297,8 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
             } }
         )
     }
-    LaunchedEffect(state.messages.lastOrNull()?.id, historyQuery) {
-        if (historyQuery.isNotBlank() || pendingQuote != null || highlightedQuote != null) return@LaunchedEffect
+    LaunchedEffect(state.messages.lastOrNull()?.id, historyQuery, historyKind, historyAuthor) {
+        if (historyFiltered || pendingQuote != null || highlightedQuote != null) return@LaunchedEffect
         val next = state.messages.lastOrNull()?.id
         val total = list.layoutInfo.totalItemsCount
         val lastVisible = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
@@ -308,7 +327,16 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
             if (historyQuery.isNotBlank()) ZButton(stringResource(R.string.next_teachers_clear),
                 { historyQuery = "" }, ghost = true, tag = "Inbox.HistoryClear")
         }
-        if (historyQuery.isNotBlank()) Text(stringResource(R.string.ux30_inbox_history_scope),
+        FlowRow(Modifier.padding(horizontal = Zapara.space.l), horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            ZChip(stringResource(R.string.ux30_chat_history_filters), selected = historyFiltersOpen,
+                onClick = { historyFiltersOpen = !historyFiltersOpen }, tag = "Inbox.HistoryFilters")
+            if (historyFiltered) ZButton(stringResource(R.string.group_message_reset), ::clearHistoryFilters,
+                ghost = true, tag = "Inbox.HistoryReset")
+        }
+        if (historyFiltered) Text(stringResource(R.string.ux30_chat_result_count, visibleMessages.size, state.messages.size),
+            modifier = Modifier.padding(horizontal = Zapara.space.l), color = Zapara.colors.text2,
+            style = Zapara.typography.caption)
+        if (historyFiltered) Text(stringResource(R.string.ux30_inbox_history_scope),
             modifier = Modifier.padding(horizontal = Zapara.space.l), color = Zapara.colors.text2,
             style = Zapara.typography.caption)
         if (quoteNotice != null) Text(stringResource(when {
@@ -318,10 +346,10 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
         }), modifier = Modifier.padding(horizontal = Zapara.space.l), color = Zapara.colors.warn,
             style = Zapara.typography.caption)
         val scope = rememberCoroutineScope()
-        val showJump by remember(list, state.messages.size, historyQuery) { derivedStateOf {
+        val showJump by remember(list, state.messages.size, historyFiltered) { derivedStateOf {
             val totalItems = list.layoutInfo.totalItemsCount
             val lastVisible = list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            historyQuery.isBlank() && state.messages.size > 4 && totalItems > 0 && lastVisible < totalItems - 2
+            !historyFiltered && state.messages.size > 4 && totalItems > 0 && lastVisible < totalItems - 2
         } }
         Box(Modifier.weight(1f).fillMaxWidth()) {
         LazyColumn(Modifier.fillMaxSize().testTag("Inbox.Messages"), state = list, contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -329,11 +357,11 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
             if (state.messages.isEmpty() && state.loading) item {
                 Text(stringResource(R.string.inbox_loading), color = Zapara.colors.text2)
             }
-            if (historyQuery.isBlank() && state.messages.isEmpty() && state.historyLoaded && state.error == null && !state.loading) item { Text(stringResource(R.string.face_write_first), color = Zapara.colors.text2) }
-            if (historyQuery.isNotBlank() && visibleMessages.isEmpty() && state.historyLoaded && !state.loading) item {
+            if (!historyFiltered && state.messages.isEmpty() && state.historyLoaded && state.error == null && !state.loading) item { Text(stringResource(R.string.face_write_first), color = Zapara.colors.text2) }
+            if (historyFiltered && visibleMessages.isEmpty() && state.historyLoaded && !state.loading) item {
                 ZCard(Modifier.fillMaxWidth(), tag = "Inbox.HistoryEmpty") {
                     Text(stringResource(R.string.ux30_inbox_history_empty), color = Zapara.colors.text2)
-                    ZButton(stringResource(R.string.next_teachers_clear), { historyQuery = "" }, ghost = true)
+                    ZButton(stringResource(R.string.group_message_reset), ::clearHistoryFilters, ghost = true)
                 }
             }
             itemsIndexed(visibleMessages, key = { _, message -> message.id }) { index, message ->
@@ -367,7 +395,7 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                                     when (val found = personalQuoteTarget(state.messages, target)) {
                                         PersonalQuoteTarget.Loaded -> {
                                             quoteNotice = null
-                                            historyQuery = ""
+                                            clearHistoryFilters()
                                             pendingQuote = target
                                         }
                                         else -> quoteNotice = found
@@ -444,7 +472,14 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                         Modifier.testTag("Inbox.Sending"), color = Zapara.colors.text2,
                         style = Zapara.typography.caption)
                     if (state.reply != null || state.editing != null) Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text((if (state.editing != null) stringResource(R.string.face_editing) else stringResource(R.string.face_replying)) + (state.editing ?: state.reply)?.body.orEmpty(), Modifier.weight(1f), color = Zapara.colors.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val target = (state.editing ?: state.reply)!!
+                        Column(Modifier.weight(1f)) {
+                            Text(if (state.editing != null) stringResource(R.string.face_editing)
+                                else stringResource(R.string.ux30_chat_reply_author, target.senderName),
+                                color = Zapara.colors.text2, style = Zapara.typography.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(chatMessagePreview(target.kind, target.body, target.fileName, target.deleted),
+                                color = Zapara.colors.text1, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
                         ZButton(stringResource(R.string.face_cancel), { onEvent(InboxEvent.CancelCompose) },
                             ghost = true, quiet = true, tag = "Inbox.CancelCompose")
                     }
@@ -490,6 +525,28 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
             }
         }
     }
+    if (historyFiltersOpen) ZBottomSheet(onDismiss = { historyFiltersOpen = false }, tag = "Inbox.HistoryFilterSheet", scrollable = true) {
+        Text(stringResource(R.string.ux30_chat_history_filters), style = Zapara.typography.section)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            listOf(PersonalHistoryAuthor.All to R.string.group_author_all,
+                PersonalHistoryAuthor.Mine to R.string.group_author_mine,
+                PersonalHistoryAuthor.Others to R.string.group_author_others).forEach { (value, label) ->
+                ZChip(stringResource(label), selected = authorFilter == value,
+                    onClick = { historyAuthor = value.name }, tag = "Inbox.HistoryAuthor.${value.name}")
+            }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            listOf(PersonalHistoryKind.All to R.string.group_kind_all, PersonalHistoryKind.Text to R.string.group_kind_text,
+                PersonalHistoryKind.PhotoVideo to R.string.group_kind_photo_video,
+                PersonalHistoryKind.Documents to R.string.group_kind_documents,
+                PersonalHistoryKind.VoiceCircle to R.string.group_kind_voice_circle).forEach { (value, label) ->
+                ZChip(stringResource(label), selected = kindFilter == value,
+                    onClick = { historyKind = value.name }, tag = "Inbox.HistoryKind.${value.name}")
+            }
+        }
+        Text(stringResource(R.string.ux30_chat_result_count, visibleMessages.size, state.messages.size), style = Zapara.typography.caption)
+        ZButton(stringResource(R.string.group_message_filters_done), { historyFiltersOpen = false }, modifier = Modifier.fillMaxWidth())
+    }
     selected?.let { message ->
         AlertDialog(onDismissRequest = { selected = null }, title = { Text(stringResource(R.string.face_message)) }, text = {
             Column {
@@ -510,6 +567,12 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
             }
         }, confirmButton = { ZButton(stringResource(R.string.face_close), { selected = null }, ghost = true, quiet = true) })
     }
-    deleting?.let { message -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text(stringResource(R.string.face_delete_message)) }, text = { Text(stringResource(R.string.face_delete_message_body)) }, confirmButton = { ZButton(stringResource(R.string.face_delete), { onEvent(InboxEvent.Delete(message)); deleting = null }) }, dismissButton = { ZButton(stringResource(R.string.face_cancel), { deleting = null }, ghost = true, quiet = true) }) }
+    deleting?.let { message -> AlertDialog(onDismissRequest = { deleting = null }, title = { Text(stringResource(R.string.face_delete_message)) }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            Text(message.senderName, style = Zapara.typography.bodyStrong)
+            Text(chatMessagePreview(message.kind, message.body, message.fileName, message.deleted), maxLines = 4, overflow = TextOverflow.Ellipsis)
+            Text(stringResource(R.string.face_delete_message_body))
+        }
+    }, confirmButton = { ZButton(stringResource(R.string.face_delete), { onEvent(InboxEvent.Delete(message)); deleting = null }) }, dismissButton = { ZButton(stringResource(R.string.face_cancel), { deleting = null }, ghost = true, quiet = true) }) }
 }
 private fun emoji(code: String) = when(code) { "like" -> "👍"; "heart" -> "❤️"; "laugh" -> "😂"; "wow" -> "😮"; "sad" -> "😢"; else -> code }

@@ -50,7 +50,7 @@ fun LessonCard(
     actions: (@Composable ColumnScope.() -> Unit)? = null
 ) {
     val c = Zapara.colors
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember(lesson.index, lesson.name) { mutableStateOf(false) }
     var friendHint by remember { mutableStateOf<String?>(null) }
     val hw = if (!expanded && lesson.homework.size > 2) lesson.homework.take(2) else lesson.homework
     ZCard(
@@ -146,6 +146,10 @@ fun LessonCard(
             }
             friendHint?.let { ZChip(it, onClick = { friendHint = null }) }
         }
+        if (lesson.homework.size > 2) ZChip(
+            if (expanded) stringResource(R.string.ux30_study_hide_homework)
+            else stringResource(R.string.ux30_study_show_more_homework, lesson.homework.size - 2),
+            onClick = { expanded = !expanded }, tag = "Lesson.HomeworkExpand.${lesson.index}")
         actions?.invoke(this)
     }
 }

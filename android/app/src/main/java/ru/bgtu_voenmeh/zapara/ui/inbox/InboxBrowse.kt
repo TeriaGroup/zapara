@@ -14,13 +14,16 @@ internal enum class InboxSourceFilter(val source: InboxSource?) {
 }
 
 internal fun browseInbox(rows: List<InboxRow>, query: String,
-    source: InboxSourceFilter = InboxSourceFilter.All, unreadOnly: Boolean = false): List<InboxRow> {
-    val needle = normalizeChatSearch(query)
-    return rows.filter { row ->
+    source: InboxSourceFilter = InboxSourceFilter.All, unreadOnly: Boolean = false,
+    draftIds: Set<String> = emptySet(), draftsOnly: Boolean = false,
+    unreadFirst: Boolean = false): List<InboxRow> {
+    val words = chatSearchWords(query)
+    val matches = rows.filter { row ->
+        val searchable = normalizeChatSearch("${row.title} ${row.subtitle} ${row.lastBody.orEmpty()}")
         (source.source == null || row.source == source.source) && (!unreadOnly || row.unread > 0) &&
-            (needle.isEmpty() || normalizeChatSearch(row.title).contains(needle) ||
-                normalizeChatSearch(row.lastBody.orEmpty()).contains(needle))
+            (!draftsOnly || row.id in draftIds) && words.all(searchable::contains)
     }
+    return if (unreadFirst) matches.sortedByDescending { it.unread > 0 } else matches
 }
 
 internal fun unreadInboxConversations(rows: List<InboxRow>): Int = rows.count { it.unread > 0 }
@@ -35,17 +38,31 @@ internal fun personalQuoteTarget(messages: List<SocialMessage>, targetId: String
         if (it.deleted) PersonalQuoteTarget.Deleted else PersonalQuoteTarget.Loaded
     } ?: PersonalQuoteTarget.Earlier
 
-internal fun browseLoadedPersonalHistory(messages: List<SocialMessage>, query: String): List<SocialMessage> {
+internal enum class PersonalHistoryKind { All, Text, PhotoVideo, Documents, VoiceCircle }
+internal enum class PersonalHistoryAuthor { All, Mine, Others }
+
+internal fun browseLoadedPersonalHistory(messages: List<SocialMessage>, query: String,
+    kind: PersonalHistoryKind = PersonalHistoryKind.All,
+    author: PersonalHistoryAuthor = PersonalHistoryAuthor.All, userId: String = ""): List<SocialMessage> {
     val words = chatSearchWords(query)
-    if (words.isEmpty()) return messages
+    if (words.isEmpty() && kind == PersonalHistoryKind.All && author == PersonalHistoryAuthor.All) return messages
     return messages.filter { message ->
         if (message.deleted) return@filter false
+        if (author != PersonalHistoryAuthor.All && (message.senderId == userId) != (author == PersonalHistoryAuthor.Mine)) return@filter false
+        val matchesKind = when (kind) {
+            PersonalHistoryKind.All -> true
+            PersonalHistoryKind.Text -> message.kind == "text"
+            PersonalHistoryKind.PhotoVideo -> message.kind in setOf("image", "video")
+            PersonalHistoryKind.Documents -> message.kind == "file"
+            PersonalHistoryKind.VoiceCircle -> message.kind in setOf("voice", "circle")
+        }
+        if (!matchesKind) return@filter false
         val searchable = normalizeChatSearch(when (message.kind) {
             "text" -> message.body.orEmpty()
             "image", "file", "voice", "circle" -> message.fileName.orEmpty()
             else -> ""
         } + " " + message.senderName)
-        searchable.isNotBlank() && words.all { word ->
+        words.all { word ->
             searchable.contains(word)
         }
     }

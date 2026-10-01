@@ -40,6 +40,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
+import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -244,6 +247,7 @@ fun SettingsSection(
     var section by rememberSaveable(initialSection) { mutableStateOf(initialSection) }
     var returnSection by rememberSaveable { mutableStateOf<String?>(null) }
     var settingsQuery by rememberSaveable { mutableStateOf("") }
+    var pendingSection by rememberSaveable { mutableStateOf<String?>(null) }
     var supportDrafts by rememberSaveable(state.profileName, stateSaver = SupportDraftsSaver) {
         mutableStateOf<Map<String, SupportLocalDraft>>(emptyMap())
     }
@@ -254,15 +258,41 @@ fun SettingsSection(
             supportDrafts[key]?.revision == revision) supportDrafts = supportDrafts - key
     }
     fun backToSettings() {
+        if (!SettingsLogic.canLeaveSection(section, state.timeSaving)) return
         if (section == "account" && returnSection != null) {
             section = returnSection; returnSection = null
+        } else if (section == "notifications" && state.timeDirty) {
+            pendingSection = ""
         } else { section = null; returnSection = null }
+    }
+    fun openSection(target: String) {
+        if (!SettingsLogic.canLeaveSection(section, state.timeSaving)) return
+        if (section == "notifications" && state.timeDirty && target != "notifications")
+            pendingSection = target
+        else { returnSection = null; section = target }
     }
     BackHandler(enabled = section != null && legalId == null) { backToSettings() }
     if (legalId != null) {
         LegalDocumentPage(legalId!!, onClose = { legalId = null })
         return
     }
+    LaunchedEffect(state.timeSaving) { if (state.timeSaving) pendingSection = null }
+    if (pendingSection != null && !state.timeSaving) AlertDialog(
+        onDismissRequest = { pendingSection = null },
+        title = { Text(stringResource(R.string.ux30_platform_unsaved_title)) },
+        text = { Text(stringResource(R.string.ux30_platform_unsaved_body)) },
+        confirmButton = { Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            ZButton(stringResource(R.string.ux30_platform_discard), {
+                val destination = pendingSection
+                pendingSection = null
+                onEvent(SettingsEvent.CancelTimes)
+                section = destination?.ifEmpty { null }
+                returnSection = null
+            }, modifier = Modifier.fillMaxWidth(), tag = "Settings.DiscardTimes")
+            ZButton(stringResource(R.string.account_cancel), { pendingSection = null },
+                modifier = Modifier.fillMaxWidth(), ghost = true, tag = "Settings.KeepTimes")
+        } }
+    )
     Column(Modifier.fillMaxSize()) {
         ZTopBar(when (section) {
             "data" -> uiText(R.string.space_day_157)
@@ -278,10 +308,10 @@ fun SettingsSection(
         BoxWithConstraints(Modifier.fillMaxSize()) {
         val wideSettings = maxWidth >= 840.dp
         if (section == null) SettingsOverview(state, account, settingsQuery,
-            { settingsQuery = it }) { returnSection = null; section = it }
+            { settingsQuery = it }) { openSection(it) }
         else Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.l)) {
             if (wideSettings) Box(Modifier.width(320.dp)) { SettingsOverview(state, account,
-                settingsQuery, { settingsQuery = it }) { returnSection = null; section = it } }
+                settingsQuery, { settingsQuery = it }) { openSection(it) } }
             LazyColumn(if (wideSettings) Modifier.widthIn(max = 720.dp).fillMaxSize() else Modifier.weight(1f).fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             item { ZButton(stringResource(if (section == "account" && returnSection == "data")
                 R.string.ux60_sync_back_to_data else R.string.settings_overview_all),
@@ -427,14 +457,18 @@ fun SettingsSection(
                         ZSwitch(state.notifyEnabled, { onEvent(SettingsEvent.Notify(it)) }, "Settings.Notify")
                     }
                     PreferenceFeedback(state, "notify", onEvent)
-                    TimeField(state.time1, stringResource(R.string.settings_time_evening), "Settings.Time1", !state.timeSaving) { onEvent(SettingsEvent.Time1(it)) }
-                    TimeField(state.time2, stringResource(R.string.settings_time_morning), "Settings.Time2", !state.timeSaving) { onEvent(SettingsEvent.Time2(it)) }
+                    TimeField(state.time1, stringResource(R.string.settings_time_evening), "Settings.Time1", !state.timeSaving, state.timeError != null) { onEvent(SettingsEvent.Time1(it)) }
+                    TimeField(state.time2, stringResource(R.string.settings_time_morning), "Settings.Time2", !state.timeSaving, state.timeError != null) { onEvent(SettingsEvent.Time2(it)) }
+                    state.timeError?.let { Text(it, style = Zapara.typography.caption, color = c.bad,
+                        modifier = Modifier.testTag("Settings.TimeError")) }
                     if (state.timeDirty) Text(stringResource(R.string.ux30_notify_unsaved),
                         style = Zapara.typography.caption, color = c.warn)
                     state.timeSaveError?.let { Text(it, style = Zapara.typography.caption, color = c.bad) }
                     ZButton(stringResource(R.string.ux30_notify_save), { onEvent(SettingsEvent.SaveTimes) },
                         enabled = state.timeDirty && state.timeError == null && !state.timeSaving,
                         busy = state.timeSaving, tag = "Settings.SaveTimes")
+                    if (state.timeSaving) Text(stringResource(R.string.ux30_platform_time_saving_wait),
+                        style = Zapara.typography.caption, color = c.text2)
                     if (state.timeDirty && !state.timeSaving) ZButton(stringResource(R.string.ux30_notify_cancel),
                         { onEvent(SettingsEvent.CancelTimes) }, ghost = true, tag = "Settings.CancelTimes")
                     Text(if (state.notifyEnabled) uiText(R.string.space_day_165, state.savedTime1, state.savedTime2)
@@ -444,7 +478,6 @@ fun SettingsSection(
                     Text(uiText(R.string.space_day_notification_preview), style = Zapara.typography.section)
                     NotificationPreview(uiText(R.string.space_day_preview_tomorrow), state.time1, state.previewEvening)
                     NotificationPreview(uiText(R.string.space_day_preview_today), state.time2, state.previewMorning)
-                    state.timeError?.let { Text(it, style = Zapara.typography.caption, color = c.bad) }
                     ZButton(stringResource(R.string.settings_notify_test), { onEvent(SettingsEvent.TestNotification) }, ghost = true, tag = "Settings.NotifyTest")
                     if (state.permissionMissing) {
                         Text(stringResource(R.string.settings_perm_notify), style = Zapara.typography.caption, color = c.warn)
@@ -488,12 +521,15 @@ private fun PreferenceFeedback(state: SettingsUiState, key: String, onEvent: (Se
 }
 
 @Composable
-private fun TimeField(value: String, label: String, tag: String, enabled: Boolean = true, onChange: (String) -> Unit) {
+private fun TimeField(value: String, label: String, tag: String, enabled: Boolean = true, invalid: Boolean = false, onChange: (String) -> Unit) {
     ZTextField(enabled = enabled,
         value = value, onValueChange = onChange,
         modifier = Modifier.fillMaxWidth().testTag(tag),
         label = { Text(label, style = Zapara.typography.caption) },
-        singleLine = true
+        singleLine = true,
+        isError = invalid,
+        placeholder = { Text(stringResource(R.string.ux30_platform_time_format)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii)
     )
 }
 

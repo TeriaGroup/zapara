@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -140,6 +142,12 @@ private fun ChatPhotoViewer(bitmap: android.graphics.Bitmap, onClose: () -> Unit
     var viewport by remember(bitmap) { mutableStateOf(IntSize.Zero) }
     var scale by remember(bitmap) { mutableStateOf(1f) }
     var pan by remember(bitmap) { mutableStateOf(Offset.Zero) }
+    fun setZoom(next: Float) {
+        scale = next.coerceIn(1f, MapZoom.Max)
+        val bounded = MapZoom.clampPan(pan.x, pan.y, viewport.width.toFloat(), viewport.height.toFloat(),
+            bitmap.width.toFloat(), bitmap.height.toFloat(), scale)
+        pan = Offset(bounded.first, bounded.second)
+    }
     val transform = rememberTransformableState { zoomChange, panChange, _ ->
         val nextScale = (scale * zoomChange).coerceIn(1f, MapZoom.Max)
         val bounded = MapZoom.clampPan(pan.x + panChange.x, pan.y + panChange.y,
@@ -164,6 +172,25 @@ private fun ChatPhotoViewer(bitmap: android.graphics.Bitmap, onClose: () -> Unit
                 modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
                 colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) {
                 Text(stringResource(R.string.ux60_chat_photo_close))
+            }
+            Row(Modifier.align(Alignment.BottomCenter).padding(16.dp)
+                .background(Color.Black.copy(alpha = 0.8f), RoundedCornerShape(12.dp)),
+                verticalAlignment = Alignment.CenterVertically) {
+                val zoomOut = stringResource(R.string.ux30_chat_zoom_out)
+                val zoomIn = stringResource(R.string.ux30_chat_zoom_in)
+                val reset = stringResource(R.string.ux30_chat_zoom_reset)
+                TextButton(onClick = { setZoom(scale / 1.5f) }, enabled = scale > 1f,
+                    modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 48.dp).testTag("Chat.PhotoZoomOut")
+                        .semantics { contentDescription = zoomOut },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) { Text("−") }
+                TextButton(onClick = { scale = 1f; pan = Offset.Zero },
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("Chat.PhotoZoomReset")
+                        .semantics { contentDescription = reset },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) { Text("${(scale * 100).toInt()}%") }
+                TextButton(onClick = { setZoom(scale * 1.5f) }, enabled = scale < MapZoom.Max,
+                    modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 48.dp).testTag("Chat.PhotoZoomIn")
+                        .semantics { contentDescription = zoomIn },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) { Text("+") }
             }
         }
     }
@@ -196,14 +223,17 @@ private fun Playback(kind: String, file: File, suppliedDuration: Int?) {
     if (kind == "voice") {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                val playbackLabel = stringResource(if (controller.playing) R.string.ux30_chat_pause else R.string.ux30_chat_play)
                 TextButton(onClick = { controller.toggle() }, enabled = controller.ready,
+                    modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = playbackLabel },
                     colors = ButtonDefaults.textButtonColors(contentColor = contentColor)) { Text(if (controller.playing) "Ⅱ" else "▶") }
                 Text("${chatClock(controller.positionMs)} / ${chatClock(duration)}", color = contentColor, style = Zapara.typography.caption)
             }
             Slider(value = if (duration > 0) controller.positionMs.toFloat() / duration else 0f,
                 onValueChange = { controller.seek((it * duration).toInt()) }, enabled = controller.ready && duration > 0,
                 colors = SliderDefaults.colors(thumbColor = contentColor, activeTrackColor = contentColor, inactiveTrackColor = contentColor.copy(alpha = 0.28f)),
-                modifier = Modifier.width(210.dp).height(24.dp))
+                modifier = Modifier.width(210.dp).heightIn(min = 48.dp))
+            PlaybackSeekControls(controller, duration, contentColor)
             PlaybackSpeedSelector(controller, contentColor)
         }
     } else {
@@ -217,7 +247,9 @@ private fun Playback(kind: String, file: File, suppliedDuration: Int?) {
                         override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
                     }
                 } }, update = { centerCrop(it, controller.videoWidth, controller.videoHeight) }, modifier = Modifier.fillMaxSize())
-                Box(Modifier.fillMaxSize().clickable { controller.toggle() }.testTag("Chat.CirclePlayback"), contentAlignment = Alignment.Center) {
+                val playbackLabel = stringResource(if (controller.playing) R.string.ux30_chat_pause else R.string.ux30_chat_play)
+                Box(Modifier.fillMaxSize().clickable(onClickLabel = playbackLabel) { controller.toggle() }
+                    .semantics { contentDescription = playbackLabel }.testTag("Chat.CirclePlayback"), contentAlignment = Alignment.Center) {
                     if (!controller.playing) Box(Modifier.size(48.dp).clip(CircleShape)
                         .background(Color.Black.copy(alpha = 0.68f)), contentAlignment = Alignment.Center) {
                         Text("▶", color = Color.White, style = Zapara.typography.title)
@@ -228,8 +260,27 @@ private fun Playback(kind: String, file: File, suppliedDuration: Int?) {
             Slider(value = if (duration > 0) controller.positionMs.toFloat() / duration else 0f,
                 onValueChange = { controller.seek((it * duration).toInt()) }, enabled = controller.ready && duration > 0,
                 colors = SliderDefaults.colors(thumbColor = contentColor, activeTrackColor = contentColor, inactiveTrackColor = contentColor.copy(alpha = 0.28f)),
-                modifier = Modifier.width(190.dp).height(24.dp))
+                modifier = Modifier.width(190.dp).heightIn(min = 48.dp))
+            PlaybackSeekControls(controller, duration, contentColor)
             PlaybackSpeedSelector(controller, contentColor)
+        }
+    }
+}
+
+@Composable
+private fun PlaybackSeekControls(controller: LocalMediaPlayer, duration: Int, contentColor: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        listOf(-10000 to R.string.ux30_chat_seek_back, 10000 to R.string.ux30_chat_seek_forward).forEach { (delta, resource) ->
+            val label = stringResource(resource)
+            TextButton(onClick = { controller.seek(chatSeekPosition(controller.positionMs, delta, duration)) },
+                enabled = controller.ready && duration > 0 && if (delta < 0) controller.positionMs > 0 else controller.positionMs < duration,
+                modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 48.dp)
+                    .testTag(if (delta < 0) "Chat.SeekBack" else "Chat.SeekForward")
+                    .semantics { contentDescription = label },
+                colors = ButtonDefaults.textButtonColors(contentColor = contentColor)) {
+                Text(stringResource(if (delta < 0) R.string.ux30_chat_seek_back_short
+                    else R.string.ux30_chat_seek_forward_short))
+            }
         }
     }
 }

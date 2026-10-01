@@ -9,6 +9,7 @@ import java.time.format.DateTimeParseException
 import java.time.temporal.ChronoUnit
 
 object SettingsLogic {
+    fun canLeaveSection(section: String?, timeSaving: Boolean): Boolean = section != "notifications" || !timeSaving
     fun persistedPreference(state: SettingsUiState, key: String,
         saved: ScheduleRepository.SettingsState): SettingsUiState = when (key) {
         "parity" -> state.copy(parityInvert = saved.parityInvert)
