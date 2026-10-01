@@ -470,11 +470,13 @@
                   </MenuFlyout>
                 </Button.Flyout>
               </Button>
-              <TextBox Grid.Column="1" Text="{Binding Draft}" PlaceholderText="{loc:T groupMessage}" MaxLength="2000" MinWidth="0"
-                       TextWrapping="Wrap" VerticalAlignment="Center" />
+              <TextBox Grid.Column="1" Text="{Binding Draft}" PlaceholderText="{loc:T groupMessage}" MinWidth="0" MinHeight="54"
+                       AcceptsReturn="True" TextWrapping="Wrap" VerticalAlignment="Center" KeyDown="OnGroupDraftKeyDown" AutomationProperties.AutomationId="Group.Draft" />
               <Button Grid.Column="2" Classes="primary" Content="{loc:T groupSend}" Command="{Binding SendCommand}"
                       VerticalAlignment="Center" MinHeight="48" AutomationProperties.AutomationId="Group.Send" />
             </Grid>
+            <TextBlock Classes="muted caption" Text="{Binding DraftLimitText}" TextWrapping="Wrap" />
+            <TextBlock Classes="faint caption" Text="Enter — новая строка · Ctrl+Enter — отправить" />
             </StackPanel>
           </Border>
           <g:GroupSpecializedView IsVisible="{Binding ShowSpecialized}" />
@@ -484,6 +486,7 @@
                       HorizontalAlignment="Center" MinHeight="48" Margin="0,0,0,8" IsVisible="{Binding HasMore}"
                       IsEnabled="{Binding CanLoadOlder}" />
               <TextBlock Classes="muted" Text="Сообщений пока нет" IsVisible="{Binding NoMessages}" />
+              <TextBlock Classes="muted caption" Text="{Binding QuoteFeedback}" TextWrapping="Wrap" IsVisible="{Binding QuoteFeedback, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
               <StackPanel Spacing="6" IsVisible="{Binding NoMessageMatches}">
                 <TextBlock Classes="muted" Text="Среди загруженных сообщений совпадений нет" TextWrapping="Wrap" />
                 <Button Classes="ghost" Content="Загрузить ранние" Command="{Binding LoadOlderCommand}"
@@ -495,7 +498,7 @@
                     <StackPanel>
                     <TextBlock Classes="muted caption" Text="{Binding DayHeader}" HorizontalAlignment="Center"
                                Margin="0,10,0,12" IsVisible="{Binding DayHeader, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                    <g:HoldBox Classes="chat-bubble" Classes.mine="{Binding Mine}" Background="{DynamicResource Brush.Card}"
+                    <g:HoldBox Classes="chat-bubble" Classes.mine="{Binding Mine}" Background="{DynamicResource Brush.Card}" Focusable="True"
                             BorderBrush="{DynamicResource Brush.Line}" BorderThickness="1"
                             CornerRadius="12" Padding="12,8" Margin="0,0,0,8" MaxWidth="440"
                             HorizontalAlignment="{Binding Mine, Converter={x:Static loc:Converters.ChatAlign}}">
@@ -511,7 +514,9 @@
                           <Button Grid.Column="3" Classes="ghost" Content="Действия" Click="OpenMessageActions"
                                   IsVisible="{Binding !Deleted}" MinHeight="48" AutomationProperties.AutomationId="Group.MessageActions" />
                         </Grid>
-                        <TextBlock Classes="muted caption" Text="{Binding ReplyPreview}" IsVisible="{Binding IsReply}" TextWrapping="Wrap" />
+                        <Button Classes="link" Content="{Binding ReplyPreview}" IsVisible="{Binding IsReply}" Command="{Binding $parent[UserControl].((g:GroupViewModel)DataContext).JumpQuoteCommand}" CommandParameter="{Binding}" HorizontalAlignment="Left" />
+                        <TextBlock Classes="muted caption" Text="{Binding QuoteHint}" IsVisible="{Binding QuoteHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" TextWrapping="Wrap" />
+                        <TextBlock Classes="muted caption" Text="Цитируемое сообщение" IsVisible="{Binding IsQuoteTarget}" />
                         <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
                         <Image Source="{Binding Preview}" MaxWidth="300" MaxHeight="220" HorizontalAlignment="Left"
                                Stretch="Uniform" />
@@ -628,6 +633,7 @@
                          <TextBlock Foreground="{DynamicResource Brush.Warn}" Text="{Binding DeadlineHint}"
                                     IsVisible="{Binding HasDeadlineHint}" />
                          <TextBlock Classes="muted caption" Text="{Binding Supporters}" IsVisible="{Binding IsCollecting}" />
+                         <TextBlock Classes="muted caption" Text="Сохраняем действие…" IsVisible="{Binding IsPending}" />
                          <Button Classes="primary" Content="Поддержать" Command="{Binding SupportCommand}"
                                  IsVisible="{Binding CanSupport}" HorizontalAlignment="Left" MinHeight="48" />
                          <TextBlock Classes="muted caption" Text="Вы поддержали" IsVisible="{Binding AlreadySupported}" />

@@ -25,6 +25,8 @@ class WidgetLaunchRecreationTest {
         val widgetIntent = Intent(context, MainActivity::class.java)
             .putExtra(MainActivity.SECTION_EXTRA, "schedule")
             .putExtra(MainActivity.ARGUMENT_EXTRA, "2026-09-23")
+            .putExtra(MainActivity.WIDGET_PROFILE_EXTRA, "old-profile")
+            .putExtra(MainActivity.WIDGET_DATABASE_EXTRA, "old-db")
 
         ActivityScenario.launch<MainActivity>(widgetIntent).use { scenario ->
             assertNotNull(device.wait(Until.findObject(By.res("Top.Title").text("Расписание")), 15_000))
@@ -32,6 +34,8 @@ class WidgetLaunchRecreationTest {
             scenario.onActivity { activity ->
                 assertFalse(activity.intent.hasExtra(MainActivity.SECTION_EXTRA))
                 assertFalse(activity.intent.hasExtra(MainActivity.ARGUMENT_EXTRA))
+                assertFalse(activity.intent.hasExtra(MainActivity.WIDGET_PROFILE_EXTRA))
+                assertFalse(activity.intent.hasExtra(MainActivity.WIDGET_DATABASE_EXTRA))
             }
 
             val maps = requireNotNull(device.wait(Until.findObject(By.res("Nav.Maps")), 15_000))

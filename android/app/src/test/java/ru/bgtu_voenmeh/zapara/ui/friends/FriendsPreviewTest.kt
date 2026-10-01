@@ -2,6 +2,7 @@ package ru.bgtu_voenmeh.zapara.ui.friends
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Test
 import ru.bgtu_voenmeh.zapara.data.Friend
 import ru.bgtu_voenmeh.zapara.data.Lesson
@@ -11,6 +12,26 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 
 class FriendsPreviewTest {
+    @Test fun stale_friend_row_resolves_by_id_and_rejects_a_new_group_even_if_index_is_reused() {
+        val a = FriendUi(11, 0, "А", "", true, 0)
+        val b = FriendUi(22, 1, "Б", "", true, 1)
+        val captured = FriendActionScope(a.id, "3313", "guest")
+        assertEquals(a.copy(index = 1), captured.find(listOf(b.copy(index = 0), a.copy(index = 1))))
+        assertTrue(captured.current("3313", "guest"))
+        assertTrue(!captured.current("3314", "guest"))
+        assertNull(captured.find(listOf(b.copy(index = 0))))
+    }
+    @Test fun failed_delete_keeps_the_exact_editor_and_confirmation_for_retry() {
+        val editor = FriendEditorUi(11, 0, "А", "Черновик", 2, "3313", "guest")
+        val pending = FriendsUiState(editor = editor, confirmDelete = 11, deletePending = true)
+        val failed = pending.deleteFailed(11, "Не удалось")
+        assertEquals(editor, failed.editor)
+        assertEquals(11L, failed.confirmDelete)
+        assertEquals("Не удалось", failed.deleteError)
+        val acknowledged = failed.deleteAcknowledged(11)
+        assertNull(acknowledged.editor)
+        assertNull(acknowledged.confirmDelete)
+    }
     private val period = LocalDate.of(2026, 9, 1)
     private val monday = LocalDate.of(2026, 9, 7)
 

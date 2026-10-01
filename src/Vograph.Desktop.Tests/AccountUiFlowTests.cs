@@ -34,6 +34,7 @@ public sealed partial class AccountUiFlowTests
         f.Handler.Send = (_, _) => Task.FromResult(Json(
             new AccountError("ignored", 503, "registration_unavailable"), HttpStatusCode.ServiceUnavailable));
         f.Vm.Registration = true;
+        f.Vm.DocumentsAccepted = true;
         f.Vm.Username = "Test.User"; f.Vm.Password = Password;
         await f.Vm.SubmitCommand.ExecuteAsync(null);
         Assert.Contains("Регистрация на этом сервере недоступна", f.Vm.Status);
@@ -47,6 +48,7 @@ public sealed partial class AccountUiFlowTests
         await using var f = new Fixture();
         await f.Vm.InitializeAsync();
         f.Vm.Registration = true;
+        f.Vm.DocumentsAccepted = true;
         f.Vm.Username = "test.user"; f.Vm.Password = Password;
         await f.Vm.SubmitCommand.ExecuteAsync(null);
         Assert.True(f.Vm.IsGuest);
@@ -156,16 +158,38 @@ public sealed partial class AccountUiFlowTests
             f.Vm.CurrentPassword = Password; f.Vm.NewPassword = Password + "new";
             await f.Vm.ChangePasswordCommand.ExecuteAsync(null);
         }
-        else if (action == "all") await f.Vm.RevokeAllCommand.ExecuteAsync(null);
+        else if (action == "all") { f.Vm.RequestRevokeAllCommand.Execute(null); await f.Vm.RevokeAllCommand.ExecuteAsync(null); }
         else
         {
             await f.Vm.LoadDevicesCommand.ExecuteAsync(null);
-            await f.Vm.RevokeDeviceCommand.ExecuteAsync(Assert.Single(f.Vm.Devices));
+            var device = Assert.Single(f.Vm.Devices);
+            f.Vm.RequestRevokeDeviceCommand.Execute(device);
+            await f.Vm.RevokeDeviceCommand.ExecuteAsync(device);
         }
         Assert.True(f.Vm.IsGuest);
         Assert.Null(f.Vault.Entry);
         Assert.Equal("", f.Vm.CurrentPassword);
         Assert.Equal("", f.Vm.NewPassword);
+    }
+
+    [Fact]
+    public async Task Device_revoke_requires_confirmation_of_the_selected_session()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        await f.Vm.LoadDevicesCommand.ExecuteAsync(null);
+        var device = Assert.Single(f.Vm.Devices);
+        await f.Vm.RevokeDeviceCommand.ExecuteAsync(device);
+        Assert.False(f.Vm.IsGuest);
+        f.Vm.RequestRevokeDeviceCommand.Execute(device);
+        Assert.True(f.Vm.HasPendingRevokeDevice);
+        f.Vm.CancelRevokeDeviceCommand.Execute(null);
+        Assert.False(f.Vm.HasPendingRevokeDevice);
+        await f.Vm.RevokeDeviceCommand.ExecuteAsync(device);
+        Assert.False(f.Vm.IsGuest);
+        f.Vm.RequestRevokeDeviceCommand.Execute(device);
+        await f.Vm.RevokeDeviceCommand.ExecuteAsync(device);
+        Assert.True(f.Vm.IsGuest);
     }
 
     [Theory]
@@ -262,6 +286,7 @@ public sealed partial class AccountUiFlowTests
             await Vm.InitializeAsync();
             Vm.Username = "Test.User"; Vm.Password = Password;
             await Vm.SubmitCommand.ExecuteAsync(null).WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
+            Assert.False(Vm.IsGuest, $"login status={Vm.Status}; phase={Profiles.Snapshot.Phase}; failure={Profiles.Snapshot.Failure}; accountFailure={Profiles.Snapshot.AccountFailure}; calls={Handler.Calls}; canAct={Vm.CanAct}; dataDirLength={Profiles.Current.Services.DataDir.Length}");
         }
         public async ValueTask DisposeAsync()
         {

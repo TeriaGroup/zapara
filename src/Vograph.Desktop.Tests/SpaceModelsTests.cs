@@ -38,6 +38,36 @@ public sealed class SpaceModelsTests
         var row=new SpaceAnswerRow(question,new(question.QuestionId,null,["А","В"]));row.Options[1].Selected=true;
         Assert.Equal(["А","Б","В"],row.Answer().Choices);
     }
+    [Fact] public void Required_form_marks_the_first_missing_answer_and_keeps_the_draft()
+    {
+        var first = new GroupFormQuestion(Guid.NewGuid(), "Первый", "shortText", true, []);
+        var second = new GroupFormQuestion(Guid.NewGuid(), "Второй", "singleChoice", true, ["А", "Б"]);
+        var form = new GroupFormResponse(Guid.NewGuid(), Guid.NewGuid(), "Анкета", "", null, false,
+            [first, second], Guid.NewGuid(), DateTimeOffset.UtcNow, true, true, null, 0);
+        static Task NoOp(SpaceFormRow _) => Task.CompletedTask;
+        var row = new SpaceFormRow(form, true, NoOp, NoOp, NoOp);
+        Assert.True(row.MarkFirstMissingRequired());
+        Assert.Equal(first.QuestionId, row.FirstMissingId);
+        Assert.Equal("Обязательные ответы: 0 из 2", row.RequiredProgressText);
+        row.Questions[0].Text = "Ответ";
+        Assert.Equal("Обязательные ответы: 1 из 2", row.RequiredProgressText);
+        Assert.False(row.HasMissingRequired);
+        Assert.True(row.MarkFirstMissingRequired());
+        Assert.Equal(second.QuestionId, row.FirstMissingId);
+        row.Questions[1].Options[0].Selected = true;
+        Assert.Equal("Обязательные ответы: 2 из 2", row.RequiredProgressText);
+        Assert.False(row.HasMissingRequired);
+        Assert.Equal("Ответ", row.Questions[0].Text);
+        Assert.False(row.MarkFirstMissingRequired());
+    }
+    [Fact] public void Choice_question_focus_skips_the_hidden_text_input()
+    {
+        var row = new Avalonia.Controls.StackPanel();
+        var hiddenText = new Avalonia.Controls.TextBox { IsVisible = false };
+        var choice = new Avalonia.Controls.CheckBox { IsVisible = true };
+        row.Children.Add(hiddenText); row.Children.Add(choice);
+        Assert.Same(choice, GroupSpecializedView.FirstVisibleAnswerInput(row));
+    }
     [Fact] public void Published_form_refresh_preserves_unsent_input_when_own_response_has_not_changed()
     {
         var question=new GroupFormQuestion(Guid.NewGuid(),"Текст","longText",false,[]);
@@ -67,5 +97,7 @@ public sealed class SpaceModelsTests
         var editor=new SpaceQuestionEditor{Title="Выберите",Kind=SpaceQuestionEditor.Kinds[2],OptionsText=" А \nБ\nА\n"};
         Assert.Equal(["А","Б"],editor.Question().Options);
         editor.Kind=SpaceQuestionEditor.Kinds[0];Assert.Empty(editor.Question().Options);
+        editor.Kind=SpaceQuestionEditor.Kinds[3];Assert.Equal(["А","Б"],editor.Question().Options);
+        Assert.Equal(editor.Id,editor.Question().QuestionId);
     }
 }

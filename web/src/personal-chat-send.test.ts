@@ -5,6 +5,8 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as composerHelpers from "./personal-composer.ts";
 import * as social from "./socialChat.ts";
+import * as personalHistory from "./personal-history.ts";
+import * as hold from "./hold.ts";
 
 const source = ts.transpileModule(await readFile(new URL("./people.tsx", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
@@ -19,32 +21,46 @@ function deferred() {
   return { promise, resolve, reject };
 }
 function mount(store: composerHelpers.PersonalComposerStore, send: (...args: any[]) => Promise<any>, load = async () => ({ messages: [], hasMore: false })) {
-  const hooks: any[] = []; let cursor = 0; const pendingEffects: (() => any)[] = []; const cleanups: (() => void)[] = [];
+  const hooks: any[] = []; let cursor = 0, changed = false;
+  const effects = new Map<number, { deps?: any[]; cleanup?: () => void }>();
+  const pendingEffects = new Map<number, () => any>();
   const intervals: (() => any)[] = [];
   const react = {
     useState: (initial: any) => { const index = cursor++; if (!(index in hooks)) hooks[index] = typeof initial === "function" ? initial() : initial;
-      return [hooks[index], (value: any) => { hooks[index] = typeof value === "function" ? value(hooks[index]) : value; }]; },
+      return [hooks[index], (value: any) => { const next = typeof value === "function" ? value(hooks[index]) : value;
+        if (!Object.is(next, hooks[index])) { hooks[index] = next; changed = true; } }]; },
     useRef: (initial: any) => { const index = cursor++; hooks[index] ??= { current: initial }; return hooks[index]; },
-    useEffect: (effect: () => any, deps: any[]) => { const index = cursor++; const old = hooks[index];
-      if (!old || deps.some((item, offset) => item !== old[offset])) { hooks[index] = deps; pendingEffects.push(effect); } },
+    useEffect: (effect: () => any, deps?: any[]) => { const index = cursor++; const old = effects.get(index);
+      if (!old || !deps || !old.deps || deps.length !== old.deps.length || deps.some((item, offset) => !Object.is(item, old.deps![offset]))) {
+        effects.set(index, { deps: deps?.slice(), cleanup: old?.cleanup }); pendingEffects.set(index, effect);
+      } },
   };
   const jsx = (type: any, props: any) => ({ type, props });
   const modules: any = {
     react, "react/jsx-runtime": { jsx, jsxs: jsx }, "./api": { socialText: send, socialEdit: send, socialMessages: load },
     "./personal-composer": composerHelpers, "./personal-composer-context": {
       usePersonalComposer: (id: string) => ({ store, refresh: () => {}, composer: store.read(id) }),
-    }, "./socialChat": social,
+    }, "./socialChat": social, "./personal-history": personalHistory, "./hold": hold,
   };
   const runtime = { exports: {} as any, require: (id: string) => modules[id] ?? {},
     window: { matchMedia: () => ({ matches: true }), setInterval: (fn: any) => { intervals.push(fn); return intervals.length; }, clearInterval() {}, clearTimeout() {} },
   };
   runInNewContext(source, runtime);
+  const onError = () => {};
   const render = () => {
-    cursor = 0; const tree = runtime.exports.TestChat({ friend, self: "me", onError: () => {} });
-    while (pendingEffects.length) { const cleanup = pendingEffects.shift()!(); if (cleanup) cleanups.push(cleanup); }
-    return tree;
+    for (let pass = 0; pass < 25; pass++) {
+      cursor = 0; changed = false;
+      const tree = runtime.exports.TestChat({ friend, self: "me", onError });
+      const scheduled = [...pendingEffects]; pendingEffects.clear();
+      for (const [index, effect] of scheduled) {
+        const record = effects.get(index)!; record.cleanup?.();
+        const cleanup = effect(); record.cleanup = typeof cleanup === "function" ? cleanup : undefined;
+      }
+      if (!changed) return tree;
+    }
+    throw new Error("Chat effects did not settle");
   };
-  return { render, unmount: () => cleanups.forEach(fn => fn()), poll: () => intervals[0]() };
+  return { render, unmount: () => { effects.forEach(effect => effect.cleanup?.()); effects.clear(); pendingEffects.clear(); }, poll: () => intervals[0]() };
 }
 function nodes(tree: any): any[] {
   if (!tree || typeof tree !== "object") return [];
@@ -87,4 +103,24 @@ test("failed initial history has retry feedback and never presents successful em
   assert.ok(tree.some(node => node.props?.className === "banner"));
   assert.ok(!tree.some(node => node.props?.children === "Напишите сообщение, отправьте стикер или кружок."));
   instance.unmount();
+});
+
+test("real personal-history search filters loaded messages and leaves the retained composer untouched", async () => {
+  const store = new composerHelpers.PersonalComposerStore("a");store.text("c","Мой черновик");
+  const messages = ["Физика","Математика"].map((body,index)=>({
+    messageId:`message-${index}`,senderId:"peer",senderName:"Друг",kind:"text",body,
+    attachmentId:null,fileName:null,contentType:null,bytes:null,createdAt:"2026-09-28T10:00:00Z",
+    replyTo:null,replyBody:null,editedAt:null,deleted:false,read:false,durationMs:null,reactions:[],
+  }));
+  const instance=mount(store,async()=>{throw new Error("Search must not send a message");},async()=>({messages,hasMore:false}));
+  instance.render();await flush();let tree=nodes(instance.render());
+  assert.equal(tree.filter(node=>node.props?.["data-hold"]==="text").length,2);
+  tree.find(node=>node.type==="input"&&node.props.type==="search").props.onChange({target:{value:"ФИЗИКА"}});
+  tree=nodes(instance.render());
+  assert.equal(tree.filter(node=>node.props?.["data-hold"]==="text").length,1);
+  assert.ok(tree.some(node=>node.props?.className==="text"&&node.props.children==="Физика"));
+  assert.equal(store.read("c").text,"Мой черновик");
+  tree.find(node=>node.type==="button"&&node.props.children==="Сбросить поиск").props.onClick();
+  assert.equal(nodes(instance.render()).filter(node=>node.props?.["data-hold"]==="text").length,2);
+  assert.equal(messages.length,2);instance.unmount();
 });

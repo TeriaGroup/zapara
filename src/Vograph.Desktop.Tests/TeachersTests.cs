@@ -67,6 +67,49 @@ public class TeachersTests : UiTest
     }
 
     [Fact]
+    public async Task No_match_among_my_teachers_can_search_all_without_losing_query()
+    {
+        using var db = TestDb.Create();
+        var vm = await Make(db);
+        vm.Query = "физ";
+        Assert.True(vm.CanSearchAllTeachers);
+        Assert.Empty(vm.Items);
+        vm.SearchAllTeachersCommand.Execute(null);
+        Assert.Equal("физ", vm.Query);
+        Assert.Equal("Чужой А.А.", Assert.Single(vm.Items).Name);
+    }
+
+    [Fact]
+    public async Task Multiword_teacher_search_matches_name_and_subject_in_either_order()
+    {
+        using var db = TestDb.Create();
+        var vm = await Make(db);
+        vm.OnlyMine = false;
+        vm.Query = "физ чужой";
+        Assert.Equal("Чужой А.А.", Assert.Single(vm.Items).Name);
+        vm.Query = "ЧУЖОЙ физ";
+        Assert.Equal("Чужой А.А.", Assert.Single(vm.Items).Name);
+        vm.OnlyMine = true;
+        Assert.Empty(vm.Items);
+    }
+
+    [Fact]
+    public void Opposite_parity_teacher_day_uses_next_actual_date_not_today_label()
+    {
+        var ru = new Loc(new I18nService("ru"));
+        var lesson = new LecturerLesson { DayOfWeek = 3, Parity = 1, TimeStart = "09:00", TimeEnd = "10:35",
+            DisciplineRaw = "лек ФИЗИКА", TypeRaw = "лек", ClassroomRaw = "312;",
+            Groups = { new GroupRef { IdGroup = "3313", Number = "А863С" } } };
+        var detail = new TeacherDetailViewModel(new LecturerInfo { Id = "x", Name = "Тест Т.Т." }, [lesson], true,
+            "3313", "А863С", false, ru, Wed9, new DateTime(2026, 9, 1), 2, _ => { });
+        detail.ParityIndex = 1;
+        var day = detail.Days[2];
+        Assert.Equal(new DateTime(2026, 9, 16), day.NextDate);
+        Assert.False(day.IsToday);
+        Assert.True(Assert.Single(day.Rows).CanOpenOwnDay);
+    }
+
+    [Fact]
     public async Task Selecting_A_Teacher_Builds_The_Week_With_Parity_Filter()
     {
         using var db = TestDb.Create();
@@ -128,6 +171,8 @@ public class TeachersTests : UiTest
         Assert.Equal(6, detail.Days.Count);
         Assert.All(detail.Days, d => Assert.Empty(d.Rows));
         Assert.False(detail.HasKafedra);
+        Assert.False(detail.HasWeekLessons);
+        Assert.Contains("нет", detail.EmptyWeekText);
     }
 
     [Fact]
@@ -146,6 +191,25 @@ public class TeachersTests : UiTest
         await Task.Delay(200, TestContext.Current.CancellationToken);
 
         Assert.Equal("2 из 3", vm.CountText); // still the old group: detached
+    }
+
+    [Fact]
+    public async Task Old_own_teacher_row_cannot_open_a_date_after_group_change()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = await Make(db, shell);
+        vm.Selected = vm.Items.First(item => item.IsMine);
+        var oldRow = vm.Detail!.Days.SelectMany(day => day.Rows).First(row => row.CanOpenOwnDay);
+        shell.NavigateTo(SectionKey.Settings);
+        var previous = shell.CurrentKey;
+        var settings = db.Services.Db.GetSettings();
+        settings.MyGroupId = "9999";
+        db.Services.Db.SaveSettings(settings);
+        shell.RaiseGroupChanged();
+        oldRow.OpenOwnDayCommand!.Execute(null);
+        Assert.Equal(previous, shell.CurrentKey);
+        vm.Detach(); shell.Detach();
     }
 
     [Fact]

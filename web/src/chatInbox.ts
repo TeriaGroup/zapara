@@ -23,9 +23,9 @@ export function unreadChatTotal(rows: ChatInboxItem[]): number {
   return rows.reduce((sum, row) => sum + Math.max(0, row.unread), 0);
 }
 
-export function filterChatInbox(rows: ChatInboxItem[], query: string, kind: ChatInboxItem["kind"] | "all"): ChatInboxItem[] {
+export function filterChatInbox(rows: ChatInboxItem[], query: string, kind: ChatInboxItem["kind"] | "all", unreadOnly = false): ChatInboxItem[] {
   const needle = query.trim().toLocaleLowerCase("ru-RU");
-  return rows.filter(row => (kind === "all" || row.kind === kind) &&
+  return rows.filter(row => (!unreadOnly || row.unread > 0) && (kind === "all" || row.kind === kind) &&
     (!needle || `${row.title} ${row.preview || ""}`.toLocaleLowerCase("ru-RU").includes(needle)));
 }
 

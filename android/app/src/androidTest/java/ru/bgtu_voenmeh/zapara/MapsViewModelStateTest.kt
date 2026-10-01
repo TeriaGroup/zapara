@@ -157,7 +157,8 @@ class MapsViewModelStateTest {
         assertTrue(vm.state.value.path.isEmpty())
         assertTrue(f.cpu.pending > 0)
         vm.onEvent(MapsEvent.OpenTo)
-        vm.onEvent(MapsEvent.PickPlace("ulk.room.564"))
+        val toPicker = vm.state.value.picker!!
+        vm.onEvent(MapsEvent.PickPlace("ulk.room.564", toPicker.field, toPicker.epoch))
         runCurrent()
         f.cpu.releaseNewest()
         runCurrent()
@@ -176,7 +177,8 @@ class MapsViewModelStateTest {
         val before = vm.state.value
         f.io.paused = true
         vm.onEvent(MapsEvent.OpenFrom)
-        vm.onEvent(MapsEvent.PickPlace("ulk.entrance.hostel"))
+        val fromPicker = vm.state.value.picker!!
+        vm.onEvent(MapsEvent.PickPlace("ulk.entrance.hostel", fromPicker.field, fromPicker.epoch))
         runCurrent()
         assertEquals(before.fromLabel, vm.state.value.fromLabel)
         assertSame(before.route, vm.state.value.route)

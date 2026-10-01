@@ -62,8 +62,7 @@ fun DateStrip(selected: LocalDate, today: LocalDate, pages: Map<LocalDate, DayPa
         BoxWithConstraints(Modifier.fillMaxWidth()) {
         val scrollDates = largeText || maxWidth < 56.dp * visibleCount + Zapara.space.xs * (visibleCount - 1)
         Row(Modifier.fillMaxWidth().then(if (scrollDates) Modifier.horizontalScroll(rememberScrollState()) else Modifier), horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-            (0L until visibleCount.toLong()).forEach { offset ->
-                val date = selected.plusDays(offset)
+            dateStripDates(selected, visibleCount).forEach { date ->
                 val page = pages[date]
                 val count = when { page == null || page.dataState != null -> "—"; page.lessons.isEmpty() -> uiText(R.string.space_day_8); else -> pluralStringResource(R.plurals.schedule_pair_count, page.lessons.size, page.lessons.size) }
                 val active = date == selected

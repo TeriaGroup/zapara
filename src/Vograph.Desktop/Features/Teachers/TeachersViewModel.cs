@@ -22,14 +22,18 @@ public sealed partial class TeachersViewModel : ViewModelBase
     private readonly ShellViewModel _shell;
     private readonly Func<DateTime> _clock;
     private readonly Action _onReload;
+    private readonly Action _onGroup;
     private readonly Action _onLanguage;
     private TeacherIndex _index = new(Array.Empty<LecturerInfo>(), Array.Empty<LecturerLesson>());
     private HashSet<string> _myIds = new();
     private string _myGroupId = "";
     private string _myGroupName = "";
     private bool _invert;
+    private DateTime _periodStart;
+    private int _weekCount = 2;
     private bool _loadedOnce;
     private Task? _inflight;
+    private int _groupEpoch;
 
     public TeachersViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null, bool allowNetwork = true) : base(app)
     {
@@ -37,8 +41,9 @@ public sealed partial class TeachersViewModel : ViewModelBase
         _clock = clock ?? (() => DateTime.Now);
         AllowNetwork = allowNetwork;
         _onReload = () => _ = LoadMyGroupAsync();
+        _onGroup = () => { _groupEpoch++; _ = LoadMyGroupAsync(); };
         _onLanguage = () => { OnPropertyChanged(nameof(Title)); Detail?.Relabel(); ApplyFilter(); };
-        shell.GroupChanged += _onReload;
+        shell.GroupChanged += _onGroup;
         // ParityInvert lives in settings, and the «нечет/чет» labels here are computed from it: the Settings
         // switch (and a timetable refresh) raise ScheduleChanged, so both events re-read it the same way.
         shell.ScheduleChanged += _onReload;
@@ -47,7 +52,7 @@ public sealed partial class TeachersViewModel : ViewModelBase
 
     public override void Detach()
     {
-        _shell.GroupChanged -= _onReload;
+        _shell.GroupChanged -= _onGroup;
         _shell.ScheduleChanged -= _onReload;
         App.Loc.LanguageChanged -= _onLanguage;
     }
@@ -67,10 +72,14 @@ public sealed partial class TeachersViewModel : ViewModelBase
     [ObservableProperty] private TeacherDetailViewModel? _detail;
     [ObservableProperty] private bool _isLoading;
     [ObservableProperty] private string? _loadError;
+    [ObservableProperty] private string _sourceNotice = "";
+    public bool HasSourceNotice => SourceNotice.Length > 0;
+    partial void OnSourceNoticeChanged(string value) => OnPropertyChanged(nameof(HasSourceNotice));
     public bool HasDetail => Detail is not null;
     public bool HasTeacherSearch => !string.IsNullOrWhiteSpace(Query);
     public bool NoTeacherMatches => _loadedOnce && !IsLoading && string.IsNullOrWhiteSpace(LoadError) && Items.Count == 0;
     public bool CanShowAllTeachers => NoTeacherMatches && OnlyMine && !HasTeacherSearch;
+    public bool CanSearchAllTeachers => NoTeacherMatches && OnlyMine && HasTeacherSearch;
     public string EmptyTeacherText => HasTeacherSearch ? "Преподаватели по запросу не найдены"
         : OnlyMine ? "У выбранной группы преподаватели пока не найдены" : "Преподавателей пока нет";
 
@@ -81,6 +90,7 @@ public sealed partial class TeachersViewModel : ViewModelBase
     }
     [RelayCommand] private void ClearTeacherSearch() => Query = "";
     [RelayCommand] private void ShowAllTeachers() => OnlyMine = false;
+    [RelayCommand] private void SearchAllTeachers() => OnlyMine = false;
     partial void OnOnlyMineChanged(bool value) => ApplyFilter();
     partial void OnIsLoadingChanged(bool value) => NotifyEmptyTeacherState();
     partial void OnLoadErrorChanged(string? value) => NotifyEmptyTeacherState();
@@ -99,8 +109,19 @@ public sealed partial class TeachersViewModel : ViewModelBase
         if (Selected is { } item) Detail = NewDetail(item, Detail?.ParityIndex ?? 0);
     }
 
-    private TeacherDetailViewModel NewDetail(TeacherItem item, int parityIndex) =>
-        new(item.Info, _index.LessonsOf(item.Info.Id), item.IsMine, _myGroupId, _myGroupName, _invert, App.Loc, _clock().Date) { ParityIndex = parityIndex };
+    private TeacherDetailViewModel NewDetail(TeacherItem item, int parityIndex)
+    {
+        var group = _myGroupId;
+        var epoch = _groupEpoch;
+        var owner = App.Profile.DatabasePath;
+        void OpenOwnDay(DateTime date)
+        {
+            if (!App.Work.CanPublish || epoch != _groupEpoch || App.Profile.DatabasePath != owner || App.Settings.MyGroupId != group) return;
+            _shell.OpenScheduleAt(date);
+        }
+        return new(item.Info, _index.LessonsOf(item.Info.Id), item.IsMine, group, _myGroupName, _invert, App.Loc, _clock().Date,
+            _periodStart, _weekCount, OpenOwnDay) { ParityIndex = parityIndex };
+    }
 
     /// <summary>Reentrancy guard. ShellViewModel.NavigateTo fires ActivateAsync without awaiting and without a
     /// busy check, and the shell hands back the same cached section instance on every navigation, so two
@@ -115,6 +136,25 @@ public sealed partial class TeachersViewModel : ViewModelBase
     }
 
     [RelayCommand] private Task Retry() => LoadAsync();
+    [RelayCommand(AllowConcurrentExecutions = false)]
+    private async Task RetryDirectory()
+    {
+        if (!AllowNetwork || IsLoading) return;
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        IsLoading = true;
+        try
+        {
+            if (await Task.Run(() => App.Lecturers.RefreshAsync()))
+            {
+                if (!operation.IsCurrent) return;
+                await RebuildAsync();
+                SourceNotice = "";
+            }
+            else if (operation.IsCurrent) SourceNotice = "Полный каталог не обновился. Показана локальная копия.";
+        }
+        finally { if (operation.IsCurrent) IsLoading = false; }
+    }
 
     /// <summary>Local copy first (instant), my-teacher ids under the gate, then the network refresh behind the list.
     /// _loadedOnce is set only once a source of data was actually found, so a failed first load (no cache, no
@@ -149,7 +189,13 @@ public sealed partial class TeachersViewModel : ViewModelBase
     {
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
-        if (await Task.Run(() => App.Lecturers.RefreshAsync())) await RebuildAsync();
+        if (await Task.Run(() => App.Lecturers.RefreshAsync()))
+        {
+            if (!operation.IsCurrent) return;
+            await RebuildAsync();
+            SourceNotice = "";
+        }
+        else if (operation.IsCurrent && _index.Lecturers.Count > 0) SourceNotice = "Полный каталог не обновился. Показана локальная копия.";
     }
 
     private async Task RebuildAsync()
@@ -161,7 +207,7 @@ public sealed partial class TeachersViewModel : ViewModelBase
         await LoadMyGroupAsync();
     }
 
-    private sealed record MyGroupData(string Id, string Name, bool Invert, HashSet<string> MyIds);
+    private sealed record MyGroupData(string Id, string Name, bool Invert, HashSet<string> MyIds, DateTime PeriodStart, int WeekCount);
 
     private async Task LoadMyGroupAsync()
     {
@@ -173,12 +219,14 @@ public sealed partial class TeachersViewModel : ViewModelBase
             var s = App.Db.GetSettings();
             var id = s.MyGroupId ?? "";
             var name = id.Length == 0 ? "" : App.Db.GetGroup(id)?.Name ?? "";
-            return new MyGroupData(id, name, s.ParityInvert, id.Length == 0 ? new HashSet<string>() : TeacherSearch.MyLecturerIds(App.Db.GetAllLessonsForGroup(id), index.Lecturers));
+            return new MyGroupData(id, name, s.ParityInvert, id.Length == 0 ? new HashSet<string>() : TeacherSearch.MyLecturerIds(App.Db.GetAllLessonsForGroup(id), index.Lecturers),
+                DateTime.TryParse(s.PeriodStart, out var periodStart) ? periodStart : new DateTime(_clock().Year, 9, 1), s.WeekCount > 0 ? s.WeekCount : 2);
         }, "teachers");
         if (data is null || !operation.IsCurrent) return;
         _myGroupId = data.Id;
         _myGroupName = data.Name;
         _invert = data.Invert;
+        _periodStart = data.PeriodStart; _weekCount = data.WeekCount;
         _myIds = data.MyIds;
         ApplyFilter();
         RebuildDetail();
@@ -200,12 +248,20 @@ public sealed partial class TeachersViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(NoTeacherMatches));
         OnPropertyChanged(nameof(CanShowAllTeachers));
+        OnPropertyChanged(nameof(CanSearchAllTeachers));
         OnPropertyChanged(nameof(EmptyTeacherText));
     }
 }
 
-public sealed record TeacherRow(string Time, string TimeEnd, string Name, string TypeLabel, string Room, string Groups, string ParityLabel, bool IsMine);
-public sealed record TeacherDay(string Title, bool IsToday, IReadOnlyList<TeacherRow> Rows);
+public sealed record TeacherRow(string Time, string TimeEnd, string Name, string TypeLabel, string Room, string Groups, string ParityLabel, bool IsMine,
+    DateTime? NextDate = null, IRelayCommand? OpenOwnDayCommand = null)
+{
+    public bool CanOpenOwnDay => IsMine && NextDate is not null && OpenOwnDayCommand is not null;
+}
+public sealed record TeacherDay(string Title, bool IsToday, IReadOnlyList<TeacherRow> Rows, DateTime? NextDate = null)
+{
+    public string NextDateText => NextDate is { } date ? $"Ближайшая дата · {date:dd.MM.yyyy}" : "";
+}
 
 /// <summary>Pure over the lecturer's lessons: no Core access, so it can be built on the UI thread when a row is selected.</summary>
 public sealed partial class TeacherDetailViewModel : ObservableObject
@@ -216,8 +272,12 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
     private readonly bool _invert;
     private readonly Loc _loc;
     private readonly DateTime _today;
+    private readonly DateTime _periodStart;
+    private readonly int _weekCount;
+    private readonly Action<DateTime>? _openOwnDay;
 
-    public TeacherDetailViewModel(LecturerInfo info, IReadOnlyList<LecturerLesson> lessons, bool isMine, string myGroupId, string myGroupName, bool invert, Loc loc, DateTime today)
+    public TeacherDetailViewModel(LecturerInfo info, IReadOnlyList<LecturerLesson> lessons, bool isMine, string myGroupId, string myGroupName, bool invert, Loc loc, DateTime today,
+        DateTime? periodStart = null, int weekCount = 2, Action<DateTime>? openOwnDay = null)
     {
         Info = info;
         _lessons = lessons;
@@ -227,6 +287,9 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
         _invert = invert;
         _loc = loc;
         _today = today;
+        _periodStart = periodStart ?? new DateTime(today.Year, 9, 1);
+        _weekCount = weekCount > 0 ? weekCount : 2;
+        _openOwnDay = openOwnDay;
         _segmentItems = BuildSegments();
         _days = Build();
     }
@@ -242,9 +305,11 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
     [ObservableProperty] private int _parityIndex; // 0 both, 1 odd, 2 even
     [ObservableProperty] private IReadOnlyList<TeacherDay> _days;
     public string WeekLessonCountText => $"Пар в выбранной неделе: {Days.Sum(day => day.Rows.Count)}";
+    public bool HasWeekLessons => Days.Any(day => day.Rows.Count > 0);
+    public string EmptyWeekText => ParityIndex == 0 ? "В загруженном расписании преподавателя пар нет." : "В выбранной чётности пар нет. Попробуйте другую неделю или обе.";
 
-    partial void OnParityIndexChanged(int value) => Days = Build();
-    partial void OnDaysChanged(IReadOnlyList<TeacherDay> value) => OnPropertyChanged(nameof(WeekLessonCountText));
+    partial void OnParityIndexChanged(int value) { Days = Build(); OnPropertyChanged(nameof(EmptyWeekText)); }
+    partial void OnDaysChanged(IReadOnlyList<TeacherDay> value) { OnPropertyChanged(nameof(WeekLessonCountText)); OnPropertyChanged(nameof(HasWeekLessons)); }
 
     public void Relabel()
     {
@@ -258,7 +323,6 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
     private IReadOnlyList<TeacherDay> Build()
     {
         var loc = _loc;
-        var todayDow = (int)_today.DayOfWeek;
         var days = new List<TeacherDay>(6);
         for (var dow = 1; dow <= 6; dow++)
         {
@@ -270,7 +334,8 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
                 .ThenBy(x => x.UserParity)
                 .Select(x => Row(x.Lesson, loc))
                 .ToList();
-            days.Add(new TeacherDay(loc.T(DayNames.Key(dow)), dow == todayDow, rows));
+            var nextDate = rows.Select(row => row.NextDate).Where(date => date is not null).Min();
+            days.Add(new TeacherDay(loc.T(DayNames.Key(dow)), nextDate?.Date == _today.Date, rows, nextDate));
         }
         return days;
     }
@@ -281,8 +346,23 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
         var groupsText = string.Join(", ", groups.Take(4)) + (groups.Count > 4 ? $" +{groups.Count - 4}" : "");
         var mine = l.Groups.Any(g => g.IdGroup == _myGroupId || (_myGroupName.Length > 0 && g.Number == _myGroupName));
         var room = string.IsNullOrWhiteSpace(l.ClassroomRaw) ? "—" : LessonText.CleanRoom(l.ClassroomRaw);
+        var next = NextDate(l.DayOfWeek, l.Parity);
         return new TeacherRow(l.TimeStart, l.TimeEnd, LessonText.StripType(l.DisciplineRaw, l.TypeRaw), DayTitles.TypeLabel(l.TypeRaw, loc),
-            room, groupsText, loc.T(ParityCodes.WeekLabelKey(l.Parity, _invert)), mine);
+            room, groupsText, loc.T(ParityCodes.WeekLabelKey(l.Parity, _invert)), mine, next,
+            mine && next is { } date && _openOwnDay is not null ? new RelayCommand(() => _openOwnDay(date)) : null);
+    }
+    private DateTime? NextDate(int dayOfWeek, int storedParity)
+    {
+        for (var offset = 0; offset < 56; offset++)
+        {
+            var date = _today.Date.AddDays(offset);
+            var dow = (int)date.DayOfWeek == 0 ? 7 : (int)date.DayOfWeek;
+            if (dow != dayOfWeek) continue;
+            var code = ParityService.GetWeekCode(date, _periodStart, _weekCount);
+            if (_invert) code = code == 1 ? 2 : 1;
+            if (storedParity == 0 || code == storedParity) return date;
+        }
+        return null;
     }
 }
 

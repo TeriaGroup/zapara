@@ -3,7 +3,8 @@ package ru.bgtu_voenmeh.zapara.data.communities
 import kotlinx.coroutines.CancellationException
 
 data class SharedHomeworkSnapshot(val groupId: String, val communityId: String, val rows: List<CommunityHomework>, val completions: Map<String, HomeworkCompletion>)
-data class SharedHomeworkRefresh(val snapshot: SharedHomeworkSnapshot?, val revoked: Boolean, val applied: Boolean = true)
+data class SharedHomeworkRefresh(val snapshot: SharedHomeworkSnapshot?, val revoked: Boolean,
+    val applied: Boolean = true, val failed: Boolean = false)
 
 class SharedHomeworkCache {
     var snapshot: SharedHomeworkSnapshot? = null
@@ -15,10 +16,21 @@ class SharedHomeworkCache {
     fun invalidate(groupId: String, communityId: String, token: String?) {
         if (activeGroup==groupId && activeToken==token && snapshot?.communityId==communityId) clear()
     }
+    fun acknowledgeCompletion(groupId: String, communityId: String, token: String,
+        completion: HomeworkCompletion): Boolean {
+        val current = snapshot ?: return false
+        if (activeGroup != groupId || activeToken != token || current.groupId != groupId ||
+            current.communityId != communityId || current.rows.none { it.homeworkId == completion.homeworkId }) return false
+        val previous = current.completions[completion.homeworkId]
+        if (previous != null && completion.revision < previous.revision) return false
+        ++serial // A prior GET cannot replace this acknowledged completion.
+        snapshot = current.copy(completions = current.completions + (completion.homeworkId to completion))
+        return true
+    }
     suspend fun refresh(api: CommunityHttpClient, token: String?, groupId: String): SharedHomeworkRefresh {
         val ticket = ++serial
+        if (activeGroup != groupId || activeToken != token) snapshot = null
         activeGroup=groupId; activeToken=token
-        if (snapshot?.groupId != groupId) snapshot = null
         fun finish(next: SharedHomeworkSnapshot?, revoked: Boolean): SharedHomeworkRefresh {
             if (revoked && activeGroup==groupId && activeToken==token) {
                 serial++; snapshot=null
@@ -38,6 +50,6 @@ class SharedHomeworkCache {
         catch (e: CommunityClientException) {
             if (e.failure in setOf(CommunityClientFailure.InvalidSession, CommunityClientFailure.Forbidden, CommunityClientFailure.NotFound)) return finish(null, true)
         } catch (_: Exception) { }
-        return finish(snapshot, false)
+        return finish(snapshot, false).copy(failed = true)
     }
 }

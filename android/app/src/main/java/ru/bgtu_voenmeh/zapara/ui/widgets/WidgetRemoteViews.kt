@@ -13,6 +13,7 @@ import android.view.View
 import android.widget.RemoteViews
 import ru.bgtu_voenmeh.zapara.MainActivity
 import ru.bgtu_voenmeh.zapara.R
+import ru.bgtu_voenmeh.zapara.ui.shell.WidgetLaunchScope
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.Locale
@@ -33,7 +34,8 @@ object WidgetRemoteViews {
         Triple(R.id.widget_homework_row4, R.id.widget_homework_subject4, R.id.widget_homework_detail4)
     )
 
-    fun schedule(context: Context, snapshot: ScheduleWidgetSnapshot, heightDp: Int = 160): RemoteViews {
+    fun schedule(context: Context, snapshot: ScheduleWidgetSnapshot, heightDp: Int = 160,
+        widgetId: Int = 0): RemoteViews {
         val compact = heightDp < 120
         val capacity = ScheduleWidgetComposer.rowsForHeightDp(heightDp, context.resources.configuration.fontScale)
         val visibleRows = if (snapshot.cleared) emptyList() else snapshot.rows.take(capacity)
@@ -41,12 +43,17 @@ object WidgetRemoteViews {
         val colors = WidgetPalette.of(context, snapshot.isDark)
         val title = if (compact && !snapshot.cleared && snapshot.dayLabel.isNotBlank())
             context.getString(R.string.widget_schedule_short_title, snapshot.dayLabel) else snapshot.title
-        paintChrome(context, views, R.id.widget_schedule_root, R.id.widget_schedule_title, R.id.widget_schedule_subtitle, R.id.widget_schedule_empty, title, if (compact) "" else snapshot.subtitle, snapshot.empty, snapshot.cleared, colors)
+        paintChrome(context, views, R.id.widget_schedule_root, R.id.widget_schedule_title, R.id.widget_schedule_subtitle, R.id.widget_schedule_empty,
+            title, snapshot.readError ?: if (compact) "" else snapshot.subtitle,
+            snapshot.empty, snapshot.cleared, colors)
+        if (snapshot.readError != null) views.setOnClickPendingIntent(R.id.widget_schedule_subtitle,
+            WidgetIntents.retry(context, widgetId, "schedule"))
         views.setViewVisibility(R.id.widget_schedule_title, if (compact && heightDp <= 90 &&
             context.resources.configuration.fontScale >= 1.25f) View.GONE else View.VISIBLE)
         val spoken = if (snapshot.cleared) listOf(snapshot.title, context.getString(R.string.widget_loading)).joinToString(", ") else buildList {
             add(snapshot.title)
             add(snapshot.subtitle)
+            add(snapshot.readError.orEmpty())
             add(snapshot.empty.orEmpty())
             visibleRows.forEach {
                 add(it.name)
@@ -55,6 +62,8 @@ object WidgetRemoteViews {
         }.filter { it.isNotBlank() }.joinToString(", ")
         views.setContentDescription(R.id.widget_schedule_root, spoken.ifBlank { context.getString(R.string.nav_schedule) })
         views.setViewVisibility(R.id.widget_schedule_toss, View.GONE)
+        val generic = openApp(context, 4101, "schedule")
+        val scope = WidgetLaunchScope(snapshot.identity.profileId, snapshot.identity.databaseName)
         scheduleRows.forEachIndexed { index, slot ->
             val row = visibleRows.getOrNull(index)
             val bind = WidgetRowBind.of(row)
@@ -62,6 +71,9 @@ object WidgetRemoteViews {
             views.setTextViewText(slot.meta, bind.secondary)
             views.setTextViewText(slot.number, if (!compact && row != null && row.number > 0) row.number.toString() else "")
             views.setViewVisibility(slot.row, if (bind.visible) View.VISIBLE else View.GONE)
+            views.setOnClickPendingIntent(slot.row, row?.let {
+                WidgetIntents.scheduleRow(context, widgetId, index + 1, it, scope)
+            } ?: generic)
             if (bind.visible && row != null) {
                 val ink = if (row.isPast) colors.text3 else colors.text1
                 views.setTextColor(slot.name, ink)
@@ -69,27 +81,38 @@ object WidgetRemoteViews {
                 views.setTextColor(slot.number, colors.text2)
             }
         }
-        val open = openApp(context, 4101, "schedule")
-        views.setOnClickPendingIntent(R.id.widget_schedule_root, open)
-        views.setOnClickPendingIntent(R.id.widget_schedule_body, open)
+        views.setOnClickPendingIntent(R.id.widget_schedule_root, generic)
+        views.setOnClickPendingIntent(R.id.widget_schedule_body, generic)
         return views
     }
 
-    fun homework(context: Context, snapshot: HomeworkWidgetSnapshot, heightDp: Int = 160): RemoteViews {
+    fun homework(context: Context, snapshot: HomeworkWidgetSnapshot, heightDp: Int = 160, widgetId: Int = 0): RemoteViews {
         val compact = heightDp < 120
         val visibleRows = if (snapshot.cleared) emptyList() else snapshot.rows.take(
             HomeworkWidgetComposer.rowsForHeightDp(heightDp, context.resources.configuration.fontScale))
         val views = RemoteViews(context.packageName, if (compact) R.layout.widget_homework_compact else R.layout.widget_homework)
         val colors = WidgetPalette.of(context, snapshot.isDark)
-        paintChrome(context, views, R.id.widget_homework_root, R.id.widget_homework_title, R.id.widget_homework_subtitle, R.id.widget_homework_empty, snapshot.title, if (compact) "" else snapshot.subtitle, snapshot.empty, snapshot.cleared, colors)
+        paintChrome(context, views, R.id.widget_homework_root, R.id.widget_homework_title, R.id.widget_homework_subtitle, R.id.widget_homework_empty,
+            snapshot.title, snapshot.readError ?: if (compact) "" else snapshot.subtitle,
+            snapshot.empty, snapshot.cleared, colors)
+        if (snapshot.readError != null) views.setOnClickPendingIntent(R.id.widget_homework_subtitle,
+            WidgetIntents.retry(context, widgetId, "homework"))
         views.setViewVisibility(R.id.widget_homework_title, if (compact && heightDp <= 90 &&
             context.resources.configuration.fontScale >= 1.25f) View.GONE else View.VISIBLE)
+        val generic = openApp(context, 4102, "homework")
+        val scope = WidgetLaunchScope(snapshot.identity.profileId, snapshot.identity.databaseName)
         homeworkRows.forEachIndexed { index, ids ->
             val row = visibleRows.getOrNull(index)
             val bind = WidgetRowBind.of(row)
             views.setTextViewText(ids.second, bind.primary)
             views.setTextViewText(ids.third, if (compact && row != null) row.detail.substringAfterLast(" · ") else bind.secondary)
             views.setViewVisibility(ids.first, if (bind.visible) View.VISIBLE else View.GONE)
+            views.setOnClickPendingIntent(ids.first, when {
+                row == null -> null
+                row.id > 0 -> WidgetIntents.homework(context, widgetId, index, row.id, scope)
+                else -> generic
+            })
+            views.setContentDescription(ids.first, row?.let { "${it.subject}, ${it.detail}" })
             if (bind.visible) {
                 views.setTextColor(ids.second, colors.text1)
                 views.setTextColor(ids.third, colors.tone(bind.tone))
@@ -98,14 +121,11 @@ object WidgetRemoteViews {
         val spoken = if (snapshot.cleared) listOf(snapshot.title, context.getString(R.string.widget_loading)) else buildList {
             add(snapshot.title)
             add(snapshot.subtitle)
+            add(snapshot.readError.orEmpty())
             add(snapshot.empty.orEmpty())
-            visibleRows.forEach {
-                add(it.subject)
-                add(it.detail)
-            }
         }
         views.setContentDescription(R.id.widget_homework_root, spoken.filter(String::isNotBlank).joinToString(", "))
-        views.setOnClickPendingIntent(R.id.widget_homework_root, openApp(context, 4102, "homework"))
+        views.setOnClickPendingIntent(R.id.widget_homework_root, generic)
         return views
     }
 
@@ -129,7 +149,9 @@ object WidgetRemoteViews {
             else -> colors.text2
         }
         bindLine(views, R.id.widget_timer_phase,
-            if (snapshot.cleared) context.getString(R.string.widget_loading) else snapshot.phaseText, phaseColor)
+            if (snapshot.cleared) context.getString(R.string.widget_loading) else snapshot.readError ?: snapshot.phaseText, phaseColor)
+        if (snapshot.readError != null) views.setOnClickPendingIntent(R.id.widget_timer_phase,
+            WidgetIntents.retry(context, 0, "timer"))
         bindLine(views, R.id.widget_timer_subject, if (snapshot.cleared) "" else snapshot.subject, colors.text1)
         bindLine(views, R.id.widget_timer_detail,
             if (snapshot.cleared || heightDp <= 110 || context.resources.configuration.fontScale >= 1.2f) "" else snapshot.detail, colors.text2)
@@ -144,7 +166,7 @@ object WidgetRemoteViews {
                 context.getString(R.string.widget_loading))
             return
         }
-        val spoken = listOf(snapshot.phaseText, snapshot.subject, snapshot.detail,
+        val spoken = listOf(snapshot.readError ?: snapshot.phaseText, snapshot.subject, snapshot.detail,
             absoluteEndText(context, snapshot))
             .map { it.trim() }
             .filter { it.isNotEmpty() }
@@ -205,7 +227,7 @@ object WidgetRemoteViews {
             val previous = scheduleFaces.previous(id, snapshot.identity)
             val layout = if (height < 120) R.layout.widget_schedule_compact else R.layout.widget_schedule
             WidgetMotionPlayer.publishFinal(context, id, layout, R.id.widget_schedule_toss,
-                snapshot.identity, policy, schedule(context, shown, height), snapshot.cleared)
+                snapshot.identity, policy, schedule(context, shown, height, id), snapshot.cleared)
             if (snapshot.cleared) {
                 scheduleFaces.forget(id)
                 return@forEach
@@ -233,7 +255,7 @@ object WidgetRemoteViews {
             val previous = homeworkFaces.previous(id, snapshot.identity)
             val layout = if (height < 120) R.layout.widget_homework_compact else R.layout.widget_homework
             WidgetMotionPlayer.publishFinal(context, id, layout, R.id.widget_homework_overlay, snapshot.identity, policy,
-                homework(context, shown, height), snapshot.cleared)
+                homework(context, shown, height, id), snapshot.cleared)
             if (snapshot.cleared) {
                 homeworkFaces.forget(id)
                 return@forEach

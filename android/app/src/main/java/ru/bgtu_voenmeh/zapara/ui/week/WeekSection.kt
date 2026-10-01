@@ -29,11 +29,15 @@ import ru.bgtu_voenmeh.zapara.ui.schedule.LessonTypeChip
 import ru.bgtu_voenmeh.zapara.ui.shell.LocalShellChrome
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
+import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
 import ru.bgtu_voenmeh.zapara.ui.gestures.plannerSwipe
 import ru.bgtu_voenmeh.zapara.ui.theme.plannerContentReveal
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -41,12 +45,39 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
     val chrome = LocalShellChrome.current
     val c = Zapara.colors
     Column(Modifier.fillMaxSize()) {
-        ZTopBar(stringResource(R.string.nav_week)) { ru.bgtu_voenmeh.zapara.ui.theme.ZButton(stringResource(R.string.nav_schedule), { onOpenDay(state.selectedDate) }, ghost = true, quiet = true) }
+        ZTopBar(stringResource(R.string.nav_week)) { ZButton(stringResource(R.string.nav_schedule), { onOpenDay(state.selectedDate) }, ghost = true, quiet = true) }
         if (!state.loaded) {
             Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
+        } else if (state.error != null && !state.hasGroup && state.days.isEmpty()) {
+            EmptyState(R.drawable.ic_week, stringResource(R.string.load_fail), state.error,
+                stringResource(R.string.repeat), { onEvent(WeekEvent.Retry) }, "Week.LoadFail")
         } else if (!state.hasGroup) {
             EmptyState(R.drawable.ic_week, stringResource(R.string.empty_no_group), stringResource(R.string.empty_no_group_hint), stringResource(R.string.group_pick), chrome.onGroupChip, "Empty.NoGroup")
+        } else if (state.noSavedSchedule) {
+            EmptyState(R.drawable.ic_week, stringResource(R.string.ux30_week_no_saved),
+                state.error ?: stringResource(R.string.ux30_week_no_saved_hint),
+                stringResource(R.string.ux30_week_load), { onEvent(WeekEvent.Retry) }, "Week.NoSavedSchedule")
         } else {
+            Row(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZIconButton(R.drawable.ic_chevron_left, stringResource(R.string.ux30_week_previous),
+                    { onEvent(WeekEvent.Shift(-1)) }, "Week.Previous")
+                val rangeFormat = DateTimeFormatter.ofPattern("d MMM", Locale("ru"))
+                Text(stringResource(R.string.ux30_week_range,
+                    state.days.firstOrNull()?.date?.format(rangeFormat).orEmpty(),
+                    state.days.lastOrNull()?.date?.format(rangeFormat).orEmpty()),
+                    style = Zapara.typography.bodyStrong, color = c.text1, modifier = Modifier.weight(1f))
+                ZIconButton(R.drawable.ic_chevron_right, stringResource(R.string.ux30_week_next),
+                    { onEvent(WeekEvent.Shift(1)) }, "Week.Next")
+                ZButton(stringResource(R.string.ux30_week_today), { onEvent(WeekEvent.Today) }, ghost = true, quiet = true)
+            }
+            state.error?.let { error ->
+                ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l), tag = "Week.LoadError") {
+                    Text(error, style = Zapara.typography.body, color = c.text1)
+                    ZButton(stringResource(R.string.repeat), { onEvent(WeekEvent.Retry) }, ghost = true,
+                        enabled = !state.refreshing, busy = state.refreshing)
+                }
+            }
             val odd = stringResource(R.string.week_odd)
             val even = stringResource(R.string.week_even)
             val labels = listOf(
@@ -66,6 +97,7 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
                             horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                             Text(day.title, style = Zapara.typography.section, color = c.text1,
                                 modifier = Modifier.weight(1f))
+                            if (day.isToday) ZChip(stringResource(R.string.ux30_week_today), tag = "Week.Today.${day.dow}")
                             ZChip(stringResource(R.string.next_week_day_count, day.rows.size),
                                 tag = "Week.Count.${day.dow}")
                         }

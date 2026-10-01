@@ -1,12 +1,36 @@
 package ru.bgtu_voenmeh.zapara.ui.settings
 
 import ru.bgtu_voenmeh.zapara.ui.UiCopy
+import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
+import ru.bgtu_voenmeh.zapara.ui.theme.ThemeChoice
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.format.DateTimeParseException
 import java.time.temporal.ChronoUnit
 
 object SettingsLogic {
+    fun persistedPreference(state: SettingsUiState, key: String,
+        saved: ScheduleRepository.SettingsState): SettingsUiState = when (key) {
+        "parity" -> state.copy(parityInvert = saved.parityInvert)
+        "theme" -> state.copy(theme = ThemeChoice.fromKey(saved.theme))
+        "animations" -> state.copy(animations = saved.animations)
+        "notify" -> state.copy(notifyEnabled = saved.notifyEnabled)
+        "source" -> state.copy(useUniversityXml = saved.useUniversityXml)
+        "maps" -> state.copy(mapsAlpha = saved.mapsAlpha)
+        else -> state
+    }
+    fun supportSendReady(reportSending: Boolean, selectingAttachment: Boolean, attachmentReads: Int): Boolean =
+        !reportSending && !selectingAttachment && attachmentReads == 0
+    fun cancelNotificationTimeDraft(state: SettingsUiState): SettingsUiState =
+        state.copy(time1 = state.savedTime1, time2 = state.savedTime2,
+            timeDirty = false, timeError = null, timeSaveError = null)
+    fun editNotificationTime(state: SettingsUiState, evening: Boolean, value: String, copy: UiCopy): SettingsUiState {
+        val first = if (evening) value else state.time1
+        val second = if (evening) state.time2 else value
+        return state.copy(time1 = first, time2 = second,
+            timeDirty = first != state.savedTime1 || second != state.savedTime2,
+            timeError = validateTimes(first, second, copy), timeSaveError = null)
+    }
     fun updatedLine(lastFetchedAt: String?, now: LocalDateTime, copy: UiCopy, hasLocal: Boolean = false): String {
         val parsed = lastFetchedAt?.let(::parse)
         if (parsed == null) {

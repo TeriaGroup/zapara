@@ -89,9 +89,9 @@ class SummaryBreakdownTest {
                 ZaparaTheme(theme, MotionSettings.Off) {
                     Box(Modifier.widthIn(max = 320.dp).fillMaxSize()) {
                         SummarySection(SummaryUiState(true, true, segment,
-                            SummaryComposer.tiles(segment, lessons, { _, _ -> "" }, copy))) {
+                            SummaryComposer.tiles(segment, lessons, { _, _ -> "" }, copy)), onEvent = {
                             if (it is SummaryEvent.Segment) segment = it.index
-                        }
+                        })
                     }
                 }
             }

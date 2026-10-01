@@ -55,6 +55,13 @@ internal class MapLoadRequests(private val scope: CoroutineScope) {
 
     fun launch(block: suspend () -> Unit): Job = start(explicit = true, block)
 
+    fun invalidate() {
+        generation++
+        job?.cancel()
+        job = null
+        explicit = false
+    }
+
     private fun start(explicit: Boolean, block: suspend () -> Unit): Job {
         this.explicit = explicit
         val request = Request(++generation)

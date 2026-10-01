@@ -4,6 +4,8 @@ import { usePrivateHomework } from "./private-sync";
 import { resolveStoredGroup } from "./groupChoice";
 import { normalizeIntersectionStrictness } from "./intersectionStrictness";
 import { createSessionRefresher } from "./session-refresh";
+import { subgroupIndex } from "./subgroups";
+import { subgroupUndoCurrent, type SubgroupUndo } from "./next-workflows";
 
 import type { FriendItem, GroupsPayload, HomeworkItem, Lesson, Session, TimetablePayload } from "./types";
 
@@ -25,8 +27,10 @@ type State = {
   loading: boolean;
   refresh: () => void;
   session: Session | null;
+  sessionLoaded: boolean;
   sessionStatus: string;
   refreshSession: () => Promise<void>;
+  acceptProfileName: (user: NonNullable<Session["user"]>) => void;
   privateHomework: ReturnType<typeof usePrivateHomework>;
   homework: HomeworkItem[];
   saveHomework: (item: HomeworkItem) => void;
@@ -40,6 +44,8 @@ type State = {
   setDate: (date: Date) => void;
   subgroups: Record<string, Record<string, string>>;
   pickSubgroup: (streamId: string, optionId: string) => void;
+  undoSubgroup: () => void;
+  canUndoSubgroup: boolean;
 };
 
 const Ctx = createContext<State | null>(null);
@@ -92,6 +98,30 @@ export function Provider({ children }: { children: ReactNode }) {
   const [subgroups, setSubgroups] = useState<Record<string, Record<string, string>>>(() => {
     try { return JSON.parse(localStorage.getItem(subgroupKey) || "{}"); } catch { return {}; }
   });
+  const subgroupOwner = session?.authenticated ? session.user?.userId || "account" : "guest";
+  const [subgroupLoadedOwner,setSubgroupLoadedOwner]=useState("guest");
+  const subgroupRef=useRef(subgroups); subgroupRef.current=subgroups;
+  const subgroupScope=useRef({identity:sessionIdentity,owner:subgroupOwner,groupId,epoch:0,lessons:bundle?.groupId===groupId?bundle.payload.lessons:[]});
+  const subgroupEpoch=subgroupScope.current.epoch+(subgroupScope.current.identity!==sessionIdentity||subgroupScope.current.groupId!==groupId?1:0);
+  subgroupScope.current={identity:sessionIdentity,owner:subgroupOwner,groupId,epoch:subgroupEpoch,lessons:bundle?.groupId===groupId?bundle.payload.lessons:[]};
+  const subgroupScopeId=`${sessionIdentity}:${subgroupEpoch}`;
+  const [subgroupUndo,setSubgroupUndo]=useState<SubgroupUndo|null>(null);
+  useEffect(()=>{let choices:Record<string,Record<string,string>>={};try{choices=JSON.parse(localStorage.getItem(subgroupOwner==="guest"?subgroupKey:`${subgroupKey}.${subgroupOwner}`)||"{}");}catch{} subgroupRef.current=choices;setSubgroups(choices);setSubgroupLoadedOwner(subgroupOwner);setSubgroupUndo(null);},[subgroupOwner]);
+  const activeSubgroups=subgroupLoadedOwner===subgroupOwner?subgroups:{};
+  const canUndoSubgroup=!!subgroupUndo&&subgroupUndoCurrent(subgroupUndo,subgroupScopeId,groupId,activeSubgroups[groupId]||{});
+  function persistSubgroup(stream:string, option:string|undefined, undo=false) {
+    const live=subgroupScope.current;
+    if(live.epoch!==subgroupEpoch||live.identity!==sessionIdentity||live.owner!==subgroupLoadedOwner||live.groupId!==groupId)return;
+    const currentStream=subgroupIndex(live.lessons).streams.find(row=>row.id===stream);
+    if(!currentStream || (option!==undefined&&!currentStream.options.some(row=>row.id===option)))return;
+    const previous=subgroupRef.current[groupId]?.[stream];
+    const group={...(subgroupRef.current[groupId]||{})};if(option===undefined)delete group[stream];else group[stream]=option;
+    const next={...subgroupRef.current,[groupId]:group};
+    try { localStorage.setItem(subgroupOwner==="guest"?subgroupKey:`${subgroupKey}.${subgroupOwner}`,JSON.stringify(next)); }
+    catch { setNotice("Выбор подгруппы не сохранён. Повторите попытку.");return; }
+    subgroupRef.current=next;setSubgroups(next);
+    setSubgroupUndo(undo?null:{scope:subgroupScopeId,group:groupId,stream,before:previous,after:option});
+  }
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -114,10 +144,8 @@ export function Provider({ children }: { children: ReactNode }) {
     if (session?.authenticated) privateHomework.saveSettings({ selectedGroupId: id || null });
   };
 
-  useEffect(() => { localStorage.setItem(friendsKey, JSON.stringify(friends)); }, [friends]);
   useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity) localStorage.setItem(intersectionStrictnessKey, String(intersectionStrictness)); }, [intersectionStrictness, sessionLoaded, sessionIdentity]);
   useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity) localStorage.setItem(showAbsentFriendsKey, showAbsentFriends ? "1" : "0"); }, [showAbsentFriends, sessionLoaded, sessionIdentity]);
-  useEffect(() => { localStorage.setItem(subgroupKey, JSON.stringify(subgroups)); }, [subgroups]);
 
   useEffect(() => {
     let stop = false;
@@ -211,20 +239,17 @@ export function Provider({ children }: { children: ReactNode }) {
     timetableLoading: !!groupId && (timetableStatus.groupId !== groupId || timetableStatus.loading),
     timetableFailed: timetableStatus.groupId === groupId && timetableStatus.failed,
     notice, loading, refresh: () => setTick(n => n + 1),
-    session, sessionStatus, refreshSession: () => sessionRefresher.current!(),
+    session, sessionLoaded, sessionStatus, refreshSession: () => sessionRefresher.current!(),
+    acceptProfileName: user => setSession(current=>current?.authenticated&&current.user?.userId===user.userId?{...current,user}:current),
     privateHomework, homework, saveHomework: privateHomework.save,
-    friends, saveFriends: setFriends,
+    friends, saveFriends: items => { if(subgroupScope.current.identity!==sessionIdentity)throw new Error("Профиль изменился.");localStorage.setItem(friendsKey,JSON.stringify(items));setFriends(items); },
     intersectionStrictness, setIntersectionStrictness: value => { const strictness = normalizeIntersectionStrictness(value); setIntersectionStrictness(strictness); if (session?.authenticated) privateHomework.saveSettings({ strictness }); else guestPreferences.current.strictness = strictness; }, showAbsentFriends, setShowAbsentFriends: value => { setShowAbsentFriends(value); if (session?.authenticated) privateHomework.saveSettings({ alwaysShow: value }); else guestPreferences.current.showAbsentFriends = value; },
     date, setDate,
-    subgroups,
-    pickSubgroup: (streamId, optionId) => setSubgroups(current => {
-      const group = { ...(current[groupId] || {}) };
-      if (group[streamId] === optionId) delete group[streamId];
-      else group[streamId] = optionId;
-      return { ...current, [groupId]: group };
-    }),
-  }), [theme, animations, invert, groupId, catalog, bundle, timetableStatus, notice, loading, session, sessionStatus, privateHomework, homework,
-    friends, intersectionStrictness, showAbsentFriends, date, subgroups]);
+    subgroups: activeSubgroups, canUndoSubgroup,
+    pickSubgroup: (streamId, optionId) => persistSubgroup(streamId,subgroupRef.current[groupId]?.[streamId]===optionId?undefined:optionId),
+    undoSubgroup: () => {if(subgroupUndo&&subgroupUndoCurrent(subgroupUndo,`${subgroupScope.current.identity}:${subgroupScope.current.epoch}`,subgroupScope.current.groupId,subgroupRef.current[groupId]||{}))persistSubgroup(subgroupUndo.stream,subgroupUndo.before,true);},
+  }), [theme, animations, invert, groupId, catalog, bundle, timetableStatus, notice, loading, session, sessionLoaded, sessionStatus, privateHomework, homework,
+    friends, intersectionStrictness, showAbsentFriends, date, subgroups, subgroupLoadedOwner, subgroupUndo, canUndoSubgroup]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

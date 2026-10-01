@@ -33,12 +33,27 @@ internal object ExternalReturn {
     fun hasPending(context: Context): Boolean = context.getSharedPreferences(prefs, Context.MODE_PRIVATE)
         .getString("transaction", null) != null
 
-    fun remember(context: Context, transactionId: String, verifier: String, userId: String?, proofPurpose: String? = null) {
+    data class Pending(val transactionId: String, val provider: String?)
+
+    fun pending(context: Context): Pending? {
+        val saved = context.getSharedPreferences(prefs, Context.MODE_PRIVATE)
+        val id = saved.getString("transaction", null) ?: return null
+        return Pending(id, saved.getString("provider", null))
+    }
+
+    suspend fun cancel(context: Context, expectedId: String): Boolean = completion.withLock {
+        val saved = context.getSharedPreferences(prefs, Context.MODE_PRIVATE)
+        if (saved.getString("transaction", null) != expectedId) return@withLock false
+        saved.edit().clear().commit()
+    }
+
+    fun remember(context: Context, transactionId: String, verifier: String, userId: String?, proofPurpose: String? = null, provider: String? = null) {
         val saved = context.getSharedPreferences(prefs, Context.MODE_PRIVATE).edit()
             .putString("transaction", transactionId)
             .putString("verifier", verifier)
             .putString("userId", userId)
             .putString("proofPurpose", proofPurpose)
+            .putString("provider", provider)
             .commit()
         if (!saved) throw AccountClientException(AccountClientFailure.VaultUnavailable)
     }

@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.VisualTree;
+using Avalonia.Threading;
 using Avalonia.Styling;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Controls;
@@ -46,8 +48,10 @@ public partial class ScheduleView : UserControl
         if (ReferenceEquals(_vm, vm)) return;
         _swipe?.Reset();
         if (_vm is not null) _vm.DayShown -= OnDayShown;
+        if (_vm is not null) _vm.LessonFocusRequested -= OnLessonFocusRequested;
         _vm = vm;
         if (_vm is not null) _vm.DayShown += OnDayShown;
+        if (_vm is not null) _vm.LessonFocusRequested += OnLessonFocusRequested;
     }
 
     private void ApplyPlanningLayout()
@@ -58,6 +62,20 @@ public partial class ScheduleView : UserControl
         Grid.SetRow(PlannerMain,wide?0:1);Grid.SetColumn(PlannerMain,wide?1:0);
         Grid.SetRow(PlannerDeadlines,wide?0:2);Grid.SetColumn(PlannerDeadlines,wide?2:0);
         _vm?.SetDateStripCount(Bounds.Width>0 && Bounds.Width<720?5:7);
+    }
+
+    private void OnOverlapClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((sender as Button)?.DataContext is not ScheduleOverlap overlap) return;
+        overlap.First.ShowDetails = true;
+        FocusLesson(overlap.First);
+    }
+    private void OnLessonFocusRequested(LessonRowViewModel row) => Dispatcher.UIThread.Post(() => FocusLesson(row));
+    private void FocusLesson(LessonRowViewModel row)
+    {
+        var card = this.GetVisualDescendants().OfType<LessonCardView>()
+            .FirstOrDefault(control => ReferenceEquals(control.DataContext, row));
+        card?.GetVisualDescendants().OfType<Button>().FirstOrDefault(button => button.IsVisible && button.IsEnabled)?.Focus();
     }
 
     /// <summary>Spec §7 «контент дня — кроссфейд + сдвиг 12px в сторону листания», 200 ms.</summary>

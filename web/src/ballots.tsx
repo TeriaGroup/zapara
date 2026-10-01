@@ -1,6 +1,8 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import * as api from "./api";
-import { ballotBoardAfterMutation } from "./channels";
+import { draftKey, useStoredDraft } from "./draft-store";
+import { useApp } from "./store";
+import { mergeBallotAck } from "./ballot-ack";
 import { ballotDeadlineLabel, ballotStatusTitle, ballotSummary, ballotVoteTotal, filterBallots, isBallotDeadlineSoon, voteShare, type BallotBrowseFilter } from "./ballotBrowse";
 import { emptyId, groupPowers } from "./powers";
 import type { Ballot, BallotBoard, Classmate, GroupRole } from "./types";
@@ -30,7 +32,8 @@ function failureText(error: unknown, fallback: string) {
   return fallback;
 }
 
-function BallotForm({ title, hint, submitLabel, action, onDone, onError }: {
+function BallotForm({ storageKey, title, hint, submitLabel, action, onDone, onError }: {
+  storageKey: string;
   title: string;
   hint: string;
   submitLabel: string;
@@ -38,12 +41,17 @@ function BallotForm({ title, hint, submitLabel, action, onDone, onError }: {
   onDone: (board: BallotBoard) => void | Promise<void>;
   onError: (text: string) => void;
 }) {
-  const [draft, setDraft] = useState({ question: "", options: ["", ""], days: 5 });
+  const [draft, setDraft, clearDraft] = useStoredDraft(storageKey, () => ({ question: "", options: ["", ""], days: 5 }));
+  const pending = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => { alive.current=true; return () => { alive.current=false; }; }, []);
   const { question, options, days } = draft;
   const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (pending.current) return;
+    const submitted = draft;
     const text = question.trim();
     const labels = options.map(item => item.trim()).filter(Boolean);
     if (!text || labels.length < 2) {
@@ -54,13 +62,14 @@ function BallotForm({ title, hint, submitLabel, action, onDone, onError }: {
       onError("Варианты должны отличаться");
       return;
     }
-    setBusy(true);
+    pending.current = true; setBusy(true);
     try {
-      await onDone(await action(text, labels, days));
-      setDraft({ question: "", options: ["", ""], days: 5 });
+      const result = await action(text, labels, days);
+      clearDraft(submitted);
+      if (alive.current) await onDone(result);
     }
-    catch (error) { onError(failureText(error, "Не получилось сохранить голосование")); }
-    finally { setBusy(false); }
+    catch (error) { if (alive.current) onError(failureText(error, "Не получилось сохранить голосование")); }
+    finally { pending.current=false; if (alive.current) setBusy(false); }
   }
 
   return (
@@ -270,21 +279,45 @@ export function BallotBoardView({ communityId, board, classmates, roles, topicId
   onChange: (board: BallotBoard) => void;
   onError: (text: string) => void;
 }) {
-  const [busy, setBusy] = useState("");
+  const app = useApp();
+  const owner = app.session?.user?.userId || "guest";
+  const scope = `${owner}:${communityId}:${topicId || "general"}`;
+  const liveScope = useRef(scope); liveScope.current=scope;
+  const alive = useRef(true);
+  useEffect(() => { alive.current=true; return () => { alive.current=false; }; }, []);
+  const pending = useRef(new Set<string>());
+  const [busy, setBusy] = useState<string[]>([]);
+  const currentBoard = useRef(board); currentBoard.current=board;
+  const revision = useRef(0);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [browse, setBrowse] = useState<BallotBrowseFilter>({ query: "", status: "all", sort: "default" });
   const [createOpen, setCreateOpen] = useState(false);
   const [copyNotice, setCopyNotice] = useState("");
   const visible = filterBallots(board.ballots, browse);
   const filtered = !!browse.query.trim() || browse.status !== "all" || browse.sort !== "default";
-  async function refreshResult(result: BallotBoard) {
-    onChange(await ballotBoardAfterMutation(result, topicId, selected => api.ballots(communityId, selected)));
+  function current() { return alive.current && liveScope.current === scope; }
+  function publish(result: BallotBoard) { currentBoard.current=result; onChange(result); }
+  async function reload() {
+    const ticket=revision.current;
+    setRefreshing(true);
+    try { const result=await api.ballots(communityId,topicId); if(current() && ticket===revision.current && pending.current.size===0) { publish(result); setRefreshFailed(false); } }
+    catch { if(current()) setRefreshFailed(true); }
+    finally { if(current()) setRefreshing(false); }
+  }
+  async function refreshResult(result: BallotBoard, id?:string) {
+    if(!current())return;
+    revision.current++;
+    publish(mergeBallotAck(currentBoard.current,result,topicId,id));
+    setRefreshFailed(false);
+    if(topicId) await reload();
   }
   async function run(id: string, action: () => Promise<BallotBoard>, fallback: string) {
-    if (readOnly) return;
-    setBusy(id);
-    try { await refreshResult(await action()); }
-    catch (error) { onError(failureText(error, fallback)); }
-    finally { setBusy(""); }
+    if (readOnly || pending.current.has(id)) return;
+    pending.current.add(id); setBusy([...pending.current]);
+    try { const result=await action(); if(current()) { pending.current.delete(id); await refreshResult(result,id); } }
+    catch (error) { if(current()) onError(failureText(error, fallback)); }
+    finally { pending.current.delete(id); if(current()) setBusy([...pending.current]); }
   }
 
   async function copySummary(ballot: Ballot) {
@@ -331,6 +364,7 @@ export function BallotBoardView({ communityId, board, classmates, roles, topicId
       {canCreate ? <div className="ballot-create stack" hidden={!createOpen}>
         <div className={board.canOpen ? "ballot-grid" : "stack"}>
           {board.canOpen && <BallotForm
+            storageKey={draftKey(owner,communityId,topicId || "general","ballot-create","headman")}
             title="Объявить голосование"
             hint="Откроется сразу для всей группы."
             submitLabel="Объявить"
@@ -339,6 +373,7 @@ export function BallotBoardView({ communityId, board, classmates, roles, topicId
             onError={onError}
           />}
           <BallotForm
+            storageKey={draftKey(owner,communityId,topicId || "general","ballot-create","propose")}
             title="Предложить голосование"
             hint="Автор уже считается поддержавшим. Голосование откроется, когда подписей будет достаточно."
             submitLabel="Предложить"
@@ -350,13 +385,14 @@ export function BallotBoardView({ communityId, board, classmates, roles, topicId
         {!topicId && <ChangeForm communityId={communityId} classmates={classmates} roles={roles} onDone={onChange} onError={onError} />}
       </div> : <p className="muted">Создавать голосования здесь могут только управляющие разделами.</p>}
       <div className="card stack ballot-list">
+        {refreshFailed && <div className="banner" role="status">Изменение принято, но обновить доску не удалось.<button className="btn" disabled={refreshing || busy.length > 0} onClick={() => void reload()}>Обновить доску</button></div>}
         {copyNotice && <p className="muted" role="status">{copyNotice}</p>}
         {visible.map(ballot => (
           <BallotCard
             key={ballot.ballotId}
             ballot={ballot}
             canClose={board.canClose && !readOnly}
-            busy={readOnly || busy === ballot.ballotId}
+            busy={readOnly || busy.includes(ballot.ballotId)}
             onSupport={() => void run(ballot.ballotId, () => api.supportBallot(communityId, ballot.ballotId), "Не получилось поддержать голосование")}
             onVote={optionId => void run(ballot.ballotId, () => api.voteBallot(communityId, ballot.ballotId, optionId), "Не получилось проголосовать")}
             onCopy={() => void copySummary(ballot)}

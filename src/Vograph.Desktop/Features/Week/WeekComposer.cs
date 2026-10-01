@@ -1,4 +1,5 @@
 using Vograph.Core.Models;
+using Vograph.Core.Services;
 using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 
@@ -7,7 +8,8 @@ namespace Vograph.Desktop.Features.Week;
 public sealed record WeekRow(string Time, string Name, string TypeLabel, string Room);
 public sealed record WeekDay(int Dow, string Title, DateTime Date, bool IsToday, IReadOnlyList<WeekRow> Rows);
 /// <param name="Parity">1 odd / 2 even as the user sees it (inversion already applied).</param>
-public sealed record WeekModel(int Parity, bool IsOddToday, bool HasGroup, int Total, IReadOnlyList<WeekDay> Days);
+public sealed record WeekModel(int Parity, bool IsOddToday, bool HasGroup, int Total, IReadOnlyList<WeekDay> Days,
+    bool HasCopy = true, DateTime? WeekStart = null);
 
 /// <summary>Six day cards of one parity. Synchronous and DB-bound — call from ViewModelBase.RunAsync.</summary>
 public sealed class WeekComposer
@@ -15,6 +17,35 @@ public sealed class WeekComposer
     private readonly AppServices _app;
 
     public WeekComposer(AppServices app) => _app = app;
+
+    public WeekModel ComposeCalendar(DateTime selectedDate, DateTime today)
+    {
+        var settings = _app.Settings;
+        var monday = selectedDate.Date.AddDays(-((int)selectedDate.DayOfWeek + 6) % 7);
+        var odd = ParityCodes.ToUser(ParityCodes.WeekCode(monday, settings), settings.ParityInvert) == 1;
+        var parity = odd ? 1 : 2;
+        var todayOdd = ParityCodes.ToUser(ParityCodes.WeekCode(today, settings), settings.ParityInvert) == 1;
+        if (string.IsNullOrEmpty(settings.MyGroupId))
+            return new WeekModel(parity, todayOdd, false, 0, [], false, monday);
+        var group = settings.MyGroupId;
+        var hasCopy = !_app.Api.Configured ? _app.Db.GetGroup(group) is not null
+            : new TimetableApiCache(_app.Db).Read(group) is { } metadata &&
+              (metadata.Source == "api" || metadata.FetchedAt is not null) ||
+              _app.Db.GetGroup(group)?.LastFetchedAt is not null || _app.Db.GetAllLessonsForGroup(group).Count > 0;
+        if (!hasCopy) return new WeekModel(parity, todayOdd, true, 0, [], false, monday);
+        var days = Enumerable.Range(0, 7).Select(offset =>
+        {
+            var date = monday.AddDays(offset);
+            List<Lesson> lessons = DateTime.TryParse(settings.PeriodStart, out var start) && date < start.Date
+                ? [] : _app.Schedule.GetSchedule(date, group);
+            var rows = lessons.OrderBy(l => TimeSpan.TryParse(l.TimeStart, out var t) ? t : TimeSpan.Zero)
+                .Select(l => new WeekRow(l.TimeStart,
+                    LessonText.StripType(_app.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw),
+                    DayTitles.TypeLabel(l.TypeRaw, _app.Loc), RoomLabel(l, _app.Loc))).ToArray();
+            return new WeekDay(offset + 1, _app.Loc.T(DayNames.Key(offset + 1)), date, date == today.Date, rows);
+        }).ToArray();
+        return new WeekModel(parity, todayOdd, true, days.Sum(day => day.Rows.Count), days, true, monday);
+    }
 
     /// <param name="parity">0 = the week today belongs to; 1 = odd; 2 = even (user-facing).</param>
     public WeekModel Compose(int parity, DateTime today)

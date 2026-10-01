@@ -7,6 +7,8 @@ import org.junit.Test
 import ru.bgtu_voenmeh.zapara.data.LECTURER_FIXTURE
 import ru.bgtu_voenmeh.zapara.data.LecturerParser
 import ru.bgtu_voenmeh.zapara.ui.XmlCopy
+import ru.bgtu_voenmeh.zapara.data.SchedCtx
+import java.time.LocalDate
 
 class TeacherDetailsComposerTest {
     private val parsed by lazy { LecturerParser.parse(LECTURER_FIXTURE) }
@@ -69,5 +71,24 @@ class TeacherDetailsComposerTest {
         val bothCount = TeacherDetailsComposer.compose(parsed.lessons, 0, "3313", XmlCopy).sumOf { it.rows.size }
         assertEquals(parsed.lessons.size, bothCount)
         assertFalse(odd.sumOf { it.rows.size } == 0 && parsed.lessons.isNotEmpty())
+    }
+
+    @Test fun inverted_selection_uses_actual_calendar_week_and_exposes_next_date() {
+        val template = parsed.lessons.first().copy(dayOfWeek = 1)
+        val lessons = listOf(template.copy(parity = 1, timeStart = "09:00"),
+            template.copy(parity = 2, timeStart = "11:00"))
+        val today = LocalDate.of(2026, 9, 8)
+        val ctx = SchedCtx("3313", LocalDate.of(2026, 9, 1), 2, true)
+        val odd = TeacherDetailsComposer.compose(lessons, 1, "3313", XmlCopy,
+            invert = true, today = today, context = ctx)
+        assertEquals(listOf("11:00"), odd.single().rows.map { it.time })
+        assertEquals(listOf(1), odd.single().rows.map { it.parity })
+        assertEquals(LocalDate.of(2026, 9, 14), odd.single().date)
+        assertEquals(LocalDate.of(2026, 9, 14), odd.single().rows.single().date)
+        val both = TeacherDetailsComposer.compose(lessons, 0, "3313", XmlCopy,
+            invert = true, today = today, context = ctx)
+        assertEquals(listOf(LocalDate.of(2026, 9, 21), LocalDate.of(2026, 9, 14)),
+            both.single().rows.map { it.date })
+        assertEquals(LocalDate.of(2026, 9, 14), both.single().date)
     }
 }

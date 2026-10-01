@@ -26,7 +26,8 @@ public sealed partial class GroupViewModel
         : (desk?.Roles.Count ?? 0) >= RoleLimit ? $"Достигнут лимит: {RoleLimit} ролей."
         : !IsHeadman && GroupRoleManagement.Position(desk, me) <= 0 ? "Создавать роли можно ниже своего уровня."
         : "Роль без дополнительных возможностей можно использовать как подгруппу для домашки.";
-    public string RoleSettingsHint => SelectedTrustedRole is not { } role ? "Выберите роль."
+    public string RoleSettingsHint => RoleEditPosition is < 0 or > 10000 ? "Уровень роли должен быть целым числом от 0 до 10000."
+        : SelectedTrustedRole is not { } role ? "Выберите роль."
         : GroupRoleManagement.RoleReason(desk, me, role.RoleId, "roles", newPosition: RoleEditPosition);
     public string TrustedGrantHint => SelectedTrustedRole is not { } role || SelectedTrustCandidate is not { } person ? "Выберите роль и участника."
         : MemberActionReason(role.RoleId, person.UserId, removing: false);
@@ -55,6 +56,8 @@ public sealed partial class GroupViewModel
         if (rolePanelId != SelectedTrustedRole?.RoleId)
         {
             rolePanelId = SelectedTrustedRole?.RoleId;
+            RoleMemberSearch = "";
+            RoleAssignedOnly = false;
             RolePanel = CanManageRoles ? "settings" : "members";
         }
         foreach (var name in new[] { nameof(ShowRoleManager), nameof(RoleCountSummary), nameof(RoleCreateHint), nameof(RoleSettingsHint),
@@ -116,6 +119,7 @@ internal static class GroupRoleManagement
 
     public static string RoleReason(GroupDeskResponse? desk, Guid actor, Guid roleId, string permission, int? newPosition = null, string? addedPower = null)
     {
+        if (newPosition is < 0 or > 10000) return "Уровень роли должен быть от 0 до 10000.";
         if (desk is null) return "Права группы ещё не загружены.";
         var role = desk.Roles.FirstOrDefault(x => x.RoleId == roleId);
         if (role is null) return "Роль больше не доступна.";

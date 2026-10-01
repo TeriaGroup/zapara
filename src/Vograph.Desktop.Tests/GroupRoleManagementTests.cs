@@ -27,6 +27,8 @@ public sealed class GroupRoleManagementTests
         Assert.NotEmpty(GroupRoleManagement.RoleReason(Desk(), Actor, Low, "roles", newPosition: 5));
         Assert.NotEmpty(GroupRoleManagement.RoleReason(Desk(), Actor, Low, "roles", addedPower: "homework"));
         Assert.Empty(GroupRoleManagement.RoleReason(Desk(headman: true, rolePowers: ["homework"]), Actor, Low, "roles", newPosition: 9));
+        Assert.Contains("0 до 10000",GroupRoleManagement.RoleReason(Desk(headman: true),Actor,Low,"roles",newPosition:-1));
+        Assert.Contains("0 до 10000",GroupRoleManagement.RoleReason(Desk(headman: true),Actor,Low,"roles",newPosition:10001));
     }
 
     [Theory]
@@ -49,6 +51,26 @@ public sealed class GroupRoleManagementTests
         Assert.Empty(GroupRoleManagement.MemberReason(capped, Actor, Low, person, removing: true));
         var self = new ClassmateResponse(Actor, "anya", "Аня", "member", true);
         Assert.NotEmpty(GroupRoleManagement.MemberReason(Desk(), Actor, Low, self, removing: false));
+    }
+
+    [AvaloniaFact]
+    public async Task Changing_role_clears_member_filters_but_refreshing_same_role_keeps_them()
+    {
+        using var fixture = new GroupSpaceViewModelTests.Fixture("chat", "chat");
+        await fixture.Vm.ActivateAsync();
+        var role = Assert.IsType<GroupTrustedRoleRow>(fixture.Vm.SelectedTrustedRole);
+        fixture.Vm.RoleMemberSearch = "Борис";
+        fixture.Vm.RoleAssignedOnly = true;
+
+        fixture.Vm.SelectedTrustedRole = new(role.RoleId, role.Name, [], role.Position);
+        Assert.Equal("Борис", fixture.Vm.RoleMemberSearch);
+        Assert.True(fixture.Vm.RoleAssignedOnly);
+
+        fixture.Vm.SelectedTrustedRole = null;
+        fixture.Vm.SelectedTrustedRole = role;
+        Assert.Equal("", fixture.Vm.RoleMemberSearch);
+        Assert.False(fixture.Vm.RoleAssignedOnly);
+        Assert.Equal(2, fixture.Vm.RoleMembers.Count);
     }
 
     [AvaloniaFact]

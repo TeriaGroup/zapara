@@ -135,6 +135,7 @@ class TeacherParityTest {
                                     details = TeacherDetailsComposer.compose(fixture, state.parityFilter, "mine", copy))
                                 is TeachersEvent.Query -> state.copy(query = event.value)
                                 is TeachersEvent.OnlyMine -> state.copy(onlyMine = event.value)
+                                TeachersEvent.Retry -> state
                             }
                             state = state.copy(list = teachers.filter {
                                 (!state.onlyMine || it.isMine) && it.name.contains(state.query, ignoreCase = true)

@@ -18,20 +18,18 @@ public sealed partial class HomeworkViewModel
     [ObservableProperty] private bool sharedLoaded;
     [ObservableProperty] private bool sharedBusy;
     [ObservableProperty] private string sharedFeedback = "";
-    [ObservableProperty] private int sharedFilter;
-    public IReadOnlyList<string> SharedFilters { get; } = ["Все задания", "Активные", "Готово у меня"];
     public bool ShowSharedTasks => HasGroup && !App.Profile.IsGuest;
     public IReadOnlyList<SharedHomeworkListRow> VisibleSharedTasks => SharedTasks.Where(row =>
-        (SharedFilter == 0 || row.Item.Completed == (SharedFilter == 2)) &&
-        (SubjectFilter.Length == 0 || ParityService.NormalizeSubject(row.Item.Title) == ParityService.NormalizeSubject(SubjectFilter))).ToArray();
+        HomeworkBrowse.MatchesStatus(row.Item.Completed, StatusFilter) &&
+        HomeworkBrowse.MatchesSubject(row.Item.Title, SubjectFilter) &&
+        HomeworkBrowse.MatchesQuery(SearchQuery, row.Item.Title, row.Item.Body)).ToArray();
     public bool SharedEmpty => SharedLoaded && !SharedLoading && VisibleSharedTasks.Count == 0;
     public string SharedSummary => $"Заданий группы: {SharedTasks.Count} · готово у вас: {SharedTasks.Count(row => row.Item.Completed)}";
-    partial void OnSharedFilterChanged(int value) => NotifySharedTasks();
     partial void OnSharedLoadedChanged(bool value) => NotifySharedTasks();
     partial void OnSharedLoadingChanged(bool value) => NotifySharedTasks();
     private void NotifySharedTasks()
     {
-        foreach (var name in new[] { nameof(ShowSharedTasks), nameof(VisibleSharedTasks), nameof(SharedEmpty), nameof(SharedSummary) }) OnPropertyChanged(name);
+        foreach (var name in new[] { nameof(ShowSharedTasks), nameof(VisibleSharedTasks), nameof(SharedEmpty), nameof(SharedSummary), nameof(HasBrowseFilters), nameof(ShowBrowseEmpty), nameof(BrowseEmptyTitle), nameof(BrowseEmptyHint), nameof(BrowseSummary) }) OnPropertyChanged(name);
     }
     private void ResetSharedScope()
     {

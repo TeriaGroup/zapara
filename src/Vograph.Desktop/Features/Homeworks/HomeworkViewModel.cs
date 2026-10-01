@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Vograph.Core.Services;
@@ -18,12 +19,17 @@ public sealed partial class HomeworkViewModel : ViewModelBase
     private int _version;
     private bool _raising;
     private readonly HashSet<string> _expanded = new();
+    private HomeworkModel? _model;
+    private string? _browseScope;
+    private HomeworkCompletionUndo? _completionUndo;
+    private readonly DispatcherTimer _undoTimer = new() { Interval = TimeSpan.FromSeconds(5) };
 
     public HomeworkViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null) : base(app)
     {
         _shell = shell;
         _clock = clock ?? (() => DateTime.Now);
         _composer = new HomeworkComposer(app);
+        _undoTimer.Tick += OnUndoTimer;
         _reload = () => { if (!_raising) _ = LoadAsync(); };
         shell.GroupChanged += _reload;
         shell.ScheduleChanged += _reload;
@@ -33,6 +39,8 @@ public sealed partial class HomeworkViewModel : ViewModelBase
 
     public override void Detach()
     {
+        ClearCompletionUndo();
+        _undoTimer.Tick -= OnUndoTimer;
         sharedRequestSerial++; sharedMutationSerial++; SharedTasks.Clear();
         _shell.GroupChanged -= _reload;
         _shell.ScheduleChanged -= _reload;
@@ -43,45 +51,118 @@ public sealed partial class HomeworkViewModel : ViewModelBase
     public override Task ActivateAsync() => LoadAsync();
 
     public string Title => T("navHomework");
+    private string CurrentBrowseScope() => App.Profile.DatabasePath + ":" + App.Settings.MyGroupId;
+    private void EnsureBrowseScope()
+    {
+        var scope = CurrentBrowseScope();
+        if (_browseScope is null) { _browseScope = scope; return; }
+        if (_browseScope == scope) return;
+        _browseScope = scope;
+        _model = null; Groups.Clear(); _expanded.Clear(); IsLoaded = false; LoadFailed = false;
+        ClearCompletionUndo();
+        SubjectFilter = ""; SearchQuery = ""; StatusFilter = 0;
+        NotifySharedTasks();
+    }
+    public bool HasCompletionUndo => _completionUndo is { } undo && undo.Scope == CurrentBrowseScope() && DateTimeOffset.UtcNow < undo.ExpiresAt;
+    public string CompletionFeedback => _completionUndo?.BeforeDone == true ? "Отметка снята" : "Отмечено готово";
+    private void OnUndoTimer(object? sender, EventArgs e) => ClearCompletionUndo();
+    private void ClearCompletionUndo()
+    {
+        _undoTimer.Stop(); _completionUndo = null;
+        OnPropertyChanged(nameof(HasCompletionUndo)); OnPropertyChanged(nameof(CompletionFeedback));
+    }
+    private void SetCompletionUndo(HomeworkCompletionUndo undo)
+    {
+        _undoTimer.Stop(); _completionUndo = undo;
+        var remaining = undo.ExpiresAt - DateTimeOffset.UtcNow;
+        _undoTimer.Interval = remaining > TimeSpan.Zero ? remaining : TimeSpan.FromMilliseconds(1);
+        _undoTimer.Start();
+        OnPropertyChanged(nameof(HasCompletionUndo)); OnPropertyChanged(nameof(CompletionFeedback));
+    }
     [ObservableProperty] private string subjectFilter = "";
     public bool HasSubjectFilter => SubjectFilter.Length>0;
-    partial void OnSubjectFilterChanged(string value){OnPropertyChanged(nameof(HasSubjectFilter));NotifySharedTasks();}
-    [RelayCommand] private void ClearSubjectFilter(){SubjectFilter="";_=LoadAsync();}
+    partial void OnSubjectFilterChanged(string value){OnPropertyChanged(nameof(HasSubjectFilter));ApplyFilters();}
+    [ObservableProperty] private string searchQuery = "";
+    partial void OnSearchQueryChanged(string value) => ApplyFilters();
+    [ObservableProperty] private int statusFilter;
+    public IReadOnlyList<string> StatusFilters { get; } = ["Активные", "Готово у меня", "Все"];
+    partial void OnStatusFilterChanged(int value) => ApplyFilters();
+    [RelayCommand] private void ClearSubjectFilter() => SubjectFilter = "";
+    [RelayCommand] private void ClearBrowseFilters() { SubjectFilter = ""; SearchQuery = ""; StatusFilter = 2; }
+    public bool HasBrowseFilters => HasSubjectFilter || SearchQuery.Trim().Length > 0 || StatusFilter != 2;
+    public bool ShowBrowseEmpty => IsLoaded && HasGroup && !LoadFailed && !SharedLoading && (!ShowSharedTasks || SharedLoaded) && Groups.Count == 0 && VisibleSharedTasks.Count == 0;
+    public string BrowseEmptyTitle => TotalBrowseCount > 0 ? "По выбранным фильтрам заданий нет" : "Заданий пока нет";
+    public string BrowseEmptyHint => TotalBrowseCount > 0 ? "Измените поиск или выберите другой статус." : "Добавьте личное задание или обновите задания группы.";
+    private int TotalBrowseCount => (_model?.Open ?? 0) + (_model?.Done ?? 0) + (ShowSharedTasks && SharedLoaded ? SharedTasks.Count : 0);
+    public string BrowseSummary
+    {
+        get
+        {
+            var shown = Groups.Sum(group => group.Items.Count) + VisibleSharedTasks.Count;
+            var total = TotalBrowseCount;
+            return ShowSharedTasks && !SharedLoaded
+                ? SharedFeedback.Length > 0 ? $"Показано личных: {shown} · задания группы недоступны" : $"Показано личных: {shown} · загружаем задания группы…"
+                : $"Показано: {shown} из {total}" + (LoadFailed ? " · последняя доступная копия" : "");
+        }
+    }
     public ObservableCollection<HomeworkGroupViewModel> Groups { get; } = new();
 
     [ObservableProperty] private string _subtitle = "";
     [ObservableProperty] private bool _isEmpty;
     [ObservableProperty] private bool _isLoaded;
+    [ObservableProperty] private bool loadFailed;
     [ObservableProperty] private bool _hasGroup; // false until the first load: ShowNoGroup guards the empty-state flash (T8 #8)
 
     /// <summary>The «Группа не выбрана» state, only once the first load has said so.</summary>
     public bool ShowNoGroup => IsLoaded && !HasGroup;
+    [RelayCommand] private Task RetryLoad() => LoadAsync();
 
     partial void OnIsLoadedChanged(bool value) => OnPropertyChanged(nameof(ShowNoGroup));
     partial void OnHasGroupChanged(bool value) => OnPropertyChanged(nameof(ShowNoGroup));
 
     public async Task LoadAsync()
     {
+        EnsureBrowseScope();
         ResetSharedScope();
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
+        var scope = CurrentBrowseScope();
         var version = ++_version;
         var today = _clock().Date;
         var model = await RunAsync(() => _composer.Compose(today), "homework");
-        if (model is null || version != _version || !operation.IsCurrent) return;
+        if (model is null)
+        {
+            if (version == _version && operation.IsCurrent && CurrentBrowseScope() == scope)
+            { LoadFailed = true; OnPropertyChanged(nameof(ShowBrowseEmpty)); OnPropertyChanged(nameof(BrowseSummary)); }
+            return;
+        }
+        if (version != _version || !operation.IsCurrent || CurrentBrowseScope() != scope) return;
+        LoadFailed = false;
         HasGroup = model.HasGroup;
         IsLoaded = true;
-        Groups.Clear();
-        foreach (var g in model.Groups)
-        {
-            var filtered = SubjectFilter.Length==0 ? g : g with { Items=g.Items.Where(x=>x.Homework.SubjectRawNormalized==ParityService.NormalizeSubject(SubjectFilter)).ToArray() };
-            if(filtered.Items.Count>0)Groups.Add(new HomeworkGroupViewModel(filtered, this, collapsed: g.Status == "done" && !_expanded.Contains(g.Status)));
-        }
-        IsEmpty = model.HasGroup && Groups.Count == 0;
+        _model = model;
+        if (_completionUndo is { } undo && !undo.Allows(model.Groups.SelectMany(group => group.Items).FirstOrDefault(item => item.Homework.Id == undo.Id)?.Homework, scope, DateTimeOffset.UtcNow))
+            ClearCompletionUndo();
+        ApplyFilters();
         Subtitle = $"{App.Loc.Plural(model.Open, "hwOpen1", "hwOpen2", "hwOpen5")} · {T("hwDoneCount", model.Done)}";
         OnPropertyChanged(nameof(Title));
-        NotifySharedTasks();
         _ = RefreshSharedTasks();
+    }
+
+    private void ApplyFilters()
+    {
+        Groups.Clear();
+        if (_model is { } model)
+        foreach (var g in model.Groups)
+        {
+            var filtered = g with { Items = g.Items.Where(x =>
+                HomeworkBrowse.MatchesSubject(x.SubjectRaw, SubjectFilter) &&
+                HomeworkBrowse.MatchesStatus(x.Status == "done", StatusFilter) &&
+                HomeworkBrowse.MatchesQuery(SearchQuery, x.Subject, x.SubjectRaw, x.Homework.Text)).ToArray() };
+            if(filtered.Items.Count>0)Groups.Add(new HomeworkGroupViewModel(filtered, this, collapsed: g.Status == "done" && StatusFilter != 1 && !_expanded.Contains(g.Status)));
+        }
+        IsEmpty = _model?.HasGroup == true && Groups.Count == 0;
+        NotifySharedTasks();
     }
 
     internal void Toggled(HomeworkGroupViewModel g)
@@ -97,14 +178,11 @@ public sealed partial class HomeworkViewModel : ViewModelBase
         if (!operation.IsCurrent) return;
         var subjects = await RunAsync(() => _composer.Subjects(), "homework subjects");
         if (subjects is null) return;
-        if (subjects.Count == 0)
-        {
-            App.Toasts.Info(T("hwNoSubjects")); // a group without lessons: say so instead of silently doing nothing (T8 #7)
-            return;
-        }
         var pick = new SubjectPickerDialogViewModel(subjects);
-        if (!await _shell.Dialogs.ShowAsync(pick) || pick.Selected is null) return;
-        var subject = pick.Selected;
+        if (!await _shell.Dialogs.ShowAsync(pick)) return;
+        var subject = pick.Selected ?? new SubjectOption(pick.ManualSubject.Trim(), pick.ManualSubject.Trim(), "");
+        if (subject.SubjectRaw.Length == 0) return;
+        var groupScope = CurrentBrowseScope();
         var today = _clock().Date;
         var norm = ParityService.NormalizeSubject(subject.SubjectRaw);
         var dues = await RunAsync(() => Enumerable.Range(1, 10).Select(n => App.Homework.ComputeDueDate(norm, today, n)).ToArray(), "homework");
@@ -114,6 +192,7 @@ public sealed partial class HomeworkViewModel : ViewModelBase
         dlg.PersistAsync = async () =>
         {
             operation.ThrowIfStale();
+            if (CurrentBrowseScope() != groupScope) throw new HomeworkPublicationException("Учебная группа изменилась. Откройте задание заново.");
             var outcome = await HomeworkShare.SaveNewAsync(
                 App, subject.SubjectRaw, dlg,
                 () => RunAsync(() => App.Db.GetSettings().MyGroupId ?? "", "homework group"),
@@ -158,8 +237,37 @@ public sealed partial class HomeworkViewModel : ViewModelBase
     {
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
-        if (await RunAsync(() => App.Homework.MarkDone(row.Entry.Homework.Id, !row.IsDone), "homework done"))
-            await ChangedAsync();
+        ClearCompletionUndo();
+        var scope = CurrentBrowseScope();
+        var changed = await RunAsync<HomeworkCompletionUndo>(() =>
+        {
+            var before = App.Homework.GetById(row.Entry.Homework.Id);
+            if (before is null || (before.Status == "done") != row.IsDone) return null!;
+            App.Homework.MarkDone(before.Id, !row.IsDone);
+            var after = App.Homework.GetById(before.Id);
+            return after is null ? null! : HomeworkCompletionUndo.Create(before, after, scope, DateTimeOffset.UtcNow);
+        }, "homework done");
+        if (changed is null || !operation.IsCurrent || CurrentBrowseScope() != scope) return;
+        SetCompletionUndo(changed);
+        await ChangedAsync();
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = false)]
+    private async Task UndoCompletion()
+    {
+        var undo = _completionUndo;
+        ClearCompletionUndo();
+        if (undo is null || undo.Scope != CurrentBrowseScope()) return;
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        var restored = await RunAsync<Core.Models.Homework>(() =>
+        {
+            var current = App.Homework.GetById(undo.Id);
+            if (!undo.Allows(current, CurrentBrowseScope(), DateTimeOffset.UtcNow)) return null!;
+            App.Homework.MarkDone(undo.Id, undo.BeforeDone);
+            return App.Homework.GetById(undo.Id)!;
+        }, "homework undo");
+        if (restored is not null && operation.IsCurrent && undo.Scope == CurrentBrowseScope()) await ChangedAsync();
     }
 
     public async Task DeleteAsync(HomeworkRowViewModel row)
@@ -168,6 +276,7 @@ public sealed partial class HomeworkViewModel : ViewModelBase
         if (!operation.IsCurrent) return;
         var confirm = new ConfirmDialogViewModel(T("hwDelete"), T("hwDeleteConfirm", row.Text), T("delete"), danger: true);
         if (!await _shell.Dialogs.ShowAsync(confirm)) return;
+        ClearCompletionUndo();
         if (await RunAsync(() =>
             {
                 App.Homework.Delete(row.Entry.Homework.Id);

@@ -21,7 +21,8 @@ data class WeekWidgetSnapshot(
     val days: List<WeekWidgetDay>,
     val empty: String?,
     val cleared: Boolean = false,
-    val isDark: Boolean = false
+    val isDark: Boolean = false,
+    val readError: String? = null
 )
 
 object WeekWidgetComposer {

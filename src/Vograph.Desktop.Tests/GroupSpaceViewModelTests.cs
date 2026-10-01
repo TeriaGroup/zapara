@@ -39,6 +39,75 @@ public sealed class GroupSpaceViewModelTests
         Assert.Equal(2,fixture.Vm.Forms.Count);var first=fixture.Vm.Forms[0];first.Questions[0].Text="Сохраняемый ответ";
         await first.SubmitCommand.ExecuteAsync(null);Assert.Equal("Сохраняемый ответ",fixture.Vm.Forms[0].Questions[0].Text);Assert.NotNull(fixture.Vm.Forms[0].Form.OwnResponse);
     }
+    [AvaloniaFact] public async Task Draft_questions_move_with_stable_ids_and_filled_delete_requires_exact_confirmation()
+    {
+        using var fixture=new Fixture("forms","forms");await fixture.Vm.ActivateAsync();
+        fixture.Vm.AddFormQuestionCommand.Execute(null);fixture.Vm.AddFormQuestionCommand.Execute(null);
+        var first=fixture.Vm.FormQuestions[0];var second=fixture.Vm.FormQuestions[1];
+        first.Title="Первый";second.Title="Второй";second.Kind=SpaceQuestionEditor.Kinds[2];second.OptionsText="А\nБ";
+        Assert.False(first.CanMoveUp);Assert.False(second.CanMoveDown);
+        fixture.Vm.MoveFormQuestionUpCommand.Execute(second);
+        Assert.Same(second,fixture.Vm.FormQuestions[0]);Assert.Same(first,fixture.Vm.FormQuestions[1]);
+        Assert.Equal(second.Id,fixture.Vm.FormQuestions[0].Question().QuestionId);
+        fixture.Vm.RemoveFormQuestionCommand.Execute(second);
+        Assert.True(fixture.Vm.HasPendingRemoveFormQuestion);Assert.Equal(2,fixture.Vm.FormQuestions.Count);
+        fixture.Vm.CancelRemoveFormQuestionCommand.Execute(null);Assert.Equal(2,fixture.Vm.FormQuestions.Count);
+        fixture.Vm.RemoveFormQuestionCommand.Execute(second);fixture.Vm.ConfirmRemoveFormQuestionCommand.Execute(null);
+        Assert.Same(first,Assert.Single(fixture.Vm.FormQuestions));
+    }
+    [AvaloniaFact] public async Task Materials_load_one_page_then_wait_for_explicit_load_more()
+    {
+        using var fixture=new Fixture("materials","materials") { MessageHasMore=true };
+        await fixture.Vm.ActivateAsync();
+        Assert.Equal(1,fixture.MessageReads);Assert.True(fixture.Vm.HasMore);Assert.True(fixture.Vm.MaterialsLoaded);
+        await fixture.Vm.LoadOlderCommand.ExecuteAsync(null);
+        Assert.Equal(2,fixture.MessageReads);
+    }
+    [AvaloniaFact] public async Task Materials_failure_offers_retry_and_never_looks_like_a_successful_empty_page()
+    {
+        using var fixture=new Fixture("materials","materials") { FailMessagesGet=true };
+        await fixture.Vm.ActivateAsync();
+        Assert.True(fixture.Vm.MaterialsLoadFailed);Assert.False(fixture.Vm.NoMaterials);
+        fixture.FailMessagesGet=false;
+        await fixture.Vm.RetryMaterialsCommand.ExecuteAsync(null);
+        Assert.True(fixture.Vm.MaterialsLoaded);Assert.False(fixture.Vm.MaterialsLoadFailed);Assert.True(fixture.Vm.NoMaterials);
+    }
+    [AvaloniaFact] public async Task Materials_refresh_failure_keeps_the_last_loaded_page()
+    {
+        using var fixture=new Fixture("materials","materials") { MessageHasMore=true };
+        await fixture.Vm.ActivateAsync();
+        var prior=Assert.Single(fixture.Vm.Messages);
+        fixture.FailMessagesGet=true;
+        await fixture.Vm.RetryMaterialsCommand.ExecuteAsync(null);
+        Assert.True(fixture.Vm.MaterialsLoadFailed);Assert.Same(prior,Assert.Single(fixture.Vm.Messages));
+        Assert.Contains("сохранённая",fixture.Vm.MaterialsErrorText);
+    }
+    [AvaloniaFact] public async Task Role_editor_keeps_each_roles_draft_separate_across_selection()
+    {
+        using var fixture=new Fixture("chat","chat") { AdditionalRole=true };await fixture.Vm.ActivateAsync();
+        var a=fixture.Vm.TrustedRoles.Single(row=>row.Name=="Помощник");
+        var b=fixture.Vm.TrustedRoles.Single(row=>row.Name=="Вторая роль");
+        fixture.Vm.SelectedTrustedRole=a;fixture.Vm.RoleEditName="Мой черновик A";
+        fixture.Vm.SelectedTrustedRole=b;
+        Assert.Equal("Вторая роль",fixture.Vm.RoleEditName);
+        fixture.Vm.RoleEditName="Мой черновик B";
+        fixture.Vm.SelectedTrustedRole=a;
+        Assert.Equal("Мой черновик A",fixture.Vm.RoleEditName);
+        fixture.Vm.SelectedTrustedRole=b;
+        Assert.Equal("Мой черновик B",fixture.Vm.RoleEditName);
+    }
+    [AvaloniaFact] public async Task Category_delete_names_affected_topic_and_requires_exact_confirmation()
+    {
+        using var fixture=new Fixture("chat","chat");fixture.EnableCategory();await fixture.Vm.ActivateAsync();
+        fixture.Vm.SelectedCategory=Assert.Single(fixture.Vm.Categories);
+        fixture.Vm.DeleteCategoryCommand.Execute(null);
+        Assert.True(fixture.Vm.HasPendingDeleteCategory);Assert.Contains("списке тем: 1",fixture.Vm.DeleteCategoryImpact);
+        Assert.Equal(0,fixture.CategoryDeletes);
+        fixture.Vm.CancelDeleteCategoryCommand.Execute(null);Assert.Equal(0,fixture.CategoryDeletes);
+        fixture.Vm.DeleteCategoryCommand.Execute(null);await fixture.Vm.ConfirmDeleteCategoryCommand.ExecuteAsync(null);
+        Assert.Equal(1,fixture.CategoryDeletes);Assert.Single(fixture.Vm.Channels.Where(item=>item.TopicId==fixture.Topic));
+        Assert.Null(fixture.Vm.Channels.Single(item=>item.TopicId==fixture.Topic).CategoryId);
+    }
     [AvaloniaTheory]
     [InlineData("chat","chat")][InlineData("announcements","chat")][InlineData("polls","ballots")][InlineData("forms","forms")]
     [InlineData("subject","chat")][InlineData("materials","materials")][InlineData("homework","homework")][InlineData("schedule","schedule")]
@@ -116,10 +185,14 @@ public sealed class GroupSpaceViewModelTests
     internal sealed class Fixture:IDisposable
     {
         private readonly ProfileTestDirectory directory=new();private readonly AppServices app;private readonly AccountClientHandler handler=new();private readonly HttpClient http;private readonly CommunityHttpClient client;
-        private readonly Guid topic=Guid.NewGuid();private readonly Guid conversation=Guid.NewGuid();private readonly Guid role=Guid.NewGuid();private readonly Guid person=Guid.NewGuid();
+        private readonly Guid topic=Guid.NewGuid();private readonly Guid conversation=Guid.NewGuid();private readonly Guid role=Guid.NewGuid();private readonly Guid secondRole=Guid.NewGuid();private readonly Guid category=Guid.NewGuid();private readonly Guid person=Guid.NewGuid();
         private readonly List<GroupTopicResponse> topics=[];private readonly List<GroupFormResponse> forms=[];
-        public GroupViewModel Vm{get;}public int MessageReads;public int Writes;public string? CreatedKind;public string? CreatedTemplate;public string? CreatedSubject;
+        public GroupViewModel Vm{get;}public int MessageReads;public bool MessageHasMore;public bool FailMessagesGet;public int Writes;public string? CreatedKind;public string? CreatedTemplate;public string? CreatedSubject;
         public int ActiveSpaceReads;
+        public bool AdditionalRole;
+        private bool categoryActive;public int CategoryDeletes;
+        public void EnableCategory()
+        { categoryActive=true;var old=topics[0];topics[0]=new(topic,old.Title,old.Icon,null,null,null,0,true,old.Kind,template:old.Template,categoryId:category,permissions:["read","post","media","channels"]); }
         public void ArchiveTopic(){var row=topics[0];topics[0]=new(row.TopicId,row.Title,row.Icon,null,null,null,0,true,row.Kind,template:row.Template,archived:true,canPost:false,permissions:["read"]);}
         public bool FailAccessSaveOnce;private long accessRevision=1;public long PreviewRevision;
         public int AccessSaves;public GroupTopicAccessRequest? SavedAccess;public GroupRoleSettingsRequest? SavedRole;public GroupTopicRequest? RenamedTopic;
@@ -133,8 +206,8 @@ public sealed class GroupSpaceViewModelTests
             topics.Add(new(topic,"Тема","user",null,null,null,0,true,kind,template:template,permissions:["read","post","media","vote","forms","formsRespond","homework","ballots","close","channels","access","pin"]));
             handler.Send=Route;Vm=new(app);
         }
-        private GroupDeskResponse Desk()=>new(!pinOnly,[new(role,roleName,1,"user",roleRevision)],[],[],[],pinOnly?["pin"]:["channels","access","roles","grants"]);
-        private GroupSpaceResponse Space()=>new(topics.Where(x=>!x.Archived).ToArray(),[],new(Powers:["read","post","forms","homework","roles","grants","access"]),Desk());
+        private GroupDeskResponse Desk()=>new(!pinOnly,AdditionalRole?[new(role,roleName,1,"user",roleRevision),new(secondRole,"Вторая роль",2,"user",1)]:[new(role,roleName,1,"user",roleRevision)],[],[],[],pinOnly?["pin"]:["channels","access","roles","grants"]);
+        private GroupSpaceResponse Space()=>new(topics.Where(x=>!x.Archived).ToArray(),categoryActive?[new GroupCategoryResponse(category,"Учёба",0,1)]:[],new(Powers:["read","post","forms","homework","roles","grants","access"]),Desk());
         public AppServices Services=>app;
         public Guid Topic=>topic;public Guid Conversation=>conversation;public Guid Person=>person;
         public List<GroupTopicResponse> TopicRows=>topics;public List<GroupFormResponse> FormRecords=>forms;
@@ -147,9 +220,19 @@ public sealed class GroupSpaceViewModelTests
             if(path.EndsWith("/communities",StringComparison.Ordinal))return Payload(new[]{Membership});
             if(path.EndsWith("/home",StringComparison.Ordinal))return Payload(new GroupHomeResponse(CommunityId,"Группа О3313","О3313",new(conversation,"group",CommunityId,"Группа О3313",null,null,null,0),[new(AccountClientTestSupport.UserId,"anya","Аня","headman",true),new(person,"boris","Борис","member",false)],[]));
             if(path.EndsWith("/space",StringComparison.Ordinal)){ActiveSpaceReads++;return Payload(Space());}
+            if(path.EndsWith("/space/categories/"+category.ToString("D")+"/delete",StringComparison.Ordinal))
+            { CategoryDeletes++;categoryActive=false;var old=topics[0];topics[0]=new(topic,old.Title,old.Icon,null,null,null,0,true,old.Kind,template:old.Template,permissions:["read","post","media","channels"]);return Payload(Space()); }
             if(path.EndsWith("/space/archive",StringComparison.Ordinal))return Payload(new GroupTopicListResponse(topics.Where(x=>x.Archived).ToArray(),true));
             if(path.EndsWith("/desk",StringComparison.Ordinal))return Payload(Desk());
-            if(path.EndsWith("/messages",StringComparison.Ordinal)){MessageReads++;return Payload(new ChatPageResponse([],false));}
+            if(path.EndsWith("/messages",StringComparison.Ordinal))
+            {
+                MessageReads++;
+                if(FailMessagesGet)return Problem(503,"unavailable");
+                return MessageHasMore && !request.RequestUri.Query.Contains("before",StringComparison.Ordinal)
+                    ? Payload(new ChatPageResponse([new(Guid.NewGuid(),conversation,person,"Борис","Материал",DateTimeOffset.UtcNow)],true))
+                    : Payload(new ChatPageResponse([],false));
+            }
+            if(path.EndsWith("/read",StringComparison.Ordinal))return Payload(new ConversationResponse(conversation,"group",CommunityId,"Группа О3313",null,null,null,0));
             if(path.EndsWith("/space/preview",StringComparison.Ordinal))return Payload(new GroupPermissionPreviewResponse(topics.ToArray()));
             if(path.EndsWith("/access-preview",StringComparison.Ordinal))
             {

@@ -59,7 +59,13 @@ import java.util.Locale
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
+fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) =
+    FriendsSection(state, onEvent) { _, _, _ -> }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit,
+    onOpenEncounter: (FriendEncounter, String, String) -> Unit) {
     val c = Zapara.colors
     val latestEvent = rememberUpdatedState(onEvent)
     LaunchedEffect(Unit) {
@@ -114,6 +120,9 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
                                 val place = Intersection.scoreToTextRu(encounter.score)
                                 Text(listOf(place, encounter.friendRoom).filter { it.isNotBlank() }.joinToString(" · "),
                                     style = Zapara.typography.caption, color = c.text2)
+                                ZButton(stringResource(R.string.uxnext_friend_open_pair),
+                                    { onOpenEncounter(encounter, state.myGroupId, state.profileName) },
+                                    ghost = true, tag = "Friends.OpenEncounter.$index")
                             }
                         }
                     }
@@ -131,7 +140,8 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
                 }
             }
             itemsIndexed(state.friends, key = { _, it -> it.id }) { index, friend ->
-                ZCard(onClick = { onEvent(FriendsEvent.Edit(friend.index)) }, tag = "Friends.Row.${friend.index}", modifier = Modifier.fillMaxWidth().appear(index)) {
+                val scope = FriendActionScope(friend.id, state.myGroupId, state.profileName)
+                ZCard(onClick = { onEvent(FriendsEvent.Edit(scope)) }, tag = "Friends.Row.${friend.index}", modifier = Modifier.fillMaxWidth().appear(index)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                         FriendDot(friend.colorIndex, size = 10.dp)
                         Column(Modifier.weight(1f)) {
@@ -139,7 +149,7 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
                             Text(friend.members, style = Zapara.typography.caption, color = c.text2)
                         }
                         val enabledLabel = stringResource(R.string.friends_enabled_label, friend.groupName)
-                        ZSwitch(friend.enabled, { onEvent(FriendsEvent.Toggle(friend.index, it)) }, "Friends.Enabled.${friend.index}",
+                        ZSwitch(friend.enabled, { onEvent(FriendsEvent.Toggle(scope, it)) }, "Friends.Enabled.${friend.index}",
                             Modifier.semantics { contentDescription = enabledLabel })
                     }
                 }
@@ -200,10 +210,13 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
     }
     state.confirmDelete?.let {
         AlertDialog(
-            onDismissRequest = { onEvent(FriendsEvent.CancelDelete) },
+            onDismissRequest = { if (!state.deletePending) onEvent(FriendsEvent.CancelDelete) },
             title = { Text(stringResource(R.string.friends_delete_title), style = Zapara.typography.section) },
-            confirmButton = { ZButton(stringResource(R.string.delete), { onEvent(FriendsEvent.ConfirmDelete) }) },
-            dismissButton = { ZButton(stringResource(R.string.theme_cancel), { onEvent(FriendsEvent.CancelDelete) }, ghost = true) },
+            text = { state.deleteError?.let { Text(it, color = Zapara.colors.bad) } },
+            confirmButton = { ZButton(stringResource(R.string.delete), { onEvent(FriendsEvent.ConfirmDelete) },
+                enabled = !state.deletePending, busy = state.deletePending) },
+            dismissButton = { ZButton(stringResource(R.string.theme_cancel), { onEvent(FriendsEvent.CancelDelete) },
+                ghost = true, enabled = !state.deletePending) },
             containerColor = Zapara.colors.card
         )
     }
@@ -213,14 +226,28 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
 @Composable
 private fun FriendEditorSheet(editor: FriendEditorUi, state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
     val c = Zapara.colors
-    ZBottomSheet({ onEvent(FriendsEvent.EditorCancel) }, "Sheet.Friend") {
+    ZBottomSheet({ onEvent(FriendsEvent.EditorCancel) }, "Sheet.Friend",
+        canDismiss = { !state.editorSaving }) {
         Text(stringResource(R.string.friends_group), style = Zapara.typography.section, color = c.text1)
-        ZButton(editor.groupName.ifBlank { stringResource(R.string.group_pick) }, { onEvent(FriendsEvent.OpenPicker) }, ghost = true)
+        if (state.groups.isNotEmpty()) {
+            ZButton(editor.groupName.ifBlank { stringResource(R.string.group_pick) },
+                { onEvent(FriendsEvent.OpenPicker) }, ghost = true, enabled = !state.editorSaving)
+        } else {
+            Text(stringResource(R.string.ux30_friends_offline_catalog), style = Zapara.typography.caption, color = c.text2)
+            ZButton(stringResource(R.string.ux30_friends_manual),
+                { onEvent(FriendsEvent.ManualOffline(!editor.manualOffline)) },
+                ghost = true, tag = "Friends.ManualOffline", enabled = !state.editorSaving)
+            if (editor.manualOffline) OutlinedTextField(editor.groupName,
+                { onEvent(FriendsEvent.EditorGroup(it)) }, modifier = Modifier.fillMaxWidth().testTag("Friends.ManualGroup"),
+                label = { Text(stringResource(R.string.friends_group)) }, singleLine = true,
+                enabled = !state.editorSaving)
+        }
         OutlinedTextField(
             value = editor.members, onValueChange = { onEvent(FriendsEvent.EditorMembers(it)) },
             modifier = Modifier.fillMaxWidth().testTag("Editor.Text"),
             placeholder = { Text(stringResource(R.string.friends_members), color = c.text3) },
             singleLine = true,
+            enabled = !state.editorSaving,
             shape = RoundedCornerShape(Zapara.radii.control),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = c.chip, unfocusedContainerColor = c.chip,
@@ -238,7 +265,7 @@ private fun FriendEditorSheet(editor: FriendEditorUi, state: FriendsUiState, onE
                 Box(Modifier.size(Zapara.space.minTouch)
                         .testTag("Editor.Color.$i")
                         .clip(CircleShape)
-                        .selectable(selected, role = Role.RadioButton,
+                        .selectable(selected, enabled = !state.editorSaving, role = Role.RadioButton,
                             interactionSource = remember { MutableInteractionSource() },
                             indication = if (Zapara.motion.enabled) LocalIndication.current else null,
                             onClick = { onEvent(FriendsEvent.EditorColor(i)) })
@@ -252,9 +279,14 @@ private fun FriendEditorSheet(editor: FriendEditorUi, state: FriendsUiState, onE
         state.editorError?.let { Text(it, style = Zapara.typography.caption, color = c.bad) }
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            ZButton(stringResource(R.string.theme_cancel), { onEvent(FriendsEvent.EditorCancel) }, ghost = true, tag = "Editor.Cancel")
-            if (editor.id != null) ZButton(stringResource(R.string.delete), { onEvent(FriendsEvent.AskDelete(editor.id)) }, ghost = true, tag = "Editor.Delete")
-            ZButton(stringResource(R.string.theme_save), { onEvent(FriendsEvent.EditorSave) }, enabled = editor.groupName.isNotBlank(), tag = "Editor.Save")
+            ZButton(stringResource(R.string.theme_cancel), { onEvent(FriendsEvent.EditorCancel) }, ghost = true,
+                tag = "Editor.Cancel", enabled = !state.editorSaving)
+            if (editor.id != null) ZButton(stringResource(R.string.delete), { onEvent(FriendsEvent.AskDelete(editor.id)) },
+                ghost = true, tag = "Editor.Delete", enabled = !state.editorSaving)
+            ZButton(stringResource(R.string.theme_save), { onEvent(FriendsEvent.EditorSave) },
+                enabled = validFriendGroupName(editor.groupName, state.groups, editor.manualOffline,
+                    state.friends.firstOrNull { it.id == editor.id }?.groupName) != null && !state.editorSaving,
+                busy = state.editorSaving, tag = "Editor.Save")
         }
     }
 }

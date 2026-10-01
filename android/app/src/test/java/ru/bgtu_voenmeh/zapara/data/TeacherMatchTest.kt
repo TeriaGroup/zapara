@@ -4,6 +4,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class TeacherMatchTest {
+    @Test fun query_words_match_across_teacher_and_subject_independent_of_order() {
+        val fields = listOf("Иванов И.И.", "Кафедра математики", "Общая физика")
+        assertEquals(true, lecturerMatchesWords(listOf("иванов", "физика"), fields))
+        assertEquals(true, lecturerMatchesWords(listOf("физика", "иванов"), fields))
+        assertEquals(false, lecturerMatchesWords(listOf("иванов", "химия"), fields))
+    }
     private val catalog = listOf(
         LecturerInfo("1", "Петров А.Б.", "кафедра"),
         LecturerInfo("2", "Петров С.К.", "кафедра"),

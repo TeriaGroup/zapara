@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Icon } from "./icons";
+import { groupWireText } from "./scalar-input";
+import { sendOnEnter } from "./personal-composer";
 import { groupCircleLimit, groupVoiceLimit, recordingFilename } from "./group-media";
 
 type RecordingKind = "voice" | "circle";
@@ -24,11 +26,12 @@ function clock(ms: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia, onPoll, onLesson, onDraft, onSubmit, onCancelContext, onChoose, onRecorded, onError }: {
+export function GroupComposer({ draft, editing, replyTo, contextText, wireContext = "", allowMedia, onPoll, onLesson, onDraft, onSubmit, onCancelContext, onChoose, onRecorded, onError }: {
   draft: string;
   editing: boolean;
   replyTo: boolean;
   contextText: string;
+  wireContext?: string;
   allowMedia: boolean;
   onPoll?: () => void;
   onLesson?: () => void;
@@ -39,6 +42,8 @@ export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia
   onRecorded: (kind: RecordingKind, name: string, blob: Blob, durationMs: number) => Promise<void>;
   onError: (message: string) => void;
 }) {
+  const composing = useRef(false);
+  const wire = groupWireText(draft, wireContext, editing);
   const [panel, setPanel] = useState(false);
   const [recording, setRecording] = useState<RecordingKind | null>(null);
   const [starting, setStarting] = useState(false);
@@ -204,14 +209,15 @@ export function GroupComposer({ draft, editing, replyTo, contextText, allowMedia
       <form className="compose" onSubmit={onSubmit}>
         {!editing && allowMedia && <button className="btn tool" type="button" aria-label="Вложения" disabled={starting || sending}
           onClick={() => setPanel(value => !value)}><Icon name="paperclip" size={18} /></button>}
-        <input value={draft} onChange={event => onDraft(event.target.value)} placeholder="Сообщение" aria-label="Сообщение" maxLength={2000} />
+        <textarea rows={2} value={draft} onChange={event => onDraft(event.target.value)} placeholder="Сообщение" aria-label="Сообщение" onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }} onKeyDown={event => { if (sendOnEnter(event.key, event.shiftKey, composing.current || event.nativeEvent.isComposing, event.keyCode === 229, window.matchMedia("(pointer: fine)").matches)) { event.preventDefault(); if (wire.valid && !sending) event.currentTarget.form?.requestSubmit(); } }} />
         {draft.trim() || editing || !allowMedia
-          ? <button className="btn primary" type="submit" disabled={!draft.trim() || sending}>{editing ? "Сохранить" : "Отправить"}</button>
+          ? <button className="btn primary" type="submit" disabled={!wire.valid || sending}>{editing ? "Сохранить" : "Отправить"}</button>
           : <>
               <button className="btn tool" type="button" aria-label="Кружок" disabled={starting || sending} onClick={() => void begin("circle")}><Icon name="circle" size={18} /></button>
               <button className="btn primary tool" type="button" aria-label="Голосовое" disabled={starting || sending} onClick={() => void begin("voice")}><Icon name="mic" size={18} /></button>
             </>}
       </form>
+      <p className="muted" role="status">{wire.count}/2000 · Shift+Enter — новая строка{draft.trim() && wire.error ? ` · ${wire.error}` : ""}</p>
       {sending && <p className="muted">Отправка записи…</p>}
       {panel && allowMedia && !editing && <div className="actions group-attachment-menu">
         <button type="button" onClick={() => { setPanel(false); onChoose("image"); }}>Фото</button>

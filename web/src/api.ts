@@ -464,15 +464,20 @@ export const submitGroupForm = (id: string, formId: string, answers: FormAnswer[
 export const groupFormResponses = (id: string, formId: string, after?: string) => read<{ formId: string; responses: FormResponse[]; nextCursor: string | null; totalResponses: number }>(`${spacePath(id)}/forms/${formId}/responses` + (after ? `?after=${encodeURIComponent(after)}` : ""));
 export type AccountDevice = { familyId: string; deviceId: string; deviceName: string; platform: string; lastSeenAt: string; expiresAt: string; isCurrent: boolean };
 export const accountMe = () => read<{ user: import("./types").SessionUser; familyId: string; authenticationMethods: string[] }>("/web-api/account/me");
+export const updateDisplayName = (displayName: string) => send<import("./types").SessionUser>("PATCH", "/web-api/account/me", { displayName });
+export const changeAccountPassword = (currentPassword: string, newPassword: string) => send<void>("POST", "/web-api/account/password/change", { currentPassword, newPassword });
 export const accountDevices = (cursor?: string) => read<{ devices: AccountDevice[]; nextCursor: string | null }>("/web-api/account/devices" + (cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""));
 export const revokeDevice = (familyId: string) => send<void>("DELETE", `/web-api/account/devices/${familyId}`, undefined, true);
+export const revokeAllDevices = () => send<void>("POST", "/web-api/account/sessions/revoke-all", undefined, true);
+export const requestPasswordReset = (username: string) => send<void>("POST", "/web-api/auth/password-reset/request", { username });
+export const confirmPasswordReset = (token: string, newPassword: string) => send<void>("POST", "/web-api/auth/password-reset/confirm", { token, newPassword });
 export const syncMetadata = () => read<{ syncEpoch: string; currentSequence: number; minAfterSequence: number }>("/web-api/sync/metadata");
 import type { SyncRecord, SyncHomeworkValue, SyncSettingsValue } from "./private-sync";
 export const beginSyncSnapshot = () => send<{ manifestId: string; syncEpoch: string; highWater: number }>("POST", "/web-api/sync/resync", undefined, true);
 export const syncSnapshotPage = (manifestId: string, afterOrdinal: number) => read<{ nextAfterOrdinal: number; hasMore: boolean; items: { ordinal: number; record: SyncRecord }[] }>(`/web-api/sync/resync/${manifestId}?afterOrdinal=${afterOrdinal}&limit=200`);
-export async function mutatePrivate(epoch: string, opId: string, type: string, id: string, revision: number, value: SyncHomeworkValue | SyncSettingsValue | { done: boolean; doneAtUtc: string | null }, expectedUserId?: string) {
+export async function mutatePrivate(epoch: string, opId: string, type: string, id: string, revision: number, value: SyncHomeworkValue | SyncSettingsValue | { done: boolean; doneAtUtc: string | null } | null, expectedUserId?: string, action: "upsert" | "delete" = "upsert") {
   if (expectedUserId && signedInUser !== expectedUserId) throw new Error("stale-owner");
-  const response = await fetch("/web-api/sync/mutations", { method: "POST", credentials: "same-origin", headers: authHeaders(true), body: JSON.stringify({ syncEpoch: epoch, opId, entityType: type, entityId: id, expectedRevision: revision, action: "upsert", value }) });
+  const response = await fetch("/web-api/sync/mutations", { method: "POST", credentials: "same-origin", headers: authHeaders(true), body: JSON.stringify({ syncEpoch: epoch, opId, entityType: type, entityId: id, expectedRevision: revision, action, value }) });
   if (response.status !== 409 && !response.ok) throw new Error(String(response.status));
   return response.json() as Promise<{ status: number; code: string; serverRecord: SyncRecord | null }>;
 }

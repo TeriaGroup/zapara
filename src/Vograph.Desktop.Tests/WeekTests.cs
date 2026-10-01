@@ -106,6 +106,55 @@ public class WeekTests : UiTest
     }
 
     [Fact]
+    public void Calendar_week_uses_real_Monday_to_Sunday_dates_and_distinguishes_missing_copy()
+    {
+        using var db = TestDb.Create();
+        var composer = new WeekComposer(db.Services);
+        var current = composer.ComposeCalendar(Wed9, Wed9);
+        Assert.True(current.HasCopy);
+        Assert.Equal("07.09", current.Days[0].Date.ToString("dd.MM"));
+        Assert.Equal("13.09", current.Days[^1].Date.ToString("dd.MM"));
+        Assert.True(current.Days[2].IsToday);
+        Assert.Equal(2, current.Parity);
+
+        var settings = db.Services.Db.GetSettings();
+        settings.MyGroupId = "missing-group";
+        db.Services.Db.SaveSettings(settings);
+        var missing = composer.ComposeCalendar(Wed9, Wed9);
+        Assert.True(missing.HasGroup);
+        Assert.False(missing.HasCopy);
+        Assert.Empty(missing.Days);
+    }
+
+    [Fact]
+    public void Inverted_calendar_week_parity_matches_the_actual_schedule_code()
+    {
+        using var db = TestDb.Create();
+        var settings = db.Services.Db.GetSettings();
+        settings.ParityInvert = true;
+        db.Services.Db.SaveSettings(settings);
+        var model = new WeekComposer(db.Services).ComposeCalendar(Mon7, Mon7);
+        Assert.Equal(2, model.Parity);
+        Assert.Equal(db.Services.Schedule.GetSchedule(Mon7.Date, TestDb.MyGroupId).Count, model.Days[0].Rows.Count);
+    }
+
+    [Fact]
+    public async Task Calendar_week_moves_by_seven_days_and_today_restores_current_range()
+    {
+        using var db = TestDb.Create();
+        var vm = new WeekViewModel(db.Services, new ShellViewModel(db.Services), () => Wed9);
+        await vm.ReloadAsync();
+        Assert.Contains("7 сентября", vm.WeekRange);
+        await vm.NextWeekCommand.ExecuteAsync(null);
+        Assert.Equal("14.09", vm.Days[0].Date.ToString("dd.MM"));
+        Assert.Equal(0, vm.ParityIndex);
+        await vm.PreviousWeekCommand.ExecuteAsync(null);
+        Assert.Equal("07.09", vm.Days[0].Date.ToString("dd.MM"));
+        await vm.CurrentWeekCommand.ExecuteAsync(null);
+        Assert.Equal("07.09", vm.Days[0].Date.ToString("dd.MM"));
+    }
+
+    [Fact]
     public void Sunday_Is_Never_Today_In_The_Grid()
     {
         using var db = TestDb.Create();
@@ -160,7 +209,7 @@ public class WeekTests : UiTest
         Frames.Capture(window, "week-light");
 
         var cards = window.GetVisualDescendants().OfType<Button>().Where(b => b.Classes.Contains("weekday")).ToList();
-        Assert.Equal(6, cards.Count);
+        Assert.Equal(7, cards.Count);
         Click(window, cards[2]); // Wednesday of the odd week → 16.09
         var schedule = Assert.IsType<ScheduleViewModel>(shell.Current);
         await Waits.Until(() => schedule.Date == new DateTime(2026, 9, 16), "schedule date after day click");

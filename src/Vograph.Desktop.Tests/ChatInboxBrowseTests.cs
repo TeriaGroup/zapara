@@ -20,6 +20,8 @@ public sealed class ChatInboxBrowseTests
         Assert.Equal(7, ChatInboxBrowse.UnreadTotal(rows));
         Assert.Equal(rows, ChatInboxBrowse.Filter(rows, "", -1));
         Assert.Empty(ChatInboxBrowse.Filter(rows, "нет", 0));
+        Assert.Equal(new[] { direct }, ChatInboxBrowse.Filter(rows, "привет", 2, unreadOnly: true));
+        Assert.Empty(ChatInboxBrowse.Filter([Row("Прочитано", "Привет", 0, personal: true)], "привет", 3, unreadOnly: true));
         var historical = new ChatInboxRow(Guid.NewGuid(), null, true, "Старый чат", "",
             new DateTimeOffset(2020, 3, 1, 9, 0, 0, TimeSpan.Zero), 0, new RelayCommand(() => { }));
         Assert.Contains("2020", historical.When);

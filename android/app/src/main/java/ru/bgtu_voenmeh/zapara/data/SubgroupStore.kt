@@ -14,9 +14,29 @@ class SubgroupStore(context: Context) {
         }.getOrDefault(emptyMap())
     }
 
-    fun select(profileKey: String, groupId: String, streamId: String, optionId: String) {
+    @Synchronized fun select(profileKey: String, groupId: String, streamId: String, optionId: String) {
+        selectWithPrevious(profileKey, groupId, streamId, optionId)
+    }
+
+    @Synchronized fun selectWithPrevious(profileKey: String, groupId: String, streamId: String,
+        optionId: String): Pair<String?, String?> {
         val next = read(profileKey, groupId).toMutableMap()
-        if (next[streamId] == optionId) next.remove(streamId) else next[streamId] = optionId
+        val before = next[streamId]
+        if (before == optionId) next.remove(streamId) else next[streamId] = optionId
+        write(profileKey, groupId, next)
+        return before to next[streamId]
+    }
+
+    @Synchronized fun restoreIfCurrent(profileKey: String, groupId: String, streamId: String,
+        expected: String?, restore: String?): Boolean {
+        val next = read(profileKey, groupId).toMutableMap()
+        if (next[streamId] != expected) return false
+        if (restore == null) next.remove(streamId) else next[streamId] = restore
+        write(profileKey, groupId, next)
+        return true
+    }
+
+    private fun write(profileKey: String, groupId: String, next: Map<String, String>) {
         val obj = JSONObject()
         next.forEach { (stream, option) -> obj.put(stream, option) }
         prefs.edit().putString(key(profileKey, groupId), obj.toString()).apply()

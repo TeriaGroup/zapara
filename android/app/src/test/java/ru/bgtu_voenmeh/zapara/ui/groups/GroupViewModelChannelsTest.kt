@@ -25,6 +25,7 @@ import ru.bgtu_voenmeh.zapara.data.communities.CommunityHttpClient
 import ru.bgtu_voenmeh.zapara.data.communities.GroupDesk
 import ru.bgtu_voenmeh.zapara.data.communities.GroupPower
 import ru.bgtu_voenmeh.zapara.data.communities.GroupRole
+import ru.bgtu_voenmeh.zapara.data.communities.GroupFormAnswer
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class GroupViewModelChannelsTest {
@@ -35,6 +36,9 @@ class GroupViewModelChannelsTest {
     private val firstMessage = "77777777-7777-4777-8777-777777777777"
     private val chatTopic = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
     private val ballotTopic = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    private val formsTopic = "12121212-1212-4121-8121-121212121212"
+    private val formId = "13131313-1313-4131-8131-131313131313"
+    private val formQuestion = "14141414-1414-4141-8141-141414141414"
     private val newTopic = "99999999-9999-4999-8999-999999999999"
     private val trustedRole = "88888888-8888-4888-8888-888888888888"
     private val ballot = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
@@ -153,6 +157,122 @@ class GroupViewModelChannelsTest {
         }
     }
 
+    @Test fun inbox_requested_group_chat_opens_the_exact_general_conversation() = runTest(dispatcher) {
+        val vm = GroupViewModel(GroupRuntime(false, user,
+            CommunityHttpClient(server(), AccountServerScope.parse("http://127.0.0.1:9/")),
+            { testToken("za_", 4) }, { "O3313" }, initialCommunityId = community,
+            initialConversationId = conversation, startInChannelList = true))
+        runCurrent()
+        try {
+            assertEquals(conversation, vm.state.value.activeConversationId)
+            assertEquals(null, vm.state.value.activeTopicId)
+            assertEquals("chat", vm.state.value.activeChannelKind)
+            assertFalse(vm.state.value.showChannels)
+        } finally {
+            vm.onEvent(GroupEvent.Back)
+            runCurrent()
+        }
+    }
+
+    @Test fun form_post_ack_is_retained_when_followup_get_fails_and_retry_is_read_only() = runTest(dispatcher) {
+        val http = server(includeForms = true)
+        val normal = http.handler
+        var submitted = false
+        var failPostRefresh = true
+        var formReads = 0
+        http.handler = { call ->
+            val path = call.url.substringAfter("/communities")
+            when {
+                call.method == "POST" && path == "/$community/space/forms/$formId/response" -> {
+                    submitted = true
+                    jsonReply(formFixture(answered = true))
+                }
+                call.method == "GET" && path == "/$community/space/topics/$formsTopic/forms" -> {
+                    formReads++
+                    if (submitted && failPostRefresh) {
+                        failPostRefresh = false
+                        HttpReply(503, """{"title":"Недоступно","status":503,"code":"db_unavailable"}""".toByteArray())
+                    } else jsonReply("""{"forms":[${formFixture(answered = submitted)}]}""")
+                }
+                else -> normal(call)
+            }
+        }
+        val vm = viewModel(http)
+        runCurrent()
+        try {
+            vm.onEvent(GroupEvent.OpenChannel(formsTopic))
+            runCurrent()
+            assertEquals("forms", vm.state.value.activeChannelKind)
+            assertEquals(1, formReads)
+
+            vm.onEvent(GroupEvent.SpaceAction(GroupSpaceAction.SubmitForm(formId,
+                listOf(GroupFormAnswer(formQuestion, "Ответ")))))
+            runCurrent()
+            assertEquals(1, http.requests.count { it.method == "POST" && it.url.endsWith("/$community/space/forms/$formId/response") })
+            assertEquals("Ответ", vm.state.value.forms.single().ownResponse?.answers?.single()?.text)
+            assertEquals(2, formReads)
+            assertTrue(vm.state.value.spaceError != null)
+            assertTrue(vm.state.value.formRefreshFailed)
+            assertFalse(vm.state.value.channelBusy)
+
+            vm.onEvent(GroupEvent.SpaceAction(GroupSpaceAction.ReloadContent))
+            runCurrent()
+            assertEquals(1, http.requests.count { it.method == "POST" && it.url.endsWith("/$community/space/forms/$formId/response") })
+            assertEquals(3, formReads)
+            assertEquals("Ответ", vm.state.value.forms.single().ownResponse?.answers?.single()?.text)
+            assertEquals(null, vm.state.value.spaceError)
+            assertFalse(vm.state.value.formRefreshFailed)
+        } finally {
+            vm.onEvent(GroupEvent.Back)
+            runCurrent()
+        }
+    }
+
+    @Test fun separate_ballot_votes_can_finish_in_reverse_order_without_duplicate_post_or_result_loss() = runTest(dispatcher) {
+        val second = "22222222-2222-4222-8222-222222222222"
+        val secondOption = "33333333-3333-4333-8333-333333333333"
+        fun twoBoard(firstChosen: Boolean, secondChosen: Boolean) =
+            board(firstChosen).dropLast(2) + "," +
+                """{"ballotId":"$second","question":"Второй","origin":"headman","status":"open","deadlineAt":"2026-10-01T12:00:00Z","supporters":0,"supportersNeeded":1,"supported":false,"options":[{"optionId":"$secondOption","label":"Да","votes":1,"chosen":$secondChosen}],"effect":"","outcome":"","topicId":"$ballotTopic"}]}"""
+        val http = server()
+        val normal = http.handler
+        val releaseFirst = CompletableDeferred<Unit>()
+        val releaseSecond = CompletableDeferred<Unit>()
+        http.handler = { call -> when {
+            call.method == "GET" && call.url.endsWith("/$community/ballots?topic=$ballotTopic") -> jsonReply(twoBoard(false, false))
+            call.method == "POST" && call.url.endsWith("/$community/ballots/$ballot/votes") -> {
+                releaseFirst.await(); jsonReply(twoBoard(true, false))
+            }
+            call.method == "POST" && call.url.endsWith("/$community/ballots/$second/votes") -> {
+                releaseSecond.await(); jsonReply(twoBoard(false, true))
+            }
+            else -> normal(call)
+        } }
+        val vm = viewModel(http)
+        runCurrent()
+        try {
+            vm.onEvent(GroupEvent.OpenChannel(ballotTopic))
+            runCurrent()
+            vm.onEvent(GroupEvent.VoteBallot(ballot, option))
+            vm.onEvent(GroupEvent.VoteBallot(ballot, option))
+            vm.onEvent(GroupEvent.VoteBallot(second, secondOption))
+            runCurrent()
+            assertEquals(setOf(ballot, second), vm.state.value.ballotPendingIds)
+            assertEquals(1, http.requests.count { it.method == "POST" && it.url.endsWith("/$community/ballots/$ballot/votes") })
+            releaseSecond.complete(Unit)
+            runCurrent()
+            assertTrue(vm.state.value.board!!.ballots.first { it.ballotId == second }.options.single().chosen)
+            releaseFirst.complete(Unit)
+            runCurrent()
+            assertTrue(vm.state.value.board!!.ballots.first { it.ballotId == ballot }.options.single().chosen)
+            assertTrue(vm.state.value.board!!.ballots.first { it.ballotId == second }.options.single().chosen)
+            assertTrue(vm.state.value.ballotPendingIds.isEmpty())
+        } finally {
+            releaseFirst.complete(Unit); releaseSecond.complete(Unit)
+            vm.onEvent(GroupEvent.Back); runCurrent()
+        }
+    }
+
     @Test fun failedBallotCreationKeepsEditorPendingUntilSuccessfulRetry() = runTest(dispatcher) {
         val http = server()
         val normal = http.handler
@@ -175,14 +295,82 @@ class GroupViewModelChannelsTest {
             assertTrue(vm.state.value.ballotCreateFailed)
             assertEquals(0, vm.state.value.ballotCreateVersion)
             createFails = false
-            vm.onEvent(GroupEvent.CreateBallot("Когда?", listOf("Завтра", "Позже"), 3, false))
+            vm.onEvent(GroupEvent.CreateBallot("Когда?", listOf("Завтра", "Позже"), 3, false, draftRevision = 5))
             runCurrent()
             assertFalse(vm.state.value.failed)
             assertFalse(vm.state.value.ballotCreateFailed)
             assertEquals(1, vm.state.value.ballotCreateVersion)
+            assertEquals(5L, vm.state.value.ballotAckRevision)
         } finally {
             vm.onEvent(GroupEvent.Back)
             runCurrent()
+        }
+    }
+
+    @Test fun old_create_ack_after_a_to_b_to_a_keeps_newer_a_and_b_drafts() = runTest(dispatcher) {
+        val http = server()
+        val normal = http.handler
+        val release = CompletableDeferred<Unit>()
+        http.handler = { call ->
+            if (call.method == "POST" && call.url.endsWith("/$community/ballots/collective")) {
+                release.await()
+                HttpReply(201, board(false).toByteArray())
+            } else normal(call)
+        }
+        val vm = viewModel(http)
+        runCurrent()
+        try {
+            vm.onEvent(GroupEvent.OpenChannel(ballotTopic)); runCurrent()
+            val a = vm.state.value.ballotDraftKey!!
+            vm.onEvent(GroupEvent.BallotDraftEdit(a, question = "Старый A", options = listOf("Да", "Нет"), composing = true))
+            val submitted = vm.state.value.ballotDraft
+            vm.onEvent(GroupEvent.CreateBallot("Старый A", listOf("Да", "Нет"), 3, false, submitted.revision, a))
+            runCurrent()
+            vm.onEvent(GroupEvent.GlobalBallots("Все голосования")); runCurrent()
+            val b = vm.state.value.ballotDraftKey!!
+            vm.onEvent(GroupEvent.BallotDraftEdit(b, question = "Черновик B", composing = true))
+            vm.onEvent(GroupEvent.OpenChannel(ballotTopic)); runCurrent()
+            assertEquals("Старый A", vm.state.value.ballotDraft.question)
+            vm.onEvent(GroupEvent.BallotDraftEdit(a, question = "Новый A"))
+            release.complete(Unit); runCurrent()
+            assertEquals("Новый A", vm.state.value.ballotDraft.question)
+            vm.onEvent(GroupEvent.GlobalBallots("Все голосования")); runCurrent()
+            assertEquals("Черновик B", vm.state.value.ballotDraft.question)
+        } finally {
+            release.complete(Unit)
+            vm.onEvent(GroupEvent.Back); runCurrent()
+        }
+    }
+
+    @Test fun accepted_create_while_viewing_b_clears_only_submitted_a_draft() = runTest(dispatcher) {
+        val http = server()
+        val normal = http.handler
+        val release = CompletableDeferred<Unit>()
+        http.handler = { call ->
+            if (call.method == "POST" && call.url.endsWith("/$community/ballots/collective")) {
+                release.await(); HttpReply(201, board(false).toByteArray())
+            } else normal(call)
+        }
+        val vm = viewModel(http)
+        runCurrent()
+        try {
+            vm.onEvent(GroupEvent.OpenChannel(ballotTopic)); runCurrent()
+            val a = vm.state.value.ballotDraftKey!!
+            vm.onEvent(GroupEvent.BallotDraftEdit(a, question = "Отправленный A", options = listOf("Да", "Нет"), composing = true))
+            val snapshot = vm.state.value.ballotDraft
+            vm.onEvent(GroupEvent.CreateBallot(snapshot.question, snapshot.options, snapshot.days, false, snapshot.revision, a))
+            runCurrent()
+            vm.onEvent(GroupEvent.GlobalBallots("Все голосования")); runCurrent()
+            val b = vm.state.value.ballotDraftKey!!
+            vm.onEvent(GroupEvent.BallotDraftEdit(b, question = "Независимый B", composing = true))
+            release.complete(Unit); runCurrent()
+            assertEquals("Независимый B", vm.state.value.ballotDraft.question)
+            vm.onEvent(GroupEvent.OpenChannel(ballotTopic)); runCurrent()
+            assertFalse(vm.state.value.ballotDraft.hasContent)
+            assertFalse(vm.state.value.ballotDraft.composing)
+        } finally {
+            release.complete(Unit)
+            vm.onEvent(GroupEvent.Back); runCurrent()
         }
     }
 
@@ -774,7 +962,7 @@ class GroupViewModelChannelsTest {
 
     private fun server(canManage: Boolean = false, headman: Boolean = false,
         restrictedChat: Boolean = false, pinnedBallot: Boolean = false, restrictedBallot: Boolean = false,
-        existingRole: Boolean = false): FakeHttp {
+        existingRole: Boolean = false, includeForms: Boolean = false): FakeHttp {
         var chosen = false
         var roleCreated = existingRole
         var powerEnabled = false
@@ -785,8 +973,8 @@ class GroupViewModelChannelsTest {
                 call.method == "GET" && path == "/$community/space" -> HttpReply(404, """{"title":"Not found","status":404,"code":"not_found"}""".toByteArray())
                 call.method == "GET" && path.isEmpty() -> jsonReply("""[{"communityId":"$community","name":"O3313","description":"Группа","revision":1,"role":"member"}]""")
                 call.method == "GET" && path == "/$community/home" -> jsonReply("""{"communityId":"$community","name":"O3313","groupName":"O3313","groupChat":{"conversationId":"$conversation","kind":"group","communityId":"$community","title":"O3313","peerUserId":null,"lastBody":null,"lastAt":null,"unread":0},"classmates":[{"userId":"$user","username":"student","displayName":"Аня","role":"${if (headman) "headman" else "member"}","self":true},{"userId":"$newTopic","username":"other","displayName":"Друг","role":"member","self":false}],"directs":[]}""")
-                call.method == "GET" && path == "/$community/topics?typed=1" -> jsonReply(topicList(canManage, false, restrictedChat, pinnedBallot, restrictedBallot))
-                call.method == "POST" && path == "/$community/topics?typed=1" -> HttpReply(201, topicList(canManage, true, restrictedChat, pinnedBallot, restrictedBallot).toByteArray())
+                call.method == "GET" && path == "/$community/topics?typed=1" -> jsonReply(topicList(canManage, false, restrictedChat, pinnedBallot, restrictedBallot, includeForms))
+                call.method == "POST" && path == "/$community/topics?typed=1" -> HttpReply(201, topicList(canManage, true, restrictedChat, pinnedBallot, restrictedBallot, includeForms).toByteArray())
                 call.method == "GET" && path == "/$community/desk" -> jsonReply(desk(headman, roleCreated, powerEnabled, granted))
                 call.method == "POST" && path == "/$community/roles" -> { roleCreated = true; HttpReply(201, desk(headman, roleCreated, powerEnabled, granted).toByteArray()) }
                 call.method == "POST" && path == "/$community/roles/$trustedRole/powers" -> { powerEnabled = true; jsonReply(desk(headman, roleCreated, powerEnabled, granted)) }
@@ -805,7 +993,11 @@ class GroupViewModelChannelsTest {
         }
     }
     private fun topicList(canManage: Boolean, includeNew: Boolean = false, restrictedChat: Boolean = false,
-        pinnedBallot: Boolean = false, restrictedBallot: Boolean = false) = """{"topics":[${topic(null, "Общий", "chat")},${topic(chatTopic, "Учёба", "chat", canPost = !restrictedChat, policy = if (restrictedChat) "managers" else "all")},${topic(ballotTopic, "Голосования", "ballots", pinned = pinnedBallot, canPost = !restrictedBallot, policy = if (restrictedBallot) "managers" else "all")}${if (includeNew) ",${topic(newTopic, "Консультации", "chat")}" else ""}],"canManageChannels":$canManage}"""
+        pinnedBallot: Boolean = false, restrictedBallot: Boolean = false, includeForms: Boolean = false) = """{"topics":[${topic(null, "Общий", "chat")},${topic(chatTopic, "Учёба", "chat", canPost = !restrictedChat, policy = if (restrictedChat) "managers" else "all")},${topic(ballotTopic, "Голосования", "ballots", pinned = pinnedBallot, canPost = !restrictedBallot, policy = if (restrictedBallot) "managers" else "all")}${if (includeNew) ",${topic(newTopic, "Консультации", "chat")}" else ""}${if (includeForms) ",${topic(formsTopic, "Анкеты", "forms")}" else ""}],"canManageChannels":$canManage}"""
+    private fun formFixture(answered: Boolean): String {
+        val response = if (answered) """{"respondentId":null,"answers":[{"questionId":"$formQuestion","text":"Ответ","choices":[]}],"updatedAt":"2026-10-01T10:00:00Z"}""" else "null"
+        return """{"formId":"$formId","topicId":"$formsTopic","title":"Опрос о занятиях","description":"","deadlineAt":null,"anonymous":true,"questions":[{"questionId":"$formQuestion","title":"Ответ","kind":"shortText","required":true,"options":[]}],"createdBy":"$user","createdAt":"2026-10-01T09:00:00Z","canRespond":true,"canViewResponses":false,"ownResponse":$response,"responseCount":${if (answered) 1 else 0}}"""
+    }
     private fun desk(headman: Boolean, roleCreated: Boolean, powerEnabled: Boolean, granted: Boolean) = """{"headman":$headman,"roles":${if (roleCreated) "[{\"roleId\":\"$trustedRole\",\"name\":\"Доверенные\"}]" else "[]"},"grants":${if (granted) "[{\"roleId\":\"$trustedRole\",\"userId\":\"$newTopic\"}]" else "[]"},"applicants":[],"powers":${if (powerEnabled) "[{\"roleId\":\"$trustedRole\",\"power\":\"channels\"}]" else "[]"},"mine":[]}"""
     private fun topic(id: String?, title: String, kind: String, pinned: Boolean = false,
         canPost: Boolean = true, policy: String = "all") = """{"topicId":${id?.let { "\"$it\"" } ?: "null"},"title":"$title","icon":"💬","kind":"$kind","lastBody":null,"lastAuthor":null,"lastAt":null,"unread":0,"canDelete":false,"activeBallots":0,"description":"","accent":"default","pinned":$pinned,"writePolicy":"$policy","canPost":$canPost}"""

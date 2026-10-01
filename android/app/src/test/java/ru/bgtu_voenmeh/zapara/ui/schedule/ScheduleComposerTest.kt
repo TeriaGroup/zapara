@@ -18,6 +18,22 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 
 class ScheduleComposerTest {
+    @Test fun conflict_pairs_name_exact_overlaps_but_not_touching_endpoints() {
+        val base = page(LocalDate.of(2026, 9, 14), LocalDateTime.of(2026, 9, 14, 8, 0)).lessons.first()
+        val overlapping = base.copy(index = base.index + 100, name = "Физика",
+            timeStart = base.timeStart, timeEnd = base.timeEnd)
+        val adjacent = base.copy(index = base.index + 101, name = "История",
+            timeStart = base.timeEnd, timeEnd = "23:00")
+        assertEquals(listOf(0 to 1), ScheduleComposer.conflictPairs(listOf(base, overlapping, adjacent)))
+    }
+
+    @Test fun friend_encounter_locates_exact_pair_even_if_subject_was_renamed() {
+        val lessons = page(monday, LocalDateTime.of(2026, 9, 14, 8, 0)).lessons
+        val first = lessons.first()
+        assertEquals(0, ScheduleComposer.encounterIndex(lessons, first.timeStart, first.original))
+        assertEquals(-1, ScheduleComposer.encounterIndex(lessons, first.timeStart, "Другой предмет"))
+        assertEquals(-1, ScheduleComposer.encounterIndex(lessons, null, first.original))
+    }
     private val parsed by lazy { GroupParser.parse(GROUP_FIXTURE) }
     private val all get() = parsed.lessons
     private val ctx = SchedCtx("3313", LocalDate.of(2026, 9, 1), 2, false)

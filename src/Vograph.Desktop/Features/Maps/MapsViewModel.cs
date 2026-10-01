@@ -24,6 +24,7 @@ public sealed partial class MapsViewModel : ViewModelBase
     private readonly ShellViewModel _shell;
     private readonly Func<DateTime> _clock;
     private readonly Action _onChange;
+    private readonly Action _onGroupChange;
     private int _version;
     private int _stackVersion;
     private string? _lessonName;
@@ -37,6 +38,13 @@ public sealed partial class MapsViewModel : ViewModelBase
     private string? _prevRoomKey;
     private string? _fallbackToastKey;
     private bool _syncingBuilding;
+    private sealed record PlanState(MapInfo Map, CoordsRect? Coords, MapMode Mode, string? LessonName,
+        DateTime? Start, DateTime? End, Route? Route, string? DestRoom, string? PreviousRoom,
+        string Context, string? Note, bool Highlight, double Left, double Top, double Width, double Height, string? HighlightLabel);
+    private PlanState? displayedPlan;
+    private PlanState? failedPlan;
+    private int planRequestVersion;
+    public bool HasFailedPlan => failedPlan is not null;
 
     public MapsViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null, CampusGraph? graph = null) : base(app)
     {
@@ -49,7 +57,8 @@ public sealed partial class MapsViewModel : ViewModelBase
         LoadLastEntrance();
         RefreshEntrances();
         _onChange = () => { if (IsTracking) _ = TrackNextAsync(); };
-        shell.GroupChanged += _onChange;
+        _onGroupChange = () => { ReturnDate = null; if (IsTracking) _ = TrackNextAsync(); };
+        shell.GroupChanged += _onGroupChange;
         shell.ScheduleChanged += _onChange;
         app.Loc.LanguageChanged += Relabel;
     }
@@ -57,7 +66,7 @@ public sealed partial class MapsViewModel : ViewModelBase
     public override void Detach()
     {
         _detached = true;
-        _shell.GroupChanged -= _onChange;
+        _shell.GroupChanged -= _onGroupChange;
         _shell.ScheduleChanged -= _onChange;
         App.Loc.LanguageChanged -= Relabel;
         SetImage(null); // the section is going away: release the decode with it
@@ -71,12 +80,21 @@ public sealed partial class MapsViewModel : ViewModelBase
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
         await RefreshCacheStatusAsync();
-        if (_shell.TakePendingMap() is ({ } pending, var lessonName)) await ShowLessonMapAsync(pending, lessonName);
+        var pendingDate = _shell.PendingLessonDate;
+        if (_shell.TakePendingMap() is ({ } pending, var lessonName))
+        {
+            ReturnDate = pendingDate;
+            await ShowLessonMapAsync(pending, lessonName);
+        }
         else if (Mode is MapMode.None or MapMode.NextLesson) await TrackNextAsync();
     }
 
     public string Title => T("navMaps");
     public bool IsTracking => Mode == MapMode.NextLesson;
+    [ObservableProperty] private DateTime? returnDate;
+    public bool HasReturnDate => ReturnDate is not null;
+    partial void OnReturnDateChanged(DateTime? value) => OnPropertyChanged(nameof(HasReturnDate));
+    [RelayCommand] private void ReturnToLesson() { if (ReturnDate is { } date) _shell.OpenScheduleAt(date); }
 
     [ObservableProperty] private MapMode _mode;
     [ObservableProperty] private string _contextLine = "";
@@ -173,7 +191,7 @@ public sealed partial class MapsViewModel : ViewModelBase
         finally { _syncingBuilding = false; }
     }
 
-    private sealed record NextData(Lesson? Lesson, DateTime Date, MapInfo? Map, string? Name, CoordsRect? Coords, string? DestRoomKey, string? PrevRoomKey);
+    private sealed record NextData(Lesson? Lesson, DateTime Date, MapInfo? Map, string? Name, CoordsRect? Coords, string? DestRoomKey, string? PrevRoomKey, bool HasGroup = true);
 
     [RelayCommand]
     private Task GoToNext() => TrackNextAsync();
@@ -187,7 +205,7 @@ public sealed partial class MapsViewModel : ViewModelBase
         var data = await RunAsync(() =>
         {
             var s = App.Db.GetSettings();
-            if (string.IsNullOrEmpty(s.MyGroupId)) return new NextData(null, now, null, null, null, null, null);
+            if (string.IsNullOrEmpty(s.MyGroupId)) return new NextData(null, now, null, null, null, null, null, false);
             var (lesson, date) = App.Maps.GetNextLesson(s.MyGroupId, now);
             if (lesson is null) return new NextData(null, now, null, null, null, null, null);
             var map = App.Maps.GetMapForLesson(lesson);
@@ -207,6 +225,7 @@ public sealed partial class MapsViewModel : ViewModelBase
             _lessonName = null; _start = _end = null;
             SetRouteEnds(null, null);
             await ShowMapAsync(null, null);
+            if (!data.HasGroup) ContextLine = "Выберите учебную группу, чтобы найти следующую пару. Планы корпусов доступны вручную.";
             return;
         }
         _lessonName = data.Name;
@@ -292,22 +311,25 @@ public sealed partial class MapsViewModel : ViewModelBase
     {
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
-        _coords = coords;
-        Current = map;
-        Note = map is null ? null : NoteFor(map);
-        ContextLine = MapsComposer.ContextLine(Mode, map, _lessonName, _start, _end, _clock(), App.Loc);
-        var shownBuilding = map is null ? "ГК" : map.Building == "ВЦ" ? "ГК" : map.Building;
-        var index = Array.IndexOf(Buildings, shownBuilding) is var i and >= 0 ? i : 0;
-        SyncBuilding(index);
-        HasHighlight = false;
-        ImageError = null;
+        var version = _version;
+        var requestVersion = ++planRequestVersion;
         if (map is not { HasMap: true } || map.IsRemote)
         {
+            _coords = coords;
+            Current = map;
+            Note = map is null ? null : NoteFor(map);
+            ContextLine = MapsComposer.ContextLine(Mode, map, _lessonName, _start, _end, _clock(), App.Loc);
+            var shownBuilding = map is null ? "ГК" : map.Building == "ВЦ" ? "ГК" : map.Building;
+            SyncBuilding(Array.IndexOf(Buildings, shownBuilding) is var i and >= 0 ? i : 0);
+            HasHighlight = false; ImageError = null;
+            displayedPlan = null; failedPlan = null; OnPropertyChanged(nameof(HasFailedPlan));
             SetImage(null);
             RefreshPath();
             await RefreshStackFloorsAsync();
             return;
         }
+        var requestedState = CaptureRequest(map, coords);
+        ImageError = Image is null ? null : "Загружаем новый план. Пока показана последняя доступная карта.";
 
         string? path;
         try
@@ -324,10 +346,7 @@ public sealed partial class MapsViewModel : ViewModelBase
         if (!operation.IsCurrent) return;
         if (path is null)
         {
-            SetImage(null);
-            ImageError = T("mapNoImage");
-            RefreshPath();
-            await RefreshStackFloorsAsync();
+            if (CurrentPlanRequest()) PlanFailed(requestedState);
             return;
         }
         Bitmap bmp;
@@ -335,14 +354,14 @@ public sealed partial class MapsViewModel : ViewModelBase
         catch (Exception ex)
         {
             App.Log.Error("map image", ex);
-            SetImage(null);
-            ImageError = T("mapNoImage");
-            RefreshPath();
-            await RefreshStackFloorsAsync();
+            if (CurrentPlanRequest()) PlanFailed(requestedState);
             return;
         }
-        if (_detached || !operation.IsCurrent || !ReferenceEquals(Current, map)) { bmp.Dispose(); return; }
+        if (!CurrentPlanRequest()) { bmp.Dispose(); return; }
+        RestorePlan(requestedState);
+        HasHighlight = false;
         SetImage(bmp);
+        ImageError = null; failedPlan = null; OnPropertyChanged(nameof(HasFailedPlan));
         if (MapsComposer.Highlight(coords, bmp.PixelSize) is { } r)
         {
             HighlightLeft = r.X; HighlightTop = r.Y; HighlightWidth = r.Width; HighlightHeight = r.Height;
@@ -350,8 +369,56 @@ public sealed partial class MapsViewModel : ViewModelBase
             HasHighlight = true;
         }
         RefreshPath();
+        displayedPlan = CapturePlan(map, coords);
         await RefreshStackFloorsAsync();
         await RefreshCacheStatusAsync();
+        bool CurrentPlanRequest() => !_detached && operation.IsCurrent && version == _version && requestVersion == planRequestVersion;
+    }
+
+    private PlanState CaptureRequest(MapInfo map, CoordsRect? coords) => new(map, coords, Mode, _lessonName,
+        _start, _end, _route, _destRoomKey, _prevRoomKey,
+        MapsComposer.ContextLine(Mode, map, _lessonName, _start, _end, _clock(), App.Loc), NoteFor(map), false,
+        0, 0, 0, 0, null);
+
+    private PlanState CapturePlan(MapInfo map, CoordsRect? coords) => new(map, coords, Mode, _lessonName,
+        _start, _end, _route, _destRoomKey, _prevRoomKey, ContextLine, Note, HasHighlight,
+        HighlightLeft, HighlightTop, HighlightWidth, HighlightHeight, HighlightLabel);
+
+    private void PlanFailed(PlanState requested)
+    {
+        failedPlan = requested; OnPropertyChanged(nameof(HasFailedPlan));
+        if (displayedPlan is { } good && Image is not null)
+        {
+            RestorePlan(good);
+            ImageError = "Запрошенный план не загрузился. Показана последняя доступная карта.";
+        }
+        else
+        {
+            RestorePlan(requested);
+            SetImage(null);
+            ImageError = T("mapNoImage");
+        }
+    }
+
+    private void RestorePlan(PlanState state)
+    {
+        Mode = state.Mode; _lessonName = state.LessonName; _start = state.Start; _end = state.End;
+        _route = state.Route; _destRoomKey = state.DestRoom; _prevRoomKey = state.PreviousRoom; _coords = state.Coords;
+        Current = state.Map; ContextLine = state.Context; Note = state.Note;
+        HasHighlight = state.Highlight; HighlightLeft = state.Left; HighlightTop = state.Top;
+        HighlightWidth = state.Width; HighlightHeight = state.Height; HighlightLabel = state.HighlightLabel;
+        SyncBuilding(Array.IndexOf(Buildings, state.Map.Building == "ВЦ" ? "ГК" : state.Map.Building) is var index and >= 0 ? index : 0);
+        OnPropertyChanged(nameof(IsRouteUnmarked)); OnPropertyChanged(nameof(Route));
+        RefreshRouteSteps(); RefreshPath();
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = false)]
+    private async Task RetryPlan()
+    {
+        if (failedPlan is not { } request) return;
+        Mode = request.Mode; _lessonName = request.LessonName; _start = request.Start; _end = request.End;
+        _route = request.Route; _destRoomKey = request.DestRoom; _prevRoomKey = request.PreviousRoom;
+        await ShowMapAsync(request.Map, request.Coords);
     }
 
     private async Task RefreshStackFloorsAsync()

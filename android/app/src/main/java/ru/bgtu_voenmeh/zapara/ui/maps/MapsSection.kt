@@ -45,6 +45,7 @@ import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
+import ru.bgtu_voenmeh.zapara.ui.shell.LocalShellChrome
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
@@ -54,7 +55,8 @@ import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun MapsSection(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
+fun MapsSection(state: MapsUiState, onEvent: (MapsEvent) -> Unit,
+    onBackToLesson: (() -> Unit)? = null) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
         val compact = MapsLayout.compact(maxWidth.value.roundToInt(), maxHeight.value.roundToInt())
@@ -64,6 +66,8 @@ fun MapsSection(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
         val controlsWidth = minOf(MapsLayout.SideChromeWidth.dp, maxWidth / 2)
         Column(Modifier.fillMaxSize()) {
             if (!compact) ZTopBar(stringResource(R.string.nav_maps)) {
+                if (onBackToLesson != null) ZButton(stringResource(R.string.ux30_maps_back_to_lesson),
+                    onBackToLesson, ghost = true, quiet = true, tag = "Maps.BackToLesson")
                 if (state.alphaMaps) {
                     ZIconButton(R.drawable.ic_map_pin, stringResource(R.string.maps_to_next), { onEvent(MapsEvent.ToNext) }, "Maps.ToNext")
                 }
@@ -77,7 +81,8 @@ fun MapsSection(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
                             .fillMaxHeight()
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
-                        compact = collapsed, sidePane = true, compactSteps = compactSteps
+                        compact = collapsed, sidePane = true, compactSteps = compactSteps,
+                        onBackToLesson = onBackToLesson
                     )
                     MapsPlanPane(state, onEvent, Modifier.weight(1f).fillMaxHeight().padding(end = Zapara.space.l), compact = true, sideSteps = true)
                 }
@@ -120,7 +125,9 @@ internal fun MapsModals(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifier: Modifier = Modifier, compact: Boolean = false, sidePane: Boolean = false, compactSteps: Boolean = false) {
+private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifier: Modifier = Modifier,
+    compact: Boolean = false, sidePane: Boolean = false, compactSteps: Boolean = false,
+    onBackToLesson: (() -> Unit)? = null) {
     val c = Zapara.colors
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         if (sidePane) {
@@ -131,12 +138,27 @@ private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifie
                 }
             }
             if (state.alphaMaps) MapsStepChrome(state, onEvent, compactSteps)
+            if (onBackToLesson != null) ZButton(stringResource(R.string.ux30_maps_back_to_lesson),
+                onBackToLesson, ghost = true, quiet = true, tag = "Maps.BackToLesson")
             if (!state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = true, zoom = state.zoom, enabled = state.planFile != null)
         }
         // Keep the complete selector rows at the scroll origin, not behind the route card.
         MapsFloorControls(state, onEvent)
         if (sidePane && state.alphaMaps) MapsRouteCard(state, onEvent, compact = true)
         state.remoteNote?.let { Text(it, style = Zapara.typography.caption, color = c.text2) }
+        state.automaticNote?.let { note ->
+            ZCard(Modifier.fillMaxWidth(), tag = "Maps.AutomaticNote") {
+                Text(note, style = Zapara.typography.body, color = c.text1)
+                if (!state.hasGroup && state.alphaMaps) ZButton(stringResource(R.string.group_pick),
+                    LocalShellChrome.current.onGroupChip, ghost = true)
+            }
+        }
+        state.mapError?.let { error ->
+            ZCard(Modifier.fillMaxWidth(), tag = "Maps.LoadError") {
+                Text(error, style = Zapara.typography.body, color = c.text1)
+                ZButton(stringResource(R.string.maps_retry), { onEvent(MapsEvent.RetryMaps) }, ghost = true)
+            }
+        }
     }
 }
 

@@ -26,6 +26,7 @@ import ru.bgtu_voenmeh.zapara.ui.components.HighlightText
 import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
+import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -83,6 +84,7 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
             }
         }
         Spacer(Modifier.height(Zapara.space.s))
+        state.error?.let { Text(it, style = Zapara.typography.caption, color = c.bad) }
         val entrances = state.items.filter { it.kind == "entrance" }
         val rooms = state.items.filter { it.kind == "room" }
         LazyColumn(
@@ -91,7 +93,14 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
         ) {
             if (state.items.isEmpty()) {
                 item {
-                    Text(stringResource(R.string.maps_places_empty), style = Zapara.typography.body, color = c.text2)
+                    androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        Text(stringResource(R.string.maps_places_empty), style = Zapara.typography.body, color = c.text2)
+                        if (state.query.isNotBlank()) ZButton(stringResource(R.string.group_search_clear),
+                            { onEvent(MapsEvent.QueryPlaces("")) }, ghost = true, tag = "Picker.ClearQuery")
+                        if (state.query.isNotBlank() || state.building != null || state.floor != null)
+                            ZButton(stringResource(R.string.ux60_picker_reset_filters),
+                                { onEvent(MapsEvent.ResetPickerFilters) }, ghost = true, tag = "Picker.ResetFilters")
+                    }
                 }
             }
             if (entrances.isNotEmpty()) {
@@ -99,7 +108,7 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
                     Text(stringResource(R.string.maps_places_entrances), style = Zapara.typography.caption, color = c.text2)
                 }
                 items(entrances, key = { it.id }) { place ->
-                    PlaceRow(place, state.query, onEvent)
+                    PlaceRow(place, state.query, state.field, state.epoch, onEvent)
                 }
             }
             if (rooms.isNotEmpty()) {
@@ -107,7 +116,7 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
                     Text(stringResource(R.string.maps_places_rooms), style = Zapara.typography.caption, color = c.text2)
                 }
                 items(rooms, key = { it.id }) { place ->
-                    PlaceRow(place, state.query, onEvent)
+                    PlaceRow(place, state.query, state.field, state.epoch, onEvent)
                 }
             }
         }
@@ -115,13 +124,14 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
 }
 
 @Composable
-private fun PlaceRow(place: RoutePlaceUi, query: String, onEvent: (MapsEvent) -> Unit) {
+private fun PlaceRow(place: RoutePlaceUi, query: String, field: RouteField, epoch: Long,
+    onEvent: (MapsEvent) -> Unit) {
     val c = Zapara.colors
     ZCard(
         Modifier
             .fillMaxWidth()
             .testTag("Picker.Row.${place.id}")
-            .clickable { onEvent(MapsEvent.PickPlace(place.id)) }
+            .clickable { onEvent(MapsEvent.PickPlace(place.id, field, epoch)) }
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             HighlightText(place.label, query, Zapara.typography.bodyStrong, Modifier.weight(1f))

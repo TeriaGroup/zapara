@@ -1,6 +1,8 @@
 package ru.bgtu_voenmeh.zapara.ui.groups
 
 import ru.bgtu_voenmeh.zapara.data.communities.GroupTopic
+import ru.bgtu_voenmeh.zapara.ui.chat.chatSearchWords
+import ru.bgtu_voenmeh.zapara.ui.chat.normalizeChatSearch
 
 private fun matches(query: String, vararg values: String): Boolean {
     val needle = query.trim()
@@ -14,16 +16,22 @@ internal fun browsePeople(rows: List<GroupPersonUi>, query: String): List<GroupP
     rows.filter { matches(query, it.name, it.handle) }
 
 internal fun browseChannels(rows: List<GroupTopic>, query: String = "", kind: String = "all",
-                             unreadOnly: Boolean = false, categoryOrder: Map<String, Int> = emptyMap()): List<GroupTopic> =
-    rows.withIndex()
+                             unreadOnly: Boolean = false, categoryOrder: Map<String, Int> = emptyMap(),
+                             categoryTitles: Map<String, String> = emptyMap()): List<GroupTopic> {
+    val queryWords = chatSearchWords(query)
+    return rows.withIndex()
         .filter { (_, channel) ->
             (kind == "all" || channel.kind == kind) &&
                 (!unreadOnly || channel.unread > 0) &&
-                matches(query, channel.title, channel.description)
+                queryWords.all { word -> normalizeChatSearch(listOf(
+                    channel.title, channel.description, channel.subject.orEmpty(), channel.lastBody.orEmpty(),
+                    categoryTitles[channel.categoryId].orEmpty()
+                ).joinToString(" ")).contains(word) }
         }
         .sortedWith(compareBy<IndexedValue<GroupTopic>> { if (it.value.topicId == null && it.value.kind == "chat") 0 else 1 }
             .thenBy { categoryOrder[it.value.categoryId] ?: -1 }.thenBy { it.value.categoryId ?: "" }
             .thenBy { if (it.value.pinned) 0 else 1 }.thenBy { it.value.position }.thenByDescending { it.value.unread > 0 }.thenBy { it.index })
         .map { it.value }
+}
 
 internal fun categoryExpanded(id: String?, collapsed: Collection<String>, filtered: Boolean): Boolean = id == null || filtered || id !in collapsed

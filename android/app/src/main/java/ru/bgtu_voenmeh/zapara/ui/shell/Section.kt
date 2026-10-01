@@ -27,11 +27,13 @@ enum class Section(
     Settings("settings", R.string.nav_settings, R.drawable.ic_settings, "Sections.Settings", false);
 
     val pattern: String get() = when (this) {
-        Schedule -> "schedule?date={date}"
-        Maps -> "maps?room={room}"
+        Schedule -> "schedule?date={date}&time={time}&subject={subject}&widgetProfile={widgetProfile}&widgetDatabase={widgetDatabase}&widgetGroup={widgetGroup}"
+        Maps -> "maps?room={room}&date={date}"
         Week -> "week?date={date}"
-        Homework -> "homework?id={id}"
+        Homework -> "homework?id={id}&widgetProfile={widgetProfile}&widgetDatabase={widgetDatabase}&query={query}&sourceGroup={sourceGroup}&sourceProfile={sourceProfile}"
+        Teachers -> "teachers?id={id}&query={query}&sourceGroup={sourceGroup}&sourceProfile={sourceProfile}"
         Group -> "group?communityId={communityId}&conversationId={conversationId}&context={context}"
+        Settings -> "settings?section={section}"
         else -> route
     }
 
@@ -43,19 +45,43 @@ enum class Section(
     }
 }
 
-fun NavHostController.openSection(section: Section, arg: String? = null, conversationId: String? = null) {
+fun NavHostController.openSection(
+    section: Section, arg: String? = null, conversationId: String? = null,
+    widgetScope: WidgetLaunchScope? = null, fresh: Boolean = false, sourceDate: String? = null,
+    focusTime: String? = null, focusSubject: String? = null, widgetGroup: String? = null,
+    detailQuery: String? = null, sourceGroup: String? = null, sourceProfile: String? = null
+) {
     val dest = when {
-        section == Section.Schedule && arg != null -> "schedule?date=$arg"
-        section == Section.Maps && arg != null -> "maps?room=${Uri.encode(arg)}"
+        section == Section.Schedule && arg != null -> "schedule?date=$arg" +
+            (focusTime?.let { "&time=${Uri.encode(it)}" } ?: "") +
+            (focusSubject?.let { "&subject=${Uri.encode(it)}" } ?: "") +
+            (widgetScope?.let { "&widgetProfile=${Uri.encode(it.profileId)}&widgetDatabase=${Uri.encode(it.databaseName)}" } ?: "") +
+            (widgetGroup?.let { "&widgetGroup=${Uri.encode(it)}" } ?: "")
+        section == Section.Maps && arg != null -> "maps?room=${Uri.encode(arg)}" +
+            (sourceDate?.let { "&date=${Uri.encode(it)}" } ?: "")
+        section == Section.Homework && homeworkWidgetId(arg) != null -> "homework?id=${homeworkWidgetId(arg)}" +
+            (widgetScope?.let { "&widgetProfile=${Uri.encode(it.profileId)}&widgetDatabase=${Uri.encode(it.databaseName)}" } ?: "")
+        section in setOf(Section.Homework, Section.Teachers) && detailQuery != null -> "${section.route}?query=${Uri.encode(detailQuery)}" +
+            (arg?.let { "&id=${Uri.encode(it)}" } ?: "") +
+            (sourceGroup?.let { "&sourceGroup=${Uri.encode(it)}" } ?: "") +
+            (sourceProfile?.let { "&sourceProfile=${Uri.encode(it)}" } ?: "")
         section == Section.Group && arg != null -> "group?communityId=${Uri.encode(arg)}" +
             (conversationId?.let { "&conversationId=${Uri.encode(it)}" } ?: "")
+        section == Section.Settings && arg != null -> "settings?section=${Uri.encode(arg)}"
         else -> section.route
     }
     navigate(dest) {
-        popUpTo(graph.findStartDestination().id) { saveState = true }
+        if (!keepsSectionOrigin(section, arg ?: detailQuery, fresh)) {
+            popUpTo(graph.findStartDestination().id) { saveState = true }
+        }
         // Argument-bearing routes need a fresh entry even when the route string repeats:
         // Schedule may have moved to another day since the last launch.
-        launchSingleTop = arg == null
-        restoreState = arg == null
+        launchSingleTop = arg == null && detailQuery == null && !fresh
+        restoreState = arg == null && detailQuery == null && !fresh
     }
 }
+
+internal fun keepsSectionOrigin(section: Section, argument: String?, fresh: Boolean): Boolean =
+    !fresh && argument != null && section in setOf(
+        Section.Schedule, Section.Maps, Section.Homework, Section.Teachers, Section.Week, Section.Group, Section.Settings
+    )

@@ -1,4 +1,12 @@
 import type { FormAnswer, FormQuestion } from "./types";
+export function requiredFormProgress(questions: FormQuestion[], answers: FormAnswer[]) {
+    const required = questions.filter(question => question.required);
+    const missing = required.filter(question => {
+        const answer = answers.find(row => row.questionId === question.questionId);
+        return question.kind.endsWith("Choice") ? !answer?.choices.some(choice => question.options.includes(choice)) : !answer?.text?.trim();
+    });
+    return { total: required.length, answered: required.length - missing.length, firstMissing: missing[0] ?? null };
+}
 export function validateFormQuestions(title: string, questions: FormQuestion[], deadline: string): string | null {
     if (!title.trim() || title.trim().length > 200)
         return "Введите название анкеты";

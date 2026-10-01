@@ -55,11 +55,25 @@ object ScheduleComposer {
         }.getOrDefault(false) }
     }
 
-    fun conflicts(rows: List<LessonUi>): Set<LessonUi> = rows.filter { first ->
-        rows.any { second -> first !== second && runCatching {
-            LocalTime.parse(first.timeStart) < LocalTime.parse(second.timeEnd) && LocalTime.parse(second.timeStart) < LocalTime.parse(first.timeEnd)
-        }.getOrDefault(false) }
-    }.toSet()
+    fun conflictPairs(rows: List<LessonUi>): List<Pair<Int, Int>> = buildList {
+        rows.indices.forEach { first ->
+            (first + 1 until rows.size).forEach { second ->
+                val overlap = runCatching {
+                    LocalTime.parse(rows[first].timeStart) < LocalTime.parse(rows[second].timeEnd) &&
+                        LocalTime.parse(rows[second].timeStart) < LocalTime.parse(rows[first].timeEnd)
+                }.getOrDefault(false)
+                if (overlap) add(first to second)
+            }
+        }
+    }
+
+    fun encounterIndex(rows: List<LessonUi>, time: String?, subject: String?): Int =
+        if (time.isNullOrBlank() || subject.isNullOrBlank()) -1 else rows.indexOfFirst { lesson ->
+            lesson.timeStart == time && (lesson.original ?: lesson.name).equals(subject, ignoreCase = true)
+        }
+
+    fun conflicts(rows: List<LessonUi>): Set<LessonUi> = conflictPairs(rows)
+        .flatMap { (first, second) -> listOf(rows[first], rows[second]) }.toSet()
 
     fun deadlines(date: LocalDate, subjects: Set<String>, homework: List<Homework>): List<Homework> = homework.filter {
         it.due?.let { due -> due >= date && due <= date.plusDays(2) } ?: (it.norm in subjects)

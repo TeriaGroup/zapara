@@ -8,6 +8,7 @@ public sealed class FakeFileDialogs : IFileDialogs
     public string? SavePath { get; set; }
     public string? OpenPath { get; set; }
     public string? LastSuggestedName { get; private set; }
+    public Func<string, Task<IReadOnlyList<string>>>? SupportOpen { get; set; }
 
     public Task<string?> SaveJsonAsync(string suggestedName)
     {
@@ -23,5 +24,6 @@ public sealed class FakeFileDialogs : IFileDialogs
         LastSuggestedName = suggestedName;
         return Task.FromResult(SavePath);
     }
-    public Task<IReadOnlyList<string>> OpenSupportAsync(string kind) => Task.FromResult<IReadOnlyList<string>>(OpenPath is null ? [] : [OpenPath]);
+    public Task<IReadOnlyList<string>> OpenSupportAsync(string kind) => SupportOpen?.Invoke(kind)
+        ?? Task.FromResult<IReadOnlyList<string>>(OpenPath is null ? [] : [OpenPath]);
 }

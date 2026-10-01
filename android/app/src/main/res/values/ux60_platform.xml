@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ux60_account_username_hint">Логин: 3–32 символа, латинские буквы, цифры, точка, дефис или подчёркивание.</string>
+    <string name="ux60_account_password_hint">Пароль: от 12 до 128 символов.</string>
+    <string name="ux60_account_name_hint">Имя: не больше 80 символов, без управляющих знаков.</string>
+    <string name="ux60_account_external_pending">Сначала завершите или отмените текущий вход через сервис.</string>
+    <string name="ux60_account_external_waiting">Ожидаем ответ от %1$s. Вернитесь сюда после входа.</string>
+    <string name="ux60_account_external_cancel">Отменить ожидание входа</string>
+    <string name="ux60_account_external_cancelled">Ожидание входа отменено. Можно попробовать снова.</string>
+    <string name="ux60_export_pending">Архив готовится. Проверьте готовность этого обращения позже.</string>
+    <string name="ux60_export_ready">Архив готов. Выберите место сохранения.</string>
+    <string name="ux60_export_failed">Архив недоступен. Запросите новый после проверки аккаунта.</string>
+    <string name="ux60_export_check">Проверить готовность архива</string>
+    <string name="ux60_export_check_failed">Архив создан, но проверить готовность не удалось. Повторите проверку того же архива.</string>
+    <string name="ux60_export_expired">Архив больше не доступен. Можно запросить новый экспорт.</string>
+    <string name="ux60_export_choose_location">Выберите место для сохранения архива.</string>
+    <string name="ux60_export_choose_again">Выбрать место ещё раз</string>
+    <string name="ux60_export_save_failed">Не удалось записать архив. Выберите другое место и повторите.</string>
+    <string name="ux60_export_save_cancelled">Сохранение отменено. Архив доступен для повторной загрузки.</string>
+    <string name="ux60_update_stale">Не удалось проверить обновления. Показана ранее найденная версия %1$s.</string>
+    <string name="ux60_update_install_tag">Установить %1$s</string>
+    <string name="ux60_update_file_missing">Файл обновления больше не доступен. Загрузите его снова.</string>
+    <string name="ux60_update_install_failed">Не удалось открыть установку. Проверьте файл и повторите.</string>
+    <string name="ux60_preference_saving">Сохраняем выбор…</string>
+    <string name="ux60_preference_save_failed">Не удалось сохранить выбор. Проверьте значение и повторите.</string>
+    <string name="ux60_preference_retry">Повторить сохранение</string>
+    <string name="ux60_sync_failed">Синхронизация не завершилась. Локальные изменения сохранены; повторите попытку.</string>
+    <string name="ux60_sync_open_account">Открыть аккаунт для повторного входа</string>
+    <string name="ux60_sync_back_to_data">Назад к синхронизации</string>
+    <string name="ux60_support_subject_count">Тема: %1$d символов · при отправке %2$d из 120</string>
+    <string name="ux60_support_body_count">Текст: %1$d символов · при отправке %2$d из 4000</string>
+    <string name="ux60_support_over_limit">Текст длиннее разрешённого при отправке. Эмодзи может занимать два знака; сократите текст перед отправкой.</string>
+    <string name="ux60_support_invalid_unicode">Удалите повреждённый символ перед отправкой.</string>
+    <string name="ux60_support_input_failed">Проверьте тему и текст обращения; введённое сохранено.</string>
+    <string name="ux60_support_reselect_file">Не удалось восстановить вложение. Уберите его и выберите файл снова; текст обращения сохранён.</string>
+    <string name="ux60_picker_reset_filters">Показать все места</string>
+    <string name="ux60_picker_target_missing">Это место больше не доступно. Поиск и выбранные точки маршрута сохранены; выберите другое.</string>
+    <string name="ux60_friend_delete_failed">Не удалось удалить эту группу друзей. Ваши правки сохранены, попробуйте ещё раз.</string>
+    <string name="ux60_friend_scope_changed">Учебная группа или профиль изменились. Откройте редактор заново.</string>
+    <string name="ux60_friend_toggle_failed">Не удалось изменить эту группу друзей. Повторите попытку.</string>
+    <string name="ux60_friend_open_failed">Не удалось открыть группу друзей. Повторите попытку.</string>
+    <string name="ux60_group_pick_saving">Сохраняем учебную группу…</string>
+    <string name="ux60_group_pick_failed">Не удалось выбрать группу. Прежняя группа сохранена; повторите попытку.</string>
+</resources>

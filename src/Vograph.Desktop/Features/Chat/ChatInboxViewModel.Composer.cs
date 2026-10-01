@@ -45,9 +45,9 @@ public sealed partial class ChatInboxViewModel
     [ObservableProperty] private bool inboxLoadFailed;
     [ObservableProperty] private bool inboxLoaded;
     partial void OnInboxLoadedChanged(bool value) => RefreshInboxBrowse();
-    partial void OnLoadingMessagesChanged(bool value) => OnPropertyChanged(nameof(NoMessages));
-    partial void OnMessagesLoadedChanged(bool value) => OnPropertyChanged(nameof(NoMessages));
-    partial void OnMessageLoadFailedChanged(bool value) => OnPropertyChanged(nameof(NoMessages));
+    partial void OnLoadingMessagesChanged(bool value) { OnPropertyChanged(nameof(NoMessages)); RefreshMessageBrowse(); }
+    partial void OnMessagesLoadedChanged(bool value) { OnPropertyChanged(nameof(NoMessages)); RefreshMessageBrowse(); }
+    partial void OnMessageLoadFailedChanged(bool value) { OnPropertyChanged(nameof(NoMessages)); RefreshMessageBrowse(); }
     partial void OnInboxLoadFailedChanged(bool value) => RefreshInboxBrowse();
     partial void OnSendingChanged(bool value) => NotifyComposer();
     partial void OnDraftChanged(string value)

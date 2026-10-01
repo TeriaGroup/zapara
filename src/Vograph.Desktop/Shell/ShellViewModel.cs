@@ -64,7 +64,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         Register(SectionKey.Maps, () => new Features.Maps.MapsViewModel(App, this));
         Register(SectionKey.Friends, () => new Features.Friends.FriendsViewModel(App, this));
         Register(SectionKey.Homework, () => new Features.Homeworks.HomeworkViewModel(App, this));
-        Register(SectionKey.Community, () => new Features.Communities.CommunitiesViewModel(App, App.Communities, App.CommunityAccess));
+        Register(SectionKey.Community, () => new Features.Communities.CommunitiesViewModel(App, App.Communities, App.CommunityAccess, shell: this));
         Register(SectionKey.Group, () => new Features.Groups.GroupViewModel(App,shell:this));
         Register(SectionKey.Chat, () => new Features.Chat.ChatInboxViewModel(App, this));
         Register(SectionKey.Settings, () => new Features.Preferences.SettingsViewModel(App, this));
@@ -273,6 +273,7 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// <summary>Display name of the lesson the pending map came from, so the Maps header can read
     /// «Пара: Матан · 493 · …» instead of repeating the room. Null when no name is known.</summary>
     public string? PendingLessonName { get; private set; }
+    public DateTime? PendingLessonDate { get; private set; }
 
     /// <summary>Read once by the Maps section when it activates: a handover, not a standing selection.</summary>
     internal (MapInfo? Map, string? LessonName) TakePendingMap()
@@ -280,6 +281,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         var handover = (PendingMap, PendingLessonName);
         PendingMap = null;
         PendingLessonName = null;
+        PendingLessonDate = null;
         return handover;
     }
 
@@ -455,10 +457,20 @@ public sealed partial class ShellViewModel : ViewModelBase
     }
 
     /// <summary>Week/Teachers: jump to a concrete date in the schedule section.</summary>
-    public void OpenScheduleAt(DateTime date)
+    public void OpenScheduleAt(DateTime date, string? subjectRaw = null, string? timeStart = null)
     {
         NavigateTo(SectionKey.Schedule);
-        if (Current is ScheduleViewModel s) s.ShowDate(date);
+        if (Current is ScheduleViewModel s)
+        {
+            s.ShowDate(date);
+            if (!string.IsNullOrWhiteSpace(subjectRaw) && !string.IsNullOrWhiteSpace(timeStart)) s.RequestLessonFocus(date, subjectRaw, timeStart);
+        }
+    }
+    public void OpenAccountSettings()
+    {
+        NavigateTo(SectionKey.Settings);
+        if (Current is Features.Preferences.SettingsViewModel settings)
+            settings.OpenPanelCommand.Execute("account");
     }
 
     /// <summary>Bare keys that must not fire inside text fields or over a dialog; MainWindow calls this from its bubbling KeyDown handler.
@@ -527,10 +539,11 @@ public sealed partial class ShellViewModel : ViewModelBase
     }
 
     /// <summary>◉ on a lesson card: the caller passes the name the card shows, so the section can name the lesson.</summary>
-    public void ShowMap(MapInfo? info, string? lessonName = null)
+    public void ShowMap(MapInfo? info, string? lessonName = null, DateTime? lessonDate = null)
     {
         PendingMap = info;
         PendingLessonName = lessonName;
+        PendingLessonDate = lessonDate;
         NavigateTo(SectionKey.Maps);
     }
 

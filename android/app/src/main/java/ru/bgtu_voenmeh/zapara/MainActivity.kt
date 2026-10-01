@@ -29,6 +29,7 @@ import ru.bgtu_voenmeh.zapara.ui.account.ExternalReturnResult
 import ru.bgtu_voenmeh.zapara.ui.account.AccountViewModel
 import ru.bgtu_voenmeh.zapara.ui.shell.WidgetLaunchInbox
 import ru.bgtu_voenmeh.zapara.ui.shell.ZaparaApp
+import ru.bgtu_voenmeh.zapara.ui.widgets.WidgetIntents
 
 class MainActivity : ComponentActivity() {
     private val widgetLaunchInbox = WidgetLaunchInbox()
@@ -80,7 +81,12 @@ class MainActivity : ComponentActivity() {
     private fun acceptLaunch(intent: Intent) {
         widgetLaunchInbox.accept(
             intent.getStringExtra(SECTION_EXTRA),
-            intent.getStringExtra(ARGUMENT_EXTRA)
+            intent.getStringExtra(ARGUMENT_EXTRA),
+            intent.getStringExtra(WIDGET_PROFILE_EXTRA),
+            intent.getStringExtra(WIDGET_DATABASE_EXTRA),
+            intent.getStringExtra(WidgetIntents.EXTRA_SCHEDULE_GROUP),
+            intent.getStringExtra(WidgetIntents.EXTRA_SCHEDULE_TIME),
+            intent.getStringExtra(WidgetIntents.EXTRA_SCHEDULE_SUBJECT)
         )
     }
 
@@ -89,6 +95,11 @@ class MainActivity : ComponentActivity() {
         widgetLaunchInbox.consume(id)
         intent.removeExtra(SECTION_EXTRA)
         intent.removeExtra(ARGUMENT_EXTRA)
+        intent.removeExtra(WIDGET_PROFILE_EXTRA)
+        intent.removeExtra(WIDGET_DATABASE_EXTRA)
+        intent.removeExtra(WidgetIntents.EXTRA_SCHEDULE_GROUP)
+        intent.removeExtra(WidgetIntents.EXTRA_SCHEDULE_TIME)
+        intent.removeExtra(WidgetIntents.EXTRA_SCHEDULE_SUBJECT)
     }
 
     private fun acceptExternal(intent: Intent?) {
@@ -139,5 +150,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val SECTION_EXTRA = "zapara.section"
         const val ARGUMENT_EXTRA = "zapara.argument"
+        const val WIDGET_PROFILE_EXTRA = "zapara.widget.profile"
+        const val WIDGET_DATABASE_EXTRA = "zapara.widget.database"
     }
 }

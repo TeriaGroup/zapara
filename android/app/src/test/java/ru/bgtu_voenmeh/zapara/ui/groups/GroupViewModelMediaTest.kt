@@ -97,6 +97,51 @@ class GroupViewModelMediaTest {
         assertEquals(3, http.requests.count { it.url.endsWith("/media") })
     }
 
+    @Test fun group_attachment_save_downloads_only_for_captured_owner_and_conversation() = runTest(dispatcher) {
+        val messageId = "dddddddd-dddd-4ddd-8ddd-dddddddddd04"
+        val original = byteArrayOf(12, 23, 34, 45)
+        var savedBytes: ByteArray? = null
+        var savedUri: String? = null
+        val http = FakeHttp { call ->
+            val path = call.url.substringAfter("/communities").substringBefore('?')
+            when {
+                call.method == "GET" && !path.contains("/") -> jsonReply("""[{"communityId":"$community","name":"O3313","description":"Группа","revision":1,"role":"member"}]""")
+                path.endsWith("/home") -> jsonReply(home())
+                path.endsWith("/messages") -> jsonReply("""{"messages":[{"messageId":"$messageId","conversationId":"$conversation","senderId":"$user","senderName":"Аня","body":"лекция.pdf","createdAt":"2026-10-01T10:00:00Z","kind":"file","deleted":false}],"hasMore":false}""")
+                path.endsWith("/read") -> jsonReply(chat())
+                call.method == "GET" && path.endsWith("/messages/$messageId/media") ->
+                    HttpReply(200, original, contentType = "application/octet-stream")
+                else -> HttpReply(404, """{"title":"Нет","status":404,"code":"not_found"}""".toByteArray())
+            }
+        }
+        val runtime = GroupRuntime(false, user,
+            CommunityHttpClient(http, AccountServerScope.parse("http://127.0.0.1:9/")),
+            { testToken("za_", 4) }, { null },
+            saveMedia = { uri, bytes -> savedUri = uri; savedBytes = bytes.copyOf(); true })
+        val vm = GroupViewModel(runtime)
+        runCurrent()
+        try {
+            assertEquals(messageId, vm.state.value.messages.single().id)
+            val uri = "content://documents/lecture"
+            val target = GroupMediaSaveTarget(user, community, conversation, null, messageId)
+            vm.onEvent(GroupEvent.SaveMedia(target.copy(ownerId = "other-user"), uri))
+            runCurrent()
+            assertFalse(http.requests.any { it.url.endsWith("/messages/$messageId/media") })
+            assertNull(savedBytes)
+
+            vm.onEvent(GroupEvent.SaveMedia(target, uri))
+            runCurrent()
+            assertEquals(1, http.requests.count { it.url.endsWith("/messages/$messageId/media") })
+            assertTrue(savedBytes?.contentEquals(original) == true)
+            assertEquals(uri, savedUri)
+            assertTrue(messageId in vm.state.value.mediaSavedIds)
+            assertFalse(messageId in vm.state.value.mediaSavingIds)
+        } finally {
+            vm.onEvent(GroupEvent.Back)
+            runCurrent()
+        }
+    }
+
     private fun home() = """{"communityId":"$community","name":"O3313","groupName":"O3313","groupChat":${chat()},"classmates":[{"userId":"$user","username":"student","displayName":"Аня","role":"member","self":true}],"directs":[]}"""
 
     private fun chat() = """{"conversationId":"$conversation","kind":"group","communityId":"$community","title":"O3313","peerUserId":null,"lastBody":null,"lastAt":null,"unread":0}"""

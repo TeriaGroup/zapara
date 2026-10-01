@@ -32,7 +32,9 @@ data class RoutePickerUi(
     val building: String? = null,
     val floor: Int? = null,
     val buildings: List<String> = listOf("ГК", "УЛК"),
-    val floors: List<Int> = emptyList()
+    val floors: List<Int> = emptyList(),
+    val epoch: Long = 0,
+    val error: String? = null
 )
 
 data class MapsUiState(
@@ -76,8 +78,23 @@ data class MapsUiState(
     val rasterCatalog: Map<FloorKey, FloorRaster> = emptyMap(),
     val decodeFailedFloors: Set<FloorKey> = emptySet(),
     val roomUnmarked: Boolean = false,
-    val alphaMaps: Boolean = false
+    val alphaMaps: Boolean = false,
+    val mapError: String? = null,
+    val automaticNote: String? = null
 )
+
+internal fun RoutePickerUi.withBuilding(next: String?): RoutePickerUi {
+    val available = if (next == null) buildings.flatMap(MapsComposer::floors).distinct().sorted()
+        else MapsComposer.floors(next)
+    return copy(building = next, floors = available, floor = floor?.takeIf { it in available })
+}
+
+internal fun RoutePickerUi.clearFilters(): RoutePickerUi = copy(
+    query = "", building = null, floor = null,
+    floors = buildings.flatMap(MapsComposer::floors).distinct().sorted(), error = null)
+
+internal fun RoutePickerUi.accepts(pick: MapsEvent.PickPlace): Boolean =
+    epoch == pick.epoch && field == pick.field && items.any { it.id == pick.id }
 
 fun MapsUiState.withoutRouting(): MapsUiState = copy(
     alphaMaps = false,
@@ -123,11 +140,12 @@ sealed interface MapsEvent {
     data object OpenFrom : MapsEvent
     data object OpenTo : MapsEvent
     data class QueryPlaces(val value: String) : MapsEvent
-    data class PickPlace(val id: String) : MapsEvent
+    data class PickPlace(val id: String, val field: RouteField, val epoch: Long) : MapsEvent
     data object ClosePicker : MapsEvent
     data object SwapEnds : MapsEvent
     data class FilterPickerBuilding(val building: String?) : MapsEvent
     data class FilterPickerFloor(val floor: Int?) : MapsEvent
+    data object ResetPickerFilters : MapsEvent
     data class PlanPress(val nx: Double, val ny: Double) : MapsEvent
     data class PlanPickAs(val field: RouteField) : MapsEvent
     data object ClosePlanPick : MapsEvent

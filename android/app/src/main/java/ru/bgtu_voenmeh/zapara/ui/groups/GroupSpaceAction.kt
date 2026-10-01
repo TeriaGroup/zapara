@@ -7,7 +7,7 @@ import java.time.LocalDate
 sealed interface GroupSpaceAction {
     data class Panel(val name: String?) : GroupSpaceAction
     data class Category(val id: String?, val title: String, val position: Int, val revision: Long) : GroupSpaceAction
-    data class DeleteCategory(val id: String) : GroupSpaceAction
+    data class DeleteCategory(val id: String, val communityId: String? = null) : GroupSpaceAction
     data class Archive(val topic: GroupTopic, val archived: Boolean) : GroupSpaceAction
     data object LoadArchive : GroupSpaceAction
     data class LoadAccess(val topicId: String) : GroupSpaceAction
@@ -16,7 +16,7 @@ sealed interface GroupSpaceAction {
     data object LoadAudit : GroupSpaceAction
     data class Preview(val userId: String?, val roleId: String?) : GroupSpaceAction
     data object EndPreview : GroupSpaceAction
-    data class Role(val role: GroupRole) : GroupSpaceAction
+    data class Role(val role: GroupRole, val communityId: String? = null) : GroupSpaceAction
     data class CreateRole(val name: String) : GroupSpaceAction
     data class RoleImpact(val roleId: String) : GroupSpaceAction
     data class DeleteRole(val roleId: String) : GroupSpaceAction

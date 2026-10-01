@@ -53,7 +53,7 @@ internal sealed class CommunitiesUiHarness : IDisposable
         directory.Dispose();
     }
 
-    private Task<HttpResponseMessage> Respond(HttpRequestMessage request, CancellationToken _)
+    internal Task<HttpResponseMessage> Respond(HttpRequestMessage request, CancellationToken _)
     {
         var method = request.Method.Method;
         var uri = request.RequestUri!;

@@ -15,7 +15,22 @@
         <c:SegmentedControl Name="WeekSegment" Grid.Column="1" VerticalAlignment="Bottom" Items="{Binding SegmentItems}" SelectedIndex="{Binding ParityIndex}" />
       </Grid>
 
-      <ItemsControl Name="WeekContent" ItemsSource="{Binding Days}" IsVisible="{Binding HasGroup}" c:Appear.CascadeHost="True">
+      <WrapPanel ItemSpacing="8" LineSpacing="8">
+        <Button Content="Предыдущая неделя" Command="{Binding PreviousWeekCommand}" />
+        <Button Content="Сегодня" Command="{Binding CurrentWeekCommand}" />
+        <Button Content="Следующая неделя" Command="{Binding NextWeekCommand}" />
+        <TextBlock Classes="muted" Text="{Binding WeekRange}" VerticalAlignment="Center" />
+      </WrapPanel>
+      <StackPanel Spacing="8" IsVisible="{Binding LoadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+        <TextBlock Text="{Binding LoadError}" TextWrapping="Wrap" />
+        <Button Content="Повторить загрузку" Command="{Binding RetryWeekCommand}" HorizontalAlignment="Left" />
+      </StackPanel>
+      <StackPanel Spacing="8" IsVisible="{Binding ShowNoCopy}">
+        <TextBlock Text="Расписание группы не загружено. Нет сохранённой копии." TextWrapping="Wrap" />
+        <Button Content="Загрузить расписание" Command="{Binding RetryWeekCommand}" HorizontalAlignment="Left" />
+      </StackPanel>
+
+      <ItemsControl Name="WeekContent" ItemsSource="{Binding Days}" IsVisible="{Binding ShowWeekCards}" c:Appear.CascadeHost="True">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
@@ -68,6 +83,7 @@
       </ItemsControl>
 
       <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Week}" Margin="0,48,0,0" />
+      <Button Content="Выбрать группу" Command="{Binding ChooseGroupCommand}" IsVisible="{Binding ShowNoGroup}" HorizontalAlignment="Left" />
     </StackPanel>
   </ScrollViewer>
 </UserControl>

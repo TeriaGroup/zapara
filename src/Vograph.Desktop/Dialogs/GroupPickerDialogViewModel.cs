@@ -9,8 +9,9 @@ public sealed partial class GroupPickerDialogViewModel : DialogViewModelBase
 {
     private readonly List<Group> _all;
 
-    public GroupPickerDialogViewModel(IReadOnlyList<Group> groups, string? currentId)
+    public GroupPickerDialogViewModel(IReadOnlyList<Group> groups, string? currentId, bool allowManual = false)
     {
+        AllowManual = allowManual && groups.Count == 0;
         _all = groups.OrderBy(g => g.Name, StringComparer.Create(System.Globalization.CultureInfo.GetCultureInfo("ru-RU"), ignoreCase: true)).ToList();
         Title = Loc.Current.T("groupPickTitle");
         ApplyFilter();
@@ -18,6 +19,10 @@ public sealed partial class GroupPickerDialogViewModel : DialogViewModelBase
     }
 
     public ObservableCollection<Group> Filtered { get; } = new();
+    public bool AllowManual { get; }
+    public bool ShowCatalog => !AllowManual;
+    [ObservableProperty] private string manualName = "";
+    partial void OnManualNameChanged(string value) => RefreshCanConfirm();
 
     [ObservableProperty] private string _query = "";
     [ObservableProperty] private Group? _selected;
@@ -26,7 +31,7 @@ public sealed partial class GroupPickerDialogViewModel : DialogViewModelBase
 
     partial void OnSelectedChanged(Group? value) => RefreshCanConfirm();
 
-    protected override bool CanConfirm() => Selected is not null;
+    protected override bool CanConfirm() => Selected is not null || AllowManual && ManualName.Trim().Length > 0;
 
     private void ApplyFilter()
     {

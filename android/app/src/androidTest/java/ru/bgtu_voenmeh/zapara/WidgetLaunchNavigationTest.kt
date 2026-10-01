@@ -20,6 +20,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -30,6 +32,7 @@ import ru.bgtu_voenmeh.zapara.ui.shell.LocalShellChrome
 import ru.bgtu_voenmeh.zapara.ui.shell.Section
 import ru.bgtu_voenmeh.zapara.ui.shell.ShellChrome
 import ru.bgtu_voenmeh.zapara.ui.shell.WidgetLaunchInbox
+import ru.bgtu_voenmeh.zapara.ui.shell.WidgetLaunchScope
 import ru.bgtu_voenmeh.zapara.ui.shell.openSection
 import ru.bgtu_voenmeh.zapara.ui.theme.MotionSettings
 import ru.bgtu_voenmeh.zapara.ui.theme.ThemeChoice
@@ -38,6 +41,35 @@ import ru.bgtu_voenmeh.zapara.ui.theme.ZaparaTheme
 @RunWith(AndroidJUnit4::class)
 class WidgetLaunchNavigationTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
+
+    @Test fun homework_route_keeps_scope_and_generic_header_does_not_restore_the_previous_target() {
+        lateinit var nav: NavHostController
+        rule.setContent {
+            nav = rememberNavController()
+            NavHost(nav, startDestination = "start") {
+                composable("start") { }
+                composable(Section.Homework.pattern, arguments = listOf(
+                    navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("widgetProfile") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("widgetDatabase") { type = NavType.StringType; nullable = true; defaultValue = null }
+                )) { }
+            }
+        }
+        val scope = WidgetLaunchScope("account-a", "profiles/a/zapara.db")
+        rule.runOnIdle {
+            nav.openSection(Section.Homework, "41", widgetScope = scope, fresh = true)
+            assertEquals("41", nav.currentBackStackEntry!!.arguments!!.getString("id"))
+            assertEquals("account-a", nav.currentBackStackEntry!!.arguments!!.getString("widgetProfile"))
+            assertEquals("profiles/a/zapara.db", nav.currentBackStackEntry!!.arguments!!.getString("widgetDatabase"))
+            val first = nav.currentBackStackEntry!!.id
+            nav.openSection(Section.Homework, "41", widgetScope = scope, fresh = true)
+            assertNotEquals(first, nav.currentBackStackEntry!!.id)
+            nav.openSection(Section.Homework, fresh = true)
+            assertNull(nav.currentBackStackEntry!!.arguments?.getString("id"))
+            assertNull(nav.currentBackStackEntry!!.arguments?.getString("widgetProfile"))
+            assertNull(nav.currentBackStackEntry!!.arguments?.getString("widgetDatabase"))
+        }
+    }
 
     @Test fun tapping_same_widget_date_after_swiping_schedule_reselects_that_date() {
         val dayA = LocalDate.of(2026, 9, 23)

@@ -5,6 +5,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -14,6 +16,7 @@ import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.rememberUiText
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import android.app.DatePickerDialog
@@ -28,6 +31,7 @@ import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkAudiencePicker
 import java.time.*
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import kotlinx.coroutines.launch
 
 @Suppress("UNCHECKED_CAST")
 private val questionSaver = Saver<List<GroupFormQuestion>, ArrayList<ArrayList<Any>>>(
@@ -53,8 +57,16 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
     val uiText = rememberUiText()
     val panel = state.spacePanel ?: return
     val close = { dispatch(onEvent, GroupSpaceAction.Panel(null)) }
-    BackHandler { close() }
-    ZBottomSheet(onDismiss = close, tag = "Group.Space.$panel") {
+    var selectedRoleId by rememberSaveable(state.communityId) { mutableStateOf<String?>(null) }
+    var roleDirty by remember(state.communityId, panel) { mutableStateOf(false) }
+    var discardTarget by remember(state.communityId, panel) { mutableStateOf<String?>(null) }
+    val requestClose = {
+        if (!state.channelBusy) {
+            if (panel == "roles" && roleDirty) discardTarget = "__close__" else close()
+        }
+    }
+    BackHandler { requestClose() }
+    ZBottomSheet(onDismiss = requestClose, tag = "Group.Space.$panel") {
         Text(when(panel) { "roles" -> uiText(R.string.space_day_62); "categories" -> uiText(R.string.space_day_63); "archive" -> uiText(R.string.space_day_64); "access" -> uiText(R.string.space_day_65); "preview" -> uiText(R.string.space_day_66); else -> uiText(R.string.space_day_67) }, style = Zapara.typography.section)
         state.spaceError?.let { Text(it, color = Zapara.colors.bad, style = Zapara.typography.body) }
         if (state.channelBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -71,7 +83,6 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
                 "roles" -> {
                     item {
                         val roles = state.desk?.roles.orEmpty().sortedByDescending { it.position }
-                        var selectedRoleId by rememberSaveable(state.communityId) { mutableStateOf<String?>(null) }
                         var name by rememberSaveable(state.communityId) { mutableStateOf("") }
                         val selected = roles.firstOrNull { it.roleId == selectedRoleId }
                         val previousIds = remember(state.communityId) { mutableStateOf(roles.map { it.roleId }.toSet()) }
@@ -94,11 +105,15 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
                             val grants = state.desk?.grants.orEmpty().count { it.roleId == role.roleId }
                             val powers = state.desk?.powers.orEmpty().filter { it.roleId == role.roleId }.map { powerTitle(it.power) }
                             ZCard(Modifier.fillMaxWidth()) {
-                                ZButton(uiText(R.string.group_roles_card, role.icon, role.name, role.position, grants), { selectedRoleId = if (selectedRoleId == role.roleId) null else role.roleId }, modifier = Modifier.fillMaxWidth(), ghost = selectedRoleId != role.roleId)
+                                ZButton(uiText(R.string.group_roles_card, role.icon, role.name, role.position, grants), {
+                                    val target = if (selectedRoleId == role.roleId) "" else role.roleId
+                                    if (roleDirty) discardTarget = target else selectedRoleId = target.ifEmpty { null }
+                                }, modifier = Modifier.fillMaxWidth(), ghost = selectedRoleId != role.roleId,
+                                    enabled = !state.channelBusy)
                                 Text(powers.take(3).joinToString(" · ").ifBlank { uiText(R.string.group_roles_no_powers) } + if (powers.size > 3) uiText(R.string.group_roles_more_powers, powers.size - 3) else "", style = Zapara.typography.caption)
                             }
                         }
-                        if (selected != null) RoleEditor(selected, state, onEvent)
+                        if (selected != null) RoleEditor(selected, state, onEvent, { roleDirty = it })
                     }
                 }
                 "access" -> state.access?.let { access -> item { AccessEditor(access, state, onEvent) } }
@@ -112,6 +127,16 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
             }
         }
     }
+    if (discardTarget != null) AlertDialog(onDismissRequest = { discardTarget = null },
+        title = { Text(stringResource(R.string.next_role_discard_title)) },
+        text = { Text(stringResource(R.string.next_role_discard_body)) },
+        confirmButton = { ZButton(stringResource(R.string.next_role_discard), {
+            val target = discardTarget
+            discardTarget = null
+            roleDirty = false
+            if (target == "__close__") close() else selectedRoleId = target?.ifEmpty { null }
+        }) },
+        dismissButton = { ZButton(stringResource(R.string.channel_cancel), { discardTarget = null }, ghost = true) })
 }
 
 @Composable private fun CategoryEditor(category: GroupCategory?, state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
@@ -119,17 +144,34 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
     var initialRevision by remember(category?.categoryId) { mutableStateOf(category?.revision ?: 0) }
     var title by rememberSaveable(category?.categoryId) { mutableStateOf(category?.title ?: "") }
     var position by rememberSaveable(category?.categoryId) { mutableStateOf((category?.position ?: state.space?.categories.orEmpty().size).toString()) }
+    var confirmingDelete by remember(category?.categoryId) { mutableStateOf(false) }
     LaunchedEffect(category?.revision) { if (category != null && category.title == title && category.position.toString() == position) initialRevision = category.revision }
     ZCard(Modifier.fillMaxWidth()) {
         if (category != null && category.revision != initialRevision) ZButton(uiText(R.string.space_day_reload_changes), { title = category.title; position = category.position.toString(); initialRevision = category.revision }, ghost = true)
         Field(if (category == null) uiText(R.string.space_day_76) else uiText(R.string.space_day_77), title, { title = it.take(80) })
         Field(uiText(R.string.space_day_78), position, { position = it })
         ZButton(uiText(R.string.space_day_79), { dispatch(onEvent, GroupSpaceAction.Category(category?.categoryId, title.trim(), position.toInt(), initialRevision)) }, enabled = !state.channelBusy && title.trim().length >= 2 && position.toIntOrNull() != null, busy = state.channelBusy)
-        if (category != null) ZButton(uiText(R.string.space_day_80), { dispatch(onEvent, GroupSpaceAction.DeleteCategory(category.categoryId)) }, enabled = !state.channelBusy, ghost = true)
+        if (category != null) ZButton(uiText(R.string.space_day_80), { confirmingDelete = true },
+            enabled = !state.channelBusy && (state.desk?.headman == true || "channels" in state.desk?.mine.orEmpty()), ghost = true)
+    }
+    if (category != null && confirmingDelete) {
+        val affected = (state.space?.topics.orEmpty() + state.archived).distinctBy { it.topicId }
+            .count { it.categoryId == category.categoryId }
+        AlertDialog(onDismissRequest = { confirmingDelete = false },
+            title = { Text(stringResource(R.string.next_category_delete_title, category.title)) },
+            text = { Text(stringResource(R.string.next_category_delete_body, affected)) },
+            confirmButton = { ZButton(stringResource(R.string.next_category_delete), {
+                if (state.space?.categories?.any { it.categoryId == category.categoryId } == true &&
+                    (state.desk?.headman == true || "channels" in state.desk?.mine.orEmpty()))
+                    dispatch(onEvent, GroupSpaceAction.DeleteCategory(category.categoryId, state.communityId))
+                confirmingDelete = false
+            }, enabled = !state.channelBusy) },
+            dismissButton = { ZButton(stringResource(R.string.channel_cancel), { confirmingDelete = false }, ghost = true) })
     }
 }
 
-@Composable private fun RoleEditor(role: GroupRole, state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
+@Composable private fun RoleEditor(role: GroupRole, state: GroupUiState, onEvent: (GroupEvent) -> Unit,
+    onDirtyChange: (Boolean) -> Unit) {
     val uiText = rememberUiText()
     val desk = state.desk ?: return
     val settingReason = RoleManagementPolicy.roleReason(desk, state.people, role, "roles")
@@ -143,8 +185,12 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
     var section by rememberSaveable(role.roleId) { mutableStateOf("settings") }
     var query by rememberSaveable(role.roleId) { mutableStateOf("") }
     var assignedOnly by rememberSaveable(role.roleId) { mutableStateOf(true) }
+    var peopleLimit by rememberSaveable(state.communityId, role.roleId) { mutableIntStateOf(40) }
     var delete by remember { mutableStateOf(false) }
     LaunchedEffect(role.revision) { if (role.name == name && role.icon == icon && role.position.toString() == position) initialRevision = role.revision }
+    LaunchedEffect(role.roleId, name, icon, position, role.name, role.icon, role.position) {
+        onDirtyChange(name != role.name || icon != role.icon || position != role.position.toString())
+    }
     ZCard(Modifier.fillMaxWidth()) {
         Text("${role.icon} ${role.name}", style = Zapara.typography.section)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
@@ -159,12 +205,28 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
                     Text(uiText(R.string.group_roles_conflict), style = Zapara.typography.caption, color = Zapara.colors.warn)
                     ZButton(uiText(R.string.space_day_reload_changes), { name = role.name; icon = role.icon; position = role.position.toString(); initialRevision = role.revision }, ghost = true)
                 }
-                Field(uiText(R.string.space_day_81), name, { name = it.take(32) }, canSettings)
-                Field(uiText(R.string.space_day_82), icon, { icon = it.take(16) }, canSettings)
-                Field(uiText(R.string.space_day_83), position, { position = it }, canSettings)
+                Field(uiText(R.string.space_day_81), name, { value ->
+                    name = value.take(32)
+                    onDirtyChange(name != role.name || icon != role.icon || position != role.position.toString())
+                }, canSettings)
+                Field(uiText(R.string.space_day_82), icon, { value ->
+                    icon = value.take(16)
+                    onDirtyChange(name != role.name || icon != role.icon || position != role.position.toString())
+                }, canSettings)
+                Field(uiText(R.string.space_day_83), position, { value ->
+                    position = value
+                    onDirtyChange(name != role.name || icon != role.icon || position != role.position.toString())
+                }, canSettings)
                 Text(uiText(R.string.group_roles_level_hint), style = Zapara.typography.caption)
-                val maxPosition = if (desk.headman) 10000 else (RoleManagementPolicy.actorPosition(desk, state.people) - 1).coerceAtLeast(0)
-                ZButton(uiText(R.string.space_day_84), { dispatch(onEvent, GroupSpaceAction.Role(role.copy(name = name.trim(), icon = icon, position = position.toInt(), revision = initialRevision))) }, enabled = canSettings && !state.channelBusy && role.revision == initialRevision && name.trim().length >= 2 && (position.toIntOrNull()?.let { it in 0..maxPosition } == true))
+                val maxPosition = RoleManagementPolicy.maximumAssignablePosition(desk, state.people)
+                val parsedPosition = position.toIntOrNull()
+                if (position.isBlank()) Text(stringResource(R.string.next_role_position_required),
+                    style = Zapara.typography.caption, color = Zapara.colors.warn)
+                else if (parsedPosition == null) Text(stringResource(R.string.next_role_position_integer),
+                    style = Zapara.typography.caption, color = Zapara.colors.warn)
+                else if (parsedPosition !in 0..maxPosition) Text(stringResource(R.string.next_role_position_range, maxPosition),
+                    style = Zapara.typography.caption, color = Zapara.colors.warn)
+                ZButton(uiText(R.string.space_day_84), { dispatch(onEvent, GroupSpaceAction.Role(role.copy(name = name.trim(), icon = icon, position = position.toInt(), revision = initialRevision), state.communityId)) }, enabled = canSettings && !state.channelBusy && role.revision == initialRevision && name.trim().length >= 2 && (position.toIntOrNull()?.let { it in 0..maxPosition } == true))
                 ZButton(uiText(R.string.space_day_87), { delete = true; dispatch(onEvent, GroupSpaceAction.RoleImpact(role.roleId)) }, enabled = canSettings && !state.channelBusy, ghost = true)
             }
             "powers" -> {
@@ -184,14 +246,15 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
                 val limit = state.space?.capabilities?.maxRolesPerMember ?: 3
                 Text(uiText(R.string.space_day_86, limit.toString()), style = Zapara.typography.section)
                 grantReason?.let { Text(uiText(it), style = Zapara.typography.caption, color = Zapara.colors.warn) }
-                Field(uiText(R.string.group_roles_person_search), query, { query = it })
-                ZChip(uiText(R.string.group_roles_assigned_only), selected = assignedOnly, onClick = { assignedOnly = !assignedOnly })
+                Field(uiText(R.string.group_roles_person_search), query, { query = it; peopleLimit = 40 })
+                ZChip(uiText(R.string.group_roles_assigned_only), selected = assignedOnly,
+                    onClick = { assignedOnly = !assignedOnly; peopleLimit = 40 })
                 val filtered = state.people.filter { person ->
                     (!assignedOnly || grants.any { it.userId == person.id && it.roleId == role.roleId }) &&
                         (query.isBlank() || person.name.contains(query, true) || person.handle.contains(query, true))
                 }
-                Text(uiText(R.string.group_roles_shown, minOf(filtered.size, 40), filtered.size), style = Zapara.typography.caption)
-                filtered.take(40).forEach { person ->
+                Text(uiText(R.string.group_roles_shown, rolePeopleShown(filtered.size, peopleLimit), filtered.size), style = Zapara.typography.caption)
+                filtered.take(peopleLimit).forEach { person ->
                     val on = grants.any { it.roleId == role.roleId && it.userId == person.id }
                     val count = grants.count { it.userId == person.id }
                     val reason = RoleManagementPolicy.personReason(desk, state.people, person)
@@ -202,6 +265,8 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
                     }
                     reason?.let { Text(uiText(it), style = Zapara.typography.caption, color = Zapara.colors.text2) }
                 }
+                if (filtered.size > peopleLimit) ZButton(uiText(R.string.space_day_load_more),
+                    { peopleLimit += 40 }, ghost = true, tag = "Group.RolePeopleMore")
                 if (filtered.isEmpty()) Text(uiText(R.string.group_roles_people_empty), style = Zapara.typography.caption)
             }
         }
@@ -375,25 +440,36 @@ fun powerResource(power: String): Int = when(power) {
 
 @Composable private fun FormBuilder(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
     val uiText = rememberUiText()
-    var open by rememberSaveable(state.activeTopicId) { mutableStateOf(false) }
-    var title by rememberSaveable(state.activeTopicId) { mutableStateOf("") }
-    var description by rememberSaveable(state.activeTopicId) { mutableStateOf("") }
-    var deadline by rememberSaveable(state.activeTopicId) { mutableStateOf("") }
-    var anonymous by rememberSaveable(state.activeTopicId) { mutableStateOf(false) }
-    var questions by rememberSaveable(state.activeTopicId, stateSaver = questionSaver) { mutableStateOf(listOf(GroupFormQuestion(UUID.randomUUID().toString(), "", "shortText", true, emptyList()))) }
-    val initialVersion = remember(state.activeTopicId) { state.formCreateVersion }
+    var open by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(false) }
+    var title by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf("") }
+    var description by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf("") }
+    var deadline by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf("") }
+    var anonymous by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(false) }
+    var questions by rememberSaveable(state.communityId, state.activeTopicId, stateSaver = questionSaver) { mutableStateOf(listOf(GroupFormQuestion(UUID.randomUUID().toString(), "", "shortText", true, emptyList()))) }
+    var deletingQuestion by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf<String?>(null) }
+    val initialVersion = remember(state.communityId, state.activeTopicId) { state.formCreateVersion }
     LaunchedEffect(state.formCreateVersion) { if (state.formCreateVersion > initialVersion) { open = false; title = ""; description = ""; deadline = ""; questions = listOf(GroupFormQuestion(UUID.randomUUID().toString(), "", "shortText", true, emptyList())) } }
     ZCard(Modifier.fillMaxWidth()) {
         ZButton(uiText(R.string.space_day_123), { open = !open }, ghost = true)
         if (open) {
             Field(uiText(R.string.space_day_124), title, { title = it.take(120) }); Field(uiText(R.string.space_day_125), description, { description = it.take(2000) }); Field(uiText(R.string.space_day_126), deadline, { deadline = it })
             Row(verticalAlignment = Alignment.CenterVertically) { Switch(anonymous, { anonymous = it }); Text(uiText(R.string.space_day_127)) }
-            questions.forEachIndexed { index, question ->
+            questions.forEachIndexed { index, question -> key(question.questionId) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                    ZButton(stringResource(R.string.next_question_up), { questions = moveQuestion(questions, index, -1) },
+                        enabled = index > 0 && !state.channelBusy, ghost = true)
+                    ZButton(stringResource(R.string.next_question_down), { questions = moveQuestion(questions, index, 1) },
+                        enabled = index < questions.lastIndex && !state.channelBusy, ghost = true)
+                }
                 Field(uiText(R.string.space_day_128, (index + 1).toString()), question.title, { value -> questions = questions.mapIndexed { i, q -> if (i == index) q.copy(title = value.take(400)) else q } })
-                FlowRow { listOf("shortText" to uiText(R.string.space_day_129), "longText" to uiText(R.string.space_day_130), "singleChoice" to uiText(R.string.space_day_131), "multipleChoice" to uiText(R.string.space_day_132)).forEach { (kind, label) -> ZChip(label, selected = question.kind == kind, onClick = { questions = questions.mapIndexed { i, q -> if (i == index) q.copy(kind = kind, options = if (kind in setOf("shortText", "longText")) emptyList() else q.options) else q } }) } }
+                FlowRow { listOf("shortText" to uiText(R.string.space_day_129), "longText" to uiText(R.string.space_day_130), "singleChoice" to uiText(R.string.space_day_131), "multipleChoice" to uiText(R.string.space_day_132)).forEach { (kind, label) -> ZChip(label, selected = question.kind == kind, onClick = { questions = questions.mapIndexed { i, q -> if (i == index) q.copy(kind = kind) else q } }) } }
                 Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(question.required, { value -> questions = questions.mapIndexed { i, q -> if (i == index) q.copy(required = value) else q } }); Text(uiText(R.string.space_day_133)) }
                 if (question.kind.endsWith("Choice")) Field(uiText(R.string.space_day_134), question.options.joinToString("\n"), { value -> questions = questions.mapIndexed { i, q -> if (i == index) q.copy(options = value.split("\n")) else q } })
-                if (questions.size > 1) ZButton(uiText(R.string.space_day_135), { questions = questions.filterIndexed { i, _ -> i != index } }, ghost = true)
+                if (questions.size > 1) ZButton(uiText(R.string.space_day_135), {
+                    if (questionHasDraft(question)) deletingQuestion = question.questionId
+                    else questions = questions.filterNot { it.questionId == question.questionId }
+                }, enabled = !state.channelBusy, ghost = true)
+            }
             }
             ZButton(uiText(R.string.space_day_136), { questions = questions + GroupFormQuestion(UUID.randomUUID().toString(), "", "shortText", true, emptyList()) }, enabled = questions.size < 30, ghost = true)
             val parsed = runCatching { parseDeadline(deadline) }
@@ -408,26 +484,62 @@ fun powerResource(power: String): Int = when(power) {
             Text(uiText(R.string.space_day_138), style = Zapara.typography.caption)
         }
     }
+    val target = questions.firstOrNull { it.questionId == deletingQuestion }
+    if (target != null) AlertDialog(onDismissRequest = { deletingQuestion = null },
+        title = { Text(stringResource(R.string.next_question_delete_title)) },
+        text = { Text(stringResource(R.string.next_question_delete_body, target.title.ifBlank { stringResource(R.string.next_question_untitled) })) },
+        confirmButton = { ZButton(stringResource(R.string.next_question_delete), {
+            if (questions.size > 1 && questions.any { it.questionId == target.questionId })
+                questions = questions.filterNot { it.questionId == target.questionId }
+            deletingQuestion = null
+        }, enabled = !state.channelBusy) },
+        dismissButton = { ZButton(stringResource(R.string.channel_cancel), { deletingQuestion = null }, ghost = true) })
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable private fun FormCard(form: GroupForm, state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
     val uiText = rememberUiText()
     var answers by rememberSaveable(form.formId, stateSaver = answerSaver) { mutableStateOf(form.ownResponse?.answers ?: emptyList()) }
     fun set(answer: GroupFormAnswer) { answers = answers.filterNot { it.questionId == answer.questionId } + answer }
-    val valid = form.questions.all { q -> !q.required || answers.firstOrNull { it.questionId == q.questionId }?.let { !it.text.isNullOrBlank() || it.choices.isNotEmpty() } == true }
+    val missing = missingRequiredQuestions(form.questions, answers)
+    val valid = missing.isEmpty()
+    val requiredCount = form.questions.count { it.required }
+    val requesters = remember(form.formId, form.questions.map { it.questionId }) {
+        form.questions.associate { it.questionId to BringIntoViewRequester() }
+    }
+    val scope = rememberCoroutineScope()
     ZCard(Modifier.fillMaxWidth()) {
         Text(form.title, style = Zapara.typography.section); Text(form.description, style = Zapara.typography.body)
         Text(uiText(R.string.space_day_141, (displayDeadline(form.deadlineAt)).toString(), (if (form.anonymous) uiText(R.string.space_day_139) else uiText(R.string.space_day_140)).toString(), (form.responseCount).toString()), style = Zapara.typography.caption)
         Text(uiText(if (form.anonymous) R.string.review_form_anonymous_audience else R.string.review_form_named_audience), style = Zapara.typography.caption)
+        form.ownResponse?.let { response ->
+            val savedAt = response.updatedAt.atZone(ZoneId.systemDefault())
+                .format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))
+            Text(stringResource(R.string.ux60_chat_form_saved, savedAt),
+                style = Zapara.typography.caption, color = Zapara.colors.ok,
+                modifier = Modifier.testTag("Group.FormSaved.${form.formId}"))
+        }
+        if (form.canRespond) Text(stringResource(R.string.ux30_form_progress, requiredCount - missing.size, requiredCount),
+            style = Zapara.typography.caption, color = Zapara.colors.text2)
         form.questions.forEach { question ->
             val answer = answers.firstOrNull { it.questionId == question.questionId } ?: GroupFormAnswer(question.questionId, null)
-            Text(question.title + if (question.required) " *" else "", style = Zapara.typography.bodyStrong)
+            Text(question.title + if (question.required) " *" else "", style = Zapara.typography.bodyStrong,
+                modifier = Modifier.bringIntoViewRequester(requesters.getValue(question.questionId)))
             if (question.kind in setOf("shortText", "longText")) Field(uiText(R.string.space_day_142), answer.text ?: "", { set(answer.copy(text = it)) }, form.canRespond && !state.channelBusy && state.preview == null)
             else question.options.forEach { option -> Row(verticalAlignment = Alignment.CenterVertically) {
                 if (question.kind == "singleChoice") RadioButton(option in answer.choices, { set(answer.copy(choices = listOf(option))) }, enabled = form.canRespond && !state.channelBusy && state.preview == null)
                 else Checkbox(option in answer.choices, { on -> set(answer.copy(choices = if (on) answer.choices + option else answer.choices - option)) }, enabled = form.canRespond && !state.channelBusy && state.preview == null)
                 Text(option, style = Zapara.typography.body)
             } }
+        }
+        if (form.canRespond && missing.isNotEmpty()) {
+            Text(stringResource(R.string.ux30_form_missing, missing.size),
+                style = Zapara.typography.caption, color = Zapara.colors.warn)
+            Text(missing.take(3).joinToString(" · ") { it.title }, style = Zapara.typography.caption,
+                color = Zapara.colors.text2)
+            ZButton(stringResource(R.string.ux30_form_first_missing),
+                { scope.launch { requesters[missing.first().questionId]?.bringIntoView() } }, ghost = true,
+                tag = "Group.FormFirstMissing")
         }
         if (form.canRespond) ZButton(if (form.ownResponse == null) uiText(R.string.space_day_143) else uiText(R.string.space_day_144), { dispatch(onEvent, GroupSpaceAction.SubmitForm(form.formId, answers)) }, enabled = valid && !state.channelBusy && state.preview == null)
         else Text(uiText(R.string.space_day_145), style = Zapara.typography.caption)

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -22,10 +23,14 @@ import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.data.HomeworkFileException
 import ru.bgtu_voenmeh.zapara.data.Parity
 import ru.bgtu_voenmeh.zapara.data.SchedCtx
+import ru.bgtu_voenmeh.zapara.data.communities.SharedHomeworkCache
 import ru.bgtu_voenmeh.zapara.ui.AppEvent
 import ru.bgtu_voenmeh.zapara.ui.LessonFormat
 import ru.bgtu_voenmeh.zapara.ui.components.ToastKind
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
     private val mutable = MutableStateFlow(HomeworkUiState(guest = container.profile.isGuest))
@@ -34,6 +39,16 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
     private var saving = false
     private var reloadTicket = 0
     private var collapsed = setOf(GroupStatus.Done)
+    private var currentGroupId: String? = null
+    private var undoSerial = 0L
+    private val sharedCache = SharedHomeworkCache()
+    private var sharedTicket = 0L
+    private var groupEpoch = 0L
+    private var pickerTicket = 0L
+    private data class SharedToggleKey(val profile: String, val group: String, val community: String, val id: String)
+    private val sharedToggleRequests = RequestTokens<SharedToggleKey>()
+    private data class PersonalToggleKey(val profile: String, val group: String, val id: Long)
+    private val personalToggleRequests = RequestTokens<PersonalToggleKey>()
 
     init {
         viewModelScope.launch { reload() }
@@ -42,28 +57,38 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
 
     fun onEvent(event: HomeworkEvent) {
         when (event) {
-            is HomeworkEvent.ToggleDone -> viewModelScope.launch {
-                writes.withLock {
-                    withContext(Dispatchers.IO) {
-                        val hw = container.homework.all().firstOrNull { it.id == event.id } ?: return@withContext
-                        container.homework.markDone(event.id, !hw.done)
-                    }
-                }
-                container.events.emit(AppEvent.PersonalizationChanged)
-            }
+            is HomeworkEvent.ToggleDone -> toggleDone(event.id)
+            HomeworkEvent.UndoDone -> undoDone()
             is HomeworkEvent.Edit -> openEdit(event.id)
             HomeworkEvent.Add -> openPicker()
+            HomeworkEvent.RetryLoad -> viewModelScope.launch { reload() }
+            HomeworkEvent.RetryShared -> currentGroupId?.let { group -> viewModelScope.launch { refreshShared(group) } }
+            is HomeworkEvent.ToggleShared -> toggleShared(event.id)
+            is HomeworkEvent.BrowseQuery -> mutable.update { it.copy(browseQuery = event.value) }
+            is HomeworkEvent.BrowseFilter -> {
+                if (event.value == HomeworkCompletionFilter.Done) collapsed = collapsed - GroupStatus.Done
+                mutable.update { s -> s.copy(browseFilter = event.value,
+                    groups = s.groups.map { it.copy(collapsed = it.status in collapsed) }) }
+            }
+            HomeworkEvent.BrowseReset -> mutable.update { it.resetBrowse() }
             is HomeworkEvent.Query -> mutable.update { s ->
                 s.copy(subjectPicker = s.subjectPicker?.copy(query = event.value))
             }
             is HomeworkEvent.PickSubject -> openNew(event.raw)
-            HomeworkEvent.ClosePicker -> mutable.update { it.copy(subjectPicker = null) }
+            is HomeworkEvent.PickManualSubject -> {
+                val picker = mutable.value.subjectPicker
+                if (picker != null && picker.matches(currentGroupId, container.profile.databaseName, groupEpoch) &&
+                    manualSubjectAllowed(picker.subjects, event.raw) && currentGroupId?.isNotBlank() == true)
+                    openNew(event.raw.trim())
+            }
+            HomeworkEvent.ClosePicker -> { ++pickerTicket; mutable.update { it.copy(subjectPicker = null) } }
             is HomeworkEvent.EditorText -> mutable.update { s -> s.copy(editor = s.editor?.withText(event.text)) }
             is HomeworkEvent.EditorShare -> {
                 mutable.update { s -> s.copy(editor = s.editor?.withShare(event.on)) }
                 if (event.on) loadShareOptions()
             }
             is HomeworkEvent.EditorAudience -> mutable.update { s -> s.copy(editor = s.editor?.withAudience(event.audience)) }
+            HomeworkEvent.RetryShareOptions -> loadShareOptions()
             HomeworkEvent.RetryShare -> retryShare()
             HomeworkEvent.Inc -> mutable.update { s -> s.copy(editor = s.editor?.inc()) }
             HomeworkEvent.Dec -> mutable.update { s -> s.copy(editor = s.editor?.dec()) }
@@ -83,19 +108,10 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
             is HomeworkEvent.Attach -> attach(event.kind, event.uri)
             is HomeworkEvent.RemoveFile -> removeFile(event.id)
             is HomeworkEvent.OpenFile -> openFile(event.homeworkId, event.fileId)
-            is HomeworkEvent.AskDelete -> mutable.update { it.copy(confirmDelete = event.id) }
-            HomeworkEvent.ConfirmDelete -> {
-                val id = mutable.value.confirmDelete ?: return
-                mutable.update { it.copy(confirmDelete = null) }
-                viewModelScope.launch {
-                    writes.withLock { withContext(Dispatchers.IO) {
-                        container.homework.delete(id)
-                        container.homeworkFiles.deleteHomework(id)
-                    } }
-                    container.events.emit(AppEvent.PersonalizationChanged)
-                }
-            }
-            HomeworkEvent.CancelDelete -> mutable.update { it.copy(confirmDelete = null) }
+            is HomeworkEvent.AskDelete -> mutable.update { it.copy(confirmDelete = event.id, deleteError = null) }
+            HomeworkEvent.ConfirmDelete -> confirmDelete()
+            HomeworkEvent.CancelDelete -> if (!mutable.value.deleteBusy)
+                mutable.update { it.copy(confirmDelete = null, deleteError = null) }
             is HomeworkEvent.ToggleGroup -> {
                 collapsed = if (event.status in collapsed) collapsed - event.status else collapsed + event.status
                 mutable.update { s ->
@@ -107,13 +123,16 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
 
     private suspend fun reload() {
         val ticket = ++reloadTicket
+        var attemptedGroup: String? = null
         try {
             val today = container.clock().toLocalDate()
-            val (hasGroup, groups) = withContext(Dispatchers.IO) {
+            val (groupId, groups) = withContext(Dispatchers.IO) {
                 val prefs = container.repo.settings()
                 val gid = prefs.myGroupId.orEmpty()
-                if (gid.isEmpty()) return@withContext false to emptyList<HomeworkGroupUi>()
+                attemptedGroup = gid
+                if (gid.isEmpty()) return@withContext gid to emptyList<HomeworkGroupUi>()
                 val lessons = container.ownLessons()
+                if (lessons.isNotEmpty()) container.homework.recomputeAll(today)
                 val items = container.homework.all().map { hw ->
                     val lesson = lessons.firstOrNull { Parity.sameSubject(it.subjectNormalized, hw.norm) }
                     val subject = if (lesson != null) {
@@ -124,28 +143,195 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                     HomeworkGroups.toItem(hw, subject, today, container.copy, lesson?.subjectRaw.orEmpty())
                         .copy(files = container.homeworkFiles.list(hw.id))
                 }
-                true to HomeworkGroups.group(items, container.copy)
+                gid to HomeworkGroups.group(items, container.copy)
             }
             if (ticket != reloadTicket) return
+            val changedGroup = currentGroupId != null && currentGroupId != groupId
+            currentGroupId = groupId
+            if (changedGroup) ++undoSerial
+            if (changedGroup) {
+                ++groupEpoch; ++pickerTicket
+                sharedToggleRequests.clear()
+                personalToggleRequests.clear()
+                ++sharedTicket
+                sharedCache.clear()
+            }
             mutable.update {
-                it.copy(
+                val state = if (changedGroup) it.forGroupChange() else it
+                state.copy(
                     loaded = true,
-                    hasGroup = hasGroup,
-                    groups = groups.map { group -> group.copy(collapsed = group.status in collapsed) }
+                    hasGroup = groupId.isNotEmpty(),
+                    groups = groups.map { group -> group.copy(collapsed = group.status in collapsed) },
+                    loadError = null,
+                    browseQuery = state.browseQuery,
+                    browseFilter = state.browseFilter,
+                    undoDone = state.undoDone,
+                    sharedRows = if (changedGroup) emptyList() else state.sharedRows,
+                    sharedLoading = if (changedGroup) false else state.sharedLoading,
+                    sharedError = if (changedGroup) null else state.sharedError,
+                    sharedBusyIds = if (changedGroup) emptySet() else state.sharedBusyIds,
+                    personalBusyIds = if (changedGroup) emptySet() else state.personalBusyIds,
+                    subjectPicker = if (changedGroup) null else state.subjectPicker
                 )
             }
+            viewModelScope.launch { refreshShared(groupId) }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             android.util.Log.w("ZaparaHomework", "reload", e)
-            mutable.update { it.copy(loaded = true) }
+            if (ticket != reloadTicket) return
+            val changedGroup = attemptedGroup != null && attemptedGroup != currentGroupId
+            if (changedGroup) {
+                currentGroupId = attemptedGroup
+                ++groupEpoch; ++pickerTicket; ++undoSerial; ++sharedTicket
+                sharedToggleRequests.clear()
+                personalToggleRequests.clear()
+                sharedCache.clear()
+            }
+            mutable.update { state ->
+                val retained = if (changedGroup) state.forGroupChange().copy(
+                    hasGroup = !attemptedGroup.isNullOrEmpty(), groups = emptyList(), sharedRows = emptyList(),
+                    sharedLoading = false, sharedError = null, sharedBusyIds = emptySet(),
+                    personalBusyIds = emptySet(), subjectPicker = null) else state
+                retained.copy(loaded = true, loadError = container.app.getString(R.string.uxnext_homework_load_failed))
+            }
+        }
+    }
+
+    private fun confirmDelete() {
+        val id = mutable.value.confirmDelete ?: return
+        if (mutable.value.deleteBusy) return
+        val group = currentGroupId ?: return
+        mutable.update { it.copy(deleteBusy = true, deleteError = null) }
+        viewModelScope.launch {
+            try {
+                val deleted = writes.withLock { withContext(Dispatchers.IO) {
+                    val activeContainer = (container.app as? ru.bgtu_voenmeh.zapara.ZaparaApplication)?.container
+                    if (activeContainer != null && activeContainer !== container) return@withContext false
+                    if (container.repo.settings().myGroupId.orEmpty() != group || currentGroupId != group ||
+                        container.homework.getById(id) == null) return@withContext false
+                    container.homework.delete(id)
+                    true
+                } }
+                if (!deleted) {
+                    mutable.update { it.copy(confirmDelete = null, deleteError = null) }
+                    container.toasts.show(container.app.getString(R.string.homework_widget_unavailable), ToastKind.Bad)
+                    return@launch
+                }
+                ++undoSerial
+                mutable.update { it.copy(confirmDelete = null, undoDone = null, deleteError = null) }
+                container.events.emit(AppEvent.PersonalizationChanged)
+                try { withContext(Dispatchers.IO) { container.homeworkFiles.deleteHomework(id) } }
+                catch (e: CancellationException) { throw e }
+                catch (e: Exception) {
+                    android.util.Log.w("ZaparaHomework", "delete files", e)
+                    container.toasts.show(container.app.getString(R.string.uxnext_homework_files_cleanup_failed), ToastKind.Bad)
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                android.util.Log.w("ZaparaHomework", "delete", e)
+                mutable.update { state -> if (state.confirmDelete == id)
+                    state.copy(deleteError = container.app.getString(R.string.uxnext_homework_delete_failed)) else state }
+            } finally { mutable.update { it.copy(deleteBusy = false) } }
+        }
+    }
+
+    private fun sharedScopeCurrent(group: String, profile: String): Boolean =
+        currentGroupId == group && container.profile.databaseName == profile &&
+            (container.app as? ru.bgtu_voenmeh.zapara.ZaparaApplication)?.container
+                ?.let { it === container } != false
+
+    private suspend fun refreshShared(group: String) {
+        val ticket = ++sharedTicket
+        val profile = container.profile.databaseName
+        val api = container.communities
+        if (group.isBlank() || container.profile.isGuest || api == null) {
+            sharedCache.clear()
+            mutable.update { it.copy(sharedRows = emptyList(), sharedLoading = false, sharedError = null) }
+            return
+        }
+        mutable.update { it.copy(sharedLoading = true, sharedError = null) }
+        try {
+            val token = withContext(Dispatchers.IO) { container.accessToken() }
+            val result = sharedCache.refresh(api, token, group)
+            if (ticket != sharedTicket || !sharedScopeCurrent(group, profile) || !result.applied) return
+            val deadline = DateTimeFormatter.ofPattern("d MMMM", Locale("ru"))
+            val rows = result.snapshot?.rows.orEmpty().map { row ->
+                val completion = result.snapshot?.completions?.get(row.homeworkId)
+                SharedHomeworkItemUi(row.homeworkId, row.communityId, row.title, row.body,
+                    row.deadlineAt?.atZone(ZoneId.systemDefault())?.toLocalDate()?.format(deadline)
+                        ?: container.app.getString(R.string.uxnext_homework_no_deadline),
+                    completion?.completed == true, completion?.revision ?: 0,
+                    row.canComplete, row.audience?.selected == true)
+            }
+            mutable.update { it.copy(sharedRows = rows, sharedLoading = false,
+                sharedError = when {
+                    token == null -> container.app.getString(R.string.uxnext_homework_shared_auth)
+                    result.failed -> container.app.getString(R.string.uxnext_homework_shared_failed)
+                    else -> null
+                }) }
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) {
+            android.util.Log.w("ZaparaHomework", "shared reload", e)
+            if (ticket == sharedTicket && sharedScopeCurrent(group, profile)) mutable.update {
+                it.copy(sharedLoading = false, sharedError = container.app.getString(R.string.uxnext_homework_shared_failed))
+            }
+        }
+    }
+
+    private fun toggleShared(id: String) {
+        val current = mutable.value.sharedRows.firstOrNull { it.id == id && it.canComplete } ?: return
+        val group = currentGroupId ?: return
+        val profile = container.profile.databaseName
+        val epoch = groupEpoch
+        val key = SharedToggleKey(profile, group, current.communityId, id)
+        val serial = sharedToggleRequests.begin(key) ?: return
+        ++sharedTicket // An older refresh cannot replace a completion accepted below.
+        mutable.update { it.copy(sharedBusyIds = it.sharedBusyIds + id,
+            sharedLoading = false, sharedError = null) }
+        viewModelScope.launch {
+            try {
+                val outcome = withContext(Dispatchers.IO) {
+                    if (container.repo.settings().myGroupId.orEmpty() != group ||
+                        !sharedScopeCurrent(group, profile) || epoch != groupEpoch) return@withContext null
+                    val token = container.accessToken() ?: return@withContext null
+                    val result = container.communities?.upsertCompletion(token, current.communityId, id,
+                        !current.completed, current.completionRevision) ?: return@withContext null
+                    token to result
+                }
+                if (outcome == null || !sharedScopeCurrent(group, profile) || epoch != groupEpoch ||
+                    !sharedToggleRequests.current(key, serial)) return@launch
+                val (token, result) = outcome
+                sharedCache.acknowledgeCompletion(group, current.communityId, token, result)
+                mutable.update { state -> state.copy(sharedRows = state.sharedRows.map { row ->
+                    if (row.id == id && row.communityId == current.communityId) row.copy(
+                        completed = result.completed, completionRevision = result.revision) else row
+                }) }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                android.util.Log.w("ZaparaHomework", "shared completion", e)
+                if (sharedScopeCurrent(group, profile) && epoch == groupEpoch &&
+                    sharedToggleRequests.current(key, serial)) mutable.update {
+                    it.copy(sharedError = container.app.getString(R.string.uxnext_homework_shared_save_failed))
+                }
+            } finally {
+                if (sharedToggleRequests.finish(key, serial)) {
+                    if (epoch == groupEpoch && sharedScopeCurrent(group, profile))
+                        mutable.update { it.copy(sharedBusyIds = it.sharedBusyIds - id) }
+                }
+            }
         }
     }
 
     private fun openPicker() {
+        val requestedGroup = currentGroupId ?: return
+        val requestedProfile = container.profile.databaseName
+        val epoch = groupEpoch
+        val ticket = ++pickerTicket
         viewModelScope.launch {
-            val subjects = withContext(Dispatchers.IO) {
-                val gid = container.repo.settings().myGroupId.orEmpty()
-                container.ownLessons().distinctBy { it.subjectNormalized }.map {
+            try {
+                val (gid, subjects) = withContext(Dispatchers.IO) {
+                    val gid = container.repo.settings().myGroupId.orEmpty()
+                    gid to container.ownLessons().distinctBy { it.subjectNormalized }.map {
                     SubjectUi(
                         raw = it.subjectRaw,
                         norm = it.subjectNormalized,
@@ -153,34 +339,82 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                             .ifBlank { LessonFormat.stripType(it.subjectRaw, it.typeRaw) },
                         type = it.typeRaw
                     )
-                }.sortedBy { it.display }
+                    }.sortedBy { it.display }
+                }
+                if (ticket != pickerTicket || epoch != groupEpoch || requestedGroup != gid ||
+                    requestedGroup != currentGroupId || requestedProfile != container.profile.databaseName) return@launch
+                mutable.update { it.copy(subjectPicker = SubjectPickerUi(subjects,
+                    groupId = gid, profileName = requestedProfile, groupEpoch = epoch)) }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                if (ticket == pickerTicket && epoch == groupEpoch)
+                    container.toasts.show(container.app.getString(R.string.ux60_picker_failed), ToastKind.Bad)
             }
-            mutable.update { it.copy(subjectPicker = SubjectPickerUi(subjects)) }
         }
     }
 
     private fun openNew(raw: String) {
-        val display = mutable.value.subjectPicker?.subjects?.firstOrNull { it.raw == raw }?.display
+        val picker = mutable.value.subjectPicker ?: return
+        val group = currentGroupId ?: return
+        val profile = container.profile.databaseName
+        val epoch = groupEpoch
+        if (!picker.matches(group, profile, epoch) ||
+            picker.subjects.none { it.raw == raw } && !manualSubjectAllowed(picker.subjects, raw)) return
+        val display = picker.subjects.firstOrNull { it.raw == raw }?.display
             ?: LessonFormat.stripType(raw, "")
-        viewModelScope.launch { showEditor(null, raw, display, "", 1, false, closePicker = true) }
+        ++pickerTicket
+        viewModelScope.launch { showEditor(null, raw, display, "", 1, false, closePicker = true,
+            expectedGroup = group, expectedProfile = profile, expectedEpoch = epoch) }
     }
 
     private fun openEdit(id: Long) {
         viewModelScope.launch {
-            val item = mutable.value.groups.flatMap { it.items }.firstOrNull { it.id == id } ?: return@launch
-            showEditor(id, item.subjectRaw.ifBlank { item.subject }, item.subject, item.text, item.n, true, closePicker = false)
+            val activeEditor = mutable.value.editor
+            when (homeworkEditDecision(activeEditor, id)) {
+                HomeworkEditDecision.AlreadyOpen -> return@launch
+                HomeworkEditDecision.Blocked -> {
+                    container.toasts.show(container.app.getString(R.string.homework_widget_editor_busy), ToastKind.Bad)
+                    return@launch
+                }
+                HomeworkEditDecision.Open, HomeworkEditDecision.ReplacePristine -> Unit
+            }
+            val item = mutable.value.groups.flatMap { it.items }.firstOrNull { it.id == id }
+            val expectedGroupId = currentGroupId
+            val expectedEpoch = groupEpoch
+            val expectedProfile = container.profile.databaseName
+            val exists = withContext(Dispatchers.IO) {
+                container.repo.settings().myGroupId.orEmpty() == expectedGroupId && container.homework.getById(id) != null
+            }
+            if (item == null || !exists || currentGroupId != expectedGroupId || groupEpoch != expectedEpoch ||
+                container.profile.databaseName != expectedProfile) {
+                container.toasts.show(container.app.getString(R.string.homework_widget_unavailable), ToastKind.Bad)
+                return@launch
+            }
+            if (!homeworkEditStillAllowed(activeEditor, mutable.value.editor, id)) {
+                container.toasts.show(container.app.getString(R.string.homework_widget_editor_busy), ToastKind.Bad)
+                return@launch
+            }
+            if (activeEditor != null) cancelEditor()
+            showEditor(id, item.subjectRaw.ifBlank { item.subject }, item.subject, item.text, item.n, true,
+                closePicker = false, expectedGroup = expectedGroupId.orEmpty(), expectedProfile = expectedProfile,
+                expectedEpoch = expectedEpoch)
         }
     }
 
     private suspend fun showEditor(
-        id: Long?, raw: String, display: String, text: String, n: Int, edit: Boolean, closePicker: Boolean
+        id: Long?, raw: String, display: String, text: String, n: Int, edit: Boolean, closePicker: Boolean,
+        expectedGroup: String = currentGroupId.orEmpty(), expectedProfile: String = container.profile.databaseName,
+        expectedEpoch: Long = groupEpoch
     ) {
-        if (mutable.value.editor != null) return
+        if (mutable.value.editor != null || expectedGroup != currentGroupId ||
+            expectedProfile != container.profile.databaseName || expectedEpoch != groupEpoch) return
         val anchor = container.clock().toLocalDate()
         val prepared = withContext(Dispatchers.IO) {
             Triple(snapshotDue(raw, id, anchor), if (id == null) emptyList() else container.homeworkFiles.list(id), container.repo.settings().myGroupId)
         }
-        if (mutable.value.editor != null) return
+        if (mutable.value.editor != null || expectedGroup != currentGroupId ||
+            expectedProfile != container.profile.databaseName || expectedEpoch != groupEpoch ||
+            prepared.third != expectedGroup) return
         mutable.update {
             it.copy(
                 subjectPicker = if (closePicker) null else it.subjectPicker,
@@ -228,7 +462,7 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                 mutable.update { current -> if (current.editor?.draft != editor.draft) current else if (!outcome.sent && current.editor.shareRequest != null)
                     current.copy(editor = current.editor.copy(error = outcome.note)) else current.copy(editor = null) }
                 val note = outcome.note.ifBlank { container.app.getString(R.string.hw_saved) }
-                container.toasts.show(note, ToastKind.Ok)
+                container.toasts.show(note, if (editor.share && !outcome.sent) ToastKind.Bad else ToastKind.Ok)
                 container.events.emit(AppEvent.PersonalizationChanged)
             } catch (e: CancellationException) {
                 throw e
@@ -304,6 +538,81 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    private fun toggleDone(id: Long) {
+        val group = currentGroupId ?: return
+        val profile = container.profile.databaseName
+        val epoch = groupEpoch
+        val key = PersonalToggleKey(profile, group, id)
+        val serial = personalToggleRequests.begin(key) ?: return
+        mutable.update { it.copy(personalBusyIds = it.personalBusyIds + id) }
+        viewModelScope.launch {
+            var terminalOwned = false
+            val previous = try {
+                writes.withLock { withContext(Dispatchers.IO) {
+                    val groupId = container.repo.settings().myGroupId.orEmpty()
+                    if (groupId.isEmpty() || groupId != group || epoch != groupEpoch) return@withContext null
+                    val hw = container.homework.getById(id) ?: return@withContext null
+                    container.homework.markDone(id, !hw.done)
+                    HomeworkUndoDone(id, hw.done, groupId, profile)
+                } }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                android.util.Log.w("ZaparaHomework", "toggleDone", e)
+                if (epoch == groupEpoch && currentGroupId == group)
+                    container.toasts.show(container.app.getString(R.string.homework_browse_toggle_failed), ToastKind.Bad)
+                return@launch
+            } finally {
+                terminalOwned = personalToggleRequests.finish(key, serial)
+                if (terminalOwned) {
+                    if (epoch == groupEpoch && currentGroupId == group)
+                        mutable.update { it.copy(personalBusyIds = it.personalBusyIds - id) }
+                }
+            }
+            if (previous != null && epoch == groupEpoch && currentGroupId == group &&
+                profile == container.profile.databaseName && terminalOwned) {
+                val serial = ++undoSerial
+                mutable.update { it.copy(undoDone = previous) }
+                container.events.emit(AppEvent.PersonalizationChanged)
+                viewModelScope.launch {
+                    delay(5_000)
+                    if (serial == undoSerial) mutable.update { it.copy(undoDone = null) }
+                }
+            }
+        }
+    }
+
+    private fun undoDone() {
+        val undo = mutable.value.undoDone ?: return
+        if (mutable.value.undoDoneBusy) return
+        val serial = undoSerial
+        mutable.update { it.copy(undoDoneBusy = true) }
+        viewModelScope.launch {
+            val restored = try {
+                writes.withLock { withContext(Dispatchers.IO) {
+                    val groupId = container.repo.settings().myGroupId.orEmpty()
+                    if (undo.groupId != currentGroupId) return@withContext false
+                    val hw = container.homework.getById(undo.id) ?: return@withContext false
+                    if (!undo.canApply(container.profile.databaseName, groupId, hw.done)) return@withContext false
+                    container.homework.markDone(undo.id, undo.previousDone)
+                    true
+                } }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                android.util.Log.w("ZaparaHomework", "undoDone", e)
+                if (serial == undoSerial && mutable.value.undoDone == undo)
+                    container.toasts.show(container.app.getString(R.string.homework_browse_undo_failed), ToastKind.Bad)
+                return@launch
+            } finally {
+                if (serial == undoSerial) mutable.update { it.copy(undoDoneBusy = false) }
+            }
+            if (serial == undoSerial && mutable.value.undoDone == undo) {
+                ++undoSerial
+                mutable.update { it.copy(undoDone = null, undoDoneBusy = false) }
+            }
+            if (restored) container.events.emit(AppEvent.PersonalizationChanged)
+        }
+    }
+
     private fun retryShare() {
         val editor = mutable.value.editor ?: return
         val request = editor.shareRequest?.takeIf { it.operationId != null } ?: return
@@ -323,6 +632,10 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
     private fun loadShareOptions() {
         val editor = mutable.value.editor?.takeIf { it.share && !it.isEdit } ?: return
         if (editor.shareContext != null || editor.shareLoading) return
+        val group = currentGroupId ?: return
+        val profile = container.profile.databaseName
+        val epoch = groupEpoch
+        if (editor.scheduleGroupId != group) return
         mutable.update { s -> if (s.editor?.draft == editor.draft) s.copy(editor = s.editor.copy(shareLoading = true, error = null)) else s }
         viewModelScope.launch {
             val result = try { withContext(Dispatchers.IO) { loadHomeworkShareContext(container, editor.scheduleGroupId) } }
@@ -330,7 +643,11 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
             catch (_: Exception) { null }
             mutable.update { s ->
                 val current = s.editor
-                if (current?.draft == editor.draft && current.share) s.copy(editor = current.copy(shareContext = result, shareLoading = false)) else s
+                if (current?.draft != editor.draft || !current.share) s
+                else if (group == currentGroupId && epoch == groupEpoch && profile == container.profile.databaseName)
+                    s.copy(editor = current.copy(shareContext = result, shareLoading = false))
+                else s.copy(editor = current.copy(shareContext = null, shareLoading = false,
+                    sourceChanged = true))
             }
         }
     }
@@ -344,11 +661,15 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun openFile(homeworkId: Long, fileId: String) {
-        val located = container.homeworkFiles.savedFile(homeworkId, fileId) ?: return
-        val uri = FileProvider.getUriForFile(container.app, container.app.packageName + ".fileprovider", located.first)
-        val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, located.second).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (runCatching { container.app.startActivity(view) }.isFailure)
-            container.toasts.show(container.app.getString(R.string.hw_attach_bad), ToastKind.Bad)
+        val opened = runCatching {
+            val located = container.homeworkFiles.savedFile(homeworkId, fileId) ?: return@runCatching false
+            val uri = FileProvider.getUriForFile(container.app, container.app.packageName + ".fileprovider", located.first)
+            val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, located.second)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            container.app.startActivity(view)
+            true
+        }.getOrDefault(false)
+        if (!opened) container.toasts.show(container.app.getString(R.string.ux60_file_open_failed), ToastKind.Bad)
     }
 
     companion object {

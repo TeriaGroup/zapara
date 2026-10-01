@@ -16,7 +16,10 @@ data class ShellUiState(
     val theme: ThemeChoice = ThemeChoice.System,
     val animations: Boolean = true,
     val overlay: ShellOverlay = ShellOverlay.None,
-    val error: Boolean = false
+    val error: Boolean = false,
+    val groupPickPending: Boolean = false,
+    val pendingGroupId: String? = null,
+    val groupPickError: String? = null
 ) { val hasGroup get() = !groupId.isNullOrEmpty() }
 
 sealed interface ShellEvent {
@@ -24,4 +27,6 @@ sealed interface ShellEvent {
     data class Theme(val value: ThemeChoice) : ShellEvent
     data class Animations(val enabled: Boolean) : ShellEvent
     data class PickGroup(val id: String) : ShellEvent
+    data object RetryGroupPick : ShellEvent
+    data object RetryProjection : ShellEvent
 }

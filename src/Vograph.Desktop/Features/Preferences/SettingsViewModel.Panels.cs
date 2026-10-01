@@ -6,6 +6,39 @@ namespace Vograph.Desktop.Features.Preferences;
 public sealed partial class SettingsViewModel
 {
     [ObservableProperty] private string activePanel = "";
+    [ObservableProperty] private string settingsSearch = "";
+    private static readonly (string Id, string Text)[] Categories =
+    [
+        ("account", "аккаунт профиль вход логин пароль устройства фото"),
+        ("study", "учёба учеба группа расписание подгруппа чётность четность"),
+        ("appearance", "оформление тема светлая тёмная темная анимации"),
+        ("notifications", "уведомления напоминания время утром вечером"),
+        ("data", "данные синхронизация офлайн копия импорт конфликт"),
+        ("help", "помощь поддержка баг обновление документы")
+    ];
+    private bool CategoryMatches(string id)
+    {
+        var words = SettingsSearch.Trim().ToLowerInvariant().Replace('ё', 'е')
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        var text = Categories.First(category => category.Id == id).Text.Replace('ё', 'е');
+        return words.All(word => text.Contains(word, StringComparison.Ordinal));
+    }
+    public bool HasSettingsSearch => SettingsSearch.Trim().Length > 0;
+    public int SettingsSearchCount => Categories.Count(category => CategoryMatches(category.Id));
+    public bool NoSettingsSearchResults => HasSettingsSearch && SettingsSearchCount == 0;
+    public bool ShowAccountCategory => CategoryMatches("account");
+    public bool ShowStudyCategory => CategoryMatches("study");
+    public bool ShowAppearanceCategory => CategoryMatches("appearance");
+    public bool ShowNotificationsCategory => CategoryMatches("notifications");
+    public bool ShowDataCategory => CategoryMatches("data");
+    public bool ShowHelpCategory => CategoryMatches("help");
+    partial void OnSettingsSearchChanged(string value)
+    {
+        foreach (var name in new[] { nameof(HasSettingsSearch), nameof(SettingsSearchCount), nameof(NoSettingsSearchResults),
+            nameof(ShowAccountCategory), nameof(ShowStudyCategory), nameof(ShowAppearanceCategory),
+            nameof(ShowNotificationsCategory), nameof(ShowDataCategory), nameof(ShowHelpCategory) }) OnPropertyChanged(name);
+    }
+    [RelayCommand] private void ClearSettingsSearch() => SettingsSearch = "";
     [ObservableProperty] private string dataSummary = "";
     [ObservableProperty] private bool syncingData;
     private long dataSummaryReadSequence;

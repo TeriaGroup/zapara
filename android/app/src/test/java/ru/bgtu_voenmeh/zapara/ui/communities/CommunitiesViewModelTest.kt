@@ -1,11 +1,13 @@
 package ru.bgtu_voenmeh.zapara.ui.communities
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -88,10 +90,87 @@ class CommunitiesViewModelTest {
         assertTrue(row.canJoin)
         assertFalse(row.canOpen)
         vm.onEvent(CommunitiesEvent.Join(CID))
+        vm.onEvent(CommunitiesEvent.Join(CID))
         advanceUntilIdle()
         val pending = vm.state.value.communities.single()
         assertEquals("pending", pending.joinStatus)
         assertFalse(pending.canJoin)
+        assertEquals(1, http.requests.count { it.method == "POST" && it.url.endsWith("/$CID/join-requests") })
+    }
+
+    @Test fun group_changed_during_catalog_request_never_publishes_old_group() = runTest(dispatcher) {
+        var group = "O3313"
+        val newId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        val http = FakeHttp { call -> when (suffix(call)) {
+            "GET " -> ok("[]")
+            "GET ?groupId=O3313" -> { group = "O4411"; ok(arr(communityJson(null))) }
+            "GET ?groupId=O4411" -> ok(arr(communityJson(null).replace(CID, newId)))
+            else -> error(suffix(call))
+        } }
+        val vm = CommunitiesViewModel(CommunitiesRuntime(false, CommunityHttpClient(http, SCOPE),
+            accessToken = { ACCESS }, groupId = { group }))
+        advanceUntilIdle()
+        assertEquals(listOf(newId), vm.state.value.communities.map { it.communityId })
+    }
+
+    @Test fun late_join_failure_from_old_group_cannot_replace_new_group() = runTest(dispatcher) {
+        var group = "O3313"
+        val newId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val http = FakeHttp { call -> when (suffix(call)) {
+            "GET " -> ok("[]")
+            "GET ?groupId=O3313" -> ok(arr(communityJson(null)))
+            "GET ?groupId=O4411" -> ok(arr(communityJson(null).replace(CID, newId)))
+            "POST /$CID/join-requests" -> { entered.complete(Unit); release.await(); problem(403, "forbidden") }
+            else -> error(suffix(call))
+        } }
+        val vm = CommunitiesViewModel(CommunitiesRuntime(false, CommunityHttpClient(http, SCOPE),
+            accessToken = { ACCESS }, groupId = { group }))
+        advanceUntilIdle()
+        vm.onEvent(CommunitiesEvent.Join(CID))
+        runCurrent()
+        assertTrue(entered.isCompleted)
+        group = "O4411"
+        vm.onEvent(CommunitiesEvent.Retry)
+        runCurrent()
+        assertEquals(listOf(newId), vm.state.value.communities.map { it.communityId })
+        release.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(CommunityPane.Catalog, vm.state.value.pane)
+        assertEquals(listOf(newId), vm.state.value.communities.map { it.communityId })
+    }
+
+    @Test fun late_join_failure_from_first_a_cannot_replace_new_a_after_aba_switch() = runTest(dispatcher) {
+        var group = "O3313"
+        val newId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val http = FakeHttp { call -> when (suffix(call)) {
+            "GET " -> ok("[]")
+            "GET ?groupId=O3313" -> ok(arr(communityJson(null)))
+            "GET ?groupId=O4411" -> ok(arr(communityJson(null).replace(CID, newId)))
+            "POST /$CID/join-requests" -> { entered.complete(Unit); release.await(); problem(403, "forbidden") }
+            else -> error(suffix(call))
+        } }
+        val vm = CommunitiesViewModel(CommunitiesRuntime(false, CommunityHttpClient(http, SCOPE),
+            accessToken = { ACCESS }, groupId = { group }))
+        advanceUntilIdle()
+        vm.onEvent(CommunitiesEvent.Join(CID))
+        runCurrent()
+        assertTrue(entered.isCompleted)
+        group = "O4411"
+        vm.onEvent(CommunitiesEvent.Retry)
+        runCurrent()
+        group = "O3313"
+        vm.onEvent(CommunitiesEvent.Retry)
+        runCurrent()
+        assertEquals(listOf(CID), vm.state.value.communities.map { it.communityId })
+        release.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(CommunityPane.Catalog, vm.state.value.pane)
+        assertEquals(listOf(CID), vm.state.value.communities.map { it.communityId })
+        assertFalse(vm.state.value.failed)
     }
 
     @Test

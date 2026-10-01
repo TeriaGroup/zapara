@@ -40,7 +40,7 @@ class HomeworkSectionTest {
             HomeworkGroups.toItem(homework(8, "done"), "История", today, copy)
         ), copy))
         show(ThemeChoice.Dark) {
-            HomeworkSection(HomeworkUiState(true, true, groups)) { event ->
+            HomeworkSection(HomeworkUiState(true, true, groups, browseFilter = HomeworkCompletionFilter.All)) { event ->
                 if (event is HomeworkEvent.ToggleGroup) groups = groups.map {
                     if (it.status == event.status) it.copy(collapsed = !it.collapsed) else it
                 }
@@ -70,7 +70,7 @@ class HomeworkSectionTest {
         show(theme) {
             val item = HomeworkGroups.toItem(stored, "Высшая математика", today, copy)
             val groups = HomeworkGroups.group(listOf(item), copy).map { it.copy(collapsed = false) }
-            HomeworkSection(HomeworkUiState(true, true, groups, editor)) { event ->
+            HomeworkSection(HomeworkUiState(true, true, groups, editor, browseFilter = HomeworkCompletionFilter.All)) { event ->
                 when (event) {
                     is HomeworkEvent.ToggleDone -> stored = stored.copy(done = !stored.done,
                         status = if (stored.done) "overdue" else "done")
@@ -222,7 +222,7 @@ class HomeworkSectionTest {
         show(ThemeChoice.Dark) {
             val items = rows.map { row -> HomeworkGroups.toItem(row.copy(done = row.id == 8L && completed),
                 if (row.id == 7L) "Матан" else "История", today, copy) }
-            HomeworkSection(HomeworkUiState(true, true, HomeworkGroups.group(items, copy), editor)) { event ->
+            HomeworkSection(HomeworkUiState(true, true, HomeworkGroups.group(items, copy), editor, browseFilter = HomeworkCompletionFilter.All)) { event ->
                 events += event
                 when (event) {
                     is HomeworkEvent.Edit -> {

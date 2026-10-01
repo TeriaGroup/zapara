@@ -50,7 +50,7 @@ public class SummaryTests : UiTest
     }
 
     [Fact]
-    public void Inversion_Swaps_Which_Xml_Week_Is_Odd()
+    public async Task Inversion_Swaps_Which_Xml_Week_Is_Odd()
     {
         using var db = TestDb.Create();
         var s = db.Services.Db.GetSettings();
@@ -58,6 +58,37 @@ public class SummaryTests : UiTest
         db.Services.Db.SaveSettings(s);
         var odd = new SummaryComposer(db.Services).Compose(1, Mon7);
         Assert.Equal(2, odd.Total); // the user's "odd" is now the XML even week
+        var current = new SummaryComposer(db.Services).Compose(null, Mon7);
+        Assert.Equal(2, current.Total); // the default date's effective timetable code, inverted once
+        Assert.Equal(1, current.Parity);
+        Assert.Equal(db.Services.Schedule.GetSchedule(Mon7.Date, TestDb.MyGroupId).Count, current.ByDay[0].Count);
+        Assert.Equal(Mon7.Date, current.DayDates![0]);
+        var vm = new SummaryViewModel(db.Services, new ShellViewModel(db.Services), () => Mon7);
+        await vm.ReloadAsync();
+        var first = vm.TotalText;
+        await vm.ReloadAsync();
+        Assert.Equal(first, vm.TotalText);
+        Assert.Equal(0, vm.SegmentIndex);
+    }
+
+    [Fact]
+    public void Summary_distinguishes_missing_copy_and_resolves_day_to_selected_parity()
+    {
+        using var db = TestDb.Create();
+        var composer = new SummaryComposer(db.Services);
+        var odd = composer.Compose(1, Mon7);
+        Assert.True(odd.HasCopy);
+        Assert.Equal(new DateTime(2026, 9, 14), odd.DayDates![0]);
+        var even = composer.Compose(2, Mon7);
+        Assert.Equal(new DateTime(2026, 9, 21), even.DayDates![0]);
+
+        var settings = db.Services.Db.GetSettings();
+        settings.MyGroupId = "missing-group";
+        db.Services.Db.SaveSettings(settings);
+        var missing = composer.Compose(null, Mon7);
+        Assert.True(missing.HasGroup);
+        Assert.False(missing.HasCopy);
+        Assert.Equal(0, missing.Total);
     }
 
     [Fact]

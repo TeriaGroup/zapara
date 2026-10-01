@@ -53,9 +53,18 @@ public sealed partial class AccountPanelViewModel
     });
 
     [RelayCommand]
-    private async Task RevokeDevice(DeviceResponse? device)
+    private void RequestRevokeDevice(DeviceResponse? device)
     {
         if (!CanAct || device is null || !Devices.Contains(device)) return;
+        ConfirmRevokeAll = false; PendingRevokeDevice = device;
+    }
+    [RelayCommand] private void CancelRevokeDevice() => PendingRevokeDevice = null;
+
+    [RelayCommand]
+    private async Task RevokeDevice(DeviceResponse? device)
+    {
+        if (!CanAct || device is null || PendingRevokeDevice?.FamilyId != device.FamilyId || !Devices.Contains(device)) return;
+        PendingRevokeDevice = null;
         await RunAsync(async () =>
         {
             var result = await service!.RevokeAsync(device.FamilyId, lifetime.Token);
@@ -65,9 +74,18 @@ public sealed partial class AccountPanelViewModel
     }
 
     [RelayCommand]
-    private async Task RevokeAll()
+    private void RequestRevokeAll()
     {
         if (!CanAct || IsGuest) return;
+        PendingRevokeDevice = null; ConfirmRevokeAll = true;
+    }
+    [RelayCommand] private void CancelRevokeAll() => ConfirmRevokeAll = false;
+
+    [RelayCommand]
+    private async Task RevokeAll()
+    {
+        if (!CanAct || IsGuest || !ConfirmRevokeAll) return;
+        ConfirmRevokeAll = false;
         await RunAsync(async () =>
         {
             var result = await service!.RevokeAllAsync(lifetime.Token);

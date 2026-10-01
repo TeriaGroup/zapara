@@ -85,14 +85,17 @@ public sealed class TeacherIndex
     /// <summary>Query matches name, department or any discipline the lecturer teaches (the old subject combo box folded into search).</summary>
     public List<LecturerInfo> Filter(string query, bool onlyMine, ISet<string> myIds)
     {
-        var q = query.Trim();
+        var words = query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(word => word.ToLowerInvariant().Replace('ё', 'е')).ToArray();
         IEnumerable<LecturerInfo> res = Lecturers;
         if (onlyMine) res = res.Where(l => myIds.Contains(l.Id));
-        if (q.Length > 0)
+        if (words.Length > 0)
             res = res.Where(l =>
-                l.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                l.Kafedra.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                LessonsOf(l.Id).Any(x => x.SubjectRaw.Contains(q, StringComparison.OrdinalIgnoreCase)));
+            {
+                var text = string.Join(' ', new[] { l.Name, l.Kafedra }.Concat(LessonsOf(l.Id).Select(lesson => lesson.SubjectRaw)))
+                    .ToLowerInvariant().Replace('ё', 'е');
+                return words.All(word => text.Contains(word, StringComparison.Ordinal));
+            });
         return res.ToList();
     }
 }

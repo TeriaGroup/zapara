@@ -42,8 +42,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.ui.Alignment
 import ru.bgtu_voenmeh.zapara.ui.components.rememberUiText
 import androidx.compose.ui.Modifier
@@ -57,6 +60,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.data.AutoUpdate
+import ru.bgtu_voenmeh.zapara.data.sync.PrivateSyncState
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
 import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
@@ -145,49 +149,75 @@ private fun SettingsOverviewRow(
 }
 
 @Composable
-private fun SettingsOverview(state: SettingsUiState, account: AccountUiState, onOpen: (String) -> Unit) {
+private fun SettingsOverview(state: SettingsUiState, account: AccountUiState,
+    query: String, onQuery: (String) -> Unit, onOpen: (String) -> Unit) {
     val uiText = rememberUiText()
     val c = Zapara.colors
+    val visible = SettingsCategorySearch.visible(query, linkedMapOf(
+        "account" to stringResource(R.string.uxnext_settings_terms_account),
+        "study" to stringResource(R.string.uxnext_settings_terms_study),
+        "appearance" to stringResource(R.string.uxnext_settings_terms_appearance),
+        "notifications" to stringResource(R.string.uxnext_settings_terms_notifications),
+        "maps" to stringResource(R.string.uxnext_settings_terms_maps),
+        "data" to stringResource(R.string.uxnext_settings_terms_data),
+        "updates" to stringResource(R.string.uxnext_settings_terms_updates),
+        "help" to stringResource(R.string.uxnext_settings_terms_help)
+    ))
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l),
         verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-        item {
+        item("search") { ZTextField(query, onQuery, modifier = Modifier.fillMaxWidth().testTag("Settings.Search"),
+            placeholder = { Text(stringResource(R.string.uxnext_settings_search)) }, singleLine = true) }
+        if (query.isNotBlank()) item("search-clear") {
+            ZButton(stringResource(R.string.next_teachers_clear), { onQuery("") }, ghost = true,
+                tag = "Settings.SearchClear")
+        }
+        if (visible.isEmpty()) item("search-empty") {
+            ZCard(Modifier.fillMaxWidth(), tag = "Settings.SearchEmpty") {
+                Text(stringResource(R.string.uxnext_settings_no_result), style = Zapara.typography.body)
+                ZButton(stringResource(R.string.next_teachers_clear), { onQuery("") }, ghost = true)
+            }
+        }
+        if ("account" in visible) item {
             SettingsOverviewRow(R.drawable.ic_users, stringResource(R.string.account_title),
                 if (account.guest) stringResource(R.string.settings_overview_guest)
                 else account.accountName.ifBlank { stringResource(R.string.account_title) },
                 "Settings.Overview.Account", emphasized = true) { onOpen("account") }
         }
-        if (state.syncConflicts.isNotEmpty() || state.syncError != null) item {
+        if ("data" in visible && (state.syncConflicts.isNotEmpty() || state.syncError != null)) item {
             SettingsOverviewRow(R.drawable.ic_refresh, stringResource(R.string.sync_conflict_title),
                 state.syncError ?: stringResource(R.string.sync_conflict_body), "Settings.Overview.Sync", emphasized = true) {
                 onOpen("data")
             }
         }
-        item { Text(stringResource(R.string.settings_overview_core), style = Zapara.typography.section,
+        if (visible.any { it in setOf("study", "appearance", "notifications", "maps") }) item {
+            Text(stringResource(R.string.settings_overview_core), style = Zapara.typography.section,
             color = c.text1, modifier = Modifier.padding(top = Zapara.space.l, bottom = Zapara.space.xs)) }
-        item("core") { ZCard(Modifier.fillMaxWidth(), padded = false) {
+        if (visible.any { it in setOf("study", "appearance", "notifications", "maps") }) item("core") { ZCard(Modifier.fillMaxWidth(), padded = false) {
             Column {
-                SettingsOverviewRow(R.drawable.ic_calendar, stringResource(R.string.settings_overview_study),
+                if ("study" in visible) SettingsOverviewRow(R.drawable.ic_calendar, stringResource(R.string.settings_overview_study),
                     state.groupName.ifBlank { stringResource(R.string.group_pick) }, "Settings.Overview.Study") { onOpen("study") }
-                SettingsOverviewRow(R.drawable.ic_sun, stringResource(R.string.theme_appearance),
+                if ("appearance" in visible) SettingsOverviewRow(R.drawable.ic_sun, stringResource(R.string.theme_appearance),
                     listOf(stringResource(R.string.theme_system), stringResource(R.string.theme_light), stringResource(R.string.theme_dark))[state.theme.ordinal],
                     "Settings.Overview.Appearance") { onOpen("appearance") }
-                SettingsOverviewRow(R.drawable.ic_notification, stringResource(R.string.settings_notify),
-                    if (state.notifyEnabled) stringResource(R.string.settings_overview_notify_on, state.time1, state.time2)
+                if ("notifications" in visible) SettingsOverviewRow(R.drawable.ic_notification, stringResource(R.string.settings_notify),
+                    if (state.notifyEnabled) stringResource(R.string.settings_overview_notify_on,
+                        state.savedTime1, state.savedTime2)
                     else stringResource(R.string.settings_overview_notify_off),
                     "Settings.Overview.Notifications") { onOpen("notifications") }
-                SettingsOverviewRow(R.drawable.ic_map, stringResource(R.string.settings_maps),
+                if ("maps" in visible) SettingsOverviewRow(R.drawable.ic_map, stringResource(R.string.settings_maps),
                     stringResource(R.string.settings_maps_routes), "Settings.Overview.Maps", divider = false) { onOpen("maps") }
             }
         } }
-        item { Text(stringResource(R.string.settings_overview_service), style = Zapara.typography.section,
+        if (visible.any { it in setOf("data", "updates", "help") }) item {
+            Text(stringResource(R.string.settings_overview_service), style = Zapara.typography.section,
             color = c.text1, modifier = Modifier.padding(top = Zapara.space.l, bottom = Zapara.space.xs)) }
-        item("service") { ZCard(Modifier.fillMaxWidth(), padded = false) {
+        if (visible.any { it in setOf("data", "updates", "help") }) item("service") { ZCard(Modifier.fillMaxWidth(), padded = false) {
             Column {
-                SettingsOverviewRow(R.drawable.ic_refresh, uiText(R.string.space_day_153),
+                if ("data" in visible) SettingsOverviewRow(R.drawable.ic_refresh, uiText(R.string.space_day_153),
                     if (state.syncBusy) uiText(R.string.space_day_154) else if (state.signedIn) uiText(R.string.space_day_155) else uiText(R.string.space_day_156), "Settings.Overview.Data") { onOpen("data") }
-                SettingsOverviewRow(R.drawable.ic_download, stringResource(R.string.settings_updates),
+                if ("updates" in visible) SettingsOverviewRow(R.drawable.ic_download, stringResource(R.string.settings_updates),
                     stringResource(R.string.settings_version, state.version), "Settings.Overview.Updates") { onOpen("updates") }
-                SettingsOverviewRow(R.drawable.ic_file, stringResource(R.string.settings_overview_help),
+                if ("help" in visible) SettingsOverviewRow(R.drawable.ic_file, stringResource(R.string.settings_overview_help),
                     stringResource(R.string.settings_overview_help_summary), "Settings.Overview.Help", divider = false) { onOpen("help") }
             }
         } }
@@ -201,14 +231,31 @@ fun SettingsSection(
     updates: UpdateUiState,
     onChangeGroup: () -> Unit,
     account: AccountUiState = AccountUiState(),
-    onAccount: (AccountEvent) -> Unit = {}
+    onAccount: (AccountEvent) -> Unit = {},
+    initialSection: String? = null
 ) {
     val uiText = rememberUiText()
     val ctx = LocalContext.current
     val c = Zapara.colors
-    var legalId by remember { mutableStateOf<String?>(null) }
-    var section by rememberSaveable { mutableStateOf<String?>(null) }
-    BackHandler(enabled = section != null && legalId == null) { section = null }
+    var legalId by rememberSaveable { mutableStateOf<String?>(null) }
+    var section by rememberSaveable(initialSection) { mutableStateOf(initialSection) }
+    var returnSection by rememberSaveable { mutableStateOf<String?>(null) }
+    var settingsQuery by rememberSaveable { mutableStateOf("") }
+    var supportDrafts by rememberSaveable(state.profileName, stateSaver = SupportDraftsSaver) {
+        mutableStateOf<Map<String, SupportLocalDraft>>(emptyMap())
+    }
+    LaunchedEffect(state.reportSuccessVersion, state.reportSuccessKey, state.reportSuccessDraftRevision) {
+        val key = state.reportSuccessKey
+        val revision = state.reportSuccessDraftRevision
+        if (state.reportSuccessVersion > 0 && key != null && revision != null &&
+            supportDrafts[key]?.revision == revision) supportDrafts = supportDrafts - key
+    }
+    fun backToSettings() {
+        if (section == "account" && returnSection != null) {
+            section = returnSection; returnSection = null
+        } else { section = null; returnSection = null }
+    }
+    BackHandler(enabled = section != null && legalId == null) { backToSettings() }
     if (legalId != null) {
         LegalDocumentPage(legalId!!, onClose = { legalId = null })
         return
@@ -227,13 +274,20 @@ fun SettingsSection(
         })
         BoxWithConstraints(Modifier.fillMaxSize()) {
         val wideSettings = maxWidth >= 840.dp
-        if (section == null) SettingsOverview(state, account) { section = it }
+        if (section == null) SettingsOverview(state, account, settingsQuery,
+            { settingsQuery = it }) { returnSection = null; section = it }
         else Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.l)) {
-            if (wideSettings) Box(Modifier.width(320.dp)) { SettingsOverview(state, account) { section = it } }
+            if (wideSettings) Box(Modifier.width(320.dp)) { SettingsOverview(state, account,
+                settingsQuery, { settingsQuery = it }) { returnSection = null; section = it } }
             LazyColumn(if (wideSettings) Modifier.widthIn(max = 720.dp).fillMaxSize() else Modifier.weight(1f).fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            item { ZButton(stringResource(R.string.settings_overview_all), { section = null }, ghost = true, quiet = true, tag = "Settings.Overview.Back", leadingIcon = R.drawable.ic_chevron_left) }
+            item { ZButton(stringResource(if (section == "account" && returnSection == "data")
+                R.string.ux60_sync_back_to_data else R.string.settings_overview_all),
+                { backToSettings() }, ghost = true, quiet = true, tag = "Settings.Overview.Back", leadingIcon = R.drawable.ic_chevron_left) }
             if (section == "account") {
-            item { AccountCard(account, onAccount) { legalId = it } }
+            item { AccountCard(account, onAccount) { id ->
+                onAccount(AccountEvent.ClearSensitive)
+                legalId = id
+            } }
             if (state.signedIn) item { ZCard(Modifier.fillMaxWidth()) {
                 CloudSyncSummary(state.cloudSync)
                 ZButton(uiText(R.string.space_day_sync_now), { onEvent(SettingsEvent.SyncNow) },
@@ -250,6 +304,10 @@ fun SettingsSection(
                     Text(stringResource(R.string.cloud_sync_scope), style = Zapara.typography.caption, color = c.text2)
                     ZButton(uiText(R.string.space_day_sync_now), { onEvent(SettingsEvent.SyncNow) },
                         enabled = !state.syncBusy && state.cloudSync.attached, busy = state.syncBusy)
+                    if (state.cloudSync.failure == PrivateSyncState.NeedsReauthentication)
+                        ZButton(stringResource(R.string.ux60_sync_open_account),
+                            { returnSection = "data"; section = "account" }, ghost = true,
+                            tag = "Settings.SyncReauthenticate")
                 }
             } }
             if (state.syncConflicts.isNotEmpty() || state.syncError != null) item {
@@ -276,6 +334,7 @@ fun SettingsSection(
                         Text(uiText(R.string.space_day_invert), Modifier.weight(1f), style = Zapara.typography.body)
                         ZSwitch(state.parityInvert, { onEvent(SettingsEvent.Invert(it)) }, "Settings.ParityInvert")
                     }
+                    if (advanced) PreferenceFeedback(state, "parity", onEvent)
                     GroupActions(state.refreshing, onChangeGroup) { onEvent(SettingsEvent.Refresh) }
                 }
             }
@@ -284,10 +343,15 @@ fun SettingsSection(
                 Text(uiText(R.string.space_day_subgroup_hint), style = Zapara.typography.caption)
                 stream.options.forEach { option ->
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.RadioButton(state.subgroupChoices[stream.id] == option.id, { onEvent(SettingsEvent.Subgroup(stream.id, option.id)) })
+                        androidx.compose.material3.RadioButton(state.subgroupChoices[stream.id] == option.id,
+                            { onEvent(SettingsEvent.Subgroup(stream.id, option.id, state.groupId, state.profileName)) })
                         Text(option.label, style = Zapara.typography.body)
                     }
                 }
+                if (state.undoSubgroup?.streamId == stream.id) ZButton(
+                    stringResource(R.string.uxnext_subgroup_undo),
+                    { onEvent(SettingsEvent.UndoSubgroup) }, ghost = true,
+                    tag = "Settings.SubgroupUndo")
             } }
             if (state.apiConfigured) item {
                 ZCard(Modifier.fillMaxWidth().testTag("Settings.Source")) {
@@ -297,6 +361,7 @@ fun SettingsSection(
                         ZSwitch(state.useUniversityXml, { onEvent(SettingsEvent.UseUniversityXml(it)) }, "Settings.UniversityXml")
                     }
                     Text(stringResource(R.string.settings_source_hint), style = Zapara.typography.caption, color = c.text2)
+                    PreferenceFeedback(state, "source", onEvent)
                 }
             }
             }
@@ -308,6 +373,7 @@ fun SettingsSection(
                         listOf(stringResource(R.string.theme_system), stringResource(R.string.theme_light), stringResource(R.string.theme_dark)),
                         state.theme.ordinal, { onEvent(SettingsEvent.Theme(it)) }, "Settings.Theme"
                     )
+                    PreferenceFeedback(state, "theme", onEvent)
                     ZCard(Modifier.fillMaxWidth()) {
                         Text(uiText(R.string.space_day_161), style = Zapara.typography.section)
                         Text(uiText(R.string.space_day_162), style = Zapara.typography.caption, color = c.text2)
@@ -318,6 +384,7 @@ fun SettingsSection(
                         Text(stringResource(R.string.theme_animations), style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
                         ZSwitch(state.animations, { onEvent(SettingsEvent.Animations(it)) }, "Settings.Animations")
                     }
+                    PreferenceFeedback(state, "animations", onEvent)
                 }
             }
             }
@@ -332,6 +399,7 @@ fun SettingsSection(
                         Text(stringResource(R.string.settings_maps_routes), style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
                         ZSwitch(state.mapsAlpha, { onEvent(SettingsEvent.MapsAlpha(it)) }, "Settings.MapsAlpha")
                     }
+                    PreferenceFeedback(state, "maps", onEvent)
                     Text(stringResource(R.string.settings_maps_alpha_hint), style = Zapara.typography.caption, color = c.text2)
                 }
             }
@@ -343,9 +411,21 @@ fun SettingsSection(
                         Text(stringResource(R.string.settings_notify), style = Zapara.typography.section, color = c.text1, modifier = Modifier.weight(1f))
                         ZSwitch(state.notifyEnabled, { onEvent(SettingsEvent.Notify(it)) }, "Settings.Notify")
                     }
-                    TimeField(state.time1, stringResource(R.string.settings_time_evening), "Settings.Time1", state.notifyEnabled) { onEvent(SettingsEvent.Time1(it)) }
-                    TimeField(state.time2, stringResource(R.string.settings_time_morning), "Settings.Time2", state.notifyEnabled) { onEvent(SettingsEvent.Time2(it)) }
-                    Text(if (state.notifyEnabled) uiText(R.string.space_day_165, (state.time1).toString(), (state.time2).toString()) else uiText(R.string.space_day_166), style = Zapara.typography.caption, color = c.text2)
+                    PreferenceFeedback(state, "notify", onEvent)
+                    TimeField(state.time1, stringResource(R.string.settings_time_evening), "Settings.Time1", !state.timeSaving) { onEvent(SettingsEvent.Time1(it)) }
+                    TimeField(state.time2, stringResource(R.string.settings_time_morning), "Settings.Time2", !state.timeSaving) { onEvent(SettingsEvent.Time2(it)) }
+                    if (state.timeDirty) Text(stringResource(R.string.ux30_notify_unsaved),
+                        style = Zapara.typography.caption, color = c.warn)
+                    state.timeSaveError?.let { Text(it, style = Zapara.typography.caption, color = c.bad) }
+                    ZButton(stringResource(R.string.ux30_notify_save), { onEvent(SettingsEvent.SaveTimes) },
+                        enabled = state.timeDirty && state.timeError == null && !state.timeSaving,
+                        busy = state.timeSaving, tag = "Settings.SaveTimes")
+                    if (state.timeDirty && !state.timeSaving) ZButton(stringResource(R.string.ux30_notify_cancel),
+                        { onEvent(SettingsEvent.CancelTimes) }, ghost = true, tag = "Settings.CancelTimes")
+                    Text(if (state.notifyEnabled) uiText(R.string.space_day_165, state.savedTime1, state.savedTime2)
+                        else uiText(R.string.space_day_166), style = Zapara.typography.caption, color = c.text2)
+                    if (state.timeDirty) Text(stringResource(R.string.ux30_notify_preview_draft),
+                        style = Zapara.typography.caption, color = c.text2)
                     Text(uiText(R.string.space_day_notification_preview), style = Zapara.typography.section)
                     NotificationPreview(uiText(R.string.space_day_preview_tomorrow), state.time1, state.previewEvening)
                     NotificationPreview(uiText(R.string.space_day_preview_today), state.time2, state.previewMorning)
@@ -372,11 +452,23 @@ fun SettingsSection(
             }
             }
             if (section == "help") {
-            item { AboutCard(state, onEvent) }
+            item { AboutCard(state, onEvent, supportDrafts) { supportDrafts = it } }
             }
         }
         }
         }
+    }
+}
+
+@Composable
+private fun PreferenceFeedback(state: SettingsUiState, key: String, onEvent: (SettingsEvent) -> Unit) {
+    if (key in state.preferencePending) Text(stringResource(R.string.ux60_preference_saving),
+        style = Zapara.typography.caption, color = Zapara.colors.text2)
+    state.preferenceErrors[key]?.let { error ->
+        Text(error, style = Zapara.typography.caption, color = Zapara.colors.bad)
+        ZButton(stringResource(R.string.ux60_preference_retry),
+            { onEvent(SettingsEvent.RetryPreference(key)) }, ghost = true,
+            tag = "Settings.RetryPreference.$key")
     }
 }
 
@@ -438,33 +530,144 @@ fun UpdatesCard(state: SettingsUiState, updates: UpdateUiState, onEvent: (Settin
         }
         Text(status, style = Zapara.typography.body, color = c.text1, modifier = Modifier.testTag("Settings.UpdStatus"))
         if (updates.log.isNotBlank()) Text(updates.log, style = Zapara.typography.caption, color = c.text3)
+        if (updates.updateStale) Text(stringResource(R.string.ux60_update_stale, updates.tag),
+            style = Zapara.typography.caption, color = c.warn)
         if (updates.downloading) {
             LinearProgressIndicator(progress = { updates.progress.coerceAtLeast(0f) }, modifier = Modifier.fillMaxWidth(), color = c.accent, trackColor = c.chip)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             ZButton(stringResource(R.string.settings_upd_check), { onEvent(SettingsEvent.CheckUpdate) }, ghost = true, tag = "Settings.UpdCheck")
             if (updates.hasUpdate) ZButton(stringResource(R.string.settings_upd_download), { onEvent(SettingsEvent.DownloadUpdate) }, tag = "Settings.UpdDownload")
-            if (updates.readyFile != null) ZButton(stringResource(R.string.settings_upd_install), { onEvent(SettingsEvent.InstallUpdate) }, tag = "Settings.UpdInstall")
+            if (updates.canInstall) ZButton(stringResource(R.string.ux60_update_install_tag, updates.readyTag ?: updates.tag),
+                { onEvent(SettingsEvent.InstallUpdate) }, tag = "Settings.UpdInstall")
             if (updates.downloading) ZButton(stringResource(R.string.theme_cancel), { onEvent(SettingsEvent.CancelUpdate) }, ghost = true)
         }
     }
 }
 
+internal data class SupportAttachmentDraft(val uri: String, val name: String, val bytes: ByteArray? = null)
+
+internal data class SupportLocalDraft(
+    val subject: String = "",
+    val body: String = "",
+    val photos: List<SupportAttachmentDraft> = emptyList(),
+    val logs: List<SupportAttachmentDraft> = emptyList(),
+    val fileNote: String = "",
+    val revision: Long = 0
+)
+
+internal object SupportDraftCodec {
+    fun encode(drafts: Map<String, SupportLocalDraft>): List<String> = buildList {
+        add(drafts.size.toString())
+        drafts.toSortedMap().forEach { (key, draft) ->
+            add(key); add(draft.subject); add(draft.body); add(draft.fileNote); add(draft.revision.toString())
+            add(draft.photos.size.toString())
+            draft.photos.forEach { add(it.uri); add(it.name) }
+            add(draft.logs.size.toString())
+            draft.logs.forEach { add(it.uri); add(it.name) }
+        }
+    }
+
+    fun decode(saved: List<String>): Map<String, SupportLocalDraft> = runCatching {
+        var cursor = 0
+        fun next() = saved[cursor++]
+        buildMap {
+            repeat(next().toInt().coerceIn(0, 100)) {
+                val key = next(); val subject = next(); val body = next(); val note = next(); val revision = next().toLong()
+                val photos = List(next().toInt().coerceIn(0, 3)) { SupportAttachmentDraft(next(), next()) }
+                val logs = List(next().toInt().coerceIn(0, 3)) { SupportAttachmentDraft(next(), next()) }
+                put(key, SupportLocalDraft(subject, body, photos, logs, note, revision))
+            }
+        }
+    }.getOrDefault(emptyMap())
+}
+
+private val SupportDraftsSaver = listSaver<Map<String, SupportLocalDraft>, String>(
+    save = { SupportDraftCodec.encode(it) },
+    restore = { SupportDraftCodec.decode(it) }
+)
+
 @Composable
-fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
+private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
+    savedDrafts: Map<String, SupportLocalDraft> = emptyMap(),
+    onDraftsChanged: (Map<String, SupportLocalDraft>) -> Unit = {}) {
     val uiText = rememberUiText()
     val ctx = LocalContext.current
     val c = Zapara.colors
-    var open by remember { mutableStateOf(false) }
-    var subject by remember { mutableStateOf("") }
-    var body by remember { mutableStateOf("") }
-    var photos by remember { mutableStateOf(listOf<Pair<String, ByteArray>>()) }
-    var logs by remember { mutableStateOf(listOf<Pair<String, ByteArray>>()) }
-    var fileNote by remember { mutableStateOf("") }
+    val initial = savedDrafts[state.selectedSupportThreadId ?: "new"] ?: SupportLocalDraft()
+    var open by rememberSaveable { mutableStateOf(false) }
+    var subject by remember { mutableStateOf(initial.subject) }
+    var body by remember { mutableStateOf(initial.body) }
+    var photos by remember { mutableStateOf(initial.photos) }
+    var logs by remember { mutableStateOf(initial.logs) }
+    var fileNote by remember { mutableStateOf(initial.fileNote) }
+    var draftRevision by remember { mutableLongStateOf(initial.revision) }
+    var draftKey by remember { mutableStateOf(state.selectedSupportThreadId ?: "new") }
+    var drafts by remember { mutableStateOf(savedDrafts) }
+    var submitted by remember { mutableStateOf<Pair<String, SupportLocalDraft>?>(null) }
+    var attachmentReads by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var selectingAttachment by remember { mutableStateOf(false) }
+    fun currentDraft() = SupportLocalDraft(subject, body, photos, logs, fileNote, draftRevision)
+    fun persistDraft(changed: Boolean = false) {
+        if (changed) draftRevision++
+        drafts = drafts + (draftKey to currentDraft())
+        onDraftsChanged(drafts)
+    }
+    LaunchedEffect(draftKey, subject, body, photos, logs, fileNote) {
+        persistDraft()
+    }
+    LaunchedEffect(state.selectedSupportThreadId) {
+        val nextKey = state.selectedSupportThreadId ?: "new"
+        if (nextKey != draftKey) {
+            drafts = drafts + (draftKey to currentDraft())
+            val next = drafts[nextKey] ?: SupportLocalDraft()
+            draftKey = nextKey
+            subject = next.subject; body = next.body; photos = next.photos; logs = next.logs; fileNote = next.fileNote
+            draftRevision = next.revision
+        }
+    }
+    LaunchedEffect(state.reportSuccessVersion) {
+        if (state.reportSuccessVersion > 0) {
+            val successKey = state.reportSuccessKey
+            if (successKey != null && submitted?.first == successKey) {
+                drafts = drafts - successKey
+                onDraftsChanged(drafts)
+                if (draftKey == successKey && currentDraft() == submitted?.second) {
+                    subject = ""; body = ""; photos = emptyList(); logs = emptyList(); fileNote = ""
+                }
+                submitted = null
+            }
+        }
+    }
     val scope = rememberCoroutineScope()
+    LaunchedEffect(draftKey) {
+        val existingPhotos = photos
+        val existingLogs = logs
+        if (existingPhotos.none { it.bytes == null } && existingLogs.none { it.bytes == null }) return@LaunchedEffect
+        attachmentReads++
+        try {
+            val restoredPhotos = withContext(Dispatchers.IO) { existingPhotos.map { ref ->
+                if (ref.bytes != null) ref else readSupportFile(ctx, Uri.parse(ref.uri), 4 * 1024 * 1024)
+                    ?.let { ref.copy(name = it.first, bytes = it.second) } ?: ref
+            } }
+            val restoredLogs = withContext(Dispatchers.IO) { existingLogs.map { ref ->
+                if (ref.bytes != null) ref else readSupportFile(ctx, Uri.parse(ref.uri), 512 * 1024)
+                    ?.let { ref.copy(name = it.first, bytes = it.second) } ?: ref
+            } }
+            if (photos == existingPhotos && logs == existingLogs) {
+                photos = restoredPhotos; logs = restoredLogs
+                if (restoredPhotos.any { it.bytes == null } || restoredLogs.any { it.bytes == null })
+                    fileNote = ctx.getString(R.string.ux60_support_reselect_file)
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) { fileNote = ctx.getString(R.string.ux60_support_reselect_file) }
+        finally { attachmentReads-- }
+    }
     fun take(kind: String, uri: Uri?) {
         if (uri == null) return
+        attachmentReads++
         scope.launch {
+            try {
             val read = withContext(Dispatchers.IO) { readSupportFile(ctx, uri, if (kind == "photo") 4 * 1024 * 1024 else 512 * 1024) }
             if (read == null) {
                 fileNote = ctx.getString(if (kind == "photo") R.string.face_photo_too_big else R.string.face_log_too_big)
@@ -483,11 +686,23 @@ fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
             if (kind == "photo" && photos.size >= 3) { fileNote = ctx.getString(R.string.face_photo_limit); return@launch }
             if (kind == "log" && logs.size >= 3) { fileNote = ctx.getString(R.string.face_log_limit); return@launch }
             fileNote = ""
-            if (kind == "photo") photos = photos + read else logs = logs + read
+            runCatching { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            val attachment = SupportAttachmentDraft(uri.toString(), read.first, read.second)
+            if (kind == "photo") photos = photos + attachment else logs = logs + attachment
+            persistDraft(changed = true)
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) {
+                android.util.Log.w("ZaparaSupport", "attachment read", e)
+                fileNote = ctx.getString(R.string.face_file_unavailable)
+            } finally { attachmentReads-- }
         }
     }
-    val photo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { take("photo", it) }
-    val log = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { take("log", it) }
+    val photo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
+        selectingAttachment = false; take("photo", it)
+    }
+    val log = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
+        selectingAttachment = false; take("log", it)
+    }
     ZCard(Modifier.fillMaxWidth().testTag("Settings.About")) {
         Text(stringResource(R.string.settings_about_title), style = Zapara.typography.section, color = c.text1)
         Text(stringResource(R.string.settings_version, state.version), style = Zapara.typography.caption, color = c.text2)
@@ -498,21 +713,84 @@ fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
         ZButton(stringResource(R.string.settings_report), { open = !open }, ghost = true, tag = "Settings.Report")
         Text(stringResource(R.string.settings_report_hint), style = Zapara.typography.caption, color = c.text2)
         if (open) {
-            OutlinedTextField(subject, { subject = it.take(120) }, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.face_subject)) }, singleLine = true)
-            OutlinedTextField(body, { body = it.take(4000) }, modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.face_what_happened)) })
+            val inputStatus = SupportInputLimits.evaluate(subject, body, state.selectedSupportThreadId != null)
+            Text(stringResource(R.string.uxnext_support_threads, state.supportThreads.size),
+                style = Zapara.typography.section, color = c.text1)
+            if (state.supportLoading) Text(stringResource(R.string.uxnext_support_loading),
+                style = Zapara.typography.caption, color = c.text2)
+            state.supportError?.let { Text(it, style = Zapara.typography.body, color = c.bad) }
+            ZButton(stringResource(R.string.repeat), { onEvent(SettingsEvent.RetrySupport) },
+                ghost = true, enabled = !state.supportLoading && !state.reportSending,
+                tag = "Settings.SupportRetry")
+            val canSwitchThread = !state.reportSending && attachmentReads == 0 && !selectingAttachment
+            ZButton(stringResource(R.string.uxnext_support_new),
+                { onEvent(SettingsEvent.SelectSupportThread(null)) }, ghost = true,
+                enabled = canSwitchThread, tag = "Settings.SupportNew")
+            state.supportThreads.forEach { thread ->
+                ZButton("${thread.subject} · ${thread.messageCount}",
+                    { onEvent(SettingsEvent.SelectSupportThread(thread.id)) },
+                    ghost = state.selectedSupportThreadId != thread.id, enabled = canSwitchThread,
+                    tag = "Settings.SupportThread.${thread.id}")
+            }
+            if (state.selectedSupportThreadId == null) OutlinedTextField(subject,
+                { subject = it; persistDraft(changed = true) }, modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.face_subject)) }, singleLine = true,
+                enabled = !state.reportSending)
+            else Text(state.supportThreads.firstOrNull { it.id == state.selectedSupportThreadId }?.subject.orEmpty(),
+                style = Zapara.typography.bodyStrong, color = c.text1)
+            if (state.selectedSupportThreadId == null) Text(stringResource(R.string.ux60_support_subject_count,
+                inputStatus.subjectScalars, inputStatus.subjectWireUnits), style = Zapara.typography.caption,
+                color = if (inputStatus.subjectOverLimit) c.bad else c.text2)
+            OutlinedTextField(body, { body = it; persistDraft(changed = true) }, modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(if (state.selectedSupportThreadId == null)
+                    R.string.face_what_happened else R.string.uxnext_support_reply)) }, enabled = !state.reportSending)
+            Text(stringResource(R.string.ux60_support_body_count, inputStatus.bodyScalars, inputStatus.bodyWireUnits),
+                style = Zapara.typography.caption, color = if (inputStatus.bodyOverLimit) c.bad else c.text2)
+            if (inputStatus.subjectOverLimit || inputStatus.bodyOverLimit || inputStatus.invalidUnicode)
+                Text(stringResource(if (inputStatus.invalidUnicode) R.string.ux60_support_invalid_unicode
+                    else R.string.ux60_support_over_limit), style = Zapara.typography.caption, color = c.bad)
             Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                ZButton(stringResource(R.string.face_photo), { photo.launch(arrayOf("image/*")) }, ghost = true, tag = "Settings.ReportPhoto")
-                ZButton(stringResource(R.string.face_log_button), { log.launch(arrayOf("*/*")) }, ghost = true, tag = "Settings.ReportLog")
+                ZButton(stringResource(R.string.face_photo), {
+                    selectingAttachment = true
+                    try { photo.launch(arrayOf("image/*")) } catch (e: Exception) {
+                        selectingAttachment = false; fileNote = ctx.getString(R.string.face_file_unavailable)
+                    }
+                }, ghost = true, tag = "Settings.ReportPhoto",
+                    enabled = !state.reportSending && !selectingAttachment && attachmentReads == 0)
+                ZButton(stringResource(R.string.face_log_button), {
+                    selectingAttachment = true
+                    try { log.launch(arrayOf("*/*")) } catch (e: Exception) {
+                        selectingAttachment = false; fileNote = ctx.getString(R.string.face_file_unavailable)
+                    }
+                }, ghost = true, tag = "Settings.ReportLog",
+                    enabled = !state.reportSending && !selectingAttachment && attachmentReads == 0)
             }
             Text(stringResource(R.string.face_attach_limits), style = Zapara.typography.caption, color = c.text2)
-            (photos.map { stringResource(R.string.face_photo_named, it.first) } + logs.map { stringResource(R.string.face_log_named, it.first) }).forEach { Text(it, style = Zapara.typography.body, color = c.text1) }
+            if (attachmentReads > 0 || selectingAttachment) Text(stringResource(R.string.ux30_support_reading),
+                style = Zapara.typography.caption, color = c.text2)
+            photos.forEachIndexed { index, file ->
+                ZButton(stringResource(R.string.ux30_support_remove_file, file.name),
+                    { photos = photos.filterIndexed { i, _ -> i != index }; persistDraft(changed = true) }, ghost = true,
+                    enabled = !state.reportSending, tag = "Settings.RemovePhoto.$index")
+            }
+            logs.forEachIndexed { index, file ->
+                ZButton(stringResource(R.string.ux30_support_remove_file, file.name),
+                    { logs = logs.filterIndexed { i, _ -> i != index }; persistDraft(changed = true) }, ghost = true,
+                    enabled = !state.reportSending, tag = "Settings.RemoveLog.$index")
+            }
             if (fileNote.isNotBlank()) Text(fileNote, style = Zapara.typography.body, color = c.text1)
             ZButton(stringResource(R.string.face_send), {
-                onEvent(SettingsEvent.Report(subject, body, photos, logs))
-                if (state.signedIn && subject.trim().length >= 3 && body.trim().length >= 3) {
-                    subject = ""; body = ""; photos = emptyList(); logs = emptyList(); fileNote = ""
+                if (photos.any { it.bytes == null } || logs.any { it.bytes == null }) {
+                    fileNote = ctx.getString(R.string.ux60_support_reselect_file)
+                    return@ZButton
                 }
-            }, tag = "Settings.ReportSend")
+                submitted = draftKey to currentDraft()
+                onEvent(SettingsEvent.Report(subject, body,
+                    photos.map { it.name to it.bytes!! }, logs.map { it.name to it.bytes!! }, draftRevision))
+            }, tag = "Settings.ReportSend", enabled = SettingsLogic.supportSendReady(
+                state.reportSending, selectingAttachment, attachmentReads) && inputStatus.canSend &&
+                photos.all { it.bytes != null } && logs.all { it.bytes != null },
+                busy = state.reportSending)
             if (state.reportNote.isNotBlank()) Text(state.reportNote, style = Zapara.typography.body, color = c.text1)
             state.reportThread.forEach { line ->
                 Text((if (line.author == "operator") stringResource(R.string.face_support_line) else stringResource(R.string.face_you_line)) + line.body, style = Zapara.typography.body, color = c.text1)

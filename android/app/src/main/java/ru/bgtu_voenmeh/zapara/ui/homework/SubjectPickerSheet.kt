@@ -31,13 +31,15 @@ import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.schedule.LessonTypeChip
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
+import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 
 @Composable
 fun SubjectPickerSheet(
     picker: SubjectPickerUi,
     onQuery: (String) -> Unit,
     onPick: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onManual: (String) -> Unit = {}
 ) {
     val c = Zapara.colors
     val keyboard = LocalSoftwareKeyboardController.current
@@ -68,6 +70,11 @@ fun SubjectPickerSheet(
         Text(stringResource(if (filtered.isEmpty()) R.string.polish_subject_no_results else R.string.homework_ux_subject_count, filtered.size),
             style = Zapara.typography.caption, color = c.text2,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        if (picker.subjects.isEmpty()) {
+            Text(stringResource(R.string.uxnext_homework_manual_hint), style = Zapara.typography.caption, color = c.text2)
+            ZButton(stringResource(R.string.uxnext_homework_manual_add), { onManual(picker.query.trim()) },
+                enabled = manualSubjectAllowed(picker.subjects, picker.query), tag = "Picker.ManualSubject")
+        }
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             items(filtered, key = { it.norm }) { subject ->
                 ZCard(onClick = { onPick(subject.raw) }, tag = "Picker.Row.${subject.norm}", modifier = Modifier.fillMaxWidth()) {

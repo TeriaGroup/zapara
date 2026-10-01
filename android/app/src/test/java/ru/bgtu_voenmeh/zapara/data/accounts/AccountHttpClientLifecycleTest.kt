@@ -13,6 +13,17 @@ import ru.bgtu_voenmeh.zapara.data.api.HttpReply
 import java.time.Instant
 
 class AccountHttpClientLifecycleTest {
+    @Test fun profile_update_uses_existing_patch_route_and_returns_confirmed_name() = runBlocking {
+        val access = testToken("za_", 1)
+        val http = FakeHttp { call ->
+            assertEquals("PATCH", call.method)
+            assertEquals(root + "api/v1/account/me", call.url)
+            assertEquals("Bearer $access", call.headers["Authorization"])
+            assertEquals("""{"displayName":"Новое имя"}""", String(call.body!!))
+            json("""{"userId":"$family","username":"Test.User","displayName":"Новое имя","createdAt":"$created"}""")
+        }
+        assertEquals("Новое имя", httpClient(http).saveProfile(access, " Новое имя ").displayName)
+    }
     private val root = "https://example.invalid/root/"
     private val family = "11111111-1111-4111-8111-111111111111"
     private val device = "22222222-2222-4222-8222-222222222222"

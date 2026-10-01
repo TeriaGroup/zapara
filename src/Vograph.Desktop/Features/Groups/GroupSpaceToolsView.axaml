@@ -9,6 +9,7 @@
     <ComboBox ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory}"><ComboBox.ItemTemplate><DataTemplate x:DataType="contracts:GroupCategoryResponse"><TextBlock Text="{Binding Title}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
     <TextBox Text="{Binding CategoryTitle}" PlaceholderText="Название категории" /><NumericUpDown Value="{Binding CategoryPosition}" Minimum="0" Maximum="100" AutomationProperties.Name="Порядок категории" />
     <WrapPanel ItemSpacing="6"><Button Content="Новая" Command="{Binding NewCategoryCommand}" /><Button Content="Сохранить" Command="{Binding SaveCategoryCommand}" /><Button Content="Удалить категорию" Command="{Binding DeleteCategoryCommand}" /></WrapPanel>
+    <Border Classes="card" IsVisible="{Binding HasPendingDeleteCategory}"><StackPanel Spacing="6"><TextBlock Text="{Binding DeleteCategoryImpact}" TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Content="Отмена" Command="{Binding CancelDeleteCategoryCommand}" /><Button Classes="danger" Content="Удалить категорию" Command="{Binding ConfirmDeleteCategoryCommand}" /></WrapPanel></StackPanel></Border>
     <TextBlock Classes="muted caption" Text="Удаление категории переносит её темы в корень." TextWrapping="Wrap" />
 
    </StackPanel>

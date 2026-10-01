@@ -4,16 +4,21 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.media.MediaPlayer
+import android.media.PlaybackParams
 import android.view.Surface
 import android.view.TextureView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,6 +31,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -37,18 +44,32 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.R
+import ru.bgtu_voenmeh.zapara.ui.maps.MapZoom
 import java.io.File
 
 /** Downloads stay with the chat's authenticated data layer; this view sees only private local files. */
@@ -64,18 +85,24 @@ fun ChatMediaBubble(
 ) {
     if (kind !in setOf("image", "voice", "circle")) return
     val contentColor = LocalContentColor.current
-    LaunchedEffect(file?.absolutePath, error) {
-        if (file == null && !error) onLoad()
-    }
+    val loadState = chatMediaLoadState(file?.isFile == true, loading, error)
     Box(modifier) {
-        when {
-            error -> TextButton(onClick = onLoad, colors = ButtonDefaults.textButtonColors(contentColor = contentColor)) { Text(stringResource(R.string.chat_media_load_failed)) }
-            loading || file == null -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        when (loadState) {
+            ChatMediaLoadState.Retry -> TextButton(onClick = onLoad, colors = ButtonDefaults.textButtonColors(contentColor = contentColor)) { Text(stringResource(R.string.chat_media_load_failed)) }
+            ChatMediaLoadState.NeedsTap -> TextButton(onClick = onLoad,
+                colors = ButtonDefaults.textButtonColors(contentColor = contentColor),
+                modifier = Modifier.testTag("Chat.MediaLoad")) {
+                Text(stringResource(when (kind) {
+                    "image" -> R.string.ux60_chat_media_load_image
+                    "voice" -> R.string.ux60_chat_media_load_voice
+                    else -> R.string.ux60_chat_media_load_circle
+                }))
+            }
+            ChatMediaLoadState.Loading -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CircularProgressIndicator(Modifier.size(18.dp), color = contentColor, strokeWidth = 2.dp)
                 Text(stringResource(when(kind) { "image" -> R.string.chat_media_loading_image; "voice" -> R.string.chat_media_loading_voice; else -> R.string.chat_media_loading_circle }), color = contentColor.copy(alpha = 0.72f))
             }
-            kind == "image" -> ImagePreview(file)
-            else -> Playback(kind, file, durationMs)
+            ChatMediaLoadState.Ready -> if (kind == "image") ImagePreview(file!!) else Playback(kind, file!!, durationMs)
         }
     }
 }
@@ -99,16 +126,61 @@ private fun ImagePreview(file: File) {
     val preview = decoded.second
     if (!decoded.first) CircularProgressIndicator(Modifier.size(18.dp), color = LocalContentColor.current, strokeWidth = 2.dp)
     else if (preview == null) Text(stringResource(R.string.chat_media_image_unavailable), color = LocalContentColor.current.copy(alpha = 0.72f))
-    else Image(preview.asImageBitmap(), stringResource(R.string.chat_media_photo), Modifier.width(240.dp).height(180.dp).clip(RoundedCornerShape(10.dp)).testTag("Chat.ImagePreview"), contentScale = ContentScale.Crop)
+    else {
+        var viewerOpen by remember(file.absolutePath) { mutableStateOf(false) }
+        Image(preview.asImageBitmap(), stringResource(R.string.chat_media_photo),
+            Modifier.width(240.dp).height(180.dp).clip(RoundedCornerShape(10.dp))
+                .clickable { viewerOpen = true }.testTag("Chat.ImagePreview"), contentScale = ContentScale.Crop)
+        if (viewerOpen) ChatPhotoViewer(preview) { viewerOpen = false }
+    }
+}
+
+@Composable
+private fun ChatPhotoViewer(bitmap: android.graphics.Bitmap, onClose: () -> Unit) {
+    var viewport by remember(bitmap) { mutableStateOf(IntSize.Zero) }
+    var scale by remember(bitmap) { mutableStateOf(1f) }
+    var pan by remember(bitmap) { mutableStateOf(Offset.Zero) }
+    val transform = rememberTransformableState { zoomChange, panChange, _ ->
+        val nextScale = (scale * zoomChange).coerceIn(1f, MapZoom.Max)
+        val bounded = MapZoom.clampPan(pan.x + panChange.x, pan.y + panChange.y,
+            viewport.width.toFloat(), viewport.height.toFloat(), bitmap.width.toFloat(), bitmap.height.toFloat(), nextScale)
+        scale = nextScale
+        pan = Offset(bounded.first, bounded.second)
+    }
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(Color.Black).testTag("Chat.PhotoViewer")) {
+            Image(bitmap.asImageBitmap(), stringResource(R.string.chat_media_photo),
+                Modifier.fillMaxSize().clipToBounds().onSizeChanged { size ->
+                    viewport = size
+                    val bounded = MapZoom.clampPan(pan.x, pan.y,
+                        size.width.toFloat(), size.height.toFloat(), bitmap.width.toFloat(), bitmap.height.toFloat(), scale)
+                    pan = Offset(bounded.first, bounded.second)
+                }
+                    .pointerInput(bitmap) { detectTapGestures(onDoubleTap = { scale = 1f; pan = Offset.Zero }) }
+                    .transformable(transform)
+                    .graphicsLayer(scaleX = scale, scaleY = scale, translationX = pan.x, translationY = pan.y),
+                contentScale = ContentScale.Fit)
+            TextButton(onClick = onClose,
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) {
+                Text(stringResource(R.string.ux60_chat_photo_close))
+            }
+        }
+    }
 }
 
 @Composable
 private fun Playback(kind: String, file: File, suppliedDuration: Int?) {
     val contentColor = LocalContentColor.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     val controller = remember(file.absolutePath) { LocalMediaPlayer(file) }
-    DisposableEffect(controller) {
+    DisposableEffect(controller, lifecycle) {
         controller.prepare()
-        onDispose { controller.close() }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) controller.pause()
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer); controller.close() }
     }
     LaunchedEffect(controller, controller.playing) {
         while (controller.playing) {
@@ -132,6 +204,7 @@ private fun Playback(kind: String, file: File, suppliedDuration: Int?) {
                 onValueChange = { controller.seek((it * duration).toInt()) }, enabled = controller.ready && duration > 0,
                 colors = SliderDefaults.colors(thumbColor = contentColor, activeTrackColor = contentColor, inactiveTrackColor = contentColor.copy(alpha = 0.28f)),
                 modifier = Modifier.width(210.dp).height(24.dp))
+            PlaybackSpeedSelector(controller, contentColor)
         }
     } else {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -153,8 +226,28 @@ private fun Playback(kind: String, file: File, suppliedDuration: Int?) {
                 onValueChange = { controller.seek((it * duration).toInt()) }, enabled = controller.ready && duration > 0,
                 colors = SliderDefaults.colors(thumbColor = contentColor, activeTrackColor = contentColor, inactiveTrackColor = contentColor.copy(alpha = 0.28f)),
                 modifier = Modifier.width(190.dp).height(24.dp))
+            PlaybackSpeedSelector(controller, contentColor)
         }
     }
+}
+
+@Composable
+private fun PlaybackSpeedSelector(controller: LocalMediaPlayer, contentColor: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        chatMediaPlaybackSpeeds.forEach { speed ->
+            val value = chatMediaPlaybackSpeedLabel(speed)
+            val label = stringResource(R.string.ux60_chat_speed_accessible, value)
+            TextButton(onClick = { controller.setSpeed(speed) }, enabled = controller.ready,
+                modifier = Modifier.semantics {
+                    contentDescription = label
+                    selected = controller.playbackSpeed == speed
+                }, colors = ButtonDefaults.textButtonColors(contentColor = contentColor)) {
+                Text(value)
+            }
+        }
+    }
+    if (controller.speedFailed) Text(stringResource(R.string.ux60_chat_speed_failed),
+        color = contentColor.copy(alpha = 0.72f), style = Zapara.typography.caption)
 }
 
 private fun centerCrop(view: TextureView, videoWidth: Int, videoHeight: Int) {
@@ -166,7 +259,15 @@ private fun centerCrop(view: TextureView, videoWidth: Int, videoHeight: Int) {
     view.setTransform(Matrix().apply { setScale(scaleX, scaleY, view.width / 2f, view.height / 2f) })
 }
 
-private class LocalMediaPlayer(private val file: File) {
+private object ChatMediaPlayback {
+    private val exclusive = ExclusivePlayback<LocalMediaPlayer> { it.pauseFromCoordinator() }
+
+    fun start(player: LocalMediaPlayer) = exclusive.activate(player)
+
+    fun release(player: LocalMediaPlayer) = exclusive.release(player)
+}
+
+internal class LocalMediaPlayer(private val file: File) {
     var ready by mutableStateOf(false)
         private set
     var failed by mutableStateOf(false)
@@ -177,6 +278,24 @@ private class LocalMediaPlayer(private val file: File) {
         private set
     var positionMs by mutableIntStateOf(0)
         private set
+    private val speedPolicy by lazy {
+        PlaybackSpeedPolicy(
+            isPlaying = { player?.isPlaying == true },
+            activateExclusive = { ChatMediaPlayback.start(this) },
+            applySpeed = { speed ->
+                val media = player
+                if (media == null) false else try {
+                    media.playbackParams = PlaybackParams().setSpeed(speed)
+                    true
+                } catch (_: Exception) { false }
+            },
+            startPlayback = { player?.start() },
+            releaseExclusive = { ChatMediaPlayback.release(this) },
+            onPlayingChanged = { playing = it }
+        )
+    }
+    val playbackSpeed get() = speedPolicy.speed
+    val speedFailed get() = speedPolicy.failed
     var videoWidth by mutableIntStateOf(0)
         private set
     var videoHeight by mutableIntStateOf(0)
@@ -193,8 +312,8 @@ private class LocalMediaPlayer(private val file: File) {
                 ready = true
                 durationMs = it.duration.coerceAtLeast(0)
             }
-            media.setOnCompletionListener { playing = false; positionMs = 0; it.seekTo(0) }
-            media.setOnErrorListener { _, _, _ -> failed = true; playing = false; true }
+            media.setOnCompletionListener { playing = false; positionMs = 0; it.seekTo(0); ChatMediaPlayback.release(this) }
+            media.setOnErrorListener { _, _, _ -> failed = true; playing = false; ChatMediaPlayback.release(this); true }
             media.setOnVideoSizeChangedListener { _, width, height -> videoWidth = width; videoHeight = height }
             media.setDataSource(file.absolutePath)
             surface?.let(media::setSurface)
@@ -206,9 +325,33 @@ private class LocalMediaPlayer(private val file: File) {
         val media = player ?: return
         if (!ready) return
         try {
-            if (media.isPlaying) media.pause() else media.start()
+            if (media.isPlaying) {
+                media.pause()
+                ChatMediaPlayback.release(this)
+            } else {
+                speedPolicy.start()
+            }
             playing = media.isPlaying
-        } catch (_: Exception) { failed = true; playing = false }
+        } catch (_: Exception) { failed = true; playing = false; ChatMediaPlayback.release(this) }
+    }
+
+    fun setSpeed(speed: Float) {
+        if (ready) speedPolicy.select(speed)
+    }
+
+    fun pause() {
+        try {
+            player?.takeIf { it.isPlaying }?.pause()
+            playing = false
+        } catch (_: Exception) { playing = false }
+        ChatMediaPlayback.release(this)
+    }
+
+    internal fun pauseFromCoordinator() {
+        try {
+            player?.takeIf { it.isPlaying }?.pause()
+            playing = false
+        } catch (_: Exception) { playing = false }
     }
 
     fun seek(ms: Int) {
@@ -223,23 +366,37 @@ private class LocalMediaPlayer(private val file: File) {
     }
 
     fun attach(next: Surface) {
-        surface?.release()
+        surface?.takeIf { it !== next }?.let { safeMediaPlayerLifecycleCall { it.release() } }
         surface = next
-        player?.setSurface(next)
+        val media = player
+        if (media != null && !safeMediaPlayerLifecycleCall { media.setSurface(next) }) markPlayerFailure()
     }
 
     fun detach() {
-        player?.setSurface(null)
-        surface?.release()
+        val media = player
+        if (media != null && !safeMediaPlayerLifecycleCall { media.setSurface(null) }) markPlayerFailure()
+        surface?.let { safeMediaPlayerLifecycleCall { it.release() } }
         surface = null
     }
 
     fun close() {
+        ChatMediaPlayback.release(this)
+        pauseFromCoordinator()
         playing = false
         ready = false
-        player?.release()
+        val media = player
         player = null
-        surface?.release()
+        if (media != null) {
+            safeMediaPlayerLifecycleCall { media.setSurface(null) }
+            safeMediaPlayerLifecycleCall { media.release() }
+        }
+        surface?.let { safeMediaPlayerLifecycleCall { it.release() } }
         surface = null
+    }
+
+    private fun markPlayerFailure() {
+        failed = true
+        playing = false
+        ChatMediaPlayback.release(this)
     }
 }

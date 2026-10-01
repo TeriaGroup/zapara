@@ -1,5 +1,8 @@
 package ru.bgtu_voenmeh.zapara.ui.inbox
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -7,20 +10,25 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import ru.bgtu_voenmeh.zapara.AppContainer
 import ru.bgtu_voenmeh.zapara.R
+import ru.bgtu_voenmeh.zapara.ui.components.ToastKind
 import ru.bgtu_voenmeh.zapara.data.api.UrlConnectionTransport
 import ru.bgtu_voenmeh.zapara.data.social.*
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-data class InboxUiState(val guest: Boolean = false, val loading: Boolean = false, val error: String? = null, val rows: List<InboxRow> = emptyList(), val code: String = "", val incoming: List<SocialInvite> = emptyList(), val outgoing: List<SocialInvite> = emptyList(), val active: InboxRow? = null, val messages: List<SocialMessage> = emptyList(), val hasMore: Boolean = false, val composer: PersonalComposer = PersonalComposer(), val inviteCode: String = "", val userId: String = "", val mediaFiles: Map<String, File> = emptyMap(), val mediaLoading: Set<String> = emptySet(), val mediaErrors: Set<String> = emptySet(), val sending: Boolean = false, val historyLoaded: Boolean = false, val inboxLoaded: Boolean = false) {
+data class InboxUiState(val guest: Boolean = false, val loading: Boolean = false, val error: String? = null, val rows: List<InboxRow> = emptyList(), val code: String = "", val incoming: List<SocialInvite> = emptyList(), val outgoing: List<SocialInvite> = emptyList(), val active: InboxRow? = null, val messages: List<SocialMessage> = emptyList(), val hasMore: Boolean = false, val composer: PersonalComposer = PersonalComposer(), val inviteCode: String = "", val userId: String = "", val mediaFiles: Map<String, File> = emptyMap(), val mediaLoading: Set<String> = emptySet(), val mediaErrors: Set<String> = emptySet(), val sending: Boolean = false, val historyLoaded: Boolean = false, val inboxLoaded: Boolean = false,
+    val respondingId: String? = null, val draftPreviews: Map<String, String> = emptyMap(),
+    val profileDatabaseName: String = "", val pendingRecording: PendingPersonalRecording? = null) {
     val draft get() = composer.text
     val reply get() = composer.reply
     val editing get() = composer.editing
 }
 sealed interface InboxEvent {
     data class Upload(val conversationId: String, val uri: android.net.Uri) : InboxEvent
-    data class UploadRecorded(val conversationId: String, val kind: String, val file: File, val durationMs: Int) : InboxEvent
+    data class UploadRecorded(val scope: PersonalRecordingScope, val kind: String, val file: File, val durationMs: Int) : InboxEvent
+    data class RetryRecording(val scope: PersonalRecordingScope) : InboxEvent
+    data class DiscardRecording(val scope: PersonalRecordingScope, val file: File) : InboxEvent
     data class LoadMedia(val message: SocialMessage) : InboxEvent
     data class LocalError(val message: String) : InboxEvent
     data class Save(val message: SocialMessage, val uri: android.net.Uri) : InboxEvent
@@ -34,6 +42,8 @@ sealed interface InboxEvent {
     data class Draft(val value: String) : InboxEvent
     data class Code(val value: String) : InboxEvent
     data class Respond(val id: String, val accept: Boolean) : InboxEvent
+    data object CopyCode : InboxEvent
+    data class CopyMessage(val id: String) : InboxEvent
     data class Reply(val message: SocialMessage) : InboxEvent
     data class Edit(val message: SocialMessage) : InboxEvent
     data class Delete(val message: SocialMessage) : InboxEvent
@@ -41,10 +51,12 @@ sealed interface InboxEvent {
 }
 class InboxViewModel(private val container: AppContainer) : ViewModel() {
     private val social = container.communities?.let { SocialHttpClient(UrlConnectionTransport(), it.scope) }
-    private val mutable = MutableStateFlow(InboxUiState(guest = container.profile.isGuest, userId = container.profile.userId.orEmpty()))
+    private val mutable = MutableStateFlow(InboxUiState(guest = container.profile.isGuest,
+        userId = container.profile.userId.orEmpty(), profileDatabaseName = container.profile.databaseName))
     val state: StateFlow<InboxUiState> = mutable.asStateFlow()
     private var operation: Job? = null
     private val composers = PersonalComposerSessions()
+    private val pendingRecordings = PendingPersonalRecordingStore()
     private val historyVersions = PersonalHistoryVersions()
     private val mediaJobs = ConcurrentHashMap<String, Job>()
     private val mediaDirectory = File(container.app.cacheDir, "personal-chat-${UUID.randomUUID()}")
@@ -55,16 +67,17 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
             is InboxEvent.LocalError -> updateComposer { it.copy(error = event.message) }
             is InboxEvent.LoadMedia -> loadMedia(event.message)
             is InboxEvent.Upload -> if (state.value.active?.id == event.conversationId) execute(event)
-            is InboxEvent.UploadRecorded -> {
-                if (state.value.active?.id != event.conversationId) {
-                    event.file.delete()
-                } else if (state.value.guest || state.value.sending) {
-                    event.file.delete()
-                    mutable.update { it.copy(error = container.app.getString(R.string.face_wait_send)) }
-                } else execute(event)
-            }
+            is InboxEvent.UploadRecorded -> receiveRecorded(event)
+            is InboxEvent.RetryRecording -> retryRecorded(event.scope)
+            is InboxEvent.DiscardRecording -> discardRecorded(event.scope, event.file)
             is InboxEvent.Draft -> updateComposer { it.type(event.value) }
             is InboxEvent.Code -> mutable.update { it.copy(inviteCode = event.value.take(64)) }
+            InboxEvent.CopyCode -> copyCode()
+            is InboxEvent.CopyMessage -> copyMessage(event.id)
+            is InboxEvent.Respond -> {
+                if (state.value.respondingId == null && state.value.incoming.any { it.id == event.id })
+                    execute(event)
+            }
             is InboxEvent.Reply -> updateComposer { it.replyTo(event.message) }
             is InboxEvent.Edit -> updateComposer { it.edit(event.message) }
             InboxEvent.CancelCompose -> updateComposer { it.cancel() }
@@ -78,7 +91,56 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
         val id = current.active?.id ?: return
         val next = change(current.composer)
         composers.save(id, next)
-        mutable.update { it.copy(composer = next) }
+        mutable.update { it.copy(composer = next, draftPreviews = composers.draftPreviews()) }
+    }
+
+    private fun recordingScope(conversationId: String) = PersonalRecordingScope(
+        container.profile.userId.orEmpty(), container.profile.databaseName, conversationId)
+
+    private fun recordingScopeMatches(scope: PersonalRecordingScope, current: InboxUiState = state.value): Boolean =
+        !current.guest && scope.profileId == container.profile.userId.orEmpty() &&
+            scope.databaseName == container.profile.databaseName && current.userId == scope.profileId &&
+            current.profileDatabaseName == scope.databaseName && current.active?.id == scope.conversationId
+
+    private fun receiveRecorded(event: InboxEvent.UploadRecorded) {
+        val current = state.value
+        if (!recordingScopeMatches(event.scope, current) || current.sending) {
+            event.file.delete()
+            if (current.active?.id == event.scope.conversationId && current.sending)
+                updateComposer { it.copy(error = container.app.getString(R.string.face_wait_send)) }
+            return
+        }
+        if (pendingRecordings.get(event.scope) != null || !pendingRecordings.begin(
+                PendingPersonalRecording(event.scope, event.kind, event.file, event.durationMs))) {
+            event.file.delete()
+            updateComposer { it.copy(error = container.app.getString(R.string.ux60_chat_recording_pending)) }
+            return
+        }
+        mutable.update { currentState ->
+            if (recordingScopeMatches(event.scope, currentState))
+                currentState.copy(pendingRecording = pendingRecordings.get(event.scope)) else currentState
+        }
+        execute(event, recordingPrepared = true)
+    }
+
+    private fun retryRecorded(scope: PersonalRecordingScope) {
+        val current = state.value
+        if (!recordingScopeMatches(scope, current) || current.sending) return
+        val pending = pendingRecordings.retry(scope) ?: return
+        mutable.update { state ->
+            if (recordingScopeMatches(scope, state)) state.copy(pendingRecording = pending) else state
+        }
+        execute(InboxEvent.UploadRecorded(scope, pending.kind, pending.file, pending.durationMs), recordingPrepared = true)
+    }
+
+    private fun discardRecorded(scope: PersonalRecordingScope, file: File) {
+        val current = state.value
+        if (!recordingScopeMatches(scope, current) || current.sending ||
+            !pendingRecordings.discard(scope, file)) return
+        mutable.update { state ->
+            if (recordingScopeMatches(scope, state)) state.copy(pendingRecording = null,
+                composer = state.composer.copy(error = null)) else state
+        }
     }
     private fun navigate(row: InboxRow?) {
         generation++
@@ -87,19 +149,30 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
         cancelMediaLoads()
         mutable.update { it.copy(active = row, messages = emptyList(), hasMore = false,
             composer = row?.id?.let(composers::restore) ?: PersonalComposer(), error = null,
-            historyLoaded = false, loading = false, mediaLoading = emptySet()) }
+            historyLoaded = false, loading = false, mediaLoading = emptySet(), respondingId = null,
+            userId = container.profile.userId.orEmpty(), profileDatabaseName = container.profile.databaseName,
+            pendingRecording = row?.id?.let { pendingRecordings.get(recordingScope(it)) },
+            draftPreviews = composers.draftPreviews()) }
         onEvent(InboxEvent.Refresh)
     }
-    private fun execute(event: InboxEvent) {
+    private fun execute(event: InboxEvent, recordingPrepared: Boolean = false) {
         val composing = event == InboxEvent.Send || event is InboxEvent.Upload || event is InboxEvent.UploadRecorded
-        if (state.value.guest || !canStartPersonalOperation(composing, operation?.isActive == true, state.value.sending)) return
+        if (state.value.guest || !canStartPersonalOperation(composing, operation?.isActive == true, state.value.sending)) {
+            if (recordingPrepared && event is InboxEvent.UploadRecorded) {
+                pendingRecordings.markUncertain(event.scope, event.file)
+                mutable.update { current -> if (recordingScopeMatches(event.scope, current))
+                    current.copy(pendingRecording = pendingRecordings.get(event.scope)) else current }
+            }
+            return
+        }
         if (event == InboxEvent.Send && (!state.value.composer.canSend || state.value.active == null)) return
         val started = generation
         val snapshot = state.value
         if (composing) {
             updateComposer { it.copy(error = null) }
             mutable.update { it.copy(sending = true) }
-        } else mutable.update { it.copy(loading = true, error = null) }
+        } else mutable.update { it.copy(loading = true, error = null,
+            respondingId = if (event is InboxEvent.Respond) event.id else it.respondingId) }
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             var accepted = false
             try {
@@ -122,17 +195,17 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                         }
                         is InboxEvent.Save -> {
                             val bytes = api.download(token, event.message.attachmentId ?: error(container.app.getString(R.string.face_no_attachment)))
-                            container.app.contentResolver.openOutputStream(event.uri)?.use { it.write(bytes) } ?: error(container.app.getString(R.string.face_save_failed))
+                            container.app.contentResolver.openOutputStream(event.uri, "wt")?.use { it.write(bytes) } ?: error(container.app.getString(R.string.face_save_failed))
                         }
-                        is InboxEvent.UploadRecorded -> snapshot.active?.takeIf { it.id == event.conversationId }?.let { row ->
-                            try {
-                                val cap = if (event.kind == "voice") 4 * 1024 * 1024 else 24 * 1024 * 1024
-                                require(event.file.length() in 1..cap.toLong())
-                                val bytes = event.file.readBytes()
-                                val result = api.uploadRecording(token, row.id, event.kind, bytes, event.durationMs, snapshot.reply?.id)
-                                accepted = true
-                                acknowledge(row.id, result, snapshot.composer, attachment = true)
-                            } finally { event.file.delete() }
+                        is InboxEvent.UploadRecorded -> snapshot.active?.takeIf {
+                            it.id == event.scope.conversationId && recordingScopeMatches(event.scope)
+                        }?.let { row ->
+                            val cap = if (event.kind == "voice") 4 * 1024 * 1024 else 24 * 1024 * 1024
+                            require(event.file.isFile && event.file.length() in 1..cap.toLong())
+                            val bytes = event.file.readBytes()
+                            val result = api.uploadRecording(token, row.id, event.kind, bytes, event.durationMs, snapshot.reply?.id)
+                            accepted = true
+                            acknowledge(row.id, result, snapshot.composer, attachment = true)
                         }
                         InboxEvent.Invite -> {
                             api.invite(token, snapshot.inviteCode)
@@ -142,7 +215,14 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                                 }
                             }
                         }
-                        is InboxEvent.Respond -> api.respond(token, event.id, event.accept)
+                        is InboxEvent.Respond -> {
+                            api.respond(token, event.id, event.accept)
+                            withContext(Dispatchers.Main.immediate) {
+                                if (generation == started) mutable.update { current ->
+                                    current.copy(incoming = current.incoming.filterNot { it.id == event.id })
+                                }
+                            }
+                        }
                         InboxEvent.Send -> snapshot.active?.let { row ->
                             val result = snapshot.editing?.let { api.edit(token, row.id, it.id, snapshot.composer.sendText) } ?: api.send(token, row.id, snapshot.composer.sendText, snapshot.reply?.id)
                             accepted = true
@@ -198,8 +278,16 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                         }
                     }
                 }
-            } catch (cancel: CancellationException) { throw cancel }
+            } catch (cancel: CancellationException) {
+                if (event is InboxEvent.UploadRecorded) pendingRecordings.removeCancelled(event.scope, event.file)
+                throw cancel
+            }
             catch (e: Exception) {
+                if (event is InboxEvent.UploadRecorded && !accepted) {
+                    pendingRecordings.markUncertain(event.scope, event.file)
+                    mutable.update { current -> if (recordingScopeMatches(event.scope, current))
+                        current.copy(pendingRecording = pendingRecordings.get(event.scope)) else current }
+                }
                 val message = when {
                 e is SocialFailure && e.status == 401 -> container.app.getString(R.string.face_session_expired)
                 e is SocialFailure && e.status == 413 -> container.app.getString(R.string.face_attachment_too_large)
@@ -207,18 +295,31 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                 event is InboxEvent.UploadRecorded -> container.app.getString(R.string.face_record_failed)
                 else -> container.app.getString(R.string.face_chats_failed)
                 }
-                if (composing && !accepted && snapshot.active != null) {
+                if (event is InboxEvent.UploadRecorded) {
+                    // The retry card carries the explicit uncertain-outcome warning and actions.
+                } else if (composing && !accepted && snapshot.active != null) {
                     val id = snapshot.active.id
                     val current = composers.restore(id)
                     val next = current.copy(error = message)
                     composers.save(id, next)
-                    mutable.update { if (it.active?.id == id) it.copy(composer = next) else it }
+                    mutable.update { state ->
+                        val previews = composers.draftPreviews()
+                        if (state.active?.id == id) state.copy(composer = next, draftPreviews = previews)
+                        else state.copy(draftPreviews = previews)
+                    }
                 } else if (generation == started) mutable.update { it.copy(error = message) }
             }
             finally {
-                if (event is InboxEvent.UploadRecorded) event.file.delete()
+                if (event is InboxEvent.UploadRecorded && accepted) {
+                    pendingRecordings.removeAccepted(event.scope, event.file)
+                    event.file.delete()
+                    mutable.update { current -> if (current.pendingRecording?.let {
+                        it.scope == event.scope && it.file == event.file
+                    } == true) current.copy(pendingRecording = null) else current }
+                }
                 if (composing) mutable.update { it.copy(sending = false) }
-                else if (generation == started) mutable.update { it.copy(loading = false) }
+                else if (generation == started) mutable.update { it.copy(loading = false,
+                    respondingId = if (event is InboxEvent.Respond && it.respondingId == event.id) null else it.respondingId) }
             }
         }
         if (!composing) operation = job
@@ -230,9 +331,13 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
         val current = composers.restore(conversationId)
         val next = if (attachment) current.acknowledgeAttachment(sent) else current.acknowledge(sent)
         composers.save(conversationId, next)
-        mutable.update { if (it.active?.id == conversationId) it.copy(composer = next,
-            messages = mergePersonalHistory(it.messages, listOf(personalReceipt(it.messages.firstOrNull { row -> row.id == message.id },
-                message, editing = sent.editing != null)), true)) else it }
+        mutable.update { state ->
+            val previews = composers.draftPreviews()
+            if (state.active?.id == conversationId) state.copy(composer = next, draftPreviews = previews,
+                messages = mergePersonalHistory(state.messages, listOf(personalReceipt(state.messages.firstOrNull { row -> row.id == message.id },
+                    message, editing = sent.editing != null)), true))
+            else state.copy(draftPreviews = previews)
+        }
     }
     private suspend fun publishMessage(started: Int, conversationId: String, message: SocialMessage,
         reactionOnly: Boolean = false) = withContext(Dispatchers.Main.immediate) {
@@ -246,6 +351,9 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
     private fun loadMedia(message: SocialMessage) {
         val attachment = message.attachmentId ?: return
         if (message.deleted || message.kind !in setOf("image", "voice", "circle")) return
+        val requestedGeneration = generation
+        val requestedConversation = state.value.active?.id ?: return
+        if (!personalMediaRequestIsCurrent(state.value, requestedConversation, message)) return
         if (state.value.mediaFiles[attachment]?.isFile == true || mediaJobs[attachment]?.isActive == true) return
         val api = social ?: return
         mutable.update { it.copy(mediaLoading = it.mediaLoading + attachment, mediaErrors = it.mediaErrors - attachment) }
@@ -254,6 +362,7 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                 val token = container.accessToken() ?: throw SocialFailure(401)
                 val bytes = api.download(token, attachment)
                 ensureActive()
+                if (!isMediaRequestCurrent(requestedGeneration, requestedConversation, message)) return@launch
                 val cap = when (message.kind) { "voice" -> 4 * 1024 * 1024; "circle" -> 24 * 1024 * 1024; else -> 20 * 1024 * 1024 }
                 require(bytes.isNotEmpty() && bytes.size <= cap)
                 if (!mediaDirectory.isDirectory && !mediaDirectory.mkdirs()) error(container.app.getString(R.string.face_no_space))
@@ -267,9 +376,14 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                 try {
                     temporary.writeBytes(bytes)
                     ensureActive()
+                    if (!isMediaRequestCurrent(requestedGeneration, requestedConversation, message)) return@launch
                     if (!temporary.renameTo(destination)) error(container.app.getString(R.string.face_save_attachment_failed))
                 } finally { temporary.delete() }
                 withContext(Dispatchers.Main.immediate) {
+                    if (!isMediaRequestCurrent(requestedGeneration, requestedConversation, message)) {
+                        destination.delete()
+                        return@withContext
+                    }
                     mutable.update { current ->
                         val next = current.mediaFiles + (attachment to destination)
                         val ordered = next.entries.sortedByDescending { it.value.lastModified() }
@@ -283,16 +397,58 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                     }
                 }
             } catch (cancel: CancellationException) { throw cancel }
-            catch (_: Exception) { mutable.update { it.copy(mediaLoading = it.mediaLoading - attachment, mediaErrors = it.mediaErrors + attachment) } }
-            finally { coroutineContext[Job]?.let { mediaJobs.remove(attachment, it) } }
+            catch (_: Exception) {
+                if (isMediaRequestCurrent(requestedGeneration, requestedConversation, message))
+                    mutable.update { it.copy(mediaLoading = it.mediaLoading - attachment, mediaErrors = it.mediaErrors + attachment) }
+            }
+            finally {
+                if (isMediaRequestCurrent(requestedGeneration, requestedConversation, message))
+                    mutable.update { it.copy(mediaLoading = it.mediaLoading - attachment) }
+                coroutineContext[Job]?.let { mediaJobs.remove(attachment, it) }
+            }
         }
     }
     private fun cancelMediaLoads() {
         mediaJobs.values.forEach { it.cancel() }
         mediaJobs.clear()
     }
+    private fun isMediaRequestCurrent(requestedGeneration: Int, conversationId: String, message: SocialMessage): Boolean =
+        generation == requestedGeneration && state.value.active?.id == conversationId &&
+            personalMediaRequestIsCurrent(state.value, conversationId, message)
+
+    private fun copyCode() {
+        val current = mutable.value
+        if (current.guest || current.userId != container.profile.userId.orEmpty() || current.code.isBlank()) {
+            container.toasts.show(container.app.getString(R.string.ux30_copy_unavailable), ToastKind.Bad)
+            return
+        }
+        copyText(current.code, container.app.getString(R.string.ux30_copy_code_label))
+    }
+
+    private fun copyMessage(id: String) {
+        val current = mutable.value
+        if (current.guest || current.active == null) return
+        val content = copyablePersonalText(current.messages.firstOrNull { it.id == id })
+        if (content == null) {
+            container.toasts.show(container.app.getString(R.string.ux30_copy_unavailable), ToastKind.Bad)
+            return
+        }
+        copyText(content, container.app.getString(R.string.ux30_copy_message_label))
+    }
+
+    private fun copyText(content: String, label: String) {
+        try {
+            val clipboard = container.app.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText(label, content))
+            container.toasts.show(container.app.getString(R.string.ux30_copied), ToastKind.Ok)
+        } catch (e: Exception) {
+            android.util.Log.w("ZaparaInbox", "copy", e)
+            container.toasts.show(container.app.getString(R.string.ux30_copy_failed), ToastKind.Bad)
+        }
+    }
     override fun onCleared() {
         composers.clear()
+        pendingRecordings.clearAndDelete()
         cancelMediaLoads()
         mediaDirectory.deleteRecursively()
         super.onCleared()

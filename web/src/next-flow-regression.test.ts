@@ -1,0 +1,18 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { moveQuestion, changeQuestionKind, questionWire, questionFilled } from "./form-draft.ts";
+import { mergeBallotAck } from "./ballot-ack.ts";
+import { quoteTarget } from "./quote-navigation.ts";
+import { accountDraft, rememberAccountDraft, legalReturn } from "./account-form-draft.ts";
+import { supportFiles } from "./support.ts";
+import type { FormQuestion, BallotBoard, Ballot } from "./types";
+const question:FormQuestion={questionId:"a",title:"Вопрос",kind:"singleChoice",required:true,options:["Один","Два"]};
+test("reorder preserves identity, required flag, values and stable boundary",()=>{const b={...question,questionId:"b"};const original=[question,b];const moved=moveQuestion(original,"b",-1);assert.equal(moved[0],b);assert.equal(moved[1],question);assert.equal(moveQuestion(original,"a",-1),original);assert.equal(moveQuestion(original,"absent",1),original);});
+test("question type retains choice draft but text submission excludes options",()=>{const text=changeQuestionKind(question,"longText");assert.deepEqual(text.options,["Один","Два"]);assert.deepEqual(questionWire(text).options,[]);assert.deepEqual(questionWire(changeQuestionKind(text,"multipleChoice")).options,["Один","Два"]);assert.equal(questionFilled({...question,title:"",options:["",""]}),false);assert.equal(questionFilled({...question,title:""}),true);});
+const ballot=(id:string,topicId="topic",votes=0)=>({ballotId:id,topicId,question:id,options:[{optionId:"x",label:"x",votes,chosen:!!votes}]} as Ballot);
+const board=(...ballots:Ballot[])=>({headman:true,canOpen:true,canClose:true,members:3,supportersNeeded:2,ballots} as BallotBoard);
+test("ACK updates exact ballot and never rolls a different newer vote back",()=>{const current=board(ballot("a","topic",2),ballot("b","topic",3));const result=mergeBallotAck(current,board(ballot("a","topic",4),ballot("b","topic",0),ballot("foreign","other")),"topic","a");assert.equal(result.ballots[0].options[0].votes,4);assert.equal(result.ballots[1].options[0].votes,3);assert.equal(result.ballots.length,2);});
+test("creation ACK immediately exposes only new ballots from selected topic",()=>{const result=mergeBallotAck(board(ballot("old")),board(ballot("old"),ballot("created"),ballot("foreign","other")),"topic");assert.deepEqual(result.ballots.map(row=>row.ballotId),["created","old"]);});
+test("quote navigation distinguishes loaded deleted and not loaded",()=>{const rows=[{messageId:"a"},{messageId:"b",deleted:true}];assert.equal(quoteTarget(rows,"a"),"loaded");assert.equal(quoteTarget(rows,"b"),"deleted");assert.equal(quoteTarget(rows,"c"),"unloaded");});
+test("account legal round trip keeps only allowed non-secret fields for exact owner",()=>{rememberAccountDraft("a",{username:"user",display:"Имя",mode:"register",accepted:true,password:"secret"} as any);assert.equal("password" in accountDraft("a"),false);assert.equal(accountDraft("b").username,"");assert.equal(legalReturn({owner:"a",returnTo:"/settings?section=account"},"a"),"/settings?section=account");assert.equal(legalReturn({owner:"a",returnTo:"/settings?section=account"},"b"),"/settings");assert.equal(legalReturn({owner:"a",returnTo:"https://external.test"},"a"),"/settings");});
+test("oversized attachment batch is rejected, never silently sliced",()=>{const files=Array.from({length:4},()=>({size:1,type:"image/png",name:"a.png"} as File));assert.ok(supportFiles(files,[]).error);assert.equal(files.length,4);assert.equal(supportFiles(files.slice(0,3),[]).error,undefined);});

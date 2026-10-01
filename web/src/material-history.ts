@@ -4,6 +4,8 @@ export type MaterialHistory = {
     messages: ChatMessage[] | null;
     hasOlder: boolean;
     loadingOlder: boolean;
+    loading?: boolean;
+    error?: boolean;
 };
 export function createMaterialHistory(load: (cursor?: GroupMessageCursor) => Promise<{
     messages: ChatMessage[];
@@ -19,8 +21,8 @@ export function createMaterialHistory(load: (cursor?: GroupMessageCursor) => Pro
         epoch++;
         poller.changed();
         put({ messages: [], hasOlder: false, loadingOlder: false });
-    } onError(error); };
-    const poller = createGroupPoller(after => load(after ? { after } : undefined), () => state.messages ?? [], (updates, first) => put({ ...state, messages: mergeGroupMessages(state.messages ?? [], updates.messages), hasOlder: first || !state.messages?.length ? updates.hasOlder : state.hasOlder }), fail);
+    } put({...state,loading:false,error:true}); onError(error); };
+    const poller = createGroupPoller(after => load(after ? { after } : undefined), () => state.messages ?? [], (updates, first) => put({ ...state, loading:false,error:false,messages: mergeGroupMessages(state.messages ?? [], updates.messages), hasOlder: first || !state.messages?.length ? updates.hasOlder : state.hasOlder }), fail);
     async function earlier() {
         if (disposed || !state.hasOlder || !state.messages?.length)
             return;
@@ -37,6 +39,6 @@ export function createMaterialHistory(load: (cursor?: GroupMessageCursor) => Pro
         older = task;
         return task;
     }
-    return { poll: () => poller.poll(), earlier, append(message: ChatMessage) { if (disposed)
+    return { poll: async () => { if(disposed)return; put({...state,loading:true}); await poller.poll(); if(!disposed)put({...state,loading:false}); }, earlier, append(message: ChatMessage) { if (disposed)
             return; poller.changed(); put({ ...state, messages: mergeGroupMessages(state.messages ?? [], [message]) }); }, dispose() { disposed = true; epoch++; poller.dispose(); } };
 }

@@ -57,10 +57,30 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     [ObservableProperty] private bool ready;
     [ObservableProperty] private bool confirmLogout;
     [ObservableProperty] private bool confirmDelete;
+    [ObservableProperty] private DeviceResponse? pendingRevokeDevice;
+    [ObservableProperty] private bool confirmRevokeAll;
+    public bool HasPendingRevokeDevice => PendingRevokeDevice is not null;
+    public string RevokeDeviceCaption => PendingRevokeDevice is { } device
+        ? device.IsCurrent ? $"Завершить текущее устройство «{device.DeviceName}»? Здесь потребуется войти снова."
+            : $"Завершить сеанс устройства «{device.DeviceName}»? На нём потребуется войти снова."
+        : "";
+    partial void OnPendingRevokeDeviceChanged(DeviceResponse? value)
+    { OnPropertyChanged(nameof(HasPendingRevokeDevice)); OnPropertyChanged(nameof(RevokeDeviceCaption)); }
     [ObservableProperty] private bool hasMore;
     [ObservableProperty] private bool vkAvailable;
     [ObservableProperty] private bool yandexAvailable;
     [ObservableProperty] private bool recoveryAvailable;
+    [ObservableProperty] private bool capabilitiesFailed;
+    [ObservableProperty] private bool resetRequested;
+    [ObservableProperty] private string resetToken = "";
+    [ObservableProperty] private string resetNewPassword = "";
+    public bool CanRequestReset => ShowRecovery && !Busy && Username.Trim().Length >= 3;
+    public bool CanConfirmReset => ShowRecovery && ResetRequested && !Busy && ResetToken.Trim().Length >= 8
+        && ResetNewPassword.Length is >= 12 and <= 128;
+    partial void OnResetRequestedChanged(bool value) => OnPropertyChanged(nameof(CanConfirmReset));
+    partial void OnResetTokenChanged(string value) => OnPropertyChanged(nameof(CanConfirmReset));
+    partial void OnResetNewPasswordChanged(string value) => OnPropertyChanged(nameof(CanConfirmReset));
+    partial void OnUsernameChanged(string value) => OnPropertyChanged(nameof(CanRequestReset));
     [ObservableProperty] private string proof = "";
     [ObservableProperty] private ExportJobResponse? exportJob;
     [ObservableProperty] private byte[]? exportPayload;
@@ -116,11 +136,11 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     public bool ShowProviderProof => IsAccount && !HasPassword && Identities.Count > 0;
     public bool CanUnlinkIdentity => HasPassword || Identities.Count > 1;
     public bool CanDownloadExport => ExportJob?.Status == "ready";
-    partial void OnBusyChanged(bool value) => OnPropertyChanged(nameof(CanAct));
+    partial void OnBusyChanged(bool value) { OnPropertyChanged(nameof(CanAct)); OnPropertyChanged(nameof(CanRequestReset)); OnPropertyChanged(nameof(CanConfirmReset)); }
     partial void OnReadyChanged(bool value) => OnPropertyChanged(nameof(CanAct));
     partial void OnVkAvailableChanged(bool value) => NotifyExternal();
     partial void OnYandexAvailableChanged(bool value) => NotifyExternal();
-    partial void OnRecoveryAvailableChanged(bool value) => OnPropertyChanged(nameof(ShowRecovery));
+    partial void OnRecoveryAvailableChanged(bool value) { OnPropertyChanged(nameof(ShowRecovery)); OnPropertyChanged(nameof(CanRequestReset)); OnPropertyChanged(nameof(CanConfirmReset)); }
     partial void OnExportJobChanged(ExportJobResponse? value) => OnPropertyChanged(nameof(CanDownloadExport));
     private void OnIdentitiesChanged(object? sender, NotifyCollectionChangedEventArgs e) => NotifyExternal();
     partial void OnHasPasswordChanged(bool value)
@@ -149,14 +169,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
             if (expected is not null) await RefreshAuthenticationAsync();
         });
         Ready = true;
-        await RunAsync(async () =>
-        {
-            var caps = await service!.CapabilitiesAsync(lifetime.Token);
-            RegistrationAvailable = caps.Registration;
-            VkAvailable = caps.Vk;
-            YandexAvailable = caps.Yandex;
-            RecoveryAvailable = caps.Recovery;
-        });
+        await RefreshCapabilities();
     }
 
     private void Apply(ProfileSnapshot value)
@@ -168,6 +181,8 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
             Avatar = null;
             Devices.Clear(); Identities.Clear(); cursor = null; HasMore = false; AccountName = ""; DisplayName = "";
             ClearSecrets(); ConfirmLogout = false; ConfirmDelete = false;
+            PendingRevokeDevice = null; ConfirmRevokeAll = false;
+            ResetRequested = false; ResetToken = ""; ResetNewPassword = "";
             HasPassword = false;
             ExportJob = null; ExportPayload = null; ExportPath = null; ExportFileName = null; AuthorizeUrl = null;
         }
@@ -186,7 +201,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     private void NotifyExternal()
     {
         foreach (var name in new[] { nameof(ShowRecovery), nameof(ShowVkLogin), nameof(ShowYandexLogin), nameof(ShowExternalLogin),
-            nameof(ShowVkLink), nameof(ShowYandexLink), nameof(ShowProviderProof), nameof(CanUnlinkIdentity) })
+            nameof(ShowVkLink), nameof(ShowYandexLink), nameof(ShowProviderProof), nameof(CanUnlinkIdentity), nameof(CanRequestReset), nameof(CanConfirmReset) })
             OnPropertyChanged(name);
     }
 

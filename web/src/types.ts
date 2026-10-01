@@ -34,7 +34,7 @@ export type GroupPower = { roleId: string; power: string };
 export type GroupDesk = { headman: boolean; roles: GroupRole[]; grants: GroupGrant[]; applicants: GroupApplicant[]; powers: GroupPower[]; mine: string[]; capabilities?: GroupCapabilities };
 export type BallotOption = { optionId: string; label: string; votes: number; chosen: boolean };
 export type Ballot = {
-  ballotId: string; question: string; origin: string; status: string; deadlineAt: string;
+  ballotId: string; topicId?: string | null; question: string; origin: string; status: string; deadlineAt: string;
   supporters: number; supportersNeeded: number; supported: boolean; options: BallotOption[];
   effect: string; outcome: string;
 };

@@ -25,7 +25,8 @@ public sealed partial class GroupViewModel
         Messages.Clear();Ballots.Clear();ShowBallots=false;BallotLoaded=false;BallotLoading=false;BallotLoadFailed=false;
         Forms.Clear();ChannelHomeworks.Clear();ChannelSchedule.Clear();SubjectHomeworks.Clear();SubjectLesson="";
         ArchivedChannels.Clear();AuditEvents.Clear();Categories.Clear();Channels.Clear();People.Clear();Directs.Clear();Communities.Clear();RefreshCommunityBrowse();
-        channelDrafts.Clear();discussionDrafts.Clear();ballotDrafts.Clear();activeBallotDraftKey=null;
+        channelDrafts.Clear();discussionDrafts.Clear();ballotDrafts.Clear();ballotDraftRevisions.Clear();activeBallotDraftKey=null;
+        roleEditDrafts.Clear();
         BallotQuestion="";BallotOptionA="";BallotOptionB="";BallotOptionC="";BallotOptionD="";BallotOptionE="";BallotOptionF="";BallotDays="3";
         SelectedCategory=null;CategoryTitle="";ChannelTitle="";ChannelDescription="";ChannelSubject="";TrustedRoleName="";
         formDrafts.Clear();formDraftQuestions.Clear();creationDrafts.Clear();activeCreationCommunity=null;CreationRoles.Clear();
@@ -70,6 +71,11 @@ public sealed partial class GroupViewModel
     [ObservableProperty] private string categoryTitle = "";
     [ObservableProperty] private int categoryPosition;
     [ObservableProperty] private GroupCategoryResponse? selectedCategory;
+    private (Guid Community, Guid Category)? pendingDeleteCategory;
+    public bool HasPendingDeleteCategory => pendingDeleteCategory is not null;
+    public string DeleteCategoryImpact => pendingDeleteCategory is { } pending
+        ? $"Удалить категорию «{Categories.FirstOrDefault(item=>item.CategoryId==pending.Category)?.Title}»? В текущем списке тем: {Channels.Count(item=>item.CategoryId==pending.Category)}. Темы останутся в сообществе без категории."
+        : "";
     [ObservableProperty] private int channelPosition;
     [ObservableProperty] private int renamePosition;
     [ObservableProperty] private string channelSubject = "";
@@ -104,6 +110,33 @@ public sealed partial class GroupViewModel
         }
     }
     public bool ShowMaterials => !IsDirect && SelectedChannel is { Kind: "materials", Supported: true };
+    [ObservableProperty] private bool materialsLoading;
+    [ObservableProperty] private bool materialsLoaded;
+    [ObservableProperty] private bool materialsLoadFailed;
+    public bool NoMaterials => ShowMaterials && MaterialsLoaded && !MaterialsLoading && !MaterialsLoadFailed && !HasMore && Messages.Count == 0;
+    public string MaterialsErrorText => Messages.Count > 0
+        ? "Материалы не обновились. Показана сохранённая страница."
+        : "Материалы не загрузились. Повторите попытку.";
+    partial void OnMaterialsLoadingChanged(bool value) => OnPropertyChanged(nameof(NoMaterials));
+    partial void OnMaterialsLoadedChanged(bool value) => OnPropertyChanged(nameof(NoMaterials));
+    partial void OnMaterialsLoadFailedChanged(bool value) => OnPropertyChanged(nameof(NoMaterials));
+    [RelayCommand] private Task RetryMaterials() => ShowMaterials && conversationId is Guid id
+        ? LoadMaterialsAsync(id, navigationGeneration) : Task.CompletedTask;
+    private async Task LoadMaterialsAsync(Guid conversation, int ticket)
+    {
+        if(!CurrentChat(conversation,ticket) || MaterialsLoading)return;
+        MaterialsLoading=true;MaterialsLoadFailed=false;
+        try
+        {
+            await LoadLatestAsync(conversation,ticket);
+            if(CurrentChat(conversation,ticket))MaterialsLoaded=true;
+        }
+        catch(CommunityClientException ex) when(!ReadDenied(ex))
+        { if(CurrentChat(conversation,ticket))MaterialsLoadFailed=true; }
+        catch(AccountClientException)
+        { if(CurrentChat(conversation,ticket))MaterialsLoadFailed=true; }
+        finally { if(CurrentChat(conversation,ticket))MaterialsLoading=false; }
+    }
     public bool ShowSubject => !IsDirect && SelectedChannel is { Template: "subject", Supported: true };
     public bool ShowForms => !IsDirect && SelectedChannel is { Kind: "forms", Supported: true };
     public bool ShowChannelHomework => ShowSingleHomework || !IsDirect && SelectedChannel is { Kind: "homework", Supported: true };
@@ -115,7 +148,7 @@ public sealed partial class GroupViewModel
     public string SpecializedHint => ShowUnsupported ? "Этот тип темы не поддерживается. Обновите приложение, чтобы открыть её." : PreviewMode ? "Просмотр от лица участника: изменения отключены." : "";
     partial void OnPreviewModeChanged(bool value) { NotifySpace(); SendCommand.NotifyCanExecuteChanged(); }
     partial void OnSelectedCategoryChanged(GroupCategoryResponse? value)
-    { CategoryTitle = value?.Title ?? ""; CategoryPosition = value?.Position ?? 0; }
+    { CancelDeleteCategory(); CategoryTitle = value?.Title ?? ""; CategoryPosition = value?.Position ?? 0; }
     private void NotifySpace()
     {
         foreach (var name in new[] { nameof(CanPinSelected), nameof(PinCaption), nameof(CanSaveRoleSettings), nameof(CanSaveProposedAccess), nameof(CanCreateTopic), nameof(CanCreateRole), nameof(CanEditSelectedRole), nameof(CapabilitySummary), nameof(CanRestoreTopic), nameof(CanSetInitialAccess), nameof(InitialAccessHint), nameof(CanManageGroupAudit), nameof(CanManageGroupAccess), nameof(CanOpenChannelManagement), nameof(ShowNewChannelManagement), nameof(CanManageAccess), nameof(CanManageRoles), nameof(CanManageGrants), nameof(ShowMaterials), nameof(ShowSubject), nameof(ShowForms), nameof(ShowChannelHomework), nameof(ShowChannelSchedule), nameof(ShowUnsupported), nameof(ShowSpecialized), nameof(CanCreateForm), nameof(CanCreateChannelHomework), nameof(SpecializedHint), nameof(ShowComposer), nameof(ShowMessages), nameof(CanAttachMedia), nameof(CanManageSelectedChannel) }) OnPropertyChanged(name);
@@ -160,7 +193,25 @@ public sealed partial class GroupViewModel
         var request=new GroupCategoryRequest(SelectedCategory?.CategoryId,CategoryTitle.Trim(),CategoryPosition,SelectedCategory?.Revision??0);
         return SpaceAction(async(api,t,c,ct)=>ApplySpace(await api.SaveCategoryAsync(t,c,request,ct)),true);
     }
-    [RelayCommand] private Task DeleteCategory() => !CanManageChannels || SelectedCategory is not { } category ? Task.CompletedTask : SpaceAction(async (api,t,c,ct) => ApplySpace(await api.DeleteCategoryAsync(t,c,category.CategoryId,ct)),true);
+    [RelayCommand] private void DeleteCategory()
+    {
+        if(!CanManageChannels || SelectedCategory is not { } category || communityId is not Guid community)return;
+        pendingDeleteCategory=(community,category.CategoryId);
+        OnPropertyChanged(nameof(HasPendingDeleteCategory));OnPropertyChanged(nameof(DeleteCategoryImpact));
+    }
+    [RelayCommand] private void CancelDeleteCategory()
+    { pendingDeleteCategory=null;OnPropertyChanged(nameof(HasPendingDeleteCategory));OnPropertyChanged(nameof(DeleteCategoryImpact)); }
+    [RelayCommand] private Task ConfirmDeleteCategory()
+    {
+        var pending=pendingDeleteCategory;CancelDeleteCategory();
+        if(pending is not { } chosen || communityId!=chosen.Community || SelectedCategory?.CategoryId!=chosen.Category || !CanManageChannels)return Task.CompletedTask;
+        return SpaceAction(async(api,t,c,ct)=>
+        {
+            var result=await api.DeleteCategoryAsync(t,c,chosen.Category,ct);
+            if(CurrentSpace() && communityId==chosen.Community)
+            { if(SelectedCategory?.CategoryId==chosen.Category)SelectedCategory=null;ApplySpace(result); }
+        },true,resultCurrent:()=>communityId==chosen.Community);
+    }
     [RelayCommand] private Task ArchiveChannel()
     {
         if(!CanManageSelectedChannel || SelectedChannel is not {} row || row.TopicId is not Guid id)return Task.CompletedTask;
@@ -267,8 +318,18 @@ public sealed partial class GroupViewModel
     private static readonly string[] KnownPowers = ["read","post","media","vote","formsRespond","ballots","forms","close","pin","moderate","homework","mentionAll","joins","exclude","channels","access","roles","grants"];
     internal static string PowerLabel(string power) => power switch { "read"=>"Читать", "post"=>"Писать", "media"=>"Вложения", "vote"=>"Голосовать", "formsRespond"=>"Заполнять анкеты", "ballots"=>"Создавать опросы", "forms"=>"Создавать анкеты", "close"=>"Завершать опросы", "pin"=>"Закреплять", "moderate"=>"Удалять сообщения", "homework"=>"Общая домашка", "mentionAll"=>"Упоминать всех", "joins"=>"Принимать участников", "exclude"=>"Исключать участников", "channels"=>"Управлять темами", "access"=>"Настраивать доступ", "roles"=>"Управлять ролями", "grants"=>"Назначать роли", _=>"Неизвестное право" };
     private GroupRoleResponse? roleEditBaseline;
+    private Guid? roleEditBaselineCommunity;
+    private sealed record RoleEditDraft(string Name, string Icon, int Position, long Revision);
+    private readonly Dictionary<(Guid Community,Guid Role),RoleEditDraft> roleEditDrafts=[];
+    private void StashRoleEditorDraft()
+    {
+        if(roleEditBaselineCommunity is not Guid community || roleEditBaseline is not { } baseline)return;
+        var key=(community,baseline.RoleId);
+        if(RoleEditorDirty)roleEditDrafts[key]=new(RoleEditName,RoleEditIcon,RoleEditPosition,baseline.Revision);
+        else roleEditDrafts.Remove(key);
+    }
     [ObservableProperty] private bool roleEditConflict;
-    public bool CanSaveRoleSettings=>CanEditSelectedRole && !RoleEditConflict && !string.IsNullOrWhiteSpace(RoleEditName)
+    public bool CanSaveRoleSettings=>CanEditSelectedRole && !RoleEditConflict && RoleEditPosition is >= 0 and <= 10000 && !string.IsNullOrWhiteSpace(RoleEditName)
         && roleEditBaseline?.RoleId==SelectedTrustedRole?.RoleId && RoleSettingsHint.Length==0;
     partial void OnRoleEditConflictChanged(bool value)=>OnPropertyChanged(nameof(CanSaveRoleSettings));
     private bool RoleEditorDirty=>roleEditBaseline is {} baseline &&
@@ -276,14 +337,16 @@ public sealed partial class GroupViewModel
     private void LoadRoleEditor()
     {
         var role=desk?.Roles.FirstOrDefault(x=>x.RoleId==SelectedTrustedRole?.RoleId);
-        if(role is not null && roleEditBaseline?.RoleId==role.RoleId && RoleEditorDirty)
+        if(role is not null && roleEditBaseline?.RoleId==role.RoleId && roleEditBaselineCommunity==communityId && RoleEditorDirty)
         {
             RoleEditConflict=roleEditBaseline.Revision!=role.Revision;
             RefreshRolePowerRows(role);
             OnPropertyChanged(nameof(CanSaveRoleSettings));return;
         }
-        roleEditBaseline=role;RoleEditConflict=false;
-        RoleEditName=role?.Name ?? "";RoleEditIcon=role?.Icon ?? "user";RoleEditPosition=role?.Position ?? 0;
+        roleEditBaseline=role;roleEditBaselineCommunity=communityId;RoleEditConflict=false;
+        if(role is not null && communityId is Guid community && roleEditDrafts.TryGetValue((community,role.RoleId),out var draft))
+        {RoleEditName=draft.Name;RoleEditIcon=draft.Icon;RoleEditPosition=draft.Position;RoleEditConflict=draft.Revision!=role.Revision;}
+        else {RoleEditName=role?.Name ?? "";RoleEditIcon=role?.Icon ?? "user";RoleEditPosition=role?.Position ?? 0;}
         ConfirmRemoveRole=false;RoleImpact="";RefreshRolePowerRows(role);OnPropertyChanged(nameof(CanSaveRoleSettings));
     }
     private void RefreshRolePowerRows(GroupRoleResponse? role)
@@ -297,7 +360,7 @@ public sealed partial class GroupViewModel
             RolePowers.Add(new(power,enabled,reason.Length==0,reason));
         }
     }
-    [RelayCommand] private void ReloadRoleSettings(){if(IsBusy)return;roleEditBaseline=null;LoadRoleEditor();}
+    [RelayCommand] private void ReloadRoleSettings(){if(IsBusy)return;if(communityId is Guid community && SelectedTrustedRole is { } selected)roleEditDrafts.Remove((community,selected.RoleId));roleEditBaseline=null;LoadRoleEditor();}
     [RelayCommand] private Task SaveRoleSettings()
     {
         if(!CanSaveRoleSettings || roleEditBaseline is not {} baseline)return Task.CompletedTask;
@@ -307,6 +370,14 @@ public sealed partial class GroupViewModel
             if(PreviewMode || SelectedTrustedRole?.RoleId!=baseline.RoleId || GroupRoleManagement.RoleReason(desk,me,baseline.RoleId,"roles",newPosition:request.Position).Length>0)return;
             var result=await api.SaveRoleSettingsAsync(t,c,baseline.RoleId,request,ct);
             if(!CurrentSpace())return;
+            if(communityId is Guid community)
+            {
+                var key=(community,baseline.RoleId);
+                if(roleEditDrafts.TryGetValue(key,out var stored) && stored.Name==request.Name && stored.Icon==request.Icon && stored.Position==request.Position && stored.Revision==baseline.Revision)
+                    roleEditDrafts.Remove(key);
+                else if(SelectedTrustedRole?.RoleId==baseline.RoleId && RoleEditName==request.Name && RoleEditIcon==request.Icon && RoleEditPosition==request.Position)
+                    roleEditDrafts.Remove(key);
+            }
             if(SelectedTrustedRole?.RoleId==baseline.RoleId)roleEditBaseline=result.Roles.FirstOrDefault(x=>x.RoleId==baseline.RoleId);
             ApplyDesk(result);LoadRoleEditor();
         },true);

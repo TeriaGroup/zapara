@@ -44,6 +44,28 @@ class MapsComposerTest {
         assertEquals((1..4).toList(), MapsComposer.floors("ГК"))
         assertEquals((1..5).toList(), MapsComposer.floors("УЛК"))
     }
+    @Test fun route_picker_switch_to_gk_clears_incompatible_ulk_fifth_floor_without_changing_endpoint() {
+        val picker = RoutePickerUi(RouteField.To, "", emptyList(), "УЛК", 5,
+            listOf("ГК", "УЛК"), MapsComposer.floors("УЛК"))
+        val changed = picker.withBuilding("ГК")
+        assertEquals(RouteField.To, changed.field)
+        assertEquals("ГК", changed.building)
+        assertNull(changed.floor)
+        assertEquals((1..4).toList(), changed.floors)
+        val cleared = changed.clearFilters()
+        assertNull(cleared.building)
+        assertNull(cleared.floor)
+        assertEquals("", cleared.query)
+    }
+    @Test fun old_from_row_cannot_be_interpreted_as_new_to_picker_even_with_same_place_id() {
+        val item = RoutePlaceUi("room-101", "101", "ГК", "room", "ГК", 1, "101")
+        val from = RoutePickerUi(RouteField.From, "101", listOf(item), epoch = 7)
+        val to = RoutePickerUi(RouteField.To, "101", listOf(item), epoch = 8)
+        val oldTap = MapsEvent.PickPlace(item.id, from.field, from.epoch)
+        assertTrue(from.accepts(oldTap))
+        assertFalse(to.accepts(oldTap))
+        assertTrue(to.accepts(MapsEvent.PickPlace(item.id, to.field, to.epoch)))
+    }
 
     @Test fun highlight_follows_dest_when_the_shown_floor_changes() {
         val dest = ru.bgtu_voenmeh.zapara.data.campus.Node("gk.493", "room", "ГК", 4, 0.0, 0.0, room = "493")

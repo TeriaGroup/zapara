@@ -133,11 +133,14 @@ public class HomeworkTests : UiTest
         await edit;
         Assert.Equal("глава 2", vm.Groups[1].Items.Single().Text);
 
-        // done → collapsed «Сдано» group with a count
+        // Done filter shows the completed task immediately; All keeps this group collapsed.
         await vm.ToggleDoneAsync(vm.Groups[1].Items.Single());
+        vm.StatusFilter = 1;
         var done = vm.Groups.Single(g => g.IsDone);
-        Assert.True(done.IsCollapsed);
+        Assert.False(done.IsCollapsed);
         Assert.Equal(1, done.Count);
+        done.ToggleCommand.Execute(null);
+        Assert.True(done.IsCollapsed);
         done.ToggleCommand.Execute(null);
         Assert.False(done.IsCollapsed);
 
@@ -146,6 +149,7 @@ public class HomeworkTests : UiTest
         var confirm = await Waits.ForDialogAsync<ConfirmDialogViewModel>(shell);
         confirm.ConfirmCommand.Execute(null);
         await del;
+        vm.StatusFilter = 2;
         Assert.Single(vm.Groups);
         Assert.Equal(4, changed);
 
@@ -168,11 +172,12 @@ public class HomeworkTests : UiTest
         await Task.Delay(150, TestContext.Current.CancellationToken); // a second, event-driven reload would land here
 
         Assert.Equal(1, resets); // ChangedAsync reloads; its own HomeworkChanged echo must not reload again
+        vm.StatusFilter = 1;
         Assert.True(vm.Groups.Single().IsDone);
     }
 
     [Fact]
-    public async Task Add_Without_Lessons_Toasts_Instead_Of_Doing_Nothing()
+    public async Task Add_Without_Lessons_Uses_Explicit_Manual_Subject_And_Unknown_Due_Date()
     {
         using var db = TestDb.Create();
         var s = db.Services.Db.GetSettings();
@@ -183,10 +188,20 @@ public class HomeworkTests : UiTest
         await vm.LoadAsync();
         Assert.True(vm.HasGroup);
 
-        await vm.AddCommand.ExecuteAsync(null);
-
-        Assert.Null(shell.Dialogs.Current);
-        Assert.Contains(db.Services.Toasts.Items, t => t.Text == "У группы нет пар — добавить домашку не к чему");
+        var adding = vm.AddCommand.ExecuteAsync(null);
+        var picker = await Waits.ForDialogAsync<SubjectPickerDialogViewModel>(shell);
+        Assert.True(picker.ManualEntry);
+        Assert.False(picker.ConfirmCommand.CanExecute(null));
+        picker.ManualSubject = "  Физика  ";
+        picker.ConfirmCommand.Execute(null);
+        var editor = await Waits.ForDialogAsync<HomeworkDialogViewModel>(shell);
+        Assert.Contains("нет занятий", editor.DueText);
+        editor.Text = "Решить задачи";
+        editor.ConfirmCommand.Execute(null);
+        await adding;
+        var saved = Assert.Single(db.Services.Homework.GetAll().Where(item => item.Text == "Решить задачи"));
+        Assert.Equal("Решить задачи", saved.Text);
+        Assert.Null(saved.DueDateComputed);
     }
 
     [Fact]
@@ -206,6 +221,98 @@ public class HomeworkTests : UiTest
         Assert.True(vm.IsLoaded);
         Assert.False(vm.HasGroup);
         Assert.True(vm.ShowNoGroup);
+    }
+
+    [Fact]
+    public async Task Browse_filters_search_both_subject_and_text_and_recover_from_empty_results()
+    {
+        using var db = TestDb.Create();
+        var doneId = db.Services.Homework.AddHomework("лек ИСТОРИЯ", "Глава о реформах", 1, Sun6);
+        db.Services.Homework.MarkDone(doneId, true);
+        var vm = new HomeworkViewModel(db.Services, new ShellViewModel(db.Services), () => Sun6);
+        await vm.LoadAsync();
+
+        Assert.Equal("Показано: 1 из 2", vm.BrowseSummary);
+        vm.SearchQuery = "  МАТЕМАТ   задачи ";
+        Assert.Equal("Показано: 1 из 2", vm.BrowseSummary);
+        Assert.Equal("§5, задачи 1–12", Assert.Single(vm.Groups.Single().Items).Text);
+        vm.SearchQuery = "реформа";
+        Assert.True(vm.ShowBrowseEmpty);
+        Assert.Equal("По выбранным фильтрам заданий нет", vm.BrowseEmptyTitle);
+        vm.StatusFilter = 1;
+        Assert.Equal("Глава о реформах", Assert.Single(vm.Groups.Single().Items).Text);
+        Assert.False(vm.Groups.Single().IsCollapsed);
+        vm.ClearBrowseFiltersCommand.Execute(null);
+        Assert.Equal("", vm.SearchQuery);
+        Assert.Equal(2, vm.StatusFilter);
+        Assert.Equal("Показано: 2 из 2", vm.BrowseSummary);
+    }
+
+    [Fact]
+    public async Task Done_only_homework_is_a_filtered_empty_state_until_reset_shows_it()
+    {
+        using var db = TestDb.Create();
+        var only = Assert.Single(db.Services.Homework.GetAll());
+        db.Services.Homework.MarkDone(only.Id, true);
+        var vm = new HomeworkViewModel(db.Services, new ShellViewModel(db.Services), () => Sun6);
+        await vm.LoadAsync();
+
+        Assert.True(vm.ShowBrowseEmpty);
+        Assert.Equal("По выбранным фильтрам заданий нет", vm.BrowseEmptyTitle);
+        Assert.Equal("Показано: 0 из 1", vm.BrowseSummary);
+        vm.ClearBrowseFiltersCommand.Execute(null);
+        Assert.Equal(2, vm.StatusFilter);
+        Assert.Equal("Показано: 1 из 1", vm.BrowseSummary);
+        Assert.False(vm.ShowBrowseEmpty);
+    }
+
+    [Fact]
+    public void Completion_undo_rejects_expiry_owner_change_and_changed_or_deleted_task()
+    {
+        var before = Hw("2026-10-01");
+        before.Id = 7;
+        before.Text = "Задачи";
+        var after = Hw("2026-10-01", "done");
+        after.Id = 7;
+        after.Text = "Задачи";
+        after.DoneAt = Sun6;
+        var now = new DateTimeOffset(Sun6);
+        var ticket = HomeworkCompletionUndo.Create(before, after, "profile/group", now);
+
+        Assert.True(ticket.Allows(after, "profile/group", now.AddSeconds(4)));
+        Assert.False(ticket.Allows(after, "profile/group", now.AddSeconds(5)));
+        Assert.False(ticket.Allows(after, "other/group", now));
+        Assert.False(ticket.Allows(null, "profile/group", now));
+        after.Text = "Исправленные задачи";
+        Assert.False(ticket.Allows(after, "profile/group", now));
+    }
+
+    [Fact]
+    public async Task Completion_undo_restores_only_the_unchanged_task_and_group_change_resets_browse()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services) { Clock = () => Sun6 };
+        var vm = new HomeworkViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+        var row = Assert.Single(vm.Groups.Single().Items);
+
+        await vm.ToggleDoneAsync(row);
+        Assert.True(vm.HasCompletionUndo);
+        Assert.Empty(vm.Groups);
+        await vm.UndoCompletionCommand.ExecuteAsync(null);
+        Assert.False(vm.HasCompletionUndo);
+        Assert.False(Assert.Single(db.Services.Homework.GetAll()).Status == "done");
+
+        vm.SearchQuery = "задачи";
+        vm.SubjectFilter = TestDb.MathSubject;
+        vm.StatusFilter = 2;
+        var settings = db.Services.Db.GetSettings();
+        settings.MyGroupId = "3314";
+        db.Services.Db.SaveSettings(settings);
+        await vm.LoadAsync();
+        Assert.Equal("", vm.SearchQuery);
+        Assert.Equal("", vm.SubjectFilter);
+        Assert.Equal(0, vm.StatusFilter);
     }
 
     [AvaloniaFact]
@@ -244,6 +351,7 @@ public class HomeworkTests : UiTest
         shell.NavigateTo(SectionKey.Homework);
         var vm = Assert.IsType<HomeworkViewModel>(shell.Current);
         await Waits.Until(() => vm.Groups.Count > 0, "homework groups");
+        vm.StatusFilter = 2;
         Pump();
         SetTheme(ThemeVariant.Dark);
         Frames.Capture(window, "homework-dark");

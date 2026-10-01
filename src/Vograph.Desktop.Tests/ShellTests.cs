@@ -24,6 +24,18 @@ namespace Vograph.Desktop.Tests;
 
 public class ShellTests : UiTest
 {
+    [Fact]
+    public void Account_cta_opens_the_account_panel_not_a_previous_settings_category()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var settings = shell.Section<Vograph.Desktop.Features.Preferences.SettingsViewModel>(SectionKey.Settings);
+        settings.OpenPanelCommand.Execute("help");
+        shell.OpenAccountSettings();
+        Assert.Equal(SectionKey.Settings, shell.CurrentKey);
+        Assert.True(settings.ShowAccountPanel);
+        shell.Stop();
+    }
     private static (TestDb Db, ShellViewModel Shell) Make()
     {
         var db = TestDb.Create();

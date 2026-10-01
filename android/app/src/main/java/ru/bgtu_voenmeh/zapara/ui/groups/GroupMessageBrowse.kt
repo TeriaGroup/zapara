@@ -2,6 +2,7 @@ package ru.bgtu_voenmeh.zapara.ui.groups
 
 import java.time.Duration
 import ru.bgtu_voenmeh.zapara.data.communities.GroupTopic
+import ru.bgtu_voenmeh.zapara.ui.chat.normalizeChatSearch
 
 internal enum class MessageAuthor { All, Mine, Others }
 internal enum class MessageKind { All, Text, PhotoVideo, Documents, VoiceCircle }
@@ -21,14 +22,16 @@ internal fun sameMessageCluster(before: GroupMessageUi?, after: GroupMessageUi):
 internal fun browseMessages(
     rows: List<GroupMessageUi>, query: String,
     author: MessageAuthor = MessageAuthor.All,
-    kind: MessageKind = MessageKind.All
+    kind: MessageKind = MessageKind.All,
+    senderId: String? = null
 ): List<GroupMessageUi> {
-    val needle = query.trim()
-    val filtered = needle.isNotEmpty() || author != MessageAuthor.All || kind != MessageKind.All
+    val needle = normalizeChatSearch(query)
+    val filtered = needle.isNotEmpty() || author != MessageAuthor.All || kind != MessageKind.All || senderId != null
     return rows.filter { message ->
         if (message.deleted) return@filter !filtered
-        (needle.isEmpty() || message.body.contains(needle, ignoreCase = true)) &&
+        (needle.isEmpty() || normalizeChatSearch(message.body).contains(needle)) &&
             (author == MessageAuthor.All || message.mine == (author == MessageAuthor.Mine)) &&
+            (senderId == null || message.senderId == senderId) &&
             when (kind) {
                 MessageKind.All -> true
                 MessageKind.Text -> message.kind == "text"

@@ -17,7 +17,10 @@ data class FriendEditorUi(
     val groupName: String,
     val members: String,
     val colorIndex: Int,
-    val pickerOpen: Boolean = false
+    val sourceGroupId: String = "",
+    val sourceProfileName: String = "",
+    val pickerOpen: Boolean = false,
+    val manualOffline: Boolean = false
 )
 
 data class FriendsUiState(
@@ -28,8 +31,12 @@ data class FriendsUiState(
     val friends: List<FriendUi> = emptyList(),
     val canAdd: Boolean = true,
     val myGroupId: String = "",
+    val profileName: String = "",
     val editor: FriendEditorUi? = null,
     val editorError: String? = null,
+    val editorSaving: Boolean = false,
+    val deletePending: Boolean = false,
+    val deleteError: String? = null,
     val confirmDelete: Long? = null,
     val strictness: Int = 50,
     val alwaysShow: Boolean = false,
@@ -42,19 +49,27 @@ data class FriendsUiState(
     val hasOwnSchedule: Boolean = false
 )
 
+internal fun FriendsUiState.deleteFailed(id: Long, error: String): FriendsUiState =
+    if (confirmDelete != id) this else copy(deletePending = false, deleteError = error)
+
+internal fun FriendsUiState.deleteAcknowledged(id: Long): FriendsUiState =
+    if (confirmDelete != id) this else copy(confirmDelete = null,
+        editor = editor?.takeUnless { it.id == id }, deletePending = false, deleteError = null)
+
 sealed interface FriendsEvent {
     data object Retry : FriendsEvent
     data object RefreshSchedules : FriendsEvent
     data object Add : FriendsEvent
-    data class Edit(val index: Int) : FriendsEvent
+    data class Edit(val scope: FriendActionScope) : FriendsEvent
     data class EditorGroup(val name: String) : FriendsEvent
+    data class ManualOffline(val enabled: Boolean) : FriendsEvent
     data class EditorMembers(val text: String) : FriendsEvent
     data class EditorColor(val index: Int) : FriendsEvent
     data object OpenPicker : FriendsEvent
     data object ClosePicker : FriendsEvent
     data object EditorSave : FriendsEvent
     data object EditorCancel : FriendsEvent
-    data class Toggle(val index: Int, val enabled: Boolean) : FriendsEvent
+    data class Toggle(val scope: FriendActionScope, val enabled: Boolean) : FriendsEvent
     data class AskDelete(val id: Long) : FriendsEvent
     data object ConfirmDelete : FriendsEvent
     data object CancelDelete : FriendsEvent

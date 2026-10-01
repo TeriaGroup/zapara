@@ -204,7 +204,8 @@ class UiAccessibilityTest(private val theme: ThemeChoice, private val scale: Flo
             uniqueName(tag, name)
         }
         rule.runOnIdle {
-            assertEquals(listOf(FriendsEvent.Toggle(7, false), FriendsEvent.AlwaysShow(true), FriendsEvent.Invert(true)), events)
+            assertEquals(listOf(FriendsEvent.Toggle(FriendActionScope(42L, "", ""), false),
+                FriendsEvent.AlwaysShow(true), FriendsEvent.Invert(true)), events)
         }
     }
 

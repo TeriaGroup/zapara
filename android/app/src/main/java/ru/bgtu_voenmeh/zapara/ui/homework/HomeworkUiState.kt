@@ -40,7 +40,23 @@ data class HomeworkGroupUi(
 
 data class SubjectUi(val raw: String, val norm: String, val display: String, val type: String = "")
 
-data class SubjectPickerUi(val subjects: List<SubjectUi>, val query: String = "")
+data class SharedHomeworkItemUi(
+    val id: String,
+    val communityId: String,
+    val title: String,
+    val body: String,
+    val deadlineLabel: String,
+    val completed: Boolean,
+    val completionRevision: Long,
+    val canComplete: Boolean,
+    val audienceSelected: Boolean
+)
+
+data class SubjectPickerUi(val subjects: List<SubjectUi>, val query: String = "",
+    val groupId: String = "", val profileName: String = "", val groupEpoch: Long = 0) {
+    fun matches(group: String?, profile: String, epoch: Long): Boolean =
+        groupId == group && profileName == profile && groupEpoch == epoch
+}
 
 data class HomeworkUiState(
     val loaded: Boolean = false,
@@ -49,19 +65,66 @@ data class HomeworkUiState(
     val editor: HomeworkEditorState? = null,
     val confirmDelete: Long? = null,
     val subjectPicker: SubjectPickerUi? = null,
-    val guest: Boolean = false
+    val guest: Boolean = false,
+    val browseQuery: String = "",
+    val browseFilter: HomeworkCompletionFilter = HomeworkCompletionFilter.Active,
+    val undoDone: HomeworkUndoDone? = null,
+    val undoDoneBusy: Boolean = false,
+    val loadError: String? = null,
+    val deleteBusy: Boolean = false,
+    val deleteError: String? = null,
+    val sharedRows: List<SharedHomeworkItemUi> = emptyList(),
+    val sharedLoading: Boolean = false,
+    val sharedError: String? = null,
+    val sharedBusyIds: Set<String> = emptySet(),
+    val personalBusyIds: Set<Long> = emptySet()
 )
+
+fun HomeworkUiState.resetBrowse(): HomeworkUiState =
+    copy(browseQuery = "", browseFilter = HomeworkCompletionFilter.All)
+
+fun HomeworkUiState.forGroupChange(): HomeworkUiState =
+    copy(browseQuery = "", browseFilter = HomeworkCompletionFilter.Active, undoDone = null, undoDoneBusy = false)
+
+internal enum class HomeworkEditDecision { Open, AlreadyOpen, ReplacePristine, Blocked }
+
+internal fun homeworkEditDecision(editor: HomeworkEditorState?, targetId: Long): HomeworkEditDecision = when {
+    editor == null -> HomeworkEditDecision.Open
+    editor.id == targetId -> HomeworkEditDecision.AlreadyOpen
+    editor.busy || editor.hasDraftChanges || editor.shareLoading || editor.shareRequest != null || editor.persistedId != null ->
+        HomeworkEditDecision.Blocked
+    else -> HomeworkEditDecision.ReplacePristine
+}
+
+internal fun homeworkEditStillAllowed(
+    before: HomeworkEditorState?, current: HomeworkEditorState?, targetId: Long
+): Boolean = before === current && homeworkEditDecision(current, targetId) in
+    setOf(HomeworkEditDecision.Open, HomeworkEditDecision.ReplacePristine)
+
+data class HomeworkUndoDone(val id: Long, val previousDone: Boolean, val groupId: String, val profileName: String) {
+    fun canApply(profileName: String, groupId: String, currentDone: Boolean?): Boolean =
+        this.profileName == profileName && this.groupId == groupId && currentDone == !previousDone
+}
 
 sealed interface HomeworkEvent {
     data class ToggleDone(val id: Long) : HomeworkEvent
     data class Edit(val id: Long) : HomeworkEvent
     data object Add : HomeworkEvent
+    data object RetryLoad : HomeworkEvent
+    data object RetryShared : HomeworkEvent
+    data class ToggleShared(val id: String) : HomeworkEvent
     data class Query(val value: String) : HomeworkEvent
+    data class BrowseQuery(val value: String) : HomeworkEvent
+    data class BrowseFilter(val value: HomeworkCompletionFilter) : HomeworkEvent
+    data object BrowseReset : HomeworkEvent
+    data object UndoDone : HomeworkEvent
     data class PickSubject(val raw: String) : HomeworkEvent
+    data class PickManualSubject(val raw: String) : HomeworkEvent
     data object ClosePicker : HomeworkEvent
     data class EditorText(val text: String) : HomeworkEvent
     data class EditorShare(val on: Boolean) : HomeworkEvent
     data class EditorAudience(val audience: HomeworkAudience) : HomeworkEvent
+    data object RetryShareOptions : HomeworkEvent
     data object RetryShare : HomeworkEvent
     data object Inc : HomeworkEvent
     data object Dec : HomeworkEvent
@@ -112,7 +175,7 @@ data class HomeworkEditorState(
     fun creationAnchor(clockDate: LocalDate): LocalDate = anchorDate ?: clockDate
     fun matchesSaveContext(groupId: String?, currentDue: LocalDate?): Boolean =
         (scheduleGroupId == null || scheduleGroupId == groupId) && dueFor(n,text) == currentDue
-    val canSave: Boolean get() = text.trim().isNotEmpty() && !sourceChanged && !busy && shareRequest == null &&
+    val canSave: Boolean get() = HomeworkTextRules.valid(text) && !sourceChanged && !busy && shareRequest == null &&
         (!share || !shareLoading && shareContext != null && (!audience.selected || shareContext.supported && audience.valid()))
     fun hasChanges(existing: Homework): Boolean = text.trim() != existing.text || n != existing.n
     fun withText(value: String) = if (busy) this else copy(text = value, error = null)

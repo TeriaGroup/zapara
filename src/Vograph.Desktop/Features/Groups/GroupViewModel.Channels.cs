@@ -17,10 +17,13 @@ public sealed partial class GroupViewModel
     private readonly Dictionary<(Guid ConversationId, Guid? TopicId), string> channelDrafts = [];
     private sealed record BallotDraftState(string Question, string A, string B, string C, string D, string E, string F, string Days);
     private readonly Dictionary<string, BallotDraftState> ballotDrafts = [];
+    private readonly Dictionary<string, long> ballotDraftRevisions = [];
     private string? activeBallotDraftKey;
     private bool loadingBallotDraft;
     private Guid? pendingCloseBallotId;
     private string? pendingCloseChannelKey;
+    private readonly HashSet<Guid> pendingBallotIds = [];
+    private bool ballotCreatePending;
 
     public ObservableCollection<GroupChannelRow> Channels { get; } = [];
     public ObservableCollection<GroupBallotRow> Ballots { get; } = [];
@@ -104,7 +107,8 @@ public sealed partial class GroupViewModel
 
     private void SaveBallotDraft()
     {
-        if (!loadingBallotDraft && activeBallotDraftKey is { } key) ballotDrafts[key] = CurrentBallotDraft();
+        if (!loadingBallotDraft && activeBallotDraftKey is { } key)
+        { ballotDrafts[key] = CurrentBallotDraft(); ballotDraftRevisions[key] = ballotDraftRevisions.GetValueOrDefault(key) + 1; }
     }
 
     private void SelectBallotDraft(GroupChannelRow? channel)
@@ -133,9 +137,9 @@ public sealed partial class GroupViewModel
         finally { loadingBallotDraft = false; }
     }
 
-    private void ClearPublishedDraft(string? key, BallotDraftState submitted)
+    private void ClearPublishedDraft(string? key, BallotDraftState submitted, long revision)
     {
-        if (key is null || !ballotDrafts.TryGetValue(key, out var stored) || stored != submitted) return;
+        if (key is null || !ballotDrafts.TryGetValue(key, out var stored) || stored != submitted || ballotDraftRevisions.GetValueOrDefault(key) != revision) return;
         ballotDrafts.Remove(key);
         if (activeBallotDraftKey == key) { LoadBallotDraft(key); ShowBallotComposer = false; }
     }
@@ -165,7 +169,7 @@ public sealed partial class GroupViewModel
             pendingCloseChannelKey != communityId?.ToString("D") + ":" + SelectedChannel.Key)
         { CancelCloseBallot(); return Task.CompletedTask; }
         CancelCloseBallot();
-        return BallotActionAsync((api, token, community, ct) => api.CloseBallotAsync(token, community, ballotId, ct));
+        return BallotActionAsync((api, token, community, ct) => api.CloseBallotAsync(token, community, ballotId, ct), affectedBallotId: ballotId);
     }
     partial void OnIsDirectChanged(bool value)
     {
@@ -479,33 +483,77 @@ public sealed partial class GroupViewModel
         if (pendingCloseBallotId is Guid closing && !board.Ballots.Any(ballot => ballot.BallotId == closing && ballot.Status != "closed"))
             CancelCloseBallot();
         Ballots.Clear();
-        foreach (var ballot in board.Ballots)
-            Ballots.Add(new GroupBallotRow(ballot, !PreviewMode && !SelectedChannel!.Archived && board.CanClose && (legacySpace || SelectedChannel.Permissions.Contains("close")),
-                id => BallotActionAsync((api, token, community, ct) => api.SupportBallotAsync(token, community, id, ct)),
-                (id, option) => BallotActionAsync((api, token, community, ct) => api.VoteBallotAsync(token, community, id, new VoteRequest(option), ct)),
-                id => { AskCloseBallot(id, ballot.Question); return Task.CompletedTask; },
-                CopyBallotSummaryAsync, !PreviewMode && (SelectedChannel?.Permissions.Contains("vote") == true || legacySpace)));
+        foreach (var ballot in board.Ballots.Where(ballot => selectedTopicId is null || ballot.TopicId == selectedTopicId))
+            Ballots.Add(NewBallotRow(ballot, !PreviewMode && !SelectedChannel!.Archived && board.CanClose && (legacySpace || SelectedChannel.Permissions.Contains("close")),
+                !PreviewMode && (SelectedChannel?.Permissions.Contains("vote") == true || legacySpace)));
     }
 
-    private async Task BallotActionAsync(Func<CommunityHttpClient, string, Guid, CancellationToken, Task<BallotBoardResponse>> action, Action? accepted = null)
+    private GroupBallotRow NewBallotRow(BallotResponse ballot, bool canClose, bool canVote)
+    {
+        var sourceCommunity = communityId;
+        var sourceConversation = conversationId;
+        var sourceTopic = selectedTopicId;
+        var sourceGeneration = navigationGeneration;
+        bool CurrentRow() => sourceCommunity == communityId && sourceConversation == conversationId &&
+            sourceTopic == selectedTopicId && sourceGeneration == navigationGeneration && ShowBallots;
+        return new(ballot, canClose,
+            id => CurrentRow() ? BallotActionAsync((api, token, community, ct) => api.SupportBallotAsync(token, community, id, ct), affectedBallotId: id) : Task.CompletedTask,
+            (id, option) => CurrentRow() ? BallotActionAsync((api, token, community, ct) => api.VoteBallotAsync(token, community, id, new VoteRequest(option), ct), affectedBallotId: id) : Task.CompletedTask,
+            id => { if(CurrentRow())AskCloseBallot(id, ballot.Question); return Task.CompletedTask; }, CopyBallotSummaryAsync, canVote, pendingBallotIds.Contains(ballot.BallotId));
+    }
+
+    private async Task BallotActionAsync(Func<CommunityHttpClient, string, Guid, CancellationToken, Task<BallotBoardResponse>> action, Action? accepted = null, Guid? affectedBallotId = null)
     {
         if (PreviewMode || !ShowBallots || communityId is not Guid community || conversationId is not Guid id || Api is null || Access is null) return;
+        if (affectedBallotId is Guid pendingId && !pendingBallotIds.Add(pendingId)) return;
+        if (affectedBallotId is null && ballotCreatePending) return;
+        if (affectedBallotId is null) ballotCreatePending = true;
+        if (affectedBallotId is Guid startedId) Ballots.FirstOrDefault(row => row.BallotId == startedId)?.SetPending(true);
         var ticket = navigationGeneration;
+        var topic = selectedTopicId;
         using var operation = App.Work.Enter();
         Busy(true);
         try
         {
             var token = await Access(operation.Token);
             if (string.IsNullOrWhiteSpace(token)) { ShowAccount(); return; }
-            await action(Api, token, community, operation.Token);
+            var result = await action(Api, token, community, operation.Token);
+            if (!operation.IsCurrent) return;
             accepted?.Invoke();
-            if (operation.IsCurrent && CurrentChat(id, ticket)) await LoadBallotsAsync(id, ticket);
+            if (CurrentChat(id, ticket) && selectedTopicId == topic && SelectedChannel is { } currentChannel)
+            {
+                ++ballotRequestSerial; // an older GET must not replace an acknowledged POST.
+                BallotLoading = false; BallotLoadFailed = false; BallotLoaded = true;
+                var canClose = !PreviewMode && !currentChannel.Archived && result.CanClose && (legacySpace || currentChannel.Permissions.Contains("close"));
+                var canVote = !PreviewMode && (currentChannel.Permissions.Contains("vote") || legacySpace);
+                if (affectedBallotId is Guid target)
+                {
+                    var ballot = result.Ballots.FirstOrDefault(item => item.BallotId == target && (topic is null || item.TopicId == topic));
+                    if (ballot is not null)
+                    {
+                        var at = Ballots.ToList().FindIndex(row => row.BallotId == target);
+                        if (at >= 0) Ballots[at] = NewBallotRow(ballot, canClose, canVote);
+                    }
+                }
+                else
+                {
+                    var known = Ballots.Select(row => row.BallotId).ToHashSet();
+                    foreach (var ballot in result.Ballots.Where(item => (topic is null || item.TopicId == topic) && !known.Contains(item.BallotId)))
+                        Ballots.Add(NewBallotRow(ballot, canClose, canVote));
+                    CanOpenBallot = result.CanOpen;
+                }
+            }
             if (operation.IsCurrent && CurrentChat(id, ticket)) Status = "";
         }
         catch (CommunityClientException) { if (operation.IsCurrent && CurrentChat(id, ticket)) Status = "Не удалось обновить голосование."; }
         catch (AccountClientException ex) when (operation.IsCurrent && CurrentChat(id, ticket)) { FailSession(ex); }
         catch (OperationCanceledException) { }
-        finally { if (operation.IsCurrent) Busy(false); }
+        finally
+        {
+            if (affectedBallotId is Guid completedId) { pendingBallotIds.Remove(completedId); Ballots.FirstOrDefault(row => row.BallotId == completedId)?.SetPending(false); }
+            else ballotCreatePending = false;
+            if (operation.IsCurrent) Busy(false);
+        }
     }
 
     [RelayCommand]
@@ -522,6 +570,7 @@ public sealed partial class GroupViewModel
         BallotDraftRequest request;
         var submitted = CurrentBallotDraft();
         var draftKey = activeBallotDraftKey;
+        var draftRevision = draftKey is null ? 0 : ballotDraftRevisions.GetValueOrDefault(draftKey);
         var topic = selectedTopicId;
         var options = new[] { BallotOptionA, BallotOptionB, BallotOptionC, BallotOptionD, BallotOptionE, BallotOptionF }
             .Select(option => option.Trim()).Where(option => option.Length > 0).ToArray();
@@ -530,7 +579,7 @@ public sealed partial class GroupViewModel
         return BallotActionAsync((api, token, community, ct) => headman
             ? api.OpenHeadmanBallotAsync(token, community, request, ct)
             : api.ProposeBallotAsync(token, community, request, ct),
-            () => ClearPublishedDraft(draftKey, submitted));
+            () => ClearPublishedDraft(draftKey, submitted, draftRevision));
     }
 }
 
@@ -642,10 +691,10 @@ public sealed class GroupChannelRow(GroupTopicResponse initial, IRelayCommand op
 public sealed record GroupChannelAccentChoice(string Code, string Label);
 public sealed record GroupChannelPolicyChoice(string Code, string Label);
 
-public sealed class GroupBallotRow
+public sealed class GroupBallotRow : ObservableObject
 {
     public GroupBallotRow(BallotResponse ballot, bool canClose, Func<Guid, Task> support, Func<Guid, Guid, Task> vote,
-        Func<Guid, Task> close, Func<GroupBallotRow, Task>? copy = null, bool canVote = true)
+        Func<Guid, Task> close, Func<GroupBallotRow, Task>? copy = null, bool canVote = true, bool isPending = false)
     {
         BallotId = ballot.BallotId;
         Question = ballot.Question;
@@ -661,13 +710,15 @@ public sealed class GroupBallotRow
         IsCollecting = ballot.Status == "collecting";
         IsEffect = !string.IsNullOrEmpty(ballot.Effect);
         Outcome = ballot.Outcome switch { "accepted" => "Изменение принято", "rejected" => "Изменение отклонено", "skipped" => "Изменение не применено", _ => ballot.Outcome };
-        CanSupport = canVote && ballot.Status == "collecting" && !ballot.Supported;
+        baseCanSupport = canVote && ballot.Status == "collecting" && !ballot.Supported;
         AlreadySupported = ballot.Status == "collecting" && ballot.Supported;
-        CanClose = canClose && ballot.Status != "closed" && string.IsNullOrEmpty(ballot.Effect);
+        baseCanClose = canClose && ballot.Status != "closed" && string.IsNullOrEmpty(ballot.Effect);
+        this.isPending = isPending;
         var totalVotes = ballot.Options.Sum(option => (long)option.Votes);
         TotalVotes = totalVotes;
         Options = ballot.Options.Select(option => new GroupBallotOptionRow(option, totalVotes,
             canVote && ballot.Status == "open", () => vote(ballot.BallotId, option.OptionId))).ToArray();
+        if (isPending) foreach (var option in Options) option.SetPending(true);
         SupportCommand = new AsyncRelayCommand(() => support(ballot.BallotId));
         CloseCommand = new AsyncRelayCommand(() => close(ballot.BallotId));
         CopyCommand = copy is null ? null : new AsyncRelayCommand(() => copy(this));
@@ -688,9 +739,20 @@ public sealed class GroupBallotRow
         : $"Подано голосов: {TotalVotes}. Доли считаются от поданных голосов.";
     public bool IsCollecting { get; }
     public bool IsEffect { get; }
-    public bool CanSupport { get; }
+    private readonly bool baseCanSupport;
+    private readonly bool baseCanClose;
+    private bool isPending;
+    public bool IsPending => isPending;
+    public void SetPending(bool value)
+    {
+        if (isPending == value) return;
+        isPending = value;
+        OnPropertyChanged(nameof(IsPending)); OnPropertyChanged(nameof(CanSupport)); OnPropertyChanged(nameof(CanClose));
+        foreach (var option in Options) option.SetPending(value);
+    }
+    public bool CanSupport => baseCanSupport && !isPending;
     public bool AlreadySupported { get; }
-    public bool CanClose { get; }
+    public bool CanClose => baseCanClose && !isPending;
     public IReadOnlyList<GroupBallotOptionRow> Options { get; }
     public IAsyncRelayCommand SupportCommand { get; }
     public IAsyncRelayCommand CloseCommand { get; }
@@ -698,7 +760,7 @@ public sealed class GroupBallotRow
     public bool CanCopySummary => CopyCommand is not null;
 }
 
-public sealed class GroupBallotOptionRow(BallotOptionResponse option, long totalVotes, bool canVote, Func<Task> vote)
+public sealed class GroupBallotOptionRow(BallotOptionResponse option, long totalVotes, bool canVote, Func<Task> vote) : ObservableObject
 {
     public string Label => option.Label + " · " + option.Votes + (option.Chosen ? " ✓" : "");
     public string Text => option.Label;
@@ -708,6 +770,8 @@ public sealed class GroupBallotOptionRow(BallotOptionResponse option, long total
     public string ChoiceCaption => option.Chosen ? "Ваш выбор" : "";
     public bool IsChosen => option.Chosen;
     public string PercentAccessible => $"{Text}: голосов {Votes}, {Percent}% от поданных голосов";
-    public bool CanVote { get; } = canVote;
+    private bool pending;
+    public bool CanVote => canVote && !pending;
+    public void SetPending(bool value) { if (pending == value) return; pending = value; OnPropertyChanged(nameof(CanVote)); }
     public IAsyncRelayCommand VoteCommand { get; } = new AsyncRelayCommand(vote);
 }

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Intent
+import android.net.Uri
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -107,6 +108,20 @@ internal object GroupMediaFiles {
 }
 
 internal class GroupMediaViewer(private val app: Application) {
+    suspend fun save(destination: String, bytes: ByteArray): Boolean =
+        save(Uri.parse(destination), bytes)
+
+    suspend fun save(uri: Uri, bytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        if (bytes.isEmpty() || bytes.size > 24 * 1024 * 1024) return@withContext false
+        try {
+            app.contentResolver.openOutputStream(uri, "wt")?.use { output ->
+                output.write(bytes)
+                output.flush()
+            } ?: return@withContext false
+            true
+        } catch (_: Exception) { false }
+    }
+
     suspend fun open(message: GroupMessageUi, bytes: ByteArray): Boolean {
         val file = withContext(Dispatchers.IO) {
             GroupMediaFiles.save(app.cacheDir, message.id, message.body, bytes)

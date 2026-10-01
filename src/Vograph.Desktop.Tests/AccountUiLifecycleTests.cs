@@ -61,11 +61,25 @@ public sealed class AccountUiLifecycleTests
         f.Vm.Username = "Test.User";
         await f.Vm.ResetPasswordCommand.ExecuteAsync(null);
         Assert.Equal(unknownStatus, f.Vm.Status);
-        Assert.Contains("Сбросить", f.Vm.Status);
+        Assert.Contains("если для логина", f.Vm.Status, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(2, bodies.Count);
         Assert.Contains("no_such_user", bodies[0], StringComparison.Ordinal);
         Assert.Contains("Test.User", bodies[1], StringComparison.Ordinal);
         Assert.DoesNotContain("Test.User", f.Vm.Status, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Password_reset_confirmation_stays_disabled_until_code_and_valid_new_password()
+    {
+        await using var f = new Fixture(recovery: true);
+        await f.Vm.InitializeAsync();
+        f.Vm.ShowPasswordResetFormCommand.Execute(null);
+        Assert.True(f.Vm.ResetRequested);
+        f.Vm.ResetToken = "short";
+        f.Vm.ResetNewPassword = "abcdefghijkl";
+        Assert.False(f.Vm.CanConfirmReset);
+        f.Vm.ResetToken = "long-enough-code";
+        Assert.True(f.Vm.CanConfirmReset);
     }
 
     [Fact]
@@ -592,6 +606,7 @@ public sealed class AccountUiLifecycleTests
             Vm.Username = "Test.User";
             Vm.Password = Password;
             await Vm.SubmitCommand.ExecuteAsync(null).WaitAsync(TimeSpan.FromSeconds(3), TestContext.Current.CancellationToken);
+            Assert.False(Vm.IsGuest, $"login status={Vm.Status}; phase={Profiles.Snapshot.Phase}; failure={Profiles.Snapshot.Failure}; accountFailure={Profiles.Snapshot.AccountFailure}; calls={Handler.Calls}; canAct={Vm.CanAct}; dataDirLength={Profiles.Current.Services.DataDir.Length}");
         }
 
         public async ValueTask DisposeAsync()

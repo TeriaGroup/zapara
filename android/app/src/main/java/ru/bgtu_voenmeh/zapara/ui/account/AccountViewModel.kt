@@ -7,6 +7,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,6 +20,8 @@ import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountClientException
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountClientFailure
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountExternalStartRequest
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountExportDownload
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountExportJob
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountHttpClient
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountReauthProof
 import ru.bgtu_voenmeh.zapara.data.accounts.AccountSession
@@ -34,12 +39,16 @@ internal class AccountRuntime(
     val commitSession: suspend (AccountSession, String) -> Boolean,
     val logout: suspend (remote: (suspend (AccountSession) -> Unit)?) -> Boolean,
     val openUrl: (String) -> Unit,
-    val rememberExternal: (String, String, String?, String?) -> Unit = { _, _, _, _ -> },
+    val rememberExternal: (String, String, String?, String?, String?) -> Unit = { _, _, _, _, _ -> },
+    val pendingExternal: () -> ExternalReturn.Pending? = { null },
+    val cancelExternal: suspend (String) -> Boolean = { false },
     val writeExport: (ByteArray, String) -> Unit,
+    val writeExportToUri: (ByteArray, Uri) -> Unit = { _, _ -> throw java.io.IOException("Document destination unavailable") },
     val capabilitiesTransport: HttpExchange?,
     val scopeBase: String?,
     val serverKey: String?,
-    val sessions: AccountSessionManager? = null
+    val sessions: AccountSessionManager? = null,
+    val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     companion object {
         fun from(host: AndroidProfileHost) = AccountRuntime(
@@ -52,7 +61,9 @@ internal class AccountRuntime(
             isGuest = { host.container.profile.isGuest },
             commitSession = { session, key -> host.coordinator.commitSession(session, key).committed },
             logout = { remote -> host.coordinator.logout(remote).committed },
-            rememberExternal = { id, verifier, userId, purpose -> ExternalReturn.remember(host.app, id, verifier, userId, purpose) },
+            rememberExternal = { id, verifier, userId, purpose, provider -> ExternalReturn.remember(host.app, id, verifier, userId, purpose, provider) },
+            pendingExternal = { ExternalReturn.pending(host.app) },
+            cancelExternal = { id -> ExternalReturn.cancel(host.app, id) },
             openUrl = { url ->
                 val parsed = Uri.parse(url)
                 if (parsed.scheme != "https") throw AccountClientException(AccountClientFailure.InvalidPayload)
@@ -68,6 +79,10 @@ internal class AccountRuntime(
                 if (!dir.exists()) dir.mkdirs()
                 java.io.File(dir, name).writeBytes(bytes)
             },
+            writeExportToUri = { bytes, uri ->
+                host.app.contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) }
+                    ?: throw java.io.IOException("Cannot open export destination")
+            },
             capabilitiesTransport = UrlConnectionTransport(),
             scopeBase = host.accountScope?.baseUri?.toString(),
             serverKey = host.accountScope?.key,
@@ -80,12 +95,19 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
     constructor(host: AndroidProfileHost) : this(AccountRuntime.from(host))
 
     private var exportId: String? = null
+    private data class PendingExportFile(val file: AccountExportDownload, val version: Long, val token: String)
+    private var pendingExportFile: PendingExportFile? = null
     private var identityRevision = 0
+    private var operationSerial = 0L
+    private var operationClaim: Long? = null
     private var profileRefresh: kotlinx.coroutines.Job? = null
+    private var capabilitiesJob: kotlinx.coroutines.Job? = null
     private val mutable = MutableStateFlow(
         AccountUiState(
             configured = runtime.client != null,
             guest = runtime.isGuest(),
+            externalPending = runtime.pendingExternal() != null,
+            pendingExternalProvider = runtime.pendingExternal()?.provider,
             status = runtime.strings(
                 when {
                     runtime.client == null -> R.string.account_unconfigured
@@ -97,8 +119,12 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
     )
     val state: StateFlow<AccountUiState> = mutable.asStateFlow()
 
-    init {
-        viewModelScope.launch {
+    init { loadCapabilities() }
+
+    private fun loadCapabilities() {
+        if (capabilitiesJob?.isActive == true) return
+        mutable.update { it.copy(capabilitiesLoading = true, capabilitiesError = false) }
+        capabilitiesJob = viewModelScope.launch {
             val revision = identityRevision
             try {
                 val caps = when {
@@ -133,11 +159,15 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                     }
                 } else null
                 mutable.update {
-                    if (revision != identityRevision) return@update it.applyCaps(caps).copy(ready = true)
+                    if (revision != identityRevision) return@update it.copy(ready = true, capabilitiesLoading = false)
                     it.applyCaps(caps).copy(
                         ready = true,
+                        capabilitiesLoading = false,
+                        capabilitiesError = false,
                         guest = guest,
                         accountName = if (guest) "" else session?.user?.accountName().orEmpty(),
+                        displayName = if (guest) it.displayName else session?.user?.displayName.orEmpty(),
+                        profileNameBaseline = if (guest) "" else session?.user?.displayName.orEmpty(),
                         identities = identities,
                         hasPassword = hasPassword,
                         status = statusText(guest)
@@ -146,8 +176,9 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                android.util.Log.w("ZaparaAccount", "capabilities", e)
-                mutable.update { it.copy(ready = true, guest = runtime.isGuest(), status = statusText(runtime.isGuest())) }
+                runCatching { android.util.Log.w("ZaparaAccount", "capabilities", e) }
+                if (revision == identityRevision) mutable.update { it.copy(ready = true, capabilitiesLoading = false,
+                    capabilitiesError = true, guest = runtime.isGuest(), status = statusText(runtime.isGuest())) }
             }
         }
     }
@@ -155,13 +186,27 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
     fun onEvent(event: AccountEvent) {
         when (event) {
             AccountEvent.RefreshProfile -> refreshProfile()
+            AccountEvent.RetryCapabilities -> loadCapabilities()
+            AccountEvent.CancelExternal -> cancelExternalAttempt()
             AccountEvent.Submit -> submit()
+            AccountEvent.SaveProfile -> saveProfile()
             AccountEvent.ConfirmLogout -> logout()
-            AccountEvent.LoadDevices -> loadDevices()
-            is AccountEvent.Revoke -> revoke(event.familyId)
+            AccountEvent.LoadDevices -> loadDevices(false)
+            AccountEvent.LoadMoreDevices -> if (mutable.value.deviceCursor != null) loadDevices(true)
+            is AccountEvent.Revoke -> mutable.update { it.reduce(AccountEvent.RequestRevoke(event.familyId)) }
+            AccountEvent.ConfirmRevoke -> mutable.value.confirmRevoke?.let { target ->
+                if (target == "all") revokeAll() else revoke(target)
+            }
             AccountEvent.ChangePassword -> changePassword()
             AccountEvent.CreateExport -> createExport()
+            AccountEvent.CheckExport -> checkExport()
             AccountEvent.DownloadExport -> downloadExport()
+            is AccountEvent.SaveExport -> saveExport(event.uri, event.version, event.token)
+            AccountEvent.RetryExportSave -> pendingExportFile?.takeIf { !mutable.value.busy }?.let { pending ->
+                val next = pending.copy(version = pending.version + 1, token = java.util.UUID.randomUUID().toString())
+                pendingExportFile = next
+                mutable.update { it.copy(exportSaveVersion = next.version, exportSaveToken = next.token) }
+            }
             AccountEvent.ConfirmDelete -> deleteAccount()
             AccountEvent.RequestReset -> requestReset()
             AccountEvent.ConfirmReset -> confirmReset()
@@ -188,7 +233,11 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                         fresh.userId != session.user.userId) null else fresh
                 }
                 if (user != null && identityRevision == revision && !runtime.isGuest())
-                    mutable.update { if (it.busy) it else it.copy(accountName = user.accountName()) }
+                    mutable.update { state -> if (state.busy) state else state.copy(
+                        accountName = user.accountName(),
+                        displayName = if (state.displayName == state.profileNameBaseline)
+                            user.displayName.orEmpty() else state.displayName,
+                        profileNameBaseline = user.displayName.orEmpty()) }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: AccountClientException) {
                 if (identityRevision == revision && error.failure in setOf(AccountClientFailure.InvalidSession, AccountClientFailure.ReauthenticationRequired))
@@ -197,10 +246,46 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
         }
     }
 
+    private fun saveProfile() {
+        val captured = mutable.value
+        val client = runtime.client ?: return
+        if (!captured.canSaveProfile) return
+        val revision = identityRevision
+        val draft = captured.displayName.trim()
+        mutable.update { it.copy(busy = true, profileError = null) }
+        viewModelScope.launch {
+            try {
+                val saved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val session = requireSession()
+                    val updated = client.saveProfile(session.accessToken, draft.ifEmpty { null })
+                    val active = runtime.vault.acquire().use { it.read() }
+                    if (active == null || active.userId != session.user.userId ||
+                        active.familyId != session.familyId || updated.userId != session.user.userId) null else updated
+                }
+                mutable.update { state -> if (revision != identityRevision || runtime.isGuest() || saved == null)
+                    state.copy(busy = false) else state.copy(
+                        busy = false, accountName = saved.accountName(),
+                        displayName = if (state.displayName == captured.displayName) saved.displayName.orEmpty() else state.displayName,
+                        profileNameBaseline = saved.displayName.orEmpty(), profileError = null)
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                runCatching { android.util.Log.w("ZaparaAccount", "profile save", e) }
+                mutable.update { state -> if (revision == identityRevision && !runtime.isGuest())
+                    state.copy(busy = false, profileError = runtime.strings(R.string.uxnext_profile_failed))
+                    else state.copy(busy = false) }
+            }
+        }
+    }
+
     private fun submit() {
         val snap = mutable.value
         if (snap.busy || runtime.client == null) return
-        launchOp { captured ->
+        if (!snap.canSubmitCredentials) {
+            mutable.update { it.copy(status = runtime.strings(R.string.account_validation)) }
+            return
+        }
+        launchOp(allowIdentityTransition = true) { captured ->
             val client = runtime.client!!
             val secret = captured.password
             if (captured.registration) {
@@ -224,6 +309,8 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                 captured.copy(
                     guest = runtime.isGuest(),
                     accountName = session.user.accountName(),
+                    displayName = if (result) session.user.displayName.orEmpty() else captured.displayName,
+                    profileNameBaseline = if (result) session.user.displayName.orEmpty() else captured.profileNameBaseline,
                     identities = identities,
                     hasPassword = if (result) true else captured.hasPassword,
                     status = if (result) runtime.strings(R.string.account_local) else runtime.strings(R.string.account_transition_failed)
@@ -233,39 +320,53 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
     }
 
     private fun logout() {
-        launchOp { captured ->
+        launchOp(allowIdentityTransition = true) { captured ->
             val result = runtime.logout { session -> runtime.client?.logout(session.accessToken) }
             leave(captured, result)
         }
     }
 
-    private fun loadDevices() {
+    private fun loadDevices(append: Boolean) {
         launchOp { captured ->
             val session = requireSession()
-            val page = runtime.client!!.listDevices(session.accessToken)
+            val cursor = if (append) captured.deviceCursor else null
+            val page = runtime.client!!.listDevices(session.accessToken, cursor = cursor)
+            val fetched = page.devices.map {
+                AccountDeviceRow(it.familyId, it.deviceId, it.deviceName, it.platform, it.isCurrent)
+            }
             captured.copy(
-                devices = page.devices.map {
-                    AccountDeviceRow(it.familyId, it.deviceId, it.deviceName, it.platform, it.isCurrent)
-                },
+                devices = if (append) mergeAccountDevices(captured.devices, fetched) else fetched,
+                deviceCursor = page.nextCursor?.takeUnless { it == cursor },
                 status = statusText(false)
             )
         }
     }
 
     private fun revoke(familyId: String) {
-        launchOp { captured ->
+        if (mutable.value.confirmRevoke != familyId || mutable.value.devices.none { it.familyId == familyId }) return
+        launchOp(allowIdentityTransition = true) { captured ->
             val session = requireSession()
             runtime.client!!.revokeSession(session.accessToken, familyId)
             if (familyId == session.familyId) {
                 leave(captured, runtime.logout(null))
             } else {
-                captured.copy(devices = captured.devices.filter { it.familyId != familyId }, status = statusText(false))
+                captured.copy(devices = captured.devices.filter { it.familyId != familyId },
+                    confirmRevoke = null, status = statusText(false))
             }
         }
     }
 
+    private fun revokeAll() {
+        if (mutable.value.confirmRevoke != "all" || mutable.value.devices.isEmpty()) return
+        launchOp(allowIdentityTransition = true) { captured ->
+            val session = requireSession()
+            runtime.client!!.revokeAll(session.accessToken)
+            leave(captured, runtime.logout(null))
+        }
+    }
+
     private fun changePassword() {
-        launchOp { captured ->
+        launchOp(allowIdentityTransition = true) { captured ->
             val session = requireSession()
             runtime.client!!.changePassword(session.accessToken, captured.currentPassword, captured.newPassword)
             leave(captured, runtime.logout(null))
@@ -273,31 +374,132 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
     }
 
     private fun createExport() {
+        if (exportId != null && mutable.value.exportPending) return
+        val revision = identityRevision
         launchOp { captured ->
             if (captured.hasPassword != true) return@launchOp startProviderProof(captured, "export")
             val session = requireSession()
             val client = runtime.client!!
             val issued = client.reauthenticate(session.accessToken, captured.proof, "export")
-            var job = client.createExport(session.accessToken, issued.proofToken)
-            if (job.status != "ready") job = client.getExport(session.accessToken, job.exportId)
-            exportId = job.exportId
-            captured.copy(exportReady = job.status == "ready", status = statusText(false))
+            val job = client.createExport(session.accessToken, issued.proofToken)
+            finishExportCreation(captured, job, session.accessToken, revision)
+        }
+    }
+
+    private suspend fun finishExportCreation(captured: AccountUiState, created: AccountExportJob,
+        accessToken: String, revision: Int): AccountUiState {
+        if (revision != identityRevision || runtime.isGuest()) return captured
+        exportId = created.exportId // POST acknowledged: a failed status GET must never issue a second job.
+        if (created.status == "ready" || created.status !in setOf("pending", "preparing", "processing"))
+            return exportJobState(captured, created)
+        return try {
+            val checked = runtime.client!!.getExport(accessToken, created.exportId)
+            if (checked.exportId != created.exportId) throw AccountClientException(AccountClientFailure.InvalidPayload)
+            if (revision != identityRevision || runtime.isGuest()) captured
+            else exportJobState(captured, checked)
+        } catch (e: CancellationException) { throw e }
+        catch (_: Exception) { captured.copy(exportReady = false, exportPending = true,
+            status = runtime.strings(R.string.ux60_export_check_failed)) }
+    }
+
+    private fun exportJobState(captured: AccountUiState, job: AccountExportJob): AccountUiState {
+        exportId = job.exportId
+        return when (job.status) {
+            "ready" -> captured.copy(exportReady = true, exportPending = false,
+                status = runtime.strings(R.string.ux60_export_ready))
+            "pending", "preparing", "processing" -> captured.copy(exportReady = false, exportPending = true,
+                status = runtime.strings(R.string.ux60_export_pending))
+            else -> {
+                exportId = null
+                captured.copy(exportReady = false, exportPending = false,
+                    status = runtime.strings(R.string.ux60_export_failed))
+            }
+        }
+    }
+
+    private suspend fun exportOwnerCurrent(session: AccountSession, revision: Int, id: String): Boolean {
+        if (revision != identityRevision || runtime.isGuest() || exportId != id) return false
+        val active = runtime.vault.acquire().use { it.read() }
+        return active?.userId == session.user.userId && active.familyId == session.familyId
+    }
+
+    private fun releaseMissingExport(captured: AccountUiState): AccountUiState {
+        exportId = null
+        pendingExportFile = null
+        return captured.copy(exportPending = false, exportReady = false,
+            exportSaveName = null, exportSaveToken = null,
+            status = runtime.strings(R.string.ux60_export_expired))
+    }
+
+    private fun checkExport() {
+        val id = exportId ?: return
+        if (!mutable.value.exportPending) return
+        val revision = identityRevision
+        launchOp { captured ->
+            val session = requireSession()
+            val job = try { runtime.client!!.getExport(session.accessToken, id) }
+                catch (e: AccountClientException) {
+                    if (e.failure == AccountClientFailure.ExportNotFound && exportOwnerCurrent(session, revision, id))
+                        return@launchOp releaseMissingExport(captured)
+                    throw e
+                }
+            if (job.exportId != id) throw AccountClientException(AccountClientFailure.InvalidPayload)
+            if (revision != identityRevision || runtime.isGuest()) return@launchOp captured
+            exportJobState(captured, job)
         }
     }
 
     private fun downloadExport() {
+        if (!mutable.value.exportReady || pendingExportFile != null || mutable.value.exportSaveName != null) return
+        val revision = identityRevision
         launchOp { captured ->
             val id = exportId ?: throw AccountClientException(AccountClientFailure.ExportNotFound)
             val session = requireSession()
-            val file = runtime.client!!.downloadExport(session.accessToken, id)
-            runtime.writeExport(file.bytes, file.fileName)
-            captured.copy(exportReady = true, status = runtime.strings(R.string.account_export_download))
+            val file = try { runtime.client!!.downloadExport(session.accessToken, id) }
+                catch (e: AccountClientException) {
+                    if (e.failure == AccountClientFailure.ExportNotFound && exportOwnerCurrent(session, revision, id))
+                        return@launchOp releaseMissingExport(captured)
+                    throw e
+                }
+            if (revision != identityRevision || runtime.isGuest()) return@launchOp captured
+            val version = captured.exportSaveVersion + 1
+            val token = java.util.UUID.randomUUID().toString()
+            pendingExportFile = PendingExportFile(file, version, token)
+            captured.copy(exportSaveName = file.fileName,
+                exportSaveVersion = version,
+                exportSaveToken = token,
+                status = runtime.strings(R.string.ux60_export_choose_location))
+        }
+    }
+
+    private fun saveExport(uri: Uri?, version: Long, token: String) {
+        val pending = pendingExportFile ?: return
+        if (pending.version != version || pending.token != token ||
+            mutable.value.exportSaveVersion != version || mutable.value.exportSaveToken != token) return
+        val file = pending.file
+        if (uri == null) {
+            pendingExportFile = null
+            mutable.update { it.copy(exportSaveName = null, exportSaveToken = null,
+                status = runtime.strings(R.string.ux60_export_save_cancelled)) }
+            return
+        }
+        launchOp { captured ->
+            try {
+                withContext(runtime.ioDispatcher) { runtime.writeExportToUri(file.bytes, uri) }
+                if (pendingExportFile === pending) pendingExportFile = null
+                captured.copy(exportSaveName = null, exportSaveToken = null,
+                    status = runtime.strings(R.string.account_export_download))
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                captured.copy(exportSaveName = file.fileName,
+                    status = runtime.strings(R.string.ux60_export_save_failed))
+            }
         }
     }
 
     private fun deleteAccount() {
         if (!mutable.value.confirmDelete) return
-        launchOp { captured ->
+        launchOp(allowIdentityTransition = true) { captured ->
             if (captured.hasPassword != true) return@launchOp startProviderProof(captured, "delete_account")
             val session = requireSession()
             val client = runtime.client!!
@@ -308,22 +510,33 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
     }
 
     private fun requestReset() {
+        if (!mutable.value.canRequestRecovery) {
+            mutable.update { it.copy(status = runtime.strings(R.string.account_validation)) }
+            return
+        }
         launchOp { captured ->
-            val username = captured.recoveryUsername.ifBlank { captured.username }
+            val username = captured.recoveryUsername.ifBlank { captured.username }.trim()
             runtime.client!!.requestPasswordReset(username)
-            captured.copy(status = statusText(true))
+            captured.copy(recoveryStep = AccountRecoveryStep.Confirm,
+                status = runtime.strings(R.string.ux30_recovery_requested))
         }
     }
 
     private fun confirmReset() {
+        if (mutable.value.recoveryStep != AccountRecoveryStep.Confirm || !mutable.value.canConfirmRecovery) return
         launchOp { captured ->
             runtime.client!!.confirmPasswordReset(captured.proof, captured.newPassword)
-            captured.copy(status = statusText(true))
+            captured.copy(recoveryStep = AccountRecoveryStep.Request,
+                status = runtime.strings(R.string.ux30_recovery_done))
         }
     }
 
     private fun startExternal(provider: String, login: Boolean) {
         val snap = mutable.value
+        if (runtime.pendingExternal() != null || snap.externalPending) {
+            mutable.update { it.copy(status = runtime.strings(R.string.ux60_account_external_pending)) }
+            return
+        }
         if (login && snap.registration && !snap.documentsAccepted) {
             mutable.update { it.copy(status = runtime.strings(R.string.account_accept_required)) }
             return
@@ -351,9 +564,34 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                 ),
                 accessToken = access
             )
-            runtime.rememberExternal(start.transactionId, pkce.verifier, current?.user?.userId, null)
+            runtime.rememberExternal(start.transactionId, pkce.verifier, current?.user?.userId, null, provider)
+            mutable.update { it.copy(externalPending = true, pendingExternalProvider = provider) }
             runtime.openUrl(start.authorizeUrl)
-            captured.copy(status = runtime.strings(R.string.account_external_pending), guest = runtime.isGuest())
+            captured.copy(status = runtime.strings(R.string.account_external_pending), guest = runtime.isGuest(),
+                externalPending = true, pendingExternalProvider = provider)
+        }
+    }
+
+    private fun cancelExternalAttempt() {
+        val pending = runtime.pendingExternal()
+        if (pending == null) {
+            mutable.update { it.copy(externalPending = false, pendingExternalProvider = null) }
+            return
+        }
+        if (mutable.value.busy) return
+        mutable.update { it.copy(busy = true) }
+        viewModelScope.launch {
+            try {
+                val cancelled = runtime.cancelExternal(pending.transactionId)
+                val current = runtime.pendingExternal()
+                mutable.update { it.copy(busy = false, externalPending = current != null,
+                    pendingExternalProvider = current?.provider,
+                    status = runtime.strings(if (cancelled) R.string.ux60_account_external_cancelled
+                        else R.string.ux60_account_external_pending)) }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                mutable.update { it.copy(busy = false, status = runtime.strings(R.string.account_failed)) }
+            }
         }
     }
 
@@ -376,6 +614,7 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
     }
 
     private suspend fun startProviderProof(captured: AccountUiState, purpose: String, exclude: String? = null): AccountUiState {
+        if (runtime.pendingExternal() != null) return captured.copy(status = runtime.strings(R.string.ux60_account_external_pending))
         val provider = captured.identities.map { it.provider }.firstOrNull {
             it != exclude && ((it == "yandex" && captured.yandexAvailable) || (it == "vk" && captured.vkAvailable))
         } ?: throw AccountClientException(AccountClientFailure.ProviderUnavailable)
@@ -387,21 +626,22 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
             deviceId = runtime.deviceId(), deviceName = "Android", platform = "android", returnKind = "android",
             proofPurpose = purpose
         ), session.accessToken)
-        runtime.rememberExternal(start.transactionId, pkce.verifier, session.user.userId, purpose)
+        runtime.rememberExternal(start.transactionId, pkce.verifier, session.user.userId, purpose, provider)
+        mutable.update { it.copy(externalPending = true, pendingExternalProvider = provider) }
         runtime.openUrl(start.authorizeUrl)
-        return captured.copy(status = runtime.strings(R.string.account_external_pending))
+        return captured.copy(status = runtime.strings(R.string.account_external_pending),
+            externalPending = true, pendingExternalProvider = provider)
     }
 
     private fun finishProviderProof(proof: AccountReauthProof) {
-        launchOp { captured ->
+        val revision = identityRevision
+        launchOp(allowIdentityTransition = true) { captured ->
             val session = requireSession()
             val client = runtime.client ?: throw AccountClientException(AccountClientFailure.NotConfigured)
             when (proof.purpose) {
                 "export" -> {
-                    var job = client.createExport(session.accessToken, proof.proofToken)
-                    if (job.status != "ready") job = client.getExport(session.accessToken, job.exportId)
-                    exportId = job.exportId
-                    captured.copy(exportReady = job.status == "ready", status = statusText(false))
+                    val job = client.createExport(session.accessToken, proof.proofToken)
+                    finishExportCreation(captured, job, session.accessToken, revision)
                 }
                 "delete_account" -> {
                     if (!captured.confirmDelete) return@launchOp captured
@@ -416,9 +656,11 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                         deviceId = runtime.deviceId(), deviceName = "Android", platform = "android", returnKind = "android",
                         proofToken = proof.proofToken
                     ), session.accessToken)
-                    runtime.rememberExternal(start.transactionId, pkce.verifier, session.user.userId, null)
+                    runtime.rememberExternal(start.transactionId, pkce.verifier, session.user.userId, null, provider)
+                    mutable.update { it.copy(externalPending = true, pendingExternalProvider = provider) }
                     runtime.openUrl(start.authorizeUrl)
-                    captured.copy(status = runtime.strings(R.string.account_external_pending))
+                    captured.copy(status = runtime.strings(R.string.account_external_pending),
+                        externalPending = true, pendingExternalProvider = provider)
                 }
                 "unlink:vk", "unlink:yandex" -> {
                     val provider = proof.purpose.substringAfter(':')
@@ -430,24 +672,55 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
         }
     }
 
-    private fun launchOp(provider: String? = null, block: suspend (AccountUiState) -> AccountUiState) {
+    private data class OwnerStamp(val revision: Int, val guest: Boolean, val userId: String?, val familyId: String?)
+
+    private suspend fun ownerStamp(revision: Int, guest: Boolean): OwnerStamp {
+        return withContext(runtime.ioDispatcher) {
+            val entry = runtime.vault.acquire().use { it.read() }
+            OwnerStamp(revision, guest, entry?.userId, entry?.familyId)
+        }
+    }
+
+    private suspend fun ownerCurrent(stamp: OwnerStamp): Boolean {
+        if (stamp.revision != identityRevision || stamp.guest != runtime.isGuest()) return false
+        val current = ownerStamp(stamp.revision, stamp.guest)
+        return current.userId == stamp.userId && current.familyId == stamp.familyId
+    }
+
+    private fun launchOp(provider: String? = null, allowIdentityTransition: Boolean = false,
+        block: suspend (AccountUiState) -> AccountUiState) {
         val snap = mutable.value
-        if (snap.busy || runtime.client == null) return
+        if (snap.busy || operationClaim != null || runtime.client == null) return
+        val revision = identityRevision
+        val guest = runtime.isGuest()
+        val claim = ++operationSerial
+        operationClaim = claim
+        mutable.update { it.copy(busy = true).clearSecrets() }
         viewModelScope.launch {
-            mutable.update { it.copy(busy = true).clearSecrets() }
+            var owner: OwnerStamp? = null
             try {
-                mutable.update { block(snap).copy(busy = false).clearSecrets() }
+                owner = try { ownerStamp(revision, guest) } catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { null }
+                val stamp = owner
+                if (stamp == null) {
+                    if (revision == identityRevision) mutable.update { it.copy(busy = false, status = runtime.strings(R.string.account_failed)) }
+                    return@launch
+                }
+                if (!ownerCurrent(stamp)) return@launch
+                val result = block(snap)
+                if (!allowIdentityTransition && !ownerCurrent(stamp)) return@launch
+                mutable.update { result.copy(busy = false).clearSecrets() }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: AccountClientException) {
-                android.util.Log.w("ZaparaAccount", "op ${e.failure}", e)
-                mutable.update { it.copy(busy = false, status = failureText(e.failure)).hide(e.failure, provider) }
+                runCatching { android.util.Log.w("ZaparaAccount", "op ${e.failure}", e) }
+                if (owner?.let { ownerCurrent(it) } == true) mutable.update { it.copy(busy = false, status = failureText(e.failure)).hide(e.failure, provider) }
             } catch (e: IllegalArgumentException) {
-                mutable.update { it.copy(busy = false, status = runtime.strings(R.string.account_validation)) }
+                if (owner?.let { ownerCurrent(it) } == true) mutable.update { it.copy(busy = false, status = runtime.strings(R.string.account_validation)) }
             } catch (e: Exception) {
-                android.util.Log.w("ZaparaAccount", "op", e)
-                mutable.update { it.copy(busy = false, status = runtime.strings(R.string.account_failed)) }
-            }
+                runCatching { android.util.Log.w("ZaparaAccount", "op", e) }
+                if (owner?.let { ownerCurrent(it) } == true) mutable.update { it.copy(busy = false, status = runtime.strings(R.string.account_failed)) }
+            } finally { if (operationClaim == claim) operationClaim = null }
         }
     }
 
@@ -458,18 +731,31 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
     }
 
     private fun leave(from: AccountUiState, ok: Boolean): AccountUiState {
-        if (ok) identityRevision++
+        if (!ok || !runtime.isGuest()) return from.copy(
+            confirmLogout = false, confirmDelete = false, confirmRevoke = null,
+            status = runtime.strings(R.string.account_transition_failed)
+        ).clearSecrets()
+        identityRevision++
         exportId = null
+        pendingExportFile = null
         return from.copy(
             guest = true,
             accountName = "",
+            displayName = "",
+            profileNameBaseline = "",
+            profileError = null,
             devices = emptyList(),
+            deviceCursor = null,
+            confirmRevoke = null,
             identities = emptyList(),
             hasPassword = null,
             exportReady = false,
+            exportPending = false,
+            exportSaveName = null,
+            exportSaveToken = null,
             confirmDelete = false,
             confirmLogout = false,
-            status = runtime.strings(if (ok) R.string.account_logout_local else R.string.account_transition_failed)
+            status = runtime.strings(R.string.account_logout_local)
         )
     }
 
@@ -506,10 +792,15 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
     }
 
     internal fun externalResult(result: ExternalReturnResult) {
+        if (result != ExternalReturnResult.Ignored && result != ExternalReturnResult.Pending)
+            mutable.update { operationClaim = null; it.copy(externalPending = false, pendingExternalProvider = null, busy = false) }
         when (result) {
             is ExternalReturnResult.Verified -> finishProviderProof(result.proof)
             ExternalReturnResult.SignedIn -> {
                 identityRevision++
+                exportId = null
+                pendingExportFile = null
+                val revision = identityRevision
                 viewModelScope.launch {
                     try {
                         val session = requireSession()
@@ -520,18 +811,23 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
                         val hasPassword = try { "password" in client.authenticationMethods(session.accessToken) }
                         catch (e: CancellationException) { throw e }
                         catch (_: Exception) { null }
+                        if (revision != identityRevision || runtime.isGuest()) return@launch
                         mutable.update { it.copy(
                             ready = true, guest = runtime.isGuest(), registration = false,
                             accountName = session.user.accountName(), identities = identities,
+                            displayName = session.user.displayName.orEmpty(),
+                            profileNameBaseline = session.user.displayName.orEmpty(),
                             hasPassword = hasPassword, devices = emptyList(),
+                            exportReady = false, exportPending = false, exportSaveName = null,
+                            exportSaveToken = null,
                             status = runtime.strings(R.string.account_external_signed_in)
                         ) }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: AccountClientException) {
-                        mutable.update { it.copy(status = failureText(e.failure)) }
+                        if (revision == identityRevision) mutable.update { it.copy(status = failureText(e.failure)) }
                     } catch (_: Exception) {
-                        mutable.update { it.copy(status = runtime.strings(R.string.account_reauth)) }
+                        if (revision == identityRevision) mutable.update { it.copy(status = runtime.strings(R.string.account_reauth)) }
                     }
                 }
             }

@@ -39,6 +39,7 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="f:FriendEncounterViewModel">
                 <Border BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,0,0,1" Padding="0,4,0,10">
+                  <StackPanel Spacing="6">
                   <StackPanel Orientation="Horizontal" Spacing="10">
                     <c:FriendDot ColorIndex="{Binding ColorIndex}" Fill="Full" Width="14" Height="14" VerticalAlignment="Top" Margin="0,4,0,0" />
                     <StackPanel Spacing="3">
@@ -46,6 +47,8 @@
                       <TextBlock Text="{Binding GroupDisplay}" TextWrapping="Wrap" />
                       <TextBlock Classes="muted caption" Text="{Binding Place}" TextWrapping="Wrap" />
                     </StackPanel>
+                  </StackPanel>
+                  <Button Content="Открыть пару" Command="{Binding $parent[UserControl].((f:FriendsViewModel)DataContext).OpenEncounterCommand}" CommandParameter="{Binding}" HorizontalAlignment="Left" />
                   </StackPanel>
                 </Border>
               </DataTemplate>
@@ -62,35 +65,25 @@
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="f:FriendItemViewModel">
             <Border Classes="card" c:Appear.Kind="Cascade" c:Appear.Index="{Binding Index}">
-              <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" VerticalAlignment="Center">
-                <!-- colour: a dot that opens the palette (taken colours are hidden) -->
-                <Button Classes="icon" ToolTip.Tip="{loc:T friendsColor}"
-                        AutomationProperties.AutomationId="Friend.Color" AutomationProperties.Name="{loc:T friendsColor}">
-                  <Button.Flyout>
-                    <Flyout Placement="Bottom">
-                      <ItemsControl ItemsSource="{Binding ColorOptions}">
-                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                          <DataTemplate x:DataType="f:ColorOption">
-                            <Button Classes="icon" Command="{Binding $parent[ItemsControl].((f:FriendItemViewModel)DataContext).PickColorCommand}" CommandParameter="{Binding}">
-                              <Ellipse Width="14" Height="14" Fill="{Binding Index, Converter={x:Static loc:Converters.FriendBrush}}"
-                                       Stroke="{DynamicResource Brush.Text1}" StrokeThickness="{Binding IsCurrent, Converter={x:Static f:FriendConverters.CurrentStroke}}" />
-                            </Button>
-                          </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                      </ItemsControl>
-                    </Flyout>
-                  </Button.Flyout>
-                  <c:FriendDot ColorIndex="{Binding ColorIndex}" Fill="Full" Width="14" Height="14" />
-                </Button>
+              <StackPanel Spacing="10">
+              <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" VerticalAlignment="Center" IsVisible="{Binding !IsEditing}">
+                <c:FriendDot ColorIndex="{Binding ColorIndex}" Fill="Full" Width="14" Height="14" AutomationProperties.AutomationId="Friend.Color" AutomationProperties.Name="{loc:T friendsColor}" />
                 <TextBlock Grid.Column="1" Classes="subject" Text="{Binding GroupName}" VerticalAlignment="Center" Margin="10,0" TextTrimming="CharacterEllipsis" MaxWidth="160" />
-                <TextBox Grid.Column="2" MinWidth="0" Text="{Binding MemberNames}" PlaceholderText="{loc:T friendsNames}" LostFocus="OnNamesLostFocus" KeyDown="OnNamesKeyDown" Margin="0,0,12,0"
-                         AutomationProperties.AutomationId="Friend.Names" />
+                <TextBlock Grid.Column="2" Text="{Binding MemberNames}" TextWrapping="Wrap" VerticalAlignment="Center" />
                 <c:Switch Grid.Column="3" Content="{loc:T friendsEnabled}" IsChecked="{Binding Enabled}" VerticalAlignment="Center" Margin="0,0,12,0"
                           AutomationProperties.AutomationId="Friend.Enabled" />
-                <Button Grid.Column="4" Classes="danger" Content="{loc:T friendsRemove}" Command="{Binding RemoveCommand}"
-                        AutomationProperties.AutomationId="Friend.Remove" />
+                <Button Grid.Column="4" Content="Изменить" Command="{Binding BeginEditCommand}" AutomationProperties.AutomationId="Friend.Edit" />
               </Grid>
+              <StackPanel Spacing="8" IsVisible="{Binding IsEditing}" IsEnabled="{Binding !IsSavingDraft}">
+                <TextBox Text="{Binding DraftGroupName}" PlaceholderText="Группа" AutomationProperties.AutomationId="Friend.DraftGroup" />
+                <TextBox Text="{Binding DraftMemberNames}" PlaceholderText="Имена друзей" AutomationProperties.AutomationId="Friend.Names" />
+                <TextBlock Classes="muted caption" Text="Цвет группы" />
+                <ItemsControl ItemsSource="{Binding DraftColorOptions}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="f:ColorOption"><Button Classes="icon" Command="{Binding $parent[ItemsControl].((f:FriendItemViewModel)DataContext).PickDraftColorCommand}" CommandParameter="{Binding}"><Ellipse Width="18" Height="18" Fill="{Binding Index, Converter={x:Static loc:Converters.FriendBrush}}" Stroke="{DynamicResource Brush.Text1}" StrokeThickness="{Binding IsCurrent, Converter={x:Static f:FriendConverters.CurrentStroke}}" /></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                <TextBlock Text="{Binding DraftError}" TextWrapping="Wrap" />
+                <WrapPanel ItemSpacing="8"><Button Classes="primary" Content="Сохранить" Command="{Binding SaveDraftCommand}" AutomationProperties.AutomationId="Friend.Save" /><Button Content="Отмена" Command="{Binding CancelEditCommand}" AutomationProperties.AutomationId="Friend.Cancel" /></WrapPanel>
+              </StackPanel>
+              <Button Classes="danger" Content="{loc:T friendsRemove}" Command="{Binding RemoveCommand}" HorizontalAlignment="Left" IsEnabled="{Binding !IsSavingDraft}" AutomationProperties.AutomationId="Friend.Remove" />
+              </StackPanel>
             </Border>
           </DataTemplate>
         </ItemsControl.ItemTemplate>

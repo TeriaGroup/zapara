@@ -86,7 +86,10 @@ fun GroupPickerSheet(
     groups: List<GroupInfo>,
     currentId: String?,
     onPick: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    busy: Boolean = false,
+    error: String? = null,
+    onRetry: () -> Unit = {}
 ) {
     val uiText = rememberUiText()
     val c = Zapara.colors
@@ -95,8 +98,15 @@ fun GroupPickerSheet(
         val q = query.trim()
         if (q.isEmpty()) groups else groups.filter { it.name.contains(q, ignoreCase = true) || it.id.contains(q, ignoreCase = true) }
     }
-    ZBottomSheet(onDismiss = onDismiss, tag = "Sheet.GroupPicker") {
+    ZBottomSheet(onDismiss = onDismiss, tag = "Sheet.GroupPicker", canDismiss = { !busy }) {
         Text(stringResource(R.string.group_pick), style = Zapara.typography.section, color = c.text1)
+        if (busy) Text(stringResource(R.string.ux60_group_pick_saving),
+            style = Zapara.typography.caption, color = c.text2)
+        if (error != null) {
+            Text(error, style = Zapara.typography.caption, color = c.bad)
+            ZButton(stringResource(R.string.repeat), onRetry, ghost = true,
+                enabled = !busy, tag = "Picker.RetryGroup")
+        }
         Spacer(Modifier.height(Zapara.space.s))
         OutlinedTextField(
             value = query,
@@ -147,7 +157,7 @@ fun GroupPickerSheet(
                     Modifier
                         .fillMaxWidth()
                         .testTag("Picker.Row.${group.id}")
-                        .clickable { onPick(group.id) }
+                        .clickable(enabled = !busy) { onPick(group.id) }
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         HighlightText(group.name, query, Zapara.typography.bodyStrong, Modifier.weight(1f))

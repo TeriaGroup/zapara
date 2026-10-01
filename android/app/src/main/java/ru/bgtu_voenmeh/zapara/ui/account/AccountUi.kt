@@ -1,5 +1,7 @@
 package ru.bgtu_voenmeh.zapara.ui.account
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -23,6 +25,12 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +47,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountValidation
 import ru.bgtu_voenmeh.zapara.data.api.HttpCall
 import ru.bgtu_voenmeh.zapara.data.api.HttpExchange
 import ru.bgtu_voenmeh.zapara.data.api.JsonFail
@@ -58,9 +67,21 @@ data class AccountDeviceRow(
     val deviceName: String,
     val platform: String,
     val current: Boolean
-)
+) {
+    val label: String get() = "$deviceName · ${when (platform.lowercase()) {
+        "android" -> "Android"
+        "windows" -> "Windows"
+        "web" -> "Веб"
+        else -> platform.ifBlank { "Устройство" }
+    }} · …${deviceId.takeLast(6).uppercase()}"
+}
+
+internal fun mergeAccountDevices(current: List<AccountDeviceRow>, incoming: List<AccountDeviceRow>): List<AccountDeviceRow> =
+    (current + incoming).associateBy { it.familyId }.values.toList()
 
 data class AccountIdentityRow(val provider: String)
+
+enum class AccountRecoveryStep { Request, Confirm }
 
 data class AccountUiCapabilities(
     val registration: Boolean = false,
@@ -72,6 +93,8 @@ data class AccountUiCapabilities(
 data class AccountUiState(
     val ready: Boolean = false,
     val busy: Boolean = false,
+    val externalPending: Boolean = false,
+    val pendingExternalProvider: String? = null,
     val configured: Boolean = false,
     val guest: Boolean = true,
     val registration: Boolean = false,
@@ -80,6 +103,8 @@ data class AccountUiState(
     val username: String = "",
     val password: String = "",
     val displayName: String = "",
+    val profileNameBaseline: String = "",
+    val profileError: String? = null,
     val accountName: String = "",
     val status: String = "",
     val confirmLogout: Boolean = false,
@@ -91,10 +116,19 @@ data class AccountUiState(
     val identities: List<AccountIdentityRow> = emptyList(),
     val hasPassword: Boolean? = null,
     val exportReady: Boolean = false,
+    val exportPending: Boolean = false,
+    val exportSaveName: String? = null,
+    val exportSaveVersion: Long = 0,
+    val exportSaveToken: String? = null,
     val confirmDelete: Boolean = false,
     val vkAvailable: Boolean = false,
     val yandexAvailable: Boolean = false,
-    val recoveryAvailable: Boolean = false
+    val recoveryAvailable: Boolean = false,
+    val capabilitiesError: Boolean = false,
+    val capabilitiesLoading: Boolean = false,
+    val deviceCursor: String? = null,
+    val confirmRevoke: String? = null,
+    val recoveryStep: AccountRecoveryStep = AccountRecoveryStep.Request
 ) {
     val showGuestAuth get() = configured && ready && guest
     val showAccount get() = configured && ready && !guest
@@ -111,6 +145,15 @@ data class AccountUiState(
     val showYandexLink get() = showAccount && yandexAvailable && identities.none { it.provider == "yandex" }
     val showVkUnlink get() = showAccount && identities.any { it.provider == "vk" } && (hasPassword == true || identities.size > 1)
     val showYandexUnlink get() = showAccount && identities.any { it.provider == "yandex" } && (hasPassword == true || identities.size > 1)
+    val usernameValid get() = runCatching { AccountValidation.username(username) }.isSuccess
+    val passwordValid get() = runCatching { AccountValidation.password(password) }.isSuccess
+    val registrationNameValid get() = displayName.isBlank() || runCatching { AccountValidation.displayName(displayName) }.isSuccess
+    val canSubmitCredentials get() = showGuestAuth && !busy && !externalPending && usernameValid && passwordValid &&
+        (!registration || registrationAvailable && documentsAccepted && registrationNameValid)
+    val canRequestRecovery get() = recoveryUsername.ifBlank { username }.trim().matches(Regex("[A-Za-z0-9_.-]{3,32}"))
+    val canConfirmRecovery get() = proof.trim().isNotEmpty() && newPassword.length in 12..128
+    val canSaveProfile get() = showAccount && !busy && displayName.trim() != profileNameBaseline.trim() &&
+        runCatching { displayName.trim().takeIf { it.isNotEmpty() }?.let(AccountValidation::displayName) }.isSuccess
 
     fun clearSecrets() = copy(password = "", currentPassword = "", newPassword = "", proof = "")
 
@@ -125,6 +168,8 @@ data class AccountUiState(
         is AccountEvent.Username -> copy(username = event.value)
         is AccountEvent.Password -> copy(password = event.value)
         is AccountEvent.DisplayName -> copy(displayName = event.value)
+        is AccountEvent.ProfileName -> copy(displayName = event.value, profileError = null)
+        AccountEvent.CancelProfile -> copy(displayName = profileNameBaseline, profileError = null)
         is AccountEvent.CurrentPassword -> copy(currentPassword = event.value)
         is AccountEvent.NewPassword -> copy(newPassword = event.value)
         is AccountEvent.Proof -> copy(proof = event.value)
@@ -136,15 +181,30 @@ data class AccountUiState(
         AccountEvent.CancelLogout -> copy(confirmLogout = false)
         AccountEvent.RequestDelete -> copy(confirmDelete = true)
         AccountEvent.CancelDelete -> copy(confirmDelete = false).clearSecrets()
+        is AccountEvent.RequestRevoke -> if (devices.any { it.familyId == event.familyId })
+            copy(confirmRevoke = event.familyId) else this
+        AccountEvent.RequestRevokeAll -> if (devices.isNotEmpty()) copy(confirmRevoke = "all") else this
+        AccountEvent.CancelRevoke -> copy(confirmRevoke = null)
+        AccountEvent.ClearSensitive -> clearSecrets()
+        AccountEvent.BackToRecoveryRequest -> copy(recoveryStep = AccountRecoveryStep.Request).clearSecrets()
         else -> this
     }
 }
 
 sealed interface AccountEvent {
     data object RefreshProfile : AccountEvent
+    data object RetryCapabilities : AccountEvent
+    data object CancelExternal : AccountEvent
+    data object CheckExport : AccountEvent
+    data class SaveExport(val uri: android.net.Uri?, val version: Long, val token: String) : AccountEvent
+    data object RetryExportSave : AccountEvent
     data class Username(val value: String) : AccountEvent
     data class Password(val value: String) : AccountEvent
     data class DisplayName(val value: String) : AccountEvent
+    data class ProfileName(val value: String) : AccountEvent
+    data object SaveProfile : AccountEvent
+    data object CancelProfile : AccountEvent
+    data object ClearSensitive : AccountEvent
     data class AcceptDocuments(val value: Boolean) : AccountEvent
     data class CurrentPassword(val value: String) : AccountEvent
     data class NewPassword(val value: String) : AccountEvent
@@ -156,6 +216,11 @@ sealed interface AccountEvent {
     data object ConfirmLogout : AccountEvent
     data object CancelLogout : AccountEvent
     data object LoadDevices : AccountEvent
+    data object LoadMoreDevices : AccountEvent
+    data class RequestRevoke(val familyId: String) : AccountEvent
+    data object RequestRevokeAll : AccountEvent
+    data object ConfirmRevoke : AccountEvent
+    data object CancelRevoke : AccountEvent
     data class Revoke(val familyId: String) : AccountEvent
     data object ChangePassword : AccountEvent
     data object CreateExport : AccountEvent
@@ -165,6 +230,7 @@ sealed interface AccountEvent {
     data object CancelDelete : AccountEvent
     data object RequestReset : AccountEvent
     data object ConfirmReset : AccountEvent
+    data object BackToRecoveryRequest : AccountEvent
     data object StartVk : AccountEvent
     data object StartYandex : AccountEvent
     data object LinkVk : AccountEvent
@@ -207,6 +273,22 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
     ZCard(Modifier.fillMaxWidth().testTag("Account.Card")) {
         Text(stringResource(R.string.account_title), style = Zapara.typography.section, color = c.text1)
         Text(state.status, style = Zapara.typography.body, color = c.text1, modifier = Modifier.testTag("Account.Status"))
+        if (state.externalPending) {
+            Text(stringResource(R.string.ux60_account_external_waiting,
+                state.pendingExternalProvider?.uppercase() ?: stringResource(R.string.account_title)),
+                style = Zapara.typography.caption, color = c.text2)
+            ZButton(stringResource(R.string.ux60_account_external_cancel),
+                { onEvent(AccountEvent.CancelExternal) }, ghost = true,
+                enabled = !state.busy, tag = "Account.CancelExternal")
+        }
+        if (state.capabilitiesLoading) Text(stringResource(R.string.ux30_account_caps_loading),
+            style = Zapara.typography.caption, color = c.text2)
+        if (state.capabilitiesError) {
+            Text(stringResource(R.string.ux30_account_caps_failed), style = Zapara.typography.body, color = c.text2,
+                modifier = Modifier.testTag("Account.CapabilitiesError"))
+            ZButton(stringResource(R.string.repeat), { onEvent(AccountEvent.RetryCapabilities) },
+                ghost = true, enabled = !state.capabilitiesLoading, tag = "Account.RetryCapabilities")
+        }
         Text(stringResource(R.string.account_isolation), style = Zapara.typography.caption, color = c.text2)
         LegalLink(stringResource(R.string.face_agreement), "Legal.Agreement", R.drawable.ic_file) { onOpenLegal("agreement") }
         LegalLink(stringResource(R.string.face_policy), "Legal.Policy", R.drawable.ic_shield) { onOpenLegal("policy") }
@@ -215,13 +297,19 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
             AccountField(state.username, stringResource(R.string.account_username), "Account.Username") {
                 onEvent(AccountEvent.Username(it))
             }
+            if (!state.usernameValid) Text(stringResource(R.string.ux60_account_username_hint),
+                style = Zapara.typography.caption, color = c.warn)
             AccountField(state.password, stringResource(R.string.account_password), "Account.Password", password = true) {
                 onEvent(AccountEvent.Password(it))
             }
+            if (!state.passwordValid) Text(stringResource(R.string.ux60_account_password_hint),
+                style = Zapara.typography.caption, color = c.warn)
             if (state.registration) {
                 AccountField(state.displayName, stringResource(R.string.account_display_name), "Account.DisplayName") {
                     onEvent(AccountEvent.DisplayName(it))
                 }
+                if (!state.registrationNameValid) Text(stringResource(R.string.ux60_account_name_hint),
+                    style = Zapara.typography.caption, color = c.warn)
                 AcceptDocuments(
                     checked = state.documentsAccepted,
                     onChange = { onEvent(AccountEvent.AcceptDocuments(it)) }
@@ -230,42 +318,63 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
             Text(stringResource(R.string.account_validation), style = Zapara.typography.caption, color = c.text2)
             Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 if (state.registration) {
-                    ZButton(stringResource(R.string.account_register), { onEvent(AccountEvent.Submit) }, enabled = !state.busy && state.documentsAccepted, tag = "Account.Register")
+                    ZButton(stringResource(R.string.account_register), { onEvent(AccountEvent.Submit) }, enabled = state.canSubmitCredentials, tag = "Account.Register")
                 } else {
-                    ZButton(stringResource(R.string.account_login), { onEvent(AccountEvent.Submit) }, enabled = !state.busy, tag = "Account.Login")
+                    ZButton(stringResource(R.string.account_login), { onEvent(AccountEvent.Submit) }, enabled = state.canSubmitCredentials, tag = "Account.Login")
                 }
                 if (state.registrationAvailable) {
-                    ZButton(stringResource(R.string.account_mode), { onEvent(AccountEvent.ToggleRegistration) }, ghost = true, enabled = !state.busy, tag = "Account.Mode")
+                    ZButton(stringResource(R.string.account_mode), { onEvent(AccountEvent.ToggleRegistration) }, ghost = true, enabled = !state.busy && !state.externalPending, tag = "Account.Mode")
                 }
             }
             if (state.showYandexLogin || state.showVkLogin) {
                 Text(stringResource(R.string.face_sign_in_with), style = Zapara.typography.caption, color = c.text2)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                     if (state.showYandexLogin) {
-                        IdButton(stringResource(R.string.face_yandex_id), stringResource(R.string.account_yandex), R.drawable.ic_brand_yandex, { onEvent(AccountEvent.StartYandex) }, !state.busy, "Account.Yandex", Modifier.weight(1f))
+                        IdButton(stringResource(R.string.face_yandex_id), stringResource(R.string.account_yandex), R.drawable.ic_brand_yandex, { onEvent(AccountEvent.StartYandex) }, !state.busy && !state.externalPending, "Account.Yandex", Modifier.weight(1f))
                     }
                     if (state.showVkLogin) {
-                        IdButton("VK ID", stringResource(R.string.account_vk), R.drawable.ic_brand_vk, { onEvent(AccountEvent.StartVk) }, !state.busy, "Account.Vk", Modifier.weight(1f))
+                        IdButton("VK ID", stringResource(R.string.account_vk), R.drawable.ic_brand_vk, { onEvent(AccountEvent.StartVk) }, !state.busy && !state.externalPending, "Account.Vk", Modifier.weight(1f))
                     }
                 }
             }
             if (state.showRecovery) {
-                AccountField(state.recoveryUsername, stringResource(R.string.account_recovery_email), "Account.Recovery") {
+                AccountField(state.recoveryUsername, stringResource(R.string.ux30_recovery_login), "Account.Recovery") {
                     onEvent(AccountEvent.RecoveryUsername(it))
                 }
-                AccountField(state.proof, stringResource(R.string.account_proof), "Account.Proof", password = true) {
-                    onEvent(AccountEvent.Proof(it))
-                }
-                AccountField(state.newPassword, stringResource(R.string.account_new_password), "Account.NewPassword", password = true) {
-                    onEvent(AccountEvent.NewPassword(it))
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                    ZButton(stringResource(R.string.account_reset), { onEvent(AccountEvent.RequestReset) }, enabled = !state.busy, tag = "Account.Reset")
-                    ZButton(stringResource(R.string.account_reset), { onEvent(AccountEvent.ConfirmReset) }, ghost = true, enabled = !state.busy, tag = "Account.ConfirmReset")
+                if (state.recoveryStep == AccountRecoveryStep.Request) {
+                    ZButton(stringResource(R.string.ux30_recovery_request), { onEvent(AccountEvent.RequestReset) },
+                        enabled = !state.busy && state.canRequestRecovery, tag = "Account.Reset")
+                } else {
+                    Text(stringResource(R.string.ux30_recovery_requested), style = Zapara.typography.caption, color = c.text2)
+                    AccountField(state.proof, stringResource(R.string.account_proof), "Account.Proof", password = true) {
+                        onEvent(AccountEvent.Proof(it))
+                    }
+                    AccountField(state.newPassword, stringResource(R.string.account_new_password), "Account.NewPassword", password = true) {
+                        onEvent(AccountEvent.NewPassword(it))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        ZButton(stringResource(R.string.ux30_recovery_set), { onEvent(AccountEvent.ConfirmReset) },
+                            enabled = !state.busy && state.canConfirmRecovery, tag = "Account.ConfirmReset")
+                        ZButton(stringResource(R.string.ux30_recovery_back), { onEvent(AccountEvent.BackToRecoveryRequest) },
+                            ghost = true, enabled = !state.busy)
+                    }
                 }
             }
         } else {
             Text(state.accountName, style = Zapara.typography.section, color = c.text1, modifier = Modifier.testTag("Account.Name"))
+            AccountField(state.displayName, stringResource(R.string.uxnext_profile_name), "Account.ProfileName") {
+                onEvent(AccountEvent.ProfileName(it))
+            }
+            state.profileError?.let { Text(it, style = Zapara.typography.caption, color = c.bad,
+                modifier = Modifier.testTag("Account.ProfileError")) }
+            if (state.displayName.trim() != state.profileNameBaseline.trim()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    ZButton(stringResource(R.string.uxnext_profile_save), { onEvent(AccountEvent.SaveProfile) },
+                        enabled = state.canSaveProfile, busy = state.busy, tag = "Account.ProfileSave")
+                    ZButton(stringResource(R.string.uxnext_profile_cancel), { onEvent(AccountEvent.CancelProfile) },
+                        ghost = true, enabled = !state.busy, tag = "Account.ProfileCancel")
+                }
+            }
             ru.bgtu_voenmeh.zapara.ui.chat.LocalAvatarStore.current?.let { avatars ->
                 ru.bgtu_voenmeh.zapara.ui.chat.AvatarEditor(state.accountName,
                     ru.bgtu_voenmeh.zapara.data.avatars.AvatarTarget(ru.bgtu_voenmeh.zapara.data.avatars.AvatarKind.User, avatars.userId),
@@ -287,11 +396,56 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
 
 @Composable
 private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent) -> Unit) {
-    val enabled = !state.busy
+    val enabled = !state.busy && !state.externalPending
+    var launchedExportVersion by rememberSaveable { mutableLongStateOf(0L) }
+    var launchedExportToken by rememberSaveable { mutableStateOf("") }
+    var launchedExportKey by rememberSaveable { mutableStateOf("") }
+    val createExportDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) {
+        onEvent(AccountEvent.SaveExport(it, launchedExportVersion, launchedExportToken))
+    }
+    LaunchedEffect(state.exportSaveVersion, state.exportSaveName, state.exportSaveToken) {
+        val name = state.exportSaveName ?: return@LaunchedEffect
+        val token = state.exportSaveToken ?: return@LaunchedEffect
+        val key = "$token:${state.exportSaveVersion}"
+        if (key == launchedExportKey) return@LaunchedEffect
+        launchedExportKey = key
+        launchedExportVersion = state.exportSaveVersion
+        launchedExportToken = token
+        createExportDocument.launch(name)
+    }
     ZButton(stringResource(R.string.account_devices), { onEvent(AccountEvent.LoadDevices) }, ghost = true, enabled = enabled, tag = "Account.Devices")
     state.devices.forEach { device ->
-        Text(device.deviceName, style = Zapara.typography.body, color = Zapara.colors.text1, modifier = Modifier.testTag("Account.Device"))
-        ZButton(stringResource(R.string.account_revoke), { onEvent(AccountEvent.Revoke(device.familyId)) }, ghost = true, enabled = enabled, tag = "Account.Revoke")
+        Text(device.label, style = Zapara.typography.body, color = Zapara.colors.text1, modifier = Modifier.testTag("Account.Device"))
+        if (device.current) Text(stringResource(R.string.ux30_devices_current),
+            style = Zapara.typography.caption, color = Zapara.colors.text2)
+        if (state.confirmRevoke == device.familyId) {
+            Text(if (device.current) stringResource(R.string.ux30_devices_current_confirm)
+                else stringResource(R.string.ux30_devices_other_confirm, device.label),
+                style = Zapara.typography.body, color = Zapara.colors.text1)
+            Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZButton(stringResource(R.string.account_revoke), { onEvent(AccountEvent.ConfirmRevoke) },
+                    enabled = enabled, tag = "Account.ConfirmRevoke")
+                ZButton(stringResource(R.string.account_cancel), { onEvent(AccountEvent.CancelRevoke) },
+                    ghost = true, enabled = enabled)
+            }
+        } else {
+            ZButton(stringResource(R.string.account_revoke), { onEvent(AccountEvent.RequestRevoke(device.familyId)) },
+                ghost = true, enabled = enabled, tag = "Account.Revoke")
+        }
+    }
+    if (state.deviceCursor != null) ZButton(stringResource(R.string.ux30_devices_more),
+        { onEvent(AccountEvent.LoadMoreDevices) }, ghost = true, enabled = enabled, tag = "Account.MoreDevices")
+    if (state.devices.isNotEmpty()) {
+        if (state.confirmRevoke == "all") {
+            Text(stringResource(R.string.ux30_devices_all_confirm), style = Zapara.typography.body, color = Zapara.colors.text1)
+            Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZButton(stringResource(R.string.ux30_devices_all), { onEvent(AccountEvent.ConfirmRevoke) },
+                    enabled = enabled, tag = "Account.ConfirmRevokeAll")
+                ZButton(stringResource(R.string.account_cancel), { onEvent(AccountEvent.CancelRevoke) },
+                    ghost = true, enabled = enabled)
+            }
+        } else ZButton(stringResource(R.string.ux30_devices_all),
+            { onEvent(AccountEvent.RequestRevokeAll) }, ghost = true, enabled = enabled, tag = "Account.RevokeAll")
     }
     if (state.showPasswordChange) {
         AccountField(state.currentPassword, stringResource(R.string.account_current_password), "Account.CurrentPassword", password = true) {
@@ -309,10 +463,17 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
     } else if (state.identities.isNotEmpty()) {
         Text(stringResource(R.string.account_proof_provider), style = Zapara.typography.caption, color = Zapara.colors.text2)
     }
-    ZButton(stringResource(R.string.account_export), { onEvent(AccountEvent.CreateExport) }, ghost = true, enabled = enabled, tag = "Account.Export")
+    ZButton(stringResource(R.string.account_export), { onEvent(AccountEvent.CreateExport) }, ghost = true,
+        enabled = enabled && !state.exportPending, tag = "Account.Export")
+    if (state.exportPending) ZButton(stringResource(R.string.ux60_export_check),
+        { onEvent(AccountEvent.CheckExport) }, enabled = enabled, tag = "Account.ExportCheck")
     if (state.exportReady) {
-        ZButton(stringResource(R.string.account_export_download), { onEvent(AccountEvent.DownloadExport) }, enabled = enabled, tag = "Account.ExportDownload")
+        ZButton(stringResource(R.string.account_export_download), { onEvent(AccountEvent.DownloadExport) },
+            enabled = enabled && state.exportSaveName == null, tag = "Account.ExportDownload")
     }
+    if (state.exportSaveName != null) ZButton(stringResource(R.string.ux60_export_choose_again),
+        { onEvent(AccountEvent.RetryExportSave) }, ghost = true, enabled = enabled,
+        tag = "Account.ExportSaveRetry")
     if (state.showIdentities) {
         Text(stringResource(R.string.account_identities), style = Zapara.typography.section, color = Zapara.colors.text1)
         if (state.showYandexLink || state.showVkLink) {

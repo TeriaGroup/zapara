@@ -25,6 +25,7 @@ import ru.bgtu_voenmeh.zapara.data.Lesson
 import ru.bgtu_voenmeh.zapara.data.Parity
 import ru.bgtu_voenmeh.zapara.data.SchedCtx
 import ru.bgtu_voenmeh.zapara.data.Schedule
+import ru.bgtu_voenmeh.zapara.data.Subgroups
 import ru.bgtu_voenmeh.zapara.ui.AppEvent
 import ru.bgtu_voenmeh.zapara.ui.LessonFormat
 import ru.bgtu_voenmeh.zapara.ui.components.ToastKind
@@ -35,6 +36,7 @@ import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEditorWork
 import ru.bgtu_voenmeh.zapara.ui.homework.saveHomeworkEditor
 import ru.bgtu_voenmeh.zapara.ui.homework.loadHomeworkShareContext
 import ru.bgtu_voenmeh.zapara.ui.homework.retryHomeworkPublication
+import ru.bgtu_voenmeh.zapara.ui.homework.RequestTokens
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -42,7 +44,8 @@ class ScheduleViewModel(
     private val container: AppContainer,
     private val initialDateArg: String?
 ) : ViewModel() {
-    private val mutable = MutableStateFlow(ScheduleUiState(guest = container.profile.isGuest))
+    private val mutable = MutableStateFlow(ScheduleUiState(guest = container.profile.isGuest,
+        profileName = container.profile.databaseName))
     val state: StateFlow<ScheduleUiState> = mutable.asStateFlow()
     private var ctx: SchedCtx? = null
     private var allLessons: List<Lesson> = emptyList()
@@ -52,7 +55,10 @@ class ScheduleViewModel(
     private val projection = ScheduleProjectionController(mutable)
     private val sharedHomework get() = projection.shared.rows
     private val sharedCompletion get() = projection.shared.completions
-    private var sharedBusy = false
+    private data class SharedActionKey(val profile: String, val group: String, val community: String, val id: String)
+    private val sharedActions = RequestTokens<SharedActionKey>()
+    private var sharedActionEpoch = 0L
+    private var completionEpoch = 0L
     private var undoSerial = 0L
     private fun expireUndo() {
         val serial = ++undoSerial
@@ -60,6 +66,9 @@ class ScheduleViewModel(
     }
     private var savingHomework = false
     private var savingRename = false
+    private var renameTicket = 0L
+    private var subjectRequestTicket = 0L
+    private var subgroupUndoSerial = 0L
 
     init {
         viewModelScope.launch { bootstrap() }
@@ -80,49 +89,54 @@ class ScheduleViewModel(
         when (event) {
             is ScheduleEvent.Need -> viewModelScope.launch { ensurePage(event.date) }
             is ScheduleEvent.Select -> viewModelScope.launch {
+                ++renameTicket
                 syncClock()
                 mutable.update { it.copy(selected = event.date, undoDone = null, undoShared = null) }
                 ensureAround(event.date)
             }
             ScheduleEvent.Retry -> viewModelScope.launch { bootstrap() }
             is ScheduleEvent.QuickDay -> viewModelScope.launch {
+                ++renameTicket
                 syncClock()
                 val date=container.clock().toLocalDate().plusDays(event.offset.toLong())
                 mutable.update { it.copy(selected=date,undoDone=null,undoShared=null) }
                 ensureAround(date)
             }
             ScheduleEvent.Today -> viewModelScope.launch {
+                ++renameTicket
                 syncClock()
                 val today = container.clock().toLocalDate()
                 mutable.update { it.copy(today = today, selected = today) }
                 ensureAround(today)
             }
             ScheduleEvent.UndoShared -> mutable.value.undoShared?.let { (id, previous) -> toggleShared(id, previous, undo = true) }
-            ScheduleEvent.UndoDone -> mutable.value.undoDone?.let { (id, previous) -> viewModelScope.launch {
-                withContext(Dispatchers.IO) { container.homework.markDone(id, previous) }
-                mutable.update { it.copy(undoDone = null, undoShared = null) }
-                container.events.emit(AppEvent.PersonalizationChanged)
-            } }
+            ScheduleEvent.UndoDone -> undoPersonalCompletion()
             ScheduleEvent.SyncClock -> syncClock()
             ScheduleEvent.RefreshShared -> viewModelScope.launch { ctx?.groupId?.let { loadShared(it) } }
             ScheduleEvent.Refresh -> refresh()
-            is ScheduleEvent.LongPress -> mutable.update { it.copy(actionsFor = event.lesson) }
-            ScheduleEvent.CloseActions -> mutable.update { it.copy(actionsFor = null) }
+            is ScheduleEvent.LongPress -> { ++renameTicket; mutable.update { it.copy(actionsFor = event.lesson) } }
+            ScheduleEvent.CloseActions -> { ++renameTicket; mutable.update { it.copy(actionsFor = null) } }
             is ScheduleEvent.Rename -> openRename(event.lesson)
             is ScheduleEvent.RenameChanged -> mutable.update { s ->
-                s.copy(rename = s.rename?.copy(name = event.name, note = event.note, scope = event.scope))
+                val ui = s.rename
+                s.copy(rename = if (ui != null && !ui.busy) ui.copy(name = event.name, note = event.note,
+                    scope = event.scope, hasExisting = event.scope in ui.existingScopes, error = null) else ui)
             }
-            ScheduleEvent.RenameSave -> saveRename()
-            ScheduleEvent.RenameReset -> resetRename()
-            ScheduleEvent.RenameCancel -> mutable.update { it.copy(rename = null) }
-            is ScheduleEvent.SubjectHomework -> viewModelScope.launch {
-                val rows = withContext(Dispatchers.IO) { container.homework.forSubjectByNorm(event.lesson.subjectNorm).map { HomeworkRowUi(it.id, it.text, it.due?.toString() ?: container.app.getString(R.string.space_day_29), it.status, it.done) } }
-                mutable.update { it.copy(actionsFor = null, subjectHomework = event.lesson, subjectRows = rows + sharedHomework.filter { hw -> hw.title.equals(event.lesson.subjectRaw, true) || hw.title.equals(event.lesson.name, true) }.map { hw -> sharedRow(hw) }) }
+            is ScheduleEvent.RenameSave -> saveRename(event.draft)
+            is ScheduleEvent.RenameReset -> resetRename(event.draft)
+            ScheduleEvent.RenameCancel -> if (mutable.value.rename?.busy != true) {
+                ++renameTicket
+                mutable.update { it.copy(rename = null) }
             }
-            ScheduleEvent.CloseSubjectHomework -> mutable.update { it.copy(subjectHomework = null, sharedDetail = null) }
+            is ScheduleEvent.SubjectHomework -> openSubjectHomework(event.lesson)
+            ScheduleEvent.CloseSubjectHomework -> {
+                ++subjectRequestTicket
+                mutable.update { it.copy(subjectHomework = null, sharedDetail = null) }
+            }
             is ScheduleEvent.OpenHomework -> openExistingHomework(event.row)
-            is ScheduleEvent.ToggleShared -> toggleShared(event.id, event.done)
-            is ScheduleEvent.ToggleDone -> toggleDone(event.id)
+            is ScheduleEvent.ToggleShared -> toggleShared(event.id, event.done,
+                groupId = event.groupId, profileName = event.profileName)
+            is ScheduleEvent.ToggleDone -> toggleDone(event)
             is ScheduleEvent.AddHomework -> openHomework(event.lesson)
             is ScheduleEvent.HomeworkEditorText -> mutable.update { s ->
                 s.copy(homeworkEditor = s.homeworkEditor?.withText(event.text))
@@ -132,6 +146,7 @@ class ScheduleViewModel(
                 if (event.on) loadHomeworkShareOptions()
             }
             is ScheduleEvent.HomeworkEditorAudience -> mutable.update { s -> s.copy(homeworkEditor = s.homeworkEditor?.withAudience(event.audience)) }
+            ScheduleEvent.HomeworkRetryShareOptions -> loadHomeworkShareOptions()
             ScheduleEvent.HomeworkRetryShare -> retryHomeworkShare()
             ScheduleEvent.HomeworkEditorInc -> mutable.update { s -> s.copy(homeworkEditor = s.homeworkEditor?.inc()) }
             ScheduleEvent.HomeworkEditorDec -> mutable.update { s -> s.copy(homeworkEditor = s.homeworkEditor?.dec()) }
@@ -159,7 +174,42 @@ class ScheduleViewModel(
             is ScheduleEvent.HomeworkAttach -> attachHomework(event.kind, event.uri)
             is ScheduleEvent.HomeworkRemoveFile -> removeHomeworkFile(event.id)
             is ScheduleEvent.OpenMap -> { }
-            is ScheduleEvent.PickSubgroup -> pickSubgroup(event.streamId, event.optionId)
+            is ScheduleEvent.PickSubgroup -> pickSubgroup(event.streamId, event.optionId,
+                event.groupId, event.profileName)
+            ScheduleEvent.UndoSubgroup -> undoSubgroup()
+        }
+    }
+
+    private fun openSubjectHomework(lesson: LessonUi) {
+        val groupId = ctx?.groupId.orEmpty()
+        val request = SubjectHomeworkRequest(++subjectRequestTicket, container.profile.databaseName, groupId, lesson.subjectNorm)
+        mutable.update { it.copy(actionsFor = null, subjectHomework = lesson, subjectRows = emptyList(), subjectRowsStatus = SubjectRowsStatus.Loading) }
+        viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    if (container.repo.settings().myGroupId.orEmpty() != groupId) return@withContext null
+                    container.homework.forSubjectByNorm(lesson.subjectNorm).map {
+                        HomeworkRowUi(it.id, it.text, it.due?.toString() ?: container.app.getString(R.string.space_day_29), it.status, it.done)
+                    }
+                } ?: return@launch
+                if (!request.matches(subjectRequestTicket, container.profile.databaseName, ctx?.groupId.orEmpty(), mutable.value.subjectHomework)) return@launch
+                val shared = sharedHomework.filter { hw ->
+                    hw.title.equals(lesson.subjectRaw, true) || hw.title.equals(lesson.name, true)
+                }.map { hw -> sharedRow(hw) }
+                mutable.update { state ->
+                    if (request.matches(subjectRequestTicket, container.profile.databaseName, ctx?.groupId.orEmpty(), state.subjectHomework))
+                        state.copy(subjectRows = reconcileSubjectSheetRows(result, shared), subjectRowsStatus = SubjectRowsStatus.Ready)
+                    else state
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                android.util.Log.w("ZaparaSchedule", "subjectHomework", e)
+                mutable.update { state ->
+                    if (request.matches(subjectRequestTicket, container.profile.databaseName, ctx?.groupId.orEmpty(), state.subjectHomework))
+                        state.copy(subjectRowsStatus = SubjectRowsStatus.Failed)
+                    else state
+                }
+            }
         }
     }
 
@@ -194,13 +244,25 @@ class ScheduleViewModel(
                 mutable.update { it.copy(loaded = true, hasGroup = false, today = today, selected = today, pages = emptyMap(), error = ensureError) }
                 return@withLock
             }
-            if (ctx?.groupId != gid) { sharedCache.clear(); projection.purge() }
+            if (ctx?.groupId != gid) {
+                ++sharedActionEpoch; sharedActions.clear()
+                ++renameTicket
+                ++completionEpoch
+                ++subjectRequestTicket
+                ++subgroupUndoSerial
+                mutable.update { it.copy(subjectHomework = null, subjectRows = emptyList(), undoSubgroup = null,
+                    undoDone = null, completionBusyIds = emptySet(), undoDoneBusy = false,
+                    sharedBusyIds = emptySet()) }
+                sharedCache.clear(); projection.purge()
+            }
             ctx = SchedCtx(gid, prefs.periodStart, prefs.weekCount, prefs.parityInvert)
             allLessons = all
             val parsedArg = initialDateArg?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             val visible = ru.bgtu_voenmeh.zapara.data.Subgroups.visible(all, container.subgroupChoices(gid))
             val selected = if (mutable.value.loaded) mutable.value.selected else parsedArg ?: today
-            mutable.update { it.copy(loaded = true, hasGroup = gid.isNotEmpty(), today = today, selected = selected, pages = emptyMap(), error = null, now = now, sourceStatus = ru.bgtu_voenmeh.zapara.ui.settings.SettingsLogic.updatedLine(prefs.lastFetchedAt, now, container.copy, allLessons.isNotEmpty())) }
+            mutable.update { it.copy(loaded = true, hasGroup = gid.isNotEmpty(), groupId = gid,
+                today = today, selected = selected, pages = emptyMap(), error = null, now = now,
+                sourceStatus = ru.bgtu_voenmeh.zapara.ui.settings.SettingsLogic.updatedLine(prefs.lastFetchedAt, now, container.copy, allLessons.isNotEmpty())) }
             if (ensureError != null && gid.isNotEmpty()) {
                 container.toasts.show(container.app.getString(R.string.refresh_fail, ensureError), ToastKind.Bad)
             }
@@ -226,12 +288,25 @@ class ScheduleViewModel(
                 Triple(prefs, gid, all)
             }
             val (prefs, gid, all) = snap
-            if (ctx?.groupId != gid) { sharedCache.clear(); projection.purge() }
+            val changedGroup = ctx?.groupId != gid
+            if (changedGroup) {
+                ++sharedActionEpoch; sharedActions.clear()
+                ++renameTicket
+                ++completionEpoch
+                ++subjectRequestTicket
+                ++subgroupUndoSerial
+                mutable.update { it.copy(pages = emptyMap(), actionsFor = null, rename = null,
+                    subjectHomework = null, subjectRows = emptyList(), undoSubgroup = null,
+                    undoDone = null, undoShared = null, completionBusyIds = emptySet(), undoDoneBusy = false,
+                    sharedBusyIds = emptySet()) }
+                sharedCache.clear(); projection.purge()
+            }
             ctx = SchedCtx(gid, prefs.periodStart, prefs.weekCount, prefs.parityInvert)
             allLessons = all
             val rolled = ScheduleComposer.syncToday(today, mutable.value.today, mutable.value.selected)
             val dates = (mutable.value.pages.keys + rolled.second).distinct()
-            mutable.update { it.copy(hasGroup = gid.isNotEmpty(), today = rolled.first, selected = rolled.second, error = null) }
+            mutable.update { it.copy(hasGroup = gid.isNotEmpty(), groupId = gid,
+                today = rolled.first, selected = rolled.second, error = null) }
             dates.forEach { ensurePage(it, force = true) }
             loadShared(gid)
         } catch (e: CancellationException) { throw e }
@@ -250,7 +325,7 @@ class ScheduleViewModel(
 
     private suspend fun ensureAround(date: LocalDate) {
         ensurePage(date)
-        ensurePage(date.minusDays(1))
+        for (offset in 1L..3L) ensurePage(date.minusDays(offset))
         for (offset in 1L..6L) ensurePage(date.plusDays(offset))
     }
 
@@ -326,13 +401,59 @@ class ScheduleViewModel(
         return page.copy(lessons = if (source != null) emptyList() else page.lessons, deadlines = localDeadlines + sharedDeadlines, dataState = source)
     }
 
-    private fun pickSubgroup(streamId: String, optionId: String) {
+    private fun pickSubgroup(streamId: String, optionId: String,
+        expectedGroup: String?, expectedProfile: String?) {
         val gid = ctx?.groupId?.takeIf { it.isNotEmpty() } ?: return
+        val profile = container.profile.databaseName
+        if (expectedGroup != null && expectedGroup != gid) return
+        if (expectedProfile != null && expectedProfile != profile) return
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                container.subgroups.select(container.profile.databaseName, gid, streamId, optionId)
+            try {
+                val change = writes.withLock { withContext(Dispatchers.IO) {
+                    if (container.repo.settings().myGroupId.orEmpty() != gid ||
+                        (container.app as? ru.bgtu_voenmeh.zapara.ZaparaApplication)?.container?.profile
+                            ?.let { it != container.profile } == true) return@withContext null
+                    val streams = Subgroups.index(container.repo.allForGroup(gid)).streams
+                    if (!subgroupOptionExists(streams, streamId, optionId)) return@withContext null
+                    val (before, after) = container.subgroups.selectWithPrevious(profile, gid, streamId, optionId)
+                    SubgroupUndoUi(profile, gid, streamId, before, after)
+                } }
+                if (change != null && ctx?.groupId == gid) {
+                    val serial = ++subgroupUndoSerial
+                    mutable.update { it.copy(undoSubgroup = change) }
+                    container.events.emit(AppEvent.SubgroupChanged)
+                    viewModelScope.launch { delay(5_000); if (serial == subgroupUndoSerial)
+                        mutable.update { it.copy(undoSubgroup = null) } }
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                android.util.Log.w("ZaparaSchedule", "subgroup", e)
+                container.toasts.show(container.app.getString(R.string.uxnext_subgroup_failed), ToastKind.Bad)
             }
-            container.events.emit(AppEvent.SubgroupChanged)
+        }
+    }
+
+    private fun undoSubgroup() {
+        val undo = mutable.value.undoSubgroup ?: return
+        ++subgroupUndoSerial
+        mutable.update { it.copy(undoSubgroup = null) }
+        viewModelScope.launch {
+            try {
+                val restored = writes.withLock { withContext(Dispatchers.IO) {
+                    if (container.repo.settings().myGroupId.orEmpty() != undo.groupId ||
+                        (container.app as? ru.bgtu_voenmeh.zapara.ZaparaApplication)?.container?.profile
+                            ?.let { it != container.profile } == true) return@withContext false
+                    val streams = Subgroups.index(container.repo.allForGroup(undo.groupId)).streams
+                    val current = container.subgroups.read(undo.profile, undo.groupId)[undo.streamId]
+                    undo.allows(container.profile.databaseName, undo.groupId, current, streams) &&
+                        container.subgroups.restoreIfCurrent(undo.profile, undo.groupId, undo.streamId, undo.after, undo.before)
+                } }
+                if (restored) container.events.emit(AppEvent.SubgroupChanged)
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                android.util.Log.w("ZaparaSchedule", "subgroup undo", e)
+                container.toasts.show(container.app.getString(R.string.uxnext_subgroup_failed), ToastKind.Bad)
+            }
         }
     }
 
@@ -367,76 +488,102 @@ class ScheduleViewModel(
     }
 
     private fun openRename(lesson: LessonUi) {
+        if (savingRename) return
+        val ticket = ++renameTicket
+        val group = ctx?.groupId ?: return
+        val profile = container.profile.databaseName
+        val selectedDate = mutable.value.selected
+        mutable.update { it.copy(actionsFor = null) }
         viewModelScope.launch {
-            val existing = withContext(Dispatchers.IO) {
-                val has = container.overrides.all().any { it.subjectRawNormalized == lesson.subjectNorm }
-                val note = container.overrides.noteByNorm(lesson.subjectNorm, lesson.dayOfWeek)
-                has to note
-            }
-            mutable.update {
-                it.copy(
-                    actionsFor = null,
-                    rename = RenameUi(
-                        lesson = lesson, name = lesson.name, note = existing.second,
-                        scope = 0, hasExisting = existing.first,
-                        original = lesson.original ?: lesson.name,
-                        dayName = Parity.dayNumberToTitle(lesson.dayOfWeek)
-                    )
-                )
+            try {
+                val existing = withContext(Dispatchers.IO) {
+                    val rows = container.overrides.all().filter { it.subjectRawNormalized == lesson.subjectNorm }
+                    val scopes = rows.mapNotNull { row -> when (row.scope) {
+                        "global" -> 0
+                        "weekday:${lesson.dayOfWeek}" -> 1
+                        else -> null
+                    } }.toSet()
+                    scopes to container.overrides.noteByNorm(lesson.subjectNorm, lesson.dayOfWeek)
+                }
+                if (ticket != renameTicket || ctx?.groupId != group || mutable.value.selected != selectedDate ||
+                    container.profile.databaseName != profile) return@launch
+                mutable.update { state -> state.copy(rename = RenameUi(
+                    lesson = lesson, name = lesson.name, note = existing.second,
+                    scope = 0, hasExisting = 0 in existing.first, existingScopes = existing.first,
+                    original = lesson.original ?: lesson.name,
+                    dayName = Parity.dayNumberToTitle(lesson.dayOfWeek),
+                    profileName = profile, groupId = group, selectedDate = selectedDate
+                )) }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                if (ticket == renameTicket) container.toasts.show(container.app.getString(R.string.ux60_rename_load_failed), ToastKind.Bad)
             }
         }
     }
 
-    private fun saveRename() {
+    private fun renameCurrent(ticket: Long, ui: RenameUi): Boolean = ticket == renameTicket &&
+        container.profile.databaseName == ui.profileName && ctx?.groupId == ui.groupId &&
+        mutable.value.selected == ui.selectedDate && mutable.value.rename?.lesson == ui.lesson
+
+    private fun saveRename(target: RenameUi) {
         if (savingRename) return
-        val ui = mutable.value.rename ?: return
+        val ui = mutable.value.rename?.takeIf { !it.busy && it == target } ?: return
+        val ticket = ++renameTicket
         savingRename = true
-        mutable.update { it.copy(rename = null) }
+        mutable.update { it.copy(rename = ui.copy(busy = true, error = null)) }
         viewModelScope.launch {
             try {
                 writes.withLock {
                     withContext(Dispatchers.IO) {
+                        if (container.repo.settings().myGroupId.orEmpty() != ui.groupId ||
+                            container.profile.databaseName != ui.profileName) error("rename scope changed")
                         container.overrides.addOrUpdate(
                             ui.lesson.subjectRaw,
-                            if (ui.scope == 0) "global" else "weekday:${ui.lesson.dayOfWeek}",
+                            renameScopeKey(ui.scope, ui.lesson.dayOfWeek),
                             ui.name.trim(),
                             ui.note.trim().ifBlank { null }
                         )
                     }
                 }
+                if (renameCurrent(ticket, ui)) mutable.update { it.copy(rename = null) }
                 container.events.emit(AppEvent.PersonalizationChanged)
             } catch (e: CancellationException) {
-                mutable.update { cur -> if (cur.rename == null) cur.copy(rename = ui) else cur }
+                if (renameCurrent(ticket, ui)) mutable.update { it.copy(rename = ui.copy(error = container.app.getString(R.string.ux60_rename_save_failed))) }
                 throw e
             } catch (e: Exception) {
                 android.util.Log.w("ZaparaSchedule", "rename", e)
-                mutable.update { cur -> if (cur.rename == null) cur.copy(rename = ui) else cur }
+                if (renameCurrent(ticket, ui)) mutable.update { it.copy(rename = ui.copy(error = container.app.getString(R.string.ux60_rename_save_failed))) }
             } finally {
                 savingRename = false
             }
         }
     }
 
-    private fun resetRename() {
+    private fun resetRename(target: RenameUi) {
         if (savingRename) return
-        val ui = mutable.value.rename ?: return
+        val ui = mutable.value.rename?.takeIf { !it.busy && it.hasExisting && it == target } ?: return
+        val ticket = ++renameTicket
         savingRename = true
-        mutable.update { it.copy(rename = null) }
+        mutable.update { it.copy(rename = ui.copy(busy = true, error = null)) }
         viewModelScope.launch {
             try {
                 writes.withLock {
                     withContext(Dispatchers.IO) {
-                        container.overrides.all().filter { it.subjectRawNormalized == ui.lesson.subjectNorm }
-                            .forEach { container.overrides.remove(it.id) }
+                        if (container.repo.settings().myGroupId.orEmpty() != ui.groupId ||
+                            container.profile.databaseName != ui.profileName) error("rename scope changed")
+                        val targetScope = renameScopeKey(ui.scope, ui.lesson.dayOfWeek)
+                        renameResetIds(container.overrides.all(), ui.lesson.subjectNorm, targetScope)
+                            .forEach(container.overrides::remove)
                     }
                 }
+                if (renameCurrent(ticket, ui)) mutable.update { it.copy(rename = null) }
                 container.events.emit(AppEvent.PersonalizationChanged)
             } catch (e: CancellationException) {
-                mutable.update { cur -> if (cur.rename == null) cur.copy(rename = ui) else cur }
+                if (renameCurrent(ticket, ui)) mutable.update { it.copy(rename = ui.copy(error = container.app.getString(R.string.ux60_rename_reset_failed))) }
                 throw e
             } catch (e: Exception) {
                 android.util.Log.w("ZaparaSchedule", "rename reset", e)
-                mutable.update { cur -> if (cur.rename == null) cur.copy(rename = ui) else cur }
+                if (renameCurrent(ticket, ui)) mutable.update { it.copy(rename = ui.copy(error = container.app.getString(R.string.ux60_rename_reset_failed))) }
             } finally {
                 savingRename = false
             }
@@ -449,6 +596,8 @@ class ScheduleViewModel(
         hw.canComplete, container.app.getString(if (hw.audience?.selected == true) R.string.homework_audience_selected else R.string.homework_audience_all))
 
     private fun purgeShared() {
+        ++sharedActionEpoch; sharedActions.clear()
+        mutable.update { it.copy(sharedBusyIds = emptySet()) }
         sharedCache.clear(); projection.purge()
     }
 
@@ -464,9 +613,17 @@ class ScheduleViewModel(
             val assigned=projection.assign(snapshot.communityId,snapshot.rows,snapshot.completions)
             mutable.value.pages.keys.toList().forEach { ensurePage(it, force = true) }
             if(!projection.isCurrent(assigned)) return
-            mutable.update { it.copy(subjectRows = it.subjectRows.mapNotNull { row ->
-                if (row.sharedId == null) row else snapshot.rows.firstOrNull { hw -> hw.homeworkId == row.sharedId }?.let { hw -> sharedRow(hw) }
-            }, sharedDetail = it.sharedDetail?.sharedId?.let { id -> snapshot.rows.firstOrNull { hw -> hw.homeworkId == id }?.let { hw -> sharedRow(hw) } }) }
+            mutable.update { state ->
+                val sheet = state.subjectHomework
+                val matching = if (sheet == null) emptyList() else snapshot.rows.filter { hw ->
+                    hw.title.equals(sheet.subjectRaw, true) || hw.title.equals(sheet.name, true)
+                }.map { sharedRow(it) }
+                state.copy(subjectRows = if (sheet == null) state.subjectRows else
+                    reconcileSubjectSheetRows(state.subjectRows, matching),
+                    sharedDetail = state.sharedDetail?.sharedId?.let { id ->
+                        snapshot.rows.firstOrNull { hw -> hw.homeworkId == id }?.let { hw -> sharedRow(hw) }
+                    })
+            }
         }
     }
 
@@ -474,15 +631,20 @@ class ScheduleViewModel(
         (container.app as? ru.bgtu_voenmeh.zapara.ZaparaApplication)?.container?.profile ?: container.profile,
         ctx?.groupId, projection.shared.communityId)
 
-    private fun toggleShared(id: String, done: Boolean, undo: Boolean = false) {
-        if (sharedBusy) return
+    private fun toggleShared(id: String, done: Boolean, undo: Boolean = false,
+        groupId: String? = null, profileName: String? = null) {
         val api = container.communities ?: return
         val operation=projection.shared
         if (operation.rows.firstOrNull { it.homeworkId == id }?.canComplete != true) return
         val community = operation.communityId ?: return
         val group = ctx?.groupId ?: return
+        val profile = container.profile.databaseName
+        if (groupId != null && groupId != group || profileName != null && profileName != profile) return
+        val actionKey = SharedActionKey(profile, group, community, id)
+        val serial = sharedActions.begin(actionKey) ?: return
+        val epoch = sharedActionEpoch
+        mutable.update { it.copy(sharedBusyIds = it.sharedBusyIds + id) }
         val operationScope=ScheduleProjectionController.CompletionScope(container.profile,group,community)
-        sharedBusy = true
         viewModelScope.launch {
             var operationToken: String? = null
             try {
@@ -521,7 +683,12 @@ class ScheduleViewModel(
                 if(purged || operationScope==currentScope) container.toasts.show(container.app.getString(R.string.homework_save_failed), ToastKind.Bad)
             }
             catch (_: Exception) { if(operationScope==completionScope()) container.toasts.show(container.app.getString(R.string.homework_save_failed), ToastKind.Bad) }
-            finally { sharedBusy = false }
+            finally {
+                if (sharedActions.finish(actionKey, serial)) {
+                    if (epoch == sharedActionEpoch && operationScope == completionScope())
+                        mutable.update { it.copy(sharedBusyIds = it.sharedBusyIds - id) }
+                }
+            }
         }
     }
 
@@ -545,17 +712,69 @@ class ScheduleViewModel(
         }
     }
 
-    private fun toggleDone(id: Long) {
+    private fun toggleDone(event: ScheduleEvent.ToggleDone) {
+        val group = ctx?.groupId ?: return
+        val profile = container.profile.databaseName
+        if (event.groupId != null && event.groupId != group ||
+            event.profileName != null && event.profileName != profile ||
+            event.id in mutable.value.completionBusyIds) return
+        val epoch = completionEpoch
+        mutable.update { it.copy(completionBusyIds = it.completionBusyIds + event.id) }
         viewModelScope.launch {
-            writes.withLock {
-                withContext(Dispatchers.IO) {
-                    val hw = container.homework.all().firstOrNull { it.id == id } ?: return@withContext
-                    container.homework.markDone(id, !hw.done)
-                    mutable.update { it.copy(undoDone = id to hw.done, undoShared = null) }
+            try {
+                val undo = writes.withLock { withContext(Dispatchers.IO) {
+                    if (container.repo.settings().myGroupId.orEmpty() != group) return@withContext null
+                    val hw = container.homework.getById(event.id) ?: return@withContext null
+                    if (event.expectedDone != null && hw.done != event.expectedDone) return@withContext null
+                    container.homework.markDone(event.id, !hw.done)
+                    ScheduleCompletionUndo(event.id, hw.done, profile, group)
+                } }
+                if (undo == null) {
+                    if (epoch == completionEpoch) container.toasts.show(container.app.getString(R.string.ux60_task_changed), ToastKind.Bad)
+                    return@launch
+                }
+                if (epoch == completionEpoch && ctx?.groupId == group) {
+                    mutable.update { it.copy(undoDone = undo, undoShared = null) }
                     expireUndo()
                 }
+                container.events.emit(AppEvent.PersonalizationChanged)
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                if (epoch == completionEpoch) container.toasts.show(container.app.getString(R.string.ux60_completion_failed), ToastKind.Bad)
+            } finally {
+                if (epoch == completionEpoch) mutable.update { it.copy(completionBusyIds = it.completionBusyIds - event.id) }
             }
-            container.events.emit(AppEvent.PersonalizationChanged)
+        }
+    }
+
+    private fun undoPersonalCompletion() {
+        val undo = mutable.value.undoDone ?: return
+        if (mutable.value.undoDoneBusy) return
+        val epoch = completionEpoch
+        mutable.update { it.copy(undoDoneBusy = true) }
+        viewModelScope.launch {
+            try {
+                val restored = writes.withLock { withContext(Dispatchers.IO) {
+                    val currentGroup = container.repo.settings().myGroupId.orEmpty()
+                    val hw = container.homework.getById(undo.id) ?: return@withContext false
+                    if (!undo.canApply(container.profile.databaseName, currentGroup, hw.done)) return@withContext false
+                    container.homework.markDone(undo.id, undo.previousDone)
+                    true
+                } }
+                if (epoch == completionEpoch && mutable.value.undoDone == undo) {
+                    if (restored) {
+                        ++undoSerial
+                        mutable.update { it.copy(undoDone = null, undoShared = null) }
+                    } else mutable.update { it.copy(undoDone = null) }
+                }
+                if (restored) container.events.emit(AppEvent.PersonalizationChanged)
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                if (epoch == completionEpoch && mutable.value.undoDone == undo)
+                    container.toasts.show(container.app.getString(R.string.ux60_undo_failed), ToastKind.Bad)
+            } finally {
+                if (epoch == completionEpoch) mutable.update { it.copy(undoDoneBusy = false) }
+            }
         }
     }
 
@@ -613,7 +832,7 @@ class ScheduleViewModel(
                 mutable.update { current -> if (current.homeworkEditor?.draft != editor.draft) current else if (!outcome.sent && current.homeworkEditor.shareRequest != null)
                     current.copy(homeworkEditor = current.homeworkEditor.copy(error = outcome.note)) else current.copy(homeworkEditor = null) }
                 val note = outcome.note.ifBlank { container.app.getString(R.string.hw_saved) }
-                container.toasts.show(note, ToastKind.Ok)
+                container.toasts.show(note, if (editor.share && !outcome.sent) ToastKind.Bad else ToastKind.Ok)
                 container.events.emit(AppEvent.PersonalizationChanged)
             } catch (e: CancellationException) {
                 throw e
@@ -693,6 +912,10 @@ class ScheduleViewModel(
     private fun loadHomeworkShareOptions() {
         val editor = mutable.value.homeworkEditor?.takeIf { it.share && !it.isEdit } ?: return
         if (editor.shareContext != null || editor.shareLoading) return
+        val group = ctx?.groupId ?: return
+        val profile = container.profile.databaseName
+        val epoch = completionEpoch
+        if (editor.scheduleGroupId != group) return
         mutable.update { s -> if (s.homeworkEditor?.draft == editor.draft) s.copy(homeworkEditor = s.homeworkEditor.copy(shareLoading = true, error = null)) else s }
         viewModelScope.launch {
             val result = try { withContext(Dispatchers.IO) { loadHomeworkShareContext(container, editor.scheduleGroupId) } }
@@ -700,7 +923,11 @@ class ScheduleViewModel(
             catch (_: Exception) { null }
             mutable.update { s ->
                 val current = s.homeworkEditor
-                if (current?.draft == editor.draft && current.share) s.copy(homeworkEditor = current.copy(shareContext = result, shareLoading = false)) else s
+                if (current?.draft != editor.draft || !current.share) s
+                else if (group == ctx?.groupId && epoch == completionEpoch && profile == container.profile.databaseName)
+                    s.copy(homeworkEditor = current.copy(shareContext = result, shareLoading = false))
+                else s.copy(homeworkEditor = current.copy(shareContext = null, shareLoading = false,
+                    sourceChanged = true))
             }
         }
     }

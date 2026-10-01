@@ -33,6 +33,93 @@ public class MapsTests : UiTest
         return (shell, vm, files, launcher);
     }
 
+    private sealed class DelayedFloorFiles(FakeMapFiles inner) : IMapFiles
+    {
+        private readonly TaskCompletionSource<string?> release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Started { get; private set; }
+        public string CacheDir => inner.CacheDir;
+        public string? LocalPath(MapInfo map) => map.Floor == 2 ? null : inner.LocalPath(map);
+        public Task<string?> EnsureAsync(MapInfo map, CancellationToken ct = default)
+        {
+            if (map.Floor != 2) return inner.EnsureAsync(map, ct);
+            Started = true;
+            return release.Task.WaitAsync(ct);
+        }
+        public void Complete(string? path) => release.TrySetResult(path);
+        public (int Cached, int Total) CacheStatus() => inner.CacheStatus();
+        public Task DownloadAllAsync(IProgress<string>? progress, CancellationToken ct = default) => inner.DownloadAllAsync(progress, ct);
+    }
+
+    [Fact]
+    public async Task No_group_is_distinct_from_no_upcoming_lesson_and_manual_maps_remain_available()
+    {
+        using var db = TestDb.Create();
+        var settings = db.Services.Db.GetSettings();
+        settings.MyGroupId = "";
+        db.Services.Db.SaveSettings(settings);
+        var (_, vm, _, _) = Make(db);
+        await vm.TrackNextAsync();
+        Assert.Contains("Выберите учебную группу", vm.ContextLine);
+        Assert.True(vm.ShowEmpty);
+        Assert.NotEmpty(vm.Floors);
+    }
+
+    [AvaloniaFact]
+    public async Task Lesson_map_keeps_exact_return_date_without_creating_a_new_destination()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, _, _) = Make(db);
+        var selected = new DateTime(2026, 9, 16);
+        shell.ShowMap(db.Services.Maps.Resolve("ВЦ 280;"), "Матан", selected);
+        await Waits.Until(() => vm.ReturnDate == selected, "map return date");
+        Assert.True(vm.HasReturnDate);
+        vm.ReturnToLessonCommand.Execute(null);
+        Assert.Equal(SectionKey.Schedule, shell.CurrentKey);
+        var schedule = shell.Section<Vograph.Desktop.Features.Schedule.ScheduleViewModel>(SectionKey.Schedule);
+        await Waits.Until(() => schedule.Date == selected, "selected day after map return");
+    }
+
+    [AvaloniaFact]
+    public async Task Failed_new_floor_keeps_last_good_plan_and_retry_opens_requested_floor()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, files, _) = Make(db, ("ГК", 1));
+        shell.ShowMap(db.Services.Maps.GetAllMaps().First(map => map.Building == "ГК" && map.Floor == 1));
+        await Waits.Until(() => vm.Image is not null, "first map loaded");
+        var oldImage = vm.Image;
+        files.EnsureFails = true;
+        await vm.SelectFloorCommand.ExecuteAsync(vm.Floors.Single(floor => floor.Floor == 2));
+        Assert.True(vm.HasFailedPlan);
+        Assert.Same(oldImage, vm.Image);
+        Assert.Equal(1, vm.Current?.Floor);
+        files.EnsureFails = false;
+        await vm.RetryPlanCommand.ExecuteAsync(null);
+        Assert.False(vm.HasFailedPlan);
+        Assert.Equal(2, vm.Current?.Floor);
+        Assert.NotSame(oldImage, vm.Image);
+    }
+
+    [AvaloniaFact]
+    public async Task Late_failure_of_old_floor_cannot_clear_a_newer_successful_map()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, files, _) = Make(db, ("ГК", 1), ("ГК", 3));
+        var delayed = new DelayedFloorFiles(files);
+        db.Services.MapFiles = delayed;
+        shell.ShowMap(db.Services.Maps.GetAllMaps().First(map => map.Building == "ГК" && map.Floor == 1));
+        await Waits.Until(() => vm.Image is not null, "first plan");
+        var old = vm.SelectFloorCommand.ExecuteAsync(vm.Floors.Single(floor => floor.Floor == 2));
+        await Waits.Until(() => delayed.Started, "floor two request");
+        await vm.ShowLessonMapAsync(db.Services.Maps.GetAllMaps().First(map => map.Building == "ГК" && map.Floor == 3), "Третья пара");
+        Assert.Equal(3, vm.Current?.Floor);
+        var newer = vm.Image;
+        delayed.Complete(null);
+        await old;
+        Assert.Equal(3, vm.Current?.Floor);
+        Assert.Same(newer, vm.Image);
+        Assert.False(vm.HasFailedPlan);
+    }
+
     [Theory]
     [InlineData("2026-09-07T08:00", "2026-09-07T09:00", "2026-09-07T10:35", "через 1 ч")]
     [InlineData("2026-09-07T08:35", "2026-09-07T09:00", "2026-09-07T10:35", "через 25 мин")]
@@ -426,14 +513,15 @@ public class MapsTests : UiTest
         shell.NavigateTo(SectionKey.Maps);
         await Waits.Until(() => vm.Image is not null);
         Assert.Equal("1 из 9 планов офлайн", vm.CacheStatus);
+        var lastGood = vm.Image;
 
         files.ThrowOnStatus = true;
         files.ThrowOnLocalPath = true;
         await vm.ActivateAsync(); // the shell runs this fire-and-forget: it must never throw
 
         Assert.Equal("1 из 9 планов офлайн", vm.CacheStatus); // the failed probe keeps the last known text
-        Assert.Equal("План не загружен: нет сети и встроенной копии", vm.ImageError);
-        Assert.Null(vm.Image);
+        Assert.Contains("Показана последняя доступная карта", vm.ImageError);
+        Assert.Same(lastGood, vm.Image);
     }
 
     /// <summary>T6 #4: after «Скачать свежие планы» the plan that failed to load before is shown again — with its

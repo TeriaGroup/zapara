@@ -35,6 +35,9 @@ internal class PersonalComposerSessions {
     private val drafts = mutableMapOf<String, PersonalComposer>()
     fun save(conversationId: String, composer: PersonalComposer) { drafts[conversationId] = composer }
     fun restore(conversationId: String) = drafts[conversationId] ?: PersonalComposer()
+    fun draftPreviews(): Map<String, String> = drafts.mapNotNull { (id, composer) ->
+        composer.text.trim().takeIf(String::isNotEmpty)?.let { id to it }
+    }.toMap()
     fun clear() = drafts.clear()
 }
 

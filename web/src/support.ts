@@ -31,3 +31,9 @@ export function supportFiles(photos: File[], logs: File[]): { error?: string } {
 export function supportAppend(messages: SupportNote[], author: string, body: string): SupportNote[] {
   return [...messages, { author, body: body.trim() }];
 }
+
+/** Failed/rejected sends retain the entire draft; only an explicit acknowledgement clears it. */
+export async function sendSupportDraft(send: () => Promise<boolean>, clear: () => void): Promise<boolean> {
+  try { if (await send()) { clear(); return true; } } catch { /* Caller displays the retry state. */ }
+  return false;
+}

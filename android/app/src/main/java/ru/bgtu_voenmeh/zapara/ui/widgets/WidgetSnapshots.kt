@@ -21,7 +21,11 @@ data class ScheduleWidgetRow(
     val name: String,
     val meta: String,
     val isPast: Boolean,
-    val number: Int = 0
+    val number: Int = 0,
+    val date: LocalDate? = null,
+    val timeStart: String? = null,
+    val subjectNorm: String? = null,
+    val groupId: String? = null
 ) {
     fun faceKey(): String = "$number\u001f$name\u001f$meta"
 }
@@ -36,7 +40,8 @@ data class ScheduleWidgetSnapshot(
     val isDark: Boolean = false,
     val nextRefreshAt: java.time.LocalDateTime? = null,
     val toss: ScheduleWidgetRow? = null,
-    val dayLabel: String = ""
+    val dayLabel: String = "",
+    val readError: String? = null
 )
 
 data class HomeworkWidgetRow(
@@ -54,7 +59,8 @@ data class HomeworkWidgetSnapshot(
     val rows: List<HomeworkWidgetRow>,
     val cleared: Boolean = false,
     val isDark: Boolean = false,
-    val doneIds: Set<Long> = emptySet()
+    val doneIds: Set<Long> = emptySet(),
+    val readError: String? = null
 )
 
 internal fun widgetSubtitle(identity: WidgetJobIdentity, groupName: String?, copy: UiCopy): String {
@@ -143,7 +149,9 @@ object ScheduleWidgetComposer {
                 name = shown,
                 meta = "${lesson.timeStart} – ${lesson.timeEnd} · $room",
                 isPast = past,
-                number = numberOf(lesson.timeStart)
+                number = numberOf(lesson.timeStart), date = date,
+                timeStart = lesson.timeStart, subjectNorm = lesson.subjectNormalized,
+                groupId = gid
             )
         }
         val remaining = if (date == today) lessons.filter { stillOn(it, clock) } else lessons
@@ -224,7 +232,8 @@ object HomeworkWidgetComposer {
         displayName: (String) -> String,
         copy: UiCopy,
         cleared: Boolean = false,
-        isDark: Boolean = false
+        isDark: Boolean = false,
+        current: (Homework) -> Homework = { it }
     ): HomeworkWidgetSnapshot {
         val title = copy.get("nav_homework")
         if (cleared) {
@@ -235,7 +244,8 @@ object HomeworkWidgetComposer {
         if (gid.isEmpty()) {
             return HomeworkWidgetSnapshot(identity, title, subtitle, copy.get("empty_no_group"), emptyList(), false, isDark)
         }
-        val rows = homework
+        val currentHomework = homework.map(current)
+        val rows = currentHomework
             .filter { !it.done && it.status != "done" }
             .sortedWith(compareBy({ rank(it.status) }, { it.due ?: LocalDate.MAX }, { it.id }))
             .take(MAX_ROWS)
@@ -250,7 +260,7 @@ object HomeworkWidgetComposer {
             }
         val empty = if (rows.isEmpty()) copy.get("hw_empty_title") else null
         return HomeworkWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark,
-            homework.filter { it.done || it.status == "done" }.map { it.id }.toSet())
+            currentHomework.filter { it.done || it.status == "done" }.map { it.id }.toSet())
     }
 
     internal fun rank(status: String): Int = when (status) {
@@ -312,19 +322,25 @@ object WidgetSnapshots {
         val gid = settings.myGroupId.orEmpty()
         val groupName = container.repo.groups().firstOrNull { it.id == gid }?.name
         val lessons = if (gid.isEmpty()) emptyList() else container.repo.allForGroup(gid)
+        val today = container.clock().toLocalDate()
         return HomeworkWidgetComposer.fromHomework(
             identity = identity,
             settings = settings,
             homework = container.homework.all(),
             lessons = lessons,
-            today = container.clock().toLocalDate(),
+            today = today,
             groupName = groupName,
             displayName = { norm ->
                 val lesson = lessons.firstOrNull { Parity.sameSubject(it.subjectNormalized, norm) }
                 if (lesson != null) container.overrides.displayNameByNorm(norm, lesson.dayOfWeek) else ""
             },
             copy = container.copy,
-            isDark = dark
+            isDark = dark,
+            current = { hw -> if (hw.done) hw else {
+                val due = container.homework.computeDueDate(hw.norm, hw.createdAt, hw.n)
+                hw.copy(due = due, status = container.homework.computeStatus(hw.norm,
+                    hw.createdAt, hw.n, due, false, today))
+            } }
         )
     }
 

@@ -81,6 +81,18 @@ class HomeworkWidgetComposerTest {
         assertEquals(listOf("bad", "warn", "text2"), snap.rows.map { it.tone })
     }
 
+    @Test fun current_day_recalculation_changes_stale_rank_without_changing_stored_rows() {
+        val stale = hw(7, "было далеко", "far", today.minusDays(1))
+        val upcoming = hw(8, "скоро", "approaching", today.plusDays(2))
+        val snap = HomeworkWidgetComposer.fromHomework(guestId,
+            ScheduleRepository.SettingsState(myGroupId = "3313"), listOf(upcoming, stale), listOf(math),
+            today, "А863С", { it }, WidgetCopy,
+            current = { row -> if (row.due?.isBefore(today) == true) row.copy(status = "overdue") else row })
+        assertEquals(listOf(7L, 8L), snap.rows.map { it.id })
+        assertEquals("bad", snap.rows.first().tone)
+        assertEquals("far", stale.status)
+    }
+
     @Test fun empty_and_no_group() {
         assertEquals("Домашки нет", build(items = emptyList()).empty)
         val noGroup = build(items = emptyList(), groupId = null, groupName = null)

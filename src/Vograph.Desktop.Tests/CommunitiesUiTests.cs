@@ -105,6 +105,54 @@ public sealed class CommunitiesUiTests : UiTest
     }
 
     [Fact]
+    public async Task Failed_refresh_keeps_last_good_community_and_retry_restores_status()
+    {
+        using var h = new CommunitiesUiHarness(groupId: "O3313");
+        h.Catalog.Add(new CommunityResponse(Guid.NewGuid(), "О3313", "Проекты", 1, null));
+        await h.Vm.LoadAsync();
+        var current = Assert.Single(h.Vm.Communities);
+        h.Force = (503, "server_unavailable");
+        await h.Vm.LoadAsync();
+        Assert.True(h.Vm.LoadFailed);
+        Assert.Same(current, Assert.Single(h.Vm.Communities));
+        h.Force = null;
+        await h.Vm.RetryCommunitiesCommand.ExecuteAsync(null);
+        Assert.False(h.Vm.LoadFailed);
+        Assert.Single(h.Vm.Communities);
+    }
+
+    [Fact]
+    public async Task Late_detail_failure_cannot_replace_a_newer_selected_community_status()
+    {
+        using var h = new CommunitiesUiHarness();
+        var firstId = Guid.NewGuid(); var secondId = Guid.NewGuid();
+        h.Memberships.Add(new CommunityResponse(firstId, "Первая", "", 1, "member"));
+        h.Memberships.Add(new CommunityResponse(secondId, "Вторая", "", 1, "member"));
+        await h.Vm.LoadAsync();
+        var first = h.Vm.Communities.Single(row => row.CommunityId == firstId);
+        var second = h.Vm.Communities.Single(row => row.CommunityId == secondId);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        h.Handler.Send = (request, ct) =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains(firstId.ToString("D"), StringComparison.Ordinal)
+                && request.RequestUri.AbsolutePath.EndsWith("/homework", StringComparison.Ordinal))
+            { started.TrySetResult(); return release.Task.WaitAsync(ct); }
+            return h.Respond(request, ct);
+        };
+        var old = first.SelectCommand.ExecuteAsync(null);
+        await started.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await second.SelectCommand.ExecuteAsync(null);
+        Assert.Same(second, h.Vm.Selected);
+        var status = h.Vm.Status;
+        release.SetResult(Problem(503, "db_unavailable"));
+        await old;
+        Assert.Same(second, h.Vm.Selected);
+        Assert.Equal(status, h.Vm.Status);
+        Assert.False(h.Vm.SelectedLoadFailed);
+    }
+
+    [Fact]
     public async Task List_forbidden_maps_to_communityForbidden()
     {
         using var h = new CommunitiesUiHarness();

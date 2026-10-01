@@ -28,7 +28,9 @@ class FriendsViewModel(private val container: AppContainer) : ViewModel() {
     val state: StateFlow<FriendsUiState> = mutable.asStateFlow()
     private val writes = Mutex()
     private var saving = false
+    private var deleteScope: FriendActionScope? = null
     private var reloadTicket = 0
+    private var editRequestVersion = 0
 
     init {
         viewModelScope.launch { reload() }
@@ -41,42 +43,106 @@ class FriendsViewModel(private val container: AppContainer) : ViewModel() {
             FriendsEvent.RefreshSchedules -> refreshSchedules()
             FriendsEvent.Add -> {
                 if (!mutable.value.canAdd) return
+                editRequestVersion++
                 val used = mutable.value.friends.map { FriendPalette.keys[it.colorIndex] }
                 mutable.update {
-                    it.copy(editor = FriendEditorUi(null, null, "", "", FriendPalette.indexOf(FriendPalette.firstFree(used))), editorError = null)
+                    it.copy(editor = FriendEditorUi(null, null, "", "", FriendPalette.indexOf(FriendPalette.firstFree(used)),
+                        it.myGroupId, it.profileName), editorError = null)
                 }
             }
             is FriendsEvent.Edit -> {
-                val f = mutable.value.friends.getOrNull(event.index) ?: return
-                mutable.update {
-                    it.copy(editor = FriendEditorUi(f.id, f.index, f.groupName, f.members, f.colorIndex), editorError = null)
+                val scope = event.scope
+                if (!scope.current(mutable.value.myGroupId, mutable.value.profileName)) return
+                val ticket = reloadTicket
+                val request = ++editRequestVersion
+                viewModelScope.launch {
+                    try {
+                    val valid = withContext(Dispatchers.IO) {
+                        scope.current(container.repo.settings().myGroupId.orEmpty(), container.profile.databaseName)
+                    }
+                    if (!valid || ticket != reloadTicket || request != editRequestVersion ||
+                        !scope.current(mutable.value.myGroupId, mutable.value.profileName)) return@launch
+                    val f = scope.find(mutable.value.friends) ?: return@launch
+                    mutable.update {
+                        it.copy(editor = FriendEditorUi(f.id, f.index, f.groupName, f.members, f.colorIndex,
+                            scope.groupId, scope.profileName), editorError = null)
+                    }
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) {
+                        android.util.Log.w("ZaparaFriends", "open editor", e)
+                        container.toasts.show(container.app.getString(R.string.ux60_friend_open_failed),
+                            ru.bgtu_voenmeh.zapara.ui.components.ToastKind.Bad)
+                    }
                 }
             }
-            is FriendsEvent.EditorGroup -> mutable.update { s -> s.copy(editor = s.editor?.copy(groupName = event.name, pickerOpen = false), editorError = null) }
-            is FriendsEvent.EditorMembers -> mutable.update { s -> s.copy(editor = s.editor?.copy(members = event.text)) }
-            is FriendsEvent.EditorColor -> mutable.update { s -> s.copy(editor = s.editor?.copy(colorIndex = event.index)) }
-            FriendsEvent.OpenPicker -> mutable.update { s -> s.copy(editor = s.editor?.copy(pickerOpen = true)) }
-            FriendsEvent.ClosePicker -> mutable.update { s -> s.copy(editor = s.editor?.copy(pickerOpen = false)) }
+            is FriendsEvent.EditorGroup -> if (!saving) mutable.update { s -> s.copy(editor = s.editor?.copy(groupName = event.name, pickerOpen = false), editorError = null) }
+            is FriendsEvent.ManualOffline -> mutable.update { s -> s.copy(editor = s.editor?.copy(
+                manualOffline = event.enabled, groupName = if (event.enabled) s.editor.groupName else ""), editorError = null) }
+            is FriendsEvent.EditorMembers -> if (!saving) mutable.update { s -> s.copy(editor = s.editor?.copy(members = event.text)) }
+            is FriendsEvent.EditorColor -> if (!saving) mutable.update { s -> s.copy(editor = s.editor?.copy(colorIndex = event.index)) }
+            FriendsEvent.OpenPicker -> if (!saving) mutable.update { s -> s.copy(editor = s.editor?.copy(pickerOpen = true)) }
+            FriendsEvent.ClosePicker -> if (!saving) mutable.update { s -> s.copy(editor = s.editor?.copy(pickerOpen = false)) }
             FriendsEvent.EditorSave -> saveEditor()
-            FriendsEvent.EditorCancel -> mutable.update { it.copy(editor = null, editorError = null) }
+            FriendsEvent.EditorCancel -> if (!saving) {
+                editRequestVersion++
+                mutable.update { it.copy(editor = null, editorError = null) }
+            }
             is FriendsEvent.Toggle -> viewModelScope.launch {
-                val id = mutable.value.friends.getOrNull(event.index)?.id ?: return@launch
-                writes.withLock {
-                    withContext(Dispatchers.IO) { edits.toggle(id, event.enabled) }
+                try {
+                val scope = event.scope
+                if (!scope.current(mutable.value.myGroupId, mutable.value.profileName) ||
+                    scope.find(mutable.value.friends) == null) return@launch
+                val saved = writes.withLock {
+                    withContext(Dispatchers.IO) {
+                        if (!scope.current(container.repo.settings().myGroupId.orEmpty(), container.profile.databaseName) ||
+                            container.repo.friends().none { it.id == scope.id }) false
+                        else { edits.toggle(scope.id, event.enabled); true }
+                    }
                 }
+                if (!saved) return@launch
                 container.events.emit(AppEvent.PersonalizationChanged)
                 if (event.enabled) refreshNeededSchedules()
-            }
-            is FriendsEvent.AskDelete -> mutable.update { it.copy(confirmDelete = event.id) }
-            FriendsEvent.ConfirmDelete -> {
-                val id = mutable.value.confirmDelete ?: return
-                mutable.update { it.copy(confirmDelete = null, editor = null) }
-                viewModelScope.launch {
-                    writes.withLock { withContext(Dispatchers.IO) { edits.delete(id) } }
-                    container.events.emit(AppEvent.PersonalizationChanged)
+                } catch (e: CancellationException) { throw e }
+                catch (e: Exception) {
+                    android.util.Log.w("ZaparaFriends", "toggle", e)
+                    container.toasts.show(container.app.getString(R.string.ux60_friend_toggle_failed),
+                        ru.bgtu_voenmeh.zapara.ui.components.ToastKind.Bad)
                 }
             }
-            FriendsEvent.CancelDelete -> mutable.update { it.copy(confirmDelete = null) }
+            is FriendsEvent.AskDelete -> {
+                if (saving || mutable.value.deletePending || mutable.value.friends.none { it.id == event.id }) return
+                deleteScope = FriendActionScope(event.id, mutable.value.myGroupId, mutable.value.profileName)
+                mutable.update { it.copy(confirmDelete = event.id, deleteError = null) }
+            }
+            FriendsEvent.ConfirmDelete -> {
+                val scope = deleteScope ?: return
+                if (mutable.value.confirmDelete != scope.id || mutable.value.deletePending) return
+                mutable.update { it.copy(deletePending = true, deleteError = null) }
+                viewModelScope.launch {
+                    try {
+                        val deleted = writes.withLock { withContext(Dispatchers.IO) {
+                            if (!scope.current(container.repo.settings().myGroupId.orEmpty(), container.profile.databaseName) ||
+                                container.repo.friends().none { it.id == scope.id }) false
+                            else { edits.delete(scope.id); true }
+                        } }
+                        if (!deleted) throw IllegalStateException("friend target changed")
+                        if (deleteScope == scope) {
+                            deleteScope = null
+                            mutable.update { it.deleteAcknowledged(scope.id) }
+                        }
+                        container.events.emit(AppEvent.PersonalizationChanged)
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) {
+                        android.util.Log.w("ZaparaFriends", "delete", e)
+                        if (deleteScope == scope) mutable.update { it.deleteFailed(scope.id,
+                            container.app.getString(R.string.ux60_friend_delete_failed)) }
+                    } finally { mutable.update { it.copy(deletePending = false) } }
+                }
+            }
+            FriendsEvent.CancelDelete -> if (!mutable.value.deletePending) {
+                deleteScope = null
+                mutable.update { it.copy(confirmDelete = null, deleteError = null) }
+            }
             is FriendsEvent.Strictness -> viewModelScope.launch {
                 writes.withLock {
                     withContext(Dispatchers.IO) {
@@ -111,40 +177,53 @@ class FriendsViewModel(private val container: AppContainer) : ViewModel() {
         if (saving) return
         val editor = mutable.value.editor ?: return
         if (editor.groupName.isBlank()) return
+        if (!FriendActionScope(editor.id ?: -1, editor.sourceGroupId, editor.sourceProfileName)
+                .current(mutable.value.myGroupId, mutable.value.profileName)) {
+            mutable.update { it.copy(editorError = container.app.getString(R.string.ux60_friend_scope_changed)) }
+            return
+        }
         val selected = mutable.value.groups.firstOrNull {
             it.id == editor.groupName || it.name.equals(editor.groupName, ignoreCase = true)
         }
         val current = mutable.value.friends.firstOrNull { it.id == editor.id }
-        val groupName = selected?.name ?: current?.groupName?.takeIf { it.equals(editor.groupName, ignoreCase = true) }
+        val groupName = validFriendGroupName(editor.groupName, mutable.value.groups,
+            editor.manualOffline, current?.groupName)
         val duplicate = mutable.value.friends.any { friend ->
             friend.id != editor.id && (friend.groupName.equals(groupName, ignoreCase = true) ||
                 (selected != null && mutable.value.groups.firstOrNull { it.name.equals(friend.groupName, ignoreCase = true) }?.id == selected.id))
         }
-        if (groupName == null || selected?.id == mutable.value.myGroupId || duplicate) {
+        if (groupName == null || selected?.id == mutable.value.myGroupId ||
+            groupName == mutable.value.myGroupId || duplicate) {
             mutable.update { it.copy(editorError = container.app.getString(R.string.friends_group_unavailable)) }
             return
         }
         val needsSchedule = editor.id == null || current?.groupName != groupName
         saving = true
-        mutable.update { it.copy(editor = null, editorError = null) }
+        mutable.update { it.copy(editorSaving = true, editorError = null) }
         viewModelScope.launch {
             try {
                 writes.withLock {
                     withContext(Dispatchers.IO) {
+                        if (container.repo.settings().myGroupId.orEmpty() != editor.sourceGroupId ||
+                            container.profile.databaseName != editor.sourceProfileName)
+                            throw IllegalStateException("friend editor scope changed")
                         val hex = FriendPalette.keys[editor.colorIndex.coerceIn(0, 4)]
                         edits.save(editor.id, groupName, editor.members, hex)
                     }
                 }
                 container.events.emit(AppEvent.PersonalizationChanged)
+                mutable.update { state -> if (state.editor == editor)
+                    state.copy(editor = null, editorError = null) else state }
                 if (needsSchedule) viewModelScope.launch { refreshNeededSchedules() }
             } catch (e: CancellationException) {
-                mutable.update { cur -> if (cur.editor == null) cur.copy(editor = editor) else cur }
                 throw e
             } catch (e: Exception) {
                 android.util.Log.w("ZaparaFriends", "save", e)
-                mutable.update { cur -> if (cur.editor == null) cur.copy(editor = editor) else cur }
+                mutable.update { cur -> if (cur.editor == editor)
+                    cur.copy(editorError = container.app.getString(R.string.uxnext_friend_save_failed)) else cur }
             } finally {
                 saving = false
+                mutable.update { it.copy(editorSaving = false) }
             }
         }
     }
@@ -218,6 +297,7 @@ class FriendsViewModel(private val container: AppContainer) : ViewModel() {
                 } ?: container.copy.get("friends_preview_none")
                 FriendsUiState(
                     loaded = true, friends = friends, canAdd = friends.size < 5, myGroupId = myGroup,
+                    profileName = container.profile.databaseName,
                     strictness = Strictness.nearest(prefs.intersectionStrictness),
                     alwaysShow = prefs.alwaysShowAllTrafficLights, invert = prefs.parityInvert,
                     groups = groups,
@@ -229,8 +309,16 @@ class FriendsViewModel(private val container: AppContainer) : ViewModel() {
                 )
             }
             if (ticket != reloadTicket) return
-            mutable.update { cur -> snap.copy(editor = cur.editor, confirmDelete = cur.confirmDelete,
-                editorError = cur.editorError, refreshing = cur.refreshing, refreshFailed = cur.refreshFailed) }
+            if (deleteScope?.current(snap.myGroupId, snap.profileName) != true) deleteScope = null
+            mutable.update { cur ->
+                val editor = cur.editor?.takeIf { it.sourceGroupId == snap.myGroupId && it.sourceProfileName == snap.profileName }
+                snap.copy(editor = editor,
+                    confirmDelete = cur.confirmDelete.takeIf { deleteScope != null },
+                    editorError = cur.editorError.takeIf { editor != null }, editorSaving = cur.editorSaving && editor != null,
+                    deletePending = cur.deletePending && deleteScope != null,
+                    deleteError = cur.deleteError.takeIf { deleteScope != null },
+                    refreshing = cur.refreshing, refreshFailed = cur.refreshFailed)
+            }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             android.util.Log.w("ZaparaFriends", "reload", e)

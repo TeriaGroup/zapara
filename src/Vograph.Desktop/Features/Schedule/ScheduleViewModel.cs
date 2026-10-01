@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Avalonia.Threading;
 using Vograph.Core.Models;
 using Vograph.Core.Services;
 using Vograph.Desktop.Dialogs;
@@ -31,6 +32,26 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     private int _dateStripCount=7;
     public void SetDateStripCount(int count){if(count is not (5 or 7)||_dateStripCount==count)return;_dateStripCount=count;if(_loaded)_=ReloadAsync();}
     private readonly Avalonia.Threading.DispatcherTimer _planningClock;
+    private readonly DispatcherTimer _subgroupUndoClock = new() { Interval = TimeSpan.FromSeconds(5) };
+    private SubgroupChoiceUndo? subgroupUndo;
+    private int subgroupRenderEpoch;
+    internal int SubgroupRenderEpoch => subgroupRenderEpoch;
+    private string SubgroupScope => App.Profile.DatabasePath + ":" + App.Settings.MyGroupId;
+    public bool HasSubgroupUndo => subgroupUndo is { } undo && undo.Scope == SubgroupScope && DateTimeOffset.UtcNow < undo.ExpiresAt;
+    public string SubgroupUndoCaption => subgroupUndo is { Before: null } ? "Подгруппа выбрана" : "Выбор подгруппы изменён";
+    private void ClearSubgroupUndo()
+    {
+        _subgroupUndoClock.Stop(); subgroupUndo = null;
+        OnPropertyChanged(nameof(HasSubgroupUndo)); OnPropertyChanged(nameof(SubgroupUndoCaption));
+    }
+    private void SetSubgroupUndo(SubgroupChoiceUndo undo)
+    {
+        _subgroupUndoClock.Stop(); subgroupUndo = undo;
+        var remaining = undo.ExpiresAt - DateTimeOffset.UtcNow;
+        _subgroupUndoClock.Interval = remaining > TimeSpan.Zero ? remaining : TimeSpan.FromMilliseconds(1);
+        _subgroupUndoClock.Start();
+        OnPropertyChanged(nameof(HasSubgroupUndo)); OnPropertyChanged(nameof(SubgroupUndoCaption));
+    }
 
     public ScheduleViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null) : base(app)
     {
@@ -40,13 +61,14 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         _calendarDate = _selectedDay;
         _planningClock = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
         _planningClock.Tick += OnPlanningClock;
+        _subgroupUndoClock.Tick += (_, _) => ClearSubgroupUndo();
         _composer = new ScheduleComposer(app);
         _segmentItems = BuildSegmentItems();
         _onLanguage = () => { SegmentItems = BuildSegmentItems(); _ = ReloadAsync(); };
         // Another group: run smart start again — the old offset was chosen for the old group, or for none.
         // Same guard as ReloadAsync: a section that never loaded has no stale offset to correct, and it
         // runs smart start on its own first load — starting Core work here would only outlive the shell.
-        _onGroup = () => { if (_loaded) _ = ReloadAsync(); };
+        _onGroup = () => { subgroupRenderEpoch++; pendingLessonFocus = null; ClearSubgroupUndo(); if (_loaded) _ = ReloadAsync(); };
         _onSchedule = () => _ = ReloadAsync();
         // Homework changed elsewhere (the Homework section): recompose the day. Our own mutations already
         // reloaded before they raised the event, so _raising keeps the card from composing twice.
@@ -60,6 +82,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     public override void Detach()
     {
         _planningClock.Stop();
+        _subgroupUndoClock.Stop();
         _planningClock.Tick -= OnPlanningClock;
         App.Loc.LanguageChanged -= _onLanguage;
         _shell.GroupChanged -= _onGroup;
@@ -73,6 +96,25 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     public void ShowDate(DateTime date) => SelectDate(date);
 
     public ObservableCollection<LessonRowViewModel> Lessons { get; } = new();
+    public event Action<LessonRowViewModel>? LessonFocusRequested;
+    private (DateTime Date, string Subject, string Time)? pendingLessonFocus;
+    public void RequestLessonFocus(DateTime date, string subjectRaw, string timeStart)
+    {
+        pendingLessonFocus = (date.Date, subjectRaw, timeStart);
+        if (_loaded && Date.Date == date.Date) ApplyPendingLessonFocus();
+    }
+    private void ApplyPendingLessonFocus()
+    {
+        if (pendingLessonFocus is not { } request) return;
+        if (Date.Date != request.Date) return;
+        var row = Lessons.FirstOrDefault(item => item.Row.Lesson.SubjectRaw == request.Subject && item.TimeStart == request.Time);
+        if (row is null) return;
+        pendingLessonFocus = null;
+        row.ShowDetails = true;
+        LessonFocusRequested?.Invoke(row);
+    }
+    public ObservableCollection<ScheduleOverlap> Overlaps { get; } = new();
+    public bool HasOverlaps => Overlaps.Count > 0;
 
     [ObservableProperty] private IList<string> _segmentItems;
     [ObservableProperty] private int _dayOffset;
@@ -111,6 +153,13 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         var now = _clock();
         _selectedDay = now.Date;
         var model = await ComposeAsync(() => _composer.Compose(0, now, _dateStripCount));
+        if (_selectedDay != now.Date)
+        {
+            _loaded = true;
+            await ReloadAsync();
+            _planningClock.Start();
+            return;
+        }
         _loaded = true;
         if (model is null || version != _reloadVersion) return;
         _suppressReload = true;
@@ -171,6 +220,9 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         }).ToArray();
         for(var i=0;i<reconciled.Length;i++){var old=Lessons.IndexOf(reconciled[i]);if(old<0)Lessons.Insert(i,reconciled[i]);else if(old!=i)Lessons.Move(old,i);}
         while(Lessons.Count>reconciled.Length)Lessons.RemoveAt(Lessons.Count-1);
+        ApplyPendingLessonFocus();
+        Overlaps.Clear(); foreach (var conflict in ScheduleOverlap.Find(Lessons.ToArray())) Overlaps.Add(conflict);
+        OnPropertyChanged(nameof(HasOverlaps));
         OnPropertyChanged(nameof(DayPriorityCaption));OnPropertyChanged(nameof(HasPriority));OnPropertyChanged(nameof(ShowDayState));
         NextStudyDate = model.NextStudyDate;
         SourceSummary = model.SourceSummary;
@@ -247,20 +299,52 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     }
 
     /// <summary>The card's own name travels with the map (renamed, type stripped), so the Maps header names the lesson.</summary>
-    public void ShowMap(LessonRowViewModel row) => _shell.ShowMap(row.Row.Map, row.DisplayName);
+    public void ShowMap(LessonRowViewModel row) => _shell.ShowMap(row.Row.Map, row.DisplayName, Date);
 
-    public async Task PickSubgroupAsync(string streamId, string optionId)
+    public async Task PickSubgroupAsync(string sourceGroupId, string sourceScope, int renderEpoch, string streamId, string optionId)
     {
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
         var groupId = App.Settings.MyGroupId;
-        if (string.IsNullOrEmpty(groupId)) return;
-        await RunAsync(() =>
+        if (string.IsNullOrEmpty(groupId) || groupId != sourceGroupId || SubgroupScope != sourceScope || renderEpoch != subgroupRenderEpoch) return;
+        var scope = SubgroupScope;
+        ClearSubgroupUndo();
+        var changed = await RunAsync<SubgroupChoiceUndo>(() =>
         {
+            if (SubgroupScope != scope || App.Settings.MyGroupId != sourceGroupId || renderEpoch != subgroupRenderEpoch) return null!;
+            var stream = SubgroupRules.Build(App.Db.GetAllLessonsForGroup(groupId)).Streams.FirstOrDefault(row => row.Id == streamId);
+            if (stream is null || stream.Options.All(option => option.Id != optionId)) return null!;
+            var before = App.Db.GetSubgroupChoices(groupId).GetValueOrDefault(streamId);
             App.Db.ToggleSubgroupChoice(groupId, streamId, optionId);
-            return "";
+            var after = App.Db.GetSubgroupChoices(groupId).GetValueOrDefault(streamId);
+            return new SubgroupChoiceUndo(scope, streamId, before, after, DateTimeOffset.UtcNow.AddSeconds(5));
         }, "subgroup");
+        if (changed is null || !operation.IsCurrent || SubgroupScope != scope) return;
+        SetSubgroupUndo(changed);
         await ReloadAsync();
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = false)]
+    private async Task UndoSubgroup()
+    {
+        var undo = subgroupUndo;
+        ClearSubgroupUndo();
+        if (undo is null || undo.Scope != SubgroupScope) return;
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        var restored = await RunAsync(() =>
+        {
+            if (SubgroupScope != undo.Scope) return "";
+            var group = App.Settings.MyGroupId;
+            if (string.IsNullOrEmpty(group)) return "";
+            var stream = SubgroupRules.Build(App.Db.GetAllLessonsForGroup(group)).Streams.FirstOrDefault(row => row.Id == undo.StreamId);
+            if (stream is null || undo.Before is { } prior && stream.Options.All(option => option.Id != prior)) return "";
+            var current = App.Db.GetSubgroupChoices(group).GetValueOrDefault(undo.StreamId);
+            if (!undo.Allows(SubgroupScope, current, DateTimeOffset.UtcNow)) return "";
+            App.Db.ToggleSubgroupChoice(group, undo.StreamId, undo.Before ?? current!);
+            return "restored";
+        }, "subgroup undo");
+        if (restored == "restored" && operation.IsCurrent && SubgroupScope == undo.Scope) await ReloadAsync();
     }
 
     public async Task RenameAsync(LessonRowViewModel row)

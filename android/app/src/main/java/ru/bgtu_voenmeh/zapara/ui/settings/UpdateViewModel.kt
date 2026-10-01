@@ -20,6 +20,7 @@ data class UpdateUiState(
     val apkUrl: String? = null,
     val htmlUrl: String? = null,
     val hasUpdate: Boolean = false,
+    val updateStale: Boolean = false,
     val upToDate: Boolean = false,
     val error: String? = null,
     val downloading: Boolean = false,
@@ -27,10 +28,13 @@ data class UpdateUiState(
     val doneBytes: Long = 0L,
     val totalBytes: Long = -1L,
     val readyFile: String? = null,
+    val readyTag: String? = null,
     val auto: Boolean = true,
     val log: String = "",
     val checkedAt: String = ""
-)
+) {
+    val canInstall: Boolean get() = hasUpdate && readyTag == tag && readyFile?.let { File(it).isFile } == true
+}
 
 class UpdateViewModel(
     private val source: UpdateSource,
@@ -44,7 +48,7 @@ class UpdateViewModel(
     private val mutable = MutableStateFlow(UpdateUiState(auto = autoEnabled()))
     val state: StateFlow<UpdateUiState> = mutable.asStateFlow()
     private var downloadJob: Job? = null
-    @Volatile private var cancelled = false
+    @Volatile private var downloadGeneration = 0L
 
     fun checkOnStart() {
         if (!autoEnabled()) return
@@ -53,7 +57,7 @@ class UpdateViewModel(
 
     fun check(manual: Boolean) {
         if (mutable.value.checking || mutable.value.downloading) return
-        mutable.update { it.copy(checking = true, error = null, upToDate = false, hasUpdate = false, log = copy.get("upd_log_request")) }
+        mutable.update { it.copy(checking = true, error = null, upToDate = false, log = copy.get("upd_log_request")) }
         scope.launch {
             try {
                 val cached = source.cached()
@@ -65,16 +69,23 @@ class UpdateViewModel(
                 }
                 val at = stamp()
                 if (info == null) {
-                    mutable.update { it.copy(checking = false, upToDate = true, hasUpdate = false, error = null, log = copy.get("upd_log_none"), checkedAt = at) }
+                    mutable.update { it.copy(checking = false, upToDate = true, hasUpdate = false,
+                        updateStale = false, readyFile = null, readyTag = null,
+                        error = null, log = copy.get("upd_log_none"), checkedAt = at) }
                 } else if (isNewer(info.tag, currentTag)) {
                     mutable.update {
                         it.copy(
                             checking = false, tag = info.tag, apkUrl = info.apkUrl, htmlUrl = info.htmlUrl,
-                            hasUpdate = true, upToDate = false, log = copy.get("upd_log_found", info.tag), checkedAt = at
+                            hasUpdate = true, upToDate = false, updateStale = false,
+                            readyFile = it.readyFile.takeIf { _ -> it.readyTag == info.tag },
+                            readyTag = it.readyTag.takeIf { ready -> ready == info.tag },
+                            log = copy.get("upd_log_found", info.tag), checkedAt = at
                         )
                     }
                 } else {
-                    mutable.update { it.copy(checking = false, upToDate = true, hasUpdate = false, tag = info.tag, log = copy.get("upd_log_none"), checkedAt = at) }
+                    mutable.update { it.copy(checking = false, upToDate = true, hasUpdate = false,
+                        updateStale = false, readyFile = null, readyTag = null,
+                        tag = info.tag, log = copy.get("upd_log_none"), checkedAt = at) }
                 }
             } catch (e: CancellationException) {
                 mutable.update { it.copy(checking = false) }
@@ -82,7 +93,8 @@ class UpdateViewModel(
             } catch (e: Exception) {
                 val raw = e.message ?: e.javaClass.simpleName
                 val friendly = if ("403" in raw) copy.get("upd_err_403") else copy.get("upd_err", raw)
-                mutable.update { it.copy(checking = false, error = friendly, log = copy.get("upd_log_fail"), checkedAt = stamp()) }
+                mutable.update { it.copy(checking = false, updateStale = it.hasUpdate,
+                    error = friendly, log = copy.get("upd_log_fail"), checkedAt = stamp()) }
             }
         }
     }
@@ -90,40 +102,60 @@ class UpdateViewModel(
     fun download() {
         val tag = mutable.value.tag
         val url = mutable.value.apkUrl ?: return
-        if (tag.isEmpty() || mutable.value.downloading) return
-        cancelled = false
-        mutable.update { it.copy(downloading = true, progress = -1f, error = null, log = copy.get("upd_log_connect")) }
+        if (tag.isEmpty() || !mutable.value.hasUpdate || mutable.value.checking || mutable.value.downloading) return
+        val generation = ++downloadGeneration
+        fun current() = generation == downloadGeneration && mutable.value.tag == tag
+        mutable.update { it.copy(downloading = true, progress = -1f, error = null,
+            readyFile = null, readyTag = null, log = copy.get("upd_log_connect")) }
         downloadJob?.cancel()
         downloadJob = scope.launch {
             try {
                 val file = source.download(url, tag) { done, total ->
                     val p = if (total > 0) done.toFloat() / total else -1f
-                    mutable.update { it.copy(progress = p, doneBytes = done, totalBytes = total, log = copy.get("upd_log_dl")) }
+                    if (current()) mutable.update { state ->
+                        if (generation == downloadGeneration && state.tag == tag)
+                            state.copy(progress = p, doneBytes = done, totalBytes = total, log = copy.get("upd_log_dl"))
+                        else state
+                    }
                 }
-                if (cancelled) return@launch
-                mutable.update { it.copy(downloading = false, progress = 1f, readyFile = file.absolutePath, log = copy.get("upd_log_done")) }
+                if (!current()) return@launch
+                mutable.update { state -> if (generation == downloadGeneration && state.tag == tag)
+                    state.copy(downloading = false, progress = 1f, readyFile = file.absolutePath,
+                        readyTag = tag, log = copy.get("upd_log_done")) else state }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: AutoUpdate.DownloadCancelled) {
-                mutable.update { it.copy(downloading = false, log = copy.get("upd_log_cancel")) }
+                if (current()) mutable.update { state -> if (generation == downloadGeneration && state.tag == tag)
+                    state.copy(downloading = false, log = copy.get("upd_log_cancel")) else state }
             } catch (e: Exception) {
-                if (cancelled) {
-                    mutable.update { it.copy(downloading = false, log = copy.get("upd_log_cancel")) }
-                } else {
-                    mutable.update { it.copy(downloading = false, error = copy.get("upd_err_dl", e.message ?: e.javaClass.simpleName), log = copy.get("upd_log_dl_fail")) }
+                if (current()) {
+                    mutable.update { state -> if (generation == downloadGeneration && state.tag == tag)
+                        state.copy(downloading = false, error = copy.get("upd_err_dl", e.message ?: e.javaClass.simpleName),
+                            log = copy.get("upd_log_dl_fail")) else state }
                 }
             }
         }
     }
 
     fun install() {
-        val path = mutable.value.readyFile ?: return
-        source.install(File(path))
-        mutable.update { it.copy(log = copy.get("upd_log_install")) }
+        val current = mutable.value
+        val path = current.readyFile ?: return
+        if (!current.canInstall) {
+            mutable.update { it.copy(readyFile = null, readyTag = null,
+                error = copy.get("ux60_update_file_missing")) }
+            return
+        }
+        try {
+            source.install(File(path))
+            mutable.update { it.copy(log = copy.get("upd_log_install"), error = null) }
+        } catch (e: Exception) {
+            mutable.update { it.copy(error = copy.get("ux60_update_install_failed"),
+                log = copy.get("upd_log_dl_fail")) }
+        }
     }
 
     fun cancel() {
-        cancelled = true
+        downloadGeneration++
         source.cancelDownload()
         downloadJob?.cancel()
         mutable.update { it.copy(downloading = false, log = copy.get("upd_log_cancel")) }

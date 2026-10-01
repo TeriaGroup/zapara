@@ -28,6 +28,21 @@ public sealed class ChatInboxTests
         => new(id, PromotedId, "Друг", "text", body, null, null, null, null, Now,
             null, null, null, false, false, null, reactions ?? []);
 
+    [Fact]
+    public void Personal_copy_and_search_use_visible_caption_or_filename_not_service_urls()
+    {
+        var text = Message(Guid.NewGuid(), "Конспект");
+        var media = new SocialMessageResponse(Guid.NewGuid(), PromotedId, "Друг", "file", "/web-api/files/private", null,
+            "Физика.pdf", null, null, Now, null, null, null, false, false, null, []);
+        var caption = new SocialMessageResponse(Guid.NewGuid(), PromotedId, "Друг", "image", "Фото доски", null,
+            "Доска.jpg", null, null, Now, null, null, null, false, false, null, []);
+        Assert.Equal("Конспект", PersonalMessageText.CopyText(text));
+        Assert.Null(PersonalMessageText.CopyText(media));
+        Assert.Contains("Физика.pdf", PersonalMessageText.SearchText(media));
+        Assert.DoesNotContain("web-api", PersonalMessageText.SearchText(media));
+        Assert.Equal("Фото доски", PersonalMessageText.CopyText(caption));
+    }
+
     [AvaloniaFact]
     public async Task Inbox_includes_group_chat_group_direct_and_social_friend()
     {
@@ -141,6 +156,19 @@ public sealed class ChatInboxTests
         await inbox.LoadOlderCommand.ExecuteAsync(null);
 
         Assert.Equal([First, Second, Third, Fourth], inbox.Messages.Select(item => item.Id).ToArray());
+        inbox.Draft = "Неотправленный черновик";
+        inbox.MessageSearch = "  ПЕРВ ";
+        Assert.Equal(First, Assert.Single(inbox.VisibleMessages).Id);
+        Assert.Contains("1 из 4", inbox.HistorySearchScope);
+        Assert.Equal(4, inbox.Messages.Count);
+        inbox.ClearMessageSearchCommand.Execute(null);
+        Assert.Equal(4, inbox.VisibleMessages.Count);
+        Assert.Equal("Неотправленный черновик", inbox.Draft);
+        var copied = new List<string>();
+        inbox.SetClipboardWriter(value => { copied.Add(value); return Task.CompletedTask; });
+        await inbox.CopyOwnCodeCommand.ExecuteAsync(null);
+        await inbox.Messages[0].CopyCommand.ExecuteAsync(null);
+        Assert.Equal(["ABCD1234", "Первое"], copied);
     }
 
     [AvaloniaFact]

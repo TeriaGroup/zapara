@@ -3,6 +3,7 @@ package ru.bgtu_voenmeh.zapara.data
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 // Lecturer schedule from bundled assets (offline-first).
 class LecturerStore(private val context: Context) {
@@ -37,15 +38,20 @@ class LecturerStore(private val context: Context) {
         if (onlyMy) {
             list = list.filter { TeacherMatch.inMineList(it, myIds) }
         }
-        val q = query.trim().lowercase()
-        if (q.isNotEmpty()) {
+        val words = query.trim().lowercase(Locale.ROOT).replace('ё', 'е')
+            .split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (words.isNotEmpty()) {
             list = list.filter { l ->
-                l.name.lowercase().contains(q) || l.id.contains(q) ||
-                    l.kafedra.lowercase().contains(q) ||
-                    lessonsFor(l.id).any { it.disciplineRaw.lowercase().contains(q) }
+                lecturerMatchesWords(words, listOf(l.name, l.id, l.kafedra) +
+                    lessonsFor(l.id).map { it.disciplineRaw.ifBlank { it.subjectRaw } })
             }
         }
         // No cap: LazyColumn renders lazily, all 718 lecturers are fine (was take(100)).
         return list.sortedBy { it.name }.toList()
     }
+}
+
+internal fun lecturerMatchesWords(words: List<String>, fields: List<String>): Boolean {
+    val haystack = fields.joinToString(" ").lowercase(Locale.ROOT).replace('ё', 'е')
+    return words.all(haystack::contains)
 }

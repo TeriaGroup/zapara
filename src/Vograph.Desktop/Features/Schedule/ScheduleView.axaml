@@ -6,7 +6,7 @@
              x:Class="Vograph.Desktop.Features.Schedule.ScheduleView"
              x:DataType="s:ScheduleViewModel">
   <UserControl.Styles><Style Selector="TextBlock.done"><Setter Property="TextDecorations" Value="Strikethrough" /></Style><Style Selector="TextBlock.display"><Setter Property="FontSize" Value="22" /><Setter Property="FontWeight" Value="Medium" /></Style><Style Selector="TextBlock.subject"><Setter Property="FontSize" Value="17" /><Setter Property="FontWeight" Value="Medium" /></Style></UserControl.Styles>
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+  <Grid RowDefinitions="*,Auto"><ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Disabled">
     <StackPanel MaxWidth="1280" Margin="24" Spacing="12">
 
       <Grid ColumnDefinitions="*" RowDefinitions="Auto,Auto,Auto" Margin="0,0,0,8" MinWidth="0">
@@ -49,6 +49,12 @@
       </ItemsControl>
 </StackPanel><StackPanel Name="PlannerMain" Grid.Row="1" Spacing="12">      <TextBlock Classes="muted caption" Text="{Binding DaySummary}" IsVisible="{Binding DaySummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       <TextBlock Classes="muted caption" Text="{Binding SourceSummary}" TextWrapping="Wrap" />
+      <StackPanel Spacing="6" IsVisible="{Binding HasOverlaps}">
+        <TextBlock Text="Пересекаются пары:" Classes="subject" />
+        <ItemsControl ItemsSource="{Binding Overlaps}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="s:ScheduleOverlap">
+          <Button Content="{Binding Caption}" Click="OnOverlapClick" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" />
+        </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+      </StackPanel>
       <TextBlock Classes="subject" Text="{Binding DayPriorityCaption}" IsVisible="{Binding ShowDayState}" />
 
       <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,0,0,6" />
@@ -104,4 +110,7 @@
 </Grid>
     </StackPanel>
   </ScrollViewer>
+  <Border Grid.Row="1" IsVisible="{Binding HasSubgroupUndo}" Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="24,8">
+    <WrapPanel ItemSpacing="12" HorizontalAlignment="Center"><TextBlock Text="{Binding SubgroupUndoCaption}" VerticalAlignment="Center" /><Button Content="Отменить выбор" Command="{Binding UndoSubgroupCommand}" /></WrapPanel>
+  </Border></Grid>
 </UserControl>

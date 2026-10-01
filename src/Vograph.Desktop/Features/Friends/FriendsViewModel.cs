@@ -14,7 +14,8 @@ using Vograph.Desktop.ViewModels;
 namespace Vograph.Desktop.Features.Friends;
 
 public sealed record ColorOption(int Index, bool IsCurrent);
-public sealed record FriendEncounterViewModel(string When, string GroupName, string Members, string Place, int ColorIndex)
+public sealed record FriendEncounterViewModel(string When, string GroupName, string Members, string Place, int ColorIndex,
+    DateTime Date, string SubjectRaw, string TimeStart, string OwnerScope, string OwnGroupId, int RenderEpoch)
 {
     public string GroupDisplay => string.IsNullOrWhiteSpace(Members) ? GroupName : $"{GroupName} · {Members}";
 }
@@ -25,10 +26,12 @@ public sealed partial class FriendsViewModel : ViewModelBase
     private readonly ShellViewModel _shell;
     private readonly Func<DateTime> _clock;
     private readonly Action _reload;
+    private readonly Action _groupChanged;
     private readonly DispatcherTimer _forecastTimer = new() { Interval = TimeSpan.FromMinutes(1) };
     private bool _suppress;
     private bool _suppressReload;
     private int _version;
+    private int _groupEpoch;
     private Task? _pendingSettingsSave;
 
     public FriendsViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null) : base(app)
@@ -38,8 +41,9 @@ public sealed partial class FriendsViewModel : ViewModelBase
         _tickLabels = BuildTicks();
         _strictnessLabel = LabelFor(50);
         _reload = () => { if (!_suppressReload) _ = LoadAsync(); };
+        _groupChanged = () => { _groupEpoch++; _reload(); };
         _forecastTimer.Tick += OnForecastTick;
-        shell.GroupChanged += _reload;
+        shell.GroupChanged += _groupChanged;
         shell.ScheduleChanged += _reload;
         app.Loc.LanguageChanged += _reload;
     }
@@ -48,7 +52,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
     {
         _forecastTimer.Stop();
         _forecastTimer.Tick -= OnForecastTick;
-        _shell.GroupChanged -= _reload;
+        _shell.GroupChanged -= _groupChanged;
         _shell.ScheduleChanged -= _reload;
         App.Loc.LanguageChanged -= _reload;
     }
@@ -62,6 +66,12 @@ public sealed partial class FriendsViewModel : ViewModelBase
     private void OnForecastTick(object? sender, EventArgs e) => _ = RefreshPreviewAsync();
 
     public string Title => T("navFriends");
+    [RelayCommand] private void OpenEncounter(FriendEncounterViewModel? encounter)
+    {
+        if (encounter is not null && App.Work.CanPublish && encounter.OwnerScope == App.Profile.DatabasePath &&
+            encounter.OwnGroupId == App.Settings.MyGroupId && encounter.RenderEpoch == _groupEpoch)
+            _shell.OpenScheduleAt(encounter.Date, encounter.SubjectRaw, encounter.TimeStart);
+    }
     public string Subtitle => T("friendsSubtitle");
     public ObservableCollection<FriendItemViewModel> Friends { get; } = new();
 
@@ -112,12 +122,13 @@ public sealed partial class FriendsViewModel : ViewModelBase
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
         var version = ++_version;
+        var groupEpoch = _groupEpoch;
         var now = _clock();
         var data = await RunAsync(() =>
         {
             var friends = App.Db.GetFriends();
             var settings = App.Db.GetSettings();
-            return new FriendsData(friends, settings, ComputePreview(friends, settings, now));
+            return new FriendsData(friends, settings, ComputePreview(friends, settings, now, groupEpoch));
         }, "friends");
         if (data is null || version != _version || !operation.IsCurrent) return;
         _suppress = true;
@@ -135,7 +146,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
     }
 
     /// <summary>Up to three upcoming schedule overlaps. A loaded empty timetable differs from an unavailable one.</summary>
-    private PreviewData ComputePreview(List<FriendGroup> friends, Settings settings, DateTime now)
+    private PreviewData ComputePreview(List<FriendGroup> friends, Settings settings, DateTime now, int groupEpoch)
     {
         var loc = App.Loc;
         var myId = settings.MyGroupId ?? "";
@@ -178,7 +189,8 @@ public sealed partial class FriendsViewModel : ViewModelBase
                     first ??= (line, marks);
                     var place = loc.T(best.Score switch { >= 100 => "inter100", >= 75 => "inter75", >= 50 => "inter50", _ => "inter25" });
                     encounters.Add(new FriendEncounterViewModel(line, friend.GroupName, friend.MemberNames ?? "",
-                        string.IsNullOrWhiteSpace(best.Room) ? place : $"{place} · {best.Room}", FriendPalette.IndexOf(friend.ColorHex)));
+                        string.IsNullOrWhiteSpace(best.Room) ? place : $"{place} · {best.Room}", FriendPalette.IndexOf(friend.ColorHex),
+                        date, l.SubjectRaw, l.TimeStart, App.Profile.DatabasePath, myId, groupEpoch));
                     if (encounters.Count == 3) break;
                 }
             }
@@ -212,8 +224,9 @@ public sealed partial class FriendsViewModel : ViewModelBase
         if (!operation.IsCurrent) return;
         if (_pendingSettingsSave is { } pending) await pending;
         var version = ++_version;
+        var groupEpoch = _groupEpoch;
         var now = _clock();
-        var preview = await RunAsync(() => ComputePreview(App.Db.GetFriends(), App.Db.GetSettings(), now), "friends");
+        var preview = await RunAsync(() => ComputePreview(App.Db.GetFriends(), App.Db.GetSettings(), now, groupEpoch), "friends");
         if (preview is null || version != _version || !operation.IsCurrent) return;
         ApplyPreview(preview);
     }
@@ -268,9 +281,10 @@ public sealed partial class FriendsViewModel : ViewModelBase
             return App.Db.GetAllGroups().Where(g => g.Id != my && !taken.Contains(g.Name)).ToList();
         }, "groups");
         if (groups is null) return;
-        var dlg = new GroupPickerDialogViewModel(groups, null);
-        if (!await _shell.Dialogs.ShowAsync(dlg) || dlg.Selected is null) return;
-        var name = dlg.Selected.Name;
+        var dlg = new GroupPickerDialogViewModel(groups, null, allowManual: groups.Count == 0);
+        if (!await _shell.Dialogs.ShowAsync(dlg)) return;
+        var name = dlg.Selected?.Name ?? dlg.ManualName.Trim();
+        if (name.Length == 0 || taken.Contains(name) || name == App.Settings.MyGroupId) return;
         var color = FriendPalette.Hex[FirstFreeColor()];
         var ok = await RunAsync(() => App.Db.InsertFriend(new FriendGroup { GroupName = name, ColorHex = color, Enabled = true, MemberNames = "" }), "friend add");
         if (!ok) return;
@@ -278,6 +292,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
         await LoadAsync();
         RaiseScheduleChangedQuietly();
         App.Toasts.Ok(T("friendAdded", name));
+        if (dlg.AllowManual) App.Toasts.Info("Группа добавлена вручную. Расписание появится после загрузки каталога.");
     }
 
     private int FirstFreeColor()
@@ -290,7 +305,7 @@ public sealed partial class FriendsViewModel : ViewModelBase
     public async Task RemoveAsync(FriendItemViewModel item)
     {
         using var operation = App.Work.Enter();
-        if (!operation.IsCurrent) return;
+        if (!operation.IsCurrent || item.IsSavingDraft) return;
         var confirm = new ConfirmDialogViewModel(T("friendsRemove"), T("friendsRemoveConfirm", item.GroupName), T("delete"), danger: true);
         if (!await _shell.Dialogs.ShowAsync(confirm)) return;
         if (!await RunAsync(() => { App.Db.DeleteFriend(item.Model.Id); App.Api.Invalidate(); }, "friend delete")) return;
@@ -330,6 +345,54 @@ public sealed partial class FriendsViewModel : ViewModelBase
         RefreshColorOptions();
         RaiseScheduleChangedQuietly();
         await RefreshPreviewAsync();
+    }
+
+    private sealed record FriendDraftSave(bool Saved, string Error);
+
+    public async Task SaveDraftAsync(FriendItemViewModel item)
+    {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent || !item.IsEditing || item.IsSavingDraft) return;
+        var original = item.Model;
+        var group = item.DraftGroupName.Trim();
+        var members = item.DraftMemberNames.Trim();
+        var color = item.DraftColorIndex;
+        if (group.Length == 0) { item.DraftError = "Укажите группу."; return; }
+        if (color < 0 || color >= FriendPalette.Hex.Length) { item.DraftError = "Выберите цвет."; return; }
+        if (group.Equals(App.Settings.MyGroupId, StringComparison.OrdinalIgnoreCase) ||
+            Friends.Any(other => !ReferenceEquals(other, item) && other.GroupName.Equals(group, StringComparison.OrdinalIgnoreCase)))
+        { item.DraftError = "Эта группа уже выбрана или совпадает с вашей."; return; }
+        if (Friends.Any(other => !ReferenceEquals(other, item) && other.ColorIndex == color))
+        { item.DraftError = "Этот цвет уже занят другой группой."; return; }
+        var revision = item.DraftRevision;
+        item.IsSavingDraft = true;
+        try
+        {
+        var saved = await RunAsync(() =>
+        {
+            var current = App.Db.GetFriends().FirstOrDefault(friend => friend.Id == original.Id);
+            if (current is null) return new FriendDraftSave(false, "Группа друзей больше не найдена. Черновик сохранён.");
+            if (current.GroupName != original.GroupName || current.MemberNames != original.MemberNames || current.ColorHex != original.ColorHex)
+                return new FriendDraftSave(false, "Данные группы изменились. Проверьте их перед сохранением.");
+            if (App.Db.GetFriends().Any(friend => friend.Id != original.Id && friend.GroupName.Equals(group, StringComparison.OrdinalIgnoreCase)))
+                return new FriendDraftSave(false, "Эта группа уже добавлена.");
+            current.GroupName = group;
+            current.MemberNames = members;
+            current.ColorHex = FriendPalette.Hex[color];
+            App.Db.UpdateFriend(current);
+            App.Api.Invalidate();
+            return new FriendDraftSave(true, "");
+        }, "friend edit");
+        if (!operation.IsCurrent || saved is null) return;
+        if (!saved.Saved) { item.DraftError = saved.Error; return; }
+        if (item.DraftRevision == revision) item.IsEditing = false;
+        item.DraftError = "";
+        await _shell.EnsureApiNeedsAsync();
+        await LoadAsync();
+        RaiseScheduleChangedQuietly();
+        App.Toasts.Ok("Группа друзей сохранена.");
+        }
+        finally { item.IsSavingDraft = false; }
     }
 
     private void RefreshColorOptions()
@@ -390,6 +453,22 @@ public sealed partial class FriendItemViewModel : ObservableObject
     [ObservableProperty] private bool _enabled;
     [ObservableProperty] private int _colorIndex;
     [ObservableProperty] private IReadOnlyList<ColorOption> _colorOptions;
+    [ObservableProperty] private bool _isEditing;
+    [ObservableProperty] private bool _isSavingDraft;
+    [ObservableProperty] private string _draftGroupName = "";
+    [ObservableProperty] private string _draftMemberNames = "";
+    [ObservableProperty] private int _draftColorIndex;
+    [ObservableProperty] private string _draftError = "";
+    internal long DraftRevision { get; private set; }
+    partial void OnDraftGroupNameChanged(string value) => DraftRevision++;
+    partial void OnDraftMemberNamesChanged(string value) => DraftRevision++;
+    partial void OnDraftColorIndexChanged(int value)
+    {
+        DraftRevision++;
+        OnPropertyChanged(nameof(DraftColorOptions));
+    }
+    public IReadOnlyList<ColorOption> DraftColorOptions => ColorOptions.Select(option => new ColorOption(option.Index, option.Index == DraftColorIndex)).ToArray();
+    partial void OnColorOptionsChanged(IReadOnlyList<ColorOption> value) => OnPropertyChanged(nameof(DraftColorOptions));
 
     /// <summary>Re-synced from a fresh DB read (SyncFriends): updates the bound display without
     /// re-triggering a save (the value already came from the database, not from the user).</summary>
@@ -410,10 +489,26 @@ public sealed partial class FriendItemViewModel : ObservableObject
         if (!_loading) _ = _owner.SaveAsync(this);
     }
 
-    /// <summary>The names box saves on focus loss / Enter (view code-behind), not on every keystroke.</summary>
     [RelayCommand]
-    private Task CommitNames() => MemberNames == (Model.MemberNames ?? "") ? Task.CompletedTask : _owner.SaveAsync(this);
-
-    [RelayCommand] private Task PickColor(ColorOption option) => _owner.SetColorAsync(this, option.Index);
+    private void BeginEdit()
+    {
+        if (IsSavingDraft) return;
+        DraftGroupName = Model.GroupName;
+        DraftMemberNames = Model.MemberNames ?? "";
+        DraftColorIndex = FriendPalette.IndexOf(Model.ColorHex);
+        DraftError = "";
+        IsEditing = true;
+    }
+    [RelayCommand]
+    private void CancelEdit()
+    {
+        if (IsSavingDraft) return;
+        IsEditing = false;
+        DraftError = "";
+    }
+    [RelayCommand] private Task SaveDraft() => _owner.SaveDraftAsync(this);
+    [RelayCommand] private void PickDraftColor(ColorOption option) => DraftColorIndex = option.Index;
+    // Kept for callers that explicitly commit names; the view no longer invokes it on focus loss.
+    [RelayCommand] private Task CommitNames() => MemberNames == (Model.MemberNames ?? "") ? Task.CompletedTask : _owner.SaveAsync(this);
     [RelayCommand] private Task Remove() => _owner.RemoveAsync(this);
 }

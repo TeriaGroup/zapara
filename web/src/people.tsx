@@ -1,3 +1,4 @@
+import { revealQuote } from "./quote-navigation";
 import { FormEvent, Fragment, UIEvent, useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./api";
 import { emojiGroups } from "./emoji";
@@ -12,6 +13,8 @@ import { holdActions, runHold } from "./hold";
 import { createSocialPoller, mergeSocialMessages, reconcileActiveFriend, sameSocialCluster } from "./socialChat";
 import { Avatar } from "./avatar-view";
 import { chatInboxTime } from "./chatInbox";
+import { personalCopyText, searchPersonalHistory } from "./personal-history";
+import { Link } from "react-router-dom";
 import { emptyChatState, personalText, personalTextCount, personalTextLimit, personalTextValid, sendOnEnter } from "./personal-composer";
 import { usePersonalComposer } from "./personal-composer-context";
 import type { SocialFriend, SocialHome, SocialMessage } from "./types";
@@ -45,12 +48,20 @@ function explain(error: unknown, fallback: string) {
 
 export function PeoplePanel({ initialConversationId }: { initialConversationId?: string } = {}) {
   const app = useApp();
+  return <PeopleContent key={JSON.stringify([app.session?.authenticated, app.session?.user?.userId, app.session?.familyId])} initialConversationId={initialConversationId} />;
+}
+
+function PeopleContent({ initialConversationId }: { initialConversationId?: string }) {
+  const app = useApp();
   const [home, setHome] = useState<SocialHome | null>(null);
   const [active, setActive] = useState<SocialFriend | null>(null);
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const actionPending = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const homeRevision = useRef(0);
   const activeIdRef = useRef<string | null>(null);
   const openedFromRoute = useRef<string | null>(null);
@@ -94,40 +105,50 @@ export function PeoplePanel({ initialConversationId }: { initialConversationId?:
 
   async function invite(event: FormEvent) {
     event.preventDefault();
-    if (!code.trim() || busy) return;
+    if (!code.trim() || actionPending.current) return;
+    actionPending.current = true;
     homeRevision.current += 1;
     setBusy(true);
     setError("");
     try {
-      setHome(await api.socialInvite(code.trim()));
+      const value = await api.socialInvite(code.trim());
+      if (!alive.current) return;
+      setHome(value);
       homeRevision.current += 1;
       setCode("");
     } catch (reason) {
-      setError(explain(reason, "Не удалось добавить по коду"));
-    } finally { setBusy(false); }
+      if (alive.current) setError(explain(reason, "Не удалось добавить по коду"));
+    } finally { actionPending.current = false; if (alive.current) setBusy(false); }
   }
 
   async function answer(friendshipId: string, accept: boolean) {
+    if (actionPending.current) return;
+    actionPending.current = true;
+    setBusy(true);
     homeRevision.current += 1;
     setError("");
     try {
-      setHome(await (accept ? api.socialAccept(friendshipId) : api.socialDecline(friendshipId)));
+      const value = await (accept ? api.socialAccept(friendshipId) : api.socialDecline(friendshipId));
+      if (!alive.current) return;
+      setHome(value);
       homeRevision.current += 1;
     }
-    catch { setError(accept ? "Не удалось принять запрос" : "Не удалось отклонить запрос"); }
+    catch { if (alive.current) setError(accept ? "Не удалось принять запрос. Попробуйте ещё раз." : "Не удалось отклонить запрос. Попробуйте ещё раз."); }
+    finally { actionPending.current = false; if (alive.current) setBusy(false); }
   }
 
   async function copy() {
-    if (!home) return;
+    if (!home?.code || !alive.current) return;
     try {
       await navigator.clipboard.writeText(home.code);
+      if (!alive.current) return;
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch { setCopied(false); setError("Скопируйте код вручную"); }
+      window.setTimeout(() => { if (alive.current) setCopied(false); }, 1600);
+    } catch { if (alive.current) { setCopied(false); setError("Скопируйте код вручную"); } }
   }
 
   if (!app.session?.authenticated) {
-    return <div className="card"><h2>Переписка</h2><p className="muted">Войдите в аккаунт, чтобы получить свой код и писать другим. Расписание и карты работают и без входа.</p></div>;
+    return <div className="card"><h2>Переписка</h2><p className="muted">Войдите в аккаунт, чтобы получить свой код и писать другим. Расписание и карты работают и без входа.</p><Link className="btn primary" to="/settings?section=account">Открыть настройки аккаунта</Link></div>;
   }
 
   return (
@@ -140,8 +161,8 @@ export function PeoplePanel({ initialConversationId }: { initialConversationId?:
             <article className="card row" key={item.friendshipId} style={{ justifyContent: "space-between" }}>
               <div className="row"><Avatar kind="user" id={null} name={personName(item.username, item.displayName)} /><div><b>{personName(item.username, item.displayName)}</b><div className="muted">@{item.username}</div></div></div>
               <div className="row">
-                <button className="btn primary" type="button" onClick={() => void answer(item.friendshipId, true)}>Принять</button>
-                <button className="btn" type="button" onClick={() => void answer(item.friendshipId, false)}>Отклонить</button>
+                <button className="btn primary" type="button" disabled={busy} onClick={() => void answer(item.friendshipId, true)}>Принять</button>
+                <button className="btn" type="button" disabled={busy} onClick={() => void answer(item.friendshipId, false)}>Отклонить</button>
               </div>
             </article>
           ))}
@@ -161,7 +182,7 @@ export function PeoplePanel({ initialConversationId }: { initialConversationId?:
             <h2>Ваш код</h2>
             <div className="row" style={{ justifyContent: "space-between" }}>
               <span className="code">{home?.code || "……"}</span>
-              <button className="btn" type="button" onClick={() => void copy()} disabled={!home}>{copied ? "Скопирован" : "Скопировать"}</button>
+              <button className="btn" type="button" onClick={() => void copy()} disabled={!home?.code}>{copied ? "Скопирован" : "Скопировать"}</button>
             </div>
             <p className="muted">Код индивидуальный. Его можно продиктовать или отправить человеку, с которым хотите переписываться.</p>
           </article>
@@ -319,6 +340,9 @@ function StudyShelf({ onSend }: { onSend: (body: string | null) => void }) {
 
 function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self: string; familyId?: string | null; onError: (text: string) => void }) {
   const [messages, setMessages] = useState<SocialMessage[]>([]);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [copyNotice, setCopyNotice] = useState("");
+  const visibleMessages = searchPersonalHistory(messages, historyQuery);
   const [more, setMore] = useState(false);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [showLatestJump, setShowLatestJump] = useState(false);
@@ -436,11 +460,11 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
   }, [draft, recording, circling]);
 
   useEffect(() => {
-    if (stick.current && logRef.current) {
+    if (!historyQuery.trim() && stick.current && logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
       setShowLatestJump(false);
     } else setShowLatestJump(messages.length > 0);
-  }, [messages]);
+  }, [messages, historyQuery]);
 
   useEffect(() => {
     if (!openMenu) return;
@@ -752,25 +776,29 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
   return (
     <section className="card chat">
       <div className="chat-title"><Avatar kind="user" id={friend.userId} name={personName(friend.username, friend.displayName)} /><h2>{personName(friend.username, friend.displayName)}</h2></div>
+      <label className="field">Поиск в загруженной истории<input type="search" value={historyQuery} onChange={event => setHistoryQuery(event.target.value)} placeholder="Текст или имя файла" /></label>
+      {!!historyQuery.trim() && <div className="row"><span className="muted" role="status">Найдено: {visibleMessages.length} из {messages.length}. Поиск только в загруженных сообщениях.</span><button className="btn" type="button" onClick={() => setHistoryQuery("")}>Сбросить поиск</button></div>}
+      {copyNotice && <p className="muted" role="status">{copyNotice}</p>}
+      {!!historyQuery.trim() && visibleMessages.length === 0 && <p className="muted" role="status">В загруженной истории совпадений нет. Очистите поиск или загрузите более ранние сообщения.</p>}
       <div className="log" ref={logRef} onScroll={onScroll}>
         {more && <button className="btn" type="button" disabled={loadingEarlier} onClick={() => void earlier()}>{loadingEarlier ? "Загрузка…" : "Раньше"}</button>}
-        {messages.map((message, index) => {
+        {visibleMessages.map((message, index) => {
           const mine = message.senderId === self;
           const sticker = message.kind === "sticker" && !message.deleted;
           const round = message.kind === "circle" && !message.deleted;
-          const previous = messages[index - 1];
+          const previous = visibleMessages[index - 1];
           const grouped = !!previous && sameSocialCluster(previous, message);
           const newDay = !previous || new Date(previous.createdAt).toDateString() !== new Date(message.createdAt).toDateString();
           return (
             <Fragment key={message.messageId}>
             {newDay && <div className="message-day" role="separator">{new Date(message.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}</div>}
-            <article data-hold={message.kind} className={"bubble" + (mine ? " mine" : " chat-incoming") + (grouped ? " grouped" : "") + (sticker ? " sticker" : "") + (round ? " round" : "")}
+            <article id={`personal-message-${message.messageId}`} tabIndex={-1} data-hold={message.kind} className={"bubble" + (mine ? " mine" : " chat-incoming") + (grouped ? " grouped" : "") + (sticker ? " sticker" : "") + (round ? " round" : "")}
               onPointerDown={() => { heldOpen.current = false; if (holdTimer.current) window.clearTimeout(holdTimer.current); holdTimer.current = window.setTimeout(() => { holdTimer.current = 0; heldOpen.current = true; setOpenMenu(message.messageId); }, 450); }}
               onPointerUp={event => { if (holdTimer.current) window.clearTimeout(holdTimer.current); if (heldOpen.current && !(event.target instanceof Element && event.target.closest(".actions"))) event.preventDefault(); }}
               onPointerLeave={() => { if (holdTimer.current) window.clearTimeout(holdTimer.current); }}
               onClickCapture={event => { if (event.target instanceof Element && event.target.closest(".actions")) return; if (heldOpen.current || openMenu === message.messageId) { event.preventDefault(); event.stopPropagation(); } }}>
               {!mine && !grouped && <Avatar kind="user" id={message.senderId} name={message.senderName} className="message-avatar" />}
-              {message.replyTo && <div className="quote">{message.replyBody || "Сообщение"}</div>}
+              {message.replyTo && <button type="button" className="quote btn quiet" onClick={() => onError(revealQuote(messagesRef.current,message.replyTo!,"personal-message-"))}>{message.replyBody || "Сообщение"}</button>}
               {message.deleted ? <div>Сообщение удалено</div> : (
                 <>
                   {message.kind === "image" && message.attachmentId && <a href={api.socialAttachment(message.attachmentId)} target="_blank" rel="noreferrer"><img src={api.socialAttachment(message.attachmentId)} alt="Фото" /></a>}
@@ -793,6 +821,7 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
               )}
               {holdActions(message.kind, mine, message.deleted, openMenu === message.messageId).length > 0 && (
                 <div className="actions">
+                  {personalCopyText(message) && <button type="button" onClick={() => { const text = personalCopyText(message); if (!text) return; void navigator.clipboard.writeText(text).then(() => { if (aliveRef.current) setCopyNotice("Текст скопирован"); }).catch(() => { if (aliveRef.current) setCopyNotice("Не удалось скопировать. Выделите текст сообщения вручную."); }); }}>Копировать</button>}
                   {holdActions(message.kind, mine, message.deleted, true).includes("reaction") && <button type="button" onClick={() => runHold("reaction", { reply() {}, reaction() { setReactFor(reactFor === message.messageId ? null : message.messageId); }, edit() {}, delete() {} })}>Реакция</button>}
                   {holdActions(message.kind, mine, message.deleted, true).includes("reply") && <button type="button" onClick={() => runHold("reply", { reply() { setOpenMenu(null); composerStore.reply(friend.conversationId, message); refreshComposer(); }, reaction() {}, edit() {}, delete() {} })}>Ответить</button>}
                   {holdActions(message.kind, mine, message.deleted, true).includes("edit") && <button type="button" onClick={() => runHold("edit", { reply() {}, reaction() {}, edit() { setOpenMenu(null); setPanel(null); composerStore.edit(friend.conversationId, message); refreshComposer(); }, delete() {} })}>Изменить</button>}

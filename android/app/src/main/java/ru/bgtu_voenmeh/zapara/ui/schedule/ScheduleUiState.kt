@@ -72,8 +72,28 @@ data class RenameUi(
     val scope: Int,
     val hasExisting: Boolean,
     val original: String,
-    val dayName: String
+    val dayName: String,
+    val existingScopes: Set<Int> = emptySet(),
+    val profileName: String = "",
+    val groupId: String = "",
+    val selectedDate: LocalDate? = null,
+    val busy: Boolean = false,
+    val error: String? = null
 )
+
+enum class SubjectRowsStatus { Loading, Ready, Failed }
+
+data class SubjectHomeworkRequest(val ticket: Long, val profileName: String, val groupId: String, val subjectNorm: String) {
+    fun matches(ticket: Long, profileName: String, groupId: String, lesson: LessonUi?): Boolean =
+        this.ticket == ticket && this.profileName == profileName && this.groupId == groupId &&
+            lesson?.subjectNorm == subjectNorm
+}
+
+data class ScheduleCompletionUndo(val id: Long, val previousDone: Boolean,
+    val profileName: String, val groupId: String) {
+    fun canApply(profile: String, group: String, currentDone: Boolean?): Boolean =
+        profileName == profile && groupId == group && currentDone == !previousDone
+}
 
 data class ScheduleUiState(
     val loaded: Boolean = false,
@@ -87,13 +107,20 @@ data class ScheduleUiState(
     val homeworkEditor: HomeworkEditorState? = null,
     val error: String? = null,
     val guest: Boolean = false,
-    val undoDone: Pair<Long, Boolean>? = null,
+    val undoDone: ScheduleCompletionUndo? = null,
+    val completionBusyIds: Set<Long> = emptySet(),
+    val undoDoneBusy: Boolean = false,
+    val sharedBusyIds: Set<String> = emptySet(),
     val now: java.time.LocalDateTime = java.time.LocalDateTime.now(),
     val sourceStatus: String? = null,
     val undoShared: Pair<String, Boolean>? = null,
     val subjectHomework: LessonUi? = null,
     val subjectRows: List<HomeworkRowUi> = emptyList(),
-    val sharedDetail: HomeworkRowUi? = null
+    val subjectRowsStatus: SubjectRowsStatus = SubjectRowsStatus.Ready,
+    val sharedDetail: HomeworkRowUi? = null,
+    val groupId: String = "",
+    val profileName: String = "",
+    val undoSubgroup: SubgroupUndoUi? = null
 )
 
 sealed interface ScheduleEvent {
@@ -111,18 +138,21 @@ sealed interface ScheduleEvent {
     data object CloseActions : ScheduleEvent
     data class Rename(val lesson: LessonUi) : ScheduleEvent
     data class RenameChanged(val name: String, val note: String, val scope: Int) : ScheduleEvent
-    data object RenameSave : ScheduleEvent
-    data object RenameReset : ScheduleEvent
+    data class RenameSave(val draft: RenameUi) : ScheduleEvent
+    data class RenameReset(val draft: RenameUi) : ScheduleEvent
     data object RenameCancel : ScheduleEvent
     data class SubjectHomework(val lesson: LessonUi) : ScheduleEvent
     data object CloseSubjectHomework : ScheduleEvent
     data class OpenHomework(val row: HomeworkRowUi) : ScheduleEvent
-    data class ToggleShared(val id: String, val done: Boolean) : ScheduleEvent
-    data class ToggleDone(val id: Long) : ScheduleEvent
+    data class ToggleShared(val id: String, val done: Boolean,
+        val groupId: String? = null, val profileName: String? = null) : ScheduleEvent
+    data class ToggleDone(val id: Long, val expectedDone: Boolean? = null,
+        val groupId: String? = null, val profileName: String? = null) : ScheduleEvent
     data class AddHomework(val lesson: LessonUi) : ScheduleEvent
     data class HomeworkEditorText(val text: String) : ScheduleEvent
     data class HomeworkEditorShare(val on: Boolean) : ScheduleEvent
     data class HomeworkEditorAudience(val audience: ru.bgtu_voenmeh.zapara.data.communities.HomeworkAudience) : ScheduleEvent
+    data object HomeworkRetryShareOptions : ScheduleEvent
     data object HomeworkRetryShare : ScheduleEvent
     data object HomeworkEditorInc : ScheduleEvent
     data object HomeworkEditorDec : ScheduleEvent
@@ -132,5 +162,7 @@ sealed interface ScheduleEvent {
     data class HomeworkAttach(val kind: String, val uri: Uri) : ScheduleEvent
     data class HomeworkRemoveFile(val id: String) : ScheduleEvent
     data class OpenMap(val lesson: LessonUi) : ScheduleEvent
-    data class PickSubgroup(val streamId: String, val optionId: String) : ScheduleEvent
+    data class PickSubgroup(val streamId: String, val optionId: String,
+        val groupId: String? = null, val profileName: String? = null) : ScheduleEvent
+    data object UndoSubgroup : ScheduleEvent
 }

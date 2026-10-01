@@ -36,6 +36,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.res.stringResource
+import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.pressScale
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -83,6 +86,7 @@ fun ZButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, en
     val interactions = remember { MutableInteractionSource() }
     val focused by interactions.collectIsFocusedAsState()
     val pressed by interactions.collectIsPressedAsState()
+    val busyDescription = stringResource(R.string.ux60_busy_operation, text)
     val restingColor = if (!ghost) c.accent else if (quiet) Color.Transparent else c.chip
     val contentColor = if (!enabled) c.text2 else if (ghost) c.text1 else c.onAccent
     val backgroundColor = when {
@@ -92,7 +96,12 @@ fun ZButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, en
         else -> restingColor
     }
     Surface(
-        modifier.then(if (tag != null) Modifier.testTag(tag) else Modifier).sizeIn(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch)
+        modifier.then(if (tag != null) Modifier.testTag(tag) else Modifier)
+            .then(if (busy) Modifier.semantics(mergeDescendants = true) {
+                contentDescription = text
+                stateDescription = busyDescription
+            } else Modifier)
+            .sizeIn(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch)
             .pressScale(interactions)
             .clip(shape).controlFocusRing(enabled && !busy && focused, contentColor, Zapara.radii.control).clickable(
                 interactionSource = interactions,
@@ -112,7 +121,7 @@ fun ZButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, en
                 }
                 if (busy) Box(Modifier.matchParentSize(), contentAlignment = Alignment.Center) {
                     Text(androidx.compose.ui.res.stringResource(ru.bgtu_voenmeh.zapara.R.string.space_day_busy), style = Zapara.typography.bodyStrong,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clearAndSetSemantics { })
                 }
             }
         }

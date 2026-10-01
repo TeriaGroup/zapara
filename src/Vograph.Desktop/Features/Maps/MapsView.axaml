@@ -16,13 +16,16 @@
         </Border>
         <TextBlock Classes="muted" Text="{Binding RouteUnmarked}" IsVisible="{Binding IsRouteUnmarked}" Margin="0,4,0,0" />
       </StackPanel>
-      <Button Grid.Column="1" Classes="pill" VerticalAlignment="Bottom" Command="{Binding GoToNextCommand}" IsVisible="{Binding ShowGoToNext}"
+      <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Bottom">
+      <Button Classes="pill" Command="{Binding GoToNextCommand}" IsVisible="{Binding ShowGoToNext}"
               AutomationProperties.AutomationId="Maps.ToNext" AutomationProperties.Name="{loc:T mapToNext}">
         <StackPanel Orientation="Horizontal" Spacing="6">
           <c:Icon Data="{StaticResource Icon.Crosshair}" Size="14" />
           <TextBlock Text="{loc:T mapToNext}" />
         </StackPanel>
       </Button>
+      <Button Classes="ghost" Content="К выбранному дню" Command="{Binding ReturnToLessonCommand}" IsVisible="{Binding HasReturnDate}" />
+      </StackPanel>
     </Grid>
 
     <WrapPanel Grid.Row="1" ItemSpacing="12" LineSpacing="8" Margin="0,14,0,10">
@@ -107,6 +110,7 @@
           <c:EmptyState IsVisible="{Binding ShowEmpty}" Title="{Binding ContextLine}" Hint="{loc:T mapRemoteHint}" Icon="{StaticResource Icon.Map}" VerticalAlignment="Center" />
           <TextBlock Classes="muted caption" Text="{Binding ImageError}" IsVisible="{Binding ImageError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+          <Button Content="Повторить этот план" Command="{Binding RetryPlanCommand}" IsVisible="{Binding HasFailedPlan}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,54" />
           <Border Classes="chip" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12" IsVisible="{Binding HasNote}">
             <TextBlock Text="{Binding Note}" TextWrapping="Wrap" />
           </Border>

@@ -18,8 +18,10 @@
       <TextBlock Classes="muted caption" Text="Общение внутри приложения «Расписание военмех»" />
       <TextBlock Classes="muted" Text="{Binding Status}" TextWrapping="Wrap" />
     </StackPanel>
-    <c:EmptyState Grid.Row="1" IsVisible="{Binding NeedAccount}" Title="Войдите в аккаунт"
-                  Hint="Личные чаты и группы доступны после входа." Icon="{StaticResource Icon.Chat}" />
+    <StackPanel Grid.Row="1" IsVisible="{Binding NeedAccount}" Spacing="10" VerticalAlignment="Center">
+      <c:EmptyState Title="Войдите в аккаунт" Hint="Личные чаты и группы доступны после входа." Icon="{StaticResource Icon.Chat}" />
+      <Button Content="Открыть настройки аккаунта" Command="{Binding OpenAccountCommand}" HorizontalAlignment="Center" />
+    </StackPanel>
     <Grid Grid.Row="1" Margin="0,18,0,0" ColumnDefinitions="340,16,*" IsVisible="{Binding !NeedAccount}">
       <Border Classes="card" Padding="10" ClipToBounds="True">
         <DockPanel LastChildFill="True">
@@ -29,20 +31,24 @@
              <Button Classes="ghost" Content="Обновить" Command="{Binding RefreshCommand}" HorizontalAlignment="Left" />
              <TextBox Text="{Binding InboxSearch, Mode=TwoWay}" PlaceholderText="Название или последнее сообщение"
                       AutomationProperties.AutomationId="Chat.InboxSearch" />
-             <ComboBox SelectedIndex="{Binding InboxSourceIndex, Mode=TwoWay}"
+              <ComboBox SelectedIndex="{Binding InboxSourceIndex, Mode=TwoWay}"
                        AutomationProperties.AutomationId="Chat.InboxSource">
                <ComboBoxItem Content="Все источники" />
                <ComboBoxItem Content="Группы" />
                <ComboBoxItem Content="Личные чаты группы" />
                <ComboBoxItem Content="Друзья по коду" />
-             </ComboBox>
+              </ComboBox>
+              <c:Switch Content="Только непрочитанные" IsChecked="{Binding UnreadOnly}" />
              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                <TextBlock Classes="muted caption" Text="{Binding InboxResultCount}" VerticalAlignment="Center" />
                <Button Grid.Column="1" Classes="ghost" Content="Сбросить" Command="{Binding ResetInboxFiltersCommand}"
                        IsVisible="{Binding HasInboxFilters}" MinHeight="48" />
              </Grid>
             <TextBlock Classes="muted caption" Text="Ваш код для приглашения" />
-            <TextBlock Text="{Binding MyCode}" FontWeight="SemiBold" />
+             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+               <TextBlock Text="{Binding MyCode}" FontWeight="SemiBold" VerticalAlignment="Center" />
+               <Button Grid.Column="1" Content="Копировать код" Command="{Binding CopyOwnCodeCommand}" />
+             </Grid>
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
               <TextBox Text="{Binding InviteCode}" PlaceholderText="Код друга" MaxLength="64" />
               <Button Grid.Column="1" Classes="primary" Content="Пригласить" Command="{Binding InviteCommand}" />
@@ -52,8 +58,8 @@
                 <DataTemplate x:DataType="chat:ChatInviteRow">
                   <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,3">
                     <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
-                    <Button Grid.Column="1" Classes="primary" Content="Принять" Command="{Binding AcceptCommand}" />
-                    <Button Grid.Column="2" Classes="ghost" Content="Отклонить" Command="{Binding DeclineCommand}" />
+                    <Button Grid.Column="1" Classes="primary" Content="Принять" Command="{Binding AcceptCommand}" IsEnabled="{Binding !Busy}" />
+                    <Button Grid.Column="2" Classes="ghost" Content="Отклонить" Command="{Binding DeclineCommand}" IsEnabled="{Binding !Busy}" />
                   </Grid>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
@@ -143,19 +149,26 @@
           <ScrollViewer x:Name="MessageScroll" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="12,10" Spacing="8">
               <TextBlock Classes="muted" Text="Загрузка сообщений…" IsVisible="{Binding LoadingMessages}" />
-              <TextBlock Classes="muted" Text="Сообщений пока нет" IsVisible="{Binding NoMessages}" />
+               <TextBlock Classes="muted" Text="Сообщений пока нет" IsVisible="{Binding NoMessages}" />
+               <TextBlock Classes="muted caption" Text="{Binding QuoteFeedback}" TextWrapping="Wrap" IsVisible="{Binding QuoteFeedback, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+               <TextBox Text="{Binding MessageSearch, Mode=TwoWay}" PlaceholderText="Поиск в загруженной личной истории" IsVisible="{Binding HasConversation}" />
+               <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasConversation}">
+                 <TextBlock Classes="muted caption" Text="{Binding HistorySearchScope}" VerticalAlignment="Center" />
+                 <Button Grid.Column="1" Content="Очистить поиск" Command="{Binding ClearMessageSearchCommand}" IsVisible="{Binding MessageSearch, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+               </Grid>
+               <TextBlock Classes="muted" Text="В загруженных сообщениях совпадений нет." IsVisible="{Binding NoHistoryMatches}" />
               <StackPanel IsVisible="{Binding MessageLoadFailed}" Spacing="6">
                 <TextBlock Text="Не удалось загрузить сообщения." TextWrapping="Wrap" />
                 <Button Content="Повторить" Command="{Binding ReloadMessagesCommand}" HorizontalAlignment="Left" />
               </StackPanel>
               <Button Classes="ghost" Content="Ранее" Command="{Binding LoadOlderCommand}" IsVisible="{Binding HasMore}" HorizontalAlignment="Center" />
-              <ItemsControl ItemsSource="{Binding Messages}" AutomationProperties.AutomationId="Chat.Messages">
+               <ItemsControl ItemsSource="{Binding VisibleMessages}" AutomationProperties.AutomationId="Chat.Messages">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="chat:ChatMessageRow">
                     <StackPanel>
                     <TextBlock Classes="muted caption" Text="{Binding DayHeader}" HorizontalAlignment="Center" Margin="0,10,0,12"
                                IsVisible="{Binding DayHeader, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                    <Border Classes="card chat-message" Classes.mine="{Binding Mine}" Margin="0,0,0,4" Padding="12,8"
+                    <Border Classes="card chat-message" Classes.mine="{Binding Mine}" Margin="0,0,0,4" Padding="12,8" Focusable="True"
                             MaxWidth="440" HorizontalAlignment="{Binding Mine, Converter={x:Static loc:Converters.ChatAlign}}">
                       <StackPanel Spacing="4">
                         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
@@ -167,7 +180,9 @@
                           <TextBlock Grid.Column="1" Classes="caption" Text="{Binding Author}" IsVisible="{Binding ShowAuthor}" VerticalAlignment="Center" />
                           <TextBlock Grid.Column="2" Classes="muted caption" Text="{Binding When}" />
                         </Grid>
-                        <TextBlock Classes="muted caption" Text="{Binding Detail}" />
+                        <Button Classes="link" Content="{Binding Detail}" IsVisible="{Binding IsReply}" Command="{Binding $parent[UserControl].((chat:ChatInboxViewModel)DataContext).JumpQuoteCommand}" CommandParameter="{Binding}" HorizontalAlignment="Left" />
+                        <TextBlock Classes="muted caption" Text="{Binding QuoteHint}" IsVisible="{Binding QuoteHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" TextWrapping="Wrap" />
+                        <TextBlock Classes="muted caption" Text="Цитируемое сообщение" IsVisible="{Binding IsQuoteTarget}" />
                         <TextBlock Text="{Binding Display}" TextWrapping="Wrap" />
                         <Image Source="{Binding Preview}" MaxWidth="300" MaxHeight="220" HorizontalAlignment="Left"
                                Stretch="Uniform" />
@@ -180,7 +195,8 @@
                           <Button.Flyout>
                             <MenuFlyout Placement="Bottom">
                               <MenuItem Header="Ответить" Command="{Binding ReplyCommand}" />
-                              <MenuItem Header="Реакция" Command="{Binding ReactCommand}" IsVisible="{Binding CanReact}" />
+                               <MenuItem Header="Реакция" Command="{Binding ReactCommand}" IsVisible="{Binding CanReact}" />
+                               <MenuItem Header="Копировать текст" Command="{Binding CopyCommand}" IsVisible="{Binding CanCopy}" />
                               <MenuItem Header="Изменить" Command="{Binding EditCommand}" IsVisible="{Binding CanEdit}" />
                               <MenuItem Header="Удалить" Command="{Binding DeleteCommand}" IsVisible="{Binding CanDelete}" />
                             </MenuFlyout>

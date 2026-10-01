@@ -7,16 +7,49 @@ namespace Vograph.Desktop.Features.Account;
 public sealed partial class AccountPanelViewModel
 {
     [RelayCommand]
+    private async Task RefreshCapabilities()
+    {
+        if (service is null || disposed) return;
+        var received = false;
+        await RunAsync(async () =>
+        {
+            var caps = await service.CapabilitiesAsync(lifetime.Token);
+            RegistrationAvailable = caps.Registration;
+            VkAvailable = caps.Vk;
+            YandexAvailable = caps.Yandex;
+            RecoveryAvailable = caps.Recovery;
+            received = true;
+        });
+        if (!disposed) CapabilitiesFailed = !received;
+    }
+
+    [RelayCommand]
     private async Task ResetPassword()
     {
-        if (!CanAct || !RecoveryAvailable) return;
+        if (!CanRequestReset) return;
         var username = Username;
         await RunAsync(async () =>
         {
             await service!.RequestPasswordResetAsync(username, lifetime.Token);
-            Status = T("accountResetPassword");
+            ResetRequested = true;
+            Status = "Если для логина доступно восстановление, инструкция отправлена. Проверьте почту.";
         });
     }
+
+    [RelayCommand]
+    private async Task ConfirmPasswordReset()
+    {
+        if (!CanConfirmReset) return;
+        var token = ResetToken.Trim();
+        var password = ResetNewPassword;
+        await RunAsync(async () =>
+        {
+            await service!.ConfirmPasswordResetAsync(token, password, lifetime.Token);
+            ResetToken = ""; ResetNewPassword = ""; ResetRequested = false;
+            Status = "Пароль обновлён. Теперь можно войти.";
+        });
+    }
+    [RelayCommand] private void ShowPasswordResetForm() { if (ShowRecovery) ResetRequested = true; }
 
     [RelayCommand]
     private Task Export()

@@ -5,7 +5,7 @@ using Vograph.Desktop.ViewModels;
 
 namespace Vograph.Desktop.Features.Summary;
 
-public sealed record DayBar(string Label, int Count, double Height);
+public sealed record DayBar(string Label, int Count, double Height, DateTime? Date = null);
 
 public sealed partial class SummaryViewModel : ViewModelBase
 {
@@ -46,9 +46,22 @@ public sealed partial class SummaryViewModel : ViewModelBase
     [ObservableProperty] private string _subtitle = "";
     [ObservableProperty] private bool _isLoaded;
     [ObservableProperty] private bool _hasGroup;
+    [ObservableProperty] private bool _hasCopy = true;
+    [ObservableProperty] private string _loadError = "";
     public bool ShowNoGroup => IsLoaded && !HasGroup;
-    partial void OnIsLoadedChanged(bool value) => OnPropertyChanged(nameof(ShowNoGroup));
-    partial void OnHasGroupChanged(bool value) => OnPropertyChanged(nameof(ShowNoGroup));
+    public bool ShowNoCopy => IsLoaded && HasGroup && !HasCopy;
+    public bool ShowSummary => HasGroup && HasCopy;
+    partial void OnIsLoadedChanged(bool value) { OnPropertyChanged(nameof(ShowNoGroup)); OnPropertyChanged(nameof(ShowNoCopy)); }
+    partial void OnHasGroupChanged(bool value) { OnPropertyChanged(nameof(ShowNoGroup)); OnPropertyChanged(nameof(ShowNoCopy)); OnPropertyChanged(nameof(ShowSummary)); }
+    partial void OnHasCopyChanged(bool value) { OnPropertyChanged(nameof(ShowNoCopy)); OnPropertyChanged(nameof(ShowSummary)); }
+    [CommunityToolkit.Mvvm.Input.RelayCommand] private void OpenDay(DayBar? day) { if (day?.Date is { } date) _shell.OpenScheduleAt(date); }
+    [CommunityToolkit.Mvvm.Input.RelayCommand] private void ChooseGroup() => _shell.NavigateTo(SectionKey.Settings);
+    [CommunityToolkit.Mvvm.Input.RelayCommand(AllowConcurrentExecutions = false)]
+    private async Task RetrySummary()
+    {
+        await _shell.RefreshScheduleAsync(force: true, quiet: false);
+        await ReloadAsync();
+    }
     [ObservableProperty] private string _totalText = "—";
     [ObservableProperty] private IReadOnlyList<DayBar> _dayBars = Array.Empty<DayBar>();
     [ObservableProperty] private IReadOnlyList<CountItem> _types = Array.Empty<CountItem>();
@@ -73,7 +86,13 @@ public sealed partial class SummaryViewModel : ViewModelBase
         var today = _clock().Date;
         int? parity = _initialized ? SegmentIndex switch { 0 => 1, 1 => 2, _ => 0 } : null;
         var model = await RunAsync(() => _composer.Compose(parity, today), "summary");
-        if (model is null || version != _version || !operation.IsCurrent) return;
+        if (model is null)
+        {
+            if (version == _version && operation.IsCurrent) LoadError = "Сводку не удалось обновить. Последняя загруженная сводка сохранена.";
+            return;
+        }
+        if (version != _version || !operation.IsCurrent) return;
+        LoadError = "";
         _initialized = true;
         _suppress = true;
         SegmentIndex = model.Parity switch { 1 => 0, 2 => 1, _ => 2 };
@@ -84,11 +103,13 @@ public sealed partial class SummaryViewModel : ViewModelBase
     private void Apply(SummaryModel m)
     {
         HasGroup = m.HasGroup;
+        HasCopy = m.HasCopy;
         IsLoaded = true;
         SegmentItems = BuildSegmentItems();
         TotalText = m.Total.ToString();
         var max = m.ByDay.Count == 0 ? 0 : m.ByDay.Max(d => d.Count);
-        DayBars = m.ByDay.Select(d => new DayBar(d.Name, d.Count, max == 0 ? 0 : Math.Round(BarMax * d.Count / max))).ToList();
+        DayBars = m.ByDay.Select((d, index) => new DayBar(d.Name, d.Count, max == 0 ? 0 : Math.Round(BarMax * d.Count / max),
+            index < (m.DayDates?.Count ?? 0) ? m.DayDates![index] : null)).ToList();
         Types = m.ByType;
         Subjects = m.Subjects;
         Teachers = m.Teachers;

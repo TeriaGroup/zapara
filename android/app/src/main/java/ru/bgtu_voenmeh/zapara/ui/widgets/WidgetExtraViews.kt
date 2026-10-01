@@ -23,13 +23,19 @@ object WidgetExtraViews {
         val colors = WidgetPalette.of(context, snapshot.isDark)
         views.setInt(R.id.widget_wayfinder_root, "setBackgroundResource", colors.background)
         line(views, R.id.widget_wayfinder_title, face.title, colors.text1)
-        line(views, R.id.widget_wayfinder_status, face.status, colors.text2)
+        line(views, R.id.widget_wayfinder_status,
+            if (face.subject.isNotBlank()) face.readError ?: face.status else face.status, colors.text2)
         line(views, R.id.widget_wayfinder_room, face.room, colors.text1)
         line(views, R.id.widget_wayfinder_subject, face.subject, colors.text1)
         line(views, R.id.widget_wayfinder_time, face.time, colors.text2)
         line(views, R.id.widget_wayfinder_empty, face.empty.orEmpty(), colors.text2)
+        if (face.readError != null) {
+            val retry = WidgetIntents.retry(context, widgetId, "wayfinder")
+            views.setOnClickPendingIntent(R.id.widget_wayfinder_status, retry)
+            views.setOnClickPendingIntent(R.id.widget_wayfinder_empty, retry)
+        }
         views.setViewVisibility(R.id.widget_wayfinder_overlay, View.GONE)
-        val spoken = listOf(face.title, face.status, face.targetDate?.format(spokenDate).orEmpty(),
+        val spoken = listOf(face.title, face.readError ?: face.status, face.targetDate?.format(spokenDate).orEmpty(),
             face.subject, face.time, face.room, face.empty.orEmpty())
             .filter(String::isNotBlank).joinToString(", ")
         views.setContentDescription(R.id.widget_wayfinder_root, spoken)
@@ -45,14 +51,20 @@ object WidgetExtraViews {
         views.setInt(R.id.widget_week_root, "setBackgroundResource", colors.background)
         line(views, R.id.widget_week_title, snapshot.title, colors.text1)
         val empty = if (snapshot.cleared) context.getString(R.string.widget_loading) else snapshot.empty.orEmpty()
-        val showSubtitle = empty.isBlank() && context.resources.configuration.fontScale < 1.2f
-        line(views, R.id.widget_week_subtitle, snapshot.subtitle.takeIf { showSubtitle }.orEmpty(), colors.text2)
+        val showSubtitle = snapshot.readError != null || empty.isBlank() && context.resources.configuration.fontScale < 1.2f
+        line(views, R.id.widget_week_subtitle,
+            (snapshot.readError ?: snapshot.subtitle).takeIf { showSubtitle }.orEmpty(), colors.text2)
         line(views, R.id.widget_week_empty, empty, colors.text2)
+        if (snapshot.readError != null) {
+            val retry = WidgetIntents.retry(context, widgetId, "week")
+            views.setOnClickPendingIntent(R.id.widget_week_subtitle, retry)
+            views.setOnClickPendingIntent(R.id.widget_week_empty, retry)
+        }
         val showDays = !snapshot.cleared && empty.isBlank() && snapshot.days.isNotEmpty()
         views.setViewVisibility(R.id.widget_week_row_top, if (showDays) View.VISIBLE else View.GONE)
         views.setViewVisibility(R.id.widget_week_row_bottom, if (showDays) View.VISIBLE else View.GONE)
         views.setContentDescription(R.id.widget_week_root,
-            listOf(snapshot.title, snapshot.subtitle.takeUnless { snapshot.cleared }.orEmpty(), empty)
+            listOf(snapshot.title, snapshot.readError ?: snapshot.subtitle.takeUnless { snapshot.cleared }.orEmpty(), empty)
                 .filter(String::isNotBlank).joinToString(", "))
         views.setViewVisibility(R.id.widget_week_overlay, View.GONE)
         weekCells.forEachIndexed { index, id ->

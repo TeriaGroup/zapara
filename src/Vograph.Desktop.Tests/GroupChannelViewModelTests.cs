@@ -186,7 +186,58 @@ public sealed class GroupChannelViewModelTests
 
         await vm.Ballots[0].Options[0].VoteCommand.ExecuteAsync(null);
         Assert.Equal(OptionYes, fixture.VotedOption);
-        Assert.True(fixture.Requests.Count(path => path.EndsWith($"/ballots?topic={BallotTopic:D}", StringComparison.Ordinal)) >= 2);
+        Assert.Equal(1, fixture.Requests.Count(path => path.EndsWith($"/ballots?topic={BallotTopic:D}", StringComparison.Ordinal)));
+        Assert.Single(vm.Ballots); // the accepted POST response is applied without a second GET
+    }
+
+    [AvaloniaFact]
+    public async Task Accepted_vote_uses_post_board_even_when_a_followup_get_would_fail()
+    {
+        using var fixture = new Fixture(canManage: false);
+        var vm = fixture.Vm; await vm.ActivateAsync();
+        vm.Channels.Single(row => row.TopicId == BallotTopic).OpenCommand.Execute(null);
+        await Waits.Until(() => vm.ShowBallots && vm.Ballots.Count == 1, "vote board loaded");
+        fixture.SetBoard(new BallotBoardResponse(false, true, false, 3, 2, [
+            new BallotResponse(PollId, "Когда встречаемся?", "headman", "open", CommunityClientTestSupport.Now.AddDays(2), 0, 2, false,
+                [new BallotOptionResponse(OptionYes, "Завтра", 2, true), new BallotOptionResponse(OptionNo, "В пятницу", 0, false)], "", "", BallotTopic)
+        ]));
+        fixture.FailBallotGet = true;
+        await vm.Ballots[0].Options[0].VoteCommand.ExecuteAsync(null);
+        Assert.True(Assert.Single(vm.Ballots).Options[0].IsChosen);
+        Assert.False(vm.BallotLoadFailed);
+        Assert.Equal(1, fixture.Requests.Count(path => path.EndsWith($"/ballots?topic={BallotTopic:D}", StringComparison.Ordinal)));
+    }
+
+    [AvaloniaFact]
+    public async Task Pending_vote_blocks_only_its_own_ballot()
+    {
+        using var fixture = new Fixture(canManage: false);
+        var otherId = Guid.NewGuid(); var otherOption = Guid.NewGuid();
+        fixture.SetBoard(new BallotBoardResponse(false, true, false, 3, 2, [
+            new BallotResponse(PollId, "Первый", "headman", "open", CommunityClientTestSupport.Now.AddDays(2), 0, 2, false,
+                [new BallotOptionResponse(OptionYes, "Да", 0, false), new BallotOptionResponse(OptionNo, "Нет", 0, false)], "", "", BallotTopic),
+            new BallotResponse(otherId, "Второй", "headman", "open", CommunityClientTestSupport.Now.AddDays(2), 0, 2, false,
+                [new BallotOptionResponse(otherOption, "Да", 0, false)], "", "", BallotTopic)
+        ]));
+        fixture.HoldVoteFor = PollId;
+        fixture.VoteStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.VoteRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var vm = fixture.Vm; await vm.ActivateAsync();
+        vm.Channels.Single(row => row.TopicId == BallotTopic).OpenCommand.Execute(null);
+        await Waits.Until(() => vm.Ballots.Count == 2, "two ballots loaded");
+        var first = vm.Ballots.Single(row => row.BallotId == PollId);
+        var second = vm.Ballots.Single(row => row.BallotId == otherId);
+        var pending = first.Options[0].VoteCommand.ExecuteAsync(null);
+        await fixture.VoteStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        Assert.True(first.IsPending); Assert.False(first.Options[1].CanVote); Assert.True(second.Options[0].CanVote);
+        await first.Options[1].VoteCommand.ExecuteAsync(null);
+        Assert.Equal(1, fixture.VoteCalls);
+        await second.Options[0].VoteCommand.ExecuteAsync(null);
+        Assert.Equal(2, fixture.VoteCalls);
+        fixture.VoteRelease.SetResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+        { Content = System.Net.Http.Json.JsonContent.Create(fixture.CurrentBoard) });
+        await pending;
+        Assert.False(vm.Ballots.Single(row => row.BallotId == PollId).IsPending);
     }
 
     [AvaloniaFact]
@@ -539,6 +590,11 @@ public sealed class GroupChannelViewModelTests
         public string[] CreatedOptions = [];
         public List<string> TrustActions { get; } = [];
         public bool FailBallotGet;
+        public Guid? HoldVoteFor;
+        public TaskCompletionSource? VoteStarted;
+        public TaskCompletionSource<HttpResponseMessage>? VoteRelease;
+        public int VoteCalls;
+        public BallotBoardResponse CurrentBoard => Board();
         public bool FailBallotCreate;
         private BallotBoardResponse? boardOverride;
         public TaskCompletionSource? SendStarted;
@@ -715,8 +771,11 @@ public sealed class GroupChannelViewModelTests
             }
             if (path.EndsWith("/votes", StringComparison.Ordinal) && request.Method == HttpMethod.Post)
             {
+                VoteCalls++;
                 using var json = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
                 VotedOption = json.RootElement.GetProperty("optionId").GetGuid();
+                if (HoldVoteFor is Guid held && path.Contains(held.ToString("D"), StringComparison.OrdinalIgnoreCase) && VoteRelease is not null)
+                { VoteStarted?.TrySetResult(); return await VoteRelease.Task.WaitAsync(ct); }
                 return Payload(Board());
             }
             if (path.EndsWith("/close", StringComparison.Ordinal) && request.Method == HttpMethod.Post)

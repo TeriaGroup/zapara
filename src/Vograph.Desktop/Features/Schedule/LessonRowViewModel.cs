@@ -35,8 +35,11 @@ public sealed partial class LessonRowViewModel : ObservableObject
         while(Homework.Count>ordered.Length)Homework.RemoveAt(Homework.Count-1);
         OnPropertyChanged(nameof(HasHomework));OnPropertyChanged(nameof(ShowHomeworkDetails));
         var mark=row.Subgroup;
-        var options=mark is {ShowChooser:true}?mark.Options.Select(x=>new SubgroupOptionViewModel(x.Id,x.Label,x.Id==mark.ChosenId)).ToArray():[];
-        if(!SubgroupOptions.Select(x=>(x.Id,x.Label,x.IsChosen)).SequenceEqual(options.Select(x=>(x.Id,x.Label,x.IsChosen)))){SubgroupOptions=options;OnPropertyChanged(nameof(SubgroupOptions));}
+        var sourceScope=_owner.App.Profile.DatabasePath+":"+row.Lesson.GroupId;
+        var renderEpoch=_owner.SubgroupRenderEpoch;
+        var options=mark is {ShowChooser:true}?mark.Options.Select(x=>new SubgroupOptionViewModel(x.Id,x.Label,x.Id==mark.ChosenId,sourceScope,renderEpoch,
+            new AsyncRelayCommand(()=>_owner.PickSubgroupAsync(row.Lesson.GroupId,sourceScope,renderEpoch,mark.StreamId,x.Id)))).ToArray():[];
+        if(!SubgroupOptions.Select(x=>(x.Id,x.Label,x.IsChosen,x.SourceScope,x.RenderEpoch)).SequenceEqual(options.Select(x=>(x.Id,x.Label,x.IsChosen,x.SourceScope,x.RenderEpoch)))){SubgroupOptions=options;OnPropertyChanged(nameof(SubgroupOptions));}
         var chosen=mark?.Options.FirstOrDefault(x=>x.Id==mark.ChosenId)?.Label;
         SubgroupPrompt=mark is null?"":chosen is null?Loc.Current.T("subgroupPick"):Loc.Current.T("subgroupYours")+" · "+chosen;
         OnPropertyChanged(nameof(SubgroupPrompt));OnPropertyChanged(nameof(HasSubgroup));
@@ -77,9 +80,6 @@ public sealed partial class LessonRowViewModel : ObservableObject
     public IReadOnlyList<SubgroupOptionViewModel> SubgroupOptions { get; private set; } = [];
 
     [RelayCommand]
-    private Task PickSubgroup(string optionId) => _owner.PickSubgroupAsync(Row.Subgroup!.StreamId, optionId);
-
-    [RelayCommand]
     private void ShowMap() => _owner.ShowMap(this);
 
     [RelayCommand] private Task Rename() => _owner.RenameAsync(this);
@@ -90,16 +90,22 @@ public sealed partial class LessonRowViewModel : ObservableObject
 
 public sealed class SubgroupOptionViewModel
 {
-    public SubgroupOptionViewModel(string id, string label, bool chosen)
+    public SubgroupOptionViewModel(string id, string label, bool chosen, string sourceScope, int renderEpoch, IAsyncRelayCommand selectCommand)
     {
         Id = id;
         Label = label;
         IsChosen = chosen;
+        SourceScope = sourceScope;
+        RenderEpoch = renderEpoch;
+        SelectCommand = selectCommand;
     }
 
     public string Id { get; }
     public string Label { get; }
     public bool IsChosen { get; }
+    public string SourceScope { get; }
+    public int RenderEpoch { get; }
+    public IAsyncRelayCommand SelectCommand { get; }
 }
 
 public sealed class FriendMarkViewModel

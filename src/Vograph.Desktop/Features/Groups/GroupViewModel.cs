@@ -56,7 +56,7 @@ public sealed partial class GroupViewModel : ViewModelBase
         accessToken = app.CommunityAccess;
         this.recorder = recorder ?? new WindowsChatMediaRecorder();
         this.clipboardWriter = clipboardWriter;
-        Messages.CollectionChanged += (_, _) => RefreshMessageBrowse();
+        Messages.CollectionChanged += (_, _) => { RefreshMessageBrowse(); OnPropertyChanged(nameof(NoMaterials)); OnPropertyChanged(nameof(MaterialsErrorText)); };
         Ballots.CollectionChanged += (_, _) => RefreshBallotBrowse();
         player.PlaybackEnded += () => Dispatcher.UIThread.Post(StopPlayback);
         player.PlaybackFailed += () => Dispatcher.UIThread.Post(() =>
@@ -141,7 +141,9 @@ public sealed partial class GroupViewModel : ViewModelBase
             else channelDrafts[key] = value;
         }
         SendCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(DraftLimitText));
     }
+    public string DraftLimitText => GroupMessageDraftValidation.Check(Draft, DiscussionContext, editing is not null).Label;
     private void Busy(bool value)
     {
         busyDepth = Math.Max(0, busyDepth + (value ? 1 : -1));
@@ -370,6 +372,7 @@ public sealed partial class GroupViewModel : ViewModelBase
         replyTo = null;
         editing = null;
         HoldCaption = "";
+        QuoteFeedback = "";
         HasMore = false;
         try
         {
@@ -510,7 +513,10 @@ public sealed partial class GroupViewModel : ViewModelBase
         var sentGroupChannel = selectedGroupChannel;
         var submittedDraft = Draft;
         var submittedContext = DiscussionContext;
-        var submittedBody = (submittedContext.Length > 0 ? submittedContext + "\n\n" : "") + submittedDraft.Trim();
+        var validation = GroupMessageDraftValidation.Check(submittedDraft, submittedContext, editing is not null);
+        if (file is null && !validation.IsValid) { Status = validation.Error; return; }
+        var submittedBody = ((submittedContext.Length > 0 ? submittedContext + "\n\n" : "") + submittedDraft.Trim())
+            .Replace("\r\n", "\n", StringComparison.Ordinal);
         var submittedReply = replyTo;
         var submittedEdit = editing;
         using var operation = App.Work.Enter();
@@ -530,7 +536,7 @@ public sealed partial class GroupViewModel : ViewModelBase
                 message = await GroupMedia.Place(api, token, id, fileKind, name, file, submittedReply, operation.Token, topicId: sentTopic);
             }
             else if (submittedEdit is Guid editId)
-                message = await api.EditMessageAsync(token, id, editId, new(submittedDraft.Trim()), operation.Token);
+                message = await api.EditMessageAsync(token, id, editId, new(submittedDraft.Trim().Replace("\r\n", "\n", StringComparison.Ordinal)), operation.Token);
             else
                 message = sentGroupChannel
                     ? await api.SendTopicMessageAsync(token, id, new(submittedBody, sentTopic, submittedReply), operation.Token)
@@ -715,7 +721,8 @@ public sealed partial class GroupViewModel : ViewModelBase
         await Send();
     }
 
-    private bool CanSend() => !HasRecordedDraft && ShowComposer && !IsBusy && !IsRecording && !IsFinalizingRecording && conversationId is not null && (!string.IsNullOrWhiteSpace(Draft) || pendingBytes is { Length: > 0 });
+    private bool CanSend() => !HasRecordedDraft && ShowComposer && !IsBusy && !IsRecording && !IsFinalizingRecording && conversationId is not null
+        && (pendingBytes is { Length: > 0 } || GroupMessageDraftValidation.Check(Draft, DiscussionContext, editing is not null).IsValid);
 
     [RelayCommand]
     private Task BackToGroup()
@@ -874,7 +881,7 @@ public sealed partial class GroupViewModel : ViewModelBase
             message.SenderId == me, message.Kind, message.Deleted, action => ApplyHold(row, action),
             () => DownloadMediaAsync(row, message.ConversationId), message.Reactions, replyPreview,
             () => PlayMediaAsync(row, message.ConversationId), message.SenderId, message.CreatedAt,
-            () => CopyMessageAsync(row), () => MessageActions(row));
+            () => CopyMessageAsync(row), () => MessageActions(row), message.ReplyTo);
         if (message.Kind == "image" && !message.Deleted)
         {
             if (previewCache.TryGetValue(message.MessageId, out var cached)) row.Preview = cached;
@@ -1148,7 +1155,7 @@ public sealed partial class GroupPersonRow(string name, string detail, string ro
     public IRelayCommand? OpenCommand { get; } = open;
 }
 
-public sealed partial class GroupMessageRow(Guid id, string author, string body, string when, bool mine, string kind = "text", bool deleted = false, Action<string>? apply = null, Func<Task>? download = null, IReadOnlyList<ChatReactionSummary>? reactions = null, string? replyPreview = null, Func<Task>? play = null, Guid senderId = default, DateTimeOffset createdAt = default, Func<Task>? copy = null, Func<IReadOnlyList<string>>? actions = null) : ObservableObject
+public sealed partial class GroupMessageRow(Guid id, string author, string body, string when, bool mine, string kind = "text", bool deleted = false, Action<string>? apply = null, Func<Task>? download = null, IReadOnlyList<ChatReactionSummary>? reactions = null, string? replyPreview = null, Func<Task>? play = null, Guid senderId = default, DateTimeOffset createdAt = default, Func<Task>? copy = null, Func<IReadOnlyList<string>>? actions = null, Guid? replyToId = null) : ObservableObject
 {
     public Guid Id { get; } = id;
     public string Author { get; private set; } = author;
@@ -1180,7 +1187,10 @@ public sealed partial class GroupMessageRow(Guid id, string author, string body,
     public bool Deleted { get; } = deleted;
     [ObservableProperty] private string dayHeader = "";
     [ObservableProperty] private bool showAuthor;
-    public bool IsReply => replyPreview is not null;
+    public Guid? ReplyToId { get; } = replyToId;
+    [ObservableProperty] private bool isQuoteTarget;
+    [ObservableProperty] private string quoteHint = "";
+    public bool IsReply => ReplyToId is not null || replyPreview is not null;
     public string ReplyPreview { get; } = replyPreview is null ? "" : "↳ " + replyPreview[..Math.Min(replyPreview.Length, 80)];
     public IReadOnlyList<ChatReactionSummary> ReactionSummaries { get; } = reactions ?? [];
     public IReadOnlyList<GroupReactionRow> Reactions { get; } = (reactions ?? [])

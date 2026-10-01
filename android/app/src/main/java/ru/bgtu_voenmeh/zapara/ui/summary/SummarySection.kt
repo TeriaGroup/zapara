@@ -1,6 +1,7 @@
 package ru.bgtu_voenmeh.zapara.ui.summary
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.stringResource
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
@@ -38,16 +40,30 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
 
 @Composable
-fun SummarySection(state: SummaryUiState, onEvent: (SummaryEvent) -> Unit) {
+fun SummarySection(state: SummaryUiState, onEvent: (SummaryEvent) -> Unit,
+    onOpenDay: (java.time.LocalDate) -> Unit = {},
+    onOpenDetail: (SummaryDetailTarget) -> Unit = {}) {
     val chrome = LocalShellChrome.current
     val c = Zapara.colors
     Column(Modifier.fillMaxSize().background(c.canvas)) {
         ZTopBar(stringResource(R.string.nav_summary))
         if (!state.loaded) {
             Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
+        } else if (state.error != null && !state.hasGroup) {
+            EmptyState(R.drawable.ic_summary, stringResource(R.string.load_fail), state.error,
+                stringResource(R.string.repeat), { onEvent(SummaryEvent.Retry) }, "Summary.LoadFail")
         } else if (!state.hasGroup) {
             EmptyState(R.drawable.ic_summary, stringResource(R.string.empty_no_group), stringResource(R.string.empty_no_group_hint), stringResource(R.string.group_pick), chrome.onGroupChip, "Empty.NoGroup")
+        } else if (state.noSavedSchedule) {
+            EmptyState(R.drawable.ic_summary, stringResource(R.string.ux30_summary_no_saved),
+                state.error ?: stringResource(R.string.ux30_summary_no_saved_hint),
+                stringResource(R.string.repeat), { onEvent(SummaryEvent.Retry) }, "Summary.NoSavedSchedule")
         } else {
+            state.error?.let { error -> ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l), tag = "Summary.LoadError") {
+                Text(error, style = Zapara.typography.body, color = c.text1)
+                ru.bgtu_voenmeh.zapara.ui.theme.ZButton(stringResource(R.string.repeat),
+                    { onEvent(SummaryEvent.Retry) }, ghost = true, enabled = !state.refreshing)
+            } }
             ZSegmented(
                 listOf(stringResource(R.string.week_odd), stringResource(R.string.week_even), stringResource(R.string.summary_both)),
                 state.segment, { onEvent(SummaryEvent.Segment(it)) }, "Summary.Segment",
@@ -56,6 +72,10 @@ fun SummarySection(state: SummaryUiState, onEvent: (SummaryEvent) -> Unit) {
             HorizontalDivider(Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
                 thickness = Zapara.space.hairline, color = c.line)
             LazyColumn(Modifier.fillMaxSize().testTag("Summary.List"), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                if (state.tiles.total == 0) item("no-lessons") {
+                    Text(stringResource(R.string.ux30_summary_no_lessons), style = Zapara.typography.body,
+                        color = c.text2, modifier = Modifier.testTag("Summary.EmptyWeek"))
+                }
                 item {
                     ZCard(Modifier.fillMaxWidth().appear(0)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -74,15 +94,28 @@ fun SummarySection(state: SummaryUiState, onEvent: (SummaryEvent) -> Unit) {
                 item {
                     CountCard(stringResource(R.string.summary_by_day),
                         state.tiles.byDay.map { Parity.dayNumberToTitle(it.first) to it.second }, 1,
-                        "Summary.ByDay", state.tiles.byDay.map { "Summary.Day.${it.first}" }, showBars = true)
+                        "Summary.ByDay", state.tiles.byDay.map { "Summary.Day.${it.first}" }, showBars = true,
+                        onRow = { index -> state.tiles.byDay.getOrNull(index)?.first?.let(state.dayDates::get)?.let(onOpenDay) })
                 }
                 item { CountCard(stringResource(R.string.summary_by_type), state.tiles.byType, 2, showBars = true) }
-                item { CountCard(stringResource(R.string.summary_by_subject), state.tiles.bySubject, 3) }
-                item { CountCard(stringResource(R.string.summary_by_teacher), state.tiles.byTeacher, 4) }
+                item { CountCard(stringResource(R.string.summary_by_subject), state.tiles.bySubject, 3,
+                    onRow = { index -> state.tiles.bySubject.getOrNull(index)?.first?.let { label ->
+                        onOpenDetail(SummaryDetailTarget(SummaryDetailKind.Subject, label,
+                            state.tiles.subjectNormByLabel[label], state.groupId, state.profileName))
+                    } }) }
+                item { CountCard(stringResource(R.string.summary_by_teacher), state.tiles.byTeacher, 4,
+                    onRow = { index -> state.tiles.byTeacher.getOrNull(index)?.first?.let { label ->
+                        onOpenDetail(SummaryDetailTarget(SummaryDetailKind.Teacher, label,
+                            state.tiles.teacherIdByLabel[label], state.groupId, state.profileName))
+                    } }) }
                 item {
                     CountCard(stringResource(R.string.summary_by_room), state.tiles.byRoom, 5,
                         "Summary.ByRoom", state.tiles.byRoom.indices.map { "Summary.Room.$it" },
-                        stringResource(R.string.summary_rooms_empty))
+                        stringResource(R.string.summary_rooms_empty),
+                        onRow = { index -> state.tiles.byRoom.getOrNull(index)?.first?.let { label ->
+                            onOpenDetail(SummaryDetailTarget(SummaryDetailKind.Room, label,
+                                state.tiles.roomRawByLabel[label], state.groupId, state.profileName))
+                        } })
                 }
             }
         }
@@ -91,7 +124,8 @@ fun SummarySection(state: SummaryUiState, onEvent: (SummaryEvent) -> Unit) {
 
 @Composable
 private fun CountCard(title: String, rows: List<Pair<String, Int>>, index: Int,
-    tag: String? = null, rowTags: List<String> = emptyList(), emptyText: String? = null, showBars: Boolean = false) {
+    tag: String? = null, rowTags: List<String> = emptyList(), emptyText: String? = null,
+    showBars: Boolean = false, onRow: ((Int) -> Unit)? = null) {
     val c = Zapara.colors
     val maximum = rows.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1
     ZCard(Modifier.fillMaxWidth().appear(index).then(if (tag == null) Modifier else Modifier.testTag(tag))) {
@@ -99,7 +133,8 @@ private fun CountCard(title: String, rows: List<Pair<String, Int>>, index: Int,
         if (rows.isEmpty()) Text(emptyText ?: stringResource(R.string.panels_summary_empty), style = Zapara.typography.body, color = c.text2)
         rows.forEachIndexed { rowIndex, (name, n) ->
             val rowTag = rowTags.getOrNull(rowIndex)
-            Column(Modifier.fillMaxWidth().then(if (rowTag == null) Modifier else Modifier.testTag(rowTag)),
+            Column(Modifier.fillMaxWidth().then(if (rowTag == null) Modifier else Modifier.testTag(rowTag))
+                .then(if (onRow != null) Modifier.clickable(role = Role.Button) { onRow(rowIndex) } else Modifier),
                 verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                     Text(name, style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))

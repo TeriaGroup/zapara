@@ -30,6 +30,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.LocalUiCopy
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
@@ -45,9 +48,14 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
 
 @Composable
-fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
+fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) =
+    TeachersSection(state, onEvent) { _, _, _ -> }
+
+@Composable
+fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
+    onOpenOwnDay: (LocalDate, String, String) -> Unit) {
     if (state.selected != null) {
-        TeacherScreen(state, onEvent)
+        TeacherScreen(state, onEvent, onOpenOwnDay)
         return
     }
     val c = Zapara.colors
@@ -73,24 +81,40 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
             Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
             return
         }
+        state.loadError?.let { error ->
+            ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l), tag = "Teachers.LoadError") {
+                Text(error, style = Zapara.typography.body, color = c.text1)
+                ZButton(stringResource(R.string.repeat), { onEvent(TeachersEvent.Retry) }, ghost = true)
+            }
+        }
+        val currentResults = state.appliedQuery == state.query && state.appliedOnlyMine == state.onlyMine
         Row(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            Text(stringResource(R.string.teachers_found, state.list.size, state.total),
+            Text(if (state.searching) stringResource(R.string.ux60_teacher_searching)
+                else if (currentResults) stringResource(R.string.teachers_found, state.list.size, state.total)
+                else stringResource(R.string.ux60_teacher_search_failed),
                 style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f))
             if (state.query.isNotBlank()) ZButton(stringResource(R.string.next_teachers_clear),
                 { onEvent(TeachersEvent.Query("")) }, ghost = true, tag = "Teachers.ClearSearch")
         }
+        if (state.searching) {
+            Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
+            return@Column
+        }
+        if (!currentResults) return@Column
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            if (state.list.isEmpty() && state.query.isNotBlank()) item("no-results") {
+            if (state.list.isEmpty() && state.query.isNotBlank() && state.loadError == null) item("no-results") {
                 ZCard(Modifier.fillMaxWidth(), tag = "Empty.TeacherSearch") {
                     Text(stringResource(R.string.next_teachers_no_results),
                         style = Zapara.typography.body, color = c.text2)
+                    if (state.onlyMine) ZButton(stringResource(R.string.ux30_teachers_search_all),
+                        { onEvent(TeachersEvent.OnlyMine(false)) }, ghost = true, tag = "Teachers.SearchAll")
                     ZButton(stringResource(R.string.next_teachers_clear),
                         { onEvent(TeachersEvent.Query("")) }, ghost = true)
                 }
             }
-            if (state.list.isEmpty() && state.query.isBlank()) item("empty") {
+            if (state.list.isEmpty() && state.query.isBlank() && state.loadError == null) item("empty") {
                 ZCard(Modifier.fillMaxWidth(), tag = "Empty.Teachers") {
                     Text(stringResource(if (state.onlyMine) R.string.next_teachers_my_empty else R.string.next_teachers_empty),
                         style = Zapara.typography.body, color = c.text2)
@@ -105,6 +129,8 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                             Text(row.name, style = Zapara.typography.bodyStrong, color = c.text1)
                             Text(row.subjects, style = Zapara.typography.caption, color = c.text2)
+                            if (row.department.isNotBlank()) Text(stringResource(R.string.ux60_teacher_department,
+                                row.department), style = Zapara.typography.caption, color = c.text2)
                         }
                         Icon(painterResource(R.drawable.ic_chevron_right), null,
                             Modifier.size(24.dp), tint = c.text2)
@@ -117,7 +143,8 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
+fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
+    onOpenOwnDay: (LocalDate, String, String) -> Unit = { _, _, _ -> }) {
     val selected = state.selected ?: return
     val c = Zapara.colors
     val copy = LocalUiCopy.current
@@ -137,6 +164,9 @@ fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
                     Text(selected.name, style = Zapara.typography.title, color = c.text1, modifier = Modifier.weight(1f))
                 }
             }
+            if (selected.department.isNotBlank()) Text(stringResource(R.string.ux60_teacher_department,
+                selected.department), modifier = Modifier.padding(horizontal = Zapara.space.l),
+                style = Zapara.typography.caption, color = c.text2)
         }
         item(key = "filters") {
         ZSegmented(
@@ -150,11 +180,26 @@ fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
                 style = Zapara.typography.caption, color = c.text2,
                 modifier = Modifier.padding(horizontal = Zapara.space.l))
         }
+        if (state.loadError != null) item(key = "error") {
+            ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l), tag = "Teacher.LoadError") {
+                Text(state.loadError, style = Zapara.typography.body, color = c.text1)
+                ZButton(stringResource(R.string.repeat), { onEvent(TeachersEvent.Retry) }, ghost = true)
+            }
+        }
+        if (state.detailsLoading) item(key = "loading") {
+            Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
+        } else if (state.details.isEmpty() && state.loadError == null) item(key = "empty") {
+            ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l), tag = "Teacher.EmptyWeek") {
+                Text(stringResource(R.string.ux30_teacher_no_week), style = Zapara.typography.body, color = c.text2)
+            }
+        }
             itemsIndexed(state.details, key = { _, it -> it.dow }) { index, day ->
                 ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).appear(index), tag = "Teacher.Day.${day.dow}") {
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                         verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                         Text(day.title, style = Zapara.typography.section, color = c.text1)
+                        day.date?.let { date -> ZChip(date.format(DateTimeFormatter.ofPattern("d MMM", Locale("ru"))),
+                            tag = "Teacher.Date.${day.dow}") }
                         ZChip(stringResource(R.string.polish_teacher_day_count, day.rows.size))
                     }
                     day.rows.forEachIndexed { rowIndex, row ->
@@ -171,6 +216,11 @@ fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) {
                             if (row.isMyGroup) Text(stringResource(R.string.teacher_my_group),
                                 style = Zapara.typography.caption, color = c.text1,
                                 modifier = Modifier.testTag("Teacher.MyGroup.${day.dow}.$rowIndex"))
+                            row.date?.takeIf { row.isMyGroup && state.groupId.isNotBlank() }?.let { date ->
+                                ZButton(stringResource(R.string.uxnext_teacher_open_day),
+                                    { onOpenOwnDay(date, state.groupId, state.profileName) },
+                                    ghost = true, tag = "Teacher.OpenDay.${day.dow}.$rowIndex")
+                            }
                         }
                     }
                 }

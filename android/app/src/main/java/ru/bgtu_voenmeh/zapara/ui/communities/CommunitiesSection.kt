@@ -25,6 +25,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
+import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
@@ -35,11 +36,12 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
 
 @Composable
-fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) -> Unit) {
+fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) -> Unit,
+    onOpenAccount: () -> Unit = {}) {
     var query by rememberSaveable { mutableStateOf("") }
     val selected = state.selected
     if (state.pane == CommunityPane.Detail && selected != null) {
-        CommunityDetail(selected, state.failed, onEvent)
+        CommunityDetail(selected, state, onEvent)
         return
     }
     val c = Zapara.colors
@@ -49,11 +51,18 @@ fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) ->
             CommunityPane.Guest -> EmptyState(
                 R.drawable.ic_community,
                 stringResource(R.string.community_need_account),
+                actionText = stringResource(R.string.ux30_open_account),
+                onAction = onOpenAccount,
                 tag = "Empty.NeedAccount"
             )
-            CommunityPane.Empty -> EmptyState(
+            CommunityPane.Empty -> if (state.loading) Column(Modifier.padding(Zapara.space.l)) {
+                Text(stringResource(R.string.ux30_community_loading), style = Zapara.typography.body)
+                SkeletonList()
+            } else EmptyState(
                 R.drawable.ic_community,
                 stringResource(if (state.failed) R.string.community_failed else R.string.community_empty),
+                actionText = if (state.failed) stringResource(R.string.repeat) else null,
+                onAction = if (state.failed) ({ onEvent(CommunitiesEvent.Retry) }) else null,
                 tag = if (state.failed) "Empty.CommunityFailed" else "Empty.Communities"
             )
             CommunityPane.Forbidden -> EmptyState(
@@ -64,12 +73,13 @@ fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) ->
             CommunityPane.Catalog, CommunityPane.Detail -> Column(Modifier.fillMaxSize()) {
                 val visible = browseCommunities(state.communities, query)
                 if (state.failed) {
-                    Text(
-                        stringResource(R.string.community_failed),
-                        color = c.bad,
-                        style = Zapara.typography.caption,
-                        modifier = Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s).testTag("Community.Error")
-                    )
+                    Row(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.community_failed), color = c.bad,
+                            style = Zapara.typography.caption, modifier = Modifier.weight(1f).testTag("Community.Error"))
+                        ZButton(stringResource(R.string.repeat), { onEvent(CommunitiesEvent.Retry) }, ghost = true,
+                            enabled = !state.loading)
+                    }
                 }
                 LazyColumn(
                     Modifier.weight(1f).fillMaxWidth(),
@@ -122,19 +132,24 @@ fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) ->
                                     else -> R.string.group_role_member
                                 }), tag = "Community.Role.${item.communityId}")
                             }
-                            if (item.joinStatus == "pending") {
+                            if (item.communityId in state.joining) {
+                                Text(stringResource(R.string.ux30_community_joining), style = Zapara.typography.caption, color = c.text2)
+                            } else if (item.joinStatus == "pending") {
                                 Text(
                                     stringResource(R.string.community_pending),
                                     style = Zapara.typography.caption,
                                     color = c.text2,
                                     modifier = Modifier.testTag("Community.Pending.${item.communityId}")
                                 )
+                            } else if (item.joinStatus == "accepted" && item.role == null) {
+                                Text(stringResource(R.string.ux30_community_join_accepted), style = Zapara.typography.caption, color = c.text2)
                             } else if (item.canJoin) {
                                 ZButton(
                                     stringResource(R.string.community_join),
                                     { onEvent(CommunitiesEvent.Join(item.communityId)) },
                                     ghost = true,
-                                    tag = "Community.Join.${item.communityId}"
+                                    tag = "Community.Join.${item.communityId}",
+                                    enabled = item.communityId !in state.joining && !state.loading
                                 )
                             }
                         }
@@ -146,7 +161,8 @@ fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) ->
 }
 
 @Composable
-private fun CommunityDetail(selected: CommunityDetailUi, failed: Boolean, onEvent: (CommunitiesEvent) -> Unit) {
+private fun CommunityDetail(selected: CommunityDetailUi, state: CommunitiesUiState,
+    onEvent: (CommunitiesEvent) -> Unit) {
     val c = Zapara.colors
     BackHandler { onEvent(CommunitiesEvent.Back) }
     Column(Modifier.fillMaxSize()) {
@@ -154,14 +170,18 @@ private fun CommunityDetail(selected: CommunityDetailUi, failed: Boolean, onEven
             ZIconButton(R.drawable.ic_chevron_left, stringResource(R.string.community_title), { onEvent(CommunitiesEvent.Back) }, "Community.Back")
             Text(selected.name, style = Zapara.typography.title, color = c.text1, modifier = Modifier.weight(1f))
         }
-        if (failed) {
-            Text(
-                stringResource(R.string.community_failed),
-                color = c.bad,
-                style = Zapara.typography.caption,
-                modifier = Modifier.padding(horizontal = Zapara.space.l).testTag("Community.Error")
-            )
+        if (state.failed) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.community_failed), color = c.bad,
+                    style = Zapara.typography.caption, modifier = Modifier.weight(1f).testTag("Community.Error"))
+                ZButton(stringResource(R.string.repeat), { onEvent(CommunitiesEvent.Retry) }, ghost = true,
+                    enabled = !state.loading)
+            }
         }
+        if (state.loading) Text(stringResource(R.string.ux30_community_loading),
+            style = Zapara.typography.caption, color = c.text2,
+            modifier = Modifier.padding(horizontal = Zapara.space.l))
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(Zapara.space.l),
@@ -193,13 +213,15 @@ private fun CommunityDetail(selected: CommunityDetailUi, failed: Boolean, onEven
                                 ZButton(
                                     stringResource(R.string.community_accept),
                                     { onEvent(CommunitiesEvent.AcceptJoin(selected.communityId, request.requestId)) },
-                                    tag = "Community.Accept.${request.requestId}"
+                                    tag = "Community.Accept.${request.requestId}",
+                                    enabled = request.requestId !in state.resolving
                                 )
                                 ZButton(
                                     stringResource(R.string.community_reject),
                                     { onEvent(CommunitiesEvent.RejectJoin(selected.communityId, request.requestId)) },
                                     ghost = true,
-                                    tag = "Community.Reject.${request.requestId}"
+                                    tag = "Community.Reject.${request.requestId}",
+                                    enabled = request.requestId !in state.resolving
                                 )
                             }
                         }

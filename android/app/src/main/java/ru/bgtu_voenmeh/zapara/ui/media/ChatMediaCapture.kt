@@ -26,6 +26,7 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.ime
@@ -72,7 +73,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.R
 import java.io.File
 
-private enum class CaptureMode { Idle, Voice, CirclePreview, Circle, Finalizing }
+private enum class CaptureMode { Idle, Voice, CirclePreview, Circle, Finalizing, Review }
 
 /** The idle slot keeps each chat's own composer layout while sharing recording behavior. */
 @Composable
@@ -145,7 +146,7 @@ fun ChatMediaCaptureHost(
             CaptureMode.Voice -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 Text(stringResource(R.string.chat_media_recording, chatClock(controller.elapsedMs)), color = Zapara.colors.bad, modifier = Modifier.weight(1f))
                 ZButton(stringResource(R.string.chat_media_cancel), { controller.cancel() }, ghost = true)
-                ZButton(stringResource(R.string.chat_media_send), { controller.finishVoice(true) })
+                ZButton(stringResource(R.string.ux60_chat_record_review), { controller.finishVoice(true) })
             }
             CaptureMode.CirclePreview, CaptureMode.Circle -> {
                 AndroidView(factory = { previewView }, modifier = Modifier.align(Alignment.CenterHorizontally).size(previewSize).clip(CircleShape))
@@ -154,13 +155,28 @@ fun ChatMediaCaptureHost(
                     modifier = Modifier.align(Alignment.CenterHorizontally))
                 Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), modifier = Modifier.align(Alignment.CenterHorizontally)) {
                     ZButton(stringResource(R.string.chat_media_cancel), { controller.cancel() }, ghost = true)
-                    if (controller.mode == CaptureMode.Circle) ZButton(stringResource(R.string.chat_media_send), { controller.finishCircle(true) })
+                    if (controller.mode == CaptureMode.Circle) ZButton(stringResource(R.string.ux60_chat_record_review), { controller.finishCircle(true) })
                     else ZButton(stringResource(R.string.chat_media_start), { controller.startCircle() }, enabled = controller.cameraReady)
                 }
             }
             CaptureMode.Finalizing -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 Text(stringResource(R.string.chat_media_finalizing), color = Zapara.colors.text2)
+            }
+            CaptureMode.Review -> Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                Text(stringResource(R.string.ux60_chat_record_review_title), color = Zapara.colors.text2,
+                    style = Zapara.typography.caption)
+                controller.reviewFile?.let { file ->
+                    ChatMediaBubble(controller.reviewKind.orEmpty(), file, controller.reviewDurationMs,
+                        loading = false, error = false, onLoad = {}, modifier = Modifier.align(Alignment.CenterHorizontally))
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    ZButton(stringResource(R.string.ux60_chat_record_discard), { controller.discardReview() }, ghost = true)
+                    ZButton(stringResource(R.string.ux60_chat_record_again), { controller.recordAgain() }, enabled = enabled, ghost = true,
+                        modifier = Modifier.weight(1f))
+                }
+                ZButton(stringResource(R.string.ux60_chat_record_send), { controller.sendReview() }, enabled = enabled,
+                    modifier = Modifier.fillMaxWidth())
             }
         }
     }
@@ -180,6 +196,10 @@ private class ChatCaptureController(private val context: Context) {
         private set
     var onRecorded: (String, File, Int) -> Unit = { _, file, _ -> file.delete() }
     var onError: (String) -> Unit = {}
+    private val reviewState = ChatRecordingReview()
+    val reviewFile get() = reviewState.current?.file
+    val reviewKind get() = reviewState.current?.kind
+    val reviewDurationMs get() = reviewState.current?.durationMs ?: 0
 
     private var startedAt = 0L
     private var voice: MediaRecorder? = null
@@ -251,10 +271,38 @@ private class ChatCaptureController(private val context: Context) {
         val duration = (SystemClock.elapsedRealtime() - startedAt).toInt().coerceIn(1, 180_000)
         val stopped = try { recorder.stop(); true } catch (_: Exception) { false }
         recorder.release()
-        mode = CaptureMode.Idle
         elapsedMs = 0
-        if (send && stopped && file != null && file.length() in 200..(4L * 1024 * 1024) && !released) onRecorded("voice", file, duration)
-        else { file?.delete(); if (send && !released) onError(context.getString(R.string.chat_media_voice_invalid)) }
+        if (send && stopped && file != null && file.length() in 200..(4L * 1024 * 1024) && !released) {
+            reviewState.preview(ReviewedChatRecording("voice", file, duration))
+            mode = CaptureMode.Review
+        } else {
+            file?.delete()
+            mode = CaptureMode.Idle
+            if (send && !released) onError(context.getString(R.string.chat_media_voice_invalid))
+        }
+    }
+
+    fun sendReview() {
+        if (mode != CaptureMode.Review) return
+        val recording = reviewState.takeForSend() ?: return
+        mode = CaptureMode.Idle
+        try { onRecorded(recording.kind, recording.file, recording.durationMs) }
+        catch (error: Exception) {
+            recording.file.delete()
+            onError(context.getString(R.string.ux60_chat_record_send_failed))
+        }
+    }
+
+    fun discardReview() {
+        reviewState.discard()
+        mode = CaptureMode.Idle
+    }
+
+    fun recordAgain() {
+        if (mode != CaptureMode.Review) return
+        val kind = reviewKind
+        discardReview()
+        if (kind == "circle") openCirclePreview() else startVoice()
     }
 
     fun openCirclePreview() {
@@ -491,7 +539,8 @@ private class ChatCaptureController(private val context: Context) {
                     ChatCircleMux.merge(file, audioFile, output, audioDelayUs) { job.ensureActive() }
                 }
                 if (circleSend && !released) {
-                    onRecorded("circle", output, duration)
+                    reviewState.preview(ReviewedChatRecording("circle", output, duration))
+                    mode = CaptureMode.Review
                     delivered = true
                 }
             } catch (cancelled: CancellationException) {
@@ -503,7 +552,7 @@ private class ChatCaptureController(private val context: Context) {
                 audioFile.delete()
                 if (!delivered) output.delete()
                 circleSend = false
-                mode = CaptureMode.Idle
+                if (mode == CaptureMode.Finalizing) mode = CaptureMode.Idle
                 finalizeJob = null
             }
         }
@@ -521,6 +570,7 @@ private class ChatCaptureController(private val context: Context) {
             CaptureMode.Voice -> finishVoice(false)
             CaptureMode.Circle -> finishCircle(false)
             CaptureMode.CirclePreview -> { unbindCamera(); mode = CaptureMode.Idle }
+            CaptureMode.Review -> discardReview()
             CaptureMode.Finalizing -> circleSend = false
             CaptureMode.Idle -> Unit
         }

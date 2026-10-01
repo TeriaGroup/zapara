@@ -7,8 +7,10 @@ import ru.bgtu_voenmeh.zapara.data.db.FriendEntity
 class FriendEditorActions(private val repo: ScheduleRepository) {
     fun save(id: Long?, group: String, members: String, color: String) {
         if (id == null) repo.insertFriend(FriendEntity(groupName = group, memberNames = members, colorHex = color))
-        else repo.friends().firstOrNull { it.id == id }?.let {
-            repo.updateFriend(it.copy(groupName = group, memberNames = members, colorHex = color))
+        else {
+            val existing = repo.friends().firstOrNull { it.id == id }
+                ?: throw IllegalStateException("friend no longer available")
+            repo.updateFriend(existing.copy(groupName = group, memberNames = members, colorHex = color))
         }
     }
     fun toggle(id: Long, enabled: Boolean) {

@@ -106,6 +106,7 @@ export function GroupTopics({ communityId, groupName, onOpen, onError }: {
     const [role, setRole] = useState("");
     const [rules, setRules] = useState<AccessRule[]>([]);
     const [categoryTitle, setCategoryTitle] = useState("");
+    const [categoryEdit, setCategoryEdit] = useState<{id:string;title:string;position:string;revision:number}|null>(null);
     const [preview, setPreview] = useState<{
         topics: GroupTopic[];
         roleId: string;
@@ -138,7 +139,7 @@ export function GroupTopics({ communityId, groupName, onOpen, onError }: {
     function clearEditor() { editingRef.current = null; accessSequence.current++; setEditing(null); setFieldsState(emptyChannelFields()); setAccess(null); setAccessPreview(null); setRules([]); setRole(""); }
     function clearForbidden(error: unknown, purge = true) { if (purge)
         revokeGroupDrafts(error instanceof Error && error.message === "401" ? { owner } : { owner, community: communityId }); if (!alive())
-        return; allRef.current = []; previewSequence.current++; previewTarget.current = null; setSpace(null); setArchive(null); setPreview(null); setParticipants([]); setCategoryTitle(""); setQuery(""); clearEditor(); }
+        return; allRef.current = []; previewSequence.current++; previewTarget.current = null; setSpace(null); setArchive(null); setPreview(null); setParticipants([]); setCategoryTitle(""); setCategoryEdit(null); setQuery(""); clearEditor(); }
     function loadPreview(target: {
         userId: string | null;
         roleId: string | null;
@@ -328,11 +329,9 @@ export function GroupTopics({ communityId, groupName, onOpen, onError }: {
                     loadPreview({ roleId, userId: null });
             }}><option value="">Выберите роль</option>{space?.desk.roles.map(row => <option value={row.roleId} key={row.roleId}>{row.name}</option>)}</select></label><PreviewPerson communityId={communityId} onSelectUser={userId => loadPreview({ userId, roleId: null })} onError={onError}/></details>}
     {manage && canManage && !preview && <div className="card stack"><button className="btn primary" type="button" disabled={busy || (space?.topics.length ?? 0) >= (space?.capabilities.maxTopics ?? 24)} onClick={() => edit("new")}>Создать канал</button><form className="row" onSubmit={event => { event.preventDefault(); void run(async () => { await api.saveCategory(communityId, null, categoryTitle, categories.length); setCategoryTitle(""); }); }}><input aria-label="Название категории" placeholder="Новая категория" value={categoryTitle} maxLength={40} onChange={event => setCategoryTitle(event.target.value)}/><button className="btn" disabled={legacy || busy || categoryTitle.trim().length < 2}>Добавить категорию</button></form>
-      {categories.map((row, i) => <div className="row" key={row.categoryId}><span>{row.title}</span><button className="btn quiet" disabled={busy} type="button" onClick={() => {
-                    const title = window.prompt("Название категории", row.title);
-                    if (title)
-                        void run(() => api.saveCategory(communityId, row.categoryId, title, row.position, row.revision));
-                }}>Название</button><button className="btn quiet" type="button" disabled={busy || i === 0} onClick={() => void run(() => api.saveCategory(communityId, row.categoryId, row.title, Math.max(0, row.position - 1), row.revision))}>Выше</button><button className="btn quiet" type="button" disabled={busy} onClick={() => void run(() => api.deleteCategory(communityId, row.categoryId))}>Убрать категорию</button></div>)}
+      {categories.map(row => <div className="row" key={row.categoryId}><span>{row.title} · порядок {row.position}</span><button className="btn quiet" disabled={busy} type="button" onClick={() => setCategoryEdit({id:row.categoryId,title:row.title,position:String(row.position),revision:row.revision})}>Изменить категорию</button><button className="btn quiet" type="button" disabled={busy} onClick={() => { const count=allRef.current.filter(topic=>topic.categoryId===row.categoryId).length; if(window.confirm(`Убрать категорию «${row.title}»? Каналы (${count}) сохранятся без категории.`)) void run(()=>api.deleteCategory(communityId,row.categoryId)); }}>Убрать категорию</button></div>)}
+      {categoryEdit && <form className="stack card" onSubmit={event=>{event.preventDefault();const submitted=categoryEdit; if(!submitted.title.trim()||submitted.title.trim().length>40||submitted.position.trim()===""||!Number.isInteger(Number(submitted.position))||Number(submitted.position)<0||Number(submitted.position)>10000)return; void run(async()=>{await api.saveCategory(communityId,submitted.id,submitted.title.trim(),Number(submitted.position),submitted.revision);setCategoryEdit(current=>current===submitted?null:current);});}}><label className="field">Название категории<input required maxLength={40} disabled={busy} value={categoryEdit.title} onChange={event=>setCategoryEdit({...categoryEdit,title:event.target.value})}/></label><label className="field">Порядок категории<input type="number" required min={0} max={10000} step={1} disabled={busy} value={categoryEdit.position} onChange={event=>setCategoryEdit({...categoryEdit,position:event.target.value})}/></label><p className="muted">Меньший номер показывается выше. Черновик остаётся при ошибке сохранения.</p><div className="row"><button className="btn primary" disabled={busy}>Сохранить категорию</button><button className="btn quiet" type="button" disabled={busy} onClick={()=>setCategoryEdit(null)}>Отмена</button></div></form>}
+
     </div>}
     {scopeReady && editing && !preview && <form className="card stack" onSubmit={event => void save(event)}><h2>{editing === "new" ? "Создание канала" : editingMode === "access" ? "Доступ к каналу" : "Настройки канала"}</h2>
       {editingMode === "access" && <button className="btn quiet" type="button" onClick={() => { setEditing(null); setAccess(null); setAccessPreview(null); }}>Закрыть доступ</button>}

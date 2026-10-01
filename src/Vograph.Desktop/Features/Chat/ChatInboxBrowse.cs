@@ -2,11 +2,11 @@ namespace Vograph.Desktop.Features.Chat;
 
 public static class ChatInboxBrowse
 {
-    public static IReadOnlyList<ChatInboxRow> Filter(IEnumerable<ChatInboxRow> rows, string query, int sourceIndex)
+    public static IReadOnlyList<ChatInboxRow> Filter(IEnumerable<ChatInboxRow> rows, string query, int sourceIndex, bool unreadOnly = false)
     {
         var needle = query.Trim();
         sourceIndex = sourceIndex is >= 1 and <= 3 ? sourceIndex : 0;
-        return rows.Where(row => (sourceIndex == 0 || row.SourceIndex == sourceIndex)
+        return rows.Where(row => (!unreadOnly || row.UnreadCount > 0) && (sourceIndex == 0 || row.SourceIndex == sourceIndex)
                 && (needle.Length == 0 || row.Title.Contains(needle, StringComparison.OrdinalIgnoreCase)
                     || row.Preview.Contains(needle, StringComparison.OrdinalIgnoreCase)))
             .ToArray();

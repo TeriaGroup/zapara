@@ -8,13 +8,15 @@
              x:DataType="d:GroupPickerDialogViewModel">
   <StackPanel Spacing="12" Width="440">
     <TextBlock Classes="title" Text="{Binding Title}" />
-    <TextBox Name="SearchBox" Text="{Binding Query}" PlaceholderText="{loc:T groupSearchHint}" KeyDown="OnSearchKeyDown"
+    <TextBlock Text="Каталог недоступен. Укажите группу вручную; расписание появится после загрузки." TextWrapping="Wrap" IsVisible="{Binding AllowManual}" />
+    <TextBox Text="{Binding ManualName}" PlaceholderText="Номер группы" IsVisible="{Binding AllowManual}" />
+    <TextBox Name="SearchBox" Text="{Binding Query}" PlaceholderText="{loc:T groupSearchHint}" KeyDown="OnSearchKeyDown" IsVisible="{Binding ShowCatalog}"
              AutomationProperties.AutomationId="Dialog.Search">
       <TextBox.InnerLeftContent>
         <c:Icon Data="{StaticResource Icon.Search}" Size="14" Foreground="{DynamicResource Brush.Text3}" />
       </TextBox.InnerLeftContent>
     </TextBox>
-    <ListBox x:Name="List" ItemsSource="{Binding Filtered}" SelectedItem="{Binding Selected}" Height="320" DoubleTapped="OnDoubleTapped"
+    <ListBox x:Name="List" ItemsSource="{Binding Filtered}" SelectedItem="{Binding Selected}" Height="320" DoubleTapped="OnDoubleTapped" IsVisible="{Binding ShowCatalog}"
              AutomationProperties.AutomationId="Dialog.List">
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="m:Group">

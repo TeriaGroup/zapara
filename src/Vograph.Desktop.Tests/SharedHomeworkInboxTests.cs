@@ -87,6 +87,26 @@ public sealed class SharedHomeworkInboxTests
     }
 
     [AvaloniaFact]
+    public async Task Shared_tasks_follow_the_same_status_and_search_filters_as_personal_tasks()
+    {
+        using var f = new Fixture();
+        var done = new GroupHomeworkCopyResponse(Guid.NewGuid(), "Математика", "Групповой доклад", 1, true, 1);
+        var open = new GroupHomeworkCopyResponse(Guid.NewGuid(), "Физика", "Решить задачи", 1, false, 0);
+        f.Copies = _ => Task.FromResult(Payload(new[] { done, open }));
+        await f.Load();
+
+        Assert.Equal("Физика", Assert.Single(f.Vm.VisibleSharedTasks).Item.Title);
+        f.Vm.SearchQuery = "  ГРУППОВОЙ   ДОКЛАД ";
+        Assert.Empty(f.Vm.VisibleSharedTasks);
+        f.Vm.StatusFilter = 1;
+        Assert.Equal(done.HomeworkId, Assert.Single(f.Vm.VisibleSharedTasks).Item.HomeworkId);
+        f.Vm.SearchQuery = "математика доклад";
+        Assert.Equal(done.HomeworkId, Assert.Single(f.Vm.VisibleSharedTasks).Item.HomeworkId);
+        f.Vm.ClearBrowseFiltersCommand.Execute(null);
+        Assert.Equal(2, f.Vm.VisibleSharedTasks.Count);
+    }
+
+    [AvaloniaFact]
     public async Task Late_previous_group_list_cannot_repopulate_the_new_group()
     {
         using var f = new Fixture();

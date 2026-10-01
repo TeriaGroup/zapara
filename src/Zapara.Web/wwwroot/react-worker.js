@@ -1,5 +1,5 @@
 // Replaced during bundling so each public build triggers a worker update.
-const buildId = "5662684554bd02a1c3fe";
+const buildId = "f0e3de3ee6c8941b7c1b";
 const commitCacheName = "zapara-react-commits-v1";
 const stagePrefix = "zapara-react-stage-";
 const legacyCacheName = "zapara-react-static-v1";

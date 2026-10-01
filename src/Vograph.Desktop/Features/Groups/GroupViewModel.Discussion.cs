@@ -20,6 +20,8 @@ public sealed partial class GroupViewModel
     partial void OnDiscussionContextChanged(string value)
     {
         OnPropertyChanged(nameof(HasDiscussionContext));
+        OnPropertyChanged(nameof(DraftLimitText));
+        SendCommand.NotifyCanExecuteChanged();
         if(conversationId is Guid id){var key=DraftKey(id);if(value.Length==0)discussionDrafts.Remove(key);else discussionDrafts[key]=value;}
     }
     public void RequestDiscussion(string subject,string context){requestedSubject=subject;requestedDiscussion=context;}

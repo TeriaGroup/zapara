@@ -4,6 +4,13 @@ import { createMaterialHistory, type MaterialHistory } from "./material-history.
 import type { ChatMessage } from "./types";
 const row=(id:number):ChatMessage=>({messageId:String(id).padStart(3,"0"),conversationId:"conversation",senderId:"person",senderName:"Участник",body:`Материал ${id}`,kind:"text",createdAt:new Date(2026,8,26,10,0,0,id).toISOString()});
 const rows=(start:number,end:number)=>Array.from({length:end-start+1},(_,i)=>row(start+i));
+test("material failures are retryable and refresh retains last good rows",async()=>{
+    let fail=true;let state:MaterialHistory={messages:null,hasOlder:false,loadingOlder:false};
+    const history=createMaterialHistory(async()=>{if(fail)throw new Error("offline");return{messages:rows(1,2),hasMore:false};},value=>{state=value;},()=>{});
+    await history.poll();assert.equal(state.error,true);assert.equal(state.loading,false);assert.equal(state.messages,null);
+    fail=false;await history.poll();assert.equal(state.error,false);assert.equal(state.messages?.length,2);
+    fail=true;await history.poll();assert.equal(state.error,true);assert.equal(state.messages?.length,2);history.dispose();
+});
 test("materials load over 50 entries and polling preserves fetched history while updating known records",async()=>{
     let latest=rows(51,100);let state:MaterialHistory={messages:null,hasOlder:false,loadingOlder:false};const cursors:any[]=[];
     const history=createMaterialHistory(async cursor=>{cursors.push(cursor);return cursor?.before?{messages:rows(1,50),hasMore:false}:{messages:latest,hasMore:true};},value=>{state=value;},error=>{throw error;});

@@ -34,6 +34,7 @@
         <Button HorizontalAlignment="Left" Content="Закрыть" Command="{Binding CloseDocumentCommand}" AutomationProperties.AutomationId="Legal.Close" />
       </StackPanel>
       <TextBlock Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.AutomationId="Account.Status" />
+      <Button Content="Повторить загрузку возможностей входа" Command="{Binding RefreshCapabilitiesCommand}" IsVisible="{Binding CapabilitiesFailed}" HorizontalAlignment="Left" />
       <Button Content="Отменить вход" Command="{Binding CancelExternalCommand}" IsVisible="{Binding ExternalPending}" AutomationProperties.AutomationId="Account.CancelExternal" />
       <TextBlock Classes="caption" Text="{loc:T accountIsolation}" TextWrapping="Wrap" />
       <Button Content="{loc:T accountRecover}" Command="{Binding RecoverCommand}" IsVisible="{Binding NeedsRecovery}" />
@@ -78,7 +79,15 @@
           </StackPanel>
           <StackPanel Spacing="8" IsVisible="{Binding ShowRecovery}">
             <TextBlock Text="{loc:T accountRecoveryEmail}" TextWrapping="Wrap" />
-            <Button HorizontalAlignment="Left" Content="{loc:T accountResetPassword}" Command="{Binding ResetPasswordCommand}" AutomationProperties.AutomationId="Account.ResetPassword" />
+            <Button HorizontalAlignment="Left" Content="Запросить инструкцию" Command="{Binding ResetPasswordCommand}" IsEnabled="{Binding CanRequestReset}" AutomationProperties.AutomationId="Account.ResetPassword" />
+            <Button HorizontalAlignment="Left" Content="У меня уже есть код" Command="{Binding ShowPasswordResetFormCommand}" />
+            <StackPanel Spacing="6" IsVisible="{Binding ResetRequested}">
+              <TextBlock Text="Код из инструкции" />
+              <TextBox Text="{Binding ResetToken}" AutomationProperties.Name="Код восстановления" />
+              <TextBlock Text="Новый пароль (12–128 символов)" />
+              <TextBox Text="{Binding ResetNewPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="Новый пароль для восстановления" />
+              <Button Content="Установить новый пароль" Command="{Binding ConfirmPasswordResetCommand}" IsEnabled="{Binding CanConfirmReset}" HorizontalAlignment="Left" />
+            </StackPanel>
           </StackPanel>
         </StackPanel>
         <StackPanel Spacing="10" IsVisible="{Binding IsAccount}">
@@ -118,13 +127,21 @@
                   <TextBlock Text="{Binding DeviceName}" TextWrapping="Wrap" />
                   <TextBlock Text="{loc:T accountCurrentDevice}" IsVisible="{Binding IsCurrent}" />
                   <Button HorizontalAlignment="Left" Content="{loc:T accountRevoke}" AutomationProperties.AutomationId="Account.Revoke"
-                          Command="{Binding $parent[a:AccountPanelView].((a:AccountPanelViewModel)DataContext).RevokeDeviceCommand}" CommandParameter="{Binding}" />
+                          Command="{Binding $parent[a:AccountPanelView].((a:AccountPanelViewModel)DataContext).RequestRevokeDeviceCommand}" CommandParameter="{Binding}" />
                 </StackPanel>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
           <Button HorizontalAlignment="Left" Content="{loc:T accountMore}" Command="{Binding MoreDevicesCommand}" IsVisible="{Binding HasMore}" />
-          <Button HorizontalAlignment="Left" Content="{loc:T accountRevokeAll}" Command="{Binding RevokeAllCommand}" />
+          <StackPanel Spacing="6" IsVisible="{Binding HasPendingRevokeDevice}">
+            <TextBlock Text="{Binding RevokeDeviceCaption}" TextWrapping="Wrap" />
+            <WrapPanel ItemSpacing="8"><Button Classes="danger" Content="Завершить этот сеанс" Command="{Binding RevokeDeviceCommand}" CommandParameter="{Binding PendingRevokeDevice}" /><Button Content="Отмена" Command="{Binding CancelRevokeDeviceCommand}" /></WrapPanel>
+          </StackPanel>
+          <Button HorizontalAlignment="Left" Content="{loc:T accountRevokeAll}" Command="{Binding RequestRevokeAllCommand}" />
+          <StackPanel Spacing="6" IsVisible="{Binding ConfirmRevokeAll}">
+            <TextBlock Text="Завершить все сеансы? На всех устройствах потребуется войти снова." TextWrapping="Wrap" />
+            <WrapPanel ItemSpacing="8"><Button Classes="danger" Content="Завершить все сеансы" Command="{Binding RevokeAllCommand}" /><Button Content="Отмена" Command="{Binding CancelRevokeAllCommand}" /></WrapPanel>
+          </StackPanel>
           <StackPanel Spacing="10" IsVisible="{Binding HasPassword}">
             <TextBlock Text="{loc:T accountCurrentPassword}" />
             <TextBox Text="{Binding CurrentPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountCurrentPassword}" AutomationProperties.AutomationId="Account.CurrentPassword" />

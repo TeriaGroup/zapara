@@ -21,7 +21,7 @@ public sealed partial class CommunityItemViewModel : ObservableObject
     }
 
     public Guid CommunityId { get; }
-    public bool CanJoin => Role is null && !IsPending;
+    public bool CanJoin => Role is null && !IsPending && !IsJoining;
     public bool IsMember => Role is "member" or "headman" or "curator";
     public bool IsStaff => Role is "headman" or "curator";
     public string RoleLabel => Role switch
@@ -36,6 +36,7 @@ public sealed partial class CommunityItemViewModel : ObservableObject
     [ObservableProperty] private string description;
     [ObservableProperty] private string? role;
     [ObservableProperty] private bool isPending;
+    [ObservableProperty] private bool isJoining;
     [ObservableProperty] private string draftTitle = "";
     [ObservableProperty] private string draftBody = "";
     [ObservableProperty] private string draftQuestion = "";
@@ -52,6 +53,7 @@ public sealed partial class CommunityItemViewModel : ObservableObject
 
     partial void OnRoleChanged(string? value) => NotifyFlags();
     partial void OnIsPendingChanged(bool value) => NotifyFlags();
+    partial void OnIsJoiningChanged(bool value) => NotifyFlags();
     private void NotifyFlags()
     {
         OnPropertyChanged(nameof(CanJoin));

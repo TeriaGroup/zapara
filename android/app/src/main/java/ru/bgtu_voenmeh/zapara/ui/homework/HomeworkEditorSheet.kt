@@ -51,7 +51,8 @@ fun HomeworkEditorSheet(
     onAudience: (HomeworkAudience) -> Unit = {},
     onRetryShare: () -> Unit = {},
     isGuest: Boolean = false,
-    onRecalculate: () -> Unit = {}
+    onRecalculate: () -> Unit = {},
+    onRetryShareOptions: () -> Unit = {}
 ) {
     val photo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onPick("photo", uri)
@@ -83,7 +84,14 @@ fun HomeworkEditorSheet(
             placeholder = { Text(stringResource(R.string.hw_editor_hint), style = Zapara.typography.caption, color = c.text3) },
             label = { Text(stringResource(R.string.polish_homework_task)) },
             enabled = !state.busy,
-            supportingText = if (state.text.isBlank()) {{ Text(stringResource(R.string.homework_ux_empty_text)) }} else null,
+            isError = state.text.isNotBlank() && !HomeworkTextRules.valid(state.text),
+            supportingText = { Text(when {
+                state.text.isBlank() -> stringResource(R.string.homework_ux_empty_text)
+                HomeworkTextRules.scalars(state.text) > HomeworkTextRules.limit ->
+                    stringResource(R.string.ux60_homework_text_too_long, HomeworkTextRules.scalars(state.text))
+                !HomeworkTextRules.valid(state.text) -> stringResource(R.string.ux60_homework_text_invalid)
+                else -> stringResource(R.string.ux60_homework_text_count, HomeworkTextRules.scalars(state.text))
+            }) },
             minLines = 3
         )
         Spacer(Modifier.height(Zapara.space.m))
@@ -161,7 +169,11 @@ fun HomeworkEditorSheet(
                 Text(stringResource(R.string.homework_share_group, context?.groupName ?: stringResource(R.string.homework_share_group_loading)), style = Zapara.typography.bodyStrong, color = c.text1)
                 Text(stringResource(R.string.homework_share_context, state.dueText(LocalUiCopy.current)), style = Zapara.typography.caption, color = c.text2)
                 if (state.shareLoading) Text(stringResource(R.string.homework_share_loading), style = Zapara.typography.caption, color = c.text2)
-                else if (context == null) Text(stringResource(R.string.homework_share_unavailable), style = Zapara.typography.caption, color = c.warn)
+                else if (context == null) {
+                    Text(stringResource(R.string.homework_share_unavailable), style = Zapara.typography.caption, color = c.warn)
+                    ZButton(stringResource(R.string.ux60_share_options_retry), onRetryShareOptions,
+                        ghost = true, enabled = !state.busy, tag = "Editor.ShareOptionsRetry")
+                }
                 else if (context.supported) HomeworkAudiencePicker(state.draft, state.audience,
                     context.desk.roles.map { AudienceChoice(it.roleId, it.name) },
                     context.people.filterNot { it.self }.map { AudienceChoice(it.userId, it.displayName ?: it.username) },

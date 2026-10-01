@@ -168,6 +168,68 @@ public class FriendsTests : UiTest
     }
 
     [Fact]
+    public async Task Friend_editor_cancel_and_conflict_keep_saved_values_and_draft_separate()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+        var item = Assert.Single(vm.Friends);
+        item.BeginEditCommand.Execute(null);
+        item.DraftGroupName = "Е452Б";
+        item.DraftMemberNames = "Петя";
+        item.DraftColorIndex = 4;
+        Assert.Equal("09С31", db.Services.Db.GetFriends().Single().GroupName);
+        item.CancelEditCommand.Execute(null);
+        Assert.Equal(("09С31", "Иван", FriendPalette.Hex[0]),
+            (db.Services.Db.GetFriends().Single().GroupName, db.Services.Db.GetFriends().Single().MemberNames, db.Services.Db.GetFriends().Single().ColorHex));
+
+        item.BeginEditCommand.Execute(null);
+        item.DraftGroupName = "Е452Б";
+        item.DraftMemberNames = "Петя";
+        var remote = db.Services.Db.GetFriends().Single();
+        remote.MemberNames = "Обновлено другим действием";
+        db.Services.Db.UpdateFriend(remote);
+        await item.SaveDraftCommand.ExecuteAsync(null);
+        Assert.True(item.IsEditing);
+        Assert.Equal("Петя", item.DraftMemberNames);
+        Assert.Contains("изменились", item.DraftError);
+        Assert.Equal("09С31", db.Services.Db.GetFriends().Single().GroupName);
+        Assert.Equal("Обновлено другим действием", db.Services.Db.GetFriends().Single().MemberNames);
+    }
+
+    [Fact]
+    public async Task Friend_editor_saves_group_names_and_color_together()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+        var item = Assert.Single(vm.Friends);
+        item.BeginEditCommand.Execute(null);
+        item.DraftGroupName = "Е452Б";
+        item.DraftMemberNames = "Петя";
+        item.DraftColorIndex = 4;
+        await item.SaveDraftCommand.ExecuteAsync(null);
+        var saved = Assert.Single(db.Services.Db.GetFriends());
+        Assert.Equal(("Е452Б", "Петя", FriendPalette.Hex[4]), (saved.GroupName, saved.MemberNames, saved.ColorHex));
+        Assert.False(item.IsEditing);
+    }
+
+    [Fact]
+    public async Task Pending_friend_save_prevents_cancel_or_remove_from_replacing_its_snapshot()
+    {
+        using var db = TestDb.Create(); var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => Sun6); await vm.LoadAsync();
+        var item = Assert.Single(vm.Friends); item.BeginEditCommand.Execute(null);
+        item.DraftMemberNames = "Новый черновик"; item.IsSavingDraft = true;
+        item.CancelEditCommand.Execute(null); await vm.RemoveAsync(item);
+        Assert.True(item.IsEditing); Assert.Single(db.Services.Db.GetFriends());
+        Assert.Equal("Новый черновик", item.DraftMemberNames);
+        item.IsSavingDraft = false;
+    }
+
+    [Fact]
     public async Task Strictness_And_Always_Show_Persist_And_Drive_The_Preview()
     {
         using var db = TestDb.Create();
@@ -235,6 +297,41 @@ public class FriendsTests : UiTest
     }
 
     [Fact]
+    public async Task Encounter_opens_its_absolute_day_and_exact_pair_without_changing_own_group()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => new DateTime(2026, 9, 14, 9, 30, 0));
+        await vm.LoadAsync();
+        var encounter = Assert.Single(vm.Encounters, row => row.TimeStart == "09:00");
+        var originalGroup = db.Services.Db.GetSettings().MyGroupId;
+        vm.OpenEncounterCommand.Execute(encounter);
+        var schedule = Assert.IsType<Vograph.Desktop.Features.Schedule.ScheduleViewModel>(shell.Current);
+        await Waits.Until(() => schedule.Date.Date == encounter.Date.Date &&
+            schedule.Lessons.Any(row => row.Row.Lesson.SubjectRaw == encounter.SubjectRaw && row.TimeStart == encounter.TimeStart && row.ShowDetails),
+            "encounter exact pair focused");
+        Assert.Equal(originalGroup, db.Services.Db.GetSettings().MyGroupId);
+    }
+
+    [Fact]
+    public async Task Encounter_from_previous_group_cannot_open_current_groups_schedule()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => new DateTime(2026, 9, 14, 9, 30, 0));
+        await vm.LoadAsync();
+        var stale = Assert.Single(vm.Encounters, row => row.TimeStart == "09:00");
+        shell.NavigateTo(SectionKey.Settings);
+        var before = shell.CurrentKey;
+        var settings = db.Services.Db.GetSettings(); settings.MyGroupId = "Е452Б"; db.Services.Db.SaveSettings(settings);
+        vm.OpenEncounterCommand.Execute(stale);
+        Assert.Equal(before, shell.CurrentKey);
+        settings.MyGroupId = stale.OwnGroupId; db.Services.Db.SaveSettings(settings); shell.RaiseGroupChanged();
+        vm.OpenEncounterCommand.Execute(stale);
+        Assert.Equal(before, shell.CurrentKey);
+    }
+
+    [Fact]
     public async Task Forecast_Rejects_An_Imported_Friend_Entry_For_The_Selected_Group()
     {
         using var db = TestDb.Create();
@@ -265,11 +362,11 @@ public class FriendsTests : UiTest
         SetTheme(ThemeVariant.Dark);
         Frames.Capture(window, "friends-dark");
 
-        var colorButton = window.GetVisualDescendants().OfType<Button>().First(b => b.Flyout is Flyout);
-        colorButton.Flyout!.ShowAt(colorButton);
+        var friend = Assert.Single(vm.Friends);
+        friend.BeginEditCommand.Execute(null);
         Pump();
-        Frames.Capture(window, "friends-color-flyout-dark");
-        colorButton.Flyout.Hide();
+        Frames.Capture(window, "friends-color-editor-dark");
+        friend.CancelEditCommand.Execute(null);
         Pump();
 
         SetTheme(ThemeVariant.Light);

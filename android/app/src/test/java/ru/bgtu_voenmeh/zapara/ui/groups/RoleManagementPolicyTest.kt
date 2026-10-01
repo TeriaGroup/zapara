@@ -1,7 +1,9 @@
 package ru.bgtu_voenmeh.zapara.ui.groups
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.bgtu_voenmeh.zapara.data.communities.GroupDesk
 import ru.bgtu_voenmeh.zapara.data.communities.GroupGrant
@@ -28,5 +30,16 @@ class RoleManagementPolicyTest {
         val desk = GroupDesk(false, listOf(low, high), listOf(GroupGrant("high", "me"), GroupGrant("high", "other")), listOf(GroupPower("low", "exclude")), listOf("roles", "grants"))
         assertEquals(R.string.group_roles_unheld, RoleManagementPolicy.roleReason(desk, listOf(self, member), low, "grants"))
         assertEquals(R.string.group_roles_person_equal, RoleManagementPolicy.personReason(desk, listOf(self, member), member))
+    }
+
+    @Test fun headman_position_is_bounded_and_delegate_stays_strictly_below_own_level() {
+        val headman = GroupDesk(true, listOf(low), emptyList(), emptyList(), listOf("roles"))
+        assertTrue(RoleManagementPolicy.positionAllowed(0, headman, listOf(self)))
+        assertTrue(RoleManagementPolicy.positionAllowed(10000, headman, listOf(self)))
+        assertFalse(RoleManagementPolicy.positionAllowed(10001, headman, listOf(self)))
+        assertFalse(RoleManagementPolicy.positionAllowed(-1, headman, listOf(self)))
+        val delegate = GroupDesk(false, listOf(low, high), listOf(GroupGrant("high", "me")), emptyList(), listOf("roles"))
+        assertTrue(RoleManagementPolicy.positionAllowed(4, delegate, listOf(self)))
+        assertFalse(RoleManagementPolicy.positionAllowed(5, delegate, listOf(self)))
     }
 }

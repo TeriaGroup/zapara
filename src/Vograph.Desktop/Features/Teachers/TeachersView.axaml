@@ -31,6 +31,8 @@
                   IsVisible="{Binding HasTeacherSearch}" MinHeight="48" HorizontalAlignment="Left" />
           <Button Classes="ghost" Content="Показать всех" Command="{Binding ShowAllTeachersCommand}"
                   IsVisible="{Binding CanShowAllTeachers}" MinHeight="48" HorizontalAlignment="Left" />
+          <Button Classes="ghost" Content="Искать среди всех, сохранив запрос" Command="{Binding SearchAllTeachersCommand}"
+                  IsVisible="{Binding CanSearchAllTeachers}" MinHeight="48" HorizontalAlignment="Left" />
         </StackPanel>
         <ListBox Grid.Row="3" Margin="0,10,0,0" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" AutomationProperties.AutomationId="Teachers.List">
           <ListBox.ItemTemplate>
@@ -45,13 +47,19 @@
       </Grid>
 
       <!-- right: detail -->
-      <c:EmptyState Grid.Column="2" IsVisible="{Binding !HasDetail}" Title="{loc:T teachersPick}" Hint="{loc:T teachersPickHint}"
-                    Icon="{StaticResource Icon.Teachers}" VerticalAlignment="Center" />
-      <ScrollViewer Grid.Column="2" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding HasDetail}">
+      <Grid Grid.Column="2" RowDefinitions="Auto,*">
+      <StackPanel Grid.Row="0" Spacing="4" IsVisible="{Binding HasSourceNotice}" Margin="0,0,0,8">
+        <TextBlock Text="{Binding SourceNotice}" Classes="muted" TextWrapping="Wrap" />
+        <Button Content="Повторить обновление каталога" Command="{Binding RetryDirectoryCommand}" IsVisible="{Binding AllowNetwork}" HorizontalAlignment="Left" />
+      </StackPanel>
+      <c:EmptyState Grid.Row="1" IsVisible="{Binding !HasDetail}" Title="{loc:T teachersPick}" Hint="{loc:T teachersPickHint}"
+                     Icon="{StaticResource Icon.Teachers}" VerticalAlignment="Center" />
+      <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding HasDetail}">
         <ContentControl Content="{Binding Detail}">
           <ContentControl.ContentTemplate>
             <DataTemplate x:DataType="t:TeacherDetailViewModel">
               <StackPanel Spacing="12">
+                <TextBlock Text="{Binding EmptyWeekText}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding !HasWeekLessons}" />
                 <Grid ColumnDefinitions="*,Auto">
                   <StackPanel>
                     <TextBlock Classes="title" Text="{Binding Name}" TextWrapping="Wrap" />
@@ -68,6 +76,7 @@
                       <Border Classes="card" Classes.next="{Binding IsToday}">
                         <StackPanel Spacing="8">
                           <TextBlock Classes="subject" Text="{Binding Title}" />
+                          <TextBlock Classes="muted caption" Text="{Binding NextDateText}" TextWrapping="Wrap" />
                           <TextBlock Classes="faint" Text="{loc:T noLessons}" IsVisible="{Binding Rows.Count, Converter={x:Static t:TeacherConverters.IsZero}}" />
                           <ItemsControl ItemsSource="{Binding Rows}">
                             <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -85,6 +94,7 @@
                                       <Border Classes="chip" Margin="6,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsMine}"><TextBlock Text="{loc:T teachersMine}" /></Border>
                                     </WrapPanel>
                                     <TextBlock Classes="muted caption" Text="{Binding Groups}" TextWrapping="Wrap" />
+                                    <Button Classes="ghost" Content="Открыть мою пару" Command="{Binding OpenOwnDayCommand}" IsVisible="{Binding CanOpenOwnDay}" HorizontalAlignment="Left" />
                                   </StackPanel>
                                   <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Right">
                                     <Border Classes="chip" HorizontalAlignment="Right"><TextBlock Classes="tnum" Text="{Binding Room}" /></Border>
@@ -104,6 +114,7 @@
           </ContentControl.ContentTemplate>
         </ContentControl>
       </ScrollViewer>
+      </Grid>
     </Grid>
   </Grid>
 </UserControl>

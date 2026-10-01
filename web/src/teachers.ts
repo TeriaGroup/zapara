@@ -1,5 +1,6 @@
 import { onWeek } from "./summary.ts";
 import type { Lesson, Teacher, TeacherLesson } from "./types.ts";
+import { matchesWords } from "./next-workflows.ts";
 
 export type TeacherRow = { id: string; name: string; detail: string; mine: boolean };
 
@@ -61,7 +62,7 @@ export function teacherRows(catalog: Teacher[], lessons: Lesson[], query: string
     if (onlyMine && !mine.has(teacher.id)) return false;
     if (!needle) return true;
     const subjects = subjectsOf(teacher, lessons);
-    return [teacher.name, teacher.kafedra, teacher.shortName, subjects].join(" ").toLocaleLowerCase("ru").includes(needle);
+    return matchesWords(needle,teacher.name,teacher.kafedra,teacher.shortName,subjects);
   }).map(teacher => ({
     id: teacher.id,
     name: teacher.name,

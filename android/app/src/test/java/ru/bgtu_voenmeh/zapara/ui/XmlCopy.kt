@@ -6,13 +6,16 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 object XmlCopy : UiCopy {
     private val values: Map<String, String> by lazy {
-        val file = File("src/main/res/values/strings.xml")
-        val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file)
-        val nodes = doc.getElementsByTagName("string")
-        (0 until nodes.length).associate { i ->
-            val node = nodes.item(i) as Element
-            node.getAttribute("name") to node.textContent
-        }
+        File("src/main/res/values").listFiles { file -> file.extension == "xml" }.orEmpty()
+            .sortedBy { it.name }
+            .flatMap { file ->
+                val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file)
+                val nodes = doc.getElementsByTagName("string")
+                (0 until nodes.length).map { i ->
+                    val node = nodes.item(i) as Element
+                    node.getAttribute("name") to node.textContent
+                }
+            }.toMap()
     }
 
     override fun get(name: String, vararg args: Any?): String {

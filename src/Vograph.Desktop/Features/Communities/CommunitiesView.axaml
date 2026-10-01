@@ -17,6 +17,8 @@
       <c:EmptyState IsVisible="{Binding NeedAccount}" Title="{loc:T communityNeedAccount}"
                     Hint="{loc:T accountIsolation}" Icon="{StaticResource Icon.Friends}" Margin="0,24"
                     AutomationProperties.AutomationId="Community.NeedAccount" />
+      <Button Content="Открыть настройки аккаунта" Command="{Binding OpenAccountCommand}" IsVisible="{Binding NeedAccount}" HorizontalAlignment="Left" />
+      <Button Content="Повторить загрузку сообществ" Command="{Binding RetryCommunitiesCommand}" IsVisible="{Binding LoadFailed}" HorizontalAlignment="Left" />
       <c:EmptyState IsVisible="{Binding IsEmpty}" Title="{loc:T communityEmpty}"
                     Icon="{StaticResource Icon.Friends}" Margin="0,24"
                     AutomationProperties.AutomationId="Community.Empty" />
@@ -58,6 +60,7 @@
                   <Button Classes="primary" Content="{loc:T communityJoin}" Command="{Binding JoinCommand}"
                           IsVisible="{Binding CanJoin}" AutomationProperties.AutomationId="Community.Join"
                           AutomationProperties.Name="{loc:T communityJoin}" />
+                  <TextBlock Classes="muted caption" Text="Отправляем заявку…" IsVisible="{Binding IsJoining}" VerticalAlignment="Center" />
                   <TextBlock Classes="muted caption" Text="{loc:T communityPending}" IsVisible="{Binding IsPending}"
                              VerticalAlignment="Center" AutomationProperties.AutomationId="Community.Pending" />
                 </StackPanel>
@@ -216,6 +219,7 @@
           </DataTemplate>
         </ContentControl.ContentTemplate>
       </ContentControl>
+      <Button Content="Повторить загрузку деталей" Command="{Binding RetrySelectedCommand}" IsVisible="{Binding SelectedLoadFailed}" HorizontalAlignment="Left" />
     </StackPanel>
   </ScrollViewer>
 </UserControl>

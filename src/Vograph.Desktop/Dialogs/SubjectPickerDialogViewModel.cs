@@ -14,22 +14,27 @@ public sealed partial class SubjectPickerDialogViewModel : DialogViewModelBase
     public SubjectPickerDialogViewModel(IReadOnlyList<SubjectOption> subjects)
     {
         _all = subjects;
+        ManualEntry = subjects.Count == 0;
         Title = Loc.Current.T("hwPickSubject");
         ApplyFilter();
     }
 
     public ObservableCollection<SubjectOption> Filtered { get; } = new();
+    public bool ManualEntry { get; }
+    public bool ShowList => !ManualEntry;
+    [ObservableProperty] private string manualSubject = "";
+    partial void OnManualSubjectChanged(string value) => RefreshCanConfirm();
 
     [ObservableProperty] private string _query = "";
     [ObservableProperty] private SubjectOption? _selected;
     public bool HasQuery => Query.Length > 0;
-    public bool NoResults => Filtered.Count == 0;
+    public bool NoResults => !ManualEntry && Filtered.Count == 0;
     [RelayCommand] private void ClearQuery() => Query = "";
 
     partial void OnQueryChanged(string value) => ApplyFilter();
     partial void OnSelectedChanged(SubjectOption? value) => RefreshCanConfirm();
 
-    protected override bool CanConfirm() => Selected is not null;
+    protected override bool CanConfirm() => Selected is not null || ManualEntry && ManualSubject.Trim().Length > 0;
 
     private void ApplyFilter()
     {

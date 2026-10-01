@@ -28,6 +28,7 @@ public sealed partial class GroupViewModel
 
     partial void OnSelectedTrustedRoleChanged(GroupTrustedRoleRow? value)
     {
+        StashRoleEditorDraft();
         RefreshTrustedGrants();
         LoadRoleEditor();
         NotifySpace();

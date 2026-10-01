@@ -10,6 +10,8 @@ public sealed partial class GroupViewModel
     private const string CopyFailedStatus = "Не удалось скопировать текст.";
     private IReadOnlyList<GroupMessageRow> filteredMessages = [];
     private Guid? pendingDeleteMessageId;
+    public event Action<GroupMessageRow>? QuoteTargetRequested;
+    [ObservableProperty] private string quoteFeedback = "";
 
     [ObservableProperty] private string messageSearch = "";
     [ObservableProperty] private int messageAuthorIndex;
@@ -34,7 +36,7 @@ public sealed partial class GroupViewModel
     partial void OnMessageSearchChanged(string value) => RefreshMessageBrowse();
     partial void OnMessageAuthorIndexChanged(int value) => RefreshMessageBrowse();
     partial void OnMessageKindIndexChanged(int value) => RefreshMessageBrowse();
-    partial void OnHasMoreChanged(bool value) => OnPropertyChanged(nameof(CanLoadOlder));
+    partial void OnHasMoreChanged(bool value) { OnPropertyChanged(nameof(CanLoadOlder)); OnPropertyChanged(nameof(NoMaterials)); }
     partial void OnLoadingOlderChanged(bool value)
     {
         OnPropertyChanged(nameof(OlderCaption));
@@ -89,6 +91,20 @@ public sealed partial class GroupViewModel
         {
             Status = CopyFailedStatus;
         }
+    }
+
+    [RelayCommand]
+    private void JumpQuote(GroupMessageRow? row)
+    {
+        if (row is null || !Messages.Contains(row) || row.ReplyToId is not Guid parentId) return;
+        foreach (var item in Messages) item.QuoteHint = "";
+        var target = Messages.FirstOrDefault(item => item.Id == parentId);
+        if (target is null) { row.QuoteHint = QuoteFeedback = HasMore ? "Цитата ещё не загружена. Загрузите ранние сообщения." : "Цитата недоступна в этой истории."; return; }
+        if (target.Deleted) { row.QuoteHint = QuoteFeedback = "Цитируемое сообщение удалено."; return; }
+        if (!FilteredMessages.Contains(target)) ResetMessageFilters();
+        foreach (var item in Messages) item.IsQuoteTarget = ReferenceEquals(item, target);
+        QuoteFeedback = "Цитируемое сообщение найдено.";
+        QuoteTargetRequested?.Invoke(target);
     }
 
     [RelayCommand]

@@ -45,6 +45,18 @@ class SummaryComposerTest {
         assertTrue(tiles.rooms.isEmpty())
     }
 
+    @Test fun ambiguous_display_subject_has_no_exact_drilldown_target() {
+        val lessons = listOf(
+            Lesson(groupId = "3313", dayOfWeek = 1, parity = 0, subjectRaw = "Алгебра",
+                subjectNormalized = "алгебра"),
+            Lesson(groupId = "3313", dayOfWeek = 2, parity = 0, subjectRaw = "Геометрия",
+                subjectNormalized = "геометрия")
+        )
+        val tiles = SummaryComposer.tiles(2, lessons, { _, _ -> "Общий предмет" }, XmlCopy)
+        assertEquals(2, tiles.bySubject.single().second)
+        assertFalse("Общий предмет" in tiles.subjectNormByLabel)
+    }
+
     @Test fun sunday_is_included_only_in_the_filtered_input() {
         val lessons = fixture + fixture[0].copy(dayOfWeek = 7, parity = 2)
         assertEquals((1..6).toList(), SummaryComposer.tiles(0, lessons, { _, _ -> "" }, XmlCopy).byDay.map { it.first })

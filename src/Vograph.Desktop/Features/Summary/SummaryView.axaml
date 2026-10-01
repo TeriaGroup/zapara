@@ -34,8 +34,17 @@
 
       <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,0,0,4" />
       <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Summary}" Margin="0,48,0,0" />
+      <Button Content="Выбрать группу" Command="{Binding ChooseGroupCommand}" IsVisible="{Binding ShowNoGroup}" HorizontalAlignment="Left" />
+      <StackPanel Spacing="8" IsVisible="{Binding ShowNoCopy}">
+        <TextBlock Text="Расписание группы не загружено. Сводку пока нельзя посчитать." TextWrapping="Wrap" />
+        <Button Content="Загрузить расписание" Command="{Binding RetrySummaryCommand}" HorizontalAlignment="Left" />
+      </StackPanel>
+      <StackPanel Spacing="8" IsVisible="{Binding LoadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+        <TextBlock Text="{Binding LoadError}" TextWrapping="Wrap" />
+        <Button Content="Повторить" Command="{Binding RetrySummaryCommand}" HorizontalAlignment="Left" />
+      </StackPanel>
 
-      <WrapPanel IsVisible="{Binding HasGroup}" ItemSpacing="12" LineSpacing="12" c:Appear.CascadeHost="True">
+      <WrapPanel IsVisible="{Binding ShowSummary}" ItemSpacing="12" LineSpacing="12" c:Appear.CascadeHost="True">
         <Border Classes="card" Width="220" c:Appear.Kind="Cascade" c:Appear.Index="0">
           <StackPanel Spacing="6">
             <TextBlock Classes="muted caption" Text="Всего занятий" />
@@ -52,6 +61,7 @@
               </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="s:DayBar">
+                  <Button Classes="ghost" Command="{Binding $parent[UserControl].((s:SummaryViewModel)DataContext).OpenDayCommand}" CommandParameter="{Binding}" ToolTip.Tip="Открыть день в расписании" Padding="4">
                   <StackPanel Spacing="4" HorizontalAlignment="Center">
                     <TextBlock Classes="tnum caption" Text="{Binding Count}" HorizontalAlignment="Center" />
                     <Border Width="18" Height="40" CornerRadius="4" Background="{DynamicResource Brush.Chip}" VerticalAlignment="Bottom">
@@ -59,6 +69,7 @@
                     </Border>
                     <TextBlock Classes="micro" Text="{Binding Label}" HorizontalAlignment="Center" />
                   </StackPanel>
+                  </Button>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>

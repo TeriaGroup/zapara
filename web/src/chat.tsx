@@ -24,17 +24,23 @@ function inboxSource(kind: ChatInboxItem["kind"]): string {
 
 export function ChatInboxPage() {
   const app = useApp();
+  return <ChatInboxContent key={JSON.stringify([app.session?.authenticated, app.session?.user?.userId, app.session?.familyId])} />;
+}
+
+function ChatInboxContent() {
+  const app = useApp();
   const [rows, setRows] = useState<ChatInboxItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<ChatInboxItem["kind"] | "all">("all");
+  const [unreadOnly, setUnreadOnly] = useState(false);
   const ownerRef = useRef<string | null | undefined>(undefined);
   const accountId = app.session?.authenticated ? app.session.user?.userId : null;
-  const visible = filterChatInbox(rows, query, kind);
+  const visible = filterChatInbox(rows, query, kind, unreadOnly);
   const unread = unreadChatTotal(rows);
-  const filtered = !!query.trim() || kind !== "all";
+  const filtered = !!query.trim() || kind !== "all" || unreadOnly;
 
   useEffect(() => {
     if (ownerRef.current !== accountId) {
@@ -76,7 +82,7 @@ export function ChatInboxPage() {
 
   if (!accountId) return <section className="page"><div className="card empty">
     <h1>Чат</h1><p>Войдите в аккаунт, чтобы переписываться с группой и другими людьми.</p>
-    <Link className="btn primary" to="/settings">Открыть настройки</Link>
+    <Link className="btn primary" to="/settings?section=account">Открыть настройки аккаунта</Link>
   </div></section>;
 
   return <section className="page inbox">
@@ -92,17 +98,18 @@ export function ChatInboxPage() {
         <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Название или последнее сообщение" />
       </label>
       <div className="row" role="group" aria-label="Источник беседы">
+        <button className={unreadOnly ? "btn primary" : "btn"} type="button" aria-pressed={unreadOnly} onClick={() => setUnreadOnly(value => !value)}>Непрочитанные</button>
         {inboxKinds.map(option => <button key={option.value} className={kind === option.value ? "btn primary" : "btn"} type="button"
           aria-pressed={kind === option.value} onClick={() => setKind(option.value)}>{option.label}</button>)}
       </div>
       <div className="row"><span className="muted">Показано {visible.length} из {rows.length}</span>
-        {filtered && <button className="btn" type="button" onClick={() => { setQuery(""); setKind("all"); }}>Сбросить</button>}
+        {filtered && <button className="btn" type="button" onClick={() => { setQuery(""); setKind("all"); setUnreadOnly(false); }}>Сбросить</button>}
       </div>
     </div>}
     {emptyChatState(loading, error, rows.length) === "loading" && <p className="muted">Загружаем беседы…</p>}
     {emptyChatState(loading, error, rows.length) === "empty" && <div className="card empty">Пока нет бесед. Вступите в учебную группу или добавьте человека по коду.</div>}
     {rows.length > 0 && visible.length === 0 && <div className="card empty">По запросу бесед нет.
-      <button className="btn" type="button" onClick={() => { setQuery(""); setKind("all"); }}>Показать все</button>
+      <button className="btn" type="button" onClick={() => { setQuery(""); setKind("all"); setUnreadOnly(false); }}>Показать все</button>
     </div>}
     <div className="people">
       {visible.map(item => <Link className="person" key={`${item.kind}:${item.conversationId}`} to={destination(item)}>

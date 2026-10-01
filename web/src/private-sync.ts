@@ -35,10 +35,12 @@ type Pending = {
     type: "homework" | "completion" | "settings";
     id: string;
     revision: number;
+    action?: "upsert" | "delete";
+    deletedItem?: HomeworkItem;
     value: SyncHomeworkValue | SyncSettingsValue | {
         done: boolean;
         doneAtUtc: string | null;
-    };
+    } | null;
     conflict?: SyncRecord | null;
 };
 type Profile = {
@@ -47,6 +49,7 @@ type Profile = {
     records: SyncRecord[];
     pending: Pending[];
     settingsIntent?: Partial<SyncSettingsValue>;
+    readFailed?: boolean;
 };
 const guestKey = "zapara.homework";
 const accountKey = (owner: string) => `zapara.private-homework.${owner}`;
@@ -58,7 +61,7 @@ function read(owner: string): Profile {
         return { owner, items: raw.items ?? [], records: raw.records ?? [], pending: raw.pending ?? [], settingsIntent: raw.settingsIntent ?? undefined };
     }
     catch {
-        return { owner, items: [], records: [], pending: [] };
+        return { owner, items: [], records: [], pending: [], readFailed: true };
     }
 }
 function write(profile: Profile) { localStorage.setItem(profile.owner === "guest" ? guestKey : accountKey(profile.owner), JSON.stringify(profile.owner === "guest" ? profile.items : profile)); }
@@ -81,6 +84,7 @@ export function usePrivateHomework(userId: string | null) {
     const [status, setStatus] = useState("");
     const [tick, setTick] = useState(0);
     const running = useRef<object | null>(null);
+    const mutationsInFlight = useRef(new Set<string>());
     const cursor = useRef<{
         owner: string;
         epoch: string;
@@ -89,6 +93,7 @@ export function usePrivateHomework(userId: string | null) {
     const commit = (next: Profile) => {
         if (next.owner !== expectedOwner.current)
             return false;
+        if (current.current.owner === next.owner && current.current.readFailed) throw new Error("Не удалось прочитать сохранённые данные. Повторите загрузку перед изменениями.");
         write(next);
         current.current = next;
         setProfile(next);
@@ -177,7 +182,12 @@ export function usePrivateHomework(userId: string | null) {
                         continue;
                     if (stop || expectedOwner.current !== owner)
                         return;
-                    const result = await api.mutatePrivate(epoch, pending.opId, pending.type, pending.id, pending.revision, pending.value, owner);
+                    if (!current.current.pending.some(row => row.opId === pending.opId)) continue;
+                    const flight = `${owner}:${pending.opId}`;
+                    mutationsInFlight.current.add(flight);
+                    let result: Awaited<ReturnType<typeof api.mutatePrivate>>;
+                    try { result = await api.mutatePrivate(epoch, pending.opId, pending.type, pending.id, pending.revision, pending.value, owner, pending.action); }
+                    finally { mutationsInFlight.current.delete(flight); }
                     if (stop || expectedOwner.current !== owner)
                         return;
                     local = current.current;
@@ -215,8 +225,8 @@ export function usePrivateHomework(userId: string | null) {
     }, [owner, tick]);
     function save(item: HomeworkItem) {
         const local = current.current;
-        if (local.owner !== owner)
-            return;
+        if (local.owner !== owner || expectedOwner.current !== owner)
+            throw new Error("Профиль изменился. Откройте задание заново.");
         const previous = local.items.find(row => row.id === item.id);
         const items = previous ? local.items.map(row => row.id === item.id ? item : row) : [item, ...local.items];
         let pending = local.pending;
@@ -241,15 +251,40 @@ export function usePrivateHomework(userId: string | null) {
         if (owner !== "guest" && pending.length) setStatus("Есть несохранённые изменения");
         setTick(value => value + 1);
     }
-    function resolve(opId: string, choice: "local" | "server") {
+    function remove(id: string) {
+        const local=current.current;
+        if(local.owner!==owner||expectedOwner.current!==owner)throw new Error("Профиль изменился.");
+        if(!local.items.some(row=>row.id===id))throw new Error("Задание уже удалено.");
+        let pending=local.pending;
+        if(owner!=="guest") {
+            const record=local.records.find(row=>row.entityType==="homework"&&row.entityId===id&&!row.tombstone);
+            const related = pending.filter(row=>row.id===id);
+            if(related.some(row=>mutationsInFlight.current.has(`${owner}:${row.opId}`)))throw new Error("Задание сейчас синхронизируется. Дождитесь ответа и повторите удаление.");
+            pending=pending.filter(row=>row.id!==id);
+            if(record?.revision) pending=[...pending,{opId:crypto.randomUUID(),type:"homework",id,revision:record.revision,value:null,action:"delete",deletedItem:local.items.find(row=>row.id===id)}];
+            else if(!related.some(row=>row.type==="homework"&&row.revision===0&&row.action!=="delete"))throw new Error("Сначала подтвердите синхронизацию этого задания.");
+        }
+        if(!commit({...local,items:local.items.filter(row=>row.id!==id),pending}))throw new Error("Профиль изменился.");
+        setStatus(owner==="guest"?"Задание удалено на устройстве":pending.some(row=>row.id===id&&row.action==="delete")?"Удаление ожидает синхронизации":"Локальное задание удалено до отправки на сервер");setTick(value=>value+1);
+    }
+    function retryRead() {
+        if(expectedOwner.current!==owner)return;
+        const next=read(owner);
+        if(next.readFailed){setStatus("Не удалось прочитать сохранённые задания. Доступные данные оставлены.");return;}
+        current.current=next;setProfile(next);setTick(value=>value+1);
+    }
+    function resolve(opId: string, choice: "local" | "server", expectedRevision?: number | null) {
         const local = current.current;
+        if(local.owner!==owner||expectedOwner.current!==owner)return;
         const pending = local.pending.find(row => row.opId === opId);
         if (!pending)
             return;
+        if(expectedRevision!==undefined&&expectedRevision!==(pending.conflict?.revision??null)){setStatus("Конфликт обновился. Сверьте показанные версии заново.");return;}
         const records = pending.conflict ? [...local.records.filter(row => row.entityType !== pending.type || row.entityId !== pending.id), pending.conflict] : local.records;
         const queue = choice === "server" ? local.pending.filter(row => row.opId !== opId) : local.pending.map(row => row.opId === opId ? { ...row, opId: crypto.randomUUID(), revision: pending.conflict?.revision ?? 0, conflict: undefined } : row);
         const ids = new Set(queue.map(row => row.id));
-        if (!commit({ ...local, records, pending: queue, items: [...projectHomework(records, local.items).filter(row => !ids.has(row.id)), ...local.items.filter(row => ids.has(row.id))] })) return;
+        const localWithDeleted=pending.deletedItem&&!local.items.some(row=>row.id===pending.id)?[...local.items,pending.deletedItem]:local.items;
+        if (!commit({ ...local, records, pending: queue, items: [...projectHomework(records, localWithDeleted).filter(row => !ids.has(row.id)), ...local.items.filter(row => ids.has(row.id))] })) return;
         setStatus(queue.length ? "Есть несохранённые изменения" : "Синхронизация ожидается");
         setTick(value => value + 1);
     }
@@ -285,8 +320,8 @@ export function usePrivateHomework(userId: string | null) {
     const settings = profile.owner === owner && settingsBase
         ? profile.settingsIntent ? { ...settingsBase, ...profile.settingsIntent } as SyncSettingsValue : settingsBase as SyncSettingsValue
         : undefined;
-    return { items: profile.owner === owner ? profile.items : [], save,
+    return { items: profile.owner === owner ? profile.items : [], save, remove, retryRead, readFailed: profile.owner === owner && !!profile.readFailed,
         status: profile.owner === owner ? status : owner === "guest" ? "Гостевые данные на устройстве" : "Синхронизация ожидается",
         saveSettings, settings,
-        ready: cursor.current?.owner === owner, pending: profile.owner === owner ? profile.pending : [], resolve, refresh: () => setTick(value => value + 1), importGuest };
+        ready: profile.owner === owner && !profile.readFailed && (owner === "guest" || cursor.current?.owner === owner), pending: profile.owner === owner ? profile.pending : [], resolve, refresh: () => setTick(value => value + 1), importGuest };
 }

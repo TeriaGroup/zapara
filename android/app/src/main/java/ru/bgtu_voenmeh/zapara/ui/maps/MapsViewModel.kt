@@ -45,6 +45,7 @@ class MapsViewModel internal constructor(
     private val routeComputations = MapRouteComputations(routeDispatcher, ioDispatcher)
     private var routeResult: MapRouteResult? = null
     private var rasterRetry = 0L
+    private var pickerEpoch = 0L
 
     init {
         launchMap {
@@ -91,16 +92,16 @@ class MapsViewModel internal constructor(
             MapsEvent.OpenFrom -> if (routingOn()) openPicker(RouteField.From)
             MapsEvent.OpenTo -> if (routingOn()) openPicker(RouteField.To)
             is MapsEvent.QueryPlaces -> refreshPicker { it.copy(query = event.value) }
-            is MapsEvent.PickPlace -> launchMap { pickPlace(event.id) }
-            MapsEvent.ClosePicker -> mutable.update { it.copy(picker = null) }
-            MapsEvent.SwapEnds -> if (routingOn()) launchMap { swapEnds() }
-            is MapsEvent.FilterPickerBuilding -> refreshPicker { picker ->
-                picker.copy(
-                    building = event.building,
-                    floors = event.building?.let { MapsComposer.floors(it) } ?: picker.floors
-                )
+            is MapsEvent.PickPlace -> launchMap { pickPlace(event) }
+            MapsEvent.ClosePicker -> {
+                pickerEpoch++
+                mapLoads.invalidate()
+                mutable.update { it.copy(picker = null) }
             }
+            MapsEvent.SwapEnds -> if (routingOn()) launchMap { swapEnds() }
+            is MapsEvent.FilterPickerBuilding -> refreshPicker { it.withBuilding(event.building) }
             is MapsEvent.FilterPickerFloor -> refreshPicker { it.copy(floor = event.floor) }
+            MapsEvent.ResetPickerFilters -> refreshPicker { it.clearFilters() }
             is MapsEvent.PlanPress -> onPlanPress(event.nx, event.ny)
             is MapsEvent.PlanPickAs -> if (routingOn()) launchMap { pickPlanAs(event.field) }
             MapsEvent.ClosePlanPick -> mutable.update { it.copy(planPick = null) }
@@ -156,7 +157,12 @@ class MapsViewModel internal constructor(
         if (!routingOn()) {
             ensureGraph()
             val info = MapResolve.resolve(classroomRaw)
-            if (info == null || info.isRemote) {
+            if (info == null) {
+                browsePlan()
+                mutable.update { it.copy(automaticNote = container.copy.get("ux30_maps_unknown_room")) }
+                return
+            }
+            if (info.isRemote) {
                 browsePlan()
                 return
             }
@@ -171,7 +177,11 @@ class MapsViewModel internal constructor(
         }
         ensureGraph()
         val info = MapResolve.resolve(classroomRaw)
-        if (info == null) { toNext(); return }
+        if (info == null) {
+            browsePlan()
+            mutable.update { it.copy(automaticNote = container.copy.get("ux30_maps_unknown_room")) }
+            return
+        }
         destRoomKey = info.classroomRaw
         toId = CampusRouter.resolveClassroom(graph, classroomRaw)?.id
         val initialStepId = computeRoute()
@@ -220,6 +230,8 @@ class MapsViewModel internal constructor(
                 toId = null
                 computeRoute()
                 applyPlan("ГК", 1, MapMode.None, line, null)
+                mutable.update { it.copy(hasGroup = gid.isNotEmpty(), automaticNote = container.copy.get(
+                    if (gid.isEmpty()) "ux30_maps_no_group" else "ux30_maps_no_next")) }
                 return
             }
             destRoomKey = target.classroomRaw
@@ -247,7 +259,8 @@ class MapsViewModel internal constructor(
             container.loadError(e)
             mutable.update { it.copy(loaded = true).withRoute(it.building)
                 .copy(rasterCatalog = it.rasterCatalog, activeStepId = it.activeStepId,
-                    routeFailure = container.copy.get("maps_route_load_failed")) }
+                    routeFailure = container.copy.get("maps_route_load_failed"),
+                    mapError = container.copy.get("ux30_maps_load_failed")) }
         }
     }
 
@@ -280,7 +293,8 @@ class MapsViewModel internal constructor(
                 highlight = coords?.let { rect -> HighlightUi(rect, room.orEmpty()) },
                 roomUnmarked = !room.isNullOrBlank() && coords == null,
                 contextLine = line, mode = mode, note = note?.ifBlank { null },
-                remoteNote = if (vc) container.copy.get("maps_vc_note") else null
+                remoteNote = if (vc) container.copy.get("maps_vc_note") else null,
+                mapError = null, automaticNote = null
             ).withRoute(shown).copy(rasterCatalog = catalog)
         }
     }
@@ -314,16 +328,18 @@ class MapsViewModel internal constructor(
     }
 
     private fun openPicker(field: RouteField) {
+        mapLoads.invalidate()
+        val epoch = ++pickerEpoch
         val state = mutable.value
         val building = state.building
         val floor = state.floor
         mutable.update {
             it.copy(
-                stepsOpen = false, planPick = null,
+                stepsOpen = false, planPick = null, routeLoading = false,
                 picker = RoutePickerUi(
                     field, "",
                     MapsComposer.pickerItems(allPlaces, "", building, floor),
-                    building, floor, state.buildings, MapsComposer.floors(building)
+                    building, floor, state.buildings, MapsComposer.floors(building), epoch = epoch
                 )
             )
         }
@@ -334,7 +350,7 @@ class MapsViewModel internal constructor(
         val next = update(picker)
         mutable.update {
             it.copy(
-                picker = next.copy(
+                picker = next.copy(error = null,
                     items = MapsComposer.pickerItems(allPlaces, next.query, next.building, next.floor)
                 )
             )
@@ -367,10 +383,19 @@ class MapsViewModel internal constructor(
         applyPlace(pick.id, field)
     }
 
-    private suspend fun pickPlace(id: String) {
-        val field = mutable.value.picker?.field ?: return
+    private suspend fun pickPlace(event: MapsEvent.PickPlace) {
+        val picker = mutable.value.picker ?: return
+        if (!picker.accepts(event) || pickerEpoch != event.epoch) return
+        ensureGraph()
+        val chosen = node(event.id)
+        mapLoads.ensureCurrent()
+        if (pickerEpoch != event.epoch || mutable.value.picker?.accepts(event) != true) return
+        if (chosen == null) {
+            mutable.update { it.copy(picker = it.picker?.copy(error = container.copy.get("ux60_picker_target_missing"))) }
+            return
+        }
         mutable.update { it.copy(picker = null) }
-        applyPlace(id, field)
+        applyPlace(chosen.id, event.field)
     }
 
     private suspend fun applyPlace(id: String, field: RouteField) {
@@ -495,7 +520,7 @@ class MapsViewModel internal constructor(
         val selected = mutable.value.activeStepId
         val previousRoute = mutable.value.route
         rasterRetry++
-        mutable.update { it.copy(decodeFailedFloors = emptySet()) }
+        mutable.update { it.copy(decodeFailedFloors = emptySet(), mapError = null) }
         ensureGraph(force = true)
         val initialStepId = computeRoute(selected, previousRoute)
         val current = mutable.value
@@ -513,7 +538,8 @@ class MapsViewModel internal constructor(
         catch (e: CancellationException) { throw e }
         catch (_: Exception) {
             mapLoads.ensureCurrent()
-            mutable.update { it.copy(routeLoading = false, routeFailure = container.copy.get("maps_route_load_failed")) }
+            mutable.update { it.copy(routeLoading = false, routeFailure = container.copy.get("maps_route_load_failed"),
+                mapError = container.copy.get("ux30_maps_load_failed")) }
         }
     }
 

@@ -25,7 +25,8 @@ data class WayfinderWidgetSnapshot(
     val empty: String?,
     val cleared: Boolean = false,
     val isDark: Boolean = false,
-    val nextRefreshAt: LocalDateTime? = null
+    val nextRefreshAt: LocalDateTime? = null,
+    val readError: String? = null
 )
 
 object WayfinderWidgetComposer {

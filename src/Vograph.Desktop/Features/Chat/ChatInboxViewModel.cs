@@ -38,6 +38,9 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
     private DispatcherTimer? timer;
     private bool watching;
     private int polling;
+    private Func<string, Task>? clipboardWriter;
+    private readonly HashSet<Guid> resolvingInvites = [];
+    public void SetClipboardWriter(Func<string, Task>? writer) => clipboardWriter = writer;
     internal TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(12);
     public void Watch(bool visible)
     {
@@ -57,6 +60,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         _ = CancelRecordingAsync();
         StopPlayback();
         ReleaseVisibleAvatars();
+        clipboardWriter = null;
     }
 
     private async void OnTick(object? sender, EventArgs e)
@@ -94,23 +98,25 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         });
         NeedAccount = (Social is null && Communities is null) || Access is null;
         Chats.CollectionChanged += (_, _) => RefreshInboxBrowse();
-        Messages.CollectionChanged += (_, _) => { OnPropertyChanged(nameof(NoMessages)); GroupMessages(); };
+        Messages.CollectionChanged += (_, _) => { OnPropertyChanged(nameof(NoMessages)); RefreshMessageBrowse(); GroupMessages(); };
     }
 
     public ObservableCollection<ChatInboxRow> Chats { get; } = [];
     private IReadOnlyList<ChatInboxRow> filteredChats = [];
     [ObservableProperty] private string inboxSearch = "";
     [ObservableProperty] private int inboxSourceIndex;
+    [ObservableProperty] private bool unreadOnly;
     [ObservableProperty] private bool loadingInbox;
     public IReadOnlyList<ChatInboxRow> FilteredChats => filteredChats;
     public int UnreadTotal => ChatInboxBrowse.UnreadTotal(Chats);
     public string UnreadSummary => UnreadTotal == 0 ? "Нет непрочитанных" : $"Непрочитанных: {UnreadTotal}";
     public string InboxResultCount => $"Показано {filteredChats.Count} из {Chats.Count}";
-    public bool HasInboxFilters => InboxSearch.Trim().Length > 0 || InboxSourceIndex is >= 1 and <= 3;
+    public bool HasInboxFilters => InboxSearch.Trim().Length > 0 || InboxSourceIndex is >= 1 and <= 3 || UnreadOnly;
     public bool NoInboxMatches => InboxLoaded && !LoadingInbox && !InboxLoadFailed && HasInboxFilters && filteredChats.Count == 0;
     public bool NoChats => InboxLoaded && !LoadingInbox && !InboxLoadFailed && Chats.Count == 0 && !HasInboxFilters;
     partial void OnInboxSearchChanged(string value) => RefreshInboxBrowse();
     partial void OnInboxSourceIndexChanged(int value) => RefreshInboxBrowse();
+    partial void OnUnreadOnlyChanged(bool value) => RefreshInboxBrowse();
     partial void OnLoadingInboxChanged(bool value)
     {
         OnPropertyChanged(nameof(NoChats));
@@ -121,10 +127,11 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
     {
         InboxSearch = "";
         InboxSourceIndex = 0;
+        UnreadOnly = false;
     }
     private void RefreshInboxBrowse()
     {
-        filteredChats = ChatInboxBrowse.Filter(Chats, InboxSearch, InboxSourceIndex);
+        filteredChats = ChatInboxBrowse.Filter(Chats, InboxSearch, InboxSourceIndex, UnreadOnly);
         OnPropertyChanged(nameof(FilteredChats));
         OnPropertyChanged(nameof(UnreadTotal));
         OnPropertyChanged(nameof(UnreadSummary));
@@ -135,9 +142,44 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
     }
     public ObservableCollection<ChatInviteRow> Incoming { get; } = [];
     public ObservableCollection<ChatMessageRow> Messages { get; } = [];
+    public event Action<ChatMessageRow>? QuoteTargetRequested;
+    [ObservableProperty] private string quoteFeedback = "";
     [ObservableProperty] private bool needAccount;
+    partial void OnNeedAccountChanged(bool value) { if (value) { MyCode = ""; resolvingInvites.Clear(); } }
     [ObservableProperty] private string status = "";
     [ObservableProperty] private string myCode = "";
+    [ObservableProperty] private string messageSearch = "";
+    public IReadOnlyList<ChatMessageRow> VisibleMessages => string.IsNullOrWhiteSpace(MessageSearch)
+        ? Messages.ToArray() : Messages.Where(row => row.SearchableText.Contains(MessageSearch.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray();
+    public bool NoHistoryMatches => MessagesLoaded && !LoadingMessages && !MessageLoadFailed && Messages.Count > 0 && VisibleMessages.Count == 0;
+    public string HistorySearchScope => $"Поиск среди загруженных сообщений: {VisibleMessages.Count} из {Messages.Count}";
+    partial void OnMessageSearchChanged(string value) => RefreshMessageBrowse();
+    [RelayCommand] private void ClearMessageSearch() => MessageSearch = "";
+    [RelayCommand] private void JumpQuote(ChatMessageRow? source)
+    {
+        if (source is null || !Messages.Contains(source) || source.ReplyToId is not Guid parentId) return;
+        foreach (var row in Messages) row.QuoteHint = "";
+        var target = Messages.FirstOrDefault(row => row.Id == parentId);
+        if (target is null) { source.QuoteHint = QuoteFeedback = HasMore ? "Цитата ещё не загружена. Нажмите «Ранее»." : "Цитата недоступна в этой истории."; return; }
+        if (target.Deleted) { source.QuoteHint = QuoteFeedback = "Цитируемое сообщение удалено."; return; }
+        if (!VisibleMessages.Contains(target)) MessageSearch = "";
+        foreach (var row in Messages) row.IsQuoteTarget = ReferenceEquals(row, target);
+        QuoteFeedback = "Цитируемое сообщение найдено.";
+        QuoteTargetRequested?.Invoke(target);
+    }
+    private void RefreshMessageBrowse()
+    {
+        OnPropertyChanged(nameof(VisibleMessages)); OnPropertyChanged(nameof(NoHistoryMatches)); OnPropertyChanged(nameof(HistorySearchScope));
+    }
+    [RelayCommand] private void OpenAccount() => shell.OpenAccountSettings();
+    [RelayCommand]
+    private async Task CopyOwnCode()
+    {
+        var code = MyCode.Trim();
+        if (NeedAccount || code.Length == 0 || clipboardWriter is null) return;
+        try { await clipboardWriter(code); if (!NeedAccount && MyCode.Trim() == code) Status = "Код скопирован."; }
+        catch { if (!NeedAccount) Status = "Не удалось скопировать код."; }
+    }
     [ObservableProperty] private string inviteCode = "";
     [ObservableProperty] private string chatTitle = "";
     [ObservableProperty] private Bitmap? chatAvatar;
@@ -188,7 +230,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         {
             var token = await Access(operation.Token);
             if (!operation.IsCurrent || ticket != generation) return;
-            if (string.IsNullOrWhiteSpace(token)) { ClearVisibleAvatars(); NeedAccount = true; return; }
+            if (string.IsNullOrWhiteSpace(token)) { ClearVisibleAvatars(); NeedAccount = true; MyCode = ""; return; }
             SocialHomeResponse? home = null;
             var socialUnavailable = Social is null;
             if (Social is not null)
@@ -255,9 +297,8 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
             {
                 Incoming.Clear();
                 foreach (var invite in home.Incoming)
-                    Incoming.Add(new(invite.DisplayName ?? invite.Username,
-                        new AsyncRelayCommand(() => AcceptAsync(invite.FriendshipId)),
-                        new AsyncRelayCommand(() => DeclineAsync(invite.FriendshipId))));
+                    Incoming.Add(new ChatInviteRow(invite.FriendshipId, invite.DisplayName ?? invite.Username,
+                        (id, accept) => ResolveInviteAsync(id, accept)) { Busy = resolvingInvites.Contains(invite.FriendshipId) });
             }
             Status = (groupsUnavailable, socialUnavailable) switch
             {
@@ -295,6 +336,8 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         StopPlayback();
         ReleaseConversationAvatar();
         Messages.Clear();
+        MessageSearch = "";
+        QuoteFeedback = "";
         ClearPreviews();
         SaveComposer();
         conversationId = friend.ConversationId;
@@ -413,36 +456,29 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         { if (operation.IsCurrent) Status = "Не удалось отправить приглашение."; }
     }
 
-    private async Task AcceptAsync(Guid friendshipId)
+    private async Task ResolveInviteAsync(Guid friendshipId, bool accept)
     {
-        if (Social is null || Access is null) return;
+        if (Social is null || Access is null || !resolvingInvites.Add(friendshipId)) return;
+        var row = Incoming.FirstOrDefault(item => item.Id == friendshipId);
+        if (row is not null) row.Busy = true;
         using var operation = App.Work.Enter();
         try
         {
             var token = await Access(operation.Token);
             if (string.IsNullOrEmpty(token) || !operation.IsCurrent) return;
-            await Social.AcceptAsync(token, friendshipId, operation.Token);
+            if (accept) await Social.AcceptAsync(token, friendshipId, operation.Token);
+            else await Social.DeclineAsync(token, friendshipId, operation.Token);
             if (operation.IsCurrent) await RefreshAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is SocialClientException or AccountClientException)
-        { if (operation.IsCurrent) Status = "Не удалось принять приглашение."; }
-    }
-
-    private async Task DeclineAsync(Guid friendshipId)
-    {
-        if (Social is null || Access is null) return;
-        using var operation = App.Work.Enter();
-        try
+        { if (operation.IsCurrent) Status = accept ? "Не удалось принять приглашение." : "Не удалось отклонить приглашение."; }
+        finally
         {
-            var token = await Access(operation.Token);
-            if (string.IsNullOrEmpty(token) || !operation.IsCurrent) return;
-            await Social.DeclineAsync(token, friendshipId, operation.Token);
-            if (operation.IsCurrent) await RefreshAsync();
+            resolvingInvites.Remove(friendshipId);
+            if (row is not null) row.Busy = false;
+            foreach (var current in Incoming.Where(item => item.Id == friendshipId)) current.Busy = false;
         }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) when (ex is SocialClientException or AccountClientException)
-        { if (operation.IsCurrent) Status = "Не удалось отклонить приглашение."; }
     }
 
     [RelayCommand(CanExecute = nameof(CanSend))]
@@ -647,6 +683,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
 
     private ChatMessageRow Row(SocialMessageResponse message)
     {
+        var scope = conversationId;
         var row = new ChatMessageRow(message,
             message.SenderId != peerId,
             new RelayCommand(() => BeginReply(message.MessageId)),
@@ -656,13 +693,28 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
             message.AttachmentId is Guid && !message.Deleted && message.Kind is "image" or "file" or "voice" or "circle"
                 ? new AsyncRelayCommand(() => SaveAttachmentAsync(message)) : null,
             message.AttachmentId is Guid && !message.Deleted && message.Kind is "voice" or "circle"
-                ? new AsyncRelayCommand(() => PlayMediaAsync(message)) : null);
+                ? new AsyncRelayCommand(() => PlayMediaAsync(message)) : null,
+            new AsyncRelayCommand(() => CopyPersonalMessageAsync(message, scope)));
         if (message.Kind == "image" && !message.Deleted && message.AttachmentId is Guid attachment)
         {
             if (previewCache.TryGetValue(attachment, out var cached)) row.Preview = cached;
             else Dispatcher.UIThread.Post(() => _ = LoadPhotoPreviewAsync(attachment));
         }
         return row;
+    }
+
+    private async Task CopyPersonalMessageAsync(SocialMessageResponse message, Guid? scope)
+    {
+        var content = PersonalMessageText.CopyText(message);
+        if (scope is null || conversationId != scope || peerId is null || content is null
+            || !Messages.Any(row => row.Id == message.MessageId && row.CanCopy)) return;
+        try
+        {
+            if (clipboardWriter is null) throw new InvalidOperationException("Clipboard unavailable");
+            await clipboardWriter(content);
+            if (conversationId == scope) Status = "Текст скопирован.";
+        }
+        catch { if (conversationId == scope) Status = "Не удалось скопировать текст."; }
     }
 
     private void GroupMessages()
@@ -948,18 +1000,31 @@ public sealed partial class ChatInboxRow(Guid conversationId, Guid? communityId,
     public IRelayCommand OpenCommand { get; } = open;
 }
 
-public sealed class ChatInviteRow(string name, IAsyncRelayCommand accept, IAsyncRelayCommand decline)
+public sealed partial class ChatInviteRow : ObservableObject
 {
-    public string Name { get; } = name;
-    public IAsyncRelayCommand AcceptCommand { get; } = accept;
-    public IAsyncRelayCommand DeclineCommand { get; } = decline;
+    public ChatInviteRow(Guid id, string name, Func<Guid, bool, Task> resolve)
+    {
+        Id = id; Name = name;
+        AcceptCommand = new AsyncRelayCommand(() => resolve(id, true));
+        DeclineCommand = new AsyncRelayCommand(() => resolve(id, false));
+    }
+    public Guid Id { get; }
+    public string Name { get; }
+    [ObservableProperty] private bool busy;
+    public IAsyncRelayCommand AcceptCommand { get; }
+    public IAsyncRelayCommand DeclineCommand { get; }
 }
 
 public sealed partial class ChatMessageRow(SocialMessageResponse response, bool mine, IRelayCommand reply,
     IRelayCommand edit, IAsyncRelayCommand delete, IAsyncRelayCommand react, IAsyncRelayCommand? download,
-    IAsyncRelayCommand? play) : ObservableObject
+    IAsyncRelayCommand? play, IAsyncRelayCommand copy) : ObservableObject
 {
     public Guid Id => response.MessageId;
+    public Guid? ReplyToId => response.ReplyTo;
+    public bool IsReply => ReplyToId is not null;
+    public bool Deleted => response.Deleted;
+    [ObservableProperty] private bool isQuoteTarget;
+    [ObservableProperty] private string quoteHint = "";
     public DateTimeOffset CreatedAt => response.CreatedAt;
     [ObservableProperty] private string dayHeader = "";
     [ObservableProperty] private bool showAuthor;
@@ -985,6 +1050,9 @@ public sealed partial class ChatMessageRow(SocialMessageResponse response, bool 
     public bool CanEdit => Mine && !response.Deleted && response.Kind == "text";
     public bool CanDelete => Mine && !response.Deleted;
     public bool CanReact => !response.Deleted;
+    public bool CanCopy => PersonalMessageText.CopyText(response) is not null;
+    public string SearchableText => PersonalMessageText.SearchText(response);
+    public IAsyncRelayCommand CopyCommand { get; } = copy;
     public string Reactions => string.Join(" ", response.Reactions.Select(r => $"{r.Emoji} {r.Count}"));
     public IRelayCommand ReplyCommand { get; } = reply;
     public IRelayCommand EditCommand { get; } = edit;

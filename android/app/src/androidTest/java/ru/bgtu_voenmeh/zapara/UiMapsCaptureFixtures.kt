@@ -90,11 +90,12 @@ internal class UiMapsCaptureFixtures : AutoCloseable {
                 } else if (scenario == "summary") {
                     val copy = AndroidUiCopy(LocalContext.current)
                     CompositionLocalProvider(LocalShellChrome provides ShellChrome("Тестовая группа", false, true) {}) {
-                        SummarySection(summary) { event ->
+                        SummarySection(summary, onEvent = { event ->
                             when (event) {
                                 is SummaryEvent.Segment -> summary = SummaryCaptureModel.state(event.index, copy)
+                                SummaryEvent.Retry -> Unit
                             }
-                        }
+                        })
                     }
                 } else if (scenario == "homework") {
                     val copy = AndroidUiCopy(LocalContext.current)
@@ -118,7 +119,7 @@ internal class UiMapsCaptureFixtures : AutoCloseable {
                         }
                     }
                 } else {
-                MapsSection(current) { event ->
+                MapsSection(current, onEvent = { event ->
                     current = when (event) {
                         MapsEvent.OpenFrom -> current.copy(picker = RoutePickerUi(RouteField.From, "", emptyList()))
                         MapsEvent.OpenTo -> current.copy(picker = RoutePickerUi(RouteField.To, "", emptyList()))
@@ -126,7 +127,7 @@ internal class UiMapsCaptureFixtures : AutoCloseable {
                         is MapsEvent.QueryPlaces -> current.copy(picker = current.picker?.copy(query = event.value))
                         else -> throw AssertionError("Unimplemented capture event: $event")
                     }
-                }
+                })
                 }
             }
         }

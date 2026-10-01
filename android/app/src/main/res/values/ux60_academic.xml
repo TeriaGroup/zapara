@@ -1,0 +1,22 @@
+<resources>
+    <string name="ux60_saving">Сохраняем…</string>
+    <string name="ux60_task_changed">Задание изменилось. Обновите список и повторите.</string>
+    <string name="ux60_completion_failed">Не удалось изменить отметку задания. Повторите попытку.</string>
+    <string name="ux60_undo_failed">Не удалось отменить отметку. Попробуйте ещё раз.</string>
+    <string name="ux60_rename_load_failed">Не удалось открыть изменение названия. Попробуйте снова.</string>
+    <string name="ux60_rename_save_failed">Изменение не сохранилось. Черновик доступен для повтора.</string>
+    <string name="ux60_rename_reset_failed">Не удалось сбросить изменение. Попробуйте снова.</string>
+    <string name="ux60_rename_reset_title">Сбросить изменение названия?</string>
+    <string name="ux60_rename_reset_scope">Будет удалено изменение для «%1$s». Другие варианты названия останутся.</string>
+    <string name="ux60_picker_failed">Не удалось загрузить предметы. Попробуйте снова.</string>
+    <string name="ux60_share_options_retry">Повторить загрузку параметров публикации</string>
+    <string name="ux60_homework_text_count">%1$d / 4000 символов</string>
+    <string name="ux60_homework_text_too_long">%1$d / 4000 символов. Сократите задание перед сохранением.</string>
+    <string name="ux60_homework_text_invalid">Задание содержит недопустимый символ.</string>
+    <string name="ux60_file_open_failed">Файл недоступен или на устройстве нет приложения для его открытия.</string>
+    <string name="ux60_teacher_searching">Ищем преподавателей…</string>
+    <string name="ux60_teacher_search_failed">Результаты для нового запроса не загрузились. Повторите поиск.</string>
+    <string name="ux60_teacher_department">Кафедра: %1$s</string>
+    <string name="ux60_widget_read_failed">Нет обновления · нажмите для повтора</string>
+    <string name="ux60_widget_stale_at">Не обновилось · данные с %1$s · повторить</string>
+</resources>

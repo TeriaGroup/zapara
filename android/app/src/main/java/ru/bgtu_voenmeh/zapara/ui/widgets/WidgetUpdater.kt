@@ -28,6 +28,8 @@ import ru.bgtu_voenmeh.zapara.ZaparaApplication
 import ru.bgtu_voenmeh.zapara.AppContainer
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.concurrent.atomic.AtomicLong
 
 object WidgetUpdater {
     private val gate = Any()
@@ -46,6 +48,35 @@ object WidgetUpdater {
     private var timerEnd: LocalDateTime? = null
     private var timerWake: LocalDateTime? = null
     private var wayfinderWake: LocalDateTime? = null
+    private val scheduleCache = WidgetReadCache<ScheduleWidgetSnapshot>()
+    private val homeworkCache = WidgetReadCache<HomeworkWidgetSnapshot>()
+    private val timerCache = WidgetReadCache<TimerWidgetSnapshot>()
+    private val wayfinderCache = WidgetReadCache<WayfinderWidgetSnapshot>()
+    private val weekCache = WidgetReadCache<WeekWidgetSnapshot>()
+    private val staleClock = DateTimeFormatter.ofPattern("HH:mm")
+    private val readSerial = AtomicLong()
+    private val contentScopeGate = Any()
+    private var latestReadSerial = 0L
+    private var latestReadGroup: String? = null
+
+    private fun observedGroup(request: Long, group: String?) = synchronized(contentScopeGate) {
+        if (request >= latestReadSerial) {
+            latestReadSerial = request
+            latestReadGroup = group
+        }
+    }
+
+    private fun newerDifferentGroup(request: Long, group: String?): Boolean = synchronized(contentScopeGate) {
+        request < latestReadSerial && group != latestReadGroup
+    }
+
+    /** Main thread: never reuse an old group's rows, including after A→B→A. */
+    private fun prepareContentGroup(group: String?): Boolean {
+        val changed = scheduleCache.enterGroup(group)
+        homeworkCache.enterGroup(group); timerCache.enterGroup(group)
+        wayfinderCache.enterGroup(group); weekCache.enterGroup(group)
+        return changed
+    }
 
     data class MotionPreferenceChange(val identity: WidgetJobIdentity, val revision: Long)
 
@@ -197,6 +228,9 @@ object WidgetUpdater {
         }
         container.work.enter().use { ticket ->
             if (!ticket.admitted) return
+            val request = readSerial.incrementAndGet()
+            val groupBefore = try { container.repo.settings().myGroupId.orEmpty() }
+                catch (_: Exception) { null }
             val policyRevision = WidgetMotionPlayer.beginPolicyObservation()
             val policy = motionPolicy(app, container)
             observeMotionPolicy(app, identity, policy, policyRevision)
@@ -233,7 +267,14 @@ object WidgetUpdater {
             }
             val current = WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value)
             if (!WidgetJobs.canApply(ticket, identity, current)) return
-            apply(app, identity, policy, schedule, homework, timer, wayfinder, week)
+            val groupAfter = try { container.repo.settings().myGroupId.orEmpty() }
+                catch (_: Exception) { null }
+            val stableGroup = stableWidgetGroup(groupBefore, groupAfter)
+            observedGroup(request, stableGroup)
+            apply(app, identity, policy,
+                schedule.takeIf { stableGroup != null }, homework.takeIf { stableGroup != null },
+                timer.takeIf { stableGroup != null }, wayfinder.takeIf { stableGroup != null },
+                week.takeIf { stableGroup != null }, heartbeatOnly, stableGroup, request)
         }
     }
 
@@ -245,33 +286,71 @@ object WidgetUpdater {
         homework: HomeworkWidgetSnapshot?,
         timer: TimerWidgetSnapshot?,
         wayfinder: WayfinderWidgetSnapshot?,
-        week: WeekWidgetSnapshot?
+        week: WeekWidgetSnapshot?,
+        heartbeatOnly: Boolean,
+        groupScope: String?,
+        request: Long
     ) {
         main.post {
             if (!prepareProfile(app, identity)) return@post
+            if (newerDifferentGroup(request, groupScope)) return@post
+            val groupChanged = prepareContentGroup(groupScope)
+            val readAt = LocalDateTime.now()
+            fun stale(at: LocalDateTime?) = if (at == null) app.getString(ru.bgtu_voenmeh.zapara.R.string.ux60_widget_read_failed)
+                else app.getString(ru.bgtu_voenmeh.zapara.R.string.ux60_widget_stale_at, at.format(staleClock))
+            val dark = WidgetTheme.isDark("system", night(app))
+            val shownSchedule = schedule?.let { scheduleCache.accept(identity, groupScope!!, it, readAt) }
+                ?: scheduleCache.lastFor(identity, groupScope)?.let { it.value.copy(
+                    readError = stale(it.readAt), nextRefreshAt = null) }
+                ?: ScheduleWidgetComposer.cleared(identity, app.host.container.copy, dark).let {
+                    it.copy(cleared = false, empty = stale(null), readError = stale(null))
+                }
+            val shownHomework = if (heartbeatOnly && !groupChanged) null else (homework?.let { homeworkCache.accept(identity, groupScope!!, it, readAt) }
+                ?: homeworkCache.lastFor(identity, groupScope)?.let { it.value.copy(readError = stale(it.readAt)) }
+                ?: HomeworkWidgetComposer.cleared(identity, app.host.container.copy, dark).let {
+                    it.copy(cleared = false, empty = stale(null), readError = stale(null))
+                })
+            val shownTimer = timer?.let { timerCache.accept(identity, groupScope!!, it, readAt) }
+                ?: timerCache.lastFor(identity, groupScope)?.let { it.value.copy(
+                    endsAt = null, nextRefreshAt = null, timeText = "", fraction = 0f,
+                    readError = stale(it.readAt)) }
+                ?: TimerWidgetComposer.cleared(identity, app.host.container.copy, dark).let {
+                    it.copy(cleared = false, phaseText = stale(null), readError = stale(null))
+                }
+            val shownWayfinder = if (heartbeatOnly && !groupChanged) null else (wayfinder?.let { wayfinderCache.accept(identity, groupScope!!, it, readAt) }
+                ?: wayfinderCache.lastFor(identity, groupScope)?.let { it.value.copy(
+                    readError = stale(it.readAt), nextRefreshAt = null) }
+                ?: WayfinderWidgetComposer.cleared(identity, app.host.container.copy, dark).let {
+                    it.copy(cleared = false, empty = stale(null), readError = stale(null))
+                })
+            val shownWeek = if (heartbeatOnly && !groupChanged) null else (week?.let { weekCache.accept(identity, groupScope!!, it, readAt) }
+                ?: weekCache.lastFor(identity, groupScope)?.let { it.value.copy(readError = stale(it.readAt)) }
+                ?: WeekWidgetComposer.cleared(identity, app.host.container.copy, dark).let {
+                    it.copy(cleared = false, empty = stale(null), readError = stale(null))
+                })
             publish("motion policy") { WidgetRemoteViews.prepareMotion(app, policy) }
             scheduleDaily(app)
             scheduleHeartbeat(app)
             val current = WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value)
-            if (schedule != null && WidgetJobs.accept(schedule.identity, current)) publish("schedule") {
-                WidgetRemoteViews.pushSchedule(app, schedule, policy)
-                scheduleWake = schedule.nextRefreshAt
+            if (WidgetJobs.accept(shownSchedule.identity, current)) publish("schedule") {
+                WidgetRemoteViews.pushSchedule(app, shownSchedule, policy)
+                scheduleWake = shownSchedule.nextRefreshAt
             }
-            if (homework != null && WidgetJobs.accept(homework.identity, current)) publish("homework") {
-                WidgetRemoteViews.pushHomework(app, homework, policy)
+            if (shownHomework != null && WidgetJobs.accept(shownHomework.identity, current)) publish("homework") {
+                WidgetRemoteViews.pushHomework(app, shownHomework, policy)
             }
-            if (timer != null && WidgetJobs.accept(timer.identity, current)) publish("timer") {
-                WidgetRemoteViews.pushTimer(app, timer, policy)
-                timerEnd = timer.endsAt.takeUnless { timer.cleared }
-                timerWake = timer.nextRefreshAt.takeUnless { timer.cleared }
-                followTimer(app, timer)
+            if (WidgetJobs.accept(shownTimer.identity, current)) publish("timer") {
+                WidgetRemoteViews.pushTimer(app, shownTimer, policy)
+                timerEnd = shownTimer.endsAt.takeUnless { shownTimer.cleared }
+                timerWake = shownTimer.nextRefreshAt.takeUnless { shownTimer.cleared }
+                followTimer(app, shownTimer)
             }
-            if (wayfinder != null && WidgetJobs.accept(wayfinder.identity, current)) publish("wayfinder") {
-                WidgetRemoteViews.pushWayfinder(app, wayfinder, policy)
-                wayfinderWake = wayfinder.nextRefreshAt
+            if (shownWayfinder != null && WidgetJobs.accept(shownWayfinder.identity, current)) publish("wayfinder") {
+                WidgetRemoteViews.pushWayfinder(app, shownWayfinder, policy)
+                wayfinderWake = shownWayfinder.nextRefreshAt
             }
-            if (week != null && WidgetJobs.accept(week.identity, current)) publish("week") {
-                WidgetRemoteViews.pushWeek(app, week, policy)
+            if (shownWeek != null && WidgetJobs.accept(shownWeek.identity, current)) publish("week") {
+                WidgetRemoteViews.pushWeek(app, shownWeek, policy)
             }
             val placed = presence(app)
             val now = LocalDateTime.now()
@@ -303,6 +382,7 @@ object WidgetUpdater {
             timerEnd = null
             timerWake = null
             wayfinderWake = null
+            scheduleCache.clear(); homeworkCache.clear(); timerCache.clear(); wayfinderCache.clear(); weekCache.clear()
             WidgetRemoteViews.dropTimerFaces()
             scheduleAdvance(app, null)
             followTimer(app, null)
@@ -354,6 +434,9 @@ object WidgetUpdater {
                 keepPulse(app)
                 return
             }
+            val request = readSerial.incrementAndGet()
+            val groupBefore = try { container.repo.settings().myGroupId.orEmpty() }
+                catch (_: Exception) { null }
             val policyRevision = WidgetMotionPlayer.beginPolicyObservation()
             val policy = motionPolicy(app, container)
             observeMotionPolicy(app, identity, policy, policyRevision)
@@ -362,6 +445,7 @@ object WidgetUpdater {
             } catch (e: Exception) {
                 Log.w("ZaparaWidget", "timer", e)
                 keepPulse(app)
+                refresh(app)
                 return
             }
             val current = WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value)
@@ -369,6 +453,10 @@ object WidgetUpdater {
                 keepPulse(app)
                 return
             }
+            val groupAfter = try { container.repo.settings().myGroupId.orEmpty() }
+                catch (_: Exception) { null }
+            val stableGroup = stableWidgetGroup(groupBefore, groupAfter)
+            observedGroup(request, stableGroup)
             main.post {
                 val nowId = WidgetJobIdentity.of(app.host.container.profile, app.host.generation.value)
                 if (!WidgetJobs.accept(timer.identity, nowId)) {
@@ -377,6 +465,13 @@ object WidgetUpdater {
                 }
                 try {
                     if (!prepareProfile(app, timer.identity)) return@post
+                    if (newerDifferentGroup(request, stableGroup) || stableGroup == null) {
+                        refresh(app)
+                        return@post
+                    }
+                    val groupChanged = prepareContentGroup(stableGroup)
+                    if (groupChanged) refresh(app)
+                    timerCache.accept(timer.identity, stableGroup, timer, LocalDateTime.now())
                     WidgetRemoteViews.pushTimer(app, timer, policy)
                     timerEnd = timer.endsAt.takeUnless { timer.cleared }
                     timerWake = timer.nextRefreshAt.takeUnless { timer.cleared }

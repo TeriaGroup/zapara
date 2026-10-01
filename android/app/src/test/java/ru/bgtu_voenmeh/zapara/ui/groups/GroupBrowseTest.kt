@@ -10,6 +10,11 @@ class GroupBrowseTest {
     private val unread = topic("unread", "Учёба", "chat", unread = 3)
     private val quiet = topic("quiet", "Конспекты", "chat")
     private val ballot = topic("vote", "Опросы", "ballots", unread = 1, description = "После пар")
+    private val materials = topic("materials", "Архив", "materials", unread = 1, description = "Лекции")
+        .copy(lastBody = "Всё к экзамену", subject = "Физика", categoryId = "cat")
+    private val forms = topic("forms", "Формы", "forms")
+    private val homework = topic("homework", "Задания", "homework")
+    private val schedule = topic("schedule", "План", "schedule")
 
     @Test fun groups_and_people_search_by_visible_names_and_handles() {
         val groups = listOf(GroupCommunityUi("a", "О3313", "member"), GroupCommunityUi("b", "Военмех", "member"))
@@ -32,6 +37,24 @@ class GroupBrowseTest {
         assertEquals(listOf("vote"), browseChannels(rows, "  ПОСЛЕ  ", "ballots", true).map { it.topicId })
         assertEquals(listOf("unread"), browseChannels(rows, "уч", "chat", true).map { it.topicId })
         assertEquals(emptyList<String>(), browseChannels(rows, "нет совпадений").map { it.topicId })
+    }
+
+    @Test fun supported_specialized_channel_kinds_filter_independently() {
+        val rows = listOf(general, ballot, materials, forms, homework, schedule)
+        assertEquals(listOf("materials"), browseChannels(rows, kind = "materials").map { it.topicId })
+        assertEquals(listOf("forms"), browseChannels(rows, kind = "forms").map { it.topicId })
+        assertEquals(listOf("homework"), browseChannels(rows, kind = "homework").map { it.topicId })
+        assertEquals(listOf("schedule"), browseChannels(rows, kind = "schedule").map { it.topicId })
+    }
+
+    @Test fun channel_search_matches_normalized_subject_category_and_latest_body_tokens() {
+        val rows = listOf(materials, materials.copy(topicId = "hidden", unread = 0), quiet)
+        val categoryTitles = mapOf("cat" to "Преподаватели")
+        assertEquals(listOf("materials"), browseChannels(rows, "физика преподаватели все", unreadOnly = true,
+            categoryTitles = categoryTitles).map { it.topicId })
+        assertEquals(listOf("materials", "hidden"), browseChannels(rows, "всё физика", categoryTitles = categoryTitles).map { it.topicId })
+        assertEquals(emptyList<String>(), browseChannels(rows, "физика преподаватели несуществует",
+            categoryTitles = categoryTitles).map { it.topicId })
     }
 
     private fun topic(id: String?, title: String, kind: String, unread: Int = 0,

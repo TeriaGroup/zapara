@@ -26,6 +26,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private readonly ShellViewModel _shell;
     private readonly Func<DateTime> _clock;
     private readonly Action _reload;
+    private readonly Action _groupReload;
+    private int studyRenderEpoch;
     private readonly PropertyChangedEventHandler _onShell;
     private readonly Action _onTheme;
     private readonly Action _onSyncHealth;
@@ -70,6 +72,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         _notificationsEnabled = app.Prefs.NotificationsEnabled;
         _lanSync = app.LanSync.IsRunning;
         _reload = () => _ = LoadAsync();
+        _groupReload = () => { studyRenderEpoch++; ClearStudySubgroupUndo(); _ = LoadAsync(); };
         _onShell = (_, e) =>
         {
             if (e.PropertyName == nameof(ShellViewModel.SidebarCollapsed)) Suppressed(() => CompactSidebar = shell.SidebarCollapsed);
@@ -81,7 +84,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             if (ActivePanel == "data" && App.Work.CanPublish) _ = ReadDataSummary();
         });
         shell.PropertyChanged += _onShell;
-        shell.GroupChanged += _reload;
+        shell.GroupChanged += _groupReload;
         shell.ScheduleChanged += _reload;
         app.Loc.LanguageChanged += Relabel;
         app.Outbox.Changed += _onSyncHealth;
@@ -93,9 +96,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public override void Detach()
     {
+        studyUndoClock.Stop();
         Watch(false);
         _shell.PropertyChanged -= _onShell;
-        _shell.GroupChanged -= _reload;
+        _shell.GroupChanged -= _groupReload;
         _shell.ScheduleChanged -= _reload;
         App.Loc.LanguageChanged -= Relabel;
         App.Outbox.Changed -= _onSyncHealth;
@@ -129,54 +133,173 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public string Title => T("navSettings");
     public Features.Account.AccountPanelViewModel AccountPanel => App.Shared.AccountPanel;
     public ObservableCollection<SupportNote> ReportMessages { get; } = [];
+    public ObservableCollection<SupportThreadItem> ReportThreads { get; } = [];
+    public ObservableCollection<SupportDraftAttachment> ReportFiles { get; } = [];
     [ObservableProperty] private string reportSubject = "";
     [ObservableProperty] private string reportBody = "";
+    private long reportDraftRevision;
+    partial void OnReportSubjectChanged(string value) => reportDraftRevision++;
+    partial void OnReportBodyChanged(string value) => reportDraftRevision++;
+    internal static bool MayClearReportDraft(long sentRevision, long currentRevision) => sentRevision == currentRevision;
     [ObservableProperty] private string reportNote = "";
+    [ObservableProperty] private string reportReplyBody = "";
+    [ObservableProperty] private string reportHistoryStatus = "";
+    [ObservableProperty] private bool reportHistoryLoading;
+    [ObservableProperty] private string selectedReportSubject = "";
+    public bool HasSelectedReportThread => reportThreadId.HasValue;
+    public bool HasReportThreads => ReportThreads.Count > 0;
     [ObservableProperty] private string reportFilesText = "";
+    [ObservableProperty] private bool reportAttachmentLoading;
     private Guid? reportThreadId;
     private readonly List<SupportUpload> reportPhotos = [];
     private readonly List<SupportUpload> reportLogs = [];
+    private readonly Dictionary<Guid, string> reportReplyDrafts = [];
+    private int reportHistoryVersion;
 
     public async Task LoadReportAsync()
     {
-        if (AccountPanel.IsGuest) return;
+        using var operation = App.Work.Enter();
+        var version = ++reportHistoryVersion;
+        if (AccountPanel.IsGuest)
+        {
+            ReportHistoryLoading = false;
+            ReportThreads.Clear();
+            ReportMessages.Clear();
+            reportReplyDrafts.Clear();
+            reportThreadId = null;
+            ReportReplyBody = "";
+            SelectedReportSubject = "";
+            ReportHistoryStatus = "Войдите в аккаунт, чтобы увидеть обращения.";
+            OnPropertyChanged(nameof(HasReportThreads));
+            OnPropertyChanged(nameof(HasSelectedReportThread));
+            return;
+        }
+        ReportHistoryLoading = true;
+        ReportHistoryStatus = "Загружаем обращения…";
         try
         {
-            var list = await AccountPanel.LoadSupportAsync(CancellationToken.None);
-            var latest = list?.LastOrDefault();
-            if (latest is null) return;
-            reportThreadId = latest.Id;
-            ReportMessages.Clear();
-            foreach (var line in latest.Messages) ReportMessages.Add(new(line.Author, Shown(line)));
+            var list = await AccountPanel.LoadSupportAsync(operation.Token);
+            if (!operation.IsCurrent || version != reportHistoryVersion || AccountPanel.IsGuest) return;
+            if (list is null) { ReportHistoryStatus = "Не удалось загрузить обращения. Повторите загрузку."; return; }
+            ApplyReportHistoryIfCurrent(version, list);
+            ReportHistoryStatus = ReportThreads.Count == 0 ? "Обращений пока нет." : "";
         }
-        catch (AccountClientException) { ReportNote = "Сообщение не отправилось"; }
+        catch (OperationCanceledException) { }
+        catch (AccountClientException) { if (operation.IsCurrent && version == reportHistoryVersion) ReportHistoryStatus = "Не удалось загрузить обращения. Повторите загрузку."; }
+        finally { if (operation.IsCurrent && version == reportHistoryVersion) ReportHistoryLoading = false; }
+    }
+
+    [RelayCommand] private Task RetryReportHistory() => LoadReportAsync();
+
+    internal int ReportHistoryVersion => reportHistoryVersion;
+    internal bool ApplyReportHistoryIfCurrent(int version, IReadOnlyList<SupportThreadResponse> threads)
+    {
+        if (version != reportHistoryVersion) return false;
+        ApplyReportThreads(threads);
+        return true;
+    }
+
+    internal void ApplyAcceptedReportThread(SupportThreadResponse saved, bool select = true)
+    {
+        ++reportHistoryVersion;
+        ReportHistoryLoading = false;
+        ReportHistoryStatus = "";
+        var old = ReportThreads.FirstOrDefault(item => item.Id == saved.Id);
+        if (old is not null) ReportThreads.Remove(old);
+        var updated = new SupportThreadItem(saved.Id, saved.Subject, saved.Messages);
+        ReportThreads.Add(updated);
+        if (select) SelectReportThread(updated);
+        OnPropertyChanged(nameof(HasReportThreads));
+    }
+
+    internal void ApplyReportThreads(IReadOnlyList<SupportThreadResponse> threads)
+    {
+        var selected = reportThreadId;
+        ReportThreads.Clear();
+        foreach (var thread in threads) ReportThreads.Add(new SupportThreadItem(thread.Id, thread.Subject, thread.Messages));
+        var target = ReportThreads.FirstOrDefault(item => item.Id == selected) ?? ReportThreads.LastOrDefault();
+        SelectReportThread(target);
+        OnPropertyChanged(nameof(HasReportThreads));
+    }
+
+    [RelayCommand]
+    private void SelectReportThread(SupportThreadItem? item)
+    {
+        if (item is not null && !ReportThreads.Contains(item)) return;
+        if (reportThreadId is Guid previous) reportReplyDrafts[previous] = ReportReplyBody;
+        reportThreadId = item?.Id;
+        ReportReplyBody = item is not null && reportReplyDrafts.TryGetValue(item.Id, out var draft) ? draft : "";
+        SelectedReportSubject = item?.Subject ?? "";
+        ReportMessages.Clear();
+        if (item is not null) foreach (var line in item.Messages) ReportMessages.Add(new(line.Author, Shown(line)));
+        OnPropertyChanged(nameof(HasSelectedReportThread));
     }
 
     [RelayCommand]
     private async Task SendReport()
     {
+        if (ReportAttachmentLoading) { ReportNote = "Дождитесь выбора вложения перед отправкой."; return; }
         var (_, error) = SupportChat.Submit(!AccountPanel.IsGuest, ReportMessages.ToArray(), ReportSubject, ReportBody);
         ReportNote = error ?? "";
         if (error is not null) return;
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        var revision = reportDraftRevision;
+        var subject = ReportSubject.Trim();
+        var body = ReportBody.Trim();
+        var files = reportPhotos.Concat(reportLogs).ToArray();
         try
         {
-            var files = reportPhotos.Concat(reportLogs).ToArray();
-            var saved = await AccountPanel.SendSupportAsync(reportThreadId, ReportSubject.Trim(), ReportBody.Trim(), files, CancellationToken.None);
+            var saved = await AccountPanel.SendSupportAsync(null, subject, body, files, operation.Token);
+            if (!operation.IsCurrent) return;
             if (saved is null)
             {
                 ReportNote = "Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ.";
                 return;
             }
-            reportThreadId = saved.Id;
-            ReportMessages.Clear();
-            foreach (var line in saved.Messages) ReportMessages.Add(new(line.Author, Shown(line)));
-            ReportSubject = "";
-            ReportBody = "";
-            reportPhotos.Clear();
-            reportLogs.Clear();
-            ReportFilesText = "";
+            ApplyAcceptedReportThread(saved);
+            if (MayClearReportDraft(revision, reportDraftRevision))
+            {
+                ReportSubject = "";
+                ReportBody = "";
+                reportPhotos.Clear();
+                reportLogs.Clear();
+                ReportFiles.Clear();
+                ReportFilesText = "";
+            }
+            else ReportNote = "Предыдущее сообщение отправлено. Новый черновик сохранён.";
         }
-        catch (AccountClientException) { ReportNote = "Сообщение не отправилось"; }
+        catch (OperationCanceledException) { }
+        catch (AccountClientException) { if (operation.IsCurrent) ReportNote = "Сообщение не отправилось"; }
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = false)]
+    private async Task SendReportReply()
+    {
+        var id = reportThreadId;
+        var text = ReportReplyBody.Trim();
+        if (id is null) { ReportNote = "Выберите обращение для ответа."; return; }
+        if (AccountPanel.IsGuest || text.Length < 3) { ReportNote = "Напишите ответ длиной не меньше трёх символов."; return; }
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        var draft = ReportReplyBody;
+        try
+        {
+            var saved = await AccountPanel.SendSupportAsync(id, "", text, operation.Token);
+            if (!operation.IsCurrent) return;
+            if (saved is null) { if (reportThreadId == id) ReportNote = "Войдите в аккаунт, чтобы отправить ответ."; return; }
+            var stillSelected = reportThreadId == id;
+            if (stillSelected && ReportReplyBody == draft) ReportReplyBody = "";
+            ApplyAcceptedReportThread(saved, stillSelected);
+            if (reportThreadId != id)
+            {
+                if (reportReplyDrafts.TryGetValue(id.Value, out var oldDraft) && oldDraft == draft) reportReplyDrafts.Remove(id.Value);
+                return;
+            }
+            ReportNote = "Ответ отправлен.";
+        }
+        catch (OperationCanceledException) { }
+        catch (AccountClientException) { if (operation.IsCurrent && reportThreadId == id) ReportNote = "Ответ не отправился. Текст сохранён."; }
     }
 
     [RelayCommand]
@@ -187,6 +310,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     private async Task PickReport(string kind)
     {
+        if (ReportAttachmentLoading) return;
+        ReportAttachmentLoading = true;
+        try
+        {
         var paths = await App.FileDialogs.OpenSupportAsync(kind);
         var list = kind == "photo" ? reportPhotos : reportLogs;
         foreach (var path in paths)
@@ -216,10 +343,24 @@ public sealed partial class SettingsViewModel : ViewModelBase
             }
             var bytes = await File.ReadAllBytesAsync(path);
             var type = ext switch { ".png" => "image/png", ".webp" => "image/webp", ".jpg" or ".jpeg" => "image/jpeg", _ => "text/plain" };
-            list.Add(new SupportUpload(kind, info.Name, type, bytes));
+            var upload = new SupportUpload(kind, info.Name, type, bytes);
+            list.Add(upload);
+            ReportFiles.Add(new SupportDraftAttachment(Guid.NewGuid(), kind, info.Name, upload));
+            reportDraftRevision++;
             ReportNote = "";
         }
         ReportFilesText = string.Join("\n", reportPhotos.Select(file => "Фото: " + file.Name).Concat(reportLogs.Select(file => "Лог: " + file.Name)));
+        }
+        finally { ReportAttachmentLoading = false; }
+    }
+    [RelayCommand]
+    private void RemoveReportFile(SupportDraftAttachment? file)
+    {
+        if (file is null || !ReportFiles.Remove(file)) return;
+        if (file.Kind == "photo") reportPhotos.Remove(file.Upload);
+        else reportLogs.Remove(file.Upload);
+        reportDraftRevision++;
+        ReportFilesText = string.Join("\n", reportPhotos.Select(item => "Фото: " + item.Name).Concat(reportLogs.Select(item => "Лог: " + item.Name)));
     }
 
     private static string Shown(SupportLineResponse line)
@@ -307,9 +448,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty] private bool _notificationsEnabled;
     [ObservableProperty] private string _notifyTime1 = "20:00";
     [ObservableProperty] private string _notifyTime2 = "07:30";
+    private string savedNotifyTime1 = "20:00", savedNotifyTime2 = "07:30";
+    public bool HasNotifyTimeDraft => NotifyTime1.Trim() != savedNotifyTime1 || NotifyTime2.Trim() != savedNotifyTime2;
+    public bool CanSaveTimes => NotificationScheduler.IsValidTime(NotifyTime1) && NotificationScheduler.IsValidTime(NotifyTime2)
+        && HasNotifyTimeDraft;
+    public string NotifyTimesHint => !NotificationScheduler.IsValidTime(NotifyTime1) || !NotificationScheduler.IsValidTime(NotifyTime2)
+        ? "Укажите время в формате чч:мм. Действующие уведомления не изменены."
+        : CanSaveTimes ? "Время изменится после сохранения." : "Время сохранено.";
 
     public string NotificationSummary => NotificationsEnabled
-        ? $"{NotifyTime1} · {NotifyTime2}" : "Выключены";
+        ? $"{savedNotifyTime1} · {savedNotifyTime2}" : "Выключены";
 
     partial void OnNotificationsEnabledChanged(bool value)
     {
@@ -319,8 +467,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
         App.Prefs.Save();
     }
 
-    partial void OnNotifyTime1Changed(string value) => OnPropertyChanged(nameof(NotificationSummary));
-    partial void OnNotifyTime2Changed(string value) => OnPropertyChanged(nameof(NotificationSummary));
+    partial void OnNotifyTime1Changed(string value) { OnPropertyChanged(nameof(CanSaveTimes)); OnPropertyChanged(nameof(HasNotifyTimeDraft)); OnPropertyChanged(nameof(NotifyTimesHint)); }
+    partial void OnNotifyTime2Changed(string value) { OnPropertyChanged(nameof(CanSaveTimes)); OnPropertyChanged(nameof(HasNotifyTimeDraft)); OnPropertyChanged(nameof(NotifyTimesHint)); }
+    [RelayCommand] private void DiscardNotifyTimes() { NotifyTime1 = savedNotifyTime1; NotifyTime2 = savedNotifyTime2; }
 
     [RelayCommand(AllowConcurrentExecutions = false)]
     private async Task SaveTimes()
@@ -334,7 +483,12 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
         var (t1, t2) = (NotifyTime1.Trim(), NotifyTime2.Trim());
         var ok = await RunAsync(() => { var s = App.Db.GetSettings(); s.NotifyTime1 = t1; s.NotifyTime2 = t2; App.Db.SaveSettings(s); }, "notify times");
-        if (ok) App.Toasts.Ok(T("notifSaved", t1, t2));
+        if (ok)
+        {
+            savedNotifyTime1 = t1; savedNotifyTime2 = t2;
+            OnPropertyChanged(nameof(NotificationSummary)); OnPropertyChanged(nameof(CanSaveTimes)); OnPropertyChanged(nameof(HasNotifyTimeDraft)); OnPropertyChanged(nameof(NotifyTimesHint));
+            App.Toasts.Ok(T("notifSaved", t1, t2));
+        }
     }
 
     [RelayCommand] private async Task TestNotification(){if(!NotificationPreviewVisible){await PreviewNotification();return;}await App.NotificationScheduler.ShowTestAsync(_clock());}
@@ -493,8 +647,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
         CompactSidebar = _shell.SidebarCollapsed;
         Animations = App.Prefs.Animations;
         NotificationsEnabled = App.Prefs.NotificationsEnabled;
-        NotifyTime1 = data.Settings.NotifyTime1 ?? "20:00";
-        NotifyTime2 = data.Settings.NotifyTime2 ?? "07:30";
+        savedNotifyTime1 = data.Settings.NotifyTime1 ?? "20:00";
+        savedNotifyTime2 = data.Settings.NotifyTime2 ?? "07:30";
+        NotifyTime1 = savedNotifyTime1;
+        NotifyTime2 = savedNotifyTime2;
+        OnPropertyChanged(nameof(NotificationSummary)); OnPropertyChanged(nameof(CanSaveTimes)); OnPropertyChanged(nameof(HasNotifyTimeDraft)); OnPropertyChanged(nameof(NotifyTimesHint));
         LanSync = App.LanSync.IsRunning;
         _suppress = false;
         if (QrVisible) QrHint = T(_qrViaServer ? "syncQrServerHint" : "syncQrHint");
@@ -531,4 +688,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
         OnPropertyChanged(nameof(VersionText));
         _ = LoadAsync();
     }
+}
+
+public sealed record SupportThreadItem(Guid Id, string Subject, IReadOnlyList<SupportLineResponse> Messages)
+{
+    public string Label => $"{Subject} · {Messages.Count} сообщений";
+}
+
+public sealed record SupportDraftAttachment(Guid Id, string Kind, string Name, SupportUpload Upload)
+{
+    public string Label => (Kind == "photo" ? "Фото: " : "Лог: ") + Name;
 }

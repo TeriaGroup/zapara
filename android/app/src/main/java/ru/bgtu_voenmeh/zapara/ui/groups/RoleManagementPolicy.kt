@@ -6,6 +6,12 @@ import ru.bgtu_voenmeh.zapara.R
 
 /** UI hints only. The server remains authoritative, including topic access rules. */
 internal object RoleManagementPolicy {
+    fun maximumAssignablePosition(desk: GroupDesk, people: List<GroupPersonUi>): Int =
+        if (desk.headman) 10000 else actorPosition(desk, people) - 1
+
+    fun positionAllowed(position: Int, desk: GroupDesk, people: List<GroupPersonUi>): Boolean =
+        position in 0..maximumAssignablePosition(desk, people)
+
     fun actorPosition(desk: GroupDesk, people: List<GroupPersonUi>): Int {
         val self = people.firstOrNull { it.self }?.id ?: return 0
         val held = desk.grants.filter { it.userId == self }.map { it.roleId }.toSet()

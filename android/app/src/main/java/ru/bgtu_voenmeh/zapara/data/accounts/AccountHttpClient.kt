@@ -81,6 +81,14 @@ class AccountHttpClient(
         return user(root.field("user").obj())
     }
 
+    suspend fun saveProfile(accessToken: String, displayName: String?): AccountUser {
+        val clean = displayName?.trim()?.takeIf { it.isNotEmpty() }
+        val validated = clean?.let(AccountValidation::displayName)
+        val body = "{\"displayName\":" + (validated?.let(::q) ?: "null") + "}"
+        val root = send("PATCH", "account/me", body, accessToken, 200).obj()
+        return user(root)
+    }
+
     suspend fun authenticationMethods(accessToken: String): Set<String> = readPayload {
         val root = send("GET", "account/me", null, accessToken, 200).obj()
         val methods = root.array("authenticationMethods", 3).items.map {

@@ -2,6 +2,9 @@
  <ScrollViewer HorizontalScrollBarVisibility="Disabled"><StackPanel Margin="16" Spacing="12">
   <TextBlock Text="{Binding SpecializedHint}" TextWrapping="Wrap" />
   <StackPanel Spacing="8" IsVisible="{Binding ShowMaterials}"><TextBlock Classes="subject" Text="Материалы темы" /><TextBlock Classes="muted caption" Text="Файлы и ссылки из этой темы. Прикрепить материал можно скрепкой внизу." TextWrapping="Wrap" />
+   <TextBlock Classes="muted" Text="Загружаем материалы…" IsVisible="{Binding MaterialsLoading}" />
+   <StackPanel Spacing="6" IsVisible="{Binding MaterialsLoadFailed}"><TextBlock Text="{Binding MaterialsErrorText}" TextWrapping="Wrap" /><Button Content="Повторить загрузку" Command="{Binding RetryMaterialsCommand}" HorizontalAlignment="Left" /></StackPanel>
+   <TextBlock Classes="muted" Text="Материалов в теме пока нет." IsVisible="{Binding NoMaterials}" />
    <Button Content="Загрузить ещё материалы" Command="{Binding LoadOlderCommand}" IsVisible="{Binding HasMore}" IsEnabled="{Binding CanLoadOlder}" />
    <ItemsControl ItemsSource="{Binding Messages}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:GroupMessageRow"><Border Classes="card" Margin="0,4"><StackPanel Spacing="6"><TextBlock Text="{Binding Body}" TextWrapping="Wrap" /><TextBlock Classes="muted caption" Text="{Binding Author}" /><Button Content="Скачать материал" Command="{Binding DownloadCommand}" IsVisible="{Binding CanDownload}" /><Button Content="Открыть ссылку" Command="{Binding OpenLinkCommand}" IsVisible="{Binding HasLink}" /></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
   </StackPanel>
@@ -19,18 +22,24 @@
       <ComboBox ItemsSource="{Binding QuestionKinds}" SelectedItem="{Binding Kind}" />
       <CheckBox Content="Обязательный вопрос" IsChecked="{Binding Required}" />
       <TextBox Text="{Binding OptionsText}" PlaceholderText="Каждый вариант с новой строки" AcceptsReturn="True" TextWrapping="Wrap" IsVisible="{Binding HasChoices}" />
+      <WrapPanel ItemSpacing="6"><Button Content="Выше" IsEnabled="{Binding CanMoveUp}" Command="{Binding $parent[UserControl].((g:GroupViewModel)DataContext).MoveFormQuestionUpCommand}" CommandParameter="{Binding}" /><Button Content="Ниже" IsEnabled="{Binding CanMoveDown}" Command="{Binding $parent[UserControl].((g:GroupViewModel)DataContext).MoveFormQuestionDownCommand}" CommandParameter="{Binding}" /></WrapPanel>
       <Button Content="Убрать вопрос" Command="{Binding $parent[UserControl].((g:GroupViewModel)DataContext).RemoveFormQuestionCommand}" CommandParameter="{Binding}" />
      </StackPanel></Border>
     </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    <Border Classes="card" IsVisible="{Binding HasPendingRemoveFormQuestion}"><StackPanel Spacing="6"><TextBlock Text="{Binding PendingRemoveFormQuestionText}" TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Content="Отмена" Command="{Binding CancelRemoveFormQuestionCommand}" /><Button Classes="danger" Content="Убрать вопрос" Command="{Binding ConfirmRemoveFormQuestionCommand}" /></WrapPanel></StackPanel></Border>
     <WrapPanel ItemSpacing="8"><Button Content="Добавить вопрос" Command="{Binding AddFormQuestionCommand}" /><Button Classes="primary" Content="Опубликовать анкету" Command="{Binding PublishFormCommand}" IsEnabled="{Binding !IsBusy}" /></WrapPanel>
    </StackPanel>
    <ItemsControl ItemsSource="{Binding Forms}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceFormRow">
     <Border Classes="card" Margin="0,4"><StackPanel Spacing="8">
      <TextBlock Classes="subject" Text="{Binding Title}" TextWrapping="Wrap" /><TextBlock Text="{Binding Description}" TextWrapping="Wrap" /><TextBlock Classes="muted caption" Text="{Binding Summary}" TextWrapping="Wrap" />
+     <TextBlock Classes="muted caption" Text="{Binding RequiredProgressText}" />
      <ItemsControl ItemsSource="{Binding Questions}" IsEnabled="{Binding CanRespond}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceAnswerRow"><StackPanel Spacing="6" Margin="0,6">
       <TextBlock Text="{Binding Title}" TextWrapping="Wrap" /><TextBox Text="{Binding Text}" IsVisible="{Binding IsText}" AcceptsReturn="{Binding IsLong}" TextWrapping="Wrap" />
       <ItemsControl ItemsSource="{Binding Options}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceAnswerChoice"><CheckBox Content="{Binding Label}" IsChecked="{Binding Selected}" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+      <TextBlock Text="Обязательный ответ пропущен" IsVisible="{Binding IsMissing}" Classes="muted caption" />
      </StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+     <TextBlock Text="{Binding ValidationMessage}" IsVisible="{Binding HasMissingRequired}" TextWrapping="Wrap" />
+     <Button Content="К первому пропуску" Click="FocusFirstMissing" IsVisible="{Binding HasMissingRequired}" HorizontalAlignment="Left" />
      <Button Classes="primary" Content="Сохранить мой ответ" Command="{Binding SubmitCommand}" IsVisible="{Binding CanRespond}" HorizontalAlignment="Left" />
      <WrapPanel IsVisible="{Binding CanViewResponses}" ItemSpacing="8"><Button Content="Ответы участников" Command="{Binding ResponsesCommand}" /><Button Content="Экспорт CSV" Command="{Binding ExportCommand}" /></WrapPanel>
      <TextBlock Text="Загружаем ответы…" IsVisible="{Binding ResponseLoading}" /><TextBlock Text="Все ответы загружены" IsVisible="{Binding ResponsesComplete}" Classes="muted caption" /><ItemsControl ItemsSource="{Binding Responses}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,6" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>

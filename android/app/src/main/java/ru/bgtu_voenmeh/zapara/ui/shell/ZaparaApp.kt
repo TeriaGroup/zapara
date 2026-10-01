@@ -8,13 +8,26 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -56,6 +69,7 @@ import ru.bgtu_voenmeh.zapara.ui.schedule.ScheduleViewModel
 import ru.bgtu_voenmeh.zapara.ui.settings.SettingsSection
 import ru.bgtu_voenmeh.zapara.ui.settings.SettingsViewModel
 import ru.bgtu_voenmeh.zapara.ui.summary.SummarySection
+import ru.bgtu_voenmeh.zapara.ui.summary.SummaryDetailKind
 import ru.bgtu_voenmeh.zapara.ui.summary.SummaryViewModel
 import ru.bgtu_voenmeh.zapara.ui.teachers.TeachersSection
 import ru.bgtu_voenmeh.zapara.ui.teachers.TeachersViewModel
@@ -66,6 +80,8 @@ import ru.bgtu_voenmeh.zapara.ui.theme.ThemeCrossfade
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.ZaparaEase
 import ru.bgtu_voenmeh.zapara.ui.theme.ZaparaTheme
+import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
+import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.week.WeekSection
 import ru.bgtu_voenmeh.zapara.ui.week.WeekViewModel
 
@@ -98,6 +114,32 @@ private fun ZaparaAppBody(
     onLaunchHandled: (Long) -> Unit
 ) {
     val shellVm: ShellViewModel = viewModel(owner, factory = ShellViewModel.factory(container))
+    var widgetRestoreAttempted by remember { mutableStateOf(false) }
+    suspend fun resolveWidgetLaunch(target: WidgetLaunch): WidgetLaunchResolution? = target.resolveAfterRestore(
+        restore = {
+            // Host construction normally restores synchronously. Retry the existing guest
+            // fallback before checking a persisted scoped action; never select its account.
+            if (!widgetRestoreAttempted && host?.container?.profile?.isGuest == true) {
+                withContext(Dispatchers.IO) { host.restore() }
+                widgetRestoreAttempted = true
+            }
+        },
+        profile = { host?.container?.profile ?: container.profile },
+        group = { withContext(Dispatchers.IO) { (host?.container ?: container).repo.settings().myGroupId } }
+    )
+    fun launchFeedback(problem: WidgetLaunchProblem, section: Section = Section.Homework) {
+        container.toasts.show(container.app.getString(when {
+            section == Section.Schedule && problem == WidgetLaunchProblem.OtherProfile -> R.string.ux60_widget_other_profile
+            section == Section.Schedule && problem == WidgetLaunchProblem.OtherGroup -> R.string.ux60_widget_other_group
+            section == Section.Schedule -> R.string.ux60_widget_lesson_unavailable
+            problem == WidgetLaunchProblem.OtherProfile -> R.string.homework_widget_other_profile
+            else -> R.string.homework_widget_unavailable
+        }))
+    }
+    suspend fun matchesSource(group: String?, profile: String?): Boolean = withContext(Dispatchers.IO) {
+        !group.isNullOrBlank() && container.repo.settings().myGroupId == group &&
+            container.profile.databaseName == profile
+    } && (host == null || host.container === container)
     val state by shellVm.state.collectAsStateWithLifecycle()
     val update by container.update.state.collectAsStateWithLifecycle()
     val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
@@ -118,7 +160,13 @@ private fun ZaparaAppBody(
         val barCurrent = if (current == Section.Group && !entry?.arguments?.getString("communityId").isNullOrBlank()) Section.Chat else current
         LaunchedEffect(launch?.id) {
             launch?.let {
-                nav.openSection(it.section, it.argument)
+                val resolved = resolveWidgetLaunch(it) ?: return@LaunchedEffect
+                // Restoration can replace the whole profile-owned composition while suspended.
+                if (host != null && host.container !== container) return@LaunchedEffect
+                nav.openSection(it.section, resolved.argument, widgetScope = resolved.scope,
+                    fresh = true, focusTime = resolved.scheduleTarget?.time,
+                    focusSubject = resolved.scheduleTarget?.subject, widgetGroup = resolved.scheduleTarget?.groupId)
+                resolved.problem?.let { problem -> launchFeedback(problem, it.section) }
                 onLaunchHandled(it.id)
             }
         }
@@ -127,11 +175,11 @@ private fun ZaparaAppBody(
             shellVm.onEvent(ShellEvent.Overlay(ShellOverlay.GroupPicker))
         }
         val themeDesc = if (Zapara.colors.isDark) stringResource(R.string.theme_dark) else stringResource(R.string.theme_light)
-        BackHandler(enabled = state.overlay != ShellOverlay.None || current != Section.Schedule) {
+        BackHandler(enabled = state.overlay != ShellOverlay.None || nav.previousBackStackEntry != null || current != Section.Schedule) {
             when {
                 state.overlay != ShellOverlay.None ->
                     shellVm.onEvent(ShellEvent.Overlay(ShellOverlay.None))
-                else -> nav.openSection(Section.Schedule)
+                else -> if (!nav.popBackStack()) nav.openSection(Section.Schedule)
             }
         }
         CompositionLocalProvider(LocalShellChrome provides chrome,
@@ -157,8 +205,20 @@ private fun ZaparaAppBody(
                         )
                     }
                 ) {
+                    Column(Modifier.fillMaxSize()) {
+                        if (state.error) ZCard(Modifier.fillMaxWidth().padding(Zapara.space.s)) {
+                            Row(verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                                Text(stringResource(R.string.ux60_shell_projection_failed), Modifier.weight(1f),
+                                    style = Zapara.typography.caption, color = Zapara.colors.text2)
+                                ZButton(stringResource(R.string.maps_retry),
+                                    { shellVm.onEvent(ShellEvent.RetryProjection) }, ghost = true,
+                                    tag = "Shell.RetryProjection")
+                            }
+                        }
                         NavHost(
                             navController = nav,
+                            modifier = Modifier.weight(1f),
                             startDestination = Section.Schedule.pattern,
                             enterTransition = { fadeIn(tween(motion.ms(Durations.section), easing = ZaparaEase)) + slideInHorizontally(tween(motion.ms(Durations.section), easing = ZaparaEase)) { slidePx } },
                             exitTransition = { fadeOut(tween(motion.ms(Durations.section), easing = ZaparaEase)) + slideOutHorizontally(tween(motion.ms(Durations.section), easing = ZaparaEase)) { -slidePx } },
@@ -167,23 +227,67 @@ private fun ZaparaAppBody(
                         ) {
                             composable(
                                 Section.Schedule.pattern,
-                                arguments = listOf(navArgument("date") { type = NavType.StringType; nullable = true; defaultValue = null })
+                                arguments = listOf(
+                                    navArgument("date") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                    navArgument("time") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                    navArgument("subject") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                    navArgument("widgetProfile") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                    navArgument("widgetDatabase") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                    navArgument("widgetGroup") { type = NavType.StringType; nullable = true; defaultValue = null })
                             ) { dest ->
                                 ProvideSectionEntry {
                                 val date = dest.arguments?.getString("date")
-                                val vm: ScheduleViewModel = viewModel(factory = ScheduleViewModel.factory(container, date))
+                                val widgetProfile = dest.arguments?.getString("widgetProfile")
+                                val widgetDatabase = dest.arguments?.getString("widgetDatabase")
+                                val widgetGroup = dest.arguments?.getString("widgetGroup")
+                                val focusTime = dest.arguments?.getString("time")
+                                val focusSubject = dest.arguments?.getString("subject")
+                                val scoped = widgetProfile != null || widgetDatabase != null || widgetGroup != null
+                                val vm: ScheduleViewModel = viewModel(factory = ScheduleViewModel.factory(container, if (scoped) null else date))
                                 val s by vm.state.collectAsStateWithLifecycle()
-                                LaunchedEffect(date) {
-                                    date?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }?.let {
+                                var scopedValid by remember(dest.id) { mutableStateOf(false) }
+                                var scopedFailureShown by remember(dest.id) { mutableStateOf(false) }
+                                var rowChecked by remember(dest.id) { mutableStateOf(false) }
+                                LaunchedEffect(date, s.loaded, s.groupId, scoped, launch?.id) {
+                                    if (scoped && (!s.loaded || launch != null)) return@LaunchedEffect
+                                    val argument = if (scoped) {
+                                        val request = WidgetLaunchInbox().accept("schedule", date, widgetProfile,
+                                            widgetDatabase, widgetGroup, focusTime, focusSubject) ?: return@LaunchedEffect
+                                        val resolved = resolveWidgetLaunch(request) ?: return@LaunchedEffect
+                                        if (host != null && host.container !== container) return@LaunchedEffect
+                                        scopedValid = resolved.problem == null
+                                        resolved.problem?.let {
+                                            if (!scopedFailureShown) launchFeedback(it, Section.Schedule)
+                                            scopedFailureShown = true
+                                            vm.onEvent(ru.bgtu_voenmeh.zapara.ui.schedule.ScheduleEvent.Today)
+                                        }
+                                        resolved.argument
+                                    } else date
+                                    argument?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }?.let {
                                         vm.onEvent(ru.bgtu_voenmeh.zapara.ui.schedule.ScheduleEvent.Select(it))
                                     }
                                 }
-                                ScheduleSection(s, vm::onEvent, onDiscuss = { context -> nav.navigate("group?context=${android.net.Uri.encode(context)}") }, onWeek = { selected -> nav.navigate("week?date=$selected") }) { room -> nav.openSection(Section.Maps, room) }
+                                LaunchedEffect(scopedValid, s.pages) {
+                                    if (!scopedValid || rowChecked) return@LaunchedEffect
+                                    val day = date?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() } ?: return@LaunchedEffect
+                                    val page = s.pages[day] ?: return@LaunchedEffect
+                                    rowChecked = true
+                                    if (page.lessons.none { it.timeStart == focusTime && it.subjectNorm == focusSubject })
+                                        launchFeedback(WidgetLaunchProblem.InvalidTarget, Section.Schedule)
+                                }
+                                ScheduleSection(s, vm::onEvent, onDiscuss = { context -> nav.navigate("group?context=${android.net.Uri.encode(context)}") },
+                                    onWeek = { selected -> nav.navigate("week?date=$selected") },
+                                    focusTime = focusTime.takeIf { !scoped || scopedValid },
+                                    focusSubject = focusSubject.takeIf { !scoped || scopedValid }) { room ->
+                                    nav.openSection(Section.Maps, room, sourceDate = s.selected.toString())
+                                }
                                 }
                             }
                             composable(
                                 Section.Maps.pattern,
-                                arguments = listOf(navArgument("room") { type = NavType.StringType; nullable = true; defaultValue = null })
+                                arguments = listOf(
+                                    navArgument("room") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                    navArgument("date") { type = NavType.StringType; nullable = true; defaultValue = null })
                             ) { dest ->
                                 ProvideSectionEntry {
                                 val room = dest.arguments?.getString("room")
@@ -193,14 +297,57 @@ private fun ZaparaAppBody(
                                     if (!room.isNullOrBlank()) vm.onEvent(ru.bgtu_voenmeh.zapara.ui.maps.MapsEvent.ShowRoom(room))
                                     else vm.onEvent(ru.bgtu_voenmeh.zapara.ui.maps.MapsEvent.Browse)
                                 }
-                                MapsSection(s, vm::onEvent)
+                                val sourceDate = dest.arguments?.getString("date")?.let {
+                                    runCatching { java.time.LocalDate.parse(it) }.getOrNull()
+                                }
+                                MapsSection(s, vm::onEvent, onBackToLesson = sourceDate?.let { date ->
+                                    { nav.openSection(Section.Schedule, date.toString()) }
+                                })
                                 }
                             }
-                            composable(Section.Homework.pattern, arguments = listOf(navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null })) { dest ->
+                            composable(Section.Homework.pattern, arguments = listOf(
+                                navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                navArgument("widgetProfile") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                navArgument("widgetDatabase") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                navArgument("query") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                navArgument("sourceGroup") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                navArgument("sourceProfile") { type = NavType.StringType; nullable = true; defaultValue = null }
+                            )) { dest ->
                                 ProvideSectionEntry {
-                                val vm: HomeworkViewModel = viewModel(factory = HomeworkViewModel.factory(container))
+                                // Preserve an active draft across tabs and repeated widget routes.
+                                // The profile host clears this store when the account changes.
+                                val vm: HomeworkViewModel = viewModel(owner, factory = HomeworkViewModel.factory(container))
                                 val s by vm.state.collectAsStateWithLifecycle()
-                                LaunchedEffect(dest.arguments?.getString("id")) { dest.arguments?.getString("id")?.toLongOrNull()?.let { vm.onEvent(ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEvent.Edit(it)) } }
+                                val targetId = dest.arguments?.getString("id")
+                                val widgetProfile = dest.arguments?.getString("widgetProfile")
+                                val widgetDatabase = dest.arguments?.getString("widgetDatabase")
+                                val detailQuery = dest.arguments?.getString("query")
+                                var detailHandled by rememberSaveable(dest.id) { mutableStateOf(false) }
+                                LaunchedEffect(detailQuery, s.loaded) {
+                                    if (detailQuery == null || detailHandled || !s.loaded) return@LaunchedEffect
+                                    detailHandled = true
+                                    if (matchesSource(dest.arguments?.getString("sourceGroup"), dest.arguments?.getString("sourceProfile"))) {
+                                        vm.onEvent(ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEvent.BrowseFilter(
+                                            ru.bgtu_voenmeh.zapara.ui.homework.HomeworkCompletionFilter.All))
+                                        vm.onEvent(ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEvent.BrowseQuery(detailQuery))
+                                    }
+                                }
+                                var targetHandled by rememberSaveable(dest.id, targetId, widgetProfile, widgetDatabase) { mutableStateOf(false) }
+                                LaunchedEffect(targetId, widgetProfile, widgetDatabase, s.loaded, launch?.id) {
+                                    // A newer widget launch takes precedence over a restored old route.
+                                    if (launch != null || targetHandled || targetId == null || !s.loaded) return@LaunchedEffect
+                                    val scoped = widgetProfile != null || widgetDatabase != null
+                                    val argument = if (scoped) {
+                                        val scope = WidgetLaunchScope.parse(widgetProfile, widgetDatabase)
+                                        val resolved = resolveWidgetLaunch(WidgetLaunch(0, Section.Homework, targetId,
+                                            scope, invalidTarget = scope == null)) ?: return@LaunchedEffect
+                                        if (host != null && host.container !== container) return@LaunchedEffect
+                                        resolved.problem?.let(::launchFeedback)
+                                        resolved.argument
+                                    } else targetId
+                                    targetHandled = true
+                                    homeworkWidgetId(argument)?.let { vm.onEvent(ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEvent.Edit(it)) }
+                                }
                                 HomeworkSection(s, vm::onEvent)
                                 }
                             }
@@ -215,28 +362,92 @@ private fun ZaparaAppBody(
                                 ProvideSectionEntry {
                                 val vm: SummaryViewModel = viewModel(factory = SummaryViewModel.factory(container))
                                 val s by vm.state.collectAsStateWithLifecycle()
-                                SummarySection(s, vm::onEvent)
+                                val detailNavigation = rememberCoroutineScope()
+                                SummarySection(s, vm::onEvent,
+                                    onOpenDay = { date -> nav.openSection(Section.Schedule, date.toString()) },
+                                    onOpenDetail = { target -> detailNavigation.launch {
+                                        if (!matchesSource(target.groupId, target.profileName)) return@launch
+                                        when (target.kind) {
+                                            SummaryDetailKind.Subject -> nav.openSection(Section.Homework,
+                                                detailQuery = target.lookup ?: target.label,
+                                                sourceGroup = target.groupId, sourceProfile = target.profileName)
+                                            SummaryDetailKind.Teacher -> nav.openSection(Section.Teachers, target.lookup,
+                                                detailQuery = if (target.lookup != null) "" else target.label, sourceGroup = target.groupId,
+                                                sourceProfile = target.profileName)
+                                            SummaryDetailKind.Room -> if (target.lookup != null)
+                                                nav.openSection(Section.Maps, target.lookup) else nav.navigate(Section.Maps.route)
+                                        }
+                                    } })
                                 }
                             }
-                            composable(Section.Teachers.route) {
+                            composable(Section.Teachers.pattern, arguments = listOf(
+                                navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                navArgument("query") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                navArgument("sourceGroup") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                navArgument("sourceProfile") { type = NavType.StringType; nullable = true; defaultValue = null }
+                            )) { dest ->
                                 ProvideSectionEntry {
                                 val vm: TeachersViewModel = viewModel(factory = TeachersViewModel.factory(container))
                                 val s by vm.state.collectAsStateWithLifecycle()
-                                TeachersSection(s, vm::onEvent)
+                                val detailQuery = dest.arguments?.getString("query")
+                                val teacherId = dest.arguments?.getString("id")
+                                var detailPrepared by rememberSaveable(dest.id) { mutableStateOf(false) }
+                                var detailOpened by rememberSaveable(dest.id) { mutableStateOf(false) }
+                                LaunchedEffect(detailQuery, s.loaded) {
+                                    if (detailQuery == null || detailPrepared || !s.loaded) return@LaunchedEffect
+                                    if (!matchesSource(dest.arguments?.getString("sourceGroup"), dest.arguments?.getString("sourceProfile"))) {
+                                        detailPrepared = true; detailOpened = true
+                                        return@LaunchedEffect
+                                    }
+                                    detailPrepared = true
+                                    vm.onEvent(ru.bgtu_voenmeh.zapara.ui.teachers.TeachersEvent.OnlyMine(false))
+                                    vm.onEvent(ru.bgtu_voenmeh.zapara.ui.teachers.TeachersEvent.Query(detailQuery))
+                                }
+                                LaunchedEffect(detailPrepared, s.searching, s.appliedQuery, s.list) {
+                                    if (!detailPrepared || detailOpened || s.searching || s.appliedQuery != detailQuery) return@LaunchedEffect
+                                    detailOpened = true
+                                    if (teacherId != null && s.list.any { it.id == teacherId } &&
+                                        matchesSource(dest.arguments?.getString("sourceGroup"), dest.arguments?.getString("sourceProfile")))
+                                        vm.onEvent(ru.bgtu_voenmeh.zapara.ui.teachers.TeachersEvent.Open(teacherId))
+                                }
+                                val teacherNavigation = rememberCoroutineScope()
+                                TeachersSection(s, vm::onEvent) { date, expectedGroup, expectedProfile ->
+                                    teacherNavigation.launch {
+                                        val valid = withContext(Dispatchers.IO) {
+                                            expectedGroup.isNotBlank() &&
+                                                container.repo.settings().myGroupId == expectedGroup &&
+                                                container.profile.databaseName == expectedProfile
+                                        }
+                                        if (valid && (container.app as? ZaparaApplication)?.container === container)
+                                            nav.openSection(Section.Schedule, date.toString())
+                                    }
+                                }
                                 }
                             }
                             composable(Section.Friends.route) {
                                 ProvideSectionEntry {
                                 val vm: FriendsViewModel = viewModel(factory = FriendsViewModel.factory(container))
                                 val s by vm.state.collectAsStateWithLifecycle()
-                                FriendsSection(s, vm::onEvent)
+                                val encounterNavigation = rememberCoroutineScope()
+                                FriendsSection(s, vm::onEvent) { encounter, expectedGroup, expectedProfile ->
+                                    encounterNavigation.launch {
+                                        val valid = withContext(Dispatchers.IO) {
+                                            expectedGroup.isNotBlank() &&
+                                                container.repo.settings().myGroupId == expectedGroup &&
+                                                container.profile.databaseName == expectedProfile
+                                        }
+                                        if (valid && (container.app as? ZaparaApplication)?.container === container)
+                                            nav.openSection(Section.Schedule, encounter.date.toString(),
+                                                focusTime = encounter.time, focusSubject = encounter.subject)
+                                    }
+                                }
                                 }
                             }
                             composable(Section.Community.route) {
                                 ProvideSectionEntry {
                                 val vm: CommunitiesViewModel = viewModel(factory = CommunitiesViewModel.factory(container))
                                 val s by vm.state.collectAsStateWithLifecycle()
-                                CommunitiesSection(s, vm::onEvent)
+                                CommunitiesSection(s, vm::onEvent) { nav.openSection(Section.Settings, "account") }
                                 }
                             }
                             composable(Section.Chat.route) {
@@ -245,7 +456,7 @@ private fun ZaparaAppBody(
                                 val s by vm.state.collectAsStateWithLifecycle()
                                 InboxSection(s, vm::onEvent, onOpenGroup = { communityId, conversationId ->
                                     nav.openSection(Section.Group, communityId, conversationId)
-                                })
+                                }, onOpenAccount = { nav.openSection(Section.Settings, "account") })
                                 }
                             }
                             composable(Section.Group.pattern, arguments = listOf(
@@ -258,11 +469,18 @@ private fun ZaparaAppBody(
                                 val conversationId = dest.arguments?.getString("conversationId")?.takeIf { it.isNotBlank() }
                                 val vm: GroupViewModel = viewModel(factory = GroupViewModel.factory(container, communityId, conversationId, dest.arguments?.getString("context")))
                                 val s by vm.state.collectAsStateWithLifecycle()
-                                GroupSection(s, vm::onEvent) { id -> nav.navigate("homework?id=$id") }
+                                GroupSection(s, vm::onEvent,
+                                    onReturnToInbox = if (conversationId != null && s.activeConversationId == conversationId &&
+                                        s.activeTopicId == null && !s.showTrusted && s.spacePanel == null) {
+                                        { if (!nav.popBackStack()) nav.openSection(Section.Chat) }
+                                    } else null) { id -> nav.navigate("homework?id=$id") }
                                 }
                             }
-                            composable(Section.Settings.route) {
+                            composable(Section.Settings.pattern, arguments = listOf(
+                                navArgument("section") { type = NavType.StringType; nullable = true; defaultValue = null }
+                            )) { dest ->
                                 ProvideSectionEntry {
+                                val initialSection = dest.arguments?.getString("section")?.takeIf { it == "account" }
                                 val vm: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(container))
                                 val s by vm.state.collectAsStateWithLifecycle()
                                 if (host != null) {
@@ -271,17 +489,19 @@ private fun ZaparaAppBody(
                                     SettingsSection(
                                         s, vm::onEvent, update,
                                         { shellVm.onEvent(ShellEvent.Overlay(ShellOverlay.GroupPicker)) },
-                                        account, accountVm::onEvent
+                                        account, accountVm::onEvent, initialSection
                                     )
                                 } else {
                                     SettingsSection(s, vm::onEvent, update, {
                                         shellVm.onEvent(ShellEvent.Overlay(ShellOverlay.GroupPicker))
-                                    })
+                                    }, initialSection = initialSection)
                                 }
                                 }
                             }
                         }
-                        ToastHost(container.toasts.items, onDismiss = container.toasts::dismiss, Modifier.align(Alignment.BottomCenter))
+                    }
+                        ToastHost(container.toasts.items, onDismiss = container.toasts::dismiss,
+                            Modifier.align(Alignment.BottomCenter), onAction = container.toasts::invokeAction)
                 }
                 if (state.overlay == ShellOverlay.Sections) {
                     SectionsSheet(
@@ -298,7 +518,9 @@ private fun ZaparaAppBody(
                         groups = state.groups,
                         currentId = state.groupId,
                         onPick = { id -> shellVm.onEvent(ShellEvent.PickGroup(id)) },
-                        onDismiss = { shellVm.onEvent(ShellEvent.Overlay(ShellOverlay.None)) }
+                        onDismiss = { shellVm.onEvent(ShellEvent.Overlay(ShellOverlay.None)) },
+                        busy = state.groupPickPending, error = state.groupPickError,
+                        onRetry = { shellVm.onEvent(ShellEvent.RetryGroupPick) }
                     )
                 }
             }

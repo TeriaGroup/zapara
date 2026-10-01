@@ -7,8 +7,8 @@ import org.junit.Test
 import ru.bgtu_voenmeh.zapara.data.communities.GroupTopic
 
 class GroupMessageBrowseTest {
-    private val mine = GroupMessageUi("mine", "Аня", "  Завтра ЛАБА  ", "12.09 10:00", true)
-    private val other = GroupMessageUi("other", "Аня", "Лаба сегодня", "12.09 10:01", false)
+    private val mine = GroupMessageUi("mine", "Аня", "  Завтра ЛАБА  ", "12.09 10:00", true, senderId = "sender-a")
+    private val other = GroupMessageUi("other", "Аня", "Лаба сегодня", "12.09 10:01", false, senderId = "sender-b")
     private val photo = GroupMessageUi("photo", "Борис", "Схема", "12.09 10:02", false, kind = "image")
     private val voice = GroupMessageUi("voice", "Борис", "voice.m4a", "12.09 10:03", false, kind = "voice")
     private val deleted = GroupMessageUi("deleted", "Борис", "Сообщение удалено", "12.09 10:04", false, deleted = true)
@@ -24,6 +24,19 @@ class GroupMessageBrowseTest {
         val rows = listOf(mine, other)
         assertEquals(listOf("mine"), browseMessages(rows, "", MessageAuthor.Mine).map { it.id })
         assertEquals(listOf("other"), browseMessages(rows, "", MessageAuthor.Others).map { it.id })
+    }
+
+    @Test fun senderIdFilterDistinguishesPeopleWithTheSameDisplayName() {
+        val rows = listOf(mine, other.copy(senderId = "sender-a"), other.copy(id = "same-name", senderId = "sender-c"))
+        assertEquals(listOf("mine", "other"), browseMessages(rows, "", senderId = "sender-a").map { it.id })
+        assertEquals(listOf("same-name"), browseMessages(rows, "", senderId = "sender-c").map { it.id })
+        assertEquals(listOf("mine", "other", "same-name"), browseMessages(rows, "").map { it.id })
+    }
+
+    @Test fun searchNormalizesYoAndYeOnBothSides() {
+        val rows = listOf(mine.copy(body = "Всё готово"), other.copy(body = "Все готово"))
+        assertEquals(listOf("mine", "other"), browseMessages(rows, "все").map { it.id })
+        assertEquals(listOf("mine", "other"), browseMessages(rows, "всё").map { it.id })
     }
 
     @Test fun kindFilterGroupsMediaAndKeepsDeletedTombstoneOnlyInUnfilteredView() {

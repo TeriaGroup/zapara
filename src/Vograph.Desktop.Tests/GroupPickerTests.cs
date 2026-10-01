@@ -59,6 +59,21 @@ public class GroupPickerTests
         Assert.Equal(new[] { "09С31", "А863С", "Е452Б", "О3313" }, vm.Filtered.Select(g => g.Name));
     }
 
+    [Fact]
+    public void Manual_group_entry_is_available_only_without_a_catalog()
+    {
+        using var db = TestDb.Create(seedPersonalization: false);
+        var missingCatalog = new GroupPickerDialogViewModel([], null, allowManual: true);
+        Assert.True(missingCatalog.AllowManual);
+        Assert.False(missingCatalog.ConfirmCommand.CanExecute(null));
+        missingCatalog.ManualName = " А863С ";
+        Assert.True(missingCatalog.ConfirmCommand.CanExecute(null));
+        var availableCatalog = new GroupPickerDialogViewModel(Groups, null, allowManual: true);
+        Assert.False(availableCatalog.AllowManual);
+        availableCatalog.ManualName = "опечатка";
+        Assert.False(availableCatalog.ConfirmCommand.CanExecute(null));
+    }
+
     [Theory]
     [InlineData("09С31", "9c", 1, 2)]       // Latin c for Cyrillic С
     [InlineData("А863С", "a86", 0, 3)]
