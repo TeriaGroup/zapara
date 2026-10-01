@@ -32,7 +32,6 @@ public partial class TimetableApiClientTests
     [Theory]
     [InlineData("not a url")]
     [InlineData("http://example.invalid/")]
-    [InlineData("   ")]
     public void Adoption_bad_configuration_is_explicit_not_legacy(string url)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vograph-api-tests", Guid.NewGuid().ToString("N"));
@@ -42,6 +41,19 @@ public partial class TimetableApiClientTests
             Assert.True(app.Api.Configured);
             Assert.NotNull(app.Api.ConfigurationError);
             Assert.DoesNotContain(url, app.Api.ConfigurationError);
+        }
+        finally { CleanupApiDirectory(dir); }
+    }
+
+    [Fact]
+    public void Adoption_blank_address_stays_local()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "vograph-api-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var app = AppServices.Create(dir, () => false, "   ");
+            Assert.False(app.Api.Configured);
+            Assert.Null(app.Api.ConfigurationError);
         }
         finally { CleanupApiDirectory(dir); }
     }

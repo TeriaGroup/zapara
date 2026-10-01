@@ -15,7 +15,7 @@ public class ScheduleLogicTests
     [InlineData(-1, "Вчера")]
     [InlineData(0, "Сегодня")]
     [InlineData(1, "Завтра")]
-    [InlineData(2, "Среда")]     // 09.09
+    [InlineData(2, "Послезавтра")]
     [InlineData(-2, "Суббота")]  // 05.09
     public void Title_Uses_Words_Near_Today_And_Weekday_Elsewhere(int offset, string expected) =>
         Assert.Equal(expected, DayTitles.Title(offset, Mon.AddDays(offset), Ru));
