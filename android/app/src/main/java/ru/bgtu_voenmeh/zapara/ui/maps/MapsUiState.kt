@@ -35,7 +35,10 @@ data class RoutePickerUi(
     val floors: List<Int> = emptyList(),
     val epoch: Long = 0,
     val error: String? = null,
-    val searchCampus: Boolean = true
+    val searchCampus: Boolean = true,
+    val recent: List<RoutePlaceUi> = emptyList(),
+    val selectedFrom: Boolean = false,
+    val selectedTo: Boolean = false
 )
 
 data class MapsUiState(
@@ -95,7 +98,22 @@ internal fun RoutePickerUi.clearFilters(): RoutePickerUi = copy(
     floors = buildings.flatMap(MapsComposer::floors).distinct().sorted(), error = null)
 
 internal fun RoutePickerUi.accepts(pick: MapsEvent.PickPlace): Boolean =
-    epoch == pick.epoch && field == pick.field && items.any { it.id == pick.id }
+    epoch == pick.epoch && field == pick.field &&
+        (items.any { it.id == pick.id } || query.isBlank() && recent.any { it.id == pick.id })
+
+internal fun RoutePickerUi.switchTo(field: RouteField, epoch: Long): RoutePickerUi =
+    copy(field = field, epoch = epoch, error = null)
+
+internal class RecentPlaceIds(private val limit: Int = 5) {
+    private val ids = ArrayDeque<String>()
+    fun remember(id: String) {
+        ids.remove(id)
+        ids.addFirst(id)
+        while (ids.size > limit) ids.removeLast()
+    }
+    fun clear() = ids.clear()
+    fun items(): List<String> = ids.toList()
+}
 
 /** Return to a local manual map after both route endpoints have been cleared. */
 internal fun MapsUiState.clearedRouteDisplay(): MapsUiState = copy(
@@ -154,6 +172,10 @@ sealed interface MapsEvent {
     data class QueryPlaces(val value: String) : MapsEvent
     data class PickPlace(val id: String, val field: RouteField, val epoch: Long) : MapsEvent
     data object ClosePicker : MapsEvent
+    data class SwitchPickerField(val field: RouteField) : MapsEvent
+    data object ClearRecentPlaces : MapsEvent
+    data object PickerCurrentFloor : MapsEvent
+    data class RevealEndpoint(val field: RouteField) : MapsEvent
     data object SwapEnds : MapsEvent
     data class FilterPickerBuilding(val building: String?) : MapsEvent
     data class FilterPickerFloor(val floor: Int?) : MapsEvent

@@ -6,6 +6,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
@@ -31,6 +34,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -185,6 +192,7 @@ fun ZChip(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ZSegmented(items: List<String>, selected: Int, onSelect: (Int) -> Unit, tag: String, modifier: Modifier = Modifier) {
     val c = Zapara.colors
@@ -192,12 +200,17 @@ fun ZSegmented(items: List<String>, selected: Int, onSelect: (Int) -> Unit, tag:
         .clip(RoundedCornerShape(Zapara.radii.control)).background(c.chip).padding(Zapara.space.xs)
     @Composable fun segment(index: Int, label: String, itemModifier: Modifier) {
         val active = index == selected
+        val bring = remember { BringIntoViewRequester() }
+        LaunchedEffect(active, LocalDensity.current.fontScale) {
+            if (active) { withFrameNanos { }; bring.bringIntoView() }
+        }
         val interactions = remember { MutableInteractionSource() }
         val focused by interactions.collectIsFocusedAsState()
         val pressed by interactions.collectIsPressedAsState()
         val restingColor = if (active) c.segThumb else Color.Transparent
         Box(
             itemModifier
+                .bringIntoViewRequester(bring)
                 .sizeIn(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch)
                 .testTag("$tag.$index")
                 .clip(RoundedCornerShape(Zapara.radii.control))
@@ -263,6 +276,7 @@ fun ZBottomSheet(
         onDismissRequest = requestDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
+    CompositionLocalProvider(LocalContentColor provides c.text1) {
     val window = (LocalView.current.parent as DialogWindowProvider).window
     SideEffect {
         window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
@@ -351,6 +365,7 @@ fun ZBottomSheet(
                 if (!inlineFooter) footerContent()
             }
         }
+    }
     }
     }
 }

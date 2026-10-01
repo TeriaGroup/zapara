@@ -91,8 +91,23 @@ class WidgetLaunchInboxTest {
         val generic = WidgetLaunchInbox().accept("homework", null)!!
         assertEquals(WidgetLaunchResolution(null), generic.resolveAfterRestore(
             restore = { error("Generic list must not restore an account") }, profile = { account }))
-        assertEquals("2026-09-23", WidgetLaunchInbox().accept("schedule", "2026-09-23", "old", "old-db")!!.resolve(account)!!.argument)
-        assertEquals("493а", WidgetLaunchInbox().accept("maps", "493а", "old", "old-db")!!.resolve(account)!!.argument)
+        assertEquals("2026-09-23", WidgetLaunchInbox().accept("schedule", "2026-09-23")!!.resolve(account)!!.argument)
+        assertEquals("493а", WidgetLaunchInbox().accept("maps", "493а")!!.resolve(account)!!.argument)
+    }
+
+    @Test fun generic_widget_headers_honor_displayed_profile_without_needing_a_record_id() = runBlocking {
+        listOf("homework" to null, "schedule" to "2026-10-02", "maps" to "493").forEach { (section, argument) ->
+            val launch = WidgetLaunchInbox().accept(section, argument, account.userId, account.databaseName)!!
+            var restored = false
+            val result = launch.resolveAfterRestore({ restored = true }, { account })!!
+            assertTrue(restored)
+            assertEquals(argument, result.argument)
+            assertNull(result.problem)
+            assertEquals(WidgetLaunchScope.of(account), result.scope)
+            assertEquals(WidgetLaunchProblem.OtherProfile, launch.resolve(ProfileDescriptor.guest())!!.problem)
+        }
+        assertEquals(WidgetLaunchProblem.InvalidTarget,
+            WidgetLaunchInbox().accept("homework", null, account.userId, null)!!.resolve(account)!!.problem)
     }
 
     @Test fun homework_positive_local_id_is_preserved_for_scoped_resolution() {

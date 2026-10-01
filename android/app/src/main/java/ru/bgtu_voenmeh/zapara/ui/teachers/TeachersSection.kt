@@ -1,7 +1,6 @@
 package ru.bgtu_voenmeh.zapara.ui.teachers
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,14 +16,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -143,9 +144,10 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
             itemsIndexed(state.list, key = { _, it -> it.id }) { index, row ->
                 ZCard(onClick = { onEvent(TeachersEvent.Open(row.id)) }, tag = "Teachers.Row.${row.id}", modifier = Modifier.fillMaxWidth().appear(index)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                        if (row.isMine) Box(Modifier.size(6.dp).clip(CircleShape).background(c.text1))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                             Text(row.name, style = Zapara.typography.bodyStrong, color = c.text1)
+                            if (row.isMine) ZChip(stringResource(R.string.teacher_my_group),
+                                tag = "Teachers.Mine.${row.id}")
                             Text(row.subjects, style = Zapara.typography.caption, color = c.text2)
                             if (row.department.isNotBlank()) Text(stringResource(R.string.ux60_teacher_department,
                                 row.department), style = Zapara.typography.caption, color = c.text2)
@@ -166,6 +168,10 @@ fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
     val selected = state.selected ?: return
     val c = Zapara.colors
     val copy = LocalUiCopy.current
+    var myGroupOnly by rememberSaveable(selected.id, state.groupId, state.profileName) { mutableStateOf(false) }
+    val visibleDays = if (myGroupOnly) state.details.mapNotNull { day ->
+        day.copy(rows = day.rows.filter { it.isMyGroup }).takeIf { it.rows.isNotEmpty() }
+    } else state.details
     BackHandler { onEvent(TeachersEvent.Back) }
     LazyColumn(Modifier.fillMaxSize().testTag("Teacher.List"),
         contentPadding = PaddingValues(vertical = Zapara.space.s),
@@ -202,9 +208,16 @@ fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
                 "Teacher.Segment", Modifier.padding(horizontal = Zapara.space.l))
         }
         item(key = "count") {
-            Text(stringResource(R.string.teacher_detail_lessons, state.details.sumOf { it.rows.size }),
+            FlowRow(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                Text(stringResource(R.string.teacher_detail_lessons, visibleDays.sumOf { it.rows.size }),
                 style = Zapara.typography.caption, color = c.text2,
-                modifier = Modifier.padding(horizontal = Zapara.space.l))
+                    modifier = Modifier.align(Alignment.CenterVertically))
+                if (state.groupId.isNotBlank()) ZChip(stringResource(R.string.ux100_study_teacher_my_group_only),
+                    selected = myGroupOnly, onClick = { myGroupOnly = !myGroupOnly },
+                    tag = "Teacher.MyGroupOnly")
+            }
         }
         if (state.loadError != null) item(key = "error") {
             ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l), tag = "Teacher.LoadError") {
@@ -214,14 +227,17 @@ fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
         }
         if (state.detailsLoading) item(key = "loading") {
             Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
-        } else if (state.details.isEmpty() && state.loadError == null) item(key = "empty") {
+        } else if (visibleDays.isEmpty() && state.loadError == null) item(key = "empty") {
             ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l), tag = "Teacher.EmptyWeek") {
-                Text(stringResource(R.string.ux30_teacher_no_week), style = Zapara.typography.body, color = c.text2)
+                Text(stringResource(if (myGroupOnly) R.string.ux100_study_teacher_no_my_group
+                    else R.string.ux30_teacher_no_week), style = Zapara.typography.body, color = c.text2)
+                if (myGroupOnly) ZButton(stringResource(R.string.ux100_study_teacher_show_all_groups),
+                    { myGroupOnly = false }, ghost = true, tag = "Teacher.ShowAllGroups")
                 if (state.parityFilter != 0) ZButton(stringResource(R.string.ux30_study_teacher_all_weeks),
                     { onEvent(TeachersEvent.Parity(0)) }, ghost = true, tag = "Teacher.ShowAllWeeks")
             }
         }
-            itemsIndexed(state.details, key = { _, it -> it.dow }) { index, day ->
+            itemsIndexed(visibleDays, key = { _, it -> it.dow }) { index, day ->
                 ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).appear(index), tag = "Teacher.Day.${day.dow}") {
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                         verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {

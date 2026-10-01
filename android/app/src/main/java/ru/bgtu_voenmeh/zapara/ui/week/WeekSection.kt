@@ -12,14 +12,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.constrainHeight
 import ru.bgtu_voenmeh.zapara.R
@@ -27,6 +35,7 @@ import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
+import ru.bgtu_voenmeh.zapara.ui.components.ZTextField
 import ru.bgtu_voenmeh.zapara.ui.schedule.LessonTypeChip
 import ru.bgtu_voenmeh.zapara.ui.shell.LocalShellChrome
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
@@ -47,6 +56,9 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
     val chrome = LocalShellChrome.current
     val c = Zapara.colors
     val largeText = LocalDensity.current.fontScale >= 1.5f
+    var lessonsOnly by rememberSaveable(state.groupId, state.profileName) { mutableStateOf(false) }
+    var query by rememberSaveable(state.groupId, state.profileName) { mutableStateOf("") }
+    val keyboard = LocalSoftwareKeyboardController.current
     Column(Modifier.fillMaxSize()) {
         ZTopBar(stringResource(R.string.nav_week)) { ZButton(stringResource(R.string.nav_schedule), { onOpenDay(state.selectedDate) }, ghost = true, quiet = true) }
         if (!state.loaded) {
@@ -124,19 +136,46 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
             Text(stringResource(R.string.next_week_total, state.days.sumOf { it.rows.size }),
                 style = Zapara.typography.caption, color = c.text2,
                 modifier = Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s))
+            ZTextField(query, { query = it },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l)
+                    .testTag("Week.Search"),
+                placeholder = { Text(stringResource(R.string.ux100_study_week_search)) },
+                singleLine = true, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }))
+            FlowRow(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                ZChip(stringResource(R.string.ux100_study_week_classes_only), selected = lessonsOnly,
+                    onClick = { lessonsOnly = !lessonsOnly }, tag = "Week.ClassesOnly")
+                state.days.firstOrNull { it.rows.isNotEmpty() }?.let { next ->
+                    ZButton(stringResource(R.string.ux100_study_week_open_next),
+                        { onOpenDay(next.date) }, ghost = true, tag = "Week.OpenNextClass")
+                }
+            }
+            val visibleDays = WeekBrowse.filter(state.days, query, lessonsOnly)
             LazyColumn(Modifier.fillMaxSize()
                 .plannerSwipe(state.parity) { direction -> direction.weekIndex(state.parity)?.let { onEvent(WeekEvent.Parity(it)) } }
                 .plannerContentReveal(state.parity), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                if (state.days.isNotEmpty() && state.days.all { it.rows.isEmpty() }) item("empty-week") {
+                if (query.isBlank() && state.days.isNotEmpty() && state.days.all { it.rows.isEmpty() }) item("empty-week") {
                     ZCard(Modifier.fillMaxWidth(), tag = "Week.EmptyWeek") {
                         Text(stringResource(R.string.ux30_study_empty_week),
                             style = Zapara.typography.body, color = c.text2)
+                        if (lessonsOnly) ZButton(stringResource(R.string.ux100_study_week_show_days),
+                            { lessonsOnly = false }, ghost = true, tag = "Week.ShowDays")
                         ZButton(stringResource(R.string.ux30_study_other_week),
                             { onEvent(WeekEvent.Parity(1 - selectedParity)) }, ghost = true,
                             tag = "Week.OtherParity")
                     }
                 }
-                itemsIndexed(state.days, key = { _, it -> it.dow }) { index, day ->
+                if (state.days.isNotEmpty() && visibleDays.isEmpty() && query.isNotBlank()) item("no-search-results") {
+                    ZCard(Modifier.fillMaxWidth(), tag = "Week.NoSearchResults") {
+                        Text(stringResource(R.string.ux100_study_week_no_match),
+                            style = Zapara.typography.body, color = c.text2)
+                        ZButton(stringResource(R.string.ux100_study_week_clear_search),
+                            { query = "" }, ghost = true, tag = "Week.ClearSearch")
+                    }
+                }
+                itemsIndexed(visibleDays, key = { _, it -> it.dow }) { index, day ->
                     ZCard(onClick = { onOpenDay(day.date) }, tag = "Week.Day.${day.dow}", modifier = Modifier.fillMaxWidth().appear(index)) {
                         if (largeText) {
                             Text(day.title, style = Zapara.typography.section, color = c.text1,
@@ -197,6 +236,9 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit, onOpenDay: (Lo
                                             if (stacked) time.height + name.height + gap * 2 else 0)
                                     }
                                 }
+                                if (row.teacher.isNotBlank()) Text(row.teacher,
+                                    style = Zapara.typography.caption, color = c.text2,
+                                    modifier = Modifier.fillMaxWidth())
                             }
                         }
                     }

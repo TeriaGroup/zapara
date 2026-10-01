@@ -98,6 +98,20 @@ class MapsViewModel internal constructor(
                 mapLoads.invalidate()
                 mutable.update { it.copy(picker = null) }
             }
+            is MapsEvent.SwitchPickerField -> if (routingOn()) switchPickerField(event.field)
+            MapsEvent.ClearRecentPlaces -> {
+                recentPlaceIds.clear()
+                mutable.update { it.copy(picker = it.picker?.copy(recent = emptyList())) }
+            }
+            MapsEvent.PickerCurrentFloor -> {
+                val building = mutable.value.building
+                val floor = mutable.value.floor
+                refreshPicker { it.withBuilding(building).copy(floor = floor, searchCampus = false) }
+            }
+            is MapsEvent.RevealEndpoint -> if (routingOn()) launchMap {
+                ensureGraph()
+                node(if (event.field == RouteField.From) fromId else toId)?.let { revealNode(it) }
+            }
             MapsEvent.SwapEnds -> if (routingOn()) launchMap { swapEnds() }
             is MapsEvent.FilterPickerBuilding -> refreshPicker { it.withBuilding(event.building) }
             is MapsEvent.FilterPickerFloor -> refreshPicker { it.copy(floor = event.floor) }
@@ -341,10 +355,20 @@ class MapsViewModel internal constructor(
                 picker = RoutePickerUi(
                     field, "",
                     MapsComposer.pickerItems(allPlaces, "", building, floor),
-                    building, floor, state.buildings, MapsComposer.floors(building), epoch = epoch
+                    building, floor, state.buildings, MapsComposer.floors(building), epoch = epoch,
+                    recent = recentPlaceIds.items().mapNotNull { id -> allPlaces.firstOrNull { it.id == id } },
+                    selectedFrom = fromId != null, selectedTo = toId != null
                 )
             )
         }
+    }
+
+    private fun switchPickerField(field: RouteField) {
+        val current = mutable.value.picker ?: return
+        if (current.field == field) return
+        mapLoads.invalidate()
+        val epoch = ++pickerEpoch
+        mutable.update { it.copy(picker = current.switchTo(field, epoch)) }
     }
 
     private fun refreshPicker(update: (RoutePickerUi) -> RoutePickerUi) {
@@ -397,12 +421,14 @@ class MapsViewModel internal constructor(
             return
         }
         mutable.update { it.copy(picker = null) }
+        rememberPlace(chosen.id)
         applyPlace(chosen.id, event.field)
     }
 
     private suspend fun applyPlace(id: String, field: RouteField) {
         ensureGraph()
         val chosen = node(id) ?: return
+        rememberPlace(chosen.id)
         if (field == RouteField.From) {
             val graphSnapshot = graph
             mapLoads.selectFromPlace(MapFromSelection(fromId, lastEntranceId, prevRoomKey), chosen,
@@ -419,6 +445,12 @@ class MapsViewModel internal constructor(
             destRoomKey = chosen.room ?: chosen.id
         }
         revealNode(chosen)
+    }
+
+    private val recentPlaceIds = RecentPlaceIds()
+
+    private fun rememberPlace(id: String) {
+        recentPlaceIds.remember(id)
     }
 
     private suspend fun swapEnds() {
@@ -525,7 +557,11 @@ class MapsViewModel internal constructor(
     private fun selectStep(id: Int) {
         val current = mutable.value
         val selected = RouteNavigation.select(current, id)
-        if (selected === current) return
+        if (selected === current) {
+            mutable.update { it.copy(stepsOpen = false) }
+            return
+        }
+        mutable.update { it.copy(stepsOpen = false) }
         launchMap {
             applyPlan(selected.building, selected.floor, MapMode.Manual, mutable.value.contextLine, selectionId = id)
         }

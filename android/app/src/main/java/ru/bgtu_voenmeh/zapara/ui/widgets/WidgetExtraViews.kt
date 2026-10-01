@@ -41,7 +41,8 @@ object WidgetExtraViews {
         views.setContentDescription(R.id.widget_wayfinder_root, spoken)
         views.setOnClickPendingIntent(R.id.widget_wayfinder_root, WidgetIntents.open(context, widgetId, 0,
             if (face.opensMap) "maps" else "schedule",
-            if (face.opensMap) face.classroomRaw else face.targetDate?.toString()))
+            if (face.opensMap) face.classroomRaw else face.targetDate?.toString(),
+            ru.bgtu_voenmeh.zapara.ui.shell.WidgetLaunchScope(face.identity.profileId, face.identity.databaseName)))
         return views
     }
 
@@ -82,10 +83,12 @@ object WidgetExtraViews {
             ).filter(String::isNotBlank).joinToString(", ")
             views.setContentDescription(id, spoken)
             views.setOnClickPendingIntent(id, day?.let {
-                WidgetIntents.open(context, widgetId, index + 1, "schedule", it.date.toString())
+                WidgetIntents.open(context, widgetId, index + 1, "schedule", it.date.toString(),
+                    ru.bgtu_voenmeh.zapara.ui.shell.WidgetLaunchScope(snapshot.identity.profileId, snapshot.identity.databaseName))
             })
         }
-        views.setOnClickPendingIntent(R.id.widget_week_root, WidgetIntents.open(context, widgetId, 0, "schedule", null))
+        views.setOnClickPendingIntent(R.id.widget_week_root, WidgetIntents.open(context, widgetId, 0, "schedule", null,
+            ru.bgtu_voenmeh.zapara.ui.shell.WidgetLaunchScope(snapshot.identity.profileId, snapshot.identity.databaseName)))
         return views
     }
 

@@ -20,6 +20,16 @@ import androidx.compose.ui.Alignment
 import ru.bgtu_voenmeh.zapara.ui.components.rememberUiText
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.Role
+import ru.bgtu_voenmeh.zapara.ui.components.ZTextField
+import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
@@ -35,16 +45,40 @@ import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
 fun SectionsSheet(current: Section, onPick: (Section) -> Unit, onDismiss: () -> Unit) {
     val uiText = rememberUiText()
     val c = Zapara.colors
+    var query by rememberSaveable { mutableStateOf("") }
+    val focus = LocalFocusManager.current
     val sectionGroups = listOf(
         uiText(R.string.space_day_167) to listOf(Section.Schedule, Section.Week, Section.Homework, Section.Maps, Section.Teachers, Section.Summary),
         uiText(R.string.space_day_168) to listOf(Section.Group, Section.Chat, Section.Friends, Section.Community),
         uiText(R.string.space_day_169) to listOf(Section.Settings)
     )
+    val titles = Section.entries.associateWith { stringResource(it.title) }
+    val descriptions = mapOf(Section.Friends to stringResource(R.string.ux100_common_description_friends),
+        Section.Group to stringResource(R.string.ux100_common_description_group),
+        Section.Community to stringResource(R.string.ux100_common_description_community),
+        Section.Chat to stringResource(R.string.ux100_common_description_chat))
+    val words = query.trim().lowercase().replace('ё', 'е').split(Regex("\\s+")).filter(String::isNotBlank)
+    val visibleGroups = sectionGroups.map { (name, sections) ->
+        name to sections.filter { item -> words.all { word ->
+            (titles.getValue(item) + " " + descriptions[item].orEmpty()).lowercase().replace('ё', 'е').contains(word) } }
+    }.filter { it.second.isNotEmpty() }
     ZBottomSheet(onDismiss = onDismiss, tag = "Sheet.Sections") {
         Text(stringResource(R.string.sections_title), style = Zapara.typography.section, color = c.text1)
         Spacer(Modifier.height(Zapara.space.s))
+        ZTextField(query, { query = it }, modifier = Modifier.fillMaxWidth().testTag("Sections.Search"),
+            placeholder = { Text(stringResource(R.string.ux100_common_section_search)) }, singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+            trailingIcon = if (query.isNotEmpty()) {{ ZIconButton(R.drawable.ic_x,
+                stringResource(R.string.ux100_common_clear_search), { query = "" }, "Sections.ClearSearch") }} else null)
+        if (query.isEmpty()) ZButton(stringResource(R.string.ux100_common_open_current), onDismiss,
+            ghost = true, tag = "Sections.Current")
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 600.dp).clipToBounds(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-            sectionGroups.forEach { (title, sections) ->
+            if (visibleGroups.isEmpty()) item {
+                Text(stringResource(R.string.ux100_common_section_empty), color = c.text2)
+                ZButton(stringResource(R.string.ux100_common_clear_search), { query = "" }, ghost = true)
+            }
+            visibleGroups.forEach { (title, sections) ->
                 item { Text(title, style = Zapara.typography.caption, color = c.text2, modifier = Modifier.padding(top = Zapara.space.m)) }
                 items(sections, key = { it.route }) { section -> SectionCard(section, current == section) { onPick(section) } }
             }
@@ -60,7 +94,8 @@ private fun SectionCard(section: Section, active: Boolean, onClick: () -> Unit) 
         Modifier
             .fillMaxWidth()
             .testTag(section.tag)
-            .clickable(onClick = onClick)
+            .semantics { selected = active }
+            .clickable(role = Role.Button, onClick = onClick)
     ) {
         Row(
             Modifier.fillMaxWidth(),
@@ -68,12 +103,17 @@ private fun SectionCard(section: Section, active: Boolean, onClick: () -> Unit) 
             horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)
         ) {
             ZIcon(section.icon, stringResource(section.title), Modifier.size(20.dp))
-            Text(
-                stringResource(section.title),
-                style = Zapara.typography.bodyStrong,
-                color = c.text1,
-                modifier = Modifier.weight(1f)
-            )
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(section.title), style = Zapara.typography.bodyStrong, color = c.text1)
+                val description = when(section) {
+                    Section.Friends -> R.string.ux100_common_description_friends
+                    Section.Group -> R.string.ux100_common_description_group
+                    Section.Community -> R.string.ux100_common_description_community
+                    Section.Chat -> R.string.ux100_common_description_chat
+                    else -> null
+                }
+                description?.let { Text(stringResource(it), style = Zapara.typography.caption, color = c.text2) }
+            }
             if (active) {
                 Box(Modifier.size(6.dp).clip(CircleShape).background(c.text1))
             }
@@ -93,13 +133,19 @@ fun GroupPickerSheet(
 ) {
     val uiText = rememberUiText()
     val c = Zapara.colors
-    var query by remember { mutableStateOf("") }
+    val focus = LocalFocusManager.current
+    var query by rememberSaveable(currentId) { mutableStateOf("") }
     val filtered = remember(groups, query) {
-        val q = query.trim()
-        if (q.isEmpty()) groups else groups.filter { it.name.contains(q, ignoreCase = true) || it.id.contains(q, ignoreCase = true) }
+        searchGroups(groups, query)
     }
+    val current = groups.firstOrNull { it.id == currentId }
     ZBottomSheet(onDismiss = onDismiss, tag = "Sheet.GroupPicker", canDismiss = { !busy }) {
         Text(stringResource(R.string.group_pick), style = Zapara.typography.section, color = c.text1)
+        LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false),
+            verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        item("controls") { Column(Modifier.fillMaxWidth()) {
+        current?.let { Text(stringResource(R.string.ux100_common_current_group, it.name),
+            style = Zapara.typography.caption, color = c.text2) }
         if (busy) Text(stringResource(R.string.ux60_group_pick_saving),
             style = Zapara.typography.caption, color = c.text2)
         if (error != null) {
@@ -114,6 +160,11 @@ fun GroupPickerSheet(
             modifier = Modifier.fillMaxWidth().testTag("Picker.Search"),
             placeholder = { Text(stringResource(R.string.group_search), style = Zapara.typography.caption, color = c.text3) },
             singleLine = true,
+            enabled = !busy,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+            trailingIcon = if (query.isNotEmpty()) {{ ZIconButton(R.drawable.ic_x,
+                stringResource(R.string.ux100_common_clear_search), { query = "" }, "Picker.ClearQuery", enabled = !busy) }} else null,
             shape = RoundedCornerShape(Zapara.radii.control),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = c.chip,
@@ -125,10 +176,9 @@ fun GroupPickerSheet(
             )
         )
         Spacer(Modifier.height(Zapara.space.s))
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 420.dp),
-            verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
-        ) {
+        Text(stringResource(R.string.ux100_common_groups_count, filtered.size),
+            style = Zapara.typography.caption, color = c.text2)
+        } }
             if (filtered.isEmpty()) {
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
@@ -152,12 +202,14 @@ fun GroupPickerSheet(
                     }
                 }
             }
-            items(filtered, key = { it.id }) { group ->
+            items(if (query.isBlank() && current != null) listOf(current) + filtered.filterNot { it.id == currentId } else filtered,
+                key = { it.id }) { group ->
                 ZCard(
                     Modifier
                         .fillMaxWidth()
                         .testTag("Picker.Row.${group.id}")
-                        .clickable(enabled = !busy) { onPick(group.id) }
+                        .semantics { selected = group.id == currentId }
+                        .clickable(enabled = !busy, role = Role.Button) { onPick(group.id) }
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         HighlightText(group.name, query, Zapara.typography.bodyStrong, Modifier.weight(1f))

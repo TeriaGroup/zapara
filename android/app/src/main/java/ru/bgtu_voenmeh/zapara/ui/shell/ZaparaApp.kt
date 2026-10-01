@@ -132,7 +132,7 @@ private fun ZaparaAppBody(
             section == Section.Schedule && problem == WidgetLaunchProblem.OtherProfile -> R.string.ux60_widget_other_profile
             section == Section.Schedule && problem == WidgetLaunchProblem.OtherGroup -> R.string.ux60_widget_other_group
             section == Section.Schedule -> R.string.ux60_widget_lesson_unavailable
-            problem == WidgetLaunchProblem.OtherProfile -> R.string.homework_widget_other_profile
+            problem == WidgetLaunchProblem.OtherProfile -> R.string.ux100_common_widget_other_profile
             else -> R.string.homework_widget_unavailable
         }))
     }
@@ -268,7 +268,8 @@ private fun ZaparaAppBody(
                                     }
                                 }
                                 LaunchedEffect(scopedValid, s.pages) {
-                                    if (!scopedValid || rowChecked) return@LaunchedEffect
+                                    if (!scopedValid || rowChecked || focusTime == null ||
+                                        focusSubject == null || widgetGroup == null) return@LaunchedEffect
                                     val day = date?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() } ?: return@LaunchedEffect
                                     val page = s.pages[day] ?: return@LaunchedEffect
                                     rowChecked = true

@@ -28,6 +28,16 @@ fun RouteStepBar(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifier: Mod
                     style = Zapara.typography.bodyStrong, color = Zapara.colors.text1,
                     modifier = Modifier.padding(vertical = Zapara.space.s).testTag("Maps.ActiveStep"))
             }
+            if (step != null) {
+                Text(routeStepText(step), style = Zapara.typography.body, color = Zapara.colors.text1,
+                    modifier = Modifier.testTag("Maps.CompactInstruction"))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    ZButton(stringResource(R.string.maps_step_previous), { onEvent(MapsEvent.PreviousRouteStep) },
+                        enabled = index > 0, ghost = true, tag = "Maps.StepPrevious")
+                    ZButton(stringResource(R.string.maps_step_next), { onEvent(MapsEvent.NextRouteStep) },
+                        enabled = index < steps.lastIndex, ghost = true, tag = "Maps.StepNext")
+                }
+            }
             RoutePlanReturn(state, onEvent)
             RoutePresentationProblems(state)
             if (state.routeLoading) Text(stringResource(R.string.maps_route_loading), color = Zapara.colors.text1)

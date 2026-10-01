@@ -45,12 +45,20 @@ object WidgetIntents {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
-    fun open(context: Context, widgetId: Int, slot: Int, section: String, argument: String?): PendingIntent {
+    fun open(context: Context, widgetId: Int, slot: Int, section: String, argument: String?,
+        scope: WidgetLaunchScope? = null): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
-            data = Uri.parse("zapara-widget://open/$widgetId/$slot")
+            data = Uri.Builder().scheme("zapara-widget").authority("open")
+                .appendPath(widgetId.toString()).appendPath(slot.toString())
+                .appendQueryParameter("section", section).appendQueryParameter("argument", argument)
+                .apply { scope?.let { appendQueryParameter("profile", it.profileId); appendQueryParameter("database", it.databaseName) } }.build()
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(MainActivity.SECTION_EXTRA, section)
             putExtra(MainActivity.ARGUMENT_EXTRA, argument)
+            scope?.let {
+                putExtra(MainActivity.WIDGET_PROFILE_EXTRA, it.profileId)
+                putExtra(MainActivity.WIDGET_DATABASE_EXTRA, it.databaseName)
+            }
         }
         return PendingIntent.getActivity(context, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)

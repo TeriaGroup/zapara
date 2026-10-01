@@ -388,6 +388,17 @@ private fun MapsRouteCard(state: MapsUiState, onEvent: (MapsEvent) -> Unit, comp
                     }
                     if (expanded) RouteMeta(state, onEvent)
                 }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                    verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                    if (state.canSwap) ZButton(stringResource(R.string.maps_swap),
+                        { onEvent(MapsEvent.SwapEnds) }, ghost = true, tag = "Maps.SwapDirect")
+                    if (state.fromLabel.isNotBlank()) ZButton(stringResource(R.string.ux100_platform_show_start),
+                        { onEvent(MapsEvent.RevealEndpoint(RouteField.From)) }, ghost = true, tag = "Maps.ShowFrom")
+                    if (state.toLabel.isNotBlank()) ZButton(stringResource(R.string.ux100_platform_show_destination),
+                        { onEvent(MapsEvent.RevealEndpoint(RouteField.To)) }, ghost = true, tag = "Maps.ShowTo")
+                    if (state.routeFailure != null) ZButton(stringResource(R.string.maps_retry),
+                        { onEvent(MapsEvent.RetryMaps) }, ghost = true, tag = "Maps.RetryRouteCard")
+                }
                 if (expanded) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                     if (state.fromLabel.isNotBlank()) ZButton(stringResource(R.string.ux30_platform_clear_start),
                         { onEvent(MapsEvent.ClearEndpoint(RouteField.From)) }, ghost = true, tag = "Maps.ClearFrom")

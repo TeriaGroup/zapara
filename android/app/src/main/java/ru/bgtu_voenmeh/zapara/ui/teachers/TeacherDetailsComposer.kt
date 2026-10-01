@@ -44,7 +44,7 @@ object TeacherDetailsComposer {
                 title = Parity.dayNumberToTitle(dow),
                 rows = dayLessons.sortedBy { it.timeStart }.map { lesson ->
                     TeacherRowLesson(
-                        time = lesson.timeStart,
+                        time = listOf(lesson.timeStart, lesson.timeEnd).filter(String::isNotBlank).joinToString("–"),
                         subject = LessonFormat.stripType(lesson.disciplineRaw.ifBlank { lesson.subjectRaw }, lesson.typeRaw),
                         groups = lesson.groups.joinToString(", ") { it.number },
                         room = LessonFormat.roomLabel(lesson.roomRaw, lesson.buildingRaw, lesson.classroomRaw, copy),

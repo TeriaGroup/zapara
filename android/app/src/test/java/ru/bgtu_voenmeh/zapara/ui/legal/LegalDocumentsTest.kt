@@ -7,6 +7,15 @@ import org.junit.Test
 import java.io.File
 
 class LegalDocumentsTest {
+    @Test fun search_matches_all_words_across_each_paragraph_and_treats_yo_as_e() {
+        val body = "Первый абзац про карту.\n\nВторой абзац про учётную запись.\n\nЁжик и запись."
+        assertEquals(listOf("Второй абзац про учётную запись."),
+            LegalDocuments.matchingParagraphs(body, "  ЗАПИСЬ  второй "))
+        assertEquals(listOf("Ёжик и запись."), LegalDocuments.matchingParagraphs(body, "ежик"))
+        assertEquals(3, LegalDocuments.matchingParagraphs(body, "  ").size)
+        assertTrue(LegalDocuments.matchingParagraphs(body, "несуществующее").isEmpty())
+    }
+
     @Test fun both_documents_are_the_texts_the_account_entry_shows() {
         val legal = File("src/main").resolve("../../../../legal").canonicalFile
         fun open(name: String) = File(legal, name).inputStream()

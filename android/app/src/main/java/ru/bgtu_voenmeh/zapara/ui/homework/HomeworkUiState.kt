@@ -68,6 +68,10 @@ data class HomeworkUiState(
     val guest: Boolean = false,
     val browseQuery: String = "",
     val browseFilter: HomeworkCompletionFilter = HomeworkCompletionFilter.Active,
+    val deadlineFilter: HomeworkDeadlineFilter = HomeworkDeadlineFilter.All,
+    val originFilter: HomeworkOriginFilter = HomeworkOriginFilter.All,
+    val withFilesOnly: Boolean = false,
+    val sortBySubject: Boolean = false,
     val undoDone: HomeworkUndoDone? = null,
     val undoDoneBusy: Boolean = false,
     val loadError: String? = null,
@@ -81,10 +85,14 @@ data class HomeworkUiState(
 )
 
 fun HomeworkUiState.resetBrowse(): HomeworkUiState =
-    copy(browseQuery = "", browseFilter = HomeworkCompletionFilter.All)
+    copy(browseQuery = "", browseFilter = HomeworkCompletionFilter.All,
+        deadlineFilter = HomeworkDeadlineFilter.All, originFilter = HomeworkOriginFilter.All,
+        withFilesOnly = false, sortBySubject = false)
 
 fun HomeworkUiState.forGroupChange(): HomeworkUiState =
-    copy(browseQuery = "", browseFilter = HomeworkCompletionFilter.Active, undoDone = null, undoDoneBusy = false)
+    copy(browseQuery = "", browseFilter = HomeworkCompletionFilter.Active,
+        deadlineFilter = HomeworkDeadlineFilter.All, originFilter = HomeworkOriginFilter.All,
+        withFilesOnly = false, sortBySubject = false, undoDone = null, undoDoneBusy = false)
 
 internal enum class HomeworkEditDecision { Open, AlreadyOpen, ReplacePristine, Blocked }
 
@@ -116,6 +124,10 @@ sealed interface HomeworkEvent {
     data class Query(val value: String) : HomeworkEvent
     data class BrowseQuery(val value: String) : HomeworkEvent
     data class BrowseFilter(val value: HomeworkCompletionFilter) : HomeworkEvent
+    data class DeadlineFilter(val value: HomeworkDeadlineFilter) : HomeworkEvent
+    data class OriginFilter(val value: HomeworkOriginFilter) : HomeworkEvent
+    data class WithFilesOnly(val value: Boolean) : HomeworkEvent
+    data class SortBySubject(val value: Boolean) : HomeworkEvent
     data object BrowseReset : HomeworkEvent
     data object UndoDone : HomeworkEvent
     data class PickSubject(val raw: String) : HomeworkEvent
@@ -135,6 +147,8 @@ sealed interface HomeworkEvent {
     data object ConfirmDelete : HomeworkEvent
     data object CancelDelete : HomeworkEvent
     data class ToggleGroup(val status: GroupStatus) : HomeworkEvent
+    data object ExpandGroups : HomeworkEvent
+    data object CollapseGroups : HomeworkEvent
     data class Attach(val kind: String, val uri: Uri) : HomeworkEvent
     data class RemoveFile(val id: String) : HomeworkEvent
     data class OpenFile(val homeworkId: Long, val fileId: String) : HomeworkEvent

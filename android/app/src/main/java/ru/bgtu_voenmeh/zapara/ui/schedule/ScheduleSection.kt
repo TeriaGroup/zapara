@@ -165,7 +165,12 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit,
             Text(lesson.name, style = Zapara.typography.section)
             when (state.subjectRowsStatus) {
                 SubjectRowsStatus.Loading -> Text(stringResource(R.string.schedule_subject_homework_loading), style = Zapara.typography.body, modifier = Modifier.testTag("Schedule.SubjectHomework.Loading"))
-                SubjectRowsStatus.Failed -> Text(stringResource(R.string.schedule_subject_homework_failed), style = Zapara.typography.body, modifier = Modifier.testTag("Schedule.SubjectHomework.Failed"))
+                SubjectRowsStatus.Failed -> {
+                    Text(stringResource(R.string.schedule_subject_homework_failed), style = Zapara.typography.body,
+                        modifier = Modifier.testTag("Schedule.SubjectHomework.Failed"))
+                    ZButton(stringResource(R.string.repeat), { onEvent(ScheduleEvent.SubjectHomework(lesson)) },
+                        ghost = true, tag = "Schedule.SubjectHomework.Retry")
+                }
                 SubjectRowsStatus.Ready -> if (state.subjectRows.isEmpty()) Text(stringResource(R.string.schedule_subject_homework_empty), style = Zapara.typography.body, modifier = Modifier.testTag("Schedule.SubjectHomework.Empty"))
             }
             state.subjectRows.forEach { row ->
@@ -227,6 +232,16 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
             else if (page.lessons.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                 Text(pluralStringResource(R.plurals.schedule_pair_count, page.lessons.size, page.lessons.size), modifier = Modifier.align(Alignment.CenterVertically), style = Zapara.typography.section, color = Zapara.colors.text1)
                 ZChip("${page.lessons.minOf { it.timeStart }}–${page.lessons.maxOf { it.timeEnd }}")
+            }
+            if (page.deadlines.isNotEmpty() || featured != null) FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                if (featured != null) ZButton(stringResource(R.string.ux100_study_jump_current), {
+                    scrollScope.launch { list.animateScrollToItem(page.lessons.indexOf(featured) + 1) }
+                }, ghost = true, tag = "Schedule.JumpCurrent")
+                if (page.deadlines.isNotEmpty()) ZButton(stringResource(R.string.ux100_study_jump_deadlines), {
+                    scrollScope.launch { list.animateScrollToItem(page.lessons.size + 1) }
+                }, ghost = true, tag = "Schedule.JumpDeadlines")
             }
             }
             if (page.lessons.isEmpty() && page.dataState == null) {
@@ -299,7 +314,18 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
             } else ZCard(Modifier.fillMaxWidth(), onClick = { onEvent(ScheduleEvent.LongPress(lesson)) }) {
                 Text("${lesson.timeStart}–${lesson.timeEnd} · ${lesson.type}", style = Zapara.typography.caption, color = Zapara.colors.text2)
                 Text(lesson.name, style = Zapara.typography.bodyStrong)
-                Text("${lesson.room} · ${lesson.teacher}", style = Zapara.typography.caption, color = Zapara.colors.text2)
+                val placeAndTeacher = listOf(lesson.room, lesson.teacher).filter(String::isNotBlank).joinToString(" · ")
+                if (placeAndTeacher.isNotBlank()) Text(placeAndTeacher,
+                    style = Zapara.typography.caption, color = Zapara.colors.text2)
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                    verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                    ZButton(uiText(R.string.space_day_21), { onEvent(ScheduleEvent.SubjectHomework(lesson)) },
+                        ghost = true, leadingIcon = R.drawable.ic_homework,
+                        tag = "Schedule.Homework.${lesson.index}.$index")
+                    if (lesson.classroomRaw.isNotBlank()) ZButton(uiText(R.string.space_day_20),
+                        { onOpenMap(lesson.classroomRaw) }, ghost = true, leadingIcon = R.drawable.ic_map,
+                        tag = "Schedule.Map.${lesson.index}.$index")
+                }
             }
         }
         if (page.deadlines.isNotEmpty()) {

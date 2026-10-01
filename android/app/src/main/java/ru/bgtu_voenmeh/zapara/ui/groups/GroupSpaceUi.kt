@@ -56,6 +56,7 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
 @Composable fun GroupSpaceManagement(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
     val uiText = rememberUiText()
     val panel = state.spacePanel ?: return
+    var managementQuery by rememberSaveable(state.communityId, panel) { mutableStateOf("") }
     val close = { dispatch(onEvent, GroupSpaceAction.Panel(null)) }
     var selectedRoleId by rememberSaveable(state.communityId) { mutableStateOf<String?>(null) }
     var roleDirty by remember(state.communityId, panel) { mutableStateOf(false) }
@@ -70,13 +71,17 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
         Text(when(panel) { "roles" -> uiText(R.string.space_day_62); "categories" -> uiText(R.string.space_day_63); "archive" -> uiText(R.string.space_day_64); "access" -> uiText(R.string.space_day_65); "preview" -> uiText(R.string.space_day_66); else -> uiText(R.string.space_day_67) }, style = Zapara.typography.section)
         state.spaceError?.let { Text(it, color = Zapara.colors.bad, style = Zapara.typography.body) }
         if (state.channelBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (panel in setOf("archive", "categories", "preview")) Field(stringResource(when (panel) {
+            "archive" -> R.string.ux100_chat_archive_search; "categories" -> R.string.ux100_chat_category_search
+            else -> R.string.ux100_chat_preview_search
+        }), managementQuery, { managementQuery = it })
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 600.dp), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             when(panel) {
                 "categories" -> {
                     item { CategoryEditor(null, state, onEvent) }
-                    items(state.space?.categories.orEmpty().sortedBy { it.position }, key = { it.categoryId }) { CategoryEditor(it, state, onEvent) }
+                    items(state.space?.categories.orEmpty().filter { managementQuery.isBlank() || it.title.contains(managementQuery.trim(), true) }.sortedBy { it.position }, key = { it.categoryId }) { CategoryEditor(it, state, onEvent) }
                 }
-                "archive" -> items(state.archived, key = { it.topicId ?: "general" }) { topic ->
+                "archive" -> items(state.archived.filter { managementQuery.isBlank() || (it.title + " " + it.description).contains(managementQuery.trim(), true) }, key = { it.topicId ?: "general" }) { topic ->
                     ZCard(Modifier.fillMaxWidth(),onClick={ topic.topicId?.let { onEvent(GroupEvent.OpenArchived(it)) } }) { Text(topic.title, style = Zapara.typography.bodyStrong); Text(topic.description, style = Zapara.typography.caption)
                         ZButton(uiText(R.string.space_day_68), { dispatch(onEvent, GroupSpaceAction.Archive(topic, false)) }, enabled = !state.channelBusy && GroupActions.canManageTopic(state,topic), ghost = true) }
                 }
@@ -119,7 +124,7 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
                 "preview" -> {
                     item { Text(uiText(R.string.space_day_72), style = Zapara.typography.caption)
                         if (state.preview != null) ZButton(uiText(R.string.space_day_73), { dispatch(onEvent, GroupSpaceAction.EndPreview) }, ghost = true) }
-                    items(state.people, key = { it.id }) { person -> ZButton("${person.name} · ${officialRoleTitle(person.role)}", { dispatch(onEvent, GroupSpaceAction.Preview(person.id, null)) }, enabled = !state.channelBusy, ghost = true) }
+                    items(browsePeople(state.people, managementQuery), key = { it.id }) { person -> ZButton("${person.name} · ${officialRoleTitle(person.role)}", { dispatch(onEvent, GroupSpaceAction.Preview(person.id, null)) }, enabled = !state.channelBusy, ghost = true) }
                     items(state.desk?.roles.orEmpty(), key = { it.roleId }) { role -> ZButton(role.name, { dispatch(onEvent, GroupSpaceAction.Preview(null, role.roleId)) }, enabled = !state.channelBusy, ghost = true) }
                 }
                 "audit" -> items(state.audit, key = { it.eventId }) { event -> ZCard(Modifier.fillMaxWidth()) { Text(event.action, style = Zapara.typography.bodyStrong); Text(uiText(R.string.space_day_75, (event.createdAt.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))).toString(), (state.people.firstOrNull { it.id == event.actorId }?.name ?: uiText(R.string.space_day_74)).toString()), style = Zapara.typography.caption) } }
@@ -149,6 +154,10 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
         if (category != null && category.revision != initialRevision) ZButton(uiText(R.string.space_day_reload_changes), { title = category.title; position = category.position.toString(); initialRevision = category.revision }, ghost = true)
         Field(if (category == null) uiText(R.string.space_day_76) else uiText(R.string.space_day_77), title, { title = it.take(80) })
         Field(uiText(R.string.space_day_78), position, { position = it })
+        if (category != null && (title != category.title || position != category.position.toString()))
+            ZButton(stringResource(R.string.ux100_chat_category_reset), {
+                title = category.title; position = category.position.toString(); initialRevision = category.revision
+            }, enabled = !state.channelBusy, ghost = true)
         ZButton(uiText(R.string.space_day_79), { dispatch(onEvent, GroupSpaceAction.Category(category?.categoryId, title.trim(), position.toInt(), initialRevision)) }, enabled = !state.channelBusy && title.trim().length >= 2 && position.toIntOrNull() != null, busy = state.channelBusy)
         if (category != null) ZButton(uiText(R.string.space_day_80), { confirmingDelete = true },
             enabled = !state.channelBusy && (state.desk?.headman == true || "channels" in state.desk?.mine.orEmpty()), ghost = true)
@@ -216,6 +225,11 @@ private fun parseDeadline(value: String): Instant? = if (value.isBlank()) null e
                     position = value
                     onDirtyChange(name != role.name || icon != role.icon || position != role.position.toString())
                 }, canSettings)
+                if (name != role.name || icon != role.icon || position != role.position.toString())
+                    ZButton(stringResource(R.string.ux100_chat_role_reset), {
+                        name = role.name; icon = role.icon; position = role.position.toString(); initialRevision = role.revision
+                        onDirtyChange(false)
+                    }, enabled = !state.channelBusy, ghost = true)
                 Text(uiText(R.string.group_roles_level_hint), style = Zapara.typography.caption)
                 val maxPosition = RoleManagementPolicy.maximumAssignablePosition(desk, state.people)
                 val parsedPosition = position.toIntOrNull()
@@ -309,6 +323,8 @@ fun powerResource(power: String): Int = when(power) {
     var revisions by rememberSaveable(access.topicId, stateSaver = RevisionGuard.Saver) { mutableStateOf(RevisionGuard(access.revision)) }
     LaunchedEffect(access.revision) { revisions = revisions.observed(access.revision) }
     var advanced by rememberSaveable(access.topicId) { mutableStateOf(false) }
+    var affectedQuery by rememberSaveable(access.topicId) { mutableStateOf("") }
+    var changedOnly by rememberSaveable(access.topicId) { mutableStateOf(false) }
     var readChoice by rememberSaveable(access.topicId) { mutableStateOf<String?>(null) }
     var postChoice by rememberSaveable(access.topicId) { mutableStateOf<String?>(null) }
     fun change(power: String, value: String) {
@@ -351,6 +367,9 @@ fun powerResource(power: String): Int = when(power) {
             val selected = rules.firstOrNull { it.roleId == roleId && it.power == power }?.state ?: "inherit"
             FlowRow { listOf("inherit" to R.string.space_day_112, "allow" to R.string.space_day_113, "deny" to R.string.space_day_114).forEach { (value,label) -> ZChip(uiText(label), selected = value == selected, onClick = { change(power,value) }) } }
         }
+        if (rules != GroupAccessPresets.topicRules(access.rules)) ZButton(stringResource(R.string.ux100_chat_access_reset), {
+            rules = GroupAccessPresets.topicRules(access.rules); readChoice = null; postChoice = null; revisions = revisions.reload()
+        }, enabled = !state.channelBusy, ghost = true)
         ZButton(uiText(R.string.review_reload_access), { readChoice=null; postChoice=null; dispatch(onEvent,GroupSpaceAction.LoadAccess(access.topicId)) },enabled=!state.channelBusy,ghost=true)
         ZButton(uiText(R.string.review_access_preview), { dispatch(onEvent, GroupSpaceAction.PreviewAccess(access.topicId, rules, revisions.base)) }, enabled = !state.channelBusy && !revisions.conflict, busy = state.channelBusy)
         if (approval != null) {
@@ -358,7 +377,15 @@ fun powerResource(power: String): Int = when(power) {
             val ordinary = approval.response.participants.firstOrNull { p -> state.people.firstOrNull { it.id == p.userId }?.role == "member" && state.desk?.grants.orEmpty().none { it.userId == p.userId } }
             if (ordinary == null) Text(uiText(R.string.review_no_ordinary_member), style = Zapara.typography.caption)
             else Text(uiText(R.string.review_ordinary_member, ordinary.afterPermissions.joinToString { power -> uiText(powerResource(power)) }), style = Zapara.typography.caption)
-            approval.response.participants.forEach { person ->
+            Field(stringResource(R.string.ux100_chat_affected_search), affectedQuery, { affectedQuery = it })
+            ZChip(stringResource(R.string.ux100_chat_affected_changed), selected = changedOnly, onClick = { changedOnly = !changedOnly })
+            val shownParticipants = approval.response.participants.filter { person ->
+                val member = state.people.firstOrNull { it.id == person.userId }
+                (affectedQuery.isBlank() || listOf(member?.name.orEmpty(), member?.handle.orEmpty()).any { it.contains(affectedQuery.trim(), true) }) &&
+                    (!changedOnly || person.beforePermissions.toSet() != person.afterPermissions.toSet())
+            }
+            Text(stringResource(R.string.ux100_chat_results, shownParticipants.size, approval.response.participants.size), style = Zapara.typography.caption)
+            shownParticipants.forEach { person ->
                 var details by rememberSaveable(access.topicId, person.userId) { mutableStateOf(false) }
                 val name = state.people.firstOrNull { it.id == person.userId }?.name ?: uiText(R.string.space_day_148)
                 ZButton(name, { details = !details }, ghost = true, quiet = true)
@@ -380,13 +407,31 @@ fun powerResource(power: String): Int = when(power) {
     val topic = GroupActions.topic(state, state.activeTopicId)
     val permissions = topic?.permissions.orEmpty()
     var completedFilter by rememberSaveable(state.activeTopicId) { mutableStateOf(false) }
+    var formQuery by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf("") }
+    var formFilter by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf("all") }
     LazyColumn(modifier, contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         item { state.spaceError?.let { Text(it, color = Zapara.colors.bad) }; if (state.channelBusy) LinearProgressIndicator(Modifier.fillMaxWidth()); ZButton(uiText(R.string.space_day_116), { dispatch(onEvent, GroupSpaceAction.ReloadContent) }, enabled = !state.channelBusy, ghost = true) }
         when(state.activeChannelKind) {
             "forms" -> {
                 if ("forms" in permissions && state.preview == null) item { FormBuilder(state, onEvent) }
-                items(state.forms, key = { it.formId }) { FormCard(it, state, onEvent) }
-                if (state.forms.isEmpty()) item { Text(uiText(R.string.space_day_117), style = Zapara.typography.body) }
+                val shown = state.forms.filter { form ->
+                    (formQuery.isBlank() || (form.title + " " + form.description).contains(formQuery.trim(), ignoreCase = true)) &&
+                        when (formFilter) { "unanswered" -> form.ownResponse == null && form.canRespond
+                            "answered" -> form.ownResponse != null; "closed" -> !form.canRespond; else -> true }
+                }
+                item {
+                    Field(stringResource(R.string.ux100_chat_form_search), formQuery, { formQuery = it })
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                        listOf("all" to R.string.ux100_chat_form_all, "unanswered" to R.string.ux100_chat_form_unanswered,
+                            "answered" to R.string.ux100_chat_form_answered, "closed" to R.string.ux100_chat_form_closed).forEach { (value, label) ->
+                            ZChip(stringResource(label), selected = formFilter == value, onClick = { formFilter = value })
+                        }
+                    }
+                    Text(stringResource(R.string.ux100_chat_results, shown.size, state.forms.size), style = Zapara.typography.caption)
+                    if (shown.isEmpty()) Text(stringResource(R.string.ux100_chat_filter_empty), style = Zapara.typography.body)
+                    if (formQuery.isNotBlank() || formFilter != "all") ZButton(stringResource(R.string.ux100_chat_reset), { formQuery = ""; formFilter = "all" }, ghost = true)
+                }
+                items(shown, key = { it.formId }) { FormCard(it, state, onEvent) }
             }
             "homework" -> {
                 if ("homework" in permissions && state.preview == null) item { SharedHomeworkEditor(state, onEvent) }
@@ -443,6 +488,8 @@ fun powerResource(power: String): Int = when(power) {
 
 @Composable private fun FormBuilder(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
     val uiText = rememberUiText()
+    var preview by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(false) }
+    var discard by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(false) }
     var open by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(false) }
     var title by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf("") }
     var description by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf("") }
@@ -453,10 +500,13 @@ fun powerResource(power: String): Int = when(power) {
     val initialVersion = remember(state.communityId, state.activeTopicId) { state.formCreateVersion }
     LaunchedEffect(state.formCreateVersion) { if (state.formCreateVersion > initialVersion) { open = false; title = ""; description = ""; deadline = ""; questions = listOf(GroupFormQuestion(UUID.randomUUID().toString(), "", "shortText", true, emptyList())) } }
     ZCard(Modifier.fillMaxWidth()) {
-        ZButton(uiText(R.string.space_day_123), { open = !open }, ghost = true)
+        ZButton(uiText(R.string.space_day_123), { open = !open }, enabled = !state.channelBusy, ghost = true)
         if (open) {
-            Field(uiText(R.string.space_day_124), title, { title = it.take(120) }); Field(uiText(R.string.space_day_125), description, { description = it.take(2000) }); Field(uiText(R.string.space_day_126), deadline, { deadline = it })
-            Row(verticalAlignment = Alignment.CenterVertically) { Switch(anonymous, { anonymous = it }); Text(uiText(R.string.space_day_127)) }
+            Field(uiText(R.string.space_day_124), title, { title = it.take(120) }, !state.channelBusy)
+            Field(uiText(R.string.space_day_125), description, { description = it.take(2000) }, !state.channelBusy)
+            FormDeadlineField(deadline, { deadline = it }, !state.channelBusy)
+            Text(stringResource(R.string.ux100_chat_question_count, questions.size), style = Zapara.typography.caption)
+            Row(verticalAlignment = Alignment.CenterVertically) { Switch(anonymous, { anonymous = it }, enabled = !state.channelBusy); Text(uiText(R.string.space_day_127)) }
             questions.forEachIndexed { index, question -> key(question.questionId) {
                 Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                     ZButton(stringResource(R.string.next_question_up), { questions = moveQuestion(questions, index, -1) },
@@ -464,17 +514,23 @@ fun powerResource(power: String): Int = when(power) {
                     ZButton(stringResource(R.string.next_question_down), { questions = moveQuestion(questions, index, 1) },
                         enabled = index < questions.lastIndex && !state.channelBusy, ghost = true)
                 }
-                Field(uiText(R.string.space_day_128, (index + 1).toString()), question.title, { value -> questions = questions.mapIndexed { i, q -> if (i == index) q.copy(title = value.take(400)) else q } })
-                FlowRow { listOf("shortText" to uiText(R.string.space_day_129), "longText" to uiText(R.string.space_day_130), "singleChoice" to uiText(R.string.space_day_131), "multipleChoice" to uiText(R.string.space_day_132)).forEach { (kind, label) -> ZChip(label, selected = question.kind == kind, onClick = { questions = questions.mapIndexed { i, q -> if (i == index) q.copy(kind = kind) else q } }) } }
-                Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(question.required, { value -> questions = questions.mapIndexed { i, q -> if (i == index) q.copy(required = value) else q } }); Text(uiText(R.string.space_day_133)) }
-                if (question.kind.endsWith("Choice")) Field(uiText(R.string.space_day_134), question.options.joinToString("\n"), { value -> questions = questions.mapIndexed { i, q -> if (i == index) q.copy(options = value.split("\n")) else q } })
+                Field(uiText(R.string.space_day_128, (index + 1).toString()), question.title, { value -> questions = questions.mapIndexed { i, q -> if (i == index) q.copy(title = value.take(400)) else q } }, !state.channelBusy)
+                FlowRow { listOf("shortText" to uiText(R.string.space_day_129), "longText" to uiText(R.string.space_day_130), "singleChoice" to uiText(R.string.space_day_131), "multipleChoice" to uiText(R.string.space_day_132)).forEach { (kind, label) -> ZChip(label, selected = question.kind == kind, onClick = { if (!state.channelBusy) questions = questions.mapIndexed { i, q -> if (i == index) q.copy(kind = kind) else q } }) } }
+                Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(question.required, { value -> questions = questions.mapIndexed { i, q -> if (i == index) q.copy(required = value) else q } }, enabled = !state.channelBusy); Text(uiText(R.string.space_day_133)) }
+                if (question.kind.endsWith("Choice")) Field(uiText(R.string.space_day_134), question.options.joinToString("\n"), { value -> questions = questions.mapIndexed { i, q -> if (i == index) q.copy(options = value.split("\n")) else q } }, !state.channelBusy)
+                val questionProblem = GroupFormDraft(uiText(R.string.ux100_chat_question_validation), "", null, false, listOf(question)).problem(Instant.now())
+                if (questionProblem != null) Text(stringResource(R.string.ux100_chat_question_problem, index + 1),
+                    style = Zapara.typography.caption, color = Zapara.colors.warn)
+                ZButton(stringResource(R.string.ux100_chat_duplicate_question), {
+                    questions = duplicateFormQuestion(questions, question.questionId, UUID.randomUUID().toString())
+                }, enabled = questions.size < 30 && !state.channelBusy, ghost = true)
                 if (questions.size > 1) ZButton(uiText(R.string.space_day_135), {
                     if (questionHasDraft(question)) deletingQuestion = question.questionId
                     else questions = questions.filterNot { it.questionId == question.questionId }
                 }, enabled = !state.channelBusy, ghost = true)
             }
             }
-            ZButton(uiText(R.string.space_day_136), { questions = questions + GroupFormQuestion(UUID.randomUUID().toString(), "", "shortText", true, emptyList()) }, enabled = questions.size < 30, ghost = true)
+            ZButton(uiText(R.string.space_day_136), { questions = questions + GroupFormQuestion(UUID.randomUUID().toString(), "", "shortText", true, emptyList()) }, enabled = questions.size < 30 && !state.channelBusy, ghost = true)
             val parsed = runCatching { parseDeadline(deadline) }
             val payload = GroupFormDraft(title, description, parsed.getOrNull(), anonymous, questions).normalized()
             val problem = if (parsed.isFailure) "deadline" else payload.problem(Instant.now())
@@ -483,10 +539,35 @@ fun powerResource(power: String): Int = when(power) {
                 "questions" -> R.string.review_form_questions; "question" -> R.string.review_form_question; "options" -> R.string.review_form_options; else -> R.string.review_form_size
             }), style = Zapara.typography.caption, color = Zapara.colors.warn)
             val valid = problem == null
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZButton(stringResource(R.string.ux100_chat_preview), { preview = true }, enabled = valid && !state.channelBusy, ghost = true)
+                ZButton(stringResource(R.string.ux100_chat_discard_form), { discard = true }, enabled = !state.channelBusy, ghost = true)
+            }
             ZButton(uiText(R.string.space_day_137), { dispatch(onEvent, GroupSpaceAction.CreateForm(title, description, parseDeadline(deadline), anonymous, payload.questions)) }, enabled = valid && !state.channelBusy, busy = state.channelBusy)
             Text(uiText(R.string.space_day_138), style = Zapara.typography.caption)
         }
     }
+    if (preview) ZBottomSheet(onDismiss = { preview = false }, tag = "Group.FormPreview", scrollable = true) {
+        Text(title, style = Zapara.typography.section)
+        Text(description, style = Zapara.typography.body)
+        Text(deadline.ifBlank { uiText(R.string.space_day_61) }, style = Zapara.typography.caption)
+        Text(uiText(if (anonymous) R.string.review_form_anonymous_audience else R.string.review_form_named_audience), style = Zapara.typography.caption)
+        questions.forEachIndexed { index, question ->
+            Text("${index + 1}. ${question.title}", style = Zapara.typography.bodyStrong)
+            Text(stringResource(if (question.required) R.string.ux100_chat_form_question_required else R.string.ux100_chat_form_question_optional), style = Zapara.typography.caption)
+            question.options.filter(String::isNotBlank).forEach { Text("○ $it", style = Zapara.typography.body) }
+        }
+        ZButton(stringResource(R.string.ux100_chat_preview_close), { preview = false })
+    }
+    if (discard) AlertDialog(onDismissRequest = { discard = false },
+        title = { Text(stringResource(R.string.ux100_chat_discard_title)) },
+        text = { Text(stringResource(R.string.ux100_chat_discard_body)) },
+        confirmButton = { ZButton(stringResource(R.string.ux100_chat_discard_form), {
+            title = ""; description = ""; deadline = ""; anonymous = false
+            questions = listOf(GroupFormQuestion(UUID.randomUUID().toString(), "", "shortText", true, emptyList()))
+            discard = false
+        }, enabled = !state.channelBusy) },
+        dismissButton = { ZButton(uiText(R.string.channel_cancel), { discard = false }, ghost = true) })
     val target = questions.firstOrNull { it.questionId == deletingQuestion }
     if (target != null) AlertDialog(onDismissRequest = { deletingQuestion = null },
         title = { Text(stringResource(R.string.next_question_delete_title)) },
@@ -505,7 +586,14 @@ fun powerResource(power: String): Int = when(power) {
     var answers by rememberSaveable(form.formId, stateSaver = answerSaver) { mutableStateOf(form.ownResponse?.answers ?: emptyList()) }
     fun set(answer: GroupFormAnswer) { answers = answers.filterNot { it.questionId == answer.questionId } + answer }
     val missing = missingRequiredQuestions(form.questions, answers)
-    val valid = missing.isEmpty()
+    val tooLong = form.questions.any { question ->
+        val limit = if (question.kind == "shortText") 500 else 8000
+        question.kind in setOf("shortText", "longText") && (answers.firstOrNull { it.questionId == question.questionId }?.text?.length ?: 0) > limit
+    }
+    val valid = missing.isEmpty() && !tooLong
+    val dirty = !sameFormAnswers(answers, form.ownResponse?.answers.orEmpty())
+    var restoring by rememberSaveable(form.formId) { mutableStateOf(false) }
+    var showResponses by rememberSaveable(form.formId) { mutableStateOf(false) }
     val requiredCount = form.questions.count { it.required }
     val requesters = remember(form.formId, form.questions.map { it.questionId }) {
         form.questions.associate { it.questionId to BringIntoViewRequester() }
@@ -522,18 +610,31 @@ fun powerResource(power: String): Int = when(power) {
                 style = Zapara.typography.caption, color = Zapara.colors.ok,
                 modifier = Modifier.testTag("Group.FormSaved.${form.formId}"))
         }
+        if (form.canRespond && (dirty || form.ownResponse != null)) Text(stringResource(if (dirty) R.string.ux100_chat_answer_dirty else R.string.ux100_chat_form_saved_clean),
+            style = Zapara.typography.caption, color = if (dirty) Zapara.colors.warn else Zapara.colors.ok)
+        if (form.canRespond && dirty) ZButton(stringResource(R.string.ux100_chat_restore_answers), { restoring = true }, enabled = !state.channelBusy && state.preview == null, ghost = true)
         if (form.canRespond) Text(stringResource(R.string.ux30_form_progress, requiredCount - missing.size, requiredCount),
             style = Zapara.typography.caption, color = Zapara.colors.text2)
         form.questions.forEach { question ->
             val answer = answers.firstOrNull { it.questionId == question.questionId } ?: GroupFormAnswer(question.questionId, null)
             Text(question.title + if (question.required) " *" else "", style = Zapara.typography.bodyStrong,
                 modifier = Modifier.bringIntoViewRequester(requesters.getValue(question.questionId)))
-            if (question.kind in setOf("shortText", "longText")) Field(uiText(R.string.space_day_142), answer.text ?: "", { set(answer.copy(text = it)) }, form.canRespond && !state.channelBusy && state.preview == null)
+            if (question.kind in setOf("shortText", "longText")) {
+                val limit = if (question.kind == "shortText") 500 else 8000
+                ZTextField(answer.text.orEmpty(), { set(answer.copy(text = it)) }, label = { Text(uiText(R.string.space_day_142)) },
+                    enabled = form.canRespond && !state.channelBusy && state.preview == null,
+                    modifier = Modifier.fillMaxWidth(), minLines = if (question.kind == "longText") 3 else 1, maxLines = 8,
+                    isError = answer.text.orEmpty().length > limit,
+                    supportingText = { Text(stringResource(R.string.ux100_chat_answer_length, answer.text.orEmpty().length, limit)) })
+            }
             else question.options.forEach { option -> Row(verticalAlignment = Alignment.CenterVertically) {
                 if (question.kind == "singleChoice") RadioButton(option in answer.choices, { set(answer.copy(choices = listOf(option))) }, enabled = form.canRespond && !state.channelBusy && state.preview == null)
                 else Checkbox(option in answer.choices, { on -> set(answer.copy(choices = if (on) answer.choices + option else answer.choices - option)) }, enabled = form.canRespond && !state.channelBusy && state.preview == null)
                 Text(option, style = Zapara.typography.body)
             } }
+            if (question.kind == "singleChoice" && !question.required && answer.choices.isNotEmpty())
+                ZButton(stringResource(R.string.ux100_chat_clear_choice), { set(answer.copy(choices = emptyList())) },
+                    enabled = form.canRespond && !state.channelBusy && state.preview == null, ghost = true)
         }
         if (form.canRespond && missing.isNotEmpty()) {
             Text(stringResource(R.string.ux30_form_missing, missing.size),
@@ -544,16 +645,28 @@ fun powerResource(power: String): Int = when(power) {
                 { scope.launch { requesters[missing.first().questionId]?.bringIntoView() } }, ghost = true,
                 tag = "Group.FormFirstMissing")
         }
-        if (form.canRespond) ZButton(if (form.ownResponse == null) uiText(R.string.space_day_143) else uiText(R.string.space_day_144), { dispatch(onEvent, GroupSpaceAction.SubmitForm(form.formId, answers)) }, enabled = valid && !state.channelBusy && state.preview == null)
+        if (form.canRespond) ZButton(if (form.ownResponse == null) uiText(R.string.space_day_143) else uiText(R.string.space_day_144), { dispatch(onEvent, GroupSpaceAction.SubmitForm(form.formId, answers)) }, enabled = valid && (dirty || form.ownResponse == null) && !state.channelBusy && state.preview == null)
         else Text(uiText(R.string.space_day_145), style = Zapara.typography.caption)
-        if (form.canViewResponses) ZButton(uiText(R.string.space_day_146), { dispatch(onEvent, GroupSpaceAction.Responses(form.formId)) }, enabled = !state.channelBusy, ghost = true)
+        if (form.canViewResponses) ZButton(if (showResponses) stringResource(R.string.ux100_chat_answers_hide) else uiText(R.string.space_day_146), {
+            showResponses = !showResponses
+            if (showResponses) dispatch(onEvent, GroupSpaceAction.Responses(form.formId))
+        }, enabled = !state.channelBusy, ghost = true)
+        if (showResponses && form.canViewResponses) {
         state.responseCounts[form.formId]?.let { total -> Text(uiText(R.string.space_day_response_count, state.responses[form.formId].orEmpty().size, total), style = Zapara.typography.caption) }
         state.responseCursors[form.formId]?.let { cursor -> ZButton(uiText(R.string.space_day_load_more), { dispatch(onEvent, GroupSpaceAction.Responses(form.formId, cursor)) }, enabled = !state.channelBusy, ghost = true) }
         state.responses[form.formId]?.forEach { response ->
             Text(if (form.anonymous) uiText(R.string.space_day_147) else state.people.firstOrNull { it.id == response.respondentId }?.name ?: uiText(R.string.space_day_148), style = Zapara.typography.bodyStrong)
-            response.answers.forEach { answer -> Text("${form.questions.firstOrNull { it.questionId == answer.questionId }?.title}: ${answer.text ?: answer.choices.joinToString()}", style = Zapara.typography.body) }
+            response.answers.forEach { answer -> Text("${form.questions.firstOrNull { it.questionId == answer.questionId }?.title}: ${answer.text?.takeIf { it.isNotEmpty() } ?: answer.choices.joinToString()}", style = Zapara.typography.body) }
+        }
         }
     }
+    if (restoring) AlertDialog(onDismissRequest = { restoring = false },
+        title = { Text(stringResource(R.string.ux100_chat_restore_title)) },
+        text = { Text(stringResource(R.string.ux100_chat_restore_body)) },
+        confirmButton = { ZButton(stringResource(R.string.ux100_chat_restore), {
+            answers = form.ownResponse?.answers.orEmpty(); restoring = false
+        }, enabled = !state.channelBusy && state.preview == null) },
+        dismissButton = { ZButton(uiText(R.string.channel_cancel), { restoring = false }, ghost = true) })
 }
 
 @Composable private fun SharedHomeworkEditor(state: GroupUiState, onEvent: (GroupEvent) -> Unit, initial: CommunityHomework? = null) {
@@ -607,4 +720,20 @@ fun powerResource(power: String): Int = when(power) {
     val roles = value.roleIds.map { id -> state.desk?.roles?.firstOrNull { it.roleId == id }?.name ?: id }
     val people = value.userIds.map { id -> state.people.firstOrNull { it.id == id }?.name ?: id }
     return uiText(R.string.homework_audience_selected) + ": " + (roles + people).joinToString(", ")
+}
+
+@Composable private fun FormDeadlineField(value: String, change: (String) -> Unit, enabled: Boolean) {
+    val context = LocalContext.current
+    val theme = if (Zapara.colors.isDark) R.style.Zapara_DatePicker_Dark else R.style.Zapara_DatePicker_Light
+    Field(stringResource(R.string.space_day_126), value, change, enabled)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+        ZButton(stringResource(R.string.ux100_chat_calendar), {
+            val date = runCatching { LocalDate.parse(value) }.getOrDefault(LocalDate.now().plusDays(1))
+            DatePickerDialog(context, theme, { _, year, month, day -> change(LocalDate.of(year, month + 1, day).toString()) },
+                date.year, date.monthValue - 1, date.dayOfMonth).show()
+        }, enabled = enabled, ghost = true)
+        ZButton(stringResource(R.string.ux100_chat_tomorrow), { change(LocalDate.now().plusDays(1).toString()) }, enabled = enabled, ghost = true)
+        ZButton(stringResource(R.string.ux100_chat_week), { change(LocalDate.now().plusDays(7).toString()) }, enabled = enabled, ghost = true)
+        if (value.isNotBlank()) ZButton(stringResource(R.string.ux100_chat_no_deadline), { change("") }, enabled = enabled, ghost = true)
+    }
 }

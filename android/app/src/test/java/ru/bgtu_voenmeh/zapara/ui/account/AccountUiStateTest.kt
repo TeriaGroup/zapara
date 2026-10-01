@@ -76,6 +76,13 @@ class AccountUiStateTest {
         assertEquals("", legal.password)
         assertEquals("", legal.proof)
     }
+    @Test fun busy_save_does_not_make_a_valid_profile_name_invalid() {
+        val saving = AccountUiState(ready = true, configured = true, guest = false,
+            displayName = "Новое имя", profileNameBaseline = "Старое имя", busy = true)
+        assertTrue(saving.profileNameValid)
+        assertFalse(saving.canSaveProfile)
+        assertFalse(saving.copy(displayName = "\u0001").profileNameValid)
+    }
     @Test fun device_pages_deduplicate_by_family_and_keep_newer_device_state() {
         val first = AccountDeviceRow("a", "device-a", "Телефон", "android", false)
         val updated = first.copy(current = true)

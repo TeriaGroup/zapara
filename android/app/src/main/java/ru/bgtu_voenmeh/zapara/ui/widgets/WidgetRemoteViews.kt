@@ -62,8 +62,8 @@ object WidgetRemoteViews {
         }.filter { it.isNotBlank() }.joinToString(", ")
         views.setContentDescription(R.id.widget_schedule_root, spoken.ifBlank { context.getString(R.string.nav_schedule) })
         views.setViewVisibility(R.id.widget_schedule_toss, View.GONE)
-        val generic = openApp(context, 4101, "schedule")
         val scope = WidgetLaunchScope(snapshot.identity.profileId, snapshot.identity.databaseName)
+        val generic = WidgetIntents.open(context, widgetId, 0, "schedule", visibleRows.firstOrNull()?.date?.toString(), scope)
         scheduleRows.forEachIndexed { index, slot ->
             val row = visibleRows.getOrNull(index)
             val bind = WidgetRowBind.of(row)
@@ -99,8 +99,8 @@ object WidgetRemoteViews {
             WidgetIntents.retry(context, widgetId, "homework"))
         views.setViewVisibility(R.id.widget_homework_title, if (compact && heightDp <= 90 &&
             context.resources.configuration.fontScale >= 1.25f) View.GONE else View.VISIBLE)
-        val generic = openApp(context, 4102, "homework")
         val scope = WidgetLaunchScope(snapshot.identity.profileId, snapshot.identity.databaseName)
+        val generic = WidgetIntents.open(context, widgetId, 0, "homework", null, scope)
         homeworkRows.forEachIndexed { index, ids ->
             val row = visibleRows.getOrNull(index)
             val bind = WidgetRowBind.of(row)
@@ -156,7 +156,8 @@ object WidgetRemoteViews {
         bindLine(views, R.id.widget_timer_detail,
             if (snapshot.cleared || heightDp <= 110 || context.resources.configuration.fontScale >= 1.2f) "" else snapshot.detail, colors.text2)
         bindTimerDescription(context, views, snapshot)
-        views.setOnClickPendingIntent(R.id.widget_timer_root, openApp(context, 4104, "schedule"))
+        views.setOnClickPendingIntent(R.id.widget_timer_root, WidgetIntents.open(context, 4104, 0, "schedule", null,
+            WidgetLaunchScope(snapshot.identity.profileId, snapshot.identity.databaseName)))
         return views
     }
 

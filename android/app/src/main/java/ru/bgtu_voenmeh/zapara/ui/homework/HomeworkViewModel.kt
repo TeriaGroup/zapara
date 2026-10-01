@@ -65,6 +65,14 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
             HomeworkEvent.RetryShared -> currentGroupId?.let { group -> viewModelScope.launch { refreshShared(group) } }
             is HomeworkEvent.ToggleShared -> toggleShared(event.id)
             is HomeworkEvent.BrowseQuery -> mutable.update { it.copy(browseQuery = event.value) }
+            is HomeworkEvent.DeadlineFilter -> mutable.update { it.copy(deadlineFilter = event.value,
+                originFilter = if (event.value == HomeworkDeadlineFilter.All) it.originFilter else HomeworkOriginFilter.Personal) }
+            is HomeworkEvent.OriginFilter -> mutable.update { it.copy(originFilter = event.value,
+                deadlineFilter = if (event.value == HomeworkOriginFilter.Shared) HomeworkDeadlineFilter.All else it.deadlineFilter,
+                withFilesOnly = if (event.value == HomeworkOriginFilter.Shared) false else it.withFilesOnly) }
+            is HomeworkEvent.WithFilesOnly -> mutable.update { it.copy(withFilesOnly = event.value,
+                originFilter = if (event.value) HomeworkOriginFilter.Personal else it.originFilter) }
+            is HomeworkEvent.SortBySubject -> mutable.update { it.copy(sortBySubject = event.value) }
             is HomeworkEvent.BrowseFilter -> {
                 if (event.value == HomeworkCompletionFilter.Done) collapsed = collapsed - GroupStatus.Done
                 mutable.update { s -> s.copy(browseFilter = event.value,
@@ -117,6 +125,14 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                 mutable.update { s ->
                     s.copy(groups = s.groups.map { g -> if (g.status == event.status) g.copy(collapsed = g.status in collapsed) else g })
                 }
+            }
+            HomeworkEvent.ExpandGroups -> {
+                collapsed = emptySet()
+                mutable.update { s -> s.copy(groups = s.groups.map { it.copy(collapsed = false) }) }
+            }
+            HomeworkEvent.CollapseGroups -> {
+                collapsed = GroupStatus.entries.toSet()
+                mutable.update { s -> s.copy(groups = s.groups.map { it.copy(collapsed = true) }) }
             }
         }
     }

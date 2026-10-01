@@ -23,6 +23,9 @@ import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
@@ -255,6 +258,11 @@ private fun InboxRow.avatarTarget(): AvatarTarget? = when {
 @Composable
 private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, modifier: Modifier) {
     val activeId = state.active?.id ?: return
+    val composerFocus = remember(activeId) { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(activeId, state.editing?.id, state.reply?.id) {
+        if (state.editing != null || state.reply != null) { if (runCatching { composerFocus.requestFocus() }.isSuccess) keyboard?.show() }
+    }
     var historyQuery by rememberSaveable(activeId) { mutableStateOf("") }
     var historyKind by rememberSaveable(state.userId, state.profileDatabaseName, activeId) { mutableStateOf(PersonalHistoryKind.All.name) }
     var historyAuthor by rememberSaveable(state.userId, state.profileDatabaseName, activeId) { mutableStateOf(PersonalHistoryAuthor.All.name) }
@@ -408,6 +416,8 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                                     attachment in state.mediaLoading, attachment in state.mediaErrors,
                                     onLoad = { onEvent(InboxEvent.LoadMedia(message)) })
                             } else SelectionContainer { Text(message.body ?: message.fileName ?: stringResource(R.string.face_attachment), color = Zapara.colors.text1) }
+                            if (!message.deleted) ZButton(stringResource(R.string.ux100_chat_message_actions), { selected = message },
+                                ghost = true, tag = "Inbox.MessageActions.${message.id}")
                             if (!message.deleted && message.attachmentId != null) ZButton(stringResource(R.string.face_save),
                                 { saving = message; save.launch(message.fileName ?: "attachment") },
                                 enabled = !state.loading, ghost = true, quiet = true)
@@ -488,6 +498,9 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                             ZIconButton(R.drawable.ic_paperclip, stringResource(R.string.face_attach_hint),
                                 { attachOpen = true }, "Inbox.Attach", enabled = !state.sending)
                             DropdownMenu(expanded = attachOpen, onDismissRequest = { attachOpen = false }) {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.ux100_chat_image_pick)) },
+                                    onClick = { attachOpen = false; pickingFor = activeId; pick.launch(arrayOf("image/*")) },
+                                    modifier = Modifier.testTag("Inbox.Photo"))
                                 DropdownMenuItem(text = { Text(stringResource(R.string.face_attachment)) },
                                     onClick = { attachOpen = false; pickingFor = activeId; pick.launch(arrayOf("*/*")) },
                                     modifier = Modifier.testTag("Inbox.File"))
@@ -502,7 +515,7 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                             }
                         }
                         ZTextField(state.draft, { onEvent(InboxEvent.Draft(it)) },
-                            modifier = Modifier.weight(1f).testTag("Inbox.Draft"),
+                            modifier = Modifier.weight(1f).focusRequester(composerFocus).testTag("Inbox.Draft"),
                             placeholder = { Text(stringResource(R.string.face_message)) }, maxLines = 4,
                             isError = state.composer.messageLength > PERSONAL_MESSAGE_LIMIT,
                             supportingText = if (state.composer.messageLength >= 1800) ({
@@ -514,7 +527,7 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                         if (state.draft.isNotBlank() || state.editing != null) {
                             ZIconButton(R.drawable.ic_send,
                                 if (state.editing != null) stringResource(R.string.face_save) else stringResource(R.string.face_send),
-                                { onEvent(InboxEvent.Send) }, "Inbox.Send",
+                                { keyboard?.hide(); onEvent(InboxEvent.Send) }, "Inbox.Send",
                                 enabled = !state.sending && state.composer.canSend, primary = true)
                         } else {
                             ZIconButton(R.drawable.ic_mic, stringResource(R.string.face_record_voice),
@@ -548,8 +561,11 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
         ZButton(stringResource(R.string.group_message_filters_done), { historyFiltersOpen = false }, modifier = Modifier.fillMaxWidth())
     }
     selected?.let { message ->
-        AlertDialog(onDismissRequest = { selected = null }, title = { Text(stringResource(R.string.face_message)) }, text = {
+        AlertDialog(onDismissRequest = { selected = null }, title = { Text(message.senderName) }, text = {
             Column {
+                Text(chatMessagePreview(message.kind, message.body, message.fileName, message.deleted), maxLines = 4,
+                    overflow = TextOverflow.Ellipsis, style = Zapara.typography.body)
+                Text(message.createdAt.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")), style = Zapara.typography.caption)
                 ZButton(stringResource(R.string.face_reply), { onEvent(InboxEvent.Reply(message)); selected = null }, ghost = true, quiet = true)
                 if (copyablePersonalText(message) != null) ZButton(stringResource(R.string.ux30_copy_message_label),
                     { onEvent(InboxEvent.CopyMessage(message.id)); selected = null }, ghost = true,

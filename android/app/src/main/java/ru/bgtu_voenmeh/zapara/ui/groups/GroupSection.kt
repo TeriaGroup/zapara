@@ -71,6 +71,9 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import ru.bgtu_voenmeh.zapara.ui.components.rememberUiText
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
@@ -1231,6 +1234,7 @@ private fun BallotEditor(busy: Boolean, canOpen: Boolean, canSubmit: Boolean, fa
     days: Int, onDays: (Int) -> Unit,
     onSave: (String, List<String>, Int, Boolean) -> Unit, onCancel: () -> Unit) {
     val uiText = rememberUiText()
+    var deletingOption by remember { mutableStateOf<Pair<Int, String>?>(null) }
     ZCard(Modifier.fillMaxWidth(), tag = "Group.BallotEditor") {
         Text(stringResource(R.string.channel_ballot_one_question), style = Zapara.typography.bodyStrong)
         if (failed) Text(stringResource(R.string.group_ballot_submit_failed), style = Zapara.typography.caption,
@@ -1240,22 +1244,38 @@ private fun BallotEditor(busy: Boolean, canOpen: Boolean, canSubmit: Boolean, fa
         if (!canSubmit) Text(stringResource(R.string.group_ballot_write_revoked), style = Zapara.typography.caption,
             color = Zapara.colors.warn)
         ZTextField(question, { onQuestion(it.take(400)) }, label = { Text(stringResource(R.string.channel_ballot_question)) },
+            enabled = !busy,
+            supportingText = { Text(stringResource(R.string.ux100_chat_question_length, question.length)) },
             modifier = Modifier.fillMaxWidth().testTag("Group.BallotQuestion"))
         options.forEachIndexed { index, option ->
             ZTextField(option, { next -> onOptions(options.mapIndexed { i, value -> if (i == index) next.take(80) else value }) },
                 label = { Text(stringResource(R.string.channel_ballot_option, index + 1)) }, singleLine = true,
+                enabled = !busy,
                 modifier = Modifier.fillMaxWidth().testTag("Group.BallotOption.$index"))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                ZButton(stringResource(R.string.ux100_chat_option_up), { onOptions(moveBallotOption(options, index, -1)) }, enabled = !busy && index > 0, ghost = true)
+                ZButton(stringResource(R.string.ux100_chat_option_down), { onOptions(moveBallotOption(options, index, 1)) }, enabled = !busy && index < options.lastIndex, ghost = true)
+                if (options.size > 2) ZButton(stringResource(R.string.ux100_chat_option_remove), {
+                    if (option.isBlank()) onOptions(options.filterIndexed { i, _ -> i != index }) else deletingOption = index to option
+                }, enabled = !busy, ghost = true)
+            }
         }
-        if (options.size < 6) ZButton(stringResource(R.string.channel_ballot_add_option), { onOptions(options + "") }, ghost = true)
-        if (options.size > 2) ZButton(stringResource(R.string.channel_ballot_remove_option), { onOptions(options.dropLast(1)) }, ghost = true)
+        if (options.size < 6) ZButton(stringResource(R.string.channel_ballot_add_option), { onOptions(options + "") }, enabled = !busy, ghost = true)
         Text(stringResource(R.string.channel_ballot_duration), style = Zapara.typography.caption)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             listOf(1, 3, 7, 14).forEach { value ->
-                ZChip(stringResource(R.string.channel_ballot_days, value), selected = days == value, onClick = { onDays(value) }, tag = "Group.BallotDays.$value")
+                ZChip(stringResource(R.string.channel_ballot_days, value), selected = days == value, onClick = { if (!busy) onDays(value) }, tag = "Group.BallotDays.$value")
             }
         }
-        val valid = question.isNotBlank() && options.size in 2..6 && options.all { it.isNotBlank() } &&
-            options.map { it.trim() }.distinct().size == options.size
+        Text(stringResource(R.string.ux100_chat_ballot_deadline,
+            java.time.LocalDateTime.now().plusDays(days.toLong()).format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))), style = Zapara.typography.caption)
+        val problem = ballotEditorProblem(question, options)
+        if (problem != null) Text(stringResource(when (problem) {
+            BallotEditorProblem.Question -> R.string.ux100_chat_ballot_question
+            BallotEditorProblem.EmptyOption -> R.string.ux100_chat_ballot_empty
+            BallotEditorProblem.DuplicateOption -> R.string.ux100_chat_ballot_duplicate
+        }), style = Zapara.typography.caption, color = Zapara.colors.warn)
+        val valid = problem == null
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             ZButton(stringResource(R.string.channel_ballot_propose), { onSave(question.trim(), options.map { it.trim() }, days, false) },
                 enabled = valid && canSubmit && !busy, tag = "Group.BallotPropose")
@@ -1264,6 +1284,16 @@ private fun BallotEditor(busy: Boolean, canOpen: Boolean, canSubmit: Boolean, fa
             ZButton(stringResource(R.string.channel_cancel), onCancel, enabled = !busy, ghost = true)
         }
     }
+    deletingOption?.let { (index, value) ->
+        AlertDialog(onDismissRequest = { deletingOption = null },
+            title = { Text(stringResource(R.string.ux100_chat_option_remove_title)) },
+            text = { Text(value) },
+            confirmButton = { ZButton(stringResource(R.string.ux100_chat_option_remove), {
+                if (options.size > 2 && options.getOrNull(index) == value) onOptions(options.filterIndexed { i, _ -> i != index })
+                deletingOption = null
+            }, enabled = !busy) },
+            dismissButton = { ZButton(stringResource(R.string.channel_cancel), { deletingOption = null }, ghost = true) })
+    }
 }
 
 @Composable
@@ -1271,12 +1301,21 @@ private fun People(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                    query: String, onQuery: (String) -> Unit, modifier: Modifier) {
     val uiText = rememberUiText()
     val c = Zapara.colors
-    val visible = browsePeople(state.people, query)
+    var leadersOnly by rememberSaveable(state.communityId) { mutableStateOf(false) }
+    val visible = browsePeople(state.people, query).filter { !leadersOnly || it.role in setOf("headman", "curator") }
+    val visibleDirects = state.directs.filter { query.isBlank() || (it.title + " " + it.preview).contains(query.trim(), ignoreCase = true) }
     LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         item {
             ZTextField(query, onQuery, label = { Text(stringResource(R.string.channel_people_search)) },
                 placeholder = { Text(stringResource(R.string.channel_people_search_hint)) }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("Group.PeopleSearch"))
+        }
+        item {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                ZChip(stringResource(R.string.ux100_chat_people_all), selected = !leadersOnly, onClick = { leadersOnly = false })
+                ZChip(stringResource(R.string.ux100_chat_people_leaders), selected = leadersOnly, onClick = { leadersOnly = true })
+            }
+            Text(stringResource(R.string.ux100_chat_results, visible.size, state.people.size), style = Zapara.typography.caption)
         }
         item {
             ZCard(onClick = { onEvent(GroupEvent.GroupChat) }, tag = "Group.Room", modifier = Modifier.fillMaxWidth()) {
@@ -1295,10 +1334,10 @@ private fun People(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
         if (state.people.isNotEmpty()) {
             item { Text(stringResource(R.string.group_roster), style = Zapara.typography.bodyStrong, color = c.text2) }
         }
-        if (query.isNotBlank() && visible.isEmpty()) item {
+        if ((query.isNotBlank() || leadersOnly) && visible.isEmpty()) item {
             ZCard(Modifier.fillMaxWidth(), tag = "Empty.GroupPeopleSearch") {
                 Text(stringResource(R.string.channel_people_empty), style = Zapara.typography.body, color = c.text2)
-                ZButton(stringResource(R.string.group_search_clear), { onQuery("") }, ghost = true)
+                ZButton(stringResource(R.string.group_search_clear), { onQuery(""); leadersOnly = false }, ghost = true)
             }
         }
         items(visible, key = { it.id }) { person ->
@@ -1312,14 +1351,15 @@ private fun People(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                         Text(person.name, style = Zapara.typography.bodyStrong, color = c.text1, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("@${person.handle}", style = Zapara.typography.caption, color = c.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (person.self) Text(stringResource(R.string.ux100_chat_people_self), style = Zapara.typography.caption, color = c.text2)
                     }
                     RoleChip(person.role)
                 }
             }
         }
-        if (state.directs.isNotEmpty()) {
+        if (visibleDirects.isNotEmpty() && !leadersOnly) {
             item { Text(stringResource(R.string.group_directs), style = Zapara.typography.bodyStrong, color = c.text2) }
-            items(state.directs, key = { it.id }) { chat ->
+            items(visibleDirects, key = { it.id }) { chat ->
                 ZCard(onClick = { onEvent(GroupEvent.OpenChat(chat.id, chat.title)) }, tag = "Group.Direct.${chat.id}", modifier = Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                         ChatAvatar(chat.title, chat.peerUserId?.let { AvatarTarget(AvatarKind.User, it) }, 40.dp)
@@ -1714,6 +1754,11 @@ private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaL
 private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
     val uiText = rememberUiText()
     val c = Zapara.colors
+    val composerFocus = remember(state.activeConversationId, state.activeTopicId) { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(state.activeConversationId, state.activeTopicId, state.editing, state.replyTo) {
+        if (state.editing != null || state.replyTo != null) { if (runCatching { composerFocus.requestFocus() }.isSuccess) keyboard?.show() }
+    }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val permissions = state.channels.firstOrNull { it.topicId == state.activeTopicId }?.permissions.orEmpty()
@@ -1789,7 +1834,7 @@ private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
                     }
                 }
                 ZTextField(value = state.draft, onValueChange = { onEvent(GroupEvent.Draft(it)) },
-                    enabled = !state.sending, modifier = Modifier.weight(1f).testTag("Group.Draft"),
+                    enabled = !state.sending, modifier = Modifier.weight(1f).focusRequester(composerFocus).testTag("Group.Draft"),
                     placeholder = { Text(stringResource(R.string.group_message)) }, minLines = 2, maxLines = 4,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                     isError = messagePreview.problem != null && messagePreview.problem != GroupMessageProblem.Empty,
@@ -1803,7 +1848,7 @@ private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
                     if (state.attachmentPending) ZButton(stringResource(R.string.group_retry), { onEvent(GroupEvent.Send) },
                         enabled = !state.sending, tag = "Group.Send")
                     else ZIconButton(R.drawable.ic_send, stringResource(R.string.group_send),
-                        { onEvent(GroupEvent.Send) }, "Group.Send",
+                        { keyboard?.hide(); onEvent(GroupEvent.Send) }, "Group.Send",
                         enabled = !state.sending && messagePreview.ready, primary = true)
                 } else {
                     ZIconButton(R.drawable.ic_mic, stringResource(R.string.group_record_voice),

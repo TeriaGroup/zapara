@@ -111,7 +111,9 @@ fun ChatMediaBubble(
 
 @Composable
 private fun ImagePreview(file: File) {
-    val decoded by produceState<Pair<Boolean, android.graphics.Bitmap?>>(false to null, file.absolutePath) {
+    var attempt by remember(file.absolutePath) { mutableIntStateOf(0) }
+    val decoded by produceState<Pair<Boolean, android.graphics.Bitmap?>>(false to null, file.absolutePath, attempt) {
+        value = false to null
         val bitmap = withContext(Dispatchers.IO) {
             try {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -127,7 +129,12 @@ private fun ImagePreview(file: File) {
     }
     val preview = decoded.second
     if (!decoded.first) CircularProgressIndicator(Modifier.size(18.dp), color = LocalContentColor.current, strokeWidth = 2.dp)
-    else if (preview == null) Text(stringResource(R.string.chat_media_image_unavailable), color = LocalContentColor.current.copy(alpha = 0.72f))
+    else if (preview == null) Column {
+        Text(stringResource(R.string.chat_media_image_unavailable), color = LocalContentColor.current.copy(alpha = 0.72f))
+        TextButton(onClick = { attempt++ }, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.ux100_chat_image_retry))
+        }
+    }
     else {
         var viewerOpen by remember(file.absolutePath) { mutableStateOf(false) }
         Image(preview.asImageBitmap(), stringResource(R.string.chat_media_photo),
@@ -200,7 +207,8 @@ private fun ChatPhotoViewer(bitmap: android.graphics.Bitmap, onClose: () -> Unit
 private fun Playback(kind: String, file: File, suppliedDuration: Int?) {
     val contentColor = LocalContentColor.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val controller = remember(file.absolutePath) { LocalMediaPlayer(file) }
+    var attempt by remember(file.absolutePath) { mutableIntStateOf(0) }
+    val controller = remember(file.absolutePath, attempt) { LocalMediaPlayer(file) }
     DisposableEffect(controller, lifecycle) {
         controller.prepare()
         val observer = LifecycleEventObserver { _, event ->
@@ -217,9 +225,16 @@ private fun Playback(kind: String, file: File, suppliedDuration: Int?) {
     }
     val duration = controller.durationMs.takeIf { it > 0 } ?: suppliedDuration?.coerceAtLeast(0) ?: 0
     if (controller.failed) {
-        Text(stringResource(R.string.chat_media_play_failed), color = contentColor.copy(alpha = 0.72f))
+        Column {
+            Text(stringResource(R.string.chat_media_play_failed), color = contentColor.copy(alpha = 0.72f))
+            TextButton(onClick = { attempt++ }, modifier = Modifier.heightIn(min = 48.dp),
+                colors = ButtonDefaults.textButtonColors(contentColor = contentColor)) {
+                Text(stringResource(R.string.ux100_chat_player_retry))
+            }
+        }
         return
     }
+    val seekDescription = stringResource(R.string.ux100_chat_playback_seek)
     if (kind == "voice") {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -232,7 +247,7 @@ private fun Playback(kind: String, file: File, suppliedDuration: Int?) {
             Slider(value = if (duration > 0) controller.positionMs.toFloat() / duration else 0f,
                 onValueChange = { controller.seek((it * duration).toInt()) }, enabled = controller.ready && duration > 0,
                 colors = SliderDefaults.colors(thumbColor = contentColor, activeTrackColor = contentColor, inactiveTrackColor = contentColor.copy(alpha = 0.28f)),
-                modifier = Modifier.width(210.dp).heightIn(min = 48.dp))
+                modifier = Modifier.width(210.dp).heightIn(min = 48.dp).semantics { contentDescription = seekDescription })
             PlaybackSeekControls(controller, duration, contentColor)
             PlaybackSpeedSelector(controller, contentColor)
         }
@@ -260,7 +275,7 @@ private fun Playback(kind: String, file: File, suppliedDuration: Int?) {
             Slider(value = if (duration > 0) controller.positionMs.toFloat() / duration else 0f,
                 onValueChange = { controller.seek((it * duration).toInt()) }, enabled = controller.ready && duration > 0,
                 colors = SliderDefaults.colors(thumbColor = contentColor, activeTrackColor = contentColor, inactiveTrackColor = contentColor.copy(alpha = 0.28f)),
-                modifier = Modifier.width(190.dp).heightIn(min = 48.dp))
+                modifier = Modifier.width(190.dp).heightIn(min = 48.dp).semantics { contentDescription = seekDescription })
             PlaybackSeekControls(controller, duration, contentColor)
             PlaybackSpeedSelector(controller, contentColor)
         }

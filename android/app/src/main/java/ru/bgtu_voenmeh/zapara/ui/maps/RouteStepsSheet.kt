@@ -47,6 +47,14 @@ fun RouteStepsSheet(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
                         { onEvent(MapsEvent.RetryMaps) }, tag = "Maps.RouteRetry")
                 }
                 if (state.routeLoading) Text(stringResource(R.string.maps_route_loading), color = Zapara.colors.text1)
+                if (steps.isEmpty() && !state.routeLoading) {
+                    Text(stringResource(R.string.ux100_platform_route_empty), style = Zapara.typography.body,
+                        color = Zapara.colors.text2)
+                    ru.bgtu_voenmeh.zapara.ui.theme.ZButton(stringResource(R.string.maps_from),
+                        { onEvent(MapsEvent.OpenFrom) }, ghost = true, tag = "Maps.StepsPickFrom")
+                    ru.bgtu_voenmeh.zapara.ui.theme.ZButton(stringResource(R.string.maps_to),
+                        { onEvent(MapsEvent.OpenTo) }, ghost = true, tag = "Maps.StepsPickTo")
+                }
             }
             itemsIndexed(steps, key = { _, step -> step.id }) { position, step ->
                 val chosen = step.id == state.activeStepId

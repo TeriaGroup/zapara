@@ -19,7 +19,7 @@
 
     <application
         android:name=".ZaparaApplication"
-        android:label="Военмех - расписание и карты"
+        android:label="@string/ux100_common_public_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.Material.NoActionBar"

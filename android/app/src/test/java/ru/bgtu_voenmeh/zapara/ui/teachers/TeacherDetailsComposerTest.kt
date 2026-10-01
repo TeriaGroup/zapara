@@ -31,7 +31,7 @@ class TeacherDetailsComposerTest {
             val rows = days.single().rows
             assertEquals(parities, rows.map { it.parity })
             assertEquals(1, rows.map { it.subject }.distinct().size)
-            assertTrue(rows.all { it.time == "09:00" && it.isMyGroup })
+            assertTrue(rows.all { it.time.startsWith("09:00") && it.isMyGroup })
             assertEquals(1, rows.count { it.parity == 0 })
             assertEquals(parities.map { TeacherDetailsComposer.parityLabel(it, XmlCopy) },
                 rows.map { TeacherDetailsComposer.parityLabel(it.parity, XmlCopy) })
@@ -81,7 +81,7 @@ class TeacherDetailsComposerTest {
         val ctx = SchedCtx("3313", LocalDate.of(2026, 9, 1), 2, true)
         val odd = TeacherDetailsComposer.compose(lessons, 1, "3313", XmlCopy,
             invert = true, today = today, context = ctx)
-        assertEquals(listOf("11:00"), odd.single().rows.map { it.time })
+        assertTrue(odd.single().rows.single().time.startsWith("11:00"))
         assertEquals(listOf(1), odd.single().rows.map { it.parity })
         assertEquals(LocalDate.of(2026, 9, 14), odd.single().date)
         assertEquals(LocalDate.of(2026, 9, 14), odd.single().rows.single().date)
@@ -90,5 +90,11 @@ class TeacherDetailsComposerTest {
         assertEquals(listOf(LocalDate.of(2026, 9, 21), LocalDate.of(2026, 9, 14)),
             both.single().rows.map { it.date })
         assertEquals(LocalDate.of(2026, 9, 14), both.single().date)
+    }
+
+    @Test fun teacher_overview_includes_the_end_of_each_pair() {
+        val lesson = parsed.lessons.first().copy(dayOfWeek = 1, timeStart = "09:00", timeEnd = "10:35")
+        val days = TeacherDetailsComposer.compose(listOf(lesson), 0, "3313", XmlCopy)
+        assertEquals("09:00–10:35", days.single().rows.single().time)
     }
 }

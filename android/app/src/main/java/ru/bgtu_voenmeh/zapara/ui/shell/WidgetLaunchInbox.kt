@@ -42,6 +42,9 @@ data class WidgetLaunch(
 ) {
     fun resolve(profile: ProfileDescriptor?, currentGroup: String? = null): WidgetLaunchResolution? {
         if (profile == null) return null
+        if (invalidTarget) return WidgetLaunchResolution(null, problem = WidgetLaunchProblem.InvalidTarget)
+        if (scope != null && !scope.matches(profile))
+            return WidgetLaunchResolution(null, problem = WidgetLaunchProblem.OtherProfile)
         if (section == Section.Schedule && (scheduleTarget != null || invalidTarget)) {
             if (invalidTarget || argument == null || scope == null || scheduleTarget == null)
                 return WidgetLaunchResolution(null, problem = WidgetLaunchProblem.InvalidTarget)
@@ -50,8 +53,8 @@ data class WidgetLaunch(
                 return WidgetLaunchResolution(null, problem = WidgetLaunchProblem.OtherGroup)
             return WidgetLaunchResolution(argument, scope, scheduleTarget = scheduleTarget)
         }
-        if (section != Section.Homework || (argument == null && scope == null && !invalidTarget))
-            return WidgetLaunchResolution(argument)
+        if (section != Section.Homework || argument == null)
+            return WidgetLaunchResolution(argument, scope)
         if (invalidTarget || homeworkWidgetId(argument) == null || scope == null)
             return WidgetLaunchResolution(null, problem = WidgetLaunchProblem.InvalidTarget)
         if (!scope.matches(profile)) return WidgetLaunchResolution(null, problem = WidgetLaunchProblem.OtherProfile)
@@ -61,7 +64,7 @@ data class WidgetLaunch(
     /** Read the published profile only after normal vault restoration has had a chance to finish. */
     suspend fun resolveAfterRestore(restore: suspend () -> Unit, profile: () -> ProfileDescriptor?,
         group: suspend () -> String? = { null }): WidgetLaunchResolution? {
-        if (scope != null && (section == Section.Homework && argument != null || scheduleTarget != null)) restore()
+        if (scope != null) restore()
         return resolve(profile(), if (scheduleTarget != null) group() else null)
     }
 }
@@ -93,10 +96,12 @@ class WidgetLaunchInbox {
             scheduleTime != null && scheduleTime.matches(Regex("[0-2][0-9]:[0-5][0-9]")) &&
             runCatching { LocalTime.parse(scheduleTime) }.isSuccess)
             ScheduleWidgetTarget(scheduleGroup, scheduleTime, scheduleSubject) else null
-        val scope = if (destination == Section.Homework || scheduleRequested) WidgetLaunchScope.parse(profileId, databaseName) else null
-        val requestedTarget = destination == Section.Homework && (argument != null || profileId != null || databaseName != null) || scheduleRequested
+        val scopeRequested = profileId != null || databaseName != null
+        val scope = WidgetLaunchScope.parse(profileId, databaseName)
+        val requestedTarget = destination == Section.Homework && argument != null || scheduleRequested
         val launch = WidgetLaunch(++nextId, destination, safeArgument, scope,
-            invalidTarget = requestedTarget && (safeArgument == null || scope == null || scheduleRequested && target == null),
+            invalidTarget = scopeRequested && scope == null ||
+                requestedTarget && (safeArgument == null || scope == null || scheduleRequested && target == null),
             scheduleTarget = target)
         pending.value = launch
         return launch

@@ -53,8 +53,10 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
     val chrome = LocalShellChrome.current
     val c = Zapara.colors
     val keyboard = LocalSoftwareKeyboardController.current
-    val browse = HomeworkBrowse.filter(state.groups, state.browseQuery, state.browseFilter)
-    val visibleShared = HomeworkBrowse.shared(state.sharedRows, state.browseQuery, state.browseFilter)
+    val browse = HomeworkBrowse.filter(state.groups, state.browseQuery, state.browseFilter,
+        state.originFilter, state.deadlineFilter, state.withFilesOnly, state.sortBySubject)
+    val visibleShared = HomeworkBrowse.shared(state.sharedRows, state.browseQuery, state.browseFilter,
+        state.originFilter, state.deadlineFilter, state.withFilesOnly)
     Column(Modifier.fillMaxSize()) {
         ZTopBar(stringResource(R.string.nav_homework)) {
             if (state.hasGroup) ZIconButton(R.drawable.ic_plus, stringResource(R.string.add), { onEvent(HomeworkEvent.Add) }, "Homework.Add")
@@ -110,6 +112,41 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                                     onClick = { onEvent(HomeworkEvent.BrowseFilter(filter)) }, tag = "Homework.Filter.$filter")
                             }
                         }
+                        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                            verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                            HomeworkDeadlineFilter.entries.forEach { filter ->
+                                val label = when (filter) {
+                                    HomeworkDeadlineFilter.All -> R.string.ux100_study_deadline_all
+                                    HomeworkDeadlineFilter.Overdue -> R.string.ux100_study_deadline_overdue
+                                    HomeworkDeadlineFilter.Urgent -> R.string.ux100_study_deadline_urgent
+                                    HomeworkDeadlineFilter.Soon -> R.string.ux100_study_deadline_soon
+                                    HomeworkDeadlineFilter.NoDate -> R.string.ux100_study_deadline_none
+                                }
+                                ZChip(stringResource(label), selected = state.deadlineFilter == filter,
+                                    onClick = { onEvent(HomeworkEvent.DeadlineFilter(filter)) },
+                                    tag = "Homework.Deadline.$filter")
+                            }
+                        }
+                        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                            verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                            HomeworkOriginFilter.entries.forEach { filter ->
+                                val label = when (filter) {
+                                    HomeworkOriginFilter.All -> R.string.ux100_study_origin_all
+                                    HomeworkOriginFilter.Personal -> R.string.ux100_study_origin_personal
+                                    HomeworkOriginFilter.Shared -> R.string.ux100_study_origin_shared
+                                }
+                                if (!state.guest || filter != HomeworkOriginFilter.Shared) ZChip(stringResource(label),
+                                    selected = state.originFilter == filter,
+                                    onClick = { onEvent(HomeworkEvent.OriginFilter(filter)) },
+                                    tag = "Homework.Origin.$filter")
+                            }
+                            ZChip(stringResource(R.string.ux100_study_with_files), selected = state.withFilesOnly,
+                                onClick = { onEvent(HomeworkEvent.WithFilesOnly(!state.withFilesOnly)) },
+                                tag = "Homework.WithFiles")
+                            ZChip(stringResource(R.string.ux100_study_sort_subject), selected = state.sortBySubject,
+                                onClick = { onEvent(HomeworkEvent.SortBySubject(!state.sortBySubject)) },
+                                tag = "Homework.SortSubject")
+                        }
                     }
                 }
                 item("summary") {
@@ -123,6 +160,23 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                     }
                     Text(stringResource(R.string.ux30_study_browse_count, browse.visibleCount + visibleShared.size),
                         style = Zapara.typography.caption, color = c.text2)
+                    if (state.browseQuery.isNotBlank() ||
+                        state.deadlineFilter != HomeworkDeadlineFilter.All ||
+                        state.originFilter != HomeworkOriginFilter.All || state.withFilesOnly || state.sortBySubject) {
+                        ZButton(stringResource(R.string.ux100_study_reset_filters),
+                            { onEvent(HomeworkEvent.BrowseReset) }, ghost = true, tag = "Homework.ResetFilters")
+                    }
+                    if (browse.groups.size > 1) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                        verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                        if (browse.groups.any { it.collapsed }) ZButton(
+                            stringResource(R.string.ux100_study_expand_groups),
+                            { onEvent(HomeworkEvent.ExpandGroups) }, ghost = true,
+                            tag = "Homework.ExpandGroups")
+                        if (browse.groups.any { !it.collapsed }) ZButton(
+                            stringResource(R.string.ux100_study_collapse_groups),
+                            { onEvent(HomeworkEvent.CollapseGroups) }, ghost = true,
+                            tag = "Homework.CollapseGroups")
+                    }
                     }
                 }
                 if (browse.visibleCount + visibleShared.size == 0 && state.loadError == null && !state.sharedLoading && state.sharedError == null) {
@@ -191,6 +245,9 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                                     ZIconButton(R.drawable.ic_pencil,
                                         stringResource(R.string.ux_homework_edit_label, item.subject, item.text),
                                         { onEvent(HomeworkEvent.Edit(item.id)) }, "Homework.Edit.${item.id}")
+                                    ZIconButton(R.drawable.ic_x,
+                                        stringResource(R.string.ux100_study_delete_assignment, item.subject),
+                                        { onEvent(HomeworkEvent.AskDelete(item.id)) }, "Homework.Delete.${item.id}")
                                     val completionLabel = stringResource(R.string.hw_completion_label, item.subject, item.text)
                                     ZSwitch(item.done, { if (item.id !in state.personalBusyIds)
                                         onEvent(HomeworkEvent.ToggleDone(item.id)) }, "Homework.Done.${item.id}",
@@ -231,6 +288,8 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                                     "Homework.SharedDone.${row.id}",
                                     Modifier.semantics { contentDescription = row.title })
                             }
+                            if (row.id in state.sharedBusyIds) Text(stringResource(R.string.ux60_saving),
+                                style = Zapara.typography.caption, color = c.text2)
                         }
                     }
                 }
@@ -276,7 +335,14 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
         AlertDialog(
             onDismissRequest = { onEvent(HomeworkEvent.CancelDelete) },
             title = { Text(stringResource(R.string.hw_delete_title), style = Zapara.typography.section) },
-            text = { state.deleteError?.let { Text(it, color = c.bad, style = Zapara.typography.body) } },
+            text = {
+                Column {
+                    val target = state.groups.flatMap { group -> group.items }.firstOrNull { item -> item.id == state.confirmDelete }
+                    target?.let { Text(stringResource(R.string.ux100_study_delete_detail, it.subject, it.text),
+                        style = Zapara.typography.body, color = c.text1) }
+                    state.deleteError?.let { Text(it, color = c.bad, style = Zapara.typography.body) }
+                }
+            },
             confirmButton = { ZButton(stringResource(R.string.delete), { onEvent(HomeworkEvent.ConfirmDelete) },
                 enabled = !state.deleteBusy, busy = state.deleteBusy) },
             dismissButton = { ZButton(stringResource(R.string.theme_cancel), { onEvent(HomeworkEvent.CancelDelete) },

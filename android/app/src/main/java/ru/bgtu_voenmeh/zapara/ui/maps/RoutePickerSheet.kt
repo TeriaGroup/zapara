@@ -36,6 +36,12 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
     val title = stringResource(if (state.field == RouteField.From) R.string.maps_from else R.string.maps_to)
     ZBottomSheet({ onEvent(MapsEvent.ClosePicker) }, "Sheet.Route") {
         Text(title, style = Zapara.typography.section, color = c.text1)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            ZChip(stringResource(R.string.maps_from), selected = state.field == RouteField.From,
+                onClick = { onEvent(MapsEvent.SwitchPickerField(RouteField.From)) }, tag = "Picker.SelectFrom")
+            ZChip(stringResource(R.string.maps_to), selected = state.field == RouteField.To,
+                onClick = { onEvent(MapsEvent.SwitchPickerField(RouteField.To)) }, tag = "Picker.SelectTo")
+        }
         Spacer(Modifier.height(Zapara.space.s))
         OutlinedTextField(
             value = state.query,
@@ -56,6 +62,8 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
             )
         )
         Spacer(Modifier.height(Zapara.space.s))
+        ZButton(stringResource(R.string.ux100_platform_current_floor),
+            { onEvent(MapsEvent.PickerCurrentFloor) }, ghost = true, tag = "Picker.CurrentFloor")
         if (state.query.isNotBlank()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 ZChip(stringResource(R.string.ux30_platform_search_everywhere), selected = state.searchCampus,
@@ -100,12 +108,37 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
             ZButton(stringResource(R.string.ux60_picker_reset_filters),
                 { onEvent(MapsEvent.ResetPickerFilters) }, ghost = true, tag = "Picker.ResetFilters")
         state.error?.let { Text(it, style = Zapara.typography.caption, color = c.bad) }
+        if ((state.field == RouteField.From && state.selectedFrom) ||
+            (state.field == RouteField.To && state.selectedTo)) {
+            ZButton(stringResource(R.string.ux100_platform_clear_selected),
+                { onEvent(MapsEvent.ClearEndpoint(state.field)) }, ghost = true, tag = "Picker.ClearSelected")
+        }
         val entrances = state.items.filter { it.kind == "entrance" }
         val rooms = state.items.filter { it.kind == "room" }
+        val recentOutsideResults = if (state.query.isBlank())
+            state.recent.filterNot { recent -> state.items.any { it.id == recent.id } }
+        else emptyList()
+        if (state.query.isBlank() && state.recent.isNotEmpty() && recentOutsideResults.isEmpty())
+            ZButton(stringResource(R.string.ux100_platform_clear_recent),
+                { onEvent(MapsEvent.ClearRecentPlaces) }, ghost = true, quiet = true,
+                tag = "Picker.ClearRecent")
         LazyColumn(
             modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp).weight(1f, fill = false),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
         ) {
+            if (recentOutsideResults.isNotEmpty()) {
+                item("recent-title") {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.ux100_platform_recent_places), style = Zapara.typography.caption,
+                            color = c.text2, modifier = Modifier.weight(1f))
+                        ZButton(stringResource(R.string.ux100_platform_clear_recent),
+                            { onEvent(MapsEvent.ClearRecentPlaces) }, ghost = true, quiet = true, tag = "Picker.ClearRecent")
+                    }
+                }
+                items(recentOutsideResults, key = { "recent:${it.id}" }) { place ->
+                    PlaceRow(place, "", state.field, state.epoch, onEvent)
+                }
+            }
             if (state.items.isEmpty()) {
                 item {
                     androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
