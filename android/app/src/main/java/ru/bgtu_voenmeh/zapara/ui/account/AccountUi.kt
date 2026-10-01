@@ -349,7 +349,19 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
             }
             if (state.showYandexLogin || state.showVkLogin) {
                 Text(stringResource(R.string.face_sign_in_with), style = Zapara.typography.caption, color = c.text2)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                val largeText = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+                if (largeText) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    if (state.showYandexLogin) {
+                        IdButton(stringResource(R.string.face_yandex_id), stringResource(R.string.account_yandex), R.drawable.ic_brand_yandex,
+                            { onEvent(AccountEvent.StartYandex) }, !state.busy && !state.externalPending,
+                            "Account.Yandex", Modifier.fillMaxWidth())
+                    }
+                    if (state.showVkLogin) {
+                        IdButton("VK ID", stringResource(R.string.account_vk), R.drawable.ic_brand_vk,
+                            { onEvent(AccountEvent.StartVk) }, !state.busy && !state.externalPending,
+                            "Account.Vk", Modifier.fillMaxWidth())
+                    }
+                } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                     if (state.showYandexLogin) {
                         IdButton(stringResource(R.string.face_yandex_id), stringResource(R.string.account_yandex), R.drawable.ic_brand_yandex, { onEvent(AccountEvent.StartYandex) }, !state.busy && !state.externalPending, "Account.Yandex", Modifier.weight(1f))
                     }

@@ -33,4 +33,5 @@
     <string name="ux100_platform_all_conflicts">Все конфликты</string>
     <string name="ux100_platform_no_other_devices">Других активных устройств нет</string>
     <string name="ux100_platform_load_other_devices">Другие устройства могут быть на следующих страницах списка</string>
+    <string name="ux100_platform_support_signed_in_hint">Опишите вопрос в новом обращении или ответьте в существующем.</string>
 </resources>

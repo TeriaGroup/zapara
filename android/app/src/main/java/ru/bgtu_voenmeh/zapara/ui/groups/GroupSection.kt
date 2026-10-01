@@ -107,6 +107,7 @@ import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
 import ru.bgtu_voenmeh.zapara.ui.chat.chatMessagePreview
 import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
+import ru.bgtu_voenmeh.zapara.ui.shell.rememberKeyboardVisible
 import ru.bgtu_voenmeh.zapara.ui.components.RevisionGuard
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
@@ -245,6 +246,8 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     val c = Zapara.colors
     val channelState = rememberSaveableStateHolder()
     val conversation = isChannelDetail(state)
+    val keyboardVisible = rememberKeyboardVisible()
+    val browsingWithKeyboard = (state.showChannels || state.showPeople) && keyboardVisible
     var detailsOpen by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(false) }
     var searchOpen by rememberSaveable(state.activeConversationId, state.activeTopicId) { mutableStateOf(false) }
     var avatarOpen by rememberSaveable(state.communityId) { mutableStateOf(false) }
@@ -261,6 +264,7 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
         verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
     ) {
         if (state.showChannels || state.showPeople) {
+            if (!browsingWithKeyboard) {
             ZButton(stringResource(R.string.group_list), { onReturnToInbox?.invoke() ?: onEvent(GroupEvent.Back) }, ghost = true, tag = "Group.List")
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 ChatAvatar(state.title, groupAvatar, 40.dp)
@@ -280,6 +284,7 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                     else -> GroupEvent.Chat
                 }) },
                 tag = "Group.Panes", modifier = Modifier.fillMaxWidth())
+            }
         } else {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
@@ -339,7 +344,9 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
             }
         }
         }
-        if (!conversation) details()
+        if (!conversation) {
+            if (!browsingWithKeyboard) details()
+        }
         else {
             if (state.failed || state.mediaError) Text(
                 stringResource(if (state.mediaError) R.string.group_media_failed else R.string.group_failed),
@@ -1288,11 +1295,13 @@ private fun BallotEditor(busy: Boolean, canOpen: Boolean, canSubmit: Boolean, fa
         AlertDialog(onDismissRequest = { deletingOption = null },
             title = { Text(stringResource(R.string.ux100_chat_option_remove_title)) },
             text = { Text(value) },
-            confirmButton = { ZButton(stringResource(R.string.ux100_chat_option_remove), {
+            confirmButton = { Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZButton(stringResource(R.string.ux100_chat_option_remove), {
                 if (options.size > 2 && options.getOrNull(index) == value) onOptions(options.filterIndexed { i, _ -> i != index })
                 deletingOption = null
-            }, enabled = !busy) },
-            dismissButton = { ZButton(stringResource(R.string.channel_cancel), { deletingOption = null }, ghost = true) })
+                }, modifier = Modifier.fillMaxWidth(), enabled = !busy)
+                ZButton(stringResource(R.string.channel_cancel), { deletingOption = null }, modifier = Modifier.fillMaxWidth(), ghost = true)
+            } })
     }
 }
 
@@ -1306,8 +1315,8 @@ private fun People(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     val visibleDirects = state.directs.filter { query.isBlank() || (it.title + " " + it.preview).contains(query.trim(), ignoreCase = true) }
     LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         item {
-            ZTextField(query, onQuery, label = { Text(stringResource(R.string.channel_people_search)) },
-                placeholder = { Text(stringResource(R.string.channel_people_search_hint)) }, singleLine = true,
+            ZTextField(query, onQuery, label = { Text(stringResource(R.string.ux100_chat_people_chat_search)) },
+                placeholder = { Text(stringResource(R.string.ux100_chat_people_chat_search_hint)) }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("Group.PeopleSearch"))
         }
         item {
@@ -1315,7 +1324,8 @@ private fun People(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                 ZChip(stringResource(R.string.ux100_chat_people_all), selected = !leadersOnly, onClick = { leadersOnly = false })
                 ZChip(stringResource(R.string.ux100_chat_people_leaders), selected = leadersOnly, onClick = { leadersOnly = true })
             }
-            Text(stringResource(R.string.ux100_chat_results, visible.size, state.people.size), style = Zapara.typography.caption)
+            Text(stringResource(R.string.ux100_chat_people_chat_count, visible.size, state.people.size,
+                if (leadersOnly) 0 else visibleDirects.size, state.directs.size), style = Zapara.typography.caption)
         }
         item {
             ZCard(onClick = { onEvent(GroupEvent.GroupChat) }, tag = "Group.Room", modifier = Modifier.fillMaxWidth()) {

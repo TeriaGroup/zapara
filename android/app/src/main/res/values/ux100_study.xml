@@ -11,6 +11,8 @@
     <string name="ux100_study_with_files">С файлами</string>
     <string name="ux100_study_sort_subject">По предмету</string>
     <string name="ux100_study_reset_filters">Сбросить фильтры</string>
+    <string name="ux100_study_more_filters">Ещё фильтры</string>
+    <string name="ux100_study_hide_more_filters">Скрыть фильтры</string>
     <string name="ux100_study_delete_assignment">Удалить задание по предмету %1$s</string>
     <string name="ux100_study_delete_detail">%1$s: %2$s</string>
     <string name="ux100_study_week_classes_only">Только дни с парами</string>

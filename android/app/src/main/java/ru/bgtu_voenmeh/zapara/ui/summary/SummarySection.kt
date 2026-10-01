@@ -147,10 +147,11 @@ private fun CountCard(title: String, rows: List<Pair<String, Int>>, index: Int,
     val c = Zapara.colors
     val maximum = rows.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1
     var showAll by rememberSaveable(title) { mutableStateOf(false) }
-    val shown = if (showAll || rows.size <= 5) rows else rows.take(5)
+    val compactLimit = if (index == 1) 7 else 5
+    val shown = if (showAll || rows.size <= compactLimit) rows else rows.take(compactLimit)
     ZCard(Modifier.fillMaxWidth().appear(index).then(if (tag == null) Modifier else Modifier.testTag(tag))) {
         Text(title, style = Zapara.typography.section, color = c.text1)
-        if (rows.size > 5) Text(stringResource(R.string.ux100_study_summary_count, rows.size),
+        if (rows.size > compactLimit) Text(stringResource(R.string.ux100_study_summary_count, rows.size),
             style = Zapara.typography.caption, color = c.text2)
         if (rows.isEmpty()) Text(emptyText ?: stringResource(R.string.panels_summary_empty), style = Zapara.typography.body, color = c.text2)
         shown.forEachIndexed { rowIndex, (name, n) ->
@@ -168,7 +169,7 @@ private fun CountCard(title: String, rows: List<Pair<String, Int>>, index: Int,
                 else if (rowIndex < shown.lastIndex) HorizontalDivider(Modifier.padding(top = Zapara.space.xs), thickness = Zapara.space.hairline, color = c.line)
             }
         }
-        if (rows.size > 5) ZButton(stringResource(if (showAll) R.string.ux100_study_summary_less
+        if (rows.size > compactLimit) ZButton(stringResource(if (showAll) R.string.ux100_study_summary_less
             else R.string.ux100_study_summary_all), { showAll = !showAll }, ghost = true,
             tag = "Summary.Expand.$index")
     }

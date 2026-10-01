@@ -573,7 +573,8 @@ fun SettingsSection(
             }
             }
             if (section == "help") {
-            item { AboutCard(state, onEvent, supportDrafts, { supportDrafts = it }) { legalId = it } }
+            item { AboutCard(state, onEvent, supportDrafts, { supportDrafts = it },
+                { legalId = it }) { returnSection = "help"; section = "account" } }
             }
         }
         }
@@ -715,7 +716,8 @@ private val SupportDraftsSaver = listSaver<Map<String, SupportLocalDraft>, Strin
 private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
     savedDrafts: Map<String, SupportLocalDraft> = emptyMap(),
     onDraftsChanged: (Map<String, SupportLocalDraft>) -> Unit = {},
-    onOpenLegal: (String) -> Unit = {}) {
+    onOpenLegal: (String) -> Unit = {},
+    onOpenAccount: () -> Unit = {}) {
     val uiText = rememberUiText()
     val ctx = LocalContext.current
     val c = Zapara.colors
@@ -843,8 +845,11 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
             ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AutoUpdate.RELEASES_PAGE)))
         }, ghost = true, tag = "Settings.Releases")
         ZButton(stringResource(R.string.settings_report), { open = !open }, ghost = true, tag = "Settings.Report")
-        Text(stringResource(R.string.settings_report_hint), style = Zapara.typography.caption, color = c.text2)
-        if (open) {
+        Text(stringResource(if (state.signedIn) R.string.ux100_platform_support_signed_in_hint
+            else R.string.settings_report_hint), style = Zapara.typography.caption, color = c.text2)
+        if (open && !state.signedIn) ZButton(stringResource(R.string.ux100_platform_open_account),
+            onOpenAccount, ghost = true, tag = "Settings.SupportOpenAccount")
+        if (open && state.signedIn) {
             val inputStatus = SupportInputLimits.evaluate(subject, body, state.selectedSupportThreadId != null)
             if (confirmDiscardDraft) AlertDialog(
                 onDismissRequest = { confirmDiscardDraft = false },

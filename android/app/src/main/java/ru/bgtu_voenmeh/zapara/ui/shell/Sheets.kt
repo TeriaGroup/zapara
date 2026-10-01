@@ -46,7 +46,6 @@ fun SectionsSheet(current: Section, onPick: (Section) -> Unit, onDismiss: () -> 
     val uiText = rememberUiText()
     val c = Zapara.colors
     var query by rememberSaveable { mutableStateOf("") }
-    val focus = LocalFocusManager.current
     val sectionGroups = listOf(
         uiText(R.string.space_day_167) to listOf(Section.Schedule, Section.Week, Section.Homework, Section.Maps, Section.Teachers, Section.Summary),
         uiText(R.string.space_day_168) to listOf(Section.Group, Section.Chat, Section.Friends, Section.Community),
@@ -63,6 +62,7 @@ fun SectionsSheet(current: Section, onPick: (Section) -> Unit, onDismiss: () -> 
             (titles.getValue(item) + " " + descriptions[item].orEmpty()).lowercase().replace('ё', 'е').contains(word) } }
     }.filter { it.second.isNotEmpty() }
     ZBottomSheet(onDismiss = onDismiss, tag = "Sheet.Sections") {
+        val focus = LocalFocusManager.current
         Text(stringResource(R.string.sections_title), style = Zapara.typography.section, color = c.text1)
         Spacer(Modifier.height(Zapara.space.s))
         ZTextField(query, { query = it }, modifier = Modifier.fillMaxWidth().testTag("Sections.Search"),
@@ -73,7 +73,7 @@ fun SectionsSheet(current: Section, onPick: (Section) -> Unit, onDismiss: () -> 
                 stringResource(R.string.ux100_common_clear_search), { query = "" }, "Sections.ClearSearch") }} else null)
         if (query.isEmpty()) ZButton(stringResource(R.string.ux100_common_open_current), onDismiss,
             ghost = true, tag = "Sections.Current")
-        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 600.dp).clipToBounds(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+        LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 600.dp).clipToBounds(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             if (visibleGroups.isEmpty()) item {
                 Text(stringResource(R.string.ux100_common_section_empty), color = c.text2)
                 ZButton(stringResource(R.string.ux100_common_clear_search), { query = "" }, ghost = true)
@@ -133,13 +133,13 @@ fun GroupPickerSheet(
 ) {
     val uiText = rememberUiText()
     val c = Zapara.colors
-    val focus = LocalFocusManager.current
     var query by rememberSaveable(currentId) { mutableStateOf("") }
     val filtered = remember(groups, query) {
         searchGroups(groups, query)
     }
     val current = groups.firstOrNull { it.id == currentId }
     ZBottomSheet(onDismiss = onDismiss, tag = "Sheet.GroupPicker", canDismiss = { !busy }) {
+        val focus = LocalFocusManager.current
         Text(stringResource(R.string.group_pick), style = Zapara.typography.section, color = c.text1)
         LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {

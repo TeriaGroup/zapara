@@ -177,7 +177,7 @@ private fun ChatPhotoViewer(bitmap: android.graphics.Bitmap, onClose: () -> Unit
                 contentScale = ContentScale.Fit)
             TextButton(onClick = onClose,
                 modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
-                colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) {
+                colors = ButtonDefaults.textButtonColors(contentColor = Color.White, disabledContentColor = Color.White.copy(alpha = 0.45f))) {
                 Text(stringResource(R.string.ux60_chat_photo_close))
             }
             Row(Modifier.align(Alignment.BottomCenter).padding(16.dp)
@@ -189,15 +189,15 @@ private fun ChatPhotoViewer(bitmap: android.graphics.Bitmap, onClose: () -> Unit
                 TextButton(onClick = { setZoom(scale / 1.5f) }, enabled = scale > 1f,
                     modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 48.dp).testTag("Chat.PhotoZoomOut")
                         .semantics { contentDescription = zoomOut },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) { Text("−") }
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White, disabledContentColor = Color.White.copy(alpha = 0.45f))) { Text("−") }
                 TextButton(onClick = { scale = 1f; pan = Offset.Zero },
                     modifier = Modifier.heightIn(min = 48.dp).testTag("Chat.PhotoZoomReset")
                         .semantics { contentDescription = reset },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) { Text("${(scale * 100).toInt()}%") }
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White, disabledContentColor = Color.White.copy(alpha = 0.45f))) { Text("${(scale * 100).toInt()}%") }
                 TextButton(onClick = { setZoom(scale * 1.5f) }, enabled = scale < MapZoom.Max,
                     modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 48.dp).testTag("Chat.PhotoZoomIn")
                         .semantics { contentDescription = zoomIn },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White)) { Text("+") }
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White, disabledContentColor = Color.White.copy(alpha = 0.45f))) { Text("+") }
             }
         }
     }

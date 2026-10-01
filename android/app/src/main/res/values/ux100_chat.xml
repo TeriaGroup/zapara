@@ -57,4 +57,8 @@
   <string name="ux100_chat_affected_search">Найти участника в проверке доступа</string>
   <string name="ux100_chat_affected_changed">Только изменённые права</string>
   <string name="ux100_chat_question_validation">Проверка вопроса</string>
+  <string name="ux100_chat_question_text_problem">Вопрос %1$d: введите текст вопроса (до 400 символов).</string>
+  <string name="ux100_chat_people_chat_search">Участник или личный чат</string>
+  <string name="ux100_chat_people_chat_search_hint">Имя, ник или текст переписки</string>
+  <string name="ux100_chat_people_chat_count">Участников: %1$d из %2$d · Переписок: %3$d из %4$d</string>
 </resources>

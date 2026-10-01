@@ -20,6 +20,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -27,11 +31,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
@@ -53,6 +59,10 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
     val chrome = LocalShellChrome.current
     val c = Zapara.colors
     val keyboard = LocalSoftwareKeyboardController.current
+    val largeText = LocalDensity.current.fontScale >= 1.5f
+    var advancedOpen by rememberSaveable { mutableStateOf(false) }
+    val advancedActive = state.deadlineFilter != HomeworkDeadlineFilter.All ||
+        state.originFilter != HomeworkOriginFilter.All || state.withFilesOnly || state.sortBySubject
     val browse = HomeworkBrowse.filter(state.groups, state.browseQuery, state.browseFilter,
         state.originFilter, state.deadlineFilter, state.withFilesOnly, state.sortBySubject)
     val visibleShared = HomeworkBrowse.shared(state.sharedRows, state.browseQuery, state.browseFilter,
@@ -114,6 +124,37 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                         }
                         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                             verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                            ZButton(stringResource(if (advancedOpen) R.string.ux100_study_hide_more_filters
+                                else R.string.ux100_study_more_filters),
+                                { advancedOpen = !advancedOpen }, ghost = true, tag = "Homework.MoreFilters")
+                            if (advancedActive || state.browseQuery.isNotBlank()) ZButton(
+                                stringResource(R.string.ux100_study_reset_filters),
+                                { onEvent(HomeworkEvent.BrowseReset) }, ghost = true,
+                                tag = "Homework.ResetFilters")
+                        }
+                        if (advancedActive && !advancedOpen) {
+                            val chosen = buildList {
+                                when (state.deadlineFilter) {
+                                    HomeworkDeadlineFilter.Overdue -> add(R.string.ux100_study_deadline_overdue)
+                                    HomeworkDeadlineFilter.Urgent -> add(R.string.ux100_study_deadline_urgent)
+                                    HomeworkDeadlineFilter.Soon -> add(R.string.ux100_study_deadline_soon)
+                                    HomeworkDeadlineFilter.NoDate -> add(R.string.ux100_study_deadline_none)
+                                    HomeworkDeadlineFilter.All -> Unit
+                                }
+                                when (state.originFilter) {
+                                    HomeworkOriginFilter.Personal -> add(R.string.ux100_study_origin_personal)
+                                    HomeworkOriginFilter.Shared -> add(R.string.ux100_study_origin_shared)
+                                    HomeworkOriginFilter.All -> Unit
+                                }
+                                if (state.withFilesOnly) add(R.string.ux100_study_with_files)
+                                if (state.sortBySubject) add(R.string.ux100_study_sort_subject)
+                            }.map { stringResource(it) }.joinToString(" · ")
+                            Text(chosen, style = Zapara.typography.caption, color = c.text2,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                        if (advancedOpen) {
+                        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                            verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                             HomeworkDeadlineFilter.entries.forEach { filter ->
                                 val label = when (filter) {
                                     HomeworkDeadlineFilter.All -> R.string.ux100_study_deadline_all
@@ -147,6 +188,7 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                                 onClick = { onEvent(HomeworkEvent.SortBySubject(!state.sortBySubject)) },
                                 tag = "Homework.SortSubject")
                         }
+                        }
                     }
                 }
                 item("summary") {
@@ -160,12 +202,6 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                     }
                     Text(stringResource(R.string.ux30_study_browse_count, browse.visibleCount + visibleShared.size),
                         style = Zapara.typography.caption, color = c.text2)
-                    if (state.browseQuery.isNotBlank() ||
-                        state.deadlineFilter != HomeworkDeadlineFilter.All ||
-                        state.originFilter != HomeworkOriginFilter.All || state.withFilesOnly || state.sortBySubject) {
-                        ZButton(stringResource(R.string.ux100_study_reset_filters),
-                            { onEvent(HomeworkEvent.BrowseReset) }, ghost = true, tag = "Homework.ResetFilters")
-                    }
                     if (browse.groups.size > 1) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                         verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                         if (browse.groups.any { it.collapsed }) ZButton(
@@ -238,9 +274,13 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                                     }
                                 }
                                 HorizontalDivider(color = c.line)
+                                if (largeText) Text(stringResource(R.string.polish_homework_completion),
+                                    style = Zapara.typography.caption, color = c.text2,
+                                    modifier = Modifier.fillMaxWidth())
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                                    Text(stringResource(R.string.polish_homework_completion),
+                                    if (largeText) androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                                    else Text(stringResource(R.string.polish_homework_completion),
                                         style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f))
                                     ZIconButton(R.drawable.ic_pencil,
                                         stringResource(R.string.ux_homework_edit_label, item.subject, item.text),

@@ -319,12 +319,13 @@ private fun FriendEditorSheet(editor: FriendEditorUi, state: FriendsUiState, onE
                 label = { Text(stringResource(R.string.friends_group)) }, singleLine = true,
                 enabled = !state.editorSaving)
         }
+        val membersHint = stringResource(R.string.ux100_common_members_hint)
+        Text(membersHint, style = Zapara.typography.caption, color = c.text2)
         OutlinedTextField(
             value = editor.members, onValueChange = { onEvent(FriendsEvent.EditorMembers(it)) },
-            modifier = Modifier.fillMaxWidth().testTag("Editor.Text"),
+            modifier = Modifier.fillMaxWidth().testTag("Editor.Text").semantics { contentDescription = membersHint },
             placeholder = { Text(stringResource(R.string.friends_members), color = c.text3) },
             minLines = 2, maxLines = 4,
-            label = { Text(stringResource(R.string.ux100_common_members_hint)) },
             enabled = !state.editorSaving,
             shape = RoundedCornerShape(Zapara.radii.control),
             colors = OutlinedTextFieldDefaults.colors(

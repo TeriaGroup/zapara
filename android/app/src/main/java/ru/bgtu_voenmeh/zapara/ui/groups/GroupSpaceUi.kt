@@ -519,7 +519,7 @@ fun powerResource(power: String): Int = when(power) {
                 Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(question.required, { value -> questions = questions.mapIndexed { i, q -> if (i == index) q.copy(required = value) else q } }, enabled = !state.channelBusy); Text(uiText(R.string.space_day_133)) }
                 if (question.kind.endsWith("Choice")) Field(uiText(R.string.space_day_134), question.options.joinToString("\n"), { value -> questions = questions.mapIndexed { i, q -> if (i == index) q.copy(options = value.split("\n")) else q } }, !state.channelBusy)
                 val questionProblem = GroupFormDraft(uiText(R.string.ux100_chat_question_validation), "", null, false, listOf(question)).problem(Instant.now())
-                if (questionProblem != null) Text(stringResource(R.string.ux100_chat_question_problem, index + 1),
+                if (questionProblem != null) Text(stringResource(if (questionProblem == "options") R.string.ux100_chat_question_problem else R.string.ux100_chat_question_text_problem, index + 1),
                     style = Zapara.typography.caption, color = Zapara.colors.warn)
                 ZButton(stringResource(R.string.ux100_chat_duplicate_question), {
                     questions = duplicateFormQuestion(questions, question.questionId, UUID.randomUUID().toString())
@@ -562,12 +562,14 @@ fun powerResource(power: String): Int = when(power) {
     if (discard) AlertDialog(onDismissRequest = { discard = false },
         title = { Text(stringResource(R.string.ux100_chat_discard_title)) },
         text = { Text(stringResource(R.string.ux100_chat_discard_body)) },
-        confirmButton = { ZButton(stringResource(R.string.ux100_chat_discard_form), {
+        confirmButton = { Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            ZButton(stringResource(R.string.ux100_chat_discard_form), {
             title = ""; description = ""; deadline = ""; anonymous = false
             questions = listOf(GroupFormQuestion(UUID.randomUUID().toString(), "", "shortText", true, emptyList()))
             discard = false
-        }, enabled = !state.channelBusy) },
-        dismissButton = { ZButton(uiText(R.string.channel_cancel), { discard = false }, ghost = true) })
+            }, modifier = Modifier.fillMaxWidth(), enabled = !state.channelBusy)
+            ZButton(uiText(R.string.channel_cancel), { discard = false }, modifier = Modifier.fillMaxWidth(), ghost = true)
+        } })
     val target = questions.firstOrNull { it.questionId == deletingQuestion }
     if (target != null) AlertDialog(onDismissRequest = { deletingQuestion = null },
         title = { Text(stringResource(R.string.next_question_delete_title)) },

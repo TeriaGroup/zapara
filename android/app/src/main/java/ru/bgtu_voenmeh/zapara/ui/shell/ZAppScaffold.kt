@@ -30,6 +30,16 @@ internal fun ZAppScaffold(
     bottomBar: @Composable () -> Unit,
     content: @Composable BoxScope.() -> Unit
 ) {
+    val keyboardVisible = rememberKeyboardVisible()
+    Scaffold(modifier = modifier, containerColor = Zapara.colors.canvas,
+        bottomBar = { if (!keyboardVisible) bottomBar() }) { padding ->
+        val frame = Modifier.padding(padding).consumeWindowInsets(padding)
+        Box((if (conversation) frame.imePadding() else frame).fillMaxSize(), content = content)
+    }
+}
+
+@Composable
+internal fun rememberKeyboardVisible(): Boolean {
     val view = LocalView.current
     var platformKeyboardVisible by remember(view) { mutableStateOf(false) }
     DisposableEffect(view) {
@@ -42,10 +52,5 @@ internal fun ZAppScaffold(
         listener.onGlobalLayout()
         onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(listener) }
     }
-    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0 || platformKeyboardVisible
-    Scaffold(modifier = modifier, containerColor = Zapara.colors.canvas,
-        bottomBar = { if (!keyboardVisible) bottomBar() }) { padding ->
-        val frame = Modifier.padding(padding).consumeWindowInsets(padding)
-        Box((if (conversation) frame.imePadding() else frame).fillMaxSize(), content = content)
-    }
+    return WindowInsets.ime.getBottom(LocalDensity.current) > 0 || platformKeyboardVisible
 }
