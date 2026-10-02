@@ -73,7 +73,8 @@ fun SubjectPickerSheet(
         if (picker.subjects.isEmpty()) {
             Text(stringResource(R.string.uxnext_homework_manual_hint), style = Zapara.typography.caption, color = c.text2)
             ZButton(stringResource(R.string.uxnext_homework_manual_add), { onManual(picker.query.trim()) },
-                enabled = manualSubjectAllowed(picker.subjects, picker.query), tag = "Picker.ManualSubject")
+                modifier = Modifier.fillMaxWidth(), enabled = manualSubjectAllowed(picker.subjects, picker.query),
+                tag = "Picker.ManualSubject", leadingIcon = R.drawable.ic_plus)
         }
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             items(filtered, key = { it.norm }) { subject ->

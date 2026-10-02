@@ -96,18 +96,18 @@ internal fun parseFormDeadline(day: String, time: String, zone: ZoneId = ZoneId.
             else -> R.string.ux100_chat_preview_search
         }), managementQuery, { managementQuery = it })
         if (panel == "audit") {
-            ZButton(stringResource(if (auditFiltersOpen) R.string.ux300_android_hide_audit_filters
+            ZDisclosureButton(stringResource(if (auditFiltersOpen) R.string.ux300_android_hide_audit_filters
                 else R.string.ux300_android_show_audit_filters),
-                { auditFiltersOpen = !auditFiltersOpen }, ghost = true, tag = "Group.AuditFilters")
+                expanded = auditFiltersOpen, onClick = { auditFiltersOpen = !auditFiltersOpen }, tag = "Group.AuditFilters")
             if (auditFiltersOpen) {
                 Field(stringResource(R.string.ux300_android_audit_search), managementQuery,
                     { managementQuery = it })
-                ZButton(stringResource(R.string.ux300_android_audit_date), {
+                ZActionButton(stringResource(R.string.ux300_android_audit_date), {
                     val date = runCatching { LocalDate.parse(auditDate) }.getOrDefault(LocalDate.now())
                     DatePickerDialog(nativeContext, auditCalendarTheme,
                         { _, year, month, day -> auditDate = LocalDate.of(year, month + 1, day).toString() },
                         date.year, date.monthValue - 1, date.dayOfMonth).show()
-                }, ghost = true, tag = "Group.AuditDate")
+                }, tag = "Group.AuditDate", leadingIcon = R.drawable.ic_calendar)
             }
             if (managementQuery.isNotBlank() || auditDate.isNotBlank()) {
                 Text(listOf(managementQuery, auditDate).filter(String::isNotBlank).joinToString(" · "),
@@ -168,8 +168,8 @@ internal fun parseFormDeadline(day: String, time: String, zone: ZoneId = ZoneId.
                 "preview" -> {
                     item { Text(uiText(R.string.space_day_72), style = Zapara.typography.caption)
                         if (state.preview != null) ZButton(uiText(R.string.space_day_73), { dispatch(onEvent, GroupSpaceAction.EndPreview) }, ghost = true) }
-                    items(browsePeople(state.people, managementQuery), key = { it.id }) { person -> ZButton("${person.name} · ${officialRoleTitle(person.role)}", { dispatch(onEvent, GroupSpaceAction.Preview(person.id, null)) }, enabled = !state.channelBusy, ghost = true) }
-                    items(state.desk?.roles.orEmpty(), key = { it.roleId }) { role -> ZButton(role.name, { dispatch(onEvent, GroupSpaceAction.Preview(null, role.roleId)) }, enabled = !state.channelBusy, ghost = true) }
+                    items(browsePeople(state.people, managementQuery), key = { it.id }) { person -> ZActionButton("${person.name} · ${officialRoleTitle(person.role)}", { dispatch(onEvent, GroupSpaceAction.Preview(person.id, null)) }, enabled = !state.channelBusy, leadingIcon = R.drawable.ic_users) }
+                    items(state.desk?.roles.orEmpty(), key = { it.roleId }) { role -> ZActionButton(role.name, { dispatch(onEvent, GroupSpaceAction.Preview(null, role.roleId)) }, enabled = !state.channelBusy, leadingIcon = R.drawable.ic_shield) }
                 }
                 "audit" -> {
                     if (shownAudit.isEmpty()) item { Text(stringResource(R.string.ux300_android_audit_empty),
@@ -409,7 +409,8 @@ fun powerResource(power: String): Int = when(power) {
                 if(selection.roles.isEmpty()) Text(uiText(R.string.review_select_a_role),style=Zapara.typography.caption,color=Zapara.colors.warn)
             }
         }
-        ZButton(uiText(R.string.review_advanced_access), { advanced = !advanced }, ghost = true, quiet = true)
+        ZDisclosureButton(uiText(R.string.review_advanced_access), expanded = advanced,
+            onClick = { advanced = !advanced })
         if (advanced) state.space?.capabilities?.powers.orEmpty().filterNot { it in GroupAccessPresets.groupOnly }.forEach { power ->
             Text(powerTitle(power), style = Zapara.typography.bodyStrong)
             val selected = rules.firstOrNull { it.roleId == roleId && it.power == power }?.state ?: "inherit"
@@ -436,7 +437,7 @@ fun powerResource(power: String): Int = when(power) {
             shownParticipants.forEach { person ->
                 var details by rememberSaveable(access.topicId, person.userId) { mutableStateOf(false) }
                 val name = state.people.firstOrNull { it.id == person.userId }?.name ?: uiText(R.string.space_day_148)
-                ZButton(name, { details = !details }, ghost = true, quiet = true)
+                ZDisclosureButton(name, expanded = details, onClick = { details = !details })
                 if (details) state.space?.capabilities?.powers.orEmpty().forEach { power ->
                     val source = person.sources[power].orEmpty().let { original -> state.desk?.roles.orEmpty().fold(original) { value, role -> value.replace(role.roleId, role.name, ignoreCase = true) } }
                     Text("${powerTitle(power)}: ${uiText(if (power in person.afterPermissions) R.string.space_day_113 else R.string.space_day_114)} · $source", style = Zapara.typography.caption)
@@ -468,7 +469,7 @@ fun powerResource(power: String): Int = when(power) {
     var formQuery by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf("") }
     var formFilter by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf("all") }
     LazyColumn(modifier, contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-        item { state.spaceError?.let { Text(it, color = Zapara.colors.bad) }; if (state.channelBusy) LinearProgressIndicator(Modifier.fillMaxWidth()); ZButton(uiText(R.string.space_day_116), { dispatch(onEvent, GroupSpaceAction.ReloadContent) }, enabled = !state.channelBusy, ghost = true) }
+        item { state.spaceError?.let { Text(it, color = Zapara.colors.bad) }; if (state.channelBusy) LinearProgressIndicator(Modifier.fillMaxWidth()); ZButton(uiText(R.string.space_day_116), { dispatch(onEvent, GroupSpaceAction.ReloadContent) }, modifier = Modifier.fillMaxWidth(), enabled = !state.channelBusy, leadingIcon = R.drawable.ic_refresh) }
         when(state.activeChannelKind) {
             "forms" -> {
                 if ("forms" in permissions && state.preview == null) item { FormBuilder(state, onEvent) }
@@ -587,7 +588,9 @@ fun powerResource(power: String): Int = when(power) {
     val initialVersion = remember(state.communityId, state.activeTopicId) { state.formCreateVersion }
     LaunchedEffect(state.formCreateVersion) { if (state.formCreateVersion > initialVersion) { open = false; title = ""; description = ""; deadline = ""; deadlineTime = "23:59"; questions = listOf(GroupFormQuestion(UUID.randomUUID().toString(), "", "shortText", true, emptyList())) } }
     ZCard(Modifier.fillMaxWidth()) {
-        ZButton(uiText(R.string.space_day_123), { open = !open }, enabled = !state.channelBusy, ghost = true)
+        ZDisclosureButton(uiText(R.string.space_day_123), expanded = open,
+            onClick = { open = !open }, enabled = !state.channelBusy,
+            leadingIcon = R.drawable.ic_ballot)
         if (open) {
             Field(uiText(R.string.space_day_124), title, { title = it.take(120) }, !state.channelBusy)
             Field(uiText(R.string.space_day_125), description, { description = it.take(2000) }, !state.channelBusy)
@@ -596,19 +599,20 @@ fun powerResource(power: String): Int = when(power) {
                 val context = LocalContext.current
                 val timePickerTheme = if (Zapara.colors.isDark) R.style.Zapara_DatePicker_Dark
                     else R.style.Zapara_DatePicker_Light
-                ZButton(stringResource(R.string.ux300_android_form_deadline_time, deadlineTime), {
+                ZActionButton(stringResource(R.string.ux300_android_form_deadline_time, deadlineTime), {
                     val selected = LocalTime.parse(deadlineTime)
                     android.app.TimePickerDialog(context, timePickerTheme, { _, hour, minute ->
                         deadlineTime = "%02d:%02d".format(java.util.Locale.ROOT, hour, minute)
                     }, selected.hour, selected.minute, true).show()
-                }, ghost = true, tag = "Group.FormDeadlineTime")
+                }, tag = "Group.FormDeadlineTime", leadingIcon = R.drawable.ic_calendar)
                 Text(stringResource(R.string.ux300_android_form_deadline_zone,
                     ZoneId.systemDefault().id), style = Zapara.typography.caption)
             }
             Text(stringResource(R.string.ux100_chat_question_count, questions.size), style = Zapara.typography.caption)
             Row(verticalAlignment = Alignment.CenterVertically) { Switch(anonymous, { anonymous = it }, enabled = !state.channelBusy); Text(uiText(R.string.space_day_127)) }
             questions.forEachIndexed { index, question -> key(question.questionId) {
-                Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+                    verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                     ZButton(stringResource(R.string.next_question_up), { questions = moveQuestion(questions, index, -1) },
                         enabled = index > 0 && !state.channelBusy, ghost = true)
                     ZButton(stringResource(R.string.next_question_down), { questions = moveQuestion(questions, index, 1) },
@@ -639,11 +643,12 @@ fun powerResource(power: String): Int = when(power) {
                 "questions" -> R.string.review_form_questions; "question" -> R.string.review_form_question; "options" -> R.string.review_form_options; else -> R.string.review_form_size
             }), style = Zapara.typography.caption, color = Zapara.colors.warn)
             val valid = problem == null
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                 ZButton(stringResource(R.string.ux100_chat_preview), { preview = true }, enabled = valid && !state.channelBusy, ghost = true)
                 ZButton(stringResource(R.string.ux100_chat_discard_form), { discard = true }, enabled = !state.channelBusy, ghost = true)
             }
-            ZButton(uiText(R.string.space_day_137), { dispatch(onEvent, GroupSpaceAction.CreateForm(title, description, parseFormDeadline(deadline, deadlineTime), anonymous, payload.questions)) }, enabled = valid && !state.channelBusy, busy = state.channelBusy)
+            ZButton(uiText(R.string.space_day_137), { dispatch(onEvent, GroupSpaceAction.CreateForm(title, description, parseFormDeadline(deadline, deadlineTime), anonymous, payload.questions)) }, modifier = Modifier.fillMaxWidth(), enabled = valid && !state.channelBusy, busy = state.channelBusy)
             Text(uiText(R.string.space_day_138), style = Zapara.typography.caption)
         }
     }
@@ -767,17 +772,17 @@ fun powerResource(power: String): Int = when(power) {
                 { scope.launch { requesters[missing.first().questionId]?.bringIntoView() } }, ghost = true,
                 tag = "Group.FormFirstMissing")
         }
-        if (form.canRespond) ZButton(if (form.ownResponse == null) uiText(R.string.space_day_143) else uiText(R.string.space_day_144), { dispatch(onEvent, GroupSpaceAction.SubmitForm(form.formId, answers)) }, enabled = valid && (dirty || form.ownResponse == null) && !state.channelBusy && state.preview == null)
+        if (form.canRespond) ZButton(if (form.ownResponse == null) uiText(R.string.space_day_143) else uiText(R.string.space_day_144), { dispatch(onEvent, GroupSpaceAction.SubmitForm(form.formId, answers)) }, modifier = Modifier.fillMaxWidth(), enabled = valid && (dirty || form.ownResponse == null) && !state.channelBusy && state.preview == null)
         else Text(uiText(R.string.space_day_145), style = Zapara.typography.caption)
-        if (form.canViewResponses) ZButton(if (showResponses) stringResource(R.string.ux100_chat_answers_hide) else uiText(R.string.space_day_146), {
+        if (form.canViewResponses) ZDisclosureButton(if (showResponses) stringResource(R.string.ux100_chat_answers_hide) else uiText(R.string.space_day_146), expanded = showResponses, onClick = {
             showResponses = !showResponses
             if (showResponses) dispatch(onEvent, GroupSpaceAction.Responses(form.formId))
-        }, enabled = !state.channelBusy, ghost = true)
+        }, enabled = !state.channelBusy, leadingIcon = R.drawable.ic_users)
         if (showResponses && form.canViewResponses) {
         state.responseCounts[form.formId]?.let { total -> Text(uiText(R.string.space_day_response_count, state.responses[form.formId].orEmpty().size, total), style = Zapara.typography.caption) }
-        ZButton(stringResource(if (responseFiltersOpen) R.string.ux300_android_hide_response_filters
+        ZDisclosureButton(stringResource(if (responseFiltersOpen) R.string.ux300_android_hide_response_filters
             else R.string.ux300_android_show_response_filters),
-            { responseFiltersOpen = !responseFiltersOpen }, ghost = true,
+            expanded = responseFiltersOpen, onClick = { responseFiltersOpen = !responseFiltersOpen },
             tag = "Group.FormResponseFilters")
         if (responseFiltersOpen) {
             Field(stringResource(if (form.anonymous) R.string.ux300_android_form_answer_search
@@ -802,9 +807,9 @@ fun powerResource(power: String): Int = when(power) {
         Text(stringResource(R.string.ux300_android_loaded_response_count,
             shownResponses.size, loadedResponses.size), style = Zapara.typography.caption)
         if (loadedResponses.isNotEmpty() && form.questions.any { it.kind.endsWith("Choice") }) {
-            ZButton(stringResource(if (showAggregate) R.string.ux300_android_hide_aggregate
-                else R.string.ux300_android_show_aggregate), { showAggregate = !showAggregate },
-                ghost = true, tag = "Group.FormAggregate")
+            ZDisclosureButton(stringResource(if (showAggregate) R.string.ux300_android_hide_aggregate
+                else R.string.ux300_android_show_aggregate), expanded = showAggregate,
+                onClick = { showAggregate = !showAggregate }, tag = "Group.FormAggregate")
             if (showAggregate) {
                 Text(stringResource(R.string.ux300_android_aggregate_scope, loadedResponses.size),
                     style = Zapara.typography.caption)

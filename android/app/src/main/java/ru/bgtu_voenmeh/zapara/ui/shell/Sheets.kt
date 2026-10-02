@@ -1,19 +1,13 @@
 package ru.bgtu_voenmeh.zapara.ui.shell
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -68,12 +62,15 @@ fun SectionsSheet(current: Section, onPick: (Section) -> Unit, onDismiss: () -> 
         Spacer(Modifier.height(Zapara.space.s))
         ZTextField(query, { query = it }, modifier = Modifier.fillMaxWidth().testTag("Sections.Search"),
             placeholder = { Text(stringResource(R.string.ux100_common_section_search)) }, singleLine = true,
+            leadingIcon = { ZIcon(R.drawable.ic_search, null) },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
             trailingIcon = if (query.isNotEmpty()) {{ ZIconButton(R.drawable.ic_x,
                 stringResource(R.string.ux100_common_clear_search), { query = "" }, "Sections.ClearSearch") }} else null)
+        Spacer(Modifier.height(Zapara.space.s))
         if (query.isEmpty()) ZActionButton(stringResource(R.string.ux100_common_open_current), onDismiss,
             tag = "Sections.Current", leadingIcon = current.icon)
+        Spacer(Modifier.height(Zapara.space.s))
         LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 600.dp).clipToBounds(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             if (visibleGroups.isEmpty()) item {
                 Text(stringResource(R.string.ux100_common_section_empty), color = c.text2)
@@ -103,7 +100,7 @@ private fun SectionCard(section: Section, active: Boolean, onClick: () -> Unit) 
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)
         ) {
-            ZIcon(section.icon, stringResource(section.title), Modifier.size(20.dp))
+            ZIcon(section.icon, null, Modifier.size(20.dp))
             Column(Modifier.weight(1f)) {
                 Text(stringResource(section.title), style = Zapara.typography.bodyStrong, color = c.text1)
                 val description = when(section) {
@@ -115,9 +112,8 @@ private fun SectionCard(section: Section, active: Boolean, onClick: () -> Unit) 
                 }
                 description?.let { Text(stringResource(it), style = Zapara.typography.caption, color = c.text2) }
             }
-            if (active) {
-                Box(Modifier.size(6.dp).clip(CircleShape).background(c.text1))
-            }
+            ZIcon(if (active) R.drawable.ic_check else R.drawable.ic_chevron_right, null,
+                Modifier.size(20.dp))
         }
     }
 }
@@ -155,26 +151,18 @@ fun GroupPickerSheet(
                 enabled = !busy, tag = "Picker.RetryGroup")
         }
         Spacer(Modifier.height(Zapara.space.s))
-        OutlinedTextField(
+        ZTextField(
             value = query,
             onValueChange = { query = it },
             modifier = Modifier.fillMaxWidth().testTag("Picker.Search"),
-            placeholder = { Text(stringResource(R.string.group_search), style = Zapara.typography.caption, color = c.text3) },
+            placeholder = { Text(stringResource(R.string.group_search)) },
+            leadingIcon = { ZIcon(R.drawable.ic_search, null) },
             singleLine = true,
             enabled = !busy,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
             trailingIcon = if (query.isNotEmpty()) {{ ZIconButton(R.drawable.ic_x,
-                stringResource(R.string.ux100_common_clear_search), { query = "" }, "Picker.ClearQuery", enabled = !busy) }} else null,
-            shape = RoundedCornerShape(Zapara.radii.control),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = c.chip,
-                unfocusedContainerColor = c.chip,
-                focusedBorderColor = c.lineStrong,
-                unfocusedBorderColor = c.chip,
-                focusedTextColor = c.text1,
-                unfocusedTextColor = c.text1
-            )
+                stringResource(R.string.ux100_common_clear_search), { query = "" }, "Picker.ClearQuery", enabled = !busy) }} else null
         )
         Spacer(Modifier.height(Zapara.space.s))
         Text(stringResource(R.string.ux100_common_groups_count, filtered.size),
@@ -215,7 +203,7 @@ fun GroupPickerSheet(
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         HighlightText(group.name, query, Zapara.typography.bodyStrong, Modifier.weight(1f))
                         if (group.id == currentId) {
-                            ZIcon(R.drawable.ic_check, group.name, Modifier.size(20.dp))
+                            ZIcon(R.drawable.ic_check, null, Modifier.size(20.dp))
                         }
                     }
                 }

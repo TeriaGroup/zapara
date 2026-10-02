@@ -1,18 +1,24 @@
 package ru.bgtu_voenmeh.zapara.data.api
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork
 import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
+import ru.bgtu_voenmeh.zapara.data.ParsedSchedule
 import java.net.URI
+import java.time.OffsetDateTime
 
 class ApiRefreshCoordinator(
     private val store: TimetableStore,
     private val work: ProfileWork,
     baseUrl: String?,
     transport: HttpExchange,
-    private val saveSettings: (ScheduleRepository.SettingsState) -> Unit = store::saveSettings
+    private val saveSettings: (ScheduleRepository.SettingsState) -> Unit = store::saveSettings,
+    private val universityLoader: (suspend (List<String>) -> ParsedSchedule)? = null,
+    private val clock: () -> OffsetDateTime = { OffsetDateTime.now() }
 ) {
     private val client: TimetableApiClient?
     private val sourceBase: String
@@ -48,6 +54,7 @@ class ApiRefreshCoordinator(
     }
 
     suspend fun refresh(neededOnly: Boolean = false): Boolean {
+        val callingContext = currentCoroutineContext()
         val ticket = work.enter()
         try {
             if (!ticket.isCurrent) return false
@@ -86,9 +93,38 @@ class ApiRefreshCoordinator(
                 } catch (e: TimetableApiException) {
                     ticket.throwIfStale()
                     lastFailure = e.failure
-                    throw e
+                    null
                 }
                 ticket.throwIfStale()
+                val requiredNames = (listOfNotNull(selectedName) + friendNames).distinct()
+                val olderThanDirect = snapshot != null && hasNewerUniversityCopy(requiredNames, cache, snapshot.meta.fetchedAt)
+                if (snapshot == null || snapshot.meta.stale || olderThanDirect) {
+                    val loader = universityLoader
+                    if (loader == null) {
+                        lastError = if (snapshot?.meta?.stale == true || olderThanDirect)
+                            "Сервер хранит устаревшее расписание. Локальные данные сохранены."
+                        else "Не удалось обновить расписание API. Локальные данные сохранены."
+                        return@withLock false
+                    }
+                    if (selected != null && selectedName.isNullOrBlank()) return@withLock false
+                    val names = requiredNames
+                    if (names.isEmpty()) return@withLock false
+                    val direct = loader(names)
+                    callingContext.ensureActive()
+                    ticket.throwIfStale()
+                    if (stopped || store.settings().useUniversityXml || store.settings().myGroupId != selected ||
+                        store.friends().filter { it.enabled }.map { it.groupName } != friendNames)
+                        return@withLock false
+                    try {
+                        cache.applyUniversity(direct, names, before, friendNames, clock().toString()) {
+                            callingContext.ensureActive()
+                            ticket.throwIfStale()
+                        }
+                    } catch (_: StaleTimetableSelection) { return@withLock false }
+                    lastError = null
+                    lastFailure = null
+                    return@withLock true
+                }
                 if (stopped) return@withLock false
                 if (store.settings().useUniversityXml || store.settings().myGroupId != selected || store.friends().filter { it.enabled }.map { it.groupName } != friendNames)
                     return@withLock false
@@ -124,6 +160,8 @@ class ApiRefreshCoordinator(
                 if (existing != null && cache.read(existing.id)?.sourceBase == sourceBase) return@withLock true
                 val snapshot = http.fetchResolved(listOf(TimetableGroupRequest(existing?.id, name)))
                 ticket.throwIfStale()
+                if (snapshot.meta.stale) return@withLock false
+                if (hasNewerUniversityCopy(listOf(name), cache, snapshot.meta.fetchedAt)) return@withLock false
                 if (stopped || store.settings().useUniversityXml) return@withLock false
                 cache.apply(snapshot, sourceBase)
                 true
@@ -136,5 +174,15 @@ class ApiRefreshCoordinator(
     fun stop() {
         stopped = true
         work.stopAccepting()
+    }
+
+    private fun hasNewerUniversityCopy(names: List<String>, cache: TimetableApiCache, apiFetchedAt: String): Boolean {
+        val serverAt = OffsetDateTime.parse(apiFetchedAt).toInstant()
+        return store.storedGroups().any { group ->
+            names.any { it.equals(group.name, ignoreCase = true) } && cache.read(group.id)?.let { local ->
+                local.source == "university" && local.fetchedAt != null &&
+                    OffsetDateTime.parse(local.fetchedAt).toInstant().isAfter(serverAt)
+            } == true
+        }
     }
 }

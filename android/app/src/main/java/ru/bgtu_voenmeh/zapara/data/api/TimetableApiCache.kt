@@ -1,6 +1,8 @@
 package ru.bgtu_voenmeh.zapara.data.api
 
 import java.time.LocalDate
+import java.util.Locale
+import ru.bgtu_voenmeh.zapara.data.ParsedSchedule
 
 class TimetableApiCache(private val store: TimetableStore) {
     fun read(groupId: String?): CacheMetadata? = groupId?.let { store.readMetadata(it) }
@@ -8,6 +10,9 @@ class TimetableApiCache(private val store: TimetableStore) {
     fun canIntersect(selected: String, friend: String): Boolean {
         val mine = read(selected)
         val other = read(friend)
+        if (mine?.source == "university" || other?.source == "university")
+            return mine?.source == "university" && other?.source == "university" &&
+                mine.period == other.period && !mine.fetchedAt.isNullOrBlank() && mine.fetchedAt == other.fetchedAt
         if (mine?.source != "api" && other?.source != "api") return true
         return mine?.source == "api" && other?.source == "api" && mine.sourceBase == other.sourceBase &&
             mine.period == other.period && mine.meta?.snapshotId == other.meta?.snapshotId &&
@@ -54,6 +59,59 @@ class TimetableApiCache(private val store: TimetableStore) {
                 )
             }
             if (selectedGroupId != null && selectedGroupId != settings.myGroupId) saveSettings(settings.copy(myGroupId = selectedGroupId))
+        }
+    }
+
+    fun applyUniversity(
+        parsed: ParsedSchedule,
+        requestedNames: List<String>,
+        expectedSettings: ru.bgtu_voenmeh.zapara.data.ScheduleRepository.SettingsState,
+        expectedFriendNames: List<String>,
+        fetchedAt: String,
+        guard: () -> Unit
+    ) {
+        fun key(name: String) = name.trim().lowercase(Locale.ROOT)
+        val requested = requestedNames.map(::key).toSet()
+        val incoming = parsed.groups.associateBy { key(it.name) }
+        if (requested.isEmpty() || parsed.weekCount != 2 || parsed.groups.isEmpty() ||
+            incoming.size != parsed.groups.size || requested.any { it !in incoming } ||
+            parsed.lessons.any { key(it.groupId) !in requested })
+            throw TimetableApiException(TimetableApiFailure.InvalidPayload)
+        if (parsed.periodStart.isBefore(expectedSettings.periodStart))
+            throw IllegalStateException(ru.bgtu_voenmeh.zapara.data.TimetablePayload.OLDER)
+
+        store.runInTransaction {
+            guard()
+            val current = store.settings()
+            if (current.myGroupId != expectedSettings.myGroupId || current.useUniversityXml != expectedSettings.useUniversityXml ||
+                store.friends().filter { it.enabled }.map { it.groupName } != expectedFriendNames)
+                throw StaleTimetableSelection()
+            val stored = store.storedGroups()
+            val catalogIds = store.catalogIds()
+            val preferred = linkedMapOf<String, ru.bgtu_voenmeh.zapara.data.GroupInfo>()
+            val selected = stored.firstOrNull { it.id == expectedSettings.myGroupId }
+            if (selected != null) preferred[key(selected.name)] = selected
+            for (group in stored.filter { it.id in catalogIds } + stored)
+                preferred.putIfAbsent(key(group.name), group)
+            val mapped = parsed.groups.associate { group ->
+                key(group.name) to (preferred[key(group.name)]?.id ?: group.id)
+            }
+            if (mapped.values.toSet().size != mapped.size)
+                throw TimetableApiException(TimetableApiFailure.InvalidPayload)
+            val period = TimetableApiPeriod(parsed.periodStart, parsed.weekCount, parsed.periodTitle, "Europe/Moscow")
+            store.clearCatalog()
+            for (group in parsed.groups) {
+                val id = mapped.getValue(key(group.name))
+                store.ensureGroup(id, group.name, group.url)
+                store.insertCatalog(id, group.name)
+            }
+            store.writeMetadata("", CacheMetadata(period, null, fetchedAt, "university", ""))
+            for (name in requestedNames) {
+                val id = mapped.getValue(key(name))
+                store.replaceLessons(id, parsed.lessons.filter { key(it.groupId) == key(name) }.map { it.copy(groupId = id) })
+                store.writeMetadata(id, CacheMetadata(period, null, fetchedAt, "university", ""))
+            }
+            guard()
         }
     }
 

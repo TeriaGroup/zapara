@@ -91,17 +91,20 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
             ZSwitch(state.onlyMine, { onEvent(TeachersEvent.OnlyMine(it)) }, "Teachers.OnlyMine",
                 Modifier.semantics { contentDescription = onlyMineLabel })
         }
-        if (departments.size > 1) Box {
+        if (departments.size > 1) Box(Modifier.fillMaxWidth()) {
             ZButton(if (activeDepartment.isEmpty()) stringResource(R.string.ux300_android_all_departments)
                 else activeDepartment, { departmentMenu = true }, ghost = activeDepartment.isEmpty(),
-                tag = "Teachers.Department")
+                modifier = Modifier.fillMaxWidth(), tag = "Teachers.Department", startAligned = true,
+                trailingIcon = R.drawable.ic_chevron_right, trailingIconRotation = 90f)
             androidx.compose.material3.DropdownMenu(expanded = departmentMenu,
                 onDismissRequest = { departmentMenu = false }) {
                 androidx.compose.material3.DropdownMenuItem(
-                    text = { Text(stringResource(R.string.ux300_android_all_departments)) },
+                    text = { Text(stringResource(R.string.ux300_android_all_departments),
+                        style = Zapara.typography.body, color = c.text1) },
                     onClick = { department = ""; departmentMenu = false })
                 departments.forEach { name -> androidx.compose.material3.DropdownMenuItem(
-                    text = { Text(name) }, onClick = { department = name; departmentMenu = false }) }
+                    text = { Text(name, style = Zapara.typography.body, color = c.text1) },
+                    onClick = { department = name; departmentMenu = false }) }
             }
         }
         }

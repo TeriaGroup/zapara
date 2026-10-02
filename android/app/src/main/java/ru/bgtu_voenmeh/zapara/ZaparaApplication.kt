@@ -101,7 +101,8 @@ class AndroidProfileHost(val app: Application) : ViewModelStoreOwner {
         val store = RoomTimetableStore(db)
         val work = ProfileWork()
         val repo = ScheduleRepository(db, store, work)
-        val api = ApiRefreshCoordinator(store, work, apiBase, transport, repo::saveSettings)
+        val api = ApiRefreshCoordinator(store, work, apiBase, transport, repo::saveSettings,
+            universityLoader = { names -> repo.voenmeh.fetchSchedule(names) })
         val created = AppContainer(
             app, descriptor, db, repo, work, api,
             communities = accountScope?.let { CommunityHttpClient(transport, it) },

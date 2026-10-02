@@ -9,23 +9,50 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import ru.bgtu_voenmeh.zapara.data.api.JsonValue
+import ru.bgtu_voenmeh.zapara.data.api.StrictJson
+import ru.bgtu_voenmeh.zapara.data.api.obj
+import java.time.LocalTime
 
 class VoenmehScheduleClient(
     private val get: (String) -> String = Companion::httpGet
 ) {
     suspend fun fetchSchedule(groupNames: Collection<String> = emptyList()): ParsedSchedule = coroutineScope {
         val meta = VoenmehScheduleParser.parseMeta(get(META_URL))
-        val fetchList = groupNames.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val fetchList = groupNames.map { it.trim() }.filter { it.isNotEmpty() }.map { requested ->
+            meta.groups.firstOrNull { it.equals(requested, ignoreCase = true) }
+                ?: throw IllegalStateException("Группа $requested не найдена в актуальном расписании университета")
+        }.distinct()
         val slots = Semaphore(6)
         val loaded = fetchList.map { name ->
             async {
                 slots.withPermit {
                     val url = "$LESSONS_URL?name=${encode(name)}&kind=group"
-                    name to VoenmehScheduleParser.parseLessons(get(url), name)
+                    name to checkedLessons(get(url), name)
                 }
             }
         }.awaitAll()
+        if (fetchList.isNotEmpty()) {
+            val after = VoenmehScheduleParser.parseMeta(get(META_URL))
+            if (after.groups.toSet() != meta.groups.toSet() || after.copy(groups = meta.groups) != meta) {
+                throw IllegalStateException("Расписание изменилось во время загрузки. Повторите обновление")
+            }
+        }
         VoenmehScheduleParser.assemble(meta, loaded)
+    }
+
+    private fun checkedLessons(json: String, name: String): List<Lesson> {
+        val lessons = VoenmehScheduleParser.parseLessons(json, name)
+        val payload = StrictJson.parse(json.trimStart('\uFEFF')).obj()
+        val rows = (payload.fields["lessons"] as? JsonValue.Arr)?.items
+            ?: throw IllegalStateException(TimetablePayload.NOT_XML)
+        val returnedName = (payload.fields["name"] as? JsonValue.Str)?.value?.trim()
+        if (returnedName != name || lessons.size != rows.size ||
+            rows.any { row -> ((row as? JsonValue.Obj)?.fields?.get("subject") as? JsonValue.Str)?.value.isNullOrBlank() } ||
+            lessons.any { lesson -> runCatching { LocalTime.parse(lesson.timeStart) }.isFailure }) {
+            throw IllegalStateException("Некорректные данные расписания группы $name. Локальные данные сохранены")
+        }
+        return lessons
     }
 
     companion object {

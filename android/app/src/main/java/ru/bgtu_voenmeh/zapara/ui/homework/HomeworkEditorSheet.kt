@@ -7,9 +7,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -25,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -34,6 +38,7 @@ import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
 import ru.bgtu_voenmeh.zapara.ui.components.ZTextField
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZDisclosureButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.data.communities.HomeworkAudience
@@ -92,20 +97,26 @@ fun HomeworkEditorSheet(
         HomeworkEditorWork.Idle -> state.error
     }
     ZBottomSheet(onCancel, "Sheet.Homework", scrollable = true, canDismiss = canClose, footer = {
-        if (largeText) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (largeText || maxWidth < 360.dp) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 ZButton(saveLabel, onSave, enabled = state.canSave, tag = "Editor.Save",
-                    modifier = Modifier.fillMaxWidth())
+                    modifier = Modifier.fillMaxWidth(), busy = state.work == HomeworkEditorWork.Saving,
+                    leadingIcon = R.drawable.ic_check)
                 ZButton(stringResource(R.string.theme_cancel), requestCancel, ghost = true,
-                    enabled = !state.busy, tag = "Editor.Cancel", modifier = Modifier.fillMaxWidth())
+                    enabled = !state.busy, tag = "Editor.Cancel", modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = R.drawable.ic_x)
             }
         } else {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 ZButton(stringResource(R.string.theme_cancel), requestCancel, ghost = true,
-                    enabled = !state.busy, tag = "Editor.Cancel")
+                    enabled = !state.busy, tag = "Editor.Cancel", modifier = Modifier.weight(1f).fillMaxHeight(),
+                    leadingIcon = R.drawable.ic_x)
                 ZButton(saveLabel, onSave, enabled = state.canSave, tag = "Editor.Save",
-                    modifier = Modifier.weight(1f))
+                    modifier = Modifier.weight(1f).fillMaxHeight(), busy = state.work == HomeworkEditorWork.Saving,
+                    leadingIcon = R.drawable.ic_check)
             }
+        }
         }
     }) {
         Text(state.subjectDisplay, style = Zapara.typography.section, color = c.text1)
@@ -132,8 +143,8 @@ fun HomeworkEditorSheet(
             Text(state.dueText(LocalUiCopy.current), style = Zapara.typography.body, color = c.text1,
                 modifier = Modifier.fillMaxWidth().testTag("Editor.Due"))
             var showOccurrences by rememberSaveable(state.draft) { mutableStateOf(false) }
-            ZButton(stringResource(R.string.ux300_ext_explain_due), { showOccurrences = !showOccurrences },
-                ghost = true, tag = "Editor.ExplainDue")
+            ZDisclosureButton(stringResource(R.string.ux300_ext_explain_due), showOccurrences,
+                { showOccurrences = !showOccurrences }, tag = "Editor.ExplainDue", leadingIcon = R.drawable.ic_calendar)
             if (showOccurrences) {
                 Text(stringResource(R.string.ux300_ext_due_explanation), style = Zapara.typography.caption)
                 (1..state.n).forEach { number ->
@@ -152,7 +163,9 @@ fun HomeworkEditorSheet(
             }
             if (state.sourceChanged) {
                 Text(stringResource(R.string.review_homework_source_changed), style = Zapara.typography.caption, color = c.warn)
-                ZButton(stringResource(R.string.review_recalculate_due), onRecalculate, ghost = true, enabled = !state.busy)
+                ZButton(stringResource(R.string.review_recalculate_due), onRecalculate,
+                    modifier = Modifier.fillMaxWidth(), ghost = true, enabled = !state.busy,
+                    startAligned = true, leadingIcon = R.drawable.ic_refresh)
             }
         }
         Spacer(Modifier.height(Zapara.space.m))
@@ -179,9 +192,9 @@ fun HomeworkEditorSheet(
         state.files.forEach { file ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 Text(file.name, style = Zapara.typography.caption, color = c.text1, modifier = Modifier.weight(1f))
-                ZButton(stringResource(if (file.id in state.missingFileIds)
-                    R.string.ux300_android_remove_missing_file else R.string.hw_attach_remove),
-                    { onRemove(file.id) }, ghost = true, enabled = !state.busy, tag = "Editor.Remove.${file.id}")
+                ZIconButton(R.drawable.ic_trash, stringResource(if (file.id in state.missingFileIds)
+                    R.string.ux300_android_remove_missing_file else R.string.hw_attach_remove) + ": " + file.name,
+                    { onRemove(file.id) }, "Editor.Remove.${file.id}", enabled = !state.busy)
             }
             if (file.id in state.missingFileIds) Text(stringResource(R.string.ux300_android_missing_file),
                 style = Zapara.typography.caption, color = c.warn,

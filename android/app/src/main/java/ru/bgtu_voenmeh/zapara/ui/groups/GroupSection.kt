@@ -26,6 +26,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -112,6 +113,7 @@ import ru.bgtu_voenmeh.zapara.ui.components.RevisionGuard
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
+import ru.bgtu_voenmeh.zapara.ui.theme.ZDisclosureButton
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 
 @Composable
@@ -274,13 +276,28 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
         if (state.showChannels || state.showPeople) {
             if (!browsingWithKeyboard) {
             ZButton(stringResource(R.string.group_list), { onReturnToInbox?.invoke() ?: onEvent(GroupEvent.Back) }, ghost = true, tag = "Group.List")
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                ChatAvatar(state.title, groupAvatar, 40.dp)
-                Text(state.title, style = Zapara.typography.section, color = c.text1,
-                    modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                RoleChip(state.myRole)
-                if (state.canManageChannels && state.preview == null) ZIconButton(R.drawable.ic_avatar_photo,
-                    stringResource(R.string.avatar_group), { avatarOpen = true }, "Group.EditAvatar")
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (maxWidth < 320.dp || LocalDensity.current.fontScale >= 1.5f) {
+                    Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            ChatAvatar(state.title, groupAvatar, 40.dp)
+                            Spacer(Modifier.weight(1f))
+                            if (state.canManageChannels && state.preview == null) ZIconButton(R.drawable.ic_avatar_photo,
+                                stringResource(R.string.avatar_group), { avatarOpen = true }, "Group.EditAvatar")
+                        }
+                        Text(state.title, style = Zapara.typography.section, color = c.text1,
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
+                        RoleChip(state.myRole)
+                    }
+                } else Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    ChatAvatar(state.title, groupAvatar, 40.dp)
+                    Text(state.title, style = Zapara.typography.section, color = c.text1,
+                        modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()), softWrap = false)
+                    RoleChip(state.myRole)
+                    if (state.canManageChannels && state.preview == null) ZIconButton(R.drawable.ic_avatar_photo,
+                        stringResource(R.string.avatar_group), { avatarOpen = true }, "Group.EditAvatar")
+                }
             }
             Text(stringResource(R.string.group_disclaimer), style = Zapara.typography.caption, color = c.text2)
             ZSegmented(listOf(stringResource(R.string.channel_list), stringResource(R.string.group_people),
@@ -294,22 +311,43 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                 tag = "Group.Panes", modifier = Modifier.fillMaxWidth())
             }
         } else {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                ZIconButton(R.drawable.ic_chevron_left, stringResource(R.string.group_back),
-                    { onReturnToInbox?.invoke() ?: onEvent(GroupEvent.Channels) }, "Group.Back")
-                ChatAvatar(if (state.direct) state.chatTitle else state.title,
-                    if (state.direct) peerAvatar else groupAvatar, 32.dp)
-                Column(Modifier.weight(1f)) {
-                    Text(state.title, style = Zapara.typography.caption, color = c.text2,
-                        modifier = Modifier.fillMaxWidth(), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(state.chatTitle, style = Zapara.typography.bodyStrong, color = c.text1,
-                        modifier = Modifier.fillMaxWidth(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (maxWidth < 320.dp || LocalDensity.current.fontScale >= 1.5f) {
+                    Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                            ZIconButton(R.drawable.ic_chevron_left, stringResource(R.string.group_back),
+                                { onReturnToInbox?.invoke() ?: onEvent(GroupEvent.Channels) }, "Group.Back")
+                            ChatAvatar(if (state.direct) state.chatTitle else state.title,
+                                if (state.direct) peerAvatar else groupAvatar, 32.dp)
+                            Spacer(Modifier.weight(1f))
+                            if (conversation && state.activeChannelKind == "chat") ZIconButton(R.drawable.ic_search,
+                                stringResource(R.string.group_message_search), { searchOpen = true }, "Group.MessageFilters")
+                            if (conversation) ZIconButton(R.drawable.ic_menu, stringResource(R.string.chat_details),
+                                { detailsOpen = true }, "Group.Details")
+                        }
+                        Text(state.title, style = Zapara.typography.caption, color = c.text2,
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
+                        Text(state.chatTitle, style = Zapara.typography.bodyStrong, color = c.text1,
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
+                    }
+                } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    ZIconButton(R.drawable.ic_chevron_left, stringResource(R.string.group_back),
+                        { onReturnToInbox?.invoke() ?: onEvent(GroupEvent.Channels) }, "Group.Back")
+                    ChatAvatar(if (state.direct) state.chatTitle else state.title,
+                        if (state.direct) peerAvatar else groupAvatar, 32.dp)
+                    Column(Modifier.weight(1f)) {
+                        Text(state.title, style = Zapara.typography.caption, color = c.text2,
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
+                        Text(state.chatTitle, style = Zapara.typography.bodyStrong, color = c.text1,
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
+                    }
+                    if (conversation && state.activeChannelKind == "chat") ZIconButton(R.drawable.ic_search,
+                        stringResource(R.string.group_message_search), { searchOpen = true }, "Group.MessageFilters")
+                    if (conversation) ZIconButton(R.drawable.ic_menu, stringResource(R.string.chat_details),
+                        { detailsOpen = true }, "Group.Details")
                 }
-                if (conversation && state.activeChannelKind == "chat") ZIconButton(R.drawable.ic_search,
-                    stringResource(R.string.group_message_search), { searchOpen = true }, "Group.MessageFilters")
-                if (conversation) ZIconButton(R.drawable.ic_menu, stringResource(R.string.chat_details),
-                    { detailsOpen = true }, "Group.Details")
             }
         }
         val details: @Composable () -> Unit = {
@@ -692,12 +730,9 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
             if (categoryId != null) item(key = "category:$categoryId") {
                 val name = state.space?.categories?.firstOrNull { it.categoryId == categoryId }?.title.orEmpty()
                 val expanded = categoryExpanded(categoryId, collapsed, filtered)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("$name · ${categoryTopics.size}", modifier = Modifier.weight(1f), style = Zapara.typography.section)
-                    ZButton(uiText(if (expanded) R.string.review_collapse_category else R.string.review_expand_category), {
-                        collapsed = if (categoryId in collapsed) ArrayList(collapsed - categoryId) else ArrayList(collapsed + categoryId)
-                    }, ghost = true, quiet = true)
-                }
+                ZDisclosureButton("$name · ${categoryTopics.size}", expanded = expanded, onClick = {
+                    collapsed = if (categoryId in collapsed) ArrayList(collapsed - categoryId) else ArrayList(collapsed + categoryId)
+                })
             }
             if (categoryExpanded(categoryId, collapsed, filtered)) items(categoryTopics, key = { it.topicId ?: "general" }) { channel ->
             val accent = when (channel.accent) {
@@ -1916,17 +1951,20 @@ private fun Composer(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
                         GroupMessageProblem.Invalid -> stringResource(R.string.uxnext_group_message_invalid)
                         else -> stringResource(R.string.uxnext_group_message_count, messagePreview.scalars)
                     }) })
-                if (state.draft.isNotBlank() || state.attachmentPending || state.editing != null) {
-                    if (state.attachmentPending) ZButton(stringResource(R.string.group_retry), { onEvent(GroupEvent.Send) },
-                        enabled = !state.sending, tag = "Group.Send")
-                    else ZIconButton(R.drawable.ic_send, stringResource(R.string.group_send),
-                        { keyboard?.hide(); onEvent(GroupEvent.Send) }, "Group.Send",
-                        enabled = !state.sending && messagePreview.ready, primary = true)
-                } else {
-                    ZIconButton(R.drawable.ic_mic, stringResource(R.string.group_record_voice),
-                        startVoice, "Group.Voice", enabled = !state.sending && canMedia)
+                if (!state.attachmentPending) {
+                    if (state.draft.isNotBlank() || state.editing != null) {
+                        ZIconButton(R.drawable.ic_send, stringResource(R.string.group_send),
+                            { keyboard?.hide(); onEvent(GroupEvent.Send) }, "Group.Send",
+                            enabled = !state.sending && messagePreview.ready, primary = true)
+                    } else {
+                        ZIconButton(R.drawable.ic_mic, stringResource(R.string.group_record_voice),
+                            startVoice, "Group.Voice", enabled = !state.sending && canMedia)
+                    }
                 }
             }
+            if (state.attachmentPending) ZButton(stringResource(R.string.group_retry),
+                { onEvent(GroupEvent.Send) }, modifier = Modifier.fillMaxWidth(),
+                enabled = !state.sending, tag = "Group.Send")
 
         }
     }

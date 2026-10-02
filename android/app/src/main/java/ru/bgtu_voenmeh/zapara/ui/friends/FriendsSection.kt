@@ -59,6 +59,8 @@ import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
 import ru.bgtu_voenmeh.zapara.ui.shell.GroupPickerSheet
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZActionButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZDisclosureButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
@@ -188,24 +190,25 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit,
                         Row(Modifier.fillMaxWidth().padding(vertical = Zapara.space.xs),
                             verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                             FriendDot(FriendPalette.indexOf(encounter.colorHex), size = 10.dp)
-                            Column(Modifier.weight(1f)) {
-                                Text("${encounter.date.format(dateFormat)} · ${encounter.time} · ${encounter.subject}",
-                                    style = Zapara.typography.bodyStrong, color = c.text1,
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                                Text("${encounter.date.format(dateFormat)} · ${encounter.time}",
+                                    style = Zapara.typography.caption, color = c.text2,
                                     modifier = Modifier.testTag("Friends.Encounter.$index"))
+                                Text(encounter.subject, style = Zapara.typography.bodyStrong, color = c.text1)
                                 Text(listOf(encounter.groupName, encounter.members).filter { it.isNotBlank() }.joinToString(" · "),
                                     style = Zapara.typography.body, color = c.text1)
                                 val place = Intersection.scoreToTextRu(encounter.score)
                                 Text(listOf(place, encounter.friendRoom).filter { it.isNotBlank() }.joinToString(" · "),
                                     style = Zapara.typography.caption, color = c.text2)
-                                ZButton(stringResource(R.string.uxnext_friend_open_pair),
+                                ZActionButton(stringResource(R.string.uxnext_friend_open_pair),
                                     { onOpenEncounter(encounter, state.myGroupId, state.profileName) },
-                                    ghost = true, tag = "Friends.OpenEncounter.$index")
+                                    leadingIcon = R.drawable.ic_calendar, tag = "Friends.OpenEncounter.$index")
                             }
                         }
                     }
-                    if (visibleEncounters.size > 3) ZButton(stringResource(if (encountersExpanded)
+                    if (visibleEncounters.size > 3) ZDisclosureButton(stringResource(if (encountersExpanded)
                         R.string.ux100_common_less_encounters else R.string.ux100_common_more_encounters,
-                        visibleEncounters.size - 3), { encountersExpanded = !encountersExpanded }, ghost = true,
+                        visibleEncounters.size - 3), encountersExpanded, { encountersExpanded = !encountersExpanded },
                         tag = "Friends.ExpandForecast")
                     if (state.missingGroups.isNotEmpty()) {
                         Text(stringResource(R.string.friends_forecast_missing, state.missingGroups.joinToString(", ")),

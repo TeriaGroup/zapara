@@ -73,12 +73,13 @@ fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) ->
             CommunityPane.Catalog, CommunityPane.Detail -> Column(Modifier.fillMaxSize()) {
                 val visible = browseCommunities(state.communities, query)
                 if (state.failed) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
-                        verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
+                        verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                         Text(stringResource(R.string.community_failed), color = c.bad,
-                            style = Zapara.typography.caption, modifier = Modifier.weight(1f).testTag("Community.Error"))
-                        ZButton(stringResource(R.string.repeat), { onEvent(CommunitiesEvent.Retry) }, ghost = true,
-                            enabled = !state.loading)
+                            style = Zapara.typography.caption, modifier = Modifier.testTag("Community.Error"))
+                        ZButton(stringResource(R.string.repeat), { onEvent(CommunitiesEvent.Retry) },
+                            modifier = Modifier.fillMaxWidth(), ghost = true, enabled = !state.loading,
+                            leadingIcon = R.drawable.ic_refresh)
                     }
                 }
                 LazyColumn(
@@ -171,12 +172,13 @@ private fun CommunityDetail(selected: CommunityDetailUi, state: CommunitiesUiSta
             Text(selected.name, style = Zapara.typography.title, color = c.text1, modifier = Modifier.weight(1f))
         }
         if (state.failed) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
-                verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 Text(stringResource(R.string.community_failed), color = c.bad,
-                    style = Zapara.typography.caption, modifier = Modifier.weight(1f).testTag("Community.Error"))
-                ZButton(stringResource(R.string.repeat), { onEvent(CommunitiesEvent.Retry) }, ghost = true,
-                    enabled = !state.loading)
+                    style = Zapara.typography.caption, modifier = Modifier.testTag("Community.Error"))
+                ZButton(stringResource(R.string.repeat), { onEvent(CommunitiesEvent.Retry) },
+                    modifier = Modifier.fillMaxWidth(), ghost = true, enabled = !state.loading,
+                    leadingIcon = R.drawable.ic_refresh)
             }
         }
         if (state.loading) Text(stringResource(R.string.ux30_community_loading),
@@ -209,16 +211,19 @@ private fun CommunityDetail(selected: CommunityDetailUi, state: CommunitiesUiSta
                         Text(stringResource(R.string.community_pending), style = Zapara.typography.body, color = c.text1)
                         Text(request.userId, style = Zapara.typography.caption, color = c.text2)
                         if (request.canResolve) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                                 ZButton(
                                     stringResource(R.string.community_accept),
                                     { onEvent(CommunitiesEvent.AcceptJoin(selected.communityId, request.requestId)) },
+                                    modifier = Modifier.fillMaxWidth(),
                                     tag = "Community.Accept.${request.requestId}",
-                                    enabled = request.requestId !in state.resolving
+                                    enabled = request.requestId !in state.resolving,
+                                    leadingIcon = R.drawable.ic_check
                                 )
                                 ZButton(
                                     stringResource(R.string.community_reject),
                                     { onEvent(CommunitiesEvent.RejectJoin(selected.communityId, request.requestId)) },
+                                    modifier = Modifier.fillMaxWidth(),
                                     ghost = true,
                                     tag = "Community.Reject.${request.requestId}",
                                     enabled = request.requestId !in state.resolving
@@ -267,12 +272,13 @@ private fun CommunityDetail(selected: CommunityDetailUi, state: CommunitiesUiSta
                 ZCard(Modifier.fillMaxWidth(), tag = "Community.Poll.${poll.pollId}") {
                     Text(poll.question, style = Zapara.typography.bodyStrong, color = if (poll.rejectedDraft) c.text2 else c.text1)
                     poll.options.forEach { option ->
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                            Text(option.label, style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
+                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                            Text(option.label, style = Zapara.typography.body, color = c.text1)
                             if (poll.canVote) {
                                 ZButton(
                                     stringResource(R.string.community_vote),
                                     { onEvent(CommunitiesEvent.Vote(selected.communityId, poll.pollId, option.optionId)) },
+                                    modifier = Modifier.fillMaxWidth(),
                                     ghost = true,
                                     tag = "Community.Vote.${poll.pollId}.${option.optionId}"
                                 )

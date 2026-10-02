@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.room.InvalidationTracker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -22,6 +23,7 @@ class ShellViewModel(private val container: AppContainer) : ViewModel() {
     private val mutable = MutableStateFlow(ShellUiState())
     val state: StateFlow<ShellUiState> = mutable.asStateFlow()
     private val projectionGate = ShellProjectionGate()
+    private var automaticRefresh: Job? = null
 
     init {
         viewModelScope.launch {
@@ -67,11 +69,27 @@ class ShellViewModel(private val container: AppContainer) : ViewModel() {
             mutable.update { projection.copy(overlay = it.overlay,
                 groupPickPending = it.groupPickPending, pendingGroupId = it.pendingGroupId,
                 groupPickError = it.groupPickError) }
+            checkScheduleAutomatically()
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             android.util.Log.w("ZaparaShell", "Guest projection failed", e)
             if (projectionGate.current(request) && !container.closed && container.profile.databaseName == owner)
                 mutable.update { it.copy(loaded = true, error = true) }
+        }
+    }
+
+    private fun checkScheduleAutomatically() {
+        if (container.closed || automaticRefresh?.isActive == true) return
+        automaticRefresh = viewModelScope.launch {
+            try {
+                val refreshed = withContext(Dispatchers.IO) { container.timetable.refreshIfStale() }
+                if (refreshed && !container.closed)
+                    container.events.emit(ru.bgtu_voenmeh.zapara.ui.AppEvent.ScheduleChanged)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // The shell already shows the last good local copy; background errors cannot hide it.
+            }
         }
     }
 

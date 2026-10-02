@@ -6,6 +6,61 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VoenmehScheduleClientTest {
+    @Test fun invalid_lesson_rows_do_not_clear_last_good_lessons() = runBlocking {
+        val client = VoenmehScheduleClient { url ->
+            if (url.endsWith("/meta"))
+                """{"has_data":true,"period":"ОСЕННИЙ СЕМЕСТР 2026/2027 уч. г.","groups":["А863С"]}"""
+            else """{"name":"А863С","lessons":[{"day":0,"time":"not-a-time","subject":"Математика"}]}"""
+        }
+        assertTrue("Invalid rows must fail instead of looking like an empty group",
+            runCatching { client.fetchSchedule(listOf("А863С")) }.isFailure)
+    }
+
+    @Test fun lessons_of_a_different_group_are_rejected() = runBlocking {
+        val client = VoenmehScheduleClient { url ->
+            if (url.endsWith("/meta"))
+                """{"has_data":true,"period":"ОСЕННИЙ СЕМЕСТР 2026/2027 уч. г.","groups":["А863С"]}"""
+            else """{"name":"Другая группа","lessons":[]}"""
+        }
+        assertTrue("The response must belong to the requested group",
+            runCatching { client.fetchSchedule(listOf("А863С")) }.isFailure)
+    }
+
+    @Test fun missing_requested_group_does_not_become_an_empty_timetable() = runBlocking {
+        val client = VoenmehScheduleClient { url ->
+            if (url.endsWith("/meta"))
+                """{"has_data":true,"period":"ОСЕННИЙ СЕМЕСТР 2026/2027 уч. г.","groups":["А863С"]}"""
+            else """{"name":"Нет такой группы","lessons":[]}"""
+        }
+        val failure = runCatching { client.fetchSchedule(listOf("Нет такой группы")) }.exceptionOrNull()
+        assertTrue("Missing groups must fail instead of clearing saved lessons", failure != null)
+    }
+
+    @Test fun changed_metadata_during_download_is_rejected() = runBlocking {
+        var metadataRequests = 0
+        val client = VoenmehScheduleClient { url ->
+            if (url.endsWith("/meta")) {
+                metadataRequests++
+                """{"has_data":true,"period":"ОСЕННИЙ СЕМЕСТР 2026/2027 уч. г.","groups":["А863С"],"updated_at":"2026-10-02T0${metadataRequests}:00:00Z"}"""
+            } else """{"name":"А863С","lessons":[]}"""
+        }
+        assertTrue("Mixed metadata generations must not be stored",
+            runCatching { client.fetchSchedule(listOf("А863С")) }.isFailure)
+    }
+
+    @Test fun reordered_metadata_catalog_is_the_same_generation() = runBlocking {
+        var metadataRequests = 0
+        val client = VoenmehScheduleClient { url ->
+            if (url.endsWith("/meta")) {
+                val groups = if (metadataRequests++ == 0) "\"А863С\",\"09С33\"" else "\"09С33\",\"А863С\""
+                """{"has_data":true,"period":"ОСЕННИЙ СЕМЕСТР 2026/2027 уч. г.","groups":[$groups],"updated_at":"2026-10-02T01:00:00Z"}"""
+            } else """{"name":"А863С","lessons":[]}"""
+        }
+        val parsed = client.fetchSchedule(listOf("А863С"))
+        assertEquals(2, metadataRequests)
+        assertTrue(parsed.lessons.isEmpty())
+    }
+
     @Test fun pulls_meta_and_lessons_without_xml() = runBlocking {
         val http = mutableListOf<String>()
         val client = VoenmehScheduleClient { url ->

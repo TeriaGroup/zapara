@@ -60,6 +60,7 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.VisualTransformation
@@ -116,8 +117,8 @@ fun ZTextField(
         minLines = minLines, maxLines = maxLines, isError = isError,
         textStyle = Zapara.typography.body,
         label = label?.let { content -> { ProvideTextStyle(Zapara.typography.caption, content) } },
-        placeholder = placeholder,
-        supportingText = supportingText,
+        placeholder = placeholder?.let { content -> { ProvideTextStyle(Zapara.typography.body, content) } },
+        supportingText = supportingText?.let { content -> { ProvideTextStyle(Zapara.typography.caption, content) } },
         visualTransformation = visualTransformation,
         keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
         leadingIcon = leadingIcon, trailingIcon = trailingIcon,
@@ -386,16 +387,23 @@ fun EmptyState(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        if (icon != null) ZIcon(icon, null, Modifier.size(28.dp))
-        Spacer(Modifier.height(Zapara.space.s))
-        Text(title, style = Zapara.typography.section, color = c.text1)
+        if (icon != null) {
+            Box(Modifier.size(56.dp).clip(RoundedCornerShape(Zapara.radii.card)).background(c.chip),
+                contentAlignment = Alignment.Center) {
+                ZIcon(icon, null, Modifier.size(28.dp))
+            }
+            Spacer(Modifier.height(Zapara.space.m))
+        }
+        Text(title, style = Zapara.typography.section, color = c.text1, textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 400.dp))
         if (hint != null) {
             Spacer(Modifier.height(Zapara.space.xs))
-            Text(hint, style = Zapara.typography.caption, color = c.text2)
+            Text(hint, style = Zapara.typography.caption, color = c.text2, textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(max = 400.dp))
         }
         if (actionText != null && onAction != null) {
             Spacer(Modifier.height(Zapara.space.m))
-            ZButton(actionText, onAction, ghost = true)
+            ZButton(actionText, onAction, Modifier.widthIn(max = 320.dp).fillMaxWidth(), ghost = true)
         }
     }
 }

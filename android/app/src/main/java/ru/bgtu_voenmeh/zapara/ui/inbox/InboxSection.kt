@@ -7,6 +7,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -78,19 +80,37 @@ fun InboxSection(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
     if (state.active != null) BackHandler { onEvent(InboxEvent.Back) }
     Column(modifier.fillMaxSize()) {
         if (state.active != null && !state.guest) {
-            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).background(Zapara.colors.canvas)
-                .padding(horizontal = Zapara.space.l), verticalAlignment = Alignment.CenterVertically) {
-                ChatHeaderAction(R.drawable.ic_chevron_left, stringResource(R.string.chat_header_back), true,
-                    "Inbox.Back", { onEvent(InboxEvent.Back) })
-                ChatAvatar(state.active.title, state.active.avatarTarget(), 36.dp, Modifier.padding(end = 8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(state.active.title, color = Zapara.colors.text1,
-                        style = Zapara.typography.bodyStrong, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            BoxWithConstraints(Modifier.fillMaxWidth().background(Zapara.colors.canvas)) {
+                val stacked = maxWidth < 320.dp || LocalDensity.current.fontScale >= 1.5f
+                if (stacked) Column(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l,
+                    vertical = Zapara.space.xs)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        ChatHeaderAction(R.drawable.ic_chevron_left, stringResource(R.string.chat_header_back), true,
+                            "Inbox.Back", { onEvent(InboxEvent.Back) })
+                        ChatAvatar(state.active.title, state.active.avatarTarget(), 36.dp,
+                            Modifier.padding(start = Zapara.space.s))
+                        Spacer(Modifier.weight(1f))
+                        ChatHeaderAction(R.drawable.ic_refresh, stringResource(R.string.chat_header_refresh), !state.loading,
+                            "Inbox.Refresh", { onEvent(InboxEvent.Refresh) })
+                    }
+                    Text(state.active.title, color = Zapara.colors.text1, style = Zapara.typography.bodyStrong,
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
                     Text(state.active.subtitle, color = Zapara.colors.text2, style = Zapara.typography.caption,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
+                } else Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                    .padding(horizontal = Zapara.space.l), verticalAlignment = Alignment.CenterVertically) {
+                    ChatHeaderAction(R.drawable.ic_chevron_left, stringResource(R.string.chat_header_back), true,
+                        "Inbox.Back", { onEvent(InboxEvent.Back) })
+                    ChatAvatar(state.active.title, state.active.avatarTarget(), 36.dp, Modifier.padding(end = 8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(state.active.title, color = Zapara.colors.text1, style = Zapara.typography.bodyStrong,
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
+                        Text(state.active.subtitle, color = Zapara.colors.text2, style = Zapara.typography.caption,
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
+                    }
+                    ChatHeaderAction(R.drawable.ic_refresh, stringResource(R.string.chat_header_refresh), !state.loading,
+                        "Inbox.Refresh", { onEvent(InboxEvent.Refresh) })
                 }
-                ChatHeaderAction(R.drawable.ic_refresh, stringResource(R.string.chat_header_refresh), !state.loading,
-                    "Inbox.Refresh", { onEvent(InboxEvent.Refresh) })
             }
         } else ZTopBar(stringResource(R.string.chat_header_chats)) {
             if (!state.guest) ChatHeaderAction(R.drawable.ic_refresh, stringResource(R.string.chat_header_refresh), !state.loading,
@@ -343,14 +363,13 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
         }
     }
     Column(modifier) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            ZTextField(historyQuery, { historyQuery = it }, modifier = Modifier.weight(1f).testTag("Inbox.HistorySearch"),
-                placeholder = { Text(stringResource(R.string.ux30_inbox_history_search)) }, singleLine = true)
-            if (historyQuery.isNotBlank()) ZButton(stringResource(R.string.next_teachers_clear),
-                { historyQuery = "" }, ghost = true, tag = "Inbox.HistoryClear")
-        }
+        ZTextField(historyQuery, { historyQuery = it },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).testTag("Inbox.HistorySearch"),
+            placeholder = { Text(stringResource(R.string.ux30_inbox_history_search)) }, singleLine = true,
+            trailingIcon = if (historyQuery.isNotBlank()) ({
+                ZIconButton(R.drawable.ic_x, stringResource(R.string.next_teachers_clear),
+                    { historyQuery = "" }, "Inbox.HistoryClear")
+            }) else null)
         FlowRow(Modifier.padding(horizontal = Zapara.space.l), horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             ZChip(stringResource(R.string.ux30_chat_history_filters), selected = historyFiltersOpen,
                 onClick = { historyFiltersOpen = !historyFiltersOpen }, tag = "Inbox.HistoryFilters")
@@ -484,7 +503,8 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                             style = Zapara.typography.caption)
                         if (pending.uncertain) Text(stringResource(R.string.ux60_chat_record_pending_check_history),
                             color = Zapara.colors.bad, style = Zapara.typography.caption)
-                        Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                            verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                             if (pending.uncertain) ZButton(stringResource(R.string.ux60_chat_record_pending_retry),
                                 { onEvent(InboxEvent.RetryRecording(pending.scope)) },
                                 enabled = !state.sending && !state.loading, tag = "Inbox.PendingRecording.Retry")

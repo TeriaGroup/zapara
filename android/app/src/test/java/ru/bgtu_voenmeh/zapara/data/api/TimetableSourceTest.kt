@@ -12,6 +12,46 @@ import ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork
 import java.time.LocalDate
 
 class TimetableSourceTest {
+    @Test fun cached_stale_selected_schedule_is_checked_automatically_once() = runBlocking {
+        val http = FakeHttp { call ->
+            jsonReply(if (call.url.substringBefore('?').endsWith("/groups")) catalogJson() else scheduleJson())
+        }
+        val store = MemoryTimetableStore()
+        store.upsertGroup(GroupInfo("a", "A"))
+        store.saveSettings(store.settings().copy(myGroupId = "a"))
+        val period = TimetableApiPeriod(LocalDate.of(2026, 9, 1), 2, "Тестовый семестр", "Europe/Moscow")
+        val meta = TimetableApiMeta(PIN, "2026-09-21T18:14:46Z", "2026-09-21T18:14:47Z", null,
+            "file", null, SHA, true)
+        store.writeMetadata("a", CacheMetadata(period, meta, meta.fetchedAt, "api", "https://example.invalid/"))
+        val api = ApiRefreshCoordinator(store, ProfileWork(), "https://example.invalid/", http)
+        val source = TimetableSource(api, store, { error("XML must not replace API") })
+        source.ensure()
+        assertTrue("Reading a warm cache must not wait for network", http.requests.isEmpty())
+        source.refreshIfStale()
+        assertTrue("Cached stale schedules must trigger a check", http.requests.isNotEmpty())
+        val requests = http.requests.size
+        source.refreshIfStale()
+        assertEquals("Repeated UI reloads must not flood the network", requests, http.requests.size)
+    }
+
+    @Test fun automatic_refresh_failure_keeps_cached_guest_data() = runBlocking {
+        val http = FakeHttp { error("offline") }
+        val store = MemoryTimetableStore()
+        store.upsertGroup(GroupInfo("a", "A"))
+        store.saveSettings(store.settings().copy(myGroupId = "a"))
+        val before = store.dump()
+        val api = ApiRefreshCoordinator(store, ProfileWork(), "https://example.invalid/", http)
+        val source = TimetableSource(api, store, { error("offline") })
+        source.ensure()
+        assertTrue("Offline data must be available before any network request", http.requests.isEmpty())
+        source.refreshIfStale()
+        assertTrue("Automatic refresh should attempt a request", http.requests.isNotEmpty())
+        assertEquals(before, store.dump())
+        val requests = http.requests.size
+        source.refreshIfStale()
+        assertEquals(requests, http.requests.size)
+    }
+
     @Test
     fun ensure_and_pull_use_json_when_api_configured_and_xml_flag_off() = runBlocking {
         var xml = 0

@@ -12,7 +12,19 @@ import ru.bgtu_voenmeh.zapara.ui.theme.*
 @Composable
 internal fun HomeworkRescheduleSheet(batch: HomeworkRescheduleBatch, onEvent: (HomeworkEvent) -> Unit) {
     ZBottomSheet({ onEvent(HomeworkEvent.ClosePostpone) }, "Homework.PostponePreview", scrollable = true,
-        canDismiss = { !batch.busy }) {
+        canDismiss = { !batch.busy }, footer = {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZButton(stringResource(R.string.ux300_ext_postpone_confirm), { onEvent(HomeworkEvent.ConfirmPostpone) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !batch.busy && batch.rows.any { it.eligible && it.status in setOf("pending", "failed") },
+                    busy = batch.busy, tag = "Homework.PostponeConfirm", leadingIcon = R.drawable.ic_calendar)
+                if (batch.rows.any { it.status in setOf("applied", "undoFailed") }) ZButton(stringResource(R.string.homework_browse_undo),
+                    { onEvent(HomeworkEvent.UndoPostpone) }, modifier = Modifier.fillMaxWidth(),
+                    enabled = !batch.busy, ghost = true, tag = "Homework.PostponeUndo", leadingIcon = R.drawable.ic_chevron_left)
+                ZButton(stringResource(R.string.theme_cancel), { onEvent(HomeworkEvent.ClosePostpone) },
+                    modifier = Modifier.fillMaxWidth(), enabled = !batch.busy, ghost = true, leadingIcon = R.drawable.ic_x)
+            }
+        }) {
         Text(stringResource(R.string.ux300_ext_postpone), style = Zapara.typography.section)
         Text(stringResource(R.string.ux300_ext_postpone_hint), style = Zapara.typography.caption)
         batch.rows.forEach { row ->
@@ -30,12 +42,5 @@ internal fun HomeworkRescheduleSheet(batch: HomeworkRescheduleBatch, onEvent: (H
                 }), style = Zapara.typography.caption)
             }
         }
-        ZButton(stringResource(R.string.ux300_ext_postpone_confirm), { onEvent(HomeworkEvent.ConfirmPostpone) },
-            enabled = !batch.busy && batch.rows.any { it.eligible && it.status in setOf("pending", "failed") },
-            tag = "Homework.PostponeConfirm")
-        if (batch.rows.any { it.status in setOf("applied", "undoFailed") }) ZButton(stringResource(R.string.homework_browse_undo),
-            { onEvent(HomeworkEvent.UndoPostpone) }, enabled = !batch.busy, ghost = true, tag = "Homework.PostponeUndo")
-        ZButton(stringResource(R.string.theme_cancel), { onEvent(HomeworkEvent.ClosePostpone) },
-            enabled = !batch.busy, ghost = true)
     }
 }

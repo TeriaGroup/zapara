@@ -115,4 +115,33 @@ class TimetableApiCacheTest {
         assertEquals("personal", store.homeworkText)
         assertEquals("Keep", store.allLessons("gone").single().subjectRaw)
     }
+
+    @Test
+    fun direct_groups_from_one_download_can_intersect() {
+        val store = MemoryTimetableStore()
+        val period = snapshot().period
+        store.writeMetadata("mine", CacheMetadata(period, null, "2026-10-02T12:00+03:00", "university", ""))
+        store.writeMetadata("friend", CacheMetadata(period, null, "2026-10-02T12:00+03:00", "university", ""))
+        assertTrue(TimetableApiCache(store).canIntersect("mine", "friend"))
+    }
+
+    @Test
+    fun direct_groups_from_different_downloads_cannot_intersect() {
+        val store = MemoryTimetableStore()
+        val period = snapshot().period
+        store.writeMetadata("mine", CacheMetadata(period, null, "2026-10-02T12:00+03:00", "university", ""))
+        store.writeMetadata("friend", CacheMetadata(period, null, "2026-10-02T12:01+03:00", "university", ""))
+        assertTrue(!TimetableApiCache(store).canIntersect("mine", "friend"))
+    }
+
+    @Test
+    fun direct_and_legacy_groups_cannot_intersect() {
+        val store = MemoryTimetableStore()
+        val period = snapshot().period
+        store.writeMetadata("mine", CacheMetadata(period, null, "2026-10-02T12:00+03:00", "university", ""))
+        store.writeMetadata("friend", CacheMetadata(period, null, "2026-10-02T12:00+03:00", "legacy", ""))
+        assertTrue(!TimetableApiCache(store).canIntersect("mine", "friend"))
+        store.writeMetadata("mine", CacheMetadata(period, null, "2026-10-02T12:00+03:00", "legacy", ""))
+        assertTrue(TimetableApiCache(store).canIntersect("mine", "friend"))
+    }
 }

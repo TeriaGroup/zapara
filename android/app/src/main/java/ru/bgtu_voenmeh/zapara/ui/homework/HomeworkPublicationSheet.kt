@@ -1,6 +1,6 @@
 package ru.bgtu_voenmeh.zapara.ui.homework
 
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.*
@@ -14,7 +14,20 @@ import ru.bgtu_voenmeh.zapara.ui.theme.*
 internal fun HomeworkPublicationSheet(batch: PersonalPublicationBatch, onEvent: (HomeworkEvent) -> Unit) {
     var discard by remember(batch.rows.firstOrNull()?.operationId) { mutableStateOf(false) }
     ZBottomSheet({ onEvent(HomeworkEvent.ClosePublication) }, "Homework.PublicationPreview", scrollable = true,
-        canDismiss = { !batch.busy }) {
+        canDismiss = { !batch.busy }, footer = {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZButton(stringResource(if (batch.locked) R.string.ux300_ext_publication_retry else R.string.ux300_ext_publication_confirm),
+                    { onEvent(HomeworkEvent.ConfirmPublication) }, modifier = Modifier.fillMaxWidth(),
+                    enabled = !batch.busy && batch.rows.any { !it.sent } &&
+                        publicationAudienceAvailable(batch.audience, batch.context),
+                    busy = batch.busy, tag = "Homework.PublicationConfirm", leadingIcon = R.drawable.ic_send)
+                ZButton(stringResource(R.string.ux300_ext_close), { onEvent(HomeworkEvent.ClosePublication) },
+                    modifier = Modifier.fillMaxWidth(), enabled = !batch.busy, ghost = true, leadingIcon = R.drawable.ic_x)
+                if (batch.locked && batch.rows.any { !it.sent }) ZButton(stringResource(R.string.ux300_ext_publication_abandon),
+                    { discard = true }, modifier = Modifier.fillMaxWidth(), enabled = !batch.busy, ghost = true,
+                    leadingIcon = R.drawable.ic_trash)
+            }
+        }) {
         Text(stringResource(R.string.ux300_ext_publish_selected), style = Zapara.typography.section)
         Text(batch.context.groupName, style = Zapara.typography.bodyStrong)
         Text(stringResource(R.string.ux300_ext_publication_hint), style = Zapara.typography.caption)
@@ -37,13 +50,6 @@ internal fun HomeworkPublicationSheet(batch: PersonalPublicationBatch, onEvent: 
         }
         batch.error?.let { Text(it, style = Zapara.typography.body) }
         if (batch.locked) Text(stringResource(R.string.ux300_ext_publication_retry_hint), style = Zapara.typography.caption)
-        ZButton(stringResource(if (batch.locked) R.string.ux300_ext_publication_retry else R.string.ux300_ext_publication_confirm),
-            { onEvent(HomeworkEvent.ConfirmPublication) }, enabled = !batch.busy && batch.rows.any { !it.sent } &&
-                publicationAudienceAvailable(batch.audience, batch.context), tag = "Homework.PublicationConfirm")
-        ZButton(stringResource(R.string.ux300_ext_close), { onEvent(HomeworkEvent.ClosePublication) },
-            enabled = !batch.busy, ghost = true)
-        if (batch.locked && batch.rows.any { !it.sent }) ZButton(stringResource(R.string.ux300_ext_publication_abandon),
-            { discard = true }, enabled = !batch.busy, ghost = true)
     }
     if (discard) AlertDialog(onDismissRequest = { discard = false },
         title = { Text(stringResource(R.string.ux300_ext_publication_abandon)) },

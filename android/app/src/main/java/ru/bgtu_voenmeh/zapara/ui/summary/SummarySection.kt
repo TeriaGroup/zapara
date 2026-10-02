@@ -45,6 +45,8 @@ import ru.bgtu_voenmeh.zapara.ui.shell.LocalShellChrome
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZActionButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZDisclosureButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
@@ -92,8 +94,15 @@ fun SummarySection(state: SummaryUiState, onEvent: (SummaryEvent) -> Unit,
                 thickness = Zapara.space.hairline, color = c.line)
             LazyColumn(Modifier.fillMaxSize().testTag("Summary.List"), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 if (state.tiles.total == 0) item("no-lessons") {
-                    Text(stringResource(R.string.ux30_summary_no_lessons), style = Zapara.typography.body,
-                        color = c.text2, modifier = Modifier.testTag("Summary.EmptyWeek"))
+                    ZCard(Modifier.fillMaxWidth(), tag = "Summary.EmptyWeek") {
+                        Row(verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                            ZIcon(R.drawable.ic_calendar, null)
+                            Text(stringResource(R.string.ux30_summary_no_lessons),
+                                style = Zapara.typography.body, color = c.text2,
+                                modifier = Modifier.weight(1f))
+                        }
+                    }
                 }
                 item {
                     ZCard(Modifier.fillMaxWidth().appear(0)) {
@@ -199,16 +208,17 @@ private fun CountCard(title: String, rows: List<Pair<String, Int>>, index: Int,
                 rowExtras.getOrNull(original.index)?.takeIf(String::isNotBlank)?.let { extra ->
                     Text(extra, style = Zapara.typography.caption, color = c.text2)
                 }
-                if (!lessonSlots[name].isNullOrEmpty()) ZButton(stringResource(R.string.ux300_ext_summary_slots),
-                    { selectedSlots = name }, ghost = true, tag = "Summary.Slots.$index.${original.index}")
+                if (!lessonSlots[name].isNullOrEmpty()) ZActionButton(stringResource(R.string.ux300_ext_summary_slots),
+                    { selectedSlots = name }, leadingIcon = R.drawable.ic_calendar,
+                    tag = "Summary.Slots.$index.${original.index}")
                 if (showBars) LinearProgressIndicator(progress = { (n.toFloat() / maximum).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(Zapara.radii.pill)).clearAndSetSemantics { },
                     color = c.accent, trackColor = c.chip)
                 else if (rowIndex < shown.lastIndex) HorizontalDivider(Modifier.padding(top = Zapara.space.xs), thickness = Zapara.space.hairline, color = c.line)
             }
         }
-        if (ordered.size > compactLimit) ZButton(stringResource(if (showAll) R.string.ux100_study_summary_less
-            else R.string.ux100_study_summary_all), { showAll = !showAll }, ghost = true,
+        if (ordered.size > compactLimit) ZDisclosureButton(stringResource(if (showAll) R.string.ux100_study_summary_less
+            else R.string.ux100_study_summary_all), showAll, { showAll = !showAll },
             tag = "Summary.Expand.$index")
     }
     selectedSlots?.let { selected ->
