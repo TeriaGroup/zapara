@@ -35,7 +35,7 @@ internal fun HomeworkPlanTools(items: List<HomeworkItemUi>, groupId: String, pro
     var status by remember(groupId, profileName) { mutableStateOf<String?>(null) }
     val current by rememberUpdatedState(Triple(groupId, profileName, items))
     if (items.isEmpty()) return
-    ZButton(stringResource(R.string.ux300_ext_plan_export), { open = true }, ghost = true, tag = "Homework.PlanExport")
+    ZActionButton(stringResource(R.string.ux300_ext_plan_export), { open = true }, tag = "Homework.PlanExport")
     if (open) ZBottomSheet({ if (!busy) open = false }, "Homework.PlanPreview", scrollable = true) {
         Text(stringResource(R.string.ux300_ext_plan_export), style = Zapara.typography.section)
         Text(stringResource(R.string.ux300_ext_personal_only, items.size), style = Zapara.typography.caption)
@@ -46,7 +46,7 @@ internal fun HomeworkPlanTools(items: List<HomeworkItemUi>, groupId: String, pro
             try { context.startActivity(Intent.createChooser(AndroidCalendarShare.textIntent(text),
                 context.getString(R.string.ux300_ext_share_plan))) }
             catch (_: Exception) { status = context.getString(R.string.ux300_ext_export_failed) }
-        }, enabled = !busy, tag = "Homework.SharePlan")
+        }, enabled = !busy, tag = "Homework.SharePlan", modifier = Modifier.fillMaxWidth(), startAligned = true)
         ZButton(stringResource(R.string.ux300_ext_deadline_calendar), {
             if (!busy) coroutine.launch {
                 busy = true
@@ -64,6 +64,6 @@ internal fun HomeworkPlanTools(items: List<HomeworkItemUi>, groupId: String, pro
                 catch (_: Exception) { status = context.getString(R.string.ux300_ext_export_failed) }
                 finally { busy = false }
             }
-        }, enabled = !busy, tag = "Homework.DeadlineCalendar")
+        }, enabled = !busy, tag = "Homework.DeadlineCalendar", modifier = Modifier.fillMaxWidth(), startAligned = true)
     }
 }

@@ -13,7 +13,7 @@ import java.time.LocalDate
 
 @Composable internal fun AcademicAgendaTools(state: WeekUiState, open: (LocalDate, Lesson) -> Unit) {
     var panel by remember(state.profileName, state.groupId) { mutableStateOf<String?>(null) }
-    ZButton(stringResource(R.string.ux300_agenda_assessments), { panel = "assessments" }, ghost = true, tag = "Week.Assessments")
+    ZActionButton(stringResource(R.string.ux300_agenda_assessments), { panel = "assessments" }, tag = "Week.Assessments")
     if (panel != null) ZBottomSheet({ panel = null }, "Week.AcademicAgenda", scrollable = true) {
         Text(stringResource(if (panel == "assessments") R.string.ux300_agenda_assessments else R.string.ux300_agenda_conflicts), style = Zapara.typography.section)
         Text(stringResource(R.string.ux300_agenda_scope), style = Zapara.typography.caption)
@@ -26,7 +26,7 @@ import java.time.LocalDate
                 Text("${agendaDateLabel(row.date)} · ${row.lesson.timeStart}–${row.lesson.timeEnd}", style = Zapara.typography.caption)
                 Text(row.lesson.subjectRaw, style = Zapara.typography.bodyStrong)
                 Text("${row.lesson.teacherRaw} · ${row.lesson.classroomRaw}", style = Zapara.typography.body)
-                ZButton(stringResource(R.string.ux300_agenda_open_lesson), { jump(row.date, row.lesson) }, ghost = true)
+                ZActionButton(stringResource(R.string.ux300_agenda_open_lesson), { jump(row.date, row.lesson) })
             } }
         }
     }

@@ -79,7 +79,9 @@ import ru.bgtu_voenmeh.zapara.ui.account.AccountEvent
 import ru.bgtu_voenmeh.zapara.ui.account.AccountUiState
 import ru.bgtu_voenmeh.zapara.ui.chat.SupportForm
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZActionButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
+import ru.bgtu_voenmeh.zapara.ui.theme.ZDisclosureButton
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 
 @Composable
@@ -344,9 +346,9 @@ fun SettingsSection(
             if (wideSettings) Box(Modifier.width(320.dp)) { SettingsOverview(state, account,
                 settingsQuery, { settingsQuery = it }) { openSection(it) } }
             LazyColumn(if (wideSettings) Modifier.widthIn(max = 720.dp).fillMaxSize() else Modifier.weight(1f).fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            item { ZButton(stringResource(if (section == "account" && returnSection == "data")
+            item { ZActionButton(stringResource(if (section == "account" && returnSection == "data")
                 R.string.ux60_sync_back_to_data else R.string.settings_overview_all),
-                { backToSettings() }, ghost = true, quiet = true, tag = "Settings.Overview.Back", leadingIcon = R.drawable.ic_chevron_left) }
+                { backToSettings() }, tag = "Settings.Overview.Back", leadingIcon = R.drawable.ic_chevron_left) }
             if (section == "account") {
             item { AccountCard(account, onAccount) { id ->
                 onAccount(AccountEvent.ClearSensitive)
@@ -362,8 +364,9 @@ fun SettingsSection(
             if (state.signedIn) item("pending-sync") {
                 var expanded by rememberSaveable(state.profileName) { mutableStateOf(false) }
                 ZCard(Modifier.fillMaxWidth(), tag = "Settings.PendingSync") {
-                    ZButton(stringResource(R.string.ux300_ext_pending_sync, state.pendingSync.size),
-                        { expanded = !expanded }, ghost = true, tag = "Settings.PendingSyncOpen")
+                    ZDisclosureButton(stringResource(R.string.ux300_ext_pending_sync, state.pendingSync.size),
+                        expanded = expanded, onClick = { expanded = !expanded }, tag = "Settings.PendingSyncOpen",
+                        leadingIcon = R.drawable.ic_refresh)
                     if (expanded) {
                         Text(stringResource(R.string.ux300_ext_pending_sync_hint), style = Zapara.typography.caption)
                         state.pendingSync.take(50).forEach { pending ->
@@ -382,8 +385,9 @@ fun SettingsSection(
             item { ZCard(Modifier.fillMaxWidth()) {
                 if (state.signedIn) CloudSyncSummary(state.cloudSync)
                 else Text(uiText(R.string.space_day_159), style = Zapara.typography.body)
-                if (!state.signedIn) ZButton(stringResource(R.string.ux100_platform_open_account),
-                    { returnSection = "data"; section = "account" }, ghost = true, tag = "Settings.DataOpenAccount")
+                if (!state.signedIn) ZActionButton(stringResource(R.string.ux100_platform_open_account),
+                    { returnSection = "data"; section = "account" }, tag = "Settings.DataOpenAccount",
+                    leadingIcon = R.drawable.ic_users)
                 Text(uiText(R.string.space_day_160), style = Zapara.typography.caption)
                 Text(state.groupUpdated, style = Zapara.typography.caption)
                 if (state.signedIn) {
@@ -391,9 +395,9 @@ fun SettingsSection(
                     ZButton(uiText(R.string.space_day_sync_now), { onEvent(SettingsEvent.SyncNow) },
                         enabled = !state.syncBusy && state.cloudSync.attached, busy = state.syncBusy)
                     if (state.cloudSync.failure == PrivateSyncState.NeedsReauthentication)
-                        ZButton(stringResource(R.string.ux60_sync_open_account),
-                            { returnSection = "data"; section = "account" }, ghost = true,
-                            tag = "Settings.SyncReauthenticate")
+                        ZActionButton(stringResource(R.string.ux60_sync_open_account),
+                            { returnSection = "data"; section = "account" },
+                            tag = "Settings.SyncReauthenticate", leadingIcon = R.drawable.ic_users)
                 }
             } }
             if (state.syncConflicts.isNotEmpty() || state.syncError != null) item {
@@ -440,7 +444,8 @@ fun SettingsSection(
                     Text(state.groupUpdated, style = Zapara.typography.caption, color = if (state.stale) c.warn else c.text2)
                     Text(uiText(R.string.space_day_study_selection), style = Zapara.typography.caption)
                     var advanced by rememberSaveable { mutableStateOf(false) }
-                    ZButton(uiText(R.string.space_day_advanced), { advanced = !advanced }, ghost = true, quiet = true)
+                    ZDisclosureButton(uiText(R.string.space_day_advanced), expanded = advanced,
+                        onClick = { advanced = !advanced }, leadingIcon = R.drawable.ic_settings)
                     if (advanced) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(uiText(R.string.space_day_invert), Modifier.weight(1f), style = Zapara.typography.body)
                         ZSwitch(state.parityInvert, { if ("parity" !in state.preferencePending) onEvent(SettingsEvent.Invert(it)) }, "Settings.ParityInvert")
@@ -575,14 +580,14 @@ fun SettingsSection(
                     ZButton(stringResource(R.string.settings_notify_test), { onEvent(SettingsEvent.TestNotification) }, ghost = true, tag = "Settings.NotifyTest")
                     if (state.permissionMissing) {
                         Text(stringResource(R.string.settings_perm_notify), style = Zapara.typography.caption, color = c.warn)
-                        ZButton(stringResource(R.string.settings_open_notify), {
+                        ZActionButton(stringResource(R.string.settings_open_notify), {
                             ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName))
-                        }, ghost = true)
+                        }, leadingIcon = R.drawable.ic_notification)
                     } else if (state.exactAlarmMissing) {
                         Text(stringResource(R.string.settings_perm_alarm), style = Zapara.typography.caption, color = c.warn)
-                        ZButton(stringResource(R.string.settings_open_alarm), {
+                        ZActionButton(stringResource(R.string.settings_open_alarm), {
                             ctx.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
-                        }, ghost = true)
+                        }, leadingIcon = R.drawable.ic_notification)
                     }
                 }
             }
@@ -666,12 +671,13 @@ private fun RustoreUpdatesCard() {
         Text(stringResource(R.string.settings_updates), style = Zapara.typography.section, color = c.text1)
         Text(stringResource(R.string.settings_rustore), style = Zapara.typography.body, color = c.text1)
         Text(stringResource(R.string.settings_rustore_early), style = Zapara.typography.body, color = c.text1)
-        ZButton(stringResource(R.string.settings_rustore_github), {
+        ZActionButton(stringResource(R.string.settings_rustore_github), {
             ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AutoUpdate.RELEASES_PAGE)))
-        }, ghost = true, tag = "Settings.RustoreGithub")
+        }, tag = "Settings.RustoreGithub", leadingIcon = R.drawable.ic_external_link)
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun UpdatesCard(state: SettingsUiState, updates: UpdateUiState, onEvent: (SettingsEvent) -> Unit) {
     val uiText = rememberUiText()
@@ -695,7 +701,8 @@ fun UpdatesCard(state: SettingsUiState, updates: UpdateUiState, onEvent: (Settin
         if (updates.downloading) {
             LinearProgressIndicator(progress = { updates.progress.coerceAtLeast(0f) }, modifier = Modifier.fillMaxWidth(), color = c.accent, trackColor = c.chip)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+            verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             ZButton(stringResource(R.string.settings_upd_check), { onEvent(SettingsEvent.CheckUpdate) }, ghost = true, tag = "Settings.UpdCheck")
             if (updates.hasUpdate) ZButton(stringResource(R.string.settings_upd_download), { onEvent(SettingsEvent.DownloadUpdate) }, tag = "Settings.UpdDownload")
             if (updates.canInstall) ZButton(stringResource(R.string.ux60_update_install_tag, updates.readyTag ?: updates.tag),
@@ -747,6 +754,7 @@ private val SupportDraftsSaver = listSaver<Map<String, SupportLocalDraft>, Strin
     restore = { SupportDraftCodec.decode(it) }
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
     savedDrafts: Map<String, SupportLocalDraft> = emptyMap(),
@@ -872,18 +880,19 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
         Text(stringResource(R.string.settings_about_title), style = Zapara.typography.section, color = c.text1)
         Text(stringResource(R.string.settings_version, state.version), style = Zapara.typography.caption, color = c.text2)
         Text(stringResource(R.string.settings_unofficial), style = Zapara.typography.body, color = c.text2)
-        ZButton(stringResource(R.string.face_agreement), { onOpenLegal("agreement") },
-            ghost = true, tag = "Settings.LegalAgreement")
-        ZButton(stringResource(R.string.face_policy), { onOpenLegal("policy") },
-            ghost = true, tag = "Settings.LegalPolicy")
-        ZButton(stringResource(R.string.settings_releases), {
+        ZActionButton(stringResource(R.string.face_agreement), { onOpenLegal("agreement") },
+            tag = "Settings.LegalAgreement", leadingIcon = R.drawable.ic_file)
+        ZActionButton(stringResource(R.string.face_policy), { onOpenLegal("policy") },
+            tag = "Settings.LegalPolicy", leadingIcon = R.drawable.ic_shield)
+        ZActionButton(stringResource(R.string.settings_releases), {
             ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AutoUpdate.RELEASES_PAGE)))
-        }, ghost = true, tag = "Settings.Releases")
-        ZButton(stringResource(R.string.settings_report), { open = !open }, ghost = true, tag = "Settings.Report")
+        }, tag = "Settings.Releases", leadingIcon = R.drawable.ic_external_link)
+        ZDisclosureButton(stringResource(R.string.settings_report), expanded = open,
+            onClick = { open = !open }, tag = "Settings.Report", leadingIcon = R.drawable.ic_chat)
         Text(stringResource(if (state.signedIn) R.string.ux100_platform_support_signed_in_hint
             else R.string.settings_report_hint), style = Zapara.typography.caption, color = c.text2)
-        if (open && !state.signedIn) ZButton(stringResource(R.string.ux100_platform_open_account),
-            onOpenAccount, ghost = true, tag = "Settings.SupportOpenAccount")
+        if (open && !state.signedIn) ZActionButton(stringResource(R.string.ux100_platform_open_account),
+            onOpenAccount, tag = "Settings.SupportOpenAccount", leadingIcon = R.drawable.ic_users)
         if (open && state.signedIn) {
             val inputStatus = SupportInputLimits.evaluate(subject, body, state.selectedSupportThreadId != null)
             if (confirmDiscardDraft) AlertDialog(
@@ -911,9 +920,9 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
                 ghost = true, enabled = !state.supportLoading && !state.reportSending,
                 tag = "Settings.SupportRetry")
             val canSwitchThread = !state.reportSending && attachmentReads == 0 && !selectingAttachment
-            ZButton(stringResource(R.string.uxnext_support_new),
-                { onEvent(SettingsEvent.SelectSupportThread(null)) }, ghost = true,
-                enabled = canSwitchThread, tag = "Settings.SupportNew")
+            ZActionButton(stringResource(R.string.uxnext_support_new),
+                { onEvent(SettingsEvent.SelectSupportThread(null)) },
+                enabled = canSwitchThread, tag = "Settings.SupportNew", leadingIcon = R.drawable.ic_plus)
             if (state.supportThreads.size > 4) ZTextField(threadQuery, { threadQuery = it },
                 modifier = Modifier.fillMaxWidth().testTag("Settings.SupportThreadSearch"),
                 placeholder = { Text(stringResource(R.string.ux100_platform_search_threads)) }, singleLine = true)
@@ -926,8 +935,10 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
             shownThreads.forEach { thread ->
                 ZButton("${thread.subject} · ${thread.messageCount}",
                     { onEvent(SettingsEvent.SelectSupportThread(thread.id)) },
+                    modifier = Modifier.fillMaxWidth(),
                     ghost = state.selectedSupportThreadId != thread.id, enabled = canSwitchThread,
-                    tag = "Settings.SupportThread.${thread.id}")
+                    tag = "Settings.SupportThread.${thread.id}", leadingIcon = R.drawable.ic_chat,
+                    startAligned = true, trailingIcon = R.drawable.ic_chevron_right)
             }
             if (state.selectedSupportThreadId == null) OutlinedTextField(subject,
                 { subject = it; persistDraft(changed = true) }, modifier = Modifier.fillMaxWidth(),
@@ -950,7 +961,8 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
             if (inputStatus.subjectOverLimit || inputStatus.bodyOverLimit || inputStatus.invalidUnicode)
                 Text(stringResource(if (inputStatus.invalidUnicode) R.string.ux60_support_invalid_unicode
                     else R.string.ux60_support_over_limit), style = Zapara.typography.caption, color = c.bad)
-            Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 ZButton(stringResource(R.string.face_photo), {
                     selectingAttachment = true
                     try { photo.launch(arrayOf("image/*")) } catch (e: Exception) {

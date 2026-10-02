@@ -50,7 +50,9 @@ import ru.bgtu_voenmeh.zapara.ui.components.ZTextField
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.shell.LocalShellChrome
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZActionButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
+import ru.bgtu_voenmeh.zapara.ui.theme.ZDisclosureButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
@@ -141,8 +143,8 @@ private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifie
                 }
             }
             if (state.alphaMaps) MapsStepChrome(state, onEvent, compactSteps)
-            if (onBackToLesson != null) ZButton(stringResource(R.string.ux30_maps_back_to_lesson),
-                onBackToLesson, ghost = true, quiet = true, tag = "Maps.BackToLesson")
+            if (onBackToLesson != null) ZActionButton(stringResource(R.string.ux30_maps_back_to_lesson),
+                onBackToLesson, tag = "Maps.BackToLesson", leadingIcon = R.drawable.ic_chevron_left)
             if (!state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = true, zoom = state.zoom, enabled = state.planFile != null)
         }
         // Keep the complete selector rows at the scroll origin, not behind the route card.
@@ -151,15 +153,16 @@ private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifie
             if (state.canUndoEndpoint) ZButton(stringResource(R.string.ux300_ext_restore_point),
                 { onEvent(MapsEvent.UndoEndpoint) }, ghost = true, tag = "Maps.UndoEndpoint")
             var historyOpen by rememberSaveable { mutableStateOf(false) }
-            if (state.recentRoutes.isNotEmpty()) ZButton(stringResource(R.string.ux300_ext_recent_routes),
-                { historyOpen = true }, ghost = true, tag = "Maps.RecentRoutes")
+            if (state.recentRoutes.isNotEmpty()) ZDisclosureButton(stringResource(R.string.ux300_ext_recent_routes),
+                expanded = historyOpen, onClick = { historyOpen = true }, tag = "Maps.RecentRoutes",
+                leadingIcon = R.drawable.ic_week)
             if (historyOpen) ZBottomSheet({ historyOpen = false }, "Maps.RouteHistory", scrollable = true) {
                 Text(stringResource(R.string.ux300_ext_recent_routes), style = Zapara.typography.section)
                 Text(stringResource(R.string.ux300_ext_session_memory), style = Zapara.typography.caption)
                 state.recentRoutes.forEach { route ->
-                    ZButton(route.label, {
+                    ZActionButton(route.label, {
                         onEvent(MapsEvent.RepeatRoute(route.fromId, route.toId)); historyOpen = false
-                    }, ghost = true, modifier = Modifier.fillMaxWidth())
+                    }, leadingIcon = R.drawable.ic_map)
                 }
                 ZButton(stringResource(R.string.ux300_ext_clear_routes), {
                     onEvent(MapsEvent.ClearRecentRoutes); historyOpen = false
@@ -171,8 +174,8 @@ private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifie
         state.automaticNote?.let { note ->
             ZCard(Modifier.fillMaxWidth(), tag = "Maps.AutomaticNote") {
                 Text(note, style = Zapara.typography.body, color = c.text1)
-                if (!state.hasGroup && state.alphaMaps) ZButton(stringResource(R.string.group_pick),
-                    LocalShellChrome.current.onGroupChip, ghost = true)
+                if (!state.hasGroup && state.alphaMaps) ZActionButton(stringResource(R.string.group_pick),
+                    LocalShellChrome.current.onGroupChip, leadingIcon = R.drawable.ic_calendar)
             }
         }
         state.mapError?.takeUnless { state.hasUnavailablePlan }?.let { error ->
@@ -286,8 +289,8 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
         }
         if (scrollPlan && !state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = !state.fullscreen, zoom = state.zoom, enabled = state.planFile != null)
         if (state.planFile != null && state.availableRooms.isNotEmpty() && !state.showStack)
-            ZButton(stringResource(R.string.ux300_android_floor_rooms), { roomListOpen = true },
-                ghost = true, tag = "Maps.FloorRooms")
+            ZDisclosureButton(stringResource(R.string.ux300_android_floor_rooms), expanded = roomListOpen,
+                onClick = { roomListOpen = true }, tag = "Maps.FloorRooms", leadingIcon = R.drawable.ic_search)
         if (!sideSteps && state.alphaMaps) {
             val minStep = if (state.presentation != null || !state.fullscreen) Zapara.space.minTouch else 0.dp
             Column(
@@ -319,10 +322,9 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
             if (matching.isEmpty()) Text(stringResource(R.string.ux300_android_no_rooms),
                 style = Zapara.typography.body)
             matching.take(30).forEach { room ->
-                ZButton(room.room, {
+                ZActionButton(room.room, {
                     onEvent(MapsEvent.FocusRoom(room.id)); roomListOpen = false
-                }, ghost = true, modifier = Modifier.fillMaxWidth(),
-                    tag = "Maps.FocusRoom.${room.id}")
+                }, tag = "Maps.FocusRoom.${room.id}", leadingIcon = R.drawable.ic_map_pin)
             }
             if (matching.size > 30) Text(stringResource(R.string.ux300_android_refine_room),
                 style = Zapara.typography.caption)
@@ -440,7 +442,9 @@ private fun RouteEnd(title: String, value: String, hint: String, onClick: () -> 
 private fun MapsRouteCard(state: MapsUiState, onEvent: (MapsEvent) -> Unit, compact: Boolean) {
     ZCard(Modifier.fillMaxWidth(), tag = "Maps.Route") {
             var expanded by rememberSaveable { mutableStateOf(false) }
-            ZButton(stringResource(if (expanded) R.string.maps_route_collapse else R.string.maps_route_expand), { expanded = !expanded }, modifier = Modifier.fillMaxWidth(), ghost = true, quiet = true, tag = "Maps.RouteExpand")
+            ZDisclosureButton(stringResource(if (expanded) R.string.maps_route_collapse else R.string.maps_route_expand),
+                expanded = expanded, onClick = { expanded = !expanded }, tag = "Maps.RouteExpand",
+                leadingIcon = R.drawable.ic_map)
             Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                 if (compact) {
                     RouteEnd(stringResource(R.string.maps_from), state.fromLabel, stringResource(R.string.maps_from_hint), { onEvent(MapsEvent.OpenFrom) }, "Maps.From")
@@ -461,13 +465,15 @@ private fun MapsRouteCard(state: MapsUiState, onEvent: (MapsEvent) -> Unit, comp
                     verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                     if (state.canSwap) ZButton(stringResource(R.string.maps_swap),
                         { onEvent(MapsEvent.SwapEnds) }, ghost = true, tag = "Maps.SwapDirect")
-                    if (state.fromLabel.isNotBlank()) ZButton(stringResource(R.string.ux100_platform_show_start),
-                        { onEvent(MapsEvent.RevealEndpoint(RouteField.From)) }, ghost = true, tag = "Maps.ShowFrom")
-                    if (state.toLabel.isNotBlank()) ZButton(stringResource(R.string.ux100_platform_show_destination),
-                        { onEvent(MapsEvent.RevealEndpoint(RouteField.To)) }, ghost = true, tag = "Maps.ShowTo")
                     if (state.routeFailure != null) ZButton(stringResource(R.string.maps_retry),
                         { onEvent(MapsEvent.RetryMaps) }, ghost = true, tag = "Maps.RetryRouteCard")
                 }
+                if (state.fromLabel.isNotBlank()) ZActionButton(stringResource(R.string.ux100_platform_show_start),
+                    { onEvent(MapsEvent.RevealEndpoint(RouteField.From)) }, tag = "Maps.ShowFrom",
+                    leadingIcon = R.drawable.ic_map_pin)
+                if (state.toLabel.isNotBlank()) ZActionButton(stringResource(R.string.ux100_platform_show_destination),
+                    { onEvent(MapsEvent.RevealEndpoint(RouteField.To)) }, tag = "Maps.ShowTo",
+                    leadingIcon = R.drawable.ic_map_pin)
                 if (expanded) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                     if (state.fromLabel.isNotBlank()) ZButton(stringResource(R.string.ux30_platform_clear_start),
                         { onEvent(MapsEvent.ClearEndpoint(RouteField.From)) }, ghost = true, tag = "Maps.ClearFrom")

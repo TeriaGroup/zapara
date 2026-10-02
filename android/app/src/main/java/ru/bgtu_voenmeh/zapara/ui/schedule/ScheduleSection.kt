@@ -56,6 +56,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
+import ru.bgtu_voenmeh.zapara.ui.theme.ZActionButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZDisclosureButton
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
@@ -261,15 +263,16 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                 Text(pluralStringResource(R.plurals.schedule_pair_count, page.lessons.size, page.lessons.size), modifier = Modifier.align(Alignment.CenterVertically), style = Zapara.typography.section, color = Zapara.colors.text1)
                 ZChip("${page.lessons.minOf { it.timeStart }}–${page.lessons.maxOf { it.timeEnd }}")
             }
-            ZButton(stringResource(if (dayToolsOpen) R.string.ux300_visual_day_close else R.string.ux300_visual_day_tools),
-                { dayToolsOpen = !dayToolsOpen }, ghost = true, tag = "Schedule.DayTools")
+            ZDisclosureButton(stringResource(if (dayToolsOpen) R.string.ux300_visual_day_close else R.string.ux300_visual_day_tools),
+                dayToolsOpen, { dayToolsOpen = !dayToolsOpen },
+                tag = "Schedule.DayTools", leadingIcon = R.drawable.ic_menu)
             if (dayToolsOpen) {
-            ZButton(stringResource(R.string.ux300_android_share_day), { onShareDay(page) },
-                ghost = true, tag = "Schedule.ShareDay")
+            ZActionButton(stringResource(R.string.ux300_android_share_day), { onShareDay(page) },
+                tag = "Schedule.ShareDay", leadingIcon = R.drawable.ic_calendar)
             var transfersOpen by rememberSaveable(page.date, state.groupId, state.profileName) { mutableStateOf(false) }
             if (page.transfers.isNotEmpty()) {
-                ZButton(stringResource(R.string.ux300_ext_transfers), { transfersOpen = !transfersOpen },
-                    ghost = true, tag = "Schedule.Transfers")
+                ZDisclosureButton(stringResource(R.string.ux300_ext_transfers), transfersOpen,
+                    { transfersOpen = !transfersOpen }, tag = "Schedule.Transfers", leadingIcon = R.drawable.ic_map)
                 if (transfersOpen) {
                     Text(stringResource(R.string.ux300_ext_transfer_estimate), style = Zapara.typography.caption)
                     page.transfers.forEach { transfer ->

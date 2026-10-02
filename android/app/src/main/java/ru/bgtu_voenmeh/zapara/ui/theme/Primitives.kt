@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
@@ -80,7 +81,8 @@ fun ZCard(
 }
 
 @Composable
-fun ZButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, ghost: Boolean = false, tag: String? = null, quiet: Boolean = false, busy: Boolean = false, @DrawableRes leadingIcon: Int? = null) {
+fun ZButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, ghost: Boolean = false, tag: String? = null, quiet: Boolean = false, busy: Boolean = false, @DrawableRes leadingIcon: Int? = null,
+    startAligned: Boolean = false, @DrawableRes trailingIcon: Int? = null, trailingIconRotation: Float = 0f) {
     val c = Zapara.colors
     val shape = RoundedCornerShape(Zapara.radii.control)
     val interactions = remember { MutableInteractionSource() }
@@ -114,10 +116,15 @@ fun ZButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, en
         Box(Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s), contentAlignment = Alignment.Center) {
             Box(contentAlignment = Alignment.Center) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s, Alignment.CenterHorizontally),
-                    modifier = if (busy) Modifier.alpha(0f).clearAndSetSemantics { } else Modifier)
+                    modifier = (if (startAligned) Modifier.fillMaxWidth() else Modifier)
+                        .then(if (busy) Modifier.alpha(0f).clearAndSetSemantics { } else Modifier))
                 {
                     if (leadingIcon != null) Icon(painterResource(leadingIcon), null, Modifier.size(Zapara.space.icon), tint = contentColor)
-                    Text(text, style = Zapara.typography.bodyStrong, textAlign = TextAlign.Center, modifier = Modifier.weight(1f, fill = false))
+                    Text(text, style = Zapara.typography.bodyStrong,
+                        textAlign = if (startAligned) TextAlign.Start else TextAlign.Center,
+                        modifier = Modifier.weight(1f, fill = startAligned))
+                    if (trailingIcon != null) Icon(painterResource(trailingIcon), null,
+                        Modifier.size(Zapara.space.icon).rotate(trailingIconRotation), tint = contentColor)
                 }
                 if (busy) Box(Modifier.matchParentSize(), contentAlignment = Alignment.Center) {
                     Text(androidx.compose.ui.res.stringResource(ru.bgtu_voenmeh.zapara.R.string.space_day_busy), style = Zapara.typography.bodyStrong,

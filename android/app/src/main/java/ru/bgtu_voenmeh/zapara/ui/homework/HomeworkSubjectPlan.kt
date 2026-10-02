@@ -26,7 +26,7 @@ internal fun homeworkSubjectPlans(rows: List<HomeworkItemUi>, today: LocalDate):
 internal fun HomeworkSubjectOverview(items: List<HomeworkItemUi>, scope: String, onSubject: (String) -> Unit) {
     var open by remember(scope) { mutableStateOf(false) }
     if (items.isEmpty()) return
-    ZButton(stringResource(R.string.ux300_ext_subject_plan), { open = true }, ghost = true, tag = "Homework.SubjectPlan")
+    ZActionButton(stringResource(R.string.ux300_ext_subject_plan), { open = true }, tag = "Homework.SubjectPlan")
     if (open) ZBottomSheet({ open = false }, "Homework.SubjectOverview", scrollable = true) {
         Text(stringResource(R.string.ux300_ext_subject_plan), style = Zapara.typography.section)
         Text(stringResource(R.string.ux300_ext_subject_plan_hint), style = Zapara.typography.caption)
@@ -36,7 +36,7 @@ internal fun HomeworkSubjectOverview(items: List<HomeworkItemUi>, scope: String,
                 Text(stringResource(R.string.ux300_ext_subject_plan_counts, plan.active, plan.done, plan.overdue, plan.undated),
                     style = Zapara.typography.body)
                 plan.nextDate?.let { Text(stringResource(R.string.ux300_ext_subject_next, it.toString()), style = Zapara.typography.caption) }
-                ZButton(stringResource(R.string.ux300_ext_open_subject_tasks), { onSubject(plan.key); open = false }, ghost = true)
+                ZActionButton(stringResource(R.string.ux300_ext_open_subject_tasks), { onSubject(plan.key); open = false })
             }
         }
     }

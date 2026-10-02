@@ -18,7 +18,7 @@ internal fun WeekPlanningTools(state: WeekUiState, onEvent: (WeekEvent) -> Unit,
     val dark = Zapara.colors.isDark
     var tasksOpen by remember(state.groupId, state.profileName) { mutableStateOf(false) }
     var changesOpen by remember(state.groupId, state.profileName) { mutableStateOf(false) }
-    ZButton(stringResource(R.string.ux300_agenda_changes), { changesOpen = true }, ghost = true, tag = "Week.RefreshChanges")
+    ZActionButton(stringResource(R.string.ux300_agenda_changes), { changesOpen = true }, tag = "Week.RefreshChanges")
     if (changesOpen) ZBottomSheet({ changesOpen = false }, "Week.RefreshChangesSheet", scrollable = true) {
         Text(stringResource(R.string.ux300_agenda_changes), style = Zapara.typography.section)
         Text(stringResource(R.string.ux300_refresh_scope), style = Zapara.typography.caption)
@@ -31,14 +31,14 @@ internal fun WeekPlanningTools(state: WeekUiState, onEvent: (WeekEvent) -> Unit,
             change.added.forEach { Text(stringResource(R.string.ux300_ext_week_added, change.afterDate.toString(), "${it.time} · ${it.subjectRaw} · ${it.classroomRaw}")) }
         } }
     }
-    ZButton(stringResource(R.string.ux300_ext_compare_weeks), {
+    ZActionButton(stringResource(R.string.ux300_ext_compare_weeks), {
         val date = state.comparisonDays.firstOrNull()?.date ?: state.selectedDate.plusWeeks(1)
         android.app.DatePickerDialog(context, if (dark) R.style.Zapara_DatePicker_Dark else R.style.Zapara_DatePicker_Light,
             { _, year, month, day -> onEvent(WeekEvent.Compare(LocalDate.of(year, month + 1, day))) },
             date.year, date.monthValue - 1, date.dayOfMonth).show()
-    }, ghost = true, tag = "Week.Compare")
-    ZButton(stringResource(R.string.ux300_ext_week_deadlines, state.deadlines.count { !it.done }), { tasksOpen = true },
-        ghost = true, tag = "Week.Homework")
+    }, tag = "Week.Compare")
+    ZActionButton(stringResource(R.string.ux300_ext_week_deadlines, state.deadlines.count { !it.done }), { tasksOpen = true },
+        tag = "Week.Homework")
     if (state.comparisonDays.isNotEmpty()) ZBottomSheet({ onEvent(WeekEvent.Compare(null)) }, "Week.Comparison", scrollable = true) {
         Text(stringResource(R.string.ux300_ext_compare_weeks), style = Zapara.typography.section)
         Text("${state.days.firstOrNull()?.date}–${state.days.lastOrNull()?.date} / ${state.comparisonDays.first().date}–${state.comparisonDays.last().date}",
@@ -65,7 +65,7 @@ internal fun WeekPlanningTools(state: WeekUiState, onEvent: (WeekEvent) -> Unit,
                 tasks.forEach { task -> ZCard(Modifier.fillMaxWidth()) {
                     Text("${if (task.done) "[x]" else "[ ]"} ${task.subject}", style = Zapara.typography.bodyStrong)
                     Text(task.text, style = Zapara.typography.body)
-                    ZButton(stringResource(R.string.ux300_ext_open_task), { onHomework(task.id) }, ghost = true)
+                    ZActionButton(stringResource(R.string.ux300_ext_open_task), { onHomework(task.id) })
                 } }
             }
         }

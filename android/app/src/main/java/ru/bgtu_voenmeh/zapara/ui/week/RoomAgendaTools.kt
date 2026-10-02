@@ -17,35 +17,35 @@ import java.time.LocalDate
     var roomId by remember(state.profileName, state.groupId) { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val dark = Zapara.colors.isDark
-    ZButton(stringResource(R.string.ux300_agenda_room), {
+    ZActionButton(stringResource(R.string.ux300_agenda_room), {
         open = true; event(WeekEvent.RoomDate(state.roomAgenda?.date ?: state.selectedDate))
-    }, ghost = true, tag = "Week.RoomAgenda")
+    }, tag = "Week.RoomAgenda")
     if (open) ZBottomSheet({ open = false }, "Week.RoomAgendaSheet", scrollable = true) {
         Text(stringResource(R.string.ux300_agenda_room), style = Zapara.typography.section)
         Text(stringResource(R.string.ux300_room_scope), style = Zapara.typography.caption)
         val agenda = state.roomAgenda
         val date = agenda?.date ?: state.selectedDate
-        ZButton(agendaDateLabel(date), {
+        ZActionButton(agendaDateLabel(date), {
             android.app.DatePickerDialog(context, if (dark) R.style.Zapara_DatePicker_Dark else R.style.Zapara_DatePicker_Light,
                 { _, y, m, d -> event(WeekEvent.RoomDate(LocalDate.of(y, m + 1, d))) }, date.year, date.monthValue - 1, date.dayOfMonth).show()
-        }, ghost = true, tag = "Week.RoomAgendaDate")
+        }, tag = "Week.RoomAgendaDate", leadingIcon = R.drawable.ic_calendar)
         if (agenda == null) Text(stringResource(R.string.ux300_room_loading))
         else {
             Text(stringResource(R.string.ux300_room_coverage, agenda.groups.size, agenda.unmatched), style = Zapara.typography.caption)
             Text(agenda.groups.joinToString(", "), style = Zapara.typography.caption)
             ZTextField(query, { query = it }, Modifier.fillMaxWidth(), placeholder = { Text(stringResource(R.string.ux300_room_search)) }, singleLine = true)
             if (roomId == null) agenda.places.filter { it.label.contains(query.trim(), true) }.take(80).forEach { place ->
-                ZButton(place.label, { roomId = place.id }, ghost = true)
+                ZActionButton(place.label, { roomId = place.id })
             } else {
                 Text(agenda.places.firstOrNull { it.id == roomId }?.label ?: stringResource(R.string.ux300_room_missing), style = Zapara.typography.bodyStrong)
-                ZButton(stringResource(R.string.ux300_room_choose), { roomId = null }, ghost = true)
+                ZActionButton(stringResource(R.string.ux300_room_choose), { roomId = null })
                 val rows = agenda.rows.filter { it.nodeId == roomId }
                 if (agenda.unknown) Text(stringResource(R.string.ux300_room_unknown))
                 else if (rows.isEmpty()) Text(stringResource(R.string.ux300_room_empty))
                 rows.forEach { row -> ZCard(Modifier.fillMaxWidth()) {
                     Text("${row.lesson.timeStart}–${row.lesson.timeEnd} · ${row.groupName}", style = Zapara.typography.bodyStrong)
                     Text(row.lesson.subjectRaw, style = Zapara.typography.body)
-                    ZButton(stringResource(R.string.ux300_room_map), { open = false; map(row.lesson.classroomRaw) }, ghost = true)
+                    ZActionButton(stringResource(R.string.ux300_room_map), { open = false; map(row.lesson.classroomRaw) })
                 } }
             }
         }
