@@ -332,7 +332,8 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
             val cursor = if (append) captured.deviceCursor else null
             val page = runtime.client!!.listDevices(session.accessToken, cursor = cursor)
             val fetched = page.devices.map {
-                AccountDeviceRow(it.familyId, it.deviceId, it.deviceName, it.platform, it.isCurrent)
+                AccountDeviceRow(it.familyId, it.deviceId, it.deviceName, it.platform, it.isCurrent,
+                    it.createdAt, it.lastSeenAt, it.expiresAt)
             }
             captured.copy(
                 devices = if (append) mergeAccountDevices(captured.devices, fetched) else fetched,
@@ -528,7 +529,9 @@ class AccountViewModel internal constructor(private val runtime: AccountRuntime)
         launchOp { captured ->
             runtime.client!!.confirmPasswordReset(captured.proof, captured.newPassword)
             captured.copy(recoveryStep = AccountRecoveryStep.Request,
-                status = runtime.strings(R.string.ux30_recovery_done))
+                username = captured.recoveryUsername.ifBlank { captured.username }.trim(), registration = false,
+                recoveryCompletionVersion = captured.recoveryCompletionVersion + 1,
+                status = runtime.strings(R.string.ux30_recovery_done)).clearSecrets()
         }
     }
 

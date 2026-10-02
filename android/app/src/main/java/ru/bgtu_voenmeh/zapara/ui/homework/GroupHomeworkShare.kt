@@ -5,12 +5,24 @@ import ru.bgtu_voenmeh.zapara.AppContainer
 import ru.bgtu_voenmeh.zapara.data.GroupHomework
 import ru.bgtu_voenmeh.zapara.data.HomeworkEditorShare
 import ru.bgtu_voenmeh.zapara.data.HomeworkShareOutcome
+import ru.bgtu_voenmeh.zapara.data.Homework
+import ru.bgtu_voenmeh.zapara.data.Parity
 import ru.bgtu_voenmeh.zapara.data.communities.Classmate
 import ru.bgtu_voenmeh.zapara.data.communities.GroupDesk
 import ru.bgtu_voenmeh.zapara.data.communities.HomeworkAudience
 import java.time.Instant
 
 data class HomeworkPublishSnapshot(val communityId: String, val authorId: String?, val title: String, val body: String, val deadlineAt: Instant?, val audience: HomeworkAudience?, val operationId: String?)
+
+internal class DuplicateHomework : Exception()
+
+internal fun duplicateHomework(rows: List<Homework>, editor: HomeworkEditorState): Boolean {
+    if (editor.id != null || editor.persistedId != null || editor.duplicateApproved) return false
+    val due = editor.dueFor(editor.n, editor.text)
+    val text = editor.text.trim()
+    return rows.any { row -> Parity.sameSubject(row.norm, Parity.normalizeSubject(editor.subjectRaw)) &&
+        row.text.trim().equals(text, ignoreCase = true) && row.due == due }
+}
 
 internal suspend fun retryHomeworkPublication(container: AppContainer, snapshot: HomeworkPublishSnapshot) {
     val operationId = snapshot.operationId ?: error("Safe retry unavailable")
@@ -91,6 +103,8 @@ internal suspend fun saveHomeworkEditor(
     editor: HomeworkEditorState,
     onProgress: (HomeworkEditorState) -> Unit
 ): HomeworkShareOutcome {
+    if (editor.scheduleGroupId == container.repo.settings().myGroupId &&
+        duplicateHomework(container.homework.all(), editor)) throw DuplicateHomework()
     var current = editor
     fun progress(value: HomeworkEditorState) { current = value; onProgress(value) }
     val outcome = shareSavedHomework(container, editor.copy(share = editor.share && !editor.shareAttempted),

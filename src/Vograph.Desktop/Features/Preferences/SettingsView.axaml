@@ -19,7 +19,7 @@
     </Style>
   </UserControl.Styles>
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-    <Grid Name="SettingsColumns" Margin="24,20" ColumnDefinitions="*" ColumnSpacing="20" MaxWidth="960" HorizontalAlignment="Stretch"><StackPanel Name="SettingsOverview" Spacing="6" IsVisible="{Binding ShowOverview}"><TextBlock Classes="display" Text="Настройки" /><TextBox Text="{Binding SettingsSearch}" PlaceholderText="Поиск по настройкам" AutomationProperties.AutomationId="Settings.Search" /><WrapPanel ItemSpacing="8"><TextBlock Classes="muted caption" Text="{Binding SettingsSearchCount, StringFormat='Найдено разделов: {0}'}" IsVisible="{Binding HasSettingsSearch}" /><Button Content="Очистить поиск" Command="{Binding ClearSettingsSearchCommand}" IsVisible="{Binding HasSettingsSearch}" /></WrapPanel><TextBlock Text="Раздел не найден. Попробуйте другое слово или очистите поиск." TextWrapping="Wrap" IsVisible="{Binding NoSettingsSearchResults}" /><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="account" MinHeight="64" IsVisible="{Binding ShowAccountCategory}">
+    <Grid Name="SettingsColumns" Margin="24,20" ColumnDefinitions="*" ColumnSpacing="20" MaxWidth="960" HorizontalAlignment="Stretch"><StackPanel Name="SettingsOverview" Spacing="6" IsVisible="{Binding ShowOverview}"><TextBlock Classes="display" Text="Настройки" /><TextBox Text="{Binding SettingsSearch}" PlaceholderText="Поиск по настройкам" AutomationProperties.AutomationId="Settings.Search" /><WrapPanel ItemSpacing="8"><TextBlock Classes="muted caption" Text="{Binding SettingsSearchCount, StringFormat='Найдено разделов: {0}'}" IsVisible="{Binding HasSettingsSearch}" /><Button Content="Очистить поиск" Command="{Binding ClearSettingsSearchCommand}" IsVisible="{Binding HasSettingsSearch}" /></WrapPanel><TextBlock Text="Раздел не найден. Попробуйте другое слово или очистите поиск." TextWrapping="Wrap" IsVisible="{Binding NoSettingsSearchResults}" /><ItemsControl ItemsSource="{Binding SpecificSettingResults}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="st:SettingsSearchHit"><Button Classes="ghost" Content="{Binding Title}" Command="{Binding $parent[UserControl].((st:SettingsViewModel)DataContext).OpenSpecificSettingCommand}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="account" AutomationProperties.AutomationId="Settings.Category.Account" MinHeight="64" IsVisible="{Binding ShowAccountCategory}">
           <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
             <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center">
               <c:Icon Data="{StaticResource Icon.Users}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -29,27 +29,27 @@
               <TextBlock Classes="muted caption" Text="{Binding AccountPanel.Status}" TextTrimming="CharacterEllipsis" MaxWidth="550" />
             </StackPanel>
           </StackPanel>
-        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="study" MinHeight="64" IsVisible="{Binding ShowStudyCategory}">
+        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="study" AutomationProperties.AutomationId="Settings.Category.Study" MinHeight="64" IsVisible="{Binding ShowStudyCategory}">
           <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
             <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Calendar}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
             <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Учёба" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding GroupName}" /></StackPanel>
           </StackPanel>
-        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="appearance" MinHeight="64" IsVisible="{Binding ShowAppearanceCategory}">
+        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="appearance" AutomationProperties.AutomationId="Settings.Category.Appearance" MinHeight="64" IsVisible="{Binding ShowAppearanceCategory}">
           <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
             <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Sun}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
             <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Оформление" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding ThemeSummary}" /></StackPanel>
           </StackPanel>
-        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="notifications" MinHeight="64" IsVisible="{Binding ShowNotificationsCategory}">
+        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="notifications" AutomationProperties.AutomationId="Settings.Category.Notifications" MinHeight="64" IsVisible="{Binding ShowNotificationsCategory}">
           <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
             <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Bell}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
             <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Уведомления" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="{Binding NotificationSummary}" /></StackPanel>
           </StackPanel>
-        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="data" MinHeight="64" IsVisible="{Binding ShowDataCategory}">
+        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="data" AutomationProperties.AutomationId="Settings.Category.Data" MinHeight="64" IsVisible="{Binding ShowDataCategory}">
           <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
             <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Refresh}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
             <StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="Данные и синхронизация" FontWeight="Medium" /><TextBlock Classes="muted caption" Text="Локальная копия и связь" /></StackPanel>
           </StackPanel>
-        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="help" MinHeight="64" IsVisible="{Binding ShowHelpCategory}">
+        </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="help" AutomationProperties.AutomationId="Settings.Category.Help" MinHeight="64" IsVisible="{Binding ShowHelpCategory}">
           <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
             <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center">
               <c:Icon Data="{StaticResource Icon.File}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -61,8 +61,9 @@
           </StackPanel>
         </Button></StackPanel><StackPanel Name="SettingsDetails" Spacing="12" IsVisible="{Binding !ShowOverview}">      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
   <TextBlock Classes="display" Text="{Binding PanelTitle}" TextWrapping="Wrap" VerticalAlignment="Center" />
-  <Button Grid.Column="1" Classes="ghost" Content="Назад к настройкам" Command="{Binding BackToOverviewCommand}" IsVisible="{Binding !ShowOverview}" HorizontalAlignment="Right" MinHeight="48" />
+  <Button Grid.Column="1" Classes="ghost" Content="Назад к настройкам" AutomationProperties.AutomationId="Settings.Back" Command="{Binding BackToOverviewCommand}" IsVisible="{Binding !ShowOverview}" HorizontalAlignment="Right" MinHeight="48" />
 </Grid>
+<Border Classes="card" IsVisible="{Binding ConfirmLeaveAccount}"><StackPanel Spacing="8"><TextBlock Text="Имя профиля не сохранено. Продолжите редактирование или отмените изменение перед уходом." TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Content="Продолжить редактирование" Command="{Binding KeepAccountEditingCommand}" /><Button Classes="danger" Content="Отменить изменение имени" Command="{Binding DiscardAccountEditingCommand}" /></WrapPanel></StackPanel></Border>
 <StackPanel Spacing="10" IsVisible="{Binding ShowAccountPanel}">
         <account:AccountPanelView DataContext="{Binding AccountPanel}" />
       </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowStudyPanel}">
@@ -71,7 +72,7 @@
           <TextBlock Classes="micro" Text="{loc:TU setSchedule}" />
           <Grid Classes="row" ColumnDefinitions="200,*">
             <TextBlock Text="{loc:T myGroup}" />
-            <Button Grid.Column="1" HorizontalAlignment="Left" Command="{Binding ChangeGroupCommand}"
+            <Button Name="GroupChoiceControl" Grid.Column="1" HorizontalAlignment="Left" Command="{Binding ChangeGroupCommand}"
                     AutomationProperties.AutomationId="Settings.ChangeGroup" AutomationProperties.Name="{Binding GroupName}">
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <TextBlock Text="{Binding GroupName}" FontWeight="SemiBold" />
@@ -82,7 +83,9 @@
           <TextBlock Classes="muted caption" Text="Выбранная группа задаёт расписание на устройстве. Членство и роли в чате группы оформляются отдельно." TextWrapping="Wrap" />
           <TextBlock Classes="subject" Text="Подгруппы предметов" />
           <TextBlock Classes="muted caption" Text="Если подгруппа не выбрана, показываются все занятия. Повторное нажатие снимает выбор." TextWrapping="Wrap" />
-          <ItemsControl ItemsSource="{Binding StudySubgroups}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="st:StudySubgroupRow"><StackPanel Spacing="6" Margin="0,4"><TextBlock Text="{Binding Title}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding Options}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" LineSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="st:StudySubgroupOption"><Button Content="{Binding Label}" Classes.primary="{Binding Selected}" Command="{Binding SelectCommand}" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+          <CalendarDatePicker SelectedDate="{Binding StudyImpactWeekDate}" Width="180" AutomationProperties.Name="Неделя для проверки подгруппы" />
+          <ItemsControl ItemsSource="{Binding StudySubgroups}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="st:StudySubgroupRow"><StackPanel Spacing="6" Margin="0,4"><TextBlock Text="{Binding Title}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding Options}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" LineSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="st:StudySubgroupOption"><Button Content="{Binding Label}" Classes.primary="{Binding Selected}" Command="{Binding PreviewCommand}" ToolTip.Tip="Показать влияние перед выбором" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+          <Border Classes="card" IsVisible="{Binding ShowStudyImpact}"><StackPanel Spacing="8"><TextBlock Classes="subject" Text="Влияние выбора на неделю" /><TextBlock Text="{Binding StudyImpactText}" TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Classes="primary" Content="Применить выбор подгруппы" Command="{Binding ApplyStudyImpactCommand}" IsEnabled="{Binding CanApplyStudyImpact}" /><Button Content="Отмена" Command="{Binding CancelStudyImpactCommand}" /></WrapPanel></StackPanel></Border>
           <WrapPanel ItemSpacing="8" IsVisible="{Binding HasStudySubgroupUndo}"><TextBlock Text="Выбор подгруппы изменён" VerticalAlignment="Center" /><Button Content="Отменить выбор" Command="{Binding UndoStudySubgroupCommand}" /></WrapPanel>
           <Expander Header="Дополнительно"><StackPanel Spacing="6">          <c:Switch Content="{loc:T invertParity}" IsChecked="{Binding ParityInvert}" AutomationProperties.AutomationId="Settings.ParityInvert" />
           <TextBlock Classes="faint caption" Text="{loc:T invertHint}" TextWrapping="Wrap" />
@@ -122,9 +125,14 @@
           <c:Switch Content="{loc:T notifEnabled}" IsChecked="{Binding NotificationsEnabled}" AutomationProperties.AutomationId="Settings.NotifyEnabled" />
           <TextBlock Classes="muted caption" Text="Включите напоминания, чтобы изменить время." IsVisible="{Binding !NotificationsEnabled}" TextWrapping="Wrap" />
           <StackPanel Spacing="4" IsEnabled="{Binding NotificationsEnabled}">
+            <TextBlock Classes="muted caption" Text="Быстрая настройка времени — сохраните выбор ниже" TextWrapping="Wrap" />
+            <WrapPanel ItemSpacing="8" LineSpacing="8">
+              <Button Content="19:00 и 07:00" Command="{Binding UseEarlyNotifyPresetCommand}" />
+              <Button Content="21:00 и 09:00" Command="{Binding UseLateNotifyPresetCommand}" />
+            </WrapPanel>
             <Grid Classes="row" ColumnDefinitions="200,*">
               <TextBlock Text="{loc:T notifTime1Label}" />
-              <TextBox Grid.Column="1" MaxWidth="120" HorizontalAlignment="Left" Text="{Binding NotifyTime1}" Classes="tnum" AutomationProperties.AutomationId="Settings.NotifyTime1" />
+              <TextBox Name="NotifyTime1Control" Grid.Column="1" MaxWidth="120" HorizontalAlignment="Left" Text="{Binding NotifyTime1}" Classes="tnum" AutomationProperties.AutomationId="Settings.NotifyTime1" />
             </Grid>
             <Grid Classes="row" ColumnDefinitions="200,*">
               <TextBlock Text="{loc:T notifTime2Label}" />
@@ -146,7 +154,7 @@
         </StackPanel>
       </Border>
       </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowDataPanel}">
-      <Border Classes="card"><StackPanel Spacing="8"><TextBlock Classes="subject" Text="Копия на устройстве" /><TextBlock Text="{Binding DataSummary}" TextWrapping="Wrap" /><Button Content="Синхронизировать сейчас" Command="{Binding SyncDataCommand}" IsEnabled="{Binding CanSyncData}" /><Button Content="{Binding SyncConflictSummary}" Command="{Binding ResolveDataConflictsCommand}" IsVisible="{Binding HasDataConflicts}" /><Button Content="Аккаунт и активные устройства" Command="{Binding OpenPanelCommand}" CommandParameter="account" /></StackPanel></Border>
+      <Border Classes="card"><StackPanel Spacing="8"><TextBlock Classes="subject" Text="Копия на устройстве" /><TextBlock Text="{Binding DataSummary}" TextWrapping="Wrap" /><Button Name="SyncNowControl" Content="Синхронизировать сейчас" Command="{Binding SyncDataCommand}" IsEnabled="{Binding CanSyncData}" /><Button Content="{Binding SyncConflictSummary}" Command="{Binding ResolveDataConflictsCommand}" IsVisible="{Binding HasDataConflicts}" /><Button Content="Аккаунт и активные устройства" Command="{Binding OpenPanelCommand}" CommandParameter="account" /></StackPanel></Border>
       <Border Classes="card" IsVisible="{Binding LegacyTransferAvailable}">
         <StackPanel Spacing="10">
           <TextBlock Classes="micro" Text="{loc:TU setSync}" />
@@ -190,7 +198,7 @@
           </Border>
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Button Classes="primary" Content="{loc:T updInstall}" Command="{Binding InstallCommand}" IsVisible="{Binding CanInstall}" AutomationProperties.AutomationId="Updates.Install" />
-            <Button Content="{loc:T updCheck}" Command="{Binding CheckCommand}" IsEnabled="{Binding !IsChecking}" AutomationProperties.AutomationId="Updates.Check" />
+            <Button Name="UpdateCheckControl" Content="{loc:T updCheck}" Command="{Binding CheckCommand}" IsEnabled="{Binding !IsChecking}" AutomationProperties.AutomationId="Updates.Check" />
             <Button Classes="link" Content="{loc:T updInBrowser}" Command="{Binding OpenReleasesCommand}" AutomationProperties.AutomationId="Updates.Releases" />
           </StackPanel>
         </StackPanel>
@@ -199,9 +207,10 @@
       <Border Classes="card">
         <StackPanel Spacing="8">
           <TextBlock Classes="micro" Text="Поддержка" />
+          <Border Classes="card"><StackPanel Spacing="8"><TextBlock Classes="subject" Text="Диагностика без личных данных" /><TextBlock Classes="muted caption" Text="Только версия, платформа и числа сохранённых копий, планов и изменений в очереди. Без имён, путей, адресов, токенов, текстов и файлов." TextWrapping="Wrap" /><Button Content="Проверить сводку" Command="{Binding PreviewDiagnosticsCommand}" HorizontalAlignment="Left" /><TextBox Text="{Binding DiagnosticsPreview}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" IsVisible="{Binding HasDiagnosticsPreview}" MinHeight="100" /><Button Content="Копировать сводку" Command="{Binding CopyDiagnosticsCommand}" IsVisible="{Binding HasDiagnosticsPreview}" HorizontalAlignment="Left" /><TextBlock Text="{Binding DiagnosticsStatus}" TextWrapping="Wrap" /></StackPanel></Border>
           <TextBlock TextWrapping="Wrap" Text="Сообщить о баге или ошибке. Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ." />
           <TextBlock Classes="subject" Text="Новое обращение" />
-          <TextBox Text="{Binding ReportSubject}" PlaceholderText="Тема" MinHeight="48" AutomationProperties.AutomationId="Settings.ReportSubject" />
+          <TextBox Name="ReportSubjectControl" Text="{Binding ReportSubject}" PlaceholderText="Тема" MinHeight="48" AutomationProperties.AutomationId="Settings.ReportSubject" />
           <TextBox Text="{Binding ReportBody}" PlaceholderText="Что случилось" AcceptsReturn="True" MinHeight="96" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings.ReportBody" />
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Button Content="Фото" MinHeight="48" MinWidth="48" Command="{Binding PickReportPhotoCommand}" AutomationProperties.AutomationId="Settings.ReportPhoto" />
@@ -215,12 +224,20 @@
             </WrapPanel></DataTemplate>
           </ItemsControl.ItemTemplate></ItemsControl>
           <TextBlock Text="Добавляем вложение…" IsVisible="{Binding ReportAttachmentLoading}" Classes="muted caption" />
-          <Button Content="Сообщить о баге" HorizontalAlignment="Left" MinHeight="48" Command="{Binding SendReportCommand}" IsEnabled="{Binding !ReportAttachmentLoading}" AutomationProperties.AutomationId="Settings.Report" />
+          <Button Content="Сообщить о баге" HorizontalAlignment="Left" MinHeight="48" Command="{Binding SendReportCommand}" IsEnabled="{Binding CanSendReport}" AutomationProperties.AutomationId="Settings.Report" />
+          <Button Content="Очистить черновик" Command="{Binding RequestDiscardReportCommand}" IsEnabled="{Binding !ReportSending}" HorizontalAlignment="Left" />
+          <Border Classes="card" IsVisible="{Binding ConfirmDiscardReport}"><StackPanel Spacing="8">
+            <TextBlock Text="Очистить текст и вложения этого черновика?" TextWrapping="Wrap" />
+            <WrapPanel ItemSpacing="8"><Button Content="Продолжить редактирование" Command="{Binding CancelDiscardReportCommand}" /><Button Classes="danger" Content="Очистить черновик" Command="{Binding DiscardReportCommand}" /></WrapPanel>
+          </StackPanel></Border>
           <TextBlock Text="{Binding ReportNote}" TextWrapping="Wrap" />
           <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,8" />
           <WrapPanel ItemSpacing="8"><TextBlock Classes="subject" Text="Ваши обращения" VerticalAlignment="Center" /><Button Content="Обновить обращения" Command="{Binding RetryReportHistoryCommand}" IsEnabled="{Binding !ReportHistoryLoading}" AutomationProperties.AutomationId="Settings.ReportHistoryRetry" /></WrapPanel>
           <TextBlock Text="{Binding ReportHistoryStatus}" TextWrapping="Wrap" />
-          <ItemsControl ItemsSource="{Binding ReportThreads}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="8" LineSpacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="st:SupportThreadItem"><Button Content="{Binding Label}" Command="{Binding $parent[UserControl].((st:SettingsViewModel)DataContext).SelectReportThreadCommand}" CommandParameter="{Binding}" AutomationProperties.Name="Открыть обращение" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+          <TextBox Text="{Binding ReportThreadSearch, Mode=TwoWay}" PlaceholderText="Поиск обращений по теме" AutomationProperties.Name="Поиск обращений" />
+          <Button Content="Очистить поиск обращений" Command="{Binding ClearReportThreadSearchCommand}" IsVisible="{Binding ReportThreadSearch, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" HorizontalAlignment="Left" />
+          <TextBlock Text="По этой теме обращений нет" IsVisible="{Binding NoReportThreadMatches}" />
+          <ItemsControl ItemsSource="{Binding FilteredReportThreads}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="8" LineSpacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="st:SupportThreadItem"><Button Content="{Binding Label}" Command="{Binding $parent[UserControl].((st:SettingsViewModel)DataContext).SelectReportThreadCommand}" CommandParameter="{Binding}" AutomationProperties.Name="Открыть обращение" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
           <TextBlock Classes="subject" Text="{Binding SelectedReportSubject}" IsVisible="{Binding HasSelectedReportThread}" TextWrapping="Wrap" />
           <ItemsControl ItemsSource="{Binding ReportMessages}">
             <ItemsControl.ItemTemplate>

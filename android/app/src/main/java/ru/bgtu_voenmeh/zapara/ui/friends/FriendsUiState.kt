@@ -46,8 +46,12 @@ data class FriendsUiState(
     val encounters: List<FriendEncounter> = emptyList(),
     val missingGroups: List<String> = emptyList(),
     val checkedGroups: Int = 0,
-    val hasOwnSchedule: Boolean = false
+    val hasOwnSchedule: Boolean = false,
+    val meetingDate: java.time.LocalDate = java.time.LocalDate.now(),
+    val meetingWindows: List<FriendMeetingWindows> = emptyList()
 )
+
+data class FriendMeetingWindows(val group: String, val windows: List<ru.bgtu_voenmeh.zapara.ui.FreeStudyInterval>)
 
 internal fun FriendsUiState.deleteFailed(id: Long, error: String): FriendsUiState =
     if (confirmDelete != id) this else copy(deletePending = false, deleteError = error)
@@ -57,6 +61,7 @@ internal fun FriendsUiState.deleteAcknowledged(id: Long): FriendsUiState =
         editor = editor?.takeUnless { it.id == id }, deletePending = false, deleteError = null)
 
 sealed interface FriendsEvent {
+    data class MeetingDate(val date: java.time.LocalDate) : FriendsEvent
     data object Retry : FriendsEvent
     data object RefreshSchedules : FriendsEvent
     data object Add : FriendsEvent

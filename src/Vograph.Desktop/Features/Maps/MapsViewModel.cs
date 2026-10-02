@@ -1,4 +1,5 @@
 using Avalonia;
+using System.Collections.ObjectModel;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -32,8 +33,110 @@ public sealed partial class MapsViewModel : ViewModelBase
     private CoordsRect? _coords;
     private bool _detached;
     private Route? _route;
+    private string _routeIssue = "маршрут ещё не размечен";
+    private void SetRouteIssue(string issue) { _routeIssue = issue; OnPropertyChanged(nameof(RouteUnmarked)); }
+    private Func<string, Task>? clipboardWriter;
+    public void SetClipboardWriter(Func<string, Task>? writer) => clipboardWriter = writer;
     private readonly CampusGraph _graph;
+    public ObservableCollection<MapPlaceChoice> RecentPlaces { get; } = [];
+    public bool HasRecentPlaces => RecentPlaces.Count > 0;
+    private void RememberRecent(MapPlaceChoice place)
+    {
+        var old = RecentPlaces.FirstOrDefault(item => item.Id == place.Id);
+        if (old is not null) RecentPlaces.Remove(old);
+        RecentPlaces.Insert(0, place);
+        while (RecentPlaces.Count > 6) RecentPlaces.RemoveAt(RecentPlaces.Count - 1);
+        OnPropertyChanged(nameof(HasRecentPlaces));
+    }
+    [RelayCommand] private void ClearRecentPlaces()
+    { RecentPlaces.Clear(); OnPropertyChanged(nameof(HasRecentPlaces)); }
+    [ObservableProperty] private string placeSearch = "";
+    public IReadOnlyList<MapPlaceChoice> PlaceResults => PlaceSearch.Trim().Length == 0 ? [] :
+        MapPlaceBrowse.Filter(_graph.Nodes, PlaceSearch).Take(20).ToArray();
+    public bool NoPlaceMatches => PlaceSearch.Trim().Length > 0 && PlaceResults.Count == 0;
+    public IReadOnlyList<MapPlaceChoice> CurrentFloorPlaces => Current is not { } map ? [] :
+        MapPlaceBrowse.Filter(_graph.Nodes, "").Where(place => place.Building ==
+            (map.Building == "ВЦ" ? "ГК" : map.Building) && place.Floor == map.Floor).ToArray();
+    public bool HasFloorPlaces => CurrentFloorPlaces.Count > 0;
+    partial void OnPlaceSearchChanged(string value)
+    { OnPropertyChanged(nameof(PlaceResults)); OnPropertyChanged(nameof(NoPlaceMatches)); }
+    [RelayCommand] private void ClearPlaceSearch() => PlaceSearch = "";
+    [RelayCommand]
+    private async Task SelectPlace(MapPlaceChoice? place)
+    {
+        if (place is null || !_graph.Nodes.Any(node => node.Id == place.Id && node.Kind == "room" &&
+            node.Building == place.Building && node.Floor == place.Floor)) return;
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        var map = await RunAsync(() => App.Maps.GetAllMaps().FirstOrDefault(item =>
+            item.Building == place.Building && item.Floor == place.Floor)!, "map place");
+        if (map is null || !operation.IsCurrent) return;
+        var coords = await RunAsync(() => App.Maps.GetCoords(place.Building, place.Floor, place.Room)!, "map place coords");
+        if (!operation.IsCurrent) return;
+        Mode = MapMode.Manual; _lessonName = null; _start = _end = null;
+        await ShowMapAsync(map, coords);
+        if (!operation.IsCurrent) return;
+        RememberRecent(place);
+        if (HasHighlight) HighlightLabel = place.Label;
+        if (manualStartId is { } startId)
+        {
+            manualDestinationId = place.Id;
+            _destRoomKey = place.Id;
+            _prevRoomKey = startId;
+            NotifyManualRoute();
+            ComputeRoute();
+        }
+        else
+        {
+            SetRouteEnds(place.Id, null);
+            manualDestinationId = place.Id;
+            NotifyManualRoute();
+        }
+    }
     private string? _lastEntranceId;
+    private string? manualStartId;
+    private string? manualDestinationId;
+    public bool HasManualRoutePoints => manualStartId is not null || manualDestinationId is not null;
+    public string ManualStartCaption => manualStartId is null ? "" : "Откуда: " + PlaceLabel(manualStartId);
+    public string ManualDestinationCaption => manualDestinationId is null ? "" : "Куда: " + PlaceLabel(manualDestinationId);
+    private string PlaceLabel(string id)
+    {
+        var node = _graph.Nodes.FirstOrDefault(item => item.Id == id);
+        return node is null ? "—" : $"{node.Room ?? node.Label ?? node.Id} · {node.Building}, {node.Floor} этаж";
+    }
+    private void NotifyManualRoute()
+    { OnPropertyChanged(nameof(HasManualRoutePoints)); OnPropertyChanged(nameof(ManualStartCaption)); OnPropertyChanged(nameof(ManualDestinationCaption)); }
+    [RelayCommand]
+    private void SelectRouteStart(MapPlaceChoice? place)
+    {
+        if (place is null || _graph.Nodes.All(node => node.Id != place.Id || node.Kind != "room")) return;
+        Mode = MapMode.Manual;
+        manualStartId = place.Id;
+        RememberRecent(place);
+        _prevRoomKey = place.Id;
+        NotifyManualRoute();
+        ComputeRoute();
+    }
+    [RelayCommand] private Task SelectRouteDestination(MapPlaceChoice? place) =>
+        place is null ? Task.CompletedTask : SelectPlace(place);
+    [RelayCommand] private void ClearManualRoute() => SetRouteEnds(null, null);
+    [RelayCommand] private Task ShowRouteStart() => ShowRoutePoint(manualStartId);
+    [RelayCommand] private Task ShowRouteDestination() => ShowRoutePoint(manualDestinationId);
+    private async Task ShowRoutePoint(string? id)
+    {
+        var node = _graph.Nodes.FirstOrDefault(item => item.Id == id && item.Kind == "room");
+        if (node is null) return;
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        var map = await RunAsync(() => App.Maps.GetAllMaps().FirstOrDefault(item =>
+            item.Building == node.Building && item.Floor == node.Floor)!, "map route point");
+        if (map is null || !operation.IsCurrent) return;
+        var coords = await RunAsync(() => App.Maps.GetCoords(node.Building, node.Floor, node.Room ?? "")!, "map route point coords");
+        if (!operation.IsCurrent) return;
+        Mode = MapMode.Manual; _lessonName = null; _start = _end = null;
+        await ShowMapAsync(map, coords);
+        if (operation.IsCurrent && HasHighlight) HighlightLabel = PlaceLabel(node.Id);
+    }
     private string? _destRoomKey;
     private string? _prevRoomKey;
     private string? _fallbackToastKey;
@@ -54,10 +157,18 @@ public sealed partial class MapsViewModel : ViewModelBase
         _floors = MapsComposer.Floors("ГК").Select(f => new FloorPill(f, T("mapFloorN", f), false)).ToList();
         _cacheStatus = "";
         _graph = graph ?? LoadBundledGraph();
+        ActivityDate = _clock().Date;
         LoadLastEntrance();
         RefreshEntrances();
         _onChange = () => { if (IsTracking) _ = TrackNextAsync(); };
-        _onGroupChange = () => { ReturnDate = null; if (IsTracking) _ = TrackNextAsync(); };
+        _onGroupChange = () =>
+        {
+            ReturnDate = null;
+            ClearRoomActivity();
+            ClearRecentPlaces(); ClearRecentRoutes(); ClearPinnedPlaces();
+            SetRouteEnds(null, null);
+            if (IsTracking) _ = TrackNextAsync();
+        };
         shell.GroupChanged += _onGroupChange;
         shell.ScheduleChanged += _onChange;
         app.Loc.LanguageChanged += Relabel;
@@ -66,6 +177,9 @@ public sealed partial class MapsViewModel : ViewModelBase
     public override void Detach()
     {
         _detached = true;
+        ClearRecentPlaces();
+        ClearRoomActivity();
+        ClearRecentRoutes(); ClearPinnedPlaces();
         _shell.GroupChanged -= _onGroupChange;
         _shell.ScheduleChanged -= _onChange;
         App.Loc.LanguageChanged -= Relabel;
@@ -122,9 +236,24 @@ public sealed partial class MapsViewModel : ViewModelBase
     public bool HasMap => Current is { HasMap: true };
     public bool ShowGoToNext => Mode != MapMode.NextLesson;
     public bool HasRouteSteps => RouteSteps.Count > 0;
+    [RelayCommand]
+    private async Task CopyRoute()
+    {
+        var text = MapRouteText.Format(RouteSteps);
+        if (text.Length == 0) return;
+        try
+        {
+            if (clipboardWriter is null) throw new InvalidOperationException("Clipboard unavailable");
+            await clipboardWriter(text);
+            App.Toasts.Info("Шаги маршрута скопированы.");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException)
+        { App.Toasts.Error("Не удалось скопировать маршрут."); }
+    }
     public bool HasEntrances => Entrances.Count > 0;
     public bool IsRouteUnmarked => _route is null;
-    public string RouteUnmarked => T("routeUnmarked");
+    public string RouteEstimate => _route is null ? "" : MapRouteEta.Format(_route.Seconds);
+    public string RouteUnmarked => _routeIssue;
     public Route? Route => _route;
     public string ShownBuilding
     {
@@ -147,6 +276,7 @@ public sealed partial class MapsViewModel : ViewModelBase
     partial void OnNoteChanged(string? value) => OnPropertyChanged(nameof(HasNote));
     partial void OnCurrentChanged(MapInfo? value)
     {
+        OnPropertyChanged(nameof(CurrentFloorPlaces)); OnPropertyChanged(nameof(HasFloorPlaces));
         OnPropertyChanged(nameof(HasMap));
         OnPropertyChanged(nameof(ShownBuilding));
         OnPropertyChanged(nameof(ShowPlan));
@@ -160,7 +290,8 @@ public sealed partial class MapsViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowHighlightChrome));
         if (value) _ = RefreshStackFloorsAsync();
     }
-    partial void OnRouteStepsChanged(IReadOnlyList<RouteStepItem> value) => OnPropertyChanged(nameof(HasRouteSteps));
+    partial void OnRouteStepsChanged(IReadOnlyList<RouteStepItem> value)
+    { OnPropertyChanged(nameof(HasRouteSteps)); NotifyRouteProgress(); }
     partial void OnEntrancesChanged(IReadOnlyList<EntranceItem> value) => OnPropertyChanged(nameof(HasEntrances));
 
     partial void OnBuildingIndexChanged(int value)
@@ -268,8 +399,10 @@ public sealed partial class MapsViewModel : ViewModelBase
     public void ApplyRoute(Route? route)
     {
         _route = route;
+        CurrentRouteStepIndex = 0;
         OnPropertyChanged(nameof(IsRouteUnmarked));
         OnPropertyChanged(nameof(Route));
+        OnPropertyChanged(nameof(RouteEstimate));
         RefreshRouteSteps();
         RefreshPath();
     }
@@ -279,6 +412,7 @@ public sealed partial class MapsViewModel : ViewModelBase
 
     public void SetRouteEnds(string? destRoomKey, string? previousRoomKey)
     {
+        manualStartId = null; manualDestinationId = null; NotifyManualRoute();
         _destRoomKey = destRoomKey;
         _prevRoomKey = previousRoomKey;
         ComputeRoute();
@@ -298,6 +432,8 @@ public sealed partial class MapsViewModel : ViewModelBase
     private async Task SelectRouteStep(RouteStepItem? step)
     {
         if (step is null) return;
+        var progress = RouteSteps.ToList().IndexOf(step);
+        if (progress >= 0) CurrentRouteStepIndex = progress;
         var index = Array.IndexOf(Buildings, step.Building);
         if (index < 0) return;
         SyncBuilding(index);
@@ -526,21 +662,26 @@ public sealed partial class MapsViewModel : ViewModelBase
     {
         if (string.IsNullOrEmpty(_destRoomKey))
         {
+            SetRouteIssue("маршрут ещё не размечен");
             ApplyRoute(null);
             return;
         }
         var dest = CampusRouter.ResolveClassroom(_graph, _destRoomKey);
         var guessed = CampusRouter.ResolveClassroom(_graph, _prevRoomKey)
             ?? CampusRouter.ResolveEntrance(_graph, _lastEntranceId);
-        var from = MapsComposer.StartFor(_graph, guessed?.Id, dest?.Id) ?? guessed;
+        var from = manualStartId is not null ? guessed : MapsComposer.StartFor(_graph, guessed?.Id, dest?.Id) ?? guessed;
         if (from is null || dest is null)
         {
+            SetRouteIssue(dest is null ? "Аудитория не найдена на плане. Проверьте корпус и номер."
+                : "Не удалось выбрать начало маршрута. Выберите вход.");
             ApplyRoute(null);
             NotifyStartFallback(guessed, from);
             return;
         }
         var result = CampusRouter.Find(_graph, from.Id, dest.Id);
+        SetRouteIssue(result.Ok ? "" : "Путь между выбранными точками не найден.");
         ApplyRoute(result.Ok ? result.Route : null);
+        if (result.Ok) RememberRecentRoute();
         NotifyStartFallback(guessed, from);
     }
 
@@ -642,6 +783,7 @@ public sealed partial class MapsViewModel : ViewModelBase
             var (cached, total) = await Task.Run(() => App.MapFiles.CacheStatus());
             if (!operation.IsCurrent) return;
             CacheStatus = T("mapCacheStatus", cached, total);
+            await RefreshOfflinePlansAsync();
         }
         catch (Exception ex)
         {

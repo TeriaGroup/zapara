@@ -15,6 +15,11 @@ public sealed class FakeFileDialogs : IFileDialogs
         LastSuggestedName = suggestedName;
         return Task.FromResult(SavePath);
     }
+    public Task<string?> SaveCalendarAsync(string suggestedName)
+    {
+        LastSuggestedName = suggestedName;
+        return Task.FromResult(SavePath);
+    }
 
     public Task<string?> OpenJsonAsync() => Task.FromResult(OpenPath);
     public Task<string?> OpenHomeworkAsync(bool photo) => Task.FromResult(OpenPath);

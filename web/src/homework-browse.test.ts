@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { browseHomework, homeworkEmptyKind } from "./homework-browse.ts";
 import type { GroupHomeworkCopy, HomeworkItem } from "./types.ts";
+test("deadline/source/file facets compose and keep stable original totals", () => {
+  const personal:HomeworkItem[]=[{id:"late",subject:"Мат",text:"Лист",done:false,created:"2026-09-01",deadlineAt:"2026-10-01T08:00:00Z",files:[{id:"f",kind:"document",name:"Задачи.pdf",mime:"application/pdf"}]},{id:"none",subject:"Ист",text:"Прочитать",done:false,created:"2026-09-01"}];
+  const result=browseHomework(personal,[],{subject:null,query:"задачи.pdf",status:"all",target:null,source:"personal",deadline:"overdue",onlyFiles:true,now:new Date("2026-10-01T12:00:00Z")});
+  assert.deepEqual(result.local.map(row=>row.id),["late"]);
+  assert.equal(result.total,2);
+});
 
 const local = [
   { id: "open", subject: "Математика", text: "Решить пример", done: false, created: "2026-09-01" },

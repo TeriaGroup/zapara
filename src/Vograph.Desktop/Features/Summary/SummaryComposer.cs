@@ -5,13 +5,18 @@ using Vograph.Desktop.Services;
 
 namespace Vograph.Desktop.Features.Summary;
 
-public sealed record CountItem(string Name, int Count);
+public sealed record CountItem(string Name, int Count)
+{
+    public System.Windows.Input.ICommand? OpenCommand { get; init; }
+}
+public sealed record SummaryLessonEntry(DateTime Date, string TimeStart, string TimeEnd, string SubjectRaw,
+    string Subject, string TypeLabel, string TeacherRaw, string ClassroomRaw);
 
 /// <param name="Parity">1 odd, 2 even, 0 both — as the user sees it.</param>
 public sealed record SummaryModel(int Parity, bool IsOddToday, bool HasGroup, int Total,
     IReadOnlyList<CountItem> ByDay, IReadOnlyList<CountItem> ByType, IReadOnlyList<CountItem> Subjects,
     IReadOnlyList<CountItem> Teachers, IReadOnlyList<CountItem> Rooms,
-    bool HasCopy = true, IReadOnlyList<DateTime>? DayDates = null);
+    bool HasCopy = true, IReadOnlyList<DateTime>? DayDates = null, IReadOnlyList<SummaryLessonEntry>? Entries = null);
 
 /// <summary>Aggregates of the whole group timetable (WPF CreateSummarySection / Android buildSummary). DB-bound: call under RunAsync.</summary>
 public sealed class SummaryComposer
@@ -44,7 +49,24 @@ public sealed class SummaryComposer
         var dates = Enumerable.Range(1, 6).Select(dow => p == 0
             ? today.Date.AddDays((dow - ((int)today.DayOfWeek is 0 ? 7 : (int)today.DayOfWeek) + 7) % 7)
             : NextDateForCode(dow, code, today, settings)).ToArray();
-        return summary with { DayDates = dates };
+        var entries = lessons.Select(lesson => new SummaryLessonEntry(NextActualDate(lesson, today, settings),
+            lesson.TimeStart, lesson.TimeEnd, lesson.SubjectRaw,
+            LessonText.StripType(_app.Overrides.GetDisplayName(lesson.SubjectRaw, lesson.DayOfWeek), lesson.TypeRaw),
+            string.IsNullOrWhiteSpace(lesson.TypeRaw) ? "—" : DayTitles.TypeLabel(lesson.TypeRaw, _app.Loc),
+            lesson.TeacherRaw, lesson.ClassroomRaw.TrimEnd(';', ' '))).ToArray();
+        return summary with { DayDates = dates, Entries = entries };
+    }
+
+    private static DateTime NextActualDate(Lesson lesson, DateTime today, Settings settings)
+    {
+        for (var offset = 0; offset < 56; offset++)
+        {
+            var day = today.Date.AddDays(offset);
+            if (DateTime.TryParse(settings.PeriodStart, out var periodStart) && day < periodStart.Date) continue;
+            if ((int)day.DayOfWeek != lesson.DayOfWeek) continue;
+            if (lesson.Parity == 0 || ParityCodes.WeekCode(day, settings) == lesson.Parity) return day;
+        }
+        return today.Date;
     }
 
     private static DateTime NextDateForCode(int dow, int code, DateTime today, Settings settings)

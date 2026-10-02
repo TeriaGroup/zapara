@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:d="using:Vograph.Desktop.Dialogs"
              xmlns:loc="using:Vograph.Desktop.Services"
              xmlns:h="using:Vograph.Desktop.Features.Homeworks"
              x:Class="Vograph.Desktop.Features.Homeworks.HomeworkView"
@@ -25,12 +26,33 @@
       <WrapPanel IsVisible="{Binding HasSubjectFilter}"><TextBlock Text="{Binding SubjectFilter}" VerticalAlignment="Center" /><Button Content="Все предметы" Command="{Binding ClearSubjectFilterCommand}" /></WrapPanel>
       <TextBox PlaceholderText="Поиск по предмету и заданию" Text="{Binding SearchQuery, Mode=TwoWay}" AutomationProperties.Name="Поиск по предмету и заданию" />
       <c:SegmentedControl Items="{Binding StatusFilters}" SelectedIndex="{Binding StatusFilter}" />
+      <WrapPanel ItemSpacing="8" LineSpacing="8">
+        <ComboBox ItemsSource="{Binding DeadlineFilters}" SelectedIndex="{Binding DeadlineFilter}" MinWidth="145" AutomationProperties.Name="Фильтр по сроку" />
+        <ComboBox ItemsSource="{Binding OriginFilters}" SelectedIndex="{Binding OriginFilter}" MinWidth="130" AutomationProperties.Name="Происхождение заданий" />
+        <ComboBox ItemsSource="{Binding SortOptions}" SelectedIndex="{Binding SortIndex}" MinWidth="130" AutomationProperties.Name="Сортировка заданий" />
+        <CheckBox Content="С файлами" IsChecked="{Binding FilesOnly}" VerticalAlignment="Center" />
+      </WrapPanel>
       <WrapPanel ItemSpacing="8"><TextBlock Classes="muted" Text="{Binding BrowseSummary}" VerticalAlignment="Center" /><Button Content="Сбросить фильтры" Command="{Binding ClearBrowseFiltersCommand}" IsVisible="{Binding HasBrowseFilters}" /></WrapPanel>
+      <Button Content="Сохранить сроки в календарь" Command="{Binding ExportDeadlinesCommand}" IsEnabled="{Binding HasGroups}" HorizontalAlignment="Left" />
+      <Button Content="Предпросмотр текущего списка" Command="{Binding PreviewFilteredPlanCommand}" HorizontalAlignment="Left" />
+      <TextBlock Text="Личные задания по предметам" Classes="subject" IsVisible="{Binding HasSubjectOverview}" />
+      <ItemsControl ItemsSource="{Binding SubjectOverview}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="h:HomeworkSubjectOverviewRow"><Button Classes="ghost" Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" MinHeight="48"><StackPanel><TextBlock Text="{Binding Subject}" Classes="subject" /><TextBlock Text="{Binding Summary}" TextWrapping="Wrap" /></StackPanel></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+      <Border Classes="card" IsVisible="{Binding ShowFilteredPlanPreview}"><StackPanel Spacing="8"><TextBlock Text="{Binding FilteredPlanPreview}" TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Content="Копировать список" Command="{Binding CopyFilteredPlanCommand}" /><Button Content="Скрыть" Command="{Binding HideFilteredPlanCommand}" /></WrapPanel></StackPanel></Border>
+      <WrapPanel ItemSpacing="8" LineSpacing="8"><Button Content="Выбрать несколько" Command="{Binding ToggleBulkModeCommand}" /><TextBlock Text="{Binding BulkSelectedCount, StringFormat='Выбрано: {0}'}" IsVisible="{Binding BulkMode}" VerticalAlignment="Center" /><Button Content="Отметить выбранные готовыми" Command="{Binding RequestBulkCompletionCommand}" IsVisible="{Binding BulkMode}" /><Button Content="Перенести на следующую пару" Command="{Binding RequestBulkPostponeCommand}" IsVisible="{Binding BulkMode}" /><Button Content="Опубликовать выбранные группе" Command="{Binding LoadBulkPublishRecipientsCommand}" IsVisible="{Binding BulkMode}" IsEnabled="{Binding !BulkPublishBusy}" /><Button Content="Вернуться к ожидающей публикации" Command="{Binding ReopenBulkPublicationCommand}" IsVisible="{Binding HasPendingBulkPublication}" /></WrapPanel>
+      <StackPanel Spacing="8" IsVisible="{Binding ShowBulkPublishRecipients}"><d:HomeworkAudienceView DataContext="{Binding BulkPublishRecipients}" /><Button Content="Проверить публикацию" Command="{Binding PreviewBulkPublicationCommand}" IsEnabled="{Binding !BulkPublishBusy}" HorizontalAlignment="Left" /></StackPanel>
+      <Border Classes="card" IsVisible="{Binding ShowBulkPublishPreview}"><StackPanel Spacing="8"><TextBlock Text="{Binding BulkPublishPreviewText}" TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Classes="primary" Content="Опубликовать / повторить неподтверждённые" Command="{Binding ConfirmBulkPublicationCommand}" IsEnabled="{Binding !BulkPublishBusy}" /><Button Content="Скрыть" Command="{Binding HideBulkPublicationCommand}" /></WrapPanel></StackPanel></Border>
+      <TextBlock Text="{Binding BulkPublishFeedback}" TextWrapping="Wrap" />
+      <Border Classes="card" IsVisible="{Binding ShowBulkPreview}"><StackPanel Spacing="8"><TextBlock Text="{Binding BulkPreviewText}" TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Classes="primary" Content="Подтвердить отметку" Command="{Binding ConfirmBulkCompletionCommand}" /><Button Content="Отмена" Command="{Binding CancelBulkCompletionCommand}" /></WrapPanel></StackPanel></Border>
+      <Border Classes="card" IsVisible="{Binding ShowPostponePreview}"><StackPanel Spacing="8"><TextBlock Text="{Binding PostponePreviewText}" TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Classes="primary" Content="Подтвердить перенос" Command="{Binding ConfirmBulkPostponeCommand}" /><Button Content="Отмена" Command="{Binding CancelBulkPostponeCommand}" /></WrapPanel></StackPanel></Border>
+      <TextBlock Text="{Binding BulkFeedback}" TextWrapping="Wrap" IsVisible="{Binding BulkFeedback, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+      <WrapPanel ItemSpacing="8"><TextBlock Text="{Binding PostponeFeedback}" TextWrapping="Wrap" VerticalAlignment="Center" /><Button Content="Повторить неуспешные" Command="{Binding RetryFailedPostponeCommand}" IsVisible="{Binding HasPostponeFailures}" /></WrapPanel>
       <StackPanel Spacing="6" IsVisible="{Binding LoadFailed}"><TextBlock Text="Личные задания не загрузились. Показан последний доступный список." TextWrapping="Wrap" /><Button Content="Повторить загрузку" Command="{Binding RetryLoadCommand}" HorizontalAlignment="Left" /></StackPanel>
       <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,0,0,2" />
       <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Homework}" Margin="0,24" />
+      <Button Content="Выбрать группу" Command="{Binding ChangeGroupCommand}" IsVisible="{Binding ShowNoGroup}" HorizontalAlignment="Left" />
       <c:EmptyState IsVisible="{Binding ShowBrowseEmpty}" Title="{Binding BrowseEmptyTitle}" Hint="{Binding BrowseEmptyHint}" Icon="{StaticResource Icon.Homework}" Margin="0,12" />
-      <TextBlock Text="Личные задания" Classes="subject" IsVisible="{Binding HasGroup}" />
+      <TextBlock Text="Личные задания" Classes="subject" IsVisible="{Binding ShowPersonalTasksSection}" />
+      <WrapPanel ItemSpacing="8" IsVisible="{Binding HasGroups}"><Button Content="Раскрыть все разделы" Command="{Binding ExpandAllGroupsCommand}" /><Button Content="Свернуть все разделы" Command="{Binding CollapseAllGroupsCommand}" /></WrapPanel>
 
       <ItemsControl ItemsSource="{Binding Groups}" c:Appear.CascadeHost="True">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="14" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -49,10 +71,11 @@
                 <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="h:HomeworkRowViewModel">
-                    <Border Classes="card hoverable hwrow" Classes.past="{Binding IsDone}"
+                    <Border Classes="card hoverable hwrow" Classes.past="{Binding IsDone}" Classes.next="{Binding IsHighlighted}"
                             c:Appear.Kind="Cascade" c:Appear.Index="{Binding Index}">
                       <Grid RowDefinitions="Auto,Auto">
                         <StackPanel Spacing="6">
+                          <CheckBox Content="Выбрать это задание" IsChecked="{Binding SelectedForBulk}" IsVisible="{Binding ShowBulkSelection}" IsEnabled="{Binding !IsDone}" />
                           <TextBlock Classes="subject hwtext" Text="{Binding Subject}" />
                           <TextBlock Classes="hwtext" Text="{Binding Text}" TextWrapping="Wrap" />
                           <ItemsControl ItemsSource="{Binding Files}" IsVisible="{Binding HasFiles}">
@@ -75,6 +98,9 @@
                                   AutomationProperties.AutomationId="Homework.Edit" AutomationProperties.Name="{loc:T hwEdit}"><c:Icon Data="{StaticResource Icon.Pencil}" Size="14" /></Button>
                           <Button Classes="icon small" Command="{Binding DeleteCommand}" ToolTip.Tip="{loc:T hwDelete}"
                                   AutomationProperties.AutomationId="Homework.Delete" AutomationProperties.Name="{loc:T hwDelete}"><c:Icon Data="{StaticResource Icon.Trash}" Size="14" /></Button>
+                          <Button Classes="pill" Content="Создать похожее" Command="{Binding CreateSimilarCommand}" IsVisible="{Binding IsDone}" />
+                          <Button Classes="pill" Content="Копировать текст" Command="{Binding CopyTextCommand}" />
+                          <Button Classes="pill" Content="Следующая пара" Command="{Binding OpenNextLessonCommand}" />
                         </WrapPanel>
                       </Grid>
                     </Border>
@@ -85,7 +111,7 @@
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
-      <StackPanel IsVisible="{Binding ShowSharedTasks}" Spacing="10" Margin="0,16,0,0">
+      <StackPanel IsVisible="{Binding ShowVisibleSharedSection}" Spacing="10" Margin="0,16,0,0">
         <TextBlock Text="Задания группы" Classes="subject" />
         <TextBlock Text="{Binding SharedSummary}" Classes="muted caption" TextWrapping="Wrap" />
         <Button Content="Обновить задания группы" Command="{Binding RefreshSharedTasksCommand}" IsEnabled="{Binding !SharedBusy}" HorizontalAlignment="Left" />
@@ -110,11 +136,15 @@
       </StackPanel>
     </StackPanel>
   </ScrollViewer>
-  <Border Grid.Row="1" IsVisible="{Binding HasCompletionUndo}" Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="24,8">
+  <StackPanel Grid.Row="1">
+  <Border IsVisible="{Binding HasCompletionUndo}" Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="24,8">
     <WrapPanel ItemSpacing="12" HorizontalAlignment="Center">
       <TextBlock Text="{Binding CompletionFeedback}" VerticalAlignment="Center" />
       <Button Content="Отменить" Command="{Binding UndoCompletionCommand}" />
     </WrapPanel>
   </Border>
+  <Border IsVisible="{Binding HasBulkUndo}" Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="24,8"><WrapPanel ItemSpacing="12" HorizontalAlignment="Center"><TextBlock Text="Отметки нескольких заданий сохранены" VerticalAlignment="Center" /><Button Content="Отменить успешные отметки" Command="{Binding UndoBulkCompletionCommand}" /></WrapPanel></Border>
+  <Border IsVisible="{Binding HasPostponeUndo}" Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,1,0,0" Padding="24,8"><WrapPanel ItemSpacing="12" HorizontalAlignment="Center"><TextBlock Text="Сроки выбранных заданий перенесены" VerticalAlignment="Center" /><Button Content="Вернуть прежние сроки" Command="{Binding UndoBulkPostponeCommand}" /></WrapPanel></Border>
+  </StackPanel>
   </Grid>
 </UserControl>

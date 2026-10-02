@@ -23,6 +23,7 @@ type State = {
   timetableAvailable: boolean;
   timetableLoading: boolean;
   timetableFailed: boolean;
+  timetableRevision: number;
   notice: string;
   loading: boolean;
   refresh: () => void;
@@ -48,6 +49,7 @@ type State = {
   canUndoSubgroup: boolean;
 };
 
+function readPreference(key:string){try{return localStorage.getItem(key);}catch{return null;}}
 const Ctx = createContext<State | null>(null);
 const groupKey = "zapara.group";
 const invertKey = "zapara.invert";
@@ -58,15 +60,15 @@ const showAbsentFriendsKey = "zapara.showAbsentFriends";
 const subgroupKey = "zapara.subgroups";
 
 function readList<T>(key: string): T[] {
-  try { return JSON.parse(localStorage.getItem(key) || "[]") as T[]; } catch { return []; }
+  try { return JSON.parse(readPreference(key) || "[]") as T[]; } catch { return []; }
 }
 
 export function Provider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<"light" | "dark" | "system">(() => { const saved = localStorage.getItem("zapara.theme"); return saved === "light" || saved === "dark" ? saved : "system"; });
-  const [animations, setAnimations] = useState(localStorage.getItem("zapara.animations") !== "0");
-  const [invert, setInvertState] = useState(localStorage.getItem(invertKey) === "1");
-  const [groupId, setGroupState] = useState(() => localStorage.getItem(groupKey) ?? "");
-  const groupReady = useRef(localStorage.getItem(groupKey) !== null);
+  const [theme, setThemeState] = useState<"light" | "dark" | "system">(() => { const saved = readPreference("zapara.theme"); return saved === "light" || saved === "dark" ? saved : "system"; });
+  const [animations, setAnimations] = useState(readPreference("zapara.animations") !== "0");
+  const [invert, setInvertState] = useState(readPreference(invertKey) === "1");
+  const [groupId, setGroupState] = useState(() => readPreference(groupKey) ?? "");
+  const groupReady = useRef(readPreference(groupKey) !== null);
   const [catalog, setCatalog] = useState<GroupsPayload | null>(api.readCache().groups ?? null);
   const [bundle, setBundle] = useState<{ groupId: string; payload: TimetablePayload } | null>(() => {
     const cached = groupId ? api.readCache().lessons[groupId] : null;
@@ -74,6 +76,7 @@ export function Provider({ children }: { children: ReactNode }) {
   });
   const [timetableStatus, setTimetableStatus] = useState<{ groupId: string; loading: boolean; failed: boolean }>({ groupId, loading: !!groupId, failed: false });
   const [notice, setNotice] = useState("");
+  const [timetableRevision,setTimetableRevision]=useState(0);
   const [loading, setLoading] = useState(false);
   const [tick, setTick] = useState(0);
   const [session, setSession] = useState<Session | null>(null);
@@ -87,16 +90,16 @@ export function Provider({ children }: { children: ReactNode }) {
   const homework = privateHomework.items;
   const [friends, setFriends] = useState<FriendItem[]>(() => readList(friendsKey));
   const [intersectionStrictness, setIntersectionStrictness] = useState(() => {
-    return normalizeIntersectionStrictness(localStorage.getItem(intersectionStrictnessKey));
+    return normalizeIntersectionStrictness(readPreference(intersectionStrictnessKey));
   });
-  const [showAbsentFriends, setShowAbsentFriends] = useState(localStorage.getItem(showAbsentFriendsKey) === "1");
+  const [showAbsentFriends, setShowAbsentFriends] = useState(readPreference(showAbsentFriendsKey) === "1");
   const guestPreferences = useRef({ groupId, invert, strictness: intersectionStrictness, showAbsentFriends });
   const sessionIdentity = session?.authenticated && session.user ? `${session.user.userId}:${session.familyId || ""}` : "guest";
   const previousIdentity = useRef<string | null>(null);
   const [date, setDateState] = useState(() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), now.getDate()); });
   const setDate = (value: Date) => setDateState(new Date(value.getFullYear(), value.getMonth(), value.getDate()));
   const [subgroups, setSubgroups] = useState<Record<string, Record<string, string>>>(() => {
-    try { return JSON.parse(localStorage.getItem(subgroupKey) || "{}"); } catch { return {}; }
+    try { return JSON.parse(readPreference(subgroupKey) || "{}"); } catch { return {}; }
   });
   const subgroupOwner = session?.authenticated ? session.user?.userId || "account" : "guest";
   const [subgroupLoadedOwner,setSubgroupLoadedOwner]=useState("guest");
@@ -106,7 +109,7 @@ export function Provider({ children }: { children: ReactNode }) {
   subgroupScope.current={identity:sessionIdentity,owner:subgroupOwner,groupId,epoch:subgroupEpoch,lessons:bundle?.groupId===groupId?bundle.payload.lessons:[]};
   const subgroupScopeId=`${sessionIdentity}:${subgroupEpoch}`;
   const [subgroupUndo,setSubgroupUndo]=useState<SubgroupUndo|null>(null);
-  useEffect(()=>{let choices:Record<string,Record<string,string>>={};try{choices=JSON.parse(localStorage.getItem(subgroupOwner==="guest"?subgroupKey:`${subgroupKey}.${subgroupOwner}`)||"{}");}catch{} subgroupRef.current=choices;setSubgroups(choices);setSubgroupLoadedOwner(subgroupOwner);setSubgroupUndo(null);},[subgroupOwner]);
+  useEffect(()=>{let choices:Record<string,Record<string,string>>={};try{choices=JSON.parse(readPreference(subgroupOwner==="guest"?subgroupKey:`${subgroupKey}.${subgroupOwner}`)||"{}");}catch{} subgroupRef.current=choices;setSubgroups(choices);setSubgroupLoadedOwner(subgroupOwner);setSubgroupUndo(null);},[subgroupOwner]);
   const activeSubgroups=subgroupLoadedOwner===subgroupOwner?subgroups:{};
   const canUndoSubgroup=!!subgroupUndo&&subgroupUndoCurrent(subgroupUndo,subgroupScopeId,groupId,activeSubgroups[groupId]||{});
   function persistSubgroup(stream:string, option:string|undefined, undo=false) {
@@ -123,19 +126,20 @@ export function Provider({ children }: { children: ReactNode }) {
     setSubgroupUndo(undo?null:{scope:subgroupScopeId,group:groupId,stream,before:previous,after:option});
   }
 
+  function persistPreference(key:string,value:string){try{localStorage.setItem(key,value);return true;}catch{setNotice("Не удалось сохранить настройки в браузере. Освободите место или разрешите локальное хранилище и повторите действие.");return false;}}
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const update = () => { document.documentElement.dataset.theme = theme === "system" ? media.matches ? "dark" : "light" : theme; };
-    update(); localStorage.setItem("zapara.theme", theme);
+    update(); persistPreference("zapara.theme", theme);
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, [theme]);
-  useEffect(() => { localStorage.setItem("zapara.animations", animations ? "1" : "0"); document.documentElement.dataset.motion = animations ? "on" : "off"; }, [animations]);
-  useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity) localStorage.setItem(invertKey, invert ? "1" : "0"); }, [invert, sessionLoaded, sessionIdentity]);
-  useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity && groupReady.current) localStorage.setItem(groupKey, groupId); }, [groupId, sessionLoaded, sessionIdentity]);
+  useEffect(() => { persistPreference("zapara.animations", animations ? "1" : "0"); document.documentElement.dataset.motion = animations ? "on" : "off"; }, [animations]);
+  useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity) persistPreference(invertKey, invert ? "1" : "0"); }, [invert, sessionLoaded, sessionIdentity]);
+  useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity && groupReady.current) persistPreference(groupKey, groupId); }, [groupId, sessionLoaded, sessionIdentity]);
   const chooseGroup = (id: string) => {
     groupReady.current = true;
-    if (!session?.authenticated) { guestPreferences.current.groupId = id; localStorage.setItem(groupKey, id); }
+    if (!session?.authenticated) { if(!persistPreference(groupKey,id))return; guestPreferences.current.groupId = id; }
     const cached = id ? api.readCache().lessons[id] : null;
     setBundle(cached ? { groupId: id, payload: cached } : null);
     setTimetableStatus({ groupId: id, loading: !!id, failed: false });
@@ -144,25 +148,25 @@ export function Provider({ children }: { children: ReactNode }) {
     if (session?.authenticated) privateHomework.saveSettings({ selectedGroupId: id || null });
   };
 
-  useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity) localStorage.setItem(intersectionStrictnessKey, String(intersectionStrictness)); }, [intersectionStrictness, sessionLoaded, sessionIdentity]);
-  useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity) localStorage.setItem(showAbsentFriendsKey, showAbsentFriends ? "1" : "0"); }, [showAbsentFriends, sessionLoaded, sessionIdentity]);
+  useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity) persistPreference(intersectionStrictnessKey, String(intersectionStrictness)); }, [intersectionStrictness, sessionLoaded, sessionIdentity]);
+  useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity) persistPreference(showAbsentFriendsKey, showAbsentFriends ? "1" : "0"); }, [showAbsentFriends, sessionLoaded, sessionIdentity]);
 
   useEffect(() => {
     let stop = false;
     setLoading(true);
     api.loadGroups().then(payload => {
       if (stop) return;
-      setCatalog(payload);
       const cache = api.readCache();
       cache.groups = payload;
       api.writeCache(cache);
-      const next = resolveStoredGroup(session?.authenticated ? groupId : groupReady.current ? localStorage.getItem(groupKey) : null, payload.groups);
+      setCatalog(payload);
+      const next = resolveStoredGroup(session?.authenticated ? groupId : groupReady.current ? readPreference(groupKey) : null, payload.groups);
       const cached = next ? api.readCache().lessons[next] : null;
       setBundle(cached ? { groupId: next, payload: cached } : null);
       setTimetableStatus({ groupId: next, loading: !!next, failed: false });
       if (!groupReady.current && !session?.authenticated) {
         groupReady.current = true;
-        localStorage.setItem(groupKey, next);
+        persistPreference(groupKey, next);
         guestPreferences.current.groupId = next;
       }
       setGroupState(next);
@@ -186,13 +190,15 @@ export function Provider({ children }: { children: ReactNode }) {
     setTimetableStatus({ groupId, loading: true, failed: false });
     api.loadTimetable(groupId).then(payload => {
       if (stop) return;
-      setBundle({ groupId, payload });
-      setTimetableStatus({ groupId, loading: false, failed: false });
       const cache = api.readCache();
       cache.lessons[groupId] = payload;
       if (payload.period) cache.groups = { period: payload.period, meta: payload.meta, groups: cache.groups?.groups || catalog?.groups || [] };
       api.writeCache(cache);
-    }).catch(() => {
+      setBundle({ groupId, payload });
+      setTimetableStatus({ groupId, loading: false, failed: false });
+      setTimetableRevision(value=>value+1);
+    }).catch(reason => {
+      if(reason?.name === "QuotaExceededError" || reason?.name === "SecurityError"){if(!stop){setNotice("Свежую копию не удалось сохранить в браузере. Предыдущая копия остаётся доступна; проверьте свободное место и повторите обновление.");setTimetableStatus({groupId,loading:false,failed:true});}return;}
       if (stop) return;
       setTimetableStatus({ groupId, loading: false, failed: true });
       if (cached) setNotice("Расписание не обновилось. Доступна сохранённая копия.");
@@ -238,7 +244,7 @@ export function Provider({ children }: { children: ReactNode }) {
     timetableAvailable: bundle?.groupId === groupId,
     timetableLoading: !!groupId && (timetableStatus.groupId !== groupId || timetableStatus.loading),
     timetableFailed: timetableStatus.groupId === groupId && timetableStatus.failed,
-    notice, loading, refresh: () => setTick(n => n + 1),
+    timetableRevision, notice, loading, refresh: () => setTick(n => n + 1),
     session, sessionLoaded, sessionStatus, refreshSession: () => sessionRefresher.current!(),
     acceptProfileName: user => setSession(current=>current?.authenticated&&current.user?.userId===user.userId?{...current,user}:current),
     privateHomework, homework, saveHomework: privateHomework.save,
@@ -248,7 +254,7 @@ export function Provider({ children }: { children: ReactNode }) {
     subgroups: activeSubgroups, canUndoSubgroup,
     pickSubgroup: (streamId, optionId) => persistSubgroup(streamId,subgroupRef.current[groupId]?.[streamId]===optionId?undefined:optionId),
     undoSubgroup: () => {if(subgroupUndo&&subgroupUndoCurrent(subgroupUndo,`${subgroupScope.current.identity}:${subgroupScope.current.epoch}`,subgroupScope.current.groupId,subgroupRef.current[groupId]||{}))persistSubgroup(subgroupUndo.stream,subgroupUndo.before,true);},
-  }), [theme, animations, invert, groupId, catalog, bundle, timetableStatus, notice, loading, session, sessionLoaded, sessionStatus, privateHomework, homework,
+  }), [theme, animations, invert, groupId, catalog, bundle, timetableStatus, timetableRevision, notice, loading, session, sessionLoaded, sessionStatus, privateHomework, homework,
     friends, intersectionStrictness, showAbsentFriends, date, subgroups, subgroupLoadedOwner, subgroupUndo, canUndoSubgroup]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

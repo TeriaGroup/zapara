@@ -3,9 +3,13 @@ package ru.bgtu_voenmeh.zapara.ui.settings
 import ru.bgtu_voenmeh.zapara.ui.theme.ThemeChoice
 
 data class SupportThreadUi(val id: String, val subject: String, val messageCount: Int)
+data class PendingSyncUi(val id: String, val type: String, val value: ru.bgtu_voenmeh.zapara.data.sync.SyncValue?,
+    val deleted: Boolean, val conflict: Boolean)
 
 data class SettingsUiState(
     val loaded: Boolean = false,
+    val subgroupImpact: SubgroupImpact? = null,
+    val subgroupImpactLoading: Boolean = false,
     val subgroupStreams: List<ru.bgtu_voenmeh.zapara.data.Subgroups.Stream> = emptyList(),
     val subgroupChoices: Map<String, String> = emptyMap(),
     val groupName: String = "",
@@ -40,6 +44,7 @@ data class SettingsUiState(
     val useUniversityXml: Boolean = false,
     val mapsAlpha: Boolean = false,
     val syncConflicts: List<ru.bgtu_voenmeh.zapara.data.sync.SyncConflict> = emptyList(),
+    val pendingSync: List<PendingSyncUi> = emptyList(),
     val syncBusy: Boolean = false,
     val syncError: String? = null,
     val signedIn: Boolean = false,
@@ -58,6 +63,10 @@ data class SettingsUiState(
 )
 
 sealed interface SettingsEvent {
+    data class PreviewSubgroup(val choice: Subgroup, val date: java.time.LocalDate? = null) : SettingsEvent
+    data object ConfirmSubgroupImpact : SettingsEvent
+    data object CloseSubgroupImpact : SettingsEvent
+    data object RefreshPendingSync : SettingsEvent
     data class Subgroup(val streamId: String, val optionId: String, val groupId: String? = null,
         val profileName: String? = null) : SettingsEvent
     data object UndoSubgroup : SettingsEvent

@@ -18,6 +18,7 @@ public sealed partial class GroupViewModel
     [ObservableProperty] private bool ballotLoadFailed;
     [ObservableProperty] private bool ballotLoaded;
     [ObservableProperty] private string ballotFeedback = "";
+    [ObservableProperty] private string ballotValidation = "";
 
     public IReadOnlyList<GroupBallotRow> FilteredBallots => filteredBallots;
     public bool HasBallotFilters => BallotSearch.Trim().Length > 0 || BallotStatusIndex is >= 1 and <= 3
@@ -35,7 +36,8 @@ public sealed partial class GroupViewModel
     partial void OnBallotSearchChanged(string value) => RefreshBallotBrowse();
     partial void OnBallotStatusIndexChanged(int value) => RefreshBallotBrowse();
     partial void OnBallotSortIndexChanged(int value) => RefreshBallotBrowse();
-    partial void OnShowBallotComposerChanged(bool value) => OnPropertyChanged(nameof(BallotComposerCaption));
+    partial void OnShowBallotComposerChanged(bool value)
+    { OnPropertyChanged(nameof(BallotComposerCaption)); NotifyBallotOptionEditor(); }
     partial void OnBallotLoadingChanged(bool value) => RefreshBallotStates();
     partial void OnBallotLoadFailedChanged(bool value) => RefreshBallotStates();
     partial void OnBallotLoadedChanged(bool value) => RefreshBallotStates();

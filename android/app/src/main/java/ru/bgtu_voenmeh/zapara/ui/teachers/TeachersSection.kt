@@ -54,18 +54,25 @@ import ru.bgtu_voenmeh.zapara.ui.theme.appear
 
 @Composable
 fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit) =
-    TeachersSection(state, onEvent) { _, _, _ -> }
+    TeachersSection(state, onEvent, { _, _, _ -> })
 
 @Composable
 fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
-    onOpenOwnDay: (LocalDate, String, String) -> Unit) {
+    onOpenOwnDay: (LocalDate, String, String) -> Unit,
+    onOpenMap: (String, String, String) -> Unit = { _, _, _ -> }) {
     if (state.selected != null) {
-        TeacherScreen(state, onEvent, onOpenOwnDay)
+        TeacherScreen(state, onEvent, onOpenOwnDay, onOpenMap)
         return
     }
     val c = Zapara.colors
     val keyboard = LocalSoftwareKeyboardController.current
     val onlyMineLabel = stringResource(R.string.teachers_only_mine)
+    var department by rememberSaveable(state.groupId, state.profileName) { mutableStateOf("") }
+    var departmentMenu by rememberSaveable(state.groupId, state.profileName) { mutableStateOf(false) }
+    val departments = state.list.map { it.department.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
+    val activeDepartment = department.takeIf { it in departments }.orEmpty()
+    val visibleTeachers = if (activeDepartment.isEmpty()) state.list
+        else state.list.filter { it.department.trim() == activeDepartment }
     Column(Modifier.fillMaxSize()) {
         ZTopBar(stringResource(R.string.nav_teachers))
         Column(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
@@ -84,6 +91,19 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
             ZSwitch(state.onlyMine, { onEvent(TeachersEvent.OnlyMine(it)) }, "Teachers.OnlyMine",
                 Modifier.semantics { contentDescription = onlyMineLabel })
         }
+        if (departments.size > 1) Box {
+            ZButton(if (activeDepartment.isEmpty()) stringResource(R.string.ux300_android_all_departments)
+                else activeDepartment, { departmentMenu = true }, ghost = activeDepartment.isEmpty(),
+                tag = "Teachers.Department")
+            androidx.compose.material3.DropdownMenu(expanded = departmentMenu,
+                onDismissRequest = { departmentMenu = false }) {
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(stringResource(R.string.ux300_android_all_departments)) },
+                    onClick = { department = ""; departmentMenu = false })
+                departments.forEach { name -> androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(name) }, onClick = { department = name; departmentMenu = false }) }
+            }
+        }
         }
         if (!state.loaded) {
             Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
@@ -97,7 +117,7 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
         }
         val currentResults = state.appliedQuery == state.query && state.appliedOnlyMine == state.onlyMine
         val resultsLabel = if (state.searching) stringResource(R.string.ux60_teacher_searching)
-            else if (currentResults) stringResource(R.string.teachers_found, state.list.size, state.total)
+            else if (currentResults) stringResource(R.string.teachers_found, visibleTeachers.size, state.total)
             else stringResource(R.string.ux60_teacher_search_failed)
         if (LocalDensity.current.fontScale >= 1.5f) {
             Column(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l),
@@ -123,17 +143,19 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
         }
         if (!currentResults) return@Column
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-            if (state.list.isEmpty() && state.query.isNotBlank() && state.loadError == null) item("no-results") {
+            if (visibleTeachers.isEmpty() && (state.query.isNotBlank() || activeDepartment.isNotEmpty()) && state.loadError == null) item("no-results") {
                 ZCard(Modifier.fillMaxWidth(), tag = "Empty.TeacherSearch") {
                     Text(stringResource(R.string.next_teachers_no_results),
                         style = Zapara.typography.body, color = c.text2)
                     if (state.onlyMine) ZButton(stringResource(R.string.ux30_teachers_search_all),
                         { onEvent(TeachersEvent.OnlyMine(false)) }, ghost = true, tag = "Teachers.SearchAll")
+                    if (activeDepartment.isNotEmpty()) ZButton(stringResource(R.string.ux300_android_all_departments),
+                        { department = "" }, ghost = true, tag = "Teachers.ClearDepartment")
                     ZButton(stringResource(R.string.next_teachers_clear),
                         { onEvent(TeachersEvent.Query("")) }, ghost = true)
                 }
             }
-            if (state.list.isEmpty() && state.query.isBlank() && state.loadError == null) item("empty") {
+            if (visibleTeachers.isEmpty() && state.query.isBlank() && activeDepartment.isEmpty() && state.loadError == null) item("empty") {
                 ZCard(Modifier.fillMaxWidth(), tag = "Empty.Teachers") {
                     Text(stringResource(if (state.onlyMine) R.string.next_teachers_my_empty else R.string.next_teachers_empty),
                         style = Zapara.typography.body, color = c.text2)
@@ -141,7 +163,7 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
                         { onEvent(TeachersEvent.OnlyMine(false)) }, ghost = true)
                 }
             }
-            itemsIndexed(state.list, key = { _, it -> it.id }) { index, row ->
+            itemsIndexed(visibleTeachers, key = { _, it -> it.id }) { index, row ->
                 ZCard(onClick = { onEvent(TeachersEvent.Open(row.id)) }, tag = "Teachers.Row.${row.id}", modifier = Modifier.fillMaxWidth().appear(index)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
@@ -164,7 +186,8 @@ fun TeachersSection(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
-    onOpenOwnDay: (LocalDate, String, String) -> Unit = { _, _, _ -> }) {
+    onOpenOwnDay: (LocalDate, String, String) -> Unit = { _, _, _ -> },
+    onOpenMap: (String, String, String) -> Unit = { _, _, _ -> }) {
     val selected = state.selected ?: return
     val c = Zapara.colors
     val copy = LocalUiCopy.current
@@ -238,6 +261,7 @@ fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
             }
         }
             itemsIndexed(visibleDays, key = { _, it -> it.dow }) { index, day ->
+                var collapsed by rememberSaveable(selected.id, state.parityFilter, day.dow) { mutableStateOf(false) }
                 ZCard(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).appear(index), tag = "Teacher.Day.${day.dow}") {
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                         verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
@@ -246,7 +270,10 @@ fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
                             tag = "Teacher.Date.${day.dow}") }
                         ZChip(stringResource(R.string.polish_teacher_day_count, day.rows.size))
                     }
-                    day.rows.forEachIndexed { rowIndex, row ->
+                    ZButton(stringResource(if (collapsed) R.string.ux300_android_week_expand
+                        else R.string.ux300_android_week_collapse), { collapsed = !collapsed },
+                        ghost = true, tag = "Teacher.Collapse.${day.dow}")
+                    if (!collapsed) day.rows.forEachIndexed { rowIndex, row ->
                         if (rowIndex > 0) HorizontalDivider(color = c.line)
                         Column(Modifier.fillMaxWidth().testTag("Teacher.Row.${day.dow}.$rowIndex")
                             .padding(vertical = Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
@@ -265,6 +292,12 @@ fun TeacherScreen(state: TeachersUiState, onEvent: (TeachersEvent) -> Unit,
                                     { onOpenOwnDay(date, state.groupId, state.profileName) },
                                     ghost = true, tag = "Teacher.OpenDay.${day.dow}.$rowIndex")
                             }
+                            if (row.isMyGroup && row.classroomRaw.isNotBlank() &&
+                                runCatching { ru.bgtu_voenmeh.zapara.data.MapResolve.resolve(row.classroomRaw)?.hasMap == true }
+                                    .getOrDefault(false))
+                                ZButton(stringResource(R.string.ux300_android_teacher_open_map),
+                                    { onOpenMap(row.classroomRaw, state.groupId, state.profileName) },
+                                    ghost = true, tag = "Teacher.OpenMap.${day.dow}.$rowIndex")
                         }
                     }
                 }

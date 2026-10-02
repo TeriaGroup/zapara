@@ -18,6 +18,7 @@ public sealed record FriendEncounterViewModel(string When, string GroupName, str
     DateTime Date, string SubjectRaw, string TimeStart, string OwnerScope, string OwnGroupId, int RenderEpoch)
 {
     public string GroupDisplay => string.IsNullOrWhiteSpace(Members) ? GroupName : $"{GroupName} · {Members}";
+    public System.Windows.Input.ICommand? OpenCommand { get; init; }
 }
 
 public sealed partial class FriendsViewModel : ViewModelBase
@@ -41,7 +42,8 @@ public sealed partial class FriendsViewModel : ViewModelBase
         _tickLabels = BuildTicks();
         _strictnessLabel = LabelFor(50);
         _reload = () => { if (!_suppressReload) _ = LoadAsync(); };
-        _groupChanged = () => { _groupEpoch++; _reload(); };
+        _groupChanged = () =>
+        { _groupEpoch++; SelectedComparisonFriend = null; ComparisonWindows = []; ComparisonStatus = ""; _reload(); };
         _forecastTimer.Tick += OnForecastTick;
         shell.GroupChanged += _groupChanged;
         shell.ScheduleChanged += _reload;
@@ -74,6 +76,42 @@ public sealed partial class FriendsViewModel : ViewModelBase
     }
     public string Subtitle => T("friendsSubtitle");
     public ObservableCollection<FriendItemViewModel> Friends { get; } = new();
+    [ObservableProperty] private string _friendSearch = "";
+    [ObservableProperty] private int _friendStatusIndex;
+    [ObservableProperty] private int _encounterDayIndex;
+    [ObservableProperty] private int _forecastFriendIndex;
+    [ObservableProperty] private IReadOnlyList<string> _forecastFriendOptions = ["Все группы"];
+    [ObservableProperty] private bool _showAllEncounters;
+    public IReadOnlyList<string> FriendStatusOptions { get; } = ["Все", "Включённые", "Выключенные"];
+    public IReadOnlyList<string> EncounterDayOptions { get; } = ["Ближайшие дни", "Сегодня", "Завтра"];
+    public IReadOnlyList<FriendItemViewModel> FilteredFriends => Friends.Where(item =>
+        FriendBrowse.Matches(item.GroupName, item.MemberNames, item.Enabled, FriendSearch, FriendStatusIndex)).ToArray();
+    public bool NoFriendMatches => Friends.Count > 0 && FilteredFriends.Count == 0;
+    public bool HasFriendFilters => FriendSearch.Trim().Length > 0 || FriendStatusIndex != 0;
+    public string FriendResultCount => $"Показано {FilteredFriends.Count} из {Friends.Count}";
+    private string? SelectedForecastFriend => ForecastFriendIndex > 0 && ForecastFriendIndex < ForecastFriendOptions.Count
+        ? ForecastFriendOptions[ForecastFriendIndex] : null;
+    public IReadOnlyList<FriendEncounterViewModel> VisibleEncounters =>
+        FriendBrowse.Encounters(Encounters, _clock().Date, EncounterDayIndex, ShowAllEncounters, SelectedForecastFriend);
+    public bool HasMoreEncounters => FriendBrowse.Encounters(Encounters, _clock().Date, EncounterDayIndex, true, SelectedForecastFriend).Count > 3;
+    public string MoreEncountersCaption => ShowAllEncounters ? "Свернуть прогноз" : "Показать остальные совпадения";
+    partial void OnFriendSearchChanged(string value) => RefreshFriendBrowse();
+    partial void OnFriendStatusIndexChanged(int value) => RefreshFriendBrowse();
+    partial void OnEncounterDayIndexChanged(int value) { ShowAllEncounters = false; RefreshEncounterBrowse(); }
+    partial void OnForecastFriendIndexChanged(int value) { ShowAllEncounters = false; RefreshEncounterBrowse(); }
+    partial void OnShowAllEncountersChanged(bool value) => RefreshEncounterBrowse();
+    [RelayCommand] private void ResetFriendFilters() { FriendSearch = ""; FriendStatusIndex = 0; }
+    [RelayCommand] private void ToggleMoreEncounters() => ShowAllEncounters = !ShowAllEncounters;
+    internal void RefreshFriendBrowse()
+    {
+        OnPropertyChanged(nameof(FilteredFriends)); OnPropertyChanged(nameof(NoFriendMatches));
+        OnPropertyChanged(nameof(HasFriendFilters)); OnPropertyChanged(nameof(FriendResultCount));
+    }
+    private void RefreshEncounterBrowse()
+    {
+        OnPropertyChanged(nameof(VisibleEncounters)); OnPropertyChanged(nameof(HasMoreEncounters));
+        OnPropertyChanged(nameof(MoreEncountersCaption));
+    }
 
     [ObservableProperty] private bool _canAdd = true;
     [ObservableProperty] private string _countText = "";
@@ -137,6 +175,13 @@ public sealed partial class FriendsViewModel : ViewModelBase
         _suppress = false;
         TickLabels = BuildTicks();
         SyncFriends(data.Friends);
+        if (SelectedComparisonFriend is not null && !Friends.Contains(SelectedComparisonFriend)) SelectedComparisonFriend = null;
+        var selectedForecastFriend = SelectedForecastFriend;
+        ForecastFriendOptions = ["Все группы", .. Friends.Select(item => item.GroupName)];
+        ForecastFriendIndex = selectedForecastFriend is null ? 0 : Math.Max(0,
+            Array.FindIndex(ForecastFriendOptions.ToArray(), name => name.Equals(selectedForecastFriend, StringComparison.OrdinalIgnoreCase)));
+        RefreshFriendBrowse();
+        RefreshEncounterBrowse();
         RefreshColorOptions();
         CanAdd = Friends.Count < MaxFriends;
         CountText = T("friendsCount", Friends.Count, MaxFriends);
@@ -167,12 +212,11 @@ public sealed partial class FriendsViewModel : ViewModelBase
         var encounters = new List<FriendEncounterViewModel>();
         (string Line, IReadOnlyList<FriendMark> Marks)? first = null;
         (string Line, IReadOnlyList<FriendMark> Marks)? fallback = null;
-        for (var i = 0; ownLoaded && i < 14 && encounters.Count < 3; i++)
+        for (var i = 0; ownLoaded && i < 14; i++)
         {
             var date = now.Date.AddDays(i);
             foreach (var l in App.Schedule.GetSchedule(date, myId).OrderBy(x => TimeSpan.TryParse(x.TimeStart, out var t) ? t : TimeSpan.Zero))
             {
-                if (encounters.Count == 3) break;
                 if (!TimeSpan.TryParse(l.TimeStart, out var start)) continue;
                 var end = TimeSpan.TryParse(l.TimeEnd, out var parsedEnd) ? parsedEnd : start.Add(TimeSpan.FromMinutes(95));
                 if (i == 0 && end <= now.TimeOfDay) continue;
@@ -191,7 +235,6 @@ public sealed partial class FriendsViewModel : ViewModelBase
                     encounters.Add(new FriendEncounterViewModel(line, friend.GroupName, friend.MemberNames ?? "",
                         string.IsNullOrWhiteSpace(best.Room) ? place : $"{place} · {best.Room}", FriendPalette.IndexOf(friend.ColorHex),
                         date, l.SubjectRaw, l.TimeStart, App.Profile.DatabasePath, myId, groupEpoch));
-                    if (encounters.Count == 3) break;
                 }
             }
         }
@@ -211,7 +254,9 @@ public sealed partial class FriendsViewModel : ViewModelBase
         HasPreview = !string.IsNullOrEmpty(p?.Line);
         PreviewLine = HasPreview ? p!.Line : T("previewNone");
         PreviewMarks = p is null ? Array.Empty<FriendMarkViewModel>() : p.Marks.Select(m => new FriendMarkViewModel(m)).ToList();
-        Encounters = p?.Encounters ?? Array.Empty<FriendEncounterViewModel>();
+        Encounters = p?.Encounters.Select(row => row with { OpenCommand = OpenEncounterCommand }).ToArray()
+            ?? Array.Empty<FriendEncounterViewModel>();
+        RefreshEncounterBrowse();
         ForecastStatus = p?.Status ?? "";
         MissingSchedulesText = p?.Missing ?? "";
     }
@@ -370,6 +415,11 @@ public sealed partial class FriendsViewModel : ViewModelBase
         {
         var saved = await RunAsync(() =>
         {
+            var catalog = App.Db.GetAllGroups();
+            if (!group.Equals(original.GroupName, StringComparison.OrdinalIgnoreCase) && catalog.Count > 0 &&
+                !catalog.Any(candidate => candidate.Name.Equals(group, StringComparison.OrdinalIgnoreCase) ||
+                    candidate.Id.Equals(group, StringComparison.OrdinalIgnoreCase)))
+                return new FriendDraftSave(false, "Группа не найдена в локальном каталоге. Выберите её из списка.");
             var current = App.Db.GetFriends().FirstOrDefault(friend => friend.Id == original.Id);
             if (current is null) return new FriendDraftSave(false, "Группа друзей больше не найдена. Черновик сохранён.");
             if (current.GroupName != original.GroupName || current.MemberNames != original.MemberNames || current.ColorHex != original.ColorHex)
@@ -393,6 +443,39 @@ public sealed partial class FriendsViewModel : ViewModelBase
         App.Toasts.Ok("Группа друзей сохранена.");
         }
         finally { item.IsSavingDraft = false; }
+    }
+
+    public async Task PickDraftGroupAsync(FriendItemViewModel item)
+    {
+        if (!item.IsEditing || item.IsSavingDraft) return;
+        var revision = item.DraftRevision;
+        var taken = Friends.Where(friend => !ReferenceEquals(friend, item)).Select(friend => friend.GroupName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var groups = await RunAsync(() => App.Db.GetAllGroups().Where(group =>
+            group.Id != App.Settings.MyGroupId && !taken.Contains(group.Name)).ToArray(), "friend group choices");
+        if (groups is null || !item.IsEditing || item.DraftRevision != revision) return;
+        var dialog = new GroupPickerDialogViewModel(groups, null, allowManual: groups.Length == 0);
+        if (!await _shell.Dialogs.ShowAsync(dialog) || !item.IsEditing || item.DraftRevision != revision) return;
+        var picked = dialog.Selected?.Name ?? dialog.ManualName.Trim();
+        if (picked.Length > 0) { item.DraftGroupName = picked; item.DraftError = ""; }
+    }
+
+    internal async Task CancelEditAsync(FriendItemViewModel item)
+    {
+        if (item.IsSavingDraft || !item.IsEditing) return;
+        var revision = item.DraftRevision;
+        var dirty = item.DraftGroupName != item.Model.GroupName ||
+                    item.DraftMemberNames != (item.Model.MemberNames ?? "") ||
+                    item.DraftColorIndex != FriendPalette.IndexOf(item.Model.ColorHex);
+        if (dirty)
+        {
+            var confirm = new ConfirmDialogViewModel("Закрыть несохранённые изменения?",
+                "Изменения группы, имён и цвета ещё не сохранены.", "Закрыть без сохранения", danger: true);
+            if (!await _shell.Dialogs.ShowAsync(confirm)) return;
+        }
+        if (item.IsSavingDraft || !item.IsEditing || item.DraftRevision != revision) return;
+        item.IsEditing = false;
+        item.DraftError = "";
     }
 
     private void RefreshColorOptions()
@@ -486,8 +569,10 @@ public sealed partial class FriendItemViewModel : ObservableObject
 
     partial void OnEnabledChanged(bool value)
     {
+        _owner.RefreshFriendBrowse();
         if (!_loading) _ = _owner.SaveAsync(this);
     }
+    partial void OnMemberNamesChanged(string value) => _owner.RefreshFriendBrowse();
 
     [RelayCommand]
     private void BeginEdit()
@@ -499,14 +584,9 @@ public sealed partial class FriendItemViewModel : ObservableObject
         DraftError = "";
         IsEditing = true;
     }
-    [RelayCommand]
-    private void CancelEdit()
-    {
-        if (IsSavingDraft) return;
-        IsEditing = false;
-        DraftError = "";
-    }
+    [RelayCommand] private Task CancelEdit() => _owner.CancelEditAsync(this);
     [RelayCommand] private Task SaveDraft() => _owner.SaveDraftAsync(this);
+    [RelayCommand] private Task PickDraftGroup() => _owner.PickDraftGroupAsync(this);
     [RelayCommand] private void PickDraftColor(ColorOption option) => DraftColorIndex = option.Index;
     // Kept for callers that explicitly commit names; the view no longer invokes it on focus loss.
     [RelayCommand] private Task CommitNames() => MemberNames == (Model.MemberNames ?? "") ? Task.CompletedTask : _owner.SaveAsync(this);

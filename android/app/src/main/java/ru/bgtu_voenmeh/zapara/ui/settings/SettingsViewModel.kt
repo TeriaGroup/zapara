@@ -42,6 +42,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val preferenceVersions = mutableMapOf<String, Long>()
     private val retryPreferences = mutableMapOf<String, Any>()
     private var subgroupUndoSerial = 0L
+    private var subgroupPreviewTicket = 0L
     private val subgroupWrites = Mutex()
     private var supportLoadTicket = 0L
     private var supportData: List<SupportThread> = emptyList()
@@ -59,6 +60,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun onEvent(event: SettingsEvent) {
         when (event) {
+            is SettingsEvent.PreviewSubgroup -> previewSubgroup(event.choice, event.date)
+            SettingsEvent.ConfirmSubgroupImpact -> mutable.value.subgroupImpact?.let { approval ->
+                subgroupPreviewTicket++
+                mutable.update { it.copy(subgroupImpact = null) }; chooseSubgroup(approval.event, approval)
+            }
+            SettingsEvent.CloseSubgroupImpact -> { subgroupPreviewTicket++; mutable.update { it.copy(subgroupImpact = null, subgroupImpactLoading = false) } }
+            SettingsEvent.RefreshPendingSync -> viewModelScope.launch { reload() }
             is SettingsEvent.Subgroup -> chooseSubgroup(event)
             SettingsEvent.UndoSubgroup -> undoSubgroup()
             is SettingsEvent.ResolveSync -> resolveSync(event)
@@ -211,7 +219,31 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    private fun chooseSubgroup(event: SettingsEvent.Subgroup) {
+    private fun previewSubgroup(event: SettingsEvent.Subgroup, date: java.time.LocalDate? = null) {
+        val owner = container.profile.databaseName
+        val group = mutable.value.groupId
+        if (event.profileName != owner || event.groupId != group || group.isBlank()) return
+        val ticket = ++subgroupPreviewTicket
+        mutable.update { it.copy(subgroupImpact = null, subgroupImpactLoading = true) }
+        viewModelScope.launch {
+            try {
+            val preview = withContext(Dispatchers.IO) {
+                val prefs = container.repo.settings()
+                val rows = container.repo.allForGroup(group)
+                if (prefs.myGroupId != group || !subgroupOptionExists(Subgroups.index(rows).streams, event.streamId, event.optionId)) null
+                else subgroupImpact(event, ru.bgtu_voenmeh.zapara.data.SchedCtx(group, prefs.periodStart, prefs.weekCount, prefs.parityInvert),
+                    container.subgroupChoices(group), rows, date ?: container.clock().toLocalDate(), container.copy)
+            }
+            if (ticket == subgroupPreviewTicket && owner == container.profile.databaseName && group == mutable.value.groupId)
+                mutable.update { it.copy(subgroupImpact = preview) }
+            } catch (cancel: CancellationException) { throw cancel }
+            catch (_: Exception) {
+                if (ticket == subgroupPreviewTicket) container.toasts.show(container.app.getString(R.string.uxnext_subgroup_failed), ToastKind.Bad)
+            } finally { if (ticket == subgroupPreviewTicket) mutable.update { it.copy(subgroupImpactLoading = false) } }
+        }
+    }
+
+    private fun chooseSubgroup(event: SettingsEvent.Subgroup, approval: SubgroupImpact? = null) {
         val group = event.groupId ?: mutable.value.groupId
         if (group.isBlank() || group != mutable.value.groupId) return
         val profile = container.profile.databaseName
@@ -224,6 +256,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                             ?.let { it != container.profile } == true)
                         return@withContext null
                     val streams = Subgroups.index(container.repo.allForGroup(group)).streams
+                    if (approval != null) {
+                        val prefs = container.repo.settings()
+                        val ctx = ru.bgtu_voenmeh.zapara.data.SchedCtx(group, prefs.periodStart, prefs.weekCount, prefs.parityInvert)
+                        if (!approval.stillMatches(profile, ctx, container.subgroupChoices(group), container.repo.allForGroup(group))) {
+                            container.toasts.show(container.app.getString(R.string.ux300_subgroup_stale), ToastKind.Bad)
+                            return@withContext null
+                        }
+                    }
                     if (!subgroupOptionExists(streams, event.streamId, event.optionId)) return@withContext null
                     val (before, after) = container.subgroups.selectWithPrevious(profile, group, event.streamId, event.optionId)
                     SubgroupUndoUi(profile, group, event.streamId, before, after)
@@ -399,6 +439,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     useUniversityXml = prefs.useUniversityXml,
                     mapsAlpha = prefs.mapsAlpha,
                     syncConflicts = if (container.profile.isGuest) emptyList() else container.outbox.inbox.conflicts(),
+                    pendingSync = if (container.profile.isGuest) emptyList() else container.outbox.pending().map { pending ->
+                        PendingSyncUi(pending.opId.toString(), pending.entityType,
+                            runCatching { container.outbox.payloadValue(pending) }.getOrNull(),
+                            pending.action == "delete", pending.status == "conflict")
+                    },
                     syncBusy = false,
                     syncError = null,
                     signedIn = !container.profile.isGuest,
@@ -419,6 +464,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             mutable.update { cur ->
                 val editingTimes = cur.timeDirty || cur.timeSaving || cur.timeError != null
                 snap.copy(
+                    subgroupImpact = cur.subgroupImpact?.takeIf { cur.profileName == snap.profileName && cur.groupId == snap.groupId &&
+                        it.beforeChoices == snap.subgroupChoices },
+                    subgroupImpactLoading = cur.subgroupImpactLoading && cur.profileName == snap.profileName && cur.groupId == snap.groupId,
                     refreshing = cur.refreshing,
                     syncBusy = cur.syncBusy,
                     syncError = cur.syncError,

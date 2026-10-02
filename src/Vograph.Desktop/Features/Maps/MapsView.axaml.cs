@@ -2,8 +2,10 @@ using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Input.Platform;
 using Avalonia.Media;
 using Avalonia.VisualTree;
+using Avalonia.Input;
 
 namespace Vograph.Desktop.Features.Maps;
 
@@ -22,6 +24,8 @@ public partial class MapsView : UserControl
         HighlightLabel.RenderTransform = _labelAt;
         DataContextChanged += (_, _) => { if (this.IsAttachedToVisualTree()) Hook(DataContext as MapsViewModel); };
         Zoom.ViewChanged += (_, _) => { PositionLabel(); PositionStairs(); };
+        Zoom.SizeChanged += (_, _) => PositionLabel();
+        HighlightLabel.SizeChanged += (_, _) => PositionLabel();
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -38,11 +42,20 @@ public partial class MapsView : UserControl
 
     private void Hook(MapsViewModel? vm)
     {
-        if (ReferenceEquals(_vm, vm)) { PositionStairs(); return; }
-        if (_vm is not null) _vm.PropertyChanged -= OnVmChanged;
+        if (ReferenceEquals(_vm, vm)) { PositionStairs(); PositionLabel(); return; }
+        if (_vm is not null) { _vm.PropertyChanged -= OnVmChanged; _vm.SetClipboardWriter(null); }
         _vm = vm;
-        if (_vm is not null) _vm.PropertyChanged += OnVmChanged;
+        if (_vm is not null)
+        {
+            _vm.PropertyChanged += OnVmChanged;
+            _vm.SetClipboardWriter(async value =>
+            {
+                var clipboard = TopLevel.GetTopLevel(this)?.Clipboard ?? throw new InvalidOperationException("Clipboard unavailable");
+                await clipboard.SetTextAsync(value);
+            });
+        }
         PositionStairs();
+        PositionLabel();
     }
 
     private void OnVmChanged(object? sender, PropertyChangedEventArgs e)
@@ -74,4 +87,20 @@ public partial class MapsView : UserControl
     private void OnZoomOut(object? sender, RoutedEventArgs e) => Zoom.ZoomOut();
     private void OnFit(object? sender, RoutedEventArgs e) => Zoom.Fit();
     private void OnReset(object? sender, RoutedEventArgs e) => Zoom.ResetScale();
+    private void OnMapKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (!Zoom.IsVisible || e.KeyModifiers != KeyModifiers.None &&
+            !(e.Key == Key.OemPlus && e.KeyModifiers == KeyModifiers.Shift)) return;
+        switch (e.Key)
+        {
+            case Key.Add or Key.OemPlus: Zoom.ZoomIn(); break;
+            case Key.Subtract or Key.OemMinus: Zoom.ZoomOut(); break;
+            case Key.Left: Zoom.PanBy(40, 0); break;
+            case Key.Right: Zoom.PanBy(-40, 0); break;
+            case Key.Up: Zoom.PanBy(0, 40); break;
+            case Key.Down: Zoom.PanBy(0, -40); break;
+            default: return;
+        }
+        e.Handled = true;
+    }
 }

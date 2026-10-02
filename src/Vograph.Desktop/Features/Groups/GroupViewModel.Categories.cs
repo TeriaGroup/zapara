@@ -5,6 +5,15 @@ namespace Vograph.Desktop.Features.Groups;
 public sealed partial class GroupViewModel
 {
     public ObservableCollection<SpaceCategoryBucket> ChannelCategories {get;}=[];
+    [ObservableProperty] private string categorySearch="";
+    public IReadOnlyList<SpaceCategoryBucket> VisibleChannelCategories=>GroupCategoryBrowse.Filter(ChannelCategories,CategorySearch);
+    public bool NoCategoryMatches=>ChannelCategories.Count>0&&VisibleChannelCategories.Count==0&&CategorySearch.Trim().Length>0;
+    partial void OnCategorySearchChanged(string value)
+    {
+        foreach(var category in VisibleChannelCategories)category.Expanded=true;
+        OnPropertyChanged(nameof(VisibleChannelCategories));OnPropertyChanged(nameof(NoCategoryMatches));
+    }
+    [RelayCommand] private void ClearCategorySearch()=>CategorySearch="";
     private readonly Dictionary<Guid,SpaceCategoryBucket> categoryBuckets=[];
     private void RefreshCategories()
     {
@@ -22,6 +31,7 @@ public sealed partial class GroupViewModel
         }
         for(var i=0;i<ordered.Count;i++){var old=ChannelCategories.IndexOf(ordered[i]);if(old<0)ChannelCategories.Insert(i,ordered[i]);else if(old!=i)ChannelCategories.Move(old,i);}
         while(ChannelCategories.Count>ordered.Count)ChannelCategories.RemoveAt(ChannelCategories.Count-1);
+        OnPropertyChanged(nameof(VisibleChannelCategories));OnPropertyChanged(nameof(NoCategoryMatches));
     }
 }
 public sealed partial class SpaceCategoryBucket(Guid id):ObservableObject

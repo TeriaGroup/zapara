@@ -14,7 +14,8 @@ data class TeacherRowLesson(
     val room: String,
     val isMyGroup: Boolean,
     val parity: Int,
-    val date: LocalDate? = null
+    val date: LocalDate? = null,
+    val classroomRaw: String = ""
 )
 
 data class TeacherDayUi(val dow: Int, val title: String, val rows: List<TeacherRowLesson>,
@@ -51,7 +52,8 @@ object TeacherDetailsComposer {
                         isMyGroup = lesson.groups.any { it.idGroup == myGroupId || it.number == myGroupId },
                         parity = if (invert && lesson.parity in 1..2) 3 - lesson.parity else lesson.parity,
                         date = if (today != null && context != null) teacherNextDate(
-                            lesson.dayOfWeek, lesson.parity, today, context) else null
+                            lesson.dayOfWeek, lesson.parity, today, context) else null,
+                        classroomRaw = lesson.classroomRaw
                     )
                 }
             )

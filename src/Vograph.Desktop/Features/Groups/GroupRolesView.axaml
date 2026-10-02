@@ -4,6 +4,8 @@
   <TextBlock Classes="subject" Text="Роли и подгруппы" />
   <TextBlock Classes="muted caption" Text="Старосту и куратора назначает администрация приложения. Дополнительные роли действуют только в этой группе." TextWrapping="Wrap" />
   <TextBlock Text="{Binding RoleCountSummary}" TextWrapping="Wrap" />
+  <TextBox Text="{Binding TrustSearch, Mode=TwoWay}" PlaceholderText="Найти роль или участника" AutomationProperties.Name="Поиск роли или участника" />
+  <Button Content="Очистить поиск" Command="{Binding ClearTrustSearchCommand}" IsVisible="{Binding TrustSearch, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" HorizontalAlignment="Left" />
   <Expander Header="Добавить роль или подгруппу" IsVisible="{Binding CanManageRoles}">
    <StackPanel Spacing="6">
     <TextBox Text="{Binding TrustedRoleName}" PlaceholderText="Например, подгруппа 1" AutomationProperties.Name="Название новой роли" IsEnabled="{Binding !IsBusy}" />
@@ -11,7 +13,7 @@
     <Button Content="Создать роль" Command="{Binding CreateTrustedRoleCommand}" IsEnabled="{Binding CanCreateRole}" />
    </StackPanel>
   </Expander>
-  <ListBox ItemsSource="{Binding TrustedRoles}" SelectedItem="{Binding SelectedTrustedRole}" MaxHeight="190" AutomationProperties.Name="Выберите роль для управления" IsEnabled="{Binding !IsBusy}">
+  <ListBox ItemsSource="{Binding VisibleTrustedRoles}" SelectedItem="{Binding SelectedTrustedRole}" MaxHeight="190" AutomationProperties.Name="Выберите роль для управления" IsEnabled="{Binding !IsBusy}">
    <ListBox.ItemTemplate><DataTemplate x:DataType="g:GroupTrustedRoleRow">
     <StackPanel Spacing="3" Margin="0,4"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock Text="{Binding Summary}" Classes="muted caption" TextWrapping="Wrap" /></StackPanel>
    </DataTemplate></ListBox.ItemTemplate>
@@ -30,7 +32,7 @@
     <TextBlock Text="Значок" /><TextBox Text="{Binding RoleEditIcon}" IsEnabled="{Binding CanEditSelectedRole}" AutomationProperties.Name="Значок выбранной роли" />
     <TextBlock Text="Уровень в иерархии" /><NumericUpDown Value="{Binding RoleEditPosition}" Minimum="0" Maximum="10000" IsEnabled="{Binding CanEditSelectedRole}" AutomationProperties.Name="Уровень выбранной роли" />
     <TextBlock Classes="muted caption" Text="Ответственный управляет только ролями ниже своего уровня и передаёт только доступные ему возможности." TextWrapping="Wrap" />
-    <Button Content="Сохранить настройки" Command="{Binding SaveRoleSettingsCommand}" IsEnabled="{Binding CanSaveRoleSettings}" />
+    <WrapPanel ItemSpacing="8"><Button Content="Сохранить настройки" Command="{Binding SaveRoleSettingsCommand}" IsEnabled="{Binding CanSaveRoleSettings}" /><Button Content="Отменить правки роли" Command="{Binding RevertRoleDraftCommand}" IsEnabled="{Binding CanEditSelectedRole}" /></WrapPanel>
     <StackPanel Spacing="6" IsVisible="{Binding RoleEditConflict}"><TextBlock Text="Роль изменена на другом устройстве. Ваши правки остались в редакторе. Загрузите актуальную роль перед сохранением." TextWrapping="Wrap" /><Button Content="Загрузить актуальную роль" Command="{Binding ReloadRoleSettingsCommand}" IsEnabled="{Binding !IsBusy}" /></StackPanel>
     <Expander Header="Удаление роли"><StackPanel Spacing="6"><Button Content="Проверить последствия удаления" Command="{Binding InspectRoleImpactCommand}" IsEnabled="{Binding CanEditSelectedRole}" /><TextBlock Text="{Binding RoleImpact}" TextWrapping="Wrap" /><Button Content="Удалить выбранную роль" Command="{Binding RemoveRoleCommand}" IsVisible="{Binding ConfirmRemoveRole}" IsEnabled="{Binding CanEditSelectedRole}" /></StackPanel></Expander>
    </StackPanel>

@@ -39,7 +39,7 @@ public sealed class GroupReviewRegressionTests
         {
             var path=request.RequestUri!.AbsolutePath;
             if(denied&&path.EndsWith("/space",StringComparison.Ordinal))return Task.FromResult<HttpResponseMessage?>(Problem(403,"forbidden"));
-            if(path.EndsWith("/ballots",StringComparison.Ordinal))return Task.FromResult<HttpResponseMessage?>(Payload(new BallotBoardResponse(false,false,false,3,2,[new(Guid.NewGuid(),"Закрытый вопрос","headman","open",DateTimeOffset.UtcNow.AddDays(1),0,2,false,[new(Guid.NewGuid(),"Да",0,false),new(Guid.NewGuid(),"Нет",0,false)],"","")])));
+            if(path.EndsWith("/ballots",StringComparison.Ordinal))return Task.FromResult<HttpResponseMessage?>(Payload(new BallotBoardResponse(false,false,false,3,2,[new(Guid.NewGuid(),"Закрытый вопрос","headman","open",DateTimeOffset.UtcNow.AddDays(1),0,2,false,[new(Guid.NewGuid(),"Да",0,false),new(Guid.NewGuid(),"Нет",0,false)],"","",f.Topic)])));
             return Task.FromResult<HttpResponseMessage?>(null);
         };
         await f.Vm.ActivateAsync();Assert.Single(f.Vm.Ballots);f.Vm.AuditEvents.Add("Закрытый журнал");f.Vm.BallotQuestion="Закрытый черновик";f.Vm.SharedHomeworkBody="Закрытая домашка";

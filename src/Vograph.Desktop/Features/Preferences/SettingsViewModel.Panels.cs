@@ -3,10 +3,53 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace Vograph.Desktop.Features.Preferences;
 
+public sealed record SettingsSearchHit(string Panel, string Title, string Anchor, string SearchWords);
+
 public sealed partial class SettingsViewModel
 {
     [ObservableProperty] private string activePanel = "";
+    [ObservableProperty] private bool confirmLeaveAccount;
+    private string pendingPanel = "";
+    private string pendingSettingAnchor = "";
+    [RelayCommand] private void KeepAccountEditing()
+    { ConfirmLeaveAccount = false; pendingPanel = ""; pendingSettingAnchor = ""; }
+    [RelayCommand] private void DiscardAccountEditing()
+    {
+        if (!ConfirmLeaveAccount || AccountPanel.Busy) return;
+        AccountPanel.DiscardDisplayNameDraft();
+        ConfirmLeaveAccount = false;
+        ActivePanel = pendingPanel;
+        if (pendingSettingAnchor.Length > 0) { RequestedSettingAnchor = ""; RequestedSettingAnchor = pendingSettingAnchor; }
+        pendingPanel = ""; pendingSettingAnchor = "";
+    }
     [ObservableProperty] private string settingsSearch = "";
+    [ObservableProperty] private string requestedSettingAnchor = "";
+    private static readonly SettingsSearchHit[] SpecificSettings =
+    [
+        new("study", "Выбрать учебную группу", "GroupChoiceControl", "группа учеба расписание выбрать"),
+        new("appearance", "Тема оформления", "SettingsTheme", "тема оформление светлая темная"),
+        new("notifications", "Время уведомлений", "NotifyTime1Control", "время уведомления напоминания часы"),
+        new("data", "Синхронизировать данные", "SyncNowControl", "синхронизация данные отправить"),
+        new("help", "Новое обращение", "ReportSubjectControl", "поддержка обращение сообщить ошибка"),
+        new("help", "Проверка обновления", "UpdateCheckControl", "обновление проверить версия")
+    ];
+    public IReadOnlyList<SettingsSearchHit> SpecificSettingResults
+    {
+        get
+        {
+            var words = SettingsSearch.Trim().ToLowerInvariant().Replace('ё', 'е')
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return words.Length == 0 ? [] : SpecificSettings.Where(hit =>
+                words.All(word => hit.SearchWords.Contains(word, StringComparison.Ordinal))).ToArray();
+        }
+    }
+    [RelayCommand] private void OpenSpecificSetting(SettingsSearchHit? hit)
+    {
+        if (hit is null || !SpecificSettings.Contains(hit)) return;
+        OpenPanel(hit.Panel);
+        if (ConfirmLeaveAccount) pendingSettingAnchor = hit.Anchor;
+        else { RequestedSettingAnchor = ""; RequestedSettingAnchor = hit.Anchor; }
+    }
     private static readonly (string Id, string Text)[] Categories =
     [
         ("account", "аккаунт профиль вход логин пароль устройства фото"),
@@ -25,7 +68,7 @@ public sealed partial class SettingsViewModel
     }
     public bool HasSettingsSearch => SettingsSearch.Trim().Length > 0;
     public int SettingsSearchCount => Categories.Count(category => CategoryMatches(category.Id));
-    public bool NoSettingsSearchResults => HasSettingsSearch && SettingsSearchCount == 0;
+    public bool NoSettingsSearchResults => HasSettingsSearch && SettingsSearchCount == 0 && SpecificSettingResults.Count == 0;
     public bool ShowAccountCategory => CategoryMatches("account");
     public bool ShowStudyCategory => CategoryMatches("study");
     public bool ShowAppearanceCategory => CategoryMatches("appearance");
@@ -34,6 +77,7 @@ public sealed partial class SettingsViewModel
     public bool ShowHelpCategory => CategoryMatches("help");
     partial void OnSettingsSearchChanged(string value)
     {
+        OnPropertyChanged(nameof(SpecificSettingResults));
         foreach (var name in new[] { nameof(HasSettingsSearch), nameof(SettingsSearchCount), nameof(NoSettingsSearchResults),
             nameof(ShowAccountCategory), nameof(ShowStudyCategory), nameof(ShowAppearanceCategory),
             nameof(ShowNotificationsCategory), nameof(ShowDataCategory), nameof(ShowHelpCategory) }) OnPropertyChanged(name);
@@ -69,8 +113,14 @@ public sealed partial class SettingsViewModel
             nameof(ShowAppearancePanel), nameof(ShowNotificationsPanel), nameof(ShowDataPanel), nameof(ShowHelpPanel), nameof(PanelTitle) })
             OnPropertyChanged(name);
     }
-    [RelayCommand] private void OpenPanel(string panel) => ActivePanel = panel;
-    [RelayCommand] private void BackToOverview() => ActivePanel = "";
+    [RelayCommand] private void OpenPanel(string panel)
+    {
+        if (ActivePanel == "account" && panel != "account" && AccountPanel.HasUnsavedDisplayName)
+        { pendingPanel = panel; pendingSettingAnchor = ""; ConfirmLeaveAccount = true; return; }
+        ConfirmLeaveAccount = false;
+        ActivePanel = panel;
+    }
+    [RelayCommand] private void BackToOverview() => OpenPanel("");
     private async Task ReadDataSummary()
     {
         var counts = await RunAsync(() =>

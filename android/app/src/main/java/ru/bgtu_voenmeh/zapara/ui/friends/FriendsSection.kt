@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
@@ -76,13 +77,22 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) =
 fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit,
     onOpenEncounter: (FriendEncounter, String, String) -> Unit) {
     val c = Zapara.colors
+    val ctx = LocalContext.current
     val focus = LocalFocusManager.current
     var query by rememberSaveable(state.profileName, state.myGroupId) { mutableStateOf("") }
     var status by rememberSaveable(state.profileName, state.myGroupId) { mutableStateOf(0) }
     var encounterDay by rememberSaveable(state.profileName, state.myGroupId) { mutableStateOf(0) }
+    var encounterDate by rememberSaveable(state.profileName, state.myGroupId) { mutableStateOf("") }
+    var encounterFriend by rememberSaveable(state.profileName, state.myGroupId) { mutableStateOf("") }
+    var encounterFriendMenu by rememberSaveable(state.profileName, state.myGroupId) { mutableStateOf(false) }
     var encountersExpanded by rememberSaveable(state.profileName, state.myGroupId, encounterDay) { mutableStateOf(false) }
     val visibleFriends = browseFriends(state.friends, query, status)
-    val visibleEncounters = browseEncounters(state.encounters, encounterDay, java.time.LocalDate.now())
+    val selectedDate = encounterDate.takeIf(String::isNotBlank)?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+    val visibleEncounters = browseEncounters(state.encounters, if (selectedDate == null) encounterDay else 0,
+        java.time.LocalDate.now()).filter { encounter ->
+            (selectedDate == null || encounter.date == selectedDate) &&
+                (encounterFriend.isBlank() || encounter.groupName == encounterFriend)
+        }
     val latestEvent = rememberUpdatedState(onEvent)
     LaunchedEffect(Unit) {
         while (true) {
@@ -143,13 +153,36 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit,
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                         listOf(R.string.ux100_common_all_days, R.string.ux100_common_today,
                             R.string.ux100_common_tomorrow).forEachIndexed { index, label ->
-                            ZChip(stringResource(label), selected = encounterDay == index,
-                                onClick = { encounterDay = index }, tag = "Friends.Day.$index")
+                            ZChip(stringResource(label), selected = selectedDate == null && encounterDay == index,
+                                onClick = { encounterDate = ""; encounterDay = index }, tag = "Friends.Day.$index")
+                        }
+                        ZButton(stringResource(R.string.ux300_android_pick_encounter_date), {
+                            val contextDate = selectedDate ?: java.time.LocalDate.now()
+                            android.app.DatePickerDialog(ctx, if (c.isDark) R.style.Zapara_DatePicker_Dark
+                                else R.style.Zapara_DatePicker_Light, { _, year, month, day ->
+                                encounterDate = java.time.LocalDate.of(year, month + 1, day).toString()
+                            }, contextDate.year, contextDate.monthValue - 1, contextDate.dayOfMonth).show()
+                        }, ghost = true, tag = "Friends.PickForecastDate")
+                    }
+                    val encounterGroups = state.encounters.map { it.groupName }.filter(String::isNotBlank).distinct().sorted()
+                    if (encounterGroups.size > 1) Box {
+                        ZButton(encounterFriend.ifBlank { stringResource(R.string.ux300_android_all_friends) },
+                            { encounterFriendMenu = true }, ghost = encounterFriend.isBlank(),
+                            tag = "Friends.ForecastFriend")
+                        androidx.compose.material3.DropdownMenu(expanded = encounterFriendMenu,
+                            onDismissRequest = { encounterFriendMenu = false }) {
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text(stringResource(R.string.ux300_android_all_friends)) },
+                                onClick = { encounterFriend = ""; encounterFriendMenu = false })
+                            encounterGroups.forEach { group -> androidx.compose.material3.DropdownMenuItem(
+                                text = { Text(group) }, onClick = { encounterFriend = group; encounterFriendMenu = false }) }
                         }
                     }
-                    if (encounterDay != 0 && visibleEncounters.isEmpty()) {
+                    if ((encounterDay != 0 || selectedDate != null || encounterFriend.isNotEmpty()) && visibleEncounters.isEmpty()) {
                         Text(stringResource(R.string.ux100_common_no_encounters), color = c.text2)
-                        ZButton(stringResource(R.string.ux100_common_all_days), { encounterDay = 0 }, ghost = true)
+                        ZButton(stringResource(R.string.ux100_common_all_days), {
+                            encounterDay = 0; encounterDate = ""; encounterFriend = ""
+                        }, ghost = true)
                     }
                     (if (encountersExpanded) visibleEncounters else visibleEncounters.take(3)).forEachIndexed { index, encounter ->
                         Row(Modifier.fillMaxWidth().padding(vertical = Zapara.space.xs),
@@ -180,6 +213,7 @@ fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit,
                     }
                 }
             }
+            if (!state.failed) item("meeting-planner") { FriendMeetingPlanner(state, onEvent) }
             if (state.friends.isEmpty() && !state.failed) item("empty") {
                 ZCard(Modifier.fillMaxWidth(), tag = "Empty.Friends") {
                     Text(stringResource(R.string.friends_detail_empty), style = Zapara.typography.bodyStrong, color = c.text1)

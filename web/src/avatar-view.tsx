@@ -82,6 +82,8 @@ export function AvatarEditor({ kind, id, name }: { kind: AvatarKind; id: string;
   const [busy, setBusy] = useState(false);
   const [present, setPresent] = useState(false);
   const [notice, setNotice] = useState("");
+  const [prepared,setPrepared]=useState<{file:File;url:string;marker:string}|null>(null);
+  const preparedUrl=useRef<string|null>(null);
   const input = useRef<HTMLInputElement>(null);
   const busyRef = useRef(false);
   const operation = useRef(0);
@@ -96,8 +98,10 @@ export function AvatarEditor({ kind, id, name }: { kind: AvatarKind; id: string;
     setBusy(false);
     setNotice("");
     setPresent(false);
-    return () => { mounted.current = false; operation.current++; };
+    setPrepared(null);
+    return () => { mounted.current = false; operation.current++;if(preparedUrl.current){URL.revokeObjectURL(preparedUrl.current);preparedUrl.current=null;} };
   }, [marker]);
+  useEffect(()=>()=>{if(prepared)URL.revokeObjectURL(prepared.url);},[prepared]);
 
   function current(ticket: number, started: string) {
     return mounted.current && operation.current === ticket && currentMarker.current === started;
@@ -115,17 +119,25 @@ export function AvatarEditor({ kind, id, name }: { kind: AvatarKind; id: string;
     try {
       const ready = await prepareAvatarFile(file);
       if (!current(ticket, started)) return;
-      setNotice("Загружаем фото…");
-      await api.saveAvatar(kind, id, ready, owner);
-      if (!current(ticket, started)) return;
-      cache.invalidate(key);
-      setNotice("Фото обновлено.");
+      if(preparedUrl.current)URL.revokeObjectURL(preparedUrl.current);
+      const url=URL.createObjectURL(ready);preparedUrl.current=url;
+      setPrepared({file:ready,url,marker:started});
+      setNotice("Фото подготовлено. Проверьте его перед сохранением.");
     } catch (error) { if (current(ticket, started)) setNotice(editError(error, "save")); }
     finally { if (current(ticket, started)) { busyRef.current = false; setBusy(false); if (input.current) input.current.value = ""; } }
+  }
+  async function savePrepared(){
+    if(!prepared||prepared.marker!==marker||!owner||busyRef.current)return;
+    const selected=prepared;const started=marker;const ticket=++operation.current;
+    busyRef.current=true;setBusy(true);setNotice("Загружаем фото…");
+    try{await api.saveAvatar(kind,id,selected.file,owner);if(!current(ticket,started))return;cache.invalidate(key);setPrepared(null);setNotice("Фото обновлено.");}
+    catch(reason){if(current(ticket,started))setNotice(editError(reason,"save"));}
+    finally{if(current(ticket,started)){busyRef.current=false;setBusy(false);}}
   }
 
   async function remove() {
     if (busyRef.current) return;
+    if(!window.confirm(`Удалить фото ${kind==="group"?"группы":"аккаунта"} «${name}»?`))return;
     if (!owner) { setNotice("Аккаунт обновляется. Повторите удаление фото."); return; }
     const started = marker;
     const ticket = ++operation.current;
@@ -142,6 +154,7 @@ export function AvatarEditor({ kind, id, name }: { kind: AvatarKind; id: string;
   }
 
   return <div className="avatar-editor stack">
+    {prepared?.marker===marker&&<div className="card stack"><h3>Новое фото</h3><img src={prepared.url} alt="Предпросмотр нового аватара" style={{width:180,height:180,objectFit:"cover",borderRadius:"50%"}}/><div className="row"><button className="btn primary" disabled={busy} onClick={()=>void savePrepared()}>Сохранить фото</button><button className="btn quiet" disabled={busy} onClick={()=>{setPrepared(null);setNotice("Выбранное фото не сохранено.");}}>Отмена выбора</button></div></div>}
     <div className="row"><Avatar kind={kind} id={id} name={name} className="avatar-large" onPresence={setPresent} />
       <div><b>{name}</b><p className="muted">Фото профиля {kind === "group" ? "группы" : "аккаунта"}. PNG, JPEG или WebP, до 20 МБ.</p></div></div>
     <div className="row"><label className="btn avatar-upload">{busy ? "Подождите…" : "Выбрать фото"}

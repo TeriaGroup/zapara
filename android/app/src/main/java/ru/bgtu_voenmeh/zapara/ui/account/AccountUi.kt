@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.repeatOnLifecycle
@@ -64,6 +65,7 @@ import ru.bgtu_voenmeh.zapara.data.api.StrictJson
 import ru.bgtu_voenmeh.zapara.data.api.obj
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
+import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -74,7 +76,10 @@ data class AccountDeviceRow(
     val deviceId: String,
     val deviceName: String,
     val platform: String,
-    val current: Boolean
+    val current: Boolean,
+    val createdAt: java.time.Instant? = null,
+    val lastSeenAt: java.time.Instant? = null,
+    val expiresAt: java.time.Instant? = null
 ) {
     val label: String get() = "$deviceName · ${when (platform.lowercase()) {
         "android" -> "Android"
@@ -137,7 +142,8 @@ data class AccountUiState(
     val capabilitiesLoading: Boolean = false,
     val deviceCursor: String? = null,
     val confirmRevoke: String? = null,
-    val recoveryStep: AccountRecoveryStep = AccountRecoveryStep.Request
+    val recoveryStep: AccountRecoveryStep = AccountRecoveryStep.Request,
+    val recoveryCompletionVersion: Int = 0
 ) {
     val showGuestAuth get() = configured && ready && guest
     val showAccount get() = configured && ready && !guest
@@ -313,6 +319,11 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
         if (!state.configured || !state.ready) return@ZCard
         if (state.guest) {
             var recoveryOpen by rememberSaveable { mutableStateOf(false) }
+            androidx.compose.runtime.LaunchedEffect(state.recoveryCompletionVersion) {
+                if (state.recoveryCompletionVersion > 0) recoveryOpen = false
+            }
+            var confirmPassword by remember(state.registration) { mutableStateOf("") }
+            LaunchedEffect(state.password) { if (state.password.isEmpty()) confirmPassword = "" }
             AccountField(state.username, stringResource(R.string.account_username), "Account.Username") {
                 onEvent(AccountEvent.Username(it))
             }
@@ -322,11 +333,18 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
                 onDone = if (!state.registration && state.canSubmitCredentials) {{ onEvent(AccountEvent.Submit) }} else null) {
                 onEvent(AccountEvent.Password(it))
             }
-            if (!state.passwordValid) Text(stringResource(R.string.ux60_account_password_hint),
+            if (state.registration) PasswordProgress(state.password)
+            else if (!state.passwordValid) Text(stringResource(R.string.ux60_account_password_hint),
                 style = Zapara.typography.caption, color = if (state.password.isEmpty()) c.text2 else c.text1)
             if (state.registration) {
+                AccountField(confirmPassword, stringResource(R.string.ux300_android_confirm_password),
+                    "Account.ConfirmPassword", password = true) { confirmPassword = it }
+                if (confirmPassword.isNotEmpty() && confirmPassword != state.password)
+                    Text(stringResource(R.string.ux300_android_password_mismatch),
+                        style = Zapara.typography.caption, color = c.bad,
+                        modifier = Modifier.testTag("Account.PasswordMismatch"))
                 AccountField(state.displayName, stringResource(R.string.account_display_name), "Account.DisplayName",
-                    onDone = if (state.canSubmitCredentials) {{ onEvent(AccountEvent.Submit) }} else null) {
+                    onDone = if (state.canSubmitCredentials && confirmPassword == state.password) {{ onEvent(AccountEvent.Submit) }} else null) {
                     onEvent(AccountEvent.DisplayName(it))
                 }
                 if (!state.registrationNameValid) Text(stringResource(R.string.ux60_account_name_hint),
@@ -339,7 +357,9 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                 verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 if (state.registration) {
-                    ZButton(stringResource(R.string.account_register), { onEvent(AccountEvent.Submit) }, enabled = state.canSubmitCredentials, tag = "Account.Register")
+                    ZButton(stringResource(R.string.account_register), { onEvent(AccountEvent.Submit) },
+                        enabled = state.canSubmitCredentials && confirmPassword == state.password,
+                        tag = "Account.Register")
                 } else {
                     ZButton(stringResource(R.string.account_login), { onEvent(AccountEvent.Submit) }, enabled = state.canSubmitCredentials, tag = "Account.Login")
                 }
@@ -452,6 +472,14 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
     var securityOpen by rememberSaveable(state.accountName) { mutableStateOf(false) }
     var dataOpen by rememberSaveable(state.accountName) { mutableStateOf(false) }
     var deviceFilter by rememberSaveable(state.accountName) { mutableStateOf("all") }
+    var devicePlatform by rememberSaveable(state.accountName) { mutableStateOf("") }
+    var deviceQuery by rememberSaveable(state.accountName) { mutableStateOf("") }
+    val platforms = state.devices.map { it.platform.lowercase() }.filter(String::isNotBlank).distinct().sorted()
+    val visibleDevices = state.devices.filter { device ->
+        (deviceFilter == "all" || !device.current) &&
+            (devicePlatform.isBlank() || device.platform.equals(devicePlatform, ignoreCase = true)) &&
+            (deviceQuery.isBlank() || device.label.contains(deviceQuery.trim(), ignoreCase = true))
+    }
     var launchedExportVersion by rememberSaveable { mutableLongStateOf(0L) }
     var launchedExportToken by rememberSaveable { mutableStateOf("") }
     var launchedExportKey by rememberSaveable { mutableStateOf("") }
@@ -490,11 +518,38 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
             Text(stringResource(if (state.deviceCursor == null) R.string.ux100_platform_no_other_devices
                 else R.string.ux100_platform_load_other_devices),
                 style = Zapara.typography.caption, color = Zapara.colors.text2)
+        AccountField(deviceQuery, stringResource(R.string.ux300_android_device_search),
+            "Account.DeviceSearch") { deviceQuery = it }
+        if (platforms.size > 1) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            ZChip(stringResource(R.string.ux300_android_all_platforms), selected = devicePlatform.isBlank(),
+                onClick = { devicePlatform = "" }, tag = "Account.Platform.All")
+            platforms.forEach { platform -> ZChip(platform, selected = devicePlatform == platform,
+                onClick = { devicePlatform = platform }, tag = "Account.Platform.$platform") }
+        }
+        Text(stringResource(R.string.ux300_android_device_search_scope, visibleDevices.size,
+            state.devices.size), style = Zapara.typography.caption, color = Zapara.colors.text2)
+        if (visibleDevices.isEmpty() && (deviceQuery.isNotBlank() || devicePlatform.isNotBlank()))
+            ZButton(stringResource(R.string.ux300_android_device_reset), {
+                deviceQuery = ""; devicePlatform = ""
+            }, ghost = true, tag = "Account.DeviceReset")
     }
-    state.devices.filter { deviceFilter == "all" || !it.current }.forEach { device ->
+    visibleDevices.forEach { device ->
         Text(device.label, style = Zapara.typography.body, color = Zapara.colors.text1, modifier = Modifier.testTag("Account.Device"))
         if (device.current) Text(stringResource(R.string.ux30_devices_current),
             style = Zapara.typography.caption, color = Zapara.colors.text2)
+        var detailOpen by rememberSaveable(device.familyId) { mutableStateOf(false) }
+        ZButton(stringResource(R.string.ux300_ext_device_details), { detailOpen = !detailOpen }, ghost = true,
+            tag = "Account.DeviceDetails.${device.familyId}")
+        if (detailOpen) {
+            val format = java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", java.util.Locale.forLanguageTag("ru"))
+                .withZone(java.time.ZoneId.systemDefault())
+            listOf(R.string.ux300_ext_device_created to device.createdAt,
+                R.string.ux300_ext_device_seen to device.lastSeenAt,
+                R.string.ux300_ext_device_expires to device.expiresAt).forEach { (label, instant) ->
+                if (instant != null) Text(stringResource(label, format.format(instant)), style = Zapara.typography.caption)
+            }
+            Text(device.deviceId, style = Zapara.typography.caption)
+        }
         if (state.confirmRevoke == device.familyId) {
             Text(if (device.current) stringResource(R.string.ux30_devices_current_confirm)
                 else stringResource(R.string.ux30_devices_other_confirm, device.label),
@@ -538,9 +593,7 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
         AccountField(state.newPassword, stringResource(R.string.account_new_password), "Account.NewPassword", password = true) {
             onEvent(AccountEvent.NewPassword(it))
         }
-        if (state.newPassword.isNotEmpty() && !state.canChangePassword)
-            Text(stringResource(R.string.ux30_platform_password_requirements), style = Zapara.typography.caption,
-                color = Zapara.colors.text2)
+        PasswordProgress(state.newPassword)
         if (state.currentPassword.isNotEmpty() && state.currentPassword == state.newPassword)
             Text(stringResource(R.string.ux100_platform_password_same), style = Zapara.typography.caption,
                 color = Zapara.colors.bad)
@@ -684,6 +737,21 @@ private fun IdButton(
             Text(label, style = Zapara.typography.bodyStrong, color = Zapara.colors.idInk, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
+}
+
+@Composable
+private fun PasswordProgress(value: String) {
+    if (value.isEmpty()) return
+    val count = value.codePointCount(0, value.length)
+    val label = when {
+        value.contains('\u0000') -> stringResource(R.string.ux300_android_password_invalid)
+        count < 12 -> stringResource(R.string.ux300_android_password_remaining, 12 - count)
+        count > 128 -> stringResource(R.string.ux300_android_password_over, count - 128)
+        else -> stringResource(R.string.ux300_android_password_length_ok)
+    }
+    Text(label, style = Zapara.typography.caption,
+        color = if (count in 12..128 && !value.contains('\u0000')) Zapara.colors.ok
+            else Zapara.colors.warn)
 }
 
 @Composable

@@ -12,6 +12,7 @@ public sealed partial class GroupViewModel
     private Guid? pendingDeleteMessageId;
     public event Action<GroupMessageRow>? QuoteTargetRequested;
     [ObservableProperty] private string quoteFeedback = "";
+    [ObservableProperty] private string olderSearchFeedback = "";
 
     [ObservableProperty] private string messageSearch = "";
     [ObservableProperty] private int messageAuthorIndex;
@@ -29,6 +30,7 @@ public sealed partial class GroupViewModel
         : HasMessageFilters ? $"Поиск и фильтры · {MessageResultCount}" : "Поиск и фильтры";
     public string OlderCaption => LoadingOlder ? "Загрузка…" : "Загрузить ранние";
     public bool CanLoadOlder => HasMore && !LoadingOlder;
+    public bool CanSearchOlderMessages => HasMore && HasMessageFilters && !LoadingOlder;
     public bool HasHoldAction => HoldCaption.Length > 0;
     public bool HasPendingDeleteMessage => pendingDeleteMessageId is not null;
     public bool ShowRetryBrowse => Status.Length > 0 && Status is not (CopiedTextStatus or CopyFailedStatus);
@@ -36,11 +38,12 @@ public sealed partial class GroupViewModel
     partial void OnMessageSearchChanged(string value) => RefreshMessageBrowse();
     partial void OnMessageAuthorIndexChanged(int value) => RefreshMessageBrowse();
     partial void OnMessageKindIndexChanged(int value) => RefreshMessageBrowse();
-    partial void OnHasMoreChanged(bool value) { OnPropertyChanged(nameof(CanLoadOlder)); OnPropertyChanged(nameof(NoMaterials)); }
+    partial void OnHasMoreChanged(bool value) { OnPropertyChanged(nameof(CanLoadOlder)); OnPropertyChanged(nameof(CanSearchOlderMessages)); OnPropertyChanged(nameof(NoMaterials)); }
     partial void OnLoadingOlderChanged(bool value)
     {
         OnPropertyChanged(nameof(OlderCaption));
         OnPropertyChanged(nameof(CanLoadOlder));
+        OnPropertyChanged(nameof(CanSearchOlderMessages));
     }
     partial void OnHoldCaptionChanged(string value) => OnPropertyChanged(nameof(HasHoldAction));
     partial void OnStatusChanged(string value) => OnPropertyChanged(nameof(ShowRetryBrowse));
@@ -76,6 +79,27 @@ public sealed partial class GroupViewModel
         OnPropertyChanged(nameof(NoMessages));
         OnPropertyChanged(nameof(MessageResultCount));
         OnPropertyChanged(nameof(MessageBrowseCaption));
+        OnPropertyChanged(nameof(CanSearchOlderMessages));
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = false)]
+    private async Task SearchOlderMessages()
+    {
+        if (!CanSearchOlderMessages || conversationId is not Guid id) return;
+        var ticket = navigationGeneration;
+        var query = MessageSearch; var author = MessageAuthorIndex; var kind = MessageKindIndex;
+        for (var page = 0; page < 5 && HasMore && Messages.Count > 0; page++)
+        {
+            if (!CurrentChat(id, ticket) || query != MessageSearch || author != MessageAuthorIndex || kind != MessageKindIndex) return;
+            var before = Messages.Count;
+            await LoadOlderCommand.ExecuteAsync(null);
+            if (!CurrentChat(id, ticket) || query != MessageSearch || author != MessageAuthorIndex || kind != MessageKindIndex) return;
+            if (FilteredMessages.Count > 0)
+            { OlderSearchFeedback = $"Найдено среди {Messages.Count} загруженных сообщений."; return; }
+            if (Messages.Count == before)
+            { OlderSearchFeedback = "Ранние сообщения не загрузились. Повторите поиск."; return; }
+        }
+        OlderSearchFeedback = HasMore ? "Совпадений пока нет. Можно искать дальше." : "Совпадений в доступной истории нет.";
     }
 
     private async Task CopyMessageAsync(GroupMessageRow row)
@@ -94,12 +118,20 @@ public sealed partial class GroupViewModel
     }
 
     [RelayCommand]
-    private void JumpQuote(GroupMessageRow? row)
+    private async Task JumpQuote(GroupMessageRow? row)
     {
         if (row is null || !Messages.Contains(row) || row.ReplyToId is not Guid parentId) return;
+        var id = conversationId; var ticket = navigationGeneration;
+        for (var page = 0; page < 5 && Messages.All(item => item.Id != parentId) && HasMore && Messages.Count > 0; page++)
+        {
+            var before = Messages.Count;
+            await LoadOlderCommand.ExecuteAsync(null);
+            if (conversationId != id || ticket != navigationGeneration || !Messages.Contains(row)) return;
+            if (Messages.Count == before) break;
+        }
         foreach (var item in Messages) item.QuoteHint = "";
         var target = Messages.FirstOrDefault(item => item.Id == parentId);
-        if (target is null) { row.QuoteHint = QuoteFeedback = HasMore ? "Цитата ещё не загружена. Загрузите ранние сообщения." : "Цитата недоступна в этой истории."; return; }
+        if (target is null) { row.QuoteHint = QuoteFeedback = HasMore ? "Загрузите ранние сообщения: нажмите цитату ещё раз для следующих страниц." : "Цитата недоступна в этой истории."; return; }
         if (target.Deleted) { row.QuoteHint = QuoteFeedback = "Цитируемое сообщение удалено."; return; }
         if (!FilteredMessages.Contains(target)) ResetMessageFilters();
         foreach (var item in Messages) item.IsQuoteTarget = ReferenceEquals(item, target);

@@ -37,6 +37,7 @@
           </ItemsControl>
         </WrapPanel>
         <TextBlock IsVisible="{Binding ShowDetails}" Classes="muted caption" Text="{Binding TeacherLine}" Margin="0,3,0,0" TextWrapping="Wrap" />
+        <Button Classes="ghost" Content="Открыть преподавателя" Command="{Binding OpenTeacherCommand}" IsVisible="{Binding CanOpenTeacher}" HorizontalAlignment="Left" />
         <StackPanel IsVisible="{Binding HasSubgroup}" Margin="0,8,0,0" Spacing="6">
           <TextBlock Classes="muted caption" Text="{Binding SubgroupPrompt}" TextWrapping="Wrap" />
           <ItemsControl ItemsSource="{Binding SubgroupOptions}">

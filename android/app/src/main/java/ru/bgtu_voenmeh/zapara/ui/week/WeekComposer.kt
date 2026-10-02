@@ -10,10 +10,17 @@ import java.time.LocalDate
 import java.util.Locale
 
 data class WeekRowUi(val time: String, val name: String, val room: String, val type: String = "",
-    val teacher: String = "")
+    val teacher: String = "", val start: String = "", val end: String = "",
+    val subjectNorm: String = "", val subjectRaw: String = "",
+    val teacherRaw: String = "", val classroomRaw: String = "", val typeRaw: String = "")
 data class WeekDayUi(val dow: Int, val title: String, val date: LocalDate, val rows: List<WeekRowUi>, val isToday: Boolean)
 
 object WeekBrowse {
+    fun freeMinutes(before: WeekRowUi, after: WeekRowUi): Long? {
+        val end = runCatching { java.time.LocalTime.parse(before.end) }.getOrNull() ?: return null
+        val start = runCatching { java.time.LocalTime.parse(after.start) }.getOrNull() ?: return null
+        return java.time.Duration.between(end, start).toMinutes().takeIf { it >= 15 }
+    }
     fun filter(days: List<WeekDayUi>, query: String, lessonsOnly: Boolean): List<WeekDayUi> {
         val words = query.trim().lowercase(Locale.ROOT).split(Regex("\\s+")).filter(String::isNotEmpty)
         return days.mapNotNull { day ->
@@ -58,7 +65,8 @@ object WeekComposer {
             }
             WeekRowUi(listOf(lesson.timeStart, lesson.timeEnd).filter(String::isNotBlank).joinToString("–"),
                 shown, LessonFormat.roomLabel(lesson, copy), LessonFormat.typeLabel(lesson.typeRaw, copy),
-                lesson.teacherRaw.trim())
+                lesson.teacherRaw.trim(), lesson.timeStart, lesson.timeEnd, lesson.subjectNormalized,
+                lesson.subjectRaw, lesson.teacherRaw, lesson.classroomRaw, lesson.typeRaw)
         }
         WeekDayUi(
             dow = dow,

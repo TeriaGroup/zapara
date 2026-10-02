@@ -11,7 +11,8 @@ data class WeekWidgetDay(
     val date: LocalDate,
     val shortName: String,
     val lessonCount: Int,
-    val isToday: Boolean
+    val isToday: Boolean,
+    val timeSpan: String = ""
 )
 
 data class WeekWidgetSnapshot(
@@ -67,7 +68,7 @@ object WeekWidgetComposer {
             )
         }
 
-        val counts = (0L..6L).associate { offset ->
+        val daily = (0L..6L).associate { offset ->
             val date = monday.plusDays(offset)
             val dayLessons = Schedule.lessonsForDate(
                 allLessons,
@@ -77,13 +78,16 @@ object WeekWidgetComposer {
                 settings.weekCount,
                 settings.parityInvert
             )
-            date to dayLessons.map(Lesson::timeStart).filter(String::isNotBlank).distinct().size
+            date to dayLessons
         }
+        val counts = daily.mapValues { (_, rows) -> rows.map(Lesson::timeStart).filter(String::isNotBlank).distinct().size }
         return WeekWidgetSnapshot(
             identity = identity,
             title = title,
             subtitle = subtitle,
-            days = days(monday, counts, today, copy),
+            days = days(monday, counts, today, copy).map { day ->
+                day.copy(timeSpan = validWidgetDaySpan(daily[day.date].orEmpty()))
+            },
             empty = null,
             isDark = isDark
         )
@@ -103,4 +107,14 @@ object WeekWidgetComposer {
             isToday = date == today
         )
     }
+}
+
+internal fun validWidgetDaySpan(rows: List<Lesson>): String {
+    val valid = rows.mapNotNull { row ->
+        val start = runCatching { java.time.LocalTime.parse(row.timeStart) }.getOrNull()
+        val end = runCatching { java.time.LocalTime.parse(row.timeEnd) }.getOrNull()
+        if (start == null || end == null || !end.isAfter(start)) null else start to end
+    }
+    if (valid.isEmpty()) return ""
+    return "${valid.minOf { it.first }}–${valid.maxOf { it.second }}"
 }

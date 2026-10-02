@@ -42,14 +42,22 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         snapshot = profiles?.Snapshot;
         if (profiles is not null) profiles.Changed += Apply;
         Identities.CollectionChanged += OnIdentitiesChanged;
+        Devices.CollectionChanged += (_, _) => RefreshDeviceBrowse();
         Status = T("accountUnconfigured");
     }
 
     [ObservableProperty] private string username = "";
     [ObservableProperty] private string password = "";
     [ObservableProperty] private string displayName = "";
+    public bool HasUnsavedDisplayName => IsAccount && DisplayName != lastPresentedDisplayName;
+    partial void OnDisplayNameChanged(string value) => OnPropertyChanged(nameof(HasUnsavedDisplayName));
+    public void DiscardDisplayNameDraft()
+    { if (!Busy) DisplayName = lastPresentedDisplayName; }
     [ObservableProperty] private string currentPassword = "";
     [ObservableProperty] private string newPassword = "";
+    public bool IsSameNewPassword => AccountPasswordRules.Same(CurrentPassword, NewPassword);
+    partial void OnCurrentPasswordChanged(string value) => OnPropertyChanged(nameof(IsSameNewPassword));
+    partial void OnNewPasswordChanged(string value) => OnPropertyChanged(nameof(IsSameNewPassword));
     [ObservableProperty] private string accountName = "";
     [ObservableProperty] private string status = "";
     [ObservableProperty] private bool registration;
@@ -93,11 +101,26 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     public string OpenBody => OpenDocument?.Body ?? "";
     partial void OnOpenDocumentChanged(LegalText? value)
     {
+        DocumentSearch = "";
+        SelectedDocumentParagraph = "";
         OnPropertyChanged(nameof(HasOpenDocument));
         OnPropertyChanged(nameof(OpenTitle));
         OnPropertyChanged(nameof(OpenBody));
+        OnPropertyChanged(nameof(DocumentMatches));
     }
     public ObservableCollection<DeviceResponse> Devices { get; } = [];
+    [ObservableProperty] private string deviceSearch = "";
+    [ObservableProperty] private int deviceScopeIndex;
+    public IReadOnlyList<string> DeviceScopes { get; } = ["Все устройства", "Другие устройства", "Текущее устройство"];
+    public IReadOnlyList<DeviceResponse> FilteredDevices => DeviceBrowse.Filter(Devices, DeviceSearch, DeviceScopeIndex);
+    public bool HasDeviceFilters => DeviceSearch.Trim().Length > 0 || DeviceScopeIndex != 0;
+    public bool NoDeviceMatches => Devices.Count > 0 && FilteredDevices.Count == 0 && HasDeviceFilters;
+    public string DeviceResultCount => $"Показано {FilteredDevices.Count} из {Devices.Count} загруженных";
+    partial void OnDeviceSearchChanged(string value) => RefreshDeviceBrowse();
+    partial void OnDeviceScopeIndexChanged(int value) => RefreshDeviceBrowse();
+    [RelayCommand] private void ResetDeviceFilters() { DeviceSearch = ""; DeviceScopeIndex = 0; }
+    private void RefreshDeviceBrowse()
+    { OnPropertyChanged(nameof(FilteredDevices)); OnPropertyChanged(nameof(HasDeviceFilters)); OnPropertyChanged(nameof(NoDeviceMatches)); OnPropertyChanged(nameof(DeviceResultCount)); }
     public ObservableCollection<ExternalIdentityResponse> Identities { get; } = [];
     public bool IsGuest => snapshot?.Profile.IsGuest != false;
 
@@ -194,6 +217,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
             : value.ReauthRequired ? T("accountReauth") : T(value.Profile.IsGuest ? "accountGuest" : "accountLocal");
         foreach (var name in new[] { nameof(IsGuest), nameof(IsAccount), nameof(CanAct), nameof(NeedsRecovery), nameof(ShowLogin) })
             OnPropertyChanged(name);
+        OnPropertyChanged(nameof(HasUnsavedDisplayName));
         OnPropertyChanged(nameof(ShowProviderProof));
         NotifyExternal();
     }
@@ -210,6 +234,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         AccountName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Username : user.DisplayName;
         DisplayName = user.DisplayName ?? "";
         lastPresentedDisplayName = DisplayName;
+        OnPropertyChanged(nameof(HasUnsavedDisplayName));
         OnPropertyChanged(nameof(AvatarInitials));
         _ = LoadProfileAvatarAsync(user.UserId);
     }

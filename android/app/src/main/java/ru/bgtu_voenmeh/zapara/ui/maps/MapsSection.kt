@@ -45,6 +45,8 @@ import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
+import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
+import ru.bgtu_voenmeh.zapara.ui.components.ZTextField
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.shell.LocalShellChrome
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
@@ -145,6 +147,25 @@ private fun MapsChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifie
         }
         // Keep the complete selector rows at the scroll origin, not behind the route card.
         MapsFloorControls(state, onEvent)
+        if (state.alphaMaps) {
+            if (state.canUndoEndpoint) ZButton(stringResource(R.string.ux300_ext_restore_point),
+                { onEvent(MapsEvent.UndoEndpoint) }, ghost = true, tag = "Maps.UndoEndpoint")
+            var historyOpen by rememberSaveable { mutableStateOf(false) }
+            if (state.recentRoutes.isNotEmpty()) ZButton(stringResource(R.string.ux300_ext_recent_routes),
+                { historyOpen = true }, ghost = true, tag = "Maps.RecentRoutes")
+            if (historyOpen) ZBottomSheet({ historyOpen = false }, "Maps.RouteHistory", scrollable = true) {
+                Text(stringResource(R.string.ux300_ext_recent_routes), style = Zapara.typography.section)
+                Text(stringResource(R.string.ux300_ext_session_memory), style = Zapara.typography.caption)
+                state.recentRoutes.forEach { route ->
+                    ZButton(route.label, {
+                        onEvent(MapsEvent.RepeatRoute(route.fromId, route.toId)); historyOpen = false
+                    }, ghost = true, modifier = Modifier.fillMaxWidth())
+                }
+                ZButton(stringResource(R.string.ux300_ext_clear_routes), {
+                    onEvent(MapsEvent.ClearRecentRoutes); historyOpen = false
+                }, ghost = true)
+            }
+        }
         if (sidePane && state.alphaMaps) MapsRouteCard(state, onEvent, compact = true)
         state.remoteNote?.let { Text(it, style = Zapara.typography.caption, color = c.text2) }
         state.automaticNote?.let { note ->
@@ -203,6 +224,8 @@ internal fun MapsFloorControls(state: MapsUiState, onEvent: (MapsEvent) -> Unit)
 
 @Composable
 internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modifier: Modifier = Modifier, compact: Boolean = false, sideSteps: Boolean = false, compactSteps: Boolean = false) {
+    var roomListOpen by rememberSaveable(state.building, state.floor) { mutableStateOf(false) }
+    var roomQuery by rememberSaveable(state.building, state.floor) { mutableStateOf("") }
     BoxWithConstraints(modifier) {
         val stepHeight = maxHeight * MapsLayout.StepsFraction
         val narrowRoute = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f || maxWidth < 360.dp
@@ -262,6 +285,9 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
         }
         }
         if (scrollPlan && !state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = !state.fullscreen, zoom = state.zoom, enabled = state.planFile != null)
+        if (state.planFile != null && state.availableRooms.isNotEmpty() && !state.showStack)
+            ZButton(stringResource(R.string.ux300_android_floor_rooms), { roomListOpen = true },
+                ghost = true, tag = "Maps.FloorRooms")
         if (!sideSteps && state.alphaMaps) {
             val minStep = if (state.presentation != null || !state.fullscreen) Zapara.space.minTouch else 0.dp
             Column(
@@ -278,6 +304,28 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
             }
         }
         if (!compact && !scrollPlan && !state.remote && !state.showStack) MapsZoomRow(onEvent, showFullscreen = !state.fullscreen, zoom = state.zoom, enabled = state.planFile != null)
+        }
+        if (roomListOpen) ZBottomSheet(onDismiss = { roomListOpen = false },
+            tag = "Maps.FloorRoomSheet", scrollable = true) {
+            Text(stringResource(R.string.ux300_android_floor_rooms),
+                style = Zapara.typography.section)
+            ZTextField(roomQuery, { roomQuery = it }, modifier = Modifier.fillMaxWidth()
+                .testTag("Maps.RoomSearch"), singleLine = true,
+                placeholder = { Text(stringResource(R.string.ux300_android_search_room)) })
+            val matching = state.availableRooms.filter { it.room.contains(roomQuery.trim(), ignoreCase = true) }
+                .distinctBy { it.id }.sortedBy { it.room }
+            Text(stringResource(R.string.ux300_android_room_count, matching.size,
+                state.availableRooms.size), style = Zapara.typography.caption)
+            if (matching.isEmpty()) Text(stringResource(R.string.ux300_android_no_rooms),
+                style = Zapara.typography.body)
+            matching.take(30).forEach { room ->
+                ZButton(room.room, {
+                    onEvent(MapsEvent.FocusRoom(room.id)); roomListOpen = false
+                }, ghost = true, modifier = Modifier.fillMaxWidth(),
+                    tag = "Maps.FocusRoom.${room.id}")
+            }
+            if (matching.size > 30) Text(stringResource(R.string.ux300_android_refine_room),
+                style = Zapara.typography.caption)
         }
     }
 }
@@ -331,12 +379,33 @@ internal fun MapsZoomRow(onEvent: (MapsEvent) -> Unit, showFullscreen: Boolean, 
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RouteMeta(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+    var now by remember(state.route) { mutableStateOf(java.time.LocalDateTime.now()) }
+    LaunchedEffect(state.route) {
+        while (state.route != null) {
+            kotlinx.coroutines.delay(60_000)
+            now = java.time.LocalDateTime.now()
+        }
+    }
+    FlowRow(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+        horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         if (state.durationLabel.isNotBlank()) {
             Text(state.durationLabel, style = Zapara.typography.caption, color = Zapara.colors.text2,
                 modifier = Modifier.testTag("Maps.Duration"))
+        }
+        state.route?.let { route ->
+            val arrival = now.plusSeconds(route.seconds.toLong().coerceAtLeast(0))
+            val arrivalText = if (arrival.toLocalDate() == now.toLocalDate())
+                stringResource(R.string.ux300_android_route_arrival,
+                    arrival.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")))
+            else stringResource(R.string.ux300_android_route_arrival_date,
+                arrival.format(java.time.format.DateTimeFormatter.ofPattern("d MMM HH:mm",
+                    java.util.Locale.forLanguageTag("ru"))))
+            Text(arrivalText,
+                style = Zapara.typography.caption, color = Zapara.colors.text2,
+                modifier = Modifier.testTag("Maps.Arrival"))
         }
         if (state.canSwap) {
             ZChip(stringResource(R.string.maps_swap), onClick = { onEvent(MapsEvent.SwapEnds) }, tag = "Maps.Swap")

@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Headless;
@@ -117,7 +118,7 @@ public class PolishTests : UiTest
         Assert.Equal(expected, Converters.RailAlignment.Convert(collapsed, typeof(HorizontalAlignment), null, System.Globalization.CultureInfo.InvariantCulture));
 
     [AvaloniaFact]
-    public async Task Hover_Actions_Are_Hidden_Not_Just_Transparent()
+    public async Task Primary_lesson_actions_remain_visible_without_hover()
     {
         using var db = TestDb.Create();
         db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
@@ -130,16 +131,17 @@ public class PolishTests : UiTest
         window.Show();
         Pump();
 
-        var acts = window.GetVisualDescendants().OfType<StackPanel>().Where(p => p.Classes.Contains("acts")).ToList();
-        Assert.Equal(2, acts.Count);
-        Assert.All(acts, a => Assert.False(a.IsVisible)); // invisible controls take no Tab focus
+        var actions = window.GetVisualDescendants().OfType<Avalonia.Controls.Button>()
+            .Where(button => AutomationProperties.GetAutomationId(button) is "Lesson.Map" or "Lesson.Homework")
+            .ToList();
+        Assert.Equal(4, actions.Count);
+        Assert.All(actions, button => Assert.True(button.IsEffectivelyVisible));
 
         var card = window.GetVisualDescendants().OfType<LessonCardView>().First();
         var centre = card.TranslatePoint(new Point(card.Bounds.Width / 2, card.Bounds.Height / 2), window)!.Value;
         window.MouseMove(centre);
         Pump();
-        Assert.True(acts[0].IsVisible);
-        Assert.False(acts[1].IsVisible);
+        Assert.All(actions, button => Assert.True(button.IsEffectivelyVisible));
         AssertNoBindingErrors();
     }
 

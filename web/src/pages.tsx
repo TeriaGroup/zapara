@@ -1,5 +1,23 @@
+import { TimetableExportTools } from "./timetable-export-view";
+import { HomeworkExportTools } from "./homework-export-view";
+import { PersonalHomeworkBatch } from "./personal-homework-batch-view";
+import { HomeworkPostpone } from "./homework-postpone-view";
+import { HomeworkPublication } from "./homework-publication-view";
+import { duplicatePersonalHomework } from "./personal-homework-batch";
+import { CommonFreeTime } from "./common-free-view";
+import { StudyTransferCheck } from "./study-transfer-view";
+import { WeekComparison, WeekHomework, HomeworkSubjectOverview } from "./study-overviews-view";
+import {AssessmentPlanner,RecentWeekChanges,SubgroupPreview,RoomActivity,SupportDiagnostics,studyOwner} from './study-discovery-view';
+import {exactLessonIndex} from './study-discovery';
+import {GroupObligations} from './group-obligations-view';
+import {GroupObjectFocus} from './group-object-focus';
+import {GLOBAL_BALLOTS,type Obligation} from './group-obligations';
+import { lessonMapContext, routeClassroom } from "./route-context";
+import type { SupportPendingState } from "./update-settings-view";
+import { dayLoad, dueBucket, errorHint, noteSearch, summaryRows, chooseBuildingPlan, safeAppReturn } from "./ux300";
+import { SearchField, FilterEmpty, useClock, useConnectivity, useBrowseValue, focusElement, SecretInput } from "./ux300-controls";
 import { revealQuote } from "./quote-navigation";
-import { groupWireText } from "./scalar-input";
+import { groupWireText, scalarInput } from "./scalar-input";
 import { ChangeEvent, FormEvent, Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useDateReveal, useSwipe } from "./swipe";
@@ -17,7 +35,7 @@ import { homeworkSaveError, validateHomeworkDraft } from "./homework-draft";
 import { checkHomeworkUpload, runHomeworkSave } from "./homework-save";
 import { addDays, dayTitle, isoDay, lessonsOn, sameSubject } from "./parity";
 import { forecastIntersections, intersectionPlace, markDescription, marksForLesson, resolveFriendSchedules, type FriendMark } from "./intersections";
-import { composeSummary } from "./summary";
+import { composeSummary, onWeek, summaryCode, stripType, roomLabel } from "./summary";
 import { lessonsOfGroupTeacher, teacherCode, teacherRows, teacherWeek, type TeacherRow } from "./teachers";
 import { subgroupIndex, subgroupMark, visibleLessons } from "./subgroups";
 import { HOMEWORK_FILE_LIMIT, checkHomeworkFile, compressHomeworkPhoto, deleteHomeworkBlob, putHomeworkBlob, readHomeworkBlob } from "./homework-files";
@@ -37,7 +55,7 @@ import { selectedTopicAuthority } from "./topic-authority";
 import { topicAction } from "./topic-policy";
 import { useCommunityTimetable } from "./use-community-timetable";
 import { useApp } from "./store";
-import { absoluteDate, gapsBeforeLessons, hasLessonOverlap, heroLesson, localDay, minuteClock, nearbyHomework, personalHomeworkDue } from "./planner";
+import { absoluteDate, freeGaps, gapsBeforeLessons, hasLessonOverlap, heroLesson, localDay, minuteClock, nearbyHomework, personalHomeworkDue } from "./planner";
 import { homeworkCard, lessonFrom, placeCard } from "./cards";
 import { BallotBoardView } from "./ballots";
 import { GroupTopics, TopicMark } from "./topics";
@@ -49,6 +67,9 @@ import { Avatar, AvatarEditor } from "./avatar-view";
 import { ShareMenu } from "./share";
 import { Icon } from "./icons";
 import { MapViewer } from "./map-viewer";
+import { CampusRouteView } from "./campus-route-view";
+import type { CampusNode, CampusRoute } from "./campus-routing";
+import type { PublicMapAsset } from "./types";
 import { pairCount } from "./map-viewport";
 import { calendarWeek, currentSummarySegment, summaryDayDate, roomPlan, RequestEpoch } from "./ux-navigation";
 import { friendGroupChoice } from "./friend-group-choice";
@@ -125,6 +146,7 @@ export function SchedulePage() {
   const app = useApp();
   const navigate = useNavigate();
   const location = useLocation();
+  const online = useConnectivity();
   useEffect(() => { const day = localDay(new URLSearchParams(location.search).get("date") || ""); if (day) app.setDate(day); }, [location.search]);
   const cache = api.readCache();
   const ownTimetable = cache.lessons[app.groupId];
@@ -143,6 +165,8 @@ export function SchedulePage() {
   useEffect(() => { if (calendar) calendarRef.current?.focus(); }, [calendar]);
   const gaps = gapsBeforeLessons(lessons);
   const overlaps = overlapPairs(lessons);
+  const [exactTargetNote,setExactTargetNote]=useState('');
+  useEffect(()=>{const query=new URLSearchParams(location.search),key=query.get('rawTarget');setExactTargetNote('');if(!key||app.timetableLoading||query.get('date')!==isoDay(app.date))return;const at=query.get('group')===app.groupId&&app.timetableAvailable?exactLessonIndex(lessons,key):-1;if(at<0){setExactTargetNote('Пара изменилась или недоступна в текущей группе и подгруппе. Похожая пара не выбрана.');return;}const node=document.getElementById(`schedule-lesson-${at}`);node?.focus();node?.scrollIntoView({block:'center'});},[location.search,isoDay(app.date),app.groupId,app.subgroups,app.lessons,app.timetableLoading,app.timetableAvailable]);
   useEffect(()=>{const query=new URLSearchParams(location.search),time=query.get("time"),subject=query.get("subject");if(!time||!subject||!app.timetableAvailable)return;const at=lessons.findIndex(row=>row.timeStart===time&&sameSubject(row.subjectRaw,subject));if(at<0)return;const node=document.getElementById(`schedule-lesson-${at}`);node?.focus();node?.scrollIntoView({block:"center"});},[location.search,isoDay(app.date),app.timetableAvailable,app.lessons]);
   const hero = heroLesson(lessons, app.date, now);
   const friendSchedules = resolveFriendSchedules(app.friends, app.catalog?.groups || [], cache.lessons, ownTimetable);
@@ -153,6 +177,7 @@ export function SchedulePage() {
   const [sharedUndo,setSharedUndo]=useState<{id:string;done:boolean}|null>(null);
   const [sharedBusy,setSharedBusy]=useState(false);
   const [deadlineError,setDeadlineError]=useState("");
+  const [deadlineRetry, setDeadlineRetry] = useState(0);
   const sharedScopeKey = JSON.stringify([!!app.session?.authenticated, app.session?.user?.userId, app.groupId, homeworkCommunity]);
   const sharedRequests = useRef(new HomeworkRequestScope()).current;
   sharedRequests.scope(sharedScopeKey);
@@ -161,10 +186,10 @@ export function SchedulePage() {
   sharedOwnerRef.current = sharedOwnerKey;
   useEffect(() => { setSharedBusy(false); setSharedUndo(null); setDeadlineError(""); }, [sharedScopeKey]);
   useEffect(()=>{setSharedUndo(null);},[isoDay(app.date)]);
-  useEffect(() => { let stop = false; const owner = sharedOwnerKey; const current = () => !stop && sharedOwnerRef.current === owner; setSharedHomework([]); setSharedHomeworkOwner(owner); setHomeworkCommunity("");
-    if (app.session?.authenticated && app.groupId) void api.communities(app.groupId).then(rows => { const group=rows.find(row=>row.role); if(!group || !current()) return; setHomeworkCommunity(group.communityId); return api.groupHomework(group.communityId).then(items=>{if(current()){setSharedHomeworkOwner(owner);setSharedHomework(items);}}); }).catch(()=>undefined);
+  useEffect(() => { let stop = false; const owner = sharedOwnerKey; const current = () => !stop && sharedOwnerRef.current === owner; if(sharedHomeworkOwner!==owner){setSharedHomework([]);setSharedHomeworkOwner(owner);setHomeworkCommunity("");}
+    if (app.session?.authenticated && app.groupId) void api.communities(app.groupId).then(rows => { const group=rows.find(row=>row.role); if(!current())return;if(!group){setSharedHomework([]);setHomeworkCommunity("");return;} setHomeworkCommunity(group.communityId); return api.groupHomework(group.communityId).then(items=>{if(current()){setSharedHomeworkOwner(owner);setSharedHomework(items);setDeadlineError("");}}); }).catch(()=>{if(current())setDeadlineError("Общая домашка не обновилась. Личные сроки остаются доступны.");});
     return()=>{stop=true;};
-  }, [app.groupId,app.session?.user?.userId]);
+  }, [app.groupId,app.session?.user?.userId,deadlineRetry]);
   const personal = app.homework.map(item=>({...item,deadlineAt: period ? personalHomeworkDue(item,shown,period,app.invert)?.toISOString() ?? null : null}));
   const deadlines = nearbyHomework(personal, app.date, lessons.map(lesson => lesson.subjectRaw));
   const visibleSharedHomework = scopedValue(sharedHomework, sharedHomeworkOwner, sharedOwnerKey, []);
@@ -195,8 +220,8 @@ export function SchedulePage() {
   function actions(lesson: Lesson) {
     const context = new URLSearchParams({ subject: lesson.subjectRaw, date: isoDay(app.date), time: lesson.timeStart });
     return <div className="row lesson-actions">
-      <button className="btn primary" type="button" disabled={!lesson.roomRaw && !lesson.classroomRaw} title={!lesson.roomRaw && !lesson.classroomRaw ? "Аудитория не указана" : undefined}
-        onClick={() => { const room = lesson.roomRaw || lesson.classroomRaw || ""; navigate(`/maps?${context}&room=${encodeURIComponent(room)}&building=${encodeURIComponent(lesson.buildingRaw || "")}`); }}>Открыть карту</button>
+      <button className="btn primary" type="button" disabled={!lesson.roomRaw && !lesson.classroomRaw || /дистанц|онлайн/i.test(`${lesson.roomRaw||""} ${lesson.classroomRaw||""}`)} title={!lesson.roomRaw && !lesson.classroomRaw ? "Аудитория не указана" : undefined}
+        onClick={() => navigate(`/maps?${context}&${lessonMapContext(lesson)}`)}>Открыть карту</button>
       <Link className="btn" to={`/homework?${context}`}>Домашка</Link>
       <Link className="btn quiet" to={`/group?${context}`}>Обсудить</Link>
     </div>;
@@ -214,6 +239,7 @@ export function SchedulePage() {
     </Fragment>;
   }
   return <section className="page day-page">
+    {exactTargetNote&&<p className="banner" role="status">{exactTargetNote}</p>}
     {app.canUndoSubgroup&&<div className="banner row" role="status"><span>Выбор подгруппы изменён</span><button className="btn" type="button" onClick={app.undoSubgroup}>Отменить выбор подгруппы</button></div>}
     {overlaps.length>0&&<details className="banner"><summary>Совпадает время занятий · {overlaps.length}</summary>{overlaps.map(({left,right})=><div className="row" key={`${left}:${right}`}><span>{lessons[left].subjectRaw} {lessons[left].timeStart}–{lessons[left].timeEnd} · {lessons[right].subjectRaw} {lessons[right].timeStart}–{lessons[right].timeEnd}</span>{[left,right].map(index=><button key={index} className="btn quiet" type="button" onClick={()=>{const node=document.getElementById(`schedule-lesson-${index}`);node?.focus();node?.scrollIntoView({block:"center"});}}>К {lessons[index].timeStart}</button>)}</div>)}</details>}
     <Head title={isoDay(app.date) === isoDay(addDays(now, 2)) ? "Послезавтра" : dayTitle(app.date, now)} text={absoluteDate(app.date)}>
@@ -221,7 +247,10 @@ export function SchedulePage() {
       <button className="btn quiet" type="button" aria-expanded={calendar} onClick={() => setCalendar(value => !value)}><Icon name="calendar" />Календарь</button>
       <button className="icon-btn quiet" type="button" title="Следующий день" aria-label="Следующий день" onClick={() => app.setDate(addDays(app.date, 1))}><Icon name="right" /></button>
       <Link className="btn" to="/week">Неделя</Link>
+      {hero && <button className="btn quiet" onClick={() => focusElement(`schedule-lesson-${lessons.indexOf(hero)}`)}>К ближайшей паре</button>}
+      <button className="btn quiet" onClick={() => focusElement("schedule-deadlines")}>К срокам домашки</button>
     </Head>
+    {app.timetableAvailable&&<TimetableExportTools days={[{date:app.date,lessons,known:!outsidePeriod}]} groupId={app.groupId} groupName={groupName}/>}
     <div className="seg quick-days" aria-label="Быстрый выбор дня">{["Сегодня", "Завтра", "Послезавтра"].map((title, i) => <button type="button" key={title} aria-pressed={isoDay(app.date) === isoDay(addDays(now, i))} className={isoDay(app.date) === isoDay(addDays(now, i)) ? "active" : ""} onClick={() => app.setDate(addDays(now, i))}>{title}</button>)}</div>
     {calendar && <label className="field day-calendar">Выберите дату<input ref={calendarRef} type="date" value={isoDay(app.date)} onChange={event => { const value = localDay(event.target.value); if (value) app.setDate(value); }} /></label>}
     <div className="dates day-strip">{strip.map(date => {
@@ -232,17 +261,19 @@ export function SchedulePage() {
       <main className="stack swipe" {...swipe}>
         <div className="section-overview"><strong>{groupName || "Группа не выбрана"}</strong><span>{app.timetableAvailable ? `${pairCount(lessons.length)}${lessons.length ? ` · ${lessons[0].timeStart}–${lessons.at(-1)?.timeEnd}` : ""}` : "Нет данных"}</span>
           <button className="btn quiet" type="button" disabled={app.loading || app.timetableLoading} onClick={app.refresh}>{app.loading || app.timetableLoading ? "Обновляем…" : "Обновить"}</button></div>
-        {ownTimetable && <p className="schedule-cache muted">{!navigator.onLine ? "Нет сети · сохранённая копия" : app.timetableFailed ? "Не удалось обновить · сохранённая копия" : "Обновлено"} {new Date(ownTimetable.meta.fetchedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
+        {app.timetableAvailable && <p className="muted">Учебное время: {dayLoad(lessons).minutes} мин · Окна между парами: {dayLoad(lessons).gaps} мин</p>}
+        {app.timetableAvailable&&!outsidePeriod&&<StudyTransferCheck lessons={lessons}/>}
+        {ownTimetable && <p className="schedule-cache muted">{!online ? "Нет сети · сохранённая копия" : app.timetableFailed ? "Не удалось обновить · сохранённая копия" : "Обновлено"} {new Date(ownTimetable.meta.fetchedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
         {hasLessonOverlap(lessons) && <p className="banner">Записи пар пересекаются по времени. Проверьте выбранные подгруппы.</p>}
         {!app.timetableAvailable ? <div className="card empty"><p>{app.timetableLoading ? "Загружаем расписание" : app.groupId ? "Расписание не загружено. Нет сохранённой копии." : "Выберите учебную группу"}</p>{app.groupId ? <button className="btn" type="button" disabled={app.timetableLoading || app.loading} onClick={app.refresh}>{app.timetableLoading || app.loading ? "Загружаем…" : "Повторить загрузку"}</button> : <Link className="btn" to="/settings?section=study">Выбрать группу</Link>}</div>
           : outsidePeriod ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>Дата вне учебного периода</h2><p>Сохранённое расписание начинается {period && localDay(period.start.slice(0,10)) ? absoluteDate(localDay(period.start.slice(0,10))!) : "позже выбранной даты"}.</p></div> : lessons.length === 0 ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>В этот день пар нет</h2><p>{nextDate ? `Ближайшие занятия — ${absoluteDate(nextDate)}.` : "В ближайшие три недели в сохранённом расписании занятий нет."}</p>{nextDate && <button className="btn" type="button" onClick={() => app.setDate(nextDate)}>Открыть {nextDate.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}<Icon name="right" /></button>}</div>
           : <>{isoDay(app.date) === isoDay(now) && !hero && <p className="banner">Пары закончились</p>}{lessons.map(renderLesson)}</>}
       </main>
-      <aside className="stack day-context"><h2>Ближайшие сроки · {deadlines.length + sharedDeadlines.length}</h2><p className="muted">{app.date.toLocaleDateString("ru-RU")}–{addDays(app.date, 2).toLocaleDateString("ru-RU")}</p>
+      <aside id="schedule-deadlines" tabIndex={-1} className="stack day-context"><h2>Ближайшие сроки · {deadlines.length + sharedDeadlines.length}</h2><p className="muted">{app.date.toLocaleDateString("ru-RU")}–{addDays(app.date, 2).toLocaleDateString("ru-RU")}</p>
         {deadlines.length + sharedDeadlines.length === 0 && <p className="muted">На выбранные дни заданий нет</p>}
-        {deadlines.map(item => <article className="deadline" key={item.id}><label className="check"><input type="checkbox" checked={item.done} aria-label={`Готово у меня: ${item.text}`} onChange={() => { setSharedUndo(null); setUndo({ id: item.id, done: item.done }); app.saveHomework({ ...item, done: !item.done }); }} /><Link to={`/homework?id=${item.id}&subject=${encodeURIComponent(item.subject)}`}><span className={item.done ? "done-title" : ""}>{item.text}</span><small>{item.subject}</small></Link></label><p className="muted">{item.done ? "Готово у меня · " : ""}{item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}{!item.done && item.deadlineAt && Date.parse(item.deadlineAt) < now.getTime() ? " · Просрочено" : ""}</p></article>)}
+        {deadlines.map(item => <article className="deadline" key={item.id}><label className="check"><input type="checkbox" checked={item.done} aria-label={`Готово у меня: ${item.text}`} onChange={() => { const saved=app.homework.find(row=>row.id===item.id);if(!saved)return;setSharedUndo(null); setUndo({ id: saved.id, done: saved.done }); app.saveHomework({ ...saved, done: !saved.done }); }} /><Link to={`/homework?id=${item.id}&subject=${encodeURIComponent(item.subject)}`}><span className={item.done ? "done-title" : ""}>{item.text}</span><small>{item.subject}</small></Link></label><p className="muted">{item.done ? "Готово у меня · " : ""}{item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}{!item.done && item.deadlineAt && dueBucket(item.deadlineAt,now,"date")==="overdue" ? " · Просрочено" : ""}</p></article>)}
         {sharedDeadlines.map(item => { const copy = visibleSharedHomework.find(row => row.homeworkId === item.id); return <article className="deadline" key={item.id}><Link to={`/homework?sharedId=${encodeURIComponent(item.id)}&subject=${encodeURIComponent(item.subject)}`}><b>{item.text}</b></Link><p className="muted">{audienceLabel(copy?.audience)} · {item.subject} · {item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p>{copy?.canComplete !== false && <label className="check"><input type="checkbox" aria-label={`Готово у меня: ${item.text}`} checked={item.done} disabled={sharedBusy} onChange={() => { if (copy) void changeSharedCompletion(copy, !copy.completed); }} />Готово у меня</label>}</article>; })}
-        {deadlineError && <p role="alert">{deadlineError}</p>}
+        {deadlineError && <div className="banner" role="alert">{deadlineError}<button className="btn" onClick={() => setDeadlineRetry(value=>value+1)}>Обновить общую домашку</button></div>}
         {sharedUndo && <div className="banner row" role="status"><span>{sharedUndo.done ? "Отметка снята" : "Отмечено готово"}</span><button className="btn quiet" type="button" disabled={sharedBusy} onClick={()=>{ const item=visibleSharedHomework.find(row=>row.homeworkId===sharedUndo.id); if (item) void changeSharedCompletion(item, sharedUndo.done, true); }}>Отменить</button></div>}
         {undo && <div className="banner row" role="status"><span>{!undo.done ? "Отмечено готово" : "Отметка снята"}</span><button className="btn quiet" type="button" onClick={() => { const item = app.homework.find(row => row.id === undo.id); if (item) app.saveHomework({ ...item, done: undo.done }); setUndo(null); }}>Отменить</button></div>}
         <Link className="btn" to="/homework">Вся домашка</Link>
@@ -255,12 +286,15 @@ export function SchedulePage() {
 export function WeekPage() {
   const app = useApp();
   const navigate = useNavigate();
+  const [query, setQuery] = useBrowseValue("week-query","");
+  const [hideEmpty, setHideEmpty] = useBrowseValue("week-hide-empty",false);
   const period = api.readCache().lessons[app.groupId]?.period || app.catalog?.period;
   const shown = useMemo(() => visibleLessons(app.lessons, app.subgroups[app.groupId] || {}), [app.lessons, app.subgroups, app.groupId]);
   const days = calendarWeek(app.date);
   const monday = days[0];
-  const weekDays = days.map(date => ({ date, lessons: period ? lessonsOn(shown, date, period.start, period.weekCount, app.invert) : [] }));
+  const weekDays = days.map(date => ({ date, known: !!period && isoDay(date)>=period.start.slice(0,10), lessons: period && isoDay(date)>=period.start.slice(0,10) ? lessonsOn(shown, date, period.start, period.weekCount, app.invert) : [] }));
   const weekTotal = weekDays.reduce((total, day) => total + day.lessons.length, 0);
+  const visibleDays = weekDays.map(day=>({...day, matches:day.lessons.filter(lesson=>noteSearch(query,lesson.subjectRaw,lesson.teacherRaw||"",lesson.roomRaw||"",lesson.classroomRaw||"",lesson.typeRaw||""))})).filter(day=>(!hideEmpty || !day.known || day.lessons.length>0) && (!query.trim() || day.matches.length>0));
   const swipe = useSwipe(() => app.setDate(addDays(app.date, 7)), () => app.setDate(addDays(app.date, -7)), isoDay(app.date));
   const dateReveal = useDateReveal(isoDay(monday));
   return (
@@ -271,22 +305,29 @@ export function WeekPage() {
         <button className="icon-btn" type="button" aria-label="Следующая неделя" onClick={() => app.setDate(addDays(app.date, 7))}><Icon name="right" /></button>
       </Head>
       <TimetableState />
+      <SearchField label="Найти пару на этой неделе" value={query} onChange={setQuery}/><label className="check"><input type="checkbox" checked={hideEmpty} onChange={event=>setHideEmpty(event.target.checked)}/>Скрыть дни без пар</label><div className="row"><label className="field">Неделя по дате<input type="date" value={isoDay(app.date)} onChange={event=>{const date=localDay(event.target.value);if(date)app.setDate(date);}}/></label>{weekDays.some(day=>day.lessons.length>0)&&<button className="btn" onClick={()=>{const first=weekDays.find(day=>day.lessons.length>0)!;app.setDate(first.date);navigate(`/schedule?date=${isoDay(first.date)}`);}}>Первый учебный день</button>}</div>
+      {app.timetableAvailable && visibleDays.length===0 && <FilterEmpty onReset={()=>{setQuery("");setHideEmpty(false);}}/>}
       {app.timetableAvailable && period && <div className="section-overview">
         <strong>Пар за неделю: {weekTotal}</strong>
         <span>{monday.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })} — {days[6].toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</span>
       </div>}
+      {app.timetableAvailable&&<TimetableExportTools days={weekDays} groupId={app.groupId} groupName={app.catalog?.groups.find(group=>group.id===app.groupId)?.name||app.groupId}/>}
+      <WeekComparison lessons={shown} date={app.date} period={period} invert={app.invert} available={app.timetableAvailable}/>
+      <AssessmentPlanner key={'assessments'+studyOwner(app)}/>
+      <RecentWeekChanges key={'changes'+studyOwner(app)+isoDay(monday)}/>
+      {!app.privateHomework.readFailed?<WeekHomework items={app.homework} days={days} dateOf={item=>{const due=app.timetableAvailable&&period?personalHomeworkDue(item,shown,period,app.invert):null;return due?isoDay(due):null;}}/>:<p role="status">Личные сроки недоступны: сохранённые задания не удалось прочитать.</p>}
       <p className="swipe-hint">Смахните, чтобы сменить неделю</p>
       <div className="week swipe date-reveal" {...swipe} ref={node => { swipe.ref(node); dateReveal.current = node; }}>
-        {weekDays.map(({ date, lessons: dayLessons }) => (
+        {visibleDays.map(({ date, matches: dayLessons, lessons: originalLessons, known }) => (
           <article className="card" key={isoDay(date)} aria-current={isoDay(date) === isoDay(new Date()) ? "date" : undefined}>
-            <h2 className="week-day-head">{dayTitle(date)} <span className="muted">{date.getDate()}</span>{app.timetableAvailable && <span className="chip">Пар: {dayLessons.length}</span>}</h2>
+            <h2 className="week-day-head">{dayTitle(date)} <span className="muted">{date.getDate()}</span>{app.timetableAvailable && <span className="chip">{known?`Пар: ${dayLessons.length}`:"Нет данных"}</span>}</h2>
             {isoDay(date) === isoDay(new Date()) && <span className="chip">Сегодня</span>}
             <button className="btn" type="button" onClick={() => { app.setDate(date); navigate(`/schedule?date=${isoDay(date)}`); }}>Открыть день</button>
-            <div className="stack">
+            {known&&<p className="muted">Учебное время: {dayLoad(originalLessons).minutes} мин</p>}{freeGaps(originalLessons).map(gap=><p className="free-gap" key={gap.start}>Окно {minuteClock(gap.start)}–{minuteClock(gap.end)} · {gap.duration} мин</p>)}<div className="stack">
               {dayLessons.map(lesson => (
-                <div key={lesson.timeStart + lesson.subjectRaw + (lesson.teacherRaw || "")}><b>{lesson.timeStart}</b> {lesson.subjectRaw}<div className="muted">{lesson.roomRaw}</div></div>
+                <div key={lesson.timeStart + lesson.subjectRaw + (lesson.teacherRaw || "")}><b>{lesson.timeStart}–{lesson.timeEnd}</b> {lesson.subjectRaw}<div className="muted">{roomLabel(lesson)} · {lesson.teacherRaw}</div><div className="row"><Link className="btn quiet" to={`/schedule?date=${isoDay(date)}&time=${lesson.timeStart}&subject=${encodeURIComponent(lesson.subjectRaw)}`} onClick={()=>app.setDate(date)}>Открыть пару</Link><Link className="btn quiet" to={`/homework?date=${isoDay(date)}&subject=${encodeURIComponent(lesson.subjectRaw)}`}>Домашка</Link>{lesson.classroomRaw && <Link className="btn quiet" to={`/maps?date=${isoDay(date)}&time=${lesson.timeStart}&subject=${encodeURIComponent(lesson.subjectRaw)}&${lessonMapContext(lesson)}`}>Карта</Link>}</div></div>
               ))}
-              {app.timetableAvailable && period && dayLessons.length === 0 && <span className="muted">Нет пар</span>}
+              {app.timetableAvailable && period && dayLessons.length === 0 && <span className="muted">{known ? "Нет пар" : "Дата вне известного периода"}</span>}
             </div>
           </article>
         ))}
@@ -310,11 +351,20 @@ export function SummaryPage() {
   const navigate = useNavigate();
   const period = api.readCache().lessons[app.groupId]?.period || app.catalog?.period;
   const [chosenSegment, setSegment] = useState<number | null>(null);
+  const [detail, setDetail] = useState<{title:string;rows:Lesson[]} | null>(null);
   const segment = chosenSegment ?? (period ? currentSummarySegment(new Date(), period) : 0);
   const summary = useMemo(
     () => composeSummary(app.lessons, app.subgroups[app.groupId] || {}, segment, app.invert),
     [app.lessons, app.subgroups, app.groupId, segment, app.invert],
   );
+  const source = visibleLessons(app.lessons,app.subgroups[app.groupId]||{}).filter(lesson=>onWeek(lesson.parity,summaryCode(segment,app.invert)));
+  function inspect(title:string, matches:(lesson:Lesson)=>boolean) { setDetail({title,rows:source.filter(matches)}); }
+  function openLesson(lesson:Lesson) {
+    if(!period)return;
+    const date=Array.from({length:56},(_,i)=>addDays(new Date(),i)).find(date=>lessonsOn([lesson],date,period.start,period.weekCount,app.invert).length>0);
+    if(date){app.setDate(date);navigate(`/schedule?date=${isoDay(date)}&time=${lesson.timeStart}&subject=${encodeURIComponent(lesson.subjectRaw)}`);}
+  }
+  useEffect(()=>setDetail(null),[app.groupId,segment]);
   return (
     <section className="page summary-page">
       <Head title="Сводка" text={app.groupId ? "Сколько пар в выбранной группе" : "Группа не выбрана"} />
@@ -337,28 +387,39 @@ export function SummaryPage() {
           </article>
           <CountCard title="По дням" rows={summary.byDay} onPick={index => { if (!period) return; const date = summaryDayDate(new Date(), period, segment, app.invert, index + 1); app.setDate(date); navigate(`/schedule?date=${isoDay(date)}`); }} />
           <CountCard title="По типам" rows={summary.byType} />
-          <CountCard title="По предметам" rows={summary.bySubject} />
-          <CountCard title="По преподавателям" rows={summary.byTeacher} />
-          <CountCard title="По аудиториям" rows={summary.byRoom} empty="Аудитории не указаны" />
+          <CountCard title="По предметам" rows={summary.bySubject} onSelect={name=>inspect(name,lesson=>stripType(lesson.subjectRaw,lesson.typeRaw).toLocaleLowerCase("ru")===name.toLocaleLowerCase("ru"))}/>
+          <CountCard title="По преподавателям" rows={summary.byTeacher} onSelect={name=>inspect(name,lesson=>(lesson.teacherRaw||"").split(";").some(part=>part.trim().toLocaleLowerCase("ru")===name.toLocaleLowerCase("ru")))}/>
+          <CountCard title="По аудиториям" rows={summary.byRoom} empty="Аудитории не указаны" onSelect={name=>inspect(name,lesson=>roomLabel(lesson).toLocaleLowerCase("ru")===name.toLocaleLowerCase("ru"))}/>
+          {detail && <div className="card stack"><h2>{detail.title} · занятий: {detail.rows.length}</h2><button className="btn quiet" onClick={()=>setDetail(null)}>Закрыть подробности</button>{detail.rows.map((lesson,index)=><div className="row" key={index}><span>{["","Пн","Вт","Ср","Чт","Пт","Сб","Вс"][lesson.dayOfWeek]} {lesson.timeStart}–{lesson.timeEnd} · {lesson.subjectRaw} · {roomLabel(lesson)}</span><button className="btn" onClick={()=>openLesson(lesson)}>Открыть ближайшую пару</button></div>)}</div>}
         </div>
       ) : null}
     </section>
   );
 }
 
-function CountCard({ title, rows, empty, onPick }: { title: string; rows: { name: string; count: number }[]; empty?: string; onPick?: (index: number) => void }) {
+function CountCard({ title, rows, empty, onPick, onSelect }: { title: string; rows: { name: string; count: number }[]; empty?: string; onPick?: (index: number) => void; onSelect?: (name:string)=>void }) {
   const largest = Math.max(1, ...rows.map(row => row.count));
+  const [query,setQuery]=useState("");
+  const [order,setOrder]=useState<"original"|"name"|"count">("original");
+  const [expanded,setExpanded]=useState(false);
+  const days=title==="По дням";
+  const filtered=summaryRows(rows,query,order);
+  const visible=expanded||days||query.trim()?filtered:filtered.slice(0,5);
   return (
     <article className="card stack summary-count-card">
       <h2>{title}</h2>
+      {!days && rows.length>1 && <><SearchField label={`Поиск: ${title.toLocaleLowerCase("ru")}`} value={query} onChange={setQuery}/><label className="field">Порядок<select value={order} onChange={event=>setOrder(event.target.value as typeof order)}><option value="original">Как в сводке</option><option value="name">По названию</option><option value="count">По количеству</option></select></label></>}
       {rows.length === 0 && <p className="muted">{empty ?? "В выбранном расписании занятий нет."}</p>}
-      {rows.map((row, index) => (
+      {visible.map(row => (
         <div className="summary-count-row" key={title + row.name}>
           <div className="count"><span>{row.name}</span><b>{row.count}</b></div>
-          {onPick && <button className="btn quiet" type="button" onClick={() => onPick(index)}>Открыть {row.name.toLocaleLowerCase("ru")}</button>}
+          {onPick && <button className="btn quiet" type="button" onClick={() => onPick(rows.indexOf(row))}>Открыть {row.name.toLocaleLowerCase("ru")}</button>}
+          {onSelect && <button className="btn quiet" onClick={()=>onSelect(row.name)}>Показать занятия</button>}
           <div className="summary-count-track" aria-hidden="true"><span style={{ width: `${row.count / largest * 100}%` }} /></div>
         </div>
       ))}
+      {query && filtered.length===0 && <FilterEmpty onReset={()=>setQuery("")}/>}
+      {!days && !query && rows.length>5 && <button className="btn quiet" aria-expanded={expanded} onClick={()=>setExpanded(value=>!value)}>{expanded?"Свернуть":`Показать все · ${rows.length}`}</button>}
     </article>
   );
 }
@@ -372,22 +433,27 @@ export function TeachersPage() {
 
 function TeachersContent() {
   const app = useApp();
+  const location = useLocation();
   const teacherAlive=useRef(true);
   useEffect(()=>{teacherAlive.current=true;return()=>{teacherAlive.current=false;};},[]);
   const navigate=useNavigate();
   const teacherPeriod=api.readCache().lessons[app.groupId]?.period||app.catalog?.period;
-  const [query, setQuery] = useState("");
-  const [onlyMine, setOnlyMine] = useState(true);
+  const [query, setQuery] = useBrowseValue("teacher-query","");
+  const [onlyMine, setOnlyMine] = useBrowseValue("teacher-mine",true);
   const [catalog, setCatalog] = useState<Teacher[]>([]);
   const [selected, setSelected] = useState<TeacherRow | null>(null);
   const [lessons, setLessons] = useState<TeacherLesson[]>([]);
-  const [filter, setFilter] = useState(0);
+  const [filter, setFilter] = useBrowseValue("teacher-week",0);
+  const [myLessonsOnly, setMyLessonsOnly] = useState(false);
+  const [department, setDepartment] = useBrowseValue("teacher-department","");
+  const [collapsedDays,setCollapsedDays]=useState<number[]>([]);
   const [error, setError] = useState("");
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogRetry, setCatalogRetry] = useState(0);
   const [detailError, setDetailError] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
   const requests = useRef(new RequestEpoch()).current;
+  const requestedTeacher = useRef<string|null>(null);
   const groupName = app.catalog?.groups.find(group => group.id === app.groupId)?.name || "";
   useEffect(() => { let stopped = false; setCatalogLoading(true); setError("");
     api.loadTeachers().then(data => { if (!stopped) setCatalog(data.lecturers || []); })
@@ -399,13 +465,24 @@ function TeachersContent() {
     () => visibleLessons(app.lessons, app.subgroups[app.groupId] || {}),
     [app.lessons, app.subgroups, app.groupId],
   );
-  const found = useMemo(() => teacherRows(catalog, attended, query, onlyMine), [catalog, attended, query, onlyMine]);
+  const found = useMemo(() => { const result=teacherRows(catalog, attended, query, onlyMine); return {...result,rows:department?result.rows.filter(row=>catalog.find(teacher=>teacher.id===row.id)?.kafedra===department):result.rows}; }, [catalog, attended, query, onlyMine, department]);
   const week = useMemo(
-    () => teacherWeek(lessons, teacherCode(filter, app.invert), app.groupId, groupName, app.invert),
-    [lessons, filter, app.invert, app.groupId, groupName],
+    () => teacherWeek(lessons, teacherCode(filter, app.invert), app.groupId, groupName, app.invert).map(day=>({...day,rows:day.rows.filter(row=>!myLessonsOnly || row.mine)})).filter(day=>day.rows.length>0),
+    [lessons, filter, app.invert, app.groupId, groupName, myLessonsOnly],
   );
   const teacherWeekTotal = week.reduce((total, day) => total + day.rows.length, 0);
-  async function open(row: TeacherRow) {
+  useEffect(()=>{
+    const id=new URLSearchParams(location.search).get("teacher");
+    if(!id){requests.invalidate();requestedTeacher.current=null;setSelected(null);setLessons([]);setDetailLoading(false);setDetailError("");return;}
+    if(requestedTeacher.current===id)return;
+    const row=teacherRows(catalog,attended,"",false).rows.find(row=>row.id===id);
+    if(row){void open(row,false);return;}
+    requests.invalidate();requestedTeacher.current=null;setSelected(null);setLessons([]);setDetailLoading(false);
+    setDetailError(catalogLoading?"":"Преподаватель по ссылке не найден. Выберите его в списке или повторите загрузку каталога.");
+  },[location.search,catalog,attended,catalogLoading]);
+  async function open(row: TeacherRow, route = true) {
+    if(route && new URLSearchParams(location.search).get("teacher")!==row.id){const params=new URLSearchParams(location.search);params.set("teacher",row.id);navigate({pathname:location.pathname,search:params.toString()});return;}
+    requestedTeacher.current=row.id;
     const current = requests.begin(row.id);
     const sameTeacher = selected?.id === row.id;
     setSelected(row);
@@ -421,9 +498,10 @@ function TeachersContent() {
   return (
     <section className="page teachers-page">
       <Head title="Преподаватели" text={selected ? selected.name : error || "Поиск по фамилии или предмету"} />
+      {!selected&&detailError&&<p className="banner" role="status">{detailError}</p>}
       {selected ? (
         <div className="stack">
-          <button className="btn teacher-back" type="button" onClick={() => { requests.invalidate(); setSelected(null); setDetailLoading(false); }}>Назад</button>
+          <button className="btn teacher-back" type="button" onClick={() => { requests.invalidate(); setSelected(null); setDetailLoading(false); const params=new URLSearchParams(location.search);params.delete("teacher");navigate({pathname:location.pathname,search:params.toString()},{replace:true}); }}>Назад</button>
           {detailLoading && <p className="muted" role="status">Загружаем расписание преподавателя…</p>}
           {detailError && <div className="banner row" role="status"><span>{detailError}</span>{!selected.id.startsWith("group:") && <button className="btn" type="button" disabled={detailLoading} onClick={() => void open(selected)}>Повторить</button>}</div>}
           <div className="card teacher-profile"><span className="muted">Преподаватель</span><h2>{selected.name}</h2><p className="muted">{selected.detail}</p></div>
@@ -433,16 +511,19 @@ function TeachersContent() {
             ))}
           </div>
           <div className="section-overview"><strong>Пар в выбранной неделе: {teacherWeekTotal}</strong><span>{teacherFilters[filter]}</span></div>
+          <label className="check"><input type="checkbox" checked={myLessonsOnly} onChange={event=>setMyLessonsOnly(event.target.checked)}/>Только пары моей группы</label>{myLessonsOnly && teacherWeekTotal===0 && <button className="btn" onClick={()=>setMyLessonsOnly(false)}>Показать все группы</button>}
           {!detailLoading && teacherWeekTotal === 0 && <div className="card empty"><p>{detailError ? "В доступной копии занятий для этой недели нет." : "В выбранной неделе занятий нет."}</p>{filter !== 0 && <button className="btn" type="button" onClick={() => setFilter(0)}>Показать обе недели</button>}</div>}
           {week.map(day => (
             <article className="card stack" key={day.day}>
               <h2>{day.title}{teacherPeriod&&` · ${nextTeacherDay(new Date(),day.day,teacherCode(filter,app.invert),teacherPeriod,app.invert)?.toLocaleDateString("ru-RU")||""}`}</h2>
-              {day.rows.map((row, index) => (
+              <button className="btn quiet" aria-expanded={!collapsedDays.includes(day.day)} onClick={()=>setCollapsedDays(values=>values.includes(day.day)?values.filter(value=>value!==day.day):[...values,day.day])}>{collapsedDays.includes(day.day)?`Показать пары · ${day.rows.length}`:"Свернуть день"}</button>
+              {!collapsedDays.includes(day.day) && day.rows.map((row, index) => (
                 <div className="teacher-lesson-row" key={day.day + row.time + row.subject + index}>
                   <div className="time">{row.time}</div>
                   <strong className="subject">{row.subject}</strong>
                   {row.groups && <div className="muted">{row.groups}</div>}
                   <div className="muted">{row.room}</div>
+                  {row.room && !/дистанционно/i.test(row.room) && <Link className="btn quiet" to={`/maps?${lessonMapContext(row)}&subject=${encodeURIComponent(row.subject)}`}>Открыть аудиторию</Link>}
                   <div>{row.parityLabel}</div>
                   {row.mine && <div>Моя группа {teacherPeriod&&<button className="btn quiet" type="button" onClick={()=>{if(!teacherAlive.current)return;const date=nextTeacherDay(new Date(),day.day,row.parity,teacherPeriod,app.invert);if(date){app.setDate(date);navigate(`/schedule?date=${isoDay(date)}`);}}}>Открыть день своей группы</button>}</div>}
                 </div>
@@ -454,7 +535,7 @@ function TeachersContent() {
         <div className="stack">
           {catalogLoading && <p className="muted" role="status">Загружаем каталог преподавателей…</p>}
           {error && <div className="banner row" role="status"><span>{error}</span><button className="btn" type="button" disabled={catalogLoading} onClick={() => setCatalogRetry(value => value + 1)}>Повторить</button></div>}
-          <div className="card teacher-filter-card"><div className="teacher-search-bar">
+          <div className="card teacher-filter-card"><label className="field">Кафедра<select value={department} onChange={event=>setDepartment(event.target.value)}><option value="">Все кафедры</option>{[...new Set(catalog.map(row=>row.kafedra).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ru")).map(value=><option key={value}>{value}</option>)}</select></label><div className="teacher-search-bar">
             <input className="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Фамилия или предмет" aria-label="Поиск преподавателя" />
             {!!query.trim() && <button className="btn" type="button" onClick={() => setQuery("")}>Сбросить поиск</button>}
           </div>
@@ -489,6 +570,11 @@ export function MapsPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
+  const [graphAsset,setGraphAsset]=useState<PublicMapAsset|null>(null);
+  const [routeOpen,setRouteOpen]=useState(false);
+  const [route,setRoute]=useState<CampusRoute|null>(null);
+  const [marker,setMarker]=useState<(CampusNode&{nonce:number})|null>(null);
+  const [recentPlans,setRecentPlans]=useBrowseValue<string[]>("map-recent-plans",[]);
   useEffect(() => {
     let stop = false;
     setLoading(true);
@@ -496,6 +582,7 @@ export function MapsPage() {
     api.loadMaps().then(data => {
       if (stop) return;
       setPlans(data.maps);
+      setGraphAsset(data.graph??null);
       const building = sessionStorage.getItem("zapara.map.building");
       const floor = sessionStorage.getItem("zapara.map.floor");
       setPlan(current => roomPlan(data.maps, mapContext.get("room") || "", mapContext.get("building") || "") || data.maps.find(item => item.id === current?.id) || data.maps.find(item => item.building === building && String(item.floor) === floor) || data.maps.find(item => item.building === building) || data.maps[0] || null);
@@ -504,6 +591,8 @@ export function MapsPage() {
     return () => { stop = true; };
   }, [retry, location.search]);
   useEffect(() => { if (plan) { sessionStorage.setItem("zapara.map.building", plan.building); sessionStorage.setItem("zapara.map.floor", String(plan.floor)); } }, [plan?.id]);
+  useEffect(()=>{if(plan)setRecentPlans(values=>[plan.id,...values.filter(id=>id!==plan.id)].slice(0,6));},[plan?.id]);
+  function revealPlace(node:CampusNode){const target=plans.find(plan=>plan.building===node.building&&plan.floor===node.floor);if(target){setPlan(target);setMarker({...node,nonce:Date.now()});}}
   const buildings = [...new Set(plans.map(item => item.building))];
   const floors = plans.filter(item => item.building === plan?.building).sort((a, b) => a.floor - b.floor);
   const floorAt = floors.findIndex(item => item.id === plan?.id);
@@ -516,14 +605,18 @@ export function MapsPage() {
   return (
     <section className="page maps-page">
       <Head title="Карты" text="Планы корпусов Военмеха">
-        {contextDate && <Link className="btn quiet" to={`/schedule?date=${isoDay(contextDate)}`} onClick={() => app.setDate(contextDate)}>К выбранному дню</Link>}
+        {contextDate && <Link className="btn quiet" to={`/schedule?date=${isoDay(contextDate)}&subject=${encodeURIComponent(mapContext.get("subject")||"")}&time=${encodeURIComponent(mapContext.get("time")||"")}`} onClick={() => app.setDate(contextDate)}>К выбранной паре</Link>}
         <ShareMenu card={plan ? placeCard(plan.building, String(plan.floor), "", `${plan.building}, ${plan.floor} этаж`) : null} label="Этаж в чат" />
       </Head>
-      {(mapContext.get("subject") || mapContext.get("room")) && <div className="map-context"><Icon name="pin" /><div><strong>{mapContext.get("room") ? `Аудитория ${mapContext.get("room")}` : "Аудитория не указана"}</strong><p>{[mapContext.get("subject"), contextDate ? absoluteDate(contextDate) : null, mapContext.get("time")].filter(Boolean).join(" · ")}</p><small>Найдите аудиторию на плане выбранного этажа.</small></div></div>}
+      {(mapContext.get("subject") || mapContext.get("room")) && <div className="map-context"><Icon name="pin" /><div><strong>{mapContext.get("room") ? `Аудитория ${mapContext.get("room")}` : "Аудитория не указана"}</strong><p>{[mapContext.get("subject"), contextDate ? absoluteDate(contextDate) : null, mapContext.get("time")].filter(Boolean).join(" · ")}</p><small>{/дистанц|онлайн/i.test(mapContext.get("room")||"")?"Дистанционное занятие — карта аудитории не требуется.":roomPlan(plans,mapContext.get("room")||"",mapContext.get("building")||"")?"Найдите аудиторию на плане выбранного этажа.":"План этой аудитории не распознан. Выберите корпус и этаж вручную ниже."}</small></div></div>}
       {error && <p className="banner" role="alert">{error}</p>}
+      {graphAsset&&<RoomActivity key={'room-activity'+studyOwner(app)} asset={graphAsset} onMark={revealPlace}/>}
+      {graphAsset && <button className="btn" aria-expanded={routeOpen} onClick={()=>setRouteOpen(value=>!value)}>{routeOpen?"Скрыть маршрут":"Построить маршрут по кампусу"}</button>}
+      {graphAsset&&routeOpen&&<CampusRouteView key={JSON.stringify([app.session?.user?.userId||"guest",app.session?.familyId||"",app.groupId])} asset={graphAsset} plan={plan} plans={plans} classroom={routeClassroom(mapContext.get("classroom"),mapContext.get("room"),mapContext.get("building"))} onPlan={setPlan} onMark={revealPlace} onRoute={setRoute}/>}
+      {recentPlans.length>1&&<details><summary>Недавно просмотренные этажи</summary><div className="row">{recentPlans.map(id=>plans.find(row=>row.id===id)).filter((row):row is MapPlan=>!!row).map(row=><button className="btn quiet" key={row.id} onClick={()=>setPlan(row)}>{row.building} · {row.floor} этаж</button>)}</div></details>}
       {!mapContext.get("room") && <div className="card row"><span className="muted">{!app.groupId ? "Группа не выбрана. Корпус и этаж можно выбрать вручную." : !app.timetableAvailable ? "Расписание ещё не загружено. Доступен ручной выбор плана." : !upcoming ? "Сегодня предстоящих занятий нет. Планы доступны ниже." : automatic ? `Ближайшая пара: ${upcoming.roomRaw || upcoming.classroomRaw}` : "Для аудитории ближайшей пары подходящий план не найден. Выберите его вручную."}</span>{!app.groupId && <Link className="btn" to="/settings?section=study">Выбрать группу</Link>}{automatic && <button className="btn" type="button" onClick={() => setPlan(automatic)}>К ближайшей паре</button>}</div>}
       <div className="map-tools map-selectors" role="group" aria-label="Выбор корпуса и этажа">
-        {buildings.length > 0 && <div className="seg" role="group" aria-label="Корпус">{buildings.map(building => <button key={building} className={plan?.building === building ? "active" : ""} aria-pressed={plan?.building === building} type="button" onClick={() => setPlan(plans.find(item => item.building === building) || null)}>{building}</button>)}</div>}
+        {buildings.length > 0 && <div className="seg" role="group" aria-label="Корпус">{buildings.map(building => <button key={building} className={plan?.building === building ? "active" : ""} aria-pressed={plan?.building === building} type="button" onClick={() => setPlan(chooseBuildingPlan(plans,building,plan?.floor))}>{building}</button>)}</div>}
         {floors.length > 0 && <div className="map-floors" role="group" aria-label="Этаж"><span className="muted">Этаж</span>{floors.map(item => (
           <button key={item.id} className={"icon-btn" + (item.id === plan?.id ? " selected" : "")} aria-label={`${item.floor} этаж`} aria-pressed={item.id === plan?.id} type="button" onClick={() => setPlan(item)}>{item.floor}</button>
         ))}</div>}
@@ -532,7 +625,7 @@ export function MapsPage() {
         <button className="btn" type="button" disabled={floorAt <= 0} onClick={() => floorAt > 0 && setPlan(floors[floorAt - 1])}><Icon name="down" size={16} />Ниже</button>
         <button className="btn" type="button" disabled={floorAt < 0 || floorAt >= floors.length - 1} onClick={() => floorAt >= 0 && floorAt < floors.length - 1 && setPlan(floors[floorAt + 1])}><Icon name="up" size={16} />Выше</button>
       </div>
-      {plan ? <><h2 className="map-plan-title">{plan.building} · {plan.floor} этаж</h2><MapViewer plan={plan} onNextFloor={() => { if (floorAt >= 0 && floorAt < floors.length - 1) setPlan(floors[floorAt + 1]); }} onPreviousFloor={() => { if (floorAt > 0) setPlan(floors[floorAt - 1]); }} /></> : <div className="map-frame"><div className="map-status" role="status"><Icon name="map" size={32} /><h2>{loading ? "Загружаем карты" : error ? "Карты недоступны" : "Планов пока нет"}</h2></div></div>}
+      {plan ? <><h2 className="map-plan-title">{plan.building} · {plan.floor} этаж</h2><MapViewer plan={plan} marker={marker?.building===plan.building&&marker.floor===plan.floor?marker:null} lines={route?.legs.filter(leg=>leg.building===plan.building&&leg.floor===plan.floor).map(leg=>leg.points)} onRestorePlan={setPlan} onNextFloor={() => { if (floorAt >= 0 && floorAt < floors.length - 1) setPlan(floors[floorAt + 1]); }} onPreviousFloor={() => { if (floorAt > 0) setPlan(floors[floorAt - 1]); }} /></> : <div className="map-frame"><div className="map-status" role="status"><Icon name="map" size={32} /><h2>{loading ? "Загружаем карты" : error ? "Карты недоступны" : "Планов пока нет"}</h2></div></div>}
       {error && <button className="btn primary" type="button" onClick={() => setRetry(value => value + 1)}>Повторить</button>}
     </section>
   );
@@ -545,6 +638,12 @@ export function FriendsPage() {
   const [members, setMembers] = useState("");
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [groupQuery,setGroupQuery]=useBrowseValue("friends-groupQuery","");
+  const [groupFilter,setGroupFilter]=useBrowseValue("friends-groupFilter","all");
+  const [encounterGroup,setEncounterGroup]=useBrowseValue("friends-encounterGroup","");
+  const [encounterDate,setEncounterDate]=useBrowseValue("friends-encounterDate","");
+  const [allEncounters,setAllEncounters]=useState(false);
+  const [failedGroups,setFailedGroups]=useState<string[]>([]);
   const [, setCacheRevision] = useState(0);
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -560,10 +659,11 @@ export function FriendsPage() {
     ? forecastIntersections({
       mineLessons: visibleLessons(app.lessons, app.subgroups[app.groupId] || {}),
       friends: schedules, period, invert: app.invert,
-      strictness: app.intersectionStrictness, now,
+      strictness: app.intersectionStrictness, now, limit:100,
     }) : null;
   const activeCount = app.friends.filter(friend => friend.enabled).length;
   const missingCount = forecast?.missingGroups.length || 0;
+  const encounters=(forecast?.encounters||[]).filter(row=>(!encounterGroup||row.friendGroupName===encounterGroup)&&(!encounterDate||isoDay(row.date)===encounterDate));
   const palette = ["#F2A33C", "#4CC38A", "#5AA9FF", "#C77DFF", "#FF7A9C"];
   function knownGroup(value: string) {
     return groups.find(group => group.id === value.trim() || group.name.toLocaleLowerCase("ru-RU") === value.trim().toLocaleLowerCase("ru-RU"));
@@ -593,6 +693,7 @@ export function FriendsPage() {
     setError("");
     const names = app.friends.filter(friend => friend.enabled).map(friend => friend.groupName);
     const outcomes = await Promise.all(names.map(updateFriendTimetable));
+    setFailedGroups(names.filter((_,index)=>!outcomes[index]));
     if (outcomes.some(ok => !ok)) setError("Не все расписания удалось обновить. Сохранённые копии остаются доступны.");
     setRefreshing(false);
   }
@@ -634,8 +735,9 @@ export function FriendsPage() {
         <label className="check"><input type="checkbox" checked={app.showAbsentFriends} onChange={event => app.setShowAbsentFriends(event.target.checked)} />
           <span>Показывать и группы без совпадения<span className="muted"> — в карточках пар будет виден уровень встречи или её отсутствие</span></span></label>
       </div>
+      <CommonFreeTime mine={visibleLessons(app.lessons,app.subgroups[app.groupId]||{})} friends={schedules} period={period} date={app.date} onDate={app.setDate} invert={app.invert} known={!!ownTimetable&&app.timetableAvailable}/>
       <div className="intersection-forecast-head row">
-        <div><h2>Ближайшие пересечения</h2><p className="sub">До трёх встреч на ближайшие 14 дней</p></div>
+        <div><h2>Ближайшие пересечения</h2><p className="sub">До 100 совпадений на ближайшие 14 дней по доступным расписаниям</p></div>
         {activeCount > 0 && <button className="btn" type="button" disabled={refreshing} onClick={() => void refreshFriends()}>
           <Icon name="refresh" size={16} />{refreshing ? "Обновляем…" : "Обновить расписания"}</button>}
       </div>
@@ -645,8 +747,11 @@ export function FriendsPage() {
       {!!forecast && activeCount === 0 && <div className="card empty">Включите группу друзей или добавьте новую, чтобы увидеть пересечения.</div>}
       {!!forecast && activeCount > 0 && forecast.encounters.length === 0 &&
         <div className="card empty">{forecast.checkedGroups === 0 ? "Совместимые расписания групп друзей ещё не загружены." : "По выбранной точности встреч в ближайшие две недели не найдено."}</div>}
+      {failedGroups.map(name=><div className="banner row" key={name}><span>Не обновилась группа {name}</span><button className="btn" disabled={refreshing} onClick={()=>{setRefreshing(true);void updateFriendTimetable(name).then(ok=>{if(ok)setFailedGroups(rows=>rows.filter(row=>row!==name));}).finally(()=>setRefreshing(false));}}>Повторить для этой группы</button></div>)}
       {!!forecast && forecast.encounters.length > 0 && <div className="intersection-forecast stack" aria-label="Ближайшие пересечения">
-        {forecast.encounters.map((encounter, index) => <article className="card intersection-encounter" key={`${encounter.date.toDateString()}-${encounter.time}-${encounter.friendGroupName}-${index}`}
+        <div className="row"><label className="field">Группа встречи<select value={encounterGroup} onChange={event=>setEncounterGroup(event.target.value)}><option value="">Все группы</option>{app.friends.map(friend=><option key={friend.id}>{friend.groupName}</option>)}</select></label><label className="field">Дата встречи<input type="date" value={encounterDate} onChange={event=>setEncounterDate(event.target.value)}/></label><button className="btn quiet" onClick={()=>{setEncounterDate("");setEncounterGroup("");}}>Все даты и группы</button></div>
+        {encounters.length===0 && <FilterEmpty onReset={()=>{setEncounterDate("");setEncounterGroup("");}}/>}
+        {(allEncounters?encounters:encounters.slice(0,3)).map((encounter, index) => <article className="card intersection-encounter" key={`${encounter.date.toDateString()}-${encounter.time}-${encounter.friendGroupName}-${index}`}
           style={{ borderLeftColor: encounter.color || "var(--line-strong)" }}>
           <strong>{encounter.date.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "long" })} · {encounter.time} · {encounter.subject}</strong>
           <span>{encounter.friendGroupName}{encounter.members ? ` · ${encounter.members}` : ""}</span>
@@ -655,7 +760,8 @@ export function FriendsPage() {
         </article>)}
       </div>}
       {!!forecast && missingCount > 0 && <p className="muted" role="status">Нет подходящего загруженного расписания: {forecast.missingGroups.join(", ")}. Для этих групп прогноз пока неполный.</p>}
-      <h2 className="section-list-title">Группы в расписании <span className="chip">{app.friends.length}</span></h2>
+      {encounters.length>3 && <button className="btn" onClick={()=>setAllEncounters(value=>!value)}>{allEncounters?"Свернуть встречи":`Показать все найденные · ${encounters.length}`}</button>}
+      <h2 className="section-list-title">Группы в расписании <span className="chip">{app.friends.length}</span></h2><SearchField label="Найти группу или человека" value={groupQuery} onChange={setGroupQuery}/><label className="field">Показать группы<select value={groupFilter} onChange={event=>setGroupFilter(event.target.value)}><option value="all">Все</option><option value="enabled">Включённые</option><option value="missing">Без расписания</option></select></label>{(groupQuery||groupFilter!=="all") && <button className="btn quiet" onClick={()=>{setGroupQuery("");setGroupFilter("all");}}>Сбросить отбор групп</button>}
       <p className="sub">До пяти групп. Их пары отмечаются в вашем расписании.</p>
       <form id="friend-editor" className="card stack friend-compose" hidden={!editorOpen} onSubmit={add} style={{ marginTop: 12 }}>
         <label className="field">Группа<input list="friend-groups" value={name} onChange={event => setName(event.target.value)} placeholder="А863С" /></label>
@@ -668,7 +774,7 @@ export function FriendsPage() {
         <button className="btn" type="button" onClick={() => setEditorOpen(true)}>Добавить первую группу</button>
       </div>}
       <div className="stack" style={{ marginTop: 12 }}>
-        {app.friends.map(friend => <FriendRow key={friend.id} friend={friend}
+        {app.friends.filter(friend=>noteSearch(groupQuery,friend.groupName,friend.members) && (groupFilter==="all" || groupFilter==="enabled" && friend.enabled || groupFilter==="missing" && !schedules.find(row=>row.groupName===friend.groupName)?.lessons)).map(friend => <FriendRow key={friend.id} friend={friend}
           hasSchedule={schedules.find(item => item.groupName === friend.groupName)?.lessons != null}
           groups={groups} palette={palette} duplicateGroup={duplicateGroup}
           onGroupChanged={groupName => void updateFriendTimetable(groupName)} />)}
@@ -689,6 +795,7 @@ function FriendRow({ friend, hasSchedule, groups, palette, duplicateGroup, onGro
   const [members, setMembers] = useState(friend.members);
   const [colorDraft,setColorDraft]=useState(friend.color);
   const [error, setError] = useState("");
+  const dirty = name !== friend.groupName || members !== friend.members || colorDraft !== friend.color;
   function save(event: FormEvent) {
     event.preventDefault();
     const next = name.trim();
@@ -711,13 +818,14 @@ function FriendRow({ friend, hasSchedule, groups, palette, duplicateGroup, onGro
         <div className="friend-row-name"><b>{friend.groupName}</b><div className="muted">{friend.members || "Имена не указаны"} · {hasSchedule ? "расписание готово" : "расписание недоступно"}</div></div>
         <button className={"switch" + (friend.enabled ? " on" : "")} type="button" role="switch" aria-checked={friend.enabled}
           aria-label={`Показывать группу ${friend.groupName}`}
-          onClick={() => app.saveFriends(app.friends.map(item => item.id === friend.id ? { ...item, enabled: !item.enabled } : item))}><i /></button>
-        <button className="btn" type="button" aria-expanded={editing} onClick={() => { setName(friend.groupName); setMembers(friend.members);setColorDraft(friend.color); setError(""); setEditing(value => !value); }}>{editing ? "Отмена" : "Изменить"}</button>
+          onClick={() => {try{app.saveFriends(app.friends.map(item => item.id === friend.id ? { ...item, enabled: !item.enabled } : item));}catch{setError("Не удалось сохранить переключение. Группа не изменена.");}}}><i /></button>
+        <button className="btn" type="button" aria-expanded={editing} onClick={() => { if(editing&&dirty&&!window.confirm("Отбросить изменения группы, имён и цвета?"))return; setName(friend.groupName); setMembers(friend.members);setColorDraft(friend.color); setError(""); setEditing(value => !value); }}>{editing ? "Отмена" : "Изменить"}</button>
         <button className="btn" type="button" onClick={() => {
           if (window.confirm(`Удалить группу ${friend.groupName} из пересечений?`))
-            app.saveFriends(app.friends.filter(item => item.id !== friend.id));
+            try{app.saveFriends(app.friends.filter(item => item.id !== friend.id));}catch{setError("Группа не удалена: сохранение недоступно. Повторите попытку.");}
         }}>Удалить</button>
       </div>
+      {!editing && error && <p role="alert">{error}</p>}
       {editing && <form className="stack friend-row-edit" onSubmit={save}>
         <label className="field">Группа<input list="friend-groups" value={name} onChange={event => setName(event.target.value)} /></label>
         {groups.length === 0 && <p className="muted">Ручной ввод: каталог недоступен, название пока не проверяется.</p>}
@@ -765,7 +873,14 @@ function HomeworkAttachments({ files }: { files: HomeworkFile[] }) {
 
 export function HomeworkPage() {
   const app = useApp();
+  const now = useClock();
+  const [sourceFilter,setSourceFilter]=useBrowseValue<"all"|"personal"|"shared">("homework-source","all");
+  const [deadlineFilter,setDeadlineFilter]=useBrowseValue<"all"|ReturnType<typeof dueBucket>>("homework-deadline","all");
+  const [fileFilter,setFileFilter]=useBrowseValue("homework-files",false);
+  const [order,setOrder]=useBrowseValue<"original"|"subject"|"deadline">("homework-order","original");
+  const [collapsedBuckets,setCollapsedBuckets]=useState<string[]>([]);
   const { controller, refresh, readLocal, field, draft, busy, note } = useHomeworkDraft();
+  const duplicateApproval=useRef<{draft:typeof draft;operationId:string}|null>(null);
   const { subject, text, share, nth, sharedDeadline, deadlineMode, audience, topicId, pending } = draft;
   const setNote = (value: string) => { controller.note = value; refresh(); };
   const [editorOpen, setEditorOpen] = useState(false);
@@ -777,6 +892,7 @@ export function HomeworkPage() {
   const chosenSubject = new URLSearchParams(location.search).get("subject");
   const chosenId = new URLSearchParams(location.search).get("id");
   const chosenSharedId = new URLSearchParams(location.search).get("sharedId");
+  const exactSubjectKey = new URLSearchParams(location.search).get("subjectKey");
   const [communityId, setCommunityId] = useState("");
   const [copies, setCopies] = useState<GroupHomeworkCopy[]>([]);
   const [copiesScopeTag, setCopiesScopeTag] = useState("");
@@ -786,7 +902,7 @@ export function HomeworkPage() {
   const [copyBusy, setCopyBusy] = useState<string | null>(null);
   const [editingCopy, setEditingCopy] = useState<{ id: string; revision: number; title: string; body: string; deadline: string; audience: HomeworkAudience; topicId: string | null } | null>(null);
   const [copyEditConflict, setCopyEditConflict] = useState(false);
-  const [browseState, setBrowseState] = useState<{ owner: string; query: string; status: HomeworkBrowseStatus }>({ owner: "", query: "", status: "active" });
+  const [browseState, setBrowseState] = useBrowseValue<{ owner: string; query: string; status: HomeworkBrowseStatus }>("homework-query-status",{ owner: "", query: "", status: "active" });
   const [personalUndo, setPersonalUndo] = useState<PersonalHomeworkUndo | null>(null);
   const [personalEdit,setPersonalEdit]=useState<PersonalEditDraft|null>(null);
   const copyScopeKey = JSON.stringify([!!app.session?.authenticated, app.session?.user?.userId, app.groupId, communityId]);
@@ -803,9 +919,11 @@ export function HomeworkPage() {
   const undoTask = personalUndo ? app.homework.find(item => item.id === personalUndo.id) : undefined;
   const visiblePersonalUndo = personalUndo && canUndoPersonalHomework(personalUndo, undoTask, copyOwnerKey, Date.now()) ? personalUndo : null;
   function togglePersonal(item: HomeworkItem) {
+    const saved=app.homework.find(row=>row.id===item.id);
+    if(!saved)return;
     setPersonalUndo(null);
-    app.saveHomework({ ...item, done: !item.done });
-    setPersonalUndo(personalHomeworkUndo(item, copyOwnerKey, Date.now()));
+    app.saveHomework({ ...saved, done: !saved.done });
+    setPersonalUndo(personalHomeworkUndo(saved, copyOwnerKey, Date.now()));
   }
   function undoPersonal() {
     const ticket = visiblePersonalUndo;
@@ -824,6 +942,8 @@ export function HomeworkPage() {
       navigate({ pathname: location.pathname, search: query.toString() }, { replace: true });
     }
   };
+  function resetFilters(){setBrowse({query:"",status:"all"});setSourceFilter("all");setDeadlineFilter("all");setFileFilter(false);setOrder("original");setCollapsedBuckets([]);}
+  useEffect(()=>{setCollapsedBuckets([]);},[copyOwnerKey]);
   const requestedTarget: HomeworkTarget = chosenSharedId ? { kind: "shared", id: chosenSharedId } : chosenId ? { kind: "local", id: chosenId } : null;
   const homeworkReady = app.privateHomework.ready && app.sessionLoaded
     && (!app.session?.authenticated || !app.privateHomework.settings || app.groupId === (app.privateHomework.settings.selectedGroupId || ""));
@@ -839,9 +959,14 @@ export function HomeworkPage() {
   useEffect(() => { setCopyBusy(null); setEditingCopy(null); setCopyEditConflict(false); }, [copyScopeKey]);
   const recipients = useHomeworkAudienceData(communityId);
   const subjects = [...new Set(app.lessons.map(lesson => lesson.subjectRaw))];
-  const browsing = browseHomework(app.homework, safeCopies, { subject: chosenSubject, query: browse.query, status: browse.status, target, editingSharedId: editingCopy?.id });
+  const browsePeriod=api.readCache().lessons[app.groupId]?.period;
+  const personalDate=(item:HomeworkItem)=>{const day=browsePeriod?personalHomeworkDue(item,visibleLessons(app.lessons,app.subgroups[app.groupId]||{}),browsePeriod,app.invert):null;return day?isoDay(day):null;};
+  const withDates=app.homework.map(item=>({...item,deadlinePrecision:browsePeriod?"date" as const:"instant" as const,deadlineAt:browsePeriod?personalHomeworkDue(item,visibleLessons(app.lessons,app.subgroups[app.groupId]||{}),browsePeriod,app.invert)?.toISOString()??null:item.deadlineAt}));
+  const browsing = browseHomework(withDates, safeCopies, { subject: chosenSubject, exactSubjectKey, query: browse.query, status: browse.status, target, editingSharedId: editingCopy?.id,source:sourceFilter,deadline:deadlineFilter,onlyFiles:fileFilter,order,now });
   const visibleCopies = browsing.copies;
   const visibleHomework = browsing.local;
+  const homeworkBuckets=(["overdue","today","soon","later","none"] as const).map(key=>({key,label:({overdue:"Просрочено",today:"Сегодня",soon:"Скоро",later:"Позже",none:"Без даты"})[key],rows:visibleHomework.filter(item=>dueBucket(item.deadlineAt,now,item.deadlinePrecision)===key)})).filter(group=>group.rows.length>0);
+  useEffect(()=>{if(requestedTarget)setCollapsedBuckets([]);},[chosenId,chosenSharedId]);
   const targetVisible = target?.kind === "shared" ? visibleCopies.some(item => item.homeworkId === target.id) : target?.kind === "local" ? visibleHomework.some(item => item.id === target.id) : false;
   const targetMissing = homeworkReady && !!requestedTarget && !targetVisible && copiesReady && !copiesLoading && !copiesFailed;
   const emptyKind = homeworkReady && copiesReady && !copiesLoading && !copiesFailed ? homeworkEmptyKind(browsing.total, browsing.shown, targetMissing) : null;
@@ -909,6 +1034,15 @@ export function HomeworkPage() {
     if (validation) { setNote(validation); return; }
     const ticket = controller.begin();
     if (!ticket) return;
+    if(!ticket.operation.localSaved&&(duplicateApproval.current?.draft!==controller.draft||duplicateApproval.current?.operationId!==ticket.operation.id)){
+      const visible=visibleLessons(app.lessons,app.subgroups[app.groupId]||{});
+      const due=(item:HomeworkItem)=>{const date=browsePeriod?personalHomeworkDue(item,visible,browsePeriod,app.invert):null;return date?isoDay(date):null;};
+      const duplicate=duplicatePersonalHomework(app.homework,ticket.draft,due({id:ticket.operation.id,subject:ticket.draft.subject,text:ticket.draft.text,created:ticket.operation.created,done:false,targetNthOccurrence:ticket.draft.nth}),due);
+      if(duplicate&&!window.confirm(`Личное задание «${duplicate.subject}» с тем же текстом и датой уже есть${duplicate.done?" и отмечено выполненным":""}. Всё равно создать ещё одно?`)){
+        controller.cancelBeforeSave(ticket,"Новое задание не создано. Текст и выбранные файлы сохранены в черновике.");refresh();return;
+      }
+      if(duplicate)duplicateApproval.current={draft:controller.draft,operationId:ticket.operation.id};
+    }
     const saveCopyScope = copyRequests.capture();
     refresh();
     setDiscardOpen(false);
@@ -1003,14 +1137,16 @@ export function HomeworkPage() {
       </Head>
       <p id="homework-save-status" className="muted" role="status" aria-live="polite" aria-atomic="true">{note || (controller.dirty ? "Черновик сохранится при переходе в другой раздел. При перезагрузке страницы он будет потерян." : "")}</p>
       {app.privateHomework.readFailed&&<div className="banner row" role="alert"><span>Сохранённые задания не удалось прочитать. Это не пустой список.</span><button className="btn" type="button" onClick={app.privateHomework.retryRead}>Повторить чтение</button></div>}
+      {!app.privateHomework.readFailed&&<HomeworkSubjectOverview items={app.homework} dateOf={personalDate} today={isoDay(now)} onPick={(subject,key)=>{resetFilters();setSourceFilter("personal");const query=new URLSearchParams(location.search);query.set("subject",subject);query.set("subjectKey",key);query.delete("id");query.delete("sharedId");navigate({pathname:location.pathname,search:query.toString()});requestAnimationFrame(()=>focusElement("homework-personal-results"));}}/>}
       {personalEdit?.owner===copyOwnerKey&&<PersonalHomeworkEditor key={`${copyOwnerKey}:${personalEdit.id}`} draft={personalEdit} onChange={setPersonalEdit} onClose={()=>setPersonalEdit(null)}/>}
-      {chosenSubject && <div className="row homework-filter" role="region" aria-label="Фильтр домашки"><span>Предмет: <strong>{chosenSubject}</strong></span><button className="btn" type="button" onClick={() => { const query = new URLSearchParams(location.search); query.delete("subject"); query.delete("id"); query.delete("sharedId"); navigate({ pathname: location.pathname, search: query.toString() }); }}>Показать все предметы</button></div>}
+      {(chosenSubject||exactSubjectKey!==null) && <div className="row homework-filter" role="region" aria-label="Фильтр домашки"><span>Предмет: <strong>{chosenSubject||"Без предмета"}</strong></span><button className="btn" type="button" onClick={() => { const query = new URLSearchParams(location.search); query.delete("subject"); query.delete("subjectKey"); query.delete("id"); query.delete("sharedId"); navigate({ pathname: location.pathname, search: query.toString() }); }}>Показать все предметы</button></div>}
       <label className="field homework-search">Поиск по предмету и заданию<input type="search" value={browse.query} onChange={event => setBrowse({ query: event.target.value })} placeholder="Предмет или текст задания" /></label>
+      <details className="card stack"><summary>Дополнительные фильтры</summary><div className="row"><label className="field">Источник<select value={sourceFilter} onChange={event=>setSourceFilter(event.target.value as typeof sourceFilter)}><option value="all">Личные и общие</option><option value="personal">Личные</option><option value="shared">Общие</option></select></label><label className="field">Срок<select value={deadlineFilter} onChange={event=>setDeadlineFilter(event.target.value as typeof deadlineFilter)}><option value="all">Все сроки</option><option value="overdue">Просроченные</option><option value="today">Сегодня</option><option value="soon">В ближайшие дни</option><option value="later">Позже</option><option value="none">Без даты</option></select></label><label className="field">Порядок<select value={order} onChange={event=>setOrder(event.target.value as typeof order)}><option value="original">Исходный</option><option value="subject">По предмету</option><option value="deadline">По сроку</option></select></label></div><label className="check"><input type="checkbox" checked={fileFilter} onChange={event=>setFileFilter(event.target.checked)}/>Только личные задания с файлами</label><button className="btn quiet" type="button" onClick={resetFilters}>Сбросить все условия</button></details>
       <div className="section-overview">
         <strong>Мои задания: {app.homework.length} · Общие: {copiesLoading || !copiesReady ? "загрузка…" : safeCopies.length}</strong>
         <span>Показано: {browsing.shown}{copiesFailed ? " · общая домашка недоступна" : copiesLoading || !copiesReady ? " · общая домашка загружается" : ` из ${browsing.total}`} · Выполнено: {app.homework.filter(item => item.done).length + safeCopies.filter(item => item.completed).length}</span>
       </div>
-      <div className="row homework-filters" role="group" aria-label="Показать задания"><button type="button" className="btn" aria-pressed={browse.status === "active"} onClick={() => setBrowse({ status: "active" })}>Активные</button><button type="button" className="btn" aria-pressed={browse.status === "done"} onClick={() => setBrowse({ status: "done" })}>Готово у меня</button><button type="button" className="btn" aria-pressed={browse.status === "all"} onClick={() => setBrowse({ status: "all" })}>Все</button>{(chosenSubject || browse.query.trim() || browse.status !== "all") && <button type="button" className="btn quiet" onClick={() => { setBrowse({ query: "", status: "all" }); if (chosenSubject) { const query = new URLSearchParams(location.search); query.delete("subject"); navigate({ pathname: location.pathname, search: query.toString() }); } }}>Сбросить фильтры</button>}</div>
+      <div className="row homework-filters" role="group" aria-label="Показать задания"><button type="button" className="btn" aria-pressed={browse.status === "active"} onClick={() => setBrowse({ status: "active" })}>Активные</button><button type="button" className="btn" aria-pressed={browse.status === "done"} onClick={() => setBrowse({ status: "done" })}>Готово у меня</button><button type="button" className="btn" aria-pressed={browse.status === "all"} onClick={() => setBrowse({ status: "all" })}>Все</button>{(chosenSubject || exactSubjectKey!==null || browse.query.trim() || browse.status !== "all") && <button type="button" className="btn quiet" onClick={() => { resetFilters(); if (chosenSubject||exactSubjectKey!==null) { const query = new URLSearchParams(location.search); query.delete("subject"); query.delete("subjectKey"); navigate({ pathname: location.pathname, search: query.toString() }); } }}>Сбросить фильтры</button>}</div>
       <form id="homework-editor" className="card stack homework-compose" hidden={!editorOpen} aria-busy={busy} aria-describedby="homework-save-status" onInvalid={() => setNote(validateHomeworkDraft(controller.draft) || "Проверьте поля задания")} onSubmit={event => void add(event)}>
         <fieldset className="stack homework-fields" disabled={busy}>
         <legend className="sr-only">Новое задание</legend>
@@ -1045,7 +1181,7 @@ export function HomeworkPage() {
       </form>
       {copiesFailed && <div className="card empty"><p>Общая домашка не загрузилась. Проверьте сеть и попробуйте ещё раз.</p><button className="btn primary" type="button" onClick={() => setCopiesRetry(value => value + 1)}>Повторить</button></div>}
       {targetMissing && browsing.shown > 0 && <div className="banner row" role="status"><span>Задание по ссылке не найдено в текущей группе или недоступно вашему аккаунту.</span><button className="btn quiet" type="button" onClick={() => { const query = new URLSearchParams(location.search); query.delete("id"); query.delete("sharedId"); navigate({ pathname: location.pathname, search: query.toString() }, { replace: true }); }}>Показать список</button></div>}
-      {emptyKind && <div className="card empty"><p>{emptyKind === "missing" ? "Задание по ссылке не найдено в текущей группе или недоступно вашему аккаунту." : emptyKind === "empty" ? app.groupId ? "Заданий пока нет." : "Учебная группа не выбрана. Выберите группу, чтобы видеть пары и сроки." : "По выбранным фильтрам заданий нет."}</p>{emptyKind === "empty" ? app.groupId ? <button className="btn" type="button" onClick={() => setEditorOpen(true)}>Добавить первое</button> : <Link className="btn" to="/settings?section=study">Выбрать группу</Link> : <button className="btn" type="button" onClick={() => { setBrowse({ query: "", status: "all" }); const query = new URLSearchParams(location.search); query.delete("subject"); query.delete("id"); query.delete("sharedId"); navigate({ pathname: location.pathname, search: query.toString() }); }}>Сбросить фильтры</button>}</div>}
+      {emptyKind && <div className="card empty"><p>{emptyKind === "missing" ? "Задание по ссылке не найдено в текущей группе или недоступно вашему аккаунту." : emptyKind === "empty" ? app.groupId ? "Заданий пока нет." : "Учебная группа не выбрана. Выберите группу, чтобы видеть пары и сроки." : "По выбранным фильтрам заданий нет."}</p>{emptyKind === "empty" ? app.groupId ? <button className="btn" type="button" onClick={() => setEditorOpen(true)}>Добавить первое</button> : <Link className="btn" to="/settings?section=study">Выбрать группу</Link> : <button className="btn" type="button" onClick={() => { resetFilters(); const query = new URLSearchParams(location.search); query.delete("subject"); query.delete("subjectKey"); query.delete("id"); query.delete("sharedId"); navigate({ pathname: location.pathname, search: query.toString() }); }}>Сбросить фильтры</button>}</div>}
       {visibleCopies.length > 0 && <h2 className="section-list-title">Общая домашка <span className="chip">{visibleCopies.length}</span></h2>}
       <div className="stack" style={{ marginTop: safeCopies.length > 0 ? 12 : 0 }}>
         {visibleCopies.map(item => (
@@ -1060,14 +1196,19 @@ export function HomeworkPage() {
           </article>
         ))}
       </div>
-      {visibleHomework.length > 0 && <h2 className="section-list-title">Мои задания <span className="chip">{visibleHomework.length}</span></h2>}
+      <PersonalHomeworkBatch key={JSON.stringify([copyOwnerKey,app.session?.familyId,app.groupId])} items={visibleHomework}/>
+      <HomeworkPostpone key={JSON.stringify([copyOwnerKey,app.session?.familyId,app.groupId])} items={visibleHomework} dateOf={personalDate}/>
+      <HomeworkPublication key={JSON.stringify([copyOwnerKey,app.session?.familyId,app.groupId,communityId])} items={visibleHomework} communityId={communityId} recipients={recipients} dateOf={personalDate}/>
+      {visibleHomework.length > 0 && <><h2 id="homework-personal-results" tabIndex={-1} className="section-list-title">Мои задания <span className="chip">{visibleHomework.length}</span></h2><HomeworkExportTools key={JSON.stringify([copyOwnerKey,app.session?.familyId,app.groupId])} items={visibleHomework} groupId={app.groupId} groupName={app.catalog?.groups.find(group=>group.id===app.groupId)?.name||app.groupId}/></>}
+      {homeworkBuckets.length>1 && <button className="btn quiet" onClick={()=>setCollapsedBuckets(rows=>rows.length?[]:homeworkBuckets.map(group=>group.key))}>{collapsedBuckets.length?"Развернуть все сроки":"Свернуть все сроки"}</button>}
       <div className="stack" style={{ marginTop: 12 }}>
-        {visibleHomework.map(item => (
+        {homeworkBuckets.map(group=><section className="stack" key={group.key}><button className="btn" aria-expanded={!collapsedBuckets.includes(group.key)} onClick={()=>setCollapsedBuckets(rows=>rows.includes(group.key)?rows.filter(key=>key!==group.key):[...rows,group.key])}>{group.label} · {group.rows.length}</button><div className="stack" hidden={collapsedBuckets.includes(group.key)}>{group.rows.map(item => (
           <article className={"card homework-task" + (item.done ? " homework-completed" : "")} id={item.id} tabIndex={-1} key={item.id} aria-current={target?.kind === "local" && target.id === item.id ? "true" : undefined}>
             <div className="row" style={{ justifyContent: "space-between" }}>
               <span className="row"><b>{item.subject}</b><span className="chip">{item.done ? "Выполнено" : "Личное"}</span></span>
               <button className="btn" type="button" onClick={() => togglePersonal(item)}>{item.done ? "Снова открыть" : "Сделано"}</button>
               <button className="btn quiet" type="button" onClick={()=>setPersonalEdit({id:item.id,owner:copyOwnerKey,subject:item.subject,text:item.text,nth:item.targetNthOccurrence??1})}>Изменить</button>
+              <button className="btn quiet" type="button" onClick={()=>{if(controller.dirty&&!window.confirm("Заменить текущий черновик копией этого задания?"))return;controller.clear(item.subject);field("text",item.text);field("share",false);field("nth",1);setEditorOpen(true);requestAnimationFrame(()=>document.getElementById("homework-editor")?.scrollIntoView({block:"start"}));}}>Создать похожее</button>
               <button className="btn quiet" type="button" onClick={()=>{if(!window.confirm(`Удалить личное задание «${item.subject}»? ${item.text.slice(0,100)}`))return;try{app.privateHomework.remove(item.id);setPersonalEdit(current=>current?.id===item.id?null:current);setNote("Задание удалено");}catch(reason){setNote(reason instanceof Error?reason.message:"Удалить не удалось. Задание сохранено.");}}}>Удалить</button>
             </div>
             <p className={item.done ? "done-title" : ""}>{item.text}</p><p className="muted homework-deadline">Срок: {personalHomeworkDue(item,visibleLessons(app.lessons,app.subgroups[app.groupId]||{}),api.readCache().lessons[app.groupId]?.period||app.catalog?.period||{start:isoDay(app.date),weekCount:2,title:"",timeZone:""},app.invert)?.toLocaleDateString("ru-RU") || "Без срока"}</p>
@@ -1075,10 +1216,11 @@ export function HomeworkPage() {
             <div className="row homework-task-footer">
               {app.lessons.some(lesson => sameSubject(lesson.subjectRaw, item.subject)) && <span className="chip">есть в расписании</span>}
               <ShareMenu card={homeworkCard(item)} />
+              {browsePeriod && <button className="btn quiet" onClick={()=>{const date=Array.from({length:56},(_,i)=>addDays(new Date(),i)).find(date=>lessonsOn(visibleLessons(app.lessons,app.subgroups[app.groupId]||{}),date,browsePeriod.start,browsePeriod.weekCount,app.invert).some(lesson=>sameSubject(lesson.subjectRaw,item.subject)));if(date){app.setDate(date);navigate(`/schedule?date=${isoDay(date)}&subject=${encodeURIComponent(item.subject)}`);}else setNote("В ближайшие восемь недель подходящее занятие не найдено.");}}>К ближайшему занятию</button>}
               <Link className="btn quiet" to={`/group?homework=${encodeURIComponent(item.text)}&subject=${encodeURIComponent(item.subject)}&date=${isoDay(app.date)}`}>Обсудить задание</Link>
             </div>
           </article>
-        ))}
+        ))}</div></section>)}
       </div>
       {visiblePersonalUndo && <div className="banner row homework-undo" role="status"><span>{visiblePersonalUndo.beforeDone ? "Отметка снята" : "Отмечено готово"}</span><button className="btn" type="button" onClick={undoPersonal}>Отменить</button></div>}
     </section>
@@ -1232,7 +1374,11 @@ function GroupContent() {
   const [messageFilter, setMessageFilter] = useState<MessageBrowseFilter>(defaultMessageFilter);
   const [messageBrowseOpen, setMessageBrowseOpen] = useState(false);
   const [contextExpandedByGroup, setContextExpandedByGroup] = useState<Record<string, boolean>>({});
+  const [obligationTarget,setObligationTarget]=useState<Obligation|null>(null);
+  const [globalBoardOpen,setGlobalBoardOpen]=useState(false);
   const visibleLog = filterMessages(log, messageFilter, app.session?.user?.userId || "");
+  const [matchId,setMatchId]=useState("");
+  function moveMatch(direction:number){if(!visibleLog.length)return;const at=visibleLog.findIndex(row=>row.messageId===matchId);const next=at<0?(direction>0?0:visibleLog.length-1):(at+direction+visibleLog.length)%visibleLog.length;setMatchId(visibleLog[next].messageId);focusElement(`group-message-${visibleLog[next].messageId}`);}
   const messageFiltered = !!messageFilter.query.trim() || messageFilter.author !== "all" || messageFilter.kind !== "all";
   const [copyNotice, setCopyNotice] = useState<{ key: string; text: string } | null>(null);
   const [drafts,setDrafts] = useStoredDraft<Record<string,string>>("zapara.group.drafts",()=>({}));
@@ -1261,6 +1407,7 @@ function GroupContent() {
   const [error, setError] = useState("");
   const [focusChat, setFocusChat] = useState(false);
   const [memberSearch, setMemberSearch] = useState("");
+  const [leadersOnly,setLeadersOnly]=useState(false);
   const [reloadEpoch, setReloadEpoch] = useState(0);
   const [atLatest, setAtLatest] = useState(true);
   const [mediaBusy, setMediaBusy] = useState<string[]>([]);
@@ -1695,12 +1842,14 @@ function GroupContent() {
       {error && <div className="banner row" role="alert"><span>{error}</span><button className="btn quiet" type="button" onClick={()=>setError("")}>Закрыть сообщение</button></div>}
       {error && <button className="btn" type="button" onClick={() => setReloadEpoch(value => value + 1)}>Повторить загрузку группы</button>}
       {home && desk && (desk.mine.length > 0 || desk.headman) && <GroupAdmin communityId={home.communityId} groupName={home.groupName || home.name} classmates={home.classmates} desk={desk} onChange={updateDesk} onReload={async () => { const [loaded, office] = await Promise.all([api.groupHome(home.communityId), api.groupDesk(home.communityId)]); setHome(loaded); updateDesk(office); }} onError={setError} />}
+      {home&&<GroupObligations key={JSON.stringify([studyOwner(app),home.communityId])} communityId={home.communityId} onOpen={(topic,target,freshBoard)=>{if(!topic&&freshBoard){setBoard(freshBoard);setGlobalBoardOpen(true);setObligationTarget({...target});return;}if(!topic)return;selectionEpoch.current++;clearLog();setChat(home.groupChat);setThread(topic);setFocusChat(true);setObligationTarget({...target});}}/>}
       {home && !board && !votesOff && <p className="muted" role="status">Загрузка голосований…</p>}
       {home && votesOff && <div className="banner row" role="status"><span>{board ? "Голосования не обновились. Показана предыдущая доска." : "Голосования сейчас не открылись. Чат группы на месте."}</span>
         <button className="btn" type="button" onClick={() => setVotesRetry(value => value + 1)}>Повторить</button></div>}
-      {home && board && <details className="group-board-panel">
+      {home && board && <details className="group-board-panel" open={globalBoardOpen} onToggle={event=>setGlobalBoardOpen(event.currentTarget.open)}>
         <summary>Голосования группы · {board.ballots.length}</summary>
-        <BallotBoardView communityId={home.communityId} board={board} classmates={home.classmates} roles={desk?.roles ?? []} onChange={setBoard} onError={setError} />
+        {globalBoardOpen&&obligationTarget?.source===GLOBAL_BALLOTS&&<GroupObjectFocus key={obligationTarget.id} id={`obligation-ballot-general-${obligationTarget.id}`}/>}
+        <BallotBoardView targetId={obligationTarget?.source===GLOBAL_BALLOTS?obligationTarget.id:undefined} communityId={home.communityId} board={board} classmates={home.classmates} roles={desk?.roles ?? []} onChange={setBoard} onError={setError} />
       </details>}
       {home && (
         <div className={"grid-2 split" + (focusChat ? " focus" : "")}>
@@ -1730,7 +1879,7 @@ function GroupContent() {
                 </button>;
               })}
             </div>}
-            {home.classmates.filter(person => matchesBrowseQuery(memberSearch, person.displayName, person.username)).map(person => (
+            <label className="check"><input type="checkbox" checked={leadersOnly} onChange={event=>setLeadersOnly(event.target.checked)}/>Только старосты и кураторы приложения</label>{home.classmates.filter(person => (!leadersOnly||person.role==="headman"||person.role==="curator") && matchesBrowseQuery(memberSearch, person.displayName, person.username)).map(person => (
               <button className="person" key={person.userId} type="button" disabled={person.self} onClick={() => {
                 if (!home || person.self) return;
                 const epoch = ++selectionEpoch.current;
@@ -1746,15 +1895,16 @@ function GroupContent() {
                 <span className="row">{[person.role === "headman" ? "Староста" : person.role === "curator" ? "Куратор" : "Участник", ...titlesOf(desk, person.userId)].map(title => <span className="chip" key={title}>{title}</span>)}</span>
               </button>
             ))}
-            {!!memberSearch.trim() && !home.classmates.some(person => matchesBrowseQuery(memberSearch, person.displayName, person.username)) &&
-              <div className="empty">Участник не найден <button className="btn" type="button" onClick={() => setMemberSearch("")}>Сбросить поиск</button></div>}
-            {home.directs.map(item => <button className="person" key={item.conversationId} type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setChat(item); setThread("list"); setFocusChat(true); }}><Avatar kind="user" id={item.peerUserId} name={item.title} /><span className="person-main"><b>{item.title}</b><span className="muted preview-line">{item.lastBody || "Нет сообщений"}</span></span></button>)}
+            {(!!memberSearch.trim()||leadersOnly) && !home.classmates.some(person => (!leadersOnly||person.role==="headman"||person.role==="curator")&&matchesBrowseQuery(memberSearch, person.displayName, person.username)) &&
+              <div className="empty">Участник не найден <button className="btn" type="button" onClick={() => {setMemberSearch("");setLeadersOnly(false);}}>Сбросить поиск</button></div>}
+            {home.directs.filter(item=>noteSearch(memberSearch,item.title,item.lastBody||"")).map(item => <button className="person" key={item.conversationId} type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setChat(item); setThread("list"); setFocusChat(true); }}><Avatar kind="user" id={item.peerUserId} name={item.title} /><span className="person-main"><b>{item.title}</b><span className="muted preview-line">{item.lastBody || "Нет сообщений"}</span></span></button>)}
           </div>
           <section className="card chat split-detail">
             <button className="btn back-only" type="button" onClick={() => setFocusChat(false)}>К списку</button>
             {!chat && <p className="muted">{error || "Чат открывается…"}</p>}
             {chat?.kind === "group" && thread === "list" && <GroupTopics key={home.communityId} communityId={home.communityId} groupName={home.groupName} onOpen={(next, allowed) => { selectionEpoch.current += 1; clearLog(); setCanManageChannels(allowed); setThread(next); }} onError={setError} />}
             {chat?.kind === "group" && thread !== "list" && !isChatChannel(thread) && <>
+              {obligationTarget&&obligationTarget.source===thread.topicId&&<GroupObjectFocus key={JSON.stringify(obligationTarget)} id={`obligation-${obligationTarget.kind}-${obligationTarget.kind==="ballot"?obligationTarget.source+"-":""}${obligationTarget.id}`}/>}
               <div className="row">
                 <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; setThread("list"); }}>Все разделы</button>
                 <h2>{thread.icon} {thread.title}</h2>
@@ -1763,13 +1913,13 @@ function GroupContent() {
               </div>
               {thread.description && <p className="muted">{thread.description}</p>}
               {activeBallotTopicId && channelBoard && <BallotBoardView key={activeBallotTopicId} communityId={home.communityId} board={channelBoard}
-                classmates={home.classmates} roles={desk?.roles ?? []} topicId={activeBallotTopicId} title={thread.title}
+                classmates={home.classmates} roles={desk?.roles ?? []} topicId={activeBallotTopicId} title={thread.title} targetId={obligationTarget?.source===thread.topicId?obligationTarget.id:undefined}
                 canCreate={canCreateBallot(thread, canManageChannels)} readOnly={!!thread.archived || !!thread.permissions && !thread.permissions.includes("vote")}
                 onChange={value => setChannelBoardState({ topicId: activeBallotTopicId, value, failed: false })} onError={setError} />}
               {channelBoardFailed && <div className="banner row" role="status"><span>{channelBoard ? "Голосования не обновились. Показана предыдущая доска." : "Голосования не открылись."}</span>
                 <button className="btn" type="button" onClick={() => setChannelVotesRetry(value => value + 1)}>Повторить</button></div>}
               {thread.kind === "ballots" && !channelBoard && !channelBoardFailed && <p className="muted" role="status">Загрузка голосований…</p>}
-              <SpecializedChannel communityId={home.communityId} conversationId={home.groupChat.conversationId} groupName={home.groupName} topic={thread} onError={setError} />
+              <SpecializedChannel communityId={home.communityId} conversationId={home.groupChat.conversationId} groupName={home.groupName} topic={thread} onError={setError} targetId={obligationTarget?.source===thread.topicId?obligationTarget.id:undefined}/>
             </>}
             {chat && (chat.kind !== "group" || (thread !== "list" && isChatChannel(thread))) && <>
             <div className="row">
@@ -1820,6 +1970,7 @@ function GroupContent() {
               onClick={() => setMessageBrowseOpen(value => !value)}>
               {messageBrowseOpen ? "Скрыть поиск" : messageFiltered ? `Поиск и фильтры · ${visibleLog.length} найдено` : "Поиск и фильтры"}
             </button>
+            {messageFiltered&&<div className="row"><span className="muted">Совпадений: {visibleLog.length} · загружено: {log.length}{hasOlder?" · есть ранние сообщения":""}</span><button className="btn quiet" disabled={!visibleLog.length} onClick={()=>moveMatch(-1)}>Предыдущее совпадение</button><button className="btn quiet" disabled={!visibleLog.length} onClick={()=>moveMatch(1)}>Следующее совпадение</button></div>}
             {messageBrowseOpen && <div className="message-browse" role="group" aria-label="Поиск и фильтры сообщений">
               <label className="field">Поиск сообщения
                 <input type="search" value={messageFilter.query} onChange={event => setMessageFilter(current => ({ ...current, query: event.target.value }))}
@@ -1962,11 +2113,15 @@ function LegalLinks() {
 
 export function LegalPage({ id }: { id: LegalId }) {
   const doc = legalDocument(id);
+  const [query,setQuery]=useState("");const[scale,setScale]=useState(1);
+  const paragraphs=doc.body.split(/\n\n+/);
+  const matches=paragraphs.map((text,index)=>({text,index})).filter(row=>noteSearch(query,row.text));
   const app=useApp();const location=useLocation();const back=legalReturn(location.state,app.session?.user?.userId||"guest");
   return (
     <section className="page legal">
       <h1>{doc.title}</h1>
-      {doc.body.split(/\n\n+/).map(paragraph => <p key={paragraph}>{paragraph}</p>)}
+      <SearchField label="Найти в документе" value={query} onChange={setQuery}/><div className="row"><button className="btn" disabled={scale<=.9} onClick={()=>setScale(value=>Math.max(.9,value-.1))}>Уменьшить текст</button><button className="btn" disabled={scale>=1.6} onClick={()=>setScale(value=>Math.min(1.6,value+.1))}>Увеличить текст</button><Link className="btn quiet" to={`/legal/${id==="agreement"?"policy":"agreement"}`} state={location.state}>{id==="agreement"?"Политика данных":"Пользовательское соглашение"}</Link></div>{query&&<p role="status">Найдено абзацев: {matches.length} из {paragraphs.length}</p>}{query&&!matches.length&&<FilterEmpty onReset={()=>setQuery("")}/>}
+      <div style={{fontSize:`${scale}em`}}>{matches.map(({text,index}) => <p key={index}>{text}</p>)}</div><button className="btn quiet" onClick={()=>window.scrollTo({top:0})}>К началу документа</button>
       <p><Link to={back}>Вернуться к настройкам</Link></p>
     </section>
   );
@@ -1977,6 +2132,7 @@ export function SettingsPage() {
 }
 function SettingsContent() {
   const app = useApp();
+  const [supportState,setSupportState]=useState<SupportPendingState>({dirty:false,busy:false});
   const location = useLocation();
   const navigate = useNavigate();
   const requestedSection = new URLSearchParams(location.search).get("section");
@@ -1985,12 +2141,15 @@ function SettingsContent() {
   const owner=app.session?.user?.userId||"guest";
   const [username, setUsername] = useState(()=>accountDraft(owner).username);
   const [password, setPassword] = useState("");
+  const [confirmation,setConfirmation]=useState("");
   const [display, setDisplay] = useState(()=>accountDraft(owner).display);
   const [mode, setMode] = useState<"login" | "register">(()=>accountDraft(owner).mode);
+  useEffect(()=>{setPassword("");setConfirmation("");},[mode]);
   const [accepted, setAccepted] = useState(()=>accountDraft(owner).accepted);
   useEffect(()=>{rememberAccountDraft(owner,{username,display,mode,accepted});},[owner,username,display,mode,accepted]);
   const legalState={owner,returnTo:location.pathname+location.search};
-  const [categoryQuery,setCategoryQuery]=useState("");
+  const [categoryQuery,setCategoryQuery]=useBrowseValue("settings-query","");
+  const [groupQuery,setGroupQuery]=useState("");
   const [logoutBusy,setLogoutBusy]=useState(false);const[logoutNote,setLogoutNote]=useState("");const logoutPending=useRef(false);const logoutAck=useRef(false);
   async function logout(){if(logoutPending.current)return;if(!logoutAck.current&&!window.confirm(`Выйти из аккаунта «${app.session?.user?.displayName||app.session?.user?.username||""}» на этом устройстве? Локальные данные останутся.`))return;logoutPending.current=true;setLogoutBusy(true);setLogoutNote("");try{if(!logoutAck.current){await api.logout();logoutAck.current=true;}await app.refreshSession();}catch{setLogoutNote(logoutAck.current?"Выход подтверждён. Не удалось обновить экран; повторите проверку аккаунта.":"Выйти не удалось. Аккаунт и данные сохранены; можно повторить.");}finally{logoutPending.current=false;setLogoutBusy(false);}}
   const [error, setError] = useState("");
@@ -2024,6 +2183,7 @@ function SettingsContent() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
+    if(mode==="register"&&(password!==confirmation||!scalarInput(password,12,128,false))){setError("Проверьте пароль и его подтверждение.");return;}
     setBusy(true);
     setError("");
     if (mode === "register" && !accepted) {
@@ -2036,8 +2196,9 @@ function SettingsContent() {
       await api.login(username, password);
       await app.refreshSession();
       setPassword("");
-    } catch {
-      setError(mode === "login" ? "Не удалось войти" : "Не удалось зарегистрироваться");
+      const destination=(location.state as {authReturnTo?:unknown}|null)?.authReturnTo;if(destination)navigate(safeAppReturn(destination));
+    } catch (reason) {
+      setError(errorHint(reason, mode === "login" ? "Не удалось связаться с сервером входа. Проверьте подключение и повторите." : "Не удалось зарегистрироваться. Введённые поля сохранены."));
     } finally { setBusy(false); }
   }
   return (
@@ -2066,16 +2227,17 @@ function SettingsContent() {
       </div> : <div className="stack settings-detail">
         {section === "study" && <article className="card">
           <h2>Группа</h2>
-          <label className="field">Моя группа
+          <SearchField label="Найти учебную группу" value={groupQuery} onChange={setGroupQuery}/>          <label className="field">Моя группа
             <select value={app.groupId} onChange={event => app.setGroupId(event.target.value)} aria-label="Моя группа">
               <option value="">Не выбрана</option>
-              {(app.catalog?.groups || []).map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
+              {(app.catalog?.groups || []).filter(group=>group.id===app.groupId||noteSearch(groupQuery,group.name,group.id)).sort((a,b)=>Number(b.id===app.groupId)-Number(a.id===app.groupId)).map(group => <option key={group.id} value={group.id}>{group.name}{group.id===app.groupId?" · выбрана":""}</option>)}
             </select>
           </label>
           {(app.catalog?.groups || []).length === 0 && <p className="muted">Список групп появится, когда расписание откроется. Пока можно пользоваться сохранённой копией.</p>}
           <details><summary>Дополнительно</summary><label className="switch-row"><span>Инвертировать чётность</span><input type="checkbox" role="switch" checked={app.invert} onChange={event => app.setInvert(event.target.checked)} /></label></details>
         </article>}
         {section === "study" && <StudyExtras />}
+        {section === "study" && <SubgroupPreview key={studyOwner(app)}/>}
         {section === "notifications" && <NotificationSettings />}
         {section === "data" && <DataSettings />}
         {section === "appearance" && <article className="card">
@@ -2117,7 +2279,7 @@ function SettingsContent() {
                 <button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")} disabled={!app.session?.capabilities.registration}>Регистрация</button>
               </div>
               {app.session?.capabilities.password !== false && <><label className="field">Логин<input value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" /></label>
-              <label className="field">Пароль<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" /></label></>}
+              <SecretInput label="Пароль" value={password} onChange={setPassword} autoComplete={mode==="register"?"new-password":"current-password"}/>{mode==="register"&&<><SecretInput label="Повторите пароль" value={confirmation} onChange={setConfirmation} autoComplete="new-password"/><ul className="muted"><li>{[...password].length>=12&&[...password].length<=128?"✓":"○"} От 12 до 128 символов</li><li>{scalarInput(password,0,100000,false)?"✓":"○"} Без недопустимых символов</li><li>{password&&password===confirmation?"✓":"○"} Подтверждение совпадает</li></ul></>}</>}
               {mode === "register" && <label className="field">Имя<input value={display} onChange={event => setDisplay(event.target.value)} /></label>}
               {mode === "register" && (
                 <label className="check">
@@ -2128,14 +2290,15 @@ function SettingsContent() {
               )}
               {error && <div className="banner">{error}</div>}
               <LegalLinks />
-              {app.session?.capabilities.password !== false && <button className="btn primary" type="submit" disabled={busy || (mode === "register" && !accepted)}>{busy ? "Входим…" : mode === "login" ? "Войти" : "Создать аккаунт"}</button>}
+              {app.session?.capabilities.password !== false && <button className="btn primary" type="submit" disabled={busy || (mode === "register" && (!accepted || password!==confirmation || !scalarInput(password,12,128,false)))}>{busy ? "Входим…" : mode === "login" ? "Войти" : "Создать аккаунт"}</button>}
             </form>
           )}
         </article>}
-        {section === "account" && <PasswordRecovery key={JSON.stringify([app.session?.authenticated, app.session?.user?.userId, app.session?.familyId])} />}
+        {section === "account" && <PasswordRecovery login={username} onLogin={value => { setUsername(value); setMode("login"); setPassword(""); document.querySelector<HTMLInputElement>("input[autocomplete=username]")?.focus(); }} key={JSON.stringify([app.session?.authenticated, app.session?.user?.userId, app.session?.familyId])} />}
         {section === "help" && <>
-          <SupportCard />
-          <UpdateSettings />
+          <SupportCard onState={setSupportState}/>
+          <SupportDiagnostics key={studyOwner(app)}/>
+          <UpdateSettings supportState={supportState}/>
           <article className="card"><h2>Документы</h2><LegalLinks /></article>
         </>}
       </div>}
@@ -2144,13 +2307,14 @@ function SettingsContent() {
   );
 }
 
-function FollowUp({ onSend }: { onSend: (text: string, photos: File[], logs: File[]) => Promise<boolean> }) {
+function FollowUp({ onSend, onState }: { onSend: (text: string, photos: File[], logs: File[]) => Promise<boolean>; onState?:(dirty:boolean,busy:boolean)=>void }) {
   const [text, setText] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
   const [logs, setLogs] = useState<File[]>([]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
+  useEffect(()=>{onState?.(!!text.trim()||photos.length>0||logs.length>0,busy);},[text,photos,logs,busy]);
   return (
     <form className="stack" onSubmit={async event => {
       event.preventDefault();
@@ -2211,12 +2375,12 @@ function SupportLineView({ line }: { line: api.SupportLine }) {
   );
 }
 
-function SupportCard() {
+function SupportCard({onState}:{onState:(state:SupportPendingState)=>void}) {
   const app = useApp();
-  return <SupportContent key={JSON.stringify([app.session?.authenticated, app.session?.user?.userId, app.session?.familyId])} />;
+  return <SupportContent onState={onState} key={JSON.stringify([app.session?.authenticated, app.session?.user?.userId, app.session?.familyId])} />;
 }
 
-function SupportContent() {
+function SupportContent({onState}:{onState:(state:SupportPendingState)=>void}) {
   const app = useApp();
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
@@ -2226,8 +2390,12 @@ function SupportContent() {
   const [historyError, setHistoryError] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyRetry, setHistoryRetry] = useState(0);
+  const [query,setQuery]=useState("");const[selectedThread,setSelectedThread]=useState<string|null>(null);
+  const [replyDirty,setReplyDirty]=useState(false);const[replyBusy,setReplyBusy]=useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  useEffect(()=>{onState({dirty:!!subject||!!body||photos.length>0||logs.length>0||replyDirty,busy:busy||replyBusy});},[subject,body,photos,logs,replyDirty,busy,replyBusy,onState]);
+  useEffect(()=>()=>onState({dirty:false,busy:false}),[onState]);
   const pending = useRef(false);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -2251,6 +2419,7 @@ function SupportContent() {
       const opened = await api.supportOpen(draft.subject, draft.body, photos, logs);
       if (!alive.current) return;
       setThreads(list => [opened, ...list.filter(item => item.id !== opened.id)]);
+      setSelectedThread(opened.id);
       setSubject("");
       setBody("");
       setPhotos([]);
@@ -2274,6 +2443,7 @@ function SupportContent() {
       return false;
     }
   }
+  if(!app.session?.authenticated)return <article className="card stack"><h2>Поддержка</h2><p>Войдите, чтобы отправить обращение и прочитать ответ. Гостевое расписание и карты остаются доступны.</p><Link className="btn primary" to="/settings?section=account" state={{authReturnTo:"/settings?section=help"}}>Войти и вернуться к поддержке</Link></article>;
   return (
     <article className="card stack">
       <h2>Сообщить о баге</h2>
@@ -2284,17 +2454,20 @@ function SupportContent() {
         <label className="field">Что случилось<textarea value={body} onChange={event => setBody(event.target.value)} maxLength={4000} required={!!app.session?.authenticated} rows={4} /></label>
         <Attach photos={photos} logs={logs} onPhotos={setPhotos} onLogs={setLogs} onNote={setNote} />
         <button className="btn primary" type="submit">{busy ? "Отправляем…" : "Отправить"}</button>
+        {(subject||body||photos.length>0||logs.length>0)&&<button className="btn quiet" type="button" onClick={()=>{if(window.confirm("Очистить тему, текст и выбранные вложения этого черновика?")){setSubject("");setBody("");setPhotos([]);setLogs([]);setNote("");}}}>Очистить черновик обращения</button>}
         </fieldset>
       </form>
       {note && <p className="banner">{note}</p>}
       {historyLoading && <p role="status">Загрузка истории обращений…</p>}
       {historyError && <div className="banner" role="alert">{historyError}<button className="btn" disabled={historyLoading} onClick={() => setHistoryRetry(value => value + 1)}>Повторить загрузку истории</button></div>}
       {!historyLoading && !historyError && app.session?.authenticated && threads.length === 0 && <p className="muted">Обращений пока нет.</p>}
-      {threads.map(thread => (
+      {threads.length>0&&<SearchField label="Найти обращение" value={query} onChange={setQuery}/>}
+      {threads.filter(thread=>noteSearch(query,thread.subject,...thread.messages.map(line=>line.body))).map(thread=><button className={thread.id===selectedThread?"btn primary":"btn"} disabled={replyBusy} key={thread.id} onClick={()=>{if(replyDirty&&!window.confirm("Переключить обращение и отбросить несохранённое уточнение?"))return;setReplyDirty(false);setSelectedThread(thread.id);}}>{thread.subject} · сообщений: {thread.messages.length}</button>)}
+      {threads.filter(thread=>thread.id===selectedThread).map(thread => (
         <div key={thread.id} className="stack">
           <h3>{thread.subject}</h3>
           {thread.messages.map((line, index) => <SupportLineView key={thread.id + index} line={line} />)}
-          <FollowUp onSend={(text, nextPhotos, nextLogs) => follow(thread.id, text, nextPhotos, nextLogs)} />
+          <FollowUp key={thread.id} onState={(dirty,busy)=>{setReplyDirty(dirty);setReplyBusy(busy);}} onSend={(text, nextPhotos, nextLogs) => follow(thread.id, text, nextPhotos, nextLogs)} />
         </div>
       ))}
     </article>

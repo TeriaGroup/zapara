@@ -43,6 +43,15 @@ object WidgetExtraViews {
             if (face.opensMap) "maps" else "schedule",
             if (face.opensMap) face.classroomRaw else face.targetDate?.toString(),
             ru.bgtu_voenmeh.zapara.ui.shell.WidgetLaunchScope(face.identity.profileId, face.identity.databaseName)))
+        val options = android.appwidget.AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
+        val showLesson = !snapshot.cleared && face.lessonTarget != null && face.opensMap &&
+            options.getInt(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0) >=
+                (200 * context.resources.configuration.fontScale.coerceAtLeast(1f)).toInt()
+        views.setViewVisibility(R.id.widget_wayfinder_lesson, if (showLesson) View.VISIBLE else View.GONE)
+        views.setTextColor(R.id.widget_wayfinder_lesson, colors.text1)
+        if (showLesson) views.setOnClickPendingIntent(R.id.widget_wayfinder_lesson,
+            WidgetIntents.scheduleRow(context, widgetId, 2, face.lessonTarget!!,
+                ru.bgtu_voenmeh.zapara.ui.shell.WidgetLaunchScope(face.identity.profileId, face.identity.databaseName)))
         return views
     }
 
@@ -71,14 +80,20 @@ object WidgetExtraViews {
         weekCells.forEachIndexed { index, id ->
             val day = snapshot.days.getOrNull(index).takeUnless { snapshot.cleared }
             val count = day?.let { context.resources.getQuantityString(R.plurals.widget_week_pairs, it.lessonCount, it.lessonCount) }.orEmpty()
-            line(views, id, day?.let { "${it.shortName} ${it.date.dayOfMonth}\n$count" }.orEmpty(),
+            val widgetOptions = android.appwidget.AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
+            val timeFits = widgetOptions.getInt(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0) >= 180 &&
+                context.resources.configuration.fontScale < 1.2f
+            val span = day?.timeSpan.orEmpty().takeIf { timeFits }.orEmpty()
+            views.setInt(id, "setMaxLines", if (timeFits) 3 else 2)
+            views.setInt(id, "setMaxHeight", ((if (timeFits) 72 else 48) * context.resources.displayMetrics.density).toInt())
+            line(views, id, day?.let { "${it.shortName} ${it.date.dayOfMonth}\n$count" + if (span.isNotBlank()) "\n$span" else "" }.orEmpty(),
                 if (day?.isToday == true) colors.onAccent else if (day?.lessonCount == 0) colors.text2 else colors.text1)
             val background = if (day?.isToday == true) {
                 if (snapshot.isDark) R.drawable.widget_day_today_dark else R.drawable.widget_day_today_light
             } else 0
             views.setInt(id, "setBackgroundResource", background)
             val spoken = if (day == null) "" else listOf(
-                day.date.format(spokenDate), count,
+                day.date.format(spokenDate), count, day.timeSpan,
                 context.getString(R.string.widget_week_today).takeIf { day.isToday }.orEmpty()
             ).filter(String::isNotBlank).joinToString(", ")
             views.setContentDescription(id, spoken)

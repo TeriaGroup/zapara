@@ -28,8 +28,14 @@
       </StackPanel>
       <StackPanel Spacing="8" IsVisible="{Binding HasOpenDocument}">
         <TextBlock Classes="subject" Text="{Binding OpenTitle}" TextWrapping="Wrap" />
+        <TextBox Text="{Binding DocumentSearch, Mode=TwoWay}" PlaceholderText="Поиск по документу" AutomationProperties.Name="Поиск по документу" />
+        <TextBlock Classes="muted caption" Text="{Binding DocumentSearchCount}" IsVisible="{Binding DocumentSearch, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <TextBlock Text="В документе ничего не найдено" IsVisible="{Binding NoDocumentMatches}" />
+        <ItemsControl ItemsSource="{Binding DocumentMatches}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="a:DocumentMatch"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding $parent[UserControl].((a:AccountPanelViewModel)DataContext).SelectDocumentMatchCommand}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+        <TextBlock Text="{Binding SelectedDocumentParagraph}" TextWrapping="Wrap" FontSize="{Binding DocumentTextSize}" IsVisible="{Binding SelectedDocumentParagraph, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <WrapPanel ItemSpacing="8"><Button Content="Мельче" Command="{Binding ReduceDocumentTextCommand}" /><Button Content="Крупнее" Command="{Binding EnlargeDocumentTextCommand}" /></WrapPanel>
         <ScrollViewer MaxHeight="360" HorizontalScrollBarVisibility="Disabled">
-          <TextBlock Text="{Binding OpenBody}" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding OpenBody}" TextWrapping="Wrap" FontSize="{Binding DocumentTextSize}" />
         </ScrollViewer>
         <Button HorizontalAlignment="Left" Content="Закрыть" Command="{Binding CloseDocumentCommand}" AutomationProperties.AutomationId="Legal.Close" />
       </StackPanel>
@@ -107,6 +113,7 @@
           </StackPanel>
           <TextBlock Text="{loc:T accountDisplayName}" />
           <TextBox Text="{Binding DisplayName}" AutomationProperties.Name="{loc:T accountDisplayName}" AutomationProperties.AutomationId="Account.DisplayName" />
+          <TextBlock Text="Изменение имени ещё не сохранено" IsVisible="{Binding HasUnsavedDisplayName}" Classes="muted caption" />
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Button Content="{loc:T accountSave}" Command="{Binding SaveProfileCommand}" AutomationProperties.AutomationId="Account.Save" />
             <Button Content="{loc:T accountRefresh}" Command="{Binding RefreshProfileCommand}" AutomationProperties.AutomationId="Account.Refresh" />
@@ -120,11 +127,16 @@
             </StackPanel>
           </StackPanel>
           <Button HorizontalAlignment="Left" Content="{loc:T accountDevices}" Command="{Binding LoadDevicesCommand}" AutomationProperties.AutomationId="Account.Devices" />
-          <ItemsControl ItemsSource="{Binding Devices}">
+          <TextBox Text="{Binding DeviceSearch, Mode=TwoWay}" PlaceholderText="Название, платформа или код устройства" AutomationProperties.Name="Поиск активных устройств" />
+          <ComboBox ItemsSource="{Binding DeviceScopes}" SelectedIndex="{Binding DeviceScopeIndex}" MinWidth="180" HorizontalAlignment="Left" AutomationProperties.Name="Какие устройства показать" />
+          <WrapPanel ItemSpacing="8"><TextBlock Text="{Binding DeviceResultCount}" VerticalAlignment="Center" /><Button Content="Сбросить фильтры устройств" Command="{Binding ResetDeviceFiltersCommand}" IsVisible="{Binding HasDeviceFilters}" /></WrapPanel>
+          <TextBlock Text="На загруженных страницах таких устройств нет. Другие могут быть на следующей странице." IsVisible="{Binding NoDeviceMatches}" TextWrapping="Wrap" />
+          <ItemsControl ItemsSource="{Binding FilteredDevices}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="dto:DeviceResponse">
                 <StackPanel Spacing="8" Margin="0,4">
                   <TextBlock Text="{Binding DeviceName}" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding LastSeenAt, StringFormat='Последняя активность: {0:dd.MM.yyyy HH:mm zzz}'}" TextWrapping="Wrap" />
                   <TextBlock Text="{loc:T accountCurrentDevice}" IsVisible="{Binding IsCurrent}" />
                   <Button HorizontalAlignment="Left" Content="{loc:T accountRevoke}" AutomationProperties.AutomationId="Account.Revoke"
                           Command="{Binding $parent[a:AccountPanelView].((a:AccountPanelViewModel)DataContext).RequestRevokeDeviceCommand}" CommandParameter="{Binding}" />
@@ -147,7 +159,8 @@
             <TextBox Text="{Binding CurrentPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountCurrentPassword}" AutomationProperties.AutomationId="Account.CurrentPassword" />
             <TextBlock Text="{loc:T accountNewPassword}" />
             <TextBox Text="{Binding NewPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountNewPassword}" AutomationProperties.AutomationId="Account.NewPassword" />
-            <Button HorizontalAlignment="Left" Content="{loc:T accountChangePassword}" Command="{Binding ChangePasswordCommand}" AutomationProperties.AutomationId="Account.ChangePassword" />
+            <TextBlock Text="Новый пароль должен отличаться от текущего." IsVisible="{Binding IsSameNewPassword}" TextWrapping="Wrap" />
+            <Button HorizontalAlignment="Left" Content="{loc:T accountChangePassword}" Command="{Binding ChangePasswordCommand}" IsEnabled="{Binding !IsSameNewPassword}" AutomationProperties.AutomationId="Account.ChangePassword" />
           </StackPanel>
           <StackPanel Spacing="8" IsVisible="{Binding HasPassword}">
             <TextBlock Text="{loc:T accountProof}" />

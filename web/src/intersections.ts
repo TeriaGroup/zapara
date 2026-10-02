@@ -16,6 +16,7 @@ export type IntersectionInput = {
   strictness: number;
   now: Date;
   horizonDays?: number;
+  limit?: number;
 };
 export type Encounter = {
   date: Date;
@@ -97,6 +98,7 @@ export function marksForLesson(lesson: Lesson, date: Date, input: IntersectionIn
 }
 
 export function forecastIntersections(input: IntersectionInput): IntersectionForecast {
+  const limit = Number.isFinite(input.limit) ? Math.max(1, Math.min(100, Math.floor(input.limit!))) : 3;
   const friends = input.friends.filter(friend => friend.enabled).slice(0, 5);
   const missingGroups = friends.filter(friend => friend.lessons === null).map(friend => friend.groupName);
   const checkedGroups = friends.length - missingGroups.length;
@@ -121,7 +123,7 @@ export function forecastIntersections(input: IntersectionInput): IntersectionFor
           friendRoom: (best.lesson.roomRaw || best.lesson.classroomRaw || "").trim(), color: friend.color,
           score: best.score,
         });
-        if (encounters.length === 3) return { encounters, missingGroups, checkedGroups };
+        if (encounters.length === limit) return { encounters, missingGroups, checkedGroups };
       }
     }
   }

@@ -50,7 +50,7 @@ public class SectionsRenderTests : UiTest
         var loaded = new Dictionary<SectionKey, Func<ViewModelBase, bool>>
         {
             [SectionKey.Schedule] = vm => ((ScheduleViewModel)vm).Lessons.Count == 2,
-            [SectionKey.Week] = vm => ((WeekViewModel)vm).Days.Count == 6,
+            [SectionKey.Week] = vm => ((WeekViewModel)vm).Days.Count == 7,
             [SectionKey.Summary] = vm => ((SummaryViewModel)vm).TotalText != "—",
             [SectionKey.Teachers] = vm => ((TeachersViewModel)vm).Items.Count > 0,
             [SectionKey.Maps] = vm => ((MapsViewModel)vm).Image is not null,

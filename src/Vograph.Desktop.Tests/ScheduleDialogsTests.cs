@@ -136,7 +136,7 @@ public class ScheduleDialogsTests : UiTest
 
         Assert.Equal(1, vm.DayOffset);                      // Sunday → smart start lands on Monday, not on the empty Sunday
         Assert.Equal(new DateTime(2026, 9, 14), vm.Date);
-        Assert.Equal(2, vm.SegmentIndex);
+        Assert.Equal(1, vm.SegmentIndex);
         Assert.True(vm.ShowGoToday);
         Assert.Equal(2, vm.Lessons.Count);
         Assert.Equal("А863С", shell.GroupName);
@@ -253,6 +253,11 @@ public class ScheduleDialogsTests : UiTest
         Pump();
 
         var pastCard = window.GetVisualDescendants().OfType<Border>().Single(b => b.Classes.Contains("past"));
+        Assert.DoesNotContain(pastCard.GetVisualDescendants().OfType<TextBlock>(),
+            text => text.Classes.Contains("hwtext"));
+        var expand = pastCard.GetVisualDescendants().OfType<Avalonia.Controls.Button>()
+            .Single(button => button.Content as string == "Подробнее");
+        Click(window, expand);
         var text = pastCard.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Classes.Contains("hwtext"));
         Assert.Equal("§5, задачи 1–12", text.Text);
         Assert.True(text.TextDecorations is null || text.TextDecorations.Count == 0);

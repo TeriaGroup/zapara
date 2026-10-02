@@ -20,10 +20,14 @@ public sealed partial class GroupViewModel
     public string SharedHomeworkSaveLabel => sharedHomeworkPending ? "Повторить публикацию" : editingSharedHomework is null ? "Назначить задание" : "Сохранить изменения";
     public IReadOnlyList<string> HomeworkFilters { get; } = ["Все", "Активные", "Готово у меня"];
     [ObservableProperty] private int homeworkFilter;
-    public IReadOnlyList<SpaceHomeworkRow> VisibleChannelHomeworks => ChannelHomeworks.Where(row => HomeworkFilter == 0 || row.Completed == (HomeworkFilter == 2)).ToArray();
+    [ObservableProperty] private int homeworkSortIndex;
+    public IReadOnlyList<string> HomeworkSortOptions { get; } = ["Исходный порядок", "Ближайший срок", "По предмету"];
+    public IReadOnlyList<SpaceHomeworkRow> VisibleChannelHomeworks => GroupHomeworkBrowse.Sort(
+        ChannelHomeworks.Where(row => HomeworkFilter == 0 || row.Completed == (HomeworkFilter == 2)), HomeworkSortIndex);
     public string ChannelHomeworkSummary => channelHomeworkLoaded ? $"Заданий: {ChannelHomeworks.Count} · готово у вас: {ChannelHomeworks.Count(row => row.Completed)}" : "Список заданий ещё не загружен";
     public bool NoVisibleHomework => channelHomeworkLoaded && !IsBusy && VisibleChannelHomeworks.Count == 0;
     partial void OnHomeworkFilterChanged(int value) => NotifyChannelHomeworkState();
+    partial void OnHomeworkSortIndexChanged(int value) => NotifyChannelHomeworkState();
     partial void OnSharedHomeworkTitleChanged(string value) => SaveHomeworkDraft();
     partial void OnSharedHomeworkBodyChanged(string value) => SaveHomeworkDraft();
     partial void OnSharedHomeworkDeadlineChanged(string value) => SaveHomeworkDraft();

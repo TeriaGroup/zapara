@@ -3,9 +3,11 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Avalonia.Threading;
 using Vograph.Core.Models;
+using Vograph.Core.Campus;
 using Vograph.Core.Services;
 using Vograph.Desktop.Dialogs;
 using Vograph.Desktop.Features.Homeworks;
+using Vograph.Desktop.Features.Teachers;
 using Vograph.Desktop.Domain;
 using Vograph.Desktop.Services;
 using Vograph.Desktop.Shell;
@@ -17,14 +19,22 @@ public sealed partial class ScheduleViewModel : ViewModelBase
 {
     private readonly ScheduleComposer _composer;
     private readonly ShellViewModel _shell;
+    private Func<string, Task>? clipboardWriter;
+    public void SetClipboardWriter(Func<string, Task>? writer) => clipboardWriter = writer;
     private readonly Func<DateTime> _clock;
     private readonly Action _onLanguage;
     private readonly Action _onGroup;
     private readonly Action _onSchedule;
     private readonly Action _onHomework;
+    private bool transferGraphLoaded;
+    private CampusGraph? transferGraph;
     private int _reloadVersion;
     private bool _suppressReload;
     private bool _loaded;
+    [ObservableProperty] private bool loadingDay;
+    [ObservableProperty] private string scheduleLoadError = "";
+    public bool ShowFirstDayLoading => LoadingDay && !_loaded;
+    partial void OnLoadingDayChanged(bool value) => OnPropertyChanged(nameof(ShowFirstDayLoading));
     private bool _raising;
     private int? _shownOffset;
     private DateTime _selectedDay;
@@ -68,7 +78,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         // Another group: run smart start again — the old offset was chosen for the old group, or for none.
         // Same guard as ReloadAsync: a section that never loaded has no stale offset to correct, and it
         // runs smart start on its own first load — starting Core work here would only outlive the shell.
-        _onGroup = () => { subgroupRenderEpoch++; pendingLessonFocus = null; ClearSubgroupUndo(); if (_loaded) _ = ReloadAsync(); };
+        _onGroup = () => { subgroupRenderEpoch++; pendingLessonFocus = null; LessonSearch = ""; ClearSubgroupUndo(); if (_loaded) _ = InitializeAsync(smartStart: true); };
         _onSchedule = () => _ = ReloadAsync();
         // Homework changed elsewhere (the Homework section): recompose the day. Our own mutations already
         // reloaded before they raised the event, so _raising keeps the card from composing twice.
@@ -81,6 +91,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
 
     public override void Detach()
     {
+        clipboardWriter = null;
         _planningClock.Stop();
         _subgroupUndoClock.Stop();
         _planningClock.Tick -= OnPlanningClock;
@@ -96,24 +107,63 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     public void ShowDate(DateTime date) => SelectDate(date);
 
     public ObservableCollection<LessonRowViewModel> Lessons { get; } = new();
-    public event Action<LessonRowViewModel>? LessonFocusRequested;
-    private (DateTime Date, string Subject, string Time)? pendingLessonFocus;
-    public void RequestLessonFocus(DateTime date, string subjectRaw, string timeStart)
+    public bool CanOpenTeacher(LessonRowViewModel row)
     {
-        pendingLessonFocus = (date.Date, subjectRaw, timeStart);
+        var name = row.Row.Teacher.Trim();
+        return name.Length > 0 && !name.Contains(';') && App.Lecturers.IsLoaded &&
+            App.Lecturers.Lecturers.Count(info => TeacherSearch.SameTeacher(info.Name, name)) == 1;
+    }
+    public async Task OpenTeacherAsync(LessonRowViewModel row)
+    {
+        if (!Lessons.Contains(row) || !CanOpenTeacher(row)) return;
+        var name = row.Row.Teacher.Trim();
+        var match = App.Lecturers.Lecturers.Single(info => TeacherSearch.SameTeacher(info.Name, name));
+        var group = App.Settings.MyGroupId; var scope = App.Profile.DatabasePath;
+        var teachers = _shell.Section<TeachersViewModel>(SectionKey.Teachers);
+        await teachers.OpenByNameAsync(match.Name);
+        if (App.Work.CanPublish && scope == App.Profile.DatabasePath && group == App.Settings.MyGroupId &&
+            teachers.Selected?.Info.Id == match.Id) _shell.NavigateTo(SectionKey.Teachers);
+    }
+    public event Action<LessonRowViewModel>? LessonFocusRequested;
+    private sealed record LessonFocusRequest(DateTime Date, string Subject, string Time,
+        string? End, string? Type, string? Teacher, string? Classroom);
+    private LessonFocusRequest? pendingLessonFocus;
+    public void RequestLessonFocus(DateTime date, string subjectRaw, string timeStart,
+        string? timeEnd = null, string? typeRaw = null, string? teacherRaw = null, string? classroomRaw = null)
+    {
+        pendingLessonFocus = new(date.Date, subjectRaw, timeStart, timeEnd, typeRaw, teacherRaw, classroomRaw);
         if (_loaded && Date.Date == date.Date) ApplyPendingLessonFocus();
     }
-    private void ApplyPendingLessonFocus()
+    private void ApplyPendingLessonFocus(bool final = false)
     {
         if (pendingLessonFocus is not { } request) return;
         if (Date.Date != request.Date) return;
-        var row = Lessons.FirstOrDefault(item => item.Row.Lesson.SubjectRaw == request.Subject && item.TimeStart == request.Time);
-        if (row is null) return;
+        var matches = Lessons.Where(item => item.Row.Lesson.SubjectRaw == request.Subject && item.TimeStart == request.Time &&
+            (request.End is null || item.TimeEnd == request.End) &&
+            (request.Type is null || item.Row.Lesson.TypeRaw == request.Type) &&
+            (request.Teacher is null || item.Row.Lesson.TeacherRaw == request.Teacher) &&
+            (request.Classroom is null || item.Row.Lesson.ClassroomRaw == request.Classroom)).Take(2).ToArray();
+        if (matches.Length != 1)
+        { if (final) { pendingLessonFocus = null; App.Toasts.Info("Пара изменилась в сохранённом расписании. Проверьте день заново."); }
+            return; }
         pendingLessonFocus = null;
+        var row = matches[0];
         row.ShowDetails = true;
         LessonFocusRequested?.Invoke(row);
     }
     public ObservableCollection<ScheduleOverlap> Overlaps { get; } = new();
+    [RelayCommand] private void OpenOverlapFirst(ScheduleOverlap? overlap) => OpenOverlapSide(overlap, true);
+    [RelayCommand] private void OpenOverlapSecond(ScheduleOverlap? overlap) => OpenOverlapSide(overlap, false);
+    private void OpenOverlapSide(ScheduleOverlap? overlap, bool first)
+    {
+        if (overlap is null || !Overlaps.Contains(overlap)) return;
+        var row = first ? overlap.First : overlap.Second;
+        if (!Lessons.Contains(row)) return;
+        row.ShowDetails = true; LessonFocusRequested?.Invoke(row);
+    }
+    [ObservableProperty] private IReadOnlyList<string> transferWarnings = [];
+    public bool HasTransferWarnings => TransferWarnings.Count > 0;
+    partial void OnTransferWarningsChanged(IReadOnlyList<string> value) => OnPropertyChanged(nameof(HasTransferWarnings));
     public bool HasOverlaps => Overlaps.Count > 0;
 
     [ObservableProperty] private IList<string> _segmentItems;
@@ -121,9 +171,29 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     [ObservableProperty] private int _segmentIndex;
     [ObservableProperty] private DateTime? _calendarDate;
     [ObservableProperty] private string _daySummary = "";
+    [ObservableProperty] private string _workloadSpan = "";
     public ObservableCollection<PlannerDayChoice> DateChoices { get; } = [];
     public ObservableCollection<PlannerBreak> FreeTime { get; } = [];
     public ObservableCollection<object> DayRows { get; } = [];
+    [ObservableProperty] private bool remainingToday;
+    public bool CanFilterRemainingToday => Date.Date == _clock().Date && Lessons.Count > 0;
+    public IReadOnlyList<object> VisibleDayRows => !RemainingToday || !CanFilterRemainingToday
+        ? DayRows.ToArray()
+        : DayRows.Where(item => item switch
+        {
+            LessonRowViewModel lesson => !lesson.IsPast,
+            PlannerBreak gap => gap.End > _clock().TimeOfDay,
+            _ => false
+        }).ToArray();
+    public bool RemainingEmpty => RemainingToday && CanFilterRemainingToday &&
+        !VisibleDayRows.OfType<LessonRowViewModel>().Any();
+    partial void OnRemainingTodayChanged(bool value) => RefreshRemainingToday();
+    private void RefreshRemainingToday()
+    {
+        OnPropertyChanged(nameof(CanFilterRemainingToday));
+        OnPropertyChanged(nameof(VisibleDayRows));
+        OnPropertyChanged(nameof(RemainingEmpty));
+    }
     [ObservableProperty] private string _title = "";
     [ObservableProperty] private string _subtitle = "";
     [ObservableProperty] private bool _isEmpty;
@@ -145,14 +215,19 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     private IList<string> BuildSegmentItems() => new[] { T("today"), T("tomorrow"), "Послезавтра" };
 
     /// <summary>Smart start: today while lessons remain, otherwise tomorrow.</summary>
-    public async Task InitializeAsync()
+    public Task InitializeAsync() => InitializeAsync(smartStart: false);
+
+    private async Task InitializeAsync(bool smartStart)
     {
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return;
         var version = ++_reloadVersion; // a reload already queued behind the gate must not overwrite the smart-start result
+        LoadingDay = true;
         var now = _clock();
         _selectedDay = now.Date;
-        var model = await ComposeAsync(() => _composer.Compose(0, now, _dateStripCount));
+        var model = await ComposeAsync(() => _composer.Compose(smartStart ? _composer.InitialOffset(now) : 0,
+            now, _dateStripCount));
+        if (version == _reloadVersion && operation.IsCurrent) LoadingDay = false;
         if (_selectedDay != now.Date)
         {
             _loaded = true;
@@ -161,13 +236,16 @@ public sealed partial class ScheduleViewModel : ViewModelBase
             return;
         }
         _loaded = true;
-        if (model is null || version != _reloadVersion) return;
+        if (model is null || version != _reloadVersion)
+        { if (model is null && version == _reloadVersion) ScheduleLoadError = "День не загрузился. Последняя доступная карточка сохранена."; return; }
+        ScheduleLoadError = "";
         _suppressReload = true;
         DayOffset = model.Offset;
         SyncSegment(model.Offset); // DayOffset may already hold that value, and then no change callback ran
         _suppressReload = false;
         Apply(model);
         await LoadDeadlines(model.Date, version);
+        await LoadTransferWarnings(model.Rows, version);
         _planningClock.Start();
     }
 
@@ -179,6 +257,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         if (!operation.IsCurrent) return;
         if (!_loaded) return;
         var version = ++_reloadVersion;
+        LoadingDay = true;
         var now = _clock();
         var offset = (_selectedDay - now.Date).Days;
         _suppressReload = true;
@@ -186,9 +265,39 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         SyncSegment(offset);
         _suppressReload = false;
         var model = await ComposeAsync(() => _composer.Compose(offset, now, _dateStripCount));
-        if (model is null || version != _reloadVersion) return; // superseded by a newer reload
+        if (version == _reloadVersion && operation.IsCurrent) LoadingDay = false;
+        if (model is null || version != _reloadVersion)
+        { if (model is null && version == _reloadVersion) ScheduleLoadError = "День не загрузился. Последняя доступная карточка сохранена."; return; }
+        ScheduleLoadError = "";
         Apply(model);
         await LoadDeadlines(model.Date, version);
+        await LoadTransferWarnings(model.Rows, version);
+    }
+
+    private sealed record TransferWarningResult(IReadOnlyList<string> Warnings);
+    private async Task LoadTransferWarnings(IReadOnlyList<LessonRow> rows, int version)
+    {
+        if (version != _reloadVersion) return;
+        if (rows.Count < 2) { TransferWarnings = []; return; }
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        var result = await RunAsync(() =>
+        {
+            if (!transferGraphLoaded)
+            {
+                transferGraphLoaded = true;
+                try
+                {
+                    var path = Path.Combine(App.Maps.BundledDir, "campus-graph.json");
+                    if (File.Exists(path)) transferGraph = CampusGraph.Load(File.ReadAllText(path));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CampusGraphException)
+                { transferGraph = null; }
+            }
+            return new TransferWarningResult(ScheduleTransitionPlanner.Warnings(transferGraph, rows));
+        }, "schedule transfer");
+        if (result is not null && operation.IsCurrent && version == _reloadVersion)
+            TransferWarnings = result.Warnings;
     }
 
     /// <summary>App.CoreGate (inside RunAsync) hands the gate to waiters in order, so awaiting a
@@ -206,21 +315,28 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         var direction = _shownOffset is { } prev ? Math.Sign(model.Offset - prev) : 0;
         _shownOffset = model.Offset;
         Date = model.Date;
+        if (Date.Date != _clock().Date) RemainingToday = false;
         _selectedDay = model.Date;
         _applyingCalendar = true;
         CalendarDate = model.Date;
         _applyingCalendar = false;
         Title = model.Title;
         Subtitle = model.Subtitle;
+        var usedRows = new HashSet<LessonRowViewModel>();
         var reconciled = model.Rows.Select((row,index) =>
         {
-            var existing = Lessons.FirstOrDefault(x => x.Row.Lesson.SubjectRaw == row.Lesson.SubjectRaw && x.TimeStart == row.TimeStart && x.Row.Lesson.ClassroomRaw == row.Lesson.ClassroomRaw);
-            if(existing is null)return new LessonRowViewModel(row,this,index);
+            var existing = Lessons.FirstOrDefault(x => !usedRows.Contains(x) &&
+                x.Row.Lesson.SubjectRaw == row.Lesson.SubjectRaw && x.TimeStart == row.TimeStart &&
+                x.Row.Lesson.ClassroomRaw == row.Lesson.ClassroomRaw);
+            if (existing is null) return new LessonRowViewModel(row, this, index);
+            usedRows.Add(existing);
             existing.Update(row); return existing;
         }).ToArray();
         for(var i=0;i<reconciled.Length;i++){var old=Lessons.IndexOf(reconciled[i]);if(old<0)Lessons.Insert(i,reconciled[i]);else if(old!=i)Lessons.Move(old,i);}
         while(Lessons.Count>reconciled.Length)Lessons.RemoveAt(Lessons.Count-1);
-        ApplyPendingLessonFocus();
+        OnPropertyChanged(nameof(HasLessons));
+        RefreshLessonSearch();
+        ApplyPendingLessonFocus(final: true);
         Overlaps.Clear(); foreach (var conflict in ScheduleOverlap.Find(Lessons.ToArray())) Overlaps.Add(conflict);
         OnPropertyChanged(nameof(HasOverlaps));
         OnPropertyChanged(nameof(DayPriorityCaption));OnPropertyChanged(nameof(HasPriority));OnPropertyChanged(nameof(ShowDayState));
@@ -235,6 +351,12 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         FreeTime.Clear();
         foreach (var gap in model.Breaks ?? []) FreeTime.Add(new PlannerBreak(gap));
         DaySummary = model.Summary ?? "";
+        var starts = model.Rows.Select(row => TimeSpan.TryParse(row.TimeStart, out var time) ? time : (TimeSpan?)null)
+            .Where(time => time is not null).Select(time => time!.Value).ToArray();
+        var ends = model.Rows.Select(row => TimeSpan.TryParse(row.TimeEnd, out var time) ? time : (TimeSpan?)null)
+            .Where(time => time is not null).Select(time => time!.Value).ToArray();
+        WorkloadSpan = starts.Length == 0 || ends.Length == 0 ? "" :
+            $"С {starts.Min():hh\\:mm} до {ends.Max():hh\\:mm} · перерывы: {(model.Breaks?.Sum(gap => gap.Minutes) ?? 0)} мин";
         RebuildDayRows();
         DayShown?.Invoke(direction);
     }
@@ -261,6 +383,22 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     [RelayCommand] private void PrevDay() { if (_selectedDay > DateTime.MinValue.Date) SelectDate(_selectedDay.AddDays(-1)); }
     [RelayCommand] private void NextDay() { if (_selectedDay < DateTime.MaxValue.Date) SelectDate(_selectedDay.AddDays(1)); }
     [RelayCommand] private void GoToday() => SelectDate(_clock().Date);
+    [RelayCommand] private async Task CopyDay()
+    {
+        if (!_loaded) return;
+        var scope = App.Profile.DatabasePath + ":" + App.Settings.MyGroupId;
+        var text = ScheduleShareText.Format(Date, Lessons.Select(row =>
+            (row.TimeStart, row.Row.TimeEnd, row.DisplayName, row.RoomText, row.Row.Teacher)));
+        try
+        {
+            if (clipboardWriter is null) throw new InvalidOperationException("Clipboard unavailable");
+            await clipboardWriter(text);
+            if (App.Work.CanPublish && scope == App.Profile.DatabasePath + ":" + App.Settings.MyGroupId)
+                App.Toasts.Info("День скопирован.");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException)
+        { App.Toasts.Error("Не удалось скопировать день."); }
+    }
 
     public void SelectDate(DateTime date)
     {
@@ -296,6 +434,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         }
         for(var i=0;i<orderedRows.Count;i++){var old=DayRows.IndexOf(orderedRows[i]);if(old<0)DayRows.Insert(i,orderedRows[i]);else if(old!=i)DayRows.Move(old,i);}
         while(DayRows.Count>orderedRows.Count)DayRows.RemoveAt(DayRows.Count-1);
+        RefreshRemainingToday();
     }
 
     /// <summary>The card's own name travels with the map (renamed, type stripped), so the Maps header names the lesson.</summary>

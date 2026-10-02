@@ -1,5 +1,5 @@
 import { moveQuestion, changeQuestionKind, questionWire, questionFilled } from "./form-draft";
-import { FormEvent, useEffect, useRef, useState, type SetStateAction } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useRef, useState, type SetStateAction } from "react";
 import * as api from "./api";
 import { canonicalUtc, localDateTimeInput } from "./utc";
 import { HomeworkRequestScope, scopedValue, subjectHomework } from "./homework-request-scope";
@@ -14,12 +14,16 @@ import { useCommunityTimetable } from "./use-community-timetable";
 import { buildGroupChatContext } from "./groupChatContext";
 import { absoluteDate, localDay } from "./planner";
 import { groupMediaDownload } from "./group-media";
-import { GroupInlineMedia } from "./group-inline-media";
+import { MaterialMedia } from "./group-inline-media";
 import { formResponsesCsv } from "./form-export";
+import { answerDraftChanged, choiceCounts, browseForms, copyFormQuestion, noteSearch, dueBucket, type FormBrowse } from "./ux300";
+import { SearchField, FilterEmpty, useClock } from "./ux300-controls";
+import { Sheet } from "./sheet";
 import { validateFormAnswers, validateFormQuestions, requiredFormProgress } from "./forms";
 import type { ChatMessage, FormAnswer, FormQuestion, FormResponse, GroupForm, GroupHomeworkCopy, GroupTopic, HomeworkAudience } from "./types";
-export function SpecializedChannel({ communityId, conversationId, groupName, topic, onError }: {
+export function SpecializedChannel({ communityId, conversationId, groupName, topic, onError, targetId }: {
     communityId: string;
+    targetId?: string;
     conversationId: string;
     groupName: string | null;
     topic: GroupTopic;
@@ -30,11 +34,11 @@ export function SpecializedChannel({ communityId, conversationId, groupName, top
     if (!topic.topicId)
         return null;
     if (topic.kind === "forms")
-        return <FormsChannel key={topic.topicId} communityId={communityId} topic={topic} onError={onError}/>;
+        return <FormsChannel key={topic.topicId} communityId={communityId} topic={topic} onError={onError} targetId={targetId}/>;
     if (topic.kind === "materials")
         return <MaterialsChannel key={topic.topicId} communityId={communityId} conversationId={conversationId} topic={topic} onError={onError}/>;
     if (topic.kind === "homework")
-        return <HomeworkChannel key={topic.topicId} communityId={communityId} topic={topic} onError={onError}/>;
+        return <HomeworkChannel key={topic.topicId} communityId={communityId} topic={topic} onError={onError} targetId={targetId}/>;
     if (topic.kind === "schedule")
         return <ScheduleChannel groupName={groupName} topic={topic}/>;
     return topic.kind === "ballots" ? null : <p className="banner">Этот тип канала не поддерживается. Обновите приложение.</p>;
@@ -43,12 +47,16 @@ const can = (topic: GroupTopic, power: string) => !topic.archived && topic.suppo
 const problem = (error: unknown) => error instanceof Error && (error.message === "403" || error.message === "404") ? "Доступ к каналу изменился" : "Не удалось загрузить или сохранить данные. Ввод сохранён.";
 function emptyQuestion(): FormQuestion { return { questionId: crypto.randomUUID(), title: "", kind: "shortText", required: true, options: [] }; }
 const questionTitles = { shortText: "Короткий текст", longText: "Развёрнутый текст", singleChoice: "Один вариант", multipleChoice: "Несколько вариантов" };
-function FormsChannel({ communityId, topic, onError }: {
+function FormsChannel({ communityId, topic, onError, targetId }: {
+    targetId?: string;
     communityId: string;
     topic: GroupTopic;
     onError: (text: string) => void;
 }) {
     const [forms, setForms] = useState<GroupForm[] | null>(null);
+    const [query, setQuery] = useState("");
+    const [filter, setFilter] = useState<FormBrowse>("all");
+    const [preview, setPreview] = useState(false);
     const app = useApp();
     const [createDraft, , clearCreateDraft, setCreateField] = useStoredDraft(draftKey(app.session?.user?.userId, communityId, topic.topicId!, "form-create"), () => ({ creating: false, title: "", description: "", deadline: "", anonymous: false, questions: [emptyQuestion()] }));
     const { creating, title, description, deadline, anonymous, questions } = createDraft;
@@ -85,6 +93,8 @@ function FormsChannel({ communityId, topic, onError }: {
         const validation = validateFormQuestions(title, questions, deadline);
         if (validation) {
             onError(validation);
+            const invalid = questions.find(question => validateFormQuestions("Анкета", [question], ""));
+            if (invalid) document.getElementById(`form-question-${invalid.questionId}`)?.querySelector<HTMLInputElement>("input")?.focus();
             return;
         }
         const sentDraft = createDraft;
@@ -101,16 +111,16 @@ function FormsChannel({ communityId, topic, onError }: {
             setBusy(false);
         }
     }
-    return <div className="stack"><div className="row"><h2>Анкеты</h2><button className="btn quiet" type="button" onClick={() => setRetry(value => value + 1)}>Обновить</button>{can(topic, "forms") && <button className="btn primary" type="button" onClick={() => setCreating(value => !value)}>{creating ? "Скрыть редактор" : "Создать анкету"}</button>}</div>
-    {creating && can(topic, "forms") && <form className="card stack" onSubmit={event => void create(event)}><label className="field">Название<input required maxLength={200} value={title} onChange={event => setTitle(event.target.value)}/></label><label className="field">Описание<textarea maxLength={2000} value={description} onChange={event => setDescription(event.target.value)}/></label><label className="field">Принимать ответы до<input type="datetime-local" value={deadline} onChange={event => setDeadline(event.target.value)}/></label><label className="check"><input type="checkbox" checked={anonymous} onChange={event => setAnonymous(event.target.checked)}/>Анонимные ответы</label>
-      {questions.map((question, index) => <fieldset className="stack card" key={question.questionId}><legend>Вопрос {index + 1}</legend><input aria-label={`Текст вопроса ${index + 1}`} required maxLength={400} value={question.title} onChange={event => setQuestions(rows => rows.map(row => row.questionId === question.questionId ? { ...row, title: event.target.value } : row))}/><select aria-label={`Тип вопроса ${index + 1}`} value={question.kind} onChange={event => setQuestions(rows => rows.map(row => row.questionId === question.questionId ? changeQuestionKind(row, event.target.value as FormQuestion["kind"]) : row))}>{Object.entries(questionTitles).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><label className="check"><input type="checkbox" checked={question.required} onChange={event => setQuestions(rows => rows.map(row => row.questionId === question.questionId ? { ...row, required: event.target.checked } : row))}/>Обязательный</label>
+    return <div className="stack"><div className="row"><h2>Анкеты</h2><button className="btn quiet" type="button" onClick={() => setRetry(value => value + 1)}>Обновить</button>{can(topic, "forms") && <button className="btn primary" type="button" disabled={busy} onClick={() => setCreating(value => !value)}>{creating ? "Скрыть редактор" : "Создать анкету"}</button>}</div>
+    {creating && can(topic, "forms") && <form className="card stack" onSubmit={event => void create(event)}><fieldset className="stack" disabled={busy}><label className="field">Название<input required maxLength={200} value={title} onChange={event => setTitle(event.target.value)}/></label><label className="field">Описание<textarea maxLength={2000} value={description} onChange={event => setDescription(event.target.value)}/></label><label className="field">Принимать ответы до<input type="datetime-local" value={deadline} onChange={event => setDeadline(event.target.value)}/></label><label className="check"><input type="checkbox" checked={anonymous} onChange={event => setAnonymous(event.target.checked)}/>Анонимные ответы</label>
+      {questions.map((question, index) => <fieldset id={`form-question-${question.questionId}`} className="stack card" key={question.questionId}><legend>Вопрос {index + 1}</legend>{validateFormQuestions("Анкета", [question], "") && <p className="muted" role="status">Вопрос {index + 1}: {validateFormQuestions("Анкета", [question], "")}</p>}<input aria-label={`Текст вопроса ${index + 1}`} required maxLength={400} value={question.title} onChange={event => setQuestions(rows => rows.map(row => row.questionId === question.questionId ? { ...row, title: event.target.value } : row))}/><select aria-label={`Тип вопроса ${index + 1}`} value={question.kind} onChange={event => setQuestions(rows => rows.map(row => row.questionId === question.questionId ? changeQuestionKind(row, event.target.value as FormQuestion["kind"]) : row))}>{Object.entries(questionTitles).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><label className="check"><input type="checkbox" checked={question.required} onChange={event => setQuestions(rows => rows.map(row => row.questionId === question.questionId ? { ...row, required: event.target.checked } : row))}/>Обязательный</label>
       {["singleChoice", "multipleChoice"].includes(question.kind) && question.options.map((option, i) => <div className="row" key={i}><input aria-label={`Вариант ${i + 1} вопроса ${index + 1}`} value={option} maxLength={160} required onChange={event => setQuestions(rows => rows.map(row => row.questionId === question.questionId ? { ...row, options: row.options.map((text, j) => j === i ? event.target.value : text) } : row))}/><button className="btn quiet" disabled={question.options.length <= 2} type="button" onClick={() => setQuestions(rows => rows.map(row => row.questionId === question.questionId ? { ...row, options: row.options.filter((_, j) => i !== j) } : row))}>Убрать</button></div>)}
-      {["singleChoice", "multipleChoice"].includes(question.kind) && question.options.length > 0 && <button className="btn" disabled={question.options.length >= 10} type="button" onClick={() => setQuestions(rows => rows.map(row => row.questionId === question.questionId ? { ...row, options: [...row.options, ""] } : row))}>Добавить вариант</button>}<button className="btn quiet" disabled={questions.length <= 1} type="button" onClick={() => { if (!questionFilled(question) || window.confirm(`Убрать вопрос «${question.title || "Без названия"}» и его варианты?`)) setQuestions(rows => rows.filter(row => row.questionId !== question.questionId)); }}>Убрать вопрос</button><button className="btn quiet" type="button" disabled={index === 0} onClick={() => setQuestions(rows => moveQuestion(rows, question.questionId, -1))}>Выше</button><button className="btn quiet" type="button" disabled={index === questions.length - 1} onClick={() => setQuestions(rows => moveQuestion(rows, question.questionId, 1))}>Ниже</button></fieldset>)}
-      <button className="btn" disabled={questions.length >= 20} type="button" onClick={() => setQuestions(rows => [...rows, emptyQuestion()])}>Добавить вопрос</button><p className="muted">После публикации вопросы и анонимность сохраняются. Ответы видит автор анкеты; личность в анонимной анкете скрыта.</p><button className="btn primary" disabled={busy}>{busy ? "Публикуем…" : "Опубликовать"}</button><button className="btn quiet" type="button" disabled={busy} onClick={() => {
+      {["singleChoice", "multipleChoice"].includes(question.kind) && question.options.length > 0 && <button className="btn" disabled={question.options.length >= 10} type="button" onClick={() => setQuestions(rows => rows.map(row => row.questionId === question.questionId ? { ...row, options: [...row.options, ""] } : row))}>Добавить вариант</button>}<button className="btn quiet" disabled={questions.length <= 1} type="button" onClick={() => { if (!questionFilled(question) || window.confirm(`Убрать вопрос «${question.title || "Без названия"}» и его варианты?`)) setQuestions(rows => rows.filter(row => row.questionId !== question.questionId)); }}>Убрать вопрос</button><button className="btn quiet" type="button" disabled={questions.length >= 20} onClick={() => setQuestions(rows => copyFormQuestion(rows, question.questionId, crypto.randomUUID()))}>Дублировать вопрос</button><button className="btn quiet" type="button" disabled={index === 0} onClick={() => setQuestions(rows => moveQuestion(rows, question.questionId, -1))}>Выше</button><button className="btn quiet" type="button" disabled={index === questions.length - 1} onClick={() => setQuestions(rows => moveQuestion(rows, question.questionId, 1))}>Ниже</button></fieldset>)}
+      <button className="btn" disabled={questions.length >= 20} type="button" onClick={() => setQuestions(rows => [...rows, emptyQuestion()])}>Добавить вопрос</button><p className="muted">После публикации вопросы и анонимность сохраняются. Ответы видит автор анкеты; личность в анонимной анкете скрыта.</p><button className="btn" type="button" disabled={!!validateFormQuestions(title, questions, deadline)} onClick={() => setPreview(true)}>Предпросмотр анкеты</button><button className="btn primary" disabled={busy || !!validateFormQuestions(title, questions, deadline)}>{busy ? "Публикуем…" : "Опубликовать"}</button><button className="btn quiet" type="button" disabled={busy} onClick={() => {
                 if (window.confirm("Удалить несохранённый черновик анкеты?"))
                     clearCreateDraft(createDraft);
-            }}>Удалить черновик</button></form>}
-    {forms === null ? <p role="status">Загрузка анкет…</p> : forms.length === 0 ? <p className="muted">Анкет пока нет</p> : forms.map(form => <FormCard key={form.formId} communityId={communityId} form={form} writable={can(topic, "formsRespond")} onUpdate={next => setForms(rows => rows?.map(row => row.formId === next.formId ? next : row) ?? [next])} onError={onError}/>)}
+            }}>Удалить черновик</button></fieldset></form>}{preview && <Sheet title="Предпросмотр анкеты" onClose={() => setPreview(false)}><div className="stack"><h3>{title}</h3><p>{description}</p><p className="muted">{anonymous ? "Анонимные ответы" : "Ответы с именами"}{deadline ? ` · До ${new Date(deadline).toLocaleString("ru-RU")}` : " · Без срока"}</p>{questions.map((question,index)=><div className="card" key={question.questionId}><b>{index+1}. {question.title}</b><p className="muted">{question.required ? "Обязательный ответ" : "Можно пропустить"}</p>{question.options.map(option=><p key={option}>○ {option}</p>)}</div>)}<button className="btn" type="button" onClick={() => setPreview(false)}>Вернуться к редактированию</button></div></Sheet>}
+    <SearchField label="Найти анкету" value={query} onChange={setQuery}/><label className="field">Показать анкеты<select value={filter} onChange={event => setFilter(event.target.value as FormBrowse)}><option value="all">Все</option><option value="needed">Требуют моего ответа</option><option value="answered">С моим ответом</option><option value="closed">Ответы закрыты</option></select></label>{forms && forms.length > 0 && browseForms(forms, query, filter).length === 0 && <FilterEmpty onReset={() => { setQuery(""); setFilter("all"); }}/>}<p className="muted">Найдено: {browseForms(forms ?? [], query, filter).length} из {forms?.length ?? 0}</p>{forms === null ? <p role="status">Загрузка анкет…</p> : forms.length === 0 ? <p className="muted">Анкет пока нет</p> : forms.filter(form=>form.formId===targetId||browseForms([form],query,filter).length>0).map(form => <FormCard key={form.formId} communityId={communityId} form={form} writable={can(topic, "formsRespond")} onUpdate={next => setForms(rows => rows?.map(row => row.formId === next.formId ? next : row) ?? [next])} onError={onError}/>)}
   </div>;
 }
 function FormCard({ communityId, form, writable, onUpdate, onError }: {
@@ -129,8 +139,18 @@ function FormCard({ communityId, form, writable, onUpdate, onError }: {
     const [busy, setBusy] = useState(false);
     const responseScope = { owner: app.session?.user?.userId || "guest", community: communityId, topic: form.topicId };
     const responseLease = scopeLease(sessionStorage, responseScope);
+    const exportScope=JSON.stringify([responseScope.owner,app.session?.familyId,api.authGeneration(),communityId,form.topicId,form.formId]);
+    const exportLive=useRef({scope:exportScope,allowed:form.canViewResponses});exportLive.current={scope:exportScope,allowed:form.canViewResponses};
+    const exportRequest=useRef({mounted:false,generation:0,pending:false});
+    useLayoutEffect(()=>{
+        exportRequest.current.mounted=true;
+        setBusy(false);
+        return()=>{exportRequest.current.mounted=false;exportRequest.current.generation++;exportRequest.current.pending=false;};
+    },[exportScope,form.canViewResponses]);
     const editable = writable && form.canRespond;
     const progress = requiredFormProgress(form.questions, answers);
+    const changed = answerDraftChanged(answers, form.ownResponse?.answers ?? []);
+    const [responseQuery, setResponseQuery] = useState("");
     const formElement = useRef<HTMLFormElement>(null);
     function focusMissing() {
         if (!progress.firstMissing) return;
@@ -141,7 +161,7 @@ function FormCard({ communityId, form, writable, onUpdate, onError }: {
     function update(value: FormAnswer) { setAnswers(rows => [...rows.filter(row => row.questionId !== value.questionId), value]); }
     async function submit(event: FormEvent) {
         event.preventDefault();
-        if (!editable || busy)
+        if (!editable || busy || !!form.ownResponse && !changed)
             return;
         const validation = validateFormAnswers(form.questions, answers);
         if (validation) {
@@ -164,8 +184,14 @@ function FormCard({ communityId, form, writable, onUpdate, onError }: {
         }
     }
     async function exportResponses() {
-        if (busy || !form.canViewResponses)
+        if (busy || exportRequest.current.pending || !form.canViewResponses)
             return;
+        const generation=++exportRequest.current.generation;
+        const auth=api.authGeneration();
+        exportRequest.current.pending=true;
+        const current=()=>exportRequest.current.mounted && exportRequest.current.generation===generation
+            && api.authGeneration()===auth && exportLive.current.scope===exportScope && exportLive.current.allowed
+            && scopeLeaseValid(sessionStorage,responseScope,responseLease);
         setBusy(true);
         try {
             let after: string | undefined;
@@ -173,6 +199,7 @@ function FormCard({ communityId, form, writable, onUpdate, onError }: {
             const cursors = new Set<string>();
             do {
                 const page = await api.groupFormResponses(communityId, form.formId, after);
+                if (!current()) return;
                 rows.push(...page.responses);
                 after = page.nextCursor || undefined;
                 if (after) {
@@ -181,23 +208,26 @@ function FormCard({ communityId, form, writable, onUpdate, onError }: {
                     cursors.add(after);
                 }
             } while (after);
+            if (!current()) return;
             const url = URL.createObjectURL(new Blob([formResponsesCsv(form.questions, rows)], { type: "text/csv;charset=utf-8" }));
             const anchor = document.createElement("a");
             anchor.href = url;
             anchor.download = `anketa-${form.formId}.csv`;
+            if (!current()) { URL.revokeObjectURL(url); return; }
             anchor.click();
             window.setTimeout(() => URL.revokeObjectURL(url), 60000);
         }
         catch (error) {
-            onError(problem(error));
+            if (current()) onError(problem(error));
         }
         finally {
-            setBusy(false);
+            if (current()) setBusy(false);
+            if (exportRequest.current.generation===generation) exportRequest.current.pending=false;
         }
     }
-    return <article className="card stack"><h2>{form.title}</h2><p>{form.description}</p><p className="muted">{form.anonymous ? "Анонимная" : "Именная"} · Ответов: {form.responseCount}{form.deadlineAt && ` · До ${new Date(form.deadlineAt).toLocaleString("ru-RU")}`}</p>
+    return <article id={`obligation-form-${form.formId}`} tabIndex={-1} className="card stack"><h2>{form.title}</h2><p>{form.description}</p><p className="muted">{form.anonymous ? "Анонимная" : "Именная"} · Ответов: {form.responseCount}{form.deadlineAt && ` · До ${new Date(form.deadlineAt).toLocaleString("ru-RU")}`}</p>
     {editable && <div className="row"><span className="muted" role="status">Обязательные ответы: {progress.answered} из {progress.total}{progress.firstMissing ? ` · осталось: ${progress.firstMissing.title}` : ""}</span>{progress.firstMissing && <button className="btn quiet" type="button" disabled={busy} onClick={focusMissing}>К первому пропуску</button>}</div>}
-    <form ref={formElement} noValidate className="stack" onSubmit={event => void submit(event)}>{form.questions.map(question => <fieldset key={question.questionId} className="form-question" disabled={!editable || busy}><legend>{question.title}{question.required ? " *" : ""}</legend>{question.kind === "shortText" ? <input aria-label={question.title} required={question.required} maxLength={1000} value={answer(question.questionId).text || ""} onChange={event => update({ ...answer(question.questionId), text: event.target.value })}/> : question.kind === "longText" ? <textarea aria-label={question.title} required={question.required} maxLength={4000} value={answer(question.questionId).text || ""} onChange={event => update({ ...answer(question.questionId), text: event.target.value })}/> : question.options.map(option => <label className="check" key={option}><input type={question.kind === "singleChoice" ? "radio" : "checkbox"} name={form.formId + question.questionId} checked={answer(question.questionId).choices.includes(option)} onChange={event => update({ ...answer(question.questionId), choices: question.kind === "singleChoice" ? [option] : event.target.checked ? [...answer(question.questionId).choices, option] : answer(question.questionId).choices.filter(value => value !== option) })}/>{option}</label>)}</fieldset>)}{editable ? <button className="btn primary" disabled={busy}>{busy ? "Сохраняем…" : form.ownResponse ? "Обновить мой ответ" : "Ответить"}</button> : <p className="muted">{form.ownResponse ? "Ваш ответ сохранён" : "Приём ответов недоступен"}</p>}</form>
+    {form.ownResponse && <div className="row"><p role="status">{changed ? "Ответы изменены, но ещё не отправлены" : "Все ответы сохранены"}</p>{changed && <button className="btn quiet" disabled={busy} onClick={() => { if(window.confirm("Вернуть последние отправленные ответы? Несохранённые изменения будут потеряны.")) setAnswers(form.ownResponse?.answers ?? []); }}>Вернуть сохранённые ответы</button>}</div>}<form ref={formElement} noValidate className="stack" onSubmit={event => void submit(event)}>{form.questions.map(question => <fieldset key={question.questionId} className="form-question" disabled={!editable || busy}><legend>{question.title}{question.required ? " *" : ""}</legend>{!question.required && (answer(question.questionId).choices.length > 0 || !!answer(question.questionId).text) && <button className="btn quiet" type="button" onClick={() => update({questionId: question.questionId,text:null,choices:[]})}>Очистить ответ</button>}{question.kind === "shortText" ? <input aria-label={question.title} required={question.required} maxLength={1000} value={answer(question.questionId).text || ""} onChange={event => update({ ...answer(question.questionId), text: event.target.value })}/> : question.kind === "longText" ? <textarea aria-label={question.title} required={question.required} maxLength={4000} value={answer(question.questionId).text || ""} onChange={event => update({ ...answer(question.questionId), text: event.target.value })}/> : question.options.map(option => <label className="check" key={option}><input type={question.kind === "singleChoice" ? "radio" : "checkbox"} name={form.formId + question.questionId} checked={answer(question.questionId).choices.includes(option)} onChange={event => update({ ...answer(question.questionId), choices: question.kind === "singleChoice" ? [option] : event.target.checked ? [...answer(question.questionId).choices, option] : answer(question.questionId).choices.filter(value => value !== option) })}/>{option}</label>)}</fieldset>)}{editable ? <button className="btn primary" disabled={busy || !!form.ownResponse && !changed}>{busy ? "Сохраняем…" : form.ownResponse ? "Обновить мой ответ" : "Ответить"}</button> : <p className="muted">{form.ownResponse ? "Ваш ответ сохранён" : "Приём ответов недоступен"}</p>}</form>
     {form.canViewResponses && <button className="btn quiet" type="button" disabled={busy} onClick={() => void exportResponses()}>Выгрузить ответы CSV</button>}
     {form.canViewResponses && <button className="btn" type="button" disabled={busy} onClick={() => {
                 setBusy(true);
@@ -208,7 +238,7 @@ function FormCard({ communityId, form, writable, onUpdate, onError }: {
                     onError(problem(error));
                 }).finally(() => setBusy(false));
             }}>Ответы участников</button>}
-    {responses && form.canViewResponses && <div className="stack"><h2>Ответы · {responses.length} из {totalResponses}</h2>{nextCursor && <button className="btn" type="button" disabled={busy} onClick={() => {
+    {responses && form.canViewResponses && <div className="stack"><h2>Ответы · {responses.length} из {totalResponses}</h2><details><summary>Сводка вариантов по загруженным ответам</summary><p className="muted">Учтено {responses.length} из {totalResponses} ответов; это не полный итог, пока остались страницы.</p>{choiceCounts(form.questions,responses).map((row,index)=><div className="card" key={index}><b>{row.title}</b>{row.options.map(option=><p key={option.label}>{option.label}: {option.count}</p>)}</div>)}</details><SearchField label="Поиск среди загруженных ответов" value={responseQuery} onChange={setResponseQuery}/><p className="muted">Поиск не загружает ещё не полученные страницы и не раскрывает анонимность.</p>{nextCursor && <button className="btn" type="button" disabled={busy} onClick={() => {
                     setBusy(true);
                     void api.groupFormResponses(communityId, form.formId, nextCursor).then(value => { if (!scopeLeaseValid(sessionStorage, responseScope, responseLease))
                         return; setResponses(rows => [...(rows ?? []), ...value.responses]); setNextCursor(value.nextCursor); setTotalResponses(value.totalResponses); }).catch(error => {
@@ -216,7 +246,7 @@ function FormCard({ communityId, form, writable, onUpdate, onError }: {
                             setResponses(null);
                         onError(problem(error));
                     }).finally(() => setBusy(false));
-                }}>Загрузить ещё</button>}{responses.map((response, i) => <div className="card" key={i}><p>{response.respondentId || "Анонимный ответ"} · {new Date(response.updatedAt).toLocaleString("ru-RU")}</p>{response.answers.map(row => <p key={row.questionId}><b>{form.questions.find(question => question.questionId === row.questionId)?.title}</b>: {row.text || row.choices.join(", ") || "Нет ответа"}</p>)}</div>)}</div>}
+                }}>Загрузить ещё</button>}{responses.filter(response => noteSearch(responseQuery, response.respondentId || "Анонимный ответ", new Date(response.updatedAt).toLocaleString("ru-RU"), ...response.answers.map(answer => answer.text || answer.choices.join(" ")))).map((response, i) => <div className="card" key={i}><p>{response.respondentId || "Анонимный ответ"} · {new Date(response.updatedAt).toLocaleString("ru-RU")}</p>{response.answers.map(row => <p key={row.questionId}><b>{form.questions.find(question => question.questionId === row.questionId)?.title}</b>: {row.text || row.choices.join(", ") || "Нет ответа"}</p>)}</div>)}</div>}
   </article>;
 }
 export function ScheduleChannel({ groupName, topic, initialDate }: {
@@ -233,7 +263,8 @@ export function ScheduleChannel({ groupName, topic, initialDate }: {
         return <div className="stack"><p role={timetable.error ? "alert" : "status"}>{timetable.error || "Загружаем расписание группы…"}</p><button className="btn" type="button" disabled={timetable.loading} onClick={timetable.reload}>Повторить</button></div>;
     return <div className="stack"><div className="row"><h2>{payload.group.name}</h2><button className="btn quiet" type="button" disabled={timetable.loading} onClick={timetable.reload}>{timetable.loading ? "Обновляем…" : "Обновить"}</button></div>{timetable.error && <p className="banner" role="status">{timetable.error}</p>}<p className="muted">Копия группы: {new Date(payload.meta.fetchedAt).toLocaleString("ru-RU")}</p><div className="row"><button className="btn quiet" type="button" onClick={() => setSelectedDay(date => addDays(date, -7))}>Предыдущие дни</button><button className="btn quiet" type="button" onClick={() => setSelectedDay(new Date())}>Сегодня</button><button className="btn quiet" type="button" onClick={() => setSelectedDay(date => addDays(date, 7))}>Следующие дни</button></div>{days.map(date => { const outside = isoDay(date) < payload.period.start.slice(0, 10); const lessons = outside ? [] : lessonsOn(visibleLessons(payload.lessons, app.subgroups[payload.group.id] || {}), date, payload.period.start, payload.period.weekCount, app.invert).filter(lesson => !topic.subject || sameSubject(lesson.subjectRaw, topic.subject)); return <article className="card" key={isoDay(date)}><h2>{absoluteDate(date)}</h2>{lessons.map((lesson, i) => <p key={i}>{lesson.timeStart}–{lesson.timeEnd} · {lesson.subjectRaw} · {lesson.roomRaw || "Аудитория не указана"}</p>)}{outside ? <p className="muted">Дата вне известного учебного периода · нет данных</p> : lessons.length === 0 && <p className="muted">Без пар</p>}</article>; })}</div>;
 }
-function HomeworkChannel({ communityId, topic, onError }: {
+function HomeworkChannel({ communityId, topic, onError, targetId }: {
+    targetId?: string;
     communityId: string;
     topic: GroupTopic;
     onError: (text: string) => void;
@@ -253,6 +284,9 @@ function HomeworkChannel({ communityId, topic, onError }: {
     const requestRef = useRef(0);
     const [error, setError] = useState("");
     const [filter, setFilter] = useState<"active" | "done" | "all">("active");
+    const [query, setQuery] = useState("");
+    const [order, setOrder] = useState<"original" | "deadline" | "subject">("deadline");
+    const now = useClock();
     const [editing, setEditing] = useState<{ id: string; revision: number; title: string; body: string; deadline: string; audience: HomeworkAudience } | null>(null);
     const [editConflict, setEditConflict] = useState(false);
     function refresh() {
@@ -274,7 +308,8 @@ function HomeworkChannel({ communityId, topic, onError }: {
         const timer = window.setInterval(() => { if (!stop && !busyRef.current) void refresh(); }, 4000);
         return () => { stop = true; ++requestRef.current; window.clearInterval(timer); };
     }, [communityId, topic.topicId]);
-    const visible = (items ?? []).filter(item => item.topicId === topic.topicId && (item.homeworkId === editing?.id || filter === "all" || item.completed === (filter === "done")));
+    const visible = (items ?? []).filter(item => item.topicId === topic.topicId && (item.homeworkId === targetId || item.homeworkId === editing?.id || (filter === "all" || item.completed === (filter === "done")) && noteSearch(query, item.title, item.body, item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока")))
+      .sort((a,b) => order === "subject" ? a.title.localeCompare(b.title,"ru") : order === "deadline" ? (a.deadlineAt ? Date.parse(a.deadlineAt) : Number.MAX_SAFE_INTEGER) - (b.deadlineAt ? Date.parse(b.deadlineAt) : Number.MAX_SAFE_INTEGER) : 0);
     async function publish(event: FormEvent) {
         event.preventDefault();
         if (busyRef.current || recipients.loading) return;
@@ -315,8 +350,8 @@ function HomeworkChannel({ communityId, topic, onError }: {
     }
     return <div className="stack">{can(topic, "homework") && <form className="card stack" onSubmit={event => void publish(event)}><h2>Задание в канале</h2><fieldset className="stack" disabled={busy}><label className="field">Предмет<input required value={title} onChange={event => setTitle(event.target.value)}/></label><label className="field">Задание<textarea required value={body} onChange={event => setBody(event.target.value)}/></label><label className="field">Срок<input type="datetime-local" value={deadline} onChange={event => setDeadline(event.target.value)}/></label><HomeworkRecipients communityId={communityId} value={draftAudience} onChange={audience => setHomeworkField("audience", audience)} data={recipients}/><p className="muted">Канал: {topic.title} · {audienceLabel(draftAudience)} · {deadline ? new Date(deadline).toLocaleString("ru-RU") : "Без срока"}</p><div className="row"><button className="btn primary">{busy ? "Сохраняем…" : "Опубликовать"}</button><button className="btn quiet" type="button" onClick={() => { clearHomeworkDraft(homeworkDraft); setError(""); }}>Удалить черновик</button></div></fieldset></form>}
     {error && <div className="banner row" role="alert"><span>{error}</span><button className="btn" type="button" disabled={busy} onClick={() => void refresh()}>Обновить задания</button></div>}
-    <div className="row homework-filters" role="group" aria-label="Показать задания"><button className="btn" type="button" aria-pressed={filter === "active"} onClick={() => setFilter("active")}>Активные</button><button className="btn" type="button" aria-pressed={filter === "done"} onClick={() => setFilter("done")}>Готово у меня</button><button className="btn" type="button" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>Все</button></div>
-    {items === null ? <p role="status">Загрузка заданий…</p> : visible.length === 0 ? <p className="muted">Заданий в этом разделе пока нет.</p> : visible.map(item => <article className="card stack" key={item.homeworkId}><div className="row"><h2>{item.title}</h2><span className="chip">{audienceLabel(item.audience)}</span></div><p className={item.completed ? "done-title" : ""}>{item.body}</p><p className="muted">{item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p><div className="row">{item.canComplete !== false && <button className="btn" type="button" disabled={busy || !!topic.archived} onClick={() => void mark(item)}>{item.completed ? "Снять отметку" : "Готово у меня"}</button>}{item.canEdit && !topic.archived && <button className="btn quiet" type="button" disabled={busy} onClick={() => { setEditing({ id: item.homeworkId, revision: item.revision, title: item.title, body: item.body, deadline: localDateTimeInput(item.deadlineAt), audience: item.audience || allHomeworkAudience() }); setEditConflict(false); }}>Изменить публикацию</button>}</div>
+    <SearchField label="Найти задание в канале" value={query} onChange={setQuery}/><label className="field">Порядок заданий<select value={order} onChange={event => setOrder(event.target.value as typeof order)}><option value="deadline">Ближайший срок</option><option value="subject">По предмету</option><option value="original">Как опубликованы</option></select></label><div className="row homework-filters" role="group" aria-label="Показать задания"><button className="btn" type="button" aria-pressed={filter === "active"} onClick={() => setFilter("active")}>Активные</button><button className="btn" type="button" aria-pressed={filter === "done"} onClick={() => setFilter("done")}>Готово у меня</button><button className="btn" type="button" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>Все</button></div>
+    {items === null ? <p role="status">Загрузка заданий…</p> : visible.length === 0 ? query || filter !== "all" ? <FilterEmpty onReset={() => {setQuery("");setFilter("all");}}/> : <p className="muted">Заданий в этом разделе пока нет.</p> : visible.map(item => <article id={`obligation-homework-${item.homeworkId}`} tabIndex={-1} className="card stack" key={item.homeworkId}><div className="row"><h2>{item.title}</h2><span className="chip">{audienceLabel(item.audience)}</span></div><p className={item.completed ? "done-title" : ""}>{item.body}</p><p className="muted">{item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"} · {({overdue:"Просрочено",today:"Сегодня",soon:"Скоро",later:"Позже",none:"Дата не указана"})[dueBucket(item.deadlineAt,now)]}</p><div className="row">{item.canComplete !== false && <button className="btn" type="button" disabled={busy || !!topic.archived} onClick={() => void mark(item)}>{item.completed ? "Снять отметку" : "Готово у меня"}</button>}{item.canEdit && !topic.archived && <button className="btn quiet" type="button" disabled={busy} onClick={() => { setEditing({ id: item.homeworkId, revision: item.revision, title: item.title, body: item.body, deadline: localDateTimeInput(item.deadlineAt), audience: item.audience || allHomeworkAudience() }); setEditConflict(false); }}>Изменить публикацию</button>}</div>
       {editing?.id === item.homeworkId && <form className="stack" onSubmit={event => void saveEdit(event)}><label className="field">Предмет<input required value={editing.title} onChange={event => setEditing({ ...editing, title: event.target.value })}/></label><label className="field">Задание<textarea required value={editing.body} onChange={event => setEditing({ ...editing, body: event.target.value })}/></label><label className="field">Срок<input type="datetime-local" value={editing.deadline} onChange={event => setEditing({ ...editing, deadline: event.target.value })}/></label><HomeworkRecipients communityId={`${communityId}-edit`} value={editing.audience} onChange={audience => setEditing({ ...editing, audience })} disabled={busy} data={recipients}/>{editConflict && <div className="banner" role="alert">Актуальная ревизия: {items.find(row => row.homeworkId === item.homeworkId)?.revision}. Сверьте поля и подтвердите использование новой ревизии.<button className="btn" type="button" onClick={() => { setEditing({ ...editing, revision: items.find(row => row.homeworkId === item.homeworkId)?.revision ?? editing.revision }); setEditConflict(false); }}>Использовать актуальную ревизию</button></div>}<div className="row"><button className="btn primary" disabled={busy || editConflict}>Сохранить изменения</button><button className="btn quiet" type="button" onClick={() => { setEditing(null); setEditConflict(false); }}>Отмена</button></div></form>}</article>)}
   </div>;
 }
@@ -332,6 +367,8 @@ function MaterialsChannel({ communityId, conversationId, topic, onError }: {
     const app = useApp();
     const [link, setLink, clearLinkDraft] = useStoredDraft<string>(draftKey(app.session?.user?.userId, communityId, topic.topicId!, "material-link"), () => "");
     const [busy, setBusy] = useState(false);
+    const [query,setQuery]=useState("");const[kind,setKind]=useState("all");
+    useEffect(()=>{setQuery("");setKind("all");},[communityId,topic.topicId]);
     useEffect(() => {
         const source = createMaterialHistory(cursor => api.messages(conversationId, topic.topicId!, cursor), setHistory, error => { if (error instanceof Error && ["401", "403", "404"].includes(error.message))
             revokeGroupDrafts(error.message === "401" ? { owner: app.session?.user?.userId || "guest" } : { owner: app.session?.user?.userId || "guest", community: communityId, topic: topic.topicId! }); onError(problem(error)); });
@@ -364,7 +401,7 @@ function MaterialsChannel({ communityId, conversationId, topic, onError }: {
         }
     }
     const writable = can(topic, "post");
-    return <div className="stack"><h2>Файлы и ссылки</h2>{writable && <><form className="row" onSubmit={event => {
+    return <div className="stack"><h2>Файлы и ссылки</h2><SearchField label="Поиск среди загруженных материалов" value={query} onChange={setQuery}/><label className="field">Содержимое<select value={kind} onChange={event=>setKind(event.target.value)}><option value="all">Всё</option><option value="link">Ссылки</option><option value="image">Фото</option><option value="file">Документы</option></select></label>{(query||kind!=="all")&&<button className="btn quiet" onClick={()=>{setQuery("");setKind("all");}}>Все загруженные материалы</button>}{writable && <><form className="row" onSubmit={event => {
                 event.preventDefault();
                 try {
                     const url = new URL(link);
@@ -384,7 +421,7 @@ function MaterialsChannel({ communityId, conversationId, topic, onError }: {
     {history.hasOlder && <button className="btn" type="button" disabled={history.loadingOlder} onClick={() => void historyRef.current?.earlier()}>{history.loadingOlder ? "Загружаем ранние материалы…" : "Загрузить ранние материалы"}</button>}
     {history.error && <div className="banner" role="alert">Материалы не загрузились. Ранее загруженные материалы сохранены.<button className="btn" disabled={history.loading} onClick={() => void historyRef.current?.poll()}>Повторить загрузку</button></div>}
     {messages !== null && !history.error && messages.every(message => message.deleted) && <p className="muted">Материалов пока нет.{writable ? " Добавьте ссылку или файл выше." : " Здесь появятся опубликованные файлы и ссылки."}</p>}
-    {messages === null ? history.loading ? <p role="status">Загрузка материалов…</p> : null : messages.filter(message => !message.deleted).map(message => { const media = groupMediaDownload(conversationId, message); return <article className="card" key={message.messageId}><p className="muted">{message.senderName} · {new Date(message.createdAt).toLocaleString("ru-RU")}</p>{media ? <GroupInlineMedia key={message.messageId} download={media} busy={busy} onDownload={() => { setBusy(true); void api.groupMedia(media).then(blob => { const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = media.filename; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 60000); }).catch(() => onError("Файл не загрузился")).finally(() => setBusy(false)); }}/> : /^https?:\/\/\S+$/.test(message.body) ? <a href={message.body} target="_blank" rel="noopener noreferrer">{message.body}</a> : <p>{message.body}</p>}</article>; })}
+    {messages === null ? history.loading ? <p role="status">Загрузка материалов…</p> : null : messages.filter(message => {const media=groupMediaDownload(conversationId,message);return !message.deleted&&noteSearch(query,media?.filename||message.body||"",message.senderName,new Date(message.createdAt).toLocaleDateString("ru-RU"))&&(kind==="all"||kind==="link"&&!media&&/^https?:\/\//.test(message.body)||media?.kind===kind);}).map(message => { const media = groupMediaDownload(conversationId, message); return <article className="card" key={message.messageId}><p className="muted">{message.senderName} · {new Date(message.createdAt).toLocaleString("ru-RU")}</p>{media ? <MaterialMedia key={`${app.session?.user?.userId}:${app.session?.familyId}:${topic.topicId}:${message.messageId}`} download={media}/> : /^https?:\/\/\S+$/.test(message.body) ? <a href={message.body} target="_blank" rel="noopener noreferrer">{message.body}</a> : <p>{message.body}</p>}</article>; })}
   </div>;
 }
 export function SubjectChannelContext({ communityId, groupName, topic, onError }: {

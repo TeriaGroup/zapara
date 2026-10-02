@@ -76,7 +76,8 @@ export type ChatMessage = {
 };
 
 export type MapPlan = { id: string; building: string; floor: number; url: string };
-export type MapsManifest = { version: string; maps: MapPlan[] };
+export type PublicMapAsset = { url: string; sha256: string; bytes: number };
+export type MapsManifest = { version: string; maps: MapPlan[]; graphVersion?: number; graph?: PublicMapAsset; coordinates?: PublicMapAsset };
 
 export type SocialInvite = { friendshipId: string; username: string; displayName: string | null; createdAt: string };
 export type SocialFriend = {

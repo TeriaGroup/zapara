@@ -81,8 +81,20 @@ data class HomeworkUiState(
     val sharedLoading: Boolean = false,
     val sharedError: String? = null,
     val sharedBusyIds: Set<String> = emptySet(),
-    val personalBusyIds: Set<Long> = emptySet()
+    val personalBusyIds: Set<Long> = emptySet(),
+    val bulkBusy: Boolean = false,
+    val bulkUndo: List<HomeworkUndoDone> = emptyList(),
+    val bulkResult: String? = null,
+    val groupId: String = "",
+    val profileName: String = "",
+    val reschedule: HomeworkRescheduleBatch? = null,
+    val publication: PersonalPublicationBatch? = null
 )
+
+internal fun bulkEligibleIds(groups: List<HomeworkGroupUi>, selected: List<Long>): List<Long> {
+    val eligible = groups.flatMap { it.items }.filterNot { it.done }.map { it.id }.toSet()
+    return selected.distinct().filter { it in eligible }
+}
 
 fun HomeworkUiState.resetBrowse(): HomeworkUiState =
     copy(browseQuery = "", browseFilter = HomeworkCompletionFilter.All,
@@ -92,7 +104,8 @@ fun HomeworkUiState.resetBrowse(): HomeworkUiState =
 fun HomeworkUiState.forGroupChange(): HomeworkUiState =
     copy(browseQuery = "", browseFilter = HomeworkCompletionFilter.Active,
         deadlineFilter = HomeworkDeadlineFilter.All, originFilter = HomeworkOriginFilter.All,
-        withFilesOnly = false, sortBySubject = false, undoDone = null, undoDoneBusy = false)
+        withFilesOnly = false, sortBySubject = false, undoDone = null, undoDoneBusy = false,
+        bulkBusy = false, bulkUndo = emptyList(), bulkResult = null, reschedule = null, publication = null)
 
 internal enum class HomeworkEditDecision { Open, AlreadyOpen, ReplacePristine, Blocked }
 
@@ -115,8 +128,21 @@ data class HomeworkUndoDone(val id: Long, val previousDone: Boolean, val groupId
 }
 
 sealed interface HomeworkEvent {
+    data class PreviewPublication(val ids: List<Long>) : HomeworkEvent
+    data class PublicationAudience(val audience: HomeworkAudience) : HomeworkEvent
+    data object ConfirmPublication : HomeworkEvent
+    data object ClosePublication : HomeworkEvent
+    data object DiscardPublication : HomeworkEvent
+    data object ResumePublication : HomeworkEvent
+    data class PreviewPostpone(val ids: List<Long>) : HomeworkEvent
+    data object ConfirmPostpone : HomeworkEvent
+    data object UndoPostpone : HomeworkEvent
+    data object ClosePostpone : HomeworkEvent
     data class ToggleDone(val id: Long) : HomeworkEvent
     data class Edit(val id: Long) : HomeworkEvent
+    data class Clone(val id: Long) : HomeworkEvent
+    data class BulkDone(val ids: List<Long>) : HomeworkEvent
+    data object UndoBulkDone : HomeworkEvent
     data object Add : HomeworkEvent
     data object RetryLoad : HomeworkEvent
     data object RetryShared : HomeworkEvent
@@ -142,6 +168,8 @@ sealed interface HomeworkEvent {
     data object Dec : HomeworkEvent
     data object Recalculate : HomeworkEvent
     data object Save : HomeworkEvent
+    data object ApproveDuplicate : HomeworkEvent
+    data object CancelDuplicate : HomeworkEvent
     data object Cancel : HomeworkEvent
     data class AskDelete(val id: Long) : HomeworkEvent
     data object ConfirmDelete : HomeworkEvent
@@ -150,6 +178,7 @@ sealed interface HomeworkEvent {
     data object ExpandGroups : HomeworkEvent
     data object CollapseGroups : HomeworkEvent
     data class Attach(val kind: String, val uri: Uri) : HomeworkEvent
+    data class AttachMany(val kind: String, val uris: List<Uri>) : HomeworkEvent
     data class RemoveFile(val id: String) : HomeworkEvent
     data class OpenFile(val homeworkId: Long, val fileId: String) : HomeworkEvent
 }
@@ -182,7 +211,10 @@ data class HomeworkEditorState(
     val shareLoading: Boolean = false,
     val audience: HomeworkAudience = HomeworkAudience(),
     val operationId: String = java.util.UUID.randomUUID().toString(),
-    val shareRequest: HomeworkPublishSnapshot? = null
+    val shareRequest: HomeworkPublishSnapshot? = null,
+    val duplicateWarning: Boolean = false,
+    val duplicateApproved: Boolean = false,
+    val missingFileIds: Set<String> = emptySet()
 ) {
     val busy: Boolean get() = work != HomeworkEditorWork.Idle
     val hasDraftChanges: Boolean get() = initial != HomeworkDraftSnapshot(text.trim(), n, share, files.map { it.id }.toSet())
@@ -192,11 +224,14 @@ data class HomeworkEditorState(
     val canSave: Boolean get() = HomeworkTextRules.valid(text) && !sourceChanged && !busy && shareRequest == null &&
         (!share || !shareLoading && shareContext != null && (!audience.selected || shareContext.supported && audience.valid()))
     fun hasChanges(existing: Homework): Boolean = text.trim() != existing.text || n != existing.n
-    fun withText(value: String) = if (busy) this else copy(text = value, error = null)
+    fun withText(value: String) = if (busy) this else copy(text = value, error = null,
+        duplicateWarning = false, duplicateApproved = false)
     fun withShare(value: Boolean) = if (busy) this else copy(share = value, error = null)
     fun withAudience(value: HomeworkAudience) = if (busy) this else copy(audience = value, error = null)
-    fun inc() = if (busy) this else copy(n = (n + 1).coerceAtMost(10), error = null)
-    fun dec() = if (busy) this else copy(n = (n - 1).coerceAtLeast(1), error = null)
+    fun inc() = if (busy) this else copy(n = (n + 1).coerceAtMost(10), error = null,
+        duplicateWarning = false, duplicateApproved = false)
+    fun dec() = if (busy) this else copy(n = (n - 1).coerceAtLeast(1), error = null,
+        duplicateWarning = false, duplicateApproved = false)
     fun dueText(copy: UiCopy): String {
         val due = dueFor(n, text) ?: return copy.get("hw_due_prefix", "—")
         return copy.get("hw_due_prefix", "${LessonFormat.dayMonth(due)} (${LessonFormat.weekdayShort(due, copy)})")

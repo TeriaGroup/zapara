@@ -60,6 +60,7 @@ public sealed class ZoomPanel : Decorator
 
     public void ZoomIn() => ZoomAt(new Point(Bounds.Width / 2, Bounds.Height / 2), ButtonStep);
     public void ZoomOut() => ZoomAt(new Point(Bounds.Width / 2, Bounds.Height / 2), 1 / ButtonStep);
+    public void PanBy(double dx, double dy) => Apply(Scale, OffsetX + dx, OffsetY + dy, animate: false);
 
     public void ZoomAt(Point viewportPoint, double factor)
     {
@@ -195,6 +196,7 @@ public sealed class ZoomPanel : Decorator
     {
         base.OnPointerPressed(e);
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        Focus();
         _dragLast = e.GetPosition(this);
         e.Pointer.Capture(this);
         e.Handled = true;

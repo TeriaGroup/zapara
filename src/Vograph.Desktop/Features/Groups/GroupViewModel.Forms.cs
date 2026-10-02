@@ -10,9 +10,58 @@ public sealed partial class GroupViewModel
 {
     public ObservableCollection<SpaceQuestionEditor> FormQuestions { get; } = [];
     public ObservableCollection<SpaceFormRow> Forms { get; } = [];
+    [ObservableProperty] private string formSearch = "";
+    [ObservableProperty] private int formStatusIndex;
+    public IReadOnlyList<string> FormStatuses { get; } = ["Все анкеты", "Без моего ответа", "С моим ответом", "Ответ недоступен"];
+    public IReadOnlyList<SpaceFormRow> VisibleForms => GroupFormBrowse.Filter(Forms, FormSearch, FormStatusIndex);
+    public bool HasFormFilters => FormSearch.Trim().Length > 0 || FormStatusIndex != 0;
+    public bool NoFormMatches => Forms.Count > 0 && VisibleForms.Count == 0 && HasFormFilters;
+    public string FormResultCount => $"Найдено: {VisibleForms.Count} из {Forms.Count}";
+    partial void OnFormSearchChanged(string value) => RefreshFormBrowse();
+    partial void OnFormStatusIndexChanged(int value) => RefreshFormBrowse();
+    [RelayCommand] private void ResetFormFilters() { FormSearch = ""; FormStatusIndex = 0; }
+    private void RefreshFormBrowse()
+    {
+        OnPropertyChanged(nameof(VisibleForms)); OnPropertyChanged(nameof(HasFormFilters));
+        OnPropertyChanged(nameof(NoFormMatches)); OnPropertyChanged(nameof(FormResultCount));
+    }
     public ObservableCollection<SpaceHomeworkRow> ChannelHomeworks { get; } = [];
     public ObservableCollection<string> ChannelSchedule { get; } = [];
     [ObservableProperty] private string formTitle = "";
+    [ObservableProperty] private bool formPreview;
+    [ObservableProperty] private string formValidation = "";
+    [ObservableProperty] private bool showClearFormDraft;
+    private (Guid Community, Guid Topic)? clearFormScope;
+    private string? clearFormFingerprint;
+    private string CurrentFormFingerprint() => System.Text.Json.JsonSerializer.Serialize(new
+    { FormTitle, FormDescription, FormDeadline, FormAnonymous,
+      Questions = FormQuestions.Select(question => new { question.Title, Kind = question.Kind.Code,
+          question.Required, question.OptionsText }).ToArray() });
+    [RelayCommand] private void RequestClearFormDraft()
+    {
+        if(!CanCreateForm || IsBusy || activeFormDraft is null)return;
+        if(FormTitle.Length==0 && FormDescription.Length==0 && FormDeadline.Length==0 && FormQuestions.Count==0)return;
+        clearFormScope=activeFormDraft;clearFormFingerprint=CurrentFormFingerprint();ShowClearFormDraft=true;
+    }
+    [RelayCommand] private void CancelClearFormDraft()
+    { ShowClearFormDraft=false;clearFormScope=null;clearFormFingerprint=null; }
+    [RelayCommand] private void ConfirmClearFormDraft()
+    {
+        var scope=clearFormScope;var fingerprint=clearFormFingerprint;CancelClearFormDraft();
+        if(!CanCreateForm || IsBusy || scope!=activeFormDraft || fingerprint!=CurrentFormFingerprint())
+        {Status="Черновик изменился. Проверьте его и подтвердите очистку ещё раз.";return;}
+        FormTitle="";FormDescription="";FormDeadline="";FormAnonymous=false;FormQuestions.Clear();FormValidation="";
+        SaveFormDraft();RefreshQuestionMoves();
+    }
+    partial void OnFormTitleChanged(string value) => FormValidation = "";
+    partial void OnFormDescriptionChanged(string value) => FormValidation = "";
+    partial void OnFormDeadlineChanged(string value) => FormValidation = "";
+    public bool ShowFormEditor => CanCreateForm && !FormPreview;
+    public bool ShowFormPreview => CanCreateForm && FormPreview;
+    public string FormPreviewCaption => FormPreview ? "Вернуться к редактированию" : "Предпросмотр анкеты";
+    partial void OnFormPreviewChanged(bool value)
+    { OnPropertyChanged(nameof(ShowFormEditor)); OnPropertyChanged(nameof(ShowFormPreview)); OnPropertyChanged(nameof(FormPreviewCaption)); }
+    [RelayCommand] private void ToggleFormPreview() { if(CanCreateForm && !IsBusy) FormPreview=!FormPreview; }
     [ObservableProperty] private string formDescription = "";
     [ObservableProperty] private string formDeadline = "";
     [ObservableProperty] private bool formAnonymous;
@@ -41,6 +90,8 @@ public sealed partial class GroupViewModel
     }
     private void SelectFormDraft(Guid? id)
     {
+        FormPreview=false;
+        CancelClearFormDraft();
         CancelRemoveFormQuestion();
         SaveFormDraft(); activeFormDraft=id is {} topic && communityId is {} community?(community,topic):null; FormQuestions.Clear();
         var draft=activeFormDraft is {} key ? formDrafts.GetValueOrDefault(key) : default;
@@ -53,6 +104,13 @@ public sealed partial class GroupViewModel
         for(var i=0;i<FormQuestions.Count;i++) { FormQuestions[i].CanMoveUp=i>0; FormQuestions[i].CanMoveDown=i<FormQuestions.Count-1; }
     }
     [RelayCommand] private void AddFormQuestion() { if(CanCreateForm && FormQuestions.Count<30){FormQuestions.Add(new());RefreshQuestionMoves();} }
+    [RelayCommand] private void DuplicateFormQuestion(SpaceQuestionEditor question)
+    {
+        if(!CanCreateForm || IsBusy || FormQuestions.Count>=30 || !FormQuestions.Contains(question))return;
+        FormQuestions.Insert(FormQuestions.IndexOf(question)+1,new SpaceQuestionEditor
+        {Title=question.Title,Kind=question.Kind,Required=question.Required,OptionsText=question.OptionsText});
+        RefreshQuestionMoves();SaveFormDraft();
+    }
     [RelayCommand] private void MoveFormQuestionUp(SpaceQuestionEditor question)
     { if(!CanCreateForm || IsBusy || !FormQuestions.Contains(question))return;var i=FormQuestions.IndexOf(question);if(i>0){FormQuestions.Move(i,i-1);RefreshQuestionMoves();SaveFormDraft();} }
     [RelayCommand] private void MoveFormQuestionDown(SpaceQuestionEditor question)
@@ -82,6 +140,8 @@ public sealed partial class GroupViewModel
     [RelayCommand] private Task PublishForm()
     {
         if(!CanCreateForm || selectedTopicId is not Guid topic)return Task.CompletedTask;
+        FormValidation=GroupFormDraftValidation.Check(FormTitle,FormDescription,FormDeadline,FormQuestions.ToArray());
+        if(FormValidation.Length>0){Status=FormValidation;return Task.CompletedTask;}
         GroupFormRequest request;
         try { request=new(FormTitle.Trim(),FormDescription.Trim(),ParseDeadline(FormDeadline),FormAnonymous,FormQuestions.Select(x=>x.Question()).ToArray());
             if(request.Title.Length==0||request.Questions.Count==0||request.Questions.Any(x=>x.Title.Length==0||x.Kind is "singleChoice" or "multipleChoice" && x.Options.Count<2))throw new ArgumentException(); }
@@ -121,6 +181,7 @@ public sealed partial class GroupViewModel
         }
         for(var i=0;i<ordered.Count;i++){var old=Forms.IndexOf(ordered[i]);if(old<0)Forms.Insert(i,ordered[i]);else if(old!=i)Forms.Move(old,i);}
         while(Forms.Count>ordered.Count)Forms.RemoveAt(Forms.Count-1);
+        RefreshFormBrowse();
     }
     private Task SubmitForm(SpaceFormRow row)
     {
@@ -150,7 +211,7 @@ public sealed partial class GroupViewModel
         {
             await SpaceAction(async(api,t,c,ct)=>
             {
-                row.Responses.Clear();row.RawResponses.Clear();Guid? after=null;var cursors=new HashSet<Guid>();
+                row.Responses.Clear();row.RawResponses.Clear();row.ShowResponses=true;Guid? after=null;var cursors=new HashSet<Guid>();
                 do
                 {
                     var page=await api.FormResponsesAsync(t,c,row.Form.FormId,ct,after);
@@ -202,6 +263,7 @@ public sealed partial class GroupViewModel
         foreach(var row in formRows.Values)row.Revoke();formRows.Clear();answerDrafts.Clear();homeworkDrafts.Clear();
         activeFormsScope=null;activeFormDraft=null;activeHomeworkDraft=null;editingSharedHomework=null;sharedHomeworkRevision=0;
         FormQuestions.Clear();FormTitle="";FormDescription="";FormDeadline="";FormAnonymous=false;
+        FormSearch="";FormStatusIndex=0;FormPreview=false;MaterialSearch="";AuditSearch="";AuditKindIndex=0;ArchiveSearch="";CategorySearch="";
         SharedHomeworkTitle="";SharedHomeworkBody="";SharedHomeworkDeadline="";
         sharedHomeworkPending=false;ClearHomeworkRecipients();
     }
@@ -320,12 +382,37 @@ public sealed class SpaceFormRow : ObservableObject
     private bool responseLoading;
     private bool responsesComplete;
     public SpaceFormRow(GroupFormResponse form,bool writable,Func<SpaceFormRow,Task> submit,Func<SpaceFormRow,Task> read,Func<SpaceFormRow,Task> export)
-    {Form=form;canRespond=writable&&form.CanRespond;Questions=form.Questions.Select(q=>new SpaceAnswerRow(q,form.OwnResponse?.Answers.FirstOrDefault(x=>x.QuestionId==q.QuestionId))).ToArray();foreach(var question in Questions)question.PropertyChanged+=(_,change)=>{if(change.PropertyName==nameof(SpaceAnswerRow.IsAnswered))OnPropertyChanged(nameof(RequiredProgressText));if(change.PropertyName==nameof(SpaceAnswerRow.IsMissing)&&!question.IsMissing&&FirstMissingId==question.Id){FirstMissingId=null;ValidationMessage="";}};answerBaseline=Fingerprint();SubmitCommand=new AsyncRelayCommand(()=>submit(this));ResponsesCommand=new AsyncRelayCommand(()=>read(this));ExportCommand=new AsyncRelayCommand(()=>export(this));}
+    {Form=form;canRespond=writable&&form.CanRespond;Questions=form.Questions.Select(q=>new SpaceAnswerRow(q,form.OwnResponse?.Answers.FirstOrDefault(x=>x.QuestionId==q.QuestionId))).ToArray();foreach(var question in Questions)question.PropertyChanged+=(_,change)=>{if(change.PropertyName==nameof(SpaceAnswerRow.IsAnswered)){OnPropertyChanged(nameof(RequiredProgressText));OnPropertyChanged(nameof(HasUnsavedAnswers));OnPropertyChanged(nameof(CanRestoreAnswers));}if(change.PropertyName==nameof(SpaceAnswerRow.IsMissing)&&!question.IsMissing&&FirstMissingId==question.Id){FirstMissingId=null;ValidationMessage="";}};answerBaseline=Fingerprint();SubmitCommand=new AsyncRelayCommand(()=>submit(this));ResponsesCommand=new AsyncRelayCommand(()=>read(this));ExportCommand=new AsyncRelayCommand(()=>export(this));RequestRestoreCommand=new RelayCommand(RequestRestore);CancelRestoreCommand=new RelayCommand(CancelRestore);ConfirmRestoreCommand=new RelayCommand(ConfirmRestore);ToggleResponsesCommand=new RelayCommand(()=>ShowResponses=!ShowResponses);Responses.CollectionChanged+=(_,_)=>OnPropertyChanged(nameof(HasLoadedResponses));}
     public GroupFormResponse Form{get;private set;} public string Title=>Form.Title;public string Description=>Form.Description;
     public string Summary=>$"Ответов: {Form.ResponseCount} · "+(Form.Anonymous?"Анонимная · ":"")+(Form.DeadlineAt is {} deadline?$"До {deadline.ToLocalTime():dd.MM.yyyy HH:mm}":"Без срока")+(Form.OwnResponse is null?"":" · Ваш ответ сохранён");
     public bool CanRespond=>canRespond;public bool CanViewResponses=>Form.CanViewResponses;
     public bool HasUnsavedAnswers=>Fingerprint()!=answerBaseline;
+    public bool CanRestoreAnswers=>CanRespond&&HasUnsavedAnswers;
+    public string RestoreCaption => Form.OwnResponse is null ? "Очистить несохранённый ответ" : "Вернуть последние отправленные ответы";
+    private string? pendingRestoreFingerprint;
+    public bool ConfirmRestoreVisible => pendingRestoreFingerprint is not null;
+    public IRelayCommand RequestRestoreCommand { get; }
+    public IRelayCommand CancelRestoreCommand { get; }
+    public IRelayCommand ConfirmRestoreCommand { get; }
+    private void RequestRestore()
+    {
+        if(!CanRespond || !HasUnsavedAnswers)return;
+        pendingRestoreFingerprint=Fingerprint();OnPropertyChanged(nameof(ConfirmRestoreVisible));
+    }
+    private void CancelRestore(){pendingRestoreFingerprint=null;OnPropertyChanged(nameof(ConfirmRestoreVisible));}
+    private void ConfirmRestore()
+    {
+        var pending=pendingRestoreFingerprint;CancelRestore();
+        if(!CanRespond || pending is null || pending!=Fingerprint())return;
+        RestoreAnswers(new(Form.OwnResponse?.Answers??[]));
+        answerBaseline=Fingerprint();OnPropertyChanged(nameof(HasUnsavedAnswers));OnPropertyChanged(nameof(CanRestoreAnswers));
+    }
     public bool ResponseLoading{get=>responseLoading;set=>SetProperty(ref responseLoading,value);}
+    private bool showResponses;
+    public bool ShowResponses { get=>showResponses; set { if(SetProperty(ref showResponses,value))OnPropertyChanged(nameof(ToggleResponsesCaption)); } }
+    public bool HasLoadedResponses => Responses.Count>0;
+    public string ToggleResponsesCaption => ShowResponses ? "Скрыть ответы участников" : "Показать загруженные ответы";
+    public IRelayCommand ToggleResponsesCommand { get; }
     public bool ResponsesComplete{get=>responsesComplete;set=>SetProperty(ref responsesComplete,value);}
     internal Task? ResponseLoadTask{get;set;}
     public IReadOnlyList<SpaceAnswerRow> Questions{get;}
@@ -351,21 +438,29 @@ public sealed class SpaceFormRow : ObservableObject
     internal void RestoreAnswers(GroupFormAnswerRequest request){foreach(var row in Questions)row.Restore(request.Answers.FirstOrDefault(x=>x.QuestionId==row.Id));}
     internal void Update(GroupFormResponse form,bool writable,bool forceOwnResponse=false)
     {
+        CancelRestore();
         var dirty=HasUnsavedAnswers;Form=form;canRespond=writable&&form.CanRespond;
         if(forceOwnResponse || !dirty)RestoreAnswers(new(form.OwnResponse?.Answers??[]));
         answerBaseline=System.Text.Json.JsonSerializer.Serialize(new GroupFormAnswerRequest(form.Questions.Select(q=>new SpaceAnswerRow(q,form.OwnResponse?.Answers.FirstOrDefault(x=>x.QuestionId==q.QuestionId)).Answer()).ToArray()));
         if(!form.CanViewResponses){Responses.Clear();RawResponses.Clear();ResponsesComplete=false;}
-        foreach(var name in new[]{nameof(Title),nameof(Description),nameof(Summary),nameof(CanRespond),nameof(CanViewResponses),nameof(HasUnsavedAnswers)})OnPropertyChanged(name);
+        foreach(var name in new[]{nameof(Title),nameof(Description),nameof(Summary),nameof(CanRespond),nameof(CanViewResponses),nameof(HasUnsavedAnswers),nameof(CanRestoreAnswers),nameof(RestoreCaption)})OnPropertyChanged(name);
     }
     internal void CopyUnsavedAnswers(SpaceFormRow old){if(old.HasUnsavedAnswers)RestoreAnswers(old.Answers());}
-    internal void Revoke(){canRespond=false;Form=Form with{CanRespond=false,CanViewResponses=false,OwnResponse=null};RestoreAnswers(new([]));Responses.Clear();RawResponses.Clear();ResponsesComplete=false;}
+    internal void Revoke(){canRespond=false;Form=Form with{CanRespond=false,CanViewResponses=false,OwnResponse=null};RestoreAnswers(new([]));Responses.Clear();RawResponses.Clear();ResponsesComplete=false;CancelRestore();OnPropertyChanged(nameof(CanRespond));OnPropertyChanged(nameof(CanRestoreAnswers));}
 }
 public sealed partial class SpaceAnswerRow : ObservableObject
 {
     public SpaceAnswerRow(GroupFormQuestion question,GroupFormAnswer? answer)
-    {Id=question.QuestionId;Title=question.Title+(question.Required?" *":"");Required=question.Required;IsText=question.Kind is "shortText" or "longText";IsLong=question.Kind=="longText";text=answer?.Text??"";Options=question.Options.Select(x=>new SpaceAnswerChoice(x,answer?.Choices.Contains(x)==true,()=>SelectSingle(x),question.Kind=="singleChoice")).ToArray();foreach(var option in Options)option.PropertyChanged+=(_,change)=>{if(change.PropertyName==nameof(SpaceAnswerChoice.Selected)){if(option.Selected)IsMissing=false;OnPropertyChanged(nameof(IsAnswered));}};}
+    {Id=question.QuestionId;Title=question.Title+(question.Required?" *":"");Required=question.Required;IsText=question.Kind is "shortText" or "longText";IsLong=question.Kind=="longText";text=answer?.Text??"";Options=question.Options.Select(x=>new SpaceAnswerChoice(x,answer?.Choices.Contains(x)==true,()=>SelectSingle(x),question.Kind=="singleChoice")).ToArray();foreach(var option in Options)option.PropertyChanged+=(_,change)=>{if(change.PropertyName==nameof(SpaceAnswerChoice.Selected)){if(option.Selected)IsMissing=false;OnPropertyChanged(nameof(IsAnswered));OnPropertyChanged(nameof(HasChoiceSelection));}};}
     public Guid Id{get;} public string Title{get;}public bool Required{get;}public bool IsText{get;}public bool IsLong{get;}
     public bool IsAnswered => IsText ? !string.IsNullOrWhiteSpace(Text) : Options.Any(option => option.Selected);
+    public bool HasChoiceSelection => !IsText && Options.Any(option => option.Selected);
+    [RelayCommand] private void ClearChoices()
+    {
+        if(IsText || !HasChoiceSelection)return;
+        foreach(var option in Options)option.Selected=false;
+        IsMissing=Required;
+    }
     [ObservableProperty] private string text;
     [ObservableProperty] private bool isMissing;
     partial void OnTextChanged(string value) { if (!string.IsNullOrWhiteSpace(value)) IsMissing = false; OnPropertyChanged(nameof(IsAnswered)); }

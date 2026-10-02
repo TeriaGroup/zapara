@@ -170,8 +170,16 @@ class ScheduleViewModel(
                 finally { finishHomeworkEditorWork(editor.draft) }
             }
             ScheduleEvent.HomeworkEditorSave -> saveHomework()
+            ScheduleEvent.HomeworkApproveDuplicate -> {
+                mutable.update { it.copy(homeworkEditor = it.homeworkEditor?.copy(
+                    duplicateApproved = true, duplicateWarning = false)) }
+                saveHomework()
+            }
+            ScheduleEvent.HomeworkCancelDuplicate -> mutable.update { it.copy(homeworkEditor =
+                it.homeworkEditor?.copy(duplicateWarning = false)) }
             ScheduleEvent.HomeworkEditorCancel -> cancelHomework()
             is ScheduleEvent.HomeworkAttach -> attachHomework(event.kind, event.uri)
+            is ScheduleEvent.HomeworkAttachMany -> attachHomeworkMany(event.kind, event.uris)
             is ScheduleEvent.HomeworkRemoveFile -> removeHomeworkFile(event.id)
             is ScheduleEvent.OpenMap -> { }
             is ScheduleEvent.PickSubgroup -> pickSubgroup(event.streamId, event.optionId,
@@ -398,7 +406,21 @@ class ScheduleViewModel(
             hw.deadlineAt?.atZone(java.time.ZoneId.systemDefault())?.toLocalDate()?.let { due -> due >= date && due <= date.plusDays(2) }
                 ?: subjects.any { it.equals(hw.title, true) }
         }.map { sharedRow(it, shared.completions) }
-        return page.copy(lessons = if (source != null) emptyList() else page.lessons, deadlines = localDeadlines + sharedDeadlines, dataState = source)
+        val transfers = if (source != null) emptyList() else runCatching {
+            val graph = runCatching { container.mapStore.campusGraph() }.getOrDefault(ru.bgtu_voenmeh.zapara.data.campus.CampusGraph.empty)
+            val ambiguous = ScheduleComposer.conflictPairs(page.lessons)
+                .flatMap { (first, second) -> listOf(page.lessons[first], page.lessons[second]) }.toSet()
+            page.lessons.sortedBy { it.timeStart }.zipWithNext().map { (from, to) ->
+                val start = ru.bgtu_voenmeh.zapara.data.campus.CampusRouter.resolveClassroom(graph, from.classroomRaw)
+                val end = ru.bgtu_voenmeh.zapara.data.campus.CampusRouter.resolveClassroom(graph, to.classroomRaw)
+                val seconds = if (from in ambiguous || to in ambiguous || from.remote || to.remote || start == null || end == null) null else
+                    ru.bgtu_voenmeh.zapara.data.campus.CampusRouter.find(graph, start.id, end.id).route?.seconds
+                LessonTransfer(from.room, to.room, to.classroomRaw,
+                    ru.bgtu_voenmeh.zapara.ui.StudyPlanning.assessTransfer(from.timeEnd, to.timeStart, seconds))
+            }
+        }.getOrDefault(emptyList())
+        return page.copy(lessons = if (source != null) emptyList() else page.lessons, deadlines = localDeadlines + sharedDeadlines,
+            dataState = source, transfers = transfers)
     }
 
     private fun pickSubgroup(streamId: String, optionId: String,
@@ -503,7 +525,13 @@ class ScheduleViewModel(
                         "weekday:${lesson.dayOfWeek}" -> 1
                         else -> null
                     } }.toSet()
-                    scopes to container.overrides.noteByNorm(lesson.subjectNorm, lesson.dayOfWeek)
+                    val matching = container.repo.allForGroup(group)
+                        .filter { Parity.sameSubject(it.subjectNormalized, lesson.subjectNorm) }
+                        .sortedWith(compareBy({ it.dayOfWeek }, { it.timeStart }, { it.parity }))
+                    fun label(row: ru.bgtu_voenmeh.zapara.data.Lesson) =
+                        "${Parity.dayNumberToTitle(row.dayOfWeek)} · ${row.timeStart}–${row.timeEnd}"
+                    Triple(scopes, container.overrides.noteByNorm(lesson.subjectNorm, lesson.dayOfWeek),
+                        matching.map(::label) to matching.filter { it.dayOfWeek == lesson.dayOfWeek }.map(::label))
                 }
                 if (ticket != renameTicket || ctx?.groupId != group || mutable.value.selected != selectedDate ||
                     container.profile.databaseName != profile) return@launch
@@ -512,7 +540,8 @@ class ScheduleViewModel(
                     scope = 0, hasExisting = 0 in existing.first, existingScopes = existing.first,
                     original = lesson.original ?: lesson.name,
                     dayName = Parity.dayNumberToTitle(lesson.dayOfWeek),
-                    profileName = profile, groupId = group, selectedDate = selectedDate
+                    profileName = profile, groupId = group, selectedDate = selectedDate,
+                    affectedGlobal = existing.third.first, affectedWeekday = existing.third.second
                 )) }
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) {
@@ -701,14 +730,17 @@ class ScheduleViewModel(
         }
         viewModelScope.launch {
             val hw = withContext(Dispatchers.IO) { container.homework.all().firstOrNull { it.id == row.id } } ?: return@launch
-            val files = withContext(Dispatchers.IO) { container.homeworkFiles.list(hw.id) }
+            val (files, missingFiles) = withContext(Dispatchers.IO) {
+                ru.bgtu_voenmeh.zapara.ui.homework.loadEditorFiles(container, hw.id)
+            }
             if (mutable.value.homeworkEditor != null) return@launch
             val lesson = mutable.value.subjectHomework
             val context = ctx
             val snapshot = allLessons
             val choices = context?.let { container.subgroupChoices(it.groupId) }.orEmpty()
             mutable.update { it.copy(subjectHomework = null, homeworkEditor = HomeworkEditorState(hw.id, lesson?.subjectRaw ?: hw.norm, lesson?.name ?: hw.norm, hw.text, hw.n, true,
-                { n, _ -> if (context == null) hw.due else container.homework.dueDateIn({ gid, dow, parity -> ru.bgtu_voenmeh.zapara.data.HomeworkDue.lessonsOnChosenDay(snapshot.filter { row -> row.groupId == gid }, choices, dow, parity) }, context, hw.norm, hw.createdAt, n) }, files, java.util.UUID.randomUUID().toString())) }
+                { n, _ -> if (context == null) hw.due else container.homework.dueDateIn({ gid, dow, parity -> ru.bgtu_voenmeh.zapara.data.HomeworkDue.lessonsOnChosenDay(snapshot.filter { row -> row.groupId == gid }, choices, dow, parity) }, context, hw.norm, hw.createdAt, n) }, files, java.util.UUID.randomUUID().toString(),
+                missingFileIds = missingFiles)) }
         }
     }
 
@@ -836,6 +868,10 @@ class ScheduleViewModel(
                 container.events.emit(AppEvent.PersonalizationChanged)
             } catch (e: CancellationException) {
                 throw e
+            } catch (_: ru.bgtu_voenmeh.zapara.ui.homework.DuplicateHomework) {
+                mutable.update { current -> if (current.homeworkEditor?.draft == editor.draft)
+                    current.copy(homeworkEditor = current.homeworkEditor.copy(
+                        duplicateWarning = true, error = null)) else current }
             } catch (e: Exception) {
                 android.util.Log.w("ZaparaSchedule", "homework", e)
                 val changed = e is ru.bgtu_voenmeh.zapara.ui.homework.HomeworkScheduleChanged
@@ -901,9 +937,36 @@ class ScheduleViewModel(
                 if (file.staged && editor.draft.isNotEmpty()) writes.withLock { withContext(Dispatchers.IO) { container.homeworkFiles.discardFile(editor.draft, id) } }
                 mutable.update { state ->
                     val current = state.homeworkEditor?.takeIf { it.draft == editor.draft } ?: return@update state
-                    state.copy(homeworkEditor = current.copy(files = current.files.filter { it.id != id }, removed = current.removed + id))
+                    state.copy(homeworkEditor = current.copy(files = current.files.filter { it.id != id },
+                        missingFileIds = current.missingFileIds - id, removed = current.removed + id))
                 }
             } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { homeworkEditorError(editor.draft, container.app.getString(R.string.hw_attach_bad)) }
+            finally { finishHomeworkEditorWork(editor.draft) }
+        }
+    }
+
+    private fun attachHomeworkMany(kind: String, uris: List<Uri>) {
+        if (uris.size == 1) { attachHomework(kind, uris.first()); return }
+        val editor = mutable.value.homeworkEditor ?: return
+        if (editor.draft.isEmpty() || editor.busy || uris.isEmpty()) return
+        mutable.update { it.copy(homeworkEditor = editor.copy(work = HomeworkEditorWork.Attachment, error = null)) }
+        viewModelScope.launch {
+            try {
+                val result = writes.withLock { withContext(Dispatchers.IO) {
+                    ru.bgtu_voenmeh.zapara.ui.homework.importHomeworkAttachmentBatch(container,
+                        editor, kind, uris) { saved ->
+                        mutable.update { state ->
+                            val current = state.homeworkEditor?.takeIf { it.draft == editor.draft } ?: return@update state
+                            state.copy(homeworkEditor = current.copy(files = current.files + saved))
+                        }
+                        mutable.value.homeworkEditor?.let { it.draft == editor.draft &&
+                            it.files.any { file -> file.id == saved.id } } == true
+                    }
+                } }
+                if (result.failed > 0) homeworkEditorError(editor.draft, container.app.getString(
+                    R.string.ux300_android_attachment_batch_result, result.added, result.failed))
+            } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { homeworkEditorError(editor.draft, container.app.getString(R.string.hw_attach_bad)) }
             finally { finishHomeworkEditorWork(editor.draft) }
         }

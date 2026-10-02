@@ -50,7 +50,8 @@ data class LessonUi(
     val subjectNorm: String,
     val remote: Boolean = false,
     val dayOfWeek: Int = 0,
-    val subgroup: SubgroupMarkUi? = null
+    val subgroup: SubgroupMarkUi? = null,
+    val typeRaw: String = ""
 )
 
 data class DayPage(
@@ -62,8 +63,12 @@ data class DayPage(
     val isSunday: Boolean,
     val deadlines: List<HomeworkRowUi> = emptyList(),
     val dataState: String? = null,
-    val nextKnownDate: LocalDate? = null
+    val nextKnownDate: LocalDate? = null,
+    val transfers: List<LessonTransfer> = emptyList()
 )
+
+data class LessonTransfer(val from: String, val to: String, val destinationRaw: String,
+    val assessment: ru.bgtu_voenmeh.zapara.ui.TransferAssessment)
 
 data class RenameUi(
     val lesson: LessonUi,
@@ -77,6 +82,8 @@ data class RenameUi(
     val profileName: String = "",
     val groupId: String = "",
     val selectedDate: LocalDate? = null,
+    val affectedGlobal: List<String> = emptyList(),
+    val affectedWeekday: List<String> = emptyList(),
     val busy: Boolean = false,
     val error: String? = null
 )
@@ -158,8 +165,11 @@ sealed interface ScheduleEvent {
     data object HomeworkEditorDec : ScheduleEvent
     data object RecalculateHomework : ScheduleEvent
     data object HomeworkEditorSave : ScheduleEvent
+    data object HomeworkApproveDuplicate : ScheduleEvent
+    data object HomeworkCancelDuplicate : ScheduleEvent
     data object HomeworkEditorCancel : ScheduleEvent
     data class HomeworkAttach(val kind: String, val uri: Uri) : ScheduleEvent
+    data class HomeworkAttachMany(val kind: String, val uris: List<Uri>) : ScheduleEvent
     data class HomeworkRemoveFile(val id: String) : ScheduleEvent
     data class OpenMap(val lesson: LessonUi) : ScheduleEvent
     data class PickSubgroup(val streamId: String, val optionId: String,

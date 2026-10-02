@@ -6,6 +6,8 @@ import { mergeBallotAck } from "./ballot-ack";
 import { ballotDeadlineLabel, ballotStatusTitle, ballotSummary, ballotVoteTotal, filterBallots, isBallotDeadlineSoon, voteShare, type BallotBrowseFilter } from "./ballotBrowse";
 import { emptyId, groupPowers } from "./powers";
 import type { Ballot, BallotBoard, Classmate, GroupRole } from "./types";
+import { ballotDraftProblem } from "./ux300";
+import { useClock } from "./ux300-controls";
 
 function plural(n: number, one: string, few: string, many: string) {
   const mod10 = n % 10;
@@ -47,10 +49,16 @@ function BallotForm({ storageKey, title, hint, submitLabel, action, onDone, onEr
   useEffect(() => { alive.current=true; return () => { alive.current=false; }; }, []);
   const { question, options, days } = draft;
   const [busy, setBusy] = useState(false);
+  const now = useClock();
+  const problem = ballotDraftProblem(question, options);
+  function move(index: number, direction: number) {
+    setDraft(current => { const next = [...current.options]; const target = index + direction; if(target < 0 || target >= next.length) return current; [next[index], next[target]] = [next[target],next[index]]; return {...current,options:next}; });
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (pending.current) return;
+    if (problem) { onError(problem); return; }
     const submitted = draft;
     const text = question.trim();
     const labels = options.map(item => item.trim()).filter(Boolean);
@@ -83,7 +91,8 @@ function BallotForm({ storageKey, title, hint, submitLabel, action, onDone, onEr
         <label className="field" key={index}>Вариант {index + 1}
           <span className="row">
             <input className="ballot-choice" value={value} onChange={event => setDraft(current => ({ ...current, options: current.options.map((item, itemIndex) => itemIndex === index ? event.target.value : item) }))} maxLength={80} aria-label={`Вариант ${index + 1}`} />
-            {options.length > 2 && <button className="btn" type="button" onClick={() => setDraft(current => ({ ...current, options: current.options.filter((_, itemIndex) => itemIndex !== index) }))}>Убрать</button>}
+            <button className="btn quiet" type="button" disabled={busy || index === 0} onClick={() => move(index,-1)}>Выше</button><button className="btn quiet" type="button" disabled={busy || index === options.length-1} onClick={() => move(index,1)}>Ниже</button>
+            {options.length > 2 && <button className="btn" type="button" disabled={busy} onClick={() => { if (!value.trim() || window.confirm(`Убрать вариант «${value}»?`)) setDraft(current => ({ ...current, options: current.options.filter((_, itemIndex) => itemIndex !== index) })); }}>Убрать</button>}
           </span>
         </label>
       ))}
@@ -92,8 +101,9 @@ function BallotForm({ storageKey, title, hint, submitLabel, action, onDone, onEr
         <select className="ballot-days" aria-label="Срок голосования" value={days} onChange={event => setDraft(current => ({ ...current, days: Number(event.target.value) }))}>
           {Array.from({ length: 14 }, (_, index) => index + 1).map(day => <option key={day} value={day}>{dayLabel(day)}</option>)}
         </select>
-        <button className="btn primary" type="submit" disabled={busy}>{submitLabel}</button>
+        <button className="btn primary" type="submit" disabled={busy || !!problem}>{submitLabel}</button><button className="btn quiet" type="button" disabled={busy} onClick={() => { if (window.confirm("Удалить черновик этого голосования?")) clearDraft(draft); }}>Удалить черновик</button>
       </div>
+      <p className="muted">Закроется примерно {new Date(now.getTime() + days * 86_400_000).toLocaleString("ru-RU")}</p>{problem && <p role="status">{problem}</p>}
     </form>
   );
 }
@@ -105,7 +115,8 @@ function outcomeTitle(outcome: string) {
   return "";
 }
 
-function BallotCard({ ballot, canClose, busy, onSupport, onVote, onClose, onCopy }: {
+function BallotCard({ ballot, canClose, busy, onSupport, onVote, onClose, onCopy, topicId }: {
+  topicId?: string;
   ballot: Ballot;
   canClose: boolean;
   busy: boolean;
@@ -115,10 +126,12 @@ function BallotCard({ ballot, canClose, busy, onSupport, onVote, onClose, onCopy
   onCopy: () => void;
 }) {
   const total = ballotVoteTotal(ballot);
-  const soon = isBallotDeadlineSoon(ballot, Date.now());
+  const now = useClock();
+  const soon = isBallotDeadlineSoon(ballot, now.getTime());
+  const expired = !!ballot.deadlineAt && Date.parse(ballot.deadlineAt) <= now.getTime();
   const supportPercent = Math.min(100, Math.round(ballot.supporters / Math.max(1, ballot.supportersNeeded) * 100));
   return (
-    <article className="stack ballot-card">
+    <article id={`obligation-ballot-${topicId||"general"}-${ballot.ballotId}`} tabIndex={-1} className="stack ballot-card">
       <div className="row">
         <span className="chip">{originTitle(ballot.origin)}</span>
         {ballot.effect && <span className="chip">Изменение группы</span>}
@@ -153,7 +166,7 @@ function BallotCard({ ballot, canClose, busy, onSupport, onVote, onClose, onCopy
         return (
           <div className="ballot-option" key={option.optionId}>
             {ballot.status === "open" ? (
-              <button className={option.chosen ? "btn primary" : "btn"} type="button" disabled={busy} onClick={() => onVote(option.optionId)}>
+              <button className={option.chosen ? "btn primary" : "btn"} type="button" disabled={busy || expired} onClick={() => onVote(option.optionId)}>
                 <span>{option.label}{option.chosen ? " · ваш выбор" : ""}</span>
                 <span>{option.votes} {plural(option.votes, "голос", "голоса", "голосов")} · {width}%</span>
               </button>
@@ -267,7 +280,8 @@ function ChangeForm({ communityId, classmates, roles, onDone, onError }: {
   );
 }
 
-export function BallotBoardView({ communityId, board, classmates, roles, topicId, title, canCreate = true, readOnly = false, onChange, onError }: {
+export function BallotBoardView({ communityId, board, classmates, roles, topicId, title, canCreate = true, readOnly = false, onChange, onError, targetId }: {
+  targetId?: string;
   communityId: string;
   board: BallotBoard;
   classmates: Classmate[];
@@ -292,10 +306,12 @@ export function BallotBoardView({ communityId, board, classmates, roles, topicId
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [browse, setBrowse] = useState<BallotBrowseFilter>({ query: "", status: "all", sort: "default" });
+  const [unanswered, setUnanswered] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [copyNotice, setCopyNotice] = useState("");
-  const visible = filterBallots(board.ballots, browse);
-  const filtered = !!browse.query.trim() || browse.status !== "all" || browse.sort !== "default";
+  const visible = filterBallots(board.ballots,browse).filter(ballot=>!unanswered||ballot.status === "open"&&!ballot.options.some(option=>option.chosen));
+  const target=board.ballots.find(ballot=>ballot.ballotId===targetId);if(target&&!visible.includes(target))visible.unshift(target);
+  const filtered = unanswered || !!browse.query.trim() || browse.status !== "all" || browse.sort !== "default";
   function current() { return alive.current && liveScope.current === scope; }
   function publish(result: BallotBoard) { currentBoard.current=result; onChange(result); }
   async function reload() {
@@ -339,7 +355,7 @@ export function BallotBoardView({ communityId, board, classmates, roles, topicId
           Общее начинается после {board.supportersNeeded} {plural(board.supportersNeeded, "подписи", "подписей", "подписей")}: в группе {board.members} {plural(board.members, "человек", "человека", "человек")}.
           Таким голосованием можно менять роли, возможности и состав группы. Одновременно идут не больше пяти голосований.
         </p>}
-        <div className="ballot-browse" role="group" aria-label="Поиск и фильтры голосований">
+        <label className="check"><input type="checkbox" checked={unanswered} onChange={event => setUnanswered(event.target.checked)}/>Я ещё не голосовал</label><div className="ballot-browse" role="group" aria-label="Поиск и фильтры голосований">
           <label className="field">Поиск голосования
             <input type="search" value={browse.query} onChange={event => setBrowse(current => ({ ...current, query: event.target.value }))}
               placeholder="Вопрос или вариант" />
@@ -358,7 +374,7 @@ export function BallotBoardView({ communityId, board, classmates, roles, topicId
           </label>
         </div>
         <div className="row ballot-browse-summary"><span className="muted">На текущей доске: {visible.length} из {board.ballots.length}</span>
-          {filtered && <button className="btn" type="button" onClick={() => setBrowse({ query: "", status: "all", sort: "default" })}>Сбросить фильтры</button>}
+          {filtered && <button className="btn" type="button" onClick={() => { setUnanswered(false); setBrowse({ query: "", status: "all", sort: "default" }); }}>Сбросить фильтры</button>}
         </div>
       </div>
       {canCreate ? <div className="ballot-create stack" hidden={!createOpen}>
@@ -404,7 +420,7 @@ export function BallotBoardView({ communityId, board, classmates, roles, topicId
         {board.ballots.length === 0 && <div className="empty">Голосований пока нет.
           {canCreate && <button className="btn" type="button" onClick={() => setCreateOpen(true)}>Создать голосование</button>}</div>}
         {board.ballots.length > 0 && visible.length === 0 && <div className="empty">На текущей доске совпадений нет.
-          <button className="btn" type="button" onClick={() => setBrowse({ query: "", status: "all", sort: "default" })}>Показать все</button></div>}
+          <button className="btn" type="button" onClick={() => { setUnanswered(false); setBrowse({ query: "", status: "all", sort: "default" }); }}>Показать все</button></div>}
       </div>
     </section>
   );

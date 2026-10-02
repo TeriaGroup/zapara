@@ -38,7 +38,8 @@ data class RoutePickerUi(
     val searchCampus: Boolean = true,
     val recent: List<RoutePlaceUi> = emptyList(),
     val selectedFrom: Boolean = false,
-    val selectedTo: Boolean = false
+    val selectedTo: Boolean = false,
+    val pinned: List<RoutePlaceUi> = emptyList()
 )
 
 data class MapsUiState(
@@ -82,9 +83,12 @@ data class MapsUiState(
     val rasterCatalog: Map<FloorKey, FloorRaster> = emptyMap(),
     val decodeFailedFloors: Set<FloorKey> = emptySet(),
     val roomUnmarked: Boolean = false,
+    val availableRooms: List<FloorRoom> = emptyList(),
     val alphaMaps: Boolean = false,
     val mapError: String? = null,
-    val automaticNote: String? = null
+    val automaticNote: String? = null,
+    val canUndoEndpoint: Boolean = false,
+    val recentRoutes: List<RecentRouteUi> = emptyList()
 )
 
 internal fun RoutePickerUi.withBuilding(next: String?): RoutePickerUi {
@@ -99,7 +103,8 @@ internal fun RoutePickerUi.clearFilters(): RoutePickerUi = copy(
 
 internal fun RoutePickerUi.accepts(pick: MapsEvent.PickPlace): Boolean =
     epoch == pick.epoch && field == pick.field &&
-        (items.any { it.id == pick.id } || query.isBlank() && recent.any { it.id == pick.id })
+        (items.any { it.id == pick.id } || query.isBlank() &&
+            (recent.any { it.id == pick.id } || pinned.any { it.id == pick.id }))
 
 internal fun RoutePickerUi.switchTo(field: RouteField, epoch: Long): RoutePickerUi =
     copy(field = field, epoch = epoch, error = null)
@@ -150,6 +155,7 @@ sealed interface MapsEvent {
     data class PickBuilding(val index: Int) : MapsEvent
     data class PickFloor(val n: Int) : MapsEvent
     data class ShowRoom(val classroomRaw: String) : MapsEvent
+    data class FocusRoom(val id: String) : MapsEvent
     data object Browse : MapsEvent
     data object ToNext : MapsEvent
     data object ZoomIn : MapsEvent
@@ -182,6 +188,10 @@ sealed interface MapsEvent {
     data object ResetPickerFilters : MapsEvent
     data class SearchCampus(val enabled: Boolean) : MapsEvent
     data class ClearEndpoint(val field: RouteField) : MapsEvent
+    data object UndoEndpoint : MapsEvent
+    data class RepeatRoute(val fromId: String, val toId: String) : MapsEvent
+    data object ClearRecentRoutes : MapsEvent
+    data class TogglePinnedPlace(val id: String, val epoch: Long) : MapsEvent
     data class PlanPress(val nx: Double, val ny: Double) : MapsEvent
     data class PlanPickAs(val field: RouteField) : MapsEvent
     data object ClosePlanPick : MapsEvent
@@ -191,5 +201,6 @@ sealed interface MapsEvent {
 internal fun MapsUiState.mapDecodeFailed(key: FloorKey): MapsUiState {
     if (remote || key != FloorKey(building, floor) || key in decodeFailedFloors) return this
     return copy(planFile = null, highlight = null, rasterCatalog = rasterCatalog - key,
-        floorFiles = floorFiles - key.floor, decodeFailedFloors = decodeFailedFloors + key)
+        floorFiles = floorFiles - key.floor, decodeFailedFloors = decodeFailedFloors + key,
+        availableRooms = emptyList())
 }

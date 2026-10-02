@@ -16,6 +16,8 @@ public sealed record TeacherItem(LecturerInfo Info, bool IsMine)
     public string Name => Info.Name;
     public string Kafedra => Info.Kafedra.Trim();
 }
+public sealed record DepartmentFilterOption(string Name, string Label);
+public sealed record TeacherChoice(string Name, string Department, IRelayCommand ChooseCommand);
 
 public sealed partial class TeachersViewModel : ViewModelBase
 {
@@ -34,6 +36,12 @@ public sealed partial class TeachersViewModel : ViewModelBase
     private bool _loadedOnce;
     private Task? _inflight;
     private int _groupEpoch;
+    private string? selectionMemoryId;
+    [ObservableProperty] private IReadOnlyList<TeacherChoice> nameChoices = [];
+    [ObservableProperty] private string navigationFeedback = "";
+    public bool HasNameChoices => NameChoices.Count > 0;
+    public bool HasHiddenSelection => selectionMemoryId is not null && Selected is null;
+    partial void OnNameChoicesChanged(IReadOnlyList<TeacherChoice> value) => OnPropertyChanged(nameof(HasNameChoices));
 
     public TeachersViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null, bool allowNetwork = true) : base(app)
     {
@@ -67,6 +75,9 @@ public sealed partial class TeachersViewModel : ViewModelBase
 
     [ObservableProperty] private string _query = "";
     [ObservableProperty] private bool _onlyMine = true;
+    [ObservableProperty] private IReadOnlyList<DepartmentFilterOption> _departmentOptions = [new("", "Все кафедры")];
+    [ObservableProperty] private DepartmentFilterOption? _selectedDepartment;
+    partial void OnSelectedDepartmentChanged(DepartmentFilterOption? value) => ApplyFilter();
     [ObservableProperty] private string _countText = "";
     [ObservableProperty] private TeacherItem? _selected;
     [ObservableProperty] private TeacherDetailViewModel? _detail;
@@ -96,8 +107,38 @@ public sealed partial class TeachersViewModel : ViewModelBase
     partial void OnLoadErrorChanged(string? value) => NotifyEmptyTeacherState();
     partial void OnSelectedChanged(TeacherItem? value)
     {
+        if (value is not null) selectionMemoryId = value.Info.Id;
         Detail = value is null ? null : NewDetail(value, parityIndex: 0);
         OnPropertyChanged(nameof(HasDetail));
+        OnPropertyChanged(nameof(HasHiddenSelection));
+    }
+    public async Task OpenByNameAsync(string name)
+    {
+        await LoadAsync();
+        if (!App.Work.CanPublish) return;
+        var matches = _index.Lecturers.Where(info => info.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (matches.Length == 0) { NavigationFeedback = "Преподаватель не найден в загруженном каталоге."; return; }
+        if (matches.Length > 1)
+        {
+            NameChoices = matches.Select(info => new TeacherChoice(info.Name, info.Kafedra,
+                new RelayCommand(() => SelectFromName(info.Id)))).ToArray();
+            NavigationFeedback = "Найдено несколько преподавателей с этим именем. Выберите кафедру.";
+            return;
+        }
+        SelectFromName(matches[0].Id);
+    }
+    private void SelectFromName(string id)
+    {
+        var info = _index.Lecturers.FirstOrDefault(item => item.Id == id);
+        if (info is null) return;
+        OnlyMine = false; Query = info.Name;
+        SelectedDepartment = DepartmentOptions.FirstOrDefault(option => option.Name.Equals(info.Kafedra.Trim(), StringComparison.OrdinalIgnoreCase)) ?? DepartmentOptions[0];
+        ApplyFilter(); Selected = Items.FirstOrDefault(item => item.Info.Id == id);
+        NameChoices = []; NavigationFeedback = "";
+    }
+    [RelayCommand] private void ShowSelectedTeacher()
+    {
+        if (selectionMemoryId is { } id) SelectFromName(id);
     }
 
     /// <summary>A reload re-read ParityInvert and my group, so the open detail has to be rebuilt from them.
@@ -120,7 +161,17 @@ public sealed partial class TeachersViewModel : ViewModelBase
             _shell.OpenScheduleAt(date);
         }
         return new(item.Info, _index.LessonsOf(item.Info.Id), item.IsMine, group, _myGroupName, _invert, App.Loc, _clock().Date,
-            _periodStart, _weekCount, OpenOwnDay) { ParityIndex = parityIndex };
+            _periodStart, _weekCount, OpenOwnDay, raw => OpenTeacherRoomAsync(raw, group, epoch, owner))
+        { ParityIndex = parityIndex, OnlyOwnGroup = item.IsMine && Detail?.OnlyOwnGroup == true };
+    }
+    private async Task OpenTeacherRoomAsync(string raw, string group, int epoch, string owner)
+    {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent || epoch != _groupEpoch || App.Profile.DatabasePath != owner || App.Settings.MyGroupId != group) return;
+        var map = await RunAsync(() => App.Maps.Resolve(raw), "teacher room map");
+        if (!operation.IsCurrent || epoch != _groupEpoch || App.Profile.DatabasePath != owner || App.Settings.MyGroupId != group) return;
+        if (map is { HasMap: true }) _shell.ShowMap(map);
+        else App.Toasts.Info("Для аудитории нет координаты на сохранённой карте.");
     }
 
     /// <summary>Reentrancy guard. ShellViewModel.NavigateTo fires ActivateAsync without awaiting and without a
@@ -204,6 +255,13 @@ public sealed partial class TeachersViewModel : ViewModelBase
         if (!operation.IsCurrent) return;
         var (lecturers, lessons) = (App.Lecturers.Lecturers, App.Lecturers.Lessons);
         _index = await Task.Run(() => new TeacherIndex(lecturers, lessons)); // 718 lecturers grouped off the UI thread (T4 minor 90)
+        var selectedName = SelectedDepartment?.Name ?? "";
+        DepartmentOptions = [new("", "Все кафедры"), .. _index.Lecturers.Select(row => row.Kafedra.Trim())
+            .Where(name => name.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.Create(System.Globalization.CultureInfo.GetCultureInfo("ru-RU"), true))
+            .Select(name => new DepartmentFilterOption(name, name))];
+        SelectedDepartment = DepartmentOptions.FirstOrDefault(option =>
+            option.Name.Equals(selectedName, StringComparison.OrdinalIgnoreCase)) ?? DepartmentOptions[0];
         await LoadMyGroupAsync();
     }
 
@@ -234,13 +292,14 @@ public sealed partial class TeachersViewModel : ViewModelBase
 
     private void ApplyFilter()
     {
-        var keep = Selected?.Info.Id;
-        var filtered = _index.Filter(Query, OnlyMine, _myIds);
+        var keep = Selected?.Info.Id ?? selectionMemoryId;
+        var filtered = _index.Filter(Query, OnlyMine, _myIds, SelectedDepartment?.Name);
         Items.Clear();
         foreach (var l in filtered) Items.Add(new TeacherItem(l, _myIds.Contains(l.Id)));
         var total = _index.Lecturers.Count;
         CountText = filtered.Count < total ? T("teachersCount", filtered.Count, total) : total.ToString();
         Selected = keep is null ? null : Items.FirstOrDefault(i => i.Info.Id == keep);
+        OnPropertyChanged(nameof(HasHiddenSelection));
         NotifyEmptyTeacherState();
     }
 
@@ -254,9 +313,20 @@ public sealed partial class TeachersViewModel : ViewModelBase
 }
 
 public sealed record TeacherRow(string Time, string TimeEnd, string Name, string TypeLabel, string Room, string Groups, string ParityLabel, bool IsMine,
-    DateTime? NextDate = null, IRelayCommand? OpenOwnDayCommand = null)
+    DateTime? NextDate = null, IRelayCommand? OpenOwnDayCommand = null, string? FullGroups = null,
+    IAsyncRelayCommand? OpenRoomCommand = null) : System.ComponentModel.INotifyPropertyChanged
 {
     public bool CanOpenOwnDay => IsMine && NextDate is not null && OpenOwnDayCommand is not null;
+    public bool CanOpenRoom => OpenRoomCommand is not null;
+    public bool HasMoreGroups => FullGroups is { } full && full != Groups;
+    private bool showAllGroups;
+    public string ShownGroups => showAllGroups ? FullGroups ?? Groups : Groups;
+    public string GroupToggleCaption => showAllGroups ? "Свернуть группы" : "Показать все группы";
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    public IRelayCommand ToggleGroupsCommand => new RelayCommand(() =>
+    { showAllGroups = !showAllGroups;
+        PropertyChanged?.Invoke(this, new(nameof(ShownGroups)));
+        PropertyChanged?.Invoke(this, new(nameof(GroupToggleCaption))); });
 }
 public sealed record TeacherDay(string Title, bool IsToday, IReadOnlyList<TeacherRow> Rows, DateTime? NextDate = null)
 {
@@ -275,9 +345,11 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
     private readonly DateTime _periodStart;
     private readonly int _weekCount;
     private readonly Action<DateTime>? _openOwnDay;
+    private readonly Func<string, Task>? _openRoom;
 
     public TeacherDetailViewModel(LecturerInfo info, IReadOnlyList<LecturerLesson> lessons, bool isMine, string myGroupId, string myGroupName, bool invert, Loc loc, DateTime today,
-        DateTime? periodStart = null, int weekCount = 2, Action<DateTime>? openOwnDay = null)
+        DateTime? periodStart = null, int weekCount = 2, Action<DateTime>? openOwnDay = null,
+        Func<string, Task>? openRoom = null)
     {
         Info = info;
         _lessons = lessons;
@@ -290,6 +362,7 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
         _periodStart = periodStart ?? new DateTime(today.Year, 9, 1);
         _weekCount = weekCount > 0 ? weekCount : 2;
         _openOwnDay = openOwnDay;
+        _openRoom = openRoom;
         _segmentItems = BuildSegments();
         _days = Build();
     }
@@ -303,12 +376,15 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
 
     [ObservableProperty] private IList<string> _segmentItems;
     [ObservableProperty] private int _parityIndex; // 0 both, 1 odd, 2 even
+    [ObservableProperty] private bool _onlyOwnGroup;
     [ObservableProperty] private IReadOnlyList<TeacherDay> _days;
     public string WeekLessonCountText => $"Пар в выбранной неделе: {Days.Sum(day => day.Rows.Count)}";
     public bool HasWeekLessons => Days.Any(day => day.Rows.Count > 0);
-    public string EmptyWeekText => ParityIndex == 0 ? "В загруженном расписании преподавателя пар нет." : "В выбранной чётности пар нет. Попробуйте другую неделю или обе.";
+    public string EmptyWeekText => OnlyOwnGroup ? "У преподавателя нет пар вашей группы для выбранной недели. Показать другие группы."
+        : ParityIndex == 0 ? "В загруженном расписании преподавателя пар нет." : "В выбранной чётности пар нет. Попробуйте другую неделю или обе.";
 
     partial void OnParityIndexChanged(int value) { Days = Build(); OnPropertyChanged(nameof(EmptyWeekText)); }
+    partial void OnOnlyOwnGroupChanged(bool value) { Days = Build(); OnPropertyChanged(nameof(EmptyWeekText)); }
     partial void OnDaysChanged(IReadOnlyList<TeacherDay> value) { OnPropertyChanged(nameof(WeekLessonCountText)); OnPropertyChanged(nameof(HasWeekLessons)); }
 
     public void Relabel()
@@ -328,6 +404,8 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
         {
             var rows = _lessons
                 .Where(l => l.DayOfWeek == dow)
+                .Where(l => !OnlyOwnGroup || l.Groups.Any(g => g.IdGroup == _myGroupId ||
+                    _myGroupName.Length > 0 && g.Number == _myGroupName))
                 .Where(l => ParityCodes.OnUserWeek(ParityIndex, l.Parity, _invert))
                 .Select(l => (Lesson: l, UserParity: ParityCodes.ToUser(l.Parity, _invert)))
                 .OrderBy(x => TimeSpan.TryParse(x.Lesson.TimeStart, out var t) ? t : TimeSpan.Zero)
@@ -349,7 +427,10 @@ public sealed partial class TeacherDetailViewModel : ObservableObject
         var next = NextDate(l.DayOfWeek, l.Parity);
         return new TeacherRow(l.TimeStart, l.TimeEnd, LessonText.StripType(l.DisciplineRaw, l.TypeRaw), DayTitles.TypeLabel(l.TypeRaw, loc),
             room, groupsText, loc.T(ParityCodes.WeekLabelKey(l.Parity, _invert)), mine, next,
-            mine && next is { } date && _openOwnDay is not null ? new RelayCommand(() => _openOwnDay(date)) : null);
+            mine && next is { } date && _openOwnDay is not null ? new RelayCommand(() => _openOwnDay(date)) : null,
+            string.Join(", ", groups),
+            _openRoom is not null && !string.IsNullOrWhiteSpace(l.ClassroomRaw)
+                ? new AsyncRelayCommand(() => _openRoom(l.ClassroomRaw)) : null);
     }
     private DateTime? NextDate(int dayOfWeek, int storedParity)
     {

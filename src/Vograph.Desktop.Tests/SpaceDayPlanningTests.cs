@@ -8,10 +8,18 @@ public sealed class SpaceDayPlanningTests
     {
         using var db=TestDb.Create();var now=new DateTime(2026,9,14,23,59,0);
         var shell=new ShellViewModel(db.Services);var vm=new ScheduleViewModel(db.Services,shell,()=>now);
-        await vm.InitializeAsync();vm.SelectDate(new DateTime(2026,9,16));await vm.ReloadAsync();
-        now=new DateTime(2026,9,15,0,1,0);await vm.ReloadAsync();
-        Assert.Equal(new DateTime(2026,9,16),vm.Date);Assert.Equal(1,vm.SegmentIndex);Assert.Equal(1,vm.DayOffset);
-        await vm.ActivateAsync();Assert.Equal(new DateTime(2026,9,16),vm.Date);vm.Detach();shell.Detach();
+        try
+        {
+            await vm.InitializeAsync();vm.SelectDate(new DateTime(2026,9,16));await vm.ReloadAsync();
+            now=new DateTime(2026,9,15,0,1,0);await vm.ReloadAsync();
+            Assert.Equal(new DateTime(2026,9,16),vm.Date);Assert.Equal(1,vm.SegmentIndex);Assert.Equal(1,vm.DayOffset);
+            await vm.ActivateAsync();Assert.Equal(new DateTime(2026,9,16),vm.Date);
+        }
+        finally
+        {
+            vm.Detach();shell.Detach();
+            await db.Services.Work.WhenIdleAsync(TestContext.Current.CancellationToken);
+        }
     }
     [Fact] public async Task Day_navigation_and_fast_buttons_include_empty_dates()
     {

@@ -15,6 +15,16 @@ public sealed partial class GroupViewModel
     public ObservableCollection<GroupTrustedRoleRow> TrustedRoles { get; } = [];
     public ObservableCollection<GroupTrustedPersonRow> TrustCandidates { get; } = [];
     public ObservableCollection<GroupTrustedGrantRow> TrustedGrants { get; } = [];
+    [ObservableProperty] private string trustSearch = "";
+    public IReadOnlyList<GroupTrustedRoleRow> VisibleTrustedRoles => TrustedRoles.Where(role =>
+        TrustSearch.Trim().Length == 0 || role.Name.Contains(TrustSearch.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray();
+    public IReadOnlyList<GroupTrustedPersonRow> VisibleTrustCandidates => TrustCandidates.Where(person =>
+        TrustSearch.Trim().Length == 0 || person.Name.Contains(TrustSearch.Trim(), StringComparison.OrdinalIgnoreCase) ||
+        person.OfficialRole.Contains(TrustSearch.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray();
+    partial void OnTrustSearchChanged(string value) => NotifyTrustBrowse();
+    [RelayCommand] private void ClearTrustSearch() => TrustSearch = "";
+    private void NotifyTrustBrowse()
+    { OnPropertyChanged(nameof(VisibleTrustedRoles)); OnPropertyChanged(nameof(VisibleTrustCandidates)); }
     [ObservableProperty] private bool isHeadman;
     [ObservableProperty] private string trustedRoleName = "Доверенный по каналам";
     [ObservableProperty] private GroupTrustedRoleRow? selectedTrustedRole;
@@ -105,6 +115,7 @@ public sealed partial class GroupViewModel
         RefreshTrustedGrants();
         LoadRoleEditor();
         ReconcileCreationRoles();
+        NotifyTrustBrowse();
         NotifySpace();
         RefreshHomeworkRecipients();
     }

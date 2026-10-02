@@ -56,8 +56,17 @@ public sealed partial class GroupViewModel : ViewModelBase
         accessToken = app.CommunityAccess;
         this.recorder = recorder ?? new WindowsChatMediaRecorder();
         this.clipboardWriter = clipboardWriter;
-        Messages.CollectionChanged += (_, _) => { RefreshMessageBrowse(); OnPropertyChanged(nameof(NoMaterials)); OnPropertyChanged(nameof(MaterialsErrorText)); };
+        Messages.CollectionChanged += (_, _) => { RefreshMessageBrowse(); RefreshMaterialBrowse(); OnPropertyChanged(nameof(NoMaterials)); OnPropertyChanged(nameof(MaterialsErrorText)); };
         Ballots.CollectionChanged += (_, _) => RefreshBallotBrowse();
+        Forms.CollectionChanged += (_, _) => RefreshFormBrowse();
+        AuditEvents.CollectionChanged += (_, _) => RefreshAuditBrowse();
+        ArchivedChannels.CollectionChanged += (_, _) => RefreshArchiveBrowse();
+        FormQuestions.CollectionChanged += (_, change) =>
+        {
+            if (change.OldItems is not null) foreach (SpaceQuestionEditor question in change.OldItems) question.PropertyChanged -= OnFormQuestionEdited;
+            if (change.NewItems is not null) foreach (SpaceQuestionEditor question in change.NewItems) question.PropertyChanged += OnFormQuestionEdited;
+            FormValidation = "";
+        };
         player.PlaybackEnded += () => Dispatcher.UIThread.Post(StopPlayback);
         player.PlaybackFailed += () => Dispatcher.UIThread.Post(() =>
         {
@@ -97,7 +106,7 @@ public sealed partial class GroupViewModel : ViewModelBase
     public bool CanAttachMedia => !HasRecordedDraft && ShowComposer && (IsDirect || SelectedChannel?.Permissions.Contains("media") == true || legacySpace) && !IsBusy && !IsRecording && !IsFinalizingRecording;
     public void SetClipboardWriter(Func<string, Task>? writer) => clipboardWriter = writer;
 
-    public override void Detach() { Watch(false); ReleaseVisibleAvatars(); }
+    public override void Detach() { Watch(false); ClearObligations(); ReleaseVisibleAvatars(); }
     public override Task ActivateAsync() => LoadAsync();
     public void Watch(bool visible)
     {
@@ -115,10 +124,13 @@ public sealed partial class GroupViewModel : ViewModelBase
     partial void OnHasHomeChanged(bool value)
     {
         RaiseList();
-        if (!value) ResetGroupContext();
+        if (!value) { ResetGroupContext(); ClearObligations(); }
         OnPropertyChanged(nameof(ShowGroupContext));
         OnPropertyChanged(nameof(CanEditGroupAvatar));
     }
+
+    private void OnFormQuestionEdited(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    { FormValidation = ""; }
     partial void OnHomeTitleChanged(string value) => OnPropertyChanged(nameof(GroupInitials));
     partial void OnIsRecordingChanged(bool value)
     {
@@ -272,7 +284,7 @@ public sealed partial class GroupViewModel : ViewModelBase
     {
         ReleaseVisibleAvatars();
         SaveAnswerDrafts();SaveHomeworkDraft();SaveFormDraft();SaveCreationDraft();
-        if(communityId!=home.CommunityId){ClearDesk();ArchivedChannels.Clear();archiveCommunity=null;archiveLoaded=false;archiveRequestVersion++;AuditEvents.Clear();}
+        if(communityId!=home.CommunityId){ClearObligations();ClearDesk();ArchivedChannels.Clear();archiveCommunity=null;archiveLoaded=false;archiveRequestVersion++;AuditEvents.Clear();}
         conversationId=null;groupConversationId=null;SelectedChannel=null;IsDirect=false;ChatTitle="";
         Messages.Clear();Forms.Clear();ChannelHomeworks.Clear();ChannelSchedule.Clear();Ballots.Clear();ShowBallots=false;
         ClearPreviews();RestartTimer();

@@ -40,6 +40,9 @@ export class PersonalComposerStore {
     }
     return state;
   }
+  inboxDrafts(): { conversationId: string; text: string; editing: boolean }[] {
+    return [...this.drafts].filter(([,state])=>!!state.text.trim()).map(([conversationId,state])=>({conversationId,text:state.text,editing:!!state.editing}));
+  }
   private update(id: string, patch: Partial<PersonalComposer>) {
     const state = this.read(id);
     this.drafts.set(id, { ...state, ...patch, revision: state.revision + 1 });

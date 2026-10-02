@@ -46,6 +46,8 @@ class MapsViewModel internal constructor(
     private var routeResult: MapRouteResult? = null
     private var rasterRetry = 0L
     private var pickerEpoch = 0L
+    private val routeMemory = RouteSessionMemory()
+    private val recentPlaceIds = RecentPlaceIds()
 
     init {
         launchMap {
@@ -66,10 +68,20 @@ class MapsViewModel internal constructor(
     }
 
     fun onEvent(event: MapsEvent) {
+        if (event is MapsEvent.ShowRoom || event is MapsEvent.PickEntrance || event == MapsEvent.ToNext || event == MapsEvent.Browse) {
+            routeMemory.changed()
+            mutable.update { it.copy(canUndoEndpoint = false) }
+        }
         when (event) {
             is MapsEvent.PickBuilding -> pickBuilding(event.index)
             is MapsEvent.PickFloor -> pickFloor(event.n)
             is MapsEvent.ShowRoom -> launchMap { showRoom(event.classroomRaw) }
+            is MapsEvent.FocusRoom -> mutable.update { state ->
+                val room = state.availableRooms.firstOrNull { it.id == event.id }
+                if (room == null || state.planFile == null) state else state.copy(
+                    highlight = HighlightUi(room.rect, room.room), roomUnmarked = false,
+                    zoom = 1f, fitGeneration = state.fitGeneration + 1)
+            }
             MapsEvent.Browse -> launchMap { openBrowse() }
             MapsEvent.ToNext -> if (routingOn()) launchMap { toNext() }
             MapsEvent.ZoomIn -> mutable.update { it.copy(zoom = (it.zoom * 1.25f).coerceIn(0.4f, 4f)) }
@@ -118,6 +130,35 @@ class MapsViewModel internal constructor(
             MapsEvent.ResetPickerFilters -> refreshPicker { it.clearFilters() }
             is MapsEvent.SearchCampus -> refreshPicker { it.copy(searchCampus = event.enabled) }
             is MapsEvent.ClearEndpoint -> if (routingOn()) launchMap { clearEndpoint(event.field) }
+            MapsEvent.UndoEndpoint -> if (routingOn()) launchMap {
+                val undo = routeMemory.undo ?: return@launchMap
+                routeMemory.changed()
+                mutable.update { it.copy(canUndoEndpoint = false) }
+                applyPlace(undo.second, undo.first)
+            }
+            MapsEvent.ClearRecentRoutes -> {
+                routeMemory.clearRoutes()
+                mutable.update { it.copy(recentRoutes = emptyList()) }
+            }
+            is MapsEvent.RepeatRoute -> if (routingOn()) launchMap {
+                ensureGraph()
+                if (routeMemory.history().none { it.from == event.fromId && it.to == event.toId }) return@launchMap
+                val destination = node(event.toId) ?: return@launchMap
+                if (node(event.fromId) == null) return@launchMap
+                routeMemory.changed()
+                fromId = event.fromId; toId = event.toId
+                prevRoomKey = node(fromId)?.room; destRoomKey = destination.room ?: destination.id
+                mutable.update { it.copy(canUndoEndpoint = false) }
+                revealNode(destination)
+            }
+            is MapsEvent.TogglePinnedPlace -> {
+                val picker = mutable.value.picker
+                if (picker != null && picker.epoch == event.epoch &&
+                    (picker.items + picker.recent + picker.pinned).any { it.id == event.id }) {
+                    routeMemory.togglePin(event.id)
+                    mutable.update { it.copy(picker = it.picker?.copy(pinned = pinnedPlaces())) }
+                }
+            }
             is MapsEvent.PlanPress -> onPlanPress(event.nx, event.ny)
             is MapsEvent.PlanPickAs -> if (routingOn()) launchMap { pickPlanAs(event.field) }
             MapsEvent.ClosePlanPick -> mutable.update { it.copy(planPick = null) }
@@ -131,6 +172,9 @@ class MapsViewModel internal constructor(
         mapLoads.ensureCurrent()
         graph = loaded.first
         allPlaces = places
+        routeMemory.prune(places.map { it.id }.toSet())
+        mutable.update { it.copy(recentRoutes = routeHistoryUi(), canUndoEndpoint = routeMemory.undo != null,
+            picker = it.picker?.copy(pinned = pinnedPlaces())) }
         if (!graphLoaded) lastEntranceId = loaded.second
         if (fromId == null) fromId = lastEntranceId
         graphLoaded = true
@@ -142,12 +186,13 @@ class MapsViewModel internal constructor(
         val on = withContext(ioDispatcher) { container.settings().mapsAlpha }
         if (on == mutable.value.alphaMaps) return
         if (!on) {
+            routeMemory.changed()
             fromId = null
             toId = null
             destRoomKey = null
             prevRoomKey = null
             routeResult = null
-            mutable.update { it.withoutRouting() }
+            mutable.update { it.withoutRouting().copy(canUndoEndpoint = false) }
         } else {
             mutable.update { it.copy(alphaMaps = true) }
         }
@@ -307,6 +352,7 @@ class MapsViewModel internal constructor(
                 rasterCatalog = catalog,
                 floor = level, planFile = rasters.files[level],
                 highlight = coords?.let { rect -> HighlightUi(rect, room.orEmpty()) },
+                availableRooms = rooms,
                 roomUnmarked = !room.isNullOrBlank() && coords == null,
                 contextLine = line, mode = mode, note = note?.ifBlank { null },
                 remoteNote = if (vc) container.copy.get("maps_vc_note") else null,
@@ -357,7 +403,8 @@ class MapsViewModel internal constructor(
                     MapsComposer.pickerItems(allPlaces, "", building, floor),
                     building, floor, state.buildings, MapsComposer.floors(building), epoch = epoch,
                     recent = recentPlaceIds.items().mapNotNull { id -> allPlaces.firstOrNull { it.id == id } },
-                    selectedFrom = fromId != null, selectedTo = toId != null
+                    selectedFrom = fromId != null, selectedTo = toId != null,
+                    pinned = pinnedPlaces()
                 )
             )
         }
@@ -428,6 +475,8 @@ class MapsViewModel internal constructor(
     private suspend fun applyPlace(id: String, field: RouteField) {
         ensureGraph()
         val chosen = node(id) ?: return
+        routeMemory.changed()
+        mutable.update { it.copy(canUndoEndpoint = false) }
         rememberPlace(chosen.id)
         if (field == RouteField.From) {
             val graphSnapshot = graph
@@ -447,7 +496,12 @@ class MapsViewModel internal constructor(
         revealNode(chosen)
     }
 
-    private val recentPlaceIds = RecentPlaceIds()
+    private fun pinnedPlaces() = routeMemory.pinned().mapNotNull { id -> allPlaces.firstOrNull { it.id == id } }
+    private fun routeHistoryUi() = routeMemory.history().mapNotNull { pair ->
+        val first = node(pair.from) ?: return@mapNotNull null
+        val last = node(pair.to) ?: return@mapNotNull null
+        RecentRouteUi(pair.from, pair.to, "${MapsComposer.placeLabel(first)} → ${MapsComposer.placeLabel(last)}")
+    }
 
     private fun rememberPlace(id: String) {
         recentPlaceIds.remember(id)
@@ -455,6 +509,8 @@ class MapsViewModel internal constructor(
 
     private suspend fun swapEnds() {
         if (fromId == null || toId == null) return
+        routeMemory.changed()
+        mutable.update { it.copy(canUndoEndpoint = false) }
         val oldFrom = fromId
         fromId = toId
         toId = oldFrom
@@ -466,6 +522,7 @@ class MapsViewModel internal constructor(
     }
 
     private suspend fun clearEndpoint(field: RouteField) {
+        routeMemory.cleared(field, if (field == RouteField.From) fromId else toId)
         if (field == RouteField.From) {
             fromId = null
             lastEntranceId = null
@@ -474,7 +531,7 @@ class MapsViewModel internal constructor(
             toId = null
             destRoomKey = null
         }
-        mutable.update { it.copy(picker = null, planPick = null) }
+        mutable.update { it.copy(picker = null, planPick = null, canUndoEndpoint = routeMemory.undo != null) }
         val focus = node(toId) ?: node(fromId)
         if (focus != null) revealNode(focus) else {
             routeResult = null
@@ -535,6 +592,10 @@ class MapsViewModel internal constructor(
         val guessed = result.guessed
         if (from != null) fromId = from.id
         if (result.to != null) toId = result.to.id
+        if (result.route != null && fromId != null && toId != null) {
+            routeMemory.remember(fromId!!, toId!!)
+            mutable.update { state -> state.copy(recentRoutes = routeHistoryUi()) }
+        }
         val initialStepId = result.presentation?.steps?.firstOrNull { it.id == retryStepId && result.route == retryRoute }?.id
             ?: result.presentation?.steps?.firstOrNull()?.id
         if (guessed != null && from != null && guessed.id != from.id) {
@@ -591,7 +652,15 @@ class MapsViewModel internal constructor(
     }
 
     private fun launchMap(block: suspend () -> Unit) = mapLoads.launch {
-        try { block() }
+        try {
+            val scope = withContext(ioDispatcher) { container.memoryScope + ":" + container.settings().myGroupId.orEmpty() }
+            mapLoads.ensureCurrent()
+            if (routeMemory.enter(scope)) {
+                recentPlaceIds.clear()
+                mutable.update { it.copy(canUndoEndpoint = false, recentRoutes = emptyList(), picker = null) }
+            }
+            block()
+        }
         catch (e: CancellationException) { throw e }
         catch (_: Exception) {
             mapLoads.ensureCurrent()

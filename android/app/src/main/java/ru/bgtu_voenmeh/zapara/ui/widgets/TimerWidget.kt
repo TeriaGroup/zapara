@@ -31,7 +31,11 @@ data class TimerWidgetSnapshot(
     val cleared: Boolean = false,
     val isDark: Boolean = false,
     val nextRefreshAt: LocalDateTime? = null,
-    val readError: String? = null
+    val readError: String? = null,
+    val targetDate: java.time.LocalDate? = null,
+    val targetTime: String = "",
+    val targetSubjectNorm: String = "",
+    val targetGroupId: String = ""
 )
 
 internal fun earlierRefresh(left: LocalDateTime?, right: LocalDateTime?): LocalDateTime? =
@@ -127,7 +131,8 @@ object TimerWidgetComposer {
                 end = today.atTime(holder.end),
                 now = now,
                 isDark = isDark
-            )
+            ).copy(targetDate = today, targetTime = holder.lesson.timeStart,
+                targetSubjectNorm = holder.lesson.subjectNormalized, targetGroupId = gid)
         }
         val next = spans.filter { it.start.isAfter(clock) }.minWithOrNull(compareBy({ it.start }, { it.lesson.index }))
         val previousEnd = spans.filter { !it.end.isAfter(clock) }.maxOfOrNull { it.end }
@@ -142,7 +147,8 @@ object TimerWidgetComposer {
                 end = today.atTime(next.start),
                 now = now,
                 isDark = isDark
-            )
+            ).copy(targetDate = today, targetTime = next.lesson.timeStart,
+                targetSubjectNorm = next.lesson.subjectNormalized, targetGroupId = gid)
         }
         if (next != null) {
             return quiet(
@@ -152,7 +158,8 @@ object TimerWidgetComposer {
                 isDark,
                 today.atTime(next.start),
                 subject = shown(next.lesson, displayName)
-            )
+            ).copy(targetDate = today, targetTime = next.lesson.timeStart,
+                targetSubjectNorm = next.lesson.subjectNormalized, targetGroupId = gid)
         }
         return quiet(
             identity,

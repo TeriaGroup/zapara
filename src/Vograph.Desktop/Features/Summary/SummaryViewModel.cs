@@ -5,7 +5,10 @@ using Vograph.Desktop.ViewModels;
 
 namespace Vograph.Desktop.Features.Summary;
 
-public sealed record DayBar(string Label, int Count, double Height, DateTime? Date = null);
+public sealed record DayBar(string Label, int Count, double Height, DateTime? Date = null)
+{
+    public System.Windows.Input.ICommand? OpenCommand { get; init; }
+}
 
 public sealed partial class SummaryViewModel : ViewModelBase
 {
@@ -68,6 +71,38 @@ public sealed partial class SummaryViewModel : ViewModelBase
     [ObservableProperty] private IReadOnlyList<CountItem> _subjects = Array.Empty<CountItem>();
     [ObservableProperty] private IReadOnlyList<CountItem> _teachers = Array.Empty<CountItem>();
     [ObservableProperty] private IReadOnlyList<CountItem> _rooms = Array.Empty<CountItem>();
+    [ObservableProperty] private bool _showAllSubjects;
+    [ObservableProperty] private bool _showAllTeachers;
+    public IReadOnlyList<CountItem> VisibleSubjects => ShowAllSubjects ? Subjects : Subjects.Take(5).ToArray();
+    public IReadOnlyList<CountItem> VisibleTeachers => ShowAllTeachers ? Teachers : Teachers.Take(5).ToArray();
+    public bool CanExpandSubjects => Subjects.Count > 5;
+    public bool CanExpandTeachers => Teachers.Count > 5;
+    public string SubjectExpandCaption => ShowAllSubjects ? "Свернуть предметы" : $"Показать все предметы ({Subjects.Count})";
+    public string TeacherExpandCaption => ShowAllTeachers ? "Свернуть преподавателей" : $"Показать всех преподавателей ({Teachers.Count})";
+    partial void OnShowAllSubjectsChanged(bool value)
+    { OnPropertyChanged(nameof(VisibleSubjects)); OnPropertyChanged(nameof(SubjectExpandCaption)); }
+    partial void OnShowAllTeachersChanged(bool value)
+    { OnPropertyChanged(nameof(VisibleTeachers)); OnPropertyChanged(nameof(TeacherExpandCaption)); }
+    partial void OnSubjectsChanged(IReadOnlyList<CountItem> value)
+    { OnPropertyChanged(nameof(VisibleSubjects)); OnPropertyChanged(nameof(CanExpandSubjects)); OnPropertyChanged(nameof(SubjectExpandCaption)); }
+    partial void OnTeachersChanged(IReadOnlyList<CountItem> value)
+    { OnPropertyChanged(nameof(VisibleTeachers)); OnPropertyChanged(nameof(CanExpandTeachers)); OnPropertyChanged(nameof(TeacherExpandCaption)); }
+    [CommunityToolkit.Mvvm.Input.RelayCommand] private void ToggleSubjects() => ShowAllSubjects = !ShowAllSubjects;
+    [CommunityToolkit.Mvvm.Input.RelayCommand] private void ToggleTeachers() => ShowAllTeachers = !ShowAllTeachers;
+    [ObservableProperty] private int _sortIndex;
+    public IReadOnlyList<string> SortOptions { get; } = ["По частоте", "По алфавиту"];
+    private IReadOnlyList<CountItem> rawTypes = [];
+    private IReadOnlyList<CountItem> rawSubjects = [];
+    private IReadOnlyList<CountItem> rawTeachers = [];
+    private IReadOnlyList<CountItem> rawRooms = [];
+    partial void OnSortIndexChanged(int value) => ApplySort();
+    private void ApplySort()
+    {
+        Types = SummaryBrowse.Sort(rawTypes, SortIndex).Select(row => row with { OpenCommand = OpenSummaryTypeCommand }).ToArray();
+        Subjects = SummaryBrowse.Sort(rawSubjects, SortIndex).Select(row => row with { OpenCommand = OpenSummarySubjectCommand }).ToArray();
+        Teachers = SummaryBrowse.Sort(rawTeachers, SortIndex).Select(row => row with { OpenCommand = OpenSummaryTeacherCommand }).ToArray();
+        Rooms = SummaryBrowse.Sort(rawRooms, SortIndex).Select(row => row with { OpenCommand = OpenSummaryRoomCommand }).ToArray();
+    }
     public bool HasRooms => Rooms.Count > 0;
     public bool HasTeachers => Teachers.Count > 0;
 
@@ -109,11 +144,15 @@ public sealed partial class SummaryViewModel : ViewModelBase
         TotalText = m.Total.ToString();
         var max = m.ByDay.Count == 0 ? 0 : m.ByDay.Max(d => d.Count);
         DayBars = m.ByDay.Select((d, index) => new DayBar(d.Name, d.Count, max == 0 ? 0 : Math.Round(BarMax * d.Count / max),
-            index < (m.DayDates?.Count ?? 0) ? m.DayDates![index] : null)).ToList();
-        Types = m.ByType;
-        Subjects = m.Subjects;
-        Teachers = m.Teachers;
-        Rooms = m.Rooms;
+            index < (m.DayDates?.Count ?? 0) ? m.DayDates![index] : null)
+            { OpenCommand = OpenDayCommand }).ToList();
+        rawTypes = m.ByType;
+        rawSubjects = m.Subjects;
+        rawTeachers = m.Teachers;
+        rawRooms = m.Rooms;
+        rawEntries = m.Entries ?? [];
+        ResetSummaryMatches();
+        ApplySort();
         var scope = m.Parity switch { 1 => T("parityWeek", App.I18n.FormatParity(true)), 2 => T("parityWeek", App.I18n.FormatParity(false)), _ => T("summaryBoth") };
         Subtitle = $"{scope} · {App.Loc.Plural(m.Total, "lessons1", "lessons2", "lessons5")}";
         OnPropertyChanged(nameof(HasRooms));

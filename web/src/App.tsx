@@ -1,5 +1,6 @@
-import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { Link, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useLayoutEffect, useState } from "react";
+import { publicationMemory, publicationProfile } from "./homework-publication-batch";
 import { Provider, useApp } from "./store";
 import { ChatInboxPage, PersonalChatPage } from "./chat";
 import { CommunityPage, FriendsPage, GroupPage, HomeworkPage, LegalPage, MapsPage, SchedulePage, SettingsPage, SummaryPage, TeachersPage, WeekPage } from "./pages";
@@ -8,6 +9,8 @@ import { Icon, IconName } from "./icons";
 import { Sheet } from "./sheet";
 import { HomeworkDraftProvider } from "./homework-draft-context";
 import { PersonalComposerProvider } from "./personal-composer-context";
+import { noteSearch } from "./ux300";
+import { SearchField, useRoutePosition } from "./ux300-controls";
 
 const items: [string, string, IconName][] = [
   ["schedule", "Расписание", "calendar"],
@@ -25,10 +28,16 @@ const items: [string, string, IconName][] = [
 
 function Shell() {
   const app = useApp();
+  const publicationOwner=publicationProfile(app.session?.authenticated?app.session.user?.userId:null,app.session?.familyId);
+  useLayoutEffect(()=>publicationMemory.profile(publicationOwner),[publicationOwner]);
   useReminders();
   const location = useLocation();
   const navigate = useNavigate();
   const [menu, setMenu] = useState(false);
+  const [menuQuery, setMenuQuery] = useState("");
+  useEffect(()=>{let current:HTMLMediaElement|null=null;const playing=(event:Event)=>{const node=event.target;if(!(node instanceof HTMLMediaElement))return;if(node.srcObject){current?.pause();current=null;return;}if(current&&current!==node)current.pause();current=node;};document.addEventListener("play",playing,true);return()=>{document.removeEventListener("play",playing,true);current?.pause();};},[]);
+  useRoutePosition(`${app.session?.user?.userId || "guest"}:${app.groupId}:${location.pathname}${location.search}`);
+  useEffect(() => { const frame = requestAnimationFrame(() => { const heading = document.querySelector<HTMLElement>(".stage h1"); if (heading && !document.querySelector('[role="dialog"]')) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); } }); return () => cancelAnimationFrame(frame); }, [location.pathname]);
   useEffect(()=>{if(!menu)return;const close=(event:KeyboardEvent)=>{if(event.key==="Escape"){event.preventDefault();setMenu(false);}};window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close);},[menu]);
   const group = app.catalog?.groups.find(item => item.id === app.groupId);
   const chatActive = location.pathname === "/chat" || location.pathname.startsWith("/chat/") || location.pathname === "/group";
@@ -38,7 +47,7 @@ function Shell() {
       <aside className="sidebar">
         <NavLink to="/schedule" className="brand">Расписание военмех</NavLink>
         <p className="caption">Расписание и карты Военмеха</p>
-        <button className="group-card" onClick={() => navigate("/settings")} type="button">
+        <button className="group-card" onClick={() => navigate("/settings?section=study")} type="button">
           <span className="with-ico"><Icon name="users" size={16} /> Моя группа</span>
           <strong>{group?.name || "Не выбрана"}</strong>
           <span>{app.session?.authenticated ? "Аккаунт" : "На этом устройстве"}</span>
@@ -54,7 +63,7 @@ function Shell() {
       <div className="main">
         <header className="topbar">
           <NavLink to="/schedule" className="brand">Расписание военмех</NavLink>
-          <NavLink to="/settings" className="chip top-group">{group?.name || "Выбрать группу"}</NavLink>
+          <NavLink to="/settings?section=study" className="chip top-group">{group?.name || "Выбрать группу"}</NavLink>
         </header>
         {app.notice && <div className="page" style={{ paddingBottom: 0 }}><div className="banner" role="status">{app.notice}</div></div>}
         <div className="stage" key={location.pathname}>
@@ -75,6 +84,7 @@ function Shell() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/legal/agreement" element={<LegalPage id="agreement" />} />
           <Route path="/legal/policy" element={<LegalPage id="policy" />} />
+          <Route path="*" element={<section className="page"><h1>Страница не найдена</h1><div className="card stack"><p>Ссылка могла устареть. Сохранённое расписание и ваши данные остаются доступны.</p><Link className="btn primary" to="/schedule">Открыть расписание</Link><Link className="btn" to="/settings">Настройки</Link></div></section>} />
         </Routes>
         </div>
         <nav className="bottom">
@@ -87,11 +97,13 @@ function Shell() {
       </div>
       {menu && (
         <Sheet title="Разделы" onClose={() => setMenu(false)}>
+            <SearchField label="Найти раздел" value={menuQuery} onChange={setMenuQuery} />
+            {menuQuery.trim() ? <div className="tiles">{items.filter(([path, title]) => noteSearch(menuQuery, title, ({ friends: "люди встречи сравнение расписаний", community: "участники заявки членство", group: "каналы роли голосования анкеты", chat: "переписка личные сообщения", settings: "аккаунт пароль уведомления тема" } as Record<string,string>)[path] || "")).map(([path, title, icon]) => <NavLink key={path} to={`/${path}`} className="tile" onClick={() => { setMenu(false); setMenuQuery(""); }}><Icon name={icon}/>{title}</NavLink>)}<button className="btn quiet" onClick={() => setMenuQuery("")}>Все разделы</button></div> :
             <div className="tiles">
               {([ ["Учёба", ["week", "summary", "teachers", "friends"]], ["Группа", ["group", "community"]], ["Приложение", ["settings"]] ] as [string, string[]][]).map(([label, paths]) => <section className="section-group" key={label}><h2>{label}</h2>{items.filter(([path]) => paths.includes(path)).map(([path, title, icon]) => (
                 <NavLink key={path} to={"/" + path} className="tile" onClick={() => setMenu(false)}><Icon name={icon} />{title}</NavLink>
               ))}</section>)}
-            </div>
+            </div>}
         </Sheet>
       )}
     </div>

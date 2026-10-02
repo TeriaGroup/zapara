@@ -18,10 +18,11 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
     private string[] _initialFiles = [];
     private bool _aborting;
 
-    public HomeworkDialogViewModel(string subjectDisplay, Func<int, DateTime?> computeDue, string? existingText = null, int existingNth = 1)
+    public HomeworkDialogViewModel(string subjectDisplay, Func<int, DateTime?> computeDue, string? existingText = null, int existingNth = 1,
+        bool createSimilar = false)
     {
         _computeDue = computeDue;
-        IsEdit = existingText is not null;
+        IsEdit = existingText is not null && !createSimilar;
         Title = Loc.Current.T(IsEdit ? "hwEditTitle" : "hwTitle");
         SubjectLine = Loc.Current.T("hwSubject", subjectDisplay);
         _text = existingText ?? "";
@@ -64,6 +65,16 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
     [ObservableProperty] private bool _isImporting;
     [ObservableProperty] private bool _showDiscardConfirmation;
     [ObservableProperty] private string _error = "";
+    [ObservableProperty] private bool duplicateWarning;
+    public bool AllowDuplicate { get; private set; }
+    [RelayCommand]
+    private Task CreateDuplicateAnyway()
+    {
+        if (!DuplicateWarning) return Task.CompletedTask;
+        AllowDuplicate = true;
+        DuplicateWarning = false;
+        return SaveAsync();
+    }
     public bool HasError => Error.Length > 0;
     partial void OnErrorChanged(string value) => OnPropertyChanged(nameof(HasError));
     partial void OnIsSavingChanged(bool value) => RefreshEditing();
@@ -138,9 +149,9 @@ public sealed partial class HomeworkDialogViewModel : DialogViewModelBase
     [NotifyPropertyChangedFor(nameof(ShowShareSignInHint))]
     private bool _canShare;
     private string _text = "";
-    public string Text { get => _text; set { if (CanEdit && SetProperty(ref _text, value)) RefreshCanConfirm(); } }
+    public string Text { get => _text; set { if (CanEdit && SetProperty(ref _text, value)) { DuplicateWarning = false; AllowDuplicate = false; RefreshCanConfirm(); } } }
     private int _nth = 1;
-    public int Nth { get => _nth; set { if (CanEdit && SetProperty(ref _nth, Math.Clamp(value, 1, 10))) UpdateDue(); } }
+    public int Nth { get => _nth; set { if (CanEdit && SetProperty(ref _nth, Math.Clamp(value, 1, 10))) { DuplicateWarning = false; AllowDuplicate = false; UpdateDue(); } } }
     [ObservableProperty] private string _dueText = "";
 
     partial void OnCanShareChanged(bool value)

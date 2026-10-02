@@ -41,6 +41,13 @@ fun RenameSheet(ui: RenameUi, onEvent: (ScheduleEvent) -> Unit) {
             ui.scope, { onEvent(ScheduleEvent.RenameChanged(ui.name, ui.note, it)) }, "Editor.Scope"
         )
         Text(stringResource(R.string.rename_preview, ui.name.ifBlank { ui.original }), style = Zapara.typography.caption, color = c.text2)
+        val affected = if (ui.scope == 0) ui.affectedGlobal else ui.affectedWeekday
+        Text(stringResource(R.string.ux300_android_rename_affected, affected.size),
+            style = Zapara.typography.caption, color = c.text2)
+        affected.take(5).forEach { row -> Text(row, style = Zapara.typography.caption,
+            color = c.text1) }
+        if (affected.size > 5) Text(stringResource(R.string.ux300_android_rename_more,
+            affected.size - 5), style = Zapara.typography.caption, color = c.text2)
         ui.error?.let { Text(it, style = Zapara.typography.caption, color = c.bad) }
         if (ui.busy) Text(stringResource(R.string.ux60_saving), style = Zapara.typography.caption, color = c.text2)
         Spacer(Modifier.height(Zapara.space.m))

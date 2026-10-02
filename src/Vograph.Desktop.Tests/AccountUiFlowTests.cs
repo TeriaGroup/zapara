@@ -118,6 +118,21 @@ public sealed partial class AccountUiFlowTests
     }
 
     [Fact]
+    public async Task Profile_name_draft_can_be_discarded_before_leaving_settings()
+    {
+        await using var f = new Fixture();
+        await f.Login();
+        var saved = f.Vm.DisplayName;
+        f.Vm.DisplayName = "Несохранённое имя";
+        Assert.True(f.Vm.HasUnsavedDisplayName);
+
+        f.Vm.DiscardDisplayNameDraft();
+
+        Assert.Equal(saved, f.Vm.DisplayName);
+        Assert.False(f.Vm.HasUnsavedDisplayName);
+    }
+
+    [Fact]
     public async Task Remote_refresh_requiring_login_does_not_keep_showing_an_authenticated_profile()
     {
         await using var f = new Fixture();

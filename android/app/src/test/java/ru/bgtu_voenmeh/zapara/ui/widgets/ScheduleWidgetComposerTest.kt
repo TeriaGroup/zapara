@@ -80,7 +80,9 @@ class ScheduleWidgetComposerTest {
             capacity = capacity
         )
         assertEquals(listOf("ИН. ЯЗ.", "ОСН РОС ГОС"), at(9, 0).rows.map { it.name })
+        assertEquals(2, at(9, 0).hiddenRemainingCount)
         assertEquals(listOf("ВВЕД В СПЕЦ", "ВЫСШ. МАТЕМАТ"), at(12, 30).rows.map { it.name })
+        assertEquals(0, at(12, 30).hiddenRemainingCount)
         assertEquals(listOf("ВЫСШ. МАТЕМАТ"), at(16, 0).rows.map { it.name })
         assertEquals(LocalDateTime.of(day, java.time.LocalTime.of(10, 35)), at(9, 0).nextRefreshAt)
         assertEquals(LocalDateTime.of(day, java.time.LocalTime.of(14, 15)), at(12, 30).nextRefreshAt)

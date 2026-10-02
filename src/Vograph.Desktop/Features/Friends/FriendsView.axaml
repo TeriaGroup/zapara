@@ -29,12 +29,15 @@
       <Border Classes="card" AutomationProperties.AutomationId="Friends.Forecast">
         <StackPanel Spacing="10">
           <TextBlock Classes="micro" Text="БЛИЖАЙШИЕ ПЕРЕСЕЧЕНИЯ" />
-          <TextBlock Classes="muted caption" Text="До трёх встреч на ближайшие 14 дней" />
+          <TextBlock Classes="muted caption" Text="Совпадения на ближайшие 14 дней" />
+          <c:SegmentedControl Items="{Binding EncounterDayOptions}" SelectedIndex="{Binding EncounterDayIndex}" />
+          <ComboBox ItemsSource="{Binding ForecastFriendOptions}" SelectedIndex="{Binding ForecastFriendIndex}"
+                    MinWidth="180" AutomationProperties.Name="Группа в прогнозе" />
           <Button Classes="pill" Content="Обновить расписания" Command="{Binding RefreshSchedulesCommand}"
                   HorizontalAlignment="Left" AutomationProperties.AutomationId="Friends.RefreshSchedules" />
           <TextBlock Classes="muted" Text="{Binding ForecastStatus}" TextWrapping="Wrap"
                      IsVisible="{Binding ForecastStatus, Converter={x:Static f:FriendConverters.IsNonEmpty}}" />
-          <ItemsControl ItemsSource="{Binding Encounters}">
+          <ItemsControl ItemsSource="{Binding VisibleEncounters}">
             <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="f:FriendEncounterViewModel">
@@ -48,19 +51,41 @@
                       <TextBlock Classes="muted caption" Text="{Binding Place}" TextWrapping="Wrap" />
                     </StackPanel>
                   </StackPanel>
-                  <Button Content="Открыть пару" Command="{Binding $parent[UserControl].((f:FriendsViewModel)DataContext).OpenEncounterCommand}" CommandParameter="{Binding}" HorizontalAlignment="Left" />
+                  <Button Content="Открыть пару" Command="{Binding OpenCommand}" CommandParameter="{Binding}" HorizontalAlignment="Left" />
                   </StackPanel>
                 </Border>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
+          <Button Content="{Binding MoreEncountersCaption}" Command="{Binding ToggleMoreEncountersCommand}"
+                  IsVisible="{Binding HasMoreEncounters}" HorizontalAlignment="Left" />
           <TextBlock Classes="muted caption" Text="{Binding MissingSchedulesText}" TextWrapping="Wrap"
                      IsVisible="{Binding MissingSchedulesText, Converter={x:Static f:FriendConverters.IsNonEmpty}}" />
         </StackPanel>
       </Border>
+      <Border Classes="card"><StackPanel Spacing="8">
+        <TextBlock Classes="subject" Text="Общее свободное время" />
+        <TextBlock Classes="muted caption" Text="Сравнение своей группы и одной группы друзей по сохранённому расписанию на выбранную дату." TextWrapping="Wrap" />
+        <ComboBox ItemsSource="{Binding Friends}" SelectedItem="{Binding SelectedComparisonFriend}" MinWidth="180" HorizontalAlignment="Left" AutomationProperties.Name="Группа друзей для сравнения">
+          <ComboBox.ItemTemplate><DataTemplate x:DataType="f:FriendItemViewModel"><TextBlock Text="{Binding GroupName}" /></DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+        <CalendarDatePicker SelectedDate="{Binding ComparisonDate}" Width="180" AutomationProperties.Name="Дата сравнения групп" />
+        <Button Content="Найти общие окна" Command="{Binding CompareFreeIntervalsCommand}" HorizontalAlignment="Left" />
+        <TextBlock Text="{Binding ComparisonStatus}" TextWrapping="Wrap" />
+        <ItemsControl ItemsSource="{Binding ComparisonWindows}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" Margin="0,3" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+      </StackPanel></Border>
       <c:EmptyState IsVisible="{Binding Friends.Count, Converter={x:Static f:FriendConverters.IsZero}}" Title="{loc:T friendsEmpty}" Hint="{loc:T friendsEmptyHint}" Icon="{StaticResource Icon.Friends}" Margin="0,24" />
 
-      <ItemsControl ItemsSource="{Binding Friends}" c:Appear.CascadeHost="True">
+      <TextBox Text="{Binding FriendSearch, Mode=TwoWay}" PlaceholderText="Группа или имена"
+               AutomationProperties.Name="Поиск групп друзей" />
+      <WrapPanel ItemSpacing="8" LineSpacing="8">
+        <c:SegmentedControl Items="{Binding FriendStatusOptions}" SelectedIndex="{Binding FriendStatusIndex}" />
+        <Button Content="Сбросить фильтры" Command="{Binding ResetFriendFiltersCommand}" IsVisible="{Binding HasFriendFilters}" />
+        <TextBlock Classes="muted caption" Text="{Binding FriendResultCount}" VerticalAlignment="Center" />
+      </WrapPanel>
+      <TextBlock Text="По этим условиям групп нет" IsVisible="{Binding NoFriendMatches}" />
+
+      <ItemsControl ItemsSource="{Binding FilteredFriends}" c:Appear.CascadeHost="True">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="f:FriendItemViewModel">
@@ -76,6 +101,7 @@
               </Grid>
               <StackPanel Spacing="8" IsVisible="{Binding IsEditing}" IsEnabled="{Binding !IsSavingDraft}">
                 <TextBox Text="{Binding DraftGroupName}" PlaceholderText="Группа" AutomationProperties.AutomationId="Friend.DraftGroup" />
+                <Button Content="Выбрать группу из каталога" Command="{Binding PickDraftGroupCommand}" HorizontalAlignment="Left" />
                 <TextBox Text="{Binding DraftMemberNames}" PlaceholderText="Имена друзей" AutomationProperties.AutomationId="Friend.Names" />
                 <TextBlock Classes="muted caption" Text="Цвет группы" />
                 <ItemsControl ItemsSource="{Binding DraftColorOptions}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="f:ColorOption"><Button Classes="icon" Command="{Binding $parent[ItemsControl].((f:FriendItemViewModel)DataContext).PickDraftColorCommand}" CommandParameter="{Binding}"><Ellipse Width="18" Height="18" Fill="{Binding Index, Converter={x:Static loc:Converters.FriendBrush}}" Stroke="{DynamicResource Brush.Text1}" StrokeThickness="{Binding IsCurrent, Converter={x:Static f:FriendConverters.CurrentStroke}}" /></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>

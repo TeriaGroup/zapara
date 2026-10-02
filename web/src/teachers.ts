@@ -9,6 +9,9 @@ export type TeacherWeekRow = {
   subject: string;
   groups: string;
   room: string;
+  classroomRaw?: string;
+  roomRaw?: string;
+  buildingRaw?: string;
   parity: number;
   parityLabel: string;
   mine: boolean;
@@ -93,6 +96,9 @@ export function teacherWeek(lessons: TeacherLesson[], filter: number, myGroupId:
       subject: strip(lesson.disciplineRaw || lesson.subjectRaw || "", lesson.typeRaw || ""),
       groups: (lesson.groups || []).map(group => group.number).filter(Boolean).join(", "),
       room: roomOf(lesson),
+      classroomRaw: lesson.classroomRaw,
+      roomRaw: lesson.roomRaw,
+      buildingRaw: lesson.buildingRaw,
       parity: lesson.parity,
       parityLabel: parityLabels[userParity(lesson.parity, invert)] || "Чётность не указана",
       mine: (lesson.groups || []).some(group => group.idGroup === myGroupId || group.number === myGroupId || group.number === myGroupName),

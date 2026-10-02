@@ -27,7 +27,7 @@ enum class Section(
     Settings("settings", R.string.nav_settings, R.drawable.ic_settings, "Sections.Settings", false);
 
     val pattern: String get() = when (this) {
-        Schedule -> "schedule?date={date}&time={time}&subject={subject}&widgetProfile={widgetProfile}&widgetDatabase={widgetDatabase}&widgetGroup={widgetGroup}"
+        Schedule -> "schedule?date={date}&time={time}&subject={subject}&lessonKey={lessonKey}&widgetProfile={widgetProfile}&widgetDatabase={widgetDatabase}&widgetGroup={widgetGroup}"
         Maps -> "maps?room={room}&date={date}"
         Week -> "week?date={date}"
         Homework -> "homework?id={id}&widgetProfile={widgetProfile}&widgetDatabase={widgetDatabase}&query={query}&sourceGroup={sourceGroup}&sourceProfile={sourceProfile}"
@@ -49,12 +49,14 @@ fun NavHostController.openSection(
     section: Section, arg: String? = null, conversationId: String? = null,
     widgetScope: WidgetLaunchScope? = null, fresh: Boolean = false, sourceDate: String? = null,
     focusTime: String? = null, focusSubject: String? = null, widgetGroup: String? = null,
-    detailQuery: String? = null, sourceGroup: String? = null, sourceProfile: String? = null
+    detailQuery: String? = null, sourceGroup: String? = null, sourceProfile: String? = null,
+    lessonKey: String? = null
 ) {
     val dest = when {
         section == Section.Schedule && arg != null -> "schedule?date=$arg" +
             (focusTime?.let { "&time=${Uri.encode(it)}" } ?: "") +
             (focusSubject?.let { "&subject=${Uri.encode(it)}" } ?: "") +
+            (lessonKey?.let { "&lessonKey=${Uri.encode(it)}" } ?: "") +
             (widgetScope?.let { "&widgetProfile=${Uri.encode(it.profileId)}&widgetDatabase=${Uri.encode(it.databaseName)}" } ?: "") +
             (widgetGroup?.let { "&widgetGroup=${Uri.encode(it)}" } ?: "")
         section == Section.Maps && arg != null -> "maps?room=${Uri.encode(arg)}" +

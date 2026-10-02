@@ -142,6 +142,7 @@ object ScheduleComposer {
                 timeStart = lesson.timeStart,
                 timeEnd = lesson.timeEnd,
                 type = LessonFormat.typeLabel(lesson.typeRaw, copy),
+                typeRaw = lesson.typeRaw,
                 name = shown,
                 original = original.takeIf { it != shown },
                 teacher = lesson.teacherRaw.ifBlank { "—" },

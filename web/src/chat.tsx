@@ -7,6 +7,7 @@ import { useApp } from "./store";
 import type { GroupHome, SocialHome } from "./types";
 import { emptyChatState } from "./personal-composer";
 import { Avatar } from "./avatar-view";
+import { usePersonalDrafts } from "./personal-composer-context";
 
 function destination(item: ChatInboxItem): string {
   if (item.kind === "personal") return `/chat/person/${encodeURIComponent(item.conversationId)}`;
@@ -36,11 +37,18 @@ function ChatInboxContent() {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<ChatInboxItem["kind"] | "all">("all");
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [draftsOnly,setDraftsOnly]=useState(false);
+  const [unreadFirst,setUnreadFirst]=useState(false);
+  const drafts=usePersonalDrafts();
+  const [failedSources,setFailedSources]=useState<{id:string;name:string}[]>([]);
+  const [retryingSource,setRetryingSource]=useState("");
+  const alive=useRef(true);useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const ownerRef = useRef<string | null | undefined>(undefined);
   const accountId = app.session?.authenticated ? app.session.user?.userId : null;
-  const visible = filterChatInbox(rows, query, kind, unreadOnly);
+  const visible = filterChatInbox(rows.map(row=>{const draft=drafts.find(draft=>draft.conversationId===row.conversationId);return draft?{...row,preview:`${draft.editing?"Правка":"Черновик"}: ${draft.text}`} : row;}), query, kind, unreadOnly).filter(row=>!draftsOnly||drafts.some(draft=>draft.conversationId===row.conversationId)).sort((a,b)=>unreadFirst?Number(b.unread>0)-Number(a.unread>0):0);
   const unread = unreadChatTotal(rows);
-  const filtered = !!query.trim() || kind !== "all" || unreadOnly;
+  const filtered = !!query.trim() || kind !== "all" || unreadOnly || draftsOnly;
+  async function retrySource(id:string){if(retryingSource)return;setRetryingSource(id);try{if(id==="memberships"){setRetry(value=>value+1);return;}const fresh=id==="social"?mergeChatInbox([],await api.socialHome()):mergeChatInbox([await api.groupHome(id)],null);if(alive.current){setRows(previous=>sortChatInbox([...previous.filter(row=>id==="social"?row.kind!=="personal":row.communityId!==id),...fresh]));setFailedSources(values=>values.filter(value=>value.id!==id));}}catch{if(alive.current)setError("Этот источник всё ещё недоступен. Сохранённые беседы остаются на экране.");}finally{if(alive.current)setRetryingSource("");}}
 
   useEffect(() => {
     if (ownerRef.current !== accountId) {
@@ -61,6 +69,7 @@ function ChatInboxContent() {
         const people: SocialHome | null = social.status === "fulfilled" ? social.value : null;
         const fresh = mergeChatInbox(groups, people);
         const failedGroups = new Set(joined.filter((_, index) => homes[index]?.status === "rejected").map(item => item.communityId));
+        setFailedSources([...(memberships.status==="rejected"?[{id:"memberships",name:"Список моих сообществ"}]:[]),...(social.status==="rejected"?[{id:"social",name:"Личные беседы"}]:[]),...joined.filter(item=>failedGroups.has(item.communityId)).map(item=>({id:item.communityId,name:item.name}))]);
         setRows(previous => sortChatInbox([
           ...fresh,
           ...previous.filter(item => item.kind === "personal"
@@ -93,23 +102,25 @@ function ChatInboxContent() {
       <button className="btn" type="button" onClick={() => setRetry(value => value + 1)}>Обновить</button>
     </div>
     {error && <div className="banner" role="status">{error}</div>}
+    {failedSources.map(source=><div className="banner row" key={source.id}><span>{source.name} · показаны ранее загруженные сведения</span><button className="btn" disabled={!!retryingSource} onClick={()=>void retrySource(source.id)}>Повторить этот источник</button></div>)}
     {rows.length > 0 && <div className="card stack inbox-browse">
       <label className="field">Поиск беседы
         <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Название или последнее сообщение" />
       </label>
       <div className="row" role="group" aria-label="Источник беседы">
         <button className={unreadOnly ? "btn primary" : "btn"} type="button" aria-pressed={unreadOnly} onClick={() => setUnreadOnly(value => !value)}>Непрочитанные</button>
+        <button className={draftsOnly?"btn primary":"btn"} aria-pressed={draftsOnly} onClick={()=>setDraftsOnly(value=>!value)}>Черновики личных чатов</button><button className={unreadFirst?"btn primary":"btn"} aria-pressed={unreadFirst} onClick={()=>setUnreadFirst(value=>!value)}>Непрочитанные сверху</button>
         {inboxKinds.map(option => <button key={option.value} className={kind === option.value ? "btn primary" : "btn"} type="button"
           aria-pressed={kind === option.value} onClick={() => setKind(option.value)}>{option.label}</button>)}
       </div>
       <div className="row"><span className="muted">Показано {visible.length} из {rows.length}</span>
-        {filtered && <button className="btn" type="button" onClick={() => { setQuery(""); setKind("all"); setUnreadOnly(false); }}>Сбросить</button>}
+        {filtered && <button className="btn" type="button" onClick={() => { setQuery(""); setKind("all"); setUnreadOnly(false);setDraftsOnly(false); }}>Сбросить</button>}
       </div>
     </div>}
     {emptyChatState(loading, error, rows.length) === "loading" && <p className="muted">Загружаем беседы…</p>}
     {emptyChatState(loading, error, rows.length) === "empty" && <div className="card empty">Пока нет бесед. Вступите в учебную группу или добавьте человека по коду.</div>}
     {rows.length > 0 && visible.length === 0 && <div className="card empty">По запросу бесед нет.
-      <button className="btn" type="button" onClick={() => { setQuery(""); setKind("all"); setUnreadOnly(false); }}>Показать все</button>
+      <button className="btn" type="button" onClick={() => { setQuery(""); setKind("all"); setUnreadOnly(false);setDraftsOnly(false); }}>Показать все</button>
     </div>}
     <div className="people">
       {visible.map(item => <Link className="person" key={`${item.kind}:${item.conversationId}`} to={destination(item)}>

@@ -39,6 +39,42 @@ public sealed class GroupSpaceViewModelTests
         Assert.Equal(2,fixture.Vm.Forms.Count);var first=fixture.Vm.Forms[0];first.Questions[0].Text="Сохраняемый ответ";
         await first.SubmitCommand.ExecuteAsync(null);Assert.Equal("Сохраняемый ответ",fixture.Vm.Forms[0].Questions[0].Text);Assert.NotNull(fixture.Vm.Forms[0].Form.OwnResponse);
     }
+    [AvaloniaFact] public async Task Form_preview_keeps_the_draft_and_does_not_publish()
+    {
+        using var fixture=new Fixture("forms","forms");await fixture.Vm.ActivateAsync();
+        fixture.Vm.FormTitle="Опрос о занятиях";
+        fixture.Vm.AddFormQuestionCommand.Execute(null);
+        var question=Assert.Single(fixture.Vm.FormQuestions);
+        question.Title="Какой день?";
+
+        fixture.Vm.ToggleFormPreviewCommand.Execute(null);
+        Assert.True(fixture.Vm.FormPreview);
+        Assert.False(fixture.Vm.ShowFormEditor);
+        Assert.Same(question,Assert.Single(fixture.Vm.FormQuestions));
+        fixture.Vm.ToggleFormPreviewCommand.Execute(null);
+
+        Assert.True(fixture.Vm.ShowFormEditor);
+        Assert.Equal("Опрос о занятиях",fixture.Vm.FormTitle);
+        Assert.Empty(fixture.Vm.Forms);
+    }
+    [AvaloniaFact] public async Task Clearing_form_draft_requires_same_scope_and_unchanged_snapshot()
+    {
+        using var fixture=new Fixture("forms","forms");await fixture.Vm.ActivateAsync();
+        fixture.Vm.FormTitle="Черновик";fixture.Vm.AddFormQuestionCommand.Execute(null);
+        fixture.Vm.FormQuestions[0].Title="Вопрос";
+        fixture.Vm.RequestClearFormDraftCommand.Execute(null);
+        Assert.True(fixture.Vm.ShowClearFormDraft);
+        fixture.Vm.CancelClearFormDraftCommand.Execute(null);
+        Assert.Equal("Черновик",fixture.Vm.FormTitle);
+        fixture.Vm.RequestClearFormDraftCommand.Execute(null);
+        fixture.Vm.FormTitle="Правка после запроса";
+        fixture.Vm.ConfirmClearFormDraftCommand.Execute(null);
+        Assert.Equal("Правка после запроса",fixture.Vm.FormTitle);
+        fixture.Vm.RequestClearFormDraftCommand.Execute(null);
+        fixture.Vm.ConfirmClearFormDraftCommand.Execute(null);
+        Assert.Empty(fixture.Vm.FormQuestions);Assert.Equal("",fixture.Vm.FormTitle);
+        Assert.Empty(fixture.Vm.Forms);
+    }
     [AvaloniaFact] public async Task Draft_questions_move_with_stable_ids_and_filled_delete_requires_exact_confirmation()
     {
         using var fixture=new Fixture("forms","forms");await fixture.Vm.ActivateAsync();
@@ -182,6 +218,18 @@ public sealed class GroupSpaceViewModelTests
         await Waits.Until(()=>fixture.ActiveSpaceReads>=2,"active space refreshed",6500);
         Assert.True(fixture.Vm.SelectedChannel!.Archived);Assert.Equal("Тема",fixture.Vm.ChatTitle);Assert.False(fixture.Vm.ShowComposer);
     }
+    [AvaloniaFact] public async Task Archived_topic_search_uses_loaded_archive_without_modifying_it()
+    {
+        using var fixture=new Fixture("chat","chat");fixture.ArchiveTopic();await fixture.Vm.ActivateAsync();
+        await fixture.Vm.LoadArchiveCommand.ExecuteAsync(null);
+        Assert.Single(fixture.Vm.ArchivedChannels);
+
+        fixture.Vm.ArchiveSearch="неизвестная";
+        Assert.Empty(fixture.Vm.VisibleArchivedChannels);
+        fixture.Vm.ArchiveSearch="Тема";
+        Assert.Single(fixture.Vm.VisibleArchivedChannels);
+        Assert.Single(fixture.Vm.ArchivedChannels);
+    }
     internal sealed class Fixture:IDisposable
     {
         private readonly ProfileTestDirectory directory=new();private readonly AppServices app;private readonly AccountClientHandler handler=new();private readonly HttpClient http;private readonly CommunityHttpClient client;
@@ -189,6 +237,7 @@ public sealed class GroupSpaceViewModelTests
         private readonly List<GroupTopicResponse> topics=[];private readonly List<GroupFormResponse> forms=[];
         public GroupViewModel Vm{get;}public int MessageReads;public bool MessageHasMore;public bool FailMessagesGet;public int Writes;public string? CreatedKind;public string? CreatedTemplate;public string? CreatedSubject;
         public int ActiveSpaceReads;
+        public bool HomeworkAudience;
         public bool AdditionalRole;
         private bool categoryActive;public int CategoryDeletes;
         public void EnableCategory()
@@ -206,8 +255,8 @@ public sealed class GroupSpaceViewModelTests
             topics.Add(new(topic,"Тема","user",null,null,null,0,true,kind,template:template,permissions:["read","post","media","vote","forms","formsRespond","homework","ballots","close","channels","access","pin"]));
             handler.Send=Route;Vm=new(app);
         }
-        private GroupDeskResponse Desk()=>new(!pinOnly,AdditionalRole?[new(role,roleName,1,"user",roleRevision),new(secondRole,"Вторая роль",2,"user",1)]:[new(role,roleName,1,"user",roleRevision)],[],[],[],pinOnly?["pin"]:["channels","access","roles","grants"]);
-        private GroupSpaceResponse Space()=>new(topics.Where(x=>!x.Archived).ToArray(),categoryActive?[new GroupCategoryResponse(category,"Учёба",0,1)]:[],new(Powers:["read","post","forms","homework","roles","grants","access"]),Desk());
+        private GroupDeskResponse Desk()=>new(!pinOnly,AdditionalRole?[new(role,roleName,1,"user",roleRevision),new(secondRole,"Вторая роль",2,"user",1)]:[new(role,roleName,1,"user",roleRevision)],[],[],[],pinOnly?["pin"]:["channels","access","roles","grants"],new(HomeworkAudience:HomeworkAudience));
+        private GroupSpaceResponse Space()=>new(topics.Where(x=>!x.Archived).ToArray(),categoryActive?[new GroupCategoryResponse(category,"Учёба",0,1)]:[],new(Powers:["read","post","forms","homework","roles","grants","access"],HomeworkAudience:HomeworkAudience),Desk());
         public AppServices Services=>app;
         public Guid Topic=>topic;public Guid Conversation=>conversation;public Guid Person=>person;
         public List<GroupTopicResponse> TopicRows=>topics;public List<GroupFormResponse> FormRecords=>forms;

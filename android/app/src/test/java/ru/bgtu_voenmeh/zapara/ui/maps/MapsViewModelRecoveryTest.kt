@@ -104,6 +104,26 @@ class MapsViewModelRecoveryTest {
         }
     }
 
+    @Test fun endpoint_undo_and_history_restore_real_route_and_pins_are_independent_of_recents() = fixture { vm, data, _ ->
+        vm.onEvent(MapsEvent.ClearEndpoint(RouteField.To)); runCurrent()
+        assertTrue(vm.state.value.canUndoEndpoint)
+        assertNull(vm.state.value.route)
+        vm.onEvent(MapsEvent.UndoEndpoint); runCurrent()
+        assertNotNull(vm.state.value.route)
+        assertFalse(vm.state.value.canUndoEndpoint)
+        assertTrue(vm.state.value.recentRoutes.any { it.toId == data.room.id })
+        vm.onEvent(MapsEvent.OpenTo); runCurrent()
+        val picker = vm.state.value.picker!!
+        vm.onEvent(MapsEvent.TogglePinnedPlace(data.room.id, picker.epoch))
+        assertEquals(data.room.id, vm.state.value.picker!!.pinned.single().id)
+        vm.onEvent(MapsEvent.ClearRecentPlaces)
+        assertEquals(data.room.id, vm.state.value.picker!!.pinned.single().id)
+        vm.onEvent(MapsEvent.TogglePinnedPlace(data.room.id, picker.epoch - 1))
+        assertEquals(1, vm.state.value.picker!!.pinned.size)
+        vm.onEvent(MapsEvent.ClearRecentRoutes)
+        assertTrue(vm.state.value.recentRoutes.isEmpty())
+    }
+
     @Test fun decode_failure_waits_for_manual_retry_and_ignores_other_floor() = fixture { vm, data, _ ->
         val before = vm.state.value
         val calls = data.catalogCalls

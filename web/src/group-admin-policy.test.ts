@@ -1,3 +1,4 @@
+import * as workflowRules from "./ux300.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile } from "node:fs/promises";
@@ -31,7 +32,7 @@ function harness(initial:any,api:any,classmates:any[]=[{userId:"owner",self:true
     },
   };
   const jsx=(type:any,props:any)=>({type,props});
-  const modules:any={react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"fragment"},"./api":api,"./topic-policy":policy,"./topics":{powerTitles:{}},"./powers":{groupPowers},"./avatar-view":{AvatarEditor:()=>null}};
+  const modules:any={react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"fragment"},"./api":api,"./ux300":workflowRules,"./ux300-controls":{SearchField:()=>null},"./topic-policy":policy,"./topics":{powerTitles:{}},"./powers":{groupPowers},"./avatar-view":{AvatarEditor:()=>null}};
   const context={Error,exports:{} as any,require:(id:string)=>modules[id],window:{confirm:()=>true}};
   runInNewContext(code,context);
   return {

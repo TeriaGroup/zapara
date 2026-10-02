@@ -123,6 +123,7 @@ class HomeworkWidgetComposerTest {
         val many = (1..8).map { hw(it.toLong(), "t$it", "far", today.plusDays(it.toLong())) }
         val snap = build(items = many)
         assertEquals(HomeworkWidgetComposer.MAX_ROWS, snap.rows.size)
+        assertEquals(4, snap.hiddenActiveCount)
     }
 
     @Test fun height_limits_rows_and_composer_preserves_completion_ids() {

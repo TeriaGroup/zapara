@@ -11,6 +11,25 @@ import ru.bgtu_voenmeh.zapara.data.Parity
 import ru.bgtu_voenmeh.zapara.ui.XmlCopy
 
 class SummaryComposerTest {
+    @Test fun alphabetical_sort_preserves_original_drilldown_target() {
+        val rows = listOf("Физика" to 8, "Алгебра" to 3, "Механика" to 5)
+        val alphabetical = summaryOrderedRows(rows, true)
+        assertEquals(listOf("Алгебра", "Механика", "Физика"), alphabetical.map { it.value.first })
+        assertEquals(listOf(1, 2, 0), alphabetical.map { it.index })
+        assertEquals(listOf(0, 1, 2), summaryOrderedRows(rows, false).map { it.index })
+    }
+
+    @Test fun duration_uses_valid_lesson_intervals_and_keeps_day_totals() {
+        val rows = listOf(
+            Lesson(dayOfWeek = 1, parity = 0, timeStart = "09:00", timeEnd = "10:35", subjectRaw = "А"),
+            Lesson(dayOfWeek = 1, parity = 0, timeStart = "11:00", timeEnd = "12:35", subjectRaw = "Б"),
+            Lesson(dayOfWeek = 2, parity = 0, timeStart = "12:00", timeEnd = "11:00", subjectRaw = "В")
+        )
+        val tiles = SummaryComposer.tiles(2, rows, { _, _ -> "" }, XmlCopy)
+        assertEquals(190L, tiles.totalMinutes)
+        assertEquals(190L, tiles.minutesByDay[1])
+        assertEquals(0L, tiles.minutesByDay[2])
+    }
     private val fixture = listOf(
         Lesson(dayOfWeek = 1, parity = 1, typeRaw = "лек", subjectRaw = "Математика", teacherRaw = "Иванов", classroomRaw = "101;"),
         Lesson(dayOfWeek = 1, parity = 2, typeRaw = "лек", subjectRaw = "Математика", teacherRaw = "Иванов", classroomRaw = "102;"),

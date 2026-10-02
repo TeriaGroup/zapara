@@ -34,6 +34,8 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
     private Guid? replyTo;
     private Guid? editing;
     private Guid? peerId;
+    private int unreadAtOpen;
+    private DateTimeOffset? unreadSnapshotLastAt;
     private DateTimeOffset lastChatIdentityCheck;
     private DispatcherTimer? timer;
     private bool watching;
@@ -98,6 +100,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         });
         NeedAccount = (Social is null && Communities is null) || Access is null;
         Chats.CollectionChanged += (_, _) => RefreshInboxBrowse();
+        Incoming.CollectionChanged += (_, _) => { OnPropertyChanged(nameof(HasIncoming)); OnPropertyChanged(nameof(IncomingCaption)); };
         Messages.CollectionChanged += (_, _) => { OnPropertyChanged(nameof(NoMessages)); RefreshMessageBrowse(); GroupMessages(); };
     }
 
@@ -141,31 +144,81 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         OnPropertyChanged(nameof(NoChats));
     }
     public ObservableCollection<ChatInviteRow> Incoming { get; } = [];
+    public bool HasIncoming => Incoming.Count > 0;
+    public string IncomingCaption => $"Приглашений: {Incoming.Count}";
     public ObservableCollection<ChatMessageRow> Messages { get; } = [];
     public event Action<ChatMessageRow>? QuoteTargetRequested;
+    public event Action<ChatMessageRow>? MessageFocusRequested;
+    [ObservableProperty] private string unreadJumpFeedback = "";
+    public bool HasUnreadJump => unreadAtOpen > 0 && unreadSnapshotLastAt is not null && conversationId is not null;
+    [RelayCommand(AllowConcurrentExecutions = false)]
+    private async Task JumpFirstUnread()
+    {
+        if (!HasUnreadJump || conversationId is not Guid id) return;
+        var ticket = generation;
+        ChatMessageRow[] SnapshotIncoming() => Messages.Where(row => row.IsIncoming &&
+            (unreadSnapshotLastAt is null || row.CreatedAt <= unreadSnapshotLastAt)).ToArray();
+        for (var page = 0; page < 5 && HasMore && Messages.Count > 0 &&
+            SnapshotIncoming().Length < unreadAtOpen; page++)
+        {
+            var before = Messages.Count;
+            await LoadMessagesAsync(ticket, Messages[0].Id);
+            if (conversationId != id || generation != ticket) return;
+            if (Messages.Count == before) break;
+        }
+        var incoming = SnapshotIncoming();
+        if (incoming.Length < unreadAtOpen)
+        { UnreadJumpFeedback = HasMore ? "Начало непрочитанной области ещё раньше. Нажмите снова для следующих страниц." :
+            "Счётчик изменился после открытия беседы. Обновите список бесед."; return; }
+        var target = incoming[^unreadAtOpen];
+        if (!VisibleMessages.Contains(target)) MessageSearch = "";
+        foreach (var row in Messages) row.IsUnreadTarget = ReferenceEquals(row, target);
+        UnreadJumpFeedback = "Показано начало непрочитанной области по счётчику при открытии беседы.";
+        MessageFocusRequested?.Invoke(target);
+    }
     [ObservableProperty] private string quoteFeedback = "";
     [ObservableProperty] private bool needAccount;
     partial void OnNeedAccountChanged(bool value) { if (value) { MyCode = ""; resolvingInvites.Clear(); } }
     [ObservableProperty] private string status = "";
     [ObservableProperty] private string myCode = "";
     [ObservableProperty] private string messageSearch = "";
+    public bool HasMessageSearch => !string.IsNullOrWhiteSpace(MessageSearch);
+    [ObservableProperty] private string historySearchFeedback = "";
+    public bool CanSearchOlder => HasMore && !string.IsNullOrWhiteSpace(MessageSearch);
+    partial void OnHasMoreChanged(bool value) => OnPropertyChanged(nameof(CanSearchOlder));
     public IReadOnlyList<ChatMessageRow> VisibleMessages => string.IsNullOrWhiteSpace(MessageSearch)
         ? Messages.ToArray() : Messages.Where(row => row.SearchableText.Contains(MessageSearch.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray();
     public bool NoHistoryMatches => MessagesLoaded && !LoadingMessages && !MessageLoadFailed && Messages.Count > 0 && VisibleMessages.Count == 0;
     public string HistorySearchScope => $"Поиск среди загруженных сообщений: {VisibleMessages.Count} из {Messages.Count}";
-    partial void OnMessageSearchChanged(string value) => RefreshMessageBrowse();
+    partial void OnMessageSearchChanged(string value)
+    { HistorySearchFeedback = ""; RefreshMessageBrowse(); OnPropertyChanged(nameof(CanSearchOlder)); OnPropertyChanged(nameof(HasMessageSearch)); }
+    [RelayCommand] private void OpenSearchResult(ChatMessageRow? row)
+    {
+        if (row is null || !Messages.Contains(row) || !VisibleMessages.Contains(row) || !HasMessageSearch) return;
+        MessageSearch = "";
+        MessageFocusRequested?.Invoke(row);
+    }
     [RelayCommand] private void ClearMessageSearch() => MessageSearch = "";
-    [RelayCommand] private void JumpQuote(ChatMessageRow? source)
+    [RelayCommand] private async Task JumpQuote(ChatMessageRow? source)
     {
         if (source is null || !Messages.Contains(source) || source.ReplyToId is not Guid parentId) return;
+        var id = conversationId; var ticket = generation;
+        for (var page = 0; page < 5 && Messages.All(row => row.Id != parentId) && HasMore && Messages.Count > 0; page++)
+        {
+            var before = Messages.Count;
+            await LoadMessagesAsync(ticket, Messages[0].Id);
+            if (conversationId != id || generation != ticket || !Messages.Contains(source)) return;
+            if (Messages.Count == before) break;
+        }
         foreach (var row in Messages) row.QuoteHint = "";
         var target = Messages.FirstOrDefault(row => row.Id == parentId);
-        if (target is null) { source.QuoteHint = QuoteFeedback = HasMore ? "Цитата ещё не загружена. Нажмите «Ранее»." : "Цитата недоступна в этой истории."; return; }
+        if (target is null) { source.QuoteHint = QuoteFeedback = HasMore ? "Ранее сообщение ещё не найдено. Нажмите цитату снова для следующих страниц." : "Цитата недоступна в этой истории."; return; }
         if (target.Deleted) { source.QuoteHint = QuoteFeedback = "Цитируемое сообщение удалено."; return; }
         if (!VisibleMessages.Contains(target)) MessageSearch = "";
         foreach (var row in Messages) row.IsQuoteTarget = ReferenceEquals(row, target);
         QuoteFeedback = "Цитируемое сообщение найдено.";
         QuoteTargetRequested?.Invoke(target);
+        MessageFocusRequested?.Invoke(target);
     }
     private void RefreshMessageBrowse()
     {
@@ -341,6 +394,8 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
         ClearPreviews();
         SaveComposer();
         conversationId = friend.ConversationId;
+        unreadAtOpen = friend.Unread; unreadSnapshotLastAt = friend.LastAt;
+        UnreadJumpFeedback = ""; OnPropertyChanged(nameof(HasUnreadJump));
         StartRecordingCommand.NotifyCanExecuteChanged();
         peerId = friend.UserId;
         ChatTitle = friend.DisplayName ?? friend.Username;
@@ -433,6 +488,28 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
     [RelayCommand]
     private Task LoadOlderAsync() => HasMore && Messages.Count > 0
         ? LoadMessagesAsync(generation, Messages[0].Id) : Task.CompletedTask;
+
+    [RelayCommand(AllowConcurrentExecutions = false)]
+    private async Task SearchOlder()
+    {
+        if (!CanSearchOlder || conversationId is not Guid id) return;
+        var query = MessageSearch.Trim();
+        var ticket = generation;
+        for (var page = 0; page < 5 && HasMore && Messages.Count > 0; page++)
+        {
+            if (conversationId != id || generation != ticket || MessageSearch.Trim() != query) return;
+            var before = Messages.Count;
+            await LoadMessagesAsync(ticket, Messages[0].Id);
+            if (conversationId != id || generation != ticket || MessageSearch.Trim() != query) return;
+            if (VisibleMessages.Count > 0)
+            { HistorySearchFeedback = $"Найдено среди {Messages.Count} загруженных сообщений."; return; }
+            if (Messages.Count == before)
+            { HistorySearchFeedback = "Не удалось загрузить ранние сообщения. Повторите поиск."; return; }
+        }
+        HistorySearchFeedback = HasMore
+            ? "Совпадений пока нет. Можно продолжить поиск в ранних сообщениях."
+            : "Совпадений в доступной истории нет.";
+    }
 
     [RelayCommand]
     private Task ReloadMessagesAsync() => LoadMessagesAsync(generation);
@@ -654,7 +731,7 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
             var limit = kind == "image" ? 25L * 1024 * 1024 : 20L * 1024 * 1024;
             if (!file.Exists || file.Length is < 1 || file.Length > limit)
             {
-                Status = "Файл слишком большой или недоступен.";
+                SetAttachmentError(id, "Файл слишком большой или недоступен. Текст этой беседы сохранён.");
                 return;
             }
             bytes = await File.ReadAllBytesAsync(path, operation.Token);
@@ -667,12 +744,13 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
             Messages.Add(Row(message));
             if (submitted.Reply is not null && composerRevision == submitted.Revision && replyTo == submitted.Reply)
             { replyTo = null; ActionCaption = ""; composerRevision++; SaveComposer(); NotifyComposer(); }
-            Status = "";
+            if (composers.TryGetValue(id, out var afterSend)) composers[id] = afterSend with { Error = "" };
+            ComposerError = "";
             await RefreshAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is SocialClientException or AccountClientException or IOException or UnauthorizedAccessException)
-        { if (operation.IsCurrent && ticket == generation) Status = "Не удалось отправить файл."; }
+        { if (operation.IsCurrent) SetAttachmentError(id, "Не удалось отправить файл. Текст этой беседы сохранён; выберите файл ещё раз."); }
         finally
         {
             if (bytes is not null) CryptographicOperations.ZeroMemory(bytes);
@@ -701,6 +779,12 @@ public sealed partial class ChatInboxViewModel : ViewModelBase
             else Dispatcher.UIThread.Post(() => _ = LoadPhotoPreviewAsync(attachment));
         }
         return row;
+    }
+
+    private void SetAttachmentError(Guid id, string message)
+    {
+        if (composers.TryGetValue(id, out var current)) composers[id] = current with { Error = message };
+        if (conversationId == id) ComposerError = message;
     }
 
     private async Task CopyPersonalMessageAsync(SocialMessageResponse message, Guid? scope)
@@ -1023,6 +1107,8 @@ public sealed partial class ChatMessageRow(SocialMessageResponse response, bool 
     public Guid? ReplyToId => response.ReplyTo;
     public bool IsReply => ReplyToId is not null;
     public bool Deleted => response.Deleted;
+    public bool IsIncoming => !Mine;
+    [ObservableProperty] private bool isUnreadTarget;
     [ObservableProperty] private bool isQuoteTarget;
     [ObservableProperty] private string quoteHint = "";
     public DateTimeOffset CreatedAt => response.CreatedAt;
@@ -1046,6 +1132,7 @@ public sealed partial class ChatMessageRow(SocialMessageResponse response, bool 
         ? " · " + TimeSpan.FromMilliseconds(ms).ToString(@"m\:ss") : "";
     public string Detail => response.ReplyBody is null ? "" : "Ответ: " + response.ReplyBody;
     public string When => response.CreatedAt.ToLocalTime().ToString("dd.MM HH:mm");
+    public string ActionName => $"Действия сообщения {Author}, {When}";
     public bool Mine { get; } = mine;
     public bool CanEdit => Mine && !response.Deleted && response.Kind == "text";
     public bool CanDelete => Mine && !response.Deleted;

@@ -54,13 +54,18 @@ fun HomeworkEditorSheet(
     onRetryShare: () -> Unit = {},
     isGuest: Boolean = false,
     onRecalculate: () -> Unit = {},
-    onRetryShareOptions: () -> Unit = {}
-) {
-    val photo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) onPick("photo", uri)
+    onRetryShareOptions: () -> Unit = {},
+    onConfirmDuplicate: () -> Unit = {},
+    onCancelDuplicate: () -> Unit = {},
+    onPickMany: (String, List<Uri>) -> Unit = { kind, uris ->
+        uris.firstOrNull()?.let { onPick(kind, it) }
     }
-    val document = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) onPick("document", uri)
+) {
+    val photo = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) onPickMany("photo", uris)
+    }
+    val document = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) onPickMany("document", uris)
     }
     val c = Zapara.colors
     var confirmDiscard by rememberSaveable(state.draft) { mutableStateOf(false) }
@@ -126,6 +131,18 @@ fun HomeworkEditorSheet(
             Text(stringResource(R.string.polish_homework_deadline), style = Zapara.typography.bodyStrong, color = c.text1)
             Text(state.dueText(LocalUiCopy.current), style = Zapara.typography.body, color = c.text1,
                 modifier = Modifier.fillMaxWidth().testTag("Editor.Due"))
+            var showOccurrences by rememberSaveable(state.draft) { mutableStateOf(false) }
+            ZButton(stringResource(R.string.ux300_ext_explain_due), { showOccurrences = !showOccurrences },
+                ghost = true, tag = "Editor.ExplainDue")
+            if (showOccurrences) {
+                Text(stringResource(R.string.ux300_ext_due_explanation), style = Zapara.typography.caption)
+                (1..state.n).forEach { number ->
+                    val date = state.dueFor(number, state.text)
+                    Text(stringResource(R.string.ux300_ext_due_occurrence, number,
+                        date?.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.forLanguageTag("ru")))
+                            ?: stringResource(R.string.ux300_ext_due_unknown)), style = Zapara.typography.caption)
+                }
+            }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 ZIconButton(R.drawable.ic_minus, stringResource(R.string.hw_due_decrease), onDec, "Editor.Dec", enabled = !state.busy && state.n > 1)
                 Text(stringResource(countLabel, state.n),
@@ -162,8 +179,13 @@ fun HomeworkEditorSheet(
         state.files.forEach { file ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 Text(file.name, style = Zapara.typography.caption, color = c.text1, modifier = Modifier.weight(1f))
-                ZButton(stringResource(R.string.hw_attach_remove), { onRemove(file.id) }, ghost = true, enabled = !state.busy, tag = "Editor.Remove.${file.id}")
+                ZButton(stringResource(if (file.id in state.missingFileIds)
+                    R.string.ux300_android_remove_missing_file else R.string.hw_attach_remove),
+                    { onRemove(file.id) }, ghost = true, enabled = !state.busy, tag = "Editor.Remove.${file.id}")
             }
+            if (file.id in state.missingFileIds) Text(stringResource(R.string.ux300_android_missing_file),
+                style = Zapara.typography.caption, color = c.warn,
+                modifier = Modifier.testTag("Editor.MissingFile.${file.id}"))
         }
         if (!state.isEdit && isGuest) {
             Spacer(Modifier.height(Zapara.space.s))
@@ -239,5 +261,18 @@ fun HomeworkEditorSheet(
             }
         },
         containerColor = c.card
+    )
+    if (state.duplicateWarning) AlertDialog(
+        onDismissRequest = onCancelDuplicate,
+        title = { Text(stringResource(R.string.ux300_android_duplicate_title),
+            style = Zapara.typography.section) },
+        text = { Text(stringResource(R.string.ux300_android_duplicate_hint),
+            style = Zapara.typography.body) },
+        confirmButton = { Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            ZButton(stringResource(R.string.ux300_android_create_anyway), onConfirmDuplicate,
+                tag = "Editor.CreateDuplicate", modifier = Modifier.fillMaxWidth())
+            ZButton(stringResource(R.string.theme_cancel), onCancelDuplicate, ghost = true,
+                tag = "Editor.CancelDuplicate", modifier = Modifier.fillMaxWidth())
+        } }, containerColor = c.card
     )
 }

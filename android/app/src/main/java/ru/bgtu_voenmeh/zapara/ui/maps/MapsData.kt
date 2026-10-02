@@ -15,6 +15,7 @@ import ru.bgtu_voenmeh.zapara.ui.components.ToastKind
 
 /** External data boundary only; routing, request ownership and publication remain in the VM. */
 internal interface MapsData {
+    val memoryScope: String get() = "local"
     val copy: UiCopy
     val events: Flow<*>
     fun clock(): LocalDateTime
@@ -31,6 +32,7 @@ internal interface MapsData {
 }
 
 internal class ContainerMapsData(private val container: AppContainer) : MapsData {
+    override val memoryScope get() = container.profile.databaseName
     override val copy get() = container.copy
     override val events get() = container.events.events
     override fun clock() = container.clock()

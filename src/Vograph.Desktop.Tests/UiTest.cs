@@ -55,7 +55,8 @@ public abstract class UiTest
         }
     }
 
-    protected void AssertNoBindingErrors() => Assert.Empty(Sink.Warnings);
+    protected void AssertNoBindingErrors() => Assert.True(Sink.Warnings.Count == 0,
+        string.Join(Environment.NewLine, Sink.Warnings));
 
     /// <summary>Clicks the center of a control through the window's input pipeline (not RaiseEvent).</summary>
     protected static void Click(Window window, Control target)

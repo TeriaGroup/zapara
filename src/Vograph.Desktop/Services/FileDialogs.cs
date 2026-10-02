@@ -7,6 +7,7 @@ namespace Vograph.Desktop.Services;
 public interface IFileDialogs
 {
     Task<string?> SaveJsonAsync(string suggestedName);
+    Task<string?> SaveCalendarAsync(string suggestedName);
     Task<string?> OpenJsonAsync();
     Task<string?> OpenHomeworkAsync(bool photo);
     Task<string?> OpenChatMediaAsync(string kind);
@@ -18,6 +19,7 @@ public interface IFileDialogs
 public sealed class NullFileDialogs : IFileDialogs
 {
     public Task<string?> SaveJsonAsync(string suggestedName) => Task.FromResult<string?>(null);
+    public Task<string?> SaveCalendarAsync(string suggestedName) => Task.FromResult<string?>(null);
     public Task<string?> OpenJsonAsync() => Task.FromResult<string?>(null);
     public Task<string?> OpenHomeworkAsync(bool photo) => Task.FromResult<string?>(null);
     public Task<string?> OpenChatMediaAsync(string kind) => Task.FromResult<string?>(null);
@@ -28,6 +30,7 @@ public sealed class NullFileDialogs : IFileDialogs
 public sealed class AvaloniaFileDialogs : IFileDialogs
 {
     private static readonly FilePickerFileType Json = new("JSON") { Patterns = new[] { "*.json" } };
+    private static readonly FilePickerFileType Calendar = new("Календарь") { Patterns = new[] { "*.ics" } };
     private readonly Func<TopLevel?> _topLevel;
 
     public AvaloniaFileDialogs(Func<TopLevel?> topLevel) => _topLevel = topLevel;
@@ -40,6 +43,18 @@ public sealed class AvaloniaFileDialogs : IFileDialogs
             SuggestedFileName = suggestedName,
             DefaultExtension = "json",
             FileTypeChoices = new[] { Json },
+            ShowOverwritePrompt = true
+        });
+        return file?.TryGetLocalPath();
+    }
+    public async Task<string?> SaveCalendarAsync(string suggestedName)
+    {
+        if (_topLevel() is not { } tl) return null;
+        var file = await tl.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            SuggestedFileName = suggestedName,
+            DefaultExtension = "ics",
+            FileTypeChoices = [Calendar],
             ShowOverwritePrompt = true
         });
         return file?.TryGetLocalPath();

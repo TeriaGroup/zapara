@@ -83,12 +83,14 @@ public sealed class TeacherIndex
         _byLecturer.TryGetValue(lecturerId, out var l) ? l : Array.Empty<LecturerLesson>();
 
     /// <summary>Query matches name, department or any discipline the lecturer teaches (the old subject combo box folded into search).</summary>
-    public List<LecturerInfo> Filter(string query, bool onlyMine, ISet<string> myIds)
+    public List<LecturerInfo> Filter(string query, bool onlyMine, ISet<string> myIds, string? department = null)
     {
         var words = query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(word => word.ToLowerInvariant().Replace('ё', 'е')).ToArray();
         IEnumerable<LecturerInfo> res = Lecturers;
         if (onlyMine) res = res.Where(l => myIds.Contains(l.Id));
+        if (!string.IsNullOrWhiteSpace(department))
+            res = res.Where(l => l.Kafedra.Trim().Equals(department.Trim(), StringComparison.OrdinalIgnoreCase));
         if (words.Length > 0)
             res = res.Where(l =>
             {

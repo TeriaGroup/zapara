@@ -25,7 +25,7 @@ public sealed partial class LessonRowViewModel : ObservableObject
     {
         Row=row;
         RefreshRelated(row);
-        foreach(var name in new[]{nameof(DisplayName),nameof(TeacherLine),nameof(Note),nameof(RoomText),nameof(TypeLabel),nameof(IsPast),nameof(IsNext),nameof(CanShowMap),nameof(PriorityCaption)})OnPropertyChanged(name);
+        foreach(var name in new[]{nameof(DisplayName),nameof(TeacherLine),nameof(CanOpenTeacher),nameof(Note),nameof(RoomText),nameof(TypeLabel),nameof(IsPast),nameof(IsNext),nameof(CanShowMap),nameof(PriorityCaption)})OnPropertyChanged(name);
     }
     private void RefreshRelated(LessonRow row)
     {
@@ -59,6 +59,7 @@ public sealed partial class LessonRowViewModel : ObservableObject
     public bool HasNextDate => Row.NextDateText is not null;
     public string DisplayName => Row.DisplayName;
     public string TeacherLine => Row.OriginalName is null ? Row.Teacher : $"{Row.Teacher} · {Loc.Current.T("originalLabel", Row.OriginalName)}";
+    public bool CanOpenTeacher => _owner.CanOpenTeacher(this);
     public string? Note => Row.Note;
     public bool HasNote => Row.Note is not null;
     public string TypeLabel => Row.TypeLabel;
@@ -84,6 +85,7 @@ public sealed partial class LessonRowViewModel : ObservableObject
 
     [RelayCommand] private Task Rename() => _owner.RenameAsync(this);
     [RelayCommand] private void OpenHomeworks() => _owner.OpenSubjectHomeworks(this);
+    [RelayCommand] private Task OpenTeacher() => _owner.OpenTeacherAsync(this);
     [RelayCommand] private void Discuss() => _owner.DiscussLesson(this);
     [RelayCommand] private Task AddHomework() => _owner.AddHomeworkAsync(this);
 }

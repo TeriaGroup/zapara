@@ -52,6 +52,7 @@
                Text="Чтобы поделиться домашкой с группой, войдите в аккаунт. Сейчас задание сохранится только у вас." />
     <TextBlock IsVisible="{Binding IsImporting}" Classes="muted caption" Text="Добавляем файл…" />
     <TextBlock IsVisible="{Binding HasError}" Text="{Binding Error}" TextWrapping="Wrap" AutomationProperties.AutomationId="Dialog.Error" />
+    <Button Content="Создать всё равно" Command="{Binding CreateDuplicateAnywayCommand}" IsVisible="{Binding DuplicateWarning}" HorizontalAlignment="Left" />
     <StackPanel IsVisible="{Binding ShowDiscardConfirmation}" Spacing="8">
       <TextBlock Text="Закрыть без сохранения изменений?" TextWrapping="Wrap" />
       <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">

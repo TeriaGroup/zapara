@@ -41,7 +41,9 @@ data class ScheduleWidgetSnapshot(
     val nextRefreshAt: java.time.LocalDateTime? = null,
     val toss: ScheduleWidgetRow? = null,
     val dayLabel: String = "",
-    val readError: String? = null
+    val readError: String? = null,
+    val hiddenRemainingCount: Int = 0,
+    val staleDays: Int? = null
 )
 
 data class HomeworkWidgetRow(
@@ -60,8 +62,17 @@ data class HomeworkWidgetSnapshot(
     val cleared: Boolean = false,
     val isDark: Boolean = false,
     val doneIds: Set<Long> = emptySet(),
-    val readError: String? = null
+    val readError: String? = null,
+    val hiddenActiveCount: Int = 0,
+    val staleDays: Int? = null
 )
+
+internal fun widgetStaleDays(lastFetchedAt: String?, today: LocalDate): Int? {
+    val fetched = lastFetchedAt?.let { runCatching { java.time.OffsetDateTime.parse(it)
+        .atZoneSameInstant(java.time.ZoneId.of("Europe/Moscow")).toLocalDate() }.getOrNull() }
+        ?: return null
+    return java.time.temporal.ChronoUnit.DAYS.between(fetched, today).toInt().takeIf { it >= 2 }
+}
 
 internal fun widgetSubtitle(identity: WidgetJobIdentity, groupName: String?, copy: UiCopy): String {
     val group = groupName.orEmpty()
@@ -175,7 +186,10 @@ object ScheduleWidgetComposer {
             date == today && lessons.isNotEmpty() -> copy.get("widget_timer_done")
             else -> copy.get("no_lessons_day")
         }
-        return ScheduleWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark, nextRefreshAt, toss, dayLabel)
+        return ScheduleWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark,
+            nextRefreshAt, toss, dayLabel,
+            hiddenRemainingCount = (remaining.size - rows.size).coerceAtLeast(0),
+            staleDays = widgetStaleDays(settings.lastFetchedAt, today))
     }
 
     private fun justEnded(
@@ -245,9 +259,10 @@ object HomeworkWidgetComposer {
             return HomeworkWidgetSnapshot(identity, title, subtitle, copy.get("empty_no_group"), emptyList(), false, isDark)
         }
         val currentHomework = homework.map(current)
-        val rows = currentHomework
+        val active = currentHomework
             .filter { !it.done && it.status != "done" }
             .sortedWith(compareBy({ rank(it.status) }, { it.due ?: LocalDate.MAX }, { it.id }))
+        val rows = active
             .take(MAX_ROWS)
             .map { hw ->
                 val lesson = lessons.firstOrNull { Parity.sameSubject(it.subjectNormalized, hw.norm) }
@@ -260,7 +275,9 @@ object HomeworkWidgetComposer {
             }
         val empty = if (rows.isEmpty()) copy.get("hw_empty_title") else null
         return HomeworkWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark,
-            currentHomework.filter { it.done || it.status == "done" }.map { it.id }.toSet())
+            currentHomework.filter { it.done || it.status == "done" }.map { it.id }.toSet(),
+            hiddenActiveCount = (active.size - rows.size).coerceAtLeast(0),
+            staleDays = widgetStaleDays(settings.lastFetchedAt, today))
     }
 
     internal fun rank(status: String): Int = when (status) {

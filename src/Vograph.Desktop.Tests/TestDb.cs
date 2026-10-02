@@ -10,13 +10,17 @@ public sealed class TestDb : IDisposable
     public const string MathSubject = "лек ВЫСШ. МАТЕМАТ"; // FULL Discipline: Core keeps the type token in SubjectRaw and keys overrides/homework by it
 
     public string Dir { get; }
+    private readonly string testRoot;
     public AppServices Services { get; }
 
-    private TestDb(string dir, AppServices services) { Dir = dir; Services = services; }
+    private TestDb(string dir, string testRoot, AppServices services)
+    { Dir = dir; this.testRoot = testRoot; Services = services; }
 
     public static TestDb Create(bool seedPersonalization = true)
     {
-        var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));
+        var root = Path.GetFullPath(Environment.GetEnvironmentVariable("VOGRAPH_TEST_DATA_ROOT") is { Length: > 0 } configured
+            ? configured : Path.Combine(Path.GetTempPath(), "vograph-tests"));
+        var dir = Path.Combine(root, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         // motion off in tests: frames are deterministic, MotionTests switch it on themselves
         var services = AppServices.Create(dir, systemAnimations: () => false);
@@ -35,12 +39,14 @@ public sealed class TestDb : IDisposable
             services.Homework.AddHomework(MathSubject, "§5, задачи 1–12", 1, createdAt: new DateTime(2026, 9, 5, 12, 0, 0));
             services.Db.InsertFriend(new FriendGroup { GroupName = "09С31", ColorHex = "#F2A33C", Enabled = true, MemberNames = "Иван" });
         }
-        return new TestDb(dir, services);
+        return new TestDb(dir, root, services);
     }
 
     public void Dispose()
     {
         Services.Dispose();
+        if (!Path.GetFullPath(Dir).StartsWith(Path.TrimEndingDirectorySeparator(testRoot) + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Unexpected test data directory");
         try { Directory.Delete(Dir, recursive: true); } catch (IOException ex) { Console.Error.WriteLine($"TestDb: temp dir left behind ({Dir}): {ex.Message}"); } // SQLite may still hold the file for a moment
     }
 }

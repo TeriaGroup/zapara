@@ -180,7 +180,10 @@ public class FriendsTests : UiTest
         item.DraftMemberNames = "Петя";
         item.DraftColorIndex = 4;
         Assert.Equal("09С31", db.Services.Db.GetFriends().Single().GroupName);
-        item.CancelEditCommand.Execute(null);
+        var discard = item.CancelEditCommand.ExecuteAsync(null);
+        var discardDialog = await Waits.ForDialogAsync<ConfirmDialogViewModel>(shell);
+        discardDialog.ConfirmCommand.Execute(null);
+        await discard;
         Assert.Equal(("09С31", "Иван", FriendPalette.Hex[0]),
             (db.Services.Db.GetFriends().Single().GroupName, db.Services.Db.GetFriends().Single().MemberNames, db.Services.Db.GetFriends().Single().ColorHex));
 
@@ -196,6 +199,27 @@ public class FriendsTests : UiTest
         Assert.Contains("изменились", item.DraftError);
         Assert.Equal("09С31", db.Services.Db.GetFriends().Single().GroupName);
         Assert.Equal("Обновлено другим действием", db.Services.Db.GetFriends().Single().MemberNames);
+    }
+
+    [Fact]
+    public async Task Dirty_friend_editor_requires_explicit_discard_and_keeps_draft_when_cancelled()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = new FriendsViewModel(db.Services, shell, () => Sun6);
+        await vm.LoadAsync();
+        var item = Assert.Single(vm.Friends);
+        item.BeginEditCommand.Execute(null);
+        item.DraftMemberNames = "Несохранённое имя";
+
+        var pending = item.CancelEditCommand.ExecuteAsync(null);
+        var confirm = await Waits.ForDialogAsync<ConfirmDialogViewModel>(shell);
+        confirm.CancelCommand.Execute(null);
+        await pending;
+
+        Assert.True(item.IsEditing);
+        Assert.Equal("Несохранённое имя", item.DraftMemberNames);
+        Assert.Equal("Иван", db.Services.Db.GetFriends().Single().MemberNames);
     }
 
     [Fact]

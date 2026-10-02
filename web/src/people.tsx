@@ -1,3 +1,4 @@
+import { MediaPlayer, PhotoViewer } from "./media-player";
 import { revealQuote } from "./quote-navigation";
 import { FormEvent, Fragment, UIEvent, useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./api";
@@ -18,6 +19,8 @@ import { Link } from "react-router-dom";
 import { emptyChatState, personalText, personalTextCount, personalTextLimit, personalTextValid, sendOnEnter } from "./personal-composer";
 import { usePersonalComposer } from "./personal-composer-context";
 import type { SocialFriend, SocialHome, SocialMessage } from "./types";
+import { noteSearch } from "./ux300";
+import { SearchField, focusElement } from "./ux300-controls";
 
 const voiceRecordingLimit = 4 * 1024 * 1024;
 const circleRecordingLimit = 24 * 1024 * 1024;
@@ -59,6 +62,8 @@ function PeopleContent({ initialConversationId }: { initialConversationId?: stri
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [personQuery,setPersonQuery]=useState("");
+  const [unavailableRoute,setUnavailableRoute]=useState(false);
   const actionPending = useRef(false);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -90,6 +95,7 @@ function PeopleContent({ initialConversationId }: { initialConversationId?: stri
           if (initialConversationId && openedFromRoute.current !== initialConversationId) {
             openedFromRoute.current = initialConversationId;
             const selected = value.friends.find(item => item.conversationId === initialConversationId);
+            setUnavailableRoute(!selected);
             if (selected) { activeIdRef.current = selected.conversationId; setActive(selected); }
           }
           setError(current => current === "Переписка не открылась" ? "" : current);
@@ -154,6 +160,7 @@ function PeopleContent({ initialConversationId }: { initialConversationId?: stri
   return (
     <div className="stack">
       {error && <div className="banner">{error}</div>}
+      {unavailableRoute&&<div className="banner" role="status">Беседа по ссылке недоступна в этом аккаунте.<Link className="btn" to="/chat">К списку бесед</Link><button className="btn quiet" onClick={()=>{openedFromRoute.current=null;setUnavailableRoute(false);}}>Проверить снова</button></div>}
       {!!home?.incoming.length && (
         <div className="stack">
           <h2>Входящие запросы</h2>
@@ -193,7 +200,8 @@ function PeopleContent({ initialConversationId }: { initialConversationId?: stri
             <button className="btn primary" type="submit" disabled={busy || code.trim().length < 8}>Добавить</button>
           </form>
           <div className="people">
-          {(home?.friends || []).map(friend => (
+          <SearchField label="Найти человека" value={personQuery} onChange={setPersonQuery}/>
+          {(home?.friends || []).filter(friend=>noteSearch(personQuery,friend.displayName||"",friend.username)).map(friend => (
             <button className="person" key={friend.userId} type="button" onClick={() => { activeIdRef.current = friend.conversationId; setError(""); setActive(friend); }}>
               <Avatar kind="user" id={friend.userId} name={personName(friend.username, friend.displayName)} />
               <span className="person-main"><b>{personName(friend.username, friend.displayName)}</b><span className="muted preview-line">{friend.lastBody || "Нет сообщений"}</span></span>
@@ -201,6 +209,7 @@ function PeopleContent({ initialConversationId }: { initialConversationId?: stri
             </button>
           ))}
           {home && home.friends.length === 0 && <div className="empty">Пока никого нет. Добавьте человека по коду.</div>}
+          {home&&home.friends.length>0&&!home.friends.some(friend=>noteSearch(personQuery,friend.displayName||"",friend.username))&&<p role="status">Человек по запросу не найден. Очистите поиск, чтобы вернуться к списку.</p>}
           </div>
         </div>
         {active ? <section className="split-detail"><button className="btn back-only" type="button" onClick={() => { activeIdRef.current = null; setError(""); setActive(null); }}>К списку</button><Chat key={active.conversationId} friend={active} self={app.session.user?.userId || ""} familyId={app.session.familyId} onError={chatError} /></section> : <section className="card chat split-detail"><h2>Чат</h2><p className="muted">Выберите человека в списке.</p></section>}
@@ -267,55 +276,8 @@ function clock(ms: number) {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
-function VoiceNote({ src, duration }: { src: string; duration: number | null }) {
-  const audio = useRef<HTMLAudioElement>(null);
-  const [playing, setPlaying] = useState(false);
-  const [known, setKnown] = useState(duration);
-  return (
-    <div className="voice">
-      <button className="btn" type="button" onClick={() => { const node = audio.current; if (!node) return; if (playing) node.pause(); else void node.play(); }}>{playing ? "Пауза" : "Слушать"}</button>
-      <span>{clock(known || 0)}</span>
-      <audio ref={audio} src={src} preload="metadata" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} onLoadedMetadata={event => { if (event.currentTarget.duration && Number.isFinite(event.currentTarget.duration)) setKnown(event.currentTarget.duration * 1000); }} />
-    </div>
-  );
-}
-
-function CircleNote({ src, duration }: { src: string; duration: number | null }) {
-  const video = useRef<HTMLVideoElement>(null);
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [known, setKnown] = useState(duration);
-  const radius = 96;
-  const length = 2 * Math.PI * radius;
-  function toggle() {
-    const node = video.current;
-    if (!node) return;
-    if (playing) node.pause();
-    else { node.muted = false; void node.play(); }
-  }
-  return (
-    <div className="circle">
-      <svg className="ring" viewBox="0 0 200 200" aria-hidden="true">
-        <circle cx="100" cy="100" r={radius} />
-        <circle className="progress" cx="100" cy="100" r={radius} strokeDasharray={length} strokeDashoffset={length * (1 - progress)} />
-      </svg>
-      <video
-        ref={video}
-        src={src}
-        playsInline
-        preload="metadata"
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => { setPlaying(false); setProgress(0); }}
-        onTimeUpdate={event => { const node = event.currentTarget; if (node.duration) setProgress(node.currentTime / node.duration); }}
-        onLoadedMetadata={event => { if (Number.isFinite(event.currentTarget.duration)) setKnown(event.currentTarget.duration * 1000); }}
-      />
-      <button type="button" className="circle-hit" aria-label={playing ? "Пауза" : "Смотреть кружок"} onClick={toggle} />
-      {!playing && <span className="play">▶</span>}
-      <span className="time">{clock(known || 0)}</span>
-    </div>
-  );
-}
+function VoiceNote({src,duration}:{src:string;duration:number|null}) { return <MediaPlayer src={src} knownDuration={duration||0}/>; }
+function CircleNote({src,duration}:{src:string;duration:number|null}) { return <MediaPlayer src={src} kind="circle" knownDuration={duration||0}/>; }
 
 function StudyShelf({ onSend }: { onSend: (body: string | null) => void }) {
   const app = useApp();
@@ -341,8 +303,12 @@ function StudyShelf({ onSend }: { onSend: (body: string | null) => void }) {
 function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self: string; familyId?: string | null; onError: (text: string) => void }) {
   const [messages, setMessages] = useState<SocialMessage[]>([]);
   const [historyQuery, setHistoryQuery] = useState("");
+  const [historyKind,setHistoryKind]=useState("all");
+  const [historyAuthor,setHistoryAuthor]=useState("all");
+  const [matchId,setMatchId]=useState("");
   const [copyNotice, setCopyNotice] = useState("");
-  const visibleMessages = searchPersonalHistory(messages, historyQuery);
+  const visibleMessages = searchPersonalHistory(messages, historyQuery).filter(message=>(historyKind==="all"||message.kind===historyKind)&&(historyAuthor==="all"||historyAuthor==="mine"&&message.senderId===self||historyAuthor==="other"&&message.senderId!==self));
+  function match(direction:number){if(!visibleMessages.length)return;const at=visibleMessages.findIndex(row=>row.messageId===matchId);const next=at<0?(direction>0?0:visibleMessages.length-1):(at+direction+visibleMessages.length)%visibleMessages.length;setMatchId(visibleMessages[next].messageId);focusElement(`personal-message-${visibleMessages[next].messageId}`);}
   const [more, setMore] = useState(false);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [showLatestJump, setShowLatestJump] = useState(false);
@@ -356,6 +322,10 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
   function setDraft(value: string) { composerStore.text(friend.conversationId, value); refreshComposer(); }
   const holdTimer = useRef<number | null>(null);
   const heldOpen = useRef(false);
+  const [captured,setCaptured]=useState<{file:File;kind:"voice"|"circle";duration:number;url:string}|null>(null);
+  const capturedUrl=useRef<string|null>(null);
+  useEffect(()=>()=>{if(captured){URL.revokeObjectURL(captured.url);if(capturedUrl.current===captured.url)capturedUrl.current=null;}},[captured]);
+  useEffect(()=>()=>{if(capturedUrl.current){URL.revokeObjectURL(capturedUrl.current);capturedUrl.current=null;}},[]);
   const [recording, setRecording] = useState(false);
   const [circling, setCircling] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -544,19 +514,21 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
   }
 
   async function sendFile(file: File | undefined, kind: "image" | "file" | "voice" | "circle", durationMs?: number) {
-    if (!file) return;
+    if (!file) return false;
     const ticket = beginSend();
-    if (!ticket) return;
+    if (!ticket) return false;
     const replyTo = ticket.state.reply?.messageId;
     try {
       const message = await api.socialUpload(friend.conversationId, file, kind, { replyTo, durationMs });
       composerStore.finish(ticket, "", true);
-      if (!aliveRef.current) return;
+      if (!aliveRef.current) return false;
       pollerRef.current?.changed();
       addMessages([message]);
       stick.current = true;
+      return true;
     } catch (reason) {
       composerStore.finish(ticket, explain(reason, "Ответ об отправке не получен. Проверьте историю перед повтором."), false);
+      return false;
     } finally { endSend(); }
   }
 
@@ -664,7 +636,7 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
           return;
         }
         const extension = blob.type.includes("mp4") ? "m4a" : blob.type.includes("ogg") ? "ogg" : "webm";
-        void sendFile(new File([blob], `voice.${extension}`, { type: blob.type || "audio/webm" }), "voice", duration);
+        if(!aliveRef.current)return;const file=new File([blob], `voice.${extension}`, {type:blob.type||"audio/webm"});const url=URL.createObjectURL(file);capturedUrl.current=url;setCaptured({file,kind:"voice",duration,url});
       };
       const tick = window.setInterval(() => {
         elapsedRef.current += 1;
@@ -738,7 +710,7 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
           return;
         }
         const extension = blob.type.includes("mp4") ? "mp4" : "webm";
-        void sendFile(new File([blob], `circle.${extension}`, { type: blob.type || "video/webm" }), "circle", duration);
+        if(!aliveRef.current)return;const file=new File([blob], `circle.${extension}`, {type:blob.type||"video/webm"});const url=URL.createObjectURL(file);capturedUrl.current=url;setCaptured({file,kind:"circle",duration,url});
       };
       circleRecorder.current = media;
       circleTick.current = window.setInterval(() => {
@@ -777,6 +749,8 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
     <section className="card chat">
       <div className="chat-title"><Avatar kind="user" id={friend.userId} name={personName(friend.username, friend.displayName)} /><h2>{personName(friend.username, friend.displayName)}</h2></div>
       <label className="field">Поиск в загруженной истории<input type="search" value={historyQuery} onChange={event => setHistoryQuery(event.target.value)} placeholder="Текст или имя файла" /></label>
+      <details><summary>Отбор сообщений</summary><div className="row"><label className="field">Автор<select value={historyAuthor} onChange={event=>setHistoryAuthor(event.target.value)}><option value="all">Все</option><option value="mine">Мои</option><option value="other">Собеседник</option></select></label><label className="field">Содержимое<select value={historyKind} onChange={event=>setHistoryKind(event.target.value)}><option value="all">Всё</option>{[["text","Текст"],["image","Фото"],["file","Файлы"],["voice","Голос"],["circle","Кружки"],["card","Учебные карточки"]].map(([value,title])=><option key={value} value={value}>{title}</option>)}</select></label><button className="btn quiet" onClick={()=>{setHistoryQuery("");setHistoryKind("all");setHistoryAuthor("all");}}>Вся загруженная история</button></div></details>
+      {(historyQuery||historyKind!=="all"||historyAuthor!=="all")&&<div className="row"><span className="muted">Совпадений: {visibleMessages.length} · Загружено: {messages.length}{more?" · Есть ранние сообщения":""}</span><button className="btn" disabled={!visibleMessages.length} onClick={()=>match(-1)}>Предыдущее совпадение</button><button className="btn" disabled={!visibleMessages.length} onClick={()=>match(1)}>Следующее совпадение</button></div>}
       {!!historyQuery.trim() && <div className="row"><span className="muted" role="status">Найдено: {visibleMessages.length} из {messages.length}. Поиск только в загруженных сообщениях.</span><button className="btn" type="button" onClick={() => setHistoryQuery("")}>Сбросить поиск</button></div>}
       {copyNotice && <p className="muted" role="status">{copyNotice}</p>}
       {!!historyQuery.trim() && visibleMessages.length === 0 && <p className="muted" role="status">В загруженной истории совпадений нет. Очистите поиск или загрузите более ранние сообщения.</p>}
@@ -801,7 +775,7 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
               {message.replyTo && <button type="button" className="quote btn quiet" onClick={() => onError(revealQuote(messagesRef.current,message.replyTo!,"personal-message-"))}>{message.replyBody || "Сообщение"}</button>}
               {message.deleted ? <div>Сообщение удалено</div> : (
                 <>
-                  {message.kind === "image" && message.attachmentId && <a href={api.socialAttachment(message.attachmentId)} target="_blank" rel="noreferrer"><img src={api.socialAttachment(message.attachmentId)} alt="Фото" /></a>}
+                  {message.kind === "image" && message.attachmentId && <PhotoViewer src={api.socialAttachment(message.attachmentId)}/>}
                   {message.kind === "file" && message.attachmentId && <a className="file" href={api.socialAttachment(message.attachmentId)}>{message.fileName || "Документ"}{message.bytes ? ` · ${size(message.bytes)}` : ""}</a>}
                   {message.kind === "voice" && message.attachmentId && <VoiceNote src={api.socialAttachment(message.attachmentId)} duration={message.durationMs} />}
                   {message.kind === "circle" && message.attachmentId && <CircleNote src={api.socialAttachment(message.attachmentId)} duration={message.durationMs} />}
@@ -844,7 +818,7 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
       {showLatestJump && <button className="btn latest-jump" type="button" onClick={jumpToLatest}>К новым сообщениям</button>}
       {composer.error && <div className="banner composer-error" role="status">{composer.error}</div>}
       {sending && <p className="muted composer-status" role="status">{editing ? "Сохраняем изменение…" : "Отправляем…"}</p>}
-      {circling ? (
+      {captured ? <div className="card stack"><h2>Проверьте запись перед отправкой</h2><MediaPlayer src={captured.url} kind={captured.kind} knownDuration={captured.duration}/><div className="row"><button className="btn quiet" disabled={sending} onClick={()=>setCaptured(null)}>Удалить запись</button><button className="btn quiet" disabled={sending} onClick={()=>{const kind=captured.kind;setCaptured(null);if(kind==="circle")void startCircle();else void toggleVoice();}}>Перезаписать</button><button className="btn primary" disabled={sending} onClick={()=>{const file=captured;void sendFile(file.file,file.kind,file.duration).then(sent=>{if(sent)setCaptured(null);});}}>Отправить запись</button></div></div> : circling ? (
         <div className="circle-record">
           <div className="circle live">
             <video ref={previewRef} muted playsInline autoPlay />

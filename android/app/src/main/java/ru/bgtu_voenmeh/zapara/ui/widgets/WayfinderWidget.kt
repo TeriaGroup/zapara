@@ -26,7 +26,8 @@ data class WayfinderWidgetSnapshot(
     val cleared: Boolean = false,
     val isDark: Boolean = false,
     val nextRefreshAt: LocalDateTime? = null,
-    val readError: String? = null
+    val readError: String? = null,
+    val lessonTarget: ScheduleWidgetRow? = null
 )
 
 object WayfinderWidgetComposer {
@@ -95,6 +96,8 @@ object WayfinderWidgetComposer {
                 classroomRaw = lesson.classroomRaw,
                 targetDate = date,
                 opensMap = opensMap,
+                lessonTarget = ScheduleWidgetRow(lesson.subjectRaw, "", false, lesson.index,
+                    date, lesson.timeStart, lesson.subjectNormalized, gid),
                 empty = null,
                 isDark = isDark,
                 // A later overlapping start can replace the current holder before its end.

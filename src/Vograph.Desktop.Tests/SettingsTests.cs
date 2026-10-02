@@ -193,9 +193,9 @@ public class SettingsTests : UiTest
         var vm = Assert.IsType<SettingsViewModel>(shell.Current);
         await Waits.Until(() => vm.GroupName == "А863С", "settings group name");
         Pump();
-        var appearance = window.GetVisualDescendants().OfType<Expander>()
-            .First(control => AutomationProperties.GetAutomationId(control) == "Settings.AppearanceSection");
-        appearance.IsExpanded = true;
+        var appearance = window.GetVisualDescendants().OfType<Avalonia.Controls.Button>()
+            .First(control => AutomationProperties.GetAutomationId(control) == "Settings.Category.Appearance");
+        Click(window, appearance);
         Pump();
         SetTheme(ThemeVariant.Dark);
         Frames.Capture(window, "settings-dark");

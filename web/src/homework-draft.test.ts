@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { HomeworkDraftController, homeworkSaveError, validateHomeworkDraft } from "./homework-draft.ts";
 
+test("declining a new duplicate preserves every field and selected File but drops the unused save identity",()=>{
+  const store=new HomeworkDraftController("owner:group");const file=new File(["data"],"task.pdf");store.field("subject","Математика");store.field("text","Задачи");store.field("pending",[{file,kind:"document"}]);const draft=store.draft;const first=store.begin()!;
+  store.cancelBeforeSave(first,"Продолжите редактирование");assert.equal(store.busy,false);assert.equal(store.draft,draft);assert.equal(store.draft.pending[0].file,file);assert.equal(store.current(first),false);const next=store.begin()!;assert.notEqual(next.operation.id,first.operation.id);
+  next.operation.localSaved=true;store.cancelBeforeSave(next,"Отмена");assert.equal(store.current(next),true);assert.equal(store.busy,false);
+});
+
 test("blank, preloaded and reverted drafts do not warn; files and changed fields do", () => {
   const store = new HomeworkDraftController("guest:g");
   store.preload("Математика");

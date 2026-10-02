@@ -77,6 +77,7 @@
       <Border Name="SpaceList" Classes="card" Padding="8,10" ClipToBounds="True">
         <DockPanel LastChildFill="True">
           <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="6,2,6,10">
+            <Expander Header="Сроки и дела группы"><StackPanel Spacing="6"><TextBlock Classes="muted caption" Text="Разрешённые домашние задания, анкеты и голосования текущей группы. Обзор не выполняет действий за вас." TextWrapping="Wrap" /><CalendarDatePicker SelectedDate="{Binding ObligationStartDate}" AutomationProperties.Name="Начало календаря дел группы" /><CheckBox Content="Только требует моего действия" IsChecked="{Binding ObligationsNeedMeOnly}" /><Button Content="Загрузить обзор" Command="{Binding LoadGroupObligationsCommand}" IsEnabled="{Binding !ObligationsLoading}" /><TextBlock Text="{Binding ObligationsStatus}" TextWrapping="Wrap" /><ScrollViewer MaxHeight="200" HorizontalScrollBarVisibility="Disabled"><ItemsControl ItemsSource="{Binding VisibleObligations}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:GroupObligationChoice"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" MinHeight="48" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer></StackPanel></Expander>
             <Button Content="Восстановить выбранную тему" Command="{Binding RestoreChannelCommand}" IsVisible="{Binding CanRestoreTopic}" />
             <Button Classes="ghost" Content="{loc:T groupList}" Command="{Binding BackCommand}"
                     HorizontalAlignment="Left" Padding="4,2" />
@@ -96,13 +97,16 @@
                     IsEnabled="{Binding HasUnreadChannel}" HorizontalAlignment="Stretch" MinHeight="48"
                     AutomationProperties.AutomationId="Group.NextUnread" />
           </StackPanel>
-          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+          <ScrollViewer x:Name="TopicScroll" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="12">
               <StackPanel Spacing="6">
                 <g:GroupSpaceToolsView />
                 <TextBlock Classes="micro" Text="Темы группы" Margin="8,0,8,4" />
                 <TextBox Text="{Binding ChannelSearch, Mode=TwoWay}" PlaceholderText="Поиск по названию и описанию"
                          AutomationProperties.AutomationId="Group.ChannelSearch" />
+                <TextBox Text="{Binding CategorySearch, Mode=TwoWay}" PlaceholderText="Найти категорию" AutomationProperties.Name="Поиск категории тем" />
+                <Button Classes="ghost" Content="Очистить поиск категории" Command="{Binding ClearCategorySearchCommand}" IsVisible="{Binding CategorySearch, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" HorizontalAlignment="Left" />
+                <TextBlock Classes="muted caption" Text="Категории по запросу не найдены" IsVisible="{Binding NoCategoryMatches}" />
                 <ComboBox SelectedIndex="{Binding ChannelKindIndex, Mode=TwoWay}" AutomationProperties.AutomationId="Group.ChannelKind">
                   <ComboBoxItem Content="Все каналы" />
                   <ComboBoxItem Content="Чаты" />
@@ -117,7 +121,7 @@
                 <Button Classes="ghost" Content="{Binding ManagementCaption}" Command="{Binding ToggleChannelManagementCommand}"
                         IsVisible="{Binding CanOpenChannelManagement}" HorizontalAlignment="Left"
                         AutomationProperties.AutomationId="Group.ChannelManage" />
-<ItemsControl ItemsSource="{Binding ChannelCategories}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceCategoryBucket"><StackPanel Spacing="4"><Button Classes="ghost" Content="{Binding Title}" Command="{Binding ToggleCommand}" HorizontalContentAlignment="Left" HorizontalAlignment="Stretch" />                <ItemsControl ItemsSource="{Binding Topics}" IsVisible="{Binding Expanded}" AutomationProperties.AutomationId="Group.Channels">
+<ItemsControl ItemsSource="{Binding VisibleChannelCategories}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceCategoryBucket"><StackPanel Spacing="4"><Button Classes="ghost" Content="{Binding Title}" Command="{Binding ToggleCommand}" HorizontalContentAlignment="Left" HorizontalAlignment="Stretch" />                <ItemsControl ItemsSource="{Binding Topics}" IsVisible="{Binding Expanded}" AutomationProperties.AutomationId="Group.Channels">
                   <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="g:GroupChannelRow">
@@ -487,6 +491,8 @@
                       IsEnabled="{Binding CanLoadOlder}" />
               <TextBlock Classes="muted" Text="Сообщений пока нет" IsVisible="{Binding NoMessages}" />
               <TextBlock Classes="muted caption" Text="{Binding QuoteFeedback}" TextWrapping="Wrap" IsVisible="{Binding QuoteFeedback, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <Button Content="Искать в ранних сообщениях" Command="{Binding SearchOlderMessagesCommand}" IsVisible="{Binding CanSearchOlderMessages}" IsEnabled="{Binding !LoadingOlder}" HorizontalAlignment="Left" />
+              <TextBlock Classes="muted caption" Text="{Binding OlderSearchFeedback}" TextWrapping="Wrap" />
               <StackPanel Spacing="6" IsVisible="{Binding NoMessageMatches}">
                 <TextBlock Classes="muted" Text="Среди загруженных сообщений совпадений нет" TextWrapping="Wrap" />
                 <Button Classes="ghost" Content="Загрузить ранние" Command="{Binding LoadOlderCommand}"
@@ -601,7 +607,11 @@
                   <TextBox Text="{Binding BallotOptionD}" PlaceholderText="Четвёртый вариант (необязательно)" MaxLength="80" />
                   <TextBox Text="{Binding BallotOptionE}" PlaceholderText="Пятый вариант (необязательно)" MaxLength="80" />
                   <TextBox Text="{Binding BallotOptionF}" PlaceholderText="Шестой вариант (необязательно)" MaxLength="80" />
+                  <StackPanel Spacing="4"><TextBlock Classes="muted caption" Text="Порядок вариантов и удаление необязательного" /><ComboBox ItemsSource="{Binding BallotOptionLabels}" SelectedIndex="{Binding SelectedBallotOptionIndex}" AutomationProperties.Name="Выбранный вариант голосования" /><WrapPanel ItemSpacing="6"><Button Content="Выше" Command="{Binding MoveBallotOptionUpCommand}" IsEnabled="{Binding CanMoveBallotOptionUp}" /><Button Content="Ниже" Command="{Binding MoveBallotOptionDownCommand}" IsEnabled="{Binding CanMoveBallotOptionDown}" /><Button Content="Убрать выбранный" Command="{Binding RequestRemoveBallotOptionCommand}" IsEnabled="{Binding CanRemoveBallotOption}" /></WrapPanel></StackPanel>
+                  <Border Classes="card" IsVisible="{Binding ShowRemoveBallotOption}"><StackPanel Spacing="6"><TextBlock Text="Удалить заполненный необязательный вариант? Остальные сдвинутся на его место." TextWrapping="Wrap" /><WrapPanel ItemSpacing="6"><Button Content="Оставить" Command="{Binding CancelRemoveBallotOptionCommand}" /><Button Classes="danger" Content="Удалить вариант" Command="{Binding ConfirmRemoveBallotOptionCommand}" /></WrapPanel></StackPanel></Border>
                   <TextBox Text="{Binding BallotDays}" PlaceholderText="Срок в днях (1–14)" MaxLength="2" />
+                  <WrapPanel ItemSpacing="8"><Button Content="До завтра" Command="{Binding SetBallotTomorrowCommand}" /><Button Content="Неделя" Command="{Binding SetBallotWeekCommand}" /><TextBlock Classes="muted caption" Text="{Binding BallotDeadlinePreview}" VerticalAlignment="Center" /></WrapPanel>
+                  <TextBlock Text="{Binding BallotValidation}" TextWrapping="Wrap" IsVisible="{Binding BallotValidation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                   <StackPanel Orientation="Horizontal" Spacing="8">
                     <Button Classes="primary" Content="Объявить" Command="{Binding OpenBallotCommand}"
                             IsVisible="{Binding CanOpenBallot}" MinHeight="48" />

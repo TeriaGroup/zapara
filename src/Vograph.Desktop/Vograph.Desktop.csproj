@@ -29,6 +29,8 @@
     <Compile Include="..\Zapara.Client.Domain\MessengerHold.cs" Link="MessengerHold.cs" />
     <Compile Include="..\Zapara.Client.Domain\SupportChat.cs" Link="SupportChat.cs" />
     <Compile Include="..\Zapara.Client.Domain\DayPlanning.cs" Link="DayPlanning.cs" />
+    <Compile Include="..\Zapara.Client.Domain\CalendarExport.cs" Link="CalendarExport.cs" />
+    <Compile Include="..\Zapara.Client.Domain\StudyPlanning.cs" Link="StudyPlanning.cs" />
   </ItemGroup>
 
   <!-- ShellViewModel is sealed, so its event raisers are internal rather than protected (CS0628);

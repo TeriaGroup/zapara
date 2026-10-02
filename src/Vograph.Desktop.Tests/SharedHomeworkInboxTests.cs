@@ -26,6 +26,7 @@ public sealed class SharedHomeworkInboxTests
         private readonly CommunityHttpClient client;
         public readonly HomeworkViewModel Vm;
         public Func<HttpRequestMessage, Task<HttpResponseMessage>> Copies = _ => Task.FromResult(Payload(new[] { Copy("Проект") }));
+        public bool TwoCommunities;
         public Func<HttpRequestMessage, Task<HttpResponseMessage>> Complete = _ => Task.FromResult(Payload(Completion));
         public Fixture()
         {
@@ -43,9 +44,12 @@ public sealed class SharedHomeworkInboxTests
                 var path = request.RequestUri!.AbsolutePath;
                 if (path.EndsWith("/homework/copies")) return Copies(request);
                 if (path.EndsWith("/completion")) return Complete(request);
-                var community = request.RequestUri.Query.Contains("groupId=" + TestDb.MyGroupId, StringComparison.Ordinal)
-                    ? Membership : new CommunityResponse(OtherCommunity, "Другая группа", "Учебная группа", 1, "member");
-                return Task.FromResult(Payload(new[] { community }));
+                var currentGroup = request.RequestUri.Query.Contains("groupId=" + TestDb.MyGroupId, StringComparison.Ordinal);
+                var community = currentGroup ? Membership : new CommunityResponse(OtherCommunity, "Другая группа", "Учебная группа", 1, "member");
+                CommunityResponse[] found = currentGroup && TwoCommunities
+                    ? [community, new CommunityResponse(OtherCommunity, "О3313-2", "Другое сообщество", 1, "member")]
+                    : [community];
+                return Task.FromResult(Payload(found));
             };
             Vm = new(App, new ShellViewModel(App));
         }
@@ -57,9 +61,12 @@ public sealed class SharedHomeworkInboxTests
         }
         private static string CreateFixtureDirectory()
         {
+            var configured = Environment.GetEnvironmentVariable("VOGRAPH_TEST_DATA_ROOT");
+            var basePath = Path.GetFullPath(configured is { Length: > 0 } ? configured : Path.GetTempPath());
+            if (configured is { Length: > 0 } && !basePath.StartsWith(@"\\?\", StringComparison.Ordinal)) basePath = @"\\?\" + basePath;
             for (var attempt = 0; attempt < 100; attempt++)
             {
-                var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()[..2]);
+                var path = Path.Combine(basePath, Path.GetRandomFileName()[..2]);
                 if (Directory.Exists(path)) continue;
                 Directory.CreateDirectory(path);
                 return path;
@@ -73,6 +80,18 @@ public sealed class SharedHomeworkInboxTests
             { using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}"); Microsoft.Data.Sqlite.SqliteConnection.ClearPool(connection); }
             Directory.Delete(directory, true);
         }
+    }
+
+    [AvaloniaFact]
+    public async Task One_failed_community_keeps_successful_homework_and_names_partial_result()
+    {
+        using var f = new Fixture { TwoCommunities = true };
+        f.Copies = request => Task.FromResult(request.RequestUri!.AbsolutePath.Contains(OtherCommunity.ToString("D"), StringComparison.OrdinalIgnoreCase)
+            ? Problem(503, "db_unavailable") : Payload(new[] { Copy("Сохранённое задание") }));
+        await f.Vm.LoadAsync();
+        await Waits.Until(() => f.Vm.SharedLoaded && !f.Vm.SharedLoading, "partial shared homework");
+        Assert.Equal("Сохранённое задание", Assert.Single(f.Vm.SharedTasks).Item.Title);
+        Assert.Contains("Часть заданий", f.Vm.SharedFeedback);
     }
 
     [AvaloniaFact]

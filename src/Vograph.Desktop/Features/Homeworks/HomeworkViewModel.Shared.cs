@@ -19,17 +19,19 @@ public sealed partial class HomeworkViewModel
     [ObservableProperty] private bool sharedBusy;
     [ObservableProperty] private string sharedFeedback = "";
     public bool ShowSharedTasks => HasGroup && !App.Profile.IsGuest;
-    public IReadOnlyList<SharedHomeworkListRow> VisibleSharedTasks => SharedTasks.Where(row =>
+    public bool ShowVisibleSharedSection => ShowSharedTasks && OriginFilter != 1 && !FilesOnly;
+    public IReadOnlyList<SharedHomeworkListRow> VisibleSharedTasks => !ShowVisibleSharedSection ? [] : SharedTasks.Where(row =>
         HomeworkBrowse.MatchesStatus(row.Item.Completed, StatusFilter) &&
         HomeworkBrowse.MatchesSubject(row.Item.Title, SubjectFilter) &&
-        HomeworkBrowse.MatchesQuery(SearchQuery, row.Item.Title, row.Item.Body)).ToArray();
+        HomeworkBrowse.MatchesQuery(SearchQuery, row.Item.Title, row.Item.Body) &&
+        HomeworkBrowse.MatchesSharedDeadline(row.Item.DeadlineAt, _clock(), DeadlineFilter)).ToArray();
     public bool SharedEmpty => SharedLoaded && !SharedLoading && VisibleSharedTasks.Count == 0;
     public string SharedSummary => $"Заданий группы: {SharedTasks.Count} · готово у вас: {SharedTasks.Count(row => row.Item.Completed)}";
     partial void OnSharedLoadedChanged(bool value) => NotifySharedTasks();
     partial void OnSharedLoadingChanged(bool value) => NotifySharedTasks();
     private void NotifySharedTasks()
     {
-        foreach (var name in new[] { nameof(ShowSharedTasks), nameof(VisibleSharedTasks), nameof(SharedEmpty), nameof(SharedSummary), nameof(HasBrowseFilters), nameof(ShowBrowseEmpty), nameof(BrowseEmptyTitle), nameof(BrowseEmptyHint), nameof(BrowseSummary) }) OnPropertyChanged(name);
+        foreach (var name in new[] { nameof(ShowSharedTasks), nameof(ShowVisibleSharedSection), nameof(VisibleSharedTasks), nameof(SharedEmpty), nameof(SharedSummary), nameof(HasBrowseFilters), nameof(ShowBrowseEmpty), nameof(BrowseEmptyTitle), nameof(BrowseEmptyHint), nameof(BrowseSummary) }) OnPropertyChanged(name);
     }
     private void ResetSharedScope()
     {
@@ -57,15 +59,27 @@ public sealed partial class HomeworkViewModel
             if (string.IsNullOrWhiteSpace(token)) { if (SharedScopeCurrent(group)) { SharedTasks.Clear(); SharedFeedback = "Войдите в аккаунт, чтобы получить задания группы."; } return false; }
             var memberships = await api.ListAsync(token, group, operation.Token);
             var rows = new List<SharedHomeworkListRow>();
+            var failedCommunities = 0; var loadedCommunities = 0;
             foreach (var member in memberships.Where(member => member.Role is not null))
             {
                 if (!operation.IsCurrent || !SharedScopeCurrent(group) || serial != sharedRequestSerial) return false;
-                var copies = await api.ListHomeworkCopiesAsync(token, member.CommunityId, operation.Token);
-                rows.AddRange(copies.Select(item => MakeSharedRow(member.CommunityId, member.Name, item)));
+                try
+                {
+                    var copies = await api.ListHomeworkCopiesAsync(token, member.CommunityId, operation.Token);
+                    loadedCommunities++;
+                    rows.AddRange(copies.Select(item => MakeSharedRow(member.CommunityId, member.Name, item)));
+                }
+                catch (CommunityClientException ex) when (ex.Failure is not CommunityClientFailure.InvalidSession)
+                { failedCommunities++; }
             }
             if (!operation.IsCurrent || !SharedScopeCurrent(group) || serial != sharedRequestSerial) return false;
+            if (failedCommunities > 0 && loadedCommunities == 0)
+            { SharedFeedback = "Сообщества не загрузились. Показана последняя успешно загруженная копия; повторите обновление.";
+                NotifySharedTasks(); return false; }
             SharedTasks.Clear(); foreach (var row in rows) SharedTasks.Add(row);
-            SharedLoaded = true; NotifySharedTasks(); return true;
+            SharedLoaded = true;
+            if (failedCommunities > 0) SharedFeedback = $"Часть заданий группы недоступна: сообществ с ошибкой {failedCommunities}. Показаны успешно загруженные.";
+            NotifySharedTasks(); return failedCommunities == 0;
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is CommunityClientException or AccountClientException)

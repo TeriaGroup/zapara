@@ -32,6 +32,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
@@ -75,10 +76,13 @@ import kotlinx.coroutines.launch
 @Composable
 fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit,
     onDiscuss: (String) -> Unit = {}, onWeek: (java.time.LocalDate) -> Unit = {},
-    focusTime: String? = null, focusSubject: String? = null, onOpenMap: (String) -> Unit) {
+    onShareDay: (DayPage) -> Unit = {},
+    focusTime: String? = null, focusSubject: String? = null, academicKey: String? = null, onOpenMap: (String) -> Unit) {
     val uiText = rememberUiText()
     val chrome = LocalShellChrome.current
     val lifecycle = LocalLifecycleOwner.current
+    val context = LocalContext.current
+    val shareTitle = stringResource(R.string.ux300_android_share_lesson)
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) onEvent(ScheduleEvent.RefreshShared) }
         lifecycle.lifecycle.addObserver(observer)
@@ -127,7 +131,7 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit,
                         Box(Modifier.weight(1f)
                             .plannerSwipe(state.selected) { onEvent(ScheduleEvent.Select(state.selected.plusDays(it.dayDelta))) }
                             .plannerContentReveal(state.selected)) { LessonList(page.copy(deadlines = emptyList()), state,
-                                onEvent, onOpenMap, onDiscuss, focusTime, focusSubject) }
+                                onEvent, onOpenMap, onDiscuss, onShareDay, focusTime, focusSubject, academicKey) }
                         LazyColumn(Modifier.width(320.dp)
                             .plannerSwipe(state.selected) { onEvent(ScheduleEvent.Select(state.selected.plusDays(it.dayDelta))) }
                             .plannerContentReveal(state.selected), contentPadding = PaddingValues(Zapara.space.l)) {
@@ -142,7 +146,8 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit,
                         .plannerContentReveal(state.selected)) {
                         when {
                             page == null -> Box(Modifier.padding(Zapara.space.l)) { SkeletonList() }
-                            else -> LessonList(page, state, onEvent, onOpenMap, onDiscuss, focusTime, focusSubject)
+                            else -> LessonList(page, state, onEvent, onOpenMap, onDiscuss,
+                                onShareDay, focusTime, focusSubject, academicKey)
                         }
                     }
                 }
@@ -157,7 +162,19 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit,
             onHomework = { onEvent(ScheduleEvent.SubjectHomework(lesson)) },
             onMap = { onOpenMap(lesson.classroomRaw); onEvent(ScheduleEvent.CloseActions) },
             onDismiss = { onEvent(ScheduleEvent.CloseActions) },
-            onDiscuss = { onEvent(ScheduleEvent.CloseActions); onDiscuss("${lesson.name} · ${state.selected} · ${lesson.timeStart}–${lesson.timeEnd} · ${lesson.room}") }, date = state.selected
+            onDiscuss = { onEvent(ScheduleEvent.CloseActions); onDiscuss("${lesson.name} · ${state.selected} · ${lesson.timeStart}–${lesson.timeEnd} · ${lesson.room}") },
+            onShare = {
+                val day = state.selected.format(java.time.format.DateTimeFormatter.ofPattern(
+                    "d MMMM yyyy", java.util.Locale.forLanguageTag("ru")))
+                val details = listOf(lesson.name, "$day · ${lesson.timeStart}–${lesson.timeEnd}",
+                    lesson.room.takeIf { it.isNotBlank() && !lesson.remote }).filterNotNull().joinToString("\n")
+                onEvent(ScheduleEvent.CloseActions)
+                context.startActivity(android.content.Intent.createChooser(
+                    android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_TEXT, details)
+                    }, shareTitle))
+            }, date = state.selected
         )
     }
     state.subjectHomework?.let { lesson ->
@@ -197,12 +214,15 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit,
             onSave = { onEvent(ScheduleEvent.HomeworkEditorSave) },
             onCancel = { onEvent(ScheduleEvent.HomeworkEditorCancel) },
             onPick = { kind, uri -> onEvent(ScheduleEvent.HomeworkAttach(kind, uri)) },
+            onPickMany = { kind, uris -> onEvent(ScheduleEvent.HomeworkAttachMany(kind, uris)) },
             onRemove = { onEvent(ScheduleEvent.HomeworkRemoveFile(it)) },
             onShare = { onEvent(ScheduleEvent.HomeworkEditorShare(it)) },
             onAudience = { onEvent(ScheduleEvent.HomeworkEditorAudience(it)) },
             onRetryShare = { onEvent(ScheduleEvent.HomeworkRetryShare) },
             isGuest = state.guest, onRecalculate = { onEvent(ScheduleEvent.RecalculateHomework) },
-            onRetryShareOptions = { onEvent(ScheduleEvent.HomeworkRetryShareOptions) }
+            onRetryShareOptions = { onEvent(ScheduleEvent.HomeworkRetryShareOptions) },
+            onConfirmDuplicate = { onEvent(ScheduleEvent.HomeworkApproveDuplicate) },
+            onCancelDuplicate = { onEvent(ScheduleEvent.HomeworkCancelDuplicate) }
         )
     }
 }
@@ -211,7 +231,8 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit,
 @Composable
 private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit,
     onOpenMap: (String) -> Unit, onDiscuss: (String) -> Unit,
-    focusTime: String? = null, focusSubject: String? = null) {
+    onShareDay: (DayPage) -> Unit,
+    focusTime: String? = null, focusSubject: String? = null, academicKey: String? = null) {
     val uiText = rememberUiText()
     val breaks = remember(page.lessons) { ScheduleComposer.breaksBeforeLessons(page.lessons) }
     val featured = ScheduleComposer.featured(page, state.now)
@@ -219,10 +240,16 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
     val conflicts = remember(page.lessons) { conflictPairs.flatMap { (a, b) -> listOf(page.lessons[a], page.lessons[b]) }.toSet() }
     val list = rememberLazyListState()
     val scrollScope = rememberCoroutineScope()
-    val focusIndex = remember(page.lessons, focusTime, focusSubject) {
-        ScheduleComposer.encounterIndex(page.lessons, focusTime, focusSubject)
+    val focusIndex = remember(page.lessons, focusTime, focusSubject, academicKey) {
+        if (academicKey == null) ScheduleComposer.encounterIndex(page.lessons, focusTime, focusSubject)
+        else page.lessons.indexOfFirst { row -> ru.bgtu_voenmeh.zapara.ui.week.academicLessonKey(row.index,
+            row.timeStart, row.timeEnd, row.subjectRaw, row.teacher, row.classroomRaw, row.typeRaw) == academicKey }
     }
-    LaunchedEffect(page.date, focusIndex) { if (focusIndex >= 0) list.animateScrollToItem(focusIndex + 1) }
+    var remainingOnly by rememberSaveable(page.date, state.groupId, state.profileName) { mutableStateOf(false) }
+    val visibleIndices = page.lessons.indices.filter { !remainingOnly || !page.isToday || !page.lessons[it].isPast }
+    LaunchedEffect(page.date, focusIndex) {
+        if (focusIndex >= 0) { remainingOnly = false; list.animateScrollToItem(focusIndex + 1) }
+    }
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
@@ -233,14 +260,48 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                 Text(pluralStringResource(R.plurals.schedule_pair_count, page.lessons.size, page.lessons.size), modifier = Modifier.align(Alignment.CenterVertically), style = Zapara.typography.section, color = Zapara.colors.text1)
                 ZChip("${page.lessons.minOf { it.timeStart }}–${page.lessons.maxOf { it.timeEnd }}")
             }
+            ZButton(stringResource(R.string.ux300_android_share_day), { onShareDay(page) },
+                ghost = true, tag = "Schedule.ShareDay")
+            var transfersOpen by rememberSaveable(page.date, state.groupId, state.profileName) { mutableStateOf(false) }
+            if (page.transfers.isNotEmpty()) {
+                ZButton(stringResource(R.string.ux300_ext_transfers), { transfersOpen = !transfersOpen },
+                    ghost = true, tag = "Schedule.Transfers")
+                if (transfersOpen) {
+                    Text(stringResource(R.string.ux300_ext_transfer_estimate), style = Zapara.typography.caption)
+                    page.transfers.forEach { transfer ->
+                        ZCard(Modifier.fillMaxWidth()) {
+                            Text("${transfer.from} → ${transfer.to}", style = Zapara.typography.bodyStrong)
+                            val assessment = transfer.assessment
+                            Text(stringResource(when (assessment.status) {
+                                "tight" -> R.string.ux300_ext_transfer_tight
+                                "fits" -> R.string.ux300_ext_transfer_fits
+                                "overlap" -> R.string.ux300_ext_transfer_overlap
+                                else -> R.string.ux300_ext_transfer_unknown
+                            }), style = Zapara.typography.body)
+                            if (assessment.availableSeconds != null && assessment.routeSeconds != null)
+                                Text(stringResource(R.string.ux300_ext_transfer_times,
+                                    assessment.availableSeconds.coerceAtLeast(0) / 60,
+                                    (assessment.routeSeconds + 59) / 60), style = Zapara.typography.caption)
+                            if (transfer.destinationRaw.isNotBlank()) ZButton(stringResource(R.string.ux300_ext_destination_map),
+                                { onOpenMap(transfer.destinationRaw) }, ghost = true)
+                        }
+                    }
+                }
+            }
+            if (page.isToday && page.lessons.any { it.isPast }) {
+                ZButton(stringResource(if (remainingOnly) R.string.ux300_ext_all_day else R.string.ux300_ext_remaining_only),
+                    { remainingOnly = !remainingOnly }, ghost = true, tag = "Schedule.RemainingOnly")
+                if (remainingOnly && visibleIndices.isEmpty()) Text(stringResource(R.string.ux300_ext_remaining_empty),
+                    style = Zapara.typography.body)
+            }
             if (page.deadlines.isNotEmpty() || featured != null) FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                 verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                 if (featured != null) ZButton(stringResource(R.string.ux100_study_jump_current), {
-                    scrollScope.launch { list.animateScrollToItem(page.lessons.indexOf(featured) + 1) }
+                    scrollScope.launch { list.animateScrollToItem(visibleIndices.indexOf(page.lessons.indexOf(featured)).coerceAtLeast(0) + 1) }
                 }, ghost = true, tag = "Schedule.JumpCurrent")
                 if (page.deadlines.isNotEmpty()) ZButton(stringResource(R.string.ux100_study_jump_deadlines), {
-                    scrollScope.launch { list.animateScrollToItem(page.lessons.size + 1) }
+                    scrollScope.launch { list.animateScrollToItem(visibleIndices.size + 1) }
                 }, ghost = true, tag = "Schedule.JumpDeadlines")
             }
             }
@@ -268,12 +329,14 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                         second.timeStart, second.timeEnd, second.name),
                         style = Zapara.typography.caption, color = Zapara.colors.text1)
                     ZButton(stringResource(R.string.uxnext_conflict_jump),
-                        { scrollScope.launch { list.animateScrollToItem(firstIndex + 1) } },
+                        { remainingOnly = false; scrollScope.launch { list.animateScrollToItem(firstIndex + 1) } },
                         ghost = true, tag = "Schedule.ConflictJump.$firstIndex.$secondIndex")
                 }
             }
         }
-        itemsIndexed(page.lessons, key = { index, it -> "${it.index}:${it.timeStart}:${it.subjectNorm}:${it.teacher}:$index" }) { index, lesson ->
+        itemsIndexed(visibleIndices, key = { _, index -> page.lessons[index].let {
+            "${it.index}:${it.timeStart}:${it.subjectNorm}:${it.teacher}:$index" } }) { _, index ->
+            val lesson = page.lessons[index]
             if (index == focusIndex) ZChip(stringResource(R.string.uxnext_friend_encounter),
                 tag = "Schedule.Encounter.$index")
             breaks[index]?.let { gap ->

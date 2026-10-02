@@ -187,6 +187,10 @@ internal object GroupHold {
 data class GroupUiState(
     val guest: Boolean = false,
     val ownerId: String? = null,
+    val obligations: GroupObligations? = null,
+    val obligationsOpen: Boolean = false,
+    val obligationsLoading: Boolean = false,
+    val obligationFocusId: String? = null,
     val loading: Boolean = false,
     val empty: Boolean = false,
     val failed: Boolean = false,
@@ -275,6 +279,10 @@ data class GroupUiState(
 )
 
 sealed interface GroupEvent {
+    data object Obligations : GroupEvent
+    data object CloseObligations : GroupEvent
+    data class OpenObligation(val row: GroupObligation) : GroupEvent
+    data object ClearObligationFocus : GroupEvent
     data object BeginCreation : GroupEvent
     data class CreationChanged(val draft:TopicCreationDraft) : GroupEvent
     data object CancelCreation : GroupEvent
@@ -291,9 +299,9 @@ sealed interface GroupEvent {
     data object Back : GroupEvent
     data class Direct(val userId: String) : GroupEvent
     data class OpenChat(val conversationId: String, val title: String) : GroupEvent
-    data class OpenChannel(val topicId: String?) : GroupEvent
+    data class OpenChannel(val topicId: String?, val focusObjectId: String? = null) : GroupEvent
     data class OpenArchived(val topicId: String) : GroupEvent
-    data class GlobalBallots(val title: String) : GroupEvent
+    data class GlobalBallots(val title: String, val focusObjectId: String? = null) : GroupEvent
     data object Channels : GroupEvent
     data class CreateChannel(val title: String, val icon: String, val kind: String,
         val description: String = "", val accent: String = "default", val pinned: Boolean = false,
@@ -373,6 +381,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
     private val ballotDrafts = BallotDraftStore()
     private val clock: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM HH:mm").withZone(ZoneId.systemDefault())
     private val dayClock: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy").withZone(ZoneId.systemDefault())
+    private var obligationsSerial = 0L
 
     init { viewModelScope.launch { load() } }
 
@@ -381,6 +390,18 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         if (mutable.value.activeArchivedTopic != null && (event is GroupEvent.Hold || event is GroupEvent.React || event is GroupEvent.Media || event is GroupEvent.Recorded || event is GroupEvent.CreateBallot || event is GroupEvent.VoteBallot || event is GroupEvent.CloseBallot || event is GroupEvent.SupportBallot)) return
         if (mutable.value.preview != null && event !is GroupEvent.SpaceAction && event !is GroupEvent.OpenChannel && event != GroupEvent.Channels && event != GroupEvent.Back && event != GroupEvent.SubjectTasks && event != GroupEvent.CloseSubjectTasks && event !is GroupEvent.SubjectDetail) return
         when (event) {
+            GroupEvent.Obligations -> loadObligations()
+            GroupEvent.CloseObligations -> { obligationsSerial++; mutable.value = mutable.value.copy(obligationsOpen = false, obligationsLoading = false, obligations = null) }
+            GroupEvent.ClearObligationFocus -> mutable.value = mutable.value.copy(obligationFocusId = null)
+            is GroupEvent.OpenObligation -> {
+                val row = event.row
+                if (mutable.value.preview != null || mutable.value.obligations?.rows?.none { it == row } != false ||
+                    (row.topicId != null && mutable.value.channels.none { it.topicId == row.topicId && it.supported && !it.archived && "read" in it.permissions })) return
+                obligationsSerial++
+                mutable.value = mutable.value.copy(obligationsOpen = false, obligationsLoading = false, obligations = null)
+                if (row.topicId == null && row.kind == "ballots") onEvent(GroupEvent.GlobalBallots(uiText(R.string.ux300_group_global_ballots), row.id))
+                else onEvent(GroupEvent.OpenChannel(row.topicId, row.id))
+            }
             GroupEvent.SubmitCreation -> submitCreation()
             GroupEvent.BeginCreation -> home?.communityId?.takeIf { mutable.value.canManageChannels && !mutable.value.loading }?.let { id ->
                 val draft=creationDrafts.begin(id,runtime.userId.orEmpty())
@@ -426,7 +447,9 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                     }
                 }
             }
-            is GroupEvent.Open -> viewModelScope.launch { open(event.communityId) }
+            is GroupEvent.Open -> { obligationsSerial++; mutable.value = mutable.value.copy(obligations = null,
+                obligationsOpen = false, obligationsLoading = false, obligationFocusId = null)
+                viewModelScope.launch { open(event.communityId) } }
             GroupEvent.Back -> leave()
             is GroupEvent.Direct -> viewModelScope.launch { direct(event.userId) }
             is GroupEvent.OpenChat -> viewModelScope.launch { openChat(event.conversationId, event.title, true) }
@@ -434,9 +457,12 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                 viewModelScope.launch { openChat(loaded.groupChat.conversationId,
                     topics?.topics?.firstOrNull { it.topicId == null }?.title ?: loaded.groupChat.title, false) }
             }
-            is GroupEvent.OpenChannel -> viewModelScope.launch { mutable.value=mutable.value.copy(activeArchivedTopic=null); openChannel(event.topicId) }
+            is GroupEvent.OpenChannel -> viewModelScope.launch { mutable.value=mutable.value.copy(activeArchivedTopic=null,
+                obligationFocusId = event.focusObjectId); openChannel(event.topicId) }
             is GroupEvent.OpenArchived -> viewModelScope.launch { openArchived(event.topicId) }
-            is GroupEvent.GlobalBallots -> viewModelScope.launch { openBallots(null, event.title) }
+            is GroupEvent.GlobalBallots -> viewModelScope.launch {
+                mutable.value = mutable.value.copy(obligationFocusId = event.focusObjectId); openBallots(null, event.title)
+            }
             GroupEvent.Channels -> showHomePane(false)
             is GroupEvent.CreateChannel -> manageChannel { api, token, id -> api.createTopic(token, id, event.title, event.icon, event.kind,
                 event.description, event.accent, event.pinned, event.writePolicy, event.template, event.categoryId, event.position, event.subject) }
@@ -1058,6 +1084,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         pendingBytes = null; pendingKind = null; pendingName = ""; pendingDurationMs = null
         cachedMedia.values.forEach { runCatching { it.delete() } }; cachedMedia.clear()
         mutable.value = mutable.value.copy(accessRevoked = true, showChannels = true, showPeople = false, showTrusted = false,
+            obligations = null, obligationsOpen = false, obligationsLoading = false, obligationFocusId = null,
             activeConversationId = null, activeTopicId = null, activeArchivedTopic=null, activeChannelKind = "chat", chatTitle = "", canPost = false,
             messages = emptyList(), board = null, subjectLesson = null, subjectHomework = emptyList(), subjectDetail = null, showSubjectTasks = false, forms = emptyList(), homework = emptyList(), completions = emptyMap(),
             responses = emptyMap(), responseCursors = emptyMap(), responseCounts = emptyMap(), channels = emptyList(),
@@ -1896,7 +1923,39 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
         }
     }
 
+    private fun loadObligations() {
+        val loaded = home ?: return
+        val api = runtime.client ?: return
+        if (mutable.value.preview != null || mutable.value.accessRevoked || mutable.value.space == null) return
+        val serial = ++obligationsSerial
+        val ticket = generation
+        val owner = runtime.userId
+        var topics = mutable.value.channels.toList()
+        fun currentScope() = serial == obligationsSerial && ticket == generation && owner == runtime.userId &&
+            home?.communityId == loaded.communityId && mutable.value.preview == null && !mutable.value.accessRevoked &&
+            obligationAuthority(mutable.value.channels) == obligationAuthority(topics)
+        mutable.value = mutable.value.copy(obligationsOpen = true, obligationsLoading = true, obligations = null)
+        viewModelScope.launch {
+            try {
+                val token = runtime.accessToken() ?: return@launch
+                val authority = api.space(token, loaded.communityId)
+                if (!currentScope()) return@launch
+                topics = authority.topics.toList()
+                mutable.value = mutable.value.copy(space = authority, desk = authority.desk, channels = topics)
+                val result = collectGroupObligations(api, token, loaded.communityId, topics, ::currentScope)
+                if (currentScope()) mutable.value = mutable.value.copy(obligations = result)
+            } catch (cancel: CancellationException) { throw cancel }
+            catch (error: CommunityClientException) {
+                if (currentScope()) reconcileForbidden(error, ticket)
+            }
+            catch (_: Exception) { if (currentScope()) mutable.value = mutable.value.copy(spaceError = uiText(R.string.ux300_group_obligations_failed)) }
+            finally { if (serial == obligationsSerial) mutable.value = mutable.value.copy(obligationsLoading = false) }
+        }
+    }
+
     private fun leave() {
+        obligationsSerial++
+        mutable.value = mutable.value.copy(obligations = null, obligationsOpen = false, obligationsLoading = false, obligationFocusId = null)
         resetArchiveAuthority()
         accessRequestSerial++
         poll?.cancel()

@@ -1,5 +1,8 @@
 package ru.bgtu_voenmeh.zapara.ui.maps
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -7,7 +10,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.stringResource
@@ -24,6 +32,9 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 @Composable
 fun RouteStepsSheet(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
     val steps = state.presentation?.steps.orEmpty()
+    val context = LocalContext.current
+    val clipboardLabel = stringResource(R.string.ux300_android_route_clipboard_label)
+    var copied by remember(state.fromLabel, state.toLabel, state.routeSteps) { mutableStateOf(false) }
     val index = steps.indexOfFirst { it.id == state.activeStepId }
     val scroll = rememberLazyListState()
     LaunchedEffect(state.stepsOpen, state.activeStepId) {
@@ -31,6 +42,17 @@ fun RouteStepsSheet(state: MapsUiState, onEvent: (MapsEvent) -> Unit) {
     }
     ZBottomSheet({ onEvent(MapsEvent.CloseRouteSteps) }, "Maps.StepsSheet") {
         Text(stringResource(R.string.maps_all_steps), style = Zapara.typography.section, color = Zapara.colors.text1)
+        if (state.routeSteps.isNotEmpty()) {
+            ru.bgtu_voenmeh.zapara.ui.theme.ZButton(stringResource(R.string.ux300_android_copy_route), {
+                val lines = listOf(state.fromLabel, state.toLabel).filter(String::isNotBlank) +
+                    state.routeSteps.map { it.text }
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText(clipboardLabel, lines.joinToString("\n")))
+                copied = true
+            }, ghost = true, tag = "Maps.CopyRoute")
+            if (copied) Text(stringResource(R.string.ux300_android_route_copied),
+                style = Zapara.typography.caption, color = Zapara.colors.text2)
+        }
         Spacer(Modifier.height(Zapara.space.s))
         LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).clipToBounds(), state = scroll,
             verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {

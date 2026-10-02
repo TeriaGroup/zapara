@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -107,21 +108,32 @@ fun SummarySection(state: SummaryUiState, onEvent: (SummaryEvent) -> Unit,
                             }
                             Text("${state.tiles.total}", style = Zapara.typography.title, color = c.text1, modifier = Modifier.testTag("Summary.Total"))
                         }
+                        if (state.tiles.totalMinutes > 0) Text(stringResource(
+                            R.string.ux300_android_total_minutes, state.tiles.totalMinutes / 60,
+                            state.tiles.totalMinutes % 60), style = Zapara.typography.caption,
+                            color = c.text2, modifier = Modifier.testTag("Summary.Duration"))
                     }
                 }
                 item {
                     CountCard(stringResource(R.string.summary_by_day),
                         state.tiles.byDay.map { Parity.dayNumberToTitle(it.first) to it.second }, 1,
                         "Summary.ByDay", state.tiles.byDay.map { "Summary.Day.${it.first}" }, showBars = true,
+                        rowExtras = state.tiles.byDay.map { (day, _) -> state.tiles.minutesByDay[day]
+                            ?.takeIf { it > 0 }?.let { minutes ->
+                                stringResource(R.string.ux300_android_total_minutes, minutes / 60, minutes % 60)
+                            }.orEmpty() },
                         onRow = { index -> state.tiles.byDay.getOrNull(index)?.first?.let(state.dayDates::get)?.let(onOpenDay) })
                 }
-                item { CountCard(stringResource(R.string.summary_by_type), state.tiles.byType, 2, showBars = true) }
+                item { CountCard(stringResource(R.string.summary_by_type), state.tiles.byType, 2,
+                    showBars = true, sortable = true, lessonSlots = state.tiles.lessonSlots[2].orEmpty()) }
                 item { CountCard(stringResource(R.string.summary_by_subject), state.tiles.bySubject, 3,
+                    sortable = true, lessonSlots = state.tiles.lessonSlots[3].orEmpty(),
                     onRow = { index -> state.tiles.bySubject.getOrNull(index)?.first?.let { label ->
                         onOpenDetail(SummaryDetailTarget(SummaryDetailKind.Subject, label,
                             state.tiles.subjectNormByLabel[label], state.groupId, state.profileName))
                     } }) }
                 item { CountCard(stringResource(R.string.summary_by_teacher), state.tiles.byTeacher, 4,
+                    sortable = true, lessonSlots = state.tiles.lessonSlots[4].orEmpty(),
                     onRow = { index -> state.tiles.byTeacher.getOrNull(index)?.first?.let { label ->
                         onOpenDetail(SummaryDetailTarget(SummaryDetailKind.Teacher, label,
                             state.tiles.teacherIdByLabel[label], state.groupId, state.profileName))
@@ -129,7 +141,8 @@ fun SummarySection(state: SummaryUiState, onEvent: (SummaryEvent) -> Unit,
                 item {
                     CountCard(stringResource(R.string.summary_by_room), state.tiles.byRoom, 5,
                         "Summary.ByRoom", state.tiles.byRoom.indices.map { "Summary.Room.$it" },
-                        stringResource(R.string.summary_rooms_empty),
+                        stringResource(R.string.summary_rooms_empty), sortable = true,
+                        lessonSlots = state.tiles.lessonSlots[5].orEmpty(),
                         onRow = { index -> state.tiles.byRoom.getOrNull(index)?.first?.let { label ->
                             onOpenDetail(SummaryDetailTarget(SummaryDetailKind.Room, label,
                                 state.tiles.roomRawByLabel[label], state.groupId, state.profileName))
@@ -143,34 +156,74 @@ fun SummarySection(state: SummaryUiState, onEvent: (SummaryEvent) -> Unit,
 @Composable
 private fun CountCard(title: String, rows: List<Pair<String, Int>>, index: Int,
     tag: String? = null, rowTags: List<String> = emptyList(), emptyText: String? = null,
-    showBars: Boolean = false, onRow: ((Int) -> Unit)? = null) {
+    showBars: Boolean = false, sortable: Boolean = false, rowExtras: List<String> = emptyList(),
+    lessonSlots: Map<String, List<SummaryLessonSlot>> = emptyMap(),
+    onRow: ((Int) -> Unit)? = null) {
     val c = Zapara.colors
     val maximum = rows.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1
     var showAll by rememberSaveable(title) { mutableStateOf(false) }
+    var alphabetically by rememberSaveable(title, "sort") { mutableStateOf(false) }
+    var query by rememberSaveable(title) { mutableStateOf("") }
+    var selectedSlots by remember(lessonSlots) { mutableStateOf<String?>(null) }
     val compactLimit = if (index == 1) 7 else 5
-    val shown = if (showAll || rows.size <= compactLimit) rows else rows.take(compactLimit)
+    val ordered = summaryOrderedRows(rows, alphabetically).filter { summaryMatches(it.value.first, query) }
+    val shown = if (showAll || ordered.size <= compactLimit) ordered else ordered.take(compactLimit)
     ZCard(Modifier.fillMaxWidth().appear(index).then(if (tag == null) Modifier else Modifier.testTag(tag))) {
         Text(title, style = Zapara.typography.section, color = c.text1)
+        if (sortable && (rows.size > 5 || query.isNotEmpty())) {
+            ru.bgtu_voenmeh.zapara.ui.components.ZTextField(query, { query = it },
+                modifier = Modifier.fillMaxWidth().testTag("Summary.Search.$index"), singleLine = true,
+                label = { Text(stringResource(R.string.ux300_ext_summary_search)) })
+            if (query.isNotEmpty()) {
+                Text(stringResource(R.string.ux300_ext_summary_matches, ordered.size, rows.size), style = Zapara.typography.caption)
+                ZButton(stringResource(R.string.group_search_clear), { query = "" }, ghost = true)
+            }
+        }
         if (rows.size > compactLimit) Text(stringResource(R.string.ux100_study_summary_count, rows.size),
             style = Zapara.typography.caption, color = c.text2)
+        if (sortable && rows.size > 1) ZButton(stringResource(if (alphabetically)
+            R.string.ux300_android_summary_by_count else R.string.ux300_android_summary_alphabetical),
+            { alphabetically = !alphabetically }, ghost = true,
+            tag = "Summary.Sort.$index")
         if (rows.isEmpty()) Text(emptyText ?: stringResource(R.string.panels_summary_empty), style = Zapara.typography.body, color = c.text2)
-        shown.forEachIndexed { rowIndex, (name, n) ->
-            val rowTag = rowTags.getOrNull(rowIndex)
+        shown.forEachIndexed { rowIndex, original ->
+            val (name, n) = original.value
+            val rowTag = rowTags.getOrNull(original.index)
             Column(Modifier.fillMaxWidth().then(if (rowTag == null) Modifier else Modifier.testTag(rowTag))
-                .then(if (onRow != null) Modifier.heightIn(min = 48.dp).clickable(role = Role.Button) { onRow(rowIndex) } else Modifier),
+                .then(if (onRow != null) Modifier.heightIn(min = 48.dp).clickable(role = Role.Button) { onRow(original.index) } else Modifier),
                 verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                     Text(name, style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
                     ZChip("$n")
                 }
+                rowExtras.getOrNull(original.index)?.takeIf(String::isNotBlank)?.let { extra ->
+                    Text(extra, style = Zapara.typography.caption, color = c.text2)
+                }
+                if (!lessonSlots[name].isNullOrEmpty()) ZButton(stringResource(R.string.ux300_ext_summary_slots),
+                    { selectedSlots = name }, ghost = true, tag = "Summary.Slots.$index.${original.index}")
                 if (showBars) LinearProgressIndicator(progress = { (n.toFloat() / maximum).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(Zapara.radii.pill)).clearAndSetSemantics { },
                     color = c.accent, trackColor = c.chip)
                 else if (rowIndex < shown.lastIndex) HorizontalDivider(Modifier.padding(top = Zapara.space.xs), thickness = Zapara.space.hairline, color = c.line)
             }
         }
-        if (rows.size > compactLimit) ZButton(stringResource(if (showAll) R.string.ux100_study_summary_less
+        if (ordered.size > compactLimit) ZButton(stringResource(if (showAll) R.string.ux100_study_summary_less
             else R.string.ux100_study_summary_all), { showAll = !showAll }, ghost = true,
             tag = "Summary.Expand.$index")
+    }
+    selectedSlots?.let { selected ->
+        ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet({ selectedSlots = null }, "Summary.LessonSlots", scrollable = true) {
+            Text(selected, style = Zapara.typography.section)
+            lessonSlots[selected].orEmpty().forEach { slot ->
+                ZCard(Modifier.fillMaxWidth()) {
+                    Text("${Parity.dayNumberToTitle(slot.day)} · ${slot.start}–${slot.end}", style = Zapara.typography.bodyStrong)
+                    Text(stringResource(when (slot.parity) { 1 -> R.string.week_odd; 2 -> R.string.week_even; else -> R.string.summary_both }),
+                        style = Zapara.typography.caption)
+                    Text(slot.subject, style = Zapara.typography.body)
+                    if (slot.teacher.isNotBlank()) Text(slot.teacher, style = Zapara.typography.caption)
+                    if (slot.room.isNotBlank()) Text(slot.room, style = Zapara.typography.caption)
+                }
+            }
+        }
     }
 }

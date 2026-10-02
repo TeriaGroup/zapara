@@ -97,8 +97,10 @@ public sealed partial class AccountPanelViewModel
     private async Task ChangePassword()
     {
         var current = CurrentPassword; var next = NewPassword;
+        if (!CanAct || IsGuest) { ClearSecrets(); return; }
+        if (AccountPasswordRules.Same(current, next))
+        { Status = "Новый пароль должен отличаться от текущего."; return; }
         ClearSecrets();
-        if (!CanAct || IsGuest) return;
         await RunAsync(async () =>
         {
             var result = await service!.PasswordAsync(new ChangePasswordRequest(current, next), lifetime.Token);

@@ -324,6 +324,7 @@ fun SettingsSection(
         }
     )
     Column(Modifier.fillMaxSize()) {
+        SettingsStudyExtras(state, onEvent)
         ZTopBar(when (section) {
             "data" -> uiText(R.string.space_day_157)
             "account" -> stringResource(R.string.account_title)
@@ -358,6 +359,26 @@ fun SettingsSection(
             } }
             }
             if (section == "data") {
+            if (state.signedIn) item("pending-sync") {
+                var expanded by rememberSaveable(state.profileName) { mutableStateOf(false) }
+                ZCard(Modifier.fillMaxWidth(), tag = "Settings.PendingSync") {
+                    ZButton(stringResource(R.string.ux300_ext_pending_sync, state.pendingSync.size),
+                        { expanded = !expanded }, ghost = true, tag = "Settings.PendingSyncOpen")
+                    if (expanded) {
+                        Text(stringResource(R.string.ux300_ext_pending_sync_hint), style = Zapara.typography.caption)
+                        state.pendingSync.take(50).forEach { pending ->
+                            Text(conflictTitle(pending.type), style = Zapara.typography.bodyStrong)
+                            Text(if (pending.deleted) stringResource(R.string.ux300_ext_pending_delete)
+                                else syncValueDescription(pending.value), style = Zapara.typography.body)
+                            if (pending.conflict) Text(stringResource(R.string.sync_conflict_title), style = Zapara.typography.caption)
+                        }
+                        if (state.pendingSync.size > 50) Text(stringResource(R.string.ux300_ext_pending_more,
+                            state.pendingSync.size - 50), style = Zapara.typography.caption)
+                        ZButton(stringResource(R.string.ux300_ext_pending_refresh),
+                            { onEvent(SettingsEvent.RefreshPendingSync) }, ghost = true, enabled = !state.syncBusy)
+                    }
+                }
+            }
             item { ZCard(Modifier.fillMaxWidth()) {
                 if (state.signedIn) CloudSyncSummary(state.cloudSync)
                 else Text(uiText(R.string.space_day_159), style = Zapara.typography.body)
@@ -435,7 +456,7 @@ fun SettingsSection(
                     Row(Modifier.fillMaxWidth().heightIn(min = Zapara.space.minTouch)
                         .selectable(selected = state.subgroupChoices[stream.id] == option.id,
                             role = androidx.compose.ui.semantics.Role.RadioButton,
-                            onClick = { onEvent(SettingsEvent.Subgroup(stream.id, option.id, state.groupId, state.profileName)) }),
+                            onClick = { onEvent(SettingsEvent.PreviewSubgroup(SettingsEvent.Subgroup(stream.id, option.id, state.groupId, state.profileName))) }),
                         verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.material3.RadioButton(state.subgroupChoices[stream.id] == option.id,
                             onClick = null)
@@ -573,6 +594,7 @@ fun SettingsSection(
             }
             }
             if (section == "help") {
+            item("technical-diagnostics") { SupportDiagnosticsTool(state) }
             item { AboutCard(state, onEvent, supportDrafts, { supportDrafts = it },
                 { legalId = it }) { returnSection = "help"; section = "account" } }
             }
@@ -596,15 +618,28 @@ private fun PreferenceFeedback(state: SettingsUiState, key: String, onEvent: (Se
 
 @Composable
 private fun TimeField(value: String, label: String, tag: String, enabled: Boolean = true, invalid: Boolean = false, onChange: (String) -> Unit) {
-    ZTextField(enabled = enabled,
-        value = value, onValueChange = onChange,
-        modifier = Modifier.fillMaxWidth().testTag(tag),
-        label = { Text(label, style = Zapara.typography.caption) },
-        singleLine = true,
-        isError = invalid,
-        placeholder = { Text(stringResource(R.string.ux30_platform_time_format)) },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii)
-    )
+    val context = LocalContext.current
+    val isDark = Zapara.colors.isDark
+    Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+        ZTextField(enabled = enabled,
+            value = value, onValueChange = onChange,
+            modifier = Modifier.fillMaxWidth().testTag(tag),
+            label = { Text(label, style = Zapara.typography.caption) },
+            singleLine = true,
+            isError = invalid,
+            placeholder = { Text(stringResource(R.string.ux30_platform_time_format)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii)
+        )
+        ZButton(stringResource(R.string.ux300_android_pick_time), {
+            val parts = value.split(':').mapNotNull(String::toIntOrNull)
+            val hour = parts.getOrNull(0)?.takeIf { it in 0..23 } ?: 8
+            val minute = parts.getOrNull(1)?.takeIf { it in 0..59 } ?: 0
+            android.app.TimePickerDialog(context, if (isDark)
+                R.style.Zapara_DatePicker_Dark else R.style.Zapara_DatePicker_Light,
+                { _, h, m -> onChange("%02d:%02d".format(java.util.Locale.ROOT, h, m)) },
+                hour, minute, true).show()
+        }, enabled = enabled, ghost = true, tag = "$tag.Picker")
+    }
 }
 
 @Composable

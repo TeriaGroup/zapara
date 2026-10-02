@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Vograph.Desktop.Controls;
 using Vograph.Desktop.Services;
 
@@ -18,6 +19,7 @@ public partial class MainWindow : Window
         DataContextChanged += (_, _) =>
         {
             WireTheme();
+            WirePalette();
             if (DataContext is ShellViewModel vm) vm.IsMaximized = WindowState == WindowState.Maximized;
         };
         AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
@@ -36,6 +38,7 @@ public partial class MainWindow : Window
     /// else's: the service holds one delegate, and a second window (a test opening its own shell) overwrites it.</summary>
     private Func<Action, Task>? _themeTransition;
     private ThemeService? _wiredTheme;
+    private ShellViewModel? _paletteShell;
     private WindowBounds? _normalBounds;
 
     /// <summary>The theme service switches inside a crossfade of this window (spec §7); a window without a shell switches plainly.</summary>
@@ -62,9 +65,33 @@ public partial class MainWindow : Window
     /// the window that installed it after us.</summary>
     private void OnClosed(object? sender, EventArgs e)
     {
+        if (_paletteShell is not null) _paletteShell.PropertyChanged -= OnPaletteChanged;
+        _paletteShell = null;
         if (DataContext is ShellViewModel { App.Theme: { } theme } && ReferenceEquals(theme.Transition, _themeTransition))
             theme.Transition = null;
         ThemeCrossfade.Teardown(ThemeSnapshot);
+    }
+
+    private void WirePalette()
+    {
+        if (_paletteShell is not null) _paletteShell.PropertyChanged -= OnPaletteChanged;
+        _paletteShell = DataContext as ShellViewModel;
+        if (_paletteShell is not null) _paletteShell.PropertyChanged += OnPaletteChanged;
+    }
+
+    private void OnPaletteChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(ShellViewModel.ShowCommandPalette) ||
+            _paletteShell?.ShowCommandPalette != true) return;
+        Dispatcher.UIThread.Post(() => PaletteSearch.Focus(), DispatcherPriority.Loaded);
+    }
+
+    private void OnPaletteSearchKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not ShellViewModel vm) return;
+        if (e.Key == Key.Escape) { vm.CloseCommandPaletteCommand.Execute(null); e.Handled = true; }
+        else if (e.Key == Key.Enter && vm.PaletteSections.FirstOrDefault() is { } section)
+        { vm.OpenPaletteSectionCommand.Execute(section); e.Handled = true; }
     }
 
     /// <summary>←/→/Home step the schedule day, Escape closes the dialog or the fullscreen map. A bubbling handler

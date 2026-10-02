@@ -57,10 +57,29 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
 
     fun onEvent(event: HomeworkEvent) {
         when (event) {
+            is HomeworkEvent.PreviewPublication -> previewPublication(event.ids)
+            is HomeworkEvent.PublicationAudience -> mutable.update { state ->
+                val batch = state.publication
+                if (batch == null || batch.busy || batch.locked) state else state.copy(publication = batch.copy(audience = event.audience))
+            }
+            HomeworkEvent.ConfirmPublication -> publishPersonalBatch()
+            HomeworkEvent.DiscardPublication -> if (mutable.value.publication?.busy != true) mutable.update { it.copy(publication = null) }
+            HomeworkEvent.ResumePublication -> mutable.update { it.copy(publication = it.publication?.copy(open = true)) }
+            HomeworkEvent.ClosePublication -> mutable.update { state ->
+                val batch = state.publication
+                if (batch?.busy == true) state else state.copy(publication = batch?.takeIf { it.locked && it.rows.any { row -> !row.sent } }?.copy(open = false))
+            }
+            is HomeworkEvent.PreviewPostpone -> previewPostpone(event.ids)
+            HomeworkEvent.ConfirmPostpone -> applyPostpone(false)
+            HomeworkEvent.UndoPostpone -> applyPostpone(true)
+            HomeworkEvent.ClosePostpone -> if (mutable.value.reschedule?.busy != true) mutable.update { it.copy(reschedule = null) }
             is HomeworkEvent.ToggleDone -> toggleDone(event.id)
             HomeworkEvent.UndoDone -> undoDone()
             is HomeworkEvent.Edit -> openEdit(event.id)
             HomeworkEvent.Add -> openPicker()
+            is HomeworkEvent.Clone -> openClone(event.id)
+            is HomeworkEvent.BulkDone -> completeMany(event.ids)
+            HomeworkEvent.UndoBulkDone -> undoMany()
             HomeworkEvent.RetryLoad -> viewModelScope.launch { reload() }
             HomeworkEvent.RetryShared -> currentGroupId?.let { group -> viewModelScope.launch { refreshShared(group) } }
             is HomeworkEvent.ToggleShared -> toggleShared(event.id)
@@ -112,8 +131,16 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                 finally { finishEditorWork(editor.draft) }
             }
             HomeworkEvent.Save -> save()
+            HomeworkEvent.ApproveDuplicate -> {
+                mutable.update { it.copy(editor = it.editor?.copy(duplicateApproved = true,
+                    duplicateWarning = false)) }
+                save()
+            }
+            HomeworkEvent.CancelDuplicate -> mutable.update { it.copy(editor =
+                it.editor?.copy(duplicateWarning = false)) }
             HomeworkEvent.Cancel -> cancelEditor()
             is HomeworkEvent.Attach -> attach(event.kind, event.uri)
+            is HomeworkEvent.AttachMany -> attachMany(event.kind, event.uris)
             is HomeworkEvent.RemoveFile -> removeFile(event.id)
             is HomeworkEvent.OpenFile -> openFile(event.homeworkId, event.fileId)
             is HomeworkEvent.AskDelete -> mutable.update { it.copy(confirmDelete = event.id, deleteError = null) }
@@ -176,6 +203,7 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                 val state = if (changedGroup) it.forGroupChange() else it
                 state.copy(
                     loaded = true,
+                    groupId = groupId, profileName = container.profile.databaseName,
                     hasGroup = groupId.isNotEmpty(),
                     groups = groups.map { group -> group.copy(collapsed = group.status in collapsed) },
                     loadError = null,
@@ -417,6 +445,28 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    private fun openClone(id: Long) {
+        if (mutable.value.editor != null) {
+            container.toasts.show(container.app.getString(R.string.homework_widget_editor_busy), ToastKind.Bad)
+            return
+        }
+        val item = mutable.value.groups.flatMap { it.items }.firstOrNull { it.id == id && it.done } ?: return
+        val group = currentGroupId ?: return
+        val profile = container.profile.databaseName
+        val epoch = groupEpoch
+        viewModelScope.launch {
+            val exists = withContext(Dispatchers.IO) {
+                container.repo.settings().myGroupId.orEmpty() == group &&
+                    container.homework.getById(id)?.done == true
+            }
+            if (!exists || mutable.value.editor != null || currentGroupId != group ||
+                container.profile.databaseName != profile || groupEpoch != epoch) return@launch
+            showEditor(null, item.subjectRaw.ifBlank { item.subject }, item.subject,
+                item.text, item.n, false, closePicker = false,
+                expectedGroup = group, expectedProfile = profile, expectedEpoch = epoch)
+        }
+    }
+
     private suspend fun showEditor(
         id: Long?, raw: String, display: String, text: String, n: Int, edit: Boolean, closePicker: Boolean,
         expectedGroup: String = currentGroupId.orEmpty(), expectedProfile: String = container.profile.databaseName,
@@ -426,7 +476,8 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
             expectedProfile != container.profile.databaseName || expectedEpoch != groupEpoch) return
         val anchor = container.clock().toLocalDate()
         val prepared = withContext(Dispatchers.IO) {
-            Triple(snapshotDue(raw, id, anchor), if (id == null) emptyList() else container.homeworkFiles.list(id), container.repo.settings().myGroupId)
+            Triple(snapshotDue(raw, id, anchor), loadEditorFiles(container, id),
+                container.repo.settings().myGroupId)
         }
         if (mutable.value.editor != null || expectedGroup != currentGroupId ||
             expectedProfile != container.profile.databaseName || expectedEpoch != groupEpoch ||
@@ -436,7 +487,7 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                 subjectPicker = if (closePicker) null else it.subjectPicker,
                 editor = HomeworkEditorState(
                     id, raw, display, text, n, edit, prepared.first,
-                    files = prepared.second,
+                    files = prepared.second.first, missingFileIds = prepared.second.second,
                     draft = java.util.UUID.randomUUID().toString(), anchorDate = anchor, scheduleGroupId = prepared.third
                 )
             )
@@ -482,6 +533,10 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                 container.events.emit(AppEvent.PersonalizationChanged)
             } catch (e: CancellationException) {
                 throw e
+            } catch (_: DuplicateHomework) {
+                mutable.update { current -> if (current.editor?.draft == editor.draft)
+                    current.copy(editor = current.editor.copy(duplicateWarning = true, error = null))
+                    else current }
             } catch (e: Exception) {
                 android.util.Log.w("ZaparaHomework", "save", e)
                 val message = container.app.getString(if (e is HomeworkScheduleChanged) R.string.review_homework_source_changed
@@ -546,7 +601,8 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                 if (file.staged && editor.draft.isNotEmpty()) writes.withLock { withContext(Dispatchers.IO) { container.homeworkFiles.discardFile(editor.draft, id) } }
                 mutable.update { state ->
                     val current = state.editor?.takeIf { it.draft == editor.draft } ?: return@update state
-                    state.copy(editor = current.copy(files = current.files.filter { it.id != id }, removed = current.removed + id))
+                    state.copy(editor = current.copy(files = current.files.filter { it.id != id },
+                        missingFileIds = current.missingFileIds - id, removed = current.removed + id))
                 }
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { editorError(editor.draft, container.app.getString(R.string.hw_attach_bad)) }
@@ -554,7 +610,32 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    private fun attachMany(kind: String, uris: List<Uri>) {
+        if (uris.size == 1) { attach(kind, uris.first()); return }
+        val editor = mutable.value.editor ?: return
+        if (editor.draft.isEmpty() || editor.busy || uris.isEmpty()) return
+        mutable.update { it.copy(editor = editor.copy(work = HomeworkEditorWork.Attachment, error = null)) }
+        viewModelScope.launch {
+            try {
+                val result = writes.withLock { withContext(Dispatchers.IO) {
+                    importHomeworkAttachmentBatch(container, editor, kind, uris) { saved ->
+                        mutable.update { state ->
+                            val current = state.editor?.takeIf { it.draft == editor.draft } ?: return@update state
+                            state.copy(editor = current.copy(files = current.files + saved))
+                        }
+                        mutable.value.editor?.let { it.draft == editor.draft && it.files.any { file -> file.id == saved.id } } == true
+                    }
+                } }
+                if (result.failed > 0) editorError(editor.draft, container.app.getString(
+                    R.string.ux300_android_attachment_batch_result, result.added, result.failed))
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { editorError(editor.draft, container.app.getString(R.string.hw_attach_bad)) }
+            finally { finishEditorWork(editor.draft) }
+        }
+    }
+
     private fun toggleDone(id: Long) {
+        if (mutable.value.bulkBusy) return
         val group = currentGroupId ?: return
         val profile = container.profile.databaseName
         val epoch = groupEpoch
@@ -593,6 +674,236 @@ class HomeworkViewModel(private val container: AppContainer) : ViewModel() {
                     delay(5_000)
                     if (serial == undoSerial) mutable.update { it.copy(undoDone = null) }
                 }
+            }
+        }
+    }
+
+    private fun previewPublication(selected: List<Long>) {
+        if (container.profile.isGuest || mutable.value.bulkBusy || mutable.value.editor != null) return
+        mutable.value.publication?.let {
+            mutable.update { state -> state.copy(publication = it.copy(open = true)) }; return
+        }
+        val group = currentGroupId ?: return
+        val profile = container.profile.databaseName
+        val epoch = groupEpoch
+        val items = mutable.value.groups.flatMap { it.items }.associateBy { it.id }
+        val ids = bulkEligibleIds(mutable.value.groups, selected)
+        if (ids.isEmpty() || ids.size > 50) return
+        mutable.update { it.copy(bulkBusy = true, bulkResult = null) }
+        viewModelScope.launch {
+            try {
+                val context = withContext(Dispatchers.IO) { loadHomeworkShareContext(container, group) }
+                    ?: error("No community")
+                val author = context.people.firstOrNull { it.self }?.userId ?: error("No membership")
+                if (!context.supported) error("Legacy publication")
+                val rows = withContext(Dispatchers.IO) { ids.mapNotNull { id ->
+                    val current = container.homework.getById(id)?.takeUnless { it.done } ?: return@mapNotNull null
+                    PersonalPublicationRow(current, items[id]?.subjectRaw?.ifBlank { current.norm } ?: current.norm,
+                        personalPublicationDeadline(current.due))
+                } }
+                if (sharedScopeCurrent(group, profile) && groupEpoch == epoch) mutable.update {
+                    it.copy(publication = PersonalPublicationBatch(group, profile, epoch, context, author, rows))
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { if (sharedScopeCurrent(group, profile) && groupEpoch == epoch) mutable.update {
+                it.copy(bulkResult = container.app.getString(R.string.ux300_ext_publication_unavailable))
+            } }
+            finally { if (sharedScopeCurrent(group, profile) && groupEpoch == epoch) mutable.update { it.copy(bulkBusy = false) } }
+        }
+    }
+
+    private fun publishPersonalBatch() {
+        val batch = mutable.value.publication?.takeUnless { it.busy } ?: return
+        if (mutable.value.bulkBusy || !publicationAudienceAvailable(batch.audience, batch.context) ||
+            !sharedScopeCurrent(batch.groupId, batch.profileName) || batch.epoch != groupEpoch) return
+        mutable.update { it.copy(publication = batch.copy(busy = true, error = null), bulkBusy = true) }
+        viewModelScope.launch {
+            try {
+                val client = container.communities ?: error("No communities")
+                val token = container.accessToken() ?: error("No session")
+                val desk = client.desk(token, batch.context.communityId)
+                val home = client.groupHome(token, batch.context.communityId)
+                val fresh = HomeworkShareContext(batch.context.communityId, home.name, desk, home.classmates)
+                if (home.classmates.firstOrNull { it.self }?.userId != batch.authorId ||
+                    !publicationAudienceAvailable(batch.audience, fresh)) error("Audience changed")
+                for (row in batch.rows.filterNot { it.sent }) {
+                    if (!sharedScopeCurrent(batch.groupId, batch.profileName) || groupEpoch != batch.epoch ||
+                        withContext(Dispatchers.IO) { container.repo.settings().myGroupId.orEmpty() } != batch.groupId) break
+                    try {
+                        if (!row.attempted && !withContext(Dispatchers.IO) { row.matches(container.homework.getById(row.before.id)) })
+                            error("Local task changed")
+                        mutable.update { state -> state.copy(publication = state.publication?.copy(rows = state.publication.rows.map {
+                            if (it.operationId == row.operationId) it.copy(attempted = true, failed = false) else it
+                        })) }
+                        client.shareHomework(token, batch.context.communityId, row.title, row.before.text.trim(), 0,
+                            row.deadline, audience = batch.audience, operationId = row.operationId)
+                        if (sharedScopeCurrent(batch.groupId, batch.profileName) && groupEpoch == batch.epoch) mutable.update { state ->
+                            state.copy(publication = state.publication?.copy(rows = state.publication.rows.map {
+                                if (it.operationId == row.operationId) it.copy(sent = true, failed = false) else it
+                            }))
+                        }
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) {
+                        if (sharedScopeCurrent(batch.groupId, batch.profileName) && groupEpoch == batch.epoch) mutable.update { state ->
+                            state.copy(publication = state.publication?.copy(rows = state.publication.rows.map {
+                                if (it.operationId == row.operationId) it.copy(failed = true) else it
+                            }))
+                        }
+                    }
+                }
+                if (sharedScopeCurrent(batch.groupId, batch.profileName) && groupEpoch == batch.epoch) refreshShared(batch.groupId)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { if (sharedScopeCurrent(batch.groupId, batch.profileName) && groupEpoch == batch.epoch) mutable.update {
+                it.copy(publication = it.publication?.copy(error = container.app.getString(R.string.ux300_ext_publication_unavailable)))
+            } }
+            finally { if (sharedScopeCurrent(batch.groupId, batch.profileName) && groupEpoch == batch.epoch) mutable.update {
+                it.copy(publication = it.publication?.copy(busy = false), bulkBusy = false)
+            } }
+        }
+    }
+
+    private fun previewPostpone(selected: List<Long>) {
+        if (mutable.value.bulkBusy || mutable.value.reschedule?.busy == true || mutable.value.editor != null) return
+        val group = currentGroupId ?: return
+        val profile = container.profile.databaseName
+        val epoch = groupEpoch
+        val items = mutable.value.groups.flatMap { it.items }.associateBy { it.id }
+        val ids = bulkEligibleIds(mutable.value.groups, selected)
+        if (ids.isEmpty() || ids.size > 50) return
+        mutable.update { it.copy(bulkBusy = true, bulkResult = null) }
+        viewModelScope.launch {
+            try {
+            val rows = withContext(Dispatchers.IO) { ids.mapNotNull { id ->
+                val current = container.homework.getById(id) ?: return@mapNotNull null
+                val due = if (current.n < 10) container.homework.computeDueDate(current.norm, current.createdAt, current.n + 1) else null
+                HomeworkRescheduleRow(current, items[id]?.subject ?: current.norm, due)
+            } }
+            if (sharedScopeCurrent(group, profile) && groupEpoch == epoch) mutable.update {
+                it.copy(reschedule = HomeworkRescheduleBatch(group, profile, epoch, rows))
+            }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { if (sharedScopeCurrent(group, profile) && groupEpoch == epoch) mutable.update {
+                it.copy(bulkResult = container.app.getString(R.string.ux300_ext_postpone_failed))
+            } }
+            finally { if (sharedScopeCurrent(group, profile) && groupEpoch == epoch) mutable.update { it.copy(bulkBusy = false) } }
+        }
+    }
+
+    private fun applyPostpone(undo: Boolean) {
+        val batch = mutable.value.reschedule?.takeUnless { it.busy } ?: return
+        if (!sharedScopeCurrent(batch.groupId, batch.profileName) || batch.epoch != groupEpoch || mutable.value.bulkBusy) return
+        val targets = batch.rows.filter { if (undo) it.status in setOf("applied", "undoFailed") else it.eligible && it.status in setOf("pending", "failed") }
+        if (targets.isEmpty()) return
+        mutable.update { it.copy(reschedule = batch.copy(busy = true), bulkBusy = true) }
+        viewModelScope.launch {
+            try {
+                for (row in targets) {
+                    val success = try { writes.withLock { withContext(Dispatchers.IO) {
+                        container.db.runInTransaction(java.util.concurrent.Callable {
+                        applyVerifiedReschedule(row, undo,
+                            read = { container.homework.getById(row.before.id) },
+                            compute = { n -> container.homework.computeDueDate(row.before.norm, row.before.createdAt, n) },
+                            write = { text, n -> container.homework.updateHomework(row.before.id, text, n) },
+                            scopeCurrent = { sharedScopeCurrent(batch.groupId, batch.profileName) &&
+                                groupEpoch == batch.epoch && container.repo.settings().myGroupId.orEmpty() == batch.groupId })
+                        })
+                    } } } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { false }
+                    if (sharedScopeCurrent(batch.groupId, batch.profileName) && groupEpoch == batch.epoch) mutable.update { state ->
+                        state.copy(reschedule = state.reschedule?.copy(rows = state.reschedule.rows.map {
+                            if (it.before.id != row.before.id) it else it.copy(status = if (success) {
+                                if (undo) "restored" else "applied"
+                            } else if (undo) "undoFailed" else "failed") }))
+                    }
+                }
+                container.events.emit(AppEvent.PersonalizationChanged)
+            } finally {
+                if (sharedScopeCurrent(batch.groupId, batch.profileName) && groupEpoch == batch.epoch)
+                    mutable.update { it.copy(reschedule = it.reschedule?.copy(busy = false), bulkBusy = false) }
+            }
+        }
+    }
+
+    private fun completeMany(selected: List<Long>) {
+        val group = currentGroupId ?: return
+        val profile = container.profile.databaseName
+        val epoch = groupEpoch
+        val ids = bulkEligibleIds(mutable.value.groups, selected)
+            .filterNot { it in mutable.value.personalBusyIds }
+        if (ids.size > 50) {
+            mutable.update { it.copy(bulkResult = container.app.getString(R.string.ux300_android_bulk_limit)) }
+            return
+        }
+        if (ids.isEmpty() || mutable.value.bulkBusy) return
+        mutable.update { it.copy(bulkBusy = true, bulkResult = null, bulkUndo = emptyList(),
+            personalBusyIds = it.personalBusyIds + ids) }
+        viewModelScope.launch {
+            val completed = ArrayList<HomeworkUndoDone>()
+            var failed = 0
+            try {
+                for (id in ids) {
+                    try {
+                        val applied = writes.withLock { withContext(Dispatchers.IO) {
+                            if (container.repo.settings().myGroupId.orEmpty() != group ||
+                                container.profile.databaseName != profile || groupEpoch != epoch) return@withContext false
+                            val item = container.homework.getById(id) ?: return@withContext false
+                            if (item.done) return@withContext false
+                            container.homework.markDone(id, true)
+                            true
+                        } }
+                        if (applied) completed += HomeworkUndoDone(id, false, group, profile)
+                        else failed++
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { failed++ }
+                }
+                if (currentGroupId == group && container.profile.databaseName == profile && groupEpoch == epoch) {
+                    mutable.update { it.copy(bulkUndo = completed,
+                        bulkResult = container.app.getString(R.string.ux300_android_bulk_result,
+                            completed.size, failed)) }
+                    container.events.emit(AppEvent.PersonalizationChanged)
+                }
+            } finally {
+                if (currentGroupId == group && container.profile.databaseName == profile && groupEpoch == epoch)
+                    mutable.update { it.copy(bulkBusy = false,
+                        personalBusyIds = it.personalBusyIds - ids.toSet()) }
+            }
+        }
+    }
+
+    private fun undoMany() {
+        val undo = mutable.value.bulkUndo
+        val group = currentGroupId ?: return
+        val profile = container.profile.databaseName
+        val epoch = groupEpoch
+        if (undo.isEmpty() || mutable.value.bulkBusy) return
+        mutable.update { it.copy(bulkBusy = true, personalBusyIds = it.personalBusyIds + undo.map { row -> row.id }) }
+        viewModelScope.launch {
+            val failed = ArrayList<HomeworkUndoDone>()
+            try {
+                for (row in undo) {
+                    try {
+                        val applied = writes.withLock { withContext(Dispatchers.IO) {
+                            if (container.repo.settings().myGroupId.orEmpty() != group ||
+                                container.profile.databaseName != profile || groupEpoch != epoch) return@withContext false
+                            val current = container.homework.getById(row.id)
+                            if (!row.canApply(profile, group, current?.done)) return@withContext false
+                            container.homework.markDone(row.id, row.previousDone)
+                            true
+                        } }
+                        if (!applied) failed += row
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { failed += row }
+                }
+                if (currentGroupId == group && container.profile.databaseName == profile && groupEpoch == epoch) {
+                    mutable.update { it.copy(bulkUndo = failed, bulkResult =
+                        container.app.getString(R.string.ux300_android_bulk_undo_result,
+                            undo.size - failed.size, failed.size)) }
+                    container.events.emit(AppEvent.PersonalizationChanged)
+                }
+            } finally {
+                if (currentGroupId == group && container.profile.databaseName == profile && groupEpoch == epoch)
+                    mutable.update { it.copy(bulkBusy = false,
+                        personalBusyIds = it.personalBusyIds - undo.map { row -> row.id }.toSet()) }
             }
         }
     }

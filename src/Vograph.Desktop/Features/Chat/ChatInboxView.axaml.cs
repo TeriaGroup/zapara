@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -36,6 +37,17 @@ public partial class ChatInboxView : UserControl
         pendingScroll = ScrollAction.None;
         MessageScroll.Offset = new Vector(MessageScroll.Offset.X,
             Math.Max(0, MessageScroll.Extent.Height - MessageScroll.Viewport.Height));
+    }
+    private void JumpToInvites(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    { InviteList.BringIntoView(); InviteList.Focus(); }
+
+    private void OnDraftKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || (e.KeyModifiers & KeyModifiers.Control) == 0 ||
+            (e.KeyModifiers & KeyModifiers.Alt) != 0 || DataContext is not ChatInboxViewModel chat ||
+            !chat.SendCommand.CanExecute(null)) return;
+        e.Handled = true;
+        chat.SendCommand.Execute(null);
     }
 
     private void FocusQuoteTarget(ChatMessageRow target)
@@ -99,12 +111,12 @@ public partial class ChatInboxView : UserControl
 
     protected override void OnDataContextChanged(EventArgs e)
     {
-        if (watched is not null) { watched.Messages.CollectionChanged -= OnMessagesChanged; watched.QuoteTargetRequested -= FocusQuoteTarget; }
+        if (watched is not null) { watched.Messages.CollectionChanged -= OnMessagesChanged; watched.QuoteTargetRequested -= FocusQuoteTarget; watched.MessageFocusRequested -= FocusQuoteTarget; }
         watched?.SetClipboardWriter(null);
         watched?.Watch(false);
         base.OnDataContextChanged(e);
         watched = DataContext as ChatInboxViewModel;
-        if (watched is not null) { watched.Messages.CollectionChanged += OnMessagesChanged; watched.QuoteTargetRequested += FocusQuoteTarget; }
+        if (watched is not null) { watched.Messages.CollectionChanged += OnMessagesChanged; watched.MessageFocusRequested += FocusQuoteTarget; }
         if (attached && watched is not null) BindClipboard(watched);
         pendingScroll = ScrollAction.None;
         latestAfterReset = true;
@@ -117,7 +129,7 @@ public partial class ChatInboxView : UserControl
     {
         base.OnAttachedToVisualTree(e);
         attached = true;
-        if (watched is not null) { watched.QuoteTargetRequested -= FocusQuoteTarget; watched.QuoteTargetRequested += FocusQuoteTarget; BindClipboard(watched); }
+        if (watched is not null) { watched.MessageFocusRequested -= FocusQuoteTarget; watched.MessageFocusRequested += FocusQuoteTarget; BindClipboard(watched); }
         if (watched?.Messages.Count > 0) pendingScroll = ScrollAction.Latest;
         watched?.Watch(IsVisible);
     }
@@ -125,7 +137,7 @@ public partial class ChatInboxView : UserControl
     protected override void OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
     {
         watched?.Watch(false);
-        if (watched is not null) watched.QuoteTargetRequested -= FocusQuoteTarget;
+        if (watched is not null) watched.MessageFocusRequested -= FocusQuoteTarget;
         watched?.SetClipboardWriter(null);
         attached = false;
         base.OnDetachedFromVisualTree(e);

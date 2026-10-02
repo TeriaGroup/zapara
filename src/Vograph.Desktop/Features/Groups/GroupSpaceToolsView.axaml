@@ -8,13 +8,16 @@
     <TextBlock Classes="subject" Text="Категории" />
     <ComboBox ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory}"><ComboBox.ItemTemplate><DataTemplate x:DataType="contracts:GroupCategoryResponse"><TextBlock Text="{Binding Title}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
     <TextBox Text="{Binding CategoryTitle}" PlaceholderText="Название категории" /><NumericUpDown Value="{Binding CategoryPosition}" Minimum="0" Maximum="100" AutomationProperties.Name="Порядок категории" />
-    <WrapPanel ItemSpacing="6"><Button Content="Новая" Command="{Binding NewCategoryCommand}" /><Button Content="Сохранить" Command="{Binding SaveCategoryCommand}" /><Button Content="Удалить категорию" Command="{Binding DeleteCategoryCommand}" /></WrapPanel>
+    <WrapPanel ItemSpacing="6"><Button Content="Новая" Command="{Binding NewCategoryCommand}" /><Button Content="Сохранить" Command="{Binding SaveCategoryCommand}" /><Button Content="Отменить правки" Command="{Binding RevertCategoryDraftCommand}" /><Button Content="Удалить категорию" Command="{Binding DeleteCategoryCommand}" /></WrapPanel>
     <Border Classes="card" IsVisible="{Binding HasPendingDeleteCategory}"><StackPanel Spacing="6"><TextBlock Text="{Binding DeleteCategoryImpact}" TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Content="Отмена" Command="{Binding CancelDeleteCategoryCommand}" /><Button Classes="danger" Content="Удалить категорию" Command="{Binding ConfirmDeleteCategoryCommand}" /></WrapPanel></StackPanel></Border>
     <TextBlock Classes="muted caption" Text="Удаление категории переносит её темы в корень." TextWrapping="Wrap" />
 
    </StackPanel>
     <Button Content="Открыть архив" Command="{Binding LoadArchiveCommand}" />
-    <ItemsControl ItemsSource="{Binding ArchivedChannels}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:GroupChannelRow"><Button Content="{Binding Title}" Command="{Binding OpenCommand}" ToolTip.Tip="Открыть архивную тему" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    <TextBox Text="{Binding ArchiveSearch, Mode=TwoWay}" PlaceholderText="Найти архивную тему" AutomationProperties.Name="Поиск в загруженном архиве" />
+    <WrapPanel ItemSpacing="8"><TextBlock Classes="muted caption" Text="{Binding ArchiveResultCount}" VerticalAlignment="Center" /><Button Content="Очистить поиск" Command="{Binding ClearArchiveSearchCommand}" IsVisible="{Binding ArchiveSearch, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" /></WrapPanel>
+    <TextBlock Text="В загруженном архиве совпадений нет" IsVisible="{Binding NoArchiveMatches}" />
+    <ItemsControl ItemsSource="{Binding VisibleArchivedChannels}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:GroupChannelRow"><Button Content="{Binding Title}" Command="{Binding OpenCommand}" ToolTip.Tip="Открыть архивную тему" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
    <g:GroupRolesView />
    <StackPanel Spacing="6" IsVisible="{Binding CanManageAccess}">
     <TextBlock Classes="subject" Text="Доступ к выбранной теме" /><Button Content="Загрузить правила доступа" Command="{Binding LoadAccessCommand}" />
@@ -26,13 +29,24 @@
     <Expander Header="Расширенные правила">    <ItemsControl ItemsSource="{Binding AccessRules}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceAccessRow"><StackPanel Spacing="4" Margin="0,4"><TextBlock Text="{Binding Label}" TextWrapping="Wrap" /><ComboBox ItemsSource="{Binding Choices}" SelectedItem="{Binding State}" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
     <Button Content="Проверить последствия изменений" Command="{Binding PreviewProposedAccessCommand}" />
     <TextBlock Text="{Binding AccessPreviewSummary}" TextWrapping="Wrap" FontWeight="Medium" />
-    <ItemsControl ItemsSource="{Binding AccessPreviewPeople}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceAccessPreviewPerson"><Expander Header="{Binding Name}" Margin="0,4"><StackPanel Spacing="6"><TextBlock Text="{Binding Before}" TextWrapping="Wrap" /><TextBlock Text="↓" /><TextBlock Text="{Binding After}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding Reasons}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceAccessReason"><TextBlock Text="{Binding Label}" TextWrapping="Wrap" Classes="muted caption" Margin="0,3" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></Expander></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    <TextBox Text="{Binding AccessPreviewSearch, Mode=TwoWay}" PlaceholderText="Найти участника в проверке" AutomationProperties.Name="Поиск в предварительном результате доступа" IsVisible="{Binding AccessPreviewReady}" />
+    <CheckBox Content="Только изменившиеся права" IsChecked="{Binding AccessPreviewChangedOnly}" IsVisible="{Binding AccessPreviewReady}" />
+    <Button Content="Сбросить поиск результата" Command="{Binding ResetAccessPreviewBrowseCommand}" IsVisible="{Binding AccessPreviewReady}" HorizontalAlignment="Left" />
+    <TextBlock Text="По условиям участников нет" IsVisible="{Binding NoAccessPreviewMatches}" />
+    <ItemsControl ItemsSource="{Binding VisibleAccessPreviewPeople}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceAccessPreviewPerson"><Expander Header="{Binding Name}" Margin="0,4"><StackPanel Spacing="6"><TextBlock Text="{Binding Before}" TextWrapping="Wrap" /><TextBlock Text="↓" /><TextBlock Text="{Binding After}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding Reasons}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceAccessReason"><TextBlock Text="{Binding Label}" TextWrapping="Wrap" Classes="muted caption" Margin="0,3" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel></Expander></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
     <Button Classes="primary" Content="Подтвердить и сохранить доступ" Command="{Binding SaveAccessCommand}" IsEnabled="{Binding CanSaveProposedAccess}" />
 
    </StackPanel>   <StackPanel Spacing="6" IsVisible="{Binding CanManageGroupAccess}"><TextBlock Classes="subject" Text="Просмотр группы от лица роли" /><ComboBox ItemsSource="{Binding TrustedRoles}" SelectedItem="{Binding SelectedTrustedRole}"><ComboBox.ItemTemplate><DataTemplate x:DataType="g:GroupTrustedRoleRow"><TextBlock Text="{Binding Display}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox></StackPanel>
-    <ComboBox IsVisible="{Binding CanManageGroupAccess}" ItemsSource="{Binding TrustCandidates}" SelectedItem="{Binding SelectedTrustCandidate}"><ComboBox.ItemTemplate><DataTemplate x:DataType="g:GroupTrustedPersonRow"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
+    <ComboBox IsVisible="{Binding CanManageGroupAccess}" ItemsSource="{Binding VisibleTrustCandidates}" SelectedItem="{Binding SelectedTrustCandidate}"><ComboBox.ItemTemplate><DataTemplate x:DataType="g:GroupTrustedPersonRow"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate></ComboBox>
     <Button Content="Посмотреть от лица участника" Command="{Binding PreviewPersonCommand}" IsVisible="{Binding CanManageGroupAccess}" /><Button Content="Посмотреть от лица выбранной роли" Command="{Binding PreviewRoleCommand}" IsVisible="{Binding CanManageGroupAccess}" />
-    <Button Content="Журнал изменений" Command="{Binding LoadAuditCommand}" IsVisible="{Binding CanManageGroupAudit}" /><ItemsControl ItemsSource="{Binding AuditEvents}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,4" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    <Button Content="Журнал изменений" Command="{Binding LoadAuditCommand}" IsVisible="{Binding CanManageGroupAudit}" />
+    <StackPanel Spacing="6" IsVisible="{Binding CanManageGroupAudit}">
+      <TextBox Text="{Binding AuditSearch, Mode=TwoWay}" PlaceholderText="Найти запись журнала" AutomationProperties.Name="Поиск по журналу изменений" />
+      <ComboBox ItemsSource="{Binding AuditKinds}" SelectedIndex="{Binding AuditKindIndex}" MinWidth="160" HorizontalAlignment="Left" AutomationProperties.Name="Тип изменения" />
+      <Button Content="Сбросить фильтры журнала" Command="{Binding ResetAuditFiltersCommand}" IsVisible="{Binding HasAuditFilters}" HorizontalAlignment="Left" />
+      <TextBlock Text="По фильтрам записей нет" IsVisible="{Binding NoAuditMatches}" />
+      <ItemsControl ItemsSource="{Binding VisibleAuditEvents}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,4" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    </StackPanel>
 
   </StackPanel>
  </StackPanel>

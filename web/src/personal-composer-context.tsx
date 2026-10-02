@@ -17,3 +17,8 @@ export function usePersonalComposer(conversationId: string) {
   if (!context) throw new Error("PersonalComposerProvider missing");
   return { ...context, composer: context.store.read(conversationId) };
 }
+export function usePersonalDrafts() {
+  const context=useContext(Context);
+  if(!context)throw new Error("PersonalComposerProvider missing");
+  return context.store.inboxDrafts();
+}

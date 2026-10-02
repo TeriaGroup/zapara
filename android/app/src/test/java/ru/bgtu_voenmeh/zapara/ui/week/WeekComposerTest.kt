@@ -74,4 +74,14 @@ class WeekComposerTest {
         assertTrue(WeekBrowse.filter(listOf(first, second), "нет", false).isEmpty())
     }
 
+    @Test fun free_window_excludes_overlapping_or_unparseable_lessons() {
+        val first = WeekRowUi("09:00–10:30", "А", "", start = "09:00", end = "10:30")
+        assertEquals(45L, WeekBrowse.freeMinutes(first,
+            WeekRowUi("11:15–12:45", "Б", "", start = "11:15", end = "12:45")))
+        assertEquals(null, WeekBrowse.freeMinutes(first,
+            WeekRowUi("10:20–11:55", "В", "", start = "10:20", end = "11:55")))
+        assertEquals(null, WeekBrowse.freeMinutes(first,
+            WeekRowUi("неизвестно", "Г", "", start = "", end = "")))
+    }
+
 }

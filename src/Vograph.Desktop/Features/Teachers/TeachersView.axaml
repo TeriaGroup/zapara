@@ -11,21 +11,26 @@
       <TextBlock Classes="muted" Text="{Binding CountText}" Margin="0,4,0,0" TextWrapping="Wrap" />
     </StackPanel>
 
-    <Grid Grid.Row="1" ColumnDefinitions="320,24,*">
+    <Grid x:Name="TeachersColumns" Grid.Row="1" ColumnDefinitions="320,24,*">
       <!-- left: search, filter, list -->
-      <Grid RowDefinitions="Auto,Auto,Auto,*">
+      <Grid x:Name="TeachersList" RowDefinitions="Auto,Auto,Auto,Auto,*">
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
           <TextBox Text="{Binding Query}" PlaceholderText="{loc:T teachersSearchHint}" AutomationProperties.AutomationId="Teachers.Search" />
           <Button Grid.Column="1" Classes="ghost" Content="Сбросить" Command="{Binding ClearTeacherSearchCommand}"
                   IsVisible="{Binding HasTeacherSearch}" MinHeight="48" AutomationProperties.AutomationId="Teachers.ClearSearch" />
         </Grid>
         <c:Switch Grid.Row="1" Content="{loc:T teachersOnlyMine}" IsChecked="{Binding OnlyMine}" Margin="0,10,0,0" AutomationProperties.AutomationId="Teachers.OnlyMine" />
-        <StackPanel Grid.Row="2" Spacing="8" Margin="0,8,0,0" IsVisible="{Binding LoadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+        <ComboBox Grid.Row="2" ItemsSource="{Binding DepartmentOptions}" SelectedItem="{Binding SelectedDepartment}"
+                  MinHeight="48" Margin="0,8,0,0" AutomationProperties.Name="Фильтр по кафедре">
+          <ComboBox.ItemTemplate><DataTemplate x:DataType="t:DepartmentFilterOption"><TextBlock Text="{Binding Label}" /></DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+        <StackPanel Grid.Row="3" Spacing="8" Margin="0,8,0,0" IsVisible="{Binding LoadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
           <TextBlock Classes="muted caption" Text="{Binding LoadError}" TextWrapping="Wrap" />
           <Button Content="{loc:T retry}" Command="{Binding RetryCommand}" HorizontalAlignment="Left" AutomationProperties.AutomationId="Teachers.Retry" />
         </StackPanel>
-        <TextBlock Grid.Row="2" Classes="muted caption" Text="{loc:T teachersLoading}" Margin="0,8,0,0" IsVisible="{Binding IsLoading}" />
-        <StackPanel Grid.Row="2" Spacing="8" Margin="0,8,0,0" IsVisible="{Binding NoTeacherMatches}">
+        <TextBlock Grid.Row="3" Classes="muted caption" Text="{loc:T teachersLoading}" Margin="0,8,0,0" IsVisible="{Binding IsLoading}" />
+        <StackPanel Grid.Row="3" Spacing="4"><TextBlock Text="{Binding NavigationFeedback}" TextWrapping="Wrap" /><Button Content="Показать выбранного преподавателя" Command="{Binding ShowSelectedTeacherCommand}" IsVisible="{Binding HasHiddenSelection}" HorizontalAlignment="Left" /><ItemsControl ItemsSource="{Binding NameChoices}" IsVisible="{Binding HasNameChoices}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="t:TeacherChoice"><Button Classes="ghost" Command="{Binding ChooseCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"><StackPanel><TextBlock Text="{Binding Name}" /><TextBlock Text="{Binding Department}" /></StackPanel></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel>
+        <StackPanel Grid.Row="3" Spacing="8" Margin="0,8,0,0" IsVisible="{Binding NoTeacherMatches}">
           <TextBlock Classes="muted" Text="{Binding EmptyTeacherText}" TextWrapping="Wrap" />
           <Button Classes="ghost" Content="Сбросить поиск" Command="{Binding ClearTeacherSearchCommand}"
                   IsVisible="{Binding HasTeacherSearch}" MinHeight="48" HorizontalAlignment="Left" />
@@ -34,7 +39,7 @@
           <Button Classes="ghost" Content="Искать среди всех, сохранив запрос" Command="{Binding SearchAllTeachersCommand}"
                   IsVisible="{Binding CanSearchAllTeachers}" MinHeight="48" HorizontalAlignment="Left" />
         </StackPanel>
-        <ListBox Grid.Row="3" Margin="0,10,0,0" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" AutomationProperties.AutomationId="Teachers.List">
+        <ListBox Grid.Row="4" Margin="0,10,0,0" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" AutomationProperties.AutomationId="Teachers.List">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="t:TeacherItem">
               <StackPanel Spacing="2">
@@ -47,7 +52,7 @@
       </Grid>
 
       <!-- right: detail -->
-      <Grid Grid.Column="2" RowDefinitions="Auto,*">
+      <Grid x:Name="TeachersDetail" Grid.Column="2" RowDefinitions="Auto,*">
       <StackPanel Grid.Row="0" Spacing="4" IsVisible="{Binding HasSourceNotice}" Margin="0,0,0,8">
         <TextBlock Text="{Binding SourceNotice}" Classes="muted" TextWrapping="Wrap" />
         <Button Content="Повторить обновление каталога" Command="{Binding RetryDirectoryCommand}" IsVisible="{Binding AllowNetwork}" HorizontalAlignment="Left" />
@@ -68,6 +73,7 @@
                   </StackPanel>
                   <c:SegmentedControl Name="TeacherParity" Grid.Column="1" VerticalAlignment="Top" Items="{Binding SegmentItems}" SelectedIndex="{Binding ParityIndex}" />
                 </Grid>
+                <c:Switch Content="Только моя группа" IsChecked="{Binding OnlyOwnGroup}" IsVisible="{Binding IsMine}" />
                 <Border Classes="chip" HorizontalAlignment="Left"><TextBlock Text="{Binding WeekLessonCountText}" /></Border>
                 <ItemsControl ItemsSource="{Binding Days}">
                   <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -93,11 +99,13 @@
                                       <Border Classes="chip type" Margin="6,0,0,0" VerticalAlignment="Center"><TextBlock Text="{Binding TypeLabel}" /></Border>
                                       <Border Classes="chip" Margin="6,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsMine}"><TextBlock Text="{loc:T teachersMine}" /></Border>
                                     </WrapPanel>
-                                    <TextBlock Classes="muted caption" Text="{Binding Groups}" TextWrapping="Wrap" />
+                                    <TextBlock Classes="muted caption" Text="{Binding ShownGroups}" TextWrapping="Wrap" />
+                                    <Button Classes="ghost" Content="{Binding GroupToggleCaption}" Command="{Binding ToggleGroupsCommand}" IsVisible="{Binding HasMoreGroups}" HorizontalAlignment="Left" />
                                     <Button Classes="ghost" Content="Открыть мою пару" Command="{Binding OpenOwnDayCommand}" IsVisible="{Binding CanOpenOwnDay}" HorizontalAlignment="Left" />
                                   </StackPanel>
                                   <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Right">
                                     <Border Classes="chip" HorizontalAlignment="Right"><TextBlock Classes="tnum" Text="{Binding Room}" /></Border>
+                                    <Button Classes="ghost" Content="На карте" Command="{Binding OpenRoomCommand}" IsVisible="{Binding CanOpenRoom}" HorizontalAlignment="Right" />
                                     <TextBlock Classes="faint caption" Text="{Binding ParityLabel}" HorizontalAlignment="Right" />
                                   </StackPanel>
                                 </Grid>

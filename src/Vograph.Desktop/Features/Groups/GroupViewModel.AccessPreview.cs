@@ -13,7 +13,19 @@ public sealed partial class GroupViewModel
     private string? previewedAccessFingerprint;
     [ObservableProperty] private bool accessPreviewReady;
     [ObservableProperty] private string accessPreviewSummary = "";
+    [ObservableProperty] private string accessPreviewSearch = "";
+    [ObservableProperty] private bool accessPreviewChangedOnly;
     public ObservableCollection<SpaceAccessPreviewPerson> AccessPreviewPeople { get; } = [];
+    public IReadOnlyList<SpaceAccessPreviewPerson> VisibleAccessPreviewPeople => AccessPreviewPeople.Where(person =>
+        (!AccessPreviewChangedOnly || person.Changed) &&
+        (AccessPreviewSearch.Trim().Length == 0 || person.Name.Contains(AccessPreviewSearch.Trim(), StringComparison.OrdinalIgnoreCase)))
+        .ToArray();
+    public bool NoAccessPreviewMatches => AccessPreviewReady && AccessPreviewPeople.Count > 0 && VisibleAccessPreviewPeople.Count == 0;
+    partial void OnAccessPreviewSearchChanged(string value) => NotifyAccessPreviewBrowse();
+    partial void OnAccessPreviewChangedOnlyChanged(bool value) => NotifyAccessPreviewBrowse();
+    [RelayCommand] private void ResetAccessPreviewBrowse() { AccessPreviewSearch = ""; AccessPreviewChangedOnly = false; }
+    private void NotifyAccessPreviewBrowse()
+    { OnPropertyChanged(nameof(VisibleAccessPreviewPeople)); OnPropertyChanged(nameof(NoAccessPreviewMatches)); }
     public bool CanSaveProposedAccess => CanManageAccess && AccessPreviewReady &&
         accessBaseline is { } baseline && SelectedChannel?.TopicId == baseline.TopicId &&
         previewedAccessFingerprint == AccessFingerprint();
@@ -27,6 +39,7 @@ public sealed partial class GroupViewModel
     {
         accessEditorGeneration++;
         AccessPreviewReady=false;previewedAccessFingerprint=null;AccessPreviewSummary="";AccessPreviewPeople.Clear();
+        NotifyAccessPreviewBrowse();
         OnPropertyChanged(nameof(CanSaveProposedAccess));
     }
     private void ClearAccessEditor()
@@ -52,15 +65,17 @@ public sealed partial class GroupViewModel
             {
                 var member=trustClassmates.FirstOrDefault(row=>row.UserId==person.UserId);
                 var name=member?.DisplayName ?? member?.Username ?? "Участник";
-                var before=string.Join(", ",person.BeforePermissions.Select(PowerLabel));
-                var after=string.Join(", ",person.AfterPermissions.Select(PowerLabel));
+                var before=string.Join(", ",person.BeforePermissions.Select(PowerLabel).OrderBy(label=>label,StringComparer.Ordinal));
+                var after=string.Join(", ",person.AfterPermissions.Select(PowerLabel).OrderBy(label=>label,StringComparer.Ordinal));
                 var reasons=person.Sources.Select(source=>new SpaceAccessReason(PowerLabel(source.Key),person.AfterPermissions.Contains(source.Key),source.Value)).ToArray();
                 AccessPreviewPeople.Add(new(name,before.Length==0?"Нет действий":before,after.Length==0?"Нет действий":after,reasons));
             }
             previewedAccessFingerprint=fingerprint;AccessPreviewReady=true;
+            NotifyAccessPreviewBrowse();
         });
     }
 }
 public sealed record SpaceAccessReason(string Power,bool Allowed,string Source)
 {public string Label=>Power+" · "+(Allowed?"Разрешено":"Недоступно")+" · "+Source;}
-public sealed record SpaceAccessPreviewPerson(string Name,string Before,string After,IReadOnlyList<SpaceAccessReason> Reasons);
+public sealed record SpaceAccessPreviewPerson(string Name,string Before,string After,IReadOnlyList<SpaceAccessReason> Reasons)
+{ public bool Changed => !string.Equals(Before, After, StringComparison.Ordinal); }

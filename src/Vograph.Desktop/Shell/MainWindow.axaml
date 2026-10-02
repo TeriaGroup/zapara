@@ -28,6 +28,7 @@
     <KeyBinding Gesture="Ctrl+D0" Command="{Binding NavigateCommand}" CommandParameter="Group" />
     <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding NavigateCommand}" CommandParameter="Settings" />
     <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleSidebarCommand}" />
+    <KeyBinding Gesture="Ctrl+K" Command="{Binding OpenCommandPaletteCommand}" />
     <KeyBinding Gesture="F5" Command="{Binding RefreshScheduleCommand}" />
     <!-- Enter is NOT bound here: Window.KeyBindings matches gestures even when a nested control (a
          multi-line TextBox inserting a newline) already marked the key event Handled. DialogHostView's
@@ -81,6 +82,27 @@
     </Grid>
 
     <ContentControl Content="{Binding Overlay}" IsVisible="{Binding HasOverlay}" />
+
+    <Panel IsVisible="{Binding ShowCommandPalette}" Background="{DynamicResource Brush.Backdrop}">
+    <Border Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.Line}" BorderThickness="1" CornerRadius="12"
+            HorizontalAlignment="Center" VerticalAlignment="Top" Width="560" MaxWidth="560"
+            Margin="0,64,0,0" Padding="16">
+      <StackPanel Spacing="10">
+        <TextBlock Classes="subject" Text="Перейти к разделу" />
+        <TextBox Name="PaletteSearch" Text="{Binding CommandQuery, Mode=TwoWay}" PlaceholderText="Название раздела"
+                 KeyDown="OnPaletteSearchKeyDown" AutomationProperties.Name="Поиск раздела" />
+        <TextBlock Text="Подходящих разделов нет" IsVisible="{Binding NoPaletteMatches}" />
+        <ItemsControl ItemsSource="{Binding PaletteSections}"><ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="shell:NavSection">
+            <Button Classes="ghost" Content="{Binding Label}" Command="{Binding $parent[Window].((shell:ShellViewModel)DataContext).OpenPaletteSectionCommand}"
+                    CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate></ItemsControl>
+        <Button Content="Закрыть" Command="{Binding CloseCommandPaletteCommand}" HorizontalAlignment="Right" />
+      </StackPanel>
+    </Border>
+    </Panel>
 
     <d:DialogHostView DataContext="{Binding Dialogs}" />
     <c:ToastHost DataContext="{Binding Toasts}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,18,16" />

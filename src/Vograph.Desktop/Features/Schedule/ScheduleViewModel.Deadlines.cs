@@ -24,6 +24,10 @@ public sealed partial class ScheduleViewModel
     public bool HasNextStudyDate=>NextStudyDate is not null;
     public string NextStudyCaption=>NextStudyDate is {} date?$"Следующий учебный день · {date.ToString("d MMMM", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))}" : "";
     public string DeadlineTitle=>$"Ближайшие сроки · {Deadlines.Count} заданий · готово {Deadlines.Count(x=>x.Done)}";
+    public string DeadlineAttention=>$"Невыполненные сроки: {Deadlines.Count(x=>!x.Done)}";
+    public bool HasDeadlineAttention=>Deadlines.Any(row=>!row.Done);
+    private void RefreshDeadlineSummary()
+    {OnPropertyChanged(nameof(DeadlineTitle));OnPropertyChanged(nameof(DeadlineAttention));OnPropertyChanged(nameof(HasDeadlineAttention));}
     public string DayPriorityCaption=>Date.Date==_clock().Date && Lessons.Count>0 && Lessons.All(x=>x.IsPast)?"Пары закончились":Date.Date>_clock().Date?"Первая пара":"Текущая или следующая пара";
     public bool HasPriority=>Lessons.Any(x=>x.IsNext);
     public bool ShowDayState=>HasPriority || Date.Date==_clock().Date && Lessons.Count>0 && Lessons.All(x=>x.IsPast);
@@ -93,7 +97,7 @@ public sealed partial class ScheduleViewModel
         var ordered=result.OrderBy(x=>x.Due??DateTime.MaxValue).ToArray();
         for(var i=0;i<ordered.Length;i++){var row=ordered[i];var old=Deadlines.IndexOf(row);if(old<0)Deadlines.Insert(i,row);else if(old!=i)Deadlines.Move(old,i);}
         while(Deadlines.Count>ordered.Length)Deadlines.RemoveAt(Deadlines.Count-1);
-        OnPropertyChanged(nameof(DeadlineTitle));
+        RefreshDeadlineSummary();
     }
     private async Task EditPlannerHomework(HomeworkEntry entry)
     {
@@ -104,9 +108,9 @@ public sealed partial class ScheduleViewModel
     {
         var before=row.Done;var day=Date;
         if(!await RunAsync(()=>App.Homework.MarkDone(entry.Homework.Id,!before),"planner ready"))return;
-        row.Done=!before;OnPropertyChanged(nameof(DeadlineTitle));
+        row.Done=!before;RefreshDeadlineSummary();
         deadlineUndoShared=false;
-        deadlineUndo=async()=>{if(await RunAsync(()=>App.Homework.MarkDone(entry.Homework.Id,before),"planner undo")){if(Date==day)row.Done=before;await RaiseHomeworkAsync();}};
+        deadlineUndo=async()=>{if(await RunAsync(()=>App.Homework.MarkDone(entry.Homework.Id,before),"planner undo")){if(Date==day){row.Done=before;RefreshDeadlineSummary();}await RaiseHomeworkAsync();}};
         DeadlineFeedback=before?"Отметка снята":"Отмечено готово";await RaiseHomeworkAsync();
     }
     private Task OpenSharedDeadline(Guid community,GroupHomeworkCopyResponse item)
@@ -117,12 +121,12 @@ public sealed partial class ScheduleViewModel
     {
         foreach(var row in Deadlines.Where(x=>x.Key.StartsWith("shared:",StringComparison.Ordinal) && (community is null || x.CommunityId==community)).ToArray())Deadlines.Remove(row);
         if(deadlineUndoShared){deadlineUndo=null;DeadlineFeedback="";}
-        OnPropertyChanged(nameof(DeadlineTitle));
+        RefreshDeadlineSummary();
     }
     private async Task ToggleSharedDeadline(Guid community,GroupHomeworkCopyResponse item,PlannerDeadlineRow row)
     {
         if(!item.CanComplete || App.Communities is not {} api||App.CommunityAccess is not {} access)return;
-        try{var token=await access(CancellationToken.None);if(string.IsNullOrWhiteSpace(token))return;var before=row.Done;var state=await api.GetCompletionAsync(token,community,item.HomeworkId);var changed=await api.UpsertCompletionAsync(token,community,item.HomeworkId,new(!before,state.Revision));row.Done=!before;OnPropertyChanged(nameof(DeadlineTitle));deadlineUndoShared=true;deadlineUndo=async()=>{await api.UpsertCompletionAsync(token,community,item.HomeworkId,new(before,changed.Revision));row.Done=before;};DeadlineFeedback=before?"Отметка снята":"Отмечено готово";}
+        try{var token=await access(CancellationToken.None);if(string.IsNullOrWhiteSpace(token))return;var before=row.Done;var state=await api.GetCompletionAsync(token,community,item.HomeworkId);var changed=await api.UpsertCompletionAsync(token,community,item.HomeworkId,new(!before,state.Revision));row.Done=!before;RefreshDeadlineSummary();deadlineUndoShared=true;deadlineUndo=async()=>{await api.UpsertCompletionAsync(token,community,item.HomeworkId,new(before,changed.Revision));row.Done=before;RefreshDeadlineSummary();};DeadlineFeedback=before?"Отметка снята":"Отмечено готово";}
         catch(Exception ex)when(ex is AccountClientException || ex is CommunityClientException e && e.Failure is CommunityClientFailure.InvalidSession or CommunityClientFailure.Forbidden or CommunityClientFailure.NotFound){PurgeSharedDeadlines(community);App.Toasts.Error("Доступ к заданию изменился.");}
         catch(CommunityClientException){App.Toasts.Error("Не удалось сохранить готовность.");}
     }

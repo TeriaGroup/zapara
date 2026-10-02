@@ -118,6 +118,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 fun GroupSection(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     onReturnToInbox: (() -> Unit)? = null, onOpenHomework: (Long) -> Unit = {}) {
     val uiText = rememberUiText()
+    GroupObligationsSheet(state, onEvent)
     var groupSearch by rememberSaveable { mutableStateOf("") }
     var peopleSearch by rememberSaveable(state.title) { mutableStateOf("") }
     var channelSearch by rememberSaveable(state.title) { mutableStateOf("") }
@@ -251,6 +252,13 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     var detailsOpen by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(false) }
     var searchOpen by rememberSaveable(state.activeConversationId, state.activeTopicId) { mutableStateOf(false) }
     var avatarOpen by rememberSaveable(state.communityId) { mutableStateOf(false) }
+    var recentTopics by rememberSaveable(state.communityId) { mutableStateOf(listOf<String>()) }
+    LaunchedEffect(state.communityId, state.activeTopicId, state.preview,
+        state.channels.map { it.topicId }) {
+        val id = state.activeTopicId
+        if (state.preview == null && id != null && state.channels.any { it.topicId == id })
+            recentTopics = (listOf(id) + recentTopics.filterNot { it == id }).take(3)
+    }
     val groupAvatar = state.communityId?.let { AvatarTarget(AvatarKind.Group, it) }
     val peerAvatar = state.directs.firstOrNull { it.id == state.activeConversationId }?.peerUserId
         ?.let { AvatarTarget(AvatarKind.User, it) }
@@ -366,19 +374,24 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                 details()
             }
         }
-        channelState.SaveableStateProvider("${state.communityId}:${state.activeTopicId}:${state.activeChannelKind}:${state.showChannels}:${state.showPeople}") {
+        state.obligationFocusId?.takeIf { !state.showChannels && !state.showPeople }?.let {
+            ZButton(stringResource(R.string.ux300_group_obligations_show_channel), { onEvent(GroupEvent.ClearObligationFocus) }, ghost = true)
+        }
+        val focused = state.obligationFocusId?.let { id -> state.copy(forms = state.forms.filter { it.formId == id },
+            homework = state.homework.filter { it.homeworkId == id }, board = state.board?.let { it.copy(ballots = it.ballots.filter { it.ballotId == id }) }) } ?: state
+        channelState.SaveableStateProvider("${state.communityId}:${state.activeTopicId}:${state.activeChannelKind}:${state.showChannels}:${state.showPeople}:${state.obligationFocusId}") {
         if (state.showPeople) {
             People(state, onEvent, peopleSearch, onPeopleSearch, Modifier.weight(1f))
         } else if (state.showChannels) {
             ChannelList(state, onEvent, channelSearch, onChannelSearch, channelKind, onChannelKind,
-                unreadOnly, onUnreadOnly, Modifier.weight(1f))
+                unreadOnly, onUnreadOnly, Modifier.weight(1f), recentTopics)
         } else if (state.activeChannelKind == "ballots") {
-            BallotChannel(state, onEvent, Modifier.weight(1f))
+            BallotChannel(focused, onEvent, Modifier.weight(1f))
         } else if (state.activeChannelKind == "materials") {
             MaterialList(state, onEvent, Modifier.weight(1f))
             if (state.canPost && state.preview == null) Composer(state, onEvent)
         } else if (state.activeChannelKind in setOf("forms", "homework", "schedule") || state.channels.firstOrNull { it.topicId == state.activeTopicId }?.supported == false) {
-            SpecializedChannel(state, onEvent, Modifier.weight(1f))
+            SpecializedChannel(focused, onEvent, Modifier.weight(1f))
         } else {
             Messages(state, onEvent, Modifier.weight(1f), searchOpen, { searchOpen = false },
                 showSearchAction = !conversation, onSearchOpen = { searchOpen = true })
@@ -544,7 +557,8 @@ private fun GroupContextCard(state: GroupUiState, context: GroupChatContext, onE
 @Composable
 private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                         query: String, onQuery: (String) -> Unit, kind: String, onKind: (String) -> Unit,
-                        unreadOnly: Boolean, onUnreadOnly: (Boolean) -> Unit, modifier: Modifier) {
+                        unreadOnly: Boolean, onUnreadOnly: (Boolean) -> Unit, modifier: Modifier,
+                        recentTopics: List<String>) {
     val uiText = rememberUiText()
     if (state.showTrusted) {
         TrustedPanel(state, onEvent, modifier)
@@ -624,12 +638,25 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
             }
             }
         }
+        val availableRecents = recentTopics.mapNotNull { id ->
+            (state.preview ?: state.channels).firstOrNull { it.topicId == id }
+        }
+        if (availableRecents.isNotEmpty() && !filtered) item {
+            Text(stringResource(R.string.ux300_android_recent_channels),
+                style = Zapara.typography.caption, color = c.text2)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                availableRecents.forEach { topic -> ZButton(topic.title,
+                    { onEvent(GroupEvent.OpenChannel(topic.topicId)) }, ghost = true,
+                    tag = "Group.RecentChannel.${topic.topicId}") }
+            }
+        }
         if (state.space != null) item {
             state.spaceError?.let { Text(it, color = c.bad, style = Zapara.typography.body) }
             if (state.preview != null) {
                 Text(uiText(R.string.space_day_36), style = Zapara.typography.section)
                 ZButton(uiText(R.string.space_day_37), { onEvent(GroupEvent.SpaceAction(GroupSpaceAction.EndPreview)) }, ghost = true)
             } else FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                ZButton(stringResource(R.string.ux300_group_obligations), { onEvent(GroupEvent.Obligations) }, ghost = true, tag = "Group.Obligations")
                 val mine = state.desk?.mine.orEmpty()
                 if (state.desk?.headman == true || "roles" in mine || "grants" in mine) ZButton(uiText(R.string.space_day_38), { onEvent(GroupEvent.SpaceAction(GroupSpaceAction.Panel("roles"))) }, ghost = true)
                 if (state.canManageChannels) ZButton(uiText(R.string.space_day_39), { onEvent(GroupEvent.SpaceAction(GroupSpaceAction.Panel("categories"))) }, ghost = true)
@@ -1401,12 +1428,15 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
     searchOpen: Boolean, onSearchDismiss: () -> Unit, showSearchAction: Boolean, onSearchOpen: () -> Unit) {
     val uiText = rememberUiText()
     val c = Zapara.colors
+    val calendarContext = LocalContext.current
+    val calendarTheme = if (c.isDark) R.style.Zapara_DatePicker_Dark else R.style.Zapara_DatePicker_Light
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var query by rememberSaveable(state.activeConversationId, state.activeTopicId) { mutableStateOf("") }
     var author by rememberSaveable(state.activeConversationId, state.activeTopicId) { mutableStateOf(MessageAuthor.All.name) }
     var senderId by rememberSaveable(state.activeConversationId, state.activeTopicId) { mutableStateOf("") }
     var kind by rememberSaveable(state.activeConversationId, state.activeTopicId) { mutableStateOf(MessageKind.All.name) }
+    var selectedDate by rememberSaveable(state.activeConversationId, state.activeTopicId) { mutableStateOf("") }
     var pendingQuote by remember(state.activeConversationId, state.activeTopicId) { mutableStateOf<String?>(null) }
     var highlightedQuote by remember(state.activeConversationId, state.activeTopicId) { mutableStateOf<String?>(null) }
     var quoteNotice by remember(state.activeConversationId, state.activeTopicId) { mutableStateOf<QuoteTarget?>(null) }
@@ -1415,11 +1445,15 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
     val kindFilter = MessageKind.entries.firstOrNull { it.name == kind } ?: MessageKind.All
     val selectedSenderId = senderId.takeIf(String::isNotBlank)
     val visible = browseMessages(state.messages, query, authorFilter, kindFilter, selectedSenderId)
-    val filtered = query.isNotBlank() || authorFilter != MessageAuthor.All || kindFilter != MessageKind.All || selectedSenderId != null
+        .filter { selectedDate.isBlank() || it.createdAt?.atZone(ZoneId.systemDefault())
+            ?.toLocalDate()?.toString() == selectedDate }
+    val filtered = query.isNotBlank() || authorFilter != MessageAuthor.All ||
+        kindFilter != MessageKind.All || selectedSenderId != null || selectedDate.isNotBlank()
     KeepLatestVisible(listState, "${state.activeConversationId}:${state.activeTopicId}",
         enabled = !filtered && pendingQuote == null && highlightedQuote == null)
     var firstScrollDone by remember(state.activeConversationId, state.activeTopicId) { mutableStateOf(false) }
-    val filterKey = Triple(query.trim(), authorFilter to selectedSenderId, kindFilter)
+    val filterKey = listOf(query.trim(), authorFilter.name, selectedSenderId.orEmpty(),
+        kindFilter.name, selectedDate)
     var previousFilterKey by remember(state.activeConversationId, state.activeTopicId) { mutableStateOf(filterKey) }
     LaunchedEffect(state.activeConversationId, state.activeTopicId, state.messages.size, state.hasMore, filterKey) {
         if (filterKey != previousFilterKey) {
@@ -1438,6 +1472,7 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
             listState.animateScrollToItem(index + if (state.hasMore) 1 else 0)
             highlightedQuote = target
             pendingQuote = null
+            quoteNotice = null
             delay(3000)
             if (highlightedQuote == target) highlightedQuote = null
         }
@@ -1449,8 +1484,11 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
             horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             Text(stringResource(R.string.ux30_chat_result_count, visible.size, state.messages.size),
                 style = Zapara.typography.caption, color = c.text2, modifier = Modifier.testTag("Group.SearchActive"))
+            if (selectedDate.isNotBlank()) Text(selectedDate, style = Zapara.typography.caption,
+                color = c.text2)
             ZButton(stringResource(R.string.group_message_reset), {
-                query = ""; author = MessageAuthor.All.name; senderId = ""; kind = MessageKind.All.name
+                query = ""; author = MessageAuthor.All.name; senderId = "";
+                kind = MessageKind.All.name; selectedDate = ""
             }, ghost = true, tag = "Group.InlineMessageReset")
         }
         if (quoteNotice != null) Text(stringResource(when {
@@ -1459,6 +1497,10 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
             else -> R.string.next_quote_missing
         }),
             style = Zapara.typography.caption, color = c.warn)
+        if (quoteNotice == QuoteTarget.Earlier && state.hasMore)
+            ZButton(stringResource(R.string.ux300_android_find_quoted_message),
+                { onEvent(GroupEvent.Older) }, enabled = !state.olderLoading,
+                ghost = true, tag = "Group.LoadQuotedMessage")
         if (state.chatLoading && state.messages.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Text(stringResource(R.string.group_loading), style = Zapara.typography.caption, color = c.text2)
@@ -1505,7 +1547,15 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
                                         QuoteTarget.Loaded -> {
                                             quoteNotice = null
                                             query = ""; author = MessageAuthor.All.name; senderId = ""; kind = MessageKind.All.name
+                                            selectedDate = ""
                                             pendingQuote = id
+                                        }
+                                        QuoteTarget.Earlier -> {
+                                            quoteNotice = found
+                                            query = ""; author = MessageAuthor.All.name
+                                            senderId = ""; kind = MessageKind.All.name; selectedDate = ""
+                                            pendingQuote = id
+                                            if (state.hasMore) onEvent(GroupEvent.Older)
                                         }
                                         else -> quoteNotice = found
                                     }
@@ -1531,14 +1581,26 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
                 style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f))
         }
         if (filtered) ZButton(stringResource(R.string.group_message_reset), {
-            query = ""; author = MessageAuthor.All.name; senderId = ""; kind = MessageKind.All.name
+            query = ""; author = MessageAuthor.All.name; senderId = "";
+            kind = MessageKind.All.name; selectedDate = ""
         }, ghost = true, tag = "Group.MessageReset")
+        ZButton(stringResource(R.string.ux300_android_chat_pick_date), {
+            val date = runCatching { java.time.LocalDate.parse(selectedDate) }
+                .getOrDefault(java.time.LocalDate.now())
+            android.app.DatePickerDialog(calendarContext, calendarTheme, { _, year, month, day ->
+                selectedDate = java.time.LocalDate.of(year, month + 1, day).toString()
+            }, date.year, date.monthValue - 1, date.dayOfMonth).show()
+        }, ghost = true, tag = "Group.MessageDate")
+        if (selectedDate.isNotBlank()) ZButton(stringResource(R.string.ux300_android_chat_any_date),
+            { selectedDate = "" }, ghost = true, tag = "Group.MessageAnyDate")
         Text(stringResource(R.string.group_message_filters), style = Zapara.typography.section, color = c.text1)
-        val authors = state.messages.filter { it.senderId.isNotBlank() }.distinctBy { it.senderId }
-        val selectedAuthor = authors.firstOrNull { it.senderId == selectedSenderId }
+        val authors = (state.people.map { it.id to it.name } +
+            state.messages.filter { it.senderId.isNotBlank() }.map { it.senderId to it.author })
+            .filter { it.first.isNotBlank() }.distinctBy { it.first }.sortedBy { it.second }
+        val selectedAuthor = authors.firstOrNull { it.first == selectedSenderId }
         var authorMenu by remember(state.activeConversationId, state.activeTopicId) { mutableStateOf(false) }
         Box {
-            ZButton(selectedAuthor?.let { "${it.author} · ${it.senderId.takeLast(6)}" }
+            ZButton(selectedAuthor?.let { "${it.second} · ${it.first.takeLast(6)}" }
                 ?: stringResource(R.string.ux60_chat_author_all), { authorMenu = true },
                 ghost = selectedAuthor == null, tag = "Group.MessageSender")
             DropdownMenu(expanded = authorMenu, onDismissRequest = { authorMenu = false }) {
@@ -1546,9 +1608,9 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
                     senderId = ""; author = MessageAuthor.All.name; authorMenu = false
                 }, modifier = Modifier.testTag("Group.MessageSender.All"))
                 authors.forEach { person ->
-                    DropdownMenuItem(text = { Text("${person.author} · ${person.senderId.takeLast(6)}") }, onClick = {
-                        senderId = person.senderId; author = MessageAuthor.All.name; authorMenu = false
-                    }, modifier = Modifier.testTag("Group.MessageSender.${person.senderId}"))
+                    DropdownMenuItem(text = { Text("${person.second} · ${person.first.takeLast(6)}") }, onClick = {
+                        senderId = person.first; author = MessageAuthor.All.name; authorMenu = false
+                    }, modifier = Modifier.testTag("Group.MessageSender.${person.first}"))
                 }
             }
         }

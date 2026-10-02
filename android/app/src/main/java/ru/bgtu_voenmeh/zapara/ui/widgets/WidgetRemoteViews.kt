@@ -39,12 +39,25 @@ object WidgetRemoteViews {
         val compact = heightDp < 120
         val capacity = ScheduleWidgetComposer.rowsForHeightDp(heightDp, context.resources.configuration.fontScale)
         val visibleRows = if (snapshot.cleared) emptyList() else snapshot.rows.take(capacity)
+        val hidden = snapshot.hiddenRemainingCount + (snapshot.rows.size - visibleRows.size)
+        val hiddenLabel = if (hidden > 0) context.resources.getQuantityString(
+            R.plurals.ux300_android_hidden_lessons, hidden, hidden) else ""
+        val staleLabel = snapshot.staleDays?.let { context.resources.getQuantityString(
+            R.plurals.ux300_android_stale_days, it, it) }.orEmpty()
+        val compactStatus = when {
+            snapshot.staleDays != null && hidden > 0 -> context.getString(
+                R.string.ux300_android_widget_compact_both, snapshot.staleDays, hidden)
+            snapshot.staleDays != null -> staleLabel
+            hidden > 0 -> context.getString(R.string.ux300_android_widget_compact_hidden, hidden)
+            else -> ""
+        }
         val views = RemoteViews(context.packageName, if (compact) R.layout.widget_schedule_compact else R.layout.widget_schedule)
         val colors = WidgetPalette.of(context, snapshot.isDark)
         val title = if (compact && !snapshot.cleared && snapshot.dayLabel.isNotBlank())
             context.getString(R.string.widget_schedule_short_title, snapshot.dayLabel) else snapshot.title
         paintChrome(context, views, R.id.widget_schedule_root, R.id.widget_schedule_title, R.id.widget_schedule_subtitle, R.id.widget_schedule_empty,
-            title, snapshot.readError ?: if (compact) "" else snapshot.subtitle,
+            title, snapshot.readError ?: if (compact) compactStatus
+                else listOf(snapshot.subtitle, hiddenLabel, staleLabel).filter(String::isNotBlank).joinToString(" · "),
             snapshot.empty, snapshot.cleared, colors)
         if (snapshot.readError != null) views.setOnClickPendingIntent(R.id.widget_schedule_subtitle,
             WidgetIntents.retry(context, widgetId, "schedule"))
@@ -53,6 +66,8 @@ object WidgetRemoteViews {
         val spoken = if (snapshot.cleared) listOf(snapshot.title, context.getString(R.string.widget_loading)).joinToString(", ") else buildList {
             add(snapshot.title)
             add(snapshot.subtitle)
+            add(hiddenLabel)
+            add(staleLabel)
             add(snapshot.readError.orEmpty())
             add(snapshot.empty.orEmpty())
             visibleRows.forEach {
@@ -90,10 +105,23 @@ object WidgetRemoteViews {
         val compact = heightDp < 120
         val visibleRows = if (snapshot.cleared) emptyList() else snapshot.rows.take(
             HomeworkWidgetComposer.rowsForHeightDp(heightDp, context.resources.configuration.fontScale))
+        val hidden = snapshot.hiddenActiveCount + (snapshot.rows.size - visibleRows.size)
+        val hiddenLabel = if (hidden > 0) context.resources.getQuantityString(
+            R.plurals.ux300_android_hidden_tasks, hidden, hidden) else ""
+        val staleLabel = snapshot.staleDays?.let { context.resources.getQuantityString(
+            R.plurals.ux300_android_stale_days, it, it) }.orEmpty()
+        val compactStatus = when {
+            snapshot.staleDays != null && hidden > 0 -> context.getString(
+                R.string.ux300_android_widget_compact_both, snapshot.staleDays, hidden)
+            snapshot.staleDays != null -> staleLabel
+            hidden > 0 -> context.getString(R.string.ux300_android_widget_compact_hidden, hidden)
+            else -> ""
+        }
         val views = RemoteViews(context.packageName, if (compact) R.layout.widget_homework_compact else R.layout.widget_homework)
         val colors = WidgetPalette.of(context, snapshot.isDark)
         paintChrome(context, views, R.id.widget_homework_root, R.id.widget_homework_title, R.id.widget_homework_subtitle, R.id.widget_homework_empty,
-            snapshot.title, snapshot.readError ?: if (compact) "" else snapshot.subtitle,
+            snapshot.title, snapshot.readError ?: if (compact) compactStatus
+                else listOf(snapshot.subtitle, hiddenLabel, staleLabel).filter(String::isNotBlank).joinToString(" · "),
             snapshot.empty, snapshot.cleared, colors)
         if (snapshot.readError != null) views.setOnClickPendingIntent(R.id.widget_homework_subtitle,
             WidgetIntents.retry(context, widgetId, "homework"))
@@ -121,6 +149,8 @@ object WidgetRemoteViews {
         val spoken = if (snapshot.cleared) listOf(snapshot.title, context.getString(R.string.widget_loading)) else buildList {
             add(snapshot.title)
             add(snapshot.subtitle)
+            add(hiddenLabel)
+            add(staleLabel)
             add(snapshot.readError.orEmpty())
             add(snapshot.empty.orEmpty())
         }
@@ -156,8 +186,13 @@ object WidgetRemoteViews {
         bindLine(views, R.id.widget_timer_detail,
             if (snapshot.cleared || heightDp <= 110 || context.resources.configuration.fontScale >= 1.2f) "" else snapshot.detail, colors.text2)
         bindTimerDescription(context, views, snapshot)
-        views.setOnClickPendingIntent(R.id.widget_timer_root, WidgetIntents.open(context, 4104, 0, "schedule", null,
-            WidgetLaunchScope(snapshot.identity.profileId, snapshot.identity.databaseName)))
+        val scope = WidgetLaunchScope(snapshot.identity.profileId, snapshot.identity.databaseName)
+        val focused = WidgetIntents.scheduleRow(context, 4104, 0,
+            ScheduleWidgetRow(snapshot.subject, snapshot.detail, false,
+                date = snapshot.targetDate, timeStart = snapshot.targetTime,
+                subjectNorm = snapshot.targetSubjectNorm, groupId = snapshot.targetGroupId), scope)
+        views.setOnClickPendingIntent(R.id.widget_timer_root, focused ?:
+            WidgetIntents.open(context, 4104, 0, "schedule", null, scope))
         return views
     }
 

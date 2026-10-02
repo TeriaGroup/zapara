@@ -77,20 +77,31 @@ public sealed class GroupFinalFollowupTests
     [AvaloniaTheory][InlineData(false)][InlineData(true)]
     public async Task Homework_ack_never_advances_a_new_editor_or_resurrects_purged_state(bool purge)
     {
-        using var f=new GroupSpaceViewModelTests.Fixture("homework","homework");var id=Guid.NewGuid();var denied=false;var shares=0;var started=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);var release=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var f=new GroupSpaceViewModelTests.Fixture("homework","homework") { HomeworkAudience=true };var id=Guid.NewGuid();var denied=false;var shares=0;var operationIds=new List<Guid?>();var started=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);var release=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         f.Intercept=async(request,ct)=>
         {
             var path=request.RequestUri!.AbsolutePath;
             if(denied&&path.EndsWith("/space",StringComparison.Ordinal))return Problem(403,"forbidden");
-            if(request.Method==HttpMethod.Post&&path.EndsWith("/homework/share",StringComparison.Ordinal)){shares++;var body=JsonSerializer.Deserialize<HomeworkUpsert>(await request.Content!.ReadAsStringAsync(ct),new JsonSerializerOptions(JsonSerializerDefaults.Web))!;if(shares==1){started.TrySetResult();await release.Task.WaitAsync(ct);}return Payload(new HomeworkResponse(id,CommunityId,body.Title,body.Body,1,DateTimeOffset.UtcNow,DateTimeOffset.UtcNow),HttpStatusCode.Created);}
+            if(request.Method==HttpMethod.Post&&path.EndsWith("/homework/share",StringComparison.Ordinal)){shares++;var body=JsonSerializer.Deserialize<HomeworkUpsert>(await request.Content!.ReadAsStringAsync(ct),new JsonSerializerOptions(JsonSerializerDefaults.Web))!;operationIds.Add(body.OperationId);if(shares==1){started.TrySetResult();await release.Task.WaitAsync(ct);}return Payload(new HomeworkResponse(Guid.NewGuid(),CommunityId,body.Title,body.Body,1,DateTimeOffset.UtcNow,DateTimeOffset.UtcNow,topicId:body.TopicId),HttpStatusCode.Created);}
             return null;
         };
         await f.Vm.ActivateAsync();f.Vm.SharedHomeworkTitle="v1";f.Vm.SharedHomeworkBody="v1";var pending=f.Vm.SaveSharedHomeworkCommand.ExecuteAsync(null);await started.Task.WaitAsync(TestContext.Current.CancellationToken);
         if(purge){denied=true;f.Vm.Watch(true);await Waits.Until(()=>!f.Vm.HasHome,"private state purged",6500);}
-        else{f.Vm.NewSharedHomeworkCommand.Execute(null);f.Vm.SharedHomeworkTitle="Новое";f.Vm.SharedHomeworkBody="Новый editor";}
+        else{f.Vm.NewSharedHomeworkCommand.Execute(null);Assert.Equal("v1",f.Vm.SharedHomeworkTitle);f.Vm.SharedHomeworkTitle="Правка при отправке";f.Vm.SharedHomeworkBody="Новый текст до ответа";}
         release.TrySetResult();await pending;
         if(purge){denied=false;f.Vm.RequestCommunity(CommunityId);await f.Vm.ActivateAsync();Assert.Empty(f.Vm.SharedHomeworkBody);}
-        else{await f.Vm.SaveSharedHomeworkCommand.ExecuteAsync(null);Assert.Equal(2,shares);}
+        else
+        {
+            Assert.Equal("Правка при отправке",f.Vm.SharedHomeworkTitle);
+            Assert.Equal("Новый текст до ответа",f.Vm.SharedHomeworkBody);
+            f.Vm.NewSharedHomeworkCommand.Execute(null);
+            Assert.Empty(f.Vm.SharedHomeworkBody);
+            f.Vm.SharedHomeworkTitle="Новое";f.Vm.SharedHomeworkBody="Новый editor";
+            await f.Vm.SaveSharedHomeworkCommand.ExecuteAsync(null);
+            Assert.Equal(2,shares);
+            Assert.All(operationIds,operationId=>Assert.NotNull(operationId));
+            Assert.NotEqual(operationIds[0],operationIds[1]);
+        }
     }
     [AvaloniaFact] public async Task Legacy_creation_never_sends_initial_acl_and_never_falls_back_from_custom()
     {

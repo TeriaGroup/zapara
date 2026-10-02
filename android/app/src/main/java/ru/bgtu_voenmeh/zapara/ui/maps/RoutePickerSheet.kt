@@ -32,10 +32,11 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
     val c = Zapara.colors
     val title = stringResource(if (state.field == RouteField.From) R.string.maps_from else R.string.maps_to)
-    val entrances = state.items.filter { it.kind == "entrance" }
-    val rooms = state.items.filter { it.kind == "room" }
+    val shownPinned = if (state.query.isBlank()) state.pinned.map { it.id }.toSet() else emptySet()
+    val entrances = state.items.filter { it.kind == "entrance" && it.id !in shownPinned }
+    val rooms = state.items.filter { it.kind == "room" && it.id !in shownPinned }
     val recentOutsideResults = if (state.query.isBlank())
-        state.recent.filterNot { recent -> state.items.any { it.id == recent.id } }
+        state.recent.filterNot { recent -> recent.id in shownPinned || state.items.any { it.id == recent.id } }
     else emptyList()
 
     ZBottomSheet({ onEvent(MapsEvent.ClosePicker) }, "Sheet.Route") {
@@ -109,6 +110,15 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
                     style = Zapara.typography.caption, color = c.text2,
                     modifier = Modifier.testTag("Picker.ResultCount"))
             }
+            if (state.query.isBlank() && state.pinned.isNotEmpty()) {
+                item("pinned-title") {
+                    Text(stringResource(R.string.ux300_ext_pinned_places), style = Zapara.typography.section)
+                    Text(stringResource(R.string.ux300_ext_session_memory), style = Zapara.typography.caption)
+                }
+                items(state.pinned, key = { "pinned:${it.id}" }) { place ->
+                    PlaceRow(place, "", state.field, state.epoch, onEvent, pinned = true)
+                }
+            }
             if (state.items.isNotEmpty() &&
                 (state.query.isNotBlank() || state.building != null || state.floor != null)) item("reset-filters") {
                 ZButton(stringResource(R.string.ux60_picker_reset_filters),
@@ -134,7 +144,8 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
                         tag = "Picker.ClearRecent")
                 }
                 items(recentOutsideResults, key = { "recent:${it.id}" }) { place ->
-                    PlaceRow(place, "", state.field, state.epoch, onEvent)
+                    PlaceRow(place, "", state.field, state.epoch, onEvent,
+                        pinned = state.pinned.any { it.id == place.id }, canPin = state.pinned.size < 8)
                 }
             }
             if (state.items.isEmpty()) {
@@ -155,7 +166,8 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
                     Text(stringResource(R.string.maps_places_entrances), style = Zapara.typography.caption, color = c.text2)
                 }
                 items(entrances, key = { "entrance:${it.id}" }) { place ->
-                    PlaceRow(place, state.query, state.field, state.epoch, onEvent)
+                    PlaceRow(place, state.query, state.field, state.epoch, onEvent,
+                        pinned = state.pinned.any { it.id == place.id }, canPin = state.pinned.size < 8)
                 }
             }
             if (rooms.isNotEmpty()) {
@@ -163,7 +175,8 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
                     Text(stringResource(R.string.maps_places_rooms), style = Zapara.typography.caption, color = c.text2)
                 }
                 items(rooms, key = { "room:${it.id}" }) { place ->
-                    PlaceRow(place, state.query, state.field, state.epoch, onEvent)
+                    PlaceRow(place, state.query, state.field, state.epoch, onEvent,
+                        pinned = state.pinned.any { it.id == place.id }, canPin = state.pinned.size < 8)
                 }
             }
         }
@@ -172,7 +185,7 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
 
 @Composable
 private fun PlaceRow(place: RoutePlaceUi, query: String, field: RouteField, epoch: Long,
-    onEvent: (MapsEvent) -> Unit) {
+    onEvent: (MapsEvent) -> Unit, pinned: Boolean = false, canPin: Boolean = true) {
     val c = Zapara.colors
     ZCard(
         Modifier.fillMaxWidth().testTag("Picker.Row.${place.id}")
@@ -182,5 +195,8 @@ private fun PlaceRow(place: RoutePlaceUi, query: String, field: RouteField, epoc
             HighlightText(place.label, query, Zapara.typography.bodyStrong, Modifier.weight(1f))
             Text(place.hint, style = Zapara.typography.caption, color = c.text2)
         }
+        ZButton(stringResource(if (pinned) R.string.ux300_ext_unpin else R.string.ux300_ext_pin),
+            { onEvent(MapsEvent.TogglePinnedPlace(place.id, epoch)) }, ghost = true,
+            enabled = pinned || canPin, tag = "Picker.Pin.${place.id}")
     }
 }

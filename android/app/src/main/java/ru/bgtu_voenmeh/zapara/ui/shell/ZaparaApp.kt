@@ -62,6 +62,9 @@ import ru.bgtu_voenmeh.zapara.ui.friends.FriendsSection
 import ru.bgtu_voenmeh.zapara.ui.friends.FriendsViewModel
 import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkSection
 import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkViewModel
+import ru.bgtu_voenmeh.zapara.ui.homework.nextHomeworkLesson
+import ru.bgtu_voenmeh.zapara.ui.calendar.AndroidCalendarShare
+import ru.bgtu_voenmeh.zapara.ui.calendar.CalendarLessonExport
 import ru.bgtu_voenmeh.zapara.ui.maps.MapsSection
 import ru.bgtu_voenmeh.zapara.ui.maps.MapsViewModel
 import ru.bgtu_voenmeh.zapara.ui.schedule.ScheduleSection
@@ -231,6 +234,7 @@ private fun ZaparaAppBody(
                                     navArgument("date") { type = NavType.StringType; nullable = true; defaultValue = null },
                                     navArgument("time") { type = NavType.StringType; nullable = true; defaultValue = null },
                                     navArgument("subject") { type = NavType.StringType; nullable = true; defaultValue = null },
+                                    navArgument("lessonKey") { type = NavType.StringType; nullable = true; defaultValue = null },
                                     navArgument("widgetProfile") { type = NavType.StringType; nullable = true; defaultValue = null },
                                     navArgument("widgetDatabase") { type = NavType.StringType; nullable = true; defaultValue = null },
                                     navArgument("widgetGroup") { type = NavType.StringType; nullable = true; defaultValue = null })
@@ -242,6 +246,7 @@ private fun ZaparaAppBody(
                                 val widgetGroup = dest.arguments?.getString("widgetGroup")
                                 val focusTime = dest.arguments?.getString("time")
                                 val focusSubject = dest.arguments?.getString("subject")
+                                val academicKey = dest.arguments?.getString("lessonKey")
                                 val scoped = widgetProfile != null || widgetDatabase != null || widgetGroup != null
                                 val vm: ScheduleViewModel = viewModel(factory = ScheduleViewModel.factory(container, if (scoped) null else date))
                                 val s by vm.state.collectAsStateWithLifecycle()
@@ -276,10 +281,24 @@ private fun ZaparaAppBody(
                                     if (page.lessons.none { it.timeStart == focusTime && it.subjectNorm == focusSubject })
                                         launchFeedback(WidgetLaunchProblem.InvalidTarget, Section.Schedule)
                                 }
+                                val dayShareScope = rememberCoroutineScope()
                                 ScheduleSection(s, vm::onEvent, onDiscuss = { context -> nav.navigate("group?context=${android.net.Uri.encode(context)}") },
                                     onWeek = { selected -> nav.navigate("week?date=$selected") },
+                                    onShareDay = { page -> dayShareScope.launch {
+                                        if (!matchesSource(s.groupId, s.profileName)) return@launch
+                                        val name = activity.getString(R.string.ux300_android_calendar_day_name,
+                                            page.date.format(java.time.format.DateTimeFormatter.ofPattern(
+                                                "d MMMM yyyy", java.util.Locale.forLanguageTag("ru"))))
+                                        val text = CalendarLessonExport.plainText(name,
+                                            CalendarLessonExport.day(page),
+                                            activity.getString(R.string.ux300_android_no_lessons))
+                                        activity.startActivity(android.content.Intent.createChooser(
+                                            AndroidCalendarShare.textIntent(text),
+                                            activity.getString(R.string.ux300_android_share_day)))
+                                    } },
                                     focusTime = focusTime.takeIf { !scoped || scopedValid },
-                                    focusSubject = focusSubject.takeIf { !scoped || scopedValid }) { room ->
+                                    focusSubject = focusSubject.takeIf { !scoped || scopedValid },
+                                    academicKey = academicKey.takeIf { !scoped || scopedValid }) { room ->
                                     nav.openSection(Section.Maps, room, sourceDate = s.selected.toString())
                                 }
                                 }
@@ -353,14 +372,108 @@ private fun ZaparaAppBody(
                                     targetHandled = true
                                     homeworkWidgetId(argument)?.let { vm.onEvent(ru.bgtu_voenmeh.zapara.ui.homework.HomeworkEvent.Edit(it)) }
                                 }
-                                HomeworkSection(s, vm::onEvent)
+                                val homeworkNavigation = rememberCoroutineScope()
+                                HomeworkSection(s, vm::onEvent) { subject ->
+                                    val expectedProfile = container.profile.databaseName
+                                    homeworkNavigation.launch {
+                                        val (group, target) = withContext(Dispatchers.IO) {
+                                            val settings = container.repo.settings()
+                                            val group = settings.myGroupId.orEmpty()
+                                            group to nextHomeworkLesson(container.ownLessons(),
+                                                ru.bgtu_voenmeh.zapara.data.SchedCtx(group, settings.periodStart,
+                                                    settings.weekCount, settings.parityInvert),
+                                                subject, container.clock())
+                                        }
+                                        val currentGroup = withContext(Dispatchers.IO) {
+                                            container.repo.settings().myGroupId.orEmpty()
+                                        }
+                                        if (expectedProfile != container.profile.databaseName || group != currentGroup ||
+                                            (container.app as? ZaparaApplication)?.container !== container) return@launch
+                                        if (target == null) container.toasts.show(
+                                            container.app.getString(R.string.ux300_android_no_next_subject_lesson),
+                                            ru.bgtu_voenmeh.zapara.ui.components.ToastKind.Bad)
+                                        else nav.openSection(Section.Schedule, target.date.toString(),
+                                            focusTime = target.time, focusSubject = target.subjectNorm)
+                                    }
+                                }
                                 }
                             }
                             composable(Section.Week.pattern, arguments = listOf(navArgument("date") { type = NavType.StringType; nullable = true; defaultValue = null })) { dest ->
                                 ProvideSectionEntry {
                                 val vm: WeekViewModel = viewModel(factory = WeekViewModel.factory(container, dest.arguments?.getString("date")))
                                 val s by vm.state.collectAsStateWithLifecycle()
-                                WeekSection(s, vm::onEvent) { date -> nav.openSection(Section.Schedule, date.toString()) }
+                                val weekShareScope = rememberCoroutineScope()
+                                WeekSection(s, vm::onEvent,
+                                    onOpenAgendaMap = { raw -> weekShareScope.launch {
+                                        if (matchesSource(s.groupId, s.profileName)) nav.openSection(Section.Maps, raw)
+                                    } },
+                                    onOpenAcademicLesson = { date, lesson -> weekShareScope.launch {
+                                        if (!matchesSource(s.groupId, s.profileName)) return@launch
+                                        val valid = withContext(Dispatchers.IO) {
+                                            val prefs = container.repo.settings()
+                                            val current = ru.bgtu_voenmeh.zapara.data.Schedule.lessonsForDate(container.ownLessons(),
+                                                s.groupId, date, prefs.periodStart, prefs.weekCount, prefs.parityInvert)
+                                            current.count { ru.bgtu_voenmeh.zapara.ui.week.academicLessonKey(it) ==
+                                                ru.bgtu_voenmeh.zapara.ui.week.academicLessonKey(lesson) } == 1 && current.any { it == lesson }
+                                        }
+                                        if (!matchesSource(s.groupId, s.profileName)) return@launch
+                                        if (valid) nav.openSection(Section.Schedule, date.toString(),
+                                            lessonKey = ru.bgtu_voenmeh.zapara.ui.week.academicLessonKey(lesson))
+                                        else container.toasts.show(activity.getString(R.string.ux300_agenda_lesson_changed),
+                                            ru.bgtu_voenmeh.zapara.ui.components.ToastKind.Bad)
+                                    } },
+                                    onOpenHomework = { id -> weekShareScope.launch {
+                                        if (matchesSource(s.groupId, s.profileName)) nav.openSection(Section.Homework, id.toString())
+                                    } },
+                                    onOpenLesson = { date, time, subject -> nav.openSection(Section.Schedule,
+                                        date.toString(), focusTime = time, focusSubject = subject) },
+                                    onExportIcs = { week -> weekShareScope.launch {
+                                        if (!matchesSource(week.groupId, week.profileName) || week.days.size != 7)
+                                            return@launch
+                                        val name = activity.getString(R.string.ux300_android_calendar_week_name,
+                                            week.days.first().date.toString(), week.days.last().date.toString(),
+                                            week.groupId)
+                                        try {
+                                            val result = withContext(Dispatchers.IO) {
+                                                CalendarLessonExport.ics(CalendarLessonExport.week(week.days),
+                                                    week.groupId, name, java.time.Instant.now())
+                                            }
+                                            if (result.eventCount == 0) {
+                                                container.toasts.show(activity.getString(R.string.ux300_android_calendar_no_events),
+                                                    ru.bgtu_voenmeh.zapara.ui.components.ToastKind.Bad)
+                                                return@launch
+                                            }
+                                            val uri = withContext(Dispatchers.IO) {
+                                                AndroidCalendarShare.writeIcs(activity, result)
+                                            }
+                                            if (!matchesSource(week.groupId, week.profileName)) return@launch
+                                            val send = AndroidCalendarShare.icsIntent(activity, uri)
+                                            activity.startActivity(android.content.Intent.createChooser(send,
+                                                activity.getString(R.string.ux300_android_export_ics)).apply {
+                                                clipData = send.clipData
+                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            })
+                                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                            throw cancelled
+                                        } catch (_: Exception) {
+                                            container.toasts.show(activity.getString(R.string.ux300_android_calendar_failed),
+                                                ru.bgtu_voenmeh.zapara.ui.components.ToastKind.Bad)
+                                        }
+                                    } },
+                                    onShareText = { week -> weekShareScope.launch {
+                                        if (!matchesSource(week.groupId, week.profileName) || week.days.size != 7)
+                                            return@launch
+                                        val name = activity.getString(R.string.ux300_android_calendar_week_name,
+                                            week.days.first().date.toString(), week.days.last().date.toString(),
+                                            week.groupId)
+                                        val text = CalendarLessonExport.plainText(name,
+                                            CalendarLessonExport.week(week.days),
+                                            activity.getString(R.string.ux300_android_no_lessons))
+                                        activity.startActivity(android.content.Intent.createChooser(
+                                            AndroidCalendarShare.textIntent(text),
+                                            activity.getString(R.string.ux300_android_share_text)))
+                                    } },
+                                    onOpenDay = { date -> nav.openSection(Section.Schedule, date.toString()) })
                                 }
                             }
                             composable(Section.Summary.route) {
@@ -416,7 +529,7 @@ private fun ZaparaAppBody(
                                         vm.onEvent(ru.bgtu_voenmeh.zapara.ui.teachers.TeachersEvent.Open(teacherId))
                                 }
                                 val teacherNavigation = rememberCoroutineScope()
-                                TeachersSection(s, vm::onEvent) { date, expectedGroup, expectedProfile ->
+                                TeachersSection(s, vm::onEvent, onOpenOwnDay = { date, expectedGroup, expectedProfile ->
                                     teacherNavigation.launch {
                                         val valid = withContext(Dispatchers.IO) {
                                             expectedGroup.isNotBlank() &&
@@ -426,7 +539,17 @@ private fun ZaparaAppBody(
                                         if (valid && (container.app as? ZaparaApplication)?.container === container)
                                             nav.openSection(Section.Schedule, date.toString())
                                     }
-                                }
+                                }, onOpenMap = { room, expectedGroup, expectedProfile ->
+                                    teacherNavigation.launch {
+                                        val valid = withContext(Dispatchers.IO) {
+                                            expectedGroup.isNotBlank() &&
+                                                container.repo.settings().myGroupId == expectedGroup &&
+                                                container.profile.databaseName == expectedProfile
+                                        }
+                                        if (valid && (container.app as? ZaparaApplication)?.container === container)
+                                            nav.openSection(Section.Maps, room)
+                                    }
+                                })
                                 }
                             }
                             composable(Section.Friends.route) {

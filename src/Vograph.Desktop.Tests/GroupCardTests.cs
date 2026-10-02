@@ -212,10 +212,9 @@ public class GroupCardTests
         await shell.StartAsync(allowNetwork: false);
         var first = Assert.IsType<ScheduleViewModel>(shell.Current);
         var reloads = 0;
-        // Every Apply starts with Lessons.Clear(), which raises Reset even on an empty collection, so a
-        // recompose shows up here whatever it produces. Title would not: recomposing the same group at the
-        // same offset yields the identical string, and the [ObservableProperty] setter drops equal values.
-        first.Lessons.CollectionChanged += (_, _) => reloads++;
+        // DayShown fires for every completed composition, even when stable lesson rows are
+        // reconciled in place and the collection does not change.
+        first.DayShown += _ => reloads++;
 
         // Positive control: while first is still the registered section the shell event does reach it.
         shell.RaiseScheduleChanged();

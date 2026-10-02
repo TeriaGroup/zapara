@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -123,6 +124,7 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
     draftsOnly: Boolean, onDraftsOnly: (Boolean) -> Unit,
     unreadFirst: Boolean, onUnreadFirst: (Boolean) -> Unit, modifier: Modifier) {
     var adding by remember { mutableStateOf(false) }
+    var invitesExpanded by rememberSaveable(state.userId) { mutableStateOf(false) }
     val largeText = LocalDensity.current.fontScale >= 1.5f
     val sourceFilter = InboxSourceFilter.entries.firstOrNull { it.name == source } ?: InboxSourceFilter.All
     val visible = browseInbox(state.rows, query, sourceFilter, unreadOnly, state.draftPreviews.keys, draftsOnly, unreadFirst)
@@ -176,7 +178,13 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
                 state.outgoing.forEach { Text(stringResource(R.string.face_invite_sent, it.name), color = Zapara.colors.text2) }
             }
         }
-        items(state.incoming, key = { "invite:${it.id}" }) { invite ->
+        if (state.incoming.isNotEmpty()) item("invite-heading") {
+            ZButton(stringResource(if (invitesExpanded) R.string.ux300_android_hide_invites
+                else R.string.ux300_android_show_invites, state.incoming.size),
+                { invitesExpanded = !invitesExpanded }, ghost = true,
+                tag = "Inbox.InvitesToggle")
+        }
+        if (invitesExpanded) items(state.incoming, key = { "invite:${it.id}" }) { invite ->
             ZCard(modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.face_invites_you, invite.name), color = Zapara.colors.text1)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
@@ -266,12 +274,19 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
     var historyQuery by rememberSaveable(activeId) { mutableStateOf("") }
     var historyKind by rememberSaveable(state.userId, state.profileDatabaseName, activeId) { mutableStateOf(PersonalHistoryKind.All.name) }
     var historyAuthor by rememberSaveable(state.userId, state.profileDatabaseName, activeId) { mutableStateOf(PersonalHistoryAuthor.All.name) }
+    var historyDate by rememberSaveable(state.userId, state.profileDatabaseName, activeId) { mutableStateOf("") }
+    val historyContext = LocalContext.current
+    val historyCalendarTheme = if (Zapara.colors.isDark) R.style.Zapara_DatePicker_Dark
+        else R.style.Zapara_DatePicker_Light
     var historyFiltersOpen by rememberSaveable(state.userId, state.profileDatabaseName, activeId) { mutableStateOf(false) }
     val kindFilter = PersonalHistoryKind.entries.firstOrNull { it.name == historyKind } ?: PersonalHistoryKind.All
     val authorFilter = PersonalHistoryAuthor.entries.firstOrNull { it.name == historyAuthor } ?: PersonalHistoryAuthor.All
-    val historyFiltered = historyQuery.isNotBlank() || kindFilter != PersonalHistoryKind.All || authorFilter != PersonalHistoryAuthor.All
-    fun clearHistoryFilters() { historyQuery = ""; historyKind = PersonalHistoryKind.All.name; historyAuthor = PersonalHistoryAuthor.All.name }
+    val historyFiltered = historyQuery.isNotBlank() || kindFilter != PersonalHistoryKind.All ||
+        authorFilter != PersonalHistoryAuthor.All || historyDate.isNotBlank()
+    fun clearHistoryFilters() { historyQuery = ""; historyKind = PersonalHistoryKind.All.name;
+        historyAuthor = PersonalHistoryAuthor.All.name; historyDate = "" }
     val visibleMessages = browseLoadedPersonalHistory(state.messages, historyQuery, kindFilter, authorFilter, state.userId)
+        .filter { historyDate.isBlank() || it.createdAt.atZone(ZoneId.systemDefault()).toLocalDate().toString() == historyDate }
     var saving by remember { mutableStateOf<SocialMessage?>(null) }
     var pickingFor by remember { mutableStateOf<String?>(null) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -289,7 +304,7 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
     var highlightedQuote by remember(activeId) { mutableStateOf<String?>(null) }
     var quoteNotice by remember(activeId) { mutableStateOf<PersonalQuoteTarget?>(null) }
     KeepLatestVisible(list, activeId, enabled = !historyFiltered && pendingQuote == null && highlightedQuote == null)
-    LaunchedEffect(historyQuery, historyKind, historyAuthor) { if (historyFiltered) list.scrollToItem(0) }
+    LaunchedEffect(historyQuery, historyKind, historyAuthor, historyDate) { if (historyFiltered) list.scrollToItem(0) }
     var lastId by remember(state.active?.id) { mutableStateOf<String?>(null) }
     discardPending?.let { pending ->
         AlertDialog(
@@ -322,6 +337,7 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
             list.animateScrollToItem(index + if (state.hasMore) 1 else 0)
             highlightedQuote = target
             pendingQuote = null
+            quoteNotice = null
             delay(3000)
             if (highlightedQuote == target) highlightedQuote = null
         }
@@ -341,6 +357,9 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
             if (historyFiltered) ZButton(stringResource(R.string.group_message_reset), ::clearHistoryFilters,
                 ghost = true, tag = "Inbox.HistoryReset")
         }
+        if (historyDate.isNotBlank()) Text(historyDate,
+            modifier = Modifier.padding(horizontal = Zapara.space.l), color = Zapara.colors.text2,
+            style = Zapara.typography.caption)
         if (historyFiltered) Text(stringResource(R.string.ux30_chat_result_count, visibleMessages.size, state.messages.size),
             modifier = Modifier.padding(horizontal = Zapara.space.l), color = Zapara.colors.text2,
             style = Zapara.typography.caption)
@@ -353,6 +372,10 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
             else -> R.string.next_quote_missing
         }), modifier = Modifier.padding(horizontal = Zapara.space.l), color = Zapara.colors.warn,
             style = Zapara.typography.caption)
+        if (quoteNotice == PersonalQuoteTarget.Earlier && state.hasMore)
+            ZButton(stringResource(R.string.ux300_android_find_quoted_message),
+                { onEvent(InboxEvent.Older) }, enabled = !state.loading,
+                ghost = true, tag = "Inbox.LoadQuotedMessage")
         val scope = rememberCoroutineScope()
         val showJump by remember(list, state.messages.size, historyFiltered) { derivedStateOf {
             val totalItems = list.layoutInfo.totalItemsCount
@@ -405,6 +428,12 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                                             quoteNotice = null
                                             clearHistoryFilters()
                                             pendingQuote = target
+                                        }
+                                        PersonalQuoteTarget.Earlier -> {
+                                            quoteNotice = found
+                                            clearHistoryFilters()
+                                            pendingQuote = target
+                                            if (state.hasMore) onEvent(InboxEvent.Older)
                                         }
                                         else -> quoteNotice = found
                                     }
@@ -540,6 +569,15 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
     }
     if (historyFiltersOpen) ZBottomSheet(onDismiss = { historyFiltersOpen = false }, tag = "Inbox.HistoryFilterSheet", scrollable = true) {
         Text(stringResource(R.string.ux30_chat_history_filters), style = Zapara.typography.section)
+        ZButton(stringResource(R.string.ux300_android_chat_pick_date), {
+            val date = runCatching { java.time.LocalDate.parse(historyDate) }
+                .getOrDefault(java.time.LocalDate.now())
+            android.app.DatePickerDialog(historyContext, historyCalendarTheme,
+                { _, year, month, day -> historyDate = java.time.LocalDate.of(year, month + 1, day).toString() },
+                date.year, date.monthValue - 1, date.dayOfMonth).show()
+        }, ghost = true, tag = "Inbox.HistoryDate")
+        if (historyDate.isNotBlank()) ZButton(stringResource(R.string.ux300_android_chat_any_date),
+            { historyDate = "" }, ghost = true, tag = "Inbox.HistoryAnyDate")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             listOf(PersonalHistoryAuthor.All to R.string.group_author_all,
                 PersonalHistoryAuthor.Mine to R.string.group_author_mine,

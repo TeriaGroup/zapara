@@ -45,13 +45,16 @@ public class ScheduleViewTests : UiTest
             .ToList();
         Assert.Equal(new[] { 0, 1 }, indices);
 
-        // Click "Вчера" in the segmented control through the input pipeline.
+        // Click "Завтра" in the current three-day segment through the input pipeline.
         var seg = window.GetVisualDescendants().OfType<SegmentedControl>().Single();
-        var yesterday = seg.GetVisualDescendants().OfType<Avalonia.Controls.Button>().First();
-        Click(window, yesterday);
+        var tomorrow = seg.GetVisualDescendants().OfType<Avalonia.Controls.Button>().ElementAt(1);
+        Click(window, tomorrow);
         await vm.ReloadAsync();
 
-        Assert.Equal(-1, vm.DayOffset);
+        Assert.Equal(1, vm.DayOffset);
+        Assert.Single(vm.Lessons);
+        vm.ShowDate(new DateTime(2026, 9, 13));
+        await vm.ReloadAsync();
         Assert.True(vm.IsEmpty);
         Pump();
         Assert.Single(window.GetVisualDescendants().OfType<EmptyState>(), e => e.IsEffectivelyVisible);

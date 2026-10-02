@@ -14,13 +14,16 @@ export function HomeworkDraftProvider({ children }: { children: ReactNode }) {
   controller.scope(scopeId);
   const [, refresh] = useReducer(value => value + 1, 0);
   useEffect(() => {
+    let confirmedUntil=0;
+    const allow=()=>{confirmedUntil=Date.now()+3000;};
     const warn = (event: BeforeUnloadEvent) => {
-      if (!controller.dirty) return;
+      if (!controller.dirty || Date.now()<confirmedUntil) return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
+    window.addEventListener("zapara-confirmed-reload",allow);
+    return () => {window.removeEventListener("beforeunload", warn);window.removeEventListener("zapara-confirmed-reload",allow);};
   }, [controller]);
   return <HomeworkDraftContext.Provider value={{ controller, refresh, readLocal: id => homework.current.find(item => item.id === id) }}>{children}</HomeworkDraftContext.Provider>;
 }

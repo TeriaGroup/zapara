@@ -27,6 +27,75 @@ public sealed class ChatInboxTests
     private static SocialMessageResponse Message(Guid id, string body, IReadOnlyList<SocialReactionResponse>? reactions = null)
         => new(id, PromotedId, "Друг", "text", body, null, null, null, null, Now,
             null, null, null, false, false, null, reactions ?? []);
+    private static SocialMessageResponse Reply(Guid id, Guid parent, string body)
+        => new(id, PromotedId, "Друг", "text", body, null, null, null, null, Now,
+            parent, "Цитата", null, false, false, null, []);
+    private static SocialMessageResponse OwnMessage(Guid id, string body)
+        => new(id, StaffId, "Я", "text", body, null, null, null, null, Now,
+            null, null, null, false, false, null, []);
+
+    [AvaloniaFact]
+    public async Task First_unread_loads_earlier_page_and_targets_first_unread_incoming()
+    {
+        using var directory = new ProfileTestDirectory();
+        using var services = AppServices.Create(directory.Root, () => false);
+        services.AllowNetwork = false;
+        using var handler = new AccountClientHandler();
+        using var http = new HttpClient(handler);
+        using var social = new SocialHttpClient(http, Root);
+        services.UseSocial(social, _ => Task.FromResult<string?>(Access));
+        handler.Send = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/root/api/v2/social/home" => AccountClientTestSupport.Json(FriendHome()),
+            var path when path.EndsWith("/messages", StringComparison.Ordinal)
+                => AccountClientTestSupport.Json(request.RequestUri.Query.Length == 0
+                    ? new SocialPageResponse([Message(Third, "Третье"), Message(Fourth, "Четвёртое")], true)
+                    : new SocialPageResponse([OwnMessage(First, "Своё старое"), Message(Second, "Начало непрочитанной области")], false)),
+            _ => new HttpResponseMessage(System.Net.HttpStatusCode.NotFound)
+        });
+        var inbox = new ChatInboxViewModel(services, new ShellViewModel(services));
+        await inbox.ActivateAsync(); Assert.Single(inbox.Chats).OpenCommand.Execute(null);
+        await Waits.Until(() => inbox.Messages.Count == 2, "unread personal chat");
+        ChatMessageRow? focused = null; inbox.MessageFocusRequested += row => focused = row;
+
+        await inbox.JumpFirstUnreadCommand.ExecuteAsync(null);
+
+        Assert.Equal(Second, focused?.Id);
+        Assert.True(inbox.Messages.Single(row => row.Id == Second).IsUnreadTarget);
+        Assert.Equal(4, inbox.Messages.Count);
+    }
+
+    [AvaloniaFact]
+    public async Task Quote_click_loads_older_parent_and_focuses_exact_message()
+    {
+        using var directory = new ProfileTestDirectory();
+        using var services = AppServices.Create(directory.Root, () => false);
+        services.AllowNetwork = false;
+        using var handler = new AccountClientHandler();
+        using var http = new HttpClient(handler);
+        using var social = new SocialHttpClient(http, Root);
+        services.UseSocial(social, _ => Task.FromResult<string?>(Access));
+        handler.Send = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/root/api/v2/social/home" => AccountClientTestSupport.Json(FriendHome()),
+            var path when path.EndsWith("/messages", StringComparison.Ordinal)
+                => AccountClientTestSupport.Json(request.RequestUri.Query.Length == 0
+                    ? new SocialPageResponse([Reply(Third, First, "Ответ"), Message(Fourth, "Четвёртое")], true)
+                    : new SocialPageResponse([Message(First, "Ранний исходник"), Message(Second, "Второе")], false)),
+            _ => new HttpResponseMessage(System.Net.HttpStatusCode.NotFound)
+        });
+        var inbox = new ChatInboxViewModel(services, new ShellViewModel(services));
+        await inbox.ActivateAsync();
+        Assert.Single(inbox.Chats).OpenCommand.Execute(null);
+        await Waits.Until(() => inbox.Messages.Count == 2, "quoted personal chat");
+        ChatMessageRow? focused = null; inbox.QuoteTargetRequested += row => focused = row;
+
+        await inbox.JumpQuoteCommand.ExecuteAsync(inbox.Messages.Single(row => row.Id == Third));
+
+        Assert.Equal(First, focused?.Id);
+        Assert.True(inbox.Messages.Single(row => row.Id == First).IsQuoteTarget);
+        Assert.Equal(4, inbox.Messages.Count);
+    }
 
     [Fact]
     public void Personal_copy_and_search_use_visible_caption_or_filename_not_service_urls()
@@ -153,7 +222,10 @@ public sealed class ChatInboxTests
         Assert.Single(inbox.Chats).OpenCommand.Execute(null);
         await Waits.Until(() => inbox.Messages.Count == 2, "personal chat opened");
         Assert.Equal(0, inbox.UnreadTotal);
-        await inbox.LoadOlderCommand.ExecuteAsync(null);
+        inbox.MessageSearch = "Первое";
+        Assert.Empty(inbox.VisibleMessages);
+        await inbox.SearchOlderCommand.ExecuteAsync(null);
+        Assert.Equal(First, Assert.Single(inbox.VisibleMessages).Id);
 
         Assert.Equal([First, Second, Third, Fourth], inbox.Messages.Select(item => item.Id).ToArray());
         inbox.Draft = "Неотправленный черновик";
@@ -161,7 +233,10 @@ public sealed class ChatInboxTests
         Assert.Equal(First, Assert.Single(inbox.VisibleMessages).Id);
         Assert.Contains("1 из 4", inbox.HistorySearchScope);
         Assert.Equal(4, inbox.Messages.Count);
-        inbox.ClearMessageSearchCommand.Execute(null);
+        ChatMessageRow? resultFocus = null; inbox.MessageFocusRequested += row => resultFocus = row;
+        inbox.OpenSearchResultCommand.Execute(inbox.VisibleMessages.Single());
+        Assert.Equal(First, resultFocus?.Id);
+        Assert.Equal("", inbox.MessageSearch);
         Assert.Equal(4, inbox.VisibleMessages.Count);
         Assert.Equal("Неотправленный черновик", inbox.Draft);
         var copied = new List<string>();

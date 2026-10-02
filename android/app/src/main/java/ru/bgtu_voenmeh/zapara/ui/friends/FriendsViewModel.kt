@@ -39,6 +39,10 @@ class FriendsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun onEvent(event: FriendsEvent) {
         when (event) {
+            is FriendsEvent.MeetingDate -> {
+                mutable.update { it.copy(meetingDate = event.date, meetingWindows = emptyList()) }
+                viewModelScope.launch { reload() }
+            }
             FriendsEvent.Retry -> viewModelScope.launch { reload() }
             FriendsEvent.RefreshSchedules -> refreshSchedules()
             FriendsEvent.Add -> {
@@ -258,6 +262,7 @@ class FriendsViewModel(private val container: AppContainer) : ViewModel() {
 
     private suspend fun reload() {
         val ticket = ++reloadTicket
+        val meetingDate = mutable.value.meetingDate
         try {
             val snap = withContext(Dispatchers.IO) {
                 val prefs = container.repo.settings()
@@ -277,6 +282,15 @@ class FriendsViewModel(private val container: AppContainer) : ViewModel() {
                 }
                 fun hasSchedule(id: String) = container.db.apiCacheMetadataDao().get(id) != null || raw(id).isNotEmpty()
                 val apiCache = TimetableApiCache(container.repo.store)
+                fun intervals(id: String) = ru.bgtu_voenmeh.zapara.data.Schedule.lessonsForDate(
+                    schedule(id), id, meetingDate, prefs.periodStart, prefs.weekCount, prefs.parityInvert)
+                    .map { ru.bgtu_voenmeh.zapara.ui.StudyInterval(it.timeStart, it.timeEnd) }
+                val meetings = if (myGroup.isBlank() || !hasSchedule(myGroup)) emptyList() else rows.filter { it.enabled }.mapNotNull { friend ->
+                    val id = groups.firstOrNull { it.id == friend.groupName || it.name.equals(friend.groupName, ignoreCase = true) }?.id
+                        ?: return@mapNotNull null
+                    if (id == myGroup || !hasSchedule(id) || !apiCache.canIntersect(myGroup, id)) return@mapNotNull null
+                    FriendMeetingWindows(friend.groupName, ru.bgtu_voenmeh.zapara.ui.StudyPlanning.commonFreeIntervals(intervals(myGroup), intervals(id), 1))
+                }
                 val forecast = FriendsPreview.forecast(
                     now = container.clock(),
                     myGroupId = prefs.myGroupId.orEmpty(),
@@ -296,6 +310,7 @@ class FriendsViewModel(private val container: AppContainer) : ViewModel() {
                         LessonFormat.dayMonth(it.date), it.time, it.subject)
                 } ?: container.copy.get("friends_preview_none")
                 FriendsUiState(
+                    meetingDate = meetingDate, meetingWindows = meetings,
                     loaded = true, friends = friends, canAdd = friends.size < 5, myGroupId = myGroup,
                     profileName = container.profile.databaseName,
                     strictness = Strictness.nearest(prefs.intersectionStrictness),

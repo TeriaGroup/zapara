@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,17 +56,34 @@ import ru.bgtu_voenmeh.zapara.ui.theme.appear
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
+fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) =
+    HomeworkSection(state, onEvent) { }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit,
+    onOpenNextLesson: (String) -> Unit) {
     val chrome = LocalShellChrome.current
     val c = Zapara.colors
     val keyboard = LocalSoftwareKeyboardController.current
     val largeText = LocalDensity.current.fontScale >= 1.5f
     var advancedOpen by rememberSaveable { mutableStateOf(false) }
+    var selectionMode by remember(state.groups) { mutableStateOf(false) }
+    var selectedIds by remember(state.groups) { mutableStateOf(setOf<Long>()) }
+    var selectedSubject by rememberSaveable(state.groupId, state.profileName) { mutableStateOf<String?>(null) }
+    fun toggleSelected(item: HomeworkItemUi) {
+        if (item.done || state.bulkBusy) return
+        selectedIds = if (item.id in selectedIds) selectedIds - item.id else selectedIds + item.id
+    }
     val advancedActive = state.deadlineFilter != HomeworkDeadlineFilter.All ||
         state.originFilter != HomeworkOriginFilter.All || state.withFilesOnly || state.sortBySubject
-    val browse = HomeworkBrowse.filter(state.groups, state.browseQuery, state.browseFilter,
+    val subjectGroups = if (selectedSubject == null) state.groups else state.groups.mapNotNull { group ->
+        val rows = group.items.filter { homeworkSubjectKey(it) == selectedSubject }
+        if (rows.isEmpty()) null else group.copy(items = rows)
+    }
+    val browse = HomeworkBrowse.filter(subjectGroups, state.browseQuery, state.browseFilter,
         state.originFilter, state.deadlineFilter, state.withFilesOnly, state.sortBySubject)
-    val visibleShared = HomeworkBrowse.shared(state.sharedRows, state.browseQuery, state.browseFilter,
+    val visibleShared = HomeworkBrowse.shared(if (selectedSubject == null) state.sharedRows else emptyList(), state.browseQuery, state.browseFilter,
         state.originFilter, state.deadlineFilter, state.withFilesOnly)
     Column(Modifier.fillMaxSize()) {
         ZTopBar(stringResource(R.string.nav_homework)) {
@@ -101,6 +119,15 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                 } }
                 item("browse") {
                     Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        HomeworkSubjectOverview(state.groups.flatMap { it.items }, "${state.profileName}:${state.groupId}") { key ->
+                            selectedSubject = key
+                            onEvent(HomeworkEvent.BrowseReset)
+                        }
+                        selectedSubject?.let { subject ->
+                            Text(stringResource(R.string.ux300_ext_subject_selected, subject), style = Zapara.typography.caption)
+                            ZButton(stringResource(R.string.ux300_ext_all_subjects), { selectedSubject = null }, ghost = true)
+                        }
+                        HomeworkPlanTools(browse.groups.flatMap { it.items }, state.groupId, state.profileName)
                         ZTextField(state.browseQuery, { onEvent(HomeworkEvent.BrowseQuery(it)) },
                             modifier = Modifier.fillMaxWidth().testTag("Homework.Search"),
                             placeholder = { Text(stringResource(R.string.homework_browse_search)) }, singleLine = true,
@@ -202,6 +229,40 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                     }
                     Text(stringResource(R.string.ux30_study_browse_count, browse.visibleCount + visibleShared.size),
                         style = Zapara.typography.caption, color = c.text2)
+                    if (!selectionMode && state.groups.sumOf { group -> group.items.count { !it.done } } > 1)
+                        ZButton(stringResource(R.string.ux300_android_select_homework), {
+                            selectionMode = true; selectedIds = emptySet()
+                        }, ghost = true, tag = "Homework.SelectMode")
+                    if (selectionMode) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                        verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                        Text(stringResource(R.string.ux300_android_selected_count, selectedIds.size),
+                            style = Zapara.typography.caption, color = c.text2)
+                        ZButton(stringResource(R.string.ux300_ext_postpone), {
+                            onEvent(HomeworkEvent.PreviewPostpone(selectedIds.toList()))
+                            selectionMode = false; selectedIds = emptySet()
+                        }, enabled = selectedIds.isNotEmpty() && !state.bulkBusy, ghost = true, tag = "Homework.Postpone")
+                        if (!state.guest) ZButton(stringResource(R.string.ux300_ext_publish_selected), {
+                            onEvent(HomeworkEvent.PreviewPublication(selectedIds.toList()))
+                            selectionMode = false; selectedIds = emptySet()
+                        }, enabled = selectedIds.isNotEmpty() && !state.bulkBusy, ghost = true, tag = "Homework.PublishSelected")
+                        ZButton(stringResource(R.string.ux300_android_complete_selected), {
+                            onEvent(HomeworkEvent.BulkDone(selectedIds.toList()))
+                            selectionMode = false; selectedIds = emptySet()
+                        }, enabled = selectedIds.isNotEmpty() && !state.bulkBusy,
+                            tag = "Homework.BulkDone")
+                        ZButton(stringResource(R.string.theme_cancel), {
+                            selectionMode = false; selectedIds = emptySet()
+                        }, ghost = true, tag = "Homework.CancelSelect")
+                    }
+                    if (state.bulkBusy) Text(stringResource(R.string.ux60_saving),
+                        style = Zapara.typography.caption, color = c.text2)
+                    state.bulkResult?.let { result -> Text(result, style = Zapara.typography.caption,
+                        color = c.text2, modifier = Modifier.testTag("Homework.BulkResult")) }
+                    if (state.publication?.open == false) ZButton(stringResource(R.string.ux300_ext_resume_publication),
+                        { onEvent(HomeworkEvent.ResumePublication) }, ghost = true, tag = "Homework.ResumePublication")
+                    if (state.bulkUndo.isNotEmpty()) ZButton(stringResource(R.string.homework_browse_undo),
+                        { onEvent(HomeworkEvent.UndoBulkDone) }, ghost = true,
+                        enabled = !state.bulkBusy, tag = "Homework.BulkUndo")
                     if (browse.groups.size > 1) FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                         verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                         if (browse.groups.any { it.collapsed }) ZButton(
@@ -250,8 +311,10 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                         items(group.items, key = { it.id }) { item ->
                             val burning = group.status == GroupStatus.Burning && !item.done
                             ZCard(
-                                onClick = { onEvent(HomeworkEvent.Edit(item.id)) },
-                                onLongClick = { onEvent(HomeworkEvent.AskDelete(item.id)) },
+                                onClick = { if (selectionMode) toggleSelected(item)
+                                    else onEvent(HomeworkEvent.Edit(item.id)) },
+                                onLongClick = { if (selectionMode) toggleSelected(item)
+                                    else onEvent(HomeworkEvent.AskDelete(item.id)) },
                                 tag = "Homework.Row.${item.id}",
                                 modifier = Modifier.fillMaxWidth().appear(cascade["i-${item.id}"] ?: 0)
                             ) {
@@ -273,6 +336,12 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                                         }
                                     }
                                 }
+                                if (selectionMode) ZChip(stringResource(if (item.id in selectedIds)
+                                    R.string.ux300_android_homework_selected else R.string.ux300_android_homework_choose),
+                                    selected = item.id in selectedIds,
+                                    onClick = if (item.done) null else {{ toggleSelected(item) }},
+                                    tag = "Homework.Select.${item.id}")
+                                if (!selectionMode) {
                                 HorizontalDivider(color = c.line)
                                 if (largeText) Text(stringResource(R.string.polish_homework_completion),
                                     style = Zapara.typography.caption, color = c.text2,
@@ -292,6 +361,15 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
                                     ZSwitch(item.done, { if (item.id !in state.personalBusyIds)
                                         onEvent(HomeworkEvent.ToggleDone(item.id)) }, "Homework.Done.${item.id}",
                                         Modifier.semantics { contentDescription = completionLabel })
+                                }
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                                    ZButton(stringResource(R.string.ux300_android_next_subject_lesson),
+                                        { onOpenNextLesson(item.subjectRaw.ifBlank { item.subject }) }, ghost = true,
+                                        tag = "Homework.NextLesson.${item.id}")
+                                    if (item.done) ZButton(stringResource(R.string.ux300_android_clone_homework),
+                                        { onEvent(HomeworkEvent.Clone(item.id)) }, ghost = true,
+                                        tag = "Homework.Clone.${item.id}")
+                                }
                                 }
                             }
                         }
@@ -368,9 +446,14 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit) {
             onAudience = { onEvent(HomeworkEvent.EditorAudience(it)) },
             onRetryShare = { onEvent(HomeworkEvent.RetryShare) },
             isGuest = state.guest, onRecalculate = { onEvent(HomeworkEvent.Recalculate) },
-            onRetryShareOptions = { onEvent(HomeworkEvent.RetryShareOptions) }
+            onRetryShareOptions = { onEvent(HomeworkEvent.RetryShareOptions) },
+            onConfirmDuplicate = { onEvent(HomeworkEvent.ApproveDuplicate) },
+            onCancelDuplicate = { onEvent(HomeworkEvent.CancelDuplicate) },
+            onPickMany = { kind, uris -> onEvent(HomeworkEvent.AttachMany(kind, uris)) }
         )
     }
+    state.reschedule?.let { batch -> HomeworkRescheduleSheet(batch, onEvent) }
+    state.publication?.takeIf { it.open }?.let { batch -> HomeworkPublicationSheet(batch, onEvent) }
     state.confirmDelete?.let {
         AlertDialog(
             onDismissRequest = { onEvent(HomeworkEvent.CancelDelete) },

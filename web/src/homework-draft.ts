@@ -63,6 +63,13 @@ export class HomeworkDraftController {
   current(ticket: HomeworkSaveTicket) { return ticket.epoch === this.epoch && ticket.operation === this.operation; }
   sameScope(ticket: HomeworkSaveTicket) { return ticket.epoch === this.epoch; }
   captureScope() { const epoch = this.epoch; return () => epoch === this.epoch; }
+  /** A rejected preflight must not discard user input or allocate a lasting new-row identity. */
+  cancelBeforeSave(ticket: HomeworkSaveTicket, note: string) {
+    if(!this.current(ticket))return;
+    if(!ticket.operation.localSaved&&!ticket.operation.shareAttempted&&!ticket.operation.prepared.length)this.operation=null;
+    this.busy=false;
+    this.note=note;
+  }
   finish(ticket: HomeworkSaveTicket, note: string, success: boolean) {
     if (!this.current(ticket)) return;
     this.busy = false;

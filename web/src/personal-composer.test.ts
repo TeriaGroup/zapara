@@ -4,6 +4,13 @@ import { PersonalComposerStore, personalText, personalTextCount, personalTextVal
 import type { SocialMessage } from "./types.ts";
 
 const message = (id: string, body = id) => ({ messageId: id, body } as SocialMessage);
+test("inbox draft previews follow accepted sends and never cross an account boundary",()=>{
+  const store=new PersonalComposerStore("a");store.text("one","Несохранённый текст");store.text("empty","   ");
+  assert.deepEqual(store.inboxDrafts(),[{conversationId:"one",text:"Несохранённый текст",editing:false}]);
+  const ticket=store.begin("one")!;store.text("one","Новый текст во время отправки");store.finish(ticket,"",true);
+  assert.equal(store.inboxDrafts()[0].text,"Новый текст во время отправки");
+  store.scope("b");assert.deepEqual(store.inboxDrafts(),[]);store.scope("a");assert.deepEqual(store.inboxDrafts(),[]);
+});
 
 test("conversation drafts survive consumer remounts and are erased on account changes", () => {
   const store = new PersonalComposerStore("a");

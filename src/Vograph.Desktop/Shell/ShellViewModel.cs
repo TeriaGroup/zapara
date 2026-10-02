@@ -457,13 +457,15 @@ public sealed partial class ShellViewModel : ViewModelBase
     }
 
     /// <summary>Week/Teachers: jump to a concrete date in the schedule section.</summary>
-    public void OpenScheduleAt(DateTime date, string? subjectRaw = null, string? timeStart = null)
+    public void OpenScheduleAt(DateTime date, string? subjectRaw = null, string? timeStart = null,
+        string? timeEnd = null, string? typeRaw = null, string? teacherRaw = null, string? classroomRaw = null)
     {
         NavigateTo(SectionKey.Schedule);
         if (Current is ScheduleViewModel s)
         {
             s.ShowDate(date);
-            if (!string.IsNullOrWhiteSpace(subjectRaw) && !string.IsNullOrWhiteSpace(timeStart)) s.RequestLessonFocus(date, subjectRaw, timeStart);
+            if (!string.IsNullOrWhiteSpace(subjectRaw) && !string.IsNullOrWhiteSpace(timeStart))
+                s.RequestLessonFocus(date, subjectRaw, timeStart, timeEnd, typeRaw, teacherRaw, classroomRaw);
         }
     }
     public void OpenAccountSettings()
@@ -482,6 +484,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         if (key == Key.Escape)
         {
             if (Dialogs.HasDialog) { Dialogs.DismissCommand.Execute(null); return true; }
+            if (ShowCommandPalette) { ShowCommandPalette = false; return true; }
             if (Overlay is not null) { Overlay = null; return true; }
             return false;
         }
@@ -529,6 +532,7 @@ public sealed partial class ShellViewModel : ViewModelBase
     public void NavigateTo(SectionKey key)
     {
         if (StartupStopped) return;
+        ShowCommandPalette = false;
         // Ctrl+1…9 are Window.KeyBindings and fire straight into NavigateCommand, over the fullscreen map too
         // (HandleShortcut never sees them). Without this the section would be switched invisibly behind the plan.
         Overlay = null;

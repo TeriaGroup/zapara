@@ -94,19 +94,25 @@ public sealed partial class GroupViewModel
     }
     partial void OnChannelEditConflictChanged(bool value) => OnPropertyChanged(nameof(CanSaveChannelEdit));
     partial void OnBallotQuestionChanged(string value) => SaveBallotDraft();
-    partial void OnBallotOptionAChanged(string value) => SaveBallotDraft();
-    partial void OnBallotOptionBChanged(string value) => SaveBallotDraft();
-    partial void OnBallotOptionCChanged(string value) => SaveBallotDraft();
-    partial void OnBallotOptionDChanged(string value) => SaveBallotDraft();
-    partial void OnBallotOptionEChanged(string value) => SaveBallotDraft();
-    partial void OnBallotOptionFChanged(string value) => SaveBallotDraft();
-    partial void OnBallotDaysChanged(string value) => SaveBallotDraft();
+    partial void OnBallotOptionAChanged(string value) { SaveBallotDraft(); NotifyBallotOptionEditor(); }
+    partial void OnBallotOptionBChanged(string value) { SaveBallotDraft(); NotifyBallotOptionEditor(); }
+    partial void OnBallotOptionCChanged(string value) { SaveBallotDraft(); NotifyBallotOptionEditor(); }
+    partial void OnBallotOptionDChanged(string value) { SaveBallotDraft(); NotifyBallotOptionEditor(); }
+    partial void OnBallotOptionEChanged(string value) { SaveBallotDraft(); NotifyBallotOptionEditor(); }
+    partial void OnBallotOptionFChanged(string value) { SaveBallotDraft(); NotifyBallotOptionEditor(); }
+    partial void OnBallotDaysChanged(string value)
+    { SaveBallotDraft(); OnPropertyChanged(nameof(BallotDeadlinePreview)); }
+    public string BallotDeadlinePreview => BallotDraftValidation.PreviewDeadline(BallotDays,
+        DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(3)));
+    [RelayCommand] private void SetBallotTomorrow() => BallotDays = "1";
+    [RelayCommand] private void SetBallotWeek() => BallotDays = "7";
 
     private BallotDraftState CurrentBallotDraft() => new(BallotQuestion, BallotOptionA, BallotOptionB,
         BallotOptionC, BallotOptionD, BallotOptionE, BallotOptionF, BallotDays);
 
     private void SaveBallotDraft()
     {
+        BallotValidation = "";
         if (!loadingBallotDraft && activeBallotDraftKey is { } key)
         { ballotDrafts[key] = CurrentBallotDraft(); ballotDraftRevisions[key] = ballotDraftRevisions.GetValueOrDefault(key) + 1; }
     }
@@ -198,6 +204,7 @@ public sealed partial class GroupViewModel
     }
     partial void OnSelectedChannelChanged(GroupChannelRow? value)
     {
+        CancelRemoveBallotOption();
         ClearAccessEditor();
         foreach (var channel in Channels) channel.IsSelected = !IsDirect && channel == value;
         OnPropertyChanged(nameof(HasUnreadChannel));
@@ -216,6 +223,7 @@ public sealed partial class GroupViewModel
         OnPropertyChanged(nameof(IsRestrictedChat));
         OnPropertyChanged(nameof(RestrictedCaption));
         OnPropertyChanged(nameof(CanCreateBallot));
+        NotifyBallotOptionEditor();
         OnPropertyChanged(nameof(CanAttachMedia));
         SendCommand.NotifyCanExecuteChanged();
         StartRecordingCommand.NotifyCanExecuteChanged();
@@ -564,9 +572,10 @@ public sealed partial class GroupViewModel
     private Task PublishBallotAsync(bool headman)
     {
         if (!CanCreateBallot || headman && !CanOpenBallot) return Task.CompletedTask;
-        if (!int.TryParse(BallotDays, out var days) || days is < 1 or > 14 || string.IsNullOrWhiteSpace(BallotQuestion)
-            || string.IsNullOrWhiteSpace(BallotOptionA) || string.IsNullOrWhiteSpace(BallotOptionB))
-        { Status = "Укажите вопрос, два варианта и срок от 1 до 14 дней."; return Task.CompletedTask; }
+        BallotValidation = BallotDraftValidation.Check(BallotQuestion,
+            [BallotOptionA, BallotOptionB, BallotOptionC, BallotOptionD, BallotOptionE, BallotOptionF], BallotDays);
+        if (BallotValidation.Length > 0) { Status = BallotValidation; return Task.CompletedTask; }
+        var days = int.Parse(BallotDays);
         BallotDraftRequest request;
         var submitted = CurrentBallotDraft();
         var draftKey = activeBallotDraftKey;

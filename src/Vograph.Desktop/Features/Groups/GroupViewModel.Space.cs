@@ -90,9 +90,34 @@ public sealed partial class GroupViewModel
     public IReadOnlyList<SpaceChoice> TopicTemplates => Templates;
     public ObservableCollection<GroupCategoryResponse> Categories { get; } = [];
     public ObservableCollection<GroupChannelRow> ArchivedChannels { get; } = [];
+    [ObservableProperty] private string archiveSearch = "";
+    public IReadOnlyList<GroupChannelRow> VisibleArchivedChannels => ArchivedChannels.Where(row =>
+    {
+        var words = ArchiveSearch.Trim().ToLowerInvariant().Replace('ё', 'е')
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var text = (row.Title + " " + row.Description).ToLowerInvariant().Replace('ё', 'е');
+        return words.All(word => text.Contains(word, StringComparison.Ordinal));
+    }).ToArray();
+    public bool NoArchiveMatches => ArchivedChannels.Count > 0 && VisibleArchivedChannels.Count == 0 && ArchiveSearch.Trim().Length > 0;
+    public string ArchiveResultCount => $"Показано {VisibleArchivedChannels.Count} из {ArchivedChannels.Count} загруженных";
+    partial void OnArchiveSearchChanged(string value) => RefreshArchiveBrowse();
+    [RelayCommand] private void ClearArchiveSearch() => ArchiveSearch = "";
+    private void RefreshArchiveBrowse()
+    { OnPropertyChanged(nameof(VisibleArchivedChannels)); OnPropertyChanged(nameof(NoArchiveMatches)); OnPropertyChanged(nameof(ArchiveResultCount)); }
     public ObservableCollection<SpaceAccessRow> AccessRules { get; } = [];
     public ObservableCollection<SpacePowerRow> RolePowers { get; } = [];
     public ObservableCollection<string> AuditEvents { get; } = [];
+    [ObservableProperty] private string auditSearch = "";
+    [ObservableProperty] private int auditKindIndex;
+    public IReadOnlyList<string> AuditKinds { get; } = ["Все действия", "Темы", "Роли", "Доступ"];
+    public IReadOnlyList<string> VisibleAuditEvents => GroupAuditBrowse.Filter(AuditEvents, AuditSearch, AuditKindIndex);
+    public bool HasAuditFilters => AuditSearch.Trim().Length > 0 || AuditKindIndex != 0;
+    public bool NoAuditMatches => AuditEvents.Count > 0 && VisibleAuditEvents.Count == 0 && HasAuditFilters;
+    partial void OnAuditSearchChanged(string value) => RefreshAuditBrowse();
+    partial void OnAuditKindIndexChanged(int value) => RefreshAuditBrowse();
+    [RelayCommand] private void ResetAuditFilters() { AuditSearch = ""; AuditKindIndex = 0; }
+    private void RefreshAuditBrowse()
+    { OnPropertyChanged(nameof(VisibleAuditEvents)); OnPropertyChanged(nameof(HasAuditFilters)); OnPropertyChanged(nameof(NoAuditMatches)); }
     public ObservableCollection<string> SubjectChoices { get; } = [];
     public bool CanManageGroupAccess=>!PreviewMode && (IsHeadman || desk?.Mine.Contains("access")==true);
     public bool CanManageAccess => !PreviewMode && (SelectedChannel?.Permissions.Contains("access")==true || legacySpace && CanManageGroupAccess);
@@ -110,6 +135,14 @@ public sealed partial class GroupViewModel
         }
     }
     public bool ShowMaterials => !IsDirect && SelectedChannel is { Kind: "materials", Supported: true };
+    [ObservableProperty] private string materialSearch = "";
+    public IReadOnlyList<GroupMessageRow> VisibleMaterials => GroupMaterialBrowse.Filter(Messages, MaterialSearch);
+    public bool NoMaterialMatches => ShowMaterials && Messages.Count > 0 && VisibleMaterials.Count == 0 && MaterialSearch.Trim().Length > 0;
+    public string MaterialResultCount => $"Показано {VisibleMaterials.Count} из {Messages.Count} загруженных";
+    partial void OnMaterialSearchChanged(string value) => RefreshMaterialBrowse();
+    [RelayCommand] private void ClearMaterialSearch() => MaterialSearch = "";
+    private void RefreshMaterialBrowse()
+    { OnPropertyChanged(nameof(VisibleMaterials)); OnPropertyChanged(nameof(NoMaterialMatches)); OnPropertyChanged(nameof(MaterialResultCount)); }
     [ObservableProperty] private bool materialsLoading;
     [ObservableProperty] private bool materialsLoaded;
     [ObservableProperty] private bool materialsLoadFailed;
@@ -151,7 +184,7 @@ public sealed partial class GroupViewModel
     { CancelDeleteCategory(); CategoryTitle = value?.Title ?? ""; CategoryPosition = value?.Position ?? 0; }
     private void NotifySpace()
     {
-        foreach (var name in new[] { nameof(CanPinSelected), nameof(PinCaption), nameof(CanSaveRoleSettings), nameof(CanSaveProposedAccess), nameof(CanCreateTopic), nameof(CanCreateRole), nameof(CanEditSelectedRole), nameof(CapabilitySummary), nameof(CanRestoreTopic), nameof(CanSetInitialAccess), nameof(InitialAccessHint), nameof(CanManageGroupAudit), nameof(CanManageGroupAccess), nameof(CanOpenChannelManagement), nameof(ShowNewChannelManagement), nameof(CanManageAccess), nameof(CanManageRoles), nameof(CanManageGrants), nameof(ShowMaterials), nameof(ShowSubject), nameof(ShowForms), nameof(ShowChannelHomework), nameof(ShowChannelSchedule), nameof(ShowUnsupported), nameof(ShowSpecialized), nameof(CanCreateForm), nameof(CanCreateChannelHomework), nameof(SpecializedHint), nameof(ShowComposer), nameof(ShowMessages), nameof(CanAttachMedia), nameof(CanManageSelectedChannel) }) OnPropertyChanged(name);
+        foreach (var name in new[] { nameof(CanPinSelected), nameof(PinCaption), nameof(CanSaveRoleSettings), nameof(CanSaveProposedAccess), nameof(CanCreateTopic), nameof(CanCreateRole), nameof(CanEditSelectedRole), nameof(CapabilitySummary), nameof(CanRestoreTopic), nameof(CanSetInitialAccess), nameof(InitialAccessHint), nameof(CanManageGroupAudit), nameof(CanManageGroupAccess), nameof(CanOpenChannelManagement), nameof(ShowNewChannelManagement), nameof(CanManageAccess), nameof(CanManageRoles), nameof(CanManageGrants), nameof(ShowMaterials), nameof(ShowSubject), nameof(ShowForms), nameof(ShowFormEditor), nameof(ShowFormPreview), nameof(ShowChannelHomework), nameof(ShowChannelSchedule), nameof(ShowUnsupported), nameof(ShowSpecialized), nameof(CanCreateForm), nameof(CanCreateChannelHomework), nameof(SpecializedHint), nameof(ShowComposer), nameof(ShowMessages), nameof(CanAttachMedia), nameof(CanManageSelectedChannel) }) OnPropertyChanged(name);
         RefreshRoleManager();
     }
     private void ApplySpace(GroupSpaceResponse response)
@@ -187,6 +220,8 @@ public sealed partial class GroupViewModel
     }
     [RelayCommand] private void ToggleSpaceTools() => ShowSpaceTools = !ShowSpaceTools;
     [RelayCommand] private void NewCategory() { SelectedCategory = null; CategoryTitle = ""; CategoryPosition = Categories.Count; }
+    [RelayCommand] private void RevertCategoryDraft()
+    { if(IsBusy || !CanManageChannels)return; CategoryTitle=SelectedCategory?.Title??"";CategoryPosition=SelectedCategory?.Position??Categories.Count; }
     [RelayCommand] private Task SaveCategory()
     {
         if(!CanManageChannels || string.IsNullOrWhiteSpace(CategoryTitle))return Task.CompletedTask;
@@ -361,6 +396,7 @@ public sealed partial class GroupViewModel
         }
     }
     [RelayCommand] private void ReloadRoleSettings(){if(IsBusy)return;if(communityId is Guid community && SelectedTrustedRole is { } selected)roleEditDrafts.Remove((community,selected.RoleId));roleEditBaseline=null;LoadRoleEditor();}
+    [RelayCommand] private void RevertRoleDraft(){if(!IsBusy && CanEditSelectedRole)ReloadRoleSettings();}
     [RelayCommand] private Task SaveRoleSettings()
     {
         if(!CanSaveRoleSettings || roleEditBaseline is not {} baseline)return Task.CompletedTask;

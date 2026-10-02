@@ -15,8 +15,29 @@ data class SummaryTiles(
     val byRoom: List<Pair<String, Int>> = emptyList(),
     val subjectNormByLabel: Map<String, String> = emptyMap(),
     val teacherIdByLabel: Map<String, String> = emptyMap(),
-    val roomRawByLabel: Map<String, String> = emptyMap()
+    val roomRawByLabel: Map<String, String> = emptyMap(),
+    val totalMinutes: Long = 0,
+    val minutesByDay: Map<Int, Long> = emptyMap(),
+    val lessonSlots: Map<Int, Map<String, List<SummaryLessonSlot>>> = emptyMap()
 )
+
+data class SummaryLessonSlot(val day: Int, val parity: Int, val start: String, val end: String,
+    val subject: String, val teacher: String, val room: String)
+
+internal fun summaryMatches(value: String, query: String): Boolean = query.trim()
+    .split(Regex("\\s+")).all { value.contains(it, ignoreCase = true) }
+
+internal fun lessonMinutes(lesson: Lesson): Long? {
+    val start = runCatching { java.time.LocalTime.parse(lesson.timeStart) }.getOrNull() ?: return null
+    val end = runCatching { java.time.LocalTime.parse(lesson.timeEnd) }.getOrNull() ?: return null
+    return java.time.Duration.between(start, end).toMinutes().takeIf { it in 1..720 }
+}
+
+internal fun summaryOrderedRows(rows: List<Pair<String, Int>>, alphabetically: Boolean):
+    List<IndexedValue<Pair<String, Int>>> = rows.withIndex().toList().let { values ->
+    if (alphabetically) values.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.value.first })
+    else values
+}
 
 object SummaryComposer {
     fun tiles(segment: Int, lessons: List<Lesson>, displayName: (norm: String, dow: Int) -> String,
@@ -57,6 +78,9 @@ object SummaryComposer {
         }.toMap()
         val byDay = (1..if (filtered.any { it.dayOfWeek == 7 }) 7 else 6)
             .map { day -> day to filtered.count { it.dayOfWeek == day } }
+        val minutesByDay = filtered.groupBy { it.dayOfWeek }.mapValues { (_, rows) ->
+            rows.sumOf { lessonMinutes(it) ?: 0 }
+        }
         val byRoom = counts {
             val room = it.roomRaw.trim().ifBlank { it.classroomRaw.trim().trimEnd(';').replace("*", "").trim() }
             if (room.isBlank() || room == "—") "" else LessonFormat.roomLabel(it, copy)
@@ -70,7 +94,20 @@ object SummaryComposer {
                 ?.takeIf { raw -> runCatching { MapResolve.resolve(raw)?.hasMap == true }.getOrDefault(false) }
                 ?.let { label to it }
         }.toMap()
+        val slots = filtered.sortedWith(compareBy<Lesson> { it.dayOfWeek }.thenBy { it.timeStart }.thenBy { it.parity })
+        fun detail(key: (Lesson) -> List<String>): Map<String, List<SummaryLessonSlot>> = slots.flatMap { lesson ->
+            val row = SummaryLessonSlot(lesson.dayOfWeek, lesson.parity, lesson.timeStart, lesson.timeEnd,
+                subjectLabel(lesson), lesson.teacherRaw, LessonFormat.roomLabel(lesson, copy))
+            key(lesson).distinct().filter { it.isNotBlank() && it != "—" }.map { it to row }
+        }.groupBy({ it.first }, { it.second })
+        val details = mapOf(
+            2 to detail { listOf(LessonFormat.typeLabel(it.typeRaw, copy)) },
+            3 to detail { listOf(subjectLabel(it)) },
+            4 to detail { it.teacherRaw.split(';').map(String::trim).filter(String::isNotBlank)
+                .map { raw -> teacherIdentity(raw).second } },
+            5 to detail { listOf(LessonFormat.roomLabel(it, copy)) })
         return SummaryTiles(filtered.size, byType.filter { it.first != "—" }, bySubject, byTeacher,
-            byRoom.map { it.first }, byDay, byRoom, subjectLookup, teacherLookup, roomLookup)
+            byRoom.map { it.first }, byDay, byRoom, subjectLookup, teacherLookup, roomLookup,
+            totalMinutes = minutesByDay.values.sum(), minutesByDay = minutesByDay, lessonSlots = details)
     }
 }
