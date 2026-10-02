@@ -37,7 +37,7 @@ internal fun safeSupportDiagnostics(version: String, sdk: Int, stale: Boolean, h
     if (impact != null) ZBottomSheet({ event(SettingsEvent.CloseSubgroupImpact) }, "Settings.SubgroupImpact", scrollable = true) {
         Text(stringResource(R.string.ux300_subgroup_preview), style = Zapara.typography.section)
         Text(stringResource(R.string.ux300_subgroup_scope), style = Zapara.typography.caption)
-        ZButton("${impact.weekStart} — ${impact.weekStart.plusDays(6)}", {
+        ZButton("${ru.bgtu_voenmeh.zapara.ui.week.agendaDateLabel(impact.weekStart)} — ${ru.bgtu_voenmeh.zapara.ui.week.agendaDateLabel(impact.weekStart.plusDays(6))}", {
             val date = impact.weekStart
             android.app.DatePickerDialog(context, if (dark) R.style.Zapara_DatePicker_Dark else R.style.Zapara_DatePicker_Light,
                 { _, year, month, day -> event(SettingsEvent.PreviewSubgroup(impact.event, java.time.LocalDate.of(year, month + 1, day))) },

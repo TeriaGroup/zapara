@@ -10,7 +10,7 @@ import { Sheet } from "./sheet";
 import { HomeworkDraftProvider } from "./homework-draft-context";
 import { PersonalComposerProvider } from "./personal-composer-context";
 import { noteSearch } from "./ux300";
-import { SearchField, useRoutePosition } from "./ux300-controls";
+import { SearchField, useRoutePosition, focusRouteHeading } from "./ux300-controls";
 
 const items: [string, string, IconName][] = [
   ["schedule", "Расписание", "calendar"],
@@ -37,7 +37,7 @@ function Shell() {
   const [menuQuery, setMenuQuery] = useState("");
   useEffect(()=>{let current:HTMLMediaElement|null=null;const playing=(event:Event)=>{const node=event.target;if(!(node instanceof HTMLMediaElement))return;if(node.srcObject){current?.pause();current=null;return;}if(current&&current!==node)current.pause();current=node;};document.addEventListener("play",playing,true);return()=>{document.removeEventListener("play",playing,true);current?.pause();};},[]);
   useRoutePosition(`${app.session?.user?.userId || "guest"}:${app.groupId}:${location.pathname}${location.search}`);
-  useEffect(() => { const frame = requestAnimationFrame(() => { const heading = document.querySelector<HTMLElement>(".stage h1"); if (heading && !document.querySelector('[role="dialog"]')) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); } }); return () => cancelAnimationFrame(frame); }, [location.pathname]);
+  useEffect(() => { const frame = requestAnimationFrame(focusRouteHeading); return () => cancelAnimationFrame(frame); }, [location.pathname]);
   useEffect(()=>{if(!menu)return;const close=(event:KeyboardEvent)=>{if(event.key==="Escape"){event.preventDefault();setMenu(false);}};window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close);},[menu]);
   const group = app.catalog?.groups.find(item => item.id === app.groupId);
   const chatActive = location.pathname === "/chat" || location.pathname.startsWith("/chat/") || location.pathname === "/group";

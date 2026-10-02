@@ -25,7 +25,7 @@ import java.time.LocalDate
         Text(stringResource(R.string.ux300_room_scope), style = Zapara.typography.caption)
         val agenda = state.roomAgenda
         val date = agenda?.date ?: state.selectedDate
-        ZButton(date.toString(), {
+        ZButton(agendaDateLabel(date), {
             android.app.DatePickerDialog(context, if (dark) R.style.Zapara_DatePicker_Dark else R.style.Zapara_DatePicker_Light,
                 { _, y, m, d -> event(WeekEvent.RoomDate(LocalDate.of(y, m + 1, d))) }, date.year, date.monthValue - 1, date.dayOfMonth).show()
         }, ghost = true, tag = "Week.RoomAgendaDate")

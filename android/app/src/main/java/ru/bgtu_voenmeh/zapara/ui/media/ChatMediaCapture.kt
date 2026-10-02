@@ -26,6 +26,8 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.size
@@ -76,6 +78,7 @@ import java.io.File
 private enum class CaptureMode { Idle, Voice, CirclePreview, Circle, Finalizing, Review }
 
 /** The idle slot keeps each chat's own composer layout while sharing recording behavior. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ChatMediaCaptureHost(
     enabled: Boolean,
@@ -170,10 +173,10 @@ fun ChatMediaCaptureHost(
                     ChatMediaBubble(controller.reviewKind.orEmpty(), file, controller.reviewDurationMs,
                         loading = false, error = false, onLoad = {}, modifier = Modifier.align(Alignment.CenterHorizontally))
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                    verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                     ZButton(stringResource(R.string.ux60_chat_record_discard), { controller.discardReview() }, ghost = true)
-                    ZButton(stringResource(R.string.ux60_chat_record_again), { controller.recordAgain() }, enabled = enabled, ghost = true,
-                        modifier = Modifier.weight(1f))
+                    ZButton(stringResource(R.string.ux60_chat_record_again), { controller.recordAgain() }, enabled = enabled, ghost = true)
                 }
                 ZButton(stringResource(R.string.ux60_chat_record_send), { controller.sendReview() }, enabled = enabled,
                     modifier = Modifier.fillMaxWidth())

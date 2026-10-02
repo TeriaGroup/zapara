@@ -425,7 +425,7 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .field .ballot-choice { width: auto; flex: 1 1 140px; min-width: 0; }
 .ballot-days { width: auto; }
 .ballot-bar { height: 6px; border-radius: 99px; background: var(--chip); overflow: hidden; }
-.ballot-bar > span { display: block; height: 100%; background: var(--ok); }
+.ballot-bar > span { display: block; height: 100%; background: var(--accent); }
 .legal { max-width: 720px; }
 .legal h1, .legal p { max-width: 100%; overflow-wrap: anywhere; }
 .legal p { white-space: pre-wrap; }

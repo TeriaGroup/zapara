@@ -80,6 +80,8 @@ export function Provider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [tick, setTick] = useState(0);
   const [session, setSession] = useState<Session | null>(null);
+  const groupSelection=useRef({groupId,authenticated:!!session?.authenticated});
+  groupSelection.current={groupId,authenticated:!!session?.authenticated};
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [sessionStatus, setSessionStatus] = useState("Проверяем аккаунт…");
   const sessionRefresher = useRef<(() => Promise<void>) | null>(null);
@@ -138,6 +140,7 @@ export function Provider({ children }: { children: ReactNode }) {
   useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity) persistPreference(invertKey, invert ? "1" : "0"); }, [invert, sessionLoaded, sessionIdentity]);
   useEffect(() => { if (sessionLoaded && !session?.authenticated && previousIdentity.current === sessionIdentity && groupReady.current) persistPreference(groupKey, groupId); }, [groupId, sessionLoaded, sessionIdentity]);
   const chooseGroup = (id: string) => {
+    if(id===groupSelection.current.groupId)return;
     groupReady.current = true;
     if (!session?.authenticated) { if(!persistPreference(groupKey,id))return; guestPreferences.current.groupId = id; }
     const cached = id ? api.readCache().lessons[id] : null;
@@ -160,20 +163,23 @@ export function Provider({ children }: { children: ReactNode }) {
       cache.groups = payload;
       api.writeCache(cache);
       setCatalog(payload);
-      const next = resolveStoredGroup(session?.authenticated ? groupId : groupReady.current ? readPreference(groupKey) : null, payload.groups);
-      const cached = next ? api.readCache().lessons[next] : null;
-      setBundle(cached ? { groupId: next, payload: cached } : null);
-      setTimetableStatus({ groupId: next, loading: !!next, failed: false });
-      if (!groupReady.current && !session?.authenticated) {
+      const live=groupSelection.current;
+      const next = resolveStoredGroup(live.authenticated ? live.groupId : groupReady.current ? readPreference(groupKey) : null, payload.groups);
+      if(next!==live.groupId){
+        const cached = next ? api.readCache().lessons[next] : null;
+        setBundle(cached ? { groupId: next, payload: cached } : null);
+        setTimetableStatus({ groupId: next, loading: !!next, failed: false });
+        setGroupState(next);
+      }
+      if (!groupReady.current && !live.authenticated) {
         groupReady.current = true;
         persistPreference(groupKey, next);
         guestPreferences.current.groupId = next;
       }
-      setGroupState(next);
-      setNotice(payload.meta.stale ? "Расписание может быть устаревшим. Показана сохранённая копия." : "");
+      if(!next||next!==live.groupId)setNotice(payload.meta.stale ? "Список групп может быть устаревшим. Показана сохранённая копия." : "");
     }).catch(() => {
       if (stop) return;
-      setNotice(catalog ? "Расписание не обновилось. Доступна сохранённая копия." : "Нет сети и сохранённой копии.");
+      setNotice(catalog ? "Список групп не обновился. Сохранённое расписание остаётся доступным." : "Список групп недоступен, сохранённой копии списка нет.");
     }).finally(() => { if (!stop) setLoading(false); });
     return () => { stop = true; };
   }, [tick]);
@@ -196,6 +202,7 @@ export function Provider({ children }: { children: ReactNode }) {
       api.writeCache(cache);
       setBundle({ groupId, payload });
       setTimetableStatus({ groupId, loading: false, failed: false });
+      setNotice(payload.meta.stale ? "Расписание может быть устаревшим. Показана сохранённая копия." : "");
       setTimetableRevision(value=>value+1);
     }).catch(reason => {
       if(reason?.name === "QuotaExceededError" || reason?.name === "SecurityError"){if(!stop){setNotice("Свежую копию не удалось сохранить в браузере. Предыдущая копия остаётся доступна; проверьте свободное место и повторите обновление.");setTimetableStatus({groupId,loading:false,failed:true});}return;}

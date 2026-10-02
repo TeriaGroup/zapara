@@ -7,7 +7,7 @@ import { rememberRoute, validRouteHistory, togglePinnedPlace, validPinnedPlaces,
 
 export function CampusRouteView({ asset, plan, plans, classroom, onPlan, onMark, onRoute }: {
   asset: PublicMapAsset; plan: MapPlan | null; plans: MapPlan[]; classroom: string;
-  onPlan: (plan: MapPlan) => void; onMark: (node: CampusNode) => void; onRoute: (route: CampusRoute | null) => void;
+  onPlan: (plan: MapPlan) => void; onMark: (node: CampusNode, reveal?: boolean) => void; onRoute: (route: CampusRoute | null) => void;
 }) {
   const [graph,setGraph]=useState<CampusGraph|null>(null);
   const [error,setError]=useState(""); const [retry,setRetry]=useState(0);
@@ -40,7 +40,7 @@ export function CampusRouteView({ asset, plan, plans, classroom, onPlan, onMark,
   const label=(id:string)=>{const node=graph?.nodes.find(node=>node.id===id);return node?`${node.label||node.room||"Место"} · ${node.building}, ${node.floor} этаж`:"Не выбрано";};
   const rows=graph?campusPlaces(graph,query,floorOnly?plan?.building:undefined,floorOnly?plan?.floor:undefined):[];
   function pick(node:CampusNode){if(field==="from")setFrom(node.id);else setTo(node.id);setUndo(null);setRecent(values=>[node.id,...values.filter(id=>id!==node.id)].slice(0,8));setField(null);onMark(node);}
-  function reveal(id:string){const node=graph?.nodes.find(node=>node.id===id);if(node)onMark(node);}
+  function reveal(id:string){const node=graph?.nodes.find(node=>node.id===id);if(node)onMark(node,true);}
   function showStep(index:number){const next=route?.steps[index];if(!next)return;setStep(index);const target=plans.find(plan=>plan.building===next.building&&plan.floor===next.floor);if(target)onPlan(target);}
   return <section className="card stack" aria-label="Маршрут по кампусу"><h2>Маршрут</h2><p className="muted">Выберите точки самостоятельно. Приложение не определяет ваше местоположение.</p>
     {error&&<div className="banner" role="status">{error}<button className="btn" onClick={()=>setRetry(value=>value+1)}>Повторить загрузку маршрутов</button></div>}

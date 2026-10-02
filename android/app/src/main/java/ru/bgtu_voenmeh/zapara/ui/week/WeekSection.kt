@@ -180,11 +180,14 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit,
                     }
                     Text(stringResource(R.string.next_week_total, state.days.sumOf { it.rows.size }),
                         style = Zapara.typography.caption, color = c.text2)
-                    ZButton(stringResource(if (browseOpen) R.string.ux300_android_week_hide_tools
-                        else R.string.ux300_android_week_show_tools),
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                        verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                    ZButton(stringResource(if (browseOpen) R.string.ux300_visual_week_close
+                        else R.string.ux300_visual_week_tools),
                         { browseOpen = !browseOpen }, ghost = true, tag = "Week.BrowseTools")
-                    ZButton(stringResource(R.string.ux300_android_share_schedule),
+                    ZButton(stringResource(R.string.ux300_visual_week_share),
                         { shareOpen = true }, ghost = true, tag = "Week.ShareOpen")
+                    }
                     if (!browseOpen && (query.isNotBlank() || lessonsOnly))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                             if (query.isNotBlank()) {

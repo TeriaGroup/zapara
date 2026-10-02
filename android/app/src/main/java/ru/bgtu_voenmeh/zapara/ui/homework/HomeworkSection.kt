@@ -68,6 +68,7 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit,
     val keyboard = LocalSoftwareKeyboardController.current
     val largeText = LocalDensity.current.fontScale >= 1.5f
     var advancedOpen by rememberSaveable { mutableStateOf(false) }
+    var planToolsOpen by rememberSaveable(state.groupId, state.profileName) { mutableStateOf(false) }
     var selectionMode by remember(state.groups) { mutableStateOf(false) }
     var selectedIds by remember(state.groups) { mutableStateOf(setOf<Long>()) }
     var selectedSubject by rememberSaveable(state.groupId, state.profileName) { mutableStateOf<String?>(null) }
@@ -119,7 +120,9 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit,
                 } }
                 item("browse") {
                     Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                        HomeworkSubjectOverview(state.groups.flatMap { it.items }, "${state.profileName}:${state.groupId}") { key ->
+                        ZButton(stringResource(if (planToolsOpen) R.string.ux300_visual_homework_close else R.string.ux300_visual_homework_tools),
+                            { planToolsOpen = !planToolsOpen }, ghost = true, tag = "Homework.PlanTools")
+                        if (planToolsOpen) HomeworkSubjectOverview(state.groups.flatMap { it.items }, "${state.profileName}:${state.groupId}") { key ->
                             selectedSubject = key
                             onEvent(HomeworkEvent.BrowseReset)
                         }
@@ -127,7 +130,7 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit,
                             Text(stringResource(R.string.ux300_ext_subject_selected, subject), style = Zapara.typography.caption)
                             ZButton(stringResource(R.string.ux300_ext_all_subjects), { selectedSubject = null }, ghost = true)
                         }
-                        HomeworkPlanTools(browse.groups.flatMap { it.items }, state.groupId, state.profileName)
+                        if (planToolsOpen) HomeworkPlanTools(browse.groups.flatMap { it.items }, state.groupId, state.profileName)
                         ZTextField(state.browseQuery, { onEvent(HomeworkEvent.BrowseQuery(it)) },
                             modifier = Modifier.fillMaxWidth().testTag("Homework.Search"),
                             placeholder = { Text(stringResource(R.string.homework_browse_search)) }, singleLine = true,

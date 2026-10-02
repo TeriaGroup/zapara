@@ -26,6 +26,16 @@ import * as summary from "./summary.ts";
 import * as discovery from './study-discovery.ts';
 import * as obligations from './group-obligations.ts';
 
+test("homework batch siblings retain distinct reconciliation identities across sync updates", async()=>{
+  const source=await readFile(new URL("./pages.tsx",import.meta.url),"utf8");
+  const keys=["PersonalHomeworkBatch","HomeworkPostpone","HomeworkPublication"].map(name=>{
+    const expression=source.match(new RegExp(`<${name} key=\\{(JSON\\.stringify\\(\\[[^\\]]*\\]\\))\\}`))?.[1];
+    assert.ok(expression,`${name} has a scoped identity`);
+    return runInNewContext(expression,{copyOwnerKey:"owner",app:{session:{familyId:"family"},groupId:"group"},communityId:"community"});
+  });
+  assert.equal(new Set(keys).size,keys.length,"sibling keys must not collide and retain ghost batch buttons");
+});
+
 function hooks() {
   const slots:any[]=[]; let cursor=0, mounted=true, lateWrites=0;
   const pending:(()=>void)[]=[];
@@ -152,12 +162,12 @@ test("actual common-free panel requires a selected compatible group and never de
 });
 
 test("actual route picker pins places and successful route history can be repeated and cleared",async()=>{
-  const h=hooks();const source=await readFile(new URL("../../src/Vograph.Desktop/Assets/maps/campus-graph.json",import.meta.url));
+  const h=hooks();const marks:any[]=[];const source=await readFile(new URL("../../src/Vograph.Desktop/Assets/maps/campus-graph.json",import.meta.url));
   const out=await load("./campus-route-view.tsx",[],{react:h.react,"./campus-routing":routing,"./route-memory":routeMemory,"./ux300-controls":{useClock:()=>new Date(),useBrowseValue:(_key:string,initial:any)=>h.react.useState(initial)}},{URL,TextDecoder,AbortController,crypto:{},window:{location:{origin:"https://local.test"}},fetch:async()=>({ok:true,arrayBuffer:async()=>source.buffer.slice(source.byteOffset,source.byteOffset+source.byteLength)})});
-  const render=()=>h.render(()=>out.CampusRouteView({asset:{url:"/api/v1/maps/assets/campus-graph.json",bytes:source.byteLength,sha256:""},plan:{building:"ГК",floor:1},plans:[],classroom:"",onPlan:()=>{},onMark:()=>{},onRoute:()=>{}}));
+  const render=()=>h.render(()=>out.CampusRouteView({asset:{url:"/api/v1/maps/assets/campus-graph.json",bytes:source.byteLength,sha256:""},plan:{building:"ГК",floor:1},plans:[],classroom:"",onPlan:()=>{},onMark:(node:any,show=false)=>marks.push({node,show}),onRoute:()=>{}}));
   render();await settle();render();let tree=render();nodes(tree).find(node=>node.type==="button"&&text(node).startsWith("Откуда:")).props.onClick();tree=render();nodes(tree).find(node=>node.props?.label==="Найти аудиторию или вход").props.onChange("101 ГК");tree=render();
   const pin=nodes(tree).find(node=>node.type==="button"&&node.props["aria-label"]?.startsWith("Закрепить 101 ·"));assert.ok(pin);pin.props.onClick();tree=render();assert.ok(nodes(tree).find(node=>node.props?.["aria-label"]?.startsWith("Открепить 101 ·")));
-  nodes(tree).find(node=>node.type==="button"&&text(node).startsWith("101 ·")).props.onClick();tree=render();nodes(tree).find(node=>node.type==="button"&&text(node).startsWith("Куда:")).props.onClick();tree=render();nodes(tree).find(node=>node.props?.label==="Найти аудиторию или вход").props.onChange("102 ГК");tree=render();nodes(tree).find(node=>node.type==="button"&&text(node).startsWith("102 ·")).props.onClick();render();tree=render();assert.match(text(tree),/История маршрутов/);
+  nodes(tree).find(node=>node.type==="button"&&text(node).startsWith("101 ·")).props.onClick();tree=render();nodes(tree).find(node=>node.type==="button"&&text(node).startsWith("Куда:")).props.onClick();tree=render();nodes(tree).find(node=>node.props?.label==="Найти аудиторию или вход").props.onChange("102 ГК");tree=render();nodes(tree).find(node=>node.type==="button"&&text(node).startsWith("102 ·")).props.onClick();render();tree=render();assert.match(text(tree),/История маршрутов/);assert.equal(marks.at(-1).show,false);button(tree,"Показать назначение").props.onClick();assert.equal(marks.at(-1).show,true);
   const repeat=nodes(tree).find(node=>node.type==="button"&&text(node).includes("101 ·")&&text(node).includes("→"));assert.ok(repeat);repeat.props.onClick();tree=render();button(tree,"Очистить историю маршрутов").props.onClick();tree=render();assert.equal(button(tree,"Очистить историю маршрутов"),undefined);
 });
 
@@ -254,4 +264,21 @@ test("actual obligations includes general board and revalidates exact ballot bef
  const out=await load('./group-obligations-view.tsx',[],{react:h.react,'./store':{useApp:()=>app},'./draft-revocation':revocation,'./group-obligations':obligations,'./ux300-controls':{useClock:()=>new Date()},'./api':{authGeneration:()=>0,topics:async()=>({topics:[]}),ballots:async(_community:string,topic?:string)=>{assert.equal(topic,undefined);reads++;return board;}}},{sessionStorage:storage});
  const render=()=>h.render(()=>out.GroupObligations({communityId:'community',onOpen:(topic:any,target:any,fresh:any)=>opened={topic,target,fresh}}));button(render(),'Обновить обзор обязательств').props.onClick();await settle();let tree=render();assert.match(text(tree),/Общее голосование/);assert.doesNotMatch(text(tree),/Не включать из агрегата/);assert.equal(reads,1);button(tree,'Открыть этот объект').props.onClick();await settle();assert.equal(reads,2);assert.equal(opened.topic,null);assert.equal(opened.target.id,'global-one');assert.equal(opened.fresh,board);
  opened=null;board.ballots=[];button(render(),'Открыть этот объект').props.onClick();await settle();assert.equal(opened,null);assert.match(text(render()),/больше недоступно/);
+});
+
+
+test("route restoration yields to a child-owned exact target instead of scrolling/focusing the heading",async()=>{
+ const h=hooks();let frame:any,scrolls=0,headingFocus=0;const target={matches:()=>true};const heading={tabIndex:0,focus:()=>headingFocus++,matches:()=>false};const document:any={activeElement:target,documentElement:{scrollHeight:2000},body:{},querySelector:(selector:string)=>selector==='.stage'?{contains:(node:any)=>node===target}:selector==='.stage h1'?heading:null};
+ const out=await load('./ux300-controls.tsx',[],{react:h.react},{document,MutationObserver:class{observe(){}disconnect(){}},requestAnimationFrame:(callback:any)=>{frame=callback;return 1;},cancelAnimationFrame:()=>{},window:{innerHeight:1080,scrollY:0,scrollTo:()=>scrolls++,setTimeout:()=>1,clearTimeout:()=>{},addEventListener:()=>{},removeEventListener:()=>{}}});
+ h.render(()=>out.useRoutePosition('explicit-target'));frame();out.focusRouteHeading();assert.equal(scrolls,0);assert.equal(headingFocus,0);
+ document.activeElement=document.body;out.focusRouteHeading();assert.equal(headingFocus,1);
+});
+
+
+for(const failed of [true,false])test(`actual provider keeps settled timetable state when catalog arrives late (failed=${failed})`,async()=>{
+ const h=hooks();let finishCatalog!:(value:any)=>void;const groups={period:{start:'2026-09-01',weekCount:2},meta:{stale:false},groups:[{id:'g',name:'G'}]};const old={...groups,lessons:[{subjectRaw:'Old'}]},fresh={...groups,lessons:[{subjectRaw:'Fresh'}]};let cache:any={groups,lessons:{g:old}};const memory=new Map([['zapara.group','g']]);const privateState={items:[],settings:null,saveSettings:()=>{}};
+ const out=await load('./store.tsx',[],{react:{...h.react,createContext:()=>({Provider:'provider'})},'./api':{readCache:()=>cache,writeCache:(value:any)=>cache=value,loadGroups:()=>new Promise(resolve=>finishCatalog=resolve),loadTimetable:()=>failed?Promise.reject(Error('503')):Promise.resolve(fresh)},'./private-sync':{usePrivateHomework:()=>privateState},'./groupChoice':{resolveStoredGroup:(value:string)=>value},'./intersectionStrictness':{normalizeIntersectionStrictness:()=>1},'./session-refresh':{createSessionRefresher:()=>async()=>{}},'./subgroups':subgroups,'./next-workflows':{subgroupUndoCurrent:()=>false}},
+ {localStorage:{getItem:(key:string)=>memory.get(key)??null,setItem:(key:string,value:string)=>memory.set(key,value)},document:{documentElement:{dataset:{}},addEventListener:()=>{},removeEventListener:()=>{}},window:{matchMedia:()=>({matches:false,addEventListener:()=>{},removeEventListener:()=>{}}),setInterval:()=>1,clearInterval:()=>{},addEventListener:()=>{},removeEventListener:()=>{}}});
+ const render=()=>h.render(()=>out.Provider({children:null})).props.value;render();await settle();let state=render();assert.equal(state.timetableLoading,false);assert.equal(state.timetableFailed,failed);assert.equal(state.lessons[0].subjectRaw,failed?'Old':'Fresh');
+ finishCatalog(groups);await settle();state=render();assert.equal(state.timetableLoading,false);assert.equal(state.timetableFailed,failed);assert.equal(state.lessons[0].subjectRaw,failed?'Old':'Fresh');if(failed)assert.match(state.notice,/не обновилось/);state.setGroupId('g');state=render();assert.equal(state.timetableLoading,false);
 });

@@ -259,14 +259,14 @@ export function SchedulePage() {
     })}</div>
     <div className="day-space date-reveal" ref={dateReveal}>
       <main className="stack swipe" {...swipe}>
-        <div className="section-overview"><strong>{groupName || "Группа не выбрана"}</strong><span>{app.timetableAvailable ? `${pairCount(lessons.length)}${lessons.length ? ` · ${lessons[0].timeStart}–${lessons.at(-1)?.timeEnd}` : ""}` : "Нет данных"}</span>
+        <div className="section-overview"><strong>{groupName || "Группа не выбрана"}</strong><span>{app.timetableAvailable && !outsidePeriod ? `${pairCount(lessons.length)}${lessons.length ? ` · ${lessons[0].timeStart}–${lessons.at(-1)?.timeEnd}` : ""}` : "Нет данных"}</span>
           <button className="btn quiet" type="button" disabled={app.loading || app.timetableLoading} onClick={app.refresh}>{app.loading || app.timetableLoading ? "Обновляем…" : "Обновить"}</button></div>
-        {app.timetableAvailable && <p className="muted">Учебное время: {dayLoad(lessons).minutes} мин · Окна между парами: {dayLoad(lessons).gaps} мин</p>}
+        {app.timetableAvailable && !outsidePeriod && <p className="muted">Учебное время: {dayLoad(lessons).minutes} мин · Окна между парами: {dayLoad(lessons).gaps} мин</p>}
         {app.timetableAvailable&&!outsidePeriod&&<StudyTransferCheck lessons={lessons}/>}
         {ownTimetable && <p className="schedule-cache muted">{!online ? "Нет сети · сохранённая копия" : app.timetableFailed ? "Не удалось обновить · сохранённая копия" : "Обновлено"} {new Date(ownTimetable.meta.fetchedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
         {hasLessonOverlap(lessons) && <p className="banner">Записи пар пересекаются по времени. Проверьте выбранные подгруппы.</p>}
         {!app.timetableAvailable ? <div className="card empty"><p>{app.timetableLoading ? "Загружаем расписание" : app.groupId ? "Расписание не загружено. Нет сохранённой копии." : "Выберите учебную группу"}</p>{app.groupId ? <button className="btn" type="button" disabled={app.timetableLoading || app.loading} onClick={app.refresh}>{app.timetableLoading || app.loading ? "Загружаем…" : "Повторить загрузку"}</button> : <Link className="btn" to="/settings?section=study">Выбрать группу</Link>}</div>
-          : outsidePeriod ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>Дата вне учебного периода</h2><p>Сохранённое расписание начинается {period && localDay(period.start.slice(0,10)) ? absoluteDate(localDay(period.start.slice(0,10))!) : "позже выбранной даты"}.</p></div> : lessons.length === 0 ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>В этот день пар нет</h2><p>{nextDate ? `Ближайшие занятия — ${absoluteDate(nextDate)}.` : "В ближайшие три недели в сохранённом расписании занятий нет."}</p>{nextDate && <button className="btn" type="button" onClick={() => app.setDate(nextDate)}>Открыть {nextDate.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}<Icon name="right" /></button>}</div>
+          : outsidePeriod ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>Дата вне учебного периода</h2><p>Начало сохранённого учебного периода: {period && localDay(period.start.slice(0,10)) ? absoluteDate(localDay(period.start.slice(0,10))!) : "неизвестно"}</p></div> : lessons.length === 0 ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>В этот день пар нет</h2><p>{nextDate ? `Ближайшие занятия — ${absoluteDate(nextDate)}.` : "В ближайшие три недели в сохранённом расписании занятий нет."}</p>{nextDate && <button className="btn" type="button" onClick={() => app.setDate(nextDate)}>Открыть {nextDate.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}<Icon name="right" /></button>}</div>
           : <>{isoDay(app.date) === isoDay(now) && !hero && <p className="banner">Пары закончились</p>}{lessons.map(renderLesson)}</>}
       </main>
       <aside id="schedule-deadlines" tabIndex={-1} className="stack day-context"><h2>Ближайшие сроки · {deadlines.length + sharedDeadlines.length}</h2><p className="muted">{app.date.toLocaleDateString("ru-RU")}–{addDays(app.date, 2).toLocaleDateString("ru-RU")}</p>
@@ -308,14 +308,17 @@ export function WeekPage() {
       <SearchField label="Найти пару на этой неделе" value={query} onChange={setQuery}/><label className="check"><input type="checkbox" checked={hideEmpty} onChange={event=>setHideEmpty(event.target.checked)}/>Скрыть дни без пар</label><div className="row"><label className="field">Неделя по дате<input type="date" value={isoDay(app.date)} onChange={event=>{const date=localDay(event.target.value);if(date)app.setDate(date);}}/></label>{weekDays.some(day=>day.lessons.length>0)&&<button className="btn" onClick={()=>{const first=weekDays.find(day=>day.lessons.length>0)!;app.setDate(first.date);navigate(`/schedule?date=${isoDay(first.date)}`);}}>Первый учебный день</button>}</div>
       {app.timetableAvailable && visibleDays.length===0 && <FilterEmpty onReset={()=>{setQuery("");setHideEmpty(false);}}/>}
       {app.timetableAvailable && period && <div className="section-overview">
-        <strong>Пар за неделю: {weekTotal}</strong>
+        <strong>{weekDays.some(day=>!day.known)?"Известных пар за неделю":"Пар за неделю"}: {weekTotal}</strong>
         <span>{monday.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })} — {days[6].toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}</span>
       </div>}
       {app.timetableAvailable&&<TimetableExportTools days={weekDays} groupId={app.groupId} groupName={app.catalog?.groups.find(group=>group.id===app.groupId)?.name||app.groupId}/>}
+      <details className="card week-planning-tools"><summary>Планирование недели</summary><div className="stack">
       <WeekComparison lessons={shown} date={app.date} period={period} invert={app.invert} available={app.timetableAvailable}/>
+      <SubgroupPreview key={'week-subgroups'+studyOwner(app)}/>
       <AssessmentPlanner key={'assessments'+studyOwner(app)}/>
       <RecentWeekChanges key={'changes'+studyOwner(app)+isoDay(monday)}/>
       {!app.privateHomework.readFailed?<WeekHomework items={app.homework} days={days} dateOf={item=>{const due=app.timetableAvailable&&period?personalHomeworkDue(item,shown,period,app.invert):null;return due?isoDay(due):null;}}/>:<p role="status">Личные сроки недоступны: сохранённые задания не удалось прочитать.</p>}
+      </div></details>
       <p className="swipe-hint">Смахните, чтобы сменить неделю</p>
       <div className="week swipe date-reveal" {...swipe} ref={node => { swipe.ref(node); dateReveal.current = node; }}>
         {visibleDays.map(({ date, matches: dayLessons, lessons: originalLessons, known }) => (
@@ -563,6 +566,8 @@ function TeachersContent() {
 
 export function MapsPage() {
   const app = useApp();
+  const mapHost=useRef<HTMLElement>(null);
+  function showMap(){requestAnimationFrame(()=>{const viewport=mapHost.current?.querySelector<HTMLElement>(".map-viewport");viewport?.focus({preventScroll:true});viewport?.scrollIntoView({block:"center"});});}
   const location=useLocation();
   const mapContext=new URLSearchParams(location.search);
   const [plans, setPlans] = useState<MapPlan[]>([]);
@@ -592,7 +597,7 @@ export function MapsPage() {
   }, [retry, location.search]);
   useEffect(() => { if (plan) { sessionStorage.setItem("zapara.map.building", plan.building); sessionStorage.setItem("zapara.map.floor", String(plan.floor)); } }, [plan?.id]);
   useEffect(()=>{if(plan)setRecentPlans(values=>[plan.id,...values.filter(id=>id!==plan.id)].slice(0,6));},[plan?.id]);
-  function revealPlace(node:CampusNode){const target=plans.find(plan=>plan.building===node.building&&plan.floor===node.floor);if(target){setPlan(target);setMarker({...node,nonce:Date.now()});}}
+  function revealPlace(node:CampusNode,reveal=false){const target=plans.find(plan=>plan.building===node.building&&plan.floor===node.floor);if(target){setPlan(target);setMarker({...node,nonce:Date.now()});if(reveal)showMap();}}
   const buildings = [...new Set(plans.map(item => item.building))];
   const floors = plans.filter(item => item.building === plan?.building).sort((a, b) => a.floor - b.floor);
   const floorAt = floors.findIndex(item => item.id === plan?.id);
@@ -603,18 +608,18 @@ export function MapsPage() {
   const upcoming = heroLesson(todayLessons, today, today);
   const automatic = upcoming ? roomPlan(plans, upcoming.roomRaw || upcoming.classroomRaw || "", upcoming.buildingRaw || "") : null;
   return (
-    <section className="page maps-page">
+    <section className="page maps-page" ref={mapHost}>
       <Head title="Карты" text="Планы корпусов Военмеха">
         {contextDate && <Link className="btn quiet" to={`/schedule?date=${isoDay(contextDate)}&subject=${encodeURIComponent(mapContext.get("subject")||"")}&time=${encodeURIComponent(mapContext.get("time")||"")}`} onClick={() => app.setDate(contextDate)}>К выбранной паре</Link>}
         <ShareMenu card={plan ? placeCard(plan.building, String(plan.floor), "", `${plan.building}, ${plan.floor} этаж`) : null} label="Этаж в чат" />
       </Head>
       {(mapContext.get("subject") || mapContext.get("room")) && <div className="map-context"><Icon name="pin" /><div><strong>{mapContext.get("room") ? `Аудитория ${mapContext.get("room")}` : "Аудитория не указана"}</strong><p>{[mapContext.get("subject"), contextDate ? absoluteDate(contextDate) : null, mapContext.get("time")].filter(Boolean).join(" · ")}</p><small>{/дистанц|онлайн/i.test(mapContext.get("room")||"")?"Дистанционное занятие — карта аудитории не требуется.":roomPlan(plans,mapContext.get("room")||"",mapContext.get("building")||"")?"Найдите аудиторию на плане выбранного этажа.":"План этой аудитории не распознан. Выберите корпус и этаж вручную ниже."}</small></div></div>}
       {error && <p className="banner" role="alert">{error}</p>}
-      {graphAsset&&<RoomActivity key={'room-activity'+studyOwner(app)} asset={graphAsset} onMark={revealPlace}/>}
+      {graphAsset&&<RoomActivity key={'room-activity'+studyOwner(app)} asset={graphAsset} onMark={node=>revealPlace(node,true)}/>}
       {graphAsset && <button className="btn" aria-expanded={routeOpen} onClick={()=>setRouteOpen(value=>!value)}>{routeOpen?"Скрыть маршрут":"Построить маршрут по кампусу"}</button>}
       {graphAsset&&routeOpen&&<CampusRouteView key={JSON.stringify([app.session?.user?.userId||"guest",app.session?.familyId||"",app.groupId])} asset={graphAsset} plan={plan} plans={plans} classroom={routeClassroom(mapContext.get("classroom"),mapContext.get("room"),mapContext.get("building"))} onPlan={setPlan} onMark={revealPlace} onRoute={setRoute}/>}
       {recentPlans.length>1&&<details><summary>Недавно просмотренные этажи</summary><div className="row">{recentPlans.map(id=>plans.find(row=>row.id===id)).filter((row):row is MapPlan=>!!row).map(row=><button className="btn quiet" key={row.id} onClick={()=>setPlan(row)}>{row.building} · {row.floor} этаж</button>)}</div></details>}
-      {!mapContext.get("room") && <div className="card row"><span className="muted">{!app.groupId ? "Группа не выбрана. Корпус и этаж можно выбрать вручную." : !app.timetableAvailable ? "Расписание ещё не загружено. Доступен ручной выбор плана." : !upcoming ? "Сегодня предстоящих занятий нет. Планы доступны ниже." : automatic ? `Ближайшая пара: ${upcoming.roomRaw || upcoming.classroomRaw}` : "Для аудитории ближайшей пары подходящий план не найден. Выберите его вручную."}</span>{!app.groupId && <Link className="btn" to="/settings?section=study">Выбрать группу</Link>}{automatic && <button className="btn" type="button" onClick={() => setPlan(automatic)}>К ближайшей паре</button>}</div>}
+      {!mapContext.get("room") && <div className="card row"><span className="muted">{!app.groupId ? "Группа не выбрана. Корпус и этаж можно выбрать вручную." : !app.timetableAvailable ? "Расписание ещё не загружено. Доступен ручной выбор плана." : !upcoming ? "Сегодня предстоящих занятий нет. Планы доступны ниже." : automatic ? `Ближайшая пара: ${upcoming.roomRaw || upcoming.classroomRaw}` : "Для аудитории ближайшей пары подходящий план не найден. Выберите его вручную."}</span>{!app.groupId && <Link className="btn" to="/settings?section=study">Выбрать группу</Link>}{automatic && <button className="btn" type="button" onClick={() => {setPlan(automatic);showMap();}}>К ближайшей паре</button>}</div>}
       <div className="map-tools map-selectors" role="group" aria-label="Выбор корпуса и этажа">
         {buildings.length > 0 && <div className="seg" role="group" aria-label="Корпус">{buildings.map(building => <button key={building} className={plan?.building === building ? "active" : ""} aria-pressed={plan?.building === building} type="button" onClick={() => setPlan(chooseBuildingPlan(plans,building,plan?.floor))}>{building}</button>)}</div>}
         {floors.length > 0 && <div className="map-floors" role="group" aria-label="Этаж"><span className="muted">Этаж</span>{floors.map(item => (
@@ -1196,9 +1201,9 @@ export function HomeworkPage() {
           </article>
         ))}
       </div>
-      <PersonalHomeworkBatch key={JSON.stringify([copyOwnerKey,app.session?.familyId,app.groupId])} items={visibleHomework}/>
-      <HomeworkPostpone key={JSON.stringify([copyOwnerKey,app.session?.familyId,app.groupId])} items={visibleHomework} dateOf={personalDate}/>
-      <HomeworkPublication key={JSON.stringify([copyOwnerKey,app.session?.familyId,app.groupId,communityId])} items={visibleHomework} communityId={communityId} recipients={recipients} dateOf={personalDate}/>
+      <PersonalHomeworkBatch key={JSON.stringify(["complete",copyOwnerKey,app.session?.familyId,app.groupId])} items={visibleHomework}/>
+      <HomeworkPostpone key={JSON.stringify(["postpone",copyOwnerKey,app.session?.familyId,app.groupId])} items={visibleHomework} dateOf={personalDate}/>
+      <HomeworkPublication key={JSON.stringify(["publish",copyOwnerKey,app.session?.familyId,app.groupId,communityId])} items={visibleHomework} communityId={communityId} recipients={recipients} dateOf={personalDate}/>
       {visibleHomework.length > 0 && <><h2 id="homework-personal-results" tabIndex={-1} className="section-list-title">Мои задания <span className="chip">{visibleHomework.length}</span></h2><HomeworkExportTools key={JSON.stringify([copyOwnerKey,app.session?.familyId,app.groupId])} items={visibleHomework} groupId={app.groupId} groupName={app.catalog?.groups.find(group=>group.id===app.groupId)?.name||app.groupId}/></>}
       {homeworkBuckets.length>1 && <button className="btn quiet" onClick={()=>setCollapsedBuckets(rows=>rows.length?[]:homeworkBuckets.map(group=>group.key))}>{collapsedBuckets.length?"Развернуть все сроки":"Свернуть все сроки"}</button>}
       <div className="stack" style={{ marginTop: 12 }}>

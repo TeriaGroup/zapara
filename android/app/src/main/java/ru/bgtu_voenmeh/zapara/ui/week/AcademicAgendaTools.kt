@@ -19,11 +19,11 @@ import java.time.LocalDate
         Text(stringResource(R.string.ux300_agenda_scope), style = Zapara.typography.caption)
         fun jump(date: LocalDate, lesson: Lesson) { panel = null; open(date, lesson) }
         if (panel == "assessments") {
-            Text("${state.selectedDate} — ${state.selectedDate.plusDays(27)}", style = Zapara.typography.caption)
+            Text("${agendaDateLabel(state.selectedDate)} — ${agendaDateLabel(state.selectedDate.plusDays(27))}", style = Zapara.typography.caption)
             if (state.assessmentUnknownDays > 0) Text(stringResource(R.string.ux300_agenda_unknown_days, state.assessmentUnknownDays), style = Zapara.typography.caption)
             if (state.assessments.isEmpty()) Text(stringResource(R.string.ux300_agenda_no_assessments), style = Zapara.typography.body)
             state.assessments.forEach { row -> ZCard(Modifier.fillMaxWidth()) {
-                Text("${row.date} · ${row.lesson.timeStart}–${row.lesson.timeEnd}", style = Zapara.typography.caption)
+                Text("${agendaDateLabel(row.date)} · ${row.lesson.timeStart}–${row.lesson.timeEnd}", style = Zapara.typography.caption)
                 Text(row.lesson.subjectRaw, style = Zapara.typography.bodyStrong)
                 Text("${row.lesson.teacherRaw} · ${row.lesson.classroomRaw}", style = Zapara.typography.body)
                 ZButton(stringResource(R.string.ux300_agenda_open_lesson), { jump(row.date, row.lesson) }, ghost = true)

@@ -246,6 +246,7 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
             row.timeStart, row.timeEnd, row.subjectRaw, row.teacher, row.classroomRaw, row.typeRaw) == academicKey }
     }
     var remainingOnly by rememberSaveable(page.date, state.groupId, state.profileName) { mutableStateOf(false) }
+    var dayToolsOpen by rememberSaveable(page.date, state.groupId, state.profileName) { mutableStateOf(false) }
     val visibleIndices = page.lessons.indices.filter { !remainingOnly || !page.isToday || !page.lessons[it].isPast }
     LaunchedEffect(page.date, focusIndex) {
         if (focusIndex >= 0) { remainingOnly = false; list.animateScrollToItem(focusIndex + 1) }
@@ -260,6 +261,9 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                 Text(pluralStringResource(R.plurals.schedule_pair_count, page.lessons.size, page.lessons.size), modifier = Modifier.align(Alignment.CenterVertically), style = Zapara.typography.section, color = Zapara.colors.text1)
                 ZChip("${page.lessons.minOf { it.timeStart }}–${page.lessons.maxOf { it.timeEnd }}")
             }
+            ZButton(stringResource(if (dayToolsOpen) R.string.ux300_visual_day_close else R.string.ux300_visual_day_tools),
+                { dayToolsOpen = !dayToolsOpen }, ghost = true, tag = "Schedule.DayTools")
+            if (dayToolsOpen) {
             ZButton(stringResource(R.string.ux300_android_share_day), { onShareDay(page) },
                 ghost = true, tag = "Schedule.ShareDay")
             var transfersOpen by rememberSaveable(page.date, state.groupId, state.profileName) { mutableStateOf(false) }
@@ -303,6 +307,7 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                 if (page.deadlines.isNotEmpty()) ZButton(stringResource(R.string.ux100_study_jump_deadlines), {
                     scrollScope.launch { list.animateScrollToItem(visibleIndices.size + 1) }
                 }, ghost = true, tag = "Schedule.JumpDeadlines")
+            }
             }
             }
             if (page.lessons.isEmpty() && page.dataState == null) {

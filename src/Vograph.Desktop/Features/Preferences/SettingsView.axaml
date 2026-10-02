@@ -142,7 +142,7 @@
             <Button Classes="primary" Content="{loc:T notifSave}" Command="{Binding SaveTimesCommand}" IsEnabled="{Binding CanSaveTimes}" HorizontalAlignment="Left" AutomationProperties.AutomationId="Settings.SaveTimes" />
             <Button Content="Отменить изменения времени" Command="{Binding DiscardNotifyTimesCommand}" IsEnabled="{Binding HasNotifyTimeDraft}" HorizontalAlignment="Left" />
           </StackPanel>
-          <Button Content="Предпросмотр уведомления" Command="{Binding PreviewNotificationCommand}" HorizontalAlignment="Left" />
+          <Button Content="Предпросмотр уведомления" Command="{Binding PreviewNotificationCommand}" HorizontalAlignment="Left" AutomationProperties.AutomationId="Settings.PreviewNotification" />
           <Border Classes="card" IsVisible="{Binding NotificationPreviewVisible}"><StackPanel Spacing="6"><TextBlock Classes="subject" Text="Так будет выглядеть уведомление" /><TextBlock Text="{Binding NotificationPreview}" TextWrapping="Wrap" /></StackPanel></Border>
           <Button Command="{Binding TestNotificationCommand}" HorizontalAlignment="Left" IsVisible="{Binding NotificationPreviewVisible}"
                   AutomationProperties.AutomationId="Settings.TestNotification" AutomationProperties.Name="{loc:T notifTest}">
@@ -207,7 +207,7 @@
       <Border Classes="card">
         <StackPanel Spacing="8">
           <TextBlock Classes="micro" Text="Поддержка" />
-          <Border Classes="card"><StackPanel Spacing="8"><TextBlock Classes="subject" Text="Диагностика без личных данных" /><TextBlock Classes="muted caption" Text="Только версия, платформа и числа сохранённых копий, планов и изменений в очереди. Без имён, путей, адресов, токенов, текстов и файлов." TextWrapping="Wrap" /><Button Content="Проверить сводку" Command="{Binding PreviewDiagnosticsCommand}" HorizontalAlignment="Left" /><TextBox Text="{Binding DiagnosticsPreview}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" IsVisible="{Binding HasDiagnosticsPreview}" MinHeight="100" /><Button Content="Копировать сводку" Command="{Binding CopyDiagnosticsCommand}" IsVisible="{Binding HasDiagnosticsPreview}" HorizontalAlignment="Left" /><TextBlock Text="{Binding DiagnosticsStatus}" TextWrapping="Wrap" /></StackPanel></Border>
+          <Border Classes="card"><StackPanel Spacing="8"><TextBlock Classes="subject" Text="Диагностика без личных данных" /><TextBlock Classes="muted caption" Text="Только версия, платформа и числа сохранённых копий, планов и изменений в очереди. Без имён, путей, адресов, токенов, текстов и файлов." TextWrapping="Wrap" /><Button Content="Проверить сводку" Command="{Binding PreviewDiagnosticsCommand}" HorizontalAlignment="Left" /><TextBox Text="{Binding DiagnosticsPreview}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" IsVisible="{Binding HasDiagnosticsPreview}" MinHeight="100" AutomationProperties.AutomationId="Settings.DiagnosticsPreview" /><Button Content="Копировать сводку" Command="{Binding CopyDiagnosticsCommand}" IsVisible="{Binding HasDiagnosticsPreview}" HorizontalAlignment="Left" /><TextBlock Text="{Binding DiagnosticsStatus}" TextWrapping="Wrap" /></StackPanel></Border>
           <TextBlock TextWrapping="Wrap" Text="Сообщить о баге или ошибке. Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ." />
           <TextBlock Classes="subject" Text="Новое обращение" />
           <TextBox Name="ReportSubjectControl" Text="{Binding ReportSubject}" PlaceholderText="Тема" MinHeight="48" AutomationProperties.AutomationId="Settings.ReportSubject" />

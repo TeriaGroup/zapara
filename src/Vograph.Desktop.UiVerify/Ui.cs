@@ -4,6 +4,7 @@ using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using FlaUI.Core;
 using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Definitions;
 using FlaUI.Core.Input;
 using FlaUI.Core.Tools;
 using FlaUI.Core.WindowsAPI;
@@ -42,6 +43,27 @@ public sealed partial class Ui : IDisposable
         try
         {
             Window = _app.GetMainWindow(_automation, _timeout) ?? throw new TimeoutException($"main window did not appear within {_timeout}");
+            var requestedSize = Environment.GetEnvironmentVariable("VOGRAPH_UIVERIFY_WINDOW_SIZE");
+            if (requestedSize is "960x600" or "1920x1080")
+            {
+                var size = requestedSize.Split('x');
+                var width = int.Parse(size[0]); var height = int.Parse(size[1]);
+                var handle = new IntPtr(Window.Properties.NativeWindowHandle.Value);
+                GetWindowThreadProcessId(handle, out var owner);
+                if (owner != Pid) throw new InvalidOperationException("Test window handle belongs to another process.");
+                if (Window.Patterns.Transform.IsSupported)
+                {
+                    Window.Patterns.Transform.Pattern.Resize(width, height);
+                    Window.Patterns.Transform.Pattern.Move(0, 0);
+                }
+                else if (!MoveWindow(handle, 0, 0, width, height, true))
+                    throw new InvalidOperationException("Could not resize the launched test window.");
+                Thread.Sleep(250);
+                if (!GetWindowRect(handle, out var sized) || sized.Right - sized.Left != width || sized.Bottom - sized.Top != height)
+                    throw new InvalidOperationException("Test window did not reach the requested size.");
+            }
+            else if (requestedSize is { Length: > 0 })
+                throw new ArgumentException("VOGRAPH_UIVERIFY_WINDOW_SIZE accepts only 960x600 or 1920x1080.");
         }
         catch (Exception ex)
         {
@@ -86,6 +108,29 @@ public sealed partial class Ui : IDisposable
         if (el.Patterns.Invoke.IsSupported) el.Patterns.Invoke.Pattern.Invoke();
         else MouseClick(el, automationId);
         Thread.Sleep(700); // out 180 + gap 80 + in 180, plus a margin before the next step reads the screen
+    }
+
+    public void ClickNamedButton(string name)
+    {
+        var result = Retry.WhileNull(() => Window.FindAllDescendants()
+            .FirstOrDefault(element => element.Name == name && element.ControlType == ControlType.Button),
+            _timeout, TimeSpan.FromMilliseconds(100));
+        var button = result.Result ?? throw new InvalidOperationException($"button «{name}» not found within {_timeout}");
+        if (button.Patterns.Invoke.IsSupported) button.Patterns.Invoke.Pattern.Invoke();
+        else MouseClick(button, name);
+        Thread.Sleep(700);
+    }
+
+    public void ToggleNamedCheckBox(string name)
+    {
+        var result = Retry.WhileNull(() => Window.FindAllDescendants()
+            .FirstOrDefault(element => element.Name == name && element.ControlType == ControlType.CheckBox),
+            _timeout, TimeSpan.FromMilliseconds(100));
+        var box = result.Result ?? throw new InvalidOperationException($"checkbox «{name}» not found within {_timeout}");
+        if (!box.Patterns.Toggle.IsSupported)
+            throw new InvalidOperationException($"checkbox «{name}» exposes no toggle state");
+        box.Patterns.Toggle.Pattern.Toggle();
+        Thread.Sleep(700);
     }
 
     public void Toggle(string automationId)
@@ -379,6 +424,14 @@ public sealed partial class Ui : IDisposable
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out int processId);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool MoveWindow(IntPtr hwnd, int x, int y, int width, int height,
+        [MarshalAs(UnmanagedType.Bool)] bool repaint);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect

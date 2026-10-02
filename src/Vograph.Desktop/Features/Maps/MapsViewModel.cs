@@ -460,6 +460,8 @@ public sealed partial class MapsViewModel : ViewModelBase
             HasHighlight = false; ImageError = null;
             displayedPlan = null; failedPlan = null; OnPropertyChanged(nameof(HasFailedPlan));
             SetImage(null);
+            if (map?.IsRemote == true && Mode != MapMode.Manual)
+                SetRouteIssue("Для дистанционной пары маршрут не нужен.");
             RefreshPath();
             await RefreshStackFloorsAsync();
             return;

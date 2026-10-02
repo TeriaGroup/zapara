@@ -2,7 +2,7 @@
 <resources>
     <string name="ux300_agenda_assessments">Зачёты и экзамены</string>
     <string name="ux300_agenda_conflicts">Конфликты недели</string>
-    <string name="ux300_agenda_scope">По сохранённому расписанию выбранной группы и подгруппы. Для каждой строки показано ближайшее вхождение в выбранные 28 дней; повтор каждую неделю не означает новый экзамен. Изменения университета могут ещё не попасть в эту копию.</string>
+    <string name="ux300_agenda_scope">Ближайшие зачёты и экзамены на 28 дней. Повторы одной строки показаны один раз. По сохранённому расписанию вашей подгруппы; изменения могут ещё не попасть в копию.</string>
     <string name="ux300_agenda_no_assessments">В ближайшие 28 дней зачёты и экзамены в этой копии не найдены.</string>
     <string name="ux300_agenda_unknown_days">Дней до начала периода с неизвестными данными: %1$d</string>
     <string name="ux300_agenda_no_conflicts">Пересечений времени в выбранной неделе не найдено.</string>
@@ -42,7 +42,10 @@
     <string name="ux300_group_obligations">Дела и сроки группы</string>
     <string name="ux300_group_obligations_scope">До 24 доступных тем этой группы и общая доска голосований. Общие задания без темы сюда не включены. Ошибки загрузки не означают отсутствие дел. Неизвестные отметки выполнения указаны отдельно.</string>
     <string name="ux300_group_global_ballots">Общие голосования</string>
-    <string name="ux300_group_completion_unknown">У %1$d заданий неизвестна отметка выполнения. Они показаны во всех сроках, но не в фильтре требующих ответа.</string>
+    <string name="ux300_group_completion_unknown">Неизвестна отметка выполнения: %1$d. Эти задания — во всех сроках.</string>
+    <string name="ux300_group_obligations_short_scope">Обзор доступных тем и общих голосований. Охват загрузки указан ниже.</string>
+    <string name="ux300_group_obligations_details">О данных обзора</string>
+    <string name="ux300_group_obligations_hide_details">Скрыть пояснение</string>
     <string name="ux300_group_obligations_all">Все загруженные сроки</string>
     <string name="ux300_group_obligations_mine">Требуется мой ответ</string>
     <string name="ux300_group_obligations_failed">Обзор не загружен. Попробуйте ещё раз.</string>

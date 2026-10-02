@@ -15,13 +15,17 @@ import java.time.format.DateTimeFormatter
 @Composable internal fun GroupObligationsSheet(state: GroupUiState, event: (GroupEvent) -> Unit) {
     if (!state.obligationsOpen || state.preview != null || state.accessRevoked) return
     var needsMe by remember(state.ownerId, state.communityId) { mutableStateOf(false) }
+    var details by remember(state.ownerId, state.communityId) { mutableStateOf(false) }
     var now by remember(state.ownerId, state.communityId) { mutableStateOf(Instant.now()) }
     LaunchedEffect(state.ownerId, state.communityId) {
         while (true) { kotlinx.coroutines.delay(30_000); now = Instant.now() }
     }
     ZBottomSheet({ event(GroupEvent.CloseObligations) }, "Group.ObligationsSheet", scrollable = true) {
         Text(stringResource(R.string.ux300_group_obligations), style = Zapara.typography.section)
-        Text(stringResource(R.string.ux300_group_obligations_scope), style = Zapara.typography.caption)
+        Text(stringResource(R.string.ux300_group_obligations_short_scope), style = Zapara.typography.caption)
+        ZButton(stringResource(if (details) R.string.ux300_group_obligations_hide_details else R.string.ux300_group_obligations_details),
+            { details = !details }, ghost = true)
+        if (details) Text(stringResource(R.string.ux300_group_obligations_scope), style = Zapara.typography.caption)
         ZButton(stringResource(if (needsMe) R.string.ux300_group_obligations_all else R.string.ux300_group_obligations_mine),
             { needsMe = !needsMe }, ghost = true)
         if (state.obligationsLoading) Text(stringResource(R.string.ux300_room_loading))

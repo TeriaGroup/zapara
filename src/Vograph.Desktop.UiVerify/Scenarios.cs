@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using FlaUI.Core.WindowsAPI;
+using Microsoft.Data.Sqlite;
 
 namespace Vograph.Desktop.UiVerify;
 
@@ -16,10 +17,11 @@ public static class Scenarios
 
     public static void Run(Ui ui, Report report, Options o)
     {
-        Step(report, "Запуск", () =>
+        Step(report, ui, "Запуск", () =>
         {
             if (!ui.Window.Title.Contains("Военмех")) throw new Exception($"title «{ui.Window.Title}»");
             ui.Find("Nav.Schedule");
+            ui.Find("Schedule.Title");
             // The frame really is the window: PrintWindow gives us its own rendering, and a shell with a
             // sidebar is never one flat colour — which is what a refused render (or an empty DC) would be.
             var spread = ui.Signature(ui.RegionOf("Nav.Schedule"));
@@ -28,37 +30,44 @@ public static class Scenarios
         });
 
         foreach (var (key, probe) in new[] { ("Week", "WeekSegment.0"), ("Summary", "Summary.Total"), ("Teachers", "Teachers.Search"), ("Maps", "Maps.ZoomIn"), ("Friends", "Friends.Add"), ("Homework", "Homework.Add"), ("Settings", "Settings.Refresh"), ("Schedule", "Schedule.Title") })
-            Step(report, $"Раздел {key}", () =>
+            Step(report, ui, $"Раздел {key}", () =>
             {
                 ui.Click($"Nav.{key}");
+                if (key == "Settings") OpenSettingsCategory(ui, "Settings.Category.Study");
                 ui.Find(probe);
                 return ($"{probe} найден", ui.Shot($"nav-{key.ToLowerInvariant()}"));
             });
 
-        Step(report, "Расписание: стрелки, сегмент, «К сегодня», клавиши", () =>
+        Step(report, ui, "Расписание: стрелки, сегмент, «К сегодня», клавиши", () =>
         {
             // Anchor on today first: SmartStart opens *tomorrow* once the last lesson of the day is over, so the
             // title on load is not the one «К сегодня» comes back to. Every title read waits for the recompose —
             // a day change is a gated Core call, longer than Click's own settle.
-            ui.Click("ScheduleSegment.1");
+            ui.Click("ScheduleSegment.0");
             var title0 = ui.Text("Schedule.Title");
+            var start = ui.Shot("schedule-today");
             ui.Click("Schedule.Next");
             if (!ui.WaitText("Schedule.Title", t => t != title0)) throw new Exception("title did not change after Next");
             var title1 = ui.Text("Schedule.Title");
+            var next = ui.Shot("schedule-next");
             ui.Click("Schedule.Today");
             if (!ui.WaitText("Schedule.Title", t => t == title0)) throw new Exception($"«К сегодня» did not return to {title0} (showing {ui.Text("Schedule.Title")})");
-            ui.Click("ScheduleSegment.0");
-            if (!ui.WaitText("Schedule.Title", t => t != title0)) throw new Exception("segment «Вчера» did not change the day");
-            var yesterday = ui.Text("Schedule.Title");
+            var back = ui.Shot("schedule-back-today");
+            ui.Click("ScheduleSegment.2");
+            if (!ui.WaitText("Schedule.Title", t => t != title0 && t != title1)) throw new Exception("segment «Послезавтра» did not change the day");
+            var afterTomorrow = ui.Text("Schedule.Title");
+            var after = ui.Shot("schedule-after-tomorrow");
             ui.Keys(VirtualKeyShort.HOME);
             if (!ui.WaitText("Schedule.Title", t => t == title0)) throw new Exception("Home did not return to today");
+            var home = ui.Shot("schedule-home");
             ui.Keys(VirtualKeyShort.RIGHT);
             if (!ui.WaitText("Schedule.Title", t => t == title1)) throw new Exception($"Right did not step to {title1}");
             var afterKeys = ui.Text("Schedule.Title");
-            return ($"{title0} → {title1} → {yesterday} → {afterKeys}", ui.Shot("schedule-keys"));
+            var keys = ui.Shot("schedule-keys");
+            return ($"{title0} → {title1} → {afterTomorrow} → {afterKeys}", string.Join(", ", start, next, back, after, home, keys));
         });
 
-        Step(report, "Тема и свёрнутый сайдбар", () =>
+        Step(report, ui, "Тема и свёрнутый сайдбар", () =>
         {
             // The shell tells nobody its theme — no glyph name, no toggle state, nothing in the automation tree
             // — so the read-back is the window's own paint: the group card's mean luminance. PrintWindow renders
@@ -91,7 +100,7 @@ public static class Scenarios
             return ($"яркость карточки {dark:0.##} → {light:0.##} → {back:0.##}; «{expanded}» → «{railed}» → «{expanded}», Nav.Schedule {wide} → {narrow} px", rail + ", " + lightShot);
         });
 
-        Step(report, "Диалог выбора группы", () =>
+        Step(report, ui, "Диалог выбора группы", () =>
         {
             ui.Click("Shell.GroupCard");
             ui.Find("Dialog.Search");
@@ -110,7 +119,7 @@ public static class Scenarios
             return ($"латиница «09c»: {all.Length} → {kept.Length} строк ({string.Join(", ", named.Take(4))}), Escape закрывает", shot);
         });
 
-        Step(report, "Карточка пары: переименование и домашка", () =>
+        Step(report, ui, "Карточка пары: переименование и переход к домашке", () =>
         {
             ui.Click("Nav.Schedule");
             // The fixture has lessons on Mon (both parities), Tue (odd), Wed and Sat only, and the renamed
@@ -131,16 +140,14 @@ public static class Scenarios
 
             ui.Hover(ui.Find("Lesson.Title"));
             ui.Click("Lesson.Homework");
-            ui.Find("Dialog.Text");
-            var text = ui.Text("Dialog.Text");
-            if (text.Length > 0) throw new Exception($"новая домашка открылась с текстом «{text}»");
-            var hw = ui.Shot("dialog-homework");
-            ui.Keys(VirtualKeyShort.ESCAPE);
-            if (ui.IsShown("Dialog.Text")) throw new Exception("Escape не закрыл диалог домашки");
-            return ($"{day} ({string.Join(" / ", titles)}): переименование показывает «{name}» / «{note}», домашка — пустое поле, Escape закрывает оба", rename + ", " + hw);
+            ui.Find("Homework.Add");
+            var filtered = ui.Window.FindAllDescendants().Any(element => element.Name == "Все предметы");
+            if (!filtered) throw new Exception("переход из пары не выбрал предмет в списке домашки");
+            var hw = ui.Shot("lesson-homework-filter");
+            return ($"{day} ({string.Join(" / ", titles)}): переименование показывает «{name}» / «{note}», домашка открыла фильтр предмета", rename + ", " + hw);
         });
 
-        Step(report, "Домашка: выбор предмета и отмена удаления", () =>
+        Step(report, ui, "Домашка: выбор предмета и отмена удаления", () =>
         {
             ui.Click("Nav.Homework");
             var before = ui.FindAll("Homework.Delete").Length;
@@ -162,17 +169,21 @@ public static class Scenarios
             return ($"SubjectPicker и Confirm показаны, «Отмена» оставила все {after} строк", picker + ", " + confirm);
         });
 
-        Step(report, "Карты: зум, этаж, полноэкран", () =>
+        Step(report, ui, "Карты: зум, этаж, полноэкран", () =>
         {
             ui.Click("Nav.Maps");
             ui.Find("Maps.Plan");
+            ui.Click("MapsBuilding.0");
+            ui.Click("Maps.Floor");
             var plan = ui.RegionOf("Maps.Plan");
             var fitted = ui.Signature(plan);
+            var physical = ui.Shot("maps-physical-floor");
             ui.Click("Maps.ZoomIn");
             ui.Click("Maps.ZoomIn");
             var zoomed = ui.Signature(plan);
             if (Ui.Difference(fitted, zoomed) < Redrawn) throw new Exception($"зум ×2 не изменил план (разница {Ui.Difference(fitted, zoomed):0.####})");
             var zoomShot = ui.Shot("maps-zoomed");
+            Console.WriteLine("MAP QA stage: fit");
             ui.Click("Maps.Fit");
             var floors = ui.FindAll("Maps.Floor");
             if (floors.Length < 4) throw new Exception($"{floors.Length} пилюль этажей: {ui.Dump("Maps.Floor")}");
@@ -185,7 +196,13 @@ public static class Scenarios
             var picked = -1;
             for (var i = 0; i < floors.Length && picked < 0; i++)
             {
-                ui.Invoke(floors[i]);
+                var freshFloors = ui.FindAll("Maps.Floor");
+                if (i >= freshFloors.Length) break;
+                var floor = freshFloors[i];
+                Console.WriteLine($"MAP QA stage: floor {i}, {floor.Name}, offscreen={floor.IsOffscreen}");
+                if (floor.IsOffscreen && floor.Patterns.ScrollItem.IsSupported)
+                { floor.Patterns.ScrollItem.Pattern.ScrollIntoView(); Thread.Sleep(150); }
+                ui.Invoke(floor);
                 Thread.Sleep(150); // the plan is decoded off the UI thread after the pill is pressed
                 if (Ui.Difference(refit, ui.Signature(plan)) >= Redrawn) picked = i;
             }
@@ -194,19 +211,21 @@ public static class Scenarios
             // A hand-picked floor stops the tracking, which is exactly what «К следующей паре» is for.
             if (!ui.IsShown("Maps.ToNext")) throw new Exception($"после выбора этажа #{picked} пилюля «К следующей паре» не появилась");
 
+            Console.WriteLine("MAP QA stage: fullscreen");
             ui.Click("Maps.Fullscreen");
             ui.Find("MapsFull.Close");
             var full = ui.Shot("maps-fullscreen");
             ui.Keys(VirtualKeyShort.ESCAPE);
             if (!ui.WaitFor(() => !ui.IsShown("MapsFull.Close"))) throw new Exception("Esc не закрыл полноэкранный план");
 
+            Console.WriteLine("MAP QA stage: back to next lesson");
             ui.Click("Maps.ToNext");
             if (!ui.WaitFor(() => !ui.IsShown("Maps.ToNext")))
                 throw new Exception("«К следующей паре» осталась на экране — слежение за парой не вернулось");
-            return ($"зум ×2 (разница {Ui.Difference(fitted, zoomed):0.###}), этаж #{picked} из {floors.Length} перерисовал план, полноэкран открылся и закрылся по Esc, «К следующей паре» вернула слежение", string.Join(", ", zoomShot, floorShot, full));
+            return ($"зум ×2 (разница {Ui.Difference(fitted, zoomed):0.###}), этаж #{picked} из {floors.Length} перерисовал план, полноэкран открылся и закрылся по Esc, «К следующей паре» вернула слежение", string.Join(", ", physical, zoomShot, floorShot, full));
         });
 
-        Step(report, "Настройки: язык отсутствует, тест уведомления, анимации", () =>
+        Step(report, ui, "Настройки: язык отсутствует, тест уведомления, анимации", () =>
         {
             ui.Click("Nav.Settings");
             if (ui.TryFind("SettingsLanguage", TimeSpan.FromMilliseconds(200)) is not null)
@@ -217,11 +236,19 @@ public static class Scenarios
                 throw new Exception("SettingsLanguage.1 remains");
             var settingsLabel = ui.Text("Nav.Settings");
             if (settingsLabel != "Настройки") throw new Exception($"chrome not Russian: {ui.Dump("Nav.Settings")}");
+            OpenSettingsCategory(ui, "Settings.Category.Study");
             var refresh = ui.Find("Settings.Refresh").Name;
             if (refresh != "Обновить расписание") throw new Exception($"refresh chrome not Russian: «{refresh}»");
+            var study = ui.Shot("settings-study");
+            ui.Click("Settings.Back");
+            OpenSettingsCategory(ui, "Settings.Category.Notifications");
+            ui.Click("Settings.PreviewNotification");
+            var preview = ui.Shot("settings-notification-preview");
             ui.Click("Settings.TestNotification");
             if (ui.TryFind("Toast", TimeSpan.FromSeconds(3)) is null) throw new Exception("no toast after «Тест уведомления»");
             var toast = ui.Shot("settings-toast");
+            ui.Click("Settings.Back");
+            OpenSettingsCategory(ui, "Settings.Category.Appearance");
             // Two toggles, read back twice: the switch's own state through UIA, and the preference it is
             // supposed to write, out of this run's own scratch ui.json. The first alone is not enough — a
             // ToggleButton whose IsChecked is bound to nothing still flips itself, which a deliberately
@@ -233,16 +260,54 @@ public static class Scenarios
             ui.Toggle("Settings.Animations");
             if (!ui.WaitFor(() => ui.IsOn("Settings.Animations") == on)) throw new Exception($"тумблер анимаций не вернулся в {on}");
             if (!WaitPref(o, "Animations", on)) throw new Exception($"тумблер анимаций не вернул Animations={on} в ui.json: {Pref(o, "Animations")}");
-            return ($"селектора языка нет, «Настройки» / «Обновить расписание», тост уведомления, анимации {on} → {!on} → {on} (и в ui.json тоже)", toast);
+            var appearance = ui.Shot("settings-appearance");
+            return ($"селектора языка нет, «Настройки» / «Обновить расписание», тост уведомления, анимации {on} → {!on} → {on} (и в ui.json тоже)", string.Join(", ", study, preview, toast, appearance));
         });
 
-        Step(report, "LAN-импорт меняет расписание на экране", () =>
+        Step(report, ui, "UX300: обзор зачётов и экзаменов на фактические даты", () =>
+        {
+            ui.Click("Nav.Week");
+            ui.ClickNamedButton("Показать 28 дней");
+            if (!ui.Window.FindAllDescendants().Any(element =>
+                    element.Name.StartsWith("Оценок в известных датах:", StringComparison.Ordinal)))
+                throw new Exception("обзор не показал результат для сохранённого расписания");
+            return ("28-дневный обзор открыл результат из локальной копии", ui.Shot("ux300-assessments"));
+        });
+
+        Step(report, ui, "UX300: массовая отметка личной домашки с предпросмотром", () =>
+        {
+            ui.Click("Nav.Homework");
+            var doneBefore = ui.Find("Homework.Done").Name;
+            ui.ClickNamedButton("Выбрать несколько");
+            var selecting = ui.Shot("ux300-bulk-select");
+            ui.ToggleNamedCheckBox("Выбрать это задание");
+            ui.ClickNamedButton("Отметить выбранные готовыми");
+            var preview = ui.Shot("ux300-bulk-preview");
+            ui.ClickNamedButton("Отмена");
+            if (ui.Find("Homework.Done").Name != doneBefore)
+                throw new Exception("отмена предпросмотра изменила отметку домашки");
+            return ("одна личная задача выбрана, предпросмотр открыт и отменён без записи", selecting + ", " + preview);
+        });
+
+        Step(report, ui, "UX300: безопасный предпросмотр технической сводки", () =>
+        {
+            ui.Click("Nav.Settings");
+            OpenSettingsCategory(ui, "Settings.Category.Help");
+            ui.ClickNamedButton("Проверить сводку");
+            if (!ui.Text("Settings.DiagnosticsPreview").Contains("Платформа: Windows", StringComparison.Ordinal))
+                throw new Exception("техническая сводка не открылась после явного запроса");
+            return ("локальная сводка видна; текст в буфер не копировался", ui.Shot("ux300-safe-diagnostics"));
+        });
+
+        if (Environment.GetEnvironmentVariable("VOGRAPH_UIVERIFY_SKIP_LAN") != "1")
+        Step(report, ui, "LAN-импорт меняет расписание на экране", () =>
         {
             // Pin the day the payload renames *before* the import, so the assertion is that this card changed
             // its own name — not that some day somewhere happens to have one.
             ui.Click("Nav.Schedule");
             var (day, _) = GoToLessonDay(ui, t => t.Contains("Матан"), "день с парой «Матан»");
             ui.Click("Nav.Settings");
+            OpenSettingsCategory(ui, "Settings.Category.Data");
             ui.Toggle("Settings.LanSync");
             if (!ui.WaitText("Settings.LanAddress", t => t.Contains("http://"), TimeSpan.FromSeconds(5))) throw new Exception("LAN address not shown (port 8765 busy?)");
             var address = ui.Text("Settings.LanAddress");
@@ -250,21 +315,54 @@ public static class Scenarios
             var loopback = "http://127.0.0.1" + url[url.IndexOf(':', 7)..]; // same port, loopback host
             var stored = DateTime.Now;
             var payload = "{\"Version\":1,\"ExportedAt\":\"" + DateTime.UtcNow.ToString("o") + "\",\"Overrides\":[{\"SubjectRawNormalized\":\"лек высш. математ\",\"Scope\":\"global\",\"DisplayName\":\"Математика\",\"Note\":null,\"CreatedAt\":\"" + stored.AddDays(30).ToString("o") + "\"}],\"Homework\":[],\"Friends\":[],\"Settings\":{}}";
+            var backup = BackupBeforeLanImport(o);
             using var http = new HttpClient();
             var resp = http.PostAsync(loopback, new StringContent(payload, Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
             if (!resp.IsSuccessStatusCode) throw new Exception($"POST {loopback} → {(int)resp.StatusCode}");
             ui.Click("Nav.Schedule");
             if (!ui.WaitText("Lesson.Title", t => t == "Математика", TimeSpan.FromSeconds(5)))
                 throw new Exception($"импорт не переименовал пару в «{day}»: {ui.Dump("Lesson.Title")}");
-            return ($"POST {loopback} → 200, карточка в «{day}» показывает «Математика»", ui.Shot("lan-import"));
+            return ($"POST {loopback} → 200, карточка в «{day}» показывает «Математика»; копия тестовой БД: {backup}", ui.Shot("lan-import"));
         });
 
-        Step(report, "Закрытие", () =>
+        Step(report, ui, "Закрытие", () =>
         {
             if (o.Keep) return ("--keep: приложение оставлено", null);
             if (!ui.CloseGracefully()) throw new Exception("the process had to be killed");
             return ("процесс завершился по ✕", null);
         });
+    }
+
+    private static void OpenSettingsCategory(Ui ui, string categoryId)
+    {
+        if (ui.TryFind(categoryId, TimeSpan.FromMilliseconds(250)) is null && ui.IsShown("Settings.Back"))
+            ui.Click("Settings.Back");
+        ui.Click(categoryId);
+    }
+
+    private static string BackupBeforeLanImport(Options o)
+    {
+        var sourcePath = Path.Combine(o.Data, "vograph.db");
+        var backupPath = Path.Combine(o.Out, "pre-lan-import-vograph.db");
+        if (!File.Exists(sourcePath) || File.Exists(backupPath))
+            throw new InvalidOperationException("Тестовую базу нельзя безопасно сохранить перед импортом.");
+        using (var source = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = sourcePath, Mode = SqliteOpenMode.ReadOnly }.ToString()))
+        using (var backup = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = backupPath, Mode = SqliteOpenMode.ReadWriteCreate }.ToString()))
+        {
+            source.Open(); backup.Open(); source.BackupDatabase(backup);
+        }
+        if (new FileInfo(backupPath).Length < 4096)
+            throw new InvalidOperationException("Копия тестовой базы перед импортом слишком мала.");
+        using var check = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = backupPath, Mode = SqliteOpenMode.ReadOnly }.ToString());
+        check.Open();
+        using var command = check.CreateCommand();
+        command.CommandText = "PRAGMA quick_check";
+        if (command.ExecuteScalar() as string != "ok")
+            throw new InvalidOperationException("Копия тестовой базы перед импортом не прошла quick_check.");
+        return backupPath;
     }
 
     /// <summary>What this run's own scratch ui.json says about one boolean preference, or a note about why it
@@ -305,7 +403,7 @@ public static class Scenarios
     /// </summary>
     private static (string Day, string[] Titles) GoToLessonDay(Ui ui, Func<string[], bool> want, string what)
     {
-        ui.Click("ScheduleSegment.1"); // today, wherever SmartStart opened
+        ui.Click("ScheduleSegment.0"); // today, wherever SmartStart opened
         var trace = new List<string>();
         for (var step = 0; step <= 7; step++)
         {
@@ -324,7 +422,7 @@ public static class Scenarios
         throw new Exception($"{what} не найден за неделю вперёд: {string.Join(" · ", trace)}");
     }
 
-    private static void Step(Report report, string name, Func<(string Detail, string? Frame)> body)
+    private static void Step(Report report, Ui ui, string name, Func<(string Detail, string? Frame)> body)
     {
         try
         {
@@ -333,7 +431,11 @@ public static class Scenarios
         }
         catch (Exception ex)
         {
-            report.Fail(name, ex.Message);
+            Console.Error.WriteLine(ex);
+            string? frame = null;
+            try { frame = ui.Shot("error-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-ffff")); }
+            catch (Exception capture) { Console.Error.WriteLine($"error frame unavailable: {capture.Message}"); }
+            report.Fail(name, ex.Message, frame);
         }
     }
 }

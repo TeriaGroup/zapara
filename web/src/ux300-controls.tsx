@@ -35,6 +35,8 @@ export function SecretInput({ value, onChange, disabled, autoComplete = "off", l
 }
 
 const positions = new Map<string, number>();
+function hasFocusedRouteTarget(){const active=document.activeElement;return !!active&&!!document.querySelector('.stage')?.contains(active)&&active.matches('[tabindex="-1"]:not(h1)');}
+export function focusRouteHeading(){const heading=document.querySelector<HTMLElement>('.stage h1');if(heading&&!document.querySelector('[role="dialog"]')&&!hasFocusedRouteTarget()){heading.tabIndex=-1;heading.focus({preventScroll:true});}}
 /** The map contains scroll positions only, never fields or private content. */
 export function useRoutePosition(key: string) {
   useEffect(() => {
@@ -42,7 +44,7 @@ export function useRoutePosition(key: string) {
     const at = positions.get(current) ?? 0;
     let restoring=true;
     const stop=()=>{restoring=false;observer.disconnect();};
-    const restore=()=>{if(!restoring)return;if(document.documentElement.scrollHeight-window.innerHeight>=at){window.scrollTo({top:at});stop();}};
+    const restore=()=>{if(!restoring)return;if(hasFocusedRouteTarget()){stop();return;}if(document.documentElement.scrollHeight-window.innerHeight>=at){window.scrollTo({top:at});stop();}};
     const observer=new MutationObserver(restore);
     const frame = requestAnimationFrame(restore);
     observer.observe(document.querySelector(".stage")??document.body,{childList:true,subtree:true});
