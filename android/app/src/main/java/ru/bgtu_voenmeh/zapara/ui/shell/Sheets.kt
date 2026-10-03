@@ -32,7 +32,6 @@ import ru.bgtu_voenmeh.zapara.ui.components.HighlightText
 import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
-import ru.bgtu_voenmeh.zapara.ui.theme.ZActionButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
 
@@ -67,9 +66,6 @@ fun SectionsSheet(current: Section, onPick: (Section) -> Unit, onDismiss: () -> 
             keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
             trailingIcon = if (query.isNotEmpty()) {{ ZIconButton(R.drawable.ic_x,
                 stringResource(R.string.ux100_common_clear_search), { query = "" }, "Sections.ClearSearch") }} else null)
-        Spacer(Modifier.height(Zapara.space.s))
-        if (query.isEmpty()) ZActionButton(stringResource(R.string.ux100_common_open_current), onDismiss,
-            tag = "Sections.Current", leadingIcon = current.icon)
         Spacer(Modifier.height(Zapara.space.s))
         LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 600.dp).clipToBounds(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             if (visibleGroups.isEmpty()) item {

@@ -387,7 +387,8 @@ class ScheduleViewModel(
                         groupName = f.groupName,
                         members = f.memberNames,
                         score = visibleScore,
-                        hint = if (hit != null && visibleScore < 0) "$baseHint · ${container.copy.get("friend_below_level")}" else baseHint
+                        hint = if (hit != null && visibleScore < 0) "$baseHint · ${container.copy.get("friend_below_level")}" else baseHint,
+                        intersectionScore = hit?.score ?: -1
                     )
                 }
             },

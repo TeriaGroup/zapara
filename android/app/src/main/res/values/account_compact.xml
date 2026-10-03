@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="account_profile_edit">Изменить имя</string>
+    <string name="account_section_security">Безопасность</string>
+    <string name="account_section_data">Данные аккаунта</string>
+    <string name="account_section_documents">Документы и приватность</string>
+</resources>

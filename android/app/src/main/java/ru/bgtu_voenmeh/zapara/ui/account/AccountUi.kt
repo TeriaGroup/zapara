@@ -5,6 +5,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +31,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -66,11 +72,14 @@ import ru.bgtu_voenmeh.zapara.data.api.JsonValue
 import ru.bgtu_voenmeh.zapara.data.api.StrictJson
 import ru.bgtu_voenmeh.zapara.data.api.obj
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZActionButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZDisclosureButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
+import ru.bgtu_voenmeh.zapara.ui.theme.controlFocusRing
+import ru.bgtu_voenmeh.zapara.ui.components.pressScale
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -299,8 +308,9 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
         }
     }
     ZCard(Modifier.fillMaxWidth().testTag("Account.Card")) {
-        Text(stringResource(R.string.account_title), style = Zapara.typography.section, color = c.text1)
-        Text(state.status, style = Zapara.typography.body, color = c.text1, modifier = Modifier.testTag("Account.Status"))
+        if (!state.showAccount) Text(stringResource(R.string.account_title), style = Zapara.typography.section, color = c.text1)
+        if (state.status.isNotBlank() && (!state.showAccount || state.status != stringResource(R.string.account_local)))
+            Text(state.status, style = Zapara.typography.body, color = c.text1, modifier = Modifier.testTag("Account.Status"))
         if (state.externalPending) {
             Text(stringResource(R.string.ux60_account_external_waiting,
                 state.pendingExternalProvider?.uppercase() ?: stringResource(R.string.account_title)),
@@ -317,11 +327,13 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
             ZButton(stringResource(R.string.repeat), { onEvent(AccountEvent.RetryCapabilities) },
                 ghost = true, enabled = !state.capabilitiesLoading, tag = "Account.RetryCapabilities")
         }
+        if (!state.showAccount) {
         Text(stringResource(R.string.account_isolation), style = Zapara.typography.caption, color = c.text2)
         ZActionButton(stringResource(R.string.face_agreement), { onOpenLegal("agreement") },
             tag = "Legal.Agreement", leadingIcon = R.drawable.ic_file)
         ZActionButton(stringResource(R.string.face_policy), { onOpenLegal("policy") },
             tag = "Legal.Policy", leadingIcon = R.drawable.ic_shield)
+        }
         if (!state.configured || !state.ready) return@ZCard
         if (state.guest) {
             var recoveryOpen by rememberSaveable { mutableStateOf(false) }
@@ -431,7 +443,21 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
                 }
             }
         } else {
-            Text(state.accountName, style = Zapara.typography.section, color = c.text1, modifier = Modifier.testTag("Account.Name"))
+            var editName by rememberSaveable(state.accountName) { mutableStateOf(false) }
+            val nameDirty = state.displayName.trim() != state.profileNameBaseline.trim()
+            val avatars = ru.bgtu_voenmeh.zapara.ui.chat.LocalAvatarStore.current
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.m)) {
+                if (avatars != null) ru.bgtu_voenmeh.zapara.ui.chat.AvatarEditor(state.accountName,
+                    ru.bgtu_voenmeh.zapara.data.avatars.AvatarTarget(ru.bgtu_voenmeh.zapara.data.avatars.AvatarKind.User, avatars.userId),
+                    enabled = !state.busy, compact = true)
+                else ru.bgtu_voenmeh.zapara.ui.chat.ChatAvatar(state.accountName, null, 56.dp)
+                Text(state.accountName, style = Zapara.typography.section, color = c.text1,
+                    modifier = Modifier.weight(1f).testTag("Account.Name"))
+                ZIconButton(R.drawable.ic_pencil, stringResource(R.string.account_profile_edit),
+                    { editName = true }, "Account.ProfileEdit", enabled = !state.busy && !state.externalPending)
+            }
+            if (editName || nameDirty || state.profileError != null) {
             AccountField(state.displayName, stringResource(R.string.uxnext_profile_name), "Account.ProfileName") {
                 onEvent(AccountEvent.ProfileName(it))
             }
@@ -440,32 +466,26 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
                 Text(stringResource(R.string.ux60_account_name_hint), style = Zapara.typography.caption, color = c.bad)
             state.profileError?.let { Text(it, style = Zapara.typography.caption, color = c.bad,
                 modifier = Modifier.testTag("Account.ProfileError")) }
-            if (state.displayName.trim() != state.profileNameBaseline.trim()) {
                 FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                     verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                    ZButton(stringResource(R.string.uxnext_profile_save), { onEvent(AccountEvent.SaveProfile) },
+                    ZButton(stringResource(R.string.theme_save), { onEvent(AccountEvent.SaveProfile) },
                         enabled = state.canSaveProfile, busy = state.busy, tag = "Account.ProfileSave")
-                    ZButton(stringResource(R.string.uxnext_profile_cancel), { onEvent(AccountEvent.CancelProfile) },
+                    ZButton(stringResource(R.string.theme_cancel), { editName = false; onEvent(AccountEvent.CancelProfile) },
                         ghost = true, enabled = !state.busy, tag = "Account.ProfileCancel")
                 }
             }
-            ru.bgtu_voenmeh.zapara.ui.chat.LocalAvatarStore.current?.let { avatars ->
-                ru.bgtu_voenmeh.zapara.ui.chat.AvatarEditor(state.accountName,
-                    ru.bgtu_voenmeh.zapara.data.avatars.AvatarTarget(ru.bgtu_voenmeh.zapara.data.avatars.AvatarKind.User, avatars.userId),
-                    enabled = !state.busy)
-            }
-            if (!state.confirmLogout) {
-                ZButton(stringResource(R.string.account_logout), { onEvent(AccountEvent.RequestLogout) }, ghost = true, enabled = !state.busy, tag = "Account.Logout")
-            } else {
-                Text(stringResource(R.string.account_confirm_logout), style = Zapara.typography.body, color = c.text1)
-                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                    ZButton(stringResource(R.string.account_logout), { onEvent(AccountEvent.ConfirmLogout) },
-                        modifier = Modifier.fillMaxWidth(), enabled = !state.busy, tag = "Account.ConfirmLogout")
-                    ZButton(stringResource(R.string.account_cancel), { onEvent(AccountEvent.CancelLogout) },
-                        modifier = Modifier.fillMaxWidth(), ghost = true, tag = "Account.CancelLogout")
-                }
-            }
             AccountLifecyclePanel(state, onEvent)
+            var documentsOpen by rememberSaveable(state.accountName) { mutableStateOf(false) }
+            HorizontalDivider(color = c.line, thickness = Zapara.space.hairline)
+            ZDisclosureButton(stringResource(R.string.account_section_documents), documentsOpen,
+                { documentsOpen = !documentsOpen }, tag = "Account.Documents", quiet = true)
+            if (documentsOpen) {
+                Text(stringResource(R.string.account_isolation), style = Zapara.typography.caption, color = c.text2)
+                ZActionButton(stringResource(R.string.face_agreement), { onOpenLegal("agreement") },
+                    tag = "Legal.Agreement", leadingIcon = R.drawable.ic_file, quiet = true)
+                ZActionButton(stringResource(R.string.face_policy), { onOpenLegal("policy") },
+                    tag = "Legal.Policy", leadingIcon = R.drawable.ic_shield, quiet = true)
+            }
         }
     }
 }
@@ -505,7 +525,7 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
     ZDisclosureButton(stringResource(R.string.account_devices), expanded = devicesOpen, onClick = {
         devicesOpen = !devicesOpen
         if (devicesOpen) onEvent(AccountEvent.LoadDevices)
-    }, enabled = enabled, tag = "Account.Devices")
+    }, enabled = enabled, tag = "Account.Devices", quiet = true)
     if (devicesOpen && state.devicesLoaded)
         ZButton(stringResource(R.string.ux30_platform_refresh_devices), { onEvent(AccountEvent.LoadDevices) },
             ghost = true, enabled = enabled, tag = "Account.RefreshDevices")
@@ -591,11 +611,13 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
             { onEvent(AccountEvent.RequestRevokeAll) }, ghost = true, enabled = enabled, tag = "Account.RevokeAll")
     }
     }
-    ZDisclosureButton(stringResource(R.string.ux30_platform_security), expanded = securityOpen, onClick = {
-        securityOpen = !securityOpen
+    val securityExpanded = securityOpen || state.confirmLogout
+    ZDisclosureButton(stringResource(R.string.account_section_security), expanded = securityExpanded, onClick = {
+        securityOpen = !securityExpanded
+        if (state.confirmLogout) onEvent(AccountEvent.CancelLogout)
         if (!securityOpen) onEvent(AccountEvent.ClearSensitive)
-    }, tag = "Account.Security")
-    if (securityOpen) {
+    }, tag = "Account.Security", quiet = true)
+    if (securityExpanded) {
     if (state.showPasswordChange) {
         AccountField(state.currentPassword, stringResource(R.string.account_current_password), "Account.CurrentPassword", password = true) {
             onEvent(AccountEvent.CurrentPassword(it))
@@ -610,11 +632,23 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
         ZButton(stringResource(R.string.account_change_password), { onEvent(AccountEvent.ChangePassword) },
             enabled = enabled && state.canChangePassword, tag = "Account.ChangePassword")
     }
+    if (!state.confirmLogout) {
+        ZButton(stringResource(R.string.account_logout), { onEvent(AccountEvent.RequestLogout) },
+            modifier = Modifier.fillMaxWidth(), ghost = true, enabled = !state.busy, tag = "Account.Logout")
+    } else {
+        Text(stringResource(R.string.account_confirm_logout), style = Zapara.typography.body, color = Zapara.colors.text1)
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            ZButton(stringResource(R.string.account_logout), { onEvent(AccountEvent.ConfirmLogout) },
+                modifier = Modifier.fillMaxWidth(), enabled = !state.busy, tag = "Account.ConfirmLogout")
+            ZButton(stringResource(R.string.account_cancel), { onEvent(AccountEvent.CancelLogout) },
+                modifier = Modifier.fillMaxWidth(), ghost = true, tag = "Account.CancelLogout")
+        }
     }
-    ZDisclosureButton(stringResource(R.string.ux30_platform_account_data), expanded = dataOpen, onClick = {
+    }
+    ZDisclosureButton(stringResource(R.string.account_section_data), expanded = dataOpen, onClick = {
         dataOpen = !dataOpen
         if (!dataOpen) onEvent(AccountEvent.ClearSensitive)
-    }, tag = "Account.Data")
+    }, tag = "Account.Data", quiet = true)
     if (dataOpen) {
     if (state.showPasswordProof) {
         AccountField(state.proof, stringResource(R.string.account_proof), "Account.Proof", password = true) {
@@ -682,7 +716,8 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
         Text(stringResource(R.string.account_delete_confirm), style = Zapara.typography.body, color = Zapara.colors.text1)
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             ZButton(stringResource(R.string.account_delete), { onEvent(AccountEvent.ConfirmDelete) },
-                modifier = Modifier.fillMaxWidth(), enabled = enabled && state.canPerformProtectedAction, tag = "Account.ConfirmDelete")
+                modifier = Modifier.fillMaxWidth(), enabled = enabled && state.canPerformProtectedAction,
+                destructive = true, leadingIcon = R.drawable.ic_trash, tag = "Account.ConfirmDelete")
             ZButton(stringResource(R.string.account_cancel), { onEvent(AccountEvent.CancelDelete) },
                 modifier = Modifier.fillMaxWidth(), ghost = true, tag = "Account.CancelDelete")
         }
@@ -728,16 +763,23 @@ private fun IdButton(
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(Zapara.radii.control)
+    val interactions = remember { MutableInteractionSource() }
+    val focused by interactions.collectIsFocusedAsState()
+    val pressed by interactions.collectIsPressedAsState()
     Surface(
         modifier
             .testTag(tag)
             .semantics { contentDescription = description }
-            .heightIn(min = 48.dp)
+            .sizeIn(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch)
             .alpha(if (enabled) 1f else 0.45f)
+            .then(if (enabled) Modifier.pressScale(interactions) else Modifier)
             .clip(shape)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+            .controlFocusRing(enabled && focused, Zapara.colors.idInk, Zapara.radii.control)
+            .clickable(enabled = enabled, interactionSource = interactions,
+                indication = if (Zapara.motion.enabled) LocalIndication.current else null,
+                role = Role.Button, onClick = onClick),
         shape = shape,
-        color = Color.White,
+        color = if (pressed && enabled) Zapara.colors.idInk.copy(alpha = 0.08f).compositeOver(Color.White) else Color.White,
         contentColor = Zapara.colors.idInk,
         border = BorderStroke(1.dp, Zapara.colors.idLine)
     ) {

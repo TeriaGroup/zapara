@@ -5,6 +5,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.heightIn
@@ -26,6 +29,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Text
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
@@ -33,6 +37,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
@@ -69,6 +74,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Durations
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.ZaparaEase
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZCompactButton
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
 import ru.bgtu_voenmeh.zapara.ui.gestures.plannerSwipe
 import ru.bgtu_voenmeh.zapara.ui.theme.plannerContentReveal
@@ -249,6 +255,7 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
     }
     var remainingOnly by rememberSaveable(page.date, state.groupId, state.profileName) { mutableStateOf(false) }
     var dayToolsOpen by rememberSaveable(page.date, state.groupId, state.profileName) { mutableStateOf(false) }
+    var transfersOpen by rememberSaveable(page.date, state.groupId, state.profileName) { mutableStateOf(false) }
     val visibleIndices = page.lessons.indices.filter { !remainingOnly || !page.isToday || !page.lessons[it].isPast }
     LaunchedEffect(page.date, focusIndex) {
         if (focusIndex >= 0) { remainingOnly = false; list.animateScrollToItem(focusIndex + 1) }
@@ -263,17 +270,21 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                 Text(pluralStringResource(R.plurals.schedule_pair_count, page.lessons.size, page.lessons.size), modifier = Modifier.align(Alignment.CenterVertically), style = Zapara.typography.section, color = Zapara.colors.text1)
                 ZChip("${page.lessons.minOf { it.timeStart }}–${page.lessons.maxOf { it.timeEnd }}")
             }
-            ZDisclosureButton(stringResource(if (dayToolsOpen) R.string.ux300_visual_day_close else R.string.ux300_visual_day_tools),
+            ZCard(Modifier.fillMaxWidth(), padded = false, tag = "Schedule.DayActions") {
+            Column(Modifier.fillMaxWidth()) {
+            ZDisclosureButton(stringResource(R.string.ux300_visual_day_tools),
                 dayToolsOpen, { dayToolsOpen = !dayToolsOpen },
-                tag = "Schedule.DayTools", leadingIcon = R.drawable.ic_menu)
+                tag = "Schedule.DayTools", leadingIcon = R.drawable.ic_menu, quiet = true)
             if (dayToolsOpen) {
+            HorizontalDivider(Modifier.padding(horizontal = Zapara.space.l), color = Zapara.colors.line)
             ZActionButton(stringResource(R.string.ux300_android_share_day), { onShareDay(page) },
-                tag = "Schedule.ShareDay", leadingIcon = R.drawable.ic_calendar)
-            var transfersOpen by rememberSaveable(page.date, state.groupId, state.profileName) { mutableStateOf(false) }
+                tag = "Schedule.ShareDay", leadingIcon = R.drawable.ic_send, quiet = true)
             if (page.transfers.isNotEmpty()) {
                 ZDisclosureButton(stringResource(R.string.ux300_ext_transfers), transfersOpen,
-                    { transfersOpen = !transfersOpen }, tag = "Schedule.Transfers", leadingIcon = R.drawable.ic_map)
+                    { transfersOpen = !transfersOpen }, tag = "Schedule.Transfers", leadingIcon = R.drawable.ic_map, quiet = true)
                 if (transfersOpen) {
+                    Column(Modifier.padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
+                        verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                     Text(stringResource(R.string.ux300_ext_transfer_estimate), style = Zapara.typography.caption)
                     page.transfers.forEach { transfer ->
                         ZCard(Modifier.fillMaxWidth()) {
@@ -293,23 +304,43 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                                 { onOpenMap(transfer.destinationRaw) }, ghost = true)
                         }
                     }
+                    }
                 }
             }
             if (page.isToday && page.lessons.any { it.isPast }) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l, vertical = Zapara.space.s),
+                    verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                 ZButton(stringResource(if (remainingOnly) R.string.ux300_ext_all_day else R.string.ux300_ext_remaining_only),
-                    { remainingOnly = !remainingOnly }, ghost = true, tag = "Schedule.RemainingOnly")
+                    { remainingOnly = !remainingOnly }, modifier = Modifier.fillMaxWidth(), ghost = true,
+                    tag = "Schedule.RemainingOnly", startAligned = true, leadingIcon = R.drawable.ic_calendar)
                 if (remainingOnly && visibleIndices.isEmpty()) Text(stringResource(R.string.ux300_ext_remaining_empty),
                     style = Zapara.typography.body)
+                }
             }
-            if (page.deadlines.isNotEmpty() || featured != null) FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
-                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-                if (featured != null) ZButton(stringResource(R.string.ux100_study_jump_current), {
+            if (page.deadlines.isNotEmpty() || featured != null) BoxWithConstraints(
+                Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).padding(top = Zapara.space.s, bottom = Zapara.space.m)) {
+                @Composable fun lessonShortcut(modifier: Modifier) {
+                if (featured != null) ZButton(stringResource(R.string.schedule_day_jump_lesson), {
                     scrollScope.launch { list.animateScrollToItem(visibleIndices.indexOf(page.lessons.indexOf(featured)).coerceAtLeast(0) + 1) }
-                }, ghost = true, tag = "Schedule.JumpCurrent")
-                if (page.deadlines.isNotEmpty()) ZButton(stringResource(R.string.ux100_study_jump_deadlines), {
+                }, modifier = modifier, ghost = true, tag = "Schedule.JumpCurrent")
+                }
+                @Composable fun deadlineShortcut(modifier: Modifier) {
+                if (page.deadlines.isNotEmpty()) ZButton(stringResource(R.string.schedule_day_jump_deadlines), {
                     scrollScope.launch { list.animateScrollToItem(visibleIndices.size + 1) }
-                }, ghost = true, tag = "Schedule.JumpDeadlines")
+                }, modifier = modifier, ghost = true, tag = "Schedule.JumpDeadlines")
+                }
+                if (maxWidth < 340.dp || LocalDensity.current.fontScale >= 1.5f) {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        lessonShortcut(Modifier.fillMaxWidth())
+                        deadlineShortcut(Modifier.fillMaxWidth())
+                    }
+                } else Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                    horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    lessonShortcut(Modifier.weight(1f).fillMaxHeight())
+                    deadlineShortcut(Modifier.weight(1f).fillMaxHeight())
+                }
+            }
+            }
             }
             }
             }
@@ -375,11 +406,13 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                     actions = {
                         FlowRow(Modifier.fillMaxWidth().padding(top = Zapara.space.xs), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                             // The room chip already opens the map. Keep the primary actions in one row.
-                            if (lesson.remote || lesson.room.isBlank()) ZButton(uiText(R.string.space_day_20),
+                            if (lesson.remote || lesson.room.isBlank()) ZCompactButton(uiText(R.string.schedule_lesson_action_map),
                                 { onOpenMap(lesson.classroomRaw) }, enabled = lesson.classroomRaw.isNotBlank(),
-                                ghost = true, leadingIcon = R.drawable.ic_map)
-                            ZButton(uiText(R.string.space_day_21), { onEvent(ScheduleEvent.SubjectHomework(lesson)) }, ghost = true, leadingIcon = R.drawable.ic_homework)
-                            ZButton(uiText(R.string.space_day_22), { onDiscuss("${lesson.name} · ${page.date} · ${lesson.timeStart}–${lesson.timeEnd} · ${lesson.room}") }, ghost = true, quiet = true, leadingIcon = R.drawable.ic_chat)
+                                leadingIcon = R.drawable.ic_map, tag = "Schedule.Map.${lesson.index}.$index")
+                            ZCompactButton(uiText(R.string.space_day_21), { onEvent(ScheduleEvent.SubjectHomework(lesson)) },
+                                leadingIcon = R.drawable.ic_homework, tag = "Schedule.Homework.${lesson.index}.$index")
+                            ZCompactButton(uiText(R.string.space_day_22), { onDiscuss("${lesson.name} · ${page.date} · ${lesson.timeStart}–${lesson.timeEnd} · ${lesson.room}") },
+                                leadingIcon = R.drawable.ic_chat, tag = "Schedule.Discuss.${lesson.index}.$index")
                         }
                     })
             } else ZCard(Modifier.fillMaxWidth(), onClick = { onEvent(ScheduleEvent.LongPress(lesson)) }) {
@@ -390,11 +423,11 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                     style = Zapara.typography.caption, color = Zapara.colors.text2)
                 FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                     verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-                    ZButton(uiText(R.string.space_day_21), { onEvent(ScheduleEvent.SubjectHomework(lesson)) },
-                        ghost = true, leadingIcon = R.drawable.ic_homework,
+                    ZCompactButton(uiText(R.string.space_day_21), { onEvent(ScheduleEvent.SubjectHomework(lesson)) },
+                        leadingIcon = R.drawable.ic_homework,
                         tag = "Schedule.Homework.${lesson.index}.$index")
-                    if (lesson.classroomRaw.isNotBlank()) ZButton(uiText(R.string.space_day_20),
-                        { onOpenMap(lesson.classroomRaw) }, ghost = true, leadingIcon = R.drawable.ic_map,
+                    if (lesson.classroomRaw.isNotBlank()) ZCompactButton(uiText(R.string.schedule_lesson_action_map),
+                        { onOpenMap(lesson.classroomRaw) }, leadingIcon = R.drawable.ic_map,
                         tag = "Schedule.Map.${lesson.index}.$index")
                 }
             }

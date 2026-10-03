@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="schedule_intersection_same_room">Одна аудитория</string>
+    <string name="schedule_intersection_same_floor">Один этаж</string>
+    <string name="schedule_intersection_same_building">Один корпус</string>
+    <string name="schedule_intersection_same_time">Занятия в одно время</string>
+    <string name="schedule_intersection_none">Нет пересечения по времени</string>
+</resources>

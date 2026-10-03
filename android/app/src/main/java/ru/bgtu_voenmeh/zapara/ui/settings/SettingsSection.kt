@@ -62,6 +62,8 @@ import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -302,7 +304,8 @@ fun SettingsSection(
                 onEvent(SettingsEvent.CancelTimes)
                 section = destination?.ifEmpty { null }
                 returnSection = null
-            }, modifier = Modifier.fillMaxWidth(), tag = "Settings.DiscardTimes")
+            }, modifier = Modifier.fillMaxWidth(), destructive = true,
+                leadingIcon = R.drawable.ic_trash, tag = "Settings.DiscardTimes")
             ZButton(stringResource(R.string.account_cancel), { pendingSection = null },
                 modifier = Modifier.fillMaxWidth(), ghost = true, tag = "Settings.KeepTimes")
         } }
@@ -319,7 +322,8 @@ fun SettingsSection(
                     onAccount(AccountEvent.CancelProfile)
                     section = destination?.ifEmpty { null }
                     returnSection = null
-                }, modifier = Modifier.fillMaxWidth(), tag = "Settings.DiscardProfile")
+                }, modifier = Modifier.fillMaxWidth(), destructive = true,
+                    leadingIcon = R.drawable.ic_trash, tag = "Settings.DiscardProfile")
                 ZButton(stringResource(R.string.account_cancel), { pendingProfileSection = null },
                     modifier = Modifier.fillMaxWidth(), ghost = true, tag = "Settings.KeepProfile")
             }
@@ -348,7 +352,8 @@ fun SettingsSection(
             LazyColumn(if (wideSettings) Modifier.widthIn(max = 720.dp).fillMaxSize() else Modifier.weight(1f).fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             item { ZActionButton(stringResource(if (section == "account" && returnSection == "data")
                 R.string.ux60_sync_back_to_data else R.string.settings_overview_all),
-                { backToSettings() }, tag = "Settings.Overview.Back", leadingIcon = R.drawable.ic_chevron_left) }
+                { backToSettings() }, tag = "Settings.Overview.Back",
+                leadingIcon = R.drawable.ic_chevron_left, trailingIcon = null) }
             if (section == "account") {
             item { AccountCard(account, onAccount) { id ->
                 onAccount(AccountEvent.ClearSensitive)
@@ -673,7 +678,8 @@ private fun RustoreUpdatesCard() {
         Text(stringResource(R.string.settings_rustore_early), style = Zapara.typography.body, color = c.text1)
         ZActionButton(stringResource(R.string.settings_rustore_github), {
             ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AutoUpdate.RELEASES_PAGE)))
-        }, tag = "Settings.RustoreGithub", leadingIcon = R.drawable.ic_external_link)
+        }, tag = "Settings.RustoreGithub", leadingIcon = R.drawable.ic_external_link,
+            trailingIcon = null)
     }
 }
 
@@ -886,7 +892,8 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
             tag = "Settings.LegalPolicy", leadingIcon = R.drawable.ic_shield)
         ZActionButton(stringResource(R.string.settings_releases), {
             ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AutoUpdate.RELEASES_PAGE)))
-        }, tag = "Settings.Releases", leadingIcon = R.drawable.ic_external_link)
+        }, tag = "Settings.Releases", leadingIcon = R.drawable.ic_external_link,
+            trailingIcon = null)
         ZDisclosureButton(stringResource(R.string.settings_report), expanded = open,
             onClick = { open = !open }, tag = "Settings.Report", leadingIcon = R.drawable.ic_chat)
         Text(stringResource(if (state.signedIn) R.string.ux100_platform_support_signed_in_hint
@@ -906,7 +913,8 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
                         drafts = drafts - draftKey
                         onDraftsChanged(drafts)
                         confirmDiscardDraft = false
-                    }, tag = "Settings.ConfirmDiscardSupport")
+                    }, destructive = true, leadingIcon = R.drawable.ic_trash,
+                        tag = "Settings.ConfirmDiscardSupport")
                 },
                 dismissButton = { ZButton(stringResource(R.string.account_cancel),
                     { confirmDiscardDraft = false }, ghost = true, tag = "Settings.KeepSupportDraft") }
@@ -933,12 +941,14 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
                 Text(stringResource(R.string.ux100_platform_no_threads_found),
                     style = Zapara.typography.caption, color = c.text2)
             shownThreads.forEach { thread ->
+                val current = state.selectedSupportThreadId == thread.id
                 ZButton("${thread.subject} · ${thread.messageCount}",
                     { onEvent(SettingsEvent.SelectSupportThread(thread.id)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    ghost = state.selectedSupportThreadId != thread.id, enabled = canSwitchThread,
+                    modifier = Modifier.fillMaxWidth().semantics { selected = current },
+                    ghost = true, enabled = canSwitchThread,
                     tag = "Settings.SupportThread.${thread.id}", leadingIcon = R.drawable.ic_chat,
-                    startAligned = true, trailingIcon = R.drawable.ic_chevron_right)
+                    startAligned = true,
+                    trailingIcon = if (current) null else R.drawable.ic_chevron_right)
             }
             if (state.selectedSupportThreadId == null) OutlinedTextField(subject,
                 { subject = it; persistDraft(changed = true) }, modifier = Modifier.fillMaxWidth(),

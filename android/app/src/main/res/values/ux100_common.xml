@@ -20,7 +20,6 @@
     <string name="ux100_common_groups_count">Найдено групп: %1$d</string>
     <string name="ux100_common_section_search">Найти раздел</string>
     <string name="ux100_common_section_empty">Подходящих разделов нет</string>
-    <string name="ux100_common_open_current">Вернуться к разделу</string>
     <string name="ux100_common_selected">Выбрано</string>
     <string name="ux100_common_name_id_search">Название или код группы</string>
     <string name="ux100_common_copy">Копировать</string>

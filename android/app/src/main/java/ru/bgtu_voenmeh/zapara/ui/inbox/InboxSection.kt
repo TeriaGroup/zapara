@@ -331,13 +331,12 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
             onDismissRequest = { discardPending = null },
             title = { Text(stringResource(R.string.ux60_chat_record_pending_discard_title)) },
             text = { Text(stringResource(R.string.ux60_chat_record_pending_discard_body)) },
-            confirmButton = { TextButton(onClick = {
+            confirmButton = { ZButton(stringResource(R.string.ux60_chat_record_pending_discard_confirm), {
                 onEvent(InboxEvent.DiscardRecording(pending.scope, pending.file))
                 discardPending = null
-            }) { Text(stringResource(R.string.ux60_chat_record_pending_discard_confirm)) } },
-            dismissButton = { TextButton(onClick = { discardPending = null }) {
-                Text(stringResource(R.string.face_cancel))
-            } }
+            }, destructive = true, leadingIcon = R.drawable.ic_trash) },
+            dismissButton = { ZButton(stringResource(R.string.face_cancel),
+                { discardPending = null }, ghost = true) }
         )
     }
     LaunchedEffect(state.messages.lastOrNull()?.id, historyQuery, historyKind, historyAuthor) {
@@ -647,6 +646,9 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
             Text(chatMessagePreview(message.kind, message.body, message.fileName, message.deleted), maxLines = 4, overflow = TextOverflow.Ellipsis)
             Text(stringResource(R.string.face_delete_message_body))
         }
-    }, confirmButton = { ZButton(stringResource(R.string.face_delete), { onEvent(InboxEvent.Delete(message)); deleting = null }) }, dismissButton = { ZButton(stringResource(R.string.face_cancel), { deleting = null }, ghost = true, quiet = true) }) }
+    }, confirmButton = { ZButton(stringResource(R.string.face_delete),
+        { onEvent(InboxEvent.Delete(message)); deleting = null },
+        destructive = true, leadingIcon = R.drawable.ic_trash) },
+        dismissButton = { ZButton(stringResource(R.string.face_cancel), { deleting = null }, ghost = true, quiet = true) }) }
 }
 private fun emoji(code: String) = when(code) { "like" -> "👍"; "heart" -> "❤️"; "laugh" -> "😂"; "wow" -> "😮"; "sad" -> "😢"; else -> code }

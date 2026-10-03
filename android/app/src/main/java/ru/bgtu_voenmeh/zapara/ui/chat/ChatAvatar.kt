@@ -11,10 +11,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
@@ -26,7 +28,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -40,6 +46,7 @@ import kotlinx.coroutines.withContext
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.data.api.HttpBodies
 import ru.bgtu_voenmeh.zapara.data.avatars.*
+import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import java.io.ByteArrayInputStream
@@ -82,7 +89,7 @@ fun ChatAvatar(name: String, target: AvatarTarget?, size: Dp = 40.dp, modifier: 
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AvatarEditor(name: String, target: AvatarTarget, modifier: Modifier = Modifier, enabled: Boolean = true) {
+fun AvatarEditor(name: String, target: AvatarTarget, modifier: Modifier = Modifier, enabled: Boolean = true, compact: Boolean = false) {
     val store = LocalAvatarStore.current ?: return
     val context = LocalContext.current
     val coroutine = rememberCoroutineScope()
@@ -90,6 +97,7 @@ fun AvatarEditor(name: String, target: AvatarTarget, modifier: Modifier = Modifi
     var feedback by remember(store, target) { mutableStateOf<String?>(null) }
     var failed by remember(store, target) { mutableStateOf(false) }
     var confirm by remember(store, target) { mutableStateOf(false) }
+    var menuOpen by remember(store, target) { mutableStateOf(false) }
     var pickingFor by remember { mutableStateOf<AvatarTarget?>(null) }
     fun perform(action: suspend () -> Unit, success: Int) {
         if (busy) return
@@ -120,7 +128,38 @@ fun AvatarEditor(name: String, target: AvatarTarget, modifier: Modifier = Modifi
         pickingFor = null
         if (uri != null && origin != null && origin == target) perform({ store.upload(origin, prepareAvatar(context, uri)) }, R.string.avatar_saved)
     }
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    if (compact) {
+        val menuLabel = stringResource(if (target.kind == AvatarKind.Group) R.string.avatar_group else R.string.avatar_profile)
+        Box(modifier.size(56.dp).clickable(enabled = enabled && !busy, role = Role.Button, onClick = { menuOpen = true })
+            .semantics { contentDescription = menuLabel }.testTag("Avatar.OpenMenu")) {
+            ChatAvatar(name, target, 56.dp)
+            Box(Modifier.align(Alignment.BottomEnd).size(20.dp).clip(CircleShape)
+                .background(Zapara.colors.surface).border(Zapara.space.hairline, Zapara.colors.line, CircleShape),
+                contentAlignment = Alignment.Center) {
+                Icon(painterResource(R.drawable.ic_avatar_photo), contentDescription = null,
+                    modifier = Modifier.size(13.dp), tint = Zapara.colors.text1)
+            }
+        }
+        if (menuOpen) ZBottomSheet(onDismiss = { menuOpen = false }, tag = "Avatar.Menu", scrollable = true, canDismiss = { !busy }) {
+            Text(menuLabel, style = Zapara.typography.section)
+            Text(stringResource(if (target.kind == AvatarKind.Group) R.string.avatar_group_hint else R.string.avatar_hint),
+                style = Zapara.typography.caption, color = Zapara.colors.text2)
+            if (busy) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Text(stringResource(R.string.avatar_saving), style = Zapara.typography.caption)
+            }
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZButton(stringResource(R.string.avatar_change), { pickingFor = target; picker.launch("image/*") },
+                    modifier = Modifier.fillMaxWidth(), enabled = enabled && !busy, tag = "Avatar.Choose",
+                    leadingIcon = R.drawable.ic_avatar_photo)
+                ZButton(stringResource(R.string.avatar_remove), { confirm = true }, enabled = enabled && !busy,
+                    modifier = Modifier.fillMaxWidth(), ghost = true, tag = "Avatar.Remove", leadingIcon = R.drawable.ic_trash)
+            }
+            feedback?.let { Text(it, style = Zapara.typography.caption,
+                color = if (failed) Zapara.colors.bad else Zapara.colors.text2,
+                modifier = Modifier.testTag("Avatar.Feedback")) }
+        }
+    } else Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             ChatAvatar(name, target, 56.dp)
             Column(Modifier.weight(1f)) {

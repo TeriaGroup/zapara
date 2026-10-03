@@ -136,13 +136,23 @@ fun LessonCard(
             }
         }
         if (lesson.friends.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs), verticalAlignment = Alignment.CenterVertically) {
-                lesson.friends.forEach { dot ->
+            lesson.friends.forEach { dot ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs), verticalAlignment = Alignment.CenterVertically) {
                     FriendDot(dot.index, Modifier.clickableHint { friendHint = dot.hint })
+                    val intersection = stringResource(when {
+                        dot.intersectionScore >= 100 -> R.string.schedule_intersection_same_room
+                        dot.intersectionScore >= 75 -> R.string.schedule_intersection_same_floor
+                        dot.intersectionScore >= 50 -> R.string.schedule_intersection_same_building
+                        dot.intersectionScore >= 25 -> R.string.schedule_intersection_same_time
+                        else -> R.string.schedule_intersection_none
+                    })
+                    Text(
+                        "${dot.groupName} · $intersection",
+                        modifier = Modifier.weight(1f),
+                        style = Zapara.typography.caption,
+                        color = c.text2
+                    )
                 }
-            }
-            if (friendHint == null) {
-                lesson.friends.firstOrNull()?.let { Text(it.hint, style = Zapara.typography.caption, color = c.text3) }
             }
             friendHint?.let { ZChip(it, onClick = { friendHint = null }) }
         }

@@ -20,7 +20,8 @@ data class FriendDotUi(
     val groupName: String,
     val members: String,
     val score: Int,
-    val hint: String
+    val hint: String,
+    val intersectionScore: Int = score
 )
 
 data class SubgroupOptionUi(val id: String, val label: String)
