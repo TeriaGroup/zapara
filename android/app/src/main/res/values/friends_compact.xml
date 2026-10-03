@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="friends_filter_enabled_short">Включены</string>
+    <string name="friends_filter_disabled_short">Выключены</string>
+    <string name="friends_forecast_all_days_short">Все дни</string>
+    <string name="friends_forecast_pick_date_short">Выбрать дату</string>
+</resources>

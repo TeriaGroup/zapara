@@ -45,7 +45,8 @@ fun LessonActionsSheet(
             ActionRow(R.drawable.ic_chat, uiText(R.string.space_day_28), "Actions.Discuss", onDiscuss)
             ActionRow(R.drawable.ic_send, stringResource(R.string.ux300_android_share_lesson),
                 "Actions.Share", onShare)
-            if (!lesson.remote) ActionRow(R.drawable.ic_map_pin, stringResource(R.string.action_map), "Actions.Map", onMap)
+            if (lesson.hasMapLocation) ActionRow(
+                R.drawable.ic_map_pin, stringResource(R.string.action_map), "Actions.Map", onMap)
         }
     }
 }

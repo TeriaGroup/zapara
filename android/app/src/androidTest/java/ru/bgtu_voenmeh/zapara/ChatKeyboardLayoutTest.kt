@@ -1,18 +1,18 @@
 package ru.bgtu_voenmeh.zapara
 
-import android.graphics.Bitmap
 import android.graphics.Rect
 import android.view.WindowManager
-import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.espresso.IdlingPolicies
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
 import org.junit.Assert.*
+import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -24,6 +24,7 @@ import ru.bgtu_voenmeh.zapara.ui.groups.*
 import ru.bgtu_voenmeh.zapara.ui.inbox.*
 import ru.bgtu_voenmeh.zapara.ui.shell.*
 import ru.bgtu_voenmeh.zapara.ui.theme.*
+import org.json.JSONObject
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
@@ -32,19 +33,25 @@ import java.util.concurrent.TimeUnit
 /** Offline production screens. No AppContainer, account, API, media or database operations. */
 @RunWith(AndroidJUnit4::class)
 class ChatKeyboardLayoutTest {
-    @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
+    @get:Rule val rule = createEmptyComposeRule()
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
+    private var host: OwnedTestHost? = null
+    private val activity get() = requireNotNull(host).activity
 
     @Before fun boundOfflineFixtureWaits() {
         IdlingPolicies.setMasterPolicyTimeout(30, TimeUnit.SECONDS)
         IdlingPolicies.setIdlingResourceTimeout(20, TimeUnit.SECONDS)
+        host = OwnedTestHost.launch()
+    }
+
+    @After fun closeHost() {
+        try { host?.close() } finally { host = null }
     }
 
     private fun screen(group: Boolean, context: Boolean = false) {
-        rule.runOnUiThread {
-            rule.activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        }
-        rule.setContent {
+        requireNotNull(host).scenario.onActivity { current ->
+            current.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            current.setContent {
             var inbox by remember { mutableStateOf(personalFixture(context)) }
             var space by remember { mutableStateOf(groupFixture(context)) }
             ZaparaTheme(ThemeChoice.Light, MotionSettings.Off) {
@@ -68,6 +75,7 @@ class ChatKeyboardLayoutTest {
                             }, { _, _ -> })
                     }
                 }
+            }
             }
         }
         rule.waitForIdle()
@@ -135,7 +143,9 @@ class ChatKeyboardLayoutTest {
             assertVisibleInWindow("$prefix.Draft")
             assertVisibleInWindow("$prefix.Send")
             rule.onNodeWithTag("$prefix.Message.message-24").assertIsDisplayed()
-            field.assertTextEquals(draft)
+            if (group) assertEquals("Group editor text must equal the typed draft", draft,
+                field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+            else field.assertTextEquals(draft)
             val selection = field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
             assertEquals("Input connection selection must follow the last typed character", draft.length, selection.end)
         }
@@ -145,9 +155,9 @@ class ChatKeyboardLayoutTest {
         UiDevice.getInstance(instrumentation).pressBack()
         rule.waitForIdle()
         instrumentation.runOnMainSync {
-            rule.activity.window.decorView.clearFocus()
-            val manager = rule.activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-            manager.hideSoftInputFromWindow(rule.activity.window.decorView.windowToken, 0)
+            activity.window.decorView.clearFocus()
+            val manager = activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            manager.hideSoftInputFromWindow(activity.window.decorView.windowToken, 0)
         }
         rule.waitUntil(8_000) { !KeyboardEvidence.visible() }
         capture("$name-keyboard-closed")
@@ -160,8 +170,8 @@ class ChatKeyboardLayoutTest {
         val visible = Rect()
         val windowOrigin = IntArray(2)
         instrumentation.runOnMainSync {
-            rule.activity.window.decorView.getWindowVisibleDisplayFrame(visible)
-            rule.activity.window.decorView.getLocationOnScreen(windowOrigin)
+            activity.window.decorView.getWindowVisibleDisplayFrame(visible)
+            activity.window.decorView.getLocationOnScreen(windowOrigin)
         }
         assertTrue("$tag must have a usable height: $bounds", bounds.height >= 40 * rule.density.density)
         assertTrue("$tag top clipped: $bounds, visible=$visible", bounds.top + windowOrigin[1] >= visible.top - 1)
@@ -175,11 +185,31 @@ class ChatKeyboardLayoutTest {
         if (InstrumentationRegistry.getArguments().getString("chatEvidence") != "true") return
         rule.waitForIdle()
         Thread.sleep(250)
-        val directory = File(rule.activity.getExternalFilesDir(null), "chat-keyboard-evidence").apply { mkdirs() }
-        instrumentation.uiAutomation.takeScreenshot()?.let { bitmap ->
-            File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            bitmap.recycle()
+        val directory = File(activity.getExternalFilesDir(null), "chat-keyboard-evidence").apply { mkdirs() }
+        val device = UiDevice.getInstance(instrumentation)
+        assertTrue("Full-screen capture failed: $name", device.takeScreenshot(File(directory, "$name.png")))
+        val visible = Rect()
+        val origin = IntArray(2)
+        instrumentation.runOnMainSync {
+            activity.window.decorView.getWindowVisibleDisplayFrame(visible)
+            activity.window.decorView.getLocationOnScreen(origin)
         }
+        val nodes = JSONObject()
+        listOf("Inbox.Draft", "Inbox.Send", "Inbox.Message.message-24",
+            "Group.Draft", "Group.Send", "Group.Message.message-24").forEach { tag ->
+            rule.onAllNodesWithTag(tag).fetchSemanticsNodes().firstOrNull()?.let { node ->
+                val bounds = node.boundsInWindow
+                nodes.put(tag, JSONObject().put("left", bounds.left).put("top", bounds.top)
+                    .put("right", bounds.right).put("bottom", bounds.bottom)
+                    .put("screen_top", bounds.top + origin[1]).put("screen_bottom", bounds.bottom + origin[1]))
+            }
+        }
+        File(directory, "$name.json").writeText(JSONObject()
+            .put("image", "$name.png").put("screen_width", device.displayWidth)
+            .put("screen_height", device.displayHeight).put("keyboard_visible", KeyboardEvidence.visible())
+            .put("visible_top", visible.top).put("visible_bottom", visible.bottom)
+            .put("window_origin_x", origin[0]).put("window_origin_y", origin[1])
+            .put("nodes", nodes).toString(2))
     }
 
     private fun personalFixture(context: Boolean): InboxUiState {

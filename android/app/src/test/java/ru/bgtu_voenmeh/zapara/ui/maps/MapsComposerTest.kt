@@ -21,6 +21,13 @@ class MapsComposerTest {
     private val parsed by lazy { GroupParser.parse(GROUP_FIXTURE) }
     private val ctx = SchedCtx("3313", LocalDate.of(2026, 9, 1), 2, false)
 
+    @Test fun floor_rooms_sort_by_number_then_suffix_without_integer_overflow() {
+        val labels = listOf("101", "102", "103", "11", "2", "101А", "гардероб", "999999999999999999999999999")
+        val rooms = labels.map { FloorRoom(it, it, ru.bgtu_voenmeh.zapara.data.CoordsRect(0.0, 0.0, 0.1, 0.1)) }
+        assertEquals(listOf("2", "11", "101", "101А", "102", "103", "999999999999999999999999999", "гардероб"),
+            MapsComposer.sortedFloorRooms(rooms).map { it.room })
+    }
+
     private fun lessonsOn(date: LocalDate) =
         Schedule.lessonsForDate(parsed.lessons, ctx.groupId, date, ctx.periodStart, ctx.weekCount, ctx.invert)
 

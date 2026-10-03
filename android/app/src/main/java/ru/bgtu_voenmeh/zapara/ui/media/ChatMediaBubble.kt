@@ -83,13 +83,23 @@ fun ChatMediaBubble(
     loading: Boolean,
     error: Boolean,
     onLoad: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    notFound: Boolean = false
 ) {
     if (kind !in setOf("image", "voice", "circle")) return
     val contentColor = LocalContentColor.current
-    val loadState = chatMediaLoadState(file?.isFile == true, loading, error)
+    val loadState = chatMediaLoadState(file?.isFile == true, loading, error, notFound)
     Box(modifier) {
         when (loadState) {
+            ChatMediaLoadState.NotFound -> Column {
+                Text(stringResource(R.string.chat_media_server_unavailable), color = contentColor)
+                Text(stringResource(R.string.chat_media_server_unavailable_hint),
+                    color = contentColor.copy(alpha = 0.72f))
+                TextButton(onClick = onLoad, modifier = Modifier.heightIn(min = 48.dp).testTag("Chat.MediaRetry"),
+                    colors = ButtonDefaults.textButtonColors(contentColor = contentColor)) {
+                    Text(stringResource(R.string.chat_media_retry_manual))
+                }
+            }
             ChatMediaLoadState.Retry -> TextButton(onClick = onLoad, colors = ButtonDefaults.textButtonColors(contentColor = contentColor)) { Text(stringResource(R.string.chat_media_load_failed)) }
             ChatMediaLoadState.NeedsTap -> TextButton(onClick = onLoad,
                 colors = ButtonDefaults.textButtonColors(contentColor = contentColor),

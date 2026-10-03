@@ -9,7 +9,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -43,16 +42,25 @@ class CompactLessonActionsTest {
         checkActions(1f, ThemeChoice.Light, "101", "lesson-actions-compact-light")
     }
 
-    @Test fun large_font_keeps_labels_and_disabled_map_without_overlapping_targets() {
+    @Test fun large_font_hides_map_without_room_and_keeps_touch_targets_separate() {
         checkActions(2f, ThemeChoice.Dark, "", "lesson-actions-compact-large-dark")
     }
 
-    private fun checkActions(fontScale: Float, theme: ThemeChoice, roomRaw: String, frame: String) {
+    @Test fun remote_lesson_hides_map_even_with_room_raw() {
+        checkActions(1f, ThemeChoice.Light, "101", "lesson-actions-remote-light", remote = true)
+    }
+
+    @Test fun placeholder_room_hides_map_and_room_chip_but_keeps_homework() {
+        checkActions(1f, ThemeChoice.Light, "—;", "lesson-actions-placeholder-light", room = "—")
+    }
+
+    private fun checkActions(fontScale: Float, theme: ThemeChoice, roomRaw: String, frame: String,
+        remote: Boolean = false, room: String = "") {
         val date = LocalDate.of(2026, 10, 3)
         val lesson = LessonUi(index = 1, timeStart = "09:00", timeEnd = "10:35", type = "Практика",
-            name = "Математика", original = null, teacher = "Иванов И. И.", room = "",
+            name = "Математика", original = null, teacher = "Иванов И. И.", room = room,
             classroomRaw = roomRaw, nextDate = null, homework = emptyList(), friends = emptyList(),
-            isPast = false, subjectRaw = "Математика", subjectNorm = "математика")
+            isPast = false, subjectRaw = "Математика", subjectNorm = "математика", remote = remote)
         val page = DayPage(date, true, "Суббота", listOf(lesson), null, false)
         val state = ScheduleUiState(loaded = true, hasGroup = true, today = date,
             selected = date, pages = mapOf(date to page), now = LocalDateTime.of(2026, 10, 3, 8, 0))
@@ -72,8 +80,13 @@ class CompactLessonActionsTest {
             }
         } }
         rule.waitForIdle()
-        val tags = listOf("Schedule.Map.1.0", "Schedule.Homework.1.0", "Schedule.Discuss.1.0")
+        val mapAvailable = lesson.hasMapLocation && lesson.room.isBlank()
+        val mapTag = "Schedule.Map.1.0"
+        val tags = listOfNotNull(if (mapAvailable) mapTag else null,
+            "Schedule.Homework.1.0", "Schedule.Discuss.1.0")
         rule.onNodeWithTag(tags.last()).performScrollTo()
+        if (!mapAvailable) rule.onNodeWithTag(mapTag).assertDoesNotExist()
+        if (room == "—") rule.onNodeWithTag("Lesson.Room.1").assertDoesNotExist()
         val buttons = tags.map { rule.onNodeWithTag(it).assertIsDisplayed()
             .assertWidthIsAtLeast(48.dp).assertHeightIsAtLeast(48.dp) }
         val bounds = buttons.map { it.fetchSemanticsNode().boundsInRoot }
@@ -84,14 +97,13 @@ class CompactLessonActionsTest {
         for (a in bounds.indices) for (b in a + 1 until bounds.size) {
             assertTrue("Touch targets overlap", !bounds[a].overlaps(bounds[b]))
         }
-        if (roomRaw.isBlank()) buttons[0].assertIsNotEnabled().performClick()
-        else buttons[0].performClick()
-        buttons[1].performClick()
-        buttons[2].performClick()
+        if (mapAvailable) rule.onNodeWithTag(mapTag).performClick()
+        rule.onNodeWithTag("Schedule.Homework.1.0").performClick()
+        rule.onNodeWithTag("Schedule.Discuss.1.0").performClick()
         rule.runOnIdle {
-            assertEquals(if (roomRaw.isBlank()) 0 else 1, mapCalls)
+            assertEquals(if (mapAvailable) 1 else 0, mapCalls)
             assertEquals(lesson, homework)
-            assertEquals("Математика · 2026-10-03 · 09:00–10:35 · ", discussed)
+            assertEquals("Математика · 2026-10-03 · 09:00–10:35 · $room", discussed)
         }
     }
 }

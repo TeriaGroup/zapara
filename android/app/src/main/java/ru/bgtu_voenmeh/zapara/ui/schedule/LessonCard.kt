@@ -74,7 +74,7 @@ fun LessonCard(
             if (lesson.type.isNotBlank()) {
                 LessonTypeChip(lesson.type, "Lesson.Type.${lesson.index}", Modifier.align(Alignment.CenterVertically))
             }
-            if (lesson.room.isNotBlank() && !lesson.remote) {
+            if (lesson.room.isNotBlank() && lesson.hasMapLocation) {
                 ZChip(lesson.room, modifier = Modifier.align(Alignment.CenterVertically), onClick = onRoom, leading = { ZIcon(R.drawable.ic_map_pin, null) }, tag = "Lesson.Room.${lesson.index}")
             }
         }

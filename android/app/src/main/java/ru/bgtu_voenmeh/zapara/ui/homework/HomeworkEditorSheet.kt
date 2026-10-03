@@ -138,37 +138,6 @@ fun HomeworkEditorSheet(
             minLines = 3
         )
         Spacer(Modifier.height(Zapara.space.m))
-        ZCard(Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.polish_homework_deadline), style = Zapara.typography.bodyStrong, color = c.text1)
-            Text(state.dueText(LocalUiCopy.current), style = Zapara.typography.body, color = c.text1,
-                modifier = Modifier.fillMaxWidth().testTag("Editor.Due"))
-            var showOccurrences by rememberSaveable(state.draft) { mutableStateOf(false) }
-            ZDisclosureButton(stringResource(R.string.ux300_ext_explain_due), showOccurrences,
-                { showOccurrences = !showOccurrences }, tag = "Editor.ExplainDue", leadingIcon = R.drawable.ic_calendar)
-            if (showOccurrences) {
-                Text(stringResource(R.string.ux300_ext_due_explanation), style = Zapara.typography.caption)
-                (1..state.n).forEach { number ->
-                    val date = state.dueFor(number, state.text)
-                    Text(stringResource(R.string.ux300_ext_due_occurrence, number,
-                        date?.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.forLanguageTag("ru")))
-                            ?: stringResource(R.string.ux300_ext_due_unknown)), style = Zapara.typography.caption)
-                }
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                ZIconButton(R.drawable.ic_minus, stringResource(R.string.hw_due_decrease), onDec, "Editor.Dec", enabled = !state.busy && state.n > 1)
-                Text(stringResource(countLabel, state.n),
-                    style = Zapara.typography.body, color = c.text1,
-                    modifier = Modifier.weight(1f).testTag("Editor.Count"))
-                ZIconButton(R.drawable.ic_plus, stringResource(R.string.hw_due_increase), onInc, "Editor.Inc", enabled = !state.busy && state.n < 10)
-            }
-            if (state.sourceChanged) {
-                Text(stringResource(R.string.review_homework_source_changed), style = Zapara.typography.caption, color = c.warn)
-                ZButton(stringResource(R.string.review_recalculate_due), onRecalculate,
-                    modifier = Modifier.fillMaxWidth(), ghost = true, enabled = !state.busy,
-                    startAligned = true, leadingIcon = R.drawable.ic_refresh)
-            }
-        }
-        Spacer(Modifier.height(Zapara.space.m))
         Text(stringResource(R.string.polish_homework_attachments), style = Zapara.typography.bodyStrong, color = c.text1)
         Text(stringResource(R.string.homework_ux_files_count, state.files.size), style = Zapara.typography.caption, color = c.text2)
         if (state.files.size >= 6) Text(stringResource(R.string.ux30_study_attachment_limit),
@@ -199,6 +168,37 @@ fun HomeworkEditorSheet(
             if (file.id in state.missingFileIds) Text(stringResource(R.string.ux300_android_missing_file),
                 style = Zapara.typography.caption, color = c.warn,
                 modifier = Modifier.testTag("Editor.MissingFile.${file.id}"))
+        }
+        Spacer(Modifier.height(Zapara.space.m))
+        ZCard(Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.polish_homework_deadline), style = Zapara.typography.bodyStrong, color = c.text1)
+            Text(state.dueText(LocalUiCopy.current), style = Zapara.typography.body, color = c.text1,
+                modifier = Modifier.fillMaxWidth().testTag("Editor.Due"))
+            var showOccurrences by rememberSaveable(state.draft) { mutableStateOf(false) }
+            ZDisclosureButton(stringResource(R.string.ux300_ext_explain_due), showOccurrences,
+                { showOccurrences = !showOccurrences }, tag = "Editor.ExplainDue", leadingIcon = R.drawable.ic_calendar)
+            if (showOccurrences) {
+                Text(stringResource(R.string.ux300_ext_due_explanation), style = Zapara.typography.caption)
+                (1..state.n).forEach { number ->
+                    val date = state.dueFor(number, state.text)
+                    Text(stringResource(R.string.ux300_ext_due_occurrence, number,
+                        date?.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.forLanguageTag("ru")))
+                            ?: stringResource(R.string.ux300_ext_due_unknown)), style = Zapara.typography.caption)
+                }
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZIconButton(R.drawable.ic_minus, stringResource(R.string.hw_due_decrease), onDec, "Editor.Dec", enabled = !state.busy && state.n > 1)
+                Text(stringResource(countLabel, state.n),
+                    style = Zapara.typography.body, color = c.text1,
+                    modifier = Modifier.weight(1f).testTag("Editor.Count"))
+                ZIconButton(R.drawable.ic_plus, stringResource(R.string.hw_due_increase), onInc, "Editor.Inc", enabled = !state.busy && state.n < 10)
+            }
+            if (state.sourceChanged) {
+                Text(stringResource(R.string.review_homework_source_changed), style = Zapara.typography.caption, color = c.warn)
+                ZButton(stringResource(R.string.review_recalculate_due), onRecalculate,
+                    modifier = Modifier.fillMaxWidth(), ghost = true, enabled = !state.busy,
+                    startAligned = true, leadingIcon = R.drawable.ic_refresh)
+            }
         }
         if (!state.isEdit && isGuest) {
             Spacer(Modifier.height(Zapara.space.s))

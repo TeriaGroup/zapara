@@ -310,24 +310,28 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
         }
         if (roomListOpen) ZBottomSheet(onDismiss = { roomListOpen = false },
             tag = "Maps.FloorRoomSheet", scrollable = true) {
-            Text(stringResource(R.string.ux300_android_floor_rooms),
-                style = Zapara.typography.section)
-            ZTextField(roomQuery, { roomQuery = it }, modifier = Modifier.fillMaxWidth()
-                .testTag("Maps.RoomSearch"), singleLine = true,
-                placeholder = { Text(stringResource(R.string.ux300_android_search_room)) })
-            val matching = state.availableRooms.filter { it.room.contains(roomQuery.trim(), ignoreCase = true) }
-                .distinctBy { it.id }.sortedBy { it.room }
-            Text(stringResource(R.string.ux300_android_room_count, matching.size,
-                state.availableRooms.size), style = Zapara.typography.caption)
-            if (matching.isEmpty()) Text(stringResource(R.string.ux300_android_no_rooms),
-                style = Zapara.typography.body)
-            matching.take(30).forEach { room ->
-                ZActionButton(room.room, {
-                    onEvent(MapsEvent.FocusRoom(room.id)); roomListOpen = false
-                }, tag = "Maps.FocusRoom.${room.id}", leadingIcon = R.drawable.ic_map_pin)
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                Text(stringResource(R.string.ux300_android_floor_rooms),
+                    style = Zapara.typography.section)
+                ZTextField(roomQuery, { roomQuery = it }, modifier = Modifier.fillMaxWidth()
+                    .testTag("Maps.RoomSearch"), singleLine = true,
+                    placeholder = { Text(stringResource(R.string.ux300_android_search_room)) },
+                    leadingIcon = { ZIcon(R.drawable.ic_search, null) })
+                val matching = MapsComposer.sortedFloorRooms(state.availableRooms
+                    .filter { it.room.contains(roomQuery.trim(), ignoreCase = true) }
+                    .distinctBy { it.id })
+                Text(stringResource(R.string.ux300_android_room_count, matching.size,
+                    state.availableRooms.size), style = Zapara.typography.caption)
+                if (matching.isEmpty()) Text(stringResource(R.string.ux300_android_no_rooms),
+                    style = Zapara.typography.body)
+                matching.take(30).forEach { room ->
+                    ZActionButton(room.room, {
+                        onEvent(MapsEvent.FocusRoom(room.id)); roomListOpen = false
+                    }, tag = "Maps.FocusRoom.${room.id}", leadingIcon = R.drawable.ic_map_pin)
+                }
+                if (matching.size > 30) Text(stringResource(R.string.ux300_android_refine_room),
+                    style = Zapara.typography.caption)
             }
-            if (matching.size > 30) Text(stringResource(R.string.ux300_android_refine_room),
-                style = Zapara.typography.caption)
         }
     }
 }

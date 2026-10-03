@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,9 +27,11 @@ import ru.bgtu_voenmeh.zapara.ui.components.EmptyState
 import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
 import ru.bgtu_voenmeh.zapara.ui.components.ZChip
 import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
+import ru.bgtu_voenmeh.zapara.ui.components.ZTextField
 import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
 import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
+import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
 import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.appear
@@ -89,9 +90,10 @@ fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) ->
                 ) {
                     if (state.communities.isNotEmpty()) {
                         item("search") {
-                            OutlinedTextField(query, { query = it },
-                                label = { Text(stringResource(R.string.next_community_search)) },
-                                singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Community.Search"))
+                            ZTextField(query, { query = it },
+                                modifier = Modifier.fillMaxWidth().testTag("Community.Search"),
+                                placeholder = { Text(stringResource(R.string.next_community_search)) },
+                                singleLine = true, leadingIcon = { ZIcon(R.drawable.ic_search, null) })
                         }
                         item("result") {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -189,16 +191,18 @@ private fun CommunityDetail(selected: CommunityDetailUi, state: CommunitiesUiSta
             contentPadding = PaddingValues(Zapara.space.l),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
         ) {
-            item {
-                ZCard(Modifier.fillMaxWidth().appear(0), tag = "Community.Members") {
-                    Text("${stringResource(R.string.community_members)} · ${selected.members.size}", style = Zapara.typography.section, color = c.text1)
-                    selected.members.forEach { Text(it.userId, style = Zapara.typography.caption, color = c.text2) }
+            if (selected.canModerate) {
+                item {
+                    ZCard(Modifier.fillMaxWidth().appear(0), tag = "Community.Members") {
+                        Text("${stringResource(R.string.community_members)} · ${selected.members.size}", style = Zapara.typography.section, color = c.text1)
+                        selected.members.forEach { Text(it.userId, style = Zapara.typography.caption, color = c.text2) }
+                    }
                 }
-            }
-            item {
-                ZCard(Modifier.fillMaxWidth().appear(1), tag = "Community.Staff") {
-                    Text("${stringResource(R.string.community_staff)} · ${selected.staff.size}", style = Zapara.typography.section, color = c.text1)
-                    selected.staff.forEach { Text(it.userId, style = Zapara.typography.caption, color = c.text2) }
+                item {
+                    ZCard(Modifier.fillMaxWidth().appear(1), tag = "Community.Staff") {
+                        Text("${stringResource(R.string.community_staff)} · ${selected.staff.size}", style = Zapara.typography.section, color = c.text1)
+                        selected.staff.forEach { Text(it.userId, style = Zapara.typography.caption, color = c.text2) }
+                    }
                 }
             }
             if (selected.canModerate) {

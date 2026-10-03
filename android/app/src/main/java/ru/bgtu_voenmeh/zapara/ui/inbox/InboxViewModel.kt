@@ -12,6 +12,7 @@ import ru.bgtu_voenmeh.zapara.AppContainer
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.ToastKind
 import ru.bgtu_voenmeh.zapara.data.api.UrlConnectionTransport
+import ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException
 import ru.bgtu_voenmeh.zapara.data.social.*
 import java.io.File
 import java.util.UUID
@@ -19,10 +20,13 @@ import java.util.concurrent.ConcurrentHashMap
 
 data class InboxUiState(val guest: Boolean = false, val loading: Boolean = false, val error: String? = null, val rows: List<InboxRow> = emptyList(), val code: String = "", val incoming: List<SocialInvite> = emptyList(), val outgoing: List<SocialInvite> = emptyList(), val active: InboxRow? = null, val messages: List<SocialMessage> = emptyList(), val hasMore: Boolean = false, val composer: PersonalComposer = PersonalComposer(), val inviteCode: String = "", val userId: String = "", val mediaFiles: Map<String, File> = emptyMap(), val mediaLoading: Set<String> = emptySet(), val mediaErrors: Set<String> = emptySet(), val sending: Boolean = false, val historyLoaded: Boolean = false, val inboxLoaded: Boolean = false,
     val respondingId: String? = null, val draftPreviews: Map<String, String> = emptyMap(),
-    val profileDatabaseName: String = "", val pendingRecording: PendingPersonalRecording? = null) {
+    val profileDatabaseName: String = "", val pendingRecording: PendingPersonalRecording? = null,
+    val mediaNotFound: Set<String> = emptySet()) {
     val draft get() = composer.text
     val reply get() = composer.reply
     val editing get() = composer.editing
+    internal fun withoutMediaStatus() = copy(mediaLoading = emptySet(), mediaErrors = emptySet(),
+        mediaNotFound = emptySet())
 }
 sealed interface InboxEvent {
     data class Upload(val conversationId: String, val uri: android.net.Uri) : InboxEvent
@@ -147,9 +151,9 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
         operation?.cancel()
         operation = null
         cancelMediaLoads()
-        mutable.update { it.copy(active = row, messages = emptyList(), hasMore = false,
+        mutable.update { it.withoutMediaStatus().copy(active = row, messages = emptyList(), hasMore = false,
             composer = row?.id?.let(composers::restore) ?: PersonalComposer(), error = null,
-            historyLoaded = false, loading = false, mediaLoading = emptySet(), respondingId = null,
+            historyLoaded = false, loading = false, respondingId = null,
             userId = container.profile.userId.orEmpty(), profileDatabaseName = container.profile.databaseName,
             pendingRecording = row?.id?.let { pendingRecordings.get(recordingScope(it)) },
             draftPreviews = composers.draftPreviews()) }
@@ -258,15 +262,24 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                         }
                     } else {
                         var partial = false
-                        val home = try { api.home(token) } catch (cancel: CancellationException) { throw cancel } catch (_: Exception) { partial = true; null }
+                        val home = try { api.home(token) } catch (cancel: CancellationException) { throw cancel } catch (e: Exception) {
+                            runCatching { android.util.Log.w("ZaparaInbox", "phase=social_home category=${e.javaClass.simpleName}") }
+                            partial = true; null
+                        }
                         val groupRows = mutableListOf<InboxRow>()
                         try {
                             container.communities?.list(token)?.filter { it.role != null }?.forEach { community ->
                                 try { groupRows += groupInboxRows(container.communities.groupHome(token, community.communityId)) }
                                 catch (cancel: CancellationException) { throw cancel }
-                                catch (_: Exception) { partial = true; groupRows += state.value.rows.filter { it.communityId == community.communityId } }
+                                catch (e: Exception) {
+                                    runCatching { android.util.Log.w("ZaparaInbox", "phase=group_home category=${if (e is CommunityClientException) e.failure.name else e.javaClass.simpleName}") }
+                                    partial = true; groupRows += state.value.rows.filter { it.communityId == community.communityId }
+                                }
                             }
-                        } catch (cancel: CancellationException) { throw cancel } catch (_: Exception) { partial = true; groupRows += state.value.rows.filter { it.communityId != null } }
+                        } catch (cancel: CancellationException) { throw cancel } catch (e: Exception) {
+                            runCatching { android.util.Log.w("ZaparaInbox", "phase=community_list category=${if (e is CommunityClientException) e.failure.name else e.javaClass.simpleName}") }
+                            partial = true; groupRows += state.value.rows.filter { it.communityId != null }
+                        }
                         withContext(Dispatchers.Main.immediate) {
                             if (generation == started) mutable.update { current ->
                                 if (current.active != null) current else current.copy(
@@ -356,7 +369,8 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
         if (!personalMediaRequestIsCurrent(state.value, requestedConversation, message)) return
         if (state.value.mediaFiles[attachment]?.isFile == true || mediaJobs[attachment]?.isActive == true) return
         val api = social ?: return
-        mutable.update { it.copy(mediaLoading = it.mediaLoading + attachment, mediaErrors = it.mediaErrors - attachment) }
+        mutable.update { it.copy(mediaLoading = it.mediaLoading + attachment, mediaErrors = it.mediaErrors - attachment,
+            mediaNotFound = it.mediaNotFound - attachment) }
         mediaJobs[attachment] = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val token = container.accessToken() ?: throw SocialFailure(401)
@@ -393,13 +407,19 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                             if (keep) total += entry.value.length() else entry.value.delete()
                             keep
                         }.associate { it.key to it.value }
-                        current.copy(mediaFiles = kept, mediaLoading = current.mediaLoading - attachment, mediaErrors = current.mediaErrors - attachment)
+                        current.copy(mediaFiles = kept, mediaLoading = current.mediaLoading - attachment,
+                            mediaErrors = current.mediaErrors - attachment, mediaNotFound = current.mediaNotFound - attachment)
                     }
                 }
             } catch (cancel: CancellationException) { throw cancel }
-            catch (_: Exception) {
+            catch (e: Exception) {
+                runCatching { android.util.Log.w("ZaparaInbox", "phase=media_load category=${when (e) {
+                    is SocialFailure -> "SocialHttp${e.status}"
+                    is CommunityClientException -> "Community${e.failure.name}"
+                    else -> e.javaClass.simpleName
+                }}") }
                 if (isMediaRequestCurrent(requestedGeneration, requestedConversation, message))
-                    mutable.update { it.copy(mediaLoading = it.mediaLoading - attachment, mediaErrors = it.mediaErrors + attachment) }
+                    mutable.update { personalMediaFailureState(it, requestedConversation, message, e) }
             }
             finally {
                 if (isMediaRequestCurrent(requestedGeneration, requestedConversation, message))

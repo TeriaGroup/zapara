@@ -7,7 +7,7 @@ import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.os.SystemClock
-import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -18,9 +18,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -34,6 +36,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -52,10 +55,12 @@ import kotlin.math.abs
 /** Root harness pregrants and later restores camera/microphone permissions. Extractor checks validate containers/tracks; decoding is checked separately. */
 @RunWith(AndroidJUnit4::class)
 class ChatCaptureQualityTest {
-    @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
+    @get:Rule val rule = createEmptyComposeRule()
 
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
+    private var host: OwnedTestHost? = null
+    private val activity get() = requireNotNull(host).activity
     private val callback = AtomicReference<Recorded?>(null)
     private val errors = CopyOnWriteArrayList<String>()
     private lateinit var evidenceDirectory: File
@@ -66,11 +71,16 @@ class ChatCaptureQualityTest {
             context.checkSelfPermission(Manifest.permission.RECORD_AUDIO))
         assertEquals("Root harness must grant CAMERA before the suite", PackageManager.PERMISSION_GRANTED,
             context.checkSelfPermission(Manifest.permission.CAMERA))
-        val root = requireNotNull(rule.activity.getExternalFilesDir(null))
+        host = OwnedTestHost.launch()
+        val root = requireNotNull(activity.getExternalFilesDir(null))
         evidenceDirectory = File(root, "chat-capture-evidence/run-${System.currentTimeMillis()}").apply {
             check(isDirectory || mkdirs()) { "Could not create capture evidence directory: $absolutePath" }
         }
         captureCacheDirectory = File(context.cacheDir, "chat-capture")
+    }
+
+    @After fun closeHost() {
+        try { host?.close() } finally { host = null }
     }
 
     @Test fun voice_records_aac_container_with_audio_samples_and_actual_encoder_metadata() {
@@ -79,7 +89,7 @@ class ChatCaptureQualityTest {
         waitForRecording()
         capture("voice-recording")
         SystemClock.sleep(RECORDING_MILLIS)
-        rule.onNodeWithText(rule.activity.getString(R.string.chat_media_send)).performClick()
+        reviewAndSend("voice")
 
         val recorded = awaitCallback("voice")
         val media = inspect(recorded.file)
@@ -109,11 +119,11 @@ class ChatCaptureQualityTest {
         rule.onNodeWithTag("Capture.StartCircle").performClick()
         awaitCameraReady()
         capture("circle-preview")
-        rule.onNodeWithText(rule.activity.getString(R.string.chat_media_start)).performClick()
+        rule.onNodeWithText(activity.getString(R.string.chat_media_start)).performClick()
         waitForRecording()
         capture("circle-recording")
         SystemClock.sleep(RECORDING_MILLIS)
-        rule.onNodeWithText(rule.activity.getString(R.string.chat_media_send)).performClick()
+        reviewAndSend("circle")
 
         val recorded = awaitCallback("circle", 30_000)
         val media = inspect(recorded.file)
@@ -159,7 +169,7 @@ class ChatCaptureQualityTest {
         rule.onNodeWithTag("Capture.StartVoice").performClick()
         waitForRecording()
         SystemClock.sleep(900)
-        rule.onNodeWithText(rule.activity.getString(R.string.chat_media_cancel)).performClick()
+        rule.onNodeWithText(activity.getString(R.string.chat_media_cancel)).performClick()
         awaitIdleHost()
         assertFalse("Cancel must not deliver a media callback", callback.get() != null)
         assertTrue("Cancel must not report a capture error: $errors", errors.isEmpty())
@@ -170,10 +180,10 @@ class ChatCaptureQualityTest {
         showHost()
         rule.onNodeWithTag("Capture.StartCircle").performClick()
         awaitCameraReady()
-        rule.onNodeWithText(rule.activity.getString(R.string.chat_media_start)).performClick()
+        rule.onNodeWithText(activity.getString(R.string.chat_media_start)).performClick()
         waitForRecording()
         SystemClock.sleep(900)
-        rule.onNodeWithText(rule.activity.getString(R.string.chat_media_cancel)).performClick()
+        rule.onNodeWithText(activity.getString(R.string.chat_media_cancel)).performClick()
         awaitIdleHost("Capture.StartCircle")
         rule.waitUntil(15_000) { captureCacheDirectory.listFiles().orEmpty().none { it.canonicalPath !in preexistingFiles } }
         assertFalse("Cancel must not deliver a media callback", callback.get() != null)
@@ -181,7 +191,7 @@ class ChatCaptureQualityTest {
     }
 
     private fun showHost() {
-        rule.setContent {
+        requireNotNull(host).scenario.onActivity { activity -> activity.setContent {
             ZaparaTheme(ThemeChoice.Light, MotionSettings.Off) {
                 var errorMessage by remember { mutableStateOf<String?>(null) }
                 Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -205,12 +215,13 @@ class ChatCaptureQualityTest {
                     errorMessage?.let { Text(it, Modifier.testTag("Capture.Error")) }
                 }
             }
-        }
+        } }
         rule.waitForIdle()
+        requireNotNull(host).awaitForeground()
     }
 
     private fun waitForRecording() {
-        val marker = rule.activity.getString(R.string.chat_media_recording, "")
+        val marker = activity.getString(R.string.chat_media_recording, "")
             .substringBeforeLast(' ').trim()
         rule.waitUntil(15_000) {
             rule.onAllNodesWithText(marker, substring = true).fetchSemanticsNodes().isNotEmpty() || errors.isNotEmpty()
@@ -218,8 +229,40 @@ class ChatCaptureQualityTest {
         assertTrue("Capture host reported an error: $errors", errors.isEmpty())
     }
 
+    private fun reviewAndSend(kind: String) {
+        rule.onNodeWithText(activity.getString(R.string.ux60_chat_record_review)).performClick()
+        val reviewTitle = activity.getString(R.string.ux60_chat_record_review_title)
+        rule.waitUntil(30_000) {
+            rule.onAllNodesWithText(reviewTitle).fetchSemanticsNodes().isNotEmpty() || errors.isNotEmpty()
+        }
+        assertTrue("Capture failed before review: $errors", errors.isEmpty())
+        assertTrue("Recording did not reach review", rule.onAllNodesWithText(reviewTitle).fetchSemanticsNodes().isNotEmpty())
+        capture("$kind-review")
+        val seekLabel = activity.getString(R.string.ux100_chat_playback_seek)
+        rule.waitUntil(10_000) {
+            runCatching { rule.onNodeWithContentDescription(seekLabel).assertIsEnabled() }.isSuccess || errors.isNotEmpty()
+        }
+        assertTrue("Embedded review player did not prepare: $errors", errors.isEmpty())
+        rule.onNodeWithContentDescription(seekLabel).assertIsEnabled()
+        val playLabel = activity.getString(R.string.ux30_chat_play)
+        val pauseLabel = activity.getString(R.string.ux30_chat_pause)
+        if (kind == "circle") rule.onNodeWithTag("Chat.CirclePlayback").performClick()
+        else rule.onNodeWithContentDescription(playLabel).performClick()
+        rule.waitUntil(5_000) {
+            runCatching { rule.onNodeWithContentDescription(pauseLabel).fetchSemanticsNode() }.isSuccess || errors.isNotEmpty()
+        }
+        assertTrue("Embedded review playback failed to start: $errors", errors.isEmpty())
+        rule.onNodeWithContentDescription(pauseLabel).fetchSemanticsNode()
+        SystemClock.sleep(1_100)
+        assertTrue("Embedded review player reported an error",
+            rule.onAllNodesWithText(activity.getString(R.string.chat_media_play_failed)).fetchSemanticsNodes().isEmpty())
+        capture("$kind-review-playing")
+        rule.onNodeWithContentDescription(pauseLabel).performClick()
+        rule.onNodeWithText(activity.getString(R.string.ux60_chat_record_send)).performClick()
+    }
+
     private fun awaitCameraReady() {
-        val ready = rule.activity.getString(R.string.chat_media_camera_ready)
+        val ready = activity.getString(R.string.chat_media_camera_ready)
         rule.waitUntil(30_000) {
             rule.onAllNodesWithText(ready).fetchSemanticsNodes().isNotEmpty() || errors.isNotEmpty()
         }
@@ -239,7 +282,7 @@ class ChatCaptureQualityTest {
     private fun awaitIdleHost(idleTag: String = "Capture.StartVoice") {
         rule.waitUntil(5_000) {
             rule.onAllNodesWithTag(idleTag).fetchSemanticsNodes().isNotEmpty() &&
-                rule.onAllNodesWithText(rule.activity.getString(R.string.chat_media_recording, ""), substring = true).fetchSemanticsNodes().isEmpty()
+                rule.onAllNodesWithText(activity.getString(R.string.chat_media_recording, ""), substring = true).fetchSemanticsNodes().isEmpty()
         }
     }
 

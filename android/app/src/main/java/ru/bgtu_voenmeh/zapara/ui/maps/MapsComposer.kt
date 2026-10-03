@@ -251,6 +251,23 @@ object MapsComposer {
         return out
     }
 
+    fun sortedFloorRooms(rooms: List<FloorRoom>): List<FloorRoom> = rooms.sortedWith { left, right ->
+        fun number(room: FloorRoom) = room.room.trim().takeWhile { it in '0'..'9' }
+            .trimStart('0').ifEmpty { "0" }
+        val leftDigits = left.room.trim().takeWhile { it in '0'..'9' }
+        val rightDigits = right.room.trim().takeWhile { it in '0'..'9' }
+        val numberOrder = when {
+            leftDigits.isEmpty() && rightDigits.isEmpty() -> 0
+            leftDigits.isEmpty() -> 1
+            rightDigits.isEmpty() -> -1
+            else -> number(left).length.compareTo(number(right).length)
+                .takeIf { it != 0 } ?: number(left).compareTo(number(right))
+        }
+        if (numberOrder != 0) numberOrder
+        else left.room.compareTo(right.room, ignoreCase = true)
+            .takeIf { it != 0 } ?: left.id.compareTo(right.id)
+    }
+
     fun hitRoom(nx: Double, ny: Double, rooms: List<FloorRoom>): FloorRoom? {
         var best: FloorRoom? = null
         var bestArea = Double.POSITIVE_INFINITY

@@ -4,12 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import ru.bgtu_voenmeh.zapara.AppContainer
 import ru.bgtu_voenmeh.zapara.data.communities.Community
 import ru.bgtu_voenmeh.zapara.data.communities.CommunityClientException
@@ -33,11 +35,18 @@ internal class CommunitiesRuntime(
             guest = container.profile.isGuest,
             client = container.communities,
             accessToken = { container.accessToken() },
-            groupId = { container.repo.settings().myGroupId },
+            groupId = { readCommunityGroupIdOffMain { container.repo.settings().myGroupId } },
             ownerId = container.profile.databaseName,
             scopeChanges = container.events.events
         )
     }
+}
+
+internal suspend fun readCommunityGroupIdOffMain(read: () -> String?): String? =
+    withContext(Dispatchers.IO) { read() }
+
+private fun logCommunityLoadFailure(message: String) {
+    runCatching { android.util.Log.w("ZaparaCommunities", message) }
 }
 
 class CommunitiesViewModel internal constructor(private val runtime: CommunitiesRuntime) : ViewModel() {
@@ -135,7 +144,11 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
     private suspend fun load() {
         val ticket = ++round
         val group = try { runtime.groupId() } catch (e: CancellationException) { throw e }
-        catch (e: Exception) { applyFailure(CommunityClientException(CommunityClientFailure.Transport)); return }
+        catch (e: Exception) {
+            logCommunityLoadFailure("load group_settings failed class=${e.javaClass.simpleName}")
+            applyFailure(CommunityClientException(CommunityClientFailure.Transport))
+            return
+        }
         if (scopeReady && groupScope != group) {
             ++openTicket
             ++scopeEpoch
@@ -158,9 +171,11 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
             publish(CommunitySnapshot(guest = true))
             return
         }
+        var stage = "membership_list"
         try {
             val memberships = runtime.client.list(token)
             if (ticket != round) return
+            stage = "group_catalog"
             val catalog = if (group.isNullOrBlank()) emptyList() else runtime.client.list(token, group)
             if (ticket != round) return
             if (!isCurrentScope(scope)) return
@@ -175,9 +190,13 @@ class CommunitiesViewModel internal constructor(private val runtime: Communities
         } catch (e: CancellationException) {
             throw e
         } catch (e: CommunityClientException) {
-            if (ticket == round && isCurrentScope(scope)) { loading = false; applyFailure(e) }
+            if (ticket == round && isCurrentScope(scope)) {
+                logCommunityLoadFailure("load $stage failed category=${e.failure.name}")
+                loading = false
+                applyFailure(e)
+            }
         } catch (e: Exception) {
-            android.util.Log.w("ZaparaCommunities", "load", e)
+            logCommunityLoadFailure("load $stage failed class=${e.javaClass.simpleName}")
             if (ticket == round && isCurrentScope(scope)) {
                 loading = false; publish(snapshot.copy(failure = CommunityClientFailure.Transport))
             }

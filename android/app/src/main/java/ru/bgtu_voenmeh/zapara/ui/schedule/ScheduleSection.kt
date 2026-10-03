@@ -406,8 +406,8 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                     actions = {
                         FlowRow(Modifier.fillMaxWidth().padding(top = Zapara.space.xs), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                             // The room chip already opens the map. Keep the primary actions in one row.
-                            if (lesson.remote || lesson.room.isBlank()) ZCompactButton(uiText(R.string.schedule_lesson_action_map),
-                                { onOpenMap(lesson.classroomRaw) }, enabled = lesson.classroomRaw.isNotBlank(),
+                            if (lesson.hasMapLocation && lesson.room.isBlank()) ZCompactButton(uiText(R.string.schedule_lesson_action_map),
+                                { onOpenMap(lesson.classroomRaw) },
                                 leadingIcon = R.drawable.ic_map, tag = "Schedule.Map.${lesson.index}.$index")
                             ZCompactButton(uiText(R.string.space_day_21), { onEvent(ScheduleEvent.SubjectHomework(lesson)) },
                                 leadingIcon = R.drawable.ic_homework, tag = "Schedule.Homework.${lesson.index}.$index")
@@ -426,7 +426,7 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                     ZCompactButton(uiText(R.string.space_day_21), { onEvent(ScheduleEvent.SubjectHomework(lesson)) },
                         leadingIcon = R.drawable.ic_homework,
                         tag = "Schedule.Homework.${lesson.index}.$index")
-                    if (lesson.classroomRaw.isNotBlank()) ZCompactButton(uiText(R.string.schedule_lesson_action_map),
+                    if (lesson.hasMapLocation) ZCompactButton(uiText(R.string.schedule_lesson_action_map),
                         { onOpenMap(lesson.classroomRaw) }, leadingIcon = R.drawable.ic_map,
                         tag = "Schedule.Map.${lesson.index}.$index")
                 }

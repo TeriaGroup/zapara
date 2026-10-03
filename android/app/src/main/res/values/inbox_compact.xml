@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="inbox_compact_filters">Фильтры чатов</string>
+    <string name="inbox_compact_filters_count">Фильтры чатов · %1$d</string>
+    <string name="inbox_compact_reset_search_filters">Сбросить поиск и фильтры</string>
+    <string name="inbox_compact_copy_text">Копировать текст</string>
+</resources>

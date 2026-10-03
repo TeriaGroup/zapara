@@ -53,7 +53,15 @@ data class LessonUi(
     val dayOfWeek: Int = 0,
     val subgroup: SubgroupMarkUi? = null,
     val typeRaw: String = ""
-)
+) {
+    val hasMapLocation: Boolean
+        get() {
+            if (remote) return false
+            val location = classroomRaw.trim().trimEnd(';').trim()
+            return location.isNotBlank() && location != "-" && location != "—" &&
+                location != "–" && location != "?"
+        }
+}
 
 data class DayPage(
     val date: LocalDate,
