@@ -3,15 +3,19 @@ using System.Text.Json;
 
 namespace Vograph.Core.Services;
 
-public class AutoUpdateService
+public class AutoUpdateService : IDisposable
 {
     private readonly HttpClient _http;
+    private readonly bool _ownsClient;
+    private bool _disposed;
     private const string Owner = "TeriaGroup";
     private const string Repo = "zapara";
 
-    public AutoUpdateService()
+    public AutoUpdateService() : this(new HttpClient()) { _ownsClient = true; }
+
+    public AutoUpdateService(HttpClient client)
     {
-        _http = new HttpClient();
+        _http = client ?? throw new ArgumentNullException(nameof(client));
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Zapara-AutoUpdate/1.0");
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
     }
@@ -20,10 +24,11 @@ public class AutoUpdateService
 
     public async Task<UpdateInfo?> GetLatestAsync(string channel = "windows", CancellationToken ct = default)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         string pfx = channel == "android" ? "android-" : "windows-";
         // fetch all releases, pick latest matching prefix (api/releases/latest may be android)
         var url = $"https://api.github.com/repos/{Owner}/{Repo}/releases?per_page=100";
-        var resp = await _http.GetAsync(url, ct);
+        using var resp = await _http.GetAsync(url, ct);
         resp.EnsureSuccessStatusCode();
         var json = await resp.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(json);
@@ -61,6 +66,7 @@ public class AutoUpdateService
     /// <summary>Download a release asset with progress (0..1, -1 if size unknown).</summary>
     public async Task DownloadAssetAsync(string url, string destPath, IProgress<double>? progress = null, CancellationToken ct = default)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         Directory.CreateDirectory(Path.GetDirectoryName(destPath) ?? ".");
         string tmp = destPath + ".part";
         try
@@ -89,6 +95,13 @@ public class AutoUpdateService
             try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
             throw;
         }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        if (_ownsClient) _http.Dispose();
     }
 
     public static bool TagMatchesChannel(string tag, string prefix) =>

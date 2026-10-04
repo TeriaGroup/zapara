@@ -5,11 +5,14 @@ using Zapara.Server.Social;
 
 namespace Zapara.Server.Storage;
 
-public sealed class RoutingObjectStore : IObjectStore, IContentArchive
+public sealed class RoutingObjectStore : IObjectStore, IContentArchive, IDisposable
 {
     private readonly IConfiguration configuration;
     private readonly Func<S3Target, HttpClient>? clients;
     private readonly string root;
+    private readonly object transportGate = new();
+    private HttpClient? transport;
+    private bool disposed;
 
     public RoutingObjectStore(IConfiguration configuration, Func<S3Target, HttpClient>? clients = null)
     {
@@ -60,7 +63,26 @@ public sealed class RoutingObjectStore : IObjectStore, IContentArchive
         if (File.Exists(path)) File.Delete(path);
     }
 
-    private S3ObjectStore Open(S3Target target) => new(target, clients?.Invoke(target));
+    private S3ObjectStore Open(S3Target target)
+    {
+        lock (transportGate)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            // Signing uses current settings on every request; the transport is target-independent.
+            transport ??= clients?.Invoke(target) ?? S3ObjectStore.CreateClient();
+            return new(target, transport);
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (transportGate)
+        {
+            if (disposed) return;
+            disposed = true;
+            transport?.Dispose();
+        }
+    }
 
     private S3Target? Target()
     {

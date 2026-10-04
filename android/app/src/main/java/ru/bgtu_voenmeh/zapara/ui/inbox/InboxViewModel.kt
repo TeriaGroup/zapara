@@ -402,8 +402,8 @@ class InboxViewModel(private val container: AppContainer) : ViewModel() {
                         val next = current.mediaFiles + (attachment to destination)
                         val ordered = next.entries.sortedByDescending { it.value.lastModified() }
                         var total = 0L
-                        val kept = ordered.filter { entry ->
-                            val keep = total + entry.value.length() <= 64L * 1024 * 1024 && total >= 0 && ordered.indexOf(entry) < 32
+                        val kept = ordered.filterIndexed { index, entry ->
+                            val keep = total + entry.value.length() <= 64L * 1024 * 1024 && total >= 0 && index < 32
                             if (keep) total += entry.value.length() else entry.value.delete()
                             keep
                         }.associate { it.key to it.value }

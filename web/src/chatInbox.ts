@@ -1,5 +1,20 @@
 import type { GroupHome, SocialHome } from "./types";
 
+export function createChatInboxSourceSequence() {
+  const latest = new Map<string, number>();
+  let sequence = 0;
+  return {
+    begin(source: string) {
+      const ticket = ++sequence;
+      latest.set(source, ticket);
+      return ticket;
+    },
+    isCurrent(source: string, ticket: number) {
+      return latest.get(source) === ticket;
+    },
+  };
+}
+
 export type ChatInboxItem = {
   kind: "group" | "classmate" | "personal";
   conversationId: string;

@@ -56,7 +56,7 @@ public sealed class AvatarService(IAccountUnitOfWork accounts, SocialConfigurati
         var bytes = AvatarCompressor.Compress(input);
         var revision = Guid.NewGuid();
         var stored = "avatar-" + revision.ToString("N") + ".webp";
-        await uploads.Accept(accounts, token, quotaGroup, stored, bytes, ct);
+        var accepted = await uploads.AcceptTrackedAsync(accounts, token, quotaGroup, stored, bytes, ct);
         try
         {
             await accounts.ExecuteAsync(token, async (context, cancellation) =>
@@ -91,7 +91,7 @@ public sealed class AvatarService(IAccountUnitOfWork accounts, SocialConfigurati
                 }
                 catch (Exception) { /* Preserve the original failure if the account/database is unavailable too. */ }
             }
-            await ledger.Release(accounts, token, bytes.LongLength, quotaGroup, CancellationToken.None);
+            await ledger.ReleaseFailedAsync(accepted.Reservation);
             throw;
         }
         return new(revision.ToString("D"));

@@ -84,6 +84,7 @@ public sealed class ScheduleComposer
             return new DayModel(date, offset, title, subtitle, Array.Empty<LessonRow>(), loc.T(isSunday ? "noLessonsSunday" : "noLessonsDay"), hint, NextStudyDate: nextStudyDate);
         }
 
+        var allHomework = _app.Homework.GetAll();
         var friends = _app.Db.GetFriends().Where(f => f.Enabled).Take(5).ToList();
         var isToday = offset == 0;
         var priority = DayPlanning.PriorityIndex(lessons.Select(x=>new DayInterval(ParseTime(x.TimeStart),ParseTime(x.TimeEnd))).ToArray(),DateOnly.FromDateTime(date),DateOnly.FromDateTime(now),now.TimeOfDay);
@@ -101,9 +102,10 @@ public sealed class ScheduleComposer
             var note = _app.Overrides.GetNote(l.SubjectRaw, l.DayOfWeek);
             var map = _app.Maps.Resolve(l.ClassroomRaw);
             var (roomText, tag, remote) = LessonText.RoomParts(l, map, loc);
-            var next = NextOccurrence.Find(_app.Db, settings, l.SubjectRaw, date);
-            var homework = _app.Homework.GetForSubject(l.SubjectRaw)
-                .Select(h => ToItem(h, settings, now.Date, loc))
+            var next = NextOccurrence.Find(allLessons, choices, settings, l.SubjectRaw, date);
+            var subject = ParityService.NormalizeSubject(l.SubjectRaw);
+            var homework = allHomework.Where(h => ParityService.SameSubject(h.SubjectRawNormalized, subject))
+                .Select(h => ToItem(h, settings, now.Date, loc, allLessons, choices))
                 .OrderBy(h => Order(h.Status))
                 .ToList();
 
@@ -138,10 +140,11 @@ public sealed class ScheduleComposer
 
     /// <summary>The card's status comes from the composer's own clock, not from Core's persisted Status
     /// (Core recomputes it against DateTime.Today, which made the cards drift with the wall clock).</summary>
-    private HomeworkItem ToItem(Homework h, Settings settings, DateTime today, Loc loc)
+    private HomeworkItem ToItem(Homework h, Settings settings, DateTime today, Loc loc,
+        IReadOnlyList<Lesson> allLessons, IReadOnlyDictionary<string, string> choices)
     {
         var until = h.Status != "done" && h.DueDateComputed is { } due && due.Date > today.Date
-            ? HomeworkLabels.LessonsUntil(_app.Db, settings, h.SubjectRawNormalized, today, due)
+            ? HomeworkLabels.LessonsUntil(allLessons, choices, settings, h.SubjectRawNormalized, today, due)
             : 0;
         var status = HomeworkStatus.Compute(h, today, until);
         if (status == "pending") status = "far";

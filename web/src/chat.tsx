@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import * as api from "./api";
-import { chatInboxTime, filterChatInbox, mergeChatInbox, sortChatInbox, unreadChatTotal, type ChatInboxItem } from "./chatInbox";
+import { chatInboxTime, createChatInboxSourceSequence, filterChatInbox, mergeChatInbox, sortChatInbox, unreadChatTotal, type ChatInboxItem } from "./chatInbox";
 import { PeoplePanel } from "./people";
 import { useApp } from "./store";
 import type { GroupHome, SocialHome } from "./types";
 import { emptyChatState } from "./personal-composer";
 import { Avatar } from "./avatar-view";
 import { usePersonalDrafts } from "./personal-composer-context";
+import { startVisibleRefresh } from "./visible-refresh";
 
 function destination(item: ChatInboxItem): string {
   if (item.kind === "personal") return `/chat/person/${encodeURIComponent(item.conversationId)}`;
@@ -32,7 +33,6 @@ function ChatInboxContent() {
   const app = useApp();
   const [rows, setRows] = useState<ChatInboxItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<ChatInboxItem["kind"] | "all">("all");
@@ -44,49 +44,90 @@ function ChatInboxContent() {
   const [retryingSource,setRetryingSource]=useState("");
   const alive=useRef(true);useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const ownerRef = useRef<string | null | undefined>(undefined);
+  const sourceSequence = useRef<ReturnType<typeof createChatInboxSourceSequence> | null>(null);
+  if (!sourceSequence.current) sourceSequence.current = createChatInboxSourceSequence();
   const accountId = app.session?.authenticated ? app.session.user?.userId : null;
+  const error = failedSources.length
+    ? failedSources.some(item=>item.id==="memberships")&&failedSources.some(item=>item.id==="social")
+      ? "Беседы не загрузились. Можно повторить."
+      : "Часть бесед не загрузилась. Можно повторить."
+    : "";
   const visible = filterChatInbox(rows.map(row=>{const draft=drafts.find(draft=>draft.conversationId===row.conversationId);return draft?{...row,preview:`${draft.editing?"Правка":"Черновик"}: ${draft.text}`} : row;}), query, kind, unreadOnly).filter(row=>!draftsOnly||drafts.some(draft=>draft.conversationId===row.conversationId)).sort((a,b)=>unreadFirst?Number(b.unread>0)-Number(a.unread>0):0);
   const unread = unreadChatTotal(rows);
   const filtered = !!query.trim() || kind !== "all" || unreadOnly || draftsOnly;
-  async function retrySource(id:string){if(retryingSource)return;setRetryingSource(id);try{if(id==="memberships"){setRetry(value=>value+1);return;}const fresh=id==="social"?mergeChatInbox([],await api.socialHome()):mergeChatInbox([await api.groupHome(id)],null);if(alive.current){setRows(previous=>sortChatInbox([...previous.filter(row=>id==="social"?row.kind!=="personal":row.communityId!==id),...fresh]));setFailedSources(values=>values.filter(value=>value.id!==id));}}catch{if(alive.current)setError("Этот источник всё ещё недоступен. Сохранённые беседы остаются на экране.");}finally{if(alive.current)setRetryingSource("");}}
+  async function retrySource(id:string){
+    if(retryingSource)return;
+    const source=id==="social"?"social":id==="memberships"?"memberships":`group:${id}`;
+    const ticket=sourceSequence.current!.begin(source);
+    setRetryingSource(id);
+    try{
+      if(id==="memberships"){setRetry(value=>value+1);return;}
+      const fresh=id==="social"?mergeChatInbox([],await api.socialHome()):mergeChatInbox([await api.groupHome(id)],null);
+      if(alive.current&&sourceSequence.current!.isCurrent(source,ticket)){
+        setRows(previous=>sortChatInbox([...previous.filter(row=>id==="social"?row.kind!=="personal":row.communityId!==id),...fresh]));
+        setFailedSources(values=>values.filter(value=>value.id!==id));
+      }
+    }catch{
+      // Keep the last-good rows and the source-level retry banner.
+    }finally{if(alive.current)setRetryingSource("");}
+  }
 
   useEffect(() => {
     if (ownerRef.current !== accountId) {
       ownerRef.current = accountId;
-      setRows([]); setError(""); setQuery(""); setKind("all");
+      setRows([]); setFailedSources([]); setQuery(""); setKind("all");
     }
     if (!accountId) { setRows([]); setLoading(false); return; }
     let stopped = false;
-    let running = false;
     const refresh = async () => {
-      if (running) return;
-      running = true;
+      const sequence = sourceSequence.current!;
+      const membershipTicket = sequence.begin("memberships");
+      const socialTicket = sequence.begin("social");
       const [memberships, social] = await Promise.allSettled([api.communities(), api.socialHome()]);
-      const joined = memberships.status === "fulfilled" ? memberships.value.filter(item => item.role) : [];
+      if (stopped) return;
+      const membershipCurrent = sequence.isCurrent("memberships", membershipTicket);
+      const socialCurrent = sequence.isCurrent("social", socialTicket);
+      const joined = membershipCurrent && memberships.status === "fulfilled" ? memberships.value.filter(item => item.role) : [];
+      const homeTickets = joined.map(item => sequence.begin(`group:${item.communityId}`));
       const homes = await Promise.allSettled(joined.map(item => api.groupHome(item.communityId)));
-      if (!stopped) {
-        const groups: GroupHome[] = homes.flatMap(item => item.status === "fulfilled" ? [item.value] : []);
-        const people: SocialHome | null = social.status === "fulfilled" ? social.value : null;
-        const fresh = mergeChatInbox(groups, people);
-        const failedGroups = new Set(joined.filter((_, index) => homes[index]?.status === "rejected").map(item => item.communityId));
-        setFailedSources([...(memberships.status==="rejected"?[{id:"memberships",name:"Список моих сообществ"}]:[]),...(social.status==="rejected"?[{id:"social",name:"Личные беседы"}]:[]),...joined.filter(item=>failedGroups.has(item.communityId)).map(item=>({id:item.communityId,name:item.name}))]);
-        setRows(previous => sortChatInbox([
-          ...fresh,
-          ...previous.filter(item => item.kind === "personal"
-            ? social.status === "rejected"
-            : memberships.status === "rejected" || !!item.communityId && failedGroups.has(item.communityId)),
-        ]));
-        const missing = memberships.status === "rejected" || social.status === "rejected" || homes.some(item => item.status === "rejected");
-        const allFailed = memberships.status === "rejected" && social.status === "rejected";
-        setError(missing ? allFailed ? "Беседы не загрузились. Можно повторить." : "Часть бесед не загрузилась. Можно повторить." : "");
-        setLoading(false);
-      }
-      running = false;
+      if (stopped) return;
+      const homeCurrent = homeTickets.map((ticket, index) => sequence.isCurrent(`group:${joined[index].communityId}`, ticket));
+      const groups: GroupHome[] = homes.flatMap((item, index) => homeCurrent[index] && item.status === "fulfilled" ? [item.value] : []);
+      const people: SocialHome | null = socialCurrent && social.status === "fulfilled" ? social.value : null;
+      const fresh = mergeChatInbox(groups, people);
+      const preserveGroups = new Set(joined.filter((_, index) => !homeCurrent[index] || homes[index]?.status === "rejected").map(item => item.communityId));
+      const joinedIds = new Set(joined.map(item => item.communityId));
+      setFailedSources(current => {
+        const next = new Map(current.map(item => [item.id, item]));
+        if (membershipCurrent) {
+          if (memberships.status === "rejected") next.set("memberships", { id: "memberships", name: "Список моих сообществ" });
+          else {
+            next.delete("memberships");
+            for (const id of next.keys()) if (id !== "social" && !joinedIds.has(id)) next.delete(id);
+          }
+        }
+        if (socialCurrent) {
+          if (social.status === "rejected") next.set("social", { id: "social", name: "Личные беседы" });
+          else next.delete("social");
+        }
+        joined.forEach((item, index) => {
+          if (!homeCurrent[index]) return;
+          if (homes[index]?.status === "rejected") next.set(item.communityId, { id: item.communityId, name: item.name });
+          else next.delete(item.communityId);
+        });
+        return [...next.values()];
+      });
+      setRows(previous => sortChatInbox([
+        ...fresh,
+        ...previous.filter(item => item.kind === "personal"
+          ? !socialCurrent || social.status === "rejected"
+          : !membershipCurrent || memberships.status === "rejected" || !!item.communityId && joinedIds.has(item.communityId) && preserveGroups.has(item.communityId)),
+      ]));
+      setLoading(false);
     };
     setLoading(true);
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 10_000);
-    return () => { stopped = true; window.clearInterval(timer); };
+    const stopRefresh = startVisibleRefresh(refresh, document, window);
+    return () => { stopped = true; stopRefresh(); };
   }, [accountId, retry]);
 
   if (!accountId) return <section className="page"><div className="card empty">

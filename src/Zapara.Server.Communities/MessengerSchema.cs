@@ -1,4 +1,6 @@
 using Npgsql;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Zapara.Server.Accounts;
 
 namespace Zapara.Server.Communities;
@@ -9,6 +11,8 @@ internal static class MessengerSchema
     {
         await using var connection = data.CreateConnection();
         await connection.OpenAsync(ct);
+        await using (var mode = new NpgsqlCommand("SHOW transaction_read_only", connection))
+            if (await mode.ExecuteScalarAsync(ct) is "on") return;
         await using (var probe = new NpgsqlCommand("SELECT to_regclass(@name)::text", connection))
         {
             probe.Parameters.AddWithValue("name", configuration.Schema + ".communities");
@@ -296,8 +300,24 @@ internal static class MessengerSchema
     }
 }
 
-internal sealed class MessengerSchemaService(AccountsDataSource data, CommunitiesConfiguration configuration) : Microsoft.Extensions.Hosting.IHostedService
+internal sealed class MessengerSchemaService(IServiceProvider services, ILogger<MessengerSchemaService> logger)
+    : RetriedSchemaInitialization(services.GetService<TimeProvider>() ?? TimeProvider.System, logger)
 {
-    public Task StartAsync(CancellationToken cancellationToken) => MessengerSchema.EnsureAsync(data, configuration, cancellationToken);
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    private static readonly IReadOnlyDictionary<string, string> Projections = new Dictionary<string, string>
+    {
+        ["conversations"] = "*", ["conversation_members"] = "*,last_read_no",
+        ["chat_messages"] = "*,message_no,kind,deleted,reply_to,topic_id", ["chat_reactions"] = "*",
+        ["group_topics"] = "*,kind,description,accent,pinned,write_policy,template,category_id,position,subject,archived,revision,access_snapshot",
+        ["group_topic_reads"] = "*", ["group_roles"] = "*,position,icon,revision", ["group_role_grants"] = "*",
+        ["ballots"] = "*,topic_id", ["ballot_options"] = "*", ["ballot_support"] = "*", ["ballot_votes"] = "*",
+        ["group_role_powers"] = "*", ["ballot_effects"] = "*", ["group_categories"] = "*", ["group_topic_access"] = "*",
+        ["group_management_audit"] = "*", ["group_homework_details"] = "*,topic_id,audience",
+        ["group_homework_operations"] = "*", ["group_forms"] = "*", ["group_form_answers"] = "*,response_id",
+        ["group_space_bootstrap"] = "*", ["group_space_state"] = "*"
+    };
+    protected override Task PrepareAsync(CancellationToken ct)
+        => MessengerSchema.EnsureAsync(services.GetRequiredService<AccountsDataSource>(), services.GetRequiredService<CommunitiesConfiguration>(), ct);
+    protected override Task<bool> VerifyAsync(CancellationToken ct)
+        => ModuleSchemaReadiness.CheckAsync(services.GetRequiredService<AccountsDataSource>(),
+            services.GetRequiredService<CommunitiesConfiguration>().MessagesSchema, Projections, ct);
 }

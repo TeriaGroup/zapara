@@ -1,4 +1,6 @@
 using Npgsql;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Zapara.Server.Accounts;
 
 namespace Zapara.Server.Social;
@@ -9,6 +11,8 @@ internal static class SocialSchema
     {
         await using var connection = data.CreateConnection();
         await connection.OpenAsync(ct);
+        await using (var mode = new NpgsqlCommand("SHOW transaction_read_only", connection))
+            if (await mode.ExecuteScalarAsync(ct) is "on") return;
         await using (var probe = new NpgsqlCommand("SELECT to_regclass(@name)::text", connection))
         {
             probe.Parameters.AddWithValue("name", accounts.Schema + ".users");
@@ -119,8 +123,18 @@ internal static class SocialSchema
     }
 }
 
-internal sealed class SocialSchemaService(AccountsDataSource data, AccountsConfiguration accounts) : Microsoft.Extensions.Hosting.IHostedService
+internal sealed class SocialSchemaService(IServiceProvider services, ILogger<SocialSchemaService> logger)
+    : RetriedSchemaInitialization(services.GetService<TimeProvider>() ?? TimeProvider.System, logger)
 {
-    public Task StartAsync(CancellationToken cancellationToken) => SocialSchema.EnsureAsync(data, accounts, cancellationToken);
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    private static readonly IReadOnlyDictionary<string, string> Projections = new Dictionary<string, string>
+    {
+        ["user_avatars"] = "*", ["group_avatars"] = "*", ["codes"] = "*", ["friendships"] = "*",
+        ["conversations"] = "*", ["messages"] = "*,reply_to,edited_at,deleted_at",
+        ["attachments"] = "*,duration_ms", ["reads"] = "*", ["file_purge"] = "*", ["reactions"] = "*"
+    };
+    protected override Task PrepareAsync(CancellationToken ct)
+        => SocialSchema.EnsureAsync(services.GetRequiredService<AccountsDataSource>(), services.GetRequiredService<AccountsConfiguration>(), ct);
+    protected override Task<bool> VerifyAsync(CancellationToken ct)
+        => ModuleSchemaReadiness.CheckAsync(services.GetRequiredService<AccountsDataSource>(),
+            services.GetRequiredService<SocialConfiguration>().Schema, Projections, ct);
 }

@@ -74,7 +74,7 @@ public sealed class SocialService(IAccountUnitOfWork trustedAccounts, SocialConf
     public async Task<SocialMessageResponse> SendDocumentAsync(string token, Guid conversationId, string? fileName, byte[] input, Guid? replyTo = null, CancellationToken ct = default)
     {
         var clean = DocumentPolicy.CleanName(fileName, input.LongLength);
-        var stored = Guid.NewGuid().ToString("N") + Path.GetExtension(clean).ToLowerInvariant();
+        var stored = "social-" + Guid.NewGuid().ToString("N") + Path.GetExtension(clean).ToLowerInvariant();
         return await Keep(token, input.LongLength, null, stored, input, db => db.SendFileAsync(conversationId, "file", stored, clean, DocumentPolicy.ContentType(clean), input.LongLength, null, null, replyTo), ct);
     }
 
@@ -104,12 +104,12 @@ public sealed class SocialService(IAccountUnitOfWork trustedAccounts, SocialConf
     private async Task<T> Keep<T>(string token, long bytes, string? groupId, string stored, byte[] payload, Func<SocialRepository, Task<T>> write, CancellationToken ct)
     {
         _ = bytes;
-        await uploads.Accept(trustedAccounts, token, groupId, stored, payload, ct);
+        var accepted = await uploads.AcceptTrackedAsync(trustedAccounts, token, groupId, stored, payload, ct);
         try { return await Run(token, write, ct); }
         catch
         {
-            try { media.Delete(stored); } catch (SocialException) { }
-            await ledger.Release(trustedAccounts, token, payload.LongLength, groupId, ct);
+            try { media.Delete(stored); } catch (Exception) { /* Preserve publication failure and release the reservation. */ }
+            await ledger.ReleaseFailedAsync(accepted.Reservation);
             throw;
         }
     }

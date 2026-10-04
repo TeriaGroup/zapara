@@ -54,7 +54,6 @@ class ScheduleViewModel(
     private val sharedCache = ru.bgtu_voenmeh.zapara.data.communities.SharedHomeworkCache()
     private val projection = ScheduleProjectionController(mutable)
     private val sharedHomework get() = projection.shared.rows
-    private val sharedCompletion get() = projection.shared.completions
     private data class SharedActionKey(val profile: String, val group: String, val community: String, val id: String)
     private val sharedActions = RequestTokens<SharedActionKey>()
     private var sharedActionEpoch = 0L

@@ -32,7 +32,7 @@ public sealed class AccountsPostgresFixture : IAsyncDisposable
         NpgsqlConnectionStringBuilder builder;
         try { builder = new(raw); }
         catch (ArgumentException) { throw new InvalidOperationException("Unsafe fixture connection."); }
-        if (builder.Database != "zapara_test" || builder.Host is not ("localhost" or "127.0.0.1") || builder.Port != 56432)
+        if (builder.Database != "zapara_test" || builder.Host is not ("localhost" or "127.0.0.1") || builder.Port != TestPostgresTarget.Port)
             throw new InvalidOperationException("Only approved local fixture database is allowed.");
     }
 
@@ -80,8 +80,12 @@ public sealed class AccountsPostgresFixture : IAsyncDisposable
         {
             if (created)
             {
+                if (!System.Text.RegularExpressions.Regex.IsMatch(Schema, "^acc_test_[0-9a-f]{32}$"))
+                    throw new InvalidOperationException("Unowned fixture schema.");
+                var social = Schema + "_social";
+                await ExecuteAsync($"DROP SCHEMA IF EXISTS \"{social}\" CASCADE");
                 await ExecuteAsync($"DROP SCHEMA {QuotedSchema} CASCADE");
-                var count = await ScalarAsync<long>($"SELECT count(*) FROM pg_namespace WHERE nspname='{Schema}'");
+                var count = await ScalarAsync<long>($"SELECT count(*) FROM pg_namespace WHERE nspname IN ('{Schema}','{social}')");
                 receipt($"TEARDOWN {Schema} remaining={count}");
                 Assert.Equal(0, count);
                 created = false;

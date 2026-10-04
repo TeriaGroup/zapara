@@ -32,6 +32,33 @@ test("avatar requests stay on the browser API and carry the account and group gu
   } finally { globalThis.fetch = previous; }
 });
 
+test("homework file uploads carry the current session guards and leave multipart content type to the browser", async () => {
+  const previous = globalThis.fetch;
+  const calls: { url: string; init: RequestInit }[] = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init: init || {} });
+    if (url === "/web-api/session") return Response.json({ authenticated: true, user: { userId: "self" }, csrfToken: "csrf-current", familyId: "family-current" });
+    return Response.json({ name: "upload-id" });
+  };
+  try {
+    await api.session();
+    const form = new FormData();
+    form.append("file", new Blob(["homework"]), "photo.jpg");
+    form.append("groupId", "group-current");
+    await api.uploadHomeworkFile(form);
+    const upload = calls[1];
+    const headers = new Headers(upload.init.headers);
+    assert.equal(upload.url, "/web-api/files");
+    assert.equal(upload.init.method, "POST");
+    assert.equal(upload.init.credentials, "same-origin");
+    assert.equal(headers.get("X-Zapara-Family"), "family-current");
+    assert.equal(headers.get("X-Zapara-CSRF"), "csrf-current");
+    assert.equal(headers.get("Content-Type"), null);
+    assert.equal((upload.init.body as FormData).get("groupId"), "group-current");
+    assert.equal((upload.init.body as FormData).getAll("file").length, 1);
+  } finally { globalThis.fetch = previous; }
+});
+
 test("avatar mutation rejects a captured account after the browser session changes", async () => {
   const previous = globalThis.fetch;
   let calls = 0;

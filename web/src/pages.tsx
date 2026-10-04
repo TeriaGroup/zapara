@@ -1068,7 +1068,7 @@ export function HomeworkPage() {
           const data = new FormData();
           data.append("file", item.blob, item.file.name);
           if (app.groupId) data.append("groupId", app.groupId);
-          const uploaded = await fetch("/web-api/files", { method: "POST", credentials: "same-origin", body: data });
+          const uploaded = await api.uploadHomeworkFile(data);
           checkHomeworkUpload(uploaded);
         },
         share: async (title, body, deadline, destinationTopic, selectedAudience, operationId) => { await api.shareHomework(communityId, title, body, deadline, destinationTopic, selectedAudience, recipients.supported ? operationId : undefined); },

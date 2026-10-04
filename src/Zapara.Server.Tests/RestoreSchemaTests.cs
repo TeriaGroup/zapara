@@ -10,6 +10,10 @@ using Zapara.Server.Timetable;
 
 namespace Zapara.Server.Tests;
 
+[CollectionDefinition("Owned database restore", DisableParallelization = true)]
+public sealed class OwnedDatabaseRestoreCollection;
+
+[Collection("Owned database restore")]
 public sealed class RestoreSchemaTests(ITestOutputHelper output)
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -110,7 +114,7 @@ internal sealed class RestoreFixture : IAsyncDisposable
     private RestoreFixture()
     {
         var builder = new NpgsqlConnectionStringBuilder(Environment.GetEnvironmentVariable("ZAPARA_TEST_POSTGRES"));
-        if (builder.Host != "127.0.0.1" || builder.Port != 56432 || builder.Database != "zapara_test") throw new InvalidOperationException("Only the approved local fixture is allowed.");
+        if (builder.Host != "127.0.0.1" || builder.Port != TestPostgresTarget.Port || builder.Database != "zapara_test") throw new InvalidOperationException("Only the approved local fixture is allowed.");
         databaseUser = builder.Username ?? throw new InvalidOperationException("Fixture PostgreSQL username required.");
         builder.Database = "postgres"; builder.Pooling = false; builder.IncludeErrorDetail = false;
         control = builder.ConnectionString;

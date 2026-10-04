@@ -22,7 +22,7 @@ public sealed class PostgresFixture : IAsyncDisposable
         var raw = Environment.GetEnvironmentVariable("ZAPARA_TEST_POSTGRES");
         if (string.IsNullOrWhiteSpace(raw)) throw new InvalidOperationException("ZAPARA_TEST_POSTGRES is required (no skips).");
         var builder = new NpgsqlConnectionStringBuilder(raw);
-        if (builder.Database != "zapara_test" || builder.Host is not ("127.0.0.1" or "localhost") || builder.Port != 56432)
+        if (builder.Database != "zapara_test" || builder.Host is not ("127.0.0.1" or "localhost") || builder.Port != TestPostgresTarget.Port)
             throw new InvalidOperationException("Only the approved local test database is allowed.");
         Configuration = TimetableConfiguration.FromConfiguration(new ConfigurationBuilder().AddInMemoryCollection(
             new Dictionary<string, string?> { ["ConnectionStrings:Timetable"] = raw, ["Timetable:Schema"] = Schema }).Build());

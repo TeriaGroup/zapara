@@ -29,7 +29,7 @@ public sealed class SupportStore(AccountsDataSource data, IConfiguration configu
         }
         catch
         {
-            await Undo(stored, token, ct);
+            await Undo(stored);
             throw;
         }
         Keep(messageId, cleanBody);
@@ -43,11 +43,11 @@ public sealed class SupportStore(AccountsDataSource data, IConfiguration configu
         var batch = files ?? [];
         SupportFiles.CheckCounts(batch);
         var stored = await KeepFiles(batch, token, ct);
-        await using var connection = await Open(ct);
         var schema = OperatorSettings.Schema(configuration);
         var messageId = Guid.NewGuid();
         try
         {
+            await using var connection = await Open(ct);
             await using var tx = await connection.BeginTransactionAsync(ct);
             await using var command = new NpgsqlCommand($"""
                 INSERT INTO {schema}.support_messages(message_id, thread_id, author, body, created_at)
@@ -64,7 +64,7 @@ public sealed class SupportStore(AccountsDataSource data, IConfiguration configu
         }
         catch
         {
-            await Undo(stored, token, ct);
+            await Undo(stored);
             throw;
         }
         Keep(messageId, clean);
@@ -166,9 +166,9 @@ public sealed class SupportStore(AccountsDataSource data, IConfiguration configu
         return connection;
     }
 
-    private async Task<List<(Guid Id, string Key, byte[] Bytes, SupportFile File)>> KeepFiles(IReadOnlyList<SupportFile> files, string? token, CancellationToken ct)
+    private async Task<List<(Guid Id, string Key, byte[] Bytes, SupportFile File, QuotaReservation Reservation)>> KeepFiles(IReadOnlyList<SupportFile> files, string? token, CancellationToken ct)
     {
-        var stored = new List<(Guid Id, string Key, byte[] Bytes, SupportFile File)>();
+        var stored = new List<(Guid Id, string Key, byte[] Bytes, SupportFile File, QuotaReservation Reservation)>();
         if (files.Count == 0) return stored;
         if (uploads is null || ledger is null || accounts is null || string.IsNullOrEmpty(token))
             throw new SocialException(503, "storage_unavailable");
@@ -178,35 +178,33 @@ public sealed class SupportStore(AccountsDataSource data, IConfiguration configu
             {
                 var id = Guid.NewGuid();
                 var key = ContentNames.SupportFile(id);
-                byte[] kept;
-                try { kept = await uploads.Accept(accounts, token, null, key, file.Bytes, ct); }
-                catch (Exception ex) when (ex is not SocialException)
+                StoredUpload kept;
+                try { kept = await uploads.AcceptTrackedAsync(accounts, token, null, key, file.Bytes, ct); }
+                catch (Exception ex) when (ex is not (SocialException or OperationCanceledException))
                 {
                     throw new SocialException(503, "storage_unavailable");
                 }
-                stored.Add((id, key, kept, file));
+                stored.Add((id, key, kept.Bytes, file, kept.Reservation));
             }
         }
         catch
         {
-            await Undo(stored, token, ct);
+            await Undo(stored);
             throw;
         }
         return stored;
     }
 
-    private async Task Undo(IReadOnlyList<(Guid Id, string Key, byte[] Bytes, SupportFile File)> stored, string? token, CancellationToken ct)
+    private async Task Undo(IReadOnlyList<(Guid Id, string Key, byte[] Bytes, SupportFile File, QuotaReservation Reservation)> stored)
     {
         foreach (var item in stored)
         {
             try { objects.Delete(item.Key); } catch (Exception) { /* The quota release still runs. */ }
-            if (ledger is null || accounts is null || string.IsNullOrEmpty(token)) continue;
-            try { await ledger.Release(accounts, token, item.Bytes.LongLength, null, ct); }
-            catch (Exception) { /* A failed release leaves the counter high rather than dropping a later upload. */ }
+            if (ledger is not null) await ledger.ReleaseFailedAsync(item.Reservation);
         }
     }
 
-    private static IReadOnlyList<SupportAttachment> Names(IReadOnlyList<(Guid Id, string Key, byte[] Bytes, SupportFile File)> stored)
+    private static IReadOnlyList<SupportAttachment> Names(IReadOnlyList<(Guid Id, string Key, byte[] Bytes, SupportFile File, QuotaReservation Reservation)> stored)
         => stored.Select(item => new SupportAttachment(item.Id, item.File.Kind, item.File.Name)).ToArray();
 
     private void Keep(Guid messageId, string body)
@@ -231,7 +229,7 @@ public sealed class SupportStore(AccountsDataSource data, IConfiguration configu
         catch (Exception) { return fallback; }
     }
 
-    private async Task Insert(NpgsqlConnection connection, SupportTicket ticket, Guid messageId, IReadOnlyList<(Guid Id, string Key, byte[] Bytes, SupportFile File)> files, CancellationToken ct)
+    private async Task Insert(NpgsqlConnection connection, SupportTicket ticket, Guid messageId, IReadOnlyList<(Guid Id, string Key, byte[] Bytes, SupportFile File, QuotaReservation Reservation)> files, CancellationToken ct)
     {
         var schema = OperatorSettings.Schema(configuration);
         await using var tx = await connection.BeginTransactionAsync(ct);
@@ -251,7 +249,7 @@ public sealed class SupportStore(AccountsDataSource data, IConfiguration configu
         await tx.CommitAsync(ct);
     }
 
-    private async Task InsertFiles(NpgsqlConnection connection, NpgsqlTransaction tx, Guid messageId, IReadOnlyList<(Guid Id, string Key, byte[] Bytes, SupportFile File)> files, CancellationToken ct)
+    private async Task InsertFiles(NpgsqlConnection connection, NpgsqlTransaction tx, Guid messageId, IReadOnlyList<(Guid Id, string Key, byte[] Bytes, SupportFile File, QuotaReservation Reservation)> files, CancellationToken ct)
     {
         var schema = OperatorSettings.Schema(configuration);
         foreach (var file in files)

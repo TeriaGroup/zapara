@@ -56,7 +56,10 @@ public class Program
             options.KnownProxies.Clear();
         });
         var app = builder.Build();
-        app.UseForwardedHeaders();
+        // A forwarding chain requires an actual transport peer. Header-only requests
+        // must not manufacture an address and select a fresh rate-limit partition.
+        app.UseWhen(context => context.Connection.RemoteIpAddress is not null,
+            forwarded => forwarded.UseForwardedHeaders());
         app.UseExceptionHandler(handler => handler.Run(context =>
         {
             var error = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
@@ -123,7 +126,9 @@ public class Program
             ct => ProbeNamespaceAsync(services, ct, sp => sp.GetRequiredService<CommunitiesConfiguration>().Schema,
                 (sp, connection, tx, token) => new CommunitiesMigrations(sp.GetRequiredService<AccountsDataSource>(), sp.GetRequiredService<CommunitiesConfiguration>()).VerifyCurrentPreparedSchemaAsync(connection, tx, token)),
             ct => ProbeNamespaceAsync(services, ct, sp => sp.GetRequiredService<AdminConfiguration>().Schema,
-                (sp, connection, tx, token) => new AdminMigrations(sp.GetRequiredService<AccountsDataSource>(), sp.GetRequiredService<AdminConfiguration>()).VerifyCurrentPreparedSchemaAsync(connection, tx, token)));
+                (sp, connection, tx, token) => new AdminMigrations(sp.GetRequiredService<AccountsDataSource>(), sp.GetRequiredService<AdminConfiguration>()).VerifyCurrentPreparedSchemaAsync(connection, tx, token)),
+            ct => ProbeSafelyAsync(token => SocialRegistration.IsReadyAsync(services, token), ct),
+            ct => ProbeSafelyAsync(token => CommunitiesRegistration.IsMessengerReadyAsync(services, token), ct));
 
     private static async Task<IResult> PlatformAsync(HttpContext context) =>
         PlatformReady.ToResult(await context.RequestServices.GetRequiredService<PlatformReady>()

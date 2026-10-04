@@ -126,6 +126,7 @@ public sealed partial class AppServices : IDisposable
             Refresher?.Dispose();
             NotificationScheduler?.Dispose();
             LanSync?.Dispose();
+            AutoUpdate?.Dispose();
             Microsoft.Data.Sqlite.SqliteConnection.ClearPool(Db.Connection);
             Db.Dispose();
             CoreGate.Dispose();
@@ -162,6 +163,7 @@ public sealed partial class AppServices : IDisposable
         Refresher.Dispose();
         NotificationScheduler.Dispose();
         LanSync.Dispose();
+        AutoUpdate.Dispose();
         // Take the gate before the SQLite connection goes: a gated Core call caught mid-query used to fault
         // inside SqliteConnection.Dispose. The gate is deliberately NOT released — disposal follows it, and
         // callers queued behind it land on the ObjectDisposedException path in ViewModelBase.GatedAsync.

@@ -7,7 +7,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -99,7 +98,7 @@ class LearningScreensVisualTest {
         var composedScale = Float.NaN
         current.scenario.onActivity { activity ->
             activity.setContent {
-                val copy = remember { AndroidUiCopy(activity) }
+                val copy = AndroidUiCopy(activity)
                 val actualScale = LocalDensity.current.fontScale
                 SideEffect { composedScale = actualScale }
                 ZaparaTheme(ThemeChoice.Light, MotionSettings.Off) {

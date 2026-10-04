@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Npgsql;
 using Zapara.Server.Accounts;
 using Zapara.Server.Communities;
 using Zapara.Server.Social;
@@ -192,14 +193,42 @@ public static class SupportEndpoints
         return Results.Json(new { name, bytes = stored.LongLength });
     }
 
-    private static IResult ReadFile(HttpContext context, string name)
+    private static async Task<IResult> ReadFile(HttpContext context, string name)
     {
+        context.Response.Headers.CacheControl = "private, no-store";
+        var id = name.StartsWith("hwf", StringComparison.Ordinal) ? name[3..] : name;
+        if (id.Length != 36 || !id.EndsWith(".bin", StringComparison.Ordinal)
+            || !Guid.TryParseExact(id[..32], "N", out var parsed) || parsed.ToString("N") != id[..32])
+            return Results.NotFound();
+        if (!name.StartsWith("hwf", StringComparison.Ordinal))
+        {
+            // Older private documents shared the generic .bin name shape. Their existing
+            // metadata (including pending deletion) remains authoritative until removed.
+            var data = context.RequestServices.GetRequiredService<AccountsDataSource>();
+            var social = context.RequestServices.GetRequiredService<SocialConfiguration>().QuotedSchema;
+            try
+            {
+                await using var connection = data.CreateConnection();
+                await connection.OpenAsync(context.RequestAborted);
+                await using var command = new NpgsqlCommand($"""
+                    SELECT EXISTS(SELECT 1 FROM {social}.attachments WHERE stored_name=@name)
+                        OR EXISTS(SELECT 1 FROM {social}.file_purge WHERE stored_name=@name)
+                    """, connection);
+                command.Parameters.AddWithValue("name", name);
+                if (await command.ExecuteScalarAsync(context.RequestAborted) is true) return Results.NotFound();
+            }
+            catch (Exception error) when (error is NpgsqlException or TimeoutException)
+            {
+                throw new SocialException(503, "storage_unavailable");
+            }
+        }
         var bytes = context.RequestServices.GetRequiredService<IObjectStore>().Get(name);
         return bytes is null ? Results.NotFound() : Results.Bytes(bytes, "application/octet-stream");
     }
 
     private static async Task<Contracts.Accounts.MeResponse> Me(HttpContext context, string token)
     {
+        context.Response.Headers.CacheControl = "private, no-store";
         context.Items["support-token"] = token;
         return await context.RequestServices.GetRequiredService<AccountService>().GetMeAsync(token, context.RequestAborted);
     }
@@ -213,7 +242,15 @@ public static class SupportEndpoints
 
     private static async Task<string> WebToken(HttpContext context, bool bootstrap = false)
     {
+        context.Response.Headers.CacheControl = "private, no-store";
+        context.Response.Headers["Referrer-Policy"] = "no-referrer";
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
         var store = context.RequestServices.GetService<WebSessionStore>() ?? throw new AccountServiceException(AccountFailure.InvalidSession);
+        if (!HttpMethods.IsGet(context.Request.Method))
+            context.RequestServices.GetRequiredService<WebBrowserState>().Validate(context);
+        else if (context.Request.Headers["Sec-Fetch-Site"].ToString() is "cross-site" or "same-site"
+            || (context.Request.Headers.ContainsKey("Origin") && !WebConfiguration.SameOrigin(context.Request)))
+            throw new WebRequestException(403, "csrf_invalid");
         return await store.UseAsync(context, token => Task.FromResult(token), bootstrap);
     }
 

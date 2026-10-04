@@ -375,6 +375,10 @@ export function deleteTopic(id: string, topicId: string) {
   return send<GroupTopicPage>("POST", `/web-api/communities/${id}/topics/${topicId}/delete?typed=1`, undefined, true);
 }
 
+export function uploadHomeworkFile(body: FormData) {
+  return fetch("/web-api/files", { method: "POST", credentials: "same-origin", headers: authHeaders(), body });
+}
+
 export function markRead(id: string, throughMessageId?: string) {
   return throughMessageId
     ? send("POST", `/web-api/communities/conversations/${id}/read`, { throughMessageId })

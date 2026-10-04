@@ -42,7 +42,8 @@ public class LecturerService
             var bytes = await http.GetByteArrayAsync(url);
             var xml = ParserService.DecodeXml(bytes);
             if (TimetableParser.IsHtml(xml)) throw new InvalidOperationException(TimetableParser.NotTimetable);
-            try { Directory.CreateDirectory(Path.GetDirectoryName(CachePath)!); await File.WriteAllTextAsync(CachePath, xml, Encoding.UTF8); } catch {}
+            ValidateXml(xml);
+            await SaveCacheAsync(xml);
             return (xml, false);
         }
         catch
@@ -52,6 +53,37 @@ public class LecturerService
                 try { var cached = await File.ReadAllTextAsync(CachePath, Encoding.UTF8); return (cached, true); } catch {}
             }
             throw;
+        }
+    }
+
+    private static void ValidateXml(string xml)
+    {
+        using var reader = XmlReader.Create(new StringReader(xml), new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null
+        });
+        if (reader.MoveToContent() != XmlNodeType.Element || reader.Name != "Timetable")
+            throw new XmlException("Получен файл без расписания преподавателей.");
+        while (reader.Read()) { }
+    }
+
+    private async Task SaveCacheAsync(string xml)
+    {
+        string? temporary = null;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(CachePath))!);
+            temporary = CachePath + "." + Guid.NewGuid().ToString("N") + ".part";
+            await File.WriteAllTextAsync(temporary, xml, Encoding.UTF8);
+            File.Move(temporary, CachePath, overwrite: true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        finally
+        {
+            if (temporary is not null)
+                try { File.Delete(temporary); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
         }
     }
 
@@ -114,44 +146,4 @@ public class LecturerService
         _lessons = parsed.Lessons;
     }
 
-    public List<LecturerInfo> Search(string query, bool onlyMyTeachers = false, HashSet<string>? myTeacherIds = null)
-    {
-        if (string.IsNullOrWhiteSpace(query)) return onlyMyTeachers && myTeacherIds != null ? _lecturers.Where(l => myTeacherIds.Contains(l.Id) || myTeacherIds.Contains(l.Name)).ToList() : _lecturers.Take(100).ToList();
-        var q = query.Trim().ToLowerInvariant();
-        var res = _lecturers.Where(l =>
-            l.Name.ToLowerInvariant().Contains(q) ||
-            l.Id.Contains(q) ||
-            (l.Kafedra != null && l.Kafedra.ToLowerInvariant().Contains(q))
-        );
-        if (onlyMyTeachers && myTeacherIds != null)
-            res = res.Where(l => myTeacherIds.Contains(l.Id) || myTeacherIds.Contains(l.Name) || myTeacherIds.Any(id => l.Name.Contains(id)));
-        return res.OrderBy(l => l.Name).Take(100).ToList();
-    }
-
-    public List<LecturerLesson> GetLessonsForLecturer(string lecturerIdOrName)
-    {
-        return _lessons.Where(l => l.LecturerId == lecturerIdOrName || l.LecturerName.Equals(lecturerIdOrName, StringComparison.OrdinalIgnoreCase)).OrderBy(l => l.DayOfWeek).ThenBy(l => l.Parity).ThenBy(l => l.TimeStart).ToList();
-    }
-
-    public HashSet<string> GetMyTeacherIds(string groupId, Database db)
-    {
-        var set = new HashSet<string>();
-        try
-        {
-            var lessons = db.GetAllLessonsForGroup(groupId);
-            foreach (var l in lessons)
-            {
-                if (string.IsNullOrWhiteSpace(l.TeacherRaw)) continue;
-                var teachers = l.TeacherRaw.Split(';').Select(t => t.Trim()).Where(t => !string.IsNullOrEmpty(t));
-                foreach (var t in teachers)
-                {
-                    var match = _lecturers.FirstOrDefault(li => li.Name.Contains(t.Split(' ')[0]) || t.Contains(li.Name.Split(' ')[0]));
-                    if (match != null) set.Add(match.Id);
-                    set.Add(t); // also add ShortName itself for fallback
-                }
-            }
-        }
-        catch {}
-        return set;
-    }
 }

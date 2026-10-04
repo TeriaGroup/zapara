@@ -220,12 +220,14 @@ public sealed partial class FriendsViewModel : ViewModelBase
                 if (!TimeSpan.TryParse(l.TimeStart, out var start)) continue;
                 var end = TimeSpan.TryParse(l.TimeEnd, out var parsedEnd) ? parsedEnd : start.Add(TimeSpan.FromMinutes(95));
                 if (i == 0 && end <= now.TimeOfDay) continue;
-                var marks = FriendMarks.Compute(App.Intersections, l, date, friends, settings, loc);
+                IReadOnlyList<IntersectionService.IntersectionResult> hits = usable.Count == 0
+                    ? Array.Empty<IntersectionService.IntersectionResult>()
+                    : App.Intersections.GetIntersections(l, date, usable, strictness: 0);
+                var marks = FriendMarks.Compute(usable, hits, settings, loc);
                 var name = LessonText.StripType(App.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw);
                 var line = $"{loc.I18n.FormatDay(date)} {DayTitles.ShortDate(date, loc)} · {l.TimeStart} · {name}";
                 if (marks.Count > 0) fallback ??= (line, marks);
                 if (usable.Count == 0) continue;
-                var hits = App.Intersections.GetIntersections(l, date, usable, strictness: 0);
                 foreach (var friend in usable)
                 {
                     var best = hits.Where(hit => hit.FriendGroupName == friend.GroupName).OrderByDescending(hit => hit.Score).FirstOrDefault();

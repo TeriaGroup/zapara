@@ -492,7 +492,7 @@ private fun QuickChannels(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
     val c = Zapara.colors
     val real = state.channels.filter { it.kind == "chat" || it.topicId != null }
     if (real.isEmpty()) return
-        LazyRow(Modifier.fillMaxWidth().testTag("Group.QuickChannels"),
+    LazyRow(Modifier.fillMaxWidth().testTag("Group.QuickChannels"),
             horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
             item(key = "all-channels") {
                 ZButton(stringResource(R.string.chat_design_all_channels), { onEvent(GroupEvent.Channels) },
@@ -1756,7 +1756,7 @@ private fun MessageBubble(message: GroupMessageUi, replyPreview: String?, mediaL
         }
     }
     @Composable fun MessageActions() {
-    val uiText = rememberUiText()
+        val uiText = rememberUiText()
         Box {
             IconButton(onClick = { menu = true }, modifier = Modifier.size(Zapara.space.minTouch)
                 .testTag("Group.MessageActions.${message.id}")) {

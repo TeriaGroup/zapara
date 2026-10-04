@@ -126,10 +126,14 @@ public sealed class PlatformPreparedReadinessTests(ITestOutputHelper output)
         try
         {
             await new SyncMigrations(admin.Accounts.DataSource, SyncPostgresFixture.Options(syncSchema, admin.Accounts.Schema)).EnsureAsync(Ct);
+            // Prepare optional chat modules through a separate writable host. The
+            // runtime readiness host below must never perform this preparation.
+            await using (var prepared = new WebAccountHost(admin.Accounts, moduleSettings: new()
+            { ["Communities:Enabled"] = "true", ["Communities:Schema"] = admin.Communities.Schema })) { }
             var before = await ApiTestFactory.DatabaseStateAsync(timetable);
             await using var host = Host(timetable.Schema, admin.Accounts.Schema, syncSchema, admin.Communities.Schema, admin.Schema);
             using var client = host.CreateClient();
-            foreach (var module in new[] { "timetable", "accounts", "sync", "communities", "admin" })
+            foreach (var module in new[] { "timetable", "accounts", "sync", "communities", "admin", "social", "messenger" })
                 await AssertModule(client, module, "present", HttpStatusCode.OK);
             Assert.Equal(before, await ApiTestFactory.DatabaseStateAsync(timetable));
         }

@@ -23,6 +23,7 @@ import ru.bgtu_voenmeh.zapara.data.db.SettingsDao
 import ru.bgtu_voenmeh.zapara.data.db.SettingsEntity
 import ru.bgtu_voenmeh.zapara.data.db.ZaparaDatabase
 import ru.bgtu_voenmeh.zapara.data.api.TimetableSource
+import ru.bgtu_voenmeh.zapara.data.api.StaleTimetableSelection
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileDescriptor
 import ru.bgtu_voenmeh.zapara.data.profiles.ProfileWork
 import ru.bgtu_voenmeh.zapara.data.sync.FriendValue
@@ -373,14 +374,16 @@ class ScheduleRepository private constructor(
         try {
             ticket?.throwIfStale()
             TimetableSource.guardXmlRefresh(store, settings())
-            val parsed = try {
-                voenmeh.fetchSchedule(neededGroupNames())
+            val selectedBefore = settings().myGroupId
+            val (parsed, fetchedNames) = try {
+                val names = neededGroupNames()
+                voenmeh.fetchSchedule(names) to names
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                GroupParser.parse(fetch(url))
+                GroupParser.parse(fetch(url)) to null
             }
-            ingestParsed(parsed, parsed.groups.firstOrNull()?.url ?: url)
+            ingestParsed(parsed, parsed.groups.firstOrNull()?.url ?: url, fetchedNames, selectedBefore)
         } finally {
             ticket?.close()
         }
@@ -400,13 +403,16 @@ class ScheduleRepository private constructor(
         return names.toList()
     }
 
-    private fun ingestParsed(parsed: ParsedSchedule, url: String) {
+    private fun ingestParsed(parsed: ParsedSchedule, url: String, fetchedNames: List<String>? = null,
+                             expectedGroupId: String? = null) {
         val s = settings()
         if (TimetablePayload.isOlderPeriod(parsed.periodStart, s.periodStart, s.lastFetchedAt)) {
             throw IllegalStateException(TimetablePayload.OLDER)
         }
         val now = java.time.OffsetDateTime.now().toString()
         db.runInTransaction {
+            if (fetchedNames != null && (settings().myGroupId != expectedGroupId ||
+                    neededGroupNames().toSet() != fetchedNames.toSet())) throw StaleTimetableSelection()
             val existing = db.groupDao().getAll().associateBy { it.name }
             val idByIncoming = parsed.groups.associate { g ->
                 g.id to (existing[g.name]?.id ?: g.id)
@@ -416,10 +422,13 @@ class ScheduleRepository private constructor(
                 db.groupDao().upsert(GroupEntity(id, g.name, g.url.ifBlank { url }))
             }
             val byGroup = parsed.lessons.groupBy { it.groupId }
-            for ((gid, list) in byGroup) {
-                val storedId = idByIncoming[gid] ?: gid
+            val refreshedGroups = if (fetchedNames == null) parsed.groups else parsed.groups.filter { group ->
+                fetchedNames.any { it.equals(group.name, ignoreCase = true) }
+            }
+            for (group in refreshedGroups) {
+                val storedId = idByIncoming.getValue(group.id)
                 db.lessonDao().clearForGroup(storedId)
-                list.map { it.copy(groupId = storedId).toEntity() }.chunked(200).forEach { chunk ->
+                byGroup[group.id].orEmpty().map { it.copy(groupId = storedId).toEntity() }.chunked(200).forEach { chunk ->
                     db.lessonDao().insertAll(chunk)
                 }
             }

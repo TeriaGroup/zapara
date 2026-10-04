@@ -1,12 +1,15 @@
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Zapara.Contracts.Communities;
 using Zapara.Server.Accounts;
 
 namespace Zapara.Server.Communities;
 
-internal sealed class SystemBallotService(AccountsDataSource data, CommunitiesConfiguration configuration, IHostEnvironment environment) : BackgroundService
+internal sealed class SystemBallotService(IServiceProvider services, IHostEnvironment environment) : BackgroundService
 {
+    private AccountsDataSource data => services.GetRequiredService<AccountsDataSource>();
+    private CommunitiesConfiguration configuration => services.GetRequiredService<CommunitiesConfiguration>();
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (environment.IsEnvironment("Testing")) return;

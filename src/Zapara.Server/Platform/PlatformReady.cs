@@ -15,7 +15,7 @@ public sealed class PlatformReady
     public const string Missing = "missing";
     public const string Disabled = "disabled";
 
-    private static readonly string[] Names = ["timetable", "accounts", "sync", "communities", "admin"];
+    private static readonly string[] Names = ["timetable", "accounts", "sync", "communities", "admin", "social", "messenger"];
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly Func<CancellationToken, Task<string>> timetable;
@@ -23,19 +23,25 @@ public sealed class PlatformReady
     private readonly Func<CancellationToken, Task<string>> sync;
     private readonly Func<CancellationToken, Task<string>> communities;
     private readonly Func<CancellationToken, Task<string>> admin;
+    private readonly Func<CancellationToken, Task<string>>? social;
+    private readonly Func<CancellationToken, Task<string>>? messenger;
 
     public PlatformReady(
         Func<CancellationToken, Task<string>> timetable,
         Func<CancellationToken, Task<string>> accounts,
         Func<CancellationToken, Task<string>> sync,
         Func<CancellationToken, Task<string>> communities,
-        Func<CancellationToken, Task<string>> admin)
+        Func<CancellationToken, Task<string>> admin,
+        Func<CancellationToken, Task<string>>? social = null,
+        Func<CancellationToken, Task<string>>? messenger = null)
     {
         this.timetable = timetable ?? throw new ArgumentNullException(nameof(timetable));
         this.accounts = accounts ?? throw new ArgumentNullException(nameof(accounts));
         this.sync = sync ?? throw new ArgumentNullException(nameof(sync));
         this.communities = communities ?? throw new ArgumentNullException(nameof(communities));
         this.admin = admin ?? throw new ArgumentNullException(nameof(admin));
+        this.social = social;
+        this.messenger = messenger;
     }
 
     public static PlatformReady FromConfiguration(
@@ -44,7 +50,9 @@ public sealed class PlatformReady
         Func<CancellationToken, Task<bool>> accounts,
         Func<CancellationToken, Task<bool>> sync,
         Func<CancellationToken, Task<bool>> communities,
-        Func<CancellationToken, Task<bool>> admin)
+        Func<CancellationToken, Task<bool>> admin,
+        Func<CancellationToken, Task<bool>>? social = null,
+        Func<CancellationToken, Task<bool>>? messenger = null)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(timetable);
@@ -64,13 +72,15 @@ public sealed class PlatformReady
             ct => Map(accounts, accountsEnabled, ct),
             ct => Map(sync, syncEnabled, ct),
             ct => Map(communities, communitiesEnabled, ct),
-            ct => Map(admin, adminEnabled, ct));
+            ct => Map(admin, adminEnabled, ct),
+            social is null ? null : ct => Map(social, accountsEnabled, ct),
+            messenger is null ? null : ct => Map(messenger, communitiesEnabled, ct));
     }
 
     public async Task<PlatformReadyReport> CheckAsync(CancellationToken cancellationToken = default)
     {
         var modules = new Dictionary<string, string>(StringComparer.Ordinal);
-        var probes = new (string Name, Func<CancellationToken, Task<string>> Probe)[]
+        var probes = new List<(string Name, Func<CancellationToken, Task<string>> Probe)>
                  {
                      ("timetable", timetable),
                      ("accounts", accounts),
@@ -78,9 +88,11 @@ public sealed class PlatformReady
                      ("communities", communities),
                      ("admin", admin)
                  };
+        if (social is not null) probes.Add(("social", social));
+        if (messenger is not null) probes.Add(("messenger", messenger));
         cancellationToken.ThrowIfCancellationRequested();
         var values = await Task.WhenAll(probes.Select(async probe => Normalize(await probe.Probe(cancellationToken))));
-        for (var index = 0; index < probes.Length; index++) modules[probes[index].Name] = values[index];
+        for (var index = 0; index < probes.Count; index++) modules[probes[index].Name] = values[index];
 
         return new PlatformReadyReport(new ReadOnlyDictionary<string, string>(modules));
     }
@@ -88,7 +100,7 @@ public sealed class PlatformReady
     public static IResult ToResult(PlatformReadyReport report)
     {
         ArgumentNullException.ThrowIfNull(report);
-        var modules = Names.ToDictionary(name => name, name => report.Modules[name], StringComparer.Ordinal);
+        var modules = Names.Where(report.Modules.ContainsKey).ToDictionary(name => name, name => report.Modules[name], StringComparer.Ordinal);
         if (report.IsReady)
             return new FrozenJson(JsonSerializer.Serialize(new { status = "ready", modules }, Json), 200, "application/json");
         return new FrozenJson(

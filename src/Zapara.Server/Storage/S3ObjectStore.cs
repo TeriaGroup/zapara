@@ -7,15 +7,17 @@ namespace Zapara.Server.Storage;
 
 public sealed record S3Target(string Endpoint, string Region, string Bucket, string AccessKey, string Secret);
 
-public sealed class S3ObjectStore : IObjectStore
+public sealed class S3ObjectStore : IObjectStore, IDisposable
 {
     private readonly S3Target target;
     private readonly HttpClient http;
+    private readonly bool ownsHttp;
 
     public S3ObjectStore(S3Target target, HttpClient? http = null)
     {
         this.target = target;
-        this.http = http ?? new HttpClient();
+        this.http = http ?? CreateClient();
+        ownsHttp = http is null;
     }
 
     public void Put(string key, byte[] bytes) => Send(HttpMethod.Put, key, bytes);
@@ -51,12 +53,22 @@ public sealed class S3ObjectStore : IObjectStore
         if (body is not null) request.Content = new ByteArrayContent(body);
         using var response = http.Send(request);
         if (method == HttpMethod.Get && response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
-        if (!response.IsSuccessStatusCode) throw new InvalidOperationException("Хранилище S3 не приняло файл.");
+        if (!response.IsSuccessStatusCode) throw new HttpRequestException("Хранилище S3 не приняло файл.", null, response.StatusCode);
         return method == HttpMethod.Get ? response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult() : null;
     }
 
     public static string SignedHost(Uri endpoint)
         => endpoint.IsDefaultPort ? endpoint.Host : endpoint.Host + ":" + endpoint.Port.ToString(CultureInfo.InvariantCulture);
+
+    internal static HttpClient CreateClient() => new(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5)
+    });
+
+    public void Dispose()
+    {
+        if (ownsHttp) http.Dispose();
+    }
 
     private static byte[] Hmac(byte[] key, string data)
     {

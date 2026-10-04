@@ -107,7 +107,7 @@ public sealed class GroupReviewRegressionTests
     }
     [AvaloniaFact] public async Task Late_schedule_projection_cannot_apply_to_a_different_community()
     {
-        using var f=new GroupSpaceViewModelTests.Fixture("schedule","schedule");var other=Guid.NewGuid();var otherTopic=Guid.NewGuid();var otherChat=Guid.NewGuid();var day=(int)DateTime.Today.DayOfWeek;if(day==0)day=7;
+        using var f=new GroupSpaceViewModelTests.Fixture("schedule","schedule");var other=Guid.NewGuid();var otherTopic=Guid.NewGuid();var otherChat=Guid.NewGuid();var selectedDay=new DateTime(2026,9,28);var day=(int)selectedDay.DayOfWeek;f.Vm.ChannelScheduleDate=selectedDay;
         foreach(var (id,name) in new[]{("a","Группа А"),("b","Группа Б")}){f.Services.Db.UpsertGroup(new(){Id=id,Name=name});f.Services.Db.InsertLesson(new(){GroupId=id,DayOfWeek=day,Parity=0,Index=1,TimeStart="09:00",TimeEnd="10:35",SubjectRaw="Предмет "+id.ToUpperInvariant(),SubjectNormalized="предмет "+id,TeacherRaw="Иванов",ClassroomRaw="100"});}
         var desk=new GroupDeskResponse(false,[],[],[],[],[]);
         f.Intercept=(request,ct)=>

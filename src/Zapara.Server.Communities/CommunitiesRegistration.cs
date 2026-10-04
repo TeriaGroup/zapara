@@ -24,7 +24,8 @@ public static class CommunitiesRegistration
         });
         services.AddSingleton<IAccountUnitOfWork>(provider => provider.GetRequiredService<AccountService>());
         services.AddSingleton<CommunityService>();
-        services.AddHostedService<MessengerSchemaService>();
+        services.AddSingleton<MessengerSchemaService>();
+        services.AddHostedService(provider => provider.GetRequiredService<MessengerSchemaService>());
         services.AddHostedService<SystemBallotService>();
         services.AddSingleton<IAccountLifecycleParticipant, CommunityLifecycleParticipant>();
         return services;
@@ -35,4 +36,7 @@ public static class CommunitiesRegistration
         if (CommunitiesConfiguration.IsEnabled(app.Configuration)) CommunityEndpoints.Map(app);
         return app;
     }
+
+    public static Task<bool> IsMessengerReadyAsync(IServiceProvider services, CancellationToken ct)
+        => services.GetRequiredService<MessengerSchemaService>().IsReadyAsync(ct);
 }

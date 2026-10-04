@@ -16,6 +16,8 @@ public sealed class AccountLifecycleService(
 {
     private readonly string schema = configuration.QuotedSchema;
     private readonly IAccountLifecycleParticipant[] modules = participants.ToArray();
+    private readonly SemaphoreSlim deletionScan = new(1, 1);
+    private Guid deletionCursor;
 
     public Task<ExportJobResponse> CreateExportAsync(string accessToken, ProofRequest request, CancellationToken ct = default)
     {
@@ -123,24 +125,55 @@ public sealed class AccountLifecycleService(
         return new DeleteAccountResponse("deleting", false);
     }
 
-    public Task ProcessPendingDeletionsAsync(CancellationToken ct = default)
+    public async Task ProcessPendingDeletionsAsync(CancellationToken ct = default)
+    {
+        List<Guid> jobs;
+        await deletionScan.WaitAsync(ct);
+        try
+        {
+            jobs = await ReadDeletionPageAsync(deletionCursor, ct);
+            if (jobs.Count == 0 && deletionCursor != Guid.Empty)
+                jobs = await ReadDeletionPageAsync(Guid.Empty, ct);
+            if (jobs.Count == 0) deletionCursor = Guid.Empty;
+            foreach (var jobId in jobs)
+            {
+                ct.ThrowIfCancellationRequested();
+                try
+                {
+                    await DatabaseAsync(async db =>
+                    {
+                        await using var tx = await db.BeginAsync();
+                        await using var command = db.Command($"""
+                            SELECT user_id FROM {schema}.deletion_jobs
+                            WHERE job_id=@p0 AND status IN ('queued','running') FOR UPDATE SKIP LOCKED
+                            """, jobId);
+                        if (await command.ExecuteScalarAsync(ct) is not Guid userId) return false;
+                        await ApplyDeletionAsync(db, tx, jobId, userId, ct);
+                        await db.CommitAsync(tx);
+                        return true;
+                    }, ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception) { logger.LogWarning("Очистка аккаунта отложена до следующей попытки."); }
+                // Even a cancelled slow job must allow the next pass to reach the rest
+                // of the page; never advance over jobs which have not been attempted.
+                finally { deletionCursor = jobId; }
+            }
+        }
+        finally { deletionScan.Release(); }
+    }
+
+    private Task<List<Guid>> ReadDeletionPageAsync(Guid after, CancellationToken ct)
         => DatabaseAsync(async db =>
         {
-            await using var tx = await db.BeginAsync();
-            var jobs = new List<(Guid JobId, Guid UserId)>();
-            await using (var command = db.Command($"""
-                SELECT job_id,user_id FROM {schema}.deletion_jobs
-                WHERE status IN ('queued','running') ORDER BY created_at, job_id FOR UPDATE
-                """))
-            await using (var reader = await command.ExecuteReaderAsync(ct))
-            {
-                while (await reader.ReadAsync(ct))
-                    jobs.Add((reader.GetGuid(0), reader.GetGuid(1)));
-            }
-            foreach (var job in jobs)
-                await ApplyDeletionAsync(db, tx, job.JobId, job.UserId, ct);
-            await db.CommitAsync(tx);
-            return true;
+            var pending = new List<Guid>();
+            await using var command = db.Command($"""
+                SELECT job_id FROM {schema}.deletion_jobs
+                WHERE status IN ('queued','running') AND job_id>@p0 ORDER BY job_id LIMIT 32
+                """, after);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) pending.Add(reader.GetGuid(0));
+            return pending;
         }, ct);
 
     public Task ReplayDeletionManifestsAsync(CancellationToken ct = default)

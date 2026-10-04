@@ -15,6 +15,13 @@ public static class FriendMarks
         if (enabled.Count == 0) return Array.Empty<FriendMark>();
         // strictness 0 → every time overlap; the visibility threshold is applied below.
         var results = intersections.GetIntersections(l, date, enabled, strictness: 0);
+        return Compute(enabled, results, settings, loc);
+    }
+
+    /// <summary>Formats dots from an already-computed overlap snapshot, shared by the Friends forecast.</summary>
+    public static IReadOnlyList<FriendMark> Compute(IReadOnlyList<FriendGroup> enabled,
+        IReadOnlyList<IntersectionService.IntersectionResult> results, Settings settings, Loc loc)
+    {
         var marks = new List<FriendMark>();
         foreach (var f in enabled)
         {

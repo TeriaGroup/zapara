@@ -21,9 +21,13 @@ public static class SocialRegistration
         services.AddSingleton<IAccountUnitOfWork>(provider => provider.GetRequiredService<AccountService>());
         services.AddSingleton<SocialService>();
         services.AddSingleton<IAvatarService, AvatarService>();
-        services.AddHostedService<SocialSchemaService>();
+        services.AddSingleton<SocialSchemaService>();
+        services.AddHostedService(provider => provider.GetRequiredService<SocialSchemaService>());
         services.AddHostedService<SocialFileSweeper>();
         services.AddSingleton<IAccountLifecycleParticipant, SocialLifecycleParticipant>();
         return services;
     }
+
+    public static Task<bool> IsReadyAsync(IServiceProvider services, CancellationToken ct)
+        => services.GetRequiredService<SocialSchemaService>().IsReadyAsync(ct);
 }

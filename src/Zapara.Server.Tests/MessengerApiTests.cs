@@ -141,7 +141,7 @@ public sealed class MessengerApiTests
         Assert.Equal(1, memberHome.Directs[0].Unread);
         Assert.DoesNotContain(memberHome.Directs, chat => chat.ConversationId == elsewhere.ConversationId);
         await host.Problem("GET", $"/conversations/{direct.ConversationId}/messages", 403, "forbidden", outsider.AccessToken);
-        await host.Problem("POST", $"/conversations/{home.GroupChat.ConversationId}/messages", 400, "invalid_request", member.AccessToken, Json(new SendMessageRequest("  ")));
+        await host.Problem("POST", $"/conversations/{home.GroupChat.ConversationId}/messages", 400, "invalid_request", member.AccessToken, "{\"body\":\"  \"}"u8.ToArray());
 
         await db.Accounts.ExecuteAsync($"""
             UPDATE {db.QuotedSchema}.memberships SET status='revoked', revoked_at=TIMESTAMPTZ '2026-09-08 12:06:00+00'
@@ -278,9 +278,9 @@ public sealed class MessengerApiTests
         var chat = (await host.Get<GroupHomeResponse>($"/{communityId}/home", member.AccessToken)).GroupChat.ConversationId;
         var voiceBytes = new byte[] { 0, 0, 0, 12, (byte)'f', (byte)'t', (byte)'y', (byte)'p', (byte)'M', (byte)'4', (byte)'A', (byte)' ' };
         var circleBytes = new byte[] { 0, 0, 0, 12, (byte)'f', (byte)'t', (byte)'y', (byte)'p', (byte)'i', (byte)'s', (byte)'o', (byte)'m' };
-        var oversizedVoice = new byte[2 * 1024 * 1024 + 1];
+        var oversizedVoice = new byte[4 * 1024 * 1024 + 1];
         Array.Copy(voiceBytes, oversizedVoice, voiceBytes.Length);
-        var oversizedCircle = new byte[8 * 1024 * 1024 + 1];
+        var oversizedCircle = new byte[24 * 1024 * 1024 + 1];
 
         async Task Rejected(string kind, byte[] bytes, int status, string code, string? durationMs = null)
         {

@@ -13,7 +13,11 @@ public sealed partial class SnapshotStore
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
         await using (var mode = new NpgsqlCommand("SET TRANSACTION READ ONLY; SET LOCAL search_path=pg_catalog", connection, transaction))
             await mode.ExecuteNonQueryAsync(ct);
-        await VerifySchemaAsync(connection, transaction, 2, ct);
+        await using (var versionQuery = new NpgsqlCommand($"SELECT version FROM {quotedSchema}.schema_version", connection, transaction))
+        {
+            if (await versionQuery.ExecuteScalarAsync(ct) is not int version || version is not (2 or 3)) return false;
+            await VerifySchemaAsync(connection, transaction, version, ct);
+        }
         await using var command = new NpgsqlCommand($"""
             SELECT s.payload::text,s.snapshot_id,s.fetched_at,s.published_at,s.source_modified_at,
                 s.source_kind,s.source_url,s.source_sha256

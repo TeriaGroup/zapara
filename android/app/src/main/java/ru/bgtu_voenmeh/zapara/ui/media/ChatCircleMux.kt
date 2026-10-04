@@ -131,7 +131,13 @@ internal object ChatCircleMux {
         buffer.clear()
         val size = input.readSampleData(buffer, 0)
         if (size <= 0 || size > buffer.capacity()) throw IOException("Invalid circle sample")
-        info.set(0, size, pts, input.sampleFlags)
+        info.set(0, size, pts, codecFlags(input.sampleFlags))
         output.writeSampleData(track, buffer, info)
+    }
+
+    internal fun codecFlags(sampleFlags: Int): Int {
+        if (sampleFlags and MediaExtractor.SAMPLE_FLAG_ENCRYPTED != 0) throw IOException("Encrypted circle sample")
+        return (if (sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0) or
+            (if (sampleFlags and MediaExtractor.SAMPLE_FLAG_PARTIAL_FRAME != 0) MediaCodec.BUFFER_FLAG_PARTIAL_FRAME else 0)
     }
 }

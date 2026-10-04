@@ -1,11 +1,15 @@
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Zapara.Server.Accounts;
 
 namespace Zapara.Server.Social;
 
-internal sealed class SocialFileSweeper(AccountsDataSource data, SocialConfiguration configuration, MediaStore media) : BackgroundService
+internal sealed class SocialFileSweeper(IServiceProvider services) : BackgroundService
 {
+    private AccountsDataSource data => services.GetRequiredService<AccountsDataSource>();
+    private SocialConfiguration configuration => services.GetRequiredService<SocialConfiguration>();
+    private MediaStore media => services.GetRequiredService<MediaStore>();
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(5));

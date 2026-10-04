@@ -34,6 +34,7 @@ public static class AccountsRegistration
         services.AddSingleton<RecoveryService>();
         services.AddSingleton<IAccountLifecycleParticipant, AccountLifecycleParticipant>();
         services.AddSingleton<AccountLifecycleService>();
+        services.AddHostedService<AccountDeletionCleanup>();
         services.AddAuthentication(OpaqueAccountHandler.SchemeName)
             .AddScheme<AuthenticationSchemeOptions, OpaqueAccountHandler>(OpaqueAccountHandler.SchemeName, _ => { });
         services.AddAuthorization(options => options.AddPolicy("AccountUser", policy =>

@@ -25,6 +25,8 @@ import * as overviews from "./study-overviews.ts";
 import * as summary from "./summary.ts";
 import * as discovery from './study-discovery.ts';
 import * as obligations from './group-obligations.ts';
+import * as chatInbox from './chatInbox.ts';
+import * as visibleRefresh from './visible-refresh.ts';
 
 test("homework batch siblings retain distinct reconciliation identities across sync updates", async()=>{
   const source=await readFile(new URL("./pages.tsx",import.meta.url),"utf8");
@@ -264,6 +266,58 @@ test("actual obligations includes general board and revalidates exact ballot bef
  const out=await load('./group-obligations-view.tsx',[],{react:h.react,'./store':{useApp:()=>app},'./draft-revocation':revocation,'./group-obligations':obligations,'./ux300-controls':{useClock:()=>new Date()},'./api':{authGeneration:()=>0,topics:async()=>({topics:[]}),ballots:async(_community:string,topic?:string)=>{assert.equal(topic,undefined);reads++;return board;}}},{sessionStorage:storage});
  const render=()=>h.render(()=>out.GroupObligations({communityId:'community',onOpen:(topic:any,target:any,fresh:any)=>opened={topic,target,fresh}}));button(render(),'Обновить обзор обязательств').props.onClick();await settle();let tree=render();assert.match(text(tree),/Общее голосование/);assert.doesNotMatch(text(tree),/Не включать из агрегата/);assert.equal(reads,1);button(tree,'Открыть этот объект').props.onClick();await settle();assert.equal(reads,2);assert.equal(opened.topic,null);assert.equal(opened.target.id,'global-one');assert.equal(opened.fresh,board);
  opened=null;board.ballots=[];button(render(),'Открыть этот объект').props.onClick();await settle();assert.equal(opened,null);assert.match(text(render()),/больше недоступно/);
+});
+
+test("delayed inbox source retry cannot replace a newer full refresh", async()=>{
+  const h=hooks();
+  let socialCalls=0;
+  let resolveRetry!:(value:any)=>void;
+  let timer:(()=>void)|null=null;
+  const documentListeners=new Map<string,Set<()=>void>>();
+  const windowListeners=new Map<string,Set<()=>void>>();
+  const target=(listeners:Map<string,Set<()=>void>>)=>({
+    addEventListener(type:string,listener:()=>void){const handlers=listeners.get(type)??new Set<()=>void>();handlers.add(listener);listeners.set(type,handlers);},
+    removeEventListener(type:string,listener:()=>void){listeners.get(type)?.delete(listener);},
+  });
+  const document={...target(documentListeners),hidden:false};
+  const fakeWindow={...target(windowListeners),setInterval:(callback:()=>void)=>{timer=callback;return 1;},clearInterval:()=>{timer=null;}};
+  const app={session:{authenticated:true,user:{userId:"owner"},familyId:"family"}};
+  const friendHome=(preview:string)=>({code:"ABCDEFGH",incoming:[],outgoing:[],friends:[{userId:"peer",username:"peer",displayName:"Пётр",conversationId:"personal",lastBody:preview,lastAt:"2026-10-04T12:00:00Z",unread:1}]});
+  const api={communities:async()=>[],socialHome:()=>{
+    socialCalls++;
+    if(socialCalls===1)return Promise.reject(Error("offline"));
+    if(socialCalls===2)return new Promise(resolve=>{resolveRetry=resolve;});
+    return Promise.resolve(friendHome("Новое сообщение"));
+  }};
+  const modules:any={
+    react:h.react,
+    "react-router-dom":{Link:()=>null,useParams:()=>({})},
+    "./api":api,
+    "./chatInbox":chatInbox,
+    "./people":{PeoplePanel:()=>null},
+    "./store":{useApp:()=>app},
+    "./types":{},
+    "./personal-composer":{emptyChatState:()=>"empty"},
+    "./avatar-view":{Avatar:()=>null},
+    "./personal-composer-context":{usePersonalDrafts:()=>[]},
+    "./visible-refresh":visibleRefresh,
+  };
+  const out=await load("./chat.tsx",["ChatInboxContent"],modules,{document,window:fakeWindow});
+  const render=()=>h.render(()=>out.ChatInboxContent());
+  render();
+  await settle();
+  button(render(),"Повторить этот источник").props.onClick();
+  await settle();
+  assert.equal(socialCalls,2);
+  timer!();
+  await settle();
+  assert.equal(socialCalls,3);
+  assert.match(text(render()),/Новое сообщение/);
+  resolveRetry(friendHome("Старый ответ повтора"));
+  await settle();
+  assert.match(text(render()),/Новое сообщение/);
+  assert.doesNotMatch(text(render()),/Старый ответ повтора/);
+  h.unmount();
 });
 
 
