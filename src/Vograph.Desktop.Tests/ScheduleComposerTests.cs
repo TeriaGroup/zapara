@@ -102,14 +102,136 @@ public class ScheduleComposerTests
         var s = db.Services.Db.GetSettings();
         s.IntersectionStrictness = 100; // only same room counts
         db.Services.Db.SaveSettings(s);
-        var day = new ScheduleComposer(db.Services).Compose(0, OddMondayMorning);
-        Assert.Single(day.Rows[0].Friends);   // same room → shown
-        Assert.Empty(day.Rows[1].Friends);    // same building only → hidden
+        var day = new ScheduleComposer(db.Services).Compose(0, OddMondayMorning.AddHours(6));
+        Assert.Single(day.Rows[0].Friends);   // past: same room → shown
+        Assert.Empty(day.Rows[1].Friends);    // past: same building only → hidden
 
         s.AlwaysShowAllTrafficLights = true;
         db.Services.Db.SaveSettings(s);
-        day = new ScheduleComposer(db.Services).Compose(0, OddMondayMorning);
+        day = new ScheduleComposer(db.Services).Compose(0, OddMondayMorning.AddHours(6));
         Assert.Equal(DotFill.Off, Assert.Single(day.Rows[1].Friends).Fill);
+    }
+
+    [Fact]
+    public void Every_Future_Lesson_Has_Status_And_Threshold_Does_Not_Hide_Friends()
+    {
+        using var db = TestDb.Create();
+        var settings = db.Services.Db.GetSettings();
+        settings.IntersectionStrictness = 100;
+        db.Services.Db.SaveSettings(settings);
+        var composer = new ScheduleComposer(db.Services);
+        var day = composer.Compose(0, OddMondayMorning);
+        Assert.All(day.Rows, row => Assert.True(row.IsUpcoming));
+        var below = Assert.Single(day.Rows[1].Friends);
+        Assert.True(below.HasLesson);
+        Assert.True(below.ShowLessonStatus);
+        Assert.Equal(DotFill.Off, below.Fill);
+        Assert.Equal("Пара в это время", new FriendMarkViewModel(below).LessonStatusCaption);
+        Assert.False(composer.Compose(0, OddMondayMorning.AddHours(1)).Rows[0].IsUpcoming);
+        Assert.False(composer.Compose(0, OddMondayMorning.AddHours(2)).Rows[0].IsUpcoming);
+        Assert.All(composer.Compose(-7, OddMondayMorning).Rows, row => Assert.False(row.IsUpcoming));
+        Assert.All(composer.Compose(7, OddMondayMorning).Rows, row => Assert.True(row.IsUpcoming));
+    }
+
+    [Fact]
+    public void Future_Friend_Status_Distinguishes_Missing_Schedule_And_No_Overlap()
+    {
+        using var db = TestDb.Create();
+        db.Services.Db.InsertFriend(new Vograph.Core.Models.FriendGroup { GroupName = "Нет в каталоге", Enabled = true });
+        db.Services.Db.InsertFriend(new Vograph.Core.Models.FriendGroup { GroupName = "А863С", Enabled = true });
+        var day = new ScheduleComposer(db.Services).Compose(2, OddMondayMorning);
+        var row = Assert.Single(day.Rows);
+        var unknown = Assert.Single(row.Friends.Where(mark => mark.GroupName == "Нет в каталоге"));
+        Assert.Null(unknown.HasLesson);
+        Assert.Equal("Нет данных", new FriendMarkViewModel(unknown).LessonStatusCaption);
+        var known = Assert.Single(row.Friends.Where(mark => mark.GroupName == "09С31"));
+        Assert.False(known.HasLesson);
+        Assert.Equal("Нет пары в это время", new FriendMarkViewModel(known).LessonStatusCaption);
+        Assert.DoesNotContain(row.Friends, mark => mark.GroupName == "А863С");
+    }
+
+    [Theory]
+    [InlineData("10:30", "12:05", true)]
+    [InlineData("10:35", "12:10", false)]
+    [InlineData("07:25", "09:00", false)]
+    [InlineData("09:00", "", true)]
+    [InlineData("09:00", "bad", null)]
+    [InlineData("09:00", "08:00", null)]
+    [InlineData("bad", "10:00", null)]
+    public void Friend_Status_Uses_Real_Overlap_And_Unknown_For_Invalid_Intervals(string start, string end, bool? expected)
+    {
+        var mine = new Vograph.Core.Models.Lesson { TimeStart = "09:00", TimeEnd = "10:35" };
+        var other = new Vograph.Core.Models.Lesson { TimeStart = start, TimeEnd = end };
+        Assert.Equal(expected, FriendMarks.HasLesson(mine, new[] { other }));
+        Assert.True(FriendMarks.HasLesson(mine, new[] { other, mine }));
+    }
+
+    [Theory]
+    [InlineData("493", "ГК", 100)]
+    [InlineData("412", "ВЦ", 75)]
+    [InlineData("212", "ГК", 50)]
+    [InlineData("493", "УЛК", 25)]
+    public void Future_Lesson_Status_Is_Independent_Of_Place_Score(string room, string building, int expectedScore)
+    {
+        using var db = TestDb.Create();
+        var mine = new Vograph.Core.Models.Lesson { TimeStart = "09:00", TimeEnd = "10:35", RoomRaw = "493", BuildingRaw = "ГК" };
+        var other = new Vograph.Core.Models.Lesson { TimeStart = "09:00", TimeEnd = "10:35", RoomRaw = room, BuildingRaw = building };
+        var friend = new Vograph.Core.Models.FriendGroup { GroupName = "09С31", Enabled = true };
+        var schedules = new[] { new FriendMarks.DaySchedule(friend, new[] { other }) };
+        var settings = new Vograph.Core.Models.Settings { IntersectionStrictness = 100 };
+        Assert.Equal(expectedScore, Vograph.Core.Services.IntersectionService.PlaceScore(mine, other));
+        var mark = Assert.Single(FriendMarks.Compute(mine, schedules, settings, db.Services.Loc, upcoming: true));
+        Assert.True(mark.HasLesson);
+        Assert.Equal(expectedScore == 100 ? DotFill.Full : DotFill.Off, mark.Fill);
+    }
+
+    [Fact]
+    public void Invalid_Start_Is_Never_Upcoming_And_Clock_Update_Removes_Status()
+    {
+        using var db = TestDb.Create();
+        db.Services.Db.InsertLesson(new Vograph.Core.Models.Lesson
+        {
+            GroupId = TestDb.MyGroupId, DayOfWeek = 1, Parity = 1, TimeStart = "bad", TimeEnd = "10:35", SubjectRaw = "Invalid"
+        });
+        var composer = new ScheduleComposer(db.Services);
+        var morning = composer.Compose(0, OddMondayMorning);
+        Assert.False(Assert.Single(morning.Rows, row => row.DisplayName == "Invalid").IsUpcoming);
+        var shell = new Vograph.Desktop.Shell.ShellViewModel(db.Services);
+        var owner = new ScheduleViewModel(db.Services, shell);
+        var original = Assert.Single(morning.Rows, row => row.TimeStart == "09:00");
+        var vm = new LessonRowViewModel(original, owner, 0);
+        Assert.True(vm.IsUpcoming);
+        vm.Update(Assert.Single(composer.Compose(0, OddMondayMorning.AddHours(1)).Rows, row => row.TimeStart == "09:00"));
+        Assert.False(vm.IsUpcoming);
+        Assert.All(vm.Friends, mark => Assert.False(mark.ShowLessonStatus));
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void Future_Friend_With_Stale_Or_Incompatible_Copy_Is_Unknown(bool stale, bool differentSnapshot)
+    {
+        using var db = TestDb.Create();
+        var snapshot = Guid.NewGuid();
+        foreach (var groupId in new[] { TestDb.MyGroupId, "3031" })
+        {
+            var friend = groupId == "3031";
+            var metadata = new Vograph.Core.Services.CacheMetadata(
+                new(new DateOnly(2026, 9, 1), 2, "Semester", "Europe/Moscow"),
+                new(friend && differentSnapshot ? Guid.NewGuid() : snapshot, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+                    null, "xml", null, "fixture", friend && stale), "2026-09-14T07:00:00Z", "api", "fixture");
+            using var command = db.Services.Db.Connection.CreateCommand();
+            command.CommandText = "INSERT OR REPLACE INTO api_cache_metadata(groupId, payload) VALUES (@id, @payload)";
+            command.Parameters.AddWithValue("@id", groupId);
+            command.Parameters.AddWithValue("@payload", System.Text.Json.JsonSerializer.Serialize(metadata));
+            command.ExecuteNonQuery();
+        }
+        var composer = new ScheduleComposer(db.Services);
+        var future = Assert.Single(composer.Compose(0, OddMondayMorning).Rows[0].Friends);
+        Assert.Null(future.HasLesson);
+        Assert.Equal(DotFill.Off, future.Fill);
+        Assert.Equal("Нет данных", new FriendMarkViewModel(future).LessonStatusCaption);
+        Assert.Empty(composer.Compose(0, OddMondayMorning.AddHours(1)).Rows[0].Friends);
     }
 
     [Fact]

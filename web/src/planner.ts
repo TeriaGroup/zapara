@@ -14,6 +14,16 @@ export function clockMinutes(value: string): number | null {
     return +match[1] * 60 + +match[2];
 }
 export function minuteClock(value: number) { return `${Math.floor(value / 60).toString().padStart(2, "0")}:${(value % 60).toString().padStart(2, "0")}`; }
+export function isUpcomingLesson(lesson: Pick<Lesson, "timeStart">, date: Date, now: Date): boolean {
+    const start = clockMinutes(lesson.timeStart);
+    if (start === null || !Number.isFinite(date.getTime()) || !Number.isFinite(now.getTime()))
+        return false;
+    const day = localDay(isoDay(date));
+    if (!day)
+        return false;
+    day.setMinutes(start);
+    return day.getTime() > now.getTime();
+}
 export function freeGaps(lessons: Pick<Lesson, "timeStart" | "timeEnd">[]) {
     const ranges = lessons.flatMap(lesson => {
         const start = clockMinutes(lesson.timeStart), end = clockMinutes(lesson.timeEnd);

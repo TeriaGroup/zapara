@@ -54,23 +54,7 @@ public class IntersectionService
             foreach (var fl in friendLessons)
             {
                 if (!TimesOverlap(myLesson.TimeStart, myLesson.TimeEnd, fl.TimeStart, fl.TimeEnd)) continue;
-                int score = 0;
-                // 100 room, 75 building+floor, 50 building, 25 campus. ВЦ sits inside ГК.
-                // The same room number in УЛК and ГК is two rooms; a star is what distinguishes them.
-                bool sameRoomNumber = SameText(myLesson.RoomRaw, fl.RoomRaw);
-                var myBuilding = CanonBuilding(myLesson.BuildingRaw);
-                var friendBuilding = CanonBuilding(fl.BuildingRaw);
-                bool sameBuilding = myBuilding is not null && friendBuilding is not null
-                    && myBuilding.Equals(friendBuilding, StringComparison.OrdinalIgnoreCase);
-                bool buildingsConflict = myBuilding is not null && friendBuilding is not null && !sameBuilding;
-                bool sameRoom = sameRoomNumber && !buildingsConflict;
-                int floorMy = GetFloor(myLesson.RoomRaw);
-                int floorFr = GetFloor(fl.RoomRaw);
-                bool sameFloor = sameBuilding && floorMy != 0 && floorFr != 0 && floorMy == floorFr;
-                if (sameRoom) score = 100;
-                else if (sameFloor) score = 75;
-                else if (sameBuilding) score = 50;
-                else score = 25;
+                int score = PlaceScore(myLesson, fl);
 
                 bool matches = score >= strictness;
                 // For threshold 0, any time overlap counts (score 0 >=0 true)
@@ -93,6 +77,20 @@ public class IntersectionService
         TimeSpan eA = TimeSpan.TryParse(endA, out var ea) ? ea : sA.Add(TimeSpan.FromMinutes(95));
         TimeSpan eB = TimeSpan.TryParse(endB, out var eb) ? eb : sB.Add(TimeSpan.FromMinutes(95));
         return sA < eB && sB < eA;
+    }
+
+    /// <summary>Spatial category for an already established time overlap.</summary>
+    public static int PlaceScore(Lesson mine, Lesson other)
+    {
+        var myBuilding = CanonBuilding(mine.BuildingRaw);
+        var friendBuilding = CanonBuilding(other.BuildingRaw);
+        var sameBuilding = myBuilding is not null && friendBuilding is not null
+            && myBuilding.Equals(friendBuilding, StringComparison.OrdinalIgnoreCase);
+        var buildingsConflict = myBuilding is not null && friendBuilding is not null && !sameBuilding;
+        if (SameText(mine.RoomRaw, other.RoomRaw) && !buildingsConflict) return 100;
+        var floor = GetFloor(mine.RoomRaw);
+        if (sameBuilding && floor != 0 && floor == GetFloor(other.RoomRaw)) return 75;
+        return sameBuilding ? 50 : 25;
     }
 
     /// <summary>ВЦ is the computer centre inside ГК, not a third campus building. «main» is the English alias of ГК.</summary>

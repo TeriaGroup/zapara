@@ -416,11 +416,15 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                         }
                     })
             } else ZCard(Modifier.fillMaxWidth(), onClick = { onEvent(ScheduleEvent.LongPress(lesson)) }) {
-                Text("${lesson.timeStart}–${lesson.timeEnd} · ${lesson.type}", style = Zapara.typography.caption, color = Zapara.colors.text2)
+                Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs), verticalAlignment = Alignment.CenterVertically) {
+                    if (lesson.isUpcoming) UpcomingLessonMark()
+                    Text("${lesson.timeStart}–${lesson.timeEnd} · ${lesson.type}", style = Zapara.typography.caption, color = Zapara.colors.text2)
+                }
                 Text(lesson.name, style = Zapara.typography.bodyStrong)
                 val placeAndTeacher = listOf(lesson.room, lesson.teacher).filter(String::isNotBlank).joinToString(" · ")
                 if (placeAndTeacher.isNotBlank()) Text(placeAndTeacher,
                     style = Zapara.typography.caption, color = Zapara.colors.text2)
+                if (lesson.isUpcoming) FriendStatusRows(lesson.displayFriends, true)
                 FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
                     verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                     ZCompactButton(uiText(R.string.space_day_21), { onEvent(ScheduleEvent.SubjectHomework(lesson)) },

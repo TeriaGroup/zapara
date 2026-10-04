@@ -4,7 +4,8 @@ using Vograph.Desktop.Controls;
 
 namespace Vograph.Desktop.Features.Schedule;
 
-public sealed record FriendMark(string GroupName, string MemberNames, int ColorIndex, DotFill Fill, string Tooltip);
+public sealed record FriendMark(string GroupName, string MemberNames, int ColorIndex, DotFill Fill, string Tooltip,
+    bool? HasLesson = null, bool ShowLessonStatus = false);
 
 public sealed record HomeworkItem(long Id, string Text, string Status, DateTime? Due, string Label, bool IsDone);
 
@@ -28,7 +29,7 @@ public sealed record LessonRow(
     IReadOnlyList<FriendMark> Friends,
     IReadOnlyList<HomeworkItem> Homework,
     MapInfo? Map,
-    SubgroupChoice? Subgroup = null, bool HasConflict = false);
+    SubgroupChoice? Subgroup = null, bool HasConflict = false, bool IsUpcoming = false);
 
 public sealed record PlannerDate(DateTime Date, int? LessonCount);
 

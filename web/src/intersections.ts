@@ -5,6 +5,7 @@ export type FriendSchedule = {
   groupName: string;
   members: string;
   enabled: boolean;
+  isOwn?: boolean;
   color?: string;
   lessons: Lesson[] | null;
 };
@@ -28,7 +29,8 @@ export type Encounter = {
   color?: string;
   score: number;
 };
-export type FriendMark = { groupName: string; members: string; score: number; present: boolean; color?: string };
+export type FriendMark = { groupName: string; members: string; score: number; present: boolean; hasLesson?: boolean | null; color?: string };
+export type FriendPresence = { groupName: string; members: string; hasLesson: boolean | null; color?: string };
 export type IntersectionForecast = {
   encounters: Encounter[];
   missingGroups: string[];
@@ -50,7 +52,7 @@ export function resolveFriendSchedules(friends: FriendItem[], groups: Group[],
       own.meta.snapshotId === cached.meta.snapshotId && !own.meta.stale && !cached.meta.stale));
     return {
       groupName: friend.groupName, members: friend.members, enabled: friend.enabled, color: friend.color,
-      lessons: compatible ? cached?.lessons ?? null : null,
+      isOwn: self, lessons: compatible ? cached?.lessons ?? null : null,
     };
   });
 }
@@ -63,6 +65,14 @@ function minutes(value: string): number | null {
   return hour < 24 && minute < 60 ? hour * 60 + minute : null;
 }
 
+function trustedInterval(lesson: Pick<Lesson, "timeStart" | "timeEnd">): { start: number; end: number } | null {
+  const start = minutes(lesson.timeStart);
+  if (start === null) return null;
+  const endText = lesson.timeEnd.trim();
+  const end = endText ? minutes(endText) : start + 95;
+  return end !== null && end > start ? { start, end } : null;
+}
+
 function bestMatch(mine: Lesson, date: Date, friend: FriendSchedule, input: IntersectionInput):
   { lesson: Lesson; score: number } | null {
   if (!friend.enabled || friend.lessons === null) return null;
@@ -73,6 +83,26 @@ function bestMatch(mine: Lesson, date: Date, friend: FriendSchedule, input: Inte
     if (best === null || value > best.score) best = { lesson: other, score: value };
   }
   return best;
+}
+
+export function friendHasLessonAtTime(mine: Lesson, date: Date, friend: FriendSchedule, input: IntersectionInput): boolean | null {
+  if (!friend.enabled || friend.lessons === null) return null;
+  const mineInterval = trustedInterval(mine);
+  if (mineInterval === null) return null;
+  let uncertain = false;
+  for (const other of lessonsOn(friend.lessons, date, input.period.start, input.period.weekCount, input.invert)) {
+    const otherInterval = trustedInterval(other);
+    if (otherInterval === null) {
+      uncertain = true;
+      continue;
+    }
+    if (mineInterval.start < otherInterval.end && otherInterval.start < mineInterval.end) return true;
+  }
+  return uncertain ? null : false;
+}
+
+export function lessonPresenceCaption(hasLesson: boolean | null | undefined): string {
+  return hasLesson === true ? "Пара в это время" : hasLesson === false ? "Нет пары в это время" : "Нет данных";
 }
 
 export function intersectionPlace(scoreValue: number): string {
@@ -92,9 +122,18 @@ export function marksForLesson(lesson: Lesson, date: Date, input: IntersectionIn
     const best = bestMatch(lesson, date, friend, input);
     const value = best?.score ?? 0;
     const present = value >= input.strictness;
-    if (present || alwaysShow) out.push({ groupName: friend.groupName, members: friend.members, score: value, present, color: friend.color });
+    if (present || alwaysShow) out.push({ groupName: friend.groupName, members: friend.members, score: value, present, hasLesson: friendHasLessonAtTime(lesson, date, friend, input), color: friend.color });
   }
   return out;
+}
+
+export function presenceForLesson(lesson: Lesson, date: Date, input: IntersectionInput): FriendPresence[] {
+  return input.friends.filter(friend => friend.enabled && !friend.isOwn).slice(0, 5).map(friend => ({
+    groupName: friend.groupName,
+    members: friend.members,
+    hasLesson: friendHasLessonAtTime(lesson, date, friend, input),
+    color: friend.color,
+  }));
 }
 
 export function forecastIntersections(input: IntersectionInput): IntersectionForecast {

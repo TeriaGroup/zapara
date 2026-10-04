@@ -25,7 +25,7 @@ public sealed partial class LessonRowViewModel : ObservableObject
     {
         Row=row;
         RefreshRelated(row);
-        foreach(var name in new[]{nameof(DisplayName),nameof(TeacherLine),nameof(CanOpenTeacher),nameof(Note),nameof(RoomText),nameof(TypeLabel),nameof(IsPast),nameof(IsNext),nameof(CanShowMap),nameof(PriorityCaption)})OnPropertyChanged(name);
+        foreach(var name in new[]{nameof(DisplayName),nameof(TeacherLine),nameof(CanOpenTeacher),nameof(Note),nameof(RoomText),nameof(TypeLabel),nameof(IsPast),nameof(IsNext),nameof(IsUpcoming),nameof(CanShowMap),nameof(PriorityCaption)})OnPropertyChanged(name);
     }
     private void RefreshRelated(LessonRow row)
     {
@@ -71,6 +71,7 @@ public sealed partial class LessonRowViewModel : ObservableObject
     public bool HasConflict=>Row.HasConflict;
     public bool IsPast => Row.IsPast;
     public bool IsNext => Row.IsNext;
+    public bool IsUpcoming => Row.IsUpcoming;
     public IReadOnlyList<FriendMarkViewModel> Friends { get; private set; } = [];
     public bool HasFriends => Friends.Count > 0;
     public ObservableCollection<HomeworkItemViewModel> Homework { get; } = [];
@@ -117,6 +118,12 @@ public sealed class FriendMarkViewModel
     public int ColorIndex => _mark.ColorIndex;
     public DotFill Fill => _mark.Fill;
     public string Tooltip => _mark.Tooltip;
+    public string GroupName => _mark.GroupName;
+    public bool ShowLessonStatus => _mark.ShowLessonStatus;
+    public string LessonStatusCaption => _mark.HasLesson switch
+    {
+        true => "Пара в это время", false => "Нет пары в это время", null => "Нет данных"
+    };
     public double Opacity => _mark.Fill == DotFill.Off ? 0.6 : 1.0;
 }
 

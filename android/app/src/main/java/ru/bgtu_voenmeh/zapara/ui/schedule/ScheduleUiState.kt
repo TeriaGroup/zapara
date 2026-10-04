@@ -21,7 +21,9 @@ data class FriendDotUi(
     val members: String,
     val score: Int,
     val hint: String,
-    val intersectionScore: Int = score
+    val intersectionScore: Int = score,
+    val hasLesson: Boolean? = null,
+    val visibleWhenCurrent: Boolean = true
 )
 
 data class SubgroupOptionUi(val id: String, val label: String)
@@ -52,8 +54,12 @@ data class LessonUi(
     val remote: Boolean = false,
     val dayOfWeek: Int = 0,
     val subgroup: SubgroupMarkUi? = null,
-    val typeRaw: String = ""
+    val typeRaw: String = "",
+    val isUpcoming: Boolean = false
 ) {
+    val displayFriends: List<FriendDotUi>
+        get() = if (isUpcoming) friends else friends.filter { it.visibleWhenCurrent }
+
     val hasMapLocation: Boolean
         get() {
             if (remote) return false

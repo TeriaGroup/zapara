@@ -86,6 +86,7 @@ public sealed class ScheduleComposer
 
         var allHomework = _app.Homework.GetAll();
         var friends = _app.Db.GetFriends().Where(f => f.Enabled).Take(5).ToList();
+        var friendSchedules = FriendMarks.PrepareDay(_app.Db, _app.Intersections, groupId, date, friends, settings);
         var isToday = offset == 0;
         var priority = DayPlanning.PriorityIndex(lessons.Select(x=>new DayInterval(ParseTime(x.TimeStart),ParseTime(x.TimeEnd))).ToArray(),DateOnly.FromDateTime(date),DateOnly.FromDateTime(now),now.TimeOfDay);
         var lessonIndex = 0;
@@ -95,6 +96,8 @@ public sealed class ScheduleComposer
         {
             var isPast = isToday && ParseTime(l.TimeEnd) <= now.TimeOfDay;
             var isNext = lessonIndex++ == priority;
+            var isUpcoming = TimeSpan.TryParse(l.TimeStart, out var start) && start >= TimeSpan.Zero && start < TimeSpan.FromDays(1)
+                && (date > now.Date || date == now.Date && start > now.TimeOfDay);
 
             // Core keys overrides/homework by the FULL Discipline ("лек ВЫСШ. МАТЕМАТ"); the type token is stripped for display only.
             var shownName = LessonText.StripType(_app.Overrides.GetDisplayName(l.SubjectRaw, l.DayOfWeek), l.TypeRaw);
@@ -124,11 +127,12 @@ public sealed class ScheduleComposer
                 IsRemote: remote,
                 IsPast: isPast,
                 IsNext: isNext,
-                Friends: FriendMarks.Compute(_app.Intersections, l, date, friends, settings, loc),
+                Friends: FriendMarks.Compute(l, friendSchedules, settings, loc, isUpcoming),
                 Homework: homework,
                 Map: map,
                 Subgroup: ToSubgroup(SubgroupRules.MarkOf(l, lessons, subgroups, choices)),
-                HasConflict: lessons.Any(other => !ReferenceEquals(l,other) && ParseTime(l.TimeStart)<ParseTime(other.TimeEnd) && ParseTime(l.TimeEnd)>ParseTime(other.TimeStart))));
+                HasConflict: lessons.Any(other => !ReferenceEquals(l,other) && ParseTime(l.TimeStart)<ParseTime(other.TimeEnd) && ParseTime(l.TimeEnd)>ParseTime(other.TimeStart)),
+                IsUpcoming: isUpcoming));
         }
         return new DayModel(date, offset, title, subtitle, rows, null, null);
     }

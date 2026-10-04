@@ -351,17 +351,24 @@ class ScheduleViewModel(
         val friends = container.db.friendDao().getAll().map { Friend(it.groupName, it.colorHex, it.enabled, it.memberNames) }
         val groups = container.repo.groups()
         val apiCache = ru.bgtu_voenmeh.zapara.data.api.TimetableApiCache(container.repo.store)
+        data class Followed(val friend: Friend, val id: String?, val lessons: List<Lesson>, val known: Boolean)
         val friendRows = friends.filter { it.enabled }.take(5).mapNotNull { friend ->
             val id = groups.firstOrNull { it.id == friend.groupName || it.name.equals(friend.groupName, ignoreCase = true) }?.id
-                ?: return@mapNotNull null
-            if (id == c.groupId || !apiCache.canIntersect(c.groupId, id)) return@mapNotNull null
-            val lessons = container.repo.allForGroup(id)
-            if (apiCache.read(id) == null && lessons.isEmpty()) return@mapNotNull null
-            Triple(friend, id, lessons)
+            if (id == c.groupId) return@mapNotNull null
+            if (id == null || !apiCache.canIntersect(c.groupId, id)) Followed(friend, id, emptyList(), false)
+            else {
+                val lessons = container.repo.allForGroup(id)
+                Followed(friend, id, lessons, apiCache.read(id) != null || lessons.isNotEmpty())
+            }
         }
-        val enabled = friendRows.map { it.first }
-        val ids = friendRows.associate { it.first.groupName to it.second }
-        val lessonsById = friendRows.associate { it.second to it.third }
+        val ready = friendRows.filter { it.known && it.id != null }
+        val enabled = ready.map { it.friend }
+        val ids = ready.associate { it.friend.groupName to it.id!! }
+        val dayLessonsById = ready.associate { row ->
+            val groupId = row.id!!
+            groupId to ru.bgtu_voenmeh.zapara.data.Schedule.lessonsForDate(
+                row.lessons, groupId, date, c.periodStart, c.weekCount, c.invert)
+        }
         val page = ScheduleComposer.page(
             date, dayLessons, c, now,
             displayName = { norm, dow -> container.overrides.displayNameByNorm(norm, dow) },
@@ -372,13 +379,21 @@ class ScheduleViewModel(
                     my = lesson, date = date, friends = enabled,
                     strictness = 0,
                     periodStart = c.periodStart, weekCount = c.weekCount, invert = c.invert,
-                    lessonsFor = { fid, dow, parity -> lessonsById[fid].orEmpty().filter { it.dayOfWeek == dow && (it.parity == parity || it.parity == 0) } },
+                    lessonsFor = { fid, _, _ -> dayLessonsById[fid].orEmpty() },
                     resolveId = { name -> ids[name] }
                 )
                 val byGroup = hits.associateBy { it.friendGroupName }
-                val source = if (prefs.alwaysShowAllTrafficLights) enabled else enabled.filter { (byGroup[it.groupName]?.score ?: 0) >= threshold }
-                source.map { f ->
-                    val hit = byGroup[f.groupName]
+                val future = ScheduleComposer.isUpcoming(date, lesson.timeStart, lesson.timeEnd, now)
+                val source = if (future) friendRows else ready.filter {
+                    prefs.alwaysShowAllTrafficLights || (byGroup[it.friend.groupName]?.score ?: 0) >= threshold
+                }
+                source.map { row ->
+                    val f = row.friend
+                    val presence = ScheduleComposer.hasLessonDuring(
+                        lesson.timeStart, lesson.timeEnd,
+                        row.id?.let { dayLessonsById[it] }.orEmpty(), row.known)
+                    val rawHit = byGroup[f.groupName]
+                    val hit = if (future && presence != true) null else rawHit
                     val visibleScore = hit?.score?.takeIf { it >= threshold } ?: -1
                     val baseHint = LessonFormat.friendHint(f.memberNames, f.groupName, hit?.score ?: -1, container.copy)
                     FriendDotUi(
@@ -387,7 +402,10 @@ class ScheduleViewModel(
                         members = f.memberNames,
                         score = visibleScore,
                         hint = if (hit != null && visibleScore < 0) "$baseHint · ${container.copy.get("friend_below_level")}" else baseHint,
-                        intersectionScore = hit?.score ?: -1
+                        intersectionScore = hit?.score ?: -1,
+                        hasLesson = presence,
+                        visibleWhenCurrent = row.known &&
+                            (prefs.alwaysShowAllTrafficLights || (rawHit?.score ?: 0) >= threshold)
                     )
                 }
             },

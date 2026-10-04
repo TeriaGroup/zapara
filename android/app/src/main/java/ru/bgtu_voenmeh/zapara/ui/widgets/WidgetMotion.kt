@@ -1,7 +1,10 @@
 package ru.bgtu_voenmeh.zapara.ui.widgets
 
 data class WidgetMotionPolicy(val enabled: Boolean, val durationMs: Long, val frameCount: Int) {
-    fun frames(): List<WidgetMotionFrame> = if (!enabled) listOf(WidgetMotionFrame(0, 1f)) else
+    val isPlayable: Boolean
+        get() = enabled && durationMs in 1L..500L && frameCount in 2..9 && durationMs >= frameCount - 1L
+
+    fun frames(): List<WidgetMotionFrame> = if (!isPlayable) listOf(WidgetMotionFrame(0, 1f)) else
         List(frameCount) { index ->
             WidgetMotionFrame(durationMs * index / (frameCount - 1), index / (frameCount - 1f))
         }
@@ -10,9 +13,34 @@ data class WidgetMotionPolicy(val enabled: Boolean, val durationMs: Long, val fr
         val Disabled = WidgetMotionPolicy(false, 0, 1)
 
         fun of(appEnabled: Boolean, systemScale: Float, interactive: Boolean): WidgetMotionPolicy =
-            if (appEnabled && systemScale > 0f && interactive)
-                WidgetMotionPolicy(true, (420f * systemScale).toLong().coerceIn(240, 500), 7)
+            if (appEnabled && systemScale.isFinite() && systemScale > 0f && interactive)
+                WidgetMotionPolicy(true, (420.0 * systemScale.toDouble()).coerceIn(240.0, 500.0).toLong(), 7)
             else Disabled
+    }
+}
+
+/** Pure monotonic-clock calculations; callers post only the next frame, never a backlog. */
+internal object WidgetMotionTiming {
+    /** Do not reveal the old bitmap after the final face has already been visible for a full slot. */
+    fun mayStartAt(elapsedMs: Long, durationMs: Long, frameCount: Int): Boolean {
+        val firstSlot = nextOffsetAfter(0L, durationMs, frameCount) ?: return false
+        return elapsedMs < firstSlot
+    }
+
+    fun progressAt(nowMs: Long, startedMs: Long, durationMs: Long): Float {
+        if (durationMs <= 0L) return 1f
+        if (nowMs <= startedMs) return 0f
+        return ((nowMs - startedMs).toDouble() / durationMs).coerceIn(0.0, 1.0).toFloat()
+    }
+
+    fun nextOffsetAfter(elapsedMs: Long, durationMs: Long, frameCount: Int): Long? {
+        if (durationMs !in 1L..500L || frameCount !in 2..9 || elapsedMs >= durationMs) return null
+        val steps = frameCount - 1
+        for (index in 1..steps) {
+            val offset = durationMs / steps * index + durationMs % steps * index / steps
+            if (offset > elapsedMs) return offset
+        }
+        return null
     }
 }
 
@@ -42,7 +70,7 @@ internal class WidgetMotionPolicies {
         select(expected)
         if (pendingWrites.isNotEmpty()) return false
         acceptedRevision = revision
-        enabled = policy.enabled
+        enabled = policy.isPlayable
         return true
     }
 

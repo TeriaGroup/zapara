@@ -26,7 +26,8 @@ object WidgetMotionPlayer {
         val views: RemoteViews,
         val mayAnimate: Boolean
     )
-    private data class Playback(val token: Long, var face: FinalFace, val callbacks: MutableList<Runnable>)
+    private data class Playback(val token: Long, var face: FinalFace,
+                                var callback: Runnable? = null, var overlayTouched: Boolean = false)
     private val finals = mutableMapOf<Int, FinalFace>()
     private val playing = mutableMapOf<Int, Playback>()
     private val policies = WidgetMotionPolicies()
@@ -35,7 +36,7 @@ object WidgetMotionPlayer {
 
     fun updatePolicy(identity: WidgetJobIdentity, policy: WidgetMotionPolicy, revision: Long) {
         requireMain()
-        if (policies.update(identity, policy, revision) && !policy.enabled) cancelAll()
+        if (policies.update(identity, policy, revision) && !policy.isPlayable) cancelAll()
     }
 
     fun beginPreferenceChange(identity: WidgetJobIdentity): Long {
@@ -68,14 +69,14 @@ object WidgetMotionPlayer {
         AppWidgetManager.getInstance(context).updateAppWidget(widgetId, views)
         if (cleared) finals.remove(widgetId) else finals[widgetId] = FinalFace(
             context.applicationContext, layoutId, overlayId, identity, views,
-            policy.enabled && previous?.identity == identity && previous.layoutId == layoutId
+            policy.isPlayable && previous?.identity == identity && previous.layoutId == layoutId
         )
     }
 
     /** Called even for timer-only partial repaints, so removal and reduced motion also prune work. */
     fun prepare(context: Context, policy: WidgetMotionPolicy): Set<Int> {
         requireMain()
-        if (!policy.enabled) cancelAll()
+        if (!policy.isPlayable) cancelAll()
         return prune(context)
     }
 
@@ -95,15 +96,15 @@ object WidgetMotionPlayer {
         requireMain()
         cancel(widgetId)
         val face = finals[widgetId] ?: return
-        if (!policy.enabled || !face.mayAnimate || face.identity != identity ||
+        if (!policy.isPlayable || !face.mayAnimate || face.identity != identity ||
             face.layoutId != layoutId || face.overlayId != overlayId ||
             !WidgetJobs.accept(identity, currentIdentity(context)) || !motionAllowed(context, identity)) return
         val token = tokens.next(widgetId)
-        val playback = Playback(token, face, mutableListOf())
+        val playback = Playback(token, face)
         playing[widgetId] = playback
         val started = SystemClock.uptimeMillis()
-        policy.frames().forEachIndexed { index, frame ->
-            val callback = Runnable {
+        lateinit var callback: Runnable
+        callback = Runnable {
                 if (!tokens.mayDraw(widgetId, token, identity, currentIdentity(context)) || !motionAllowed(context, identity)) {
                     if (playing[widgetId] === playback) cancel(widgetId)
                     return@Runnable
@@ -115,7 +116,19 @@ object WidgetMotionPlayer {
                         finals.remove(widgetId)
                         return@Runnable
                     }
-                    val bitmap = bitmapAt(frame.progress)
+                    val frameTime = SystemClock.uptimeMillis()
+                    val elapsed = frameTime - started
+                    if (!playback.overlayTouched &&
+                        !WidgetMotionTiming.mayStartAt(elapsed, policy.durationMs, policy.frameCount)) {
+                        cancel(widgetId)
+                        return@Runnable
+                    }
+                    val progress = WidgetMotionTiming.progressAt(frameTime, started, policy.durationMs)
+                    if (progress >= 1f) {
+                        cancel(widgetId)
+                        return@Runnable
+                    }
+                    val bitmap = bitmapAt(progress)
                     require(bitmap.config == Bitmap.Config.ARGB_8888 && maxOf(bitmap.width, bitmap.height) <= 640) {
                         "Widget frames must be ARGB_8888 and at most 640 px"
                     }
@@ -124,12 +137,19 @@ object WidgetMotionPlayer {
                         if (playing[widgetId] === playback) cancel(widgetId)
                         return@Runnable
                     }
+                    if (SystemClock.uptimeMillis() - started >= policy.durationMs) {
+                        cancel(widgetId)
+                        return@Runnable
+                    }
                     val partial = RemoteViews(context.packageName, layoutId).apply {
                         setImageViewBitmap(overlayId, bitmap)
                         setViewVisibility(overlayId, View.VISIBLE)
                     }
+                    playback.overlayTouched = true
                     AppWidgetManager.getInstance(context).partiallyUpdateAppWidget(widgetId, partial)
-                    if (index == policy.frameCount - 1) cancel(widgetId)
+                    val next = WidgetMotionTiming.nextOffsetAfter(
+                        SystemClock.uptimeMillis() - started, policy.durationMs, policy.frameCount)
+                    if (next == null || !main.postAtTime(callback, started + next)) cancel(widgetId)
                 } catch (error: Exception) {
                     Log.w("ZaparaWidget", "motion frame", error)
                     cancel(widgetId)
@@ -137,14 +157,21 @@ object WidgetMotionPlayer {
                     Log.w("ZaparaWidget", "motion allocation", error)
                     cancel(widgetId)
                 }
-            }
-            playback.callbacks += callback
-            main.postAtTime(callback, started + frame.delayMs)
         }
+        playback.callback = callback
+        if (!main.postAtTime(callback, started)) cancel(widgetId)
     }
 
     fun cancel(widgetId: Int) { requireMain(); cancel(widgetId, hide = true) }
     fun isRunning(widgetId: Int): Boolean { requireMain(); return widgetId in playing }
+
+    /** A resized host has a different rendered face even when its layout resource is unchanged. */
+    fun forget(widgetId: Int) {
+        requireMain()
+        cancel(widgetId)
+        tokens.next(widgetId)
+        finals.remove(widgetId)
+    }
 
     /** A clock pulse refreshes cleanup content without interrupting the current ring frame. */
     fun refreshFinal(widgetId: Int, identity: WidgetJobIdentity, views: RemoteViews): Boolean {
@@ -175,8 +202,8 @@ object WidgetMotionPlayer {
     private fun cancel(widgetId: Int, hide: Boolean) {
         val playback = playing.remove(widgetId) ?: return
         tokens.next(widgetId)
-        playback.callbacks.forEach(main::removeCallbacks)
-        if (hide) hideOverlay(widgetId, playback.face)
+        playback.callback?.let(main::removeCallbacks)
+        if (hide && playback.overlayTouched) hideOverlay(widgetId, playback.face)
     }
 
     private fun hideOverlay(widgetId: Int, face: FinalFace) {
@@ -217,7 +244,8 @@ object WidgetMotionPlayer {
         // enabled snapshot from restarting motion after screen-off or a system preference change.
         return try {
             (context.getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive &&
-                Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
+                Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+                    .let { it.isFinite() && it > 0f }
         } catch (_: Exception) { false }
     }
 

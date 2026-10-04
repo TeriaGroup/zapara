@@ -248,6 +248,17 @@ object WidgetRemoteViews {
         timerSnapshots.clear()
     }
 
+    /** A host resize changes geometry, not timetable data; start from a fresh static face. */
+    fun forgetMotion(widgetId: Int) {
+        WidgetMotionPlayer.forget(widgetId)
+        scheduleFaces.forget(widgetId)
+        homeworkFaces.forget(widgetId)
+        wayfinderFaces.forget(widgetId)
+        weekFaces.forget(widgetId)
+        timerSnapshots.forget(widgetId)
+        timerFaces.remove(widgetId)
+    }
+
     fun pushSchedule(context: Context, snapshot: ScheduleWidgetSnapshot, policy: WidgetMotionPolicy = WidgetMotionPolicy.Disabled) {
         prepareMotion(context, policy)
         val mgr = AppWidgetManager.getInstance(context)

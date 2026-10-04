@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { forecastIntersections, markDescription, marksForLesson, resolveFriendSchedules } from "./intersections.ts";
+import { forecastIntersections, friendHasLessonAtTime, lessonPresenceCaption, markDescription, marksForLesson, presenceForLesson, resolveFriendSchedules } from "./intersections.ts";
 import type { FriendItem, Lesson, Period, TimetablePayload } from "./types.ts";
 
 const period: Period = { start: "2026-09-21", weekCount: 2, title: "Осень", timeZone: "Europe/Moscow" };
@@ -46,7 +46,12 @@ test("strictness and missing cache are explicit; absent marks are optional", () 
   assert.equal(strict.checkedGroups, 1);
   assert.deepEqual(marksForLesson(own, new Date(2026, 8, 21), { ...base, strictness: 50 }, false), []);
   assert.deepEqual(marksForLesson(own, new Date(2026, 8, 21), { ...base, strictness: 50 }, true)
-    .map(mark => [mark.groupName, mark.present]), [["А4313", false]]);
+    .map(mark => [mark.groupName, mark.present, mark.hasLesson]), [["А4313", false, true]]);
+  assert.equal(friendHasLessonAtTime(own, new Date(2026, 8, 21), friend("А4313", [distant]), { ...base, strictness: 50 }), true);
+  assert.equal(friendHasLessonAtTime(own, new Date(2026, 8, 21), friend("А4313", []), { ...base, strictness: 50 }), false);
+  assert.equal(friendHasLessonAtTime(own, new Date(2026, 8, 21), friend("Н162С", null), { ...base, strictness: 50 }), null);
+  assert.deepEqual([lessonPresenceCaption(true), lessonPresenceCaption(false), lessonPresenceCaption(null)],
+    ["Пара в это время", "Нет пары в это время", "Нет данных"]);
   assert.equal(markDescription(marksForLesson(own, new Date(2026, 8, 21), { ...base, strictness: 50 }, true)[0]),
     "в вузе · ниже выбранной точности");
 });
@@ -62,6 +67,41 @@ test("a missing timetable is different from a loaded empty timetable", () => {
   const empty = forecastIntersections({ ...base, friends: [friend("Н162С", [])] });
   assert.equal(empty.checkedGroups, 1);
   assert.deepEqual(empty.missingGroups, []);
+});
+
+test("upcoming presence shows every enabled non-own group and keeps unknown separate from absence", () => {
+  const own = lesson();
+  const farOverlap = lesson({ roomRaw: "111", buildingRaw: "ГК" });
+  const input = { mineLessons: [own], period, invert: false, strictness: 100,
+    now: new Date(2026, 8, 21, 8, 0), friends: [
+      friend("А4313", [farOverlap]), friend("Н162С", []), friend("Курсанты", null),
+      { ...friend("Моя группа", null), isOwn: true }, { ...friend("Выключенная", null), enabled: false },
+    ] };
+  assert.deepEqual(presenceForLesson(own, new Date(2026, 8, 21), input).map(mark => [mark.groupName, mark.hasLesson]),
+    [["А4313", true], ["Н162С", false], ["Курсанты", null]]);
+});
+
+test("presence uses the 95 minute default only when an end time is missing", () => {
+  const own = lesson({ timeEnd: "" });
+  const friendStartsNearEnd = lesson({ timeStart: "10:30", timeEnd: "" });
+  const input = { mineLessons: [own], period, invert: false, strictness: 100,
+    now: new Date(2026, 8, 21, 8, 0) };
+  assert.equal(friendHasLessonAtTime(own, new Date(2026, 8, 21), friend("Н162С", [friendStartsNearEnd]), input), true);
+  assert.equal(friendHasLessonAtTime(own, new Date(2026, 8, 21), friend("Н162С", [
+    lesson({ timeStart: "10:36", timeEnd: "" }),
+  ]), input), false);
+});
+
+test("malformed intervals are unknown unless another valid pair confirms overlap", () => {
+  const own = lesson();
+  const malformedEnd = lesson({ timeStart: "12:00", timeEnd: "broken" });
+  const nonPositive = lesson({ timeStart: "12:00", timeEnd: "11:00" });
+  const validOverlap = lesson({ timeStart: "09:30", timeEnd: "10:00" });
+  const input = { mineLessons: [own], period, invert: false, strictness: 100,
+    now: new Date(2026, 8, 21, 8, 0) };
+  assert.equal(friendHasLessonAtTime(own, new Date(2026, 8, 21), friend("Н162С", [malformedEnd, nonPositive]), input), null);
+  assert.equal(friendHasLessonAtTime(own, new Date(2026, 8, 21), friend("Н162С", [malformedEnd, validOverlap]), input), true);
+  assert.equal(friendHasLessonAtTime(lesson({ timeEnd: "08:00" }), new Date(2026, 8, 21), friend("Н162С", []), input), null);
 });
 
 test("friend schedules resolve a saved group name through the catalog id cache", () => {
@@ -86,6 +126,7 @@ test("a friend timetable from another snapshot is withheld from intersections", 
   const cache = { mine: own("new"), "42": payload("old") };
   const resolved = resolveFriendSchedules(saved, base.groups, cache, cache.mine);
   assert.equal(resolved[0].lessons, null);
+  assert.equal(resolved[0].isOwn, false);
   assert.equal(resolveFriendSchedules(saved, base.groups, cache, own("old"))[0].lessons?.length, 1);
   assert.equal(resolveFriendSchedules(saved, base.groups, cache, payload("old"))[0].lessons, null);
 });

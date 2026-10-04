@@ -155,7 +155,7 @@ class WidgetMotionPlayerTest {
         }
     }
 
-    @Test fun seven_partial_frames_finish_with_hidden_overlay_and_current_accessible_text() = withWidget { id, view ->
+    @Test fun bounded_partial_frames_finish_with_hidden_overlay_and_current_accessible_text() = withWidget { id, view ->
         val progress = mutableListOf<Float>()
         main {
             repeat(2) { WidgetMotionPlayer.publishFinal(context, id, R.layout.widget_schedule, R.id.widget_schedule_toss, identity, enabled, finalFace()) }
@@ -163,9 +163,41 @@ class WidgetMotionPlayerTest {
         }
         SystemClock.sleep(650)
         main {
-            assertEquals(7, progress.size)
-            assertEquals(0f, progress.first())
-            assertEquals(1f, progress.last())
+            assertTrue("Rendering must stay within the existing frame budget", progress.size in 1..6)
+            assertTrue(progress.all { it.isFinite() && it >= 0f && it < 1f })
+            assertTrue(progress.zipWithNext().all { (first, second) -> second > first })
+            assertFalse(WidgetMotionPlayer.isRunning(id))
+            assertEquals(View.GONE, view.findViewById<ImageView>(R.id.widget_schedule_toss).visibility)
+            assertEquals("Motion final", view.findViewById<android.widget.TextView>(R.id.widget_schedule_title).text.toString())
+        }
+    }
+
+    @Test fun slow_renderer_skips_obsolete_frames_and_keeps_final_text() = withWidget { id, view ->
+        val progress = mutableListOf<Float>()
+        main {
+            repeat(2) { WidgetMotionPlayer.publishFinal(context, id, R.layout.widget_schedule, R.id.widget_schedule_toss, identity, enabled, finalFace()) }
+            WidgetMotionPlayer.play(context, id, R.layout.widget_schedule, R.id.widget_schedule_toss, identity, enabled) {
+                progress += it
+                if (progress.size == 1) SystemClock.sleep(180)
+                bitmap()
+            }
+        }
+        SystemClock.sleep(750)
+        main {
+            assertTrue("A slow renderer must skip missed cadence slots", progress.size in 1..4)
+            assertTrue(progress.zipWithNext().all { (first, second) -> second > first })
+            assertFalse(WidgetMotionPlayer.isRunning(id))
+            assertEquals(View.GONE, view.findViewById<ImageView>(R.id.widget_schedule_toss).visibility)
+            assertEquals("Motion final", view.findViewById<android.widget.TextView>(R.id.widget_schedule_title).text.toString())
+        }
+    }
+
+    @Test fun resized_widget_starts_from_static_accessible_face() = withWidget { id, view ->
+        main {
+            repeat(2) { WidgetMotionPlayer.publishFinal(context, id, R.layout.widget_schedule, R.id.widget_schedule_toss, identity, enabled, finalFace()) }
+            WidgetRemoteViews.forgetMotion(id)
+            WidgetMotionPlayer.publishFinal(context, id, R.layout.widget_schedule, R.id.widget_schedule_toss, identity, enabled, finalFace())
+            WidgetMotionPlayer.play(context, id, R.layout.widget_schedule, R.id.widget_schedule_toss, identity, enabled) { error("A resize must not animate old geometry") }
             assertFalse(WidgetMotionPlayer.isRunning(id))
             assertEquals(View.GONE, view.findViewById<ImageView>(R.id.widget_schedule_toss).visibility)
             assertEquals("Motion final", view.findViewById<android.widget.TextView>(R.id.widget_schedule_title).text.toString())

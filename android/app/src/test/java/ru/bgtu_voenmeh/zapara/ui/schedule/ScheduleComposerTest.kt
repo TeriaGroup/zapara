@@ -88,6 +88,56 @@ class ScheduleComposerTest {
         assertEquals(eighteen to eighteen, ScheduleComposer.syncToday(eighteen, eighteen, eighteen))
     }
 
+    @Test fun upcoming_mark_follows_start_time_and_selected_date() {
+        val now = LocalDateTime.of(2026, 9, 14, 10, 0)
+        val lesson = page(monday, now).lessons.first().copy(timeStart = "10:01", timeEnd = "11:30")
+        assertTrue(ScheduleComposer.isUpcoming(monday, lesson, now))
+        assertFalse(ScheduleComposer.isUpcoming(monday, lesson, now.plusMinutes(1)))
+        assertTrue(ScheduleComposer.isUpcoming(monday.plusDays(1), lesson, now))
+        assertFalse(ScheduleComposer.isUpcoming(monday.minusDays(1), lesson, now))
+        assertFalse(ScheduleComposer.isUpcoming(monday, lesson.copy(timeStart = "bad"), now))
+        assertFalse(ScheduleComposer.isUpcoming(monday, lesson.copy(timeEnd = "09:00"), now))
+        assertTrue(ScheduleComposer.isUpcoming(monday, lesson.copy(timeEnd = ""), now))
+    }
+
+    @Test fun minute_refresh_clears_upcoming_mark_when_lesson_starts() {
+        val date = monday
+        val before = LocalDateTime.of(2026, 9, 14, 8, 0)
+        val row = page(date, before).lessons.first().copy(timeStart = "08:01", timeEnd = "09:35")
+        val day = page(date, before).copy(lessons = listOf(row))
+        assertTrue(ScheduleComposer.atClock(day, before).lessons.single().isUpcoming)
+        assertFalse(ScheduleComposer.atClock(day, before.plusMinutes(1)).lessons.single().isUpcoming)
+    }
+
+    @Test fun clock_refresh_keeps_all_followed_groups_for_an_earlier_clock() {
+        val before = LocalDateTime.of(2026, 9, 14, 8, 0)
+        val base = page(monday, before)
+        val lesson = base.lessons.first().copy(timeStart = "08:01", timeEnd = "09:35",
+            friends = listOf(
+                FriendDotUi(0, "A", "", -1, "", visibleWhenCurrent = true),
+                FriendDotUi(1, "B", "", -1, "", visibleWhenCurrent = false)
+            ))
+        val day = base.copy(lessons = listOf(lesson))
+        val during = ScheduleComposer.atClock(day, before.plusMinutes(1))
+        assertEquals(listOf("A"), during.lessons.single().displayFriends.map { it.groupName })
+        val earlier = ScheduleComposer.atClock(during, before)
+        assertEquals(listOf("A", "B"), earlier.lessons.single().displayFriends.map { it.groupName })
+    }
+
+    @Test fun group_presence_distinguishes_overlap_clear_schedule_and_missing_data() {
+        val own = page(monday, LocalDateTime.of(2026, 9, 14, 8, 0)).lessons.first()
+        val overlapping = Lesson(timeStart = own.timeStart, timeEnd = own.timeEnd)
+        val later = Lesson(timeStart = "22:00", timeEnd = "23:00")
+        assertEquals(true, ScheduleComposer.hasLessonDuring(own.timeStart, own.timeEnd, listOf(overlapping), true))
+        assertEquals(false, ScheduleComposer.hasLessonDuring(own.timeStart, own.timeEnd, listOf(later), true))
+        assertEquals(false, ScheduleComposer.hasLessonDuring(own.timeStart, own.timeEnd, emptyList(), true))
+        assertNull(ScheduleComposer.hasLessonDuring(own.timeStart, own.timeEnd, listOf(overlapping), false))
+        assertNull(ScheduleComposer.hasLessonDuring(own.timeStart, own.timeEnd, listOf(Lesson(timeStart = "?", timeEnd = "?")), true))
+        assertEquals(true, ScheduleComposer.hasLessonDuring(own.timeStart, own.timeEnd,
+            listOf(Lesson(timeStart = "?", timeEnd = "?"), overlapping), true))
+        assertEquals(true, ScheduleComposer.hasLessonDuring("09:00", "", listOf(Lesson(timeStart = "10:30", timeEnd = "11:00")), true))
+    }
+
     @Test fun caption_uses_parity_and_week_number() {
         val page = page(monday, LocalDateTime.of(2026, 9, 14, 12, 0))
         assertEquals("Понедельник, 14 сентября · нечётная неделя · 3-я неделя", page.caption)

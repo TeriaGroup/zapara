@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,7 +23,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.constrainHeight
@@ -51,7 +56,6 @@ fun LessonCard(
 ) {
     val c = Zapara.colors
     var expanded by remember(lesson.index, lesson.name) { mutableStateOf(false) }
-    var friendHint by remember { mutableStateOf<String?>(null) }
     val hw = if (!expanded && lesson.homework.size > 2) lesson.homework.take(2) else lesson.homework
     ZCard(
         modifier = modifier.fillMaxWidth().alpha(if (lesson.isPast) 0.6f else 1f),
@@ -65,6 +69,7 @@ fun LessonCard(
             horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)
         ) {
+            if (lesson.isUpcoming) UpcomingLessonMark()
             Text(
                 "${lesson.timeStart} – ${lesson.timeEnd}",
                 style = Zapara.typography.bodyStrong,
@@ -135,33 +140,61 @@ fun LessonCard(
                 }
             }
         }
-        if (lesson.friends.isNotEmpty()) {
-            lesson.friends.forEach { dot ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs), verticalAlignment = Alignment.CenterVertically) {
-                    FriendDot(dot.index, Modifier.clickableHint { friendHint = dot.hint })
-                    val intersection = stringResource(when {
-                        dot.intersectionScore >= 100 -> R.string.schedule_intersection_same_room
-                        dot.intersectionScore >= 75 -> R.string.schedule_intersection_same_floor
-                        dot.intersectionScore >= 50 -> R.string.schedule_intersection_same_building
-                        dot.intersectionScore >= 25 -> R.string.schedule_intersection_same_time
-                        else -> R.string.schedule_intersection_none
-                    })
-                    Text(
-                        "${dot.groupName} · $intersection",
-                        modifier = Modifier.weight(1f),
-                        style = Zapara.typography.caption,
-                        color = c.text2
-                    )
-                }
-            }
-            friendHint?.let { ZChip(it, onClick = { friendHint = null }) }
-        }
+        FriendStatusRows(lesson.displayFriends, lesson.isUpcoming)
         if (lesson.homework.size > 2) ZChip(
             if (expanded) stringResource(R.string.ux30_study_hide_homework)
             else stringResource(R.string.ux30_study_show_more_homework, lesson.homework.size - 2),
             onClick = { expanded = !expanded }, tag = "Lesson.HomeworkExpand.${lesson.index}")
         actions?.invoke(this)
     }
+}
+
+@Composable
+internal fun UpcomingLessonMark() {
+    val label = stringResource(R.string.schedule_upcoming_lesson_mark)
+    Box(
+        Modifier.size(7.dp).clip(CircleShape).background(Zapara.colors.info)
+            .semantics { contentDescription = label }.testTag("Lesson.UpcomingMark")
+    )
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+internal fun FriendStatusRows(friends: List<FriendDotUi>, upcoming: Boolean) {
+    if (friends.isEmpty()) return
+    val c = Zapara.colors
+    var friendHint by remember(friends) { mutableStateOf<String?>(null) }
+    friends.forEach { dot ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+            verticalAlignment = Alignment.CenterVertically) {
+            FriendDot(dot.index, Modifier.clickableHint { friendHint = dot.hint })
+            val intersection = stringResource(when {
+                dot.intersectionScore >= 100 -> R.string.schedule_intersection_same_room
+                dot.intersectionScore >= 75 -> R.string.schedule_intersection_same_floor
+                dot.intersectionScore >= 50 -> R.string.schedule_intersection_same_building
+                dot.intersectionScore >= 25 -> R.string.schedule_intersection_same_time
+                else -> R.string.schedule_intersection_none
+            })
+            FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                Text(dot.groupName, style = Zapara.typography.caption, color = c.text2)
+                if (upcoming) {
+                    val status = stringResource(when (dot.hasLesson) {
+                        true -> R.string.schedule_friend_has_lesson
+                        false -> R.string.schedule_friend_no_lesson
+                        null -> R.string.schedule_friend_no_data
+                    })
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(painterResource(R.drawable.ic_calendar), null, Modifier.size(13.dp), tint = c.info)
+                        Text(status, style = Zapara.typography.caption, color = c.text2)
+                    }
+                }
+                if (!upcoming || dot.intersectionScore >= 25)
+                    Text("· $intersection", style = Zapara.typography.caption, color = c.text2)
+            }
+        }
+    }
+    friendHint?.let { ZChip(it, onClick = { friendHint = null }) }
 }
 
 @Composable

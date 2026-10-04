@@ -232,6 +232,32 @@ class WidgetMotionTest {
         }
     }
 
+    @Test fun frame_timing_skips_elapsed_slots_and_samples_actual_uptime() {
+        val started = 1_000L
+        assertEquals(0f, WidgetMotionTiming.progressAt(950L, started, 420L), 0f)
+        assertEquals(185f / 420f, WidgetMotionTiming.progressAt(1_185L, started, 420L), 0.0001f)
+        assertEquals(1f, WidgetMotionTiming.progressAt(1_500L, started, 420L), 0f)
+        assertEquals(70L, WidgetMotionTiming.nextOffsetAfter(0L, 420L, 7))
+        assertEquals(210L, WidgetMotionTiming.nextOffsetAfter(185L, 420L, 7))
+        assertEquals(280L, WidgetMotionTiming.nextOffsetAfter(210L, 420L, 7))
+        assertNull(WidgetMotionTiming.nextOffsetAfter(420L, 420L, 7))
+        assertTrue(WidgetMotionTiming.mayStartAt(69L, 420L, 7))
+        assertFalse(WidgetMotionTiming.mayStartAt(70L, 420L, 7))
+    }
+
+    @Test fun nonfinite_scale_and_malformed_direct_policies_cannot_queue_motion() {
+        assertEquals(WidgetMotionPolicy.Disabled, WidgetMotionPolicy.of(true, Float.POSITIVE_INFINITY, true))
+        assertEquals(WidgetMotionPolicy.Disabled, WidgetMotionPolicy.of(true, Float.NEGATIVE_INFINITY, true))
+        listOf(
+            WidgetMotionPolicy(true, 0L, 7),
+            WidgetMotionPolicy(true, 420L, 1),
+            WidgetMotionPolicy(true, 420L, 100)
+        ).forEach {
+            assertFalse(it.isPlayable)
+            assertEquals(listOf(WidgetMotionFrame(0L, 1f)), it.frames())
+        }
+    }
+
     @Test fun pose_has_exact_endpoints_and_clamps_progress() {
         val start = WidgetMotionPose(0f, 1f, 12f, 0f)
         val end = WidgetMotionPose(-12f, 0f, 0f, 1f)

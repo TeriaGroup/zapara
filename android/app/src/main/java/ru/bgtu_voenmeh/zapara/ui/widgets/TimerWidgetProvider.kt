@@ -40,7 +40,7 @@ class TimerWidgetProvider : AppWidgetProvider() {
         appWidgetId: Int,
         newOptions: android.os.Bundle
     ) {
-        WidgetUpdater.refresh(context)
+        WidgetUpdater.resize(context, appWidgetId)
     }
 
     companion object {

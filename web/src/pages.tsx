@@ -34,7 +34,7 @@ import { canonicalUtc, localDateTimeInput } from "./utc";
 import { homeworkSaveError, validateHomeworkDraft } from "./homework-draft";
 import { checkHomeworkUpload, runHomeworkSave } from "./homework-save";
 import { addDays, dayTitle, isoDay, lessonsOn, sameSubject } from "./parity";
-import { forecastIntersections, intersectionPlace, markDescription, marksForLesson, resolveFriendSchedules, type FriendMark } from "./intersections";
+import { forecastIntersections, intersectionPlace, lessonPresenceCaption, markDescription, marksForLesson, presenceForLesson, resolveFriendSchedules, type FriendMark, type FriendPresence } from "./intersections";
 import { composeSummary, onWeek, summaryCode, stripType, roomLabel } from "./summary";
 import { lessonsOfGroupTeacher, teacherCode, teacherRows, teacherWeek, type TeacherRow } from "./teachers";
 import { subgroupIndex, subgroupMark, visibleLessons } from "./subgroups";
@@ -55,7 +55,7 @@ import { selectedTopicAuthority } from "./topic-authority";
 import { topicAction } from "./topic-policy";
 import { useCommunityTimetable } from "./use-community-timetable";
 import { useApp } from "./store";
-import { absoluteDate, freeGaps, gapsBeforeLessons, hasLessonOverlap, heroLesson, localDay, minuteClock, nearbyHomework, personalHomeworkDue } from "./planner";
+import { absoluteDate, freeGaps, gapsBeforeLessons, hasLessonOverlap, heroLesson, isUpcomingLesson, localDay, minuteClock, nearbyHomework, personalHomeworkDue } from "./planner";
 import { homeworkCard, lessonFrom, placeCard } from "./cards";
 import { BallotBoardView } from "./ballots";
 import { GroupTopics, TopicMark } from "./topics";
@@ -110,11 +110,11 @@ function TypeChip({ type }: { type: string }) {
   return <span className={"type" + (kind ? " " + kind : "")}><i />{kind ? typeLabels[kind] : type}</span>;
 }
 
-function LessonCard({ lesson, marks = [], share, subgroup, onPick }: { lesson: Lesson; marks?: FriendMark[]; share?: string | null; subgroup?: ReturnType<typeof subgroupMark>; onPick?: (streamId: string, optionId: string) => void }) {
+function LessonCard({ lesson, marks = [], presence = [], share, subgroup, upcoming = false, onPick }: { lesson: Lesson; marks?: FriendMark[]; presence?: FriendPresence[]; share?: string | null; subgroup?: ReturnType<typeof subgroupMark>; upcoming?: boolean; onPick?: (streamId: string, optionId: string) => void }) {
   return (
     <article className="lesson">
       <div className="lesson-top">
-        <span className="time">{lesson.timeStart} – {lesson.timeEnd}</span>
+        <span className={"time" + (upcoming ? " lesson-upcoming" : "")} aria-label={upcoming ? `Предстоит: ${lesson.timeStart} – ${lesson.timeEnd}` : undefined}>{lesson.timeStart} – {lesson.timeEnd}</span>
         {lesson.typeRaw && <TypeChip type={lesson.typeRaw} />}
         <span className="chip">{lesson.roomRaw || lesson.classroomRaw || "—"}</span>
       </div>
@@ -130,10 +130,15 @@ function LessonCard({ lesson, marks = [], share, subgroup, onPick }: { lesson: L
           </div>
         )}
         <div className="row" style={{ marginTop: 6 }}>
-          {marks.map(mark => <span key={mark.groupName} className={"chip friend-mark" + (mark.present ? "" : " absent")}
+          {marks.map(mark => <span key={mark.groupName} className={"chip friend-mark" + (mark.present ? "" : " absent") + (upcoming ? " upcoming" : "")}
             style={{ borderLeftColor: mark.color || "var(--line-strong)" }}
-            aria-label={`${mark.groupName}${mark.members ? " (" + mark.members + ")" : ""}: ${markDescription(mark)}`}>
-            {mark.groupName}{mark.members ? ` · ${mark.members}` : ""} · {markDescription(mark)}
+            aria-label={`${mark.groupName}${mark.members ? " (" + mark.members + ")" : ""}: ${upcoming ? lessonPresenceCaption(mark.hasLesson) + " · " : ""}${markDescription(mark)}`}>
+            {mark.groupName}{mark.members ? ` · ${mark.members}` : ""}{upcoming && <span className="friend-presence"><Icon name="calendar" size={13} />{lessonPresenceCaption(mark.hasLesson)}</span>} · {markDescription(mark)}
+          </span>)}
+          {upcoming && presence.filter(item => !marks.some(mark => mark.groupName === item.groupName)).map(item => <span key={item.groupName} className="chip friend-mark friend-presence-mark upcoming"
+            style={{ borderLeftColor: item.color || "var(--line-strong)" }}
+            aria-label={`${item.groupName}${item.members ? " (" + item.members + ")" : ""}: ${lessonPresenceCaption(item.hasLesson)}`}>
+            {item.groupName}{item.members ? ` · ${item.members}` : ""}<span className="friend-presence"><Icon name="calendar" size={13} />{lessonPresenceCaption(item.hasLesson)}</span>
           </span>)}
           <ShareMenu card={share ?? null} />
         </div>
@@ -228,12 +233,15 @@ export function SchedulePage() {
   }
   function renderLesson(lesson: Lesson, lessonIndex: number) {
     const gap = gaps.get(lessonIndex);
-    const marks = period ? marksForLesson(lesson, app.date, { mineLessons: shown, friends: friendSchedules, period, invert: app.invert, strictness: app.intersectionStrictness, now }, app.showAbsentFriends) : [];
+    const upcoming = isUpcomingLesson(lesson, app.date, now);
+    const intersectionInput = period ? { mineLessons: shown, friends: friendSchedules, period, invert: app.invert, strictness: app.intersectionStrictness, now } : null;
+    const marks = intersectionInput ? marksForLesson(lesson, app.date, intersectionInput, app.showAbsentFriends) : [];
+    const presence = upcoming && intersectionInput ? presenceForLesson(lesson, app.date, intersectionInput) : [];
     return <Fragment key={`${lesson.index}:${lesson.timeStart}:${lesson.subjectRaw}:${lesson.teacherRaw}:${lessonIndex}`}>
       {gap && <p className="free-gap"><span>Перерыв {minuteClock(gap.start)}–{minuteClock(gap.end)}</span><span className="free-gap-duration">{Math.floor(gap.duration / 60) ? `${Math.floor(gap.duration / 60)} ч ` : ""}{gap.duration % 60 ? `${gap.duration % 60} мин` : ""}</span></p>}
       <div className={hero === lesson ? "day-hero" : "day-row"} id={`schedule-lesson-${lessonIndex}`} tabIndex={-1}>
         {hero === lesson && <p className="muted">{isoDay(app.date) > isoDay(now) ? "Первая пара" : lesson.timeStart <= minuteClock(now.getHours() * 60 + now.getMinutes()) ? "Сейчас" : "Следующая пара"}</p>}
-        <LessonCard lesson={lesson} marks={marks} share={lessonFrom(groupName, app.date, lesson)} subgroup={subgroupMark(lesson, lessons, index, choices)} onPick={app.pickSubgroup} />
+        <LessonCard lesson={lesson} marks={marks} presence={presence} upcoming={upcoming} share={lessonFrom(groupName, app.date, lesson)} subgroup={subgroupMark(lesson, lessons, index, choices)} onPick={app.pickSubgroup} />
         {actions(lesson)}
       </div>
     </Fragment>;

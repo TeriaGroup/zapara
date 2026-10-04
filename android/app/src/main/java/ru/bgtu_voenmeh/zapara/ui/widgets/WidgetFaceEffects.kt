@@ -71,15 +71,18 @@ fun weekMarker(oldDayIndex: Int, newDayIndex: Int, progress: Float): WeekMarkerF
 object WidgetFaceEffects {
     fun timer(old: TimerWidgetSnapshot, next: TimerWidgetSnapshot, policy: WidgetMotionPolicy): WidgetFaceScene? =
         if (policy.enabled && old.identity == next.identity && !old.cleared && !next.cleared &&
+            old.readError == null && next.readError == null &&
             timerFaceChanged(old, next)) WidgetFaceScene.Timer(old, next) else null
 
     fun room(old: WayfinderWidgetSnapshot, next: WayfinderWidgetSnapshot, policy: WidgetMotionPolicy): WidgetFaceScene.Room? =
         if (policy.enabled && old.identity == next.identity && !old.cleared && !next.cleared &&
+            old.readError == null && next.readError == null &&
             old.isDark == next.isDark && old.room.isNotBlank() && next.room.isNotBlank() && old.room != next.room)
             WidgetFaceScene.Room(old, next) else null
 
     fun week(old: WeekWidgetSnapshot, next: WeekWidgetSnapshot, policy: WidgetMotionPolicy): WidgetFaceScene.Week? {
         if (!policy.enabled || old.identity != next.identity || old.cleared || next.cleared ||
+            old.readError != null || next.readError != null ||
             old.isDark != next.isDark || old.days.size != 7 || next.days.size != 7 ||
             !old.empty.isNullOrBlank() || !next.empty.isNullOrBlank()) return null
         val counts = next.days.indices.filter { old.days[it].lessonCount != next.days[it].lessonCount }.toSet()
@@ -94,6 +97,7 @@ sealed class WidgetFaceScene(val kind: WidgetMotionKind) {
     class Timer(val old: TimerWidgetSnapshot, val next: TimerWidgetSnapshot) : WidgetFaceScene(WidgetMotionKind.Phase)
     class Room(val old: WayfinderWidgetSnapshot, val next: WayfinderWidgetSnapshot) : WidgetFaceScene(WidgetMotionKind.Room) {
         val oldRoom: String get() = old.room
+        val direction: Int = roomReelDirection(old.room, next.room)
     }
     class Week(val old: WeekWidgetSnapshot, val next: WeekWidgetSnapshot, val changedCountIndices: Set<Int>,
                val from: Int, val to: Int) : WidgetFaceScene(WidgetMotionKind.Day)
@@ -128,6 +132,11 @@ private class FaceCanvas(private val context: Context, views: RemoteViews, width
     private val geometry = widgetRowBitmapGeometry(widthDp, heightDp, density)
     private val root = views.apply(context, FrameLayout(context)) as ViewGroup
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private data class GlyphKey(val id: Int, val text: String, val color: Int)
+    // Bounded to one playback. These glyphs are never sent to RemoteViews or persisted.
+    private val glyphs = LinkedHashMap<GlyphKey, Bitmap>()
+    private val positions = mutableMapOf<Int, RectF>()
     init {
         root.measure(View.MeasureSpec.makeMeasureSpec((widthDp * density).roundToInt(), View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec((heightDp * density).roundToInt(), View.MeasureSpec.EXACTLY))
@@ -143,39 +152,58 @@ private class FaceCanvas(private val context: Context, views: RemoteViews, width
         return bitmap
     }
     private fun bounds(id: Int): RectF {
+        positions[id]?.let { return RectF(it) }
         val child = root.findViewById<View>(id)
         val rect = Rect()
         child.getDrawingRect(rect)
         root.offsetDescendantRectToMyCoords(child, rect)
-        return RectF(rect)
+        return RectF(rect).also { positions[id] = RectF(it) }
     }
     private fun card(dark: Boolean) = context.getColor(if (dark) R.color.widget_dark_card else R.color.widget_light_card)
     private fun text(canvas: Canvas, id: Int, value: String? = null, dy: Float = 0f,
                      alpha: Float = 1f, color: Int? = null) {
         val view = root.findViewById<TextView>(id)
+        if (view.visibility != View.VISIBLE || alpha <= 0f) return
+        val rect = bounds(id)
+        if (rect.width() <= 0f || rect.height() <= 0f) return
+        val key = GlyphKey(id, value ?: view.text.toString(), color ?: view.currentTextColor)
+        val scale = geometry.widthPx.toFloat() / root.width
+        val glyph = glyphs[key] ?: rasterText(view, key, scale).also {
+            if (glyphs.size >= 32) glyphs.remove(glyphs.keys.first())?.recycle()
+            glyphs[key] = it
+        }
+        // A moving text raster lands on the output pixel grid instead of being filtered twice.
+        val offset = (dy * density * scale).roundToInt() / scale
+        val save = canvas.save()
+        canvas.clipRect(rect)
+        rect.offset(0f, offset)
+        textPaint.alpha = (alpha * 255).roundToInt().coerceIn(0, 255)
+        canvas.drawBitmap(glyph, null, rect, textPaint)
+        canvas.restoreToCount(save)
+    }
+
+    private fun rasterText(view: TextView, key: GlyphKey, scale: Float): Bitmap {
         val savedText = view.text
         val savedColor = view.currentTextColor
-        if (value != null) {
-            view.text = value
+        fun layoutText() {
             view.measure(View.MeasureSpec.makeMeasureSpec(view.width, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(view.height, View.MeasureSpec.EXACTLY))
             view.layout(view.left, view.top, view.right, view.bottom)
         }
-        if (color != null) view.setTextColor(color)
+        view.text = key.text
+        view.setTextColor(key.color)
+        layoutText()
         try {
-            val rect = bounds(id)
-            if (rect.width() <= 0f || rect.height() <= 0f) return
-            val save = canvas.saveLayerAlpha(rect, (alpha * 255).roundToInt().coerceIn(0, 255))
-            try {
-                canvas.clipRect(rect)
-                canvas.translate(rect.left, rect.top + dy * density)
-                view.draw(canvas)
-            } finally {
-                canvas.restoreToCount(save)
-            }
+            val bitmap = Bitmap.createBitmap((view.width * scale).roundToInt().coerceIn(1, 640),
+                (view.height * scale).roundToInt().coerceIn(1, 640), Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            canvas.scale(bitmap.width.toFloat() / view.width, bitmap.height.toFloat() / view.height)
+            view.draw(canvas)
+            return bitmap
         } finally {
-            if (value != null) view.text = savedText
-            if (color != null) view.setTextColor(savedColor)
+            view.text = savedText
+            view.setTextColor(savedColor)
+            layoutText()
         }
     }
 
@@ -231,6 +259,8 @@ private class FaceCanvas(private val context: Context, views: RemoteViews, width
         // Mask the final host text for this short scene; the live Chronometer resumes afterward.
         val pose = widgetMotionPose(progress)
         fun reel(id: Int, oldText: String, newText: String, oldInk: Int, newInk: Int) {
+            // The clock is covered by the freshly drawn ring; unchanged labels outside it stay live.
+            if (oldText == newText && oldInk == newInk && id != R.id.widget_timer_time && id != R.id.widget_timer_fallback) return
             val box = bounds(id)
             if (box.width() <= 0f || box.height() <= 0f) return
             paint.color = card(scene.next.isDark)
@@ -260,7 +290,7 @@ private class FaceCanvas(private val context: Context, views: RemoteViews, width
     }
 
     private fun room(canvas: Canvas, scene: WidgetFaceScene.Room, progress: Float) {
-        val pose = roomReel(progress)
+        val pose = directionalRoomReel(progress, scene.direction)
         val area = bounds(R.id.widget_wayfinder_room)
         // The final TextView remains accessible underneath. Occlude only its measured room
         // region so the incoming number can move independently from the departing one.
@@ -282,9 +312,8 @@ private class FaceCanvas(private val context: Context, views: RemoteViews, width
         val moved = scene.from != scene.to
         val affected = scene.changedCountIndices.toMutableSet()
         if (moved) affected.addAll(listOf(scene.from, scene.to).filter { it in ids.indices })
-        // The marker can cross intermediate cells in a row; redraw their final text above it.
-        if (moved && scene.from >= 0 && scene.to >= 0 && scene.from / 4 == scene.to / 4)
-            affected.addAll(minOf(scene.from, scene.to)..maxOf(scene.from, scene.to))
+        // A measured cross-row path can touch any intervening cell. Their text stays stationary.
+        if (moved && scene.from in ids.indices && scene.to in ids.indices) affected.addAll(ids.indices)
         affected.forEach { index ->
             paint.color = card(scene.next.isDark)
             paint.alpha = 255
@@ -293,46 +322,59 @@ private class FaceCanvas(private val context: Context, views: RemoteViews, width
             canvas.drawRect(bounds(ids[index]).apply { inset(-2 * density, -2 * density) }, paint)
             root.findViewById<TextView>(ids[index]).background = null
         }
-        fun marker(index: Int, alpha: Float, dx: Float = 0f) {
-            if (index !in ids.indices || alpha <= 0f) return
-            val rect = bounds(ids[index]).apply {
-                offset(dx, 0f)
+        var highlightedRect: RectF? = null
+        fun marker(area: RectF, alpha: Float) {
+            if (alpha <= 0f) return
+            val rect = RectF(area).apply {
                 val shrink = weekMarkerInset(progress)
                 inset(width() * shrink, height() * shrink)
             }
             paint.color = colors.text1
             paint.alpha = (alpha * 255).roundToInt()
             canvas.drawRoundRect(rect, 8 * density, 8 * density, paint)
+            if (alpha > 0.5f) highlightedRect = rect
         }
-        val motion = weekMarker(scene.from, scene.to, progress)
+        val eased = widgetMotionEase(progress)
         if (moved) {
-            val dx = if (scene.from in ids.indices && scene.to in ids.indices && scene.from / 4 == scene.to / 4)
-                (bounds(ids[scene.to]).left - bounds(ids[scene.from]).left) * motion.offsetXDp / ((scene.to - scene.from) * 56f) else 0f
-            marker(scene.from, motion.oldAlpha, dx)
-            marker(scene.to, motion.newAlpha)
-        } else if (scene.to in affected) marker(scene.to, 1f)
+            if (scene.from in ids.indices && scene.to in ids.indices) {
+                fun RectF.geometry() = WidgetEffectRect(left, top, right, bottom)
+                val travelling = travellingWeekMarker(bounds(ids[scene.from]).geometry(), bounds(ids[scene.to]).geometry(), progress)
+                marker(RectF(travelling.left, travelling.top, travelling.right, travelling.bottom), 1f)
+            } else {
+                if (scene.from in ids.indices) marker(bounds(ids[scene.from]), 1f - eased)
+                if (scene.to in ids.indices) marker(bounds(ids[scene.to]), eased)
+            }
+        } else if (scene.to in affected) marker(bounds(ids[scene.to]), 1f)
         affected.forEach { index ->
             val view = root.findViewById<TextView>(ids[index])
             val day = scene.next.days[index]
-            val highlighted = if (!moved) day.isToday else if (scene.from / 4 == scene.to / 4)
-                index == (if (widgetMotionEase(progress) < 0.5f) scene.from else scene.to)
-                else (index == scene.from && motion.oldAlpha > 0.5f) || (index == scene.to && motion.newAlpha > 0.5f)
-            view.setTextColor(if (highlighted) colors.onAccent else if (day.lessonCount == 0) colors.text2 else colors.text1)
-            if (index !in scene.changedCountIndices) text(canvas, ids[index]) else {
-                val rect = bounds(ids[index])
-                val split = rect.top + view.totalPaddingTop + (view.layout?.getLineTop(1) ?: (view.height / 2))
-                var save = canvas.save()
-                canvas.clipRect(rect.left, rect.top, rect.right, split)
-                text(canvas, ids[index])
-                canvas.restoreToCount(save)
-                save = canvas.save()
-                canvas.clipRect(rect.left, split, rect.right, rect.bottom)
-                val pose = weekCountPose(progress, scene.changedCountIndices.sorted().indexOf(index))
-                val oldCount = scene.old.days[index].lessonCount
-                val oldText = "${day.shortName} ${day.date.dayOfMonth}\n" +
-                    context.resources.getQuantityString(R.plurals.widget_week_pairs, oldCount, oldCount)
-                text(canvas, ids[index], oldText, pose.oldOffsetYDp, pose.oldAlpha)
-                text(canvas, ids[index], dy = pose.newOffsetYDp, alpha = pose.newAlpha)
+            fun drawCell(ink: Int) {
+                if (index !in scene.changedCountIndices) text(canvas, ids[index], color = ink) else {
+                    val rect = bounds(ids[index])
+                    val split = rect.top + view.totalPaddingTop + (view.layout?.getLineTop(1) ?: (view.height / 2))
+                    var save = canvas.save()
+                    canvas.clipRect(rect.left, rect.top, rect.right, split)
+                    text(canvas, ids[index], color = ink)
+                    canvas.restoreToCount(save)
+                    save = canvas.save()
+                    canvas.clipRect(rect.left, split, rect.right, rect.bottom)
+                    val pose = weekCountPose(progress, scene.changedCountIndices.sorted().indexOf(index))
+                    val oldDay = scene.old.days[index]
+                    val oldCount = oldDay.lessonCount
+                    val oldText = "${day.shortName} ${day.date.dayOfMonth}\n" +
+                        context.resources.getQuantityString(R.plurals.widget_week_pairs, oldCount, oldCount) +
+                        if (view.maxLines > 2 && oldDay.timeSpan.isNotBlank()) "\n${oldDay.timeSpan}" else ""
+                    text(canvas, ids[index], oldText, pose.oldOffsetYDp, pose.oldAlpha, ink)
+                    text(canvas, ids[index], dy = pose.newOffsetYDp, alpha = pose.newAlpha, color = ink)
+                    canvas.restoreToCount(save)
+                }
+            }
+            drawCell(if (day.lessonCount == 0) colors.text2 else colors.text1)
+            highlightedRect?.let { marker ->
+                val save = canvas.save()
+                val path = android.graphics.Path().apply { addRoundRect(marker, 8 * density, 8 * density, android.graphics.Path.Direction.CW) }
+                canvas.clipPath(path)
+                drawCell(colors.onAccent)
                 canvas.restoreToCount(save)
             }
         }

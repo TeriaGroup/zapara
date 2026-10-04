@@ -13,7 +13,7 @@ class WeekWidgetProvider : AppWidgetProvider() {
     override fun onAppWidgetOptionsChanged(
         context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int, newOptions: Bundle
     ) {
-        WidgetUpdater.refresh(context)
+        WidgetUpdater.resize(context, appWidgetId)
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {

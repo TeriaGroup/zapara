@@ -128,6 +128,11 @@ object WidgetUpdater {
         }
     }
 
+    fun resize(context: Context, widgetId: Int) {
+        main.post { WidgetRemoteViews.forgetMotion(widgetId) }
+        refresh(context)
+    }
+
     fun beat(context: Context) {
         val app = context.applicationContext as? ZaparaApplication ?: return
         bind(app)

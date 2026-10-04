@@ -84,8 +84,39 @@ object ScheduleComposer {
     fun atClock(page: DayPage, now: LocalDateTime): DayPage {
         val today = page.date == now.toLocalDate()
         return page.copy(isToday = today, lessons = page.lessons.map { row ->
-            row.copy(isPast = today && runCatching { LocalTime.parse(row.timeEnd) <= now.toLocalTime() }.getOrDefault(false))
+            val upcoming = isUpcoming(page.date, row, now)
+            row.copy(
+                isPast = today && runCatching { LocalTime.parse(row.timeEnd) <= now.toLocalTime() }.getOrDefault(false),
+                isUpcoming = upcoming
+            )
         })
+    }
+
+    private fun interval(start: String, end: String): Pair<LocalTime, LocalTime>? {
+        val from = runCatching { LocalTime.parse(start) }.getOrNull() ?: return null
+        val to = if (end.isBlank()) from.plusMinutes(95) else runCatching { LocalTime.parse(end) }.getOrNull() ?: return null
+        return if (to > from) from to to else null
+    }
+
+    fun isUpcoming(date: LocalDate, lesson: LessonUi, now: LocalDateTime): Boolean =
+        isUpcoming(date, lesson.timeStart, lesson.timeEnd, now)
+
+    fun isUpcoming(date: LocalDate, timeStart: String, timeEnd: String, now: LocalDateTime): Boolean {
+        val start = interval(timeStart, timeEnd)?.first ?: return false
+        return date > now.toLocalDate() || date == now.toLocalDate() && start > now.toLocalTime()
+    }
+
+    /** Null means the time data or the followed schedule cannot support a confident answer. */
+    fun hasLessonDuring(start: String, end: String, candidates: List<Lesson>, known: Boolean): Boolean? {
+        if (!known) return null
+        val own = interval(start, end) ?: return null
+        var malformed = false
+        candidates.forEach { candidate ->
+            val other = interval(candidate.timeStart, candidate.timeEnd)
+            if (other == null) malformed = true
+            else if (own.first < other.second && other.first < own.second) return true
+        }
+        return if (malformed) null else false
     }
 
     fun purgeShared(state: ScheduleUiState): ScheduleUiState = state.copy(
@@ -154,6 +185,7 @@ object ScheduleComposer {
                 },
                 friends = friendsFor(lesson),
                 isPast = isToday && end != null && end.isBefore(nowTime),
+                isUpcoming = isUpcoming(date, lesson.timeStart, lesson.timeEnd, now),
                 subjectRaw = lesson.subjectRaw,
                 subjectNorm = lesson.subjectNormalized,
                 remote = LessonFormat.isRemote(lesson.classroomRaw),

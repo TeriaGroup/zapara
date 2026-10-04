@@ -41,6 +41,7 @@ class WidgetMotionScene internal constructor(
 ) {
     val accentCount: Int get() = rowIndices.size
     private var measured: List<RectF>? = null
+    private var framePaint: Paint? = null
 
     fun sized(widthDp: Int, heightDp: Int): WidgetMotionScene = WidgetMotionScene(
         kind, rowIndices, durationMs, dark, schedule, homework, widthDp, heightDp
@@ -50,8 +51,7 @@ class WidgetMotionScene internal constructor(
 
     fun accentAlphaAt(progress: Float): Float {
         if (kind != WidgetMotionKind.HomeworkCompleted) return 0f
-        val eased = widgetMotionEase(progress)
-        return (if (eased < 0.3f) eased / 0.3f else (1f - eased) / 0.7f).coerceIn(0f, 1f)
+        return widgetCompletionCheck(progress).alpha
     }
 
     fun rowAlphaAt(progress: Float, index: Int): Float {
@@ -98,14 +98,15 @@ class WidgetMotionScene internal constructor(
         val image = Bitmap.createBitmap(geometry.widthPx, geometry.heightPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(image)
         canvas.scale(geometry.pixelsPerDp, geometry.pixelsPerDp)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val paint = framePaint ?: Paint(Paint.ANTI_ALIAS_FLAG).also { framePaint = it }
         val areas = measured ?: measure(context).also { measured = it }
         val colors = WidgetPalette.of(context, dark)
         val p = progress.takeUnless(Float::isNaN)?.coerceIn(0f, 1f) ?: 1f
         areas.forEachIndexed { index, area ->
             if (area.isEmpty) return@forEachIndexed
             val travel = if (rowIndices.isEmpty()) widgetMotionEase(p) else rowAlphaAt(p, index)
-            val pulse = 4f * travel * (1f - travel)
+            val sweep = widgetRowSweep(travel, area.width())
+            val pulse = sweep.alpha
             paint.color = if (kind == WidgetMotionKind.HomeworkCompleted) colors.ok else colors.text1
             // The text stays live: tint at <= 7% opacity, with a moving underline below it.
             paint.alpha = (pulse * 18).roundToInt()
@@ -115,20 +116,25 @@ class WidgetMotionScene internal constructor(
             paint.alpha = (pulse * 150).roundToInt()
             paint.strokeWidth = 1.5f
             paint.strokeCap = Paint.Cap.ROUND
-            val head = area.left + (area.width() + 24f) * travel
-            canvas.drawLine(maxOf(area.left, head - 24f), area.bottom + 0.5f,
-                minOf(area.right, head), area.bottom + 0.5f, paint)
+            if (sweep.head > sweep.tail) canvas.drawLine(area.left + sweep.tail, area.bottom + 0.5f,
+                area.left + sweep.head, area.bottom + 0.5f, paint)
             canvas.restoreToCount(save)
             if (kind == WidgetMotionKind.HomeworkCompleted && index == 0) {
                 // Completion feedback sits in the outer padding, never over the next task.
-                paint.alpha = (accentAlphaAt(p) * 255).roundToInt()
+                val check = widgetCompletionCheck(p)
+                paint.alpha = (check.alpha * 255).roundToInt()
                 paint.style = Paint.Style.STROKE
+                paint.strokeJoin = Paint.Join.ROUND
                 val x = (area.left - 6f).coerceAtLeast(3f)
-                val y = area.centerY() + poseAt(p).oldOffsetYDp / 4f
+                val y = area.centerY() + check.offsetYDp
                 val path = android.graphics.Path().apply {
                     moveTo(x - 2f, y)
-                    lineTo(x, y + 2f)
-                    lineTo(x + 3f, y - 3f)
+                    val first = (check.drawFraction / 0.33f).coerceIn(0f, 1f)
+                    lineTo(x - 2f + 2f * first, y + 2f * first)
+                    if (check.drawFraction > 0.33f) {
+                        val second = ((check.drawFraction - 0.33f) / 0.67f).coerceIn(0f, 1f)
+                        lineTo(x + 3f * second, y + 2f - 5f * second)
+                    }
                 }
                 canvas.drawPath(path, paint)
                 paint.style = Paint.Style.FILL
@@ -140,6 +146,7 @@ class WidgetMotionScene internal constructor(
 
 object WidgetRowEffects {
     fun schedule(previous: ScheduleWidgetSnapshot, current: ScheduleWidgetSnapshot, policy: WidgetMotionPolicy): WidgetMotionScene? {
+        if (previous.readError != null || current.readError != null) return null
         if (!policy.enabled || previous.identity != current.identity || previous.cleared || current.cleared) return null
         if (previous.isDark != current.isDark || previous.rows == current.rows) return null
         val ended = current.toss
@@ -153,6 +160,7 @@ object WidgetRowEffects {
 
     fun homework(previous: HomeworkWidgetSnapshot, current: HomeworkWidgetSnapshot,
                  doneIds: Set<Long>, policy: WidgetMotionPolicy): WidgetMotionScene? {
+        if (previous.readError != null || current.readError != null) return null
         if (!policy.enabled || previous.identity != current.identity || previous.cleared || current.cleared) return null
         if (previous.isDark != current.isDark || previous.rows == current.rows) return null
         val missing = previous.rows.withIndex().firstOrNull { (_, row) ->
