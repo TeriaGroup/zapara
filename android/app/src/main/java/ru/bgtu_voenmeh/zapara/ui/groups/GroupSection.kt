@@ -252,6 +252,7 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     val keyboardVisible = rememberKeyboardVisible()
     val browsingWithKeyboard = (state.showChannels || state.showPeople) && keyboardVisible
     var detailsOpen by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(false) }
+    var groupInfoOpen by rememberSaveable(state.communityId) { mutableStateOf(false) }
     var searchOpen by rememberSaveable(state.activeConversationId, state.activeTopicId) { mutableStateOf(false) }
     var avatarOpen by rememberSaveable(state.communityId) { mutableStateOf(false) }
     var recentTopics by rememberSaveable(state.communityId) { mutableStateOf(listOf<String>()) }
@@ -268,6 +269,15 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
         ZBottomSheet(onDismiss = { avatarOpen = false }, tag = "Group.AvatarSheet", scrollable = true) {
             AvatarEditor(state.title, groupAvatar, enabled = !state.loading)
         }
+    if (groupInfoOpen) ZBottomSheet(onDismiss = { groupInfoOpen = false },
+        tag = "Group.InfoSheet", scrollable = true) {
+        Text(state.title, style = Zapara.typography.section, color = c.text1)
+        RoleChip(state.myRole)
+        Text(stringResource(R.string.group_disclaimer), style = Zapara.typography.caption, color = c.text2)
+        if (state.canManageChannels && state.preview == null && groupAvatar != null)
+            ZButton(stringResource(R.string.avatar_group), { groupInfoOpen = false; avatarOpen = true },
+                ghost = true, tag = "Group.EditAvatar")
+    }
     Column(
         Modifier.fillMaxSize().padding(horizontal = Zapara.space.l,
             vertical = if (conversation) Zapara.space.s else Zapara.space.l),
@@ -275,31 +285,16 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     ) {
         if (state.showChannels || state.showPeople) {
             if (!browsingWithKeyboard) {
-            ZButton(stringResource(R.string.group_list), { onReturnToInbox?.invoke() ?: onEvent(GroupEvent.Back) }, ghost = true, tag = "Group.List")
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                if (maxWidth < 320.dp || LocalDensity.current.fontScale >= 1.5f) {
-                    Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            ChatAvatar(state.title, groupAvatar, 40.dp)
-                            Spacer(Modifier.weight(1f))
-                            if (state.canManageChannels && state.preview == null) ZIconButton(R.drawable.ic_avatar_photo,
-                                stringResource(R.string.avatar_group), { avatarOpen = true }, "Group.EditAvatar")
-                        }
-                        Text(state.title, style = Zapara.typography.section, color = c.text1,
-                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
-                        RoleChip(state.myRole)
-                    }
-                } else Row(verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-                    ChatAvatar(state.title, groupAvatar, 40.dp)
-                    Text(state.title, style = Zapara.typography.section, color = c.text1,
-                        modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()), softWrap = false)
-                    RoleChip(state.myRole)
-                    if (state.canManageChannels && state.preview == null) ZIconButton(R.drawable.ic_avatar_photo,
-                        stringResource(R.string.avatar_group), { avatarOpen = true }, "Group.EditAvatar")
-                }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZIconButton(R.drawable.ic_chevron_left, stringResource(R.string.group_list),
+                    { onReturnToInbox?.invoke() ?: onEvent(GroupEvent.Back) }, "Group.List")
+                ChatAvatar(state.title, groupAvatar, 32.dp)
+                Text(state.title, style = Zapara.typography.bodyStrong, color = c.text1,
+                    modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                ZIconButton(R.drawable.ic_menu, stringResource(R.string.chat_polish_group_info),
+                    { groupInfoOpen = true }, "Group.Info")
             }
-            Text(stringResource(R.string.group_disclaimer), style = Zapara.typography.caption, color = c.text2)
             ZSegmented(listOf(stringResource(R.string.channel_list), stringResource(R.string.group_people),
                 stringResource(R.string.channel_general)),
                 selected = if (state.showPeople) 1 else 0,
@@ -354,9 +349,9 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
         val nextUnread = nextUnreadChannel(state.channels, state.activeTopicId,
             inChannel = !state.showChannels && !state.showPeople && !state.direct &&
                 (state.activeConversationId != null || state.activeTopicId != null))
-        if (!state.direct) ZButton(stringResource(if (nextUnread == null) R.string.group_no_unread else R.string.group_next_unread),
+        if (!state.direct && nextUnread != null) ZButton(stringResource(R.string.group_next_unread),
             { nextUnread?.let { onEvent(GroupEvent.OpenChannel(it.topicId)) } },
-            enabled = nextUnread != null, ghost = true, tag = "Group.NextUnread")
+            ghost = true, tag = "Group.NextUnread")
         if (state.failed) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.group_failed), color = c.bad, modifier = Modifier.weight(1f).testTag("Group.Error"))
             if (!state.attachmentPending) ZButton(stringResource(R.string.group_refresh),
@@ -406,6 +401,8 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                 tag = "Group.DetailsSheet", scrollable = true) {
                 Text(state.title, style = Zapara.typography.section)
                 Text(state.chatTitle, style = Zapara.typography.bodyStrong)
+                if (!state.direct) Text(stringResource(R.string.group_disclaimer),
+                    style = Zapara.typography.caption, color = c.text2)
                 if (!state.direct && state.canManageChannels && state.preview == null && groupAvatar != null)
                     ZButton(stringResource(R.string.avatar_group), { detailsOpen = false; avatarOpen = true },
                         ghost = true, tag = "Group.EditAvatar")
@@ -495,10 +492,12 @@ private fun QuickChannels(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
     val c = Zapara.colors
     val real = state.channels.filter { it.kind == "chat" || it.topicId != null }
     if (real.isEmpty()) return
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
-        LazyRow(Modifier.weight(1f).testTag("Group.QuickChannels"),
+        LazyRow(Modifier.fillMaxWidth().testTag("Group.QuickChannels"),
             horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            item(key = "all-channels") {
+                ZButton(stringResource(R.string.chat_design_all_channels), { onEvent(GroupEvent.Channels) },
+                    ghost = true, tag = "Group.AllChannelsQuick")
+            }
             items(real, key = { "${it.kind}:${it.topicId ?: "general"}" }) { channel ->
                 val active = channel.topicId == state.activeTopicId && channel.kind == state.activeChannelKind
                 val description = if (channel.unread > 0)
@@ -521,9 +520,6 @@ private fun QuickChannels(state: GroupUiState, onEvent: (GroupEvent) -> Unit) {
                 }
             }
         }
-        ZButton(stringResource(R.string.chat_design_all_channels), { onEvent(GroupEvent.Channels) },
-            ghost = true, tag = "Group.AllChannelsQuick")
-    }
 }
 
 @Composable
@@ -602,6 +598,17 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
         TrustedPanel(state, onEvent, modifier)
         return
     }
+    state.creationDraft?.takeIf { state.preview == null }?.let { draft ->
+        LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = Zapara.space.l)) {
+            item(key = "creation") {
+                TopicCreationEditor(draft, state,
+                    onChange = { onEvent(GroupEvent.CreationChanged(it)) },
+                    onCreate = { onEvent(GroupEvent.SubmitCreation) },
+                    onCancel = { onEvent(GroupEvent.CancelCreation) })
+            }
+        }
+        return
+    }
     val c = Zapara.colors
     val allBallotsTitle = stringResource(R.string.channel_all_ballots)
     val categories = state.space?.categories.orEmpty()
@@ -609,6 +616,7 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     val visible = browseChannels(state.preview ?: state.channels, query, kind, unreadOnly,
         categories.associate { it.categoryId to it.position }, categories.associate { it.categoryId to it.title })
     val filtered = query.isNotBlank() || kind != "all" || unreadOnly
+    val activeFilterCount = listOf(query.isNotBlank(), kind != "all", unreadOnly).count { it }
     val kindScroll = rememberScrollState()
     LaunchedEffect(state.communityId, kind, unreadOnly) {
         if (kind == "all" && !unreadOnly) kindScroll.scrollTo(0)
@@ -622,6 +630,7 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     val initialSaveVersion = remember(state.title) { state.channelSaveVersion }
     LaunchedEffect(state.channelSaveVersion) { if (state.channelSaveVersion > initialSaveVersion) { editing = null } }
     var searchOpen by rememberSaveable(state.communityId) { mutableStateOf(false) }
+    var toolsOpen by rememberSaveable(state.communityId) { mutableStateOf(false) }
     LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -629,18 +638,23 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                     color = c.text1, modifier = Modifier.weight(1f))
                 IconButton(onClick = {
                     searchOpen = !searchOpen
-                    if (!searchOpen) onQuery("")
                 }, modifier = Modifier.size(Zapara.space.minTouch).testTag("Group.ChannelSearchToggle")) {
                     Icon(painterResource(R.drawable.ic_search), stringResource(R.string.channel_search), tint = c.text1)
                 }
+                if (state.space != null || state.canManageChannels) IconButton(
+                    onClick = { toolsOpen = !toolsOpen },
+                    modifier = Modifier.size(Zapara.space.minTouch).testTag("Group.ToolsToggle")) {
+                    Icon(painterResource(R.drawable.ic_menu),
+                        stringResource(R.string.chat_polish_group_tools), tint = c.text1)
+                }
             }
         }
-        if (searchOpen || query.isNotBlank()) item {
+        if (searchOpen) item {
             ZTextField(query, onQuery, label = { Text(stringResource(R.string.channel_search)) },
                 placeholder = { Text(stringResource(R.string.channel_search_hint)) }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("Group.ChannelSearch"))
         }
-        item {
+        if (searchOpen) item {
             Row(Modifier.fillMaxWidth().horizontalScroll(kindScroll).testTag("Group.ChannelKinds"),
                 horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             listOf("all" to R.string.channel_filter_all, "chat" to R.string.channel_filter_chats,
@@ -657,6 +671,22 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
             }
         }
         if (filtered) item {
+            Text(stringResource(R.string.chat_polish_active_filters, activeFilterCount),
+                style = Zapara.typography.caption, color = c.text2,
+                modifier = Modifier.testTag("Group.ActiveChannelFilters"))
+            if (query.isNotBlank()) Text(query, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                style = Zapara.typography.caption, color = c.text2)
+            if (kind != "all") Text(stringResource(when (kind) {
+                "chat" -> R.string.channel_filter_chats
+                "ballots" -> R.string.channel_filter_ballots
+                "materials" -> R.string.ux60_chat_kind_materials
+                "forms" -> R.string.ux60_chat_kind_forms
+                "homework" -> R.string.ux60_chat_kind_homework
+                "schedule" -> R.string.ux60_chat_kind_schedule
+                else -> R.string.channel_filter_all
+            }), style = Zapara.typography.caption, color = c.text2)
+            if (unreadOnly) Text(stringResource(R.string.channel_filter_unread),
+                style = Zapara.typography.caption, color = c.text2)
             if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                     Text(stringResource(R.string.channel_results, visible.size, state.channels.size),
@@ -688,8 +718,10 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                     tag = "Group.RecentChannel.${topic.topicId}") }
             }
         }
-        if (state.space != null) item {
-            state.spaceError?.let { Text(it, color = c.bad, style = Zapara.typography.body) }
+        state.spaceError?.let { error -> item {
+            Text(error, color = c.bad, style = Zapara.typography.body)
+        } }
+        if (state.space != null && toolsOpen) item {
             if (state.preview != null) {
                 Text(uiText(R.string.space_day_36), style = Zapara.typography.section)
                 ZButton(uiText(R.string.space_day_37), { onEvent(GroupEvent.SpaceAction(GroupSpaceAction.EndPreview)) }, ghost = true)
@@ -705,17 +737,15 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                 if(state.desk?.headman==true || mine.any { it in setOf("channels","access","roles") }) ZButton(uiText(R.string.space_day_42),{ onEvent(GroupEvent.SpaceAction(GroupSpaceAction.Panel("audit"))) },ghost=true)
             }
         }
-        if (state.canManageChannels && state.preview == null) item {
+        if (state.canManageChannels && state.preview == null && toolsOpen) item {
             ZButton(stringResource(if (managing) R.string.channel_close_manage else R.string.channel_manage), {
                 managing = !managing
                 if (!managing) { editing = null }
             }, ghost = true, tag = "Group.ChannelManage")
         }
         state.creationNotice?.let { notice -> item { Text(notice, style=Zapara.typography.body, color=c.text1) } }
-        if (state.preview==null && (state.creationDraft!=null || (state.canManageChannels && managing))) item {
-            state.creationDraft?.let { draft -> TopicCreationEditor(draft,state,
-                onChange={onEvent(GroupEvent.CreationChanged(it))},onCreate={onEvent(GroupEvent.SubmitCreation)},onCancel={onEvent(GroupEvent.CancelCreation)}) }
-            ?: ZButton(stringResource(R.string.channel_create), { onEvent(GroupEvent.BeginCreation) },
+        if (state.preview==null && state.canManageChannels && managing && toolsOpen) item {
+            ZButton(stringResource(R.string.channel_create), { onEvent(GroupEvent.BeginCreation) },
                 enabled = !state.channelBusy, tag = "Group.ChannelCreate")
         }
         if (visible.isEmpty() && !showAllBallots) item {
@@ -900,6 +930,7 @@ private fun TrustedPanel(state: GroupUiState, onEvent: (GroupEvent) -> Unit, mod
     LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         item { ZButton(stringResource(R.string.channel_trusted_back), { onEvent(GroupEvent.CloseTrusted) }, ghost = true, tag = "Group.TrustedBack") }
         item { Text(stringResource(R.string.channel_trusted), style = Zapara.typography.section, color = c.text1) }
+        item { Text(stringResource(R.string.group_disclaimer), style = Zapara.typography.caption, color = c.text2) }
         item { Text(stringResource(R.string.channel_trusted_hint), style = Zapara.typography.caption, color = c.text2) }
         if (desk == null) item { Text(stringResource(if (state.failed) R.string.channel_trusted_load_failed
             else R.string.channel_trusted_loading), color = c.text2) }
@@ -1606,7 +1637,11 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
             }
         }
     }
-    if (searchOpen) ZBottomSheet(onDismiss = onSearchDismiss, tag = "Group.MessageFilterSheet", scrollable = true) {
+    if (searchOpen) ZBottomSheet(onDismiss = onSearchDismiss, tag = "Group.MessageFilterSheet",
+        scrollable = true, footer = {
+            ZButton(stringResource(R.string.group_message_filters_done), onSearchDismiss,
+                tag = "Group.MessageFiltersDone", modifier = Modifier.fillMaxWidth())
+        }) {
         ZTextField(query, { query = it }, label = { Text(stringResource(R.string.ux30_chat_group_search)) },
             singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Group.MessageSearch"))
         Text(stringResource(R.string.group_message_scope), style = Zapara.typography.caption, color = c.text2)
@@ -1669,8 +1704,6 @@ private fun Messages(state: GroupUiState, onEvent: (GroupEvent) -> Unit, modifie
                     modifier = Modifier.semantics { selected = kindFilter == value })
             }
         }
-        ZButton(stringResource(R.string.group_message_filters_done), onSearchDismiss,
-            tag = "Group.MessageFiltersDone", modifier = Modifier.fillMaxWidth())
     }
 }
 

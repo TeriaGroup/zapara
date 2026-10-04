@@ -59,6 +59,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.Observer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -209,6 +210,8 @@ private class ChatCaptureController(private val context: Context) {
     private var voiceFile: File? = null
     private var provider: ProcessCameraProvider? = null
     private var preview: Preview? = null
+    private var observedPreviewView: PreviewView? = null
+    private var previewStreamObserver: Observer<PreviewView.StreamState>? = null
     private var capture: VideoCapture<Recorder>? = null
     private var recording: Recording? = null
     private var circleFile: File? = null
@@ -346,7 +349,14 @@ private class ChatCaptureController(private val context: Context) {
             provider = cameraProvider
             preview = nextPreview
             capture = boundCapture
-            cameraReady = true
+            // A successful bind does not mean the first camera frame is visible.
+            // COMPATIBLE PreviewView reports STREAMING after its texture receives it.
+            val streamObserver = Observer<PreviewView.StreamState> { state ->
+                cameraReady = !released && capture === boundCapture && state == PreviewView.StreamState.STREAMING
+            }
+            observedPreviewView = view
+            previewStreamObserver = streamObserver
+            view.previewStreamState.observe(owner, streamObserver)
         } catch (cancelled: CancellationException) {
             unbindCamera()
             throw cancelled
@@ -603,6 +613,9 @@ private class ChatCaptureController(private val context: Context) {
     }
 
     private fun unbindCamera() {
+        previewStreamObserver?.let { observedPreviewView?.previewStreamState?.removeObserver(it) }
+        previewStreamObserver = null
+        observedPreviewView = null
         val oldPreview = preview
         val oldCapture = capture
         if (oldPreview != null && oldCapture != null) provider?.unbind(oldPreview, oldCapture)

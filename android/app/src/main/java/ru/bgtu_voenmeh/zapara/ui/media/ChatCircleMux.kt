@@ -33,7 +33,7 @@ internal object ChatCircleMux {
                 audioFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) != 1)
                 throw IOException("Circle audio is not mono AAC at 44.1 kHz or better")
 
-            val (videoFirstUs, videoLastUs) = videoTimes(video, videoIndex, checkActive)
+            val (videoFirstUs, videoEndUs) = videoTimes(video, videoIndex, checkActive)
             videoInput.selectTrack(videoIndex)
             audioInput.selectTrack(audioIndex)
             val audioFirstUs = audioInput.sampleTime
@@ -56,7 +56,7 @@ internal object ChatCircleMux {
                 val videoPts = videoInput.sampleTime.takeIf { it >= 0 }?.minus(videoFirstUs)
                 val audioPts = audioInput.sampleTime.takeIf { it >= 0 }
                     ?.let { it - audioFirstUs + audioDelayUs }
-                    ?.takeIf { it in 0L..videoLastUs }
+                    ?.takeIf { it in 0L..videoEndUs }
                 if (videoPts == null && audioPts == null) break
                 if (videoPts != null && (audioPts == null || videoPts <= audioPts)) {
                     writeSample(videoInput, outputMuxer, videoOutput, videoPts, buffer, info)
@@ -69,6 +69,11 @@ internal object ChatCircleMux {
                 }
             }
             if (copiedVideo == 0 || copiedAudio == 0) throw IOException("Circle has an empty track")
+            // Without explicit EOS, MediaMuxer repeats the preceding frame interval
+            // for the last frame. At low FPS that exceeds the endpoint used to trim AAC.
+            buffer.clear()
+            info.set(0, 0, videoEndUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+            outputMuxer.writeSampleData(videoOutput, buffer, info)
             outputMuxer.stop()
             muxerStarted = false
             if (output.length() !in 1000..maxVideoBytes) throw IOException("Circle exceeds media limit")

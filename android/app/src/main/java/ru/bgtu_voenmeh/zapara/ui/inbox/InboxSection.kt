@@ -307,12 +307,15 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
     val historyCalendarTheme = if (Zapara.colors.isDark) R.style.Zapara_DatePicker_Dark
         else R.style.Zapara_DatePicker_Light
     var historyFiltersOpen by rememberSaveable(state.userId, state.profileDatabaseName, activeId) { mutableStateOf(false) }
+    var historySearchOpen by rememberSaveable(activeId) { mutableStateOf(false) }
     val kindFilter = PersonalHistoryKind.entries.firstOrNull { it.name == historyKind } ?: PersonalHistoryKind.All
     val authorFilter = PersonalHistoryAuthor.entries.firstOrNull { it.name == historyAuthor } ?: PersonalHistoryAuthor.All
     val historyOptionsActive = kindFilter != PersonalHistoryKind.All ||
         authorFilter != PersonalHistoryAuthor.All || historyDate.isNotBlank()
     val historyFiltered = historyQuery.isNotBlank() || kindFilter != PersonalHistoryKind.All ||
         authorFilter != PersonalHistoryAuthor.All || historyDate.isNotBlank()
+    val historyFilterCount = listOf(historyQuery.isNotBlank(), kindFilter != PersonalHistoryKind.All,
+        authorFilter != PersonalHistoryAuthor.All, historyDate.isNotBlank()).count { it }
     fun clearHistoryFilters() { historyQuery = ""; historyKind = PersonalHistoryKind.All.name;
         historyAuthor = PersonalHistoryAuthor.All.name; historyDate = "" }
     val visibleMessages = browseLoadedPersonalHistory(state.messages, historyQuery, kindFilter, authorFilter, state.userId)
@@ -372,6 +375,14 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
         }
     }
     Column(modifier) {
+        ZButton(when {
+            historySearchOpen -> stringResource(R.string.chat_polish_hide_search)
+            historyFiltered -> stringResource(R.string.chat_polish_search_active, historyFilterCount)
+            else -> stringResource(R.string.chat_polish_search_messages)
+        }, { historySearchOpen = !historySearchOpen },
+            modifier = Modifier.padding(horizontal = Zapara.space.l),
+            ghost = true, tag = "Inbox.HistorySearchToggle", leadingIcon = R.drawable.ic_search)
+        if (historySearchOpen) {
         ZTextField(historyQuery, { historyQuery = it },
             modifier = Modifier.fillMaxWidth().padding(horizontal = Zapara.space.l).testTag("Inbox.HistorySearch"),
             placeholder = { Text(stringResource(R.string.ux30_inbox_history_search)) }, singleLine = true,
@@ -386,13 +397,27 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
             if (historyFiltered) ZButton(stringResource(R.string.group_message_reset), ::clearHistoryFilters,
                 ghost = true, tag = "Inbox.HistoryReset")
         }
-        if (historyDate.isNotBlank()) Text(historyDate,
+        }
+        if (historyFiltered && !historySearchOpen) FlowRow(
+            Modifier.padding(horizontal = Zapara.space.l),
+            horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            if (historyQuery.isNotBlank()) Text(historyQuery, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, style = Zapara.typography.caption,
+                color = Zapara.colors.text2)
+            if (historyDate.isNotBlank()) Text(historyDate, style = Zapara.typography.caption,
+                color = Zapara.colors.text2)
+            Text(stringResource(R.string.ux30_chat_result_count, visibleMessages.size, state.messages.size),
+                style = Zapara.typography.caption, color = Zapara.colors.text2)
+            ZButton(stringResource(R.string.group_message_reset), ::clearHistoryFilters,
+                ghost = true, tag = "Inbox.HistoryReset")
+        }
+        if (historyDate.isNotBlank() && historySearchOpen) Text(historyDate,
             modifier = Modifier.padding(horizontal = Zapara.space.l), color = Zapara.colors.text2,
             style = Zapara.typography.caption)
-        if (historyFiltered) Text(stringResource(R.string.ux30_chat_result_count, visibleMessages.size, state.messages.size),
+        if (historyFiltered && historySearchOpen) Text(stringResource(R.string.ux30_chat_result_count, visibleMessages.size, state.messages.size),
             modifier = Modifier.padding(horizontal = Zapara.space.l), color = Zapara.colors.text2,
             style = Zapara.typography.caption)
-        if (historyFiltered) Text(stringResource(R.string.ux30_inbox_history_scope),
+        if (historyFiltered && historySearchOpen) Text(stringResource(R.string.ux30_inbox_history_scope),
             modifier = Modifier.padding(horizontal = Zapara.space.l), color = Zapara.colors.text2,
             style = Zapara.typography.caption)
         if (quoteNotice != null) Text(stringResource(when {
@@ -605,7 +630,11 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
             }
         }
     }
-    if (historyFiltersOpen) ZBottomSheet(onDismiss = { historyFiltersOpen = false }, tag = "Inbox.HistoryFilterSheet", scrollable = true) {
+    if (historyFiltersOpen) ZBottomSheet(onDismiss = { historyFiltersOpen = false }, tag = "Inbox.HistoryFilterSheet",
+        scrollable = true, footer = {
+            ZButton(stringResource(R.string.group_message_filters_done), { historyFiltersOpen = false },
+                tag = "Inbox.HistoryFiltersDone", modifier = Modifier.fillMaxWidth())
+        }) {
         Text(stringResource(R.string.ux30_chat_history_filters), style = Zapara.typography.section)
         ZButton(stringResource(R.string.ux300_android_chat_pick_date), {
             val date = runCatching { java.time.LocalDate.parse(historyDate) }
@@ -634,7 +663,6 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
             }
         }
         Text(stringResource(R.string.ux30_chat_result_count, visibleMessages.size, state.messages.size), style = Zapara.typography.caption)
-        ZButton(stringResource(R.string.group_message_filters_done), { historyFiltersOpen = false }, modifier = Modifier.fillMaxWidth())
     }
     selected?.let { message ->
         AlertDialog(onDismissRequest = { selected = null }, title = { Text(message.senderName) }, text = {

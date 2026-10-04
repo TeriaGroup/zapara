@@ -59,6 +59,6 @@ fun LessonTypeChip(type: String, tag: String, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)
     ) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(ink))
-        Text(label, style = Zapara.typography.caption, color = ink)
+        Text(label, style = Zapara.typography.caption, color = Zapara.colors.text1)
     }
 }

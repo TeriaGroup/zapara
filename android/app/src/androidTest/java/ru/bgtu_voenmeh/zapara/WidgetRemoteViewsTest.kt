@@ -561,6 +561,35 @@ class WidgetRemoteViewsTest {
         }
     }
 
+    @Test fun schedule_and_homework_picker_previews_show_sample_rows_without_provider_data() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val providers = android.appwidget.AppWidgetManager.getInstance(ctx).installedProviders
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val schedule = providers.single { it.provider.className.endsWith(".ScheduleWidgetProvider") }
+            val homework = providers.single { it.provider.className.endsWith(".HomeworkWidgetProvider") }
+
+            val scheduleTree = android.widget.RemoteViews(ctx.packageName, schedule.previewLayout)
+                .apply(ctx, FrameLayout(ctx))
+            assertFalse(schedule.previewLayout == schedule.initialLayout)
+            assertEquals(View.VISIBLE, scheduleTree.named("widget_schedule_row1").visibility)
+            assertTrue((scheduleTree.named("widget_schedule_name1") as TextView).text.isNotBlank())
+            assertTrue((scheduleTree.named("widget_schedule_meta1") as TextView).text.isNotBlank())
+            assertEquals(View.VISIBLE, scheduleTree.named("widget_schedule_row2").visibility)
+            assertTrue((scheduleTree.named("widget_schedule_name2") as TextView).text.isNotBlank())
+            assertTrue((scheduleTree.named("widget_schedule_meta2") as TextView).text.isNotBlank())
+
+            val homeworkTree = android.widget.RemoteViews(ctx.packageName, homework.previewLayout)
+                .apply(ctx, FrameLayout(ctx))
+            assertFalse(homework.previewLayout == homework.initialLayout)
+            assertEquals(View.VISIBLE, homeworkTree.named("widget_homework_row1").visibility)
+            assertTrue((homeworkTree.named("widget_homework_subject1") as TextView).text.isNotBlank())
+            assertTrue((homeworkTree.named("widget_homework_detail1") as TextView).text.isNotBlank())
+            assertEquals(View.VISIBLE, homeworkTree.named("widget_homework_row2").visibility)
+            assertTrue((homeworkTree.named("widget_homework_subject2") as TextView).text.isNotBlank())
+            assertTrue((homeworkTree.named("widget_homework_detail2") as TextView).text.isNotBlank())
+        }
+    }
+
     @Test fun day_clicks_have_distinct_pending_intents_per_widget_and_slot() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         fun pending(id: Int, slot: Int) = WidgetIntents.open(ctx, id, slot, "schedule", "2026-09-${21 + slot}")

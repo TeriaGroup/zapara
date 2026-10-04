@@ -3,7 +3,7 @@
     android:label="@string/nav_schedule"
     android:description="@string/widget_schedule_description"
     android:initialLayout="@layout/widget_schedule"
-    android:previewLayout="@layout/widget_schedule"
+    android:previewLayout="@layout/widget_schedule_preview"
     android:minWidth="250dp"
     android:minHeight="110dp"
     android:minResizeWidth="180dp"

@@ -88,7 +88,9 @@ data class MapsUiState(
     val mapError: String? = null,
     val automaticNote: String? = null,
     val canUndoEndpoint: Boolean = false,
-    val recentRoutes: List<RecentRouteUi> = emptyList()
+    val recentRoutes: List<RecentRouteUi> = emptyList(),
+    val panX: Float = 0f,
+    val panY: Float = 0f
 )
 
 internal fun RoutePickerUi.withBuilding(next: String?): RoutePickerUi {
@@ -163,6 +165,7 @@ sealed interface MapsEvent {
     data object Fit : MapsEvent
     data class Fullscreen(val on: Boolean) : MapsEvent
     data class Transform(val zoom: Float) : MapsEvent
+    data class Pan(val x: Float, val y: Float) : MapsEvent
     data class PickEntrance(val id: String) : MapsEvent
     data class PickRouteStep(val building: String, val floor: Int) : MapsEvent
     data class SelectRouteStep(val id: Int) : MapsEvent

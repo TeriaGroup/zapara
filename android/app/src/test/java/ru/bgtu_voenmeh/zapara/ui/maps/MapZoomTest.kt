@@ -51,12 +51,21 @@ class MapZoomTest {
         assertEquals(fromButton, MapZoom.shown(gesture, pinched, fromButton), 0.001f)
     }
 
-    @Test fun size_change_after_rotation_resets_pan() {
+    @Test fun size_change_preserves_camera_instead_of_resetting_it() {
         assertFalse(MapZoom.shouldResetView(0, 0, 1080, 800))
         assertFalse(MapZoom.shouldResetView(1080, 800, 1080, 800))
-        assertTrue(MapZoom.shouldResetView(1800, 400, 1080, 800))
-        assertTrue(MapZoom.shouldResetView(1080, 800, 1800, 400))
-        val src = java.io.File("src/main/java/ru/bgtu_voenmeh/zapara/ui/maps/ZoomableMap.kt").readText()
-        assertTrue(src.contains("shouldResetView"))
+        assertFalse(MapZoom.shouldResetView(1800, 400, 1080, 800))
+        assertFalse(MapZoom.shouldResetView(1080, 800, 1800, 400))
+    }
+
+    @Test fun normalized_camera_center_survives_portrait_fullscreen_roundtrip() {
+        val camera = MapZoom.normalizedPan(40f, 0f, 400f, 800f, 1600f, 400f, 1.25f)
+        assertEquals(0.08f, camera.first, 0.0001f)
+        val fullscreen = MapZoom.restoredPan(camera.first, camera.second,
+            800f, 700f, 1600f, 400f, 1.25f)
+        assertEquals(80f, fullscreen.first, 0.01f)
+        val portrait = MapZoom.restoredPan(camera.first, camera.second,
+            400f, 800f, 1600f, 400f, 1.25f)
+        assertEquals(40f, portrait.first, 0.01f)
     }
 }

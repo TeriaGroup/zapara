@@ -54,7 +54,9 @@ internal class OwnedTestHost private constructor(
             dispose(activity.window.decorView)
             activity.finishAndRemoveTask()
         }
-        if (!activity.destroyed.await(8, TimeUnit.SECONDS)) {
+        // API 37 may finish task/render teardown after 8–10 seconds under test load.
+        // Keep the wait bounded and require the same lifecycle/window cleanup checks.
+        if (!activity.destroyed.await(20, TimeUnit.SECONDS)) {
             Thread.getAllStackTraces().forEach { (thread, trace) ->
                 Log.e("Api37Host", "${activity.hostId} ${thread.name}: ${trace.joinToString("\n")}")
             }

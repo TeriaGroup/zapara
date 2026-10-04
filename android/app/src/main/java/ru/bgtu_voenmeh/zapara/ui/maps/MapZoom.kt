@@ -33,8 +33,33 @@ object MapZoom {
             (if (maxY == 0f) 0f else y.coerceIn(-maxY, maxY))
     }
 
+    /** Pan as a fraction of the fitted, zoomed image; independent of viewport pixels. */
+    fun normalizedPan(
+        x: Float, y: Float,
+        viewportWidth: Float, viewportHeight: Float,
+        imageWidth: Float, imageHeight: Float,
+        zoom: Float
+    ): Pair<Float, Float> {
+        if (viewportWidth <= 0f || viewportHeight <= 0f || imageWidth <= 0f || imageHeight <= 0f || zoom <= 0f) return 0f to 0f
+        val fit = min(viewportWidth / imageWidth, viewportHeight / imageHeight)
+        val (boundedX, boundedY) = clampPan(x, y, viewportWidth, viewportHeight, imageWidth, imageHeight, zoom)
+        return boundedX / (imageWidth * fit * zoom) to boundedY / (imageHeight * fit * zoom)
+    }
+
+    fun restoredPan(
+        normalizedX: Float, normalizedY: Float,
+        viewportWidth: Float, viewportHeight: Float,
+        imageWidth: Float, imageHeight: Float,
+        zoom: Float
+    ): Pair<Float, Float> {
+        if (viewportWidth <= 0f || viewportHeight <= 0f || imageWidth <= 0f || imageHeight <= 0f || zoom <= 0f) return 0f to 0f
+        val fit = min(viewportWidth / imageWidth, viewportHeight / imageHeight)
+        return clampPan(normalizedX * imageWidth * fit * zoom, normalizedY * imageHeight * fit * zoom,
+            viewportWidth, viewportHeight, imageWidth, imageHeight, zoom)
+    }
+
+    @Suppress("UNUSED_PARAMETER")
     fun shouldResetView(oldW: Int, oldH: Int, newW: Int, newH: Int): Boolean {
-        if (oldW <= 0 || oldH <= 0 || newW <= 0 || newH <= 0) return false
-        return oldW != newW || oldH != newH
+        return false
     }
 }

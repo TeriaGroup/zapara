@@ -23,6 +23,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.Density
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.espresso.IdlingPolicies
 import androidx.test.uiautomator.UiDevice
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -62,11 +63,17 @@ import ru.bgtu_voenmeh.zapara.ui.theme.ThemeChoice
 import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 import ru.bgtu_voenmeh.zapara.ui.theme.ZaparaTheme
 import java.time.Instant
+import java.util.concurrent.TimeUnit
 
 /** Production chat/group composables with synthetic data and local callbacks only. */
 class OfflineChatGroupVisualTest {
     @get:Rule val rule = createEmptyComposeRule()
     private var host: OwnedTestHost? = null
+
+    @org.junit.Before fun boundOfflineFixtureWaits() {
+        IdlingPolicies.setMasterPolicyTimeout(30, TimeUnit.SECONDS)
+        IdlingPolicies.setIdlingResourceTimeout(20, TimeUnit.SECONDS)
+    }
 
     @After fun closeHost() {
         host?.close()
@@ -121,6 +128,9 @@ class OfflineChatGroupVisualTest {
         rule.runOnIdle { assertEquals(listOf("offline-group" to "room"), groupOpens) }
         rule.onNodeWithTag("Inbox.Chat.friend").performClick()
         rule.onNodeWithTag("Inbox.Draft").assertIsDisplayed()
+        assertTrue("History search starts collapsed",
+            rule.onAllNodesWithTag("Inbox.HistorySearch").fetchSemanticsNodes().isEmpty())
+        rule.onNodeWithTag("Inbox.HistorySearchToggle").performClick()
         val searchBottom = rule.onNodeWithTag("Inbox.HistorySearch").fetchSemanticsNode().boundsInRoot.bottom
         val filterTop = rule.onNodeWithTag("Inbox.HistoryFilters").fetchSemanticsNode().boundsInRoot.top
         val density = current.activity.resources.displayMetrics.density
@@ -128,7 +138,7 @@ class OfflineChatGroupVisualTest {
         frame(current, "fullqa-chat-light-personal")
         rule.onNodeWithTag("Inbox.HistoryFilters").performClick()
         rule.onNodeWithTag("Inbox.HistoryAuthor.Mine").performClick()
-        rule.onNodeWithText(current.activity.getString(R.string.group_message_filters_done)).performScrollTo().performClick()
+        rule.onNodeWithTag("Inbox.HistoryFiltersDone").assertIsDisplayed().performClick()
         rule.onNodeWithTag("Inbox.HistoryFilters").assertIsSelected()
         frame(current, "fullqa-chat-light-history-filter-active")
         rule.onNodeWithTag("Inbox.HistoryReset").performClick()
@@ -196,6 +206,13 @@ class OfflineChatGroupVisualTest {
         frame(current, "fullqa-group-dark-list")
         rule.onNodeWithTag("Group.Open.offline-group").performClick()
         rule.onNodeWithTag("Group.Channel.ballots").performScrollTo().assertIsDisplayed()
+        assertTrue("Channel filters start collapsed",
+            rule.onAllNodesWithTag("Group.ChannelKinds").fetchSemanticsNodes().isEmpty())
+        assertTrue("Group tools start collapsed",
+            rule.onAllNodesWithTag("Group.Obligations").fetchSemanticsNodes().isEmpty())
+        rule.onNodeWithTag("Group.Info").performClick()
+        rule.onNodeWithText(current.activity.getString(R.string.group_disclaimer)).assertIsDisplayed()
+        UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).pressBack()
         frame(current, "fullqa-group-dark-channels")
         rule.onNodeWithTag("Group.Panes.1").performClick()
         rule.onNodeWithTag("Group.Room").assertIsDisplayed()
@@ -225,10 +242,13 @@ class OfflineChatGroupVisualTest {
 
     @Test fun large_text_keeps_group_navigation_and_chat_reachable() {
         val events = mutableListOf<GroupEvent>()
+        val noUnread = groupFixture().let { fixture ->
+            fixture.copy(channels = fixture.channels.map { it.copy(unread = 0) })
+        }
         val current = OwnedTestHost.launch().also { host = it }
         current.scenario.onActivity { activity ->
             activity.setContent {
-                var state by androidx.compose.runtime.remember { mutableStateOf(groupFixture().copy(showChannels = true)) }
+                var state by androidx.compose.runtime.remember { mutableStateOf(noUnread.copy(showChannels = true)) }
                 OfflineFrame(ThemeChoice.Light, fontScale = 2f, conversation = !state.showChannels && !state.showPeople) {
                     GroupSection(state, onEvent = { event ->
                         events += event
@@ -243,6 +263,8 @@ class OfflineChatGroupVisualTest {
         }
         rule.waitForIdle()
         rule.onNodeWithTag("Nav.Chat").assertIsDisplayed()
+        assertTrue("No disabled unread action occupies the group header",
+            rule.onAllNodesWithTag("Group.NextUnread").fetchSemanticsNodes().isEmpty())
         rule.onNodeWithTag("Group.Panes.1").assertIsDisplayed().performClick()
         frame(current, "fullqa-group-large-text-people")
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
@@ -294,6 +316,9 @@ class OfflineChatGroupVisualTest {
             }
         }
         rule.waitForIdle()
+        assertTrue("Management actions start collapsed",
+            rule.onAllNodesWithTag("Group.ChannelManage").fetchSemanticsNodes().isEmpty())
+        rule.onNodeWithTag("Group.ToolsToggle").performScrollTo().performClick()
         rule.onNodeWithText("Роли").performScrollTo().performClick()
         rule.onNodeWithTag("Group.Space.roles").assertIsDisplayed()
         frame(current, "fullqa-group-roles")

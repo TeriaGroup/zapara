@@ -80,15 +80,17 @@ class MapsViewModel internal constructor(
                 val room = state.availableRooms.firstOrNull { it.id == event.id }
                 if (room == null || state.planFile == null) state else state.copy(
                     highlight = HighlightUi(room.rect, room.room), roomUnmarked = false,
-                    zoom = 1f, fitGeneration = state.fitGeneration + 1)
+                    zoom = 1f, panX = 0f, panY = 0f, fitGeneration = state.fitGeneration + 1)
             }
             MapsEvent.Browse -> launchMap { openBrowse() }
             MapsEvent.ToNext -> if (routingOn()) launchMap { toNext() }
             MapsEvent.ZoomIn -> mutable.update { it.copy(zoom = (it.zoom * 1.25f).coerceIn(0.4f, 4f)) }
             MapsEvent.ZoomOut -> mutable.update { it.copy(zoom = (it.zoom / 1.25f).coerceIn(0.4f, 4f)) }
-            MapsEvent.Fit -> mutable.update { it.copy(zoom = 1f, fitGeneration = it.fitGeneration + 1) }
+            MapsEvent.Fit -> mutable.update { it.copy(zoom = 1f, panX = 0f, panY = 0f,
+                fitGeneration = it.fitGeneration + 1) }
             is MapsEvent.Fullscreen -> mutable.update { it.copy(fullscreen = event.on) }
             is MapsEvent.Transform -> mutable.update { it.copy(zoom = event.zoom.coerceIn(0.4f, 4f)) }
+            is MapsEvent.Pan -> mutable.update { it.copy(panX = event.x, panY = event.y) }
             is MapsEvent.PickEntrance -> if (routingOn()) launchMap { pickEntrance(event.id) }
             is MapsEvent.PickRouteStep -> if (routingOn()) mutable.value.presentation?.steps?.firstOrNull {
                 it.from.building == event.building && it.from.floor == event.floor
@@ -351,6 +353,9 @@ class MapsViewModel internal constructor(
                 loaded = true, hasGroup = true, remote = false,
                 rasterCatalog = catalog,
                 floor = level, planFile = rasters.files[level],
+                zoom = if (shown != it.building || level != it.floor) 1f else it.zoom,
+                panX = if (shown != it.building || level != it.floor) 0f else it.panX,
+                panY = if (shown != it.building || level != it.floor) 0f else it.panY,
                 highlight = coords?.let { rect -> HighlightUi(rect, room.orEmpty()) },
                 availableRooms = rooms,
                 roomUnmarked = !room.isNullOrBlank() && coords == null,

@@ -276,7 +276,9 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
                     presentation = if (state.alphaMaps) state.presentation else null,
                     floorKey = FloorKey(state.building, state.floor),
                     activeStepId = if (state.alphaMaps) state.activeStepId else null,
-                    onMapUnavailable = { onEvent(MapsEvent.MapDecodeFailed(FloorKey(state.building, state.floor))) }
+                    onMapUnavailable = { onEvent(MapsEvent.MapDecodeFailed(FloorKey(state.building, state.floor))) },
+                    panX = state.panX, panY = state.panY,
+                    onPan = { x, y -> onEvent(MapsEvent.Pan(x, y)) }
                 )
                 }
             }

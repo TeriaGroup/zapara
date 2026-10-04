@@ -5,8 +5,10 @@ import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.unit.Density
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.espresso.IdlingPolicies
 import androidx.test.platform.app.InstrumentationRegistry
@@ -48,14 +50,16 @@ class ChatKeyboardLayoutTest {
         try { host?.close() } finally { host = null }
     }
 
-    private fun screen(group: Boolean, context: Boolean = false) {
+    private fun screen(group: Boolean, context: Boolean = false, fontScale: Float = 1f) {
         requireNotNull(host).scenario.onActivity { current ->
             current.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             current.setContent {
             var inbox by remember { mutableStateOf(personalFixture(context)) }
             var space by remember { mutableStateOf(groupFixture(context)) }
             ZaparaTheme(ThemeChoice.Light, MotionSettings.Off) {
-                CompositionLocalProvider(LocalShellChrome provides ShellChrome("А863С", false, true) {}) {
+                val density = LocalDensity.current.density
+                CompositionLocalProvider(LocalDensity provides Density(density, fontScale),
+                    LocalShellChrome provides ShellChrome("А863С", false, true) {}) {
                     ZAppScaffold(conversation = true,
                         bottomBar = { ZBottomBar(Section.Chat, false, 0, false, {}, {}) }) {
                             if (group) GroupSection(space, { event ->
@@ -99,12 +103,27 @@ class ChatKeyboardLayoutTest {
         rule.onNodeWithTag("Group.MessageSearch").performClick().performTextReplacement("сообщение 12")
         rule.waitUntil(8_000) { KeyboardEvidence.visible() }
         capture("Group-search-keyboard")
-        rule.onNodeWithTag("Group.MessageFiltersDone").performScrollTo().performClick()
+        assertVisibleInWindow("Group.MessageFiltersDone")
+        rule.onNodeWithTag("Group.MessageFiltersDone").performClick()
         rule.waitForIdle()
         capture("Group-search-results")
         rule.onNodeWithTag("Group.SearchActive").assertIsDisplayed()
         rule.onNodeWithTag("Group.Message.message-12").assertIsDisplayed()
         rule.onNodeWithTag("Group.Draft").assertIsDisplayed()
+    }
+
+    @Test fun group_search_done_remains_reachable_with_keyboard_at_large_text() {
+        screen(true, fontScale = 2f)
+        rule.onNodeWithTag("Group.MessageFilters").performClick()
+        val search = rule.onNodeWithTag("Group.MessageSearch")
+        search.performClick()
+        capture("Group-search-large-focused")
+        rule.waitUntil(8_000) { KeyboardEvidence.visible() }
+        search.performTextReplacement("сообщение")
+        KeyboardEvidence.requireVisible()
+        assertVisibleInWindow("Group.MessageFiltersDone")
+        rule.onNodeWithTag("Group.MessageFiltersDone").performClick()
+        rule.onNodeWithTag("Group.SearchActive").assertIsDisplayed()
     }
 
     private fun olderHistory(group: Boolean) {
@@ -196,7 +215,8 @@ class ChatKeyboardLayoutTest {
         }
         val nodes = JSONObject()
         listOf("Inbox.Draft", "Inbox.Send", "Inbox.Message.message-24",
-            "Group.Draft", "Group.Send", "Group.Message.message-24").forEach { tag ->
+            "Group.Draft", "Group.Send", "Group.Message.message-24",
+            "Group.MessageSearch", "Group.MessageFiltersDone").forEach { tag ->
             rule.onAllNodesWithTag(tag).fetchSemanticsNodes().firstOrNull()?.let { node ->
                 val bounds = node.boundsInWindow
                 nodes.put(tag, JSONObject().put("left", bounds.left).put("top", bounds.top)

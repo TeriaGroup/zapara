@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_polish_search_messages">Поиск сообщений</string>
+    <string name="chat_polish_hide_search">Скрыть поиск</string>
+    <string name="chat_polish_search_active">Поиск и фильтры · %1$d</string>
+    <string name="chat_polish_group_info">Сведения о группе</string>
+    <string name="chat_polish_group_tools">Действия группы</string>
+    <string name="chat_polish_active_filters">Фильтры каналов · %1$d</string>
+</resources>

@@ -556,13 +556,6 @@ fun SettingsSection(
                     if (state.timeDirty) Text(stringResource(R.string.ux30_notify_unsaved),
                         style = Zapara.typography.caption, color = c.warn)
                     state.timeSaveError?.let { Text(it, style = Zapara.typography.caption, color = c.bad) }
-                    ZButton(stringResource(R.string.ux30_notify_save), { onEvent(SettingsEvent.SaveTimes) },
-                        enabled = state.timeDirty && state.timeError == null && !state.timeSaving,
-                        busy = state.timeSaving, tag = "Settings.SaveTimes")
-                    if (state.timeSaving) Text(stringResource(R.string.ux30_platform_time_saving_wait),
-                        style = Zapara.typography.caption, color = c.text2)
-                    if (state.timeDirty && !state.timeSaving) ZButton(stringResource(R.string.ux30_notify_cancel),
-                        { onEvent(SettingsEvent.CancelTimes) }, ghost = true, tag = "Settings.CancelTimes")
                     if (!state.timeSaving) {
                         Text(stringResource(R.string.ux100_platform_time_presets), style = Zapara.typography.caption,
                             color = c.text2)
@@ -575,6 +568,13 @@ fun SettingsSection(
                             }, ghost = true, tag = "Settings.PresetLate")
                         }
                     }
+                    ZButton(stringResource(R.string.ux30_notify_save), { onEvent(SettingsEvent.SaveTimes) },
+                        enabled = state.timeDirty && state.timeError == null && !state.timeSaving,
+                        busy = state.timeSaving, tag = "Settings.SaveTimes")
+                    if (state.timeSaving) Text(stringResource(R.string.ux30_platform_time_saving_wait),
+                        style = Zapara.typography.caption, color = c.text2)
+                    if (state.timeDirty && !state.timeSaving) ZButton(stringResource(R.string.ux30_notify_cancel),
+                        { onEvent(SettingsEvent.CancelTimes) }, ghost = true, tag = "Settings.CancelTimes")
                     Text(if (state.notifyEnabled) uiText(R.string.space_day_165, state.savedTime1, state.savedTime2)
                         else uiText(R.string.space_day_166), style = Zapara.typography.caption, color = c.text2)
                     if (state.timeDirty) Text(stringResource(R.string.ux30_notify_preview_draft),

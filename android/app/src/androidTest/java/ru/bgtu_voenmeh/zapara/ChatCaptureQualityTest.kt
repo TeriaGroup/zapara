@@ -7,17 +7,23 @@ import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.os.SystemClock
+import android.view.View
+import android.view.ViewGroup
+import androidx.camera.view.PreviewView
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -28,6 +34,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONArray
 import org.json.JSONObject
@@ -132,11 +141,16 @@ class ChatCaptureQualityTest {
         val audioDurationMs = audio?.durationMs()
         val videoDurationMs = video?.durationMs()
         val durationDeltaMs = if (audioDurationMs != null && videoDurationMs != null) abs(audioDurationMs - videoDurationMs) else null
+        val audioFirstUs = audio?.firstSampleTimeUs
+        val videoFirstUs = video?.firstSampleTimeUs
+        val startOffsetMs = if (audioFirstUs != null && videoFirstUs != null) (audioFirstUs - videoFirstUs) / 1000L else null
         val audioDecoding = decodeAudioPlayback(recorded.file)
         val videoDecoding = decodeCircleFrame(recorded.file)
         media.json.put("audio_duration_ms", audioDurationMs ?: JSONObject.NULL)
             .put("video_duration_ms", videoDurationMs ?: JSONObject.NULL)
             .put("track_duration_delta_ms", durationDeltaMs ?: JSONObject.NULL)
+            .put("audio_start_offset_from_video_ms", startOffsetMs ?: JSONObject.NULL)
+            .put("timing_scope", "Container track boundaries, not a measurement of speech lip sync")
             .put("decode", JSONObject().put("audio", audioDecoding).put("video", videoDecoding))
         writeEvidence("circle", recorded, media, JSONObject()
             .put("quality", "CameraX Quality.HD with fallback")
@@ -162,6 +176,45 @@ class ChatCaptureQualityTest {
         assertNotNull("Circle audio track duration must be readable: ${media.json}", audioDurationMs)
         assertNotNull("Circle video track duration must be readable: ${media.json}", videoDurationMs)
         assertTrue("Circle audio/video durations should align within 250 ms: ${media.json}", durationDeltaMs != null && durationDeltaMs <= CIRCLE_TRACK_DELTA_TOLERANCE_MS)
+    }
+
+    @Test fun circle_start_waits_for_the_first_preview_frame() {
+        lateinit var cameraOwner: TestCameraLifecycle
+        instrumentation.runOnMainSync { cameraOwner = TestCameraLifecycle() }
+        showHost(cameraOwner)
+        rule.onNodeWithTag("Capture.StartCircle").performClick()
+        // Binding is allowed while CREATED, but this camera cannot stream a frame.
+        // Give asynchronous provider binding time to expose any premature ready state.
+        val ready = activity.getString(R.string.chat_media_camera_ready)
+        val deadline = SystemClock.elapsedRealtime() + 5_000
+        while (SystemClock.elapsedRealtime() < deadline &&
+            rule.onAllNodesWithText(ready).fetchSemanticsNodes().isEmpty() && errors.isEmpty()) SystemClock.sleep(50)
+        assertTrue("Camera preparation failed: $errors", errors.isEmpty())
+        rule.onNodeWithText(activity.getString(R.string.chat_media_start)).assertIsNotEnabled()
+        assertTrue("Camera must not claim ready before a frame", rule.onAllNodesWithText(ready).fetchSemanticsNodes().isEmpty())
+
+        instrumentation.runOnMainSync { cameraOwner.registry.currentState = Lifecycle.State.RESUMED }
+        awaitCameraReady()
+        rule.onNodeWithText(activity.getString(R.string.chat_media_start)).assertIsEnabled()
+        instrumentation.runOnMainSync {
+            val preview = findPreview(activity.window.decorView)
+            assertNotNull("Capture must show a camera PreviewView", preview)
+            assertEquals("Ready requires a real streaming preview", PreviewView.StreamState.STREAMING, preview?.previewStreamState?.value)
+        }
+        rule.onNodeWithText(activity.getString(R.string.chat_media_cancel)).performClick()
+        awaitIdleHost("Capture.StartCircle")
+        instrumentation.runOnMainSync { cameraOwner.registry.currentState = Lifecycle.State.DESTROYED }
+    }
+
+    private class TestCameraLifecycle : LifecycleOwner {
+        val registry = LifecycleRegistry(this).apply { currentState = Lifecycle.State.CREATED }
+        override val lifecycle: Lifecycle get() = registry
+    }
+
+    private fun findPreview(view: View): PreviewView? {
+        if (view is PreviewView) return view
+        if (view is ViewGroup) for (index in 0 until view.childCount) findPreview(view.getChildAt(index))?.let { return it }
+        return null
     }
 
     @Test fun canceling_voice_recording_does_not_call_recorded_callback() {
@@ -190,8 +243,9 @@ class ChatCaptureQualityTest {
         assertTrue("Cancel must not report a capture error: $errors", errors.isEmpty())
     }
 
-    private fun showHost() {
+    private fun showHost(cameraOwner: LifecycleOwner? = null) {
         requireNotNull(host).scenario.onActivity { activity -> activity.setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides (cameraOwner ?: activity)) {
             ZaparaTheme(ThemeChoice.Light, MotionSettings.Off) {
                 var errorMessage by remember { mutableStateOf<String?>(null) }
                 Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -214,6 +268,7 @@ class ChatCaptureQualityTest {
                     }
                     errorMessage?.let { Text(it, Modifier.testTag("Capture.Error")) }
                 }
+            }
             }
         } }
         rule.waitForIdle()
@@ -437,6 +492,10 @@ class ChatCaptureQualityTest {
         fun durationMs(): Long? {
             val formatDuration = durationUs?.takeIf { it > 0L }
             if (formatDuration != null) return formatDuration / 1000L
+            return sampleSpanMs()
+        }
+
+        fun sampleSpanMs(): Long? {
             val first = firstSampleTimeUs ?: return null
             val last = lastSampleTimeUs ?: return null
             return ((last - first).coerceAtLeast(0L)) / 1000L
@@ -452,7 +511,7 @@ class ChatCaptureQualityTest {
             .put("duration_us", durationUs)
             .put("first_sample_time_us", firstSampleTimeUs)
             .put("last_sample_time_us", lastSampleTimeUs)
-            .put("sample_span_duration_ms", durationMs())
+            .put("sample_span_duration_ms", sampleSpanMs())
             .put("extractor_demuxed_sample_count", sampleCount)
     }
 

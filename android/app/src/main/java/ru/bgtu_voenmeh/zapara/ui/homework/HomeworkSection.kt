@@ -88,6 +88,11 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit,
         state.originFilter, state.deadlineFilter, state.withFilesOnly, state.sortBySubject)
     val visibleShared = HomeworkBrowse.shared(if (selectedSubject == null) state.sharedRows else emptyList(), state.browseQuery, state.browseFilter,
         state.originFilter, state.deadlineFilter, state.withFilesOnly)
+    val allTasksCompleted = selectedSubject == null && state.browseQuery.isBlank() &&
+        state.browseFilter == HomeworkCompletionFilter.Active &&
+        state.originFilter == HomeworkOriginFilter.All && state.deadlineFilter == HomeworkDeadlineFilter.All &&
+        !state.withFilesOnly && browse.totalActive + state.sharedRows.count { !it.completed } == 0 &&
+        browse.totalDone + state.sharedRows.count { it.completed } > 0
     Column(Modifier.fillMaxSize()) {
         ZTopBar(stringResource(R.string.nav_homework)) {
             if (state.hasGroup) ZIconButton(R.drawable.ic_plus, stringResource(R.string.add), { onEvent(HomeworkEvent.Add) }, "Homework.Add")
@@ -287,6 +292,12 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit,
                             EmptyState(R.drawable.ic_homework, stringResource(R.string.hw_empty_title),
                                 stringResource(R.string.hw_empty_hint), stringResource(R.string.add),
                                 { onEvent(HomeworkEvent.Add) }, "Empty.Homework")
+                        } else if (allTasksCompleted) {
+                            EmptyState(R.drawable.ic_check, stringResource(R.string.polish_homework_completed_title),
+                                stringResource(R.string.polish_homework_completed_hint),
+                                stringResource(R.string.polish_homework_show_completed),
+                                { onEvent(HomeworkEvent.BrowseFilter(HomeworkCompletionFilter.Done)) },
+                                "Empty.HomeworkCompleted")
                         } else {
                             EmptyState(R.drawable.ic_homework, stringResource(R.string.homework_browse_no_results),
                                 stringResource(R.string.homework_browse_no_results_hint),

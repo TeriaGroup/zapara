@@ -12,17 +12,21 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -45,6 +49,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -57,6 +62,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.ZaparaEase
 import ru.bgtu_voenmeh.zapara.ui.theme.rememberMarch
 import ru.bgtu_voenmeh.zapara.ui.theme.rememberPulse
 import java.io.File
+import ru.bgtu_voenmeh.zapara.R
 
 @Composable
 fun ZoomableMap(
@@ -72,7 +78,10 @@ fun ZoomableMap(
     presentation: RoutePresentation? = null,
     floorKey: FloorKey? = null,
     activeStepId: Int? = null,
-    onMapUnavailable: (() -> Unit)? = null
+    onMapUnavailable: (() -> Unit)? = null,
+    panX: Float? = null,
+    panY: Float? = null,
+    onPan: ((Float, Float) -> Unit)? = null
 ) {
     val motion = Zapara.motion
     var gesture by remember { mutableStateOf(false) }
@@ -81,6 +90,7 @@ fun ZoomableMap(
     val animatedZoom by animateFloatAsState(targetValue = zoom, animationSpec = tween(motion.ms(Durations.zoom), easing = ZaparaEase), label = "mapZoom")
     val shown = MapZoom.shown(gesture, scale, animatedZoom)
     var requestedOffset by remember { mutableStateOf(Offset.Zero) }
+    var previousFitGeneration by remember { mutableIntStateOf(fitGeneration) }
     LaunchedEffect(zoom) {
         if (MapZoom.isButtonZoom(zoom, lastEmitted)) {
             gesture = false
@@ -89,11 +99,13 @@ fun ZoomableMap(
         }
     }
     LaunchedEffect(fitGeneration) {
-        if (fitGeneration == 0) return@LaunchedEffect
+        if (fitGeneration == previousFitGeneration) return@LaunchedEffect
+        previousFitGeneration = fitGeneration
         gesture = false
         scale = 1f
         lastEmitted = 1f
         requestedOffset = Offset.Zero
+        onPan?.invoke(0f, 0f)
         onTransform(1f)
     }
     val glow by rememberPulse(highlight != null, Durations.map, 0.4f, 0.8f)
@@ -110,32 +122,32 @@ fun ZoomableMap(
     }
     val march by rememberMarch(presentation == null && motion.enabled && !path.isNullOrEmpty() && drawProgress >= 1f, Durations.map)
     val unavailableCallback by androidx.compose.runtime.rememberUpdatedState(onMapUnavailable)
-    val bitmap by produceState<Bitmap?>(null, file?.absolutePath, floorKey) {
-        value = null
-        value = withContext(Dispatchers.IO) {
+    val bitmapState by produceState<PlanBitmap>(PlanBitmap.Loading, file?.absolutePath, floorKey) {
+        value = PlanBitmap.Loading
+        if (file == null) return@produceState
+        val decoded = withContext(Dispatchers.IO) {
             try {
-                file?.takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.absolutePath) }
+                file.takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.absolutePath) }
             } catch (e: Exception) {
                 android.util.Log.w("ZaparaMaps", "decode", e)
                 null
             }
         }
-        if (value == null && file != null) unavailableCallback?.invoke()
+        value = if (decoded != null) PlanBitmap.Ready(decoded) else PlanBitmap.Failed
+        if (decoded == null) unavailableCallback?.invoke()
     }
+    val bitmap = (bitmapState as? PlanBitmap.Ready)?.bitmap
     val c = Zapara.colors
     val density = LocalDensity.current
     var layout by remember { mutableStateOf(IntSize.Zero) }
-    var prevSize by remember { mutableStateOf(IntSize.Zero) }
-    val boundedPan = MapZoom.clampPan(
-        requestedOffset.x, requestedOffset.y,
-        layout.width.toFloat(), layout.height.toFloat(),
-        bitmap?.width?.toFloat() ?: 0f, bitmap?.height?.toFloat() ?: 0f,
-        shown
+    val boundedPan = if (panX != null && panY != null) MapZoom.restoredPan(
+        panX, panY, layout.width.toFloat(), layout.height.toFloat(),
+        bitmap?.width?.toFloat() ?: 0f, bitmap?.height?.toFloat() ?: 0f, shown
+    ) else MapZoom.clampPan(
+        requestedOffset.x, requestedOffset.y, layout.width.toFloat(), layout.height.toFloat(),
+        bitmap?.width?.toFloat() ?: 0f, bitmap?.height?.toFloat() ?: 0f, shown
     )
     val offset = Offset(boundedPan.first, boundedPan.second)
-    SideEffect {
-        requestedOffset = offset
-    }
     val press = remember { PlanPressState() }
     press.shown = shown
     press.offset = offset
@@ -156,6 +168,12 @@ fun ZoomableMap(
         requestedOffset = Offset(nextPan.first, nextPan.second)
         press.shown = next
         press.offset = requestedOffset
+        if (press.bitmap != null && press.layout.width > 0 && press.layout.height > 0) {
+            val normalized = MapZoom.normalizedPan(nextPan.first, nextPan.second,
+                press.layout.width.toFloat(), press.layout.height.toFloat(),
+                press.bitmap!!.width.toFloat(), press.bitmap!!.height.toFloat(), next)
+            onPan?.invoke(normalized.first, normalized.second)
+        }
         onTransform(next)
     }
     Box(
@@ -163,14 +181,6 @@ fun ZoomableMap(
             .fillMaxSize()
             .clipToBounds()
             .onSizeChanged { new ->
-                if (MapZoom.shouldResetView(prevSize.width, prevSize.height, new.width, new.height)) {
-                    gesture = false
-                    scale = 1f
-                    lastEmitted = 1f
-                    requestedOffset = Offset.Zero
-                    onTransform(1f)
-                }
-                prevSize = new
                 layout = new
             }
             .testTag("Maps.Plan")
@@ -181,6 +191,7 @@ fun ZoomableMap(
                         scale = 1f
                         lastEmitted = 1f
                         requestedOffset = Offset.Zero
+                        onPan?.invoke(0f, 0f)
                         onTransform(1f)
                     },
                     onLongPress = { tap ->
@@ -356,8 +367,26 @@ fun ZoomableMap(
                     }
                 }
             }
+        } else when (bitmapState) {
+            PlanBitmap.Loading -> Column(
+                Modifier.testTag("Maps.PlanLoading"),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.s)
+            ) {
+                CircularProgressIndicator(Modifier.size(24.dp), color = c.text1, strokeWidth = 2.dp)
+                Text(stringResource(R.string.maps_polish_loading_plan), style = Zapara.typography.body, color = c.text1)
+            }
+            PlanBitmap.Failed -> Text(stringResource(R.string.maps_polish_plan_failed),
+                modifier = Modifier.testTag("Maps.PlanFailed"), style = Zapara.typography.body, color = c.text1)
+            is PlanBitmap.Ready -> Unit
         }
     }
+}
+
+private sealed interface PlanBitmap {
+    data object Loading : PlanBitmap
+    data class Ready(val bitmap: Bitmap) : PlanBitmap
+    data object Failed : PlanBitmap
 }
 
 private class PlanPressState {
