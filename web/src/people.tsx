@@ -21,6 +21,7 @@ import { usePersonalComposer } from "./personal-composer-context";
 import type { SocialFriend, SocialHome, SocialMessage } from "./types";
 import { noteSearch } from "./ux300";
 import { SearchField, focusElement } from "./ux300-controls";
+import { Sheet } from "./sheet";
 
 const voiceRecordingLimit = 4 * 1024 * 1024;
 const circleRecordingLimit = 24 * 1024 * 1024;
@@ -49,12 +50,12 @@ function explain(error: unknown, fallback: string) {
   return fallback;
 }
 
-export function PeoplePanel({ initialConversationId }: { initialConversationId?: string } = {}) {
+export function PeoplePanel({ initialConversationId, onTitleChange }: { initialConversationId?: string; onTitleChange?: (title: string | null) => void } = {}) {
   const app = useApp();
-  return <PeopleContent key={JSON.stringify([app.session?.authenticated, app.session?.user?.userId, app.session?.familyId])} initialConversationId={initialConversationId} />;
+  return <PeopleContent key={JSON.stringify([app.session?.authenticated, app.session?.user?.userId, app.session?.familyId])} initialConversationId={initialConversationId} onTitleChange={onTitleChange} />;
 }
 
-function PeopleContent({ initialConversationId }: { initialConversationId?: string }) {
+function PeopleContent({ initialConversationId, onTitleChange }: { initialConversationId?: string; onTitleChange?: (title: string | null) => void }) {
   const app = useApp();
   const [home, setHome] = useState<SocialHome | null>(null);
   const [active, setActive] = useState<SocialFriend | null>(null);
@@ -71,6 +72,8 @@ function PeopleContent({ initialConversationId }: { initialConversationId?: stri
   const activeIdRef = useRef<string | null>(null);
   const openedFromRoute = useRef<string | null>(null);
   const activeId = active?.conversationId ?? null;
+  const activeTitle = active ? personName(active.username, active.displayName) : null;
+  useEffect(() => { onTitleChange?.(activeTitle); }, [activeTitle, onTitleChange]);
   const chatError = useCallback((text: string) => {
     if (activeIdRef.current === activeId) setError(text);
   }, [activeId]);
@@ -158,7 +161,7 @@ function PeopleContent({ initialConversationId }: { initialConversationId?: stri
   }
 
   return (
-    <div className="stack">
+    <div className={"stack people-panel" + (initialConversationId ? " direct-route" : "") + (active ? " active-conversation" : "")}>
       {error && <div className="banner">{error}</div>}
       {unavailableRoute&&<div className="banner" role="status">Беседа по ссылке недоступна в этом аккаунте.<Link className="btn" to="/chat">К списку бесед</Link><button className="btn quiet" onClick={()=>{openedFromRoute.current=null;setUnavailableRoute(false);}}>Проверить снова</button></div>}
       {!!home?.incoming.length && (
@@ -212,7 +215,7 @@ function PeopleContent({ initialConversationId }: { initialConversationId?: stri
           {home&&home.friends.length>0&&!home.friends.some(friend=>noteSearch(personQuery,friend.displayName||"",friend.username))&&<p role="status">Человек по запросу не найден. Очистите поиск, чтобы вернуться к списку.</p>}
           </div>
         </div>
-        {active ? <section className="split-detail"><button className="btn back-only" type="button" onClick={() => { activeIdRef.current = null; setError(""); setActive(null); }}>К списку</button><Chat key={active.conversationId} friend={active} self={app.session.user?.userId || ""} familyId={app.session.familyId} onError={chatError} /></section> : <section className="card chat split-detail"><h2>Чат</h2><p className="muted">Выберите человека в списке.</p></section>}
+        {active ? <section className="split-detail">{initialConversationId ? <Link className="btn back-only" to="/chat">К чатам</Link> : <button className="btn back-only" type="button" onClick={() => { activeIdRef.current = null; setError(""); setActive(null); }}>К списку</button>}<Chat key={active.conversationId} friend={active} self={app.session.user?.userId || ""} familyId={app.session.familyId} onError={chatError} /></section> : <section className="card chat split-detail"><h2>Чат</h2><p className="muted">Выберите человека в списке.</p></section>}
       </div>
     </div>
   );
@@ -305,9 +308,14 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
   const [historyQuery, setHistoryQuery] = useState("");
   const [historyKind,setHistoryKind]=useState("all");
   const [historyAuthor,setHistoryAuthor]=useState("all");
+  const [historySearchOpen,setHistorySearchOpen]=useState(false);
+  const [historyFiltersOpen,setHistoryFiltersOpen]=useState(false);
   const [matchId,setMatchId]=useState("");
   const [copyNotice, setCopyNotice] = useState("");
   const visibleMessages = searchPersonalHistory(messages, historyQuery).filter(message=>(historyKind==="all"||message.kind===historyKind)&&(historyAuthor==="all"||historyAuthor==="mine"&&message.senderId===self||historyAuthor==="other"&&message.senderId!==self));
+  const historyFiltered = !!historyQuery.trim() || historyKind !== "all" || historyAuthor !== "all";
+  const historyFilterCount = Number(!!historyQuery.trim()) + Number(historyKind !== "all") + Number(historyAuthor !== "all");
+  function resetHistoryFilters(){setHistoryQuery("");setHistoryKind("all");setHistoryAuthor("all");}
   function match(direction:number){if(!visibleMessages.length)return;const at=visibleMessages.findIndex(row=>row.messageId===matchId);const next=at<0?(direction>0?0:visibleMessages.length-1):(at+direction+visibleMessages.length)%visibleMessages.length;setMatchId(visibleMessages[next].messageId);focusElement(`personal-message-${visibleMessages[next].messageId}`);}
   const [more, setMore] = useState(false);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
@@ -748,10 +756,19 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
   return (
     <section className="card chat">
       <div className="chat-title"><Avatar kind="user" id={friend.userId} name={personName(friend.username, friend.displayName)} /><h2>{personName(friend.username, friend.displayName)}</h2></div>
-      <label className="field">Поиск в загруженной истории<input type="search" value={historyQuery} onChange={event => setHistoryQuery(event.target.value)} placeholder="Текст или имя файла" /></label>
-      <details><summary>Отбор сообщений</summary><div className="row"><label className="field">Автор<select value={historyAuthor} onChange={event=>setHistoryAuthor(event.target.value)}><option value="all">Все</option><option value="mine">Мои</option><option value="other">Собеседник</option></select></label><label className="field">Содержимое<select value={historyKind} onChange={event=>setHistoryKind(event.target.value)}><option value="all">Всё</option>{[["text","Текст"],["image","Фото"],["file","Файлы"],["voice","Голос"],["circle","Кружки"],["card","Учебные карточки"]].map(([value,title])=><option key={value} value={value}>{title}</option>)}</select></label><button className="btn quiet" onClick={()=>{setHistoryQuery("");setHistoryKind("all");setHistoryAuthor("all");}}>Вся загруженная история</button></div></details>
-      {(historyQuery||historyKind!=="all"||historyAuthor!=="all")&&<div className="row"><span className="muted">Совпадений: {visibleMessages.length} · Загружено: {messages.length}{more?" · Есть ранние сообщения":""}</span><button className="btn" disabled={!visibleMessages.length} onClick={()=>match(-1)}>Предыдущее совпадение</button><button className="btn" disabled={!visibleMessages.length} onClick={()=>match(1)}>Следующее совпадение</button></div>}
-      {!!historyQuery.trim() && <div className="row"><span className="muted" role="status">Найдено: {visibleMessages.length} из {messages.length}. Поиск только в загруженных сообщениях.</span><button className="btn" type="button" onClick={() => setHistoryQuery("")}>Сбросить поиск</button></div>}
+      <button className="btn personal-search-toggle" type="button" aria-expanded={historySearchOpen} onClick={()=>setHistorySearchOpen(value=>!value)}><Icon name="search" size={18}/>{historySearchOpen?"Скрыть поиск":historyFiltered?`Поиск и фильтры · ${historyFilterCount}`:"Поиск сообщений"}</button>
+      {historySearchOpen&&<div className="personal-history-tools stack">
+        <label className="field">Поиск в загруженной истории<input type="search" value={historyQuery} onChange={event => setHistoryQuery(event.target.value)} placeholder="Текст или имя файла" /></label>
+        <div className="row"><button className="btn" type="button" onClick={()=>setHistoryFiltersOpen(true)}>Фильтры сообщений{historyKind!=="all"||historyAuthor!=="all"?` · ${Number(historyKind!=="all")+Number(historyAuthor!=="all")}`:""}</button>{historyFiltered&&<button className="btn quiet" type="button" onClick={resetHistoryFilters}>Сбросить</button>}</div>
+        {historyFiltered&&<div className="row personal-match-actions"><button className="btn quiet" disabled={!visibleMessages.length} onClick={()=>match(-1)}>Предыдущее совпадение</button><button className="btn quiet" disabled={!visibleMessages.length} onClick={()=>match(1)}>Следующее совпадение</button></div>}
+      </div>}
+      {historyFiltersOpen&&<Sheet title="Фильтры сообщений" onClose={()=>setHistoryFiltersOpen(false)}><div className="stack chat-filter-sheet">
+        <label className="field">Автор<select value={historyAuthor} onChange={event=>setHistoryAuthor(event.target.value)}><option value="all">Все</option><option value="mine">Мои</option><option value="other">Собеседник</option></select></label>
+        <label className="field">Содержимое<select value={historyKind} onChange={event=>setHistoryKind(event.target.value)}><option value="all">Всё</option>{[["text","Текст"],["image","Фото"],["file","Файлы"],["voice","Голос"],["circle","Кружки"],["card","Учебные карточки"]].map(([value,title])=><option key={value} value={value}>{title}</option>)}</select></label>
+        <p className="muted">Показано {visibleMessages.length} из {messages.length} загруженных сообщений.</p>
+        <div className="row chat-sheet-actions"><button className="btn quiet" type="button" onClick={resetHistoryFilters}>Сбросить фильтры</button><button className="btn primary" type="button" onClick={()=>setHistoryFiltersOpen(false)}>Готово</button></div>
+      </div></Sheet>}
+      {historyFiltered&&<div className="row personal-history-status" role="status"><span className="muted">{historyQuery.trim()&&`«${historyQuery.trim()}» · `}Совпадений: {visibleMessages.length} из {messages.length}{more?" · Есть ранние сообщения":""}. Поиск в загруженной истории.</span>{!historySearchOpen&&<button className="btn quiet" type="button" onClick={resetHistoryFilters}>Сбросить</button>}</div>}
       {copyNotice && <p className="muted" role="status">{copyNotice}</p>}
       {!!historyQuery.trim() && visibleMessages.length === 0 && <p className="muted" role="status">В загруженной истории совпадений нет. Очистите поиск или загрузите более ранние сообщения.</p>}
       <div className="log" ref={logRef} onScroll={onScroll}>
@@ -861,6 +878,7 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
             {draftCount >= 1800 && <span className={draftCount > personalTextLimit ? "composer-limit-error" : ""} role="status">{draftCount}/{personalTextLimit}{draftCount > personalTextLimit ? " · сократите текст" : ""}</span>}
             {!!draft.trim() && draftCount <= personalTextLimit && !personalTextValid(draft) && <span role="status">Уберите недопустимые символы из текста.</span>}
           </div>
+          {panel && <Sheet title={panel === "attach" ? "Прикрепить" : panel === "emoji" ? "Смайлы" : panel === "study" ? "Расписание и домашка" : "Стикеры"} onClose={()=>setPanel(null)}><div className="personal-composer-panel">
           {panel === "attach" && (
             <div className="actions">
               <button type="button" onClick={() => { setPanel(null); photoRef.current?.click(); }}>Фото</button>
@@ -870,13 +888,14 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
               <button type="button" onClick={() => setPanel("study")}>Расписание и домашка</button>
             </div>
           )}
-          {panel === "emoji" && <EmojiPanel onPick={insertEmoji} />}
+          {panel === "emoji" && <EmojiPanel onPick={emoji=>{setPanel(null);insertEmoji(emoji);}} />}
           {panel === "study" && <StudyShelf onSend={body => void sendCard(body)} />}
           {panel === "stickers" && (
             <div className="picker sticker-grid">
               {stickerPack.map(item => <button key={item.id} type="button" onClick={() => void sendSticker(item.id)} disabled={sending} aria-label={item.title}><Sticker id={item.id} /><span>{item.title}</span></button>)}
             </div>
           )}
+          </div></Sheet>}
         </>
       )}
       <input ref={photoRef} className="hidden-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/bmp" aria-label="Фото" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; void sendFile(file, "image"); }} />

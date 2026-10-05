@@ -1,0 +1,77 @@
+/* Neutral wrappers preserve the desktop map order and dimensions. */
+.study-map-layout,
+.study-map-selection,
+.study-map-plan,
+.study-map-extras { display: contents; }
+
+.study-desktop-day-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.study-date-shell,
+.study-day-tools,
+.study-day-tools-body { display: contents; }
+.study-day-tools-trigger { display: none !important; }
+.study-mobile-week,
+.study-mobile-day-nav,
+.study-mobile-day-shortcuts { display: none; }
+.study-selected-day-caption { display: none; }
+
+@media (max-width: 959px) {
+  .day-page .page-head .sub { display: none; }
+  .day-page .study-selected-day-caption { display: block; margin: 0 0 8px; font-size: 17px; color: var(--text); }
+  .study-desktop-day-controls { display: none; }
+  .study-mobile-week { display: inline-flex; }
+  .day-page .study-date-shell { display: flex; flex-direction: column; }
+  .day-page .study-day-tools { display: block; margin-bottom: 8px; }
+  .day-page .study-day-tools-trigger { display: flex !important; width: 100%; justify-content: flex-start; min-height: 48px; }
+  .day-page .study-day-tools-body { display: none; }
+  .day-page .study-day-tools-body.open { display: block; margin-top: 8px; }
+  .day-page .quick-days { display: flex; width: 100%; margin-bottom: 8px; }
+  .day-page .quick-days button { flex: 1; min-width: 0; padding-inline: 4px; font-size: 15px; overflow-wrap: anywhere; }
+  .study-mobile-day-nav {
+    display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px;
+    align-items: center; gap: 8px; padding: 8px;
+    border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+    margin-bottom: 8px;
+  }
+  .study-mobile-day-nav .icon-btn { padding: 0; }
+  .study-mobile-day-date { min-width: 0; width: 100%; padding-inline: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .study-mobile-day-date .ico { flex: none; }
+  .study-mobile-day-date span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .day-page .day-calendar { width: 100%; max-width: 320px; }
+  .day-page .day-strip { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 0 0 12px; }
+  .day-page .day-strip .date { min-height: 68px; padding: 6px 2px; gap: 2px; }
+  .day-page .day-strip .date strong { font-size: 17px; }
+  .day-page .day-strip small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  .study-mobile-day-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 12px; }
+  .study-mobile-day-shortcuts > span { flex: 1 1 100%; font-size: 12px; color: var(--muted); }
+  .study-mobile-day-shortcuts .btn { min-height: 48px; flex: 1 1 120px; padding-inline: 8px; font-size: 13px; }
+  .day-page .day-row { border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 12px; }
+  .day-page .day-row .lesson { border: 0; padding: 0; background: transparent; }
+  .day-page .day-row .lesson .subject { font-size: 15px; }
+  .day-page .study-compact-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .day-page .study-compact-actions .btn { flex: 1 1 96px; min-height: 48px; min-width: 0; padding-inline: 8px; font-size: 13px; }
+  .day-page .study-compact-actions .ico { flex: none; }
+
+  .maps-page { display: flex; flex-direction: column; }
+  .maps-page .study-map-layout { display: flex; flex-direction: column; min-width: 0; }
+  .maps-page .study-map-extras { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+  .maps-page > .btn.primary { margin-top: 12px; }
+  .maps-page .map-context { padding: 12px; margin-bottom: 12px; }
+  .maps-page .study-map-selection {
+    display: flex; flex-direction: column; gap: 4px; min-width: 0;
+    border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+    padding: 8px; margin-bottom: 8px;
+  }
+  .maps-page .study-map-selection .map-selectors { display: flex; flex-direction: column; align-items: stretch; gap: 8px; overflow: visible; border: 0; padding: 0; margin: 0; }
+  .maps-page .study-map-selection .seg { width: 100%; overflow-x: auto; }
+  .maps-page .study-map-selection .seg button { flex: 1; min-width: 48px; }
+  .maps-page .study-map-selection .map-floors { flex-wrap: nowrap; overflow-x: auto; }
+  .maps-page .study-map-selection .map-navigation { justify-content: flex-end; overflow-x: auto; margin: 0; padding: 4px 0 0; }
+  .maps-page .study-map-plan { display: block; min-width: 0; }
+  .maps-page .study-map-plan .map-frame.map-viewport { height: clamp(160px, calc(100dvh - var(--mobile-header-height, 56px) - var(--mobile-footer-height, 64px) - 240px), 600px); min-height: 160px; }
+}
+
+@media (max-width: 959px) and (orientation: landscape) and (max-height: 560px) {
+  .maps-page .study-map-layout { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); gap: 12px; align-items: start; }
+  .maps-page .study-map-selection { max-height: calc(100dvh - 170px); overflow-y: auto; margin-bottom: 0; }
+  .maps-page .study-map-plan .map-frame.map-viewport { height: max(160px, calc(100dvh - var(--mobile-header-height, 56px) - var(--mobile-footer-height, 64px) - 160px)); }
+}

@@ -3,6 +3,7 @@ import { Icon } from "./icons";
 import { groupWireText } from "./scalar-input";
 import { sendOnEnter } from "./personal-composer";
 import { groupCircleLimit, groupVoiceLimit, recordingFilename } from "./group-media";
+import { Sheet } from "./sheet";
 
 type RecordingKind = "voice" | "circle";
 type AttachmentKind = "image" | "video" | "file";
@@ -52,6 +53,7 @@ export function GroupComposer({ draft, editing, replyTo, contextText, wireContex
   const [elapsed, setElapsed] = useState(0);
   const active = useRef<Capture | null>(null);
   const preview = useRef<HTMLVideoElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
   const mounted = useRef(false);
   const requestEpoch = useRef(0);
   const startingRef = useRef(false);
@@ -100,6 +102,12 @@ export function GroupComposer({ draft, editing, replyTo, contextText, wireContex
     preview.current.srcObject = active.current.stream;
     void preview.current.play().catch(() => undefined);
   }, [recording]);
+  useEffect(() => {
+    const node = input.current;
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = `${Math.min(128, Math.max(48, node.scrollHeight))}px`;
+  }, [draft, editing, replyTo]);
 
   async function begin(kind: RecordingKind) {
     if (active.current || startingRef.current || sending || !allowMedia || editing) return;
@@ -209,7 +217,7 @@ export function GroupComposer({ draft, editing, replyTo, contextText, wireContex
       <form className="compose" onSubmit={onSubmit}>
         {!editing && allowMedia && <button className="btn tool" type="button" aria-label="Вложения" disabled={starting || sending}
           onClick={() => setPanel(value => !value)}><Icon name="paperclip" size={18} /></button>}
-        <textarea rows={2} value={draft} onChange={event => onDraft(event.target.value)} placeholder="Сообщение" aria-label="Сообщение" onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }} onKeyDown={event => { if (sendOnEnter(event.key, event.shiftKey, composing.current || event.nativeEvent.isComposing, event.keyCode === 229, window.matchMedia("(pointer: fine)").matches)) { event.preventDefault(); if (wire.valid && !sending) event.currentTarget.form?.requestSubmit(); } }} />
+        <textarea ref={input} rows={2} value={draft} onChange={event => onDraft(event.target.value)} placeholder="Сообщение" aria-label="Сообщение" onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }} onKeyDown={event => { if (sendOnEnter(event.key, event.shiftKey, composing.current || event.nativeEvent.isComposing, event.keyCode === 229, window.matchMedia("(pointer: fine)").matches)) { event.preventDefault(); if (wire.valid && !sending) event.currentTarget.form?.requestSubmit(); } }} />
         {draft.trim() || editing || !allowMedia
           ? <button className="btn primary" type="submit" disabled={!wire.valid || sending}>{editing ? "Сохранить" : "Отправить"}</button>
           : <>
@@ -217,9 +225,9 @@ export function GroupComposer({ draft, editing, replyTo, contextText, wireContex
               <button className="btn primary tool" type="button" aria-label="Голосовое" disabled={starting || sending} onClick={() => void begin("voice")}><Icon name="mic" size={18} /></button>
             </>}
       </form>
-      <p className="muted" role="status">{wire.count}/2000 · Shift+Enter — новая строка{draft.trim() && wire.error ? ` · ${wire.error}` : ""}</p>
+      <p className="muted group-composer-help" role="status">{wire.count}/2000 · Shift+Enter — новая строка{draft.trim() && wire.error ? ` · ${wire.error}` : ""}</p>
       {sending && <p className="muted">Отправка записи…</p>}
-      {panel && allowMedia && !editing && <div className="actions group-attachment-menu">
+      {panel && allowMedia && !editing && <Sheet title="Прикрепить" onClose={()=>setPanel(false)}><div className="actions group-attachment-menu">
         <button type="button" onClick={() => { setPanel(false); onChoose("image"); }}>Фото</button>
         <button type="button" onClick={() => { setPanel(false); onChoose("video"); }}>Видео</button>
         <button type="button" onClick={() => { setPanel(false); onChoose("file"); }}>Документ</button>
@@ -227,7 +235,7 @@ export function GroupComposer({ draft, editing, replyTo, contextText, wireContex
         <button type="button" onClick={() => void begin("circle")}>Кружок</button>
         {onPoll && <button type="button" onClick={() => { setPanel(false); onPoll(); }}>Опрос</button>}
         {onLesson && <button type="button" onClick={() => { setPanel(false); onLesson(); }}>Карточка пары</button>}
-      </div>}
+      </div></Sheet>}
     </>
   );
 }

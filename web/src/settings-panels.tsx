@@ -27,10 +27,13 @@ export { NotificationSettings } from "./notification-settings";
 export function StudyExtras() {
     const app = useApp();
     const index = subgroupIndex(app.lessons);
-    return <article className="card stack"><h2>Подгруппы по предметам</h2>
+    return <article className="card stack homework-study-subgroups"><h2>Подгруппы по предметам</h2>
         {app.canUndoSubgroup&&<button className="btn" type="button" onClick={app.undoSubgroup}>Отменить последний выбор подгруппы</button>}
-        <p className="muted">Если подгруппа не выбрана, показываются все занятия. Повторное нажатие снимает выбор.</p>
-        {index.streams.map(stream => <div key={stream.id}><b>{stream.title}</b><div className="row">{stream.options.map(option => <button className={(app.subgroups[app.groupId]?.[stream.id] === option.id) ? "btn primary" : "btn"} type="button" key={option.id} onClick={() => app.pickSubgroup(stream.id, option.id)}>{option.label}</button>)}</div></div>)}
+        <p className="muted">Сначала сравните, какие занятия добавятся или исчезнут. Выбор подгруппы применяется только после подтверждения предпросмотра.</p>
+        {index.streams.map(stream => {
+            const selected = stream.options.find(option => option.id === app.subgroups[app.groupId]?.[stream.id]);
+            return <div className="row homework-study-subgroup" key={stream.id}><b>{stream.title}</b><span className="chip">{selected?.label || "Все занятия"}</span></div>;
+        })}
         {index.streams.length === 0 && <p className="muted">В сохранённом расписании разделения на подгруппы нет.</p>}
     </article>;
 }
