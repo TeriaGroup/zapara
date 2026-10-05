@@ -1,0 +1,20 @@
+<resources>
+    <string name="avatar_change">Выбрать фото</string>
+    <string name="avatar_remove">Удалить фото</string>
+    <string name="avatar_hint">Фото видно собеседникам и участникам ваших групп.</string>
+    <string name="avatar_group_hint">Фото группы видно её участникам.</string>
+    <string name="avatar_saving">Сохраняем фото…</string>
+    <string name="avatar_saved">Фото обновлено</string>
+    <string name="avatar_removed">Фото удалено</string>
+    <string name="avatar_invalid">Выберите изображение JPG, PNG или WebP до 20 МБ.</string>
+    <string name="avatar_forbidden">У вас нет права менять это фото.</string>
+    <string name="avatar_session">Войдите в аккаунт, чтобы изменить фото.</string>
+    <string name="avatar_unavailable">Сервер пока не поддерживает фото профиля.</string>
+    <string name="avatar_failed">Не удалось сохранить фото. Попробуйте ещё раз.</string>
+    <string name="avatar_remove_title">Удалить фото?</string>
+    <string name="avatar_remove_hint">Вместо него будут показаны инициалы. Позже можно выбрать другое фото.</string>
+    <string name="avatar_photo">Фото: %1$s</string>
+    <string name="avatar_profile">Фото профиля</string>
+    <string name="avatar_group">Фото группы</string>
+    <string name="avatar_empty">Без фото</string>
+</resources>

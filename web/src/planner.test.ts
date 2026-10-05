@@ -1,0 +1,25 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { absoluteDate, freeGaps, gapsBeforeLessons, hasLessonOverlap, heroLesson, isUpcomingLesson, localDay, nearbyHomework, personalHomeworkDue } from "./planner.ts";
+import type { HomeworkItem, Lesson } from "./types";
+const lesson=(start:string,end:string,subject="Математика"):Lesson=>({timeStart:start,timeEnd:end,subjectRaw:subject,subjectNormalized:subject,dayOfWeek:1,parity:0,index:0,typeRaw:"Лекция",teacherRaw:null,classroomRaw:null,roomRaw:null,buildingRaw:null});
+test("calendar parsing is local, strict and does not normalize invalid dates",()=>{assert.equal(localDay("2026-02-30"),null);assert.equal(localDay("2026-09-26")?.getDate(),26);assert.equal(localDay("2026-09-26")?.getHours(),0);assert.match(absoluteDate(new Date(2027,0,4)),/2027/);});
+test("gaps merge overlaps and nested subgroup intervals before finding every break",()=>{
+    assert.deepEqual(freeGaps([lesson("09:00","10:00"),lesson("09:30","11:00"),lesson("10:00","10:30"),lesson("11:20","12:00"),lesson("12:40","14:00")]),[{start:660,end:680,duration:20},{start:720,end:760,duration:40}]);
+    assert.deepEqual(freeGaps([lesson("09:00","10:00"),lesson("10:29","12:00")]),[{start:600,end:629,duration:29}]);
+    assert.deepEqual(freeGaps([lesson("invalid","24:00")]),[]);
+});
+test("short and long breaks are visible but adjacent lessons have no break",()=>{
+    for (const duration of [1,5,10,20,30,60]) assert.deepEqual(freeGaps([lesson("09:00","10:00"),lesson(`${duration===60?"11":"10"}:${String(duration%60).padStart(2,"0")}`,"12:00")]),[{start:600,end:600+duration,duration}]);
+    assert.deepEqual(freeGaps([lesson("09:00","10:00"),lesson("10:00","11:00")]),[]);
+});
+test("parallel subgroups show a break once before a valid lesson",()=>{
+    const rows = [lesson("09:00","10:35"),lesson("10:45","bad"),lesson("10:45","12:20"),lesson("10:45","12:20")];
+    assert.deepEqual([...gapsBeforeLessons(rows)],[[2,{start:635,end:645,duration:10}]]);
+});
+test("hero uses selected date and actual now, past never becomes upcoming",()=>{const rows=[lesson("09:00","10:00"),lesson("12:00","13:00")];const now=new Date(2026,8,28,10,30);assert.equal(heroLesson(rows,new Date(2026,8,28),now),rows[1]);assert.equal(heroLesson(rows,new Date(2026,8,29),now),rows[0]);assert.equal(heroLesson(rows,new Date(2026,8,27),now),null);assert.equal(heroLesson(rows,new Date(2026,8,28),new Date(2026,8,28,14)),null);});
+test("upcoming marker covers future dates and future starts today only",()=>{const today=new Date(2026,8,28);const now=new Date(2026,8,28,9,0,59);assert.equal(isUpcomingLesson(lesson("09:01","10:00"),today,now),true);assert.equal(isUpcomingLesson(lesson("09:00","10:00"),today,now),false);assert.equal(isUpcomingLesson(lesson("08:59","10:00"),today,now),false);assert.equal(isUpcomingLesson(lesson("09:00","10:00"),new Date(2026,8,29),now),true);assert.equal(isUpcomingLesson(lesson("bad","10:00"),new Date(2026,8,29),now),false);assert.equal(isUpcomingLesson(lesson("09:00","10:00"),new Date(NaN),now),false);});
+test("deadline window includes selected day and two following calendar dates",()=>{const base:HomeworkItem={id:"a",subject:"Математика",text:"Задание",created:"2026-09-01",done:false};const items=[{...base,id:"before",deadlineAt:new Date(2026,8,25,23,59).toISOString()},{...base,id:"start",deadlineAt:new Date(2026,8,26).toISOString()},{...base,id:"end",deadlineAt:new Date(2026,8,28,23,59).toISOString()},{...base,id:"after",deadlineAt:new Date(2026,8,29).toISOString()},{...base,id:"no-date"},{...base,id:"other",subject:"Физика"}];assert.deepEqual(nearbyHomework(items,new Date(2026,8,26),["Математика"]).map(item=>item.id),["start","end","no-date"]);});
+test("personal due date uses nth distinct lesson day strictly after creation",()=>{const item:HomeworkItem={id:"a",subject:"Математика",text:"Задание",done:false,created:new Date(2026,8,27).toISOString(),targetNthOccurrence:2};const period={start:"2026-09-01",weekCount:2,title:"Осень",timeZone:"Europe/Moscow"};const due=personalHomeworkDue(item,[lesson("09:00","10:00"),lesson("11:00","12:00")],period,false);assert.equal(due?.getDate(),5);assert.equal(due?.getMonth(),9);assert.equal(personalHomeworkDue({...item,subject:"Unknown"},[lesson("09:00","10:00")],period,false),null);});
+
+test("overlaps are distinct from short adjacent breaks",()=>{assert.equal(hasLessonOverlap([lesson("09:00","10:00"),lesson("10:00","11:00")]),false);assert.equal(hasLessonOverlap([lesson("09:00","10:00"),lesson("09:59","11:00")]),true);});

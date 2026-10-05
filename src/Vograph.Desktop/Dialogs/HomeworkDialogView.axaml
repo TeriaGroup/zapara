@@ -1,0 +1,68 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:d="using:Vograph.Desktop.Dialogs"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             x:Class="Vograph.Desktop.Dialogs.HomeworkDialogView"
+             x:DataType="d:HomeworkDialogViewModel">
+  <ScrollViewer MaxHeight="680" HorizontalScrollBarVisibility="Disabled"><StackPanel Spacing="12" MaxWidth="520" MinWidth="300">
+    <TextBlock Classes="micro" Text="{Binding Title}" />
+    <TextBlock Classes="muted caption" Text="{Binding SubjectLine}" TextWrapping="Wrap" />
+    <StackPanel Spacing="6" IsEnabled="{Binding CanEdit}">
+      <TextBlock Classes="caption" Text="{loc:T hwText}" />
+      <TextBox Name="HwText" Text="{Binding Text}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80" VerticalContentAlignment="Top"
+               AutomationProperties.AutomationId="Dialog.Text" />
+    </StackPanel>
+    <StackPanel Spacing="6">
+      <TextBlock Classes="caption" Text="{loc:T hwN}" TextWrapping="Wrap" />
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <!-- The two glyph buttons say what they do to the count next to them; there is no tooltip to borrow a
+             name from, and «−1»/«+1» is what a screen reader needs to hear about a stepper. -->
+        <Button Classes="round" Command="{Binding DecCommand}" AutomationProperties.AutomationId="Dialog.Dec" AutomationProperties.Name="-1"><c:Icon Data="{StaticResource Icon.Minus}" Size="14" /></Button>
+        <TextBlock Classes="tnum" Text="{Binding Nth}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" MinWidth="24" TextAlignment="Center" />
+        <Button Classes="round" Command="{Binding IncCommand}" AutomationProperties.AutomationId="Dialog.Inc" AutomationProperties.Name="+1"><c:Icon Data="{StaticResource Icon.Plus}" Size="14" /></Button>
+        <TextBlock Classes="muted caption" Text="{Binding DueText}" VerticalAlignment="Center" />
+      </StackPanel>
+    </StackPanel>
+    <StackPanel Orientation="Horizontal" Spacing="8">
+      <Button Content="{loc:T hwPhoto}" Command="{Binding AddPhotoCommand}" AutomationProperties.AutomationId="Dialog.Photo" />
+      <Button Content="{loc:T hwDocument}" Command="{Binding AddDocumentCommand}" AutomationProperties.AutomationId="Dialog.Document" />
+    </StackPanel>
+    <ItemsControl ItemsSource="{Binding Files}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="d:HomeworkAttachment">
+          <Grid ColumnDefinitions="*,Auto" Margin="0,2,0,0">
+            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Content="{loc:T hwFileRemove}" Command="{Binding $parent[d:HomeworkDialogViewModel].RemoveFileCommand}" CommandParameter="{Binding}" />
+          </Grid>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <CheckBox IsVisible="{Binding ShowShare}" IsEnabled="{Binding CanShareNow}" IsChecked="{Binding Share}" AutomationProperties.AutomationId="Dialog.Share">
+      <TextBlock Text="Создать задание в учебной группе" TextWrapping="Wrap" MaxWidth="400" />
+    </CheckBox>
+    <StackPanel IsVisible="{Binding ShowRecipients}" Spacing="8">
+      <TextBlock Text="{Binding RecipientNotice}" TextWrapping="Wrap" Classes="muted caption" />
+      <Button Content="Обновить получателей" Command="{Binding LoadRecipientsCommand}" IsEnabled="{Binding CanEdit}" HorizontalAlignment="Left" />
+      <d:HomeworkAudienceView DataContext="{Binding Recipients}" />
+      <TextBlock Text="{Binding PublicationDeadlineLabel}" TextWrapping="Wrap" />
+      <TextBlock Text="Группе передаются текст и срок. Прикреплённые файлы остаются в вашей личной домашке." TextWrapping="Wrap" Classes="muted caption" />
+    </StackPanel>
+    <TextBlock IsVisible="{Binding ShowShareSignInHint}" Classes="muted caption" TextWrapping="Wrap"
+               Text="Чтобы поделиться домашкой с группой, войдите в аккаунт. Сейчас задание сохранится только у вас." />
+    <TextBlock IsVisible="{Binding IsImporting}" Classes="muted caption" Text="Добавляем файл…" />
+    <TextBlock IsVisible="{Binding HasError}" Text="{Binding Error}" TextWrapping="Wrap" AutomationProperties.AutomationId="Dialog.Error" />
+    <Button Content="Создать всё равно" Command="{Binding CreateDuplicateAnywayCommand}" IsVisible="{Binding DuplicateWarning}" HorizontalAlignment="Left" />
+    <StackPanel IsVisible="{Binding ShowDiscardConfirmation}" Spacing="8">
+      <TextBlock Text="Закрыть без сохранения изменений?" TextWrapping="Wrap" />
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+        <Button Content="Продолжить редактирование" Command="{Binding KeepEditingCommand}" AutomationProperties.AutomationId="Dialog.KeepEditing" />
+        <Button Content="Закрыть без сохранения" Command="{Binding DiscardCommand}" AutomationProperties.AutomationId="Dialog.Discard" />
+      </StackPanel>
+    </StackPanel>
+    <StackPanel IsVisible="{Binding !ShowDiscardConfirmation}" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,6,0,0">
+      <Button Content="{loc:T cancel}" IsEnabled="{Binding CanDismissEditor}" Command="{Binding CancelCommand}" AutomationProperties.AutomationId="Dialog.Cancel" />
+      <Button Classes="primary" Content="{Binding SaveLabel}" Command="{Binding ConfirmCommand}" AutomationProperties.AutomationId="Dialog.Confirm" />
+    </StackPanel>
+  </StackPanel></ScrollViewer>
+</UserControl>

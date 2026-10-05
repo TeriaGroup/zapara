@@ -1,0 +1,24 @@
+using System.Globalization;
+using Microsoft.AspNetCore.Components.Web;
+using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using Zapara.Web;
+using Zapara.Web.Services;
+
+var builder = WebAssemblyHostBuilder.CreateDefault(args);
+builder.RootComponents.Add<App>("#app");
+builder.RootComponents.Add<HeadOutlet>("head::after");
+CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("ru-RU");
+CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.GetCultureInfo("ru-RU");
+builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
+builder.Services.AddScoped<BrowserStorage>();
+builder.Services.AddScoped<BrowserApiClient>();
+builder.Services.AddScoped<BrowserAccountService>();
+builder.Services.AddScoped<BrowserCommunityService>();
+builder.Services.AddScoped<BrowserNotifications>();
+builder.Services.AddScoped<BrowserLecturerStore>();
+builder.Services.AddScoped<BrowserTransferService>();
+builder.Services.AddScoped<BrowserDraftService>();
+builder.Services.AddScoped<BrowserScheduleViewState>();
+builder.Services.AddScoped<BrowserCatalogViewState>();
+builder.Services.AddScoped<WebAppState>();
+await builder.Build().RunAsync();

@@ -1,0 +1,128 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             xmlns:t="using:Vograph.Desktop.Features.Teachers"
+             x:Class="Vograph.Desktop.Features.Teachers.TeachersView"
+             x:DataType="t:TeachersViewModel">
+  <Grid RowDefinitions="Auto,*" Margin="24,20">
+    <StackPanel Margin="0,0,0,16">
+      <TextBlock Classes="display" Text="{Binding Title}" TextWrapping="Wrap" />
+      <TextBlock Classes="muted" Text="{Binding CountText}" Margin="0,4,0,0" TextWrapping="Wrap" />
+    </StackPanel>
+
+    <Grid x:Name="TeachersColumns" Grid.Row="1" ColumnDefinitions="320,24,*">
+      <!-- left: search, filter, list -->
+      <Grid x:Name="TeachersList" RowDefinitions="Auto,Auto,Auto,Auto,*">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <TextBox Text="{Binding Query}" PlaceholderText="{loc:T teachersSearchHint}" AutomationProperties.AutomationId="Teachers.Search" />
+          <Button Grid.Column="1" Classes="ghost" Content="Сбросить" Command="{Binding ClearTeacherSearchCommand}"
+                  IsVisible="{Binding HasTeacherSearch}" MinHeight="48" AutomationProperties.AutomationId="Teachers.ClearSearch" />
+        </Grid>
+        <c:Switch Grid.Row="1" Content="{loc:T teachersOnlyMine}" IsChecked="{Binding OnlyMine}" Margin="0,10,0,0" AutomationProperties.AutomationId="Teachers.OnlyMine" />
+        <ComboBox Grid.Row="2" ItemsSource="{Binding DepartmentOptions}" SelectedItem="{Binding SelectedDepartment}"
+                  MinHeight="48" Margin="0,8,0,0" AutomationProperties.Name="Фильтр по кафедре">
+          <ComboBox.ItemTemplate><DataTemplate x:DataType="t:DepartmentFilterOption"><TextBlock Text="{Binding Label}" /></DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+        <StackPanel Grid.Row="3" Spacing="8" Margin="0,8,0,0" IsVisible="{Binding LoadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <TextBlock Classes="muted caption" Text="{Binding LoadError}" TextWrapping="Wrap" />
+          <Button Content="{loc:T retry}" Command="{Binding RetryCommand}" HorizontalAlignment="Left" AutomationProperties.AutomationId="Teachers.Retry" />
+        </StackPanel>
+        <TextBlock Grid.Row="3" Classes="muted caption" Text="{loc:T teachersLoading}" Margin="0,8,0,0" IsVisible="{Binding IsLoading}" />
+        <StackPanel Grid.Row="3" Spacing="4"><TextBlock Text="{Binding NavigationFeedback}" TextWrapping="Wrap" /><Button Content="Показать выбранного преподавателя" Command="{Binding ShowSelectedTeacherCommand}" IsVisible="{Binding HasHiddenSelection}" HorizontalAlignment="Left" /><ItemsControl ItemsSource="{Binding NameChoices}" IsVisible="{Binding HasNameChoices}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="t:TeacherChoice"><Button Classes="ghost" Command="{Binding ChooseCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"><StackPanel><TextBlock Text="{Binding Name}" /><TextBlock Text="{Binding Department}" /></StackPanel></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel>
+        <StackPanel Grid.Row="3" Spacing="8" Margin="0,8,0,0" IsVisible="{Binding NoTeacherMatches}">
+          <TextBlock Classes="muted" Text="{Binding EmptyTeacherText}" TextWrapping="Wrap" />
+          <Button Classes="ghost" Content="Сбросить поиск" Command="{Binding ClearTeacherSearchCommand}"
+                  IsVisible="{Binding HasTeacherSearch}" MinHeight="48" HorizontalAlignment="Left" />
+          <Button Classes="ghost" Content="Показать всех" Command="{Binding ShowAllTeachersCommand}"
+                  IsVisible="{Binding CanShowAllTeachers}" MinHeight="48" HorizontalAlignment="Left" />
+          <Button Classes="ghost" Content="Искать среди всех, сохранив запрос" Command="{Binding SearchAllTeachersCommand}"
+                  IsVisible="{Binding CanSearchAllTeachers}" MinHeight="48" HorizontalAlignment="Left" />
+        </StackPanel>
+        <ListBox Grid.Row="4" Margin="0,10,0,0" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" AutomationProperties.AutomationId="Teachers.List">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="t:TeacherItem">
+              <StackPanel Spacing="2">
+                <TextBlock Text="{Binding Name}" FontWeight="Medium" TextWrapping="Wrap" />
+                <TextBlock Classes="muted caption" Text="{Binding Kafedra}" IsVisible="{Binding Kafedra, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+
+      <!-- right: detail -->
+      <Grid x:Name="TeachersDetail" Grid.Column="2" RowDefinitions="Auto,*">
+      <StackPanel Grid.Row="0" Spacing="4" IsVisible="{Binding HasSourceNotice}" Margin="0,0,0,8">
+        <TextBlock Text="{Binding SourceNotice}" Classes="muted" TextWrapping="Wrap" />
+        <Button Content="Повторить обновление каталога" Command="{Binding RetryDirectoryCommand}" IsVisible="{Binding AllowNetwork}" HorizontalAlignment="Left" />
+      </StackPanel>
+      <c:EmptyState Grid.Row="1" IsVisible="{Binding !HasDetail}" Title="{loc:T teachersPick}" Hint="{loc:T teachersPickHint}"
+                     Icon="{StaticResource Icon.Teachers}" VerticalAlignment="Center" />
+      <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding HasDetail}">
+        <ContentControl Content="{Binding Detail}">
+          <ContentControl.ContentTemplate>
+            <DataTemplate x:DataType="t:TeacherDetailViewModel">
+              <StackPanel Spacing="12">
+                <TextBlock Text="{Binding EmptyWeekText}" Classes="muted" TextWrapping="Wrap" IsVisible="{Binding !HasWeekLessons}" />
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel>
+                    <TextBlock Classes="title" Text="{Binding Name}" TextWrapping="Wrap" />
+                    <TextBlock Classes="muted caption" Text="{Binding Kafedra}" IsVisible="{Binding HasKafedra}" TextWrapping="Wrap" />
+                    <TextBlock Classes="faint caption" Text="{Binding MineLine}" Margin="0,2,0,0" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <c:SegmentedControl Name="TeacherParity" Grid.Column="1" VerticalAlignment="Top" Items="{Binding SegmentItems}" SelectedIndex="{Binding ParityIndex}" />
+                </Grid>
+                <c:Switch Content="Только моя группа" IsChecked="{Binding OnlyOwnGroup}" IsVisible="{Binding IsMine}" />
+                <Border Classes="chip" HorizontalAlignment="Left"><TextBlock Text="{Binding WeekLessonCountText}" /></Border>
+                <ItemsControl ItemsSource="{Binding Days}">
+                  <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="10" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="t:TeacherDay">
+                      <Border Classes="card" Classes.next="{Binding IsToday}">
+                        <StackPanel Spacing="8">
+                          <TextBlock Classes="subject" Text="{Binding Title}" />
+                          <TextBlock Classes="muted caption" Text="{Binding NextDateText}" TextWrapping="Wrap" />
+                          <TextBlock Classes="faint" Text="{loc:T noLessons}" IsVisible="{Binding Rows.Count, Converter={x:Static t:TeacherConverters.IsZero}}" />
+                          <ItemsControl ItemsSource="{Binding Rows}">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="t:TeacherRow">
+                                <Grid ColumnDefinitions="56,*,Auto">
+                                  <StackPanel>
+                                    <TextBlock Classes="tnum" Text="{Binding Time}" FontWeight="Medium" />
+                                    <TextBlock Classes="tnum muted caption" Text="{Binding TimeEnd}" />
+                                  </StackPanel>
+                                  <StackPanel Grid.Column="1" Margin="10,0">
+                                    <WrapPanel>
+                                      <TextBlock Text="{Binding Name}" TextWrapping="Wrap" />
+                                      <Border Classes="chip type" Margin="6,0,0,0" VerticalAlignment="Center"><TextBlock Text="{Binding TypeLabel}" /></Border>
+                                      <Border Classes="chip" Margin="6,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsMine}"><TextBlock Text="{loc:T teachersMine}" /></Border>
+                                    </WrapPanel>
+                                    <TextBlock Classes="muted caption" Text="{Binding ShownGroups}" TextWrapping="Wrap" />
+                                    <Button Classes="ghost" Content="{Binding GroupToggleCaption}" Command="{Binding ToggleGroupsCommand}" IsVisible="{Binding HasMoreGroups}" HorizontalAlignment="Left" />
+                                    <Button Classes="ghost" Content="Открыть мою пару" Command="{Binding OpenOwnDayCommand}" IsVisible="{Binding CanOpenOwnDay}" HorizontalAlignment="Left" />
+                                  </StackPanel>
+                                  <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Right">
+                                    <Border Classes="chip" HorizontalAlignment="Right"><TextBlock Classes="tnum" Text="{Binding Room}" /></Border>
+                                    <Button Classes="ghost" Content="На карте" Command="{Binding OpenRoomCommand}" IsVisible="{Binding CanOpenRoom}" HorizontalAlignment="Right" />
+                                    <TextBlock Classes="faint caption" Text="{Binding ParityLabel}" HorizontalAlignment="Right" />
+                                  </StackPanel>
+                                </Grid>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </DataTemplate>
+          </ContentControl.ContentTemplate>
+        </ContentControl>
+      </ScrollViewer>
+      </Grid>
+    </Grid>
+  </Grid>
+</UserControl>

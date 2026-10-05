@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ux30_platform_search_everywhere">По всему кампусу</string>
+    <string name="ux30_platform_search_selected">В выбранном корпусе и этаже</string>
+    <string name="ux30_platform_places_count">Найдено мест: %1$d</string>
+    <string name="ux30_platform_clear_start">Очистить начало</string>
+    <string name="ux30_platform_clear_destination">Очистить пункт назначения</string>
+    <string name="ux30_platform_recovery_open">Забыли пароль?</string>
+    <string name="ux30_platform_recovery_hide">Скрыть восстановление</string>
+    <string name="ux30_platform_password_requirements">Пароль должен содержать от 12 до 128 символов и отличаться от текущего.</string>
+    <string name="ux30_platform_show_password">Показать</string>
+    <string name="ux30_platform_hide_password">Скрыть</string>
+    <string name="ux30_platform_no_devices">Активных устройств не найдено.</string>
+    <string name="ux30_platform_security">Пароль и подтверждение действий</string>
+    <string name="ux30_platform_account_data">Данные и связи аккаунта</string>
+    <string name="ux30_platform_unsaved_title">Время уведомлений не сохранено</string>
+    <string name="ux30_platform_unsaved_body">При выходе из раздела изменения времени будут потеряны.</string>
+    <string name="ux30_platform_discard">Не сохранять</string>
+    <string name="ux30_platform_time_format">ЧЧ:ММ</string>
+    <string name="ux30_platform_proof_requirements">Введите действующий пароль длиной от 12 до 128 символов.</string>
+    <string name="ux30_platform_time_saving_wait">Сохраняем время уведомлений. Дождитесь завершения.</string>
+    <string name="ux30_platform_refresh_devices">Обновить устройства</string>
+</resources>

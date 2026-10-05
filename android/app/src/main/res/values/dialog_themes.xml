@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Zapara.DatePicker.Light" parent="android:style/Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorAccent">@color/widget_light_text1</item>
+        <item name="android:colorControlActivated">@color/widget_light_text1</item>
+    </style>
+    <style name="Zapara.DatePicker.Dark" parent="android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">@color/widget_dark_text1</item>
+        <item name="android:colorControlActivated">@color/widget_dark_text1</item>
+    </style>
+</resources>

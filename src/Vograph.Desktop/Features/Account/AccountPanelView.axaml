@@ -1,0 +1,215 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             xmlns:a="using:Vograph.Desktop.Features.Account"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:dto="clr-namespace:Zapara.Contracts.Accounts;assembly=Zapara.Contracts"
+             xmlns:ext="clr-namespace:Zapara.Contracts.Accounts.ExternalResponses;assembly=Zapara.Contracts"
+             x:Class="Vograph.Desktop.Features.Account.AccountPanelView"
+             x:DataType="a:AccountPanelViewModel">
+  <Border Classes="card" AutomationProperties.AutomationId="Account.Card">
+    <StackPanel Spacing="10">
+      <TextBlock Classes="subject" Text="{loc:T accountTitle}" />
+      <StackPanel Spacing="8">
+        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                Command="{Binding OpenAgreementCommand}" AutomationProperties.AutomationId="Legal.Agreement">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <c:Icon Data="{StaticResource Icon.File}" Size="18" VerticalAlignment="Center" />
+            <TextBlock Text="Пользовательское соглашение" TextWrapping="Wrap" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                Command="{Binding OpenPolicyCommand}" AutomationProperties.AutomationId="Legal.Policy">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <c:Icon Data="{StaticResource Icon.Shield}" Size="18" VerticalAlignment="Center" />
+            <TextBlock Text="Политика обработки персональных данных" TextWrapping="Wrap" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+      </StackPanel>
+      <StackPanel Spacing="8" IsVisible="{Binding HasOpenDocument}">
+        <TextBlock Classes="subject" Text="{Binding OpenTitle}" TextWrapping="Wrap" />
+        <TextBox Text="{Binding DocumentSearch, Mode=TwoWay}" PlaceholderText="Поиск по документу" AutomationProperties.Name="Поиск по документу" />
+        <TextBlock Classes="muted caption" Text="{Binding DocumentSearchCount}" IsVisible="{Binding DocumentSearch, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <TextBlock Text="В документе ничего не найдено" IsVisible="{Binding NoDocumentMatches}" />
+        <ItemsControl ItemsSource="{Binding DocumentMatches}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="a:DocumentMatch"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding $parent[UserControl].((a:AccountPanelViewModel)DataContext).SelectDocumentMatchCommand}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+        <TextBlock Text="{Binding SelectedDocumentParagraph}" TextWrapping="Wrap" FontSize="{Binding DocumentTextSize}" IsVisible="{Binding SelectedDocumentParagraph, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <WrapPanel ItemSpacing="8"><Button Content="Мельче" Command="{Binding ReduceDocumentTextCommand}" /><Button Content="Крупнее" Command="{Binding EnlargeDocumentTextCommand}" /></WrapPanel>
+        <ScrollViewer MaxHeight="360" HorizontalScrollBarVisibility="Disabled">
+          <TextBlock Text="{Binding OpenBody}" TextWrapping="Wrap" FontSize="{Binding DocumentTextSize}" />
+        </ScrollViewer>
+        <Button HorizontalAlignment="Left" Content="Закрыть" Command="{Binding CloseDocumentCommand}" AutomationProperties.AutomationId="Legal.Close" />
+      </StackPanel>
+      <TextBlock Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.AutomationId="Account.Status" />
+      <Button Content="Повторить загрузку возможностей входа" Command="{Binding RefreshCapabilitiesCommand}" IsVisible="{Binding CapabilitiesFailed}" HorizontalAlignment="Left" />
+      <Button Content="Отменить вход" Command="{Binding CancelExternalCommand}" IsVisible="{Binding ExternalPending}" AutomationProperties.AutomationId="Account.CancelExternal" />
+      <TextBlock Classes="caption" Text="{loc:T accountIsolation}" TextWrapping="Wrap" />
+      <Button Content="{loc:T accountRecover}" Command="{Binding RecoverCommand}" IsVisible="{Binding NeedsRecovery}" />
+      <StackPanel Spacing="10" IsEnabled="{Binding CanAct}">
+        <StackPanel Spacing="10" IsVisible="{Binding ShowLogin}">
+          <TextBlock Text="{loc:T accountRegistration}" IsVisible="{Binding Registration}" />
+          <TextBlock Text="{loc:T accountUsername}" />
+          <TextBox Text="{Binding Username}" AutomationProperties.Name="{loc:T accountUsername}" AutomationProperties.AutomationId="Account.Username" />
+          <TextBlock Text="{loc:T accountPassword}" />
+          <TextBox Text="{Binding Password}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountPassword}" AutomationProperties.AutomationId="Account.Password" />
+          <StackPanel Spacing="10" IsVisible="{Binding Registration}">
+            <TextBlock Text="{loc:T accountDisplayName}" />
+            <TextBox Text="{Binding DisplayName}" AutomationProperties.Name="{loc:T accountDisplayName}" />
+            <CheckBox IsChecked="{Binding DocumentsAccepted}" MinHeight="48" VerticalAlignment="Center" AutomationProperties.AutomationId="Account.AcceptDocuments">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <c:Icon Data="{StaticResource Icon.File}" Size="16" VerticalAlignment="Center" />
+                <c:Icon Data="{StaticResource Icon.Shield}" Size="16" VerticalAlignment="Center" />
+                <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="520" Text="Я принимаю пользовательское соглашение и политику обработки персональных данных." />
+              </StackPanel>
+            </CheckBox>
+          </StackPanel>
+          <TextBlock Classes="caption" Text="{loc:T accountValidation}" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Classes="primary" Content="{loc:T accountLogin}" Command="{Binding SubmitCommand}" IsVisible="{Binding !Registration}" AutomationProperties.AutomationId="Account.Login" />
+            <Button Classes="primary" Content="{loc:T accountRegister}" Command="{Binding SubmitCommand}" IsVisible="{Binding Registration}" IsEnabled="{Binding DocumentsAccepted}" AutomationProperties.AutomationId="Account.Register" />
+            <Button Content="{loc:T accountMode}" Command="{Binding ToggleRegistrationCommand}" IsVisible="{Binding RegistrationAvailable}" AutomationProperties.AutomationId="Account.Mode" />
+          </StackPanel>
+          <TextBlock Classes="caption" Text="Войти с помощью" IsVisible="{Binding ShowExternalLogin}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Classes="id" Command="{Binding StartYandexCommand}" IsVisible="{Binding ShowYandexLogin}" AutomationProperties.AutomationId="Account.Yandex" AutomationProperties.Name="{loc:T accountYandex}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <a:YandexMark VerticalAlignment="Center" />
+                <TextBlock Text="Яндекс ID" VerticalAlignment="Center" Foreground="#111111" />
+              </StackPanel>
+            </Button>
+            <Button Classes="id" Command="{Binding StartVkCommand}" IsVisible="{Binding ShowVkLogin}" AutomationProperties.AutomationId="Account.Vk" AutomationProperties.Name="{loc:T accountVk}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <a:VkMark VerticalAlignment="Center" />
+                <TextBlock Text="VK ID" VerticalAlignment="Center" Foreground="#111111" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+          <StackPanel Spacing="8" IsVisible="{Binding ShowRecovery}">
+            <TextBlock Text="{loc:T accountRecoveryEmail}" TextWrapping="Wrap" />
+            <Button HorizontalAlignment="Left" Content="Запросить инструкцию" Command="{Binding ResetPasswordCommand}" IsEnabled="{Binding CanRequestReset}" AutomationProperties.AutomationId="Account.ResetPassword" />
+            <Button HorizontalAlignment="Left" Content="У меня уже есть код" Command="{Binding ShowPasswordResetFormCommand}" />
+            <StackPanel Spacing="6" IsVisible="{Binding ResetRequested}">
+              <TextBlock Text="Код из инструкции" />
+              <TextBox Text="{Binding ResetToken}" AutomationProperties.Name="Код восстановления" />
+              <TextBlock Text="Новый пароль (12–128 символов)" />
+              <TextBox Text="{Binding ResetNewPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="Новый пароль для восстановления" />
+              <Button Content="Установить новый пароль" Command="{Binding ConfirmPasswordResetCommand}" IsEnabled="{Binding CanConfirmReset}" HorizontalAlignment="Left" />
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+        <StackPanel Spacing="10" IsVisible="{Binding IsAccount}">
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <Border Width="56" Height="56" CornerRadius="28" Background="{DynamicResource Brush.Chip}" ClipToBounds="True"
+                    AutomationProperties.Name="Фото профиля">
+              <Grid><TextBlock Text="{Binding AvatarInitials}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding NoAvatar}" />
+                <Image Source="{Binding Avatar}" Stretch="UniformToFill" IsVisible="{Binding HasAvatar}" /></Grid>
+            </Border>
+            <StackPanel Spacing="4" VerticalAlignment="Center">
+              <TextBlock Text="{Binding AccountName}" Classes="subject" AutomationProperties.AutomationId="Account.Name" />
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Classes="ghost" Content="Изменить фото" Command="{Binding ChangeAvatarCommand}" AutomationProperties.Name="Изменить фото профиля" />
+                <Button Classes="ghost" Content="Удалить фото" Command="{Binding RemoveAvatarCommand}" IsVisible="{Binding HasAvatar}" AutomationProperties.Name="Удалить фото профиля" />
+              </StackPanel>
+            </StackPanel>
+          </StackPanel>
+          <TextBlock Text="{loc:T accountDisplayName}" />
+          <TextBox Text="{Binding DisplayName}" AutomationProperties.Name="{loc:T accountDisplayName}" AutomationProperties.AutomationId="Account.DisplayName" />
+          <TextBlock Text="Изменение имени ещё не сохранено" IsVisible="{Binding HasUnsavedDisplayName}" Classes="muted caption" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="{loc:T accountSave}" Command="{Binding SaveProfileCommand}" AutomationProperties.AutomationId="Account.Save" />
+            <Button Content="{loc:T accountRefresh}" Command="{Binding RefreshProfileCommand}" AutomationProperties.AutomationId="Account.Refresh" />
+            <Button x:Name="LogoutButton" Content="{loc:T accountLogout}" Command="{Binding RequestLogoutCommand}" AutomationProperties.AutomationId="Account.Logout" />
+          </StackPanel>
+          <StackPanel Spacing="10" IsVisible="{Binding ConfirmLogout}">
+            <TextBlock Text="{loc:T accountConfirmLogout}" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Classes="primary" Content="{loc:T accountLogout}" Command="{Binding LogoutCommand}" AutomationProperties.AutomationId="Account.ConfirmLogout" />
+              <Button Content="{loc:T accountCancel}" Command="{Binding CancelLogoutCommand}" Click="OnCancelLogoutClick" />
+            </StackPanel>
+          </StackPanel>
+          <Button HorizontalAlignment="Left" Content="{loc:T accountDevices}" Command="{Binding LoadDevicesCommand}" AutomationProperties.AutomationId="Account.Devices" />
+          <TextBox Text="{Binding DeviceSearch, Mode=TwoWay}" PlaceholderText="Название, платформа или код устройства" AutomationProperties.Name="Поиск активных устройств" />
+          <ComboBox ItemsSource="{Binding DeviceScopes}" SelectedIndex="{Binding DeviceScopeIndex}" MinWidth="180" HorizontalAlignment="Left" AutomationProperties.Name="Какие устройства показать" />
+          <WrapPanel ItemSpacing="8"><TextBlock Text="{Binding DeviceResultCount}" VerticalAlignment="Center" /><Button Content="Сбросить фильтры устройств" Command="{Binding ResetDeviceFiltersCommand}" IsVisible="{Binding HasDeviceFilters}" /></WrapPanel>
+          <TextBlock Text="На загруженных страницах таких устройств нет. Другие могут быть на следующей странице." IsVisible="{Binding NoDeviceMatches}" TextWrapping="Wrap" />
+          <ItemsControl ItemsSource="{Binding FilteredDevices}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="dto:DeviceResponse">
+                <StackPanel Spacing="8" Margin="0,4">
+                  <TextBlock Text="{Binding DeviceName}" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding LastSeenAt, StringFormat='Последняя активность: {0:dd.MM.yyyy HH:mm zzz}'}" TextWrapping="Wrap" />
+                  <TextBlock Text="{loc:T accountCurrentDevice}" IsVisible="{Binding IsCurrent}" />
+                  <Button HorizontalAlignment="Left" Content="{loc:T accountRevoke}" AutomationProperties.AutomationId="Account.Revoke"
+                          Command="{Binding $parent[a:AccountPanelView].((a:AccountPanelViewModel)DataContext).RequestRevokeDeviceCommand}" CommandParameter="{Binding}" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <Button HorizontalAlignment="Left" Content="{loc:T accountMore}" Command="{Binding MoreDevicesCommand}" IsVisible="{Binding HasMore}" />
+          <StackPanel Spacing="6" IsVisible="{Binding HasPendingRevokeDevice}">
+            <TextBlock Text="{Binding RevokeDeviceCaption}" TextWrapping="Wrap" />
+            <WrapPanel ItemSpacing="8"><Button Classes="danger" Content="Завершить этот сеанс" Command="{Binding RevokeDeviceCommand}" CommandParameter="{Binding PendingRevokeDevice}" /><Button Content="Отмена" Command="{Binding CancelRevokeDeviceCommand}" /></WrapPanel>
+          </StackPanel>
+          <Button HorizontalAlignment="Left" Content="{loc:T accountRevokeAll}" Command="{Binding RequestRevokeAllCommand}" />
+          <StackPanel Spacing="6" IsVisible="{Binding ConfirmRevokeAll}">
+            <TextBlock Text="Завершить все сеансы? На всех устройствах потребуется войти снова." TextWrapping="Wrap" />
+            <WrapPanel ItemSpacing="8"><Button Classes="danger" Content="Завершить все сеансы" Command="{Binding RevokeAllCommand}" /><Button Content="Отмена" Command="{Binding CancelRevokeAllCommand}" /></WrapPanel>
+          </StackPanel>
+          <StackPanel Spacing="10" IsVisible="{Binding HasPassword}">
+            <TextBlock Text="{loc:T accountCurrentPassword}" />
+            <TextBox Text="{Binding CurrentPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountCurrentPassword}" AutomationProperties.AutomationId="Account.CurrentPassword" />
+            <TextBlock Text="{loc:T accountNewPassword}" />
+            <TextBox Text="{Binding NewPassword}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountNewPassword}" AutomationProperties.AutomationId="Account.NewPassword" />
+            <TextBlock Text="Новый пароль должен отличаться от текущего." IsVisible="{Binding IsSameNewPassword}" TextWrapping="Wrap" />
+            <Button HorizontalAlignment="Left" Content="{loc:T accountChangePassword}" Command="{Binding ChangePasswordCommand}" IsEnabled="{Binding !IsSameNewPassword}" AutomationProperties.AutomationId="Account.ChangePassword" />
+          </StackPanel>
+          <StackPanel Spacing="8" IsVisible="{Binding HasPassword}">
+            <TextBlock Text="{loc:T accountProof}" />
+            <TextBox Text="{Binding Proof}" PasswordChar="●" RevealPassword="False" AutomationProperties.Name="{loc:T accountProof}" AutomationProperties.AutomationId="Account.Proof" />
+          </StackPanel>
+          <TextBlock Text="Важные действия подтверждаются через привязанный Яндекс ID или VK ID."
+                     TextWrapping="Wrap" IsVisible="{Binding ShowProviderProof}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="{loc:T accountExport}" Command="{Binding ExportCommand}" AutomationProperties.AutomationId="Account.Export" />
+            <Button Content="{loc:T accountExportDownload}" Command="{Binding DownloadExportCommand}" IsVisible="{Binding CanDownloadExport}" AutomationProperties.AutomationId="Account.ExportDownload" />
+          </StackPanel>
+          <Button HorizontalAlignment="Left" Content="{loc:T accountDelete}" Command="{Binding RequestDeleteCommand}" AutomationProperties.AutomationId="Account.Delete" />
+          <StackPanel Spacing="10" IsVisible="{Binding ConfirmDelete}">
+            <TextBlock Text="{loc:T accountDeleteConfirm}" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Classes="primary" Content="{loc:T accountDelete}" Command="{Binding DeleteAccountCommand}" AutomationProperties.AutomationId="Account.ConfirmDelete" />
+              <Button Content="{loc:T accountCancel}" Command="{Binding CancelDeleteCommand}" />
+            </StackPanel>
+          </StackPanel>
+          <TextBlock Text="{loc:T accountIdentities}" />
+          <Button HorizontalAlignment="Left" Content="{loc:T accountIdentities}" Command="{Binding LoadIdentitiesCommand}" AutomationProperties.AutomationId="Account.Identities" />
+          <ItemsControl ItemsSource="{Binding Identities}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="ext:ExternalIdentityResponse">
+                <StackPanel Spacing="8" Margin="0,4">
+                  <TextBlock Text="{Binding Provider}" />
+                  <Button HorizontalAlignment="Left" Content="{loc:T accountUnlink}" AutomationProperties.AutomationId="Account.Unlink"
+                          IsEnabled="{Binding $parent[a:AccountPanelView].((a:AccountPanelViewModel)DataContext).CanUnlinkIdentity}"
+                          Command="{Binding $parent[a:AccountPanelView].((a:AccountPanelViewModel)DataContext).UnlinkIdentityCommand}" CommandParameter="{Binding}" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Classes="id" Command="{Binding LinkYandexCommand}" IsVisible="{Binding ShowYandexLink}" AutomationProperties.AutomationId="Account.LinkYandex" AutomationProperties.Name="Привязать Яндекс ID">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <a:YandexMark VerticalAlignment="Center" />
+                <TextBlock Text="{loc:T accountLink}" VerticalAlignment="Center" Foreground="#111111" />
+              </StackPanel>
+            </Button>
+            <Button Classes="id" Command="{Binding LinkVkCommand}" IsVisible="{Binding ShowVkLink}" AutomationProperties.AutomationId="Account.LinkVk" AutomationProperties.Name="Привязать VK ID">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <a:VkMark VerticalAlignment="Center" />
+                <TextBlock Text="{loc:T accountLink}" VerticalAlignment="Center" Foreground="#111111" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </StackPanel>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</UserControl>

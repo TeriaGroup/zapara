@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="friends_detail_count">Групп: %1$d из 5</string>
+    <string name="friends_detail_active">Активных групп: %1$d</string>
+    <string name="friends_detail_empty">Группы друзей ещё не добавлены</string>
+    <string name="friends_detail_empty_hint">Добавьте учебную группу, чтобы видеть пересечения в расписании.</string>
+    <string name="friends_detail_load_failed">Группы друзей не загрузились</string>
+    <string name="friends_detail_retry">Повторить</string>
+    <string name="friends_forecast_title">Ближайшие пересечения</string>
+    <string name="friends_forecast_hint">До трёх встреч на ближайшие 14 дней</string>
+    <string name="friends_forecast_refresh">Обновить расписания</string>
+    <string name="friends_forecast_refreshing">Обновляем…</string>
+    <string name="friends_forecast_refresh_failed">Не удалось обновить. Сохранённые данные доступны.</string>
+    <string name="friends_forecast_no_schedule">Выберите свою группу и загрузите её расписание.</string>
+    <string name="friends_forecast_no_friends">Включите группу друзей или добавьте новую.</string>
+    <string name="friends_forecast_missing">Нет подходящего загруженного расписания: %1$s. Прогноз пока неполный.</string>
+    <string name="friends_forecast_source_hint">Совпадение рассчитано по времени и аудиториям в расписании, а не по фактическому местоположению.</string>
+    <string name="friend_below_level">ниже выбранной точности</string>
+    <string name="friends_group_unavailable">Выберите другую учебную группу. Своя или уже добавленная группа не подходит.</string>
+    <string name="teacher_detail_lessons">Пар в выбранной неделе: %1$d</string>
+    <string name="community_detail_joined">Моих сообществ: %1$d</string>
+    <string name="community_detail_requests">Заявки на вступление</string>
+</resources>

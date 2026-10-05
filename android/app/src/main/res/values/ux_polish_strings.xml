@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="polish_homework_completed_title">Все задания выполнены</string>
+    <string name="polish_homework_completed_hint">Активных заданий сейчас нет. Выполненные остаются в вашем списке.</string>
+    <string name="polish_homework_show_completed">Показать выполненные</string>
+</resources>

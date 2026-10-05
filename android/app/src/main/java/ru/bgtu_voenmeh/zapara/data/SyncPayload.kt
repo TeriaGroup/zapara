@@ -1,8 +1,6 @@
 package ru.bgtu_voenmeh.zapara.data
 
 // Wire shape must stay compatible with Windows SyncPayload (v1).
-// Room entities are mapped here for transport.
-// Note: @Serializable removed for debug build - will add kotlinx-serialization in A5 final.
 
 data class SyncPayload(
     val Version: Int = 1,

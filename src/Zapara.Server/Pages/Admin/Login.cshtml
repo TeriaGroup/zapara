@@ -1,0 +1,18 @@
+@page
+@model Zapara.Server.Pages.Admin.LoginModel
+@{
+    ViewData["Title"] = "Вход";
+}
+<h1>Вход в админку</h1>
+<p class="hint">Только администратор платформы. Сессия хранится на сервере и не записывается в хранилище браузера.</p>
+@if (Model.Error is not null)
+{
+    <div class="error" role="alert">@Model.Error</div>
+}
+<form method="post" class="card">
+    <label asp-for="Username">Имя пользователя</label>
+    <input asp-for="Username" autocomplete="username" required />
+    <label asp-for="Password">Пароль</label>
+    <input asp-for="Password" type="password" autocomplete="current-password" required />
+    <button class="primary" type="submit">Войти</button>
+</form>

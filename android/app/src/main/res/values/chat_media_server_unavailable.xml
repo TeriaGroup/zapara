@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_media_server_unavailable">Вложение недоступно на сервере</string>
+    <string name="chat_media_server_unavailable_hint">Обновите чат или попросите отправителя переслать файл.</string>
+    <string name="chat_media_retry_manual">Попробовать снова</string>
+</resources>

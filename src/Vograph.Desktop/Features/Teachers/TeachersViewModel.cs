@@ -1,0 +1,454 @@
+using System.Collections.ObjectModel;
+using Avalonia.Data.Converters;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Vograph.Core.Models;
+using Vograph.Core.Services;
+using Vograph.Desktop.Domain;
+using Vograph.Desktop.Services;
+using Vograph.Desktop.Shell;
+using Vograph.Desktop.ViewModels;
+
+namespace Vograph.Desktop.Features.Teachers;
+
+public sealed record TeacherItem(LecturerInfo Info, bool IsMine)
+{
+    public string Name => Info.Name;
+    public string Kafedra => Info.Kafedra.Trim();
+}
+public sealed record DepartmentFilterOption(string Name, string Label);
+public sealed record TeacherChoice(string Name, string Department, IRelayCommand ChooseCommand);
+
+public sealed partial class TeachersViewModel : ViewModelBase
+{
+    private readonly ShellViewModel _shell;
+    private readonly Func<DateTime> _clock;
+    private readonly Action _onReload;
+    private readonly Action _onGroup;
+    private readonly Action _onLanguage;
+    private TeacherIndex _index = new(Array.Empty<LecturerInfo>(), Array.Empty<LecturerLesson>());
+    private HashSet<string> _myIds = new();
+    private string _myGroupId = "";
+    private string _myGroupName = "";
+    private bool _invert;
+    private DateTime _periodStart;
+    private int _weekCount = 2;
+    private bool _loadedOnce;
+    private Task? _inflight;
+    private int _groupEpoch;
+    private string? selectionMemoryId;
+    [ObservableProperty] private IReadOnlyList<TeacherChoice> nameChoices = [];
+    [ObservableProperty] private string navigationFeedback = "";
+    public bool HasNameChoices => NameChoices.Count > 0;
+    public bool HasHiddenSelection => selectionMemoryId is not null && Selected is null;
+    partial void OnNameChoicesChanged(IReadOnlyList<TeacherChoice> value) => OnPropertyChanged(nameof(HasNameChoices));
+
+    public TeachersViewModel(AppServices app, ShellViewModel shell, Func<DateTime>? clock = null, bool allowNetwork = true) : base(app)
+    {
+        _shell = shell;
+        _clock = clock ?? (() => DateTime.Now);
+        AllowNetwork = allowNetwork;
+        _onReload = () => _ = LoadMyGroupAsync();
+        _onGroup = () => { _groupEpoch++; _ = LoadMyGroupAsync(); };
+        _onLanguage = () => { OnPropertyChanged(nameof(Title)); Detail?.Relabel(); ApplyFilter(); };
+        shell.GroupChanged += _onGroup;
+        // ParityInvert lives in settings, and the «нечет/чет» labels here are computed from it: the Settings
+        // switch (and a timetable refresh) raise ScheduleChanged, so both events re-read it the same way.
+        shell.ScheduleChanged += _onReload;
+        app.Loc.LanguageChanged += _onLanguage;
+    }
+
+    public override void Detach()
+    {
+        _shell.GroupChanged -= _onGroup;
+        _shell.ScheduleChanged -= _onReload;
+        App.Loc.LanguageChanged -= _onLanguage;
+    }
+
+    public override Task ActivateAsync() => _loadedOnce ? Task.CompletedTask : LoadAsync();
+
+    public string Title => T("navTeachers");
+
+    /// <summary>The network switch this instance was built with (AppServices.AllowNetwork at construction); tests assert it.</summary>
+    public bool AllowNetwork { get; }
+    public ObservableCollection<TeacherItem> Items { get; } = new();
+
+    [ObservableProperty] private string _query = "";
+    [ObservableProperty] private bool _onlyMine = true;
+    [ObservableProperty] private IReadOnlyList<DepartmentFilterOption> _departmentOptions = [new("", "Все кафедры")];
+    [ObservableProperty] private DepartmentFilterOption? _selectedDepartment;
+    partial void OnSelectedDepartmentChanged(DepartmentFilterOption? value) => ApplyFilter();
+    [ObservableProperty] private string _countText = "";
+    [ObservableProperty] private TeacherItem? _selected;
+    [ObservableProperty] private TeacherDetailViewModel? _detail;
+    [ObservableProperty] private bool _isLoading;
+    [ObservableProperty] private string? _loadError;
+    [ObservableProperty] private string _sourceNotice = "";
+    public bool HasSourceNotice => SourceNotice.Length > 0;
+    partial void OnSourceNoticeChanged(string value) => OnPropertyChanged(nameof(HasSourceNotice));
+    public bool HasDetail => Detail is not null;
+    public bool HasTeacherSearch => !string.IsNullOrWhiteSpace(Query);
+    public bool NoTeacherMatches => _loadedOnce && !IsLoading && string.IsNullOrWhiteSpace(LoadError) && Items.Count == 0;
+    public bool CanShowAllTeachers => NoTeacherMatches && OnlyMine && !HasTeacherSearch;
+    public bool CanSearchAllTeachers => NoTeacherMatches && OnlyMine && HasTeacherSearch;
+    public string EmptyTeacherText => HasTeacherSearch ? "Преподаватели по запросу не найдены"
+        : OnlyMine ? "У выбранной группы преподаватели пока не найдены" : "Преподавателей пока нет";
+
+    partial void OnQueryChanged(string value)
+    {
+        ApplyFilter();
+        OnPropertyChanged(nameof(HasTeacherSearch));
+    }
+    [RelayCommand] private void ClearTeacherSearch() => Query = "";
+    [RelayCommand] private void ShowAllTeachers() => OnlyMine = false;
+    [RelayCommand] private void SearchAllTeachers() => OnlyMine = false;
+    partial void OnOnlyMineChanged(bool value) => ApplyFilter();
+    partial void OnIsLoadingChanged(bool value) => NotifyEmptyTeacherState();
+    partial void OnLoadErrorChanged(string? value) => NotifyEmptyTeacherState();
+    partial void OnSelectedChanged(TeacherItem? value)
+    {
+        if (value is not null) selectionMemoryId = value.Info.Id;
+        Detail = value is null ? null : NewDetail(value, parityIndex: 0);
+        OnPropertyChanged(nameof(HasDetail));
+        OnPropertyChanged(nameof(HasHiddenSelection));
+    }
+    public async Task OpenByNameAsync(string name)
+    {
+        await LoadAsync();
+        if (!App.Work.CanPublish) return;
+        var matches = _index.Lecturers.Where(info => info.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (matches.Length == 0) { NavigationFeedback = "Преподаватель не найден в загруженном каталоге."; return; }
+        if (matches.Length > 1)
+        {
+            NameChoices = matches.Select(info => new TeacherChoice(info.Name, info.Kafedra,
+                new RelayCommand(() => SelectFromName(info.Id)))).ToArray();
+            NavigationFeedback = "Найдено несколько преподавателей с этим именем. Выберите кафедру.";
+            return;
+        }
+        SelectFromName(matches[0].Id);
+    }
+    private void SelectFromName(string id)
+    {
+        var info = _index.Lecturers.FirstOrDefault(item => item.Id == id);
+        if (info is null) return;
+        OnlyMine = false; Query = info.Name;
+        SelectedDepartment = DepartmentOptions.FirstOrDefault(option => option.Name.Equals(info.Kafedra.Trim(), StringComparison.OrdinalIgnoreCase)) ?? DepartmentOptions[0];
+        ApplyFilter(); Selected = Items.FirstOrDefault(item => item.Info.Id == id);
+        NameChoices = []; NavigationFeedback = "";
+    }
+    [RelayCommand] private void ShowSelectedTeacher()
+    {
+        if (selectionMemoryId is { } id) SelectFromName(id);
+    }
+
+    /// <summary>A reload re-read ParityInvert and my group, so the open detail has to be rebuilt from them.
+    /// ApplyFilter cannot do it: it re-creates the selected TeacherItem, but the record compares by value, so
+    /// the Selected setter sees no change and OnSelectedChanged never runs. The «нечет/чет» segment the user
+    /// picked is carried over — a background refresh must not reset it.</summary>
+    private void RebuildDetail()
+    {
+        if (Selected is { } item) Detail = NewDetail(item, Detail?.ParityIndex ?? 0);
+    }
+
+    private TeacherDetailViewModel NewDetail(TeacherItem item, int parityIndex)
+    {
+        var group = _myGroupId;
+        var epoch = _groupEpoch;
+        var owner = App.Profile.DatabasePath;
+        void OpenOwnDay(DateTime date)
+        {
+            if (!App.Work.CanPublish || epoch != _groupEpoch || App.Profile.DatabasePath != owner || App.Settings.MyGroupId != group) return;
+            _shell.OpenScheduleAt(date);
+        }
+        return new(item.Info, _index.LessonsOf(item.Info.Id), item.IsMine, group, _myGroupName, _invert, App.Loc, _clock().Date,
+            _periodStart, _weekCount, OpenOwnDay, raw => OpenTeacherRoomAsync(raw, group, epoch, owner))
+        { ParityIndex = parityIndex, OnlyOwnGroup = item.IsMine && Detail?.OnlyOwnGroup == true };
+    }
+    private async Task OpenTeacherRoomAsync(string raw, string group, int epoch, string owner)
+    {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent || epoch != _groupEpoch || App.Profile.DatabasePath != owner || App.Settings.MyGroupId != group) return;
+        var map = await RunAsync(() => App.Maps.Resolve(raw), "teacher room map");
+        if (!operation.IsCurrent || epoch != _groupEpoch || App.Profile.DatabasePath != owner || App.Settings.MyGroupId != group) return;
+        if (map is { HasMap: true }) _shell.ShowMap(map);
+        else App.Toasts.Info("Для аудитории нет координаты на сохранённой карте.");
+    }
+
+    /// <summary>Reentrancy guard. ShellViewModel.NavigateTo fires ActivateAsync without awaiting and without a
+    /// busy check, and the shell hands back the same cached section instance on every navigation, so two
+    /// navigations back to back must share one in-flight load instead of racing two calls into the shared
+    /// LecturerService.Parse() (unsynchronized Clear()+Add() on the same lists). A completed _inflight — including
+    /// one that failed, since _loadedOnce only flips on success — falls through and starts a fresh load rather than
+    /// returning the stale task.</summary>
+    public Task LoadAsync()
+    {
+        if (_inflight is { IsCompleted: false }) return _inflight;
+        return _inflight = LoadOnceAsync();
+    }
+
+    [RelayCommand] private Task Retry() => LoadAsync();
+    [RelayCommand(AllowConcurrentExecutions = false)]
+    private async Task RetryDirectory()
+    {
+        if (!AllowNetwork || IsLoading) return;
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        IsLoading = true;
+        try
+        {
+            if (await Task.Run(() => App.Lecturers.RefreshAsync()))
+            {
+                if (!operation.IsCurrent) return;
+                await RebuildAsync();
+                SourceNotice = "";
+            }
+            else if (operation.IsCurrent) SourceNotice = "Полный каталог не обновился. Показана локальная копия.";
+        }
+        finally { if (operation.IsCurrent) IsLoading = false; }
+    }
+
+    /// <summary>Local copy first (instant), my-teacher ids under the gate, then the network refresh behind the list.
+    /// _loadedOnce is set only once a source of data was actually found, so a failed first load (no cache, no
+    /// bundled copy, no network) is retried the next time the section is activated instead of sticking forever.</summary>
+    private async Task LoadOnceAsync()
+    {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        IsLoading = true;
+        LoadError = null;
+        try
+        {
+            var have = App.Lecturers.IsLoaded || await Task.Run(() => App.Lecturers.LoadLocalAsync());
+            if (!have && AllowNetwork) have = await Task.Run(() => App.Lecturers.RefreshAsync());
+            if (!operation.IsCurrent) return;
+            if (!have)
+            {
+                LoadError = T("teachersLoadFail", T("teachersNoSource"));
+                return;
+            }
+            _loadedOnce = true;
+            await RebuildAsync();
+            if (AllowNetwork) _ = RefreshInBackgroundAsync(); // RefreshAsync swallows its own failures, RunAsync the rest
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task RefreshInBackgroundAsync()
+    {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        if (await Task.Run(() => App.Lecturers.RefreshAsync()))
+        {
+            if (!operation.IsCurrent) return;
+            await RebuildAsync();
+            SourceNotice = "";
+        }
+        else if (operation.IsCurrent && _index.Lecturers.Count > 0) SourceNotice = "Полный каталог не обновился. Показана локальная копия.";
+    }
+
+    private async Task RebuildAsync()
+    {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        var (lecturers, lessons) = (App.Lecturers.Lecturers, App.Lecturers.Lessons);
+        _index = await Task.Run(() => new TeacherIndex(lecturers, lessons)); // 718 lecturers grouped off the UI thread (T4 minor 90)
+        var selectedName = SelectedDepartment?.Name ?? "";
+        DepartmentOptions = [new("", "Все кафедры"), .. _index.Lecturers.Select(row => row.Kafedra.Trim())
+            .Where(name => name.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.Create(System.Globalization.CultureInfo.GetCultureInfo("ru-RU"), true))
+            .Select(name => new DepartmentFilterOption(name, name))];
+        SelectedDepartment = DepartmentOptions.FirstOrDefault(option =>
+            option.Name.Equals(selectedName, StringComparison.OrdinalIgnoreCase)) ?? DepartmentOptions[0];
+        await LoadMyGroupAsync();
+    }
+
+    private sealed record MyGroupData(string Id, string Name, bool Invert, HashSet<string> MyIds, DateTime PeriodStart, int WeekCount);
+
+    private async Task LoadMyGroupAsync()
+    {
+        using var operation = App.Work.Enter();
+        if (!operation.IsCurrent) return;
+        var index = _index; // captured before the lambda: RunAsync moves the work to a pool thread, and a concurrent RebuildAsync could reassign _index meanwhile
+        var data = await RunAsync(() =>
+        {
+            var s = App.Db.GetSettings();
+            var id = s.MyGroupId ?? "";
+            var name = id.Length == 0 ? "" : App.Db.GetGroup(id)?.Name ?? "";
+            return new MyGroupData(id, name, s.ParityInvert, id.Length == 0 ? new HashSet<string>() : TeacherSearch.MyLecturerIds(App.Db.GetAllLessonsForGroup(id), index.Lecturers),
+                DateTime.TryParse(s.PeriodStart, out var periodStart) ? periodStart : new DateTime(_clock().Year, 9, 1), s.WeekCount > 0 ? s.WeekCount : 2);
+        }, "teachers");
+        if (data is null || !operation.IsCurrent) return;
+        _myGroupId = data.Id;
+        _myGroupName = data.Name;
+        _invert = data.Invert;
+        _periodStart = data.PeriodStart; _weekCount = data.WeekCount;
+        _myIds = data.MyIds;
+        ApplyFilter();
+        RebuildDetail();
+    }
+
+    private void ApplyFilter()
+    {
+        var keep = Selected?.Info.Id ?? selectionMemoryId;
+        var filtered = _index.Filter(Query, OnlyMine, _myIds, SelectedDepartment?.Name);
+        Items.Clear();
+        foreach (var l in filtered) Items.Add(new TeacherItem(l, _myIds.Contains(l.Id)));
+        var total = _index.Lecturers.Count;
+        CountText = filtered.Count < total ? T("teachersCount", filtered.Count, total) : total.ToString();
+        Selected = keep is null ? null : Items.FirstOrDefault(i => i.Info.Id == keep);
+        OnPropertyChanged(nameof(HasHiddenSelection));
+        NotifyEmptyTeacherState();
+    }
+
+    private void NotifyEmptyTeacherState()
+    {
+        OnPropertyChanged(nameof(NoTeacherMatches));
+        OnPropertyChanged(nameof(CanShowAllTeachers));
+        OnPropertyChanged(nameof(CanSearchAllTeachers));
+        OnPropertyChanged(nameof(EmptyTeacherText));
+    }
+}
+
+public sealed record TeacherRow(string Time, string TimeEnd, string Name, string TypeLabel, string Room, string Groups, string ParityLabel, bool IsMine,
+    DateTime? NextDate = null, IRelayCommand? OpenOwnDayCommand = null, string? FullGroups = null,
+    IAsyncRelayCommand? OpenRoomCommand = null) : System.ComponentModel.INotifyPropertyChanged
+{
+    public bool CanOpenOwnDay => IsMine && NextDate is not null && OpenOwnDayCommand is not null;
+    public bool CanOpenRoom => OpenRoomCommand is not null;
+    public bool HasMoreGroups => FullGroups is { } full && full != Groups;
+    private bool showAllGroups;
+    public string ShownGroups => showAllGroups ? FullGroups ?? Groups : Groups;
+    public string GroupToggleCaption => showAllGroups ? "Свернуть группы" : "Показать все группы";
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    public IRelayCommand ToggleGroupsCommand => new RelayCommand(() =>
+    { showAllGroups = !showAllGroups;
+        PropertyChanged?.Invoke(this, new(nameof(ShownGroups)));
+        PropertyChanged?.Invoke(this, new(nameof(GroupToggleCaption))); });
+}
+public sealed record TeacherDay(string Title, bool IsToday, IReadOnlyList<TeacherRow> Rows, DateTime? NextDate = null)
+{
+    public string NextDateText => NextDate is { } date ? $"Ближайшая дата · {date:dd.MM.yyyy}" : "";
+}
+
+/// <summary>Pure over the lecturer's lessons: no Core access, so it can be built on the UI thread when a row is selected.</summary>
+public sealed partial class TeacherDetailViewModel : ObservableObject
+{
+    private readonly IReadOnlyList<LecturerLesson> _lessons;
+    private readonly string _myGroupId;
+    private readonly string _myGroupName;
+    private readonly bool _invert;
+    private readonly Loc _loc;
+    private readonly DateTime _today;
+    private readonly DateTime _periodStart;
+    private readonly int _weekCount;
+    private readonly Action<DateTime>? _openOwnDay;
+    private readonly Func<string, Task>? _openRoom;
+
+    public TeacherDetailViewModel(LecturerInfo info, IReadOnlyList<LecturerLesson> lessons, bool isMine, string myGroupId, string myGroupName, bool invert, Loc loc, DateTime today,
+        DateTime? periodStart = null, int weekCount = 2, Action<DateTime>? openOwnDay = null,
+        Func<string, Task>? openRoom = null)
+    {
+        Info = info;
+        _lessons = lessons;
+        IsMine = isMine;
+        _myGroupId = myGroupId;
+        _myGroupName = myGroupName;
+        _invert = invert;
+        _loc = loc;
+        _today = today;
+        _periodStart = periodStart ?? new DateTime(today.Year, 9, 1);
+        _weekCount = weekCount > 0 ? weekCount : 2;
+        _openOwnDay = openOwnDay;
+        _openRoom = openRoom;
+        _segmentItems = BuildSegments();
+        _days = Build();
+    }
+
+    public LecturerInfo Info { get; }
+    public string Name => Info.Name;
+    public string Kafedra => Info.Kafedra.Trim();
+    public bool HasKafedra => Kafedra.Length > 0;
+    public bool IsMine { get; }
+    public string MineLine => _loc.T(IsMine ? "teachersTeachesMine" : "teachersNotMine");
+
+    [ObservableProperty] private IList<string> _segmentItems;
+    [ObservableProperty] private int _parityIndex; // 0 both, 1 odd, 2 even
+    [ObservableProperty] private bool _onlyOwnGroup;
+    [ObservableProperty] private IReadOnlyList<TeacherDay> _days;
+    public string WeekLessonCountText => $"Пар в выбранной неделе: {Days.Sum(day => day.Rows.Count)}";
+    public bool HasWeekLessons => Days.Any(day => day.Rows.Count > 0);
+    public string EmptyWeekText => OnlyOwnGroup ? "У преподавателя нет пар вашей группы для выбранной недели. Показать другие группы."
+        : ParityIndex == 0 ? "В загруженном расписании преподавателя пар нет." : "В выбранной чётности пар нет. Попробуйте другую неделю или обе.";
+
+    partial void OnParityIndexChanged(int value) { Days = Build(); OnPropertyChanged(nameof(EmptyWeekText)); }
+    partial void OnOnlyOwnGroupChanged(bool value) { Days = Build(); OnPropertyChanged(nameof(EmptyWeekText)); }
+    partial void OnDaysChanged(IReadOnlyList<TeacherDay> value) { OnPropertyChanged(nameof(WeekLessonCountText)); OnPropertyChanged(nameof(HasWeekLessons)); }
+
+    public void Relabel()
+    {
+        SegmentItems = BuildSegments();
+        Days = Build();
+        OnPropertyChanged(nameof(MineLine));
+    }
+
+    private IList<string> BuildSegments() => new[] { _loc.T("summaryBothShort"), _loc.T("oddShort"), _loc.T("evenShort") };
+
+    private IReadOnlyList<TeacherDay> Build()
+    {
+        var loc = _loc;
+        var days = new List<TeacherDay>(6);
+        for (var dow = 1; dow <= 6; dow++)
+        {
+            var rows = _lessons
+                .Where(l => l.DayOfWeek == dow)
+                .Where(l => !OnlyOwnGroup || l.Groups.Any(g => g.IdGroup == _myGroupId ||
+                    _myGroupName.Length > 0 && g.Number == _myGroupName))
+                .Where(l => ParityCodes.OnUserWeek(ParityIndex, l.Parity, _invert))
+                .Select(l => (Lesson: l, UserParity: ParityCodes.ToUser(l.Parity, _invert)))
+                .OrderBy(x => TimeSpan.TryParse(x.Lesson.TimeStart, out var t) ? t : TimeSpan.Zero)
+                .ThenBy(x => x.UserParity)
+                .Select(x => Row(x.Lesson, loc))
+                .ToList();
+            var nextDate = rows.Select(row => row.NextDate).Where(date => date is not null).Min();
+            days.Add(new TeacherDay(loc.T(DayNames.Key(dow)), nextDate?.Date == _today.Date, rows, nextDate));
+        }
+        return days;
+    }
+
+    private TeacherRow Row(LecturerLesson l, Loc loc)
+    {
+        var groups = l.Groups.Select(g => g.Number).Where(n => n.Length > 0).ToList();
+        var groupsText = string.Join(", ", groups.Take(4)) + (groups.Count > 4 ? $" +{groups.Count - 4}" : "");
+        var mine = l.Groups.Any(g => g.IdGroup == _myGroupId || (_myGroupName.Length > 0 && g.Number == _myGroupName));
+        var room = string.IsNullOrWhiteSpace(l.ClassroomRaw) ? "—" : LessonText.CleanRoom(l.ClassroomRaw);
+        var next = NextDate(l.DayOfWeek, l.Parity);
+        return new TeacherRow(l.TimeStart, l.TimeEnd, LessonText.StripType(l.DisciplineRaw, l.TypeRaw), DayTitles.TypeLabel(l.TypeRaw, loc),
+            room, groupsText, loc.T(ParityCodes.WeekLabelKey(l.Parity, _invert)), mine, next,
+            mine && next is { } date && _openOwnDay is not null ? new RelayCommand(() => _openOwnDay(date)) : null,
+            string.Join(", ", groups),
+            _openRoom is not null && !string.IsNullOrWhiteSpace(l.ClassroomRaw)
+                ? new AsyncRelayCommand(() => _openRoom(l.ClassroomRaw)) : null);
+    }
+    private DateTime? NextDate(int dayOfWeek, int storedParity)
+    {
+        for (var offset = 0; offset < 56; offset++)
+        {
+            var date = _today.Date.AddDays(offset);
+            var dow = (int)date.DayOfWeek == 0 ? 7 : (int)date.DayOfWeek;
+            if (dow != dayOfWeek) continue;
+            var code = ParityService.GetWeekCode(date, _periodStart, _weekCount);
+            if (_invert) code = code == 1 ? 2 : 1;
+            if (storedParity == 0 || code == storedParity) return date;
+        }
+        return null;
+    }
+}
+
+public static class TeacherConverters
+{
+    /// <summary>«Нет занятий» for an empty day: a compiled binding cannot negate an int, so Rows.Count goes through this.</summary>
+    public static readonly IValueConverter IsZero = new FuncValueConverter<int, bool>(n => n == 0);
+}

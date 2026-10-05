@@ -1,0 +1,42 @@
+@using System.Text.Json
+@inject WebAppState State
+@if (State.Conflicts.Count > 0)
+{
+    <section class="card stack"><h2>Нужно выбрать версию</h2><p class="muted">Изменения на устройствах различаются. Ни одна версия не будет заменена без вашего выбора.</p>
+        @foreach (var conflict in State.Conflicts)
+        {
+            <div class="conflict-item stack">
+                <h3>@Kind(conflict.EntityType)</h3>
+                <div class="conflict-versions"><div><span class="caption muted">Ваша версия</span><p>@LocalText(conflict)</p></div><div><span class="caption muted">На другом устройстве</span><p>@ServerText(conflict)</p></div></div>
+                @if (conflict.ConflictCode == "friend_limit") { <p class="caption">В аккаунте уже пять групп друзей. Чтобы сохранить ещё одну, сначала удалите ненужную.</p> }
+                @if (conflict.ServerRecord?.Tombstone == true && conflict.EntityType == "settings") { <p class="caption">Эта запись настроек удалена на сервере. Можно принять удаление.</p> }
+                <div class="form-actions"><button class="button" disabled="@busy" @onclick="() => Choose(conflict, false)">Принять с другого устройства</button><button class="button primary" disabled="@(busy || conflict.EntityType == "settings" && conflict.ServerRecord?.Tombstone == true)" @onclick="() => Choose(conflict, true)">Оставить мою версию</button></div>
+            </div>
+        }
+        @if (error is not null) { <p class="form-error" role="alert">@error</p> }
+    </section>
+}
+@code {
+    private bool busy;
+    private string? error;
+    private static string Kind(string type) => type switch { "homework" => "Домашнее задание", "completion" => "Отметка выполнения", "override" => "Название и заметка", "friend" => "Друзья", "settings" => "Настройки", _ => "Изменение" };
+    private string LocalText(PendingChange row) => State.Profile.Records.TryGetValue(ProfileValues.Key(row.EntityType, row.EntityId), out var value) && !value.Tombstone ? Describe(value.Value) : "Удалить запись";
+    private static string ServerText(PendingChange row) => row.ServerRecord is { Tombstone: false, Value: { } value } ? Describe(ProfileValues.Serialize(value)) : "Запись отсутствует или удалена";
+    private static string Describe(JsonElement? value)
+    {
+        if (value is not { } json || json.ValueKind != JsonValueKind.Object) return "Нет данных";
+        var fields = new List<string>();
+        foreach (var (key, label) in new[] { ("subjectRaw", "Предмет"), ("text", "Задание"), ("targetNthOccurrence", "Через занятий"), ("displayName", "Название"), ("note", "Заметка"), ("groupName", "Группа"), ("memberNames", "Имена"), ("selectedGroupId", "Группа"), ("notifyTime1", "Вечером"), ("notifyTime2", "Утром") })
+            if (json.TryGetProperty(key, out var item) && item.ValueKind != JsonValueKind.Null) fields.Add(label + ": " + item.ToString());
+        if (json.TryGetProperty("done", out var done)) fields.Add(done.GetBoolean() ? "Выполнено" : "Не выполнено");
+        return string.Join("\n", fields);
+    }
+    private async Task Choose(PendingChange row, bool local)
+    {
+        busy = true; error = null;
+        try { await State.ResolveConflictAsync(row.OpId, local, row.ServerRecord?.Revision ?? 0); await State.SynchronizeAsync(); }
+        catch (InvalidOperationException e) { error = e.Message; }
+        catch (Exception) { error = "Выбор не сохранён. Обновите данные и попробуйте ещё раз."; }
+        finally { busy = false; }
+    }
+}

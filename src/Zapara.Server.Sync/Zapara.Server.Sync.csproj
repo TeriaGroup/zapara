@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Zapara.Contracts\Zapara.Contracts.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Accounts\Zapara.Server.Accounts.csproj" />
+    <EmbeddedResource Include="Sql\*.sql" />
+    <InternalsVisibleTo Include="Zapara.Server.Tests" />
+  </ItemGroup>
+</Project>

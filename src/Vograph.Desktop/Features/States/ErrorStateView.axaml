@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             xmlns:vm="using:Vograph.Desktop.Features.States"
+             x:Class="Vograph.Desktop.Features.States.ErrorStateView"
+             x:DataType="vm:ErrorStateViewModel">
+  <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="14" MaxWidth="420">
+    <c:EmptyState Title="{Binding Title}" Hint="{Binding Hint}" Icon="{StaticResource Icon.Alert}" />
+    <TextBlock Classes="faint caption" Text="{Binding Detail}" IsVisible="{Binding HasDetail}" TextWrapping="Wrap" TextAlignment="Center" />
+    <Button Classes="primary" Content="{loc:T retry}" Command="{Binding RetryCommand}" HorizontalAlignment="Center" />
+  </StackPanel>
+</UserControl>

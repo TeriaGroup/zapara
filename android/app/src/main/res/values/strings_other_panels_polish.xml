@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="panels_summary_total">Всего занятий</string>
+    <string name="panels_summary_period">По выбранному расписанию</string>
+    <string name="panels_summary_empty">В выбранном расписании занятий нет.</string>
+</resources>

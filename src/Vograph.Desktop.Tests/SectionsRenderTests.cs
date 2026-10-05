@@ -1,0 +1,88 @@
+using Avalonia;
+using Avalonia.Headless.XUnit;
+using Avalonia.Styling;
+using Vograph.Desktop.Features.Communities;
+using Vograph.Desktop.Features.Friends;
+using Vograph.Desktop.Features.Homeworks;
+using Vograph.Desktop.Features.Maps;
+using Vograph.Desktop.Features.Preferences;
+using Vograph.Desktop.Features.Schedule;
+using Vograph.Desktop.Features.Summary;
+using Vograph.Desktop.Features.Teachers;
+using Vograph.Desktop.Features.Week;
+using Vograph.Desktop.Services;
+using Vograph.Desktop.Shell;
+using Vograph.Desktop.ViewModels;
+using Xunit;
+
+namespace Vograph.Desktop.Tests;
+
+/// <summary>One pass over all sections: both themes render without binding errors; stored en still leaves Russian titles.</summary>
+public class SectionsRenderTests : UiTest
+{
+    private static readonly DateTime Mon7 = new(2026, 9, 14, 8, 0, 0); // odd Monday: two pairs
+
+    [AvaloniaFact]
+    public async Task All_Sections_Render_In_Both_Themes_And_Relabel_On_Language_Change()
+    {
+        using var db = TestDb.Create();
+        db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        // Every door out of the process is a fake: no maps download, no GitHub call, no OS dialog, no browser.
+        db.Services.MapFiles = new FakeMapFiles(Path.Combine(db.Dir, "maps"), ("ГК", 4));
+        db.Services.Launcher = new FakeLauncher();
+        db.Services.FileDialogs = new FakeFileDialogs();
+        db.Services.UpdateSource = new FakeUpdateSource();
+        await db.Services.Lecturers.LoadXmlAsync(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-lecturers.xml")));
+        var shell = new ShellViewModel(db.Services) { Clock = () => Mon7 };
+        shell.Register(SectionKey.Schedule, () => new ScheduleViewModel(db.Services, shell, () => Mon7));
+        shell.Register(SectionKey.Week, () => new WeekViewModel(db.Services, shell, () => Mon7));
+        shell.Register(SectionKey.Summary, () => new SummaryViewModel(db.Services, shell, () => Mon7));
+        shell.Register(SectionKey.Teachers, () => new TeachersViewModel(db.Services, shell, () => Mon7, allowNetwork: false));
+        shell.Register(SectionKey.Maps, () => new MapsViewModel(db.Services, shell, () => Mon7));
+        shell.Register(SectionKey.Friends, () => new FriendsViewModel(db.Services, shell, () => Mon7));
+        shell.Register(SectionKey.Homework, () => new HomeworkViewModel(db.Services, shell, () => Mon7));
+        shell.Register(SectionKey.Community, () => new CommunitiesViewModel(db.Services));
+        shell.Register(SectionKey.Settings, () => new SettingsViewModel(db.Services, shell, () => Mon7));
+        await shell.StartAsync(allowNetwork: false);
+        var window = new MainWindow { DataContext = shell };
+        window.Show();
+
+        var loaded = new Dictionary<SectionKey, Func<ViewModelBase, bool>>
+        {
+            [SectionKey.Schedule] = vm => ((ScheduleViewModel)vm).Lessons.Count == 2,
+            [SectionKey.Week] = vm => ((WeekViewModel)vm).Days.Count == 7,
+            [SectionKey.Summary] = vm => ((SummaryViewModel)vm).TotalText != "—",
+            [SectionKey.Teachers] = vm => ((TeachersViewModel)vm).Items.Count > 0,
+            [SectionKey.Maps] = vm => ((MapsViewModel)vm).Image is not null,
+            [SectionKey.Friends] = vm => ((FriendsViewModel)vm).Friends.Count == 1,
+            [SectionKey.Homework] = vm => ((HomeworkViewModel)vm).Groups.Count > 0,
+            [SectionKey.Community] = vm => ((CommunitiesViewModel)vm).NeedAccount,
+            [SectionKey.Group] = vm => ((Vograph.Desktop.Features.Groups.GroupViewModel)vm).NeedAccount,
+            [SectionKey.Chat] = vm => ((Vograph.Desktop.Features.Chat.ChatInboxViewModel)vm).NeedAccount,
+            [SectionKey.Settings] = vm => ((SettingsViewModel)vm).GroupName == "А863С",
+        };
+        foreach (var key in Enum.GetValues<SectionKey>())
+        {
+            shell.NavigateTo(key);
+            var vm = shell.Current!;
+            await Waits.Until(() => loaded[key](vm), $"section {key} loaded");
+            Pump();
+            SetTheme(ThemeVariant.Dark);
+            Frames.Capture(window, $"section-{key.ToString().ToLowerInvariant()}-dark");
+            SetTheme(ThemeVariant.Light);
+            Frames.Capture(window, $"section-{key.ToString().ToLowerInvariant()}-light");
+        }
+        AssertNoBindingErrors();
+
+        db.Services.Loc.SetLanguage("en");
+        Pump();
+        Assert.Equal("ru", db.Services.Loc.Language);
+        Assert.Equal(new[] { "Расписание", "Неделя", "Сводка" }, shell.MainSections.Select(s => s.Label));
+        Assert.Equal("Настройки", shell.SettingsSection.Label);
+        Assert.Equal("Неделя", ((WeekViewModel)shell.Section<ViewModelBase>(SectionKey.Week)).Title);
+        Assert.Equal("Преподаватели", ((TeachersViewModel)shell.Section<ViewModelBase>(SectionKey.Teachers)).Title);
+        Assert.Equal("Домашка", ((HomeworkViewModel)shell.Section<ViewModelBase>(SectionKey.Homework)).Title);
+        Assert.Equal("Настройки", ((SettingsViewModel)shell.Section<ViewModelBase>(SectionKey.Settings)).Title);
+        AssertNoBindingErrors();
+    }
+}

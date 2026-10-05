@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sync_local_version">На этом устройстве</string>
+    <string name="sync_server_version">На сервере</string>
+    <string name="sync_homework_deleted">Задание удалено на сервере</string>
+    <string name="sync_restore_copy">Локальная версия будет сохранена как новая запись.</string>
+    <string name="sync_local_unavailable">Локальную версию сейчас нельзя отправить. Можно принять серверную версию.</string>
+    <string name="sync_choice_changed">Данные изменились. Сравните обновлённые версии и выберите ещё раз.</string>
+    <string name="sync_choice_failed">Не удалось сохранить выбор. Обе версии сохранены; попробуйте ещё раз.</string>
+    <string name="sync_type_homework">Домашнее задание</string>
+    <string name="sync_type_completion">Выполнение задания</string>
+    <string name="sync_type_override">Название и заметка</string>
+    <string name="sync_type_friend">Группа друзей</string>
+    <string name="sync_type_settings">Настройки</string>
+    <string name="sync_value_missing">Запись удалена или отсутствует</string>
+    <string name="sync_value_homework">%1$s\n%2$s\nК занятию: %3$d</string>
+    <string name="sync_value_done">Выполнено</string>
+    <string name="sync_value_not_done">Не выполнено</string>
+    <string name="sync_value_override">Предмет: %1$s\nНазвание: %2$s\nЗаметка: %3$s\n%4$s</string>
+    <string name="sync_value_all_days">Для всех дней</string>
+    <string name="sync_value_weekday">День недели: %1$s</string>
+    <string name="sync_value_friend">Группа: %1$s\n%2$s\nЦвет: %3$d\n%4$s</string>
+    <string name="sync_value_enabled">Включена</string>
+    <string name="sync_value_disabled">Отключена</string>
+    <string name="sync_value_settings">Группа: %1$s\nИнверсия недель: %2$s\nУведомления: %3$s, %4$s\nСтрогость: %5$d\nВсе сигналы: %6$s</string>
+    <string name="sync_value_not_selected">Не выбрана</string>
+    <string name="sync_value_yes">Да</string>
+    <string name="sync_value_no">Нет</string>
+    <string name="sync_value_time_off">Отключено</string>
+</resources>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="homework_ux_discard_title">Закрыть без сохранения?</string>
+    <string name="homework_ux_discard_hint">Изменения текста, срока и вложений будут потеряны.</string>
+    <string name="homework_ux_partial_discard_hint">Уже записанная домашка останется на устройстве. Несохранённые изменения и вложения будут потеряны.</string>
+    <string name="homework_ux_keep_editing">Продолжить редактирование</string>
+    <string name="homework_ux_discard">Закрыть без сохранения</string>
+    <string name="homework_ux_saving">Сохраняем…</string>
+    <string name="homework_ux_attachment">Подготавливаем вложение…</string>
+    <string name="homework_ux_recalculating">Обновляем срок…</string>
+    <string name="homework_ux_empty_text">Опишите, что нужно сделать, чтобы сохранить домашку.</string>
+    <string name="homework_ux_save_failed">Не удалось завершить сохранение. Ввод и вложения остаются в редакторе — попробуйте ещё раз.</string>
+    <string name="homework_ux_partial_save_failed">Домашка записана на устройстве, но сохранить все изменения не удалось. Повторите сохранение — дубль не появится.</string>
+    <string name="homework_ux_share_check">Домашка сохранена на устройстве. Отправка группе уже запускалась — проверьте её в группе.</string>
+    <string name="homework_ux_subject_count">Найдено предметов: %1$d</string>
+    <string name="homework_ux_files_count">Вложений: %1$d из 6</string>
+</resources>

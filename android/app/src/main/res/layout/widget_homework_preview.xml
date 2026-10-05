@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_homework_preview_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_preview_background">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/widget_homework_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:fontFamily="@font/inter_medium"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:text="@string/nav_homework"
+            android:textColor="@color/widget_text1"
+            android:textSize="17sp" />
+
+        <LinearLayout
+            android:id="@+id/widget_homework_row1"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_homework_subject1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="@font/inter_medium"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="@string/widget_homework_preview_subject1"
+                android:textColor="@color/widget_text1"
+                android:textSize="15sp" />
+
+            <TextView
+                android:id="@+id/widget_homework_detail1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="@font/inter_regular"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="@string/widget_homework_preview_detail1"
+                android:textColor="@color/widget_text2"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/widget_homework_row2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_homework_subject2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="@font/inter_medium"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="@string/widget_homework_preview_subject2"
+                android:textColor="@color/widget_text1"
+                android:textSize="15sp" />
+
+            <TextView
+                android:id="@+id/widget_homework_detail2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="@font/inter_regular"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="@string/widget_homework_preview_detail2"
+                android:textColor="@color/widget_text2"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sheet_close_panel">Закрыть панель</string>
+    <string name="sheet_drag_down_to_close">Потяните вниз, чтобы закрыть панель</string>
+</resources>

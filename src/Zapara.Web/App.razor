@@ -1,0 +1,11 @@
+<Router AppAssembly="typeof(App).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)" />
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="typeof(MainLayout)">
+            <div class="empty-state"><h1>Страница не найдена</h1><p>Выберите раздел в меню.</p><a class="button primary" href="schedule">К расписанию</a></div>
+        </LayoutView>
+    </NotFound>
+</Router>

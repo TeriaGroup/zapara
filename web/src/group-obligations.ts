@@ -1,0 +1,10 @@
+import type {GroupTopic} from './types.ts';
+export type Obligation={id:string;source:string;kind:'form'|'ballot'|'homework'|'chat';title:string;deadline:string|null;needed:boolean;stale?:boolean};
+export const GLOBAL_BALLOTS='@global-ballots';
+export function withGlobalBallots(topics:GroupTopic[]):GroupTopic[]{return [{topicId:GLOBAL_BALLOTS,title:'Общие голосования группы',kind:'ballots',icon:'',description:'',accent:'default',pinned:false,writePolicy:'all',lastBody:null,lastAuthor:null,lastAt:null,unread:0,canDelete:false,activeBallots:0,canPost:false},...topics.filter(topic=>!(topic.kind==='ballots'&&!topic.topicId))];}
+export function obligationNeedsMe(row:Obligation,now:Date){return row.needed&&(!row.deadline||(Number.isFinite(Date.parse(row.deadline))&&Date.parse(row.deadline)>now.getTime())||row.kind==='homework');}
+export async function collectObligations(topics:GroupTopic[],previous:Obligation[],current:()=>boolean,read:(topic:GroupTopic)=>Promise<Obligation[]>){
+ const eligible=topics.filter(topic=>topic.topicId&&!topic.archived&&topic.supported!==false&&['forms','homework','ballots'].includes(topic.kind));const selected=eligible.slice(0,23);let failed=0,loaded=0;const rows:Obligation[]=topics.filter(topic=>!topic.archived&&topic.supported!==false&&topic.kind==='chat'&&topic.unread>0).map(topic=>({id:topic.topicId||'general',source:topic.topicId||'',kind:'chat',title:topic.title,deadline:null,needed:true}));
+ for(const topic of selected){if(!current())return null;try{const values=await read(topic);if(!current())return null;rows.push(...values);loaded++;}catch(reason){if(!current())return null;const status=reason instanceof Error?reason.message:'';if(status==='401')throw reason;failed++;if(!['403','404'].includes(status))rows.push(...previous.filter(row=>row.source===topic.topicId).map(row=>({...row,stale:true})));}}
+ return {rows:[...new Map(rows.map(row=>[JSON.stringify([row.kind,row.id]),row])).values()],loaded,failed,skipped:eligible.length-selected.length,total:eligible.length};
+}

@@ -1,0 +1,170 @@
+package ru.bgtu_voenmeh.zapara.ui.settings
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import ru.bgtu_voenmeh.zapara.ui.XmlCopy
+import java.io.File
+import java.io.IOException
+import java.net.UnknownHostException
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class UpdateViewModelTest {
+    private val dispatcher = StandardTestDispatcher()
+
+    @Before fun setMain() { Dispatchers.setMain(dispatcher) }
+    @After fun reset() { Dispatchers.resetMain() }
+
+    @Test fun check_newer_null_and_403() = runTest(dispatcher) {
+        val source = FakeUpdateSource(latestResult = UpdateInfo("android-v2.1.0", "h", "u", "p"))
+        val vm = UpdateViewModel(source, autoEnabled = { true }, isNewer = { latest, _ -> latest == "android-v2.1.0" }, scope = this, copy = XmlCopy)
+        vm.check(manual = true)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.hasUpdate)
+        assertEquals("android-v2.1.0", vm.state.value.tag)
+
+        source.latestResult = null
+        vm.check(manual = true)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.upToDate)
+
+        source.latestError = IOException("HTTP 403")
+        vm.check(manual = true)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.error.orEmpty().startsWith("GitHub ограничил запросы"))
+    }
+
+    @Test fun download_install_and_auto_off() = runTest(dispatcher) {
+        val file = File.createTempFile("zapara", ".apk")
+        val source = FakeUpdateSource(
+            latestResult = UpdateInfo("android-v2.1.0", "h", "http://apk", "p"),
+            downloadFile = file
+        )
+        val vm = UpdateViewModel(source, autoEnabled = { true }, isNewer = { _, _ -> true }, scope = this, copy = XmlCopy)
+        vm.check(manual = true)
+        advanceUntilIdle()
+        vm.download()
+        advanceUntilIdle()
+        assertEquals(file.absolutePath, vm.state.value.readyFile)
+        assertEquals(1f, vm.state.value.progress)
+        vm.install()
+        assertEquals(1, source.installed.size)
+
+        val quiet = FakeUpdateSource()
+        val off = UpdateViewModel(quiet, autoEnabled = { false }, isNewer = { _, _ -> true }, scope = this, copy = XmlCopy)
+        off.checkOnStart()
+        advanceUntilIdle()
+        assertEquals(0, quiet.latestCalls)
+        assertNull(off.state.value.tag.takeIf { it.isNotEmpty() } ?: null)
+    }
+    @Test fun failed_recheck_retains_last_confirmed_update_and_download_action() = runTest(dispatcher) {
+        val source = FakeUpdateSource(latestResult = UpdateInfo("android-v2.1.0", "h", "https://example.invalid/app.apk", "p"))
+        val vm = UpdateViewModel(source, { true }, { _, _ -> true }, scope = this, copy = XmlCopy)
+        vm.check(true); advanceUntilIdle()
+        source.latestError = IOException("offline")
+        vm.check(true); advanceUntilIdle()
+        assertTrue(vm.state.value.hasUpdate)
+        assertTrue(vm.state.value.updateStale)
+        assertEquals("android-v2.1.0", vm.state.value.tag)
+        assertTrue(vm.state.value.error != null)
+    }
+
+    @Test fun network_and_other_failures_do_not_expose_exception_messages() = runTest(dispatcher) {
+        val source = FakeUpdateSource(latestResult = UpdateInfo("android-v2.1.0", "h", "https://example.invalid/app.apk", "p"))
+        val vm = UpdateViewModel(source, { true }, { _, _ -> true }, scope = this, copy = XmlCopy)
+        source.latestError = IllegalStateException("wrapped", UnknownHostException("api.github.com"))
+        vm.check(true); advanceUntilIdle()
+        assertEquals(XmlCopy.get("load_fail_network"), vm.state.value.error)
+
+        source.latestError = IllegalArgumentException("internal parser details")
+        vm.check(true); advanceUntilIdle()
+        assertEquals(XmlCopy.get("upd_log_fail"), vm.state.value.error)
+
+        source.latestError = null
+        vm.check(true); advanceUntilIdle()
+        source.downloadOverride = { _, _, _ -> throw UnknownHostException("download.example.invalid") }
+        vm.download(); advanceUntilIdle()
+        assertEquals(XmlCopy.get("load_fail_network"), vm.state.value.error)
+        assertFalse(vm.state.value.downloading)
+    }
+
+    @Test fun a_new_release_or_missing_file_cannot_install_an_old_download() = runTest(dispatcher) {
+        val file = File.createTempFile("zapara-update", ".apk")
+        val source = FakeUpdateSource(UpdateInfo("android-v2.1.0", "h", "https://example.invalid/a.apk", "p"), downloadFile = file)
+        val vm = UpdateViewModel(source, { true }, { _, _ -> true }, scope = this, copy = XmlCopy)
+        vm.check(true); advanceUntilIdle(); vm.download(); advanceUntilIdle()
+        assertTrue(vm.state.value.canInstall)
+        source.latestResult = UpdateInfo("android-v2.2.0", "h", "https://example.invalid/b.apk", "p")
+        vm.check(true); advanceUntilIdle()
+        assertFalse(vm.state.value.canInstall)
+        vm.install()
+        assertTrue(source.installed.isEmpty())
+        vm.download(); advanceUntilIdle()
+        assertTrue(vm.state.value.canInstall)
+        file.delete()
+        vm.install()
+        assertTrue(source.installed.isEmpty())
+        assertFalse(vm.state.value.canInstall)
+    }
+    @Test fun canceled_old_download_cannot_publish_progress_or_file_into_same_tag_retry() = runTest(dispatcher) {
+        val oldFile = File.createTempFile("zapara-old", ".apk")
+        val newFile = File.createTempFile("zapara-new", ".apk")
+        val oldRelease = CompletableDeferred<Unit>()
+        var calls = 0
+        val source = FakeUpdateSource(UpdateInfo("android-v2.1.0", "h", "https://example.invalid/a.apk", "p"))
+        source.downloadOverride = { _, _, progress ->
+            calls++
+            if (calls == 1) {
+                withContext(NonCancellable) { oldRelease.await() }
+                progress(5, 100)
+                oldFile
+            } else { progress(100, 100); newFile }
+        }
+        val vm = UpdateViewModel(source, { true }, { _, _ -> true }, scope = this, copy = XmlCopy)
+        vm.check(true); advanceUntilIdle()
+        vm.download(); testScheduler.runCurrent()
+        vm.cancel(); vm.download(); testScheduler.runCurrent()
+        assertEquals(newFile.absolutePath, vm.state.value.readyFile)
+        oldRelease.complete(Unit); advanceUntilIdle()
+        assertEquals(newFile.absolutePath, vm.state.value.readyFile)
+        assertEquals(1f, vm.state.value.progress)
+    }
+}
+
+private class FakeUpdateSource(
+    var latestResult: UpdateInfo? = null,
+    var latestError: Exception? = null,
+    var downloadFile: File = File("ready.apk")
+) : UpdateSource {
+    var downloadOverride: (suspend (String, String, (Long, Long) -> Unit) -> File)? = null
+    var latestCalls = 0
+    val installed = mutableListOf<File>()
+    override suspend fun latest(): UpdateInfo? {
+        latestCalls++
+        latestError?.let { throw it }
+        return latestResult
+    }
+    override suspend fun download(url: String, tag: String, onProgress: (Long, Long) -> Unit): File {
+        downloadOverride?.let { return it(url, tag, onProgress) }
+        onProgress(0, 100)
+        onProgress(100, 100)
+        return downloadFile
+    }
+    override fun install(file: File) { installed += file }
+    override fun cached(): CachedCheck = CachedCheck(0, null, null, null)
+    override fun saveCheck(tag: String?, apkUrl: String?, htmlUrl: String?) {}
+}

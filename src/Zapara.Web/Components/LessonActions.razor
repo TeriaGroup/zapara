@@ -1,0 +1,101 @@
+@using Zapara.Contracts.Sync
+@inject WebAppState State
+@inject NavigationManager Navigation
+@inject BrowserDraftService Drafts
+@implements IDisposable
+@if (!hidden)
+{
+var formVersion = openVersion;
+<Modal Title="@(editing ? "Переименовать предмет" : State.DisplayName(Lesson))" OnClose="() => Cancel(formVersion, true)">
+    @if (!editing)
+    {
+        <p class="muted">@Lesson.TimeStart–@Lesson.TimeEnd · @Lesson.TeacherRaw</p>
+        <button class="picker-row" @onclick="() => GoMap(formVersion)"><Icon Name="map" /><span>Аудитория на карте</span></button>
+        <button class="picker-row" @onclick="() => GoHomework(formVersion)"><Icon Name="homework" /><span>Добавить домашнее задание</span></button>
+        <button class="picker-row" @onclick="() => BeginEdit(formVersion)"><Icon Name="edit" /><span>Переименовать и добавить заметку</span></button>
+        <button class="picker-row" @onclick="() => GoTeacher(formVersion)"><Icon Name="teachers" /><span>Преподаватель</span></button>
+    }
+    else
+    {
+        @if (opening) { <p role="status">Открываем черновик…</p> }@if (restored) { <p class="caption muted" role="status">Черновик восстановлен.</p> }
+        <label class="field">Название<input disabled="@(opening || saving || committed)" @bind:get="name" @bind:set="value => ChangeDraft(formVersion, () => name = value)" @bind:event="oninput" maxlength="256" autofocus /></label>
+        <label class="field">Применить<select disabled="@(opening || saving || committed)" value="@scope" @onchange="e => ChangeScope(e, formVersion)"><option value="global">Ко всем занятиям этого предмета</option><option value="@("weekday:" + Lesson.DayOfWeek)">Только @ParityService.DayNumberToTitle(Lesson.DayOfWeek).ToLowerInvariant()</option></select></label>
+        <label class="field">Заметка<textarea disabled="@(opening || saving || committed)" @bind:get="note" @bind:set="value => ChangeDraft(formVersion, () => note = value)" @bind:event="oninput" maxlength="4000" placeholder="Что важно помнить об этой паре"></textarea></label>
+        @if (error is not null) { <p class="form-error" role="alert">@error</p> }
+        @if (stale) { var shown = comparison; <div class="card stack" role="alert"><p>Название или заметка изменились после открытия черновика.</p>@if (shown is not null) { <p>Сейчас сохранено: @shown.Value.DisplayName</p><p class="lesson-note">@shown.Value.Note</p><button class="button" disabled="@(saving || committed)" @onclick="() => KeepDraft(shown, formVersion)">Продолжить с моим вариантом</button> } else { <p>Переименование удалено. Можно создать его заново из вашего черновика.</p><button class="button" disabled="@(saving || committed)" @onclick="() => Save(formVersion, true)">Сохранить как новое</button> }</div> }
+        <div class="form-actions">@if (existing is not null) { <button class="button danger" disabled="@(opening || saving || committed || stale)" @onclick="() => Reset(formVersion)">Вернуть исходное</button> }<button class="button" disabled="@saving" @onclick="() => Cancel(formVersion, committed)">@(committed ? "Закрыть" : "Отмена")</button><button class="button primary" disabled="@(opening || saving || committed || stale || draft is null || !Drafts.IsCurrent(draft))" @onclick="() => Save(formVersion)">Сохранить</button></div>
+    }
+</Modal>
+}
+@code {
+    [Parameter, EditorRequired] public Lesson Lesson { get; set; } = default!;
+    [Parameter] public EventCallback OnClose { get; set; }
+    private bool editing, hidden, opening, saving, committed, restored, stale;
+    private string name = "", note = "", scope = "global";
+    private string? error;
+    private EntityValue<OverrideValue>? existing;
+    private EntityValue<OverrideValue>? comparison;
+    private DraftScope owner = null!;
+    private DraftLease? draft;
+    private int openVersion;
+    private EntityValue<OverrideValue>? CurrentOriginal => State.Values<OverrideValue>("override").FirstOrDefault(x => x.Value.Scope == scope && ParityService.SameSubject(x.Value.SubjectRaw, Lesson.SubjectRaw));
+    protected override void OnInitialized() { owner = Drafts.CaptureScope(); State.Changed += Changed; Drafts.ScopeChanged += ScopeChanged; }
+    private void Changed() { if (!Drafts.IsCurrent(owner)) ScopeChanged(); else { if (editing && draft is not null && !saving && HasChanged(draft, CurrentOriginal)) { stale = true; comparison = CurrentOriginal; } _ = InvokeAsync(StateHasChanged); } }
+    private void ScopeChanged() { if (hidden) return; hidden = true; openVersion++; draft = null; existing = comparison = null; name = note = ""; _ = InvokeAsync(() => OnClose.InvokeAsync()); }
+    private static bool HasChanged(DraftLease lease, EntityValue<OverrideValue>? current) => current is not null && current.Id != lease.TargetId || BrowserDraftService.IsStale(lease, current?.Revision, current?.Value);
+    private Task BeginEdit(int version) { if (version != openVersion || hidden || !Drafts.IsCurrent(owner)) return Task.CompletedTask; editing = true; return LoadOverride(); }
+    private async Task LoadOverride()
+    {
+        var version = ++openVersion; var requestedScope = scope; var current = CurrentOriginal;
+        existing = current; name = existing?.Value.DisplayName ?? WebAppState.SubjectTitle(Lesson.SubjectRaw, Lesson.TypeRaw); note = existing?.Value.Note ?? "";
+        error = null; draft = null; restored = stale = committed = saving = false; opening = true;
+        try
+        {
+            var opened = await Drafts.OpenOverrideAsync(BrowserDraftService.OverrideKey(Lesson.SubjectRaw, scope, current?.Id), current?.Revision, current?.Value,
+                new(existing?.Value.SubjectRaw ?? Lesson.SubjectRaw, scope, name, note, existing?.Value));
+            if (version != openVersion || hidden || !Drafts.IsCurrent(opened.Lease)) return;
+            if (opened.Value.Scope != requestedScope || !ParityService.SameSubject(opened.Value.Subject, Lesson.SubjectRaw)) throw new InvalidDataException();
+            draft = opened.Lease; name = opened.Value.Name; note = opened.Value.Note; restored = opened.Restored; stale = opened.Stale; comparison = current;
+            existing = opened.Value.Original is { } basis ? new(draft.TargetId, draft.Baseline.Revision ?? 0, basis) : null;
+            if (HasChanged(draft, CurrentOriginal)) { stale = true; comparison = CurrentOriginal; }
+        }
+        catch (Exception e) { if (version == openVersion) error = e is BrowserApiException ? e.Message : "Не удалось открыть черновик. Проверьте хранилище браузера."; }
+        finally { if (version == openVersion) opening = false; }
+    }
+    private Task ChangeDraft(int version, Action change) { if (version != openVersion || !editing || hidden || opening || saving || committed || !Drafts.IsCurrent(draft)) return Task.CompletedTask; change(); return PersistDraft(); }
+    private async Task PersistDraft()
+    {
+        var lease = draft; if (lease is null || !Drafts.IsCurrent(lease)) return;
+        try { await Drafts.UpdateAsync(lease, new OverrideDraft(existing?.Value.SubjectRaw ?? Lesson.SubjectRaw, scope, name, note, existing?.Value)); }
+        catch (Exception) { if (ReferenceEquals(draft, lease)) error = "Черновик пока не сохранён. Проверьте свободное место и не закрывайте страницу."; }
+    }
+    private async Task ChangeScope(ChangeEventArgs args, int version) { if (version != openVersion || hidden || opening || saving || committed || !Drafts.IsCurrent(owner)) return; await PersistDraft(); if (version != openVersion || !Drafts.IsCurrent(owner)) return; scope = args.Value?.ToString() ?? "global"; await LoadOverride(); }
+    private async Task KeepDraft(EntityValue<OverrideValue> shown, int version) { if (version != openVersion || draft is null || !Drafts.IsCurrent(draft)) return; var current = CurrentOriginal; if (current?.Id != shown.Id || BrowserDraftService.Baseline(current.Revision, current.Value) != BrowserDraftService.Baseline(shown.Revision, shown.Value)) { comparison = current; error = "Запись снова изменилась. Сравните обновлённые данные."; return; } draft = Drafts.Rebase(draft, shown.Revision, shown.Value) with { TargetId = shown.Id }; existing = shown; stale = false; error = null; await PersistDraft(); }
+    private async Task Save(int version, bool copy = false)
+    {
+        var lease = draft; if (version != openVersion || lease is null || hidden || opening || saving || committed || !Drafts.IsCurrent(lease) || (stale && !copy)) return;
+        if (string.IsNullOrWhiteSpace(name)) { error = "Введите название предмета."; return; }
+        if (!copy && HasChanged(lease, CurrentOriginal)) { stale = true; comparison = CurrentOriginal; return; }
+        saving = true;
+        try
+        {
+            await Drafts.FlushAsync(); Drafts.RequireCurrent(lease.Scope);
+            var raw = existing?.Value.SubjectRaw ?? Lesson.SubjectRaw;
+            await State.PutEditorAsync(lease.Scope.Owner, lease.Scope.Generation, "override", copy ? Guid.NewGuid() : lease.TargetId,
+                new OverrideValue(raw, SyncValidation.NormalizeSubject(raw), scope, name.Trim(), note.Trim().Length == 0 ? null : note.Trim(), copy ? DateTimeOffset.UtcNow : existing?.Value.CreatedAtUtc ?? DateTimeOffset.UtcNow),
+                copy ? null : existing?.Value, copy ? null : lease.Baseline.Revision);
+            if (ReferenceEquals(draft, lease)) committed = true;
+            await Drafts.ClearAsync(lease); if (version == openVersion && !hidden) await OnClose.InvokeAsync();
+        }
+        catch (BrowserApiException e) { if (ReferenceEquals(draft, lease)) { error = e.Message; if (e.Code == "editor_changed") { stale = true; comparison = CurrentOriginal; } } }
+        catch (Exception) { if (ReferenceEquals(draft, lease)) error = committed ? "Название сохранено, но черновик не удалось убрать. Нажмите «Закрыть»; повторно отправлять не нужно." : "Не удалось сохранить. Проверьте свободное место и повторите попытку."; }
+        finally { if (ReferenceEquals(draft, lease)) saving = false; }
+    }
+    private async Task Reset(int version) { var lease = draft; if (version != openVersion || existing is null || lease is null || saving || !Drafts.IsCurrent(lease) || stale) return; var before = existing; saving = true; try { await State.PutEditorAsync(lease.Scope.Owner, lease.Scope.Generation, "override", before.Id, null, before.Value, before.Revision); if (ReferenceEquals(draft, lease)) committed = true; await Drafts.ClearAsync(lease); if (version == openVersion && !hidden) await OnClose.InvokeAsync(); } catch (Exception) { if (ReferenceEquals(draft, lease)) error = "Не удалось вернуть исходное название. Запись могла измениться — проверьте данные."; } finally { if (ReferenceEquals(draft, lease)) saving = false; } }
+    private async Task Cancel(int version, bool close) { if (version != openVersion || hidden || saving) return; var lease = draft; try { if (lease is not null && Drafts.IsCurrent(lease)) await Drafts.ClearAsync(lease); if (version != openVersion || hidden) return; draft = null; existing = comparison = null; editing = restored = stale = committed = false; name = note = ""; error = null; openVersion++; if (close) await OnClose.InvokeAsync(); } catch (Exception) { if (version == openVersion) error = "Не удалось удалить черновик. Попробуйте отменить ещё раз."; } }
+    private async Task Navigate(int version, string path) { if (version != openVersion || hidden || !Drafts.IsCurrent(owner)) return; await OnClose.InvokeAsync(); if (Drafts.IsCurrent(owner)) Navigation.NavigateTo(path); }
+    private Task GoMap(int version) => Navigate(version, "maps?room=" + Uri.EscapeDataString(Lesson.ClassroomRaw));
+    private Task GoHomework(int version) => Navigate(version, "homework?subject=" + Uri.EscapeDataString(Lesson.SubjectRaw));
+    private Task GoTeacher(int version) => Navigate(version, "teachers?query=" + Uri.EscapeDataString(Lesson.TeacherRaw));
+    public void Dispose() { openVersion++; State.Changed -= Changed; Drafts.ScopeChanged -= ScopeChanged; }
+}

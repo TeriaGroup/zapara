@@ -1,0 +1,33 @@
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Zapara.Server.Accounts;
+
+namespace Zapara.Server.Social;
+
+public static class SocialRegistration
+{
+    public static IServiceCollection AddSocial(this IServiceCollection services, IConfiguration configuration)
+    {
+        if (!AccountsConfiguration.IsEnabled(configuration)) return services;
+        services.AddSingleton(provider =>
+        {
+            try { return SocialConfiguration.Create(provider.GetRequiredService<AccountsConfiguration>(), provider.GetRequiredService<IConfiguration>()); }
+            catch (ArgumentException) { throw new AccountServiceException(AccountFailure.DbUnavailable); }
+        });
+        services.AddSingleton(provider => new MediaStore(provider.GetRequiredService<SocialConfiguration>().MediaRoot, provider.GetService<IObjectStore>()));
+        services.AddSingleton<QuotaLedger>();
+        services.AddSingleton(provider => new StudentUpload(provider.GetRequiredService<IObjectStore>(), provider.GetRequiredService<QuotaLedger>()));
+        services.AddSingleton<IUploadQuota>(provider => provider.GetRequiredService<StudentUpload>());
+        services.AddSingleton<IAccountUnitOfWork>(provider => provider.GetRequiredService<AccountService>());
+        services.AddSingleton<SocialService>();
+        services.AddSingleton<IAvatarService, AvatarService>();
+        services.AddSingleton<SocialSchemaService>();
+        services.AddHostedService(provider => provider.GetRequiredService<SocialSchemaService>());
+        services.AddHostedService<SocialFileSweeper>();
+        services.AddSingleton<IAccountLifecycleParticipant, SocialLifecycleParticipant>();
+        return services;
+    }
+
+    public static Task<bool> IsReadyAsync(IServiceProvider services, CancellationToken ct)
+        => services.GetRequiredService<SocialSchemaService>().IsReadyAsync(ct);
+}

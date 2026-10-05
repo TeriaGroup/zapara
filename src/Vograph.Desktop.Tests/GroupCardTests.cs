@@ -1,0 +1,233 @@
+using Vograph.Core.Models;
+using Vograph.Core.Services;
+using Vograph.Desktop.Dialogs;
+using Vograph.Desktop.Features.Schedule;
+using Vograph.Desktop.Features.States;
+using Vograph.Desktop.Services;
+using Vograph.Desktop.Shell;
+using Xunit;
+
+namespace Vograph.Desktop.Tests;
+
+public class GroupCardTests
+{
+    private static readonly Loc Ru = new(new I18nService("ru"));
+    private static readonly DateTime Now = new(2026, 9, 12, 12, 0, 0, DateTimeKind.Utc);
+
+    [Theory]
+    [InlineData(null, null, false)]
+    [InlineData("garbage", null, false)]
+    [InlineData("2026-09-11T10:00:00.0000000Z", null, false)]                 // 1 day: fresh
+    [InlineData("2026-09-08T10:00:00.0000000Z", "обновлено 08.09", false)]   // 4 days: chip
+    [InlineData("2026-09-01T10:00:00.0000000Z", "обновлено 01.09", true)]    // 11 days: warn
+    public void Stale_Chip_After_Three_Days_Warn_After_Seven(string? fetched, string? text, bool warn)
+    {
+        var (t, w) = GroupCardLogic.Stale(fetched, Now, Ru);
+        Assert.Equal(text, t);
+        Assert.Equal(warn, w);
+    }
+
+    [Fact]
+    public async Task Picking_Another_Group_Saves_And_Notifies()
+    {
+        using var db = TestDb.Create();
+        var today = new DateTime(2026, 9, 6, 12, 0, 0);
+        var shell = new ShellViewModel(db.Services) { Clock = () => today };
+        var changed = false;
+        shell.GroupChanged += () => changed = true;
+
+        // Baseline for the badge assertion below: while my group is 3313 the fixture homework on
+        // «лек ВЫСШ. МАТЕМАТ» is due Mon 07.09 (group 3313 has that lecture on Monday of both week codes),
+        // one day after the pinned Sunday clock, so HomeworkStatus.BadgeCount is 1 and the badge reads "1".
+        var badge = shell.ToolSections.Single(s => s.Key == SectionKey.Homework);
+        await shell.UpdateHomeworkBadgeAsync();
+        Assert.Equal("1", badge.Badge);
+
+        var task = shell.OpenGroupPickerCommand.ExecuteAsync(null);
+        var dlg = await Waits.ForDialogAsync<GroupPickerDialogViewModel>(shell);
+        Assert.Equal("3313", dlg.Selected!.Id);
+
+        dlg.Selected = dlg.Filtered.Single(g => g.Name == "09С31");
+        dlg.ConfirmCommand.Execute(null);
+        await task;
+
+        Assert.Equal("3031", db.Services.Settings.MyGroupId);
+        Assert.Equal("09С31", shell.GroupName);
+        Assert.True(changed);
+
+        // The awaited picker flow (not a fire-and-forget raiser) refreshes that same badge: group 3031 has no
+        // lesson for the fixture homework's subject, so RecomputeAllStatuses (run before RaiseGroupChanged,
+        // inside OpenGroupPickerAsync's own gated call) clears its due date, the count drops to 0 and the badge
+        // clears. Dropping the awaited UpdateHomeworkBadgeAsync from OpenGroupPickerAsync leaves the stale "1".
+        Assert.Null(badge.Badge);
+    }
+
+    [Fact]
+    public async Task StartAsync_With_Data_Opens_Schedule()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        await shell.StartAsync(allowNetwork: false);
+
+        var schedule = Assert.IsType<ScheduleViewModel>(shell.Current);
+        Assert.NotEmpty(schedule.Title);
+        Assert.True(shell.MainSections[0].IsActive);
+    }
+
+    [Fact]
+    public async Task StartAsync_Without_Data_Shows_Error_State_And_Retry_Works()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "vograph-tests", Guid.NewGuid().ToString("N"));
+        using var services = AppServices.Create(dir);
+        var shell = new ShellViewModel(services);
+
+        await shell.StartAsync(allowNetwork: false);
+
+        var error = Assert.IsType<ErrorStateViewModel>(shell.Current);
+        Assert.Equal("Не удалось загрузить расписание", error.Title);
+
+        // Data appears (e.g. network is back) → retry lands on the schedule.
+        var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-timetable.xml"));
+        await services.Parser.RefreshAsync(xmlOverride: xml);
+        await error.RetryCommand.ExecuteAsync(null);
+        Assert.IsType<ScheduleViewModel>(shell.Current);
+    }
+
+    [Fact]
+    public async Task StartAsync_With_Data_Does_Not_Reassign_The_Loading_State()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var seen = new List<Type>();
+        shell.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ShellViewModel.Current) && shell.Current is { } c) seen.Add(c.GetType()); };
+
+        await shell.StartAsync(allowNetwork: false);
+
+        Assert.IsType<ScheduleViewModel>(shell.Current);
+        Assert.DoesNotContain(typeof(LoadingViewModel), seen); // cache-first: the loading state is for an empty database only
+    }
+
+    [Fact]
+    public async Task Refresh_Writes_New_Timetable_Under_The_Gate_And_Notifies()
+    {
+        using var db = TestDb.Create();
+        var handler = VoenmehHttp.Handler();
+        db.Services.Refresher = new ScheduleRefresher(handler);
+        var shell = new ShellViewModel(db.Services);
+        var changed = 0;
+        shell.ScheduleChanged += () => changed++;
+
+        var s0 = db.Services.Db.GetSettings();
+        s0.LastAutoCheckAt = null;
+        db.Services.Db.SaveSettings(s0);
+
+        var ok = await shell.RefreshScheduleAsync(force: true, quiet: false);
+
+        Assert.True(ok);
+        Assert.Equal(1, changed);
+        Assert.Contains(db.Services.Db.GetAllLessonsForGroup("3313"), l => l.SubjectRaw == "лек ФИЛОСОФИЯ");
+        Assert.Single(db.Services.Toasts.Items, t => t.Text == "Расписание обновлено");
+        Assert.Equal(1, db.Services.CoreGate.CurrentCount);
+        Assert.NotNull(db.Services.Db.GetSettings().LastAutoCheckAt); // a successful fetch is also the last check (T1 #4)
+    }
+
+    [Fact]
+    public async Task Refresh_Html_json_ingests_university_xml()
+    {
+        using var db = TestDb.Create();
+        var xml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "sample-timetable.xml"));
+        db.Services.Refresher = new ScheduleRefresher(new FakeHttpHandler
+        {
+            Respond = r =>
+            {
+                var uri = r.RequestUri ?? throw new InvalidOperationException("missing uri");
+                if (uri.AbsoluteUri.Contains("TimetableGroup50.xml", StringComparison.Ordinal))
+                    return FakeHttpHandler.Text(xml);
+                return FakeHttpHandler.Text(VoenmehHttp.CachedHtml);
+            }
+        });
+        var shell = new ShellViewModel(db.Services);
+
+        var ok = await shell.RefreshScheduleAsync(force: true, quiet: false);
+
+        Assert.True(ok);
+        Assert.Single(db.Services.Toasts.Items, t => t.Text == "Расписание обновлено");
+        Assert.Contains(db.Services.Db.GetAllLessonsForGroup("3313"), l => l.SubjectRaw.Contains("ВЫСШ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Refresh_rejects_older_xml_and_keeps_last_good()
+    {
+        using var db = TestDb.Create();
+        db.Services.Refresher = new ScheduleRefresher(new FakeHttpHandler
+        {
+            Respond = r =>
+            {
+                var uri = r.RequestUri ?? throw new InvalidOperationException("missing uri");
+                if (uri.AbsoluteUri.Contains("TimetableGroup50.xml", StringComparison.Ordinal))
+                    return FakeHttpHandler.Text(VoenmehHttp.OlderXml);
+                return FakeHttpHandler.Text(VoenmehHttp.CachedHtml);
+            }
+        });
+        var shell = new ShellViewModel(db.Services);
+
+        var ok = await shell.RefreshScheduleAsync(force: true, quiet: false);
+
+        Assert.False(ok);
+        Assert.Contains(db.Services.Toasts.Items, t => t.Text.Contains("более старое", StringComparison.Ordinal));
+        Assert.Equal("2026-09-01", db.Services.Db.GetSettings().PeriodStart);
+        Assert.Contains(db.Services.Db.GetAllLessonsForGroup("3313"), l => l.SubjectRaw.Contains("ВЫСШ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Refresh_Failure_Toasts_Once_When_Quiet()
+    {
+        using var db = TestDb.Create();
+        var handler = new FakeHttpHandler { Respond = _ => throw new HttpRequestException("offline") };
+        db.Services.Refresher = new ScheduleRefresher(handler);
+        var shell = new ShellViewModel(db.Services);
+
+        Assert.False(await shell.RefreshScheduleAsync(force: false, quiet: true));
+        Assert.False(await shell.RefreshScheduleAsync(force: false, quiet: true));
+
+        Assert.Single(db.Services.Toasts.Items, t => t.Text.StartsWith("Не удалось обновить расписание"));
+    }
+
+    [Theory]
+    [InlineData(null, null, true)]
+    [InlineData(null, "2026-09-05T10:00:00.0000000Z", true)]      // fetch 26 h ago, never checked
+    [InlineData("2026-09-06T00:00:00.0000000Z", null, false)]     // checked 12 h ago
+    [InlineData("2026-09-05T11:00:00.0000000Z", null, true)]      // checked 25 h ago
+    public void ShouldAutoCheck_Follows_The_24h_Rule(string? lastCheck, string? lastFetch, bool expected)
+    {
+        var s = new Settings { LastAutoCheckAt = lastCheck, LastFetchedAt = lastFetch };
+        Assert.Equal(expected, ShellViewModel.ShouldAutoCheck(s, new DateTime(2026, 9, 6, 12, 0, 0, DateTimeKind.Utc)));
+    }
+
+    [Fact]
+    public async Task Register_Detaches_The_Previous_Section()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        await shell.StartAsync(allowNetwork: false);
+        var first = Assert.IsType<ScheduleViewModel>(shell.Current);
+        var reloads = 0;
+        // DayShown fires for every completed composition, even when stable lesson rows are
+        // reconciled in place and the collection does not change.
+        first.DayShown += _ => reloads++;
+
+        // Positive control: while first is still the registered section the shell event does reach it.
+        shell.RaiseScheduleChanged();
+        await Waits.Until(() => reloads > 0, "attached section recompose");
+        Assert.True(reloads > 0, "an attached section must recompose, otherwise the assertion below proves nothing");
+        await Task.Delay(150, TestContext.Current.CancellationToken); // let that recompose finish before the counter is reused
+
+        shell.Register(SectionKey.Schedule, () => new ScheduleViewModel(db.Services, shell));
+        reloads = 0;
+        shell.RaiseGroupChanged();
+        shell.RaiseScheduleChanged();
+        await Task.Delay(150, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, reloads); // the detached section ignores shell events
+    }
+}

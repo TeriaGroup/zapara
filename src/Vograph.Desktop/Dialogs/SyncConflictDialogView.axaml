@@ -1,0 +1,34 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="using:Vograph.Desktop.Dialogs"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             x:Class="Vograph.Desktop.Dialogs.SyncConflictDialogView"
+             x:DataType="d:SyncConflictDialogViewModel">
+  <StackPanel Spacing="14" Width="400">
+    <TextBlock Classes="title" Text="{Binding Title}" TextWrapping="Wrap" />
+    <TextBlock Classes="muted" Text="{Binding Body}" TextWrapping="Wrap" />
+    <ScrollViewer MaxHeight="280" IsVisible="{Binding CanChooseVersion}">
+      <StackPanel Spacing="8">
+        <TextBlock Text="На этом устройстве" FontWeight="SemiBold" />
+        <TextBlock Text="{Binding LocalVersion}" TextWrapping="Wrap" AutomationProperties.AutomationId="Dialog.LocalVersion" />
+        <TextBlock Text="На сервере" FontWeight="SemiBold" Margin="0,8,0,0" />
+        <TextBlock Text="{Binding ServerVersion}" TextWrapping="Wrap" AutomationProperties.AutomationId="Dialog.ServerVersion" />
+      </StackPanel>
+    </ScrollViewer>
+    <StackPanel Spacing="8" Margin="0,6,0,0">
+      <Button Content="{loc:T cancel}" Command="{Binding CancelCommand}"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+              AutomationProperties.AutomationId="Dialog.Cancel" />
+      <Button Content="{Binding KeepServerText}" Command="{Binding KeepServerCommand}"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+              IsVisible="{Binding CanChooseVersion}"
+              AutomationProperties.AutomationId="Dialog.KeepServer"
+              AutomationProperties.Name="{Binding KeepServerText}" />
+      <Button Content="{Binding KeepLocalText}" Command="{Binding KeepLocalCommand}"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+              Classes="primary" IsVisible="{Binding CanChooseVersion}"
+              AutomationProperties.AutomationId="Dialog.KeepLocal"
+              AutomationProperties.Name="{Binding KeepLocalText}" />
+    </StackPanel>
+  </StackPanel>
+</UserControl>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="schedule_intersection_same_room">Одна аудитория</string>
+    <string name="schedule_intersection_same_floor">Один этаж</string>
+    <string name="schedule_intersection_same_building">Один корпус</string>
+    <string name="schedule_intersection_same_time">Занятия в одно время</string>
+    <string name="schedule_intersection_none">Нет пересечения по времени</string>
+    <string name="schedule_upcoming_lesson_mark">Пара ещё не началась</string>
+    <string name="schedule_friend_has_lesson">Пара в это время</string>
+    <string name="schedule_friend_no_lesson">Нет пары в это время</string>
+    <string name="schedule_friend_no_data">Нет данных</string>
+</resources>

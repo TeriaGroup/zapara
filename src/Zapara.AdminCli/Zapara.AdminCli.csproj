@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Zapara.Server.Accounts\Zapara.Server.Accounts.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Sync\Zapara.Server.Sync.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Communities\Zapara.Server.Communities.csproj" />
+    <ProjectReference Include="..\Zapara.Server\Zapara.Server.csproj" />
+  </ItemGroup>
+</Project>

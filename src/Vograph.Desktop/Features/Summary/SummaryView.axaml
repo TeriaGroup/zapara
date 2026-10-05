@@ -1,0 +1,122 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             xmlns:s="using:Vograph.Desktop.Features.Summary"
+             x:Class="Vograph.Desktop.Features.Summary.SummaryView"
+             x:DataType="s:SummaryViewModel">
+  <UserControl.Resources>
+    <DataTemplate x:Key="CountRow" x:DataType="s:CountItem">
+      <Grid ColumnDefinitions="48,*" Margin="0,3">
+        <TextBlock Classes="tnum" Text="{Binding Count}" FontWeight="SemiBold" />
+        <TextBlock Grid.Column="1" Text="{Binding Name}" TextWrapping="Wrap" />
+      </Grid>
+    </DataTemplate>
+    <DataTemplate x:Key="CountChip" x:DataType="s:CountItem">
+      <Border Classes="chip" Margin="0,0,6,6">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="{Binding Name}" />
+          <TextBlock Classes="tnum muted" Text="{Binding Count}" />
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+    <DataTemplate x:Key="SubjectAction" x:DataType="s:CountItem"><Button Classes="ghost" Command="{Binding OpenCommand}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" MinHeight="40"><Grid ColumnDefinitions="48,*"><TextBlock Text="{Binding Count}" /><TextBlock Grid.Column="1" Text="{Binding Name}" TextWrapping="Wrap" /></Grid></Button></DataTemplate>
+    <DataTemplate x:Key="TeacherAction" x:DataType="s:CountItem"><Button Classes="ghost" Command="{Binding OpenCommand}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" MinHeight="40"><Grid ColumnDefinitions="48,*"><TextBlock Text="{Binding Count}" /><TextBlock Grid.Column="1" Text="{Binding Name}" TextWrapping="Wrap" /></Grid></Button></DataTemplate>
+    <DataTemplate x:Key="TypeAction" x:DataType="s:CountItem"><Button Classes="ghost" Command="{Binding OpenCommand}" CommandParameter="{Binding}" Margin="0,0,6,6" Content="{Binding Name}" AutomationProperties.Name="Показать пары этого типа" /></DataTemplate>
+    <DataTemplate x:Key="RoomAction" x:DataType="s:CountItem"><Button Classes="ghost" Command="{Binding OpenCommand}" CommandParameter="{Binding}" Margin="0,0,6,6" Content="{Binding Name}" AutomationProperties.Name="Открыть аудиторию на карте" /></DataTemplate>
+  </UserControl.Resources>
+
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="24,20" Spacing="12">
+      <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+        <StackPanel Margin="0,0,16,0">
+          <TextBlock Classes="display" Text="{Binding Title}" TextWrapping="Wrap" />
+          <TextBlock Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" TextWrapping="Wrap" />
+        </StackPanel>
+        <c:SegmentedControl Name="SummarySegment" Grid.Column="1" VerticalAlignment="Bottom" Items="{Binding SegmentItems}" SelectedIndex="{Binding SegmentIndex}" />
+      </Grid>
+
+      <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,0,0,4" />
+      <ComboBox ItemsSource="{Binding SortOptions}" SelectedIndex="{Binding SortIndex}" Width="170"
+                HorizontalAlignment="Left" AutomationProperties.Name="Порядок списков сводки" />
+      <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Summary}" Margin="0,48,0,0" />
+      <Button Content="Выбрать группу" Command="{Binding ChooseGroupCommand}" IsVisible="{Binding ShowNoGroup}" HorizontalAlignment="Left" />
+      <StackPanel Spacing="8" IsVisible="{Binding ShowNoCopy}">
+        <TextBlock Text="Расписание группы не загружено. Сводку пока нельзя посчитать." TextWrapping="Wrap" />
+        <Button Content="Загрузить расписание" Command="{Binding RetrySummaryCommand}" HorizontalAlignment="Left" />
+      </StackPanel>
+      <StackPanel Spacing="8" IsVisible="{Binding LoadError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+        <TextBlock Text="{Binding LoadError}" TextWrapping="Wrap" />
+        <Button Content="Повторить" Command="{Binding RetrySummaryCommand}" HorizontalAlignment="Left" />
+      </StackPanel>
+
+      <WrapPanel IsVisible="{Binding ShowSummary}" ItemSpacing="12" LineSpacing="12" c:Appear.CascadeHost="True">
+        <Border Classes="card" Width="220" c:Appear.Kind="Cascade" c:Appear.Index="0">
+          <StackPanel Spacing="6">
+            <TextBlock Classes="muted caption" Text="Всего занятий" />
+            <TextBlock Classes="display tnum" Text="{Binding TotalText}" FontSize="40" AutomationProperties.AutomationId="Summary.Total" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Width="300" c:Appear.Kind="Cascade" c:Appear.Index="1">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="micro" Text="{loc:TU summaryByDay}" />
+            <ItemsControl ItemsSource="{Binding DayBars}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="s:DayBar">
+                  <Button Classes="ghost" Command="{Binding OpenCommand}" CommandParameter="{Binding}" ToolTip.Tip="Открыть день в расписании" Padding="4">
+                  <StackPanel Spacing="4" HorizontalAlignment="Center">
+                    <TextBlock Classes="tnum caption" Text="{Binding Count}" HorizontalAlignment="Center" />
+                    <Border Width="18" Height="40" CornerRadius="4" Background="{DynamicResource Brush.Chip}" VerticalAlignment="Bottom">
+                      <Border Height="{Binding Height}" CornerRadius="4" Background="{DynamicResource Brush.Accent}" VerticalAlignment="Bottom" />
+                    </Border>
+                    <TextBlock Classes="micro" Text="{Binding Label}" HorizontalAlignment="Center" />
+                  </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Width="300" c:Appear.Kind="Cascade" c:Appear.Index="2">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="micro" Text="{loc:TU summaryByType}" />
+            <ItemsControl ItemsSource="{Binding Types}" ItemTemplate="{StaticResource TypeAction}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Width="360" c:Appear.Kind="Cascade" c:Appear.Index="3">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="micro" Text="{loc:TU summarySubjects}" />
+            <ItemsControl ItemsSource="{Binding VisibleSubjects}" ItemTemplate="{StaticResource SubjectAction}" />
+            <Button Classes="ghost" Content="{Binding SubjectExpandCaption}" Command="{Binding ToggleSubjectsCommand}" IsVisible="{Binding CanExpandSubjects}" HorizontalAlignment="Left" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Width="360" IsVisible="{Binding HasTeachers}" c:Appear.Kind="Cascade" c:Appear.Index="4">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="micro" Text="{loc:TU summaryTeachers}" />
+            <ItemsControl ItemsSource="{Binding VisibleTeachers}" ItemTemplate="{StaticResource TeacherAction}" />
+            <Button Classes="ghost" Content="{Binding TeacherExpandCaption}" Command="{Binding ToggleTeachersCommand}" IsVisible="{Binding CanExpandTeachers}" HorizontalAlignment="Left" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Width="360" IsVisible="{Binding HasRooms}" c:Appear.Kind="Cascade" c:Appear.Index="5">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="micro" Text="{loc:TU summaryRooms}" />
+            <ItemsControl ItemsSource="{Binding Rooms}" ItemTemplate="{StaticResource RoomAction}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+      </WrapPanel>
+      <Border Classes="card" IsVisible="{Binding HasSummaryMatches}"><StackPanel Spacing="8"><TextBlock Classes="subject" Text="{Binding SummaryMatchTitle}" /><TextBlock Text="{Binding SummaryRoomFeedback}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding SummaryMatches}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="s:SummaryLessonRow"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" MinHeight="40" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><Button Content="Скрыть пары" Command="{Binding HideSummaryMatchesCommand}" HorizontalAlignment="Left" /></StackPanel></Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

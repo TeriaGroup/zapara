@@ -3,8 +3,9 @@ package ru.bgtu_voenmeh.zapara.data
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
-// Lecturer schedule from bundled assets (offline-first). Network refresh lands in A5.
+// Lecturer schedule from bundled assets (offline-first).
 class LecturerStore(private val context: Context) {
 
     @Volatile
@@ -18,8 +19,6 @@ class LecturerStore(private val context: Context) {
         }
     }
 
-    fun isLoaded(): Boolean = data != null
-
     fun lecturers(): List<LecturerInfo> = data?.lecturers.orEmpty()
 
     fun lessonsFor(lecturerId: String): List<LecturerLesson> =
@@ -27,47 +26,32 @@ class LecturerStore(private val context: Context) {
             ?.sortedWith(compareBy({ it.dayOfWeek }, { it.parity }, { it.timeStart }))
             .orEmpty()
 
-    /** Ids + short names of teachers leading [groupId] (matches Windows GetMyTeacherIds). */
-    fun myTeacherIds(groupLessons: List<Lesson>): Set<String> {
-        val shorts = groupLessons
-            .flatMap { it.teacherRaw.split(";") }
-            .map { it.trim() }.filter { it.isNotEmpty() && it != "—" }
-        val ids = mutableSetOf<String>()
-        val lecturers = lecturers()
-        for (short in shorts) {
-            val lastName = short.split(" ").firstOrNull()?.trimEnd('.').orEmpty()
-            for (lect in lecturers) {
-                if (lastName.isNotEmpty() && lect.name.contains(lastName, ignoreCase = true)) {
-                    ids.add(lect.id)
-                    ids.add(lect.name)
-                    break
-                }
-            }
-            ids.add(short)
-        }
-        return ids
-    }
+    /** Ids + names of teachers leading the group, matched by last name and initials. */
+    fun myTeacherIds(
+        groupLessons: List<Lesson>,
+        myGroupId: String? = null,
+        myGroupName: String? = null
+    ): Set<String> = TeacherMatch.myIds(groupLessons, lecturers(), { lessonsFor(it) }, myGroupId, myGroupName)
 
     fun search(query: String, onlyMy: Boolean, myIds: Set<String>): List<LecturerInfo> {
         var list = lecturers().asSequence()
         if (onlyMy) {
-            list = list.filter { l ->
-                l.id in myIds || l.name in myIds ||
-                    myIds.any { id ->
-                        val last = id.split(" ").firstOrNull()?.trimEnd('.').orEmpty()
-                        last.isNotEmpty() && l.name.contains(last, ignoreCase = true)
-                    }
-            }
+            list = list.filter { TeacherMatch.inMineList(it, myIds) }
         }
-        val q = query.trim().lowercase()
-        if (q.isNotEmpty()) {
+        val words = query.trim().lowercase(Locale.ROOT).replace('ё', 'е')
+            .split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (words.isNotEmpty()) {
             list = list.filter { l ->
-                l.name.lowercase().contains(q) || l.id.contains(q) ||
-                    l.kafedra.lowercase().contains(q) ||
-                    lessonsFor(l.id).any { it.disciplineRaw.lowercase().contains(q) }
+                lecturerMatchesWords(words, listOf(l.name, l.id, l.kafedra) +
+                    lessonsFor(l.id).map { it.disciplineRaw.ifBlank { it.subjectRaw } })
             }
         }
         // No cap: LazyColumn renders lazily, all 718 lecturers are fine (was take(100)).
         return list.sortedBy { it.name }.toList()
     }
+}
+
+internal fun lecturerMatchesWords(words: List<String>, fields: List<String>): Boolean {
+    val haystack = fields.joinToString(" ").lowercase(Locale.ROOT).replace('ё', 'е')
+    return words.all(haystack::contains)
 }

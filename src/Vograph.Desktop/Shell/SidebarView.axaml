@@ -1,0 +1,83 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls"
+             xmlns:shell="using:Vograph.Desktop.Shell"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             x:Class="Vograph.Desktop.Shell.SidebarView"
+             x:DataType="shell:ShellViewModel">
+  <UserControl.Resources>
+    <DataTemplate x:Key="NavTemplate" x:DataType="shell:NavSection">
+      <c:NavItem Content="{Binding Label}"
+                 Icon="{Binding IconKey, Converter={x:Static loc:Converters.IconKey}}"
+                 IsActive="{Binding IsActive}" IsCompact="{Binding IsCompact}" Badge="{Binding Badge}"
+                 Command="{Binding NavigateCommand}" CommandParameter="{Binding KeyName}"
+                 ToolTip.Tip="{Binding Tip}" AutomationProperties.AutomationId="{Binding AutomationId}" />
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <Border Classes="sidebar" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,0,1,0" Padding="10,12"
+          Width="{Binding SidebarCollapsed, Converter={x:Static loc:Converters.SidebarWidth}}">
+    <Panel x:Name="Root">
+      <DockPanel LastChildFill="True">
+
+        <StackPanel DockPanel.Dock="Bottom" Spacing="4"><TextBlock Classes="micro" Text="Приложение" IsVisible="{Binding !SidebarCollapsed}" Margin="10,8" />
+          <!-- Only while an update is waiting; the badge repeats it on the collapsed rail. -->
+          <c:NavItem Content="{loc:T updTitle}" Icon="{StaticResource Icon.Download}" Badge="{Binding Updates.BadgeText}"
+                     IsCompact="{Binding SidebarCollapsed}" IsVisible="{Binding Updates.IsAvailable}"
+                     Command="{Binding OpenUpdateDialogCommand}" ToolTip.Tip="{Binding Updates.StatusText}"
+                     AutomationProperties.AutomationId="Nav.Update" AutomationProperties.Name="{loc:T updTitle}" />
+          <c:NavItem Content="{Binding SettingsSection.Label}"
+                     Icon="{Binding SettingsSection.IconKey, Converter={x:Static loc:Converters.IconKey}}"
+                     IsActive="{Binding SettingsSection.IsActive}" IsCompact="{Binding SettingsSection.IsCompact}"
+                     Command="{Binding NavigateCommand}" CommandParameter="Settings" ToolTip.Tip="{Binding SettingsSection.Tip}"
+                     AutomationProperties.AutomationId="{Binding SettingsSection.AutomationId}" />
+          <Button Classes="icon" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{loc:T themeToggleTip}" AutomationProperties.AutomationId="Shell.ThemeToggle" AutomationProperties.Name="{loc:T themeToggleTip}">
+            <c:Icon Data="{Binding IsDark, Converter={x:Static loc:Converters.ThemeIcon}}" Size="16" />
+          </Button>
+        </StackPanel>
+
+        <Button Classes="icon" DockPanel.Dock="Top" Command="{Binding ToggleSidebarCommand}" ToolTip.Tip="{Binding SidebarToggleTip}" Margin="0,0,0,8"
+                HorizontalAlignment="{Binding SidebarCollapsed, Converter={x:Static loc:Converters.RailAlignment}}"
+                AutomationProperties.AutomationId="Shell.SidebarToggle" AutomationProperties.Name="{Binding SidebarToggleTip}">
+          <c:Icon Data="{StaticResource Icon.Menu}" Size="16" />
+        </Button>
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Background="Transparent">
+        <StackPanel Spacing="2">
+          <Button Classes="ghost" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                  Command="{Binding OpenGroupPickerCommand}" Margin="0,0,0,12" ToolTip.Tip="{Binding GroupCardTip}"
+                  AutomationProperties.AutomationId="Shell.GroupCard" AutomationProperties.Name="{Binding GroupName}">
+            <Border Classes="card hoverable" Padding="12,10">
+              <StackPanel Spacing="4">
+                <TextBlock Text="{Binding GroupName}" FontSize="15" FontWeight="Medium" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
+                <TextBlock Text="{Binding GroupRailLabel}" FontSize="15" FontWeight="Medium" HorizontalAlignment="Center" IsVisible="{Binding SidebarCollapsed}" />
+                <TextBlock Classes="muted" Text="{Binding GroupSubtitle}" FontSize="12" TextTrimming="CharacterEllipsis" IsVisible="{Binding !SidebarCollapsed}" />
+                <Border Classes="chip stale" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Stretch" Padding="8,5" IsVisible="{Binding ShowStaleChip}">
+                  <TextBlock Text="{Binding StaleText}" TextWrapping="Wrap" />
+                </Border>
+                <Ellipse Classes="staledot" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Center" IsVisible="{Binding ShowStaleDot}" />
+              </StackPanel>
+            </Border>
+          </Button>
+
+          <TextBlock Classes="micro" Text="Учёба" IsVisible="{Binding !SidebarCollapsed}" Margin="10,6" />
+          <ItemsControl ItemsSource="{Binding StudySections}" ItemTemplate="{StaticResource NavTemplate}">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          </ItemsControl>
+
+          <TextBlock Classes="micro" Text="Группа" Margin="10,14,10,4" IsVisible="{Binding !SidebarCollapsed}" />
+          <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="8,12" IsVisible="{Binding SidebarCollapsed}" />
+
+          <ItemsControl ItemsSource="{Binding GroupSections}" ItemTemplate="{StaticResource NavTemplate}">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          </ItemsControl>
+        </StackPanel>
+        </ScrollViewer>
+
+      </DockPanel>
+      <!-- One indicator for the whole sidebar; SidebarView.axaml.cs places it over the active NavItem. -->
+      <Border x:Name="NavIndicator" Width="3" CornerRadius="3" Background="{DynamicResource Brush.Accent}"
+              HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" IsVisible="False"
+              RenderTransform="translateY(0px)" />
+    </Panel>
+  </Border>
+</UserControl>

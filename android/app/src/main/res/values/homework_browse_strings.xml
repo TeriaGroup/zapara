@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="homework_browse_search">Поиск по предмету или заданию</string>
+    <string name="homework_browse_active">Активные</string>
+    <string name="homework_browse_done">Готово у меня</string>
+    <string name="homework_browse_all">Все</string>
+    <string name="homework_browse_no_results">Ничего не найдено</string>
+    <string name="homework_browse_no_results_hint">Попробуйте другой запрос или покажите все задания.</string>
+    <string name="homework_browse_reset">Сбросить фильтры</string>
+    <string name="homework_browse_undo">Отменить</string>
+    <string name="homework_browse_undo_hint">Статус задания изменён</string>
+    <string name="homework_browse_toggle_failed">Не удалось изменить статус задания. Попробуйте ещё раз.</string>
+    <string name="homework_browse_undo_failed">Не удалось отменить изменение. Попробуйте ещё раз.</string>
+    <string name="homework_widget_unavailable">Задание недоступно. Обновите виджет и выберите задание из списка.</string>
+    <string name="homework_widget_other_profile">Это задание из другого профиля. Открыт список текущего профиля.</string>
+    <string name="homework_widget_editor_busy">Закройте открытый редактор, прежде чем переходить к другому заданию.</string>
+    <string name="schedule_subject_homework_loading">Загружаем задания…</string>
+    <string name="schedule_subject_homework_failed">Не удалось загрузить задания</string>
+    <string name="schedule_subject_homework_empty">По этому предмету заданий пока нет.</string>
+    <string name="schedule_subject_homework_add">Добавить задание по предмету</string>
+</resources>

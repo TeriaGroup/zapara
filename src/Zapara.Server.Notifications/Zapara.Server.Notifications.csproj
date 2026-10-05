@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><RestorePackagesWithLockFile>true</RestorePackagesWithLockFile></PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\Zapara.Server.Accounts\Zapara.Server.Accounts.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Sync\Zapara.Server.Sync.csproj" />
+    <PackageReference Include="Lib.Net.Http.WebPush" Version="3.3.1" />
+  </ItemGroup>
+</Project>

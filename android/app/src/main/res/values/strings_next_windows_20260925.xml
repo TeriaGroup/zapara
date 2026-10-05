@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="next_week_total">Всего пар: %1$d</string>
+    <string name="next_week_day_count">Пар: %1$d</string>
+    <string name="next_teachers_clear">Сбросить поиск</string>
+    <string name="next_teachers_no_results">Преподаватели по запросу не найдены</string>
+    <string name="next_teachers_my_empty">У выбранной группы преподаватели пока не найдены</string>
+    <string name="next_teachers_empty">Преподавателей пока нет</string>
+    <string name="next_teachers_show_all">Показать всех</string>
+    <string name="next_community_search">Поиск по названию или описанию</string>
+    <string name="next_community_results">Показано %1$d из %2$d</string>
+    <string name="next_community_clear">Сбросить поиск</string>
+    <string name="next_community_no_results">Группы по запросу не найдены</string>
+</resources>

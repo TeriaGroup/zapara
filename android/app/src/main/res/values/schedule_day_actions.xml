@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="schedule_day_jump_lesson">Ближайшая пара</string>
+    <string name="schedule_day_jump_deadlines">Сроки сдачи</string>
+</resources>

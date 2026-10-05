@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Timetable>
+  <Period Title="ОСЕННИЙ СЕМЕСТР 2026/2027 уч. г." StartYear="2026" StartMonth="9" StartDay="1" />
+  <Weeks WeekCount="2" />
+  <Group Number="А863С" IdGroup="3313">
+    <Days><Day Title="Понедельник"><GroupLessons><Lesson>
+      <DayTitle>Понедельник</DayTitle><WeekCode>1</WeekCode><Time>9:00 Нечетная</Time>
+      <Discipline>пр Физика</Discipline>
+      <Lecturers><Lecturer><IdLecturer>1</IdLecturer><ShortName>Иванов И.И.</ShortName></Lecturer></Lecturers>
+      <Classroom>493;</Classroom>
+    </Lesson></GroupLessons></Day></Days>
+  </Group>
+</Timetable>

@@ -1,0 +1,205 @@
+package ru.bgtu_voenmeh.zapara.ui.schedule
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import ru.bgtu_voenmeh.zapara.data.GROUP_FIXTURE
+import ru.bgtu_voenmeh.zapara.data.GroupParser
+import ru.bgtu_voenmeh.zapara.data.Homework
+import ru.bgtu_voenmeh.zapara.data.Lesson
+import ru.bgtu_voenmeh.zapara.data.Parity
+import ru.bgtu_voenmeh.zapara.data.SchedCtx
+import ru.bgtu_voenmeh.zapara.data.Schedule
+import ru.bgtu_voenmeh.zapara.data.Subgroups
+import ru.bgtu_voenmeh.zapara.ui.XmlCopy
+import java.time.LocalDate
+import java.time.LocalDateTime
+
+class ScheduleComposerTest {
+    @Test fun conflict_pairs_name_exact_overlaps_but_not_touching_endpoints() {
+        val base = page(LocalDate.of(2026, 9, 14), LocalDateTime.of(2026, 9, 14, 8, 0)).lessons.first()
+        val overlapping = base.copy(index = base.index + 100, name = "Физика",
+            timeStart = base.timeStart, timeEnd = base.timeEnd)
+        val adjacent = base.copy(index = base.index + 101, name = "История",
+            timeStart = base.timeEnd, timeEnd = "23:00")
+        assertEquals(listOf(0 to 1), ScheduleComposer.conflictPairs(listOf(base, overlapping, adjacent)))
+    }
+
+    @Test fun friend_encounter_locates_exact_pair_even_if_subject_was_renamed() {
+        val lessons = page(monday, LocalDateTime.of(2026, 9, 14, 8, 0)).lessons
+        val first = lessons.first()
+        assertEquals(0, ScheduleComposer.encounterIndex(lessons, first.timeStart, first.original))
+        assertEquals(-1, ScheduleComposer.encounterIndex(lessons, first.timeStart, "Другой предмет"))
+        assertEquals(-1, ScheduleComposer.encounterIndex(lessons, null, first.original))
+    }
+    private val parsed by lazy { GroupParser.parse(GROUP_FIXTURE) }
+    private val all get() = parsed.lessons
+    private val ctx = SchedCtx("3313", LocalDate.of(2026, 9, 1), 2, false)
+    private val monday = LocalDate.of(2026, 9, 14)
+    private val mathNorm = Parity.normalizeSubject("лек ВЫСШ. МАТЕМАТ")
+
+    private fun page(date: LocalDate, now: LocalDateTime) = ScheduleComposer.page(
+        date = date,
+        allLessons = all,
+        ctx = ctx,
+        now = now,
+        displayName = { norm, _ -> if (norm == mathNorm) "Матан" else "" },
+        homeworkFor = { norm ->
+            if (norm == mathNorm) listOf(
+                Homework(
+                    id = 1, norm = mathNorm, text = "§5, задачи 1–12",
+                    createdAt = LocalDate.of(2026, 9, 1), n = 1,
+                    due = LocalDate.of(2026, 9, 21), status = "far", done = false
+                )
+            ) else emptyList()
+        },
+        friendsFor = { lesson ->
+            if (lesson.roomRaw == "493") listOf(
+                FriendDotUi(index = 0, groupName = "09С31", members = "Иван", score = 100, hint = "Иван · 09С31 · та же аудитория")
+            ) else emptyList()
+        },
+        copy = XmlCopy
+    )
+
+    @Test fun monday_cards_rename_past_homework_and_friends() {
+        val page = page(monday, LocalDateTime.of(2026, 9, 14, 12, 0))
+        assertEquals(2, page.lessons.size)
+        val first = page.lessons[0]
+        assertEquals("Матан", first.name)
+        assertEquals("ВЫСШ. МАТЕМАТ", first.original)
+        assertTrue(first.isPast)
+        assertEquals("493 ГК", first.room)
+        assertEquals("лекция", first.type)
+        assertEquals("срок 21.09 (Пн)", first.homework.single().label)
+        assertEquals("Иван · 09С31 · та же аудитория", first.friends.single().hint)
+        val second = page.lessons[1]
+        assertFalse(second.isPast)
+        assertEquals("практика", second.type)
+        assertEquals("563 УЛК", second.room)
+    }
+
+    @Test fun syncToday_changes_relative_labels_and_preserves_the_absolute_day() {
+        val seventeen = LocalDate.of(2026, 9, 17)
+        val eighteen = LocalDate.of(2026, 9, 18)
+        assertEquals(eighteen to seventeen, ScheduleComposer.syncToday(eighteen, seventeen, seventeen))
+        assertEquals(eighteen to LocalDate.of(2026, 9, 19), ScheduleComposer.syncToday(eighteen, seventeen, LocalDate.of(2026, 9, 19)))
+        assertEquals(eighteen to eighteen, ScheduleComposer.syncToday(eighteen, eighteen, eighteen))
+    }
+
+    @Test fun upcoming_mark_follows_start_time_and_selected_date() {
+        val now = LocalDateTime.of(2026, 9, 14, 10, 0)
+        val lesson = page(monday, now).lessons.first().copy(timeStart = "10:01", timeEnd = "11:30")
+        assertTrue(ScheduleComposer.isUpcoming(monday, lesson, now))
+        assertFalse(ScheduleComposer.isUpcoming(monday, lesson, now.plusMinutes(1)))
+        assertTrue(ScheduleComposer.isUpcoming(monday.plusDays(1), lesson, now))
+        assertFalse(ScheduleComposer.isUpcoming(monday.minusDays(1), lesson, now))
+        assertFalse(ScheduleComposer.isUpcoming(monday, lesson.copy(timeStart = "bad"), now))
+        assertFalse(ScheduleComposer.isUpcoming(monday, lesson.copy(timeEnd = "09:00"), now))
+        assertTrue(ScheduleComposer.isUpcoming(monday, lesson.copy(timeEnd = ""), now))
+    }
+
+    @Test fun minute_refresh_clears_upcoming_mark_when_lesson_starts() {
+        val date = monday
+        val before = LocalDateTime.of(2026, 9, 14, 8, 0)
+        val row = page(date, before).lessons.first().copy(timeStart = "08:01", timeEnd = "09:35")
+        val day = page(date, before).copy(lessons = listOf(row))
+        assertTrue(ScheduleComposer.atClock(day, before).lessons.single().isUpcoming)
+        assertFalse(ScheduleComposer.atClock(day, before.plusMinutes(1)).lessons.single().isUpcoming)
+    }
+
+    @Test fun clock_refresh_keeps_all_followed_groups_for_an_earlier_clock() {
+        val before = LocalDateTime.of(2026, 9, 14, 8, 0)
+        val base = page(monday, before)
+        val lesson = base.lessons.first().copy(timeStart = "08:01", timeEnd = "09:35",
+            friends = listOf(
+                FriendDotUi(0, "A", "", -1, "", visibleWhenCurrent = true),
+                FriendDotUi(1, "B", "", -1, "", visibleWhenCurrent = false)
+            ))
+        val day = base.copy(lessons = listOf(lesson))
+        val during = ScheduleComposer.atClock(day, before.plusMinutes(1))
+        assertEquals(listOf("A"), during.lessons.single().displayFriends.map { it.groupName })
+        val earlier = ScheduleComposer.atClock(during, before)
+        assertEquals(listOf("A", "B"), earlier.lessons.single().displayFriends.map { it.groupName })
+    }
+
+    @Test fun group_presence_distinguishes_overlap_clear_schedule_and_missing_data() {
+        val own = page(monday, LocalDateTime.of(2026, 9, 14, 8, 0)).lessons.first()
+        val overlapping = Lesson(timeStart = own.timeStart, timeEnd = own.timeEnd)
+        val later = Lesson(timeStart = "22:00", timeEnd = "23:00")
+        assertEquals(true, ScheduleComposer.hasLessonDuring(own.timeStart, own.timeEnd, listOf(overlapping), true))
+        assertEquals(false, ScheduleComposer.hasLessonDuring(own.timeStart, own.timeEnd, listOf(later), true))
+        assertEquals(false, ScheduleComposer.hasLessonDuring(own.timeStart, own.timeEnd, emptyList(), true))
+        assertNull(ScheduleComposer.hasLessonDuring(own.timeStart, own.timeEnd, listOf(overlapping), false))
+        assertNull(ScheduleComposer.hasLessonDuring(own.timeStart, own.timeEnd, listOf(Lesson(timeStart = "?", timeEnd = "?")), true))
+        assertEquals(true, ScheduleComposer.hasLessonDuring(own.timeStart, own.timeEnd,
+            listOf(Lesson(timeStart = "?", timeEnd = "?"), overlapping), true))
+        assertEquals(true, ScheduleComposer.hasLessonDuring("09:00", "", listOf(Lesson(timeStart = "10:30", timeEnd = "11:00")), true))
+    }
+
+    @Test fun caption_uses_parity_and_week_number() {
+        val page = page(monday, LocalDateTime.of(2026, 9, 14, 12, 0))
+        assertEquals("Понедельник, 14 сентября · нечётная неделя · 3-я неделя", page.caption)
+    }
+
+    @Test fun empty_thursday_has_next_lesson_hint() {
+        val page = page(LocalDate.of(2026, 9, 10), LocalDateTime.of(2026, 9, 10, 12, 0))
+        assertTrue(page.lessons.isEmpty())
+        assertFalse(page.isSunday)
+        assertEquals("следующая пара — 14 сентября, Матан", page.nextHint)
+        assertEquals(
+            LocalDate.of(2026, 9, 14),
+            Schedule.nextOccurrenceBySubject(all, "3313", mathNorm, LocalDate.of(2026, 9, 10), ctx.periodStart, ctx.weekCount, ctx.invert)
+        )
+    }
+
+    @Test fun next_class_skips_the_subgroup_that_was_not_chosen() {
+        val ivanov = Lesson(
+            groupId = "3313", dayOfWeek = 1, parity = 0, index = 1,
+            timeStart = "09:00", timeEnd = "10:35", subjectRaw = "пр ИН. ЯЗ.", subjectNormalized = "ин. яз.",
+            teacherRaw = "Иванов И.И.", classroomRaw = "101;"
+        )
+        val petrov = Lesson(
+            groupId = "3313", dayOfWeek = 1, parity = 1, index = 2,
+            timeStart = "09:00", timeEnd = "10:35", subjectRaw = "пр ИН. ЯЗ.", subjectNormalized = "ин. яз.",
+            teacherRaw = "Петров П.П.", classroomRaw = "202;"
+        )
+        val all = listOf(ivanov, petrov)
+        val choice = mapOf(Subgroups.index(all).streams.single().id to "петров п п")
+        val page = ScheduleComposer.page(
+            date = monday,
+            allLessons = all,
+            ctx = ctx,
+            now = LocalDateTime.of(2026, 9, 14, 10, 0),
+            displayName = { _, _ -> "" },
+            homeworkFor = { emptyList() },
+            friendsFor = { emptyList() },
+            copy = XmlCopy,
+            choices = choice
+        )
+        assertEquals(1, page.lessons.size)
+        assertEquals("Петров П.П.", page.lessons.single().teacher)
+        assertEquals("28.09", page.lessons.single().nextDate)
+    }
+
+    @Test fun sunday_is_marked_without_hint() {
+        val page = page(LocalDate.of(2026, 9, 13), LocalDateTime.of(2026, 9, 13, 12, 0))
+        assertTrue(page.isSunday)
+        assertNull(page.nextHint)
+    }
+
+    @Test fun pager_range_is_731_pages_with_today_at_365() {
+        val today = LocalDate.of(2026, 9, 8)
+        assertEquals(365, ScheduleComposer.pageIndex(today, today))
+        assertEquals(today.minusDays(365), ScheduleComposer.dateAt(0, today))
+        assertEquals(today.plusDays(365), ScheduleComposer.dateAt(730, today))
+        assertEquals(731, ScheduleComposer.PAGE_COUNT)
+    }
+
+    @Test fun personalization_keeps_the_open_day() {
+        assertFalse(ScheduleComposer.resetsPager(ru.bgtu_voenmeh.zapara.ui.AppEvent.PersonalizationChanged))
+        assertTrue(ScheduleComposer.resetsPager(ru.bgtu_voenmeh.zapara.ui.AppEvent.GroupChanged))
+        assertTrue(ScheduleComposer.resetsPager(ru.bgtu_voenmeh.zapara.ui.AppEvent.ScheduleChanged))
+    }
+}

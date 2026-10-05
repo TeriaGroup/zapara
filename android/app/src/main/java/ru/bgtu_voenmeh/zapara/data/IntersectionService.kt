@@ -3,7 +3,6 @@ package ru.bgtu_voenmeh.zapara.data
 import java.time.DayOfWeek
 import java.time.LocalDate
 
-// Port of Vograph.Core IntersectionService.
 object IntersectionService {
 
     fun intersections(
@@ -24,13 +23,15 @@ object IntersectionService {
         val out = mutableListOf<IntersectionResult>()
         for (f in friends.filter { it.enabled }.take(5)) {
             val fid = resolveId(f.groupName) ?: continue
+            var best: IntersectionResult? = null
             for (fl in lessonsFor(fid, dow, code)) {
                 if (!Intersection.timesOverlap(my.timeStart, my.timeEnd, fl.timeStart, fl.timeEnd)) continue
                 val score = Intersection.scoreOf(my.roomRaw, my.buildingRaw, fl.roomRaw, fl.buildingRaw)
-                if (score >= strictness) {
-                    out.add(IntersectionResult(f.groupName, f.colorHex, fl.teacherRaw, fl.classroomRaw, score))
-                }
+                if (score >= strictness && (best == null || score > best.score))
+                    best = IntersectionResult(f.groupName, f.colorHex, fl.teacherRaw,
+                        fl.classroomRaw.ifBlank { fl.roomRaw }, score)
             }
+            best?.let(out::add)
         }
         return out
     }

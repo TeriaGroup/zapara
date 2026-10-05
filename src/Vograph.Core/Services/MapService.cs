@@ -10,11 +10,11 @@ public class MapInfo
     public string Building { get; set; } = ""; // ГК, УЛК, ВЦ, дистанционно
     public int Floor { get; set; } // 1..5
     public string Title { get; set; } = "";
-    public string Url { get; set; } = ""; // remote url
-    public string LocalPath { get; set; } = ""; // cached file path
+    public string Url { get; set; } = "";
+    public string LocalPath { get; set; } = "";
     public string RoomRaw { get; set; } = "";
     public string ClassroomRaw { get; set; } = "";
-    public bool IsRemote { get; set; } // дистанционно
+    public bool IsRemote { get; set; }
     public bool HasMap { get; set; }
     public string Note { get; set; } = "";
 }
@@ -44,62 +44,54 @@ public class MapService
         [("УЛК", 5)] = BaseUrl + "karta-ulk.-5-etazh-2022.jpg",
     };
 
-    private readonly Database _db;
     private readonly ScheduleService _schedule;
     private Dictionary<string, Dictionary<string, CoordsRect>> _coords = new(StringComparer.OrdinalIgnoreCase);
     private bool _coordsLoaded = false;
 
-    public MapService(Database db, ScheduleService schedule)
+    /// <summary>How far GetNextLesson looks ahead (spec §5.1: the empty day hints at the next lesson within two weeks).</summary>
+    public const int NextLessonHorizonDays = 14;
+
+    private HttpClient? _http;
+    private HttpClient Http => _http ??= ParserService.CreateHttpClient();
+
+    /// <param name="cacheDir">Downloaded plans and the editable coords.json (the desktop passes VOGRAPH_DATA_DIR\maps).</param>
+    /// <param name="bundledDir">The maps\ folder shipped next to the exe.</param>
+    public MapService(Database db, ScheduleService schedule, string? cacheDir = null, string? bundledDir = null)
     {
-        _db = db;
+        _ = db;
         _schedule = schedule;
+        CacheDir = cacheDir ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vograph", "maps");
+        BundledDir = bundledDir ?? Path.Combine(AppContext.BaseDirectory, "maps");
         LoadCoords();
     }
 
-    public static string GetMapsCacheDir()
+    public string CacheDir { get; }
+    public string BundledDir { get; }
+
+    public string GetMapsCacheDir()
     {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var dir = Path.Combine(appData, "Vograph", "maps");
-        Directory.CreateDirectory(dir);
-        return dir;
+        Directory.CreateDirectory(CacheDir);
+        return CacheDir;
     }
 
-    public static string GetLocalPathForUrl(string url)
-    {
-        var dir = GetMapsCacheDir();
-        var fileName = Path.GetFileName(new Uri(url).LocalPath);
-        return Path.Combine(dir, fileName);
-    }
+    public string GetLocalPathForUrl(string url) => Path.Combine(GetMapsCacheDir(), Path.GetFileName(new Uri(url).LocalPath));
 
-    public static string? GetBundledPathForUrl(string url)
+    public string? GetBundledPathForUrl(string url)
     {
         try
         {
-            var fileName = Path.GetFileName(new Uri(url).LocalPath);
-            var bundled = Path.Combine(AppContext.BaseDirectory, "maps", fileName);
-            if (File.Exists(bundled)) return bundled;
-            // also check parent for dev
-            var alt = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "maps", fileName);
-            if (File.Exists(alt)) return Path.GetFullPath(alt);
+            var bundled = Path.Combine(BundledDir, Path.GetFileName(new Uri(url).LocalPath));
+            return File.Exists(bundled) ? bundled : null;
         }
-        catch { }
-        return null;
+        catch (UriFormatException) { return null; }
     }
 
-    public static string GetCoordsPath()
-    {
-        return Path.Combine(GetMapsCacheDir(), "coords.json");
-    }
+    public string GetCoordsPath() => Path.Combine(GetMapsCacheDir(), "coords.json");
 
-    public static string? GetBundledCoordsPath()
+    public string? GetBundledCoordsPath()
     {
-        var p1 = Path.Combine(AppContext.BaseDirectory, "maps", "coords.json");
-        if (File.Exists(p1)) return p1;
-        var p2 = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "maps", "coords.json");
-        if (File.Exists(p2)) return Path.GetFullPath(p2);
-        var p3 = Path.Combine(GetMapsCacheDir(), "coords.json");
-        if (File.Exists(p3)) return p3;
-        return null;
+        var bundled = Path.Combine(BundledDir, "coords.json");
+        return File.Exists(bundled) ? bundled : null;
     }
 
     private void LoadCoords()
@@ -157,21 +149,15 @@ public class MapService
         if (!_coordsLoaded) LoadCoords();
         var key = $"{building} {floor}";
         var roomKey = roomRaw?.Trim().TrimEnd(';').Replace("*","").Trim().ToLowerInvariant() ?? "";
-        // also try without suffix like "а", "б" — keep as is, but also try stripped digits
-        // Try exact, then digits only
         if (_coords.TryGetValue(key, out var inner))
         {
             if (inner.TryGetValue(roomKey, out var cr)) return cr;
-            // try digits only
             var m = Regex.Match(roomKey, @"\d+");
             if (m.Success)
             {
                 var digits = m.Value;
                 if (inner.TryGetValue(digits, out var cr2)) return cr2;
-                // also try with suffix like "326а" -> digits + suffix
-                // already tried exact
             }
-            // case-insensitive already, try lower
             foreach (var kv in inner)
             {
                 if (kv.Key.Equals(roomKey, StringComparison.OrdinalIgnoreCase)) return kv.Value;
@@ -187,7 +173,6 @@ public class MapService
         if (string.IsNullOrWhiteSpace(roomKey)) return;
         if (!_coords.ContainsKey(key)) _coords[key] = new Dictionary<string, CoordsRect>(StringComparer.OrdinalIgnoreCase);
         _coords[key][roomKey] = new CoordsRect { x = x, y = y, w = w, h = h };
-        // Save to local file
         try
         {
             var local = GetCoordsPath();
@@ -221,54 +206,49 @@ public class MapService
             };
         }
 
-        // Detect building
         string building;
         string roomPart = raw;
         bool hasStar = raw.Contains("*");
 
-        if (raw.Contains("ВЦ") || raw.Contains("Вц") || raw.Contains("вц"))
+        if (raw.Contains("ВЦ", StringComparison.OrdinalIgnoreCase))
         {
             building = "ВЦ";
-            // room after ВЦ
-            var mVc = Regex.Match(raw, @"ВЦ\s*(\d+)", RegexOptions.IgnoreCase);
-            if (mVc.Success) roomPart = mVc.Groups[1].Value;
-            else roomPart = Regex.Match(raw, @"\d+").Value ?? raw;
+            var mVc = Regex.Match(raw, @"ВЦ\s*(.+)", RegexOptions.IgnoreCase);
+            if (mVc.Success) roomPart = mVc.Groups[1].Value.Trim();
+            else
+            {
+                var stripped = Regex.Replace(raw, @"^ВЦ\s*", "", RegexOptions.IgnoreCase).Trim();
+                roomPart = string.IsNullOrEmpty(stripped) ? raw : stripped;
+            }
         }
         else if (hasStar)
         {
             building = "УЛК";
             // star = УЛК (per user correction 2026-09-01: кабинеты со звездочкой — УЛК)
             roomPart = raw.Replace("*", "").Trim();
-            // if room like "507а" -> digits 507
-            var m = Regex.Match(roomPart, @"\d+");
-            if (m.Success) roomPart = m.Value;
         }
         else
         {
-            // no star, not ВЦ -> ГК (main corpus)
             building = "ГК";
-            var m = Regex.Match(raw, @"\d+");
-            if (m.Success) roomPart = m.Value;
-            else roomPart = raw;
+            roomPart = raw;
         }
 
         // Extract floor from first digit of numeric part
         int floor = 1;
-        var digitMatch = Regex.Match(roomPart, @"\d+");
-        if (digitMatch.Success)
+        if (roomPart.Length > 0 && char.IsDigit(roomPart[0]))
         {
-            var digits = digitMatch.Value;
-            if (digits.Length > 0 && char.IsDigit(digits[0]))
-                floor = int.Parse(digits[0].ToString());
-            if (floor < 1) floor = 1;
-            if (floor > 5) floor = 5;
+            var digitMatch = Regex.Match(roomPart, @"\d+");
+            if (digitMatch.Success)
+            {
+                floor = int.Parse(digitMatch.Value[0].ToString());
+                if (floor < 1) floor = 1;
+                if (floor > 5) floor = 5;
+            }
         }
 
-        // Clamp floor to building max
-        int maxFloor = building == "ГК" ? 4 : building == "ВЦ" ? 4 : 5;
         // ВЦ maps to ГК visuals: we use ГК map
         string mapBuilding = building == "ВЦ" ? "ГК" : building;
-        if (mapBuilding == "ГК" && floor > 4) floor = 4; // show top floor with note
+        if (mapBuilding == "ГК" && floor > 4) floor = 4;
         if (mapBuilding == "УЛК" && floor > 5) floor = 5;
 
         string title;
@@ -279,7 +259,6 @@ public class MapService
         if (building == "ВЦ")
         {
             title = $"ВЦ · {mapBuilding} {floor} этаж · ауд. {roomPart}";
-            // ВЦ uses ГК map
             if (MapUrls.TryGetValue((mapBuilding, floor), out var u))
             {
                 url = u;
@@ -297,7 +276,6 @@ public class MapService
             }
             else
             {
-                // fallback: try other building
                 if (MapUrls.TryGetValue(("ГК", Math.Min(floor,4)), out var fallback))
                 {
                     url = fallback;
@@ -313,7 +291,6 @@ public class MapService
         }
 
         var localPath = hasMap && !string.IsNullOrEmpty(url) ? GetLocalPathForUrl(url) : "";
-        // parse room raw for display
         var roomRaw = roomPart;
 
         return new MapInfo
@@ -337,13 +314,11 @@ public class MapService
         return Resolve(lesson.ClassroomRaw);
     }
 
-    // Ensure map file is cached locally (download if missing), fallback to bundled maps in app folder
     public async Task<string?> EnsureCachedAsync(MapInfo info, HttpClient? client = null)
     {
         if (info == null || !info.HasMap || string.IsNullOrEmpty(info.Url)) return null;
         var path = info.LocalPath;
         if (File.Exists(path) && new FileInfo(path).Length > 1000) return path;
-        // Try bundled first (offline bundle in publish/maps)
         var bundled = GetBundledPathForUrl(info.Url);
         if (bundled != null && File.Exists(bundled))
         {
@@ -357,8 +332,7 @@ public class MapService
         }
         try
         {
-            var http = client ?? new HttpClient();
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Vograph/1.0");
+            var http = client ?? Http;
             var bytes = await http.GetByteArrayAsync(info.Url);
             if (bytes.Length < 1000) return null;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -395,7 +369,6 @@ public class MapService
             var url = kv.Value;
             var path = GetLocalPathForUrl(url);
             if (File.Exists(path) && new FileInfo(path).Length > 1000) continue;
-            // Try bundled first for offline without network
             if (preferBundledFirst)
             {
                 var bundled = GetBundledPathForUrl(url);
@@ -415,8 +388,7 @@ public class MapService
             progress?.Report($"Downloading {kv.Key.building} {kv.Key.floor}...");
             try
             {
-                var http = client ?? new HttpClient();
-                http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 Vograph");
+                var http = client ?? Http;
                 var bytes = await http.GetByteArrayAsync(url);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 await File.WriteAllBytesAsync(path, bytes);
@@ -425,7 +397,6 @@ public class MapService
             catch (Exception ex)
             {
                 progress?.Report($"Failed {kv.Key.building} {kv.Key.floor}: {ex.Message}");
-                // final fallback try bundled again
                 var bundled2 = GetBundledPathForUrl(url);
                 if (bundled2 != null && File.Exists(bundled2))
                 {
@@ -435,11 +406,9 @@ public class MapService
         }
     }
 
-    // Find next lesson chronologically from now (today remaining, then tomorrow, then week)
     public (Lesson? lesson, DateTime date) GetNextLesson(string groupId, DateTime now)
     {
-        // Try today
-        for (int offset = 0; offset < 7; offset++)
+        for (int offset = 0; offset < NextLessonHorizonDays; offset++)
         {
             var date = now.Date.AddDays(offset);
             int dow = (int)date.DayOfWeek;
@@ -447,27 +416,22 @@ public class MapService
             if (dow == 7) continue; // Sunday no lessons
             var lessons = _schedule.GetSchedule(date, groupId);
             if (lessons.Count == 0) continue;
-            // sort by TimeStart
             var sorted = lessons.OrderBy(l => l.TimeStart).ToList();
             foreach (var l in sorted)
             {
                 if (offset == 0)
                 {
-                    // today: only future times
                     if (TimeSpan.TryParse(l.TimeStart, out var ts))
                     {
                         var lessonTime = date.Add(ts);
                         if (lessonTime > now) return (l, date);
-                        // if lesson is ongoing? consider ongoing as next
-                        if (TimeSpan.TryParse(l.TimeEnd, out var te))
-                        {
-                            var endTime = date.Add(te);
-                            if (endTime > now) return (l, date);
-                        }
+                        // A lesson still in progress counts as next. Missing end is start + 95 minutes.
+                        var end = TimeSpan.TryParse(l.TimeEnd, out var te) ? te : ts.Add(TimeSpan.FromMinutes(95));
+                        if (date.Add(end) > now) return (l, date);
                     }
                     else
                     {
-                        return (l, date); // if no time, return first
+                        return (l, date);
                     }
                 }
                 else

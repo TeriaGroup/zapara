@@ -3,7 +3,6 @@ package ru.bgtu_voenmeh.zapara.data
 import java.time.DayOfWeek
 import java.time.LocalDate
 
-// Pure schedule helpers (DB-backed repositories land in A2).
 object Schedule {
 
     /** Lessons for [groupId] on [date] filtered by computed parity. */
@@ -20,13 +19,10 @@ object Schedule {
         var code = Parity.weekCode(date, periodStart, weekCount)
         if (invert) code = if (code == 1) 2 else 1
         return all.filter { it.groupId == groupId && it.dayOfWeek == dow && (it.parity == code || it.parity == 0) }
-            .sortedWith(compareBy({ it.index }, { it.timeStart }))
+            .sortedWith(compareBy({ it.timeStart }, { it.index }))
     }
 
-    /**
-     * Next date AFTER [from] with a lesson whose normalized subject == [norm].
-     * Mirrors GetNextPairDateText (scan date+1..+60, skip Sunday).
-     */
+    /** Day after [from], through +60, skipping Sunday. */
     fun nextOccurrenceBySubject(
         all: List<Lesson>,
         groupId: String,
@@ -42,12 +38,12 @@ object Schedule {
             val date = from.plusDays(offset.toLong())
             if (date.dayOfWeek == DayOfWeek.SUNDAY) continue
             val dayLessons = lessonsForDate(all, groupId, date, periodStart, weekCount, invert)
-            if (dayLessons.any { it.subjectNormalized == norm }) return date
+            if (dayLessons.any { Parity.sameSubject(it.subjectNormalized, norm) }) return date
         }
         return null
     }
 
-    /** Same scan but matching teacher short name (mirrors GetNextTeacherDateText). */
+    /** Same +60 Sunday-skipping scan, matching the teacher short name. */
     fun nextOccurrenceByTeacher(
         all: List<Lesson>,
         groupId: String,

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ux_maps_return_to_plan">К плану %1$s · этаж %2$d</string>
+</resources>

@@ -1,0 +1,155 @@
+using Avalonia;
+using Avalonia.Headless.XUnit;
+using Avalonia.Styling;
+using Avalonia.VisualTree;
+using Vograph.Core.Models;
+using Vograph.Core.Services;
+using Vograph.Desktop.Controls;
+using Vograph.Desktop.Features.Summary;
+using Vograph.Desktop.Services;
+using Vograph.Desktop.Shell;
+using Xunit;
+
+namespace Vograph.Desktop.Tests;
+
+public class SummaryTests : UiTest
+{
+    private static readonly DateTime Mon7 = new(2026, 9, 14, 8, 0, 0); // odd (week containing 1 Sep is week 1; 07.09 is even)
+
+    [Fact]
+    public void Odd_Even_And_Both_Aggregate_The_Fixture()
+    {
+        using var db = TestDb.Create();
+        var composer = new SummaryComposer(db.Services);
+
+        var odd = composer.Compose(1, Mon7);
+        Assert.True(odd.HasGroup);
+        Assert.Equal(5, odd.Total);
+        Assert.Equal(new[] { ("Пн", 2), ("Вт", 1), ("Ср", 1), ("Чт", 0), ("Пт", 0), ("Сб", 1) }, odd.ByDay.Select(c => (c.Name, c.Count)));
+        Assert.Equal(new[] { ("лекция", 3), ("практика", 2) }, odd.ByType.Select(c => (c.Name, c.Count)));
+        Assert.Equal(5, odd.Subjects.Count);
+        Assert.Contains(odd.Subjects, c => c.Name == "Матан" && c.Count == 1);      // renamed, type stripped
+        Assert.Contains(odd.Subjects, c => c.Name == "ОСН РОС ГОС" && c.Count == 1);
+        Assert.Equal(4, odd.Teachers.Count);                                          // the Tuesday lesson has no teacher
+        Assert.Equal(new[] { "493", "563*", "526*", "дистанционно" }.OrderBy(r => r), odd.Rooms.Select(r => r.Name).OrderBy(r => r));
+
+        var even = composer.Compose(2, Mon7);
+        Assert.Equal(2, even.Total);
+        Assert.Equal(new[] { ("ВЫСШ. МАТЕМАТ", 1), ("Матан", 1) }, even.Subjects.Select(c => (c.Name, c.Count))); // lecture renamed, practice not
+
+        var both = composer.Compose(0, Mon7);
+        Assert.Equal(7, both.Total);
+        Assert.Equal(new[] { 3, 1, 2, 0, 0, 1 }, both.ByDay.Select(c => c.Count));
+        Assert.Equal(("Матан", 2), (both.Subjects[0].Name, both.Subjects[0].Count));  // most frequent first
+        Assert.Equal(("Барт Е.Л.", 2), (both.Teachers[0].Name, both.Teachers[0].Count));
+        Assert.Equal(("493", 2), (both.Rooms[0].Name, both.Rooms[0].Count));
+
+        var current = composer.Compose(null, Mon7);
+        Assert.Equal(1, current.Parity);
+        Assert.True(current.IsOddToday);
+    }
+
+    [Fact]
+    public async Task Inversion_Swaps_Which_Xml_Week_Is_Odd()
+    {
+        using var db = TestDb.Create();
+        var s = db.Services.Db.GetSettings();
+        s.ParityInvert = true;
+        db.Services.Db.SaveSettings(s);
+        var odd = new SummaryComposer(db.Services).Compose(1, Mon7);
+        Assert.Equal(2, odd.Total); // the user's "odd" is now the XML even week
+        var current = new SummaryComposer(db.Services).Compose(null, Mon7);
+        Assert.Equal(2, current.Total); // the default date's effective timetable code, inverted once
+        Assert.Equal(1, current.Parity);
+        Assert.Equal(db.Services.Schedule.GetSchedule(Mon7.Date, TestDb.MyGroupId).Count, current.ByDay[0].Count);
+        Assert.Equal(Mon7.Date, current.DayDates![0]);
+        var vm = new SummaryViewModel(db.Services, new ShellViewModel(db.Services), () => Mon7);
+        await vm.ReloadAsync();
+        var first = vm.TotalText;
+        await vm.ReloadAsync();
+        Assert.Equal(first, vm.TotalText);
+        Assert.Equal(0, vm.SegmentIndex);
+    }
+
+    [Fact]
+    public void Summary_distinguishes_missing_copy_and_resolves_day_to_selected_parity()
+    {
+        using var db = TestDb.Create();
+        var composer = new SummaryComposer(db.Services);
+        var odd = composer.Compose(1, Mon7);
+        Assert.True(odd.HasCopy);
+        Assert.Equal(new DateTime(2026, 9, 14), odd.DayDates![0]);
+        var even = composer.Compose(2, Mon7);
+        Assert.Equal(new DateTime(2026, 9, 21), even.DayDates![0]);
+
+        var settings = db.Services.Db.GetSettings();
+        settings.MyGroupId = "missing-group";
+        db.Services.Db.SaveSettings(settings);
+        var missing = composer.Compose(null, Mon7);
+        Assert.True(missing.HasGroup);
+        Assert.False(missing.HasCopy);
+        Assert.Equal(0, missing.Total);
+    }
+
+    [Fact]
+    public void Co_Taught_Lesson_Counts_Each_Teacher()
+    {
+        var lessons = new[]
+        {
+            new Lesson { DayOfWeek = 1, Parity = 1, TimeStart = "09:00", SubjectRaw = "лек ФИЗИКА", TypeRaw = "лек", TeacherRaw = "Барт Е.Л.; Иванов С.П.", ClassroomRaw = "493;" },
+            new Lesson { DayOfWeek = 2, Parity = 1, TimeStart = "09:00", SubjectRaw = "пр ФИЗИКА", TypeRaw = "пр", TeacherRaw = "Иванов С.П.", ClassroomRaw = "493;" },
+        };
+        var model = SummaryComposer.Build(1, true, lessons, l => l.SubjectRaw, new Loc(new I18nService("ru")));
+        Assert.Equal(new[] { ("Иванов С.П.", 2), ("Барт Е.Л.", 1) }, model.Teachers.Select(t => (t.Name, t.Count)));
+        Assert.Equal(("493", 2), (model.Rooms[0].Name, model.Rooms[0].Count));
+    }
+
+    [Fact]
+    public async Task ViewModel_Segments_And_Subtitle()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        var vm = new SummaryViewModel(db.Services, shell, () => Mon7);
+
+        await vm.ReloadAsync();
+        Assert.Equal(0, vm.SegmentIndex);
+        Assert.Equal(new[] { "Нечетная", "Четная", "Обе" }, vm.SegmentItems);
+        Assert.Equal("5", vm.TotalText);
+        Assert.Equal(6, vm.DayBars.Count);
+        Assert.Equal(40, vm.DayBars[0].Height);   // the busiest day fills the bar
+        Assert.Equal(20, vm.DayBars[1].Height);
+        Assert.Equal(0, vm.DayBars[3].Height);
+
+        vm.SegmentIndex = 2;
+        await vm.ReloadAsync();
+        Assert.Equal("7", vm.TotalText);
+        Assert.Contains("7 пар", vm.Subtitle);
+    }
+
+    [AvaloniaFact]
+    public async Task Summary_Renders_Both_Themes_And_Segment_Click_Switches()
+    {
+        using var db = TestDb.Create();
+        db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        var shell = new ShellViewModel(db.Services);
+        shell.Register(SectionKey.Summary, () => new SummaryViewModel(db.Services, shell, () => Mon7));
+        await shell.StartAsync(allowNetwork: false);
+        var window = new MainWindow { DataContext = shell };
+        window.Show();
+
+        shell.NavigateTo(SectionKey.Summary);
+        var vm = Assert.IsType<SummaryViewModel>(shell.Current);
+        await Waits.Until(() => vm.TotalText == "5", "summary total");
+        Pump();
+        SetTheme(ThemeVariant.Dark);
+        Frames.Capture(window, "summary-dark");
+        SetTheme(ThemeVariant.Light);
+        Frames.Capture(window, "summary-light");
+
+        var seg = window.GetVisualDescendants().OfType<SegmentedControl>().Single();
+        Click(window, seg.GetVisualDescendants().OfType<Avalonia.Controls.Button>().Last()); // «Обе»
+        await Waits.Until(() => vm.TotalText == "7", "summary total after segment switch");
+        Assert.Equal("7", vm.TotalText);
+        AssertNoBindingErrors();
+    }
+}

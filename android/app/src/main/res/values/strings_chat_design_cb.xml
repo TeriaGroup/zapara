@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_design_quick_channels">Быстрые каналы</string>
+    <string name="chat_design_all_channels">Все каналы</string>
+    <string name="chat_design_context_title">В группе сейчас</string>
+    <string name="chat_design_context_collapse">Свернуть</string>
+    <string name="chat_design_context_expand">Развернуть</string>
+    <string name="chat_design_next_lesson">Ближайшая пара по расписанию: %1$s, %2$s · %3$s</string>
+    <string name="chat_design_next_lesson_room">Ближайшая пара по расписанию: %1$s, %2$s · %3$s · %4$s</string>
+    <string name="chat_design_active_ballots">Активных голосований: %1$d</string>
+    <string name="chat_design_open_ballots">Открыть</string>
+    <string name="chat_design_channel_unread">Непрочитанных сообщений в каналах: %1$d</string>
+    <string name="chat_design_compact_lesson">Пара %1$s</string>
+    <string name="chat_design_compact_ballots">Голосований: %1$d</string>
+    <string name="chat_design_compact_unread">Непрочитано: %1$d</string>
+</resources>

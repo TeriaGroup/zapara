@@ -1,0 +1,36 @@
+<resources>
+    <string name="ux60_chat_draft_preview">Черновик: %1$s</string>
+    <string name="ux60_chat_author_all">Все авторы</string>
+    <string name="ux60_chat_kind_materials">Материалы</string>
+    <string name="ux60_chat_kind_forms">Анкеты</string>
+    <string name="ux60_chat_kind_homework">Домашка</string>
+    <string name="ux60_chat_kind_schedule">Расписание</string>
+    <string name="ux60_chat_form_saved">Ответ сохранён · %1$s</string>
+    <string name="ux60_chat_ballot_discard_title">Удалить черновик опроса?</string>
+    <string name="ux60_chat_ballot_discard_body">Вопрос, варианты и срок будут удалены только в этом канале.</string>
+    <string name="ux60_chat_ballot_discard_confirm">Удалить черновик</string>
+    <string name="ux60_chat_media_load_image">Загрузить фото</string>
+    <string name="ux60_chat_media_load_voice">Загрузить аудио</string>
+    <string name="ux60_chat_media_load_circle">Загрузить видео-сообщение</string>
+    <string name="ux60_chat_photo_close">Закрыть фото</string>
+    <string name="ux60_chat_speed_accessible">Скорость воспроизведения %1$s</string>
+    <string name="ux60_chat_speed_failed">Не удалось изменить скорость. Сохранена предыдущая.</string>
+    <string name="ux60_chat_record_review">Проверить</string>
+    <string name="ux60_chat_record_review_title">Проверьте запись перед отправкой</string>
+    <string name="ux60_chat_record_discard">Удалить</string>
+    <string name="ux60_chat_record_again">Перезаписать</string>
+    <string name="ux60_chat_record_send">Отправить запись</string>
+    <string name="ux60_chat_record_send_failed">Не удалось передать запись в чат.</string>
+    <string name="ux60_chat_record_pending_warning">Запись сохранена здесь, и её можно отправить повторно.</string>
+    <string name="ux60_chat_record_pending_check_history">Результат прошлой отправки неизвестен. Сначала проверьте историю чата, чтобы не отправить запись дважды.</string>
+    <string name="ux60_chat_record_pending_sending">Отправляем проверенную запись…</string>
+    <string name="ux60_chat_record_pending_retry">Повторить отправку</string>
+    <string name="ux60_chat_record_pending_discard">Удалить запись</string>
+    <string name="ux60_chat_record_pending_discard_title">Удалить сохранённый файл записи?</string>
+    <string name="ux60_chat_record_pending_discard_body">Файл будет удалён с этого устройства. Если сервер уже принял запись, она останется в истории чата.</string>
+    <string name="ux60_chat_record_pending_discard_confirm">Удалить запись</string>
+    <string name="ux60_chat_group_save">Сохранить файл</string>
+    <string name="ux60_chat_group_saving">Сохраняем файл…</string>
+    <string name="ux60_chat_group_saved">Файл сохранён.</string>
+    <string name="ux60_chat_group_save_failed">Не удалось сохранить файл. Попробуйте ещё раз.</string>
+</resources>

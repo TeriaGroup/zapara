@@ -9,13 +9,25 @@ public class IntersectionService
 
     public record IntersectionResult(string FriendGroupName, string FriendColor, string Teacher, string Room, int Score, bool MatchesThreshold);
 
-    // For each myLesson on selected day, find friend intersections
+    public List<FriendGroup> ComparableFriends(string selectedGroupId, IReadOnlyList<FriendGroup> friends)
+    {
+        var groups = _db.GetAllGroups();
+        var cache = new TimetableApiCache(_db);
+        return friends.Where(friend => friend.Enabled).Take(5).Where(friend =>
+        {
+            var group = groups.FirstOrDefault(g => g.Name.Equals(friend.GroupName, StringComparison.OrdinalIgnoreCase) ||
+                g.Id.Equals(friend.GroupName, StringComparison.OrdinalIgnoreCase));
+            return group is not null && group.Id != selectedGroupId &&
+                (cache.Read(group.Id) is not null || group.LastFetchedAt is not null || _db.GetAllLessonsForGroup(group.Id).Count > 0) &&
+                cache.CanIntersect(selectedGroupId, group.Id);
+        }).ToList();
+    }
+
     public List<IntersectionResult> GetIntersections(Lesson myLesson, DateTime date, List<FriendGroup> friends, int strictness)
     {
         var results = new List<IntersectionResult>();
         if (friends.Count == 0) return results;
 
-        // Determine parity for date
         var settings = _db.GetSettings();
         DateTime periodStart = DateTime.TryParse(settings.PeriodStart, out var ps) ? ps : new DateTime(DateTime.Now.Year, 9, 1);
         int weekCount = settings.WeekCount > 0 ? settings.WeekCount : 2;
@@ -25,35 +37,25 @@ public class IntersectionService
         int dow = (int)date.DayOfWeek; if (dow == 0) dow = 7;
         if (dow == 7) return results;
 
-        // Need friend groupId resolution via Name -> Id
         var allGroups = _db.GetAllGroups();
-        var groupByName = allGroups.ToDictionary(g => g.Name, g => g.Id);
+        var groupByName = allGroups.GroupBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
 
         foreach (var friend in friends.Where(f => f.Enabled).Take(5))
         {
             if (!groupByName.TryGetValue(friend.GroupName, out var friendGroupId))
             {
-                // Try by Id if friend stored Id instead of Name? fallback try direct
+                // GroupName may already be a stored group id.
                 if (_db.GetGroup(friend.GroupName) != null) friendGroupId = friend.GroupName;
                 else continue;
             }
+            if (!new TimetableApiCache(_db).CanIntersect(myLesson.GroupId, friendGroupId)) continue;
             var friendLessons = _db.GetLessons(friendGroupId, dow, weekCode);
             foreach (var fl in friendLessons)
             {
                 if (!TimesOverlap(myLesson.TimeStart, myLesson.TimeEnd, fl.TimeStart, fl.TimeEnd)) continue;
-                int score = 0;
-                // New gradations per user (2026-09-01): нет на месте (no overlap handled as empty), в вузе, в том же корпусе, на том же этаже, в той же аудитории
-                bool sameRoom = !string.IsNullOrWhiteSpace(myLesson.RoomRaw) && !string.IsNullOrWhiteSpace(fl.RoomRaw) && myLesson.RoomRaw.Trim().Equals(fl.RoomRaw.Trim(), StringComparison.OrdinalIgnoreCase);
-                bool sameBuilding = !string.IsNullOrWhiteSpace(myLesson.BuildingRaw) && !string.IsNullOrWhiteSpace(fl.BuildingRaw) && myLesson.BuildingRaw.Trim().Equals(fl.BuildingRaw.Trim(), StringComparison.OrdinalIgnoreCase);
-                int floorMy = GetFloor(myLesson.RoomRaw);
-                int floorFr = GetFloor(fl.RoomRaw);
-                bool sameFloor = sameBuilding && floorMy != 0 && floorFr != 0 && floorMy == floorFr;
-                if (sameRoom) score = 100; // в той же аудитории
-                else if (sameFloor) score = 75; // на том же этаже
-                else if (sameBuilding) score = 50; // в том же корпусе
-                else score = 25; // в вузе (корпуса в упор, не красный) — same time, different building
+                int score = PlaceScore(myLesson, fl);
 
-                // threshold check
                 bool matches = score >= strictness;
                 // For threshold 0, any time overlap counts (score 0 >=0 true)
                 // For threshold 100, only sameRoom (100) counts
@@ -77,6 +79,37 @@ public class IntersectionService
         return sA < eB && sB < eA;
     }
 
+    /// <summary>Spatial category for an already established time overlap.</summary>
+    public static int PlaceScore(Lesson mine, Lesson other)
+    {
+        var myBuilding = CanonBuilding(mine.BuildingRaw);
+        var friendBuilding = CanonBuilding(other.BuildingRaw);
+        var sameBuilding = myBuilding is not null && friendBuilding is not null
+            && myBuilding.Equals(friendBuilding, StringComparison.OrdinalIgnoreCase);
+        var buildingsConflict = myBuilding is not null && friendBuilding is not null && !sameBuilding;
+        if (SameText(mine.RoomRaw, other.RoomRaw) && !buildingsConflict) return 100;
+        var floor = GetFloor(mine.RoomRaw);
+        if (sameBuilding && floor != 0 && floor == GetFloor(other.RoomRaw)) return 75;
+        return sameBuilding ? 50 : 25;
+    }
+
+    /// <summary>ВЦ is the computer centre inside ГК, not a third campus building. «main» is the English alias of ГК.</summary>
+    private static string? CanonBuilding(string? building)
+    {
+        if (string.IsNullOrWhiteSpace(building)) return null;
+        var t = building.Trim();
+        if (t.Equals("ВЦ", StringComparison.OrdinalIgnoreCase)
+            || t.Equals("ГК", StringComparison.OrdinalIgnoreCase)
+            || t.Equals("main", StringComparison.OrdinalIgnoreCase))
+            return "ГК";
+        if (t.Equals("УЛК", StringComparison.OrdinalIgnoreCase)) return "УЛК";
+        return t;
+    }
+
+    private static bool SameText(string? a, string? b) =>
+        !string.IsNullOrWhiteSpace(a) && !string.IsNullOrWhiteSpace(b)
+        && a.Trim().Equals(b.Trim(), StringComparison.OrdinalIgnoreCase);
+
     private static int GetFloor(string? roomRaw)
     {
         if (string.IsNullOrWhiteSpace(roomRaw)) return 0;
@@ -87,13 +120,4 @@ public class IntersectionService
         if (int.TryParse(digits[0].ToString(), out var f) && f >= 1 && f <= 9) return f;
         return 0;
     }
-
-    public static string ScoreToText(int score) => score switch
-    {
-        100 => "в той же аудитории",
-        75 => "на том же этаже",
-        50 => "в том же корпусе",
-        25 => "в вузе",
-        _ => "нет на месте"
-    };
 }

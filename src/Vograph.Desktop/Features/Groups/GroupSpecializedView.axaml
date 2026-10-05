@@ -1,0 +1,95 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:g="using:Vograph.Desktop.Features.Groups" xmlns:c="using:Vograph.Desktop.Controls" xmlns:d="using:Vograph.Desktop.Dialogs" x:Class="Vograph.Desktop.Features.Groups.GroupSpecializedView" x:DataType="g:GroupViewModel">
+ <ScrollViewer HorizontalScrollBarVisibility="Disabled"><StackPanel Margin="16" Spacing="12">
+  <TextBlock Text="{Binding SpecializedHint}" TextWrapping="Wrap" />
+  <StackPanel Spacing="8" IsVisible="{Binding ShowMaterials}"><TextBlock Classes="subject" Text="Материалы темы" /><TextBlock Classes="muted caption" Text="Файлы и ссылки из этой темы. Прикрепить материал можно скрепкой внизу." TextWrapping="Wrap" />
+   <TextBlock Classes="muted" Text="Загружаем материалы…" IsVisible="{Binding MaterialsLoading}" />
+   <StackPanel Spacing="6" IsVisible="{Binding MaterialsLoadFailed}"><TextBlock Text="{Binding MaterialsErrorText}" TextWrapping="Wrap" /><Button Content="Повторить загрузку" Command="{Binding RetryMaterialsCommand}" HorizontalAlignment="Left" /></StackPanel>
+   <TextBlock Classes="muted" Text="Материалов в теме пока нет." IsVisible="{Binding NoMaterials}" />
+   <TextBox Text="{Binding MaterialSearch, Mode=TwoWay}" PlaceholderText="Найти материал или автора" AutomationProperties.Name="Поиск загруженных материалов" />
+   <WrapPanel ItemSpacing="8"><TextBlock Classes="muted caption" Text="{Binding MaterialResultCount}" VerticalAlignment="Center" /><Button Content="Очистить поиск" Command="{Binding ClearMaterialSearchCommand}" IsVisible="{Binding MaterialSearch, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" /></WrapPanel>
+   <TextBlock Text="Среди загруженных материалов совпадений нет" IsVisible="{Binding NoMaterialMatches}" />
+   <Button Content="Загрузить ещё материалы" Command="{Binding LoadOlderCommand}" IsVisible="{Binding HasMore}" IsEnabled="{Binding CanLoadOlder}" />
+   <ItemsControl ItemsSource="{Binding VisibleMaterials}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:GroupMessageRow"><Border Classes="card" Margin="0,4"><StackPanel Spacing="6"><TextBlock Text="{Binding Body}" TextWrapping="Wrap" /><TextBlock Classes="muted caption" Text="{Binding Author}" /><Button Content="Скачать материал" Command="{Binding DownloadCommand}" IsVisible="{Binding CanDownload}" /><Button Content="Открыть ссылку" Command="{Binding OpenLinkCommand}" IsVisible="{Binding HasLink}" /></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+  </StackPanel>
+  <StackPanel Spacing="10" IsVisible="{Binding ShowForms}">
+   <StackPanel Spacing="8" IsVisible="{Binding CanCreateForm}">
+    <Button Content="{Binding FormPreviewCaption}" Command="{Binding ToggleFormPreviewCommand}" HorizontalAlignment="Left" />
+    <StackPanel Spacing="8" IsVisible="{Binding ShowFormEditor}">
+    <TextBlock Classes="subject" Text="Новая анкета" />
+    <TextBox Text="{Binding FormTitle}" PlaceholderText="Название анкеты" MaxLength="120" />
+    <TextBox Text="{Binding FormDescription}" PlaceholderText="Описание" AcceptsReturn="True" TextWrapping="Wrap" />
+    <TextBox Text="{Binding FormDeadline}" PlaceholderText="Срок: дд.мм.гггг чч:мм (необязательно)" />
+    <CheckBox Content="Анонимные ответы" IsChecked="{Binding FormAnonymous}" />
+    <TextBlock Classes="muted caption" Text="Вопросы и анонимность после публикации неизменны. Ответы доступны автору анкеты." TextWrapping="Wrap" />
+    <ItemsControl ItemsSource="{Binding FormQuestions}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceQuestionEditor">
+     <Border Classes="card" Margin="0,4"><StackPanel Spacing="6">
+      <TextBox Text="{Binding Title}" PlaceholderText="Вопрос" />
+      <ComboBox ItemsSource="{Binding QuestionKinds}" SelectedItem="{Binding Kind}" />
+      <CheckBox Content="Обязательный вопрос" IsChecked="{Binding Required}" />
+      <TextBox Text="{Binding OptionsText}" PlaceholderText="Каждый вариант с новой строки" AcceptsReturn="True" TextWrapping="Wrap" IsVisible="{Binding HasChoices}" />
+      <WrapPanel ItemSpacing="6"><Button Content="Выше" IsEnabled="{Binding CanMoveUp}" Command="{Binding $parent[UserControl].((g:GroupViewModel)DataContext).MoveFormQuestionUpCommand}" CommandParameter="{Binding}" /><Button Content="Ниже" IsEnabled="{Binding CanMoveDown}" Command="{Binding $parent[UserControl].((g:GroupViewModel)DataContext).MoveFormQuestionDownCommand}" CommandParameter="{Binding}" /><Button Content="Дублировать вопрос" Command="{Binding $parent[UserControl].((g:GroupViewModel)DataContext).DuplicateFormQuestionCommand}" CommandParameter="{Binding}" /></WrapPanel>
+      <Button Content="Убрать вопрос" Command="{Binding $parent[UserControl].((g:GroupViewModel)DataContext).RemoveFormQuestionCommand}" CommandParameter="{Binding}" />
+     </StackPanel></Border>
+    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    <Border Classes="card" IsVisible="{Binding HasPendingRemoveFormQuestion}"><StackPanel Spacing="6"><TextBlock Text="{Binding PendingRemoveFormQuestionText}" TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Content="Отмена" Command="{Binding CancelRemoveFormQuestionCommand}" /><Button Classes="danger" Content="Убрать вопрос" Command="{Binding ConfirmRemoveFormQuestionCommand}" /></WrapPanel></StackPanel></Border>
+    <WrapPanel ItemSpacing="8"><Button Content="Добавить вопрос" Command="{Binding AddFormQuestionCommand}" /><Button Classes="primary" Content="Опубликовать анкету" Command="{Binding PublishFormCommand}" IsEnabled="{Binding !IsBusy}" /><Button Content="Очистить черновик" Command="{Binding RequestClearFormDraftCommand}" /></WrapPanel>
+    <Border Classes="card" IsVisible="{Binding ShowClearFormDraft}"><StackPanel Spacing="6"><TextBlock Text="Удалить текст и вопросы этого черновика? Опубликованные анкеты останутся." TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Content="Оставить черновик" Command="{Binding CancelClearFormDraftCommand}" /><Button Classes="danger" Content="Очистить" Command="{Binding ConfirmClearFormDraftCommand}" /></WrapPanel></StackPanel></Border>
+    <TextBlock Text="{Binding FormValidation}" TextWrapping="Wrap" IsVisible="{Binding FormValidation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    </StackPanel>
+    <Border Classes="card" IsVisible="{Binding ShowFormPreview}"><StackPanel Spacing="8">
+      <TextBlock Classes="subject" Text="{Binding FormTitle}" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding FormDescription}" TextWrapping="Wrap" />
+      <TextBlock Classes="muted caption" Text="{Binding FormDeadline}" />
+      <TextBlock Classes="muted caption" Text="Анонимные ответы" IsVisible="{Binding FormAnonymous}" />
+      <ItemsControl ItemsSource="{Binding FormQuestions}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceQuestionEditor"><StackPanel Spacing="4" Margin="0,5"><TextBlock Text="{Binding Title}" TextWrapping="Wrap" /><TextBlock Classes="muted caption" Text="{Binding Kind.Label}" /><TextBlock Text="{Binding OptionsText}" TextWrapping="Wrap" IsVisible="{Binding HasChoices}" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    </StackPanel></Border>
+   </StackPanel>
+   <TextBox Text="{Binding FormSearch, Mode=TwoWay}" PlaceholderText="Найти анкету" AutomationProperties.Name="Поиск анкет" />
+   <ComboBox ItemsSource="{Binding FormStatuses}" SelectedIndex="{Binding FormStatusIndex}" MinWidth="180" AutomationProperties.Name="Статус анкеты" />
+   <WrapPanel ItemSpacing="8"><TextBlock Text="{Binding FormResultCount}" VerticalAlignment="Center" /><Button Content="Сбросить фильтры" Command="{Binding ResetFormFiltersCommand}" IsVisible="{Binding HasFormFilters}" /></WrapPanel>
+   <TextBlock Text="Ничего не найдено. Измените запрос или фильтр." IsVisible="{Binding NoFormMatches}" />
+   <ItemsControl ItemsSource="{Binding VisibleForms}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceFormRow">
+    <Border Classes="card" Margin="0,4"><StackPanel Spacing="8">
+     <TextBlock Classes="subject" Text="{Binding Title}" TextWrapping="Wrap" /><TextBlock Text="{Binding Description}" TextWrapping="Wrap" /><TextBlock Classes="muted caption" Text="{Binding Summary}" TextWrapping="Wrap" />
+     <TextBlock Classes="muted caption" Text="{Binding RequiredProgressText}" />
+     <Button Content="{Binding RestoreCaption}" Command="{Binding RequestRestoreCommand}" IsVisible="{Binding CanRestoreAnswers}" HorizontalAlignment="Left" />
+     <Border Classes="card" IsVisible="{Binding ConfirmRestoreVisible}"><StackPanel Spacing="6"><TextBlock Text="Вернуть сохранённые ответы? Несохранённый ввод будет потерян." TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Content="Продолжить редактирование" Command="{Binding CancelRestoreCommand}" /><Button Classes="danger" Content="Вернуть ответы" Command="{Binding ConfirmRestoreCommand}" /></WrapPanel></StackPanel></Border>
+     <ItemsControl ItemsSource="{Binding Questions}" IsEnabled="{Binding CanRespond}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceAnswerRow"><StackPanel Spacing="6" Margin="0,6">
+      <TextBlock Text="{Binding Title}" TextWrapping="Wrap" /><TextBox Text="{Binding Text}" IsVisible="{Binding IsText}" AcceptsReturn="{Binding IsLong}" TextWrapping="Wrap" />
+      <ItemsControl ItemsSource="{Binding Options}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceAnswerChoice"><CheckBox Content="{Binding Label}" IsChecked="{Binding Selected}" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+      <Button Content="Снять выбор" Command="{Binding ClearChoicesCommand}" IsVisible="{Binding HasChoiceSelection}" HorizontalAlignment="Left" />
+      <TextBlock Text="Обязательный ответ пропущен" IsVisible="{Binding IsMissing}" Classes="muted caption" />
+     </StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+     <TextBlock Text="{Binding ValidationMessage}" IsVisible="{Binding HasMissingRequired}" TextWrapping="Wrap" />
+     <Button Content="К первому пропуску" Click="FocusFirstMissing" IsVisible="{Binding HasMissingRequired}" HorizontalAlignment="Left" />
+     <Button Classes="primary" Content="Сохранить мой ответ" Command="{Binding SubmitCommand}" IsVisible="{Binding CanRespond}" HorizontalAlignment="Left" />
+     <WrapPanel IsVisible="{Binding CanViewResponses}" ItemSpacing="8"><Button Content="Ответы участников" Command="{Binding ResponsesCommand}" /><Button Content="{Binding ToggleResponsesCaption}" Command="{Binding ToggleResponsesCommand}" IsVisible="{Binding HasLoadedResponses}" /><Button Content="Экспорт CSV" Command="{Binding ExportCommand}" /></WrapPanel>
+     <TextBlock Text="Загружаем ответы…" IsVisible="{Binding ResponseLoading}" /><TextBlock Text="Все ответы загружены" IsVisible="{Binding ResponsesComplete}" Classes="muted caption" /><ItemsControl ItemsSource="{Binding Responses}" IsVisible="{Binding ShowResponses}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,6" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    </StackPanel></Border>
+   </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+  </StackPanel>
+  <StackPanel IsVisible="{Binding ShowChannelHomework}" Spacing="10">
+   <StackPanel IsVisible="{Binding ShowSharedHomeworkEditor}" Spacing="10"><TextBlock Classes="subject" Text="Задание участникам группы" />
+    <TextBlock Classes="muted caption" Text="Укажите задание и получателей. Каждый отмечает выполнение только у себя." TextWrapping="Wrap" />
+    <StackPanel Spacing="8" IsEnabled="{Binding CanEditSharedHomework}">
+     <TextBox Text="{Binding SharedHomeworkTitle}" PlaceholderText="Предмет или название задания" AutomationProperties.Name="Название задания" />
+     <TextBox Text="{Binding SharedHomeworkBody}" PlaceholderText="Что нужно сделать" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="88" AutomationProperties.Name="Текст задания" />
+     <TextBox Text="{Binding SharedHomeworkDeadline}" PlaceholderText="Срок: дд.мм.гггг чч:мм (необязательно)" AutomationProperties.Name="Срок задания" />
+     <d:HomeworkAudienceView DataContext="{Binding HomeworkRecipients}" />
+    </StackPanel>
+    <WrapPanel ItemSpacing="8"><Button Classes="primary" Content="{Binding SharedHomeworkSaveLabel}" Command="{Binding SaveSharedHomeworkCommand}" IsEnabled="{Binding CanSaveSharedHomework}" /><Button Content="Новое задание" Command="{Binding NewSharedHomeworkCommand}" IsEnabled="{Binding CanEditSharedHomework}" /></WrapPanel>
+   </StackPanel>
+   <TextBlock Text="{Binding ChannelHomeworkSummary}" Classes="muted caption" TextWrapping="Wrap" />
+   <c:SegmentedControl Items="{Binding HomeworkFilters}" SelectedIndex="{Binding HomeworkFilter}" />
+   <ComboBox ItemsSource="{Binding HomeworkSortOptions}" SelectedIndex="{Binding HomeworkSortIndex}" MinWidth="180" HorizontalAlignment="Left" AutomationProperties.Name="Порядок заданий группы" />
+   <Button Content="Обновить задания" Command="{Binding ReloadChannelHomeworkCommand}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" />
+   <TextBlock IsVisible="{Binding NoVisibleHomework}" Text="В этом списке заданий пока нет" Classes="muted caption" />
+   <ItemsControl ItemsSource="{Binding VisibleChannelHomeworks}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceHomeworkRow"><Border Classes="card" Margin="0,4"><StackPanel Spacing="6">
+    <TextBlock Classes="subject" Text="{Binding Title}" TextWrapping="Wrap" /><TextBlock Text="{Binding Body}" TextWrapping="Wrap" /><TextBlock Classes="muted caption" Text="{Binding Deadline}" />
+    <TextBlock Classes="muted caption" Text="{Binding AudienceLabel}" TextWrapping="Wrap" /><TextBlock Classes="muted caption" Text="{Binding CompletionHint}" TextWrapping="Wrap" />
+    <WrapPanel ItemSpacing="8"><Button Content="{Binding CompletionLabel}" Command="{Binding ToggleCommand}" IsEnabled="{Binding Writable}" IsVisible="{Binding Item.CanComplete}" /><Button Content="Изменить" Command="{Binding EditCommand}" IsVisible="{Binding Editable}" /></WrapPanel>
+   </StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+  </StackPanel>
+  <StackPanel IsVisible="{Binding ShowChannelSchedule}" Spacing="10"><WrapPanel ItemSpacing="6"><Button Content="Назад" Command="{Binding ChannelPreviousCommand}" /><Button Content="Сегодня" Command="{Binding ChannelTodayCommand}" /><Button Content="Завтра" Command="{Binding ChannelTomorrowCommand}" /><Button Content="Послезавтра" Command="{Binding ChannelAfterTomorrowCommand}" /><Button Content="Вперёд" Command="{Binding ChannelNextCommand}" /></WrapPanel><CalendarDatePicker SelectedDate="{Binding ChannelScheduleDate}" AutomationProperties.Name="Дата расписания группы" /><TextBlock Text="{Binding ChannelScheduleSummary}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding ChannelScheduleDates}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" LineSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="g:SpaceScheduleDate"><c:SelectionButton Content="{Binding Label}" IsChecked="{Binding Selected,Mode=OneWay}" Command="{Binding SelectCommand}" Classes.primary="{Binding Selected}" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><Button Content="{Binding ChannelScheduleNextCaption}" Command="{Binding ChannelNextStudyCommand}" IsVisible="{Binding ChannelScheduleNextCaption,Converter={x:Static StringConverters.IsNotNullOrEmpty}}" /><ItemsControl ItemsSource="{Binding ChannelSchedule}"><ItemsControl.ItemTemplate><DataTemplate><Border Classes="card" Margin="0,4"><TextBlock Text="{Binding}" TextWrapping="Wrap" /></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel>
+ </StackPanel></ScrollViewer>
+</UserControl>

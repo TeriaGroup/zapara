@@ -1,0 +1,903 @@
+package ru.bgtu_voenmeh.zapara.ui.account
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import ru.bgtu_voenmeh.zapara.R
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountHttpClient
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountClientFailure
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountSessionManager
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountReauthProof
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountServerScope
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountSession
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountUser
+import ru.bgtu_voenmeh.zapara.data.accounts.AccountVaultEntry
+import ru.bgtu_voenmeh.zapara.data.accounts.MemoryAccountSessionVault
+import ru.bgtu_voenmeh.zapara.data.accounts.testToken
+import ru.bgtu_voenmeh.zapara.data.api.FakeHttp
+import ru.bgtu_voenmeh.zapara.data.api.HttpCall
+import ru.bgtu_voenmeh.zapara.data.api.HttpReply
+import java.time.Instant
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class AccountUiStateTest {
+    @Test fun changing_password_requires_both_valid_distinct_values() {
+        val account = AccountUiState(ready = true, configured = true, guest = false, hasPassword = true)
+        assertFalse(account.canChangePassword)
+        assertFalse(account.copy(currentPassword = "long-password-12", newPassword = "short").canChangePassword)
+        assertFalse(account.copy(currentPassword = "long-password-12", newPassword = "long-password-12").canChangePassword)
+        assertTrue(account.copy(currentPassword = "long-password-12", newPassword = "different-password-12").canChangePassword)
+        assertFalse(account.copy(currentPassword = "long-password-12", newPassword = "different-password-12", busy = true).canChangePassword)
+    }
+    @Test fun protected_actions_wait_for_password_proof_but_external_identity_can_start_its_own_proof() {
+        val passwordAccount = AccountUiState(ready = true, configured = true, guest = false, hasPassword = true)
+        assertFalse(passwordAccount.canPerformProtectedAction)
+        assertFalse(passwordAccount.copy(proof = "short").canPerformProtectedAction)
+        assertTrue(passwordAccount.copy(proof = "password-proof").canPerformProtectedAction)
+        assertTrue(passwordAccount.copy(hasPassword = false).canPerformProtectedAction)
+    }
+    @Test fun login_and_registration_readiness_uses_the_existing_account_contract() {
+        val empty = AccountUiState(ready = true, configured = true, guest = true)
+        assertFalse(empty.canSubmitCredentials)
+        assertFalse(empty.usernameValid)
+        assertFalse(empty.passwordValid)
+        val ready = empty.reduce(AccountEvent.Username("test.user"))
+            .reduce(AccountEvent.Password("long-password-12"))
+            .copy(registrationAvailable = true)
+        assertTrue(ready.canSubmitCredentials)
+        assertFalse(ready.copy(registration = true).canSubmitCredentials)
+        assertTrue(ready.copy(registration = true, documentsAccepted = true).canSubmitCredentials)
+        assertFalse(ready.copy(registration = true, documentsAccepted = true,
+            displayName = "\u0001").canSubmitCredentials)
+    }
+    @Test fun profile_name_draft_keeps_confirmed_header_until_save_and_cancel_restores_it() {
+        val state = AccountUiState(ready = true, configured = true, guest = false,
+            accountName = "Подтверждённое имя", displayName = "Подтверждённое имя",
+            profileNameBaseline = "Подтверждённое имя")
+        val edited = state.reduce(AccountEvent.ProfileName("Новое имя"))
+        assertTrue(edited.canSaveProfile)
+        assertEquals("Подтверждённое имя", edited.accountName)
+        assertEquals("Подтверждённое имя", edited.reduce(AccountEvent.CancelProfile).displayName)
+        assertFalse(edited.reduce(AccountEvent.CancelProfile).canSaveProfile)
+        val legal = edited.copy(password = "secret", proof = "proof").reduce(AccountEvent.ClearSensitive)
+        assertEquals("Новое имя", legal.displayName)
+        assertEquals("", legal.password)
+        assertEquals("", legal.proof)
+    }
+    @Test fun busy_save_does_not_make_a_valid_profile_name_invalid() {
+        val saving = AccountUiState(ready = true, configured = true, guest = false,
+            displayName = "Новое имя", profileNameBaseline = "Старое имя", busy = true)
+        assertTrue(saving.profileNameValid)
+        assertFalse(saving.canSaveProfile)
+        assertFalse(saving.copy(displayName = "\u0001").profileNameValid)
+    }
+    @Test fun device_pages_deduplicate_by_family_and_keep_newer_device_state() {
+        val first = AccountDeviceRow("a", "device-a", "Телефон", "android", false)
+        val updated = first.copy(current = true)
+        val next = AccountDeviceRow("b", "device-b", "Планшет", "android", false)
+        assertEquals(listOf(updated, next), mergeAccountDevices(listOf(first), listOf(updated, next)))
+    }
+    @Test fun duplicate_device_names_have_distinct_safe_labels_and_keep_exact_revoke_ids() {
+        val a = AccountDeviceRow("family-a", "11111111-1111-4111-8111-111111111111", "Android", "android", true)
+        val b = AccountDeviceRow("family-b", "22222222-2222-4222-8222-222222222222", "Android", "windows", false)
+        assertTrue(a.label.contains("Android"))
+        assertTrue(b.label.contains("Windows"))
+        assertTrue(a.label != b.label)
+        assertEquals("family-b", b.familyId)
+    }
+
+    @Test fun recovery_and_revoke_actions_require_exact_ready_target() {
+        val initial = AccountUiState(ready = true, configured = true, recoveryAvailable = true)
+        assertFalse(initial.canRequestRecovery)
+        val requested = initial.reduce(AccountEvent.RecoveryUsername("Test.User"))
+        assertTrue(requested.canRequestRecovery)
+        assertFalse(requested.canConfirmRecovery)
+        assertTrue(requested.copy(recoveryStep = AccountRecoveryStep.Confirm, proof = "code",
+            newPassword = "password12ab").canConfirmRecovery)
+        val target = requested.copy(devices = listOf(AccountDeviceRow("family-a", "device-a", "Телефон", "android", true)))
+            .reduce(AccountEvent.RequestRevoke("family-a"))
+        assertEquals("family-a", target.confirmRevoke)
+        assertNull(target.reduce(AccountEvent.CancelRevoke).reduce(AccountEvent.RequestRevoke("missing")).confirmRevoke)
+        assertNull(target.reduce(AccountEvent.CancelRevoke).confirmRevoke)
+        assertEquals("all", target.reduce(AccountEvent.RequestRevokeAll).confirmRevoke)
+    }
+
+    @Test fun failed_capability_lookup_is_ready_with_retry_and_recovers() = runTest(dispatcher) {
+        var attempts = 0
+        val http = FakeHttp { call -> when (route(call)) {
+            "GET auth/capabilities" -> {
+                attempts++
+                if (attempts == 1) throw java.io.IOException("offline")
+                capsJson(recovery = true)
+            }
+            else -> error(route(call))
+        } }
+        val vm = guestVm(http, openUrl = {})
+        advanceUntilIdle()
+        assertTrue(vm.state.value.ready)
+        assertTrue(vm.state.value.capabilitiesError)
+        vm.onEvent(AccountEvent.RetryCapabilities)
+        advanceUntilIdle()
+        assertFalse(vm.state.value.capabilitiesError)
+        assertTrue(vm.state.value.recoveryAvailable)
+    }
+    @Test fun a_pending_external_provider_cannot_be_replaced_until_explicit_cancel() = runTest(dispatcher) {
+        var pending: ExternalReturn.Pending? = null
+        val http = FakeHttp { call -> when (route(call)) {
+            "GET auth/capabilities" -> capsJson(vk = true, yandex = true)
+            "POST auth/external/vk/start", "POST auth/external/yandex/start" ->
+                json("""{"transactionId":"$txId","authorizeUrl":"https://example.invalid/auth","expiresAt":"$expires"}""")
+            else -> error(route(call))
+        } }
+        val vm = AccountViewModel(AccountRuntime(
+            client = AccountHttpClient(http, scope()), vault = MemoryAccountSessionVault(scope().key),
+            strings = ::copy, deviceId = { device }, isGuest = { true },
+            commitSession = { _, _ -> true }, logout = { _ -> true }, openUrl = {},
+            writeExport = { _, _ -> }, capabilitiesTransport = http,
+            scopeBase = "https://example.invalid/root/", serverKey = scope().key, ioDispatcher = dispatcher,
+            pendingExternal = { pending },
+            rememberExternal = { id, _, _, _, provider -> pending = ExternalReturn.Pending(id, provider) },
+            cancelExternal = { id -> if (pending?.transactionId == id) { pending = null; true } else false }
+        ))
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.StartVk); advanceUntilIdle()
+        assertTrue(vm.state.value.externalPending)
+        vm.onEvent(AccountEvent.StartYandex); advanceUntilIdle()
+        assertEquals(0, http.requests.count { route(it) == "POST auth/external/yandex/start" })
+        vm.onEvent(AccountEvent.CancelExternal); advanceUntilIdle()
+        vm.onEvent(AccountEvent.StartYandex); advanceUntilIdle()
+        assertEquals(1, http.requests.count { route(it) == "POST auth/external/yandex/start" })
+    }
+    @Test fun failed_local_logout_keeps_the_actual_account_visible_for_retry() = runTest(dispatcher) {
+        val http = FakeHttp { call -> when (route(call)) {
+            "GET auth/capabilities" -> capsJson()
+            "GET account/identities" -> json("[]")
+            "GET account/authentication-methods" -> json("""{"methods":["password"]}""")
+            "POST auth/logout" -> json("{}")
+            else -> error(route(call))
+        } }
+        val vm = signedIn(http, testToken("za_", 3), logoutResult = false)
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.RequestLogout)
+        vm.onEvent(AccountEvent.ConfirmLogout)
+        advanceUntilIdle()
+        assertFalse(vm.state.value.guest)
+        assertTrue(vm.state.value.showAccount)
+        assertEquals(copy(R.string.account_transition_failed), vm.state.value.status)
+    }
+    @Test fun delayed_devices_from_account_a_cannot_replace_account_b_after_external_sign_in() = runTest(dispatcher) {
+        val heldDevices = CompletableDeferred<HttpReply>()
+        val http = FakeHttp { call -> when (route(call)) {
+            "GET auth/capabilities" -> capsJson()
+            "GET account/identities" -> json("[]")
+            "GET account/me" -> passwordMeJson()
+            "GET account/devices?limit=20" -> heldDevices.await()
+            else -> error(route(call))
+        } }
+        val vault = MemoryAccountSessionVault(scope().key)
+        vault.acquire().use { it.write(AccountVaultEntry.ready(scope().key, session(testToken("za_", 3)))) }
+        val vm = AccountViewModel(AccountRuntime(AccountHttpClient(http, scope()), vault, ::copy,
+            { device }, { false }, { _, _ -> true }, { _ -> true }, {},
+            writeExport = { _, _ -> }, capabilitiesTransport = http,
+            scopeBase = "https://example.invalid/root/", serverKey = scope().key, ioDispatcher = dispatcher))
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.LoadDevices)
+        testScheduler.runCurrent()
+        assertTrue(http.requests.any { route(it) == "GET account/devices?limit=20" })
+        val b = session(testToken("za_", 4)).copy(user = AccountUser(other, "other", "Другой", Instant.parse(created)), familyId = other)
+        vault.acquire().use { it.write(AccountVaultEntry.ready(scope().key, b)) }
+        vm.externalResult(ExternalReturnResult.SignedIn)
+        heldDevices.complete(json(devicesJson()))
+        advanceUntilIdle()
+        assertEquals("Другой", vm.state.value.accountName)
+        assertTrue(vm.state.value.devices.isEmpty())
+    }
+    private val dispatcher = StandardTestDispatcher()
+    private val family = "11111111-1111-4111-8111-111111111111"
+    private val device = "22222222-2222-4222-8222-222222222222"
+    private val exportId = "33333333-3333-4333-8333-333333333333"
+    private val txId = "44444444-4444-4444-8444-444444444444"
+    private val other = "55555555-5555-4555-8555-555555555555"
+    private val created = "2026-09-01T00:00:00Z"
+    private val seen = "2026-09-08T12:00:00Z"
+    private val expires = "2026-10-08T00:00:00Z"
+    private val proof = opaque(7)
+
+    @Before fun setMain() { Dispatchers.setMain(dispatcher) }
+    @After fun reset() { Dispatchers.resetMain() }
+
+    @Test
+    fun guest_card_is_not_a_nav_section() {
+        val guest = AccountUiState(ready = true, configured = true, guest = true, status = "Гостевой профиль: данные доступны без аккаунта и сети.")
+        assertTrue(guest.guest)
+        assertFalse(guest.busy)
+        val account = guest.copy(guest = false, accountName = "Test.User")
+        assertFalse(account.guest)
+        assertTrue(account.accountName.isNotBlank())
+    }
+
+    @Test
+    fun yandex_return_updates_existing_account_screen_with_provider_name() = runTest(dispatcher) {
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson(yandex = true)
+                "GET account/identities" -> json("""[{"provider":"yandex","linkedAt":"$seen"}]""")
+                "GET account/me" -> json("""{"user":{"userId":"$family","username":"u_generated","displayName":"Глеб Иванов","createdAt":"$created"},"familyId":"$family","authenticationMethods":["yandex"]}""")
+                else -> error(route(call))
+            }
+        }
+        val vault = MemoryAccountSessionVault(scope().key)
+        var guest = true
+        val vm = AccountViewModel(AccountRuntime(
+            client = AccountHttpClient(http, scope()), vault = vault, strings = ::copy,
+            deviceId = { device }, isGuest = { guest }, commitSession = { _, _ -> true },
+            logout = { _ -> true }, openUrl = {}, writeExport = { _, _ -> },
+            capabilitiesTransport = http, scopeBase = "https://example.invalid/root/", serverKey = scope().key,
+            ioDispatcher = dispatcher
+        ))
+        advanceUntilIdle()
+        assertTrue(vm.state.value.showGuestAuth)
+        guest = false
+        val session = session(testToken("za_", 3)).copy(user = AccountUser(family, "u_generated", "Глеб Иванов", Instant.parse(created)))
+        vault.acquire().use { it.write(AccountVaultEntry.ready(scope().key, session)) }
+        vm.externalResult(ExternalReturnResult.SignedIn)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.showAccount)
+        assertEquals("Глеб Иванов", vm.state.value.accountName)
+        assertEquals(false, vm.state.value.hasPassword)
+        assertTrue(vm.state.value.identities.any { it.provider == "yandex" })
+    }
+
+    @Test
+    fun transient_refresh_failure_after_return_does_not_claim_session_expired() = runTest(dispatcher) {
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson(yandex = true)
+                "POST auth/refresh" -> throw java.io.IOException("offline")
+                else -> error(route(call))
+            }
+        }
+        val vault = MemoryAccountSessionVault(scope().key)
+        vault.acquire().use { it.write(AccountVaultEntry.ready(scope().key, session(testToken("za_", 3)))) }
+        val client = AccountHttpClient(http, scope())
+        val vm = AccountViewModel(AccountRuntime(
+            client = client, vault = vault, strings = ::copy,
+            deviceId = { device }, isGuest = { false }, commitSession = { _, _ -> true },
+            logout = { _ -> true }, openUrl = {}, writeExport = { _, _ -> },
+            capabilitiesTransport = http, scopeBase = "https://example.invalid/root/", serverKey = scope().key,
+            ioDispatcher = dispatcher,
+            sessions = AccountSessionManager(client, vault) { Instant.parse(seen) }
+        ))
+        advanceUntilIdle()
+        vm.externalResult(ExternalReturnResult.SignedIn)
+        advanceUntilIdle()
+        assertEquals(copy(R.string.account_failed), vm.state.value.status)
+    }
+
+    @Test
+    fun provider_only_account_starts_yandex_verification_for_export_without_asking_for_password() = runTest(dispatcher) {
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson(yandex = true)
+                "GET account/identities" -> json("""[{"provider":"yandex","linkedAt":"$seen"}]""")
+                "GET account/me" -> json("""{"user":{"userId":"$family","username":"u_generated","displayName":"Глеб","createdAt":"$created"},"familyId":"$family","authenticationMethods":["yandex"]}""")
+                "POST auth/external/yandex/start" -> {
+                    val body = String(call.body!!)
+                    assertTrue(body.contains("\"purpose\":\"reauth\""))
+                    assertTrue(body.contains("\"proofPurpose\":\"export\""))
+                    json("""{"transactionId":"$txId","authorizeUrl":"https://example.invalid/mock/authorize","expiresAt":"$seen"}""")
+                }
+                else -> error(route(call))
+            }
+        }
+        val vm = signedIn(http, testToken("za_", 3))
+        advanceUntilIdle()
+        assertEquals(false, vm.state.value.hasPassword)
+        assertFalse(vm.state.value.showPasswordProof)
+        vm.onEvent(AccountEvent.CreateExport)
+        advanceUntilIdle()
+        assertTrue(http.requests.any { route(it) == "POST auth/external/yandex/start" })
+        assertTrue(http.requests.none { route(it) == "POST account/reauthenticate" })
+    }
+
+    @Test
+    fun provider_verification_completes_export_without_application_password() = runTest(dispatcher) {
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson(yandex = true)
+                "GET account/identities" -> json("""[{"provider":"yandex","linkedAt":"$seen"}]""")
+                "GET account/me" -> json("""{"user":{"userId":"$family","username":"u_generated","displayName":"Глеб","createdAt":"$created"},"familyId":"$family","authenticationMethods":["yandex"]}""")
+                "POST account/exports" -> {
+                    assertEquals("""{"proofToken":"$proof"}""", String(call.body!!))
+                    json(exportJson(), 202)
+                }
+                else -> error(route(call))
+            }
+        }
+        val vm = signedIn(http, testToken("za_", 3))
+        advanceUntilIdle()
+        vm.externalResult(ExternalReturnResult.Verified(AccountReauthProof(proof, "export", Instant.parse(expires))))
+        advanceUntilIdle()
+        assertTrue(vm.state.value.exportReady)
+        assertTrue(http.requests.any { route(it) == "POST account/exports" })
+        assertFalse(vm.state.value.guest)
+    }
+
+    @Test
+    fun provider_proof_starts_link_of_second_identity_without_password() = runTest(dispatcher) {
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson(vk = true, yandex = true)
+                "GET account/identities" -> json("""[{"provider":"yandex","linkedAt":"$seen"}]""")
+                "GET account/me" -> json("""{"user":{"userId":"$family","username":"u_generated","displayName":"Глеб","createdAt":"$created"},"familyId":"$family","authenticationMethods":["yandex"]}""")
+                "POST auth/external/vk/start" -> {
+                    val body = String(call.body!!)
+                    assertTrue(body.contains("\"purpose\":\"link\""))
+                    assertTrue(body.contains("\"proofToken\":\"$proof\""))
+                    json("""{"transactionId":"$txId","authorizeUrl":"https://example.invalid/mock/authorize","expiresAt":"$seen"}""")
+                }
+                else -> error(route(call))
+            }
+        }
+        val vm = signedIn(http, testToken("za_", 3))
+        advanceUntilIdle()
+        vm.externalResult(ExternalReturnResult.Verified(AccountReauthProof(proof, "link:vk", Instant.parse(expires))))
+        advanceUntilIdle()
+        assertTrue(http.requests.any { route(it) == "POST auth/external/vk/start" })
+        assertTrue(http.requests.none { route(it) == "POST account/reauthenticate" })
+    }
+
+    @Test
+    fun unavailable_account_server_is_not_reported_as_closed_registration() = runTest(dispatcher) {
+        val vm = guestVm(FakeHttp { call -> when (route(call)) {
+            "GET auth/capabilities" -> capsJson()
+            else -> error(route(call))
+        } }, openUrl = {})
+        advanceUntilIdle()
+        vm.externalFailure(AccountClientFailure.NotConfigured)
+        assertEquals("Сервер аккаунтов не настроен", vm.state.value.status)
+    }
+
+    @Test
+    fun lifecycle_visibility_follows_capabilities_and_session() {
+        val guest = AccountUiState(
+            ready = true, configured = true, guest = true,
+            vkAvailable = true, yandexAvailable = false, recoveryAvailable = true
+        )
+        assertTrue(guest.showVkLogin)
+        assertFalse(guest.showYandexLogin)
+        assertTrue(guest.showRecovery)
+        assertFalse(guest.showDevices)
+        assertFalse(guest.showExport)
+        assertFalse(guest.showDelete)
+        assertFalse(guest.showPasswordChange)
+        assertFalse(guest.showIdentities)
+
+        val noCaps = guest.copy(vkAvailable = false, recoveryAvailable = false)
+        assertFalse(noCaps.showVkLogin)
+        assertFalse(noCaps.showRecovery)
+
+        val account = AccountUiState(
+            ready = true, configured = true, guest = false, accountName = "Test.User",
+            hasPassword = true,
+            vkAvailable = true, yandexAvailable = false,
+            identities = listOf(AccountIdentityRow("vk")),
+            devices = listOf(AccountDeviceRow(family, device, "Pixel", "android", true))
+        )
+        assertTrue(account.showDevices)
+        assertTrue(account.showExport)
+        assertTrue(account.showDelete)
+        assertTrue(account.showPasswordChange)
+        assertFalse(account.copy(hasPassword = false).showPasswordChange)
+        assertTrue(account.showVkUnlink)
+        assertFalse(account.showVkLink)
+        assertFalse(account.showYandexLink)
+        assertFalse(account.showRecovery)
+        assertTrue(account.devices.single().current)
+
+        val unconfigured = AccountUiState(ready = true, configured = false, vkAvailable = true, recoveryAvailable = true)
+        assertFalse(unconfigured.showVkLogin)
+        assertFalse(unconfigured.showRecovery)
+        assertFalse(unconfigured.showDevices)
+    }
+
+    @Test
+    fun reduce_updates_fields_and_confirm_delete_clears_secrets() {
+        val start = AccountUiState(ready = true, configured = true, guest = false)
+            .reduce(AccountEvent.CurrentPassword("password12ab"))
+            .reduce(AccountEvent.NewPassword("password12cd"))
+            .reduce(AccountEvent.Proof("proof-token"))
+            .reduce(AccountEvent.RecoveryUsername("Test.User"))
+        assertEquals("password12ab", start.currentPassword)
+        assertEquals("password12cd", start.newPassword)
+        assertEquals("proof-token", start.proof)
+        val pending = start.reduce(AccountEvent.RequestDelete)
+        assertTrue(pending.confirmDelete)
+        val cancelled = pending.reduce(AccountEvent.CancelDelete)
+        assertFalse(cancelled.confirmDelete)
+        assertEquals("", cancelled.currentPassword)
+        assertEquals("", cancelled.proof)
+        val logged = start.reduce(AccountEvent.RequestLogout)
+        assertTrue(logged.confirmLogout)
+        assertEquals("", logged.password)
+    }
+
+    @Test
+    fun native_pkce_is_s256_length_without_idp_hosts() {
+        val pkce = nativePkce()
+        assertEquals(43, pkce.challenge.length)
+        assertEquals(43, pkce.verifier.length)
+        assertTrue(pkce.challenge.all { it.isLetterOrDigit() || it == '-' || it == '_' })
+        assertTrue(pkce.challenge != pkce.verifier)
+        assertFalse(pkce.challenge.contains("://"))
+        assertFalse(pkce.verifier.contains("://"))
+    }
+
+    @Test
+    fun vk_yandex_recovery_follow_capabilities_json() = runTest(dispatcher) {
+        val http = FakeHttp {
+            assertTrue(it.url.endsWith("api/v1/auth/capabilities"))
+            assertTrue(!it.url.contains("id.vk") && !it.url.contains("oauth.yandex"))
+            json("""{"password":true,"vk":true,"yandex":false,"registration":true,"recovery":true}""")
+        }
+        val caps = readUiCapabilities(http, "https://example.invalid/root/")
+        assertTrue(caps.registration && caps.vk && caps.recovery)
+        assertFalse(caps.yandex)
+        assertEquals(1, http.requests.size)
+        val shown = AccountUiState(ready = true, configured = true, guest = true).applyCaps(caps)
+        assertTrue(shown.showVkLogin && shown.showRecovery)
+        assertFalse(shown.showYandexLogin)
+    }
+
+    @Test
+    fun load_devices_and_revoke_other_keeps_account() = runTest(dispatcher) {
+        val access = testToken("za_", 1)
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson()
+                "GET account/identities" -> json("[]")
+                "GET account/devices?limit=20" -> {
+                    assertTrue(call.url.contains("/api/v2/account/devices?"))
+                    assertEquals("Bearer $access", call.headers["Authorization"])
+                    json(devicesJson())
+                }
+                "DELETE account/devices/$other" -> HttpReply(204, ByteArray(0))
+                else -> error(route(call))
+            }
+        }
+        val vm = signedIn(http, access)
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.LoadDevices)
+        advanceUntilIdle()
+        assertEquals(2, vm.state.value.devices.size)
+        vm.onEvent(AccountEvent.RequestRevoke(other))
+        assertEquals(0, http.requests.count { route(it) == "DELETE account/devices/$other" })
+        vm.onEvent(AccountEvent.ConfirmRevoke)
+        advanceUntilIdle()
+        assertFalse(vm.state.value.guest)
+        assertEquals(family, vm.state.value.devices.single().familyId)
+        assertTrue(http.requests.none { it.url.contains("id.vk") || it.url.contains("yandex") })
+    }
+
+    @Test fun device_cursor_loads_later_page_once_and_deduplicates_family() = runTest(dispatcher) {
+        val third = "33333333-3333-4333-8333-333333333333"
+        val cursor = "a".repeat(55)
+        val http = FakeHttp { call -> when (route(call)) {
+            "GET auth/capabilities" -> capsJson()
+            "GET account/identities" -> json("[]")
+            "GET account/devices?limit=20" -> json(devicesJson().replace("\"nextCursor\":null", "\"nextCursor\":\"$cursor\""))
+            "GET account/devices?limit=20&cursor=$cursor" -> json("""{"devices":[
+                {"familyId":"$family","deviceId":"$device","deviceName":"Pixel","platform":"android",
+                 "createdAt":"$created","lastSeenAt":"$seen","expiresAt":"$expires","isCurrent":true},
+                {"familyId":"$third","deviceId":"$third","deviceName":"Laptop","platform":"windows",
+                 "createdAt":"$created","lastSeenAt":"$seen","expiresAt":"$expires","isCurrent":false}
+            ],"nextCursor":null}""")
+            else -> error(route(call))
+        } }
+        val vm = signedIn(http, testToken("za_", 1))
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.LoadDevices)
+        advanceUntilIdle()
+        assertEquals(cursor, vm.state.value.deviceCursor)
+        vm.onEvent(AccountEvent.LoadMoreDevices)
+        advanceUntilIdle()
+        assertEquals(3, vm.state.value.devices.size)
+        assertNull(vm.state.value.deviceCursor)
+        assertEquals(1, vm.state.value.devices.count { it.familyId == family })
+    }
+
+    @Test
+    fun change_password_clears_secrets_and_returns_to_guest() = runTest(dispatcher) {
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson()
+                "GET account/identities" -> json("[]")
+                "POST account/password/change" -> {
+                    assertEquals("""{"currentPassword":"password12ab","newPassword":"password12cd"}""", String(call.body!!))
+                    HttpReply(204, ByteArray(0))
+                }
+                else -> error(route(call))
+            }
+        }
+        val vm = signedIn(http, testToken("za_", 1))
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.CurrentPassword("password12ab"))
+        vm.onEvent(AccountEvent.NewPassword("password12cd"))
+        vm.onEvent(AccountEvent.ChangePassword)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.guest)
+        assertEquals("", vm.state.value.currentPassword)
+        assertEquals("", vm.state.value.newPassword)
+    }
+
+    @Test
+    fun export_uses_reauth_proof_and_prepares_actual_name_for_user_chosen_destination() = runTest(dispatcher) {
+        val names = mutableListOf<String>()
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson()
+                "GET account/identities" -> json("[]")
+                "GET account/me" -> passwordMeJson()
+                "POST account/reauthenticate" -> {
+                    assertTrue(String(call.body!!).contains("\"purpose\":\"export\""))
+                    json("""{"proofToken":"$proof","purpose":"export","expiresAt":"$seen"}""")
+                }
+                "POST account/exports" -> {
+                    assertEquals("""{"proofToken":"$proof"}""", String(call.body!!))
+                    json(exportJson(), 202)
+                }
+                "GET account/exports/$exportId/download" -> HttpReply(
+                    200, """{"ok":true}""".toByteArray(), "application/json",
+                    mapOf("Content-Disposition" to "attachment; filename=\"zapara-export-$exportId.json\"")
+                )
+                else -> error(route(call))
+            }
+        }
+        val vm = signedIn(http, testToken("za_", 1), writeExport = { _, name -> names += name })
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.Proof("password12ab"))
+        vm.onEvent(AccountEvent.CreateExport)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.exportReady)
+        assertEquals("", vm.state.value.proof)
+        vm.onEvent(AccountEvent.DownloadExport)
+        vm.onEvent(AccountEvent.DownloadExport)
+        advanceUntilIdle()
+        assertEquals("zapara-export-$exportId.json", vm.state.value.exportSaveName)
+        assertEquals(1L, vm.state.value.exportSaveVersion)
+        val token = vm.state.value.exportSaveToken!!
+        assertEquals(1, http.requests.count { route(it) == "GET account/exports/$exportId/download" })
+        vm.onEvent(AccountEvent.SaveExport(null, version = 1, token = "other-profile"))
+        assertEquals("zapara-export-$exportId.json", vm.state.value.exportSaveName)
+        vm.onEvent(AccountEvent.SaveExport(null, version = 0, token = token))
+        assertEquals("zapara-export-$exportId.json", vm.state.value.exportSaveName)
+        vm.onEvent(AccountEvent.SaveExport(null, version = 1, token = token))
+        assertNull(vm.state.value.exportSaveName)
+        assertTrue(names.isEmpty()) // no silent app-private write
+        assertFalse(vm.state.value.guest)
+    }
+
+    @Test fun pending_export_checks_the_same_job_until_ready_without_creating_a_second() = runTest(dispatcher) {
+        var checks = 0
+        val pending = exportJson().replace("\"status\":\"ready\"", "\"status\":\"pending\"")
+            .replace("\"completedAt\":\"$seen\"", "\"completedAt\":null")
+        val http = FakeHttp { call -> when (route(call)) {
+            "GET auth/capabilities" -> capsJson()
+            "GET account/identities" -> json("[]")
+            "GET account/me" -> passwordMeJson()
+            "POST account/reauthenticate" -> json("""{"proofToken":"$proof","purpose":"export","expiresAt":"$seen"}""")
+            "POST account/exports" -> json(pending, 202)
+            "GET account/exports/$exportId" -> if (++checks == 1) throw java.io.IOException("offline") else json(exportJson())
+            else -> error(route(call))
+        } }
+        val vm = signedIn(http, testToken("za_", 1))
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.Proof("password12ab"))
+        vm.onEvent(AccountEvent.CreateExport)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.exportPending)
+        vm.onEvent(AccountEvent.CreateExport)
+        vm.onEvent(AccountEvent.CheckExport)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.exportReady)
+        assertFalse(vm.state.value.exportPending)
+        assertEquals(1, http.requests.count { route(it) == "POST account/exports" })
+    }
+    @Test fun expired_export_job_releases_only_its_current_id_and_allows_a_new_request() = runTest(dispatcher) {
+        var posts = 0
+        var checks = 0
+        val pending = exportJson().replace("\"status\":\"ready\"", "\"status\":\"pending\"")
+            .replace("\"completedAt\":\"$seen\"", "\"completedAt\":null")
+        val http = FakeHttp { call -> when (route(call)) {
+            "GET auth/capabilities" -> capsJson()
+            "GET account/identities" -> json("[]")
+            "GET account/me" -> passwordMeJson()
+            "POST account/reauthenticate" -> json("""{"proofToken":"$proof","purpose":"export","expiresAt":"$seen"}""")
+            "POST account/exports" -> { posts++; json(pending, 202) }
+            "GET account/exports/$exportId" -> if (++checks == 1) json(pending)
+                else HttpReply(404, """{"code":"export_not_found"}""".toByteArray(), "application/json")
+            else -> error(route(call))
+        } }
+        val vm = signedIn(http, testToken("za_", 1))
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.Proof("password12ab")); vm.onEvent(AccountEvent.CreateExport)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.exportPending)
+        vm.onEvent(AccountEvent.CheckExport); advanceUntilIdle()
+        assertFalse(vm.state.value.exportPending)
+        assertFalse(vm.state.value.exportReady)
+        vm.onEvent(AccountEvent.Proof("password12ab")); vm.onEvent(AccountEvent.CreateExport)
+        advanceUntilIdle()
+        assertEquals(2, posts)
+    }
+
+    @Test
+    fun delete_confirm_logs_out_without_wiping_guest_flag_path() = runTest(dispatcher) {
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson()
+                "GET account/identities" -> json("[]")
+                "GET account/me" -> passwordMeJson()
+                "POST account/reauthenticate" -> json("""{"proofToken":"$proof","purpose":"delete_account","expiresAt":"$seen"}""")
+                "DELETE account" -> {
+                    assertEquals("""{"proofToken":"$proof"}""", String(call.body!!))
+                    json("""{"status":"deleting","remoteWipe":false}""", 202)
+                }
+                else -> error(route(call))
+            }
+        }
+        val vm = signedIn(http, testToken("za_", 1))
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.RequestDelete)
+        assertTrue(vm.state.value.confirmDelete)
+        vm.onEvent(AccountEvent.Proof("password12ab"))
+        vm.onEvent(AccountEvent.ConfirmDelete)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.guest)
+        assertFalse(vm.state.value.confirmDelete)
+        assertEquals("", vm.state.value.proof)
+    }
+
+    @Test
+    fun recovery_request_has_no_bearer_and_vk_start_opens_mock_only() = runTest(dispatcher) {
+        val opened = mutableListOf<String>()
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson(vk = true, recovery = true)
+                "POST auth/password-reset/request" -> {
+                    assertEquals(null, call.headers["Authorization"])
+                    assertEquals("""{"username":"Test.User"}""", String(call.body!!))
+                    json("{}", 202)
+                }
+                "POST auth/password-reset/confirm" -> {
+                    assertEquals("""{"token":"$proof","newPassword":"password12zz"}""", String(call.body!!))
+                    HttpReply(204, ByteArray(0))
+                }
+                "POST auth/external/vk/start" -> {
+                    val body = String(call.body!!)
+                    assertTrue(body.contains("\"platform\":\"android\"") && body.contains("\"nativeChallengeMethod\":\"S256\""))
+                    assertTrue(!body.contains("\"port\""))
+                    assertTrue(!call.url.contains("id.vk") && !call.url.contains("oauth.yandex"))
+                    json("""{"transactionId":"$txId","authorizeUrl":"https://example.invalid/mock/authorize","expiresAt":"$seen"}""")
+                }
+                else -> error(route(call))
+            }
+        }
+        val vm = guestVm(http, openUrl = { opened += it })
+        advanceUntilIdle()
+        assertTrue(vm.state.value.showVkLogin && vm.state.value.showRecovery)
+        vm.onEvent(AccountEvent.RecoveryUsername("Test.User"))
+        vm.onEvent(AccountEvent.RequestReset)
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.Proof(proof))
+        vm.onEvent(AccountEvent.NewPassword("password12zz"))
+        vm.onEvent(AccountEvent.ConfirmReset)
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.StartVk)
+        advanceUntilIdle()
+        assertEquals(listOf("https://example.invalid/mock/authorize"), opened)
+        assertTrue(opened.none { it.contains("id.vk") || it.contains("oauth.yandex") })
+    }
+
+    @Test
+    fun unlink_identity_uses_proof_and_hides_row() = runTest(dispatcher) {
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson(yandex = true)
+                "GET account/identities" -> json("""[{"provider":"yandex","linkedAt":"$seen"}]""")
+                "GET account/me" -> passwordMeJson()
+                "POST account/reauthenticate" -> json("""{"proofToken":"$proof","purpose":"unlink:yandex","expiresAt":"$seen"}""")
+                "DELETE account/identities/yandex" -> {
+                    assertEquals("""{"proofToken":"$proof"}""", String(call.body!!))
+                    HttpReply(204, ByteArray(0))
+                }
+                else -> error(route(call))
+            }
+        }
+        val vm = signedIn(http, testToken("za_", 1))
+        advanceUntilIdle()
+        assertTrue(vm.state.value.showYandexUnlink)
+        vm.onEvent(AccountEvent.Proof("password12ab"))
+        vm.onEvent(AccountEvent.Unlink("yandex"))
+        advanceUntilIdle()
+        assertTrue(vm.state.value.identities.none { it.provider == "yandex" })
+        assertTrue(http.requests.none { it.url.contains("id.vk") || it.url.contains("oauth.yandex") })
+    }
+
+    @Test
+    fun expired_access_is_refreshed_before_account_calls() = runTest {
+        val old = testToken("za_", 1)
+        val next = testToken("za_", 9)
+        val nextRefresh = testToken("zr_", 9)
+        val current = session(old)
+        val clock = Instant.parse(seen)
+        val vault = MemoryAccountSessionVault(scope().key)
+        kotlinx.coroutines.runBlocking {
+            vault.acquire().use { it.write(AccountVaultEntry.ready(scope().key, current)) }
+        }
+        val http = FakeHttp { call ->
+            when (route(call)) {
+                "GET auth/capabilities" -> capsJson()
+                "POST auth/refresh" -> {
+                    assertNull(call.headers["Authorization"])
+                    assertEquals("""{"refreshToken":"${current.refreshToken}"}""", String(call.body!!))
+                    json(
+                        """{"user":{"userId":"$family","username":"Test.User","displayName":null,"createdAt":"$created"},
+                        |"familyId":"$family","accessToken":"$next","refreshToken":"$nextRefresh","tokenType":"Bearer",
+                        |"accessExpiresAt":"${clock.plusSeconds(900)}","refreshExpiresAt":"$expires"}""".trimMargin()
+                    )
+                }
+                "GET account/identities" -> {
+                    assertEquals("Bearer $next", call.headers["Authorization"])
+                    json("[]")
+                }
+                "GET account/devices?limit=20" -> {
+                    assertEquals("Bearer $next", call.headers["Authorization"])
+                    json(devicesJson())
+                }
+                else -> error(route(call))
+            }
+        }
+        val sessions = AccountSessionManager(AccountHttpClient(http, scope()), vault) { clock }
+        val vm = AccountViewModel(
+            AccountRuntime(
+                client = AccountHttpClient(http, scope()),
+                vault = vault,
+                strings = ::copy,
+                deviceId = { device },
+                isGuest = { false },
+                commitSession = { _, _ -> true },
+                logout = { _ -> true },
+                openUrl = {},
+                writeExport = { _, _ -> },
+                capabilitiesTransport = http,
+                scopeBase = "https://example.invalid/root/",
+                serverKey = scope().key,
+                sessions = sessions,
+                ioDispatcher = dispatcher
+            )
+        )
+        advanceUntilIdle()
+        vm.onEvent(AccountEvent.LoadDevices)
+        advanceUntilIdle()
+        assertEquals(1, http.requests.count { route(it) == "POST auth/refresh" })
+        assertEquals(1, vm.state.value.devices.count { it.current })
+    }
+
+    private fun signedIn(
+        http: FakeHttp,
+        access: String,
+        writeExport: (ByteArray, String) -> Unit = { _, _ -> },
+        logoutResult: Boolean = true
+    ): AccountViewModel {
+        val vault = MemoryAccountSessionVault(scope().key)
+        kotlinx.coroutines.runBlocking {
+            vault.acquire().use { it.write(AccountVaultEntry.ready(scope().key, session(access))) }
+        }
+        var guest = false
+        return AccountViewModel(
+            AccountRuntime(
+                client = AccountHttpClient(http, scope()),
+                vault = vault,
+                strings = ::copy,
+                deviceId = { device },
+                isGuest = { guest },
+                commitSession = { _, _ -> true },
+                logout = { _ ->
+                    if (logoutResult) {
+                        kotlinx.coroutines.runBlocking { vault.acquire().use { it.clear() } }
+                        guest = true
+                    }
+                    logoutResult
+                },
+                openUrl = {},
+                writeExport = writeExport,
+                capabilitiesTransport = http,
+                scopeBase = "https://example.invalid/root/",
+                serverKey = scope().key,
+                ioDispatcher = dispatcher
+            )
+        )
+    }
+
+    private fun guestVm(http: FakeHttp, openUrl: (String) -> Unit): AccountViewModel {
+        return AccountViewModel(
+            AccountRuntime(
+                client = AccountHttpClient(http, scope()),
+                vault = MemoryAccountSessionVault(scope().key),
+                strings = ::copy,
+                deviceId = { device },
+                isGuest = { true },
+                commitSession = { _, _ -> true },
+                logout = { _ -> true },
+                openUrl = openUrl,
+                writeExport = { _, _ -> },
+                capabilitiesTransport = http,
+                scopeBase = "https://example.invalid/root/",
+                serverKey = scope().key,
+                ioDispatcher = dispatcher
+            )
+        )
+    }
+
+    private fun session(access: String) = AccountSession(
+        user = AccountUser(family, "Test.User", null, Instant.parse(created)),
+        familyId = family,
+        accessToken = access,
+        refreshToken = testToken("zr_", 2),
+        tokenType = "Bearer",
+        accessExpiresAt = Instant.parse(seen),
+        refreshExpiresAt = Instant.parse(expires)
+    )
+
+    private fun scope() = AccountServerScope.parse("https://example.invalid/root")
+
+    private fun route(call: HttpCall) = call.method + " " + call.url.substringAfter("/api/v1/").substringAfter("/api/v2/")
+
+    private fun json(body: String, status: Int = 200) = HttpReply(status, body.toByteArray(), "application/json")
+
+    private fun capsJson(vk: Boolean = false, yandex: Boolean = false, recovery: Boolean = false) =
+        json("""{"password":true,"vk":$vk,"yandex":$yandex,"registration":true,"recovery":$recovery}""")
+
+    private fun passwordMeJson() = json("""{"user":{"userId":"$family","username":"Test.User","displayName":null,"createdAt":"$created"},"familyId":"$family","authenticationMethods":["password"]}""")
+
+    private fun devicesJson() = """
+        {"devices":[
+          {"familyId":"$family","deviceId":"$device","deviceName":"Pixel","platform":"android",
+           "createdAt":"$created","lastSeenAt":"$seen","expiresAt":"$expires","isCurrent":true},
+          {"familyId":"$other","deviceId":"66666666-6666-4666-8666-666666666666","deviceName":"Pad","platform":"android",
+           "createdAt":"$created","lastSeenAt":"$seen","expiresAt":"$expires","isCurrent":false}
+        ],"nextCursor":null}
+    """.trimIndent()
+
+    private fun exportJson() =
+        """{"exportId":"$exportId","status":"ready","createdAt":"$seen","completedAt":"$seen","expiresAt":"$expires"}"""
+
+    private fun opaque(fill: Int): String =
+        java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32) { fill.toByte() })
+
+    private fun copy(id: Int): String = when (id) {
+        R.string.account_unconfigured -> "Сервер аккаунтов не настроен"
+        R.string.account_guest -> "Гостевой профиль: данные доступны без аккаунта и сети."
+        R.string.account_local -> "Локальные данные аккаунта. Синхронизация личных данных пока недоступна."
+        R.string.account_failed -> "Операция аккаунта не выполнена. Повторите попытку позже."
+        R.string.account_logout_local -> "Вы вышли на этом устройстве. Отзыв сессии на сервере не подтверждён этой операцией интерфейса."
+        R.string.account_transition_failed -> "Профиль не переключён. Завершите текущие операции и повторите попытку."
+        R.string.account_reauth -> "Требуется повторный вход. Локальные данные сохранены."
+        R.string.account_validation -> "Логин: 3–32 латинские буквы, цифры, точка, дефис или подчёркивание. Пароль: 12–128 символов. Имя: до 80 символов."
+        R.string.account_export_download -> "Скачать экспорт"
+        else -> "id$id"
+    }
+}

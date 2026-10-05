@@ -1,0 +1,820 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media;
+using Avalonia.Headless;
+using Avalonia.Headless.XUnit;
+using Avalonia.Input;
+using Avalonia.Styling;
+using Avalonia.VisualTree;
+using Vograph.Core.Campus;
+using Vograph.Core.Services;
+using Vograph.Desktop.Controls;
+using Vograph.Desktop.Features.Maps;
+using Vograph.Desktop.Services;
+using Vograph.Desktop.Shell;
+using Xunit;
+
+namespace Vograph.Desktop.Tests;
+
+public class MapsTests : UiTest
+{
+    private static readonly DateTime Mon8 = new(2026, 9, 7, 8, 0, 0);
+    private static readonly Loc Ru = new(new I18nService("ru"));
+
+    private static (ShellViewModel Shell, MapsViewModel Vm, FakeMapFiles Files, FakeLauncher Launcher) Make(TestDb db, params (string, int)[] cached)
+    {
+        var files = new FakeMapFiles(Path.Combine(db.Dir, "maps"), cached);
+        var launcher = new FakeLauncher();
+        db.Services.MapFiles = files;
+        db.Services.Launcher = launcher;
+        var shell = new ShellViewModel(db.Services);
+        var vm = new MapsViewModel(db.Services, shell, () => Mon8);
+        shell.Register(SectionKey.Maps, () => vm);
+        return (shell, vm, files, launcher);
+    }
+
+    private sealed class DelayedFloorFiles(FakeMapFiles inner) : IMapFiles
+    {
+        private readonly TaskCompletionSource<string?> release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Started { get; private set; }
+        public string CacheDir => inner.CacheDir;
+        public string? LocalPath(MapInfo map) => map.Floor == 2 ? null : inner.LocalPath(map);
+        public Task<string?> EnsureAsync(MapInfo map, CancellationToken ct = default)
+        {
+            if (map.Floor != 2) return inner.EnsureAsync(map, ct);
+            Started = true;
+            return release.Task.WaitAsync(ct);
+        }
+        public void Complete(string? path) => release.TrySetResult(path);
+        public (int Cached, int Total) CacheStatus() => inner.CacheStatus();
+        public Task DownloadAllAsync(IProgress<string>? progress, CancellationToken ct = default) => inner.DownloadAllAsync(progress, ct);
+    }
+
+    [Fact]
+    public async Task No_group_is_distinct_from_no_upcoming_lesson_and_manual_maps_remain_available()
+    {
+        using var db = TestDb.Create();
+        var settings = db.Services.Db.GetSettings();
+        settings.MyGroupId = "";
+        db.Services.Db.SaveSettings(settings);
+        var (_, vm, _, _) = Make(db);
+        await vm.TrackNextAsync();
+        Assert.Contains("Выберите учебную группу", vm.ContextLine);
+        Assert.True(vm.ShowEmpty);
+        Assert.NotEmpty(vm.Floors);
+    }
+
+    [AvaloniaFact]
+    public async Task Lesson_map_keeps_exact_return_date_without_creating_a_new_destination()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, _, _) = Make(db);
+        var selected = new DateTime(2026, 9, 16);
+        shell.ShowMap(db.Services.Maps.Resolve("ВЦ 280;"), "Матан", selected);
+        await Waits.Until(() => vm.ReturnDate == selected, "map return date");
+        Assert.True(vm.HasReturnDate);
+        vm.ReturnToLessonCommand.Execute(null);
+        Assert.Equal(SectionKey.Schedule, shell.CurrentKey);
+        var schedule = shell.Section<Vograph.Desktop.Features.Schedule.ScheduleViewModel>(SectionKey.Schedule);
+        await Waits.Until(() => schedule.Date == selected, "selected day after map return");
+    }
+
+    [AvaloniaFact]
+    public async Task Failed_new_floor_keeps_last_good_plan_and_retry_opens_requested_floor()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, files, _) = Make(db, ("ГК", 1));
+        shell.ShowMap(db.Services.Maps.GetAllMaps().First(map => map.Building == "ГК" && map.Floor == 1));
+        await Waits.Until(() => vm.Image is not null, "first map loaded");
+        var oldImage = vm.Image;
+        files.EnsureFails = true;
+        await vm.SelectFloorCommand.ExecuteAsync(vm.Floors.Single(floor => floor.Floor == 2));
+        Assert.True(vm.HasFailedPlan);
+        Assert.Same(oldImage, vm.Image);
+        Assert.Equal(1, vm.Current?.Floor);
+        files.EnsureFails = false;
+        await vm.RetryPlanCommand.ExecuteAsync(null);
+        Assert.False(vm.HasFailedPlan);
+        Assert.Equal(2, vm.Current?.Floor);
+        Assert.NotSame(oldImage, vm.Image);
+    }
+
+    [AvaloniaFact]
+    public async Task Late_failure_of_old_floor_cannot_clear_a_newer_successful_map()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, files, _) = Make(db, ("ГК", 1), ("ГК", 3));
+        var delayed = new DelayedFloorFiles(files);
+        db.Services.MapFiles = delayed;
+        shell.ShowMap(db.Services.Maps.GetAllMaps().First(map => map.Building == "ГК" && map.Floor == 1));
+        await Waits.Until(() => vm.Image is not null, "first plan");
+        var old = vm.SelectFloorCommand.ExecuteAsync(vm.Floors.Single(floor => floor.Floor == 2));
+        await Waits.Until(() => delayed.Started, "floor two request");
+        await vm.ShowLessonMapAsync(db.Services.Maps.GetAllMaps().First(map => map.Building == "ГК" && map.Floor == 3), "Третья пара");
+        Assert.Equal(3, vm.Current?.Floor);
+        var newer = vm.Image;
+        delayed.Complete(null);
+        await old;
+        Assert.Equal(3, vm.Current?.Floor);
+        Assert.Same(newer, vm.Image);
+        Assert.False(vm.HasFailedPlan);
+    }
+
+    [Theory]
+    [InlineData("2026-09-07T08:00", "2026-09-07T09:00", "2026-09-07T10:35", "через 1 ч")]
+    [InlineData("2026-09-07T08:35", "2026-09-07T09:00", "2026-09-07T10:35", "через 25 мин")]
+    [InlineData("2026-09-07T09:30", "2026-09-07T09:00", "2026-09-07T10:35", "идёт сейчас")]
+    [InlineData("2026-09-06T14:00", "2026-09-07T09:00", "2026-09-07T10:35", "через 19 ч")]
+    [InlineData("2026-09-05T08:00", "2026-09-07T09:00", "2026-09-07T10:35", "через 2 дн.")]
+    [InlineData("2026-09-07T10:35", "2026-09-07T09:00", "2026-09-07T10:35", "")]
+    public void Until_Formats_Minutes_Hours_Days(string now, string start, string end, string expected) =>
+        Assert.Equal(expected, MapsComposer.Until(DateTime.Parse(now), DateTime.Parse(start), DateTime.Parse(end), Ru));
+
+    [Fact]
+    public void Context_Lines_Floors_And_Highlight()
+    {
+        using var db = TestDb.Create();
+        var map = db.Services.Maps.Resolve("493;")!;
+        Assert.Equal("Следующая пара · 493 · ГК, 4 этаж · через 1 ч",
+            MapsComposer.ContextLine(MapMode.NextLesson, map, null, new DateTime(2026, 9, 7, 9, 0, 0), new DateTime(2026, 9, 7, 10, 35, 0), Mon8, Ru));
+        Assert.Equal("Пара: Матан · 493 · ГК, 4 этаж", MapsComposer.ContextLine(MapMode.Lesson, map, "Матан", null, null, Mon8, Ru));
+        Assert.Equal("ГК, 4 этаж", MapsComposer.ContextLine(MapMode.Manual, map, null, null, null, Mon8, Ru));
+        Assert.Equal("Выберите план", MapsComposer.ContextLine(MapMode.Manual, null, null, null, null, Mon8, Ru));
+        Assert.Equal("Нет предстоящих занятий", MapsComposer.ContextLine(MapMode.None, null, null, null, null, Mon8, Ru));
+        Assert.Equal(new[] { 1, 2, 3, 4 }, MapsComposer.Floors("ГК"));
+        Assert.Equal(new[] { 1, 2, 3, 4, 5 }, MapsComposer.Floors("УЛК"));
+        var rect = MapsComposer.Highlight(new CoordsRect { x = 0.5, y = 0.25, w = 0.1, h = 0.2 }, new PixelSize(1000, 800));
+        Assert.Equal(new Rect(500, 200, 100, 160), rect);
+        Assert.Null(MapsComposer.Highlight(null, new PixelSize(1000, 800)));
+    }
+
+    [Fact]
+    public void PathPixels_Maps_Unit_Square_To_Image_Pixels()
+    {
+        var pixels = MapsComposer.PathPixels([(0, 0), (1, 1)], new PixelSize(100, 100)).ToList();
+        Assert.Equal([new Point(0, 0), new Point(100, 100)], pixels);
+        Assert.Empty(MapsComposer.PathPixels(null, new PixelSize(100, 100)));
+        Assert.Empty(MapsComposer.PathPixels([], new PixelSize(100, 100)));
+        Assert.Empty(MapsComposer.PathPixels([(0, 0), (1, 1)], new PixelSize(0, 100)));
+        Assert.Empty(MapsComposer.PathPixels([(0, 0), (1, 1)], new PixelSize(100, 0)));
+    }
+
+    [Fact]
+    public void FloorPathPoints_Walks_On_Current_Floor_Only()
+    {
+        var route = CampusRouter.Find(SyntheticLabyrinth.Build(), "lab.room.west.3", "lab.room.east.3").Route!;
+        var f1 = MapsComposer.FloorPathPoints(route, "УЛК", 1);
+        var f2 = MapsComposer.FloorPathPoints(route, "УЛК", 2);
+        var f3 = MapsComposer.FloorPathPoints(route, "УЛК", 3);
+
+        Assert.Contains(f1, p => p is (0.5, 0.5));
+        Assert.DoesNotContain(f3, p => p is (0.5, 0.5));
+        Assert.Contains(f3, p => p is (0.2, 0.2));
+        Assert.DoesNotContain(f1, p => p is (0.2, 0.2));
+        Assert.Empty(f2);
+        Assert.Empty(MapsComposer.FloorPathPoints(null, "УЛК", 1));
+        Assert.Empty(MapsComposer.FloorPathPoints(route, "ГК", 1));
+    }
+
+    [Fact]
+    public void FloorPathPoints_Draws_Building_Link_Not_Stairs()
+    {
+        var route = new Route(10, [
+            new Leg("walk", "ГК", 1, null, null, [new GraphPoint(0.1, 0.1), new GraphPoint(0.2, 0.2)]),
+            new Leg("stair_up", "ГК", 1, "ГК", 2, [new GraphPoint(0.2, 0.2), new GraphPoint(0.2, 0.2)]),
+            new Leg("building_link", "ГК", 1, "ГК", 1, [new GraphPoint(0.9, 0.5), new GraphPoint(0.95, 0.5)]),
+        ], []);
+        Assert.Equal([(0.1, 0.1), (0.2, 0.2), (0.9, 0.5), (0.95, 0.5)], MapsComposer.FloorPathPoints(route, "ГК", 1));
+        Assert.Empty(MapsComposer.FloorPathPoints(route, "ГК", 2));
+        Assert.Empty(MapsComposer.FloorPathPoints(route, "УЛК", 1));
+    }
+
+    [Fact]
+    public void FloorPathStrokes_Keeps_Disconnected_Floor3_Wings()
+    {
+        var route = CampusRouter.Find(SyntheticLabyrinth.Build(), "lab.room.west.3", "lab.room.east.3").Route!;
+        var f3 = MapsComposer.FloorPathStrokes(route, "УЛК", 3);
+        Assert.Equal(2, f3.Count);
+        Assert.Equal([(0.2, 0.2), (0.2, 0.5)], f3[0]);
+        Assert.Equal([(0.8, 0.5), (0.8, 0.2)], f3[1]);
+
+        var f1 = MapsComposer.FloorPathStrokes(route, "УЛК", 1);
+        Assert.Single(f1);
+        Assert.Equal([(0.2, 0.5), (0.5, 0.5), (0.8, 0.5)], f1[0]);
+
+        var size = new PixelSize(100, 100);
+        IReadOnlyList<IReadOnlyList<Point>> Pixels(IReadOnlyList<IReadOnlyList<(double x, double y)>> strokes) =>
+            [.. strokes.Select(s => MapsComposer.PathPixels(s, size).ToList())];
+
+        var geo3 = MapsComposer.PathGeometry(Pixels(f3));
+        Assert.NotNull(geo3);
+        var figures3 = geo3!.Figures!;
+        Assert.Equal(2, figures3.Count);
+        Assert.All(figures3, f => Assert.False(f.IsClosed));
+        Assert.Equal(new Point(20, 20), figures3[0].StartPoint);
+        Assert.Equal(new Point(80, 50), figures3[1].StartPoint);
+        Assert.All(figures3, f =>
+        {
+            var line = Assert.IsType<PolyLineSegment>(Assert.Single(f.Segments!));
+            Assert.Single(line.Points);
+        });
+
+        var geo1 = MapsComposer.PathGeometry(Pixels(f1));
+        Assert.NotNull(geo1);
+        var fig1 = Assert.Single(geo1!.Figures!);
+        Assert.False(fig1.IsClosed);
+        Assert.Equal(new Point(20, 50), fig1.StartPoint);
+        Assert.Equal([new Point(50, 50), new Point(80, 50)], Assert.IsType<PolyLineSegment>(Assert.Single(fig1.Segments!)).Points);
+    }
+
+    [Fact]
+    public void RoutePathLayer_MotionOff_Reveals_The_Full_Path()
+    {
+        var layer = new RoutePathLayer
+        {
+            Strokes = [[new Point(0, 0), new Point(40, 0), new Point(40, 30)]]
+        };
+        var frame = layer.Frame();
+        Assert.True(frame.Complete);
+        Assert.Equal(3, Assert.Single(frame.Revealed).Count);
+        Assert.Equal(new TracePoint(40, 30), frame.Head);
+        Assert.Equal(new TracePoint(0, 0), frame.Start);
+    }
+
+    [Fact]
+    public void RoutePathLayer_Half_Progress_Keeps_Disconnected_Wings_Apart()
+    {
+        var layer = new RoutePathLayer
+        {
+            Strokes = [[new Point(0, 0), new Point(10, 0)], [new Point(20, 0), new Point(30, 0)]]
+        };
+        var frame = layer.Frame(0.5);
+        Assert.False(frame.Complete);
+        Assert.Equal(new TracePoint(10, 0), Assert.Single(frame.Revealed)[^1]);
+        Assert.Equal(new TracePoint(10, 0), frame.Head);
+        Assert.Equal(new TracePoint(30, 0), frame.End);
+    }
+
+    [Fact]
+    public void Maps_And_Fullscreen_Draw_The_Route_Through_RoutePathLayer()
+    {
+        var root = ResourceKeysTests.RepoRoot();
+        foreach (var file in new[] { "MapsView.axaml", "MapFullscreenView.axaml" })
+        {
+            var axaml = File.ReadAllText(Path.Combine(root, "src", "Vograph.Desktop", "Features", "Maps", file));
+            Assert.Contains("RoutePathLayer", axaml);
+            Assert.Contains("x:Name=\"RoutePath\"", axaml);
+            Assert.DoesNotContain("<Path x:Name=\"RoutePath\"", axaml);
+        }
+        var layer = File.ReadAllText(Path.Combine(root, "src", "Vograph.Desktop", "Features", "Maps", "RoutePathLayer.cs"));
+        Assert.Contains("PathTrace.At", layer);
+        Assert.Contains("MotionSettings", layer);
+        Assert.Contains("DashStyle", layer);
+        Assert.DoesNotContain("DispatcherTimer", layer);
+    }
+
+    [Fact]
+    public void ApplyRoute_Null_Leaves_No_Path()
+    {
+        using var db = TestDb.Create();
+        var (_, vm, _, _) = Make(db);
+        vm.ApplyRoute(null);
+        Assert.False(vm.HasPath);
+        Assert.False(vm.HasRouteSteps);
+        Assert.Empty(vm.PathPoints);
+        Assert.False(vm.HasHighlight);
+    }
+
+    [AvaloniaFact]
+    public async Task ApplyRoute_Overlays_Current_Floor_And_Step_Switches_Floor()
+    {
+        using var db = TestDb.Create();
+        var (_, vm, _, _) = Make(db, ("УЛК", 3), ("УЛК", 1));
+        await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("320*;")!, "Физика");
+        Assert.True(vm.HasHighlight);
+        Assert.False(vm.HasPath);
+
+        var route = CampusRouter.Find(SyntheticLabyrinth.Build(), "lab.room.west.3", "lab.room.east.3").Route!;
+        vm.ApplyRoute(route);
+
+        Assert.True(vm.HasHighlight);
+        Assert.Equal("320", vm.HighlightLabel);
+        Assert.True(vm.HasPath);
+        Assert.True(vm.HasRouteSteps);
+        Assert.Contains(vm.RouteSteps, s => s.Text.Contains("коридор", StringComparison.OrdinalIgnoreCase) || s.Text.Contains("Пройдите"));
+        var size = vm.Image!.PixelSize;
+        Assert.Equal(2, vm.PathStrokes.Count);
+        Assert.All(vm.PathStrokes, s => Assert.Equal(2, s.Count));
+        Assert.Equal(MapsComposer.PathPixels(MapsComposer.FloorPathPoints(route, "УЛК", 3), size), vm.PathPoints);
+        Assert.DoesNotContain(vm.PathPoints, p => p.X == 0.5 * size.Width && p.Y == 0.5 * size.Height);
+        Assert.Contains(vm.RouteSteps, s => s.Floor == 3 && s.IsSelected);
+        Assert.DoesNotContain(vm.RouteSteps, s => s.Floor == 1 && s.IsSelected);
+
+        var floor1 = vm.RouteSteps.First(s => s.Floor == 1 && s.Building == "УЛК");
+        vm.ShowStack = true;
+        await vm.SelectRouteStepCommand.ExecuteAsync(floor1);
+        Assert.False(vm.ShowStack);
+        Assert.Equal(("УЛК", 1), (vm.Current!.Building, vm.Current.Floor));
+        Assert.Contains(vm.RouteSteps, s => s.Floor == 1 && s.IsSelected);
+        Assert.DoesNotContain(vm.RouteSteps, s => s.Floor == 3 && s.IsSelected);
+        Assert.Equal(3, Assert.Single(vm.PathStrokes).Count);
+        Assert.Equal(MapsComposer.PathPixels(MapsComposer.FloorPathPoints(route, "УЛК", 1), vm.Image!.PixelSize), vm.PathPoints);
+        Assert.Contains(vm.PathPoints, p => p.X == 0.5 * vm.Image.PixelSize.Width && p.Y == 0.5 * vm.Image.PixelSize.Height);
+
+        vm.ApplyRoute(null);
+        Assert.False(vm.HasPath);
+        Assert.False(vm.HasRouteSteps);
+        Assert.Empty(vm.PathPoints);
+    }
+
+    [AvaloniaFact]
+    public async Task Stair_only_floor_shows_the_same_badges_in_map_and_fullscreen()
+    {
+        using var db = TestDb.Create();
+        var (_, vm, _, _) = Make(db, ("УЛК", 2));
+        await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("226*;")!, "Физика");
+        vm.ApplyRoute(new Route(40, [
+            new Leg("stair_up", "УЛК", 1, "УЛК", 2, [new(.2, .3), new(.3, .4)]),
+            new Leg("stair_up", "УЛК", 2, "УЛК", 3, [new(.3, .4), new(.4, .5)])
+        ], []));
+        Assert.False(vm.HasPath);
+        Assert.Equal("↑ 3", Assert.Single(vm.StairMarkers).Label);
+
+        var normal = new MapsView { DataContext = vm, Width = 500, Height = 450 };
+        var full = new MapFullscreenView { DataContext = new MapFullscreenViewModel(db.Services, vm), Width = 500, Height = 450 };
+        var window = new Window
+        {
+            Width = 1000, Height = 450,
+            Content = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Children = { normal, full } }
+        };
+        try
+        {
+            window.Show();
+            Pump();
+            foreach (var view in new Control[] { normal, full })
+            {
+                var overlay = view.FindControl<StairMarkersOverlay>("StairMarkers")!;
+                Assert.True(overlay.IsVisible);
+                Assert.Same(vm.StairMarkers, overlay.Markers);
+                Assert.Equal(vm.Image!.PixelSize, overlay.ImageSize);
+                Assert.True(overlay.Bounds.Width > 0 && overlay.Bounds.Height > 0);
+            }
+            AssertNoBindingErrors();
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task Auto_Mode_Tracks_The_Next_Lesson_And_Loads_The_Plan()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, files, _) = Make(db, ("ГК", 4));
+        shell.NavigateTo(SectionKey.Maps);
+        await Waits.Until(() => vm.Image is not null);
+
+        Assert.Equal(MapMode.NextLesson, vm.Mode);
+        Assert.True(vm.IsTracking);
+        Assert.Equal(("ГК", 4), (vm.Current!.Building, vm.Current.Floor));
+        Assert.StartsWith("Следующая пара · 493 · ГК, 4 этаж · через 1 ч", vm.ContextLine);
+        Assert.Equal(0, vm.BuildingIndex);
+        Assert.Equal(4, vm.Floors.Count);
+        Assert.True(vm.Floors[3].IsSelected);
+        Assert.Equal(new PixelSize(200, 100), vm.Image!.PixelSize);
+        Assert.Equal(0, files.EnsureCalls); // cached: no download
+        Assert.Equal("1 из 9 планов офлайн", vm.CacheStatus);
+    }
+
+    [AvaloniaFact]
+    public async Task Card_Action_Opens_The_Lesson_Map_With_A_Note_For_VC()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, files, _) = Make(db);
+        var map = db.Services.Maps.Resolve("ВЦ 280;")!;
+
+        shell.ShowMap(map); // ◉ on a lesson card
+        await Waits.Until(() => vm.Image is not null);
+
+        Assert.Equal(SectionKey.Maps, shell.CurrentKey);
+        Assert.Equal(MapMode.Lesson, vm.Mode);
+        Assert.False(vm.IsTracking);
+        Assert.Equal(("ВЦ", 2), (vm.Current!.Building, vm.Current.Floor));
+        Assert.Equal("ВЦ — показан план ГК", vm.Note);
+        Assert.StartsWith("Пара: ", vm.ContextLine);
+        Assert.Equal(1, files.EnsureCalls);   // not cached: fetched once
+        Assert.Null(shell.PendingMap);        // consumed
+    }
+
+    [AvaloniaFact]
+    public async Task Manual_Selection_Stops_Tracking_Until_Go_To_Next()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, _, _) = Make(db, ("ГК", 4), ("УЛК", 3));
+        shell.NavigateTo(SectionKey.Maps);
+        await Waits.Until(() => vm.Image is not null);
+
+        vm.BuildingIndex = 1; // УЛК
+        Assert.Equal(5, vm.Floors.Count);
+        vm.SelectFloorCommand.Execute(vm.Floors[2]);
+        await Waits.Until(() => vm.Current is { Building: "УЛК", Floor: 3 });
+        Assert.Equal(MapMode.Manual, vm.Mode);
+        Assert.False(vm.IsTracking);
+        Assert.Equal("УЛК, 3 этаж", vm.ContextLine);
+        Assert.False(vm.HasHighlight);
+
+        await vm.GoToNextCommand.ExecuteAsync(null);
+        Assert.Equal(MapMode.NextLesson, vm.Mode);
+        Assert.Equal(("ГК", 4), (vm.Current!.Building, vm.Current.Floor));
+    }
+
+    [AvaloniaFact]
+    public async Task Download_All_And_Menu_Actions()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, files, launcher) = Make(db, ("ГК", 4));
+        shell.NavigateTo(SectionKey.Maps);
+        await Waits.Until(() => vm.Image is not null);
+
+        await vm.DownloadAllCommand.ExecuteAsync(null);
+        Assert.False(vm.IsDownloading);
+        Assert.Equal(9, files.Progress.Count);
+        Assert.Equal("9 из 9 планов офлайн", vm.CacheStatus);
+        Assert.Contains(db.Services.Toasts.Items, t => t.Text == "Планы скачаны: 9 из 9");
+
+        await vm.OpenSiteCommand.ExecuteAsync(null);
+        Assert.Equal("https://voenmeh.ru/openmap/", Assert.Single(launcher.Urls));
+        await vm.OpenFolderCommand.ExecuteAsync(null);
+        Assert.Equal(files.CacheDir, Assert.Single(launcher.Folders));
+        await vm.VerifyCommand.ExecuteAsync(null);
+        Assert.Contains(db.Services.Toasts.Items, t => t.Text == "9 из 9 планов офлайн");
+    }
+
+    [AvaloniaFact]
+    public async Task Lesson_Handover_Names_The_Lesson_In_The_Header()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, _, _) = Make(db, ("ГК", 4));
+        var map = db.Services.Maps.Resolve("493;")!;
+
+        shell.ShowMap(map, "Матан"); // ◉ on a lesson card, with the name the card shows
+        await Waits.Until(() => vm.Image is not null);
+
+        Assert.Equal(MapMode.Lesson, vm.Mode);
+        Assert.StartsWith("Пара: Матан · 493", vm.ContextLine);
+        Assert.Null(shell.PendingLessonName); // consumed together with the map
+    }
+
+    [Fact]
+    public async Task Lesson_Card_Hands_Its_Display_Name_To_The_Shell()
+    {
+        using var db = TestDb.Create();
+        var shell = new ShellViewModel(db.Services);
+        shell.Register(SectionKey.Maps, () => new Features.States.LoadingViewModel(db.Services)); // nothing consumes the handover
+        var schedule = new Features.Schedule.ScheduleViewModel(db.Services, shell, () => Mon8);
+        shell.Register(SectionKey.Schedule, () => schedule);
+        await schedule.InitializeAsync();
+        var row = schedule.Lessons.First(r => r.CanShowMap);
+        Assert.Equal("Матан", row.DisplayName); // renamed and stripped of the type, exactly as the card shows it
+
+        row.ShowMapCommand.Execute(null); // ◉ on the card
+
+        Assert.Equal(SectionKey.Maps, shell.CurrentKey);
+        var (map, lessonName) = shell.TakePendingMap();
+        Assert.Same(row.Row.Map, map);
+        Assert.Equal(row.DisplayName, lessonName);
+        Assert.Null(shell.PendingMap);
+        Assert.Null(shell.PendingLessonName);
+    }
+
+    [AvaloniaFact]
+    public async Task Switching_Plans_Disposes_The_Previous_Decode()
+    {
+        using var db = TestDb.Create();
+        var (_, vm, _, _) = Make(db, ("ГК", 4), ("УЛК", 5));
+
+        await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("493;")!, "Матан");
+        var first = vm.Image!;
+        await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("526*;")!, "История");
+        var second = vm.Image!;
+
+        Assert.NotSame(first, second);
+        Assert.Equal(new PixelSize(200, 100), second.PixelSize);
+        Assert.Throws<ObjectDisposedException>(() => _ = first.PixelSize);
+
+        vm.Detach();
+        Assert.Null(vm.Image);
+        Assert.Throws<ObjectDisposedException>(() => _ = second.PixelSize);
+    }
+
+    [AvaloniaFact]
+    public async Task Cache_Probe_Failures_Never_Escape_The_Section()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, files, _) = Make(db, ("ГК", 4));
+        shell.NavigateTo(SectionKey.Maps);
+        await Waits.Until(() => vm.Image is not null);
+        Assert.Equal("1 из 9 планов офлайн", vm.CacheStatus);
+        var lastGood = vm.Image;
+
+        files.ThrowOnStatus = true;
+        files.ThrowOnLocalPath = true;
+        await vm.ActivateAsync(); // the shell runs this fire-and-forget: it must never throw
+
+        Assert.Equal("1 из 9 планов офлайн", vm.CacheStatus); // the failed probe keeps the last known text
+        Assert.Contains("Показана последняя доступная карта", vm.ImageError);
+        Assert.Same(lastGood, vm.Image);
+    }
+
+    /// <summary>T6 #4: after «Скачать свежие планы» the plan that failed to load before is shown again — with its
+    /// highlight, not as a bare picture. The room 320 (УЛК 3) is the fixture's only one with coordinates.</summary>
+    [AvaloniaFact]
+    public async Task Download_All_Restores_The_Plan_With_Its_Highlight()
+    {
+        using var db = TestDb.Create();
+        var (_, vm, files, _) = Make(db);
+        files.EnsureFails = true;
+        await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("320*;")!, "Физика");
+        Assert.Null(vm.Image);
+        Assert.Equal("План не загружен: нет сети и встроенной копии", vm.ImageError);
+
+        files.EnsureFails = false;
+        await vm.DownloadAllCommand.ExecuteAsync(null);
+
+        Assert.NotNull(vm.Image);
+        Assert.Null(vm.ImageError);
+        Assert.True(vm.HasHighlight);
+        Assert.Equal("320", vm.HighlightLabel);
+        Assert.Equal(MapMode.Lesson, vm.Mode); // tracking was not switched on behind the user's back
+    }
+
+    /// <summary>T6 #5: Core swallows per-file failures, so the toast compares the cache against the total.</summary>
+    [AvaloniaFact]
+    public async Task Partial_Download_Warns_Instead_Of_Celebrating()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, files, _) = Make(db, ("ГК", 4));
+        files.SkipOnDownload = ("УЛК", 5);
+        shell.NavigateTo(SectionKey.Maps);
+        await Waits.Until(() => vm.Image is not null);
+
+        await vm.DownloadAllCommand.ExecuteAsync(null);
+
+        Assert.Equal("8 из 9 планов офлайн", vm.CacheStatus);
+        Assert.Contains(db.Services.Toasts.Items, t => t.Kind == ToastKind.Warn && t.Text == "Скачано 8 из 9 — часть планов недоступна");
+        Assert.DoesNotContain(db.Services.Toasts.Items, t => t.Text.StartsWith("Планы скачаны"));
+        Assert.False(vm.IsDownloading);
+    }
+
+    /// <summary>T6 #8: the «ВЦ — показан план ГК» note is chrome and stays Russian when stored language is en.</summary>
+    [AvaloniaFact]
+    public async Task Vc_Note_Stays_Russian_When_Stored_Language_Is_English()
+    {
+        using var db = TestDb.Create();
+        var (_, vm, _, _) = Make(db);
+        await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("ВЦ 280;")!, "Матан");
+        Assert.Equal("ВЦ — показан план ГК", vm.Note);
+        db.Services.Loc.SetLanguage("en");
+        Assert.Equal("ru", db.Services.Loc.Language);
+        Assert.Equal("ВЦ — показан план ГК", vm.Note);
+        Assert.Equal(db.Services.I18n.T("mapVc"), vm.Note);
+    }
+
+    /// <summary>T6 #15: a plan still decoding when the section is detached must not resurface as an undisposed bitmap.</summary>
+    [AvaloniaFact]
+    public async Task Detach_Wins_Over_An_In_Flight_Decode()
+    {
+        using var db = TestDb.Create();
+        var (_, vm, _, _) = Make(db, ("ГК", 4));
+        var showing = vm.ShowLessonMapAsync(db.Services.Maps.Resolve("493;")!, "Матан");
+        vm.Detach();
+        await showing;
+        Assert.Null(vm.Image);
+    }
+
+    [AvaloniaFact]
+    public async Task Renders_Both_Themes_And_Fullscreen_Closes_On_Escape()
+    {
+        using var db = TestDb.Create();
+        db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        var (shell, vm, _, _) = Make(db, ("ГК", 4));
+        await shell.StartAsync(allowNetwork: false);
+        var window = new MainWindow { DataContext = shell };
+        window.Show();
+        shell.NavigateTo(SectionKey.Maps);
+        await Waits.Until(() => vm.Image is not null);
+        Pump();
+
+        SetTheme(ThemeVariant.Dark);
+        Frames.Capture(window, "maps-dark");
+        SetTheme(ThemeVariant.Light);
+        Frames.Capture(window, "maps-light");
+
+        vm.ToggleFullscreenCommand.Execute(null);
+        Assert.IsType<MapFullscreenViewModel>(shell.Overlay);
+        Pump();
+        Frames.Capture(window, "maps-fullscreen-light");
+        window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+        Assert.Null(shell.Overlay);
+
+        // Swapping the plan disposes the one the window is rendering: the renderer holds its own ref, so this is safe.
+        var shown = vm.Image!;
+        await vm.ShowLessonMapAsync(db.Services.Maps.Resolve("526*;")!, "История");
+        Pump();
+        Frames.Capture(window, "maps-swap-light");
+        Assert.NotSame(shown, vm.Image);
+        Assert.Throws<ObjectDisposedException>(() => _ = shown.PixelSize);
+        AssertNoBindingErrors();
+
+        // Ctrl+1…8 stay live over the fullscreen map (HandleShortcut only swallows the bare keys), so navigating
+        // has to close it — otherwise the new section is switched to invisibly, behind the plan.
+        vm.ToggleFullscreenCommand.Execute(null);
+        Assert.True(shell.HasOverlay);
+        shell.NavigateTo(SectionKey.Week);
+        Assert.False(shell.HasOverlay);
+    }
+
+    [AvaloniaFact]
+    public async Task No_Upcoming_Lessons_Is_Mode_None()
+    {
+        using var db = TestDb.Create();
+        var s = db.Services.Db.GetSettings();
+        s.MyGroupId = "9999";
+        db.Services.Db.SaveSettings(s);
+        var (shell, vm, _, _) = Make(db);
+        shell.NavigateTo(SectionKey.Maps);
+        await Waits.Until(() => vm.Mode == MapMode.None && vm.ContextLine.Length > 0, "maps none-mode");
+        Assert.Equal("Нет предстоящих занятий", vm.ContextLine);
+        Assert.False(vm.HasMap);
+        Assert.Null(vm.Image);
+        Assert.True(vm.ShowGoToNext); // «К следующей паре» stays available: pressing it re-checks the timetable
+    }
+
+    /// <summary>Detach() must unsubscribe the shell events, not merely block the decode: after switching the settings
+    /// to a group without lessons, a live handler would re-track into Mode None («Нет предстоящих занятий»); a detached
+    /// section keeps Mode NextLesson and its «Следующая пара …» line. Those are set before the _detached decode guard,
+    /// so this cannot be satisfied by the guard alone.</summary>
+    [AvaloniaFact]
+    public async Task Detach_Ignores_Shell_Events()
+    {
+        using var db = TestDb.Create();
+        var (shell, vm, _, _) = Make(db, ("ГК", 4));
+        shell.NavigateTo(SectionKey.Maps);
+        await Waits.Until(() => vm.Image is not null, "plan");
+        Assert.Equal(MapMode.NextLesson, vm.Mode);
+        var line = vm.ContextLine;
+        Assert.StartsWith("Следующая пара · 493", line);
+
+        vm.Detach();
+        Assert.Null(vm.Image);
+
+        var s = db.Services.Db.GetSettings();
+        s.MyGroupId = "9999"; // Е452Б: no lessons — a live handler would now re-track into «Нет предстоящих занятий»
+        db.Services.Db.SaveSettings(s);
+        shell.RaiseScheduleChanged();
+        shell.RaiseGroupChanged();
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MapMode.NextLesson, vm.Mode);
+        Assert.Equal(line, vm.ContextLine);
+        Assert.Null(vm.Image);
+    }
+
+    /// <summary>R29: with a dialog over the fullscreen map, Escape closes the dialog first, the map second.</summary>
+    [AvaloniaFact]
+    public async Task Escape_Closes_The_Dialog_Before_The_Fullscreen_Map()
+    {
+        using var db = TestDb.Create();
+        db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        var (shell, vm, _, _) = Make(db, ("ГК", 4));
+        await shell.StartAsync(allowNetwork: false);
+        var window = new MainWindow { DataContext = shell };
+        window.Show();
+        window.Focus();
+        shell.NavigateTo(SectionKey.Maps);
+        await Waits.Until(() => vm.Image is not null, "plan");
+        vm.ToggleFullscreenCommand.Execute(null);
+        var dialog = shell.Dialogs.ShowAsync(new Dialogs.ConfirmDialogViewModel("t", "m", "ok", false));
+        Pump();
+
+        window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+        Assert.False(await dialog);
+        Assert.True(shell.HasOverlay);
+
+        window.KeyPress(Key.Escape, RawInputModifiers.None, PhysicalKey.Escape, null);
+        Assert.False(shell.HasOverlay);
+        AssertNoBindingErrors();
+    }
+
+    /// <summary>The fixture's only room with coordinates (coords.json: «УЛК 3» → «320»); the frame must show the highlight.</summary>
+    [AvaloniaFact]
+    public async Task Highlight_Is_Shown_For_A_Room_With_Coordinates()
+    {
+        using var db = TestDb.Create();
+        db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        var (shell, vm, _, _) = Make(db, ("УЛК", 3));
+        await shell.StartAsync(allowNetwork: false);
+        var window = new MainWindow { DataContext = shell };
+        window.Show();
+        shell.ShowMap(db.Services.Maps.Resolve("320*;"), "Физика");
+        await Waits.Until(() => vm.Image is not null, "plan");
+        Pump();
+
+        Assert.True(vm.HasHighlight);
+        Assert.Equal("320", vm.HighlightLabel);
+        Assert.True(vm.HighlightWidth > 0 && vm.HighlightHeight > 0);
+        SetTheme(ThemeVariant.Light);
+        Frames.Capture(window, "maps-highlight-light");
+        SetTheme(ThemeVariant.Dark);
+        Frames.Capture(window, "maps-highlight-dark");
+        var label = window.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "HighlightLabel");
+        Assert.True(label.IsVisible);
+        Assert.False(label.GetVisualAncestors().OfType<ZoomPanel>().Any()); // outside the zoom transform: constant size
+        AssertNoBindingErrors();
+    }
+
+    /// <summary>The chip lives outside the zoom transform, so only the code-behind moves it: pan and zoom the plan
+    /// and it must land where MapsComposer.LabelOffset says. And it must get there without a layout pass — a label
+    /// positioned through Margin invalidates its own measure and arrange, and a changed desired size then drags the
+    /// map panel (with the ZoomPanel's arrange and transform) through a full layout pass per pan frame (T10-R6).</summary>
+    [AvaloniaFact]
+    public async Task Highlight_Label_Follows_The_View_Without_A_Layout_Pass()
+    {
+        using var db = TestDb.Create();
+        db.Services.Theme = ThemeService.ForApplication(Application.Current!, db.Services.Prefs);
+        var (shell, vm, _, _) = Make(db, ("УЛК", 3));
+        await shell.StartAsync(allowNetwork: false);
+        var window = new MainWindow { DataContext = shell };
+        window.Show();
+        shell.ShowMap(db.Services.Maps.Resolve("320*;"), "Физика");
+        await Waits.Until(() => vm.Image is not null, "plan");
+        Pump();
+
+        var zoom = window.GetVisualDescendants().OfType<ZoomPanel>().Single();
+        var label = window.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "HighlightLabel");
+        var host = (Visual)label.GetVisualParent()!;
+        Assert.Null(zoom.Transitions); // motion is off in the suite, so every view change below lands at once
+
+        Point Rendered() => label.TranslatePoint(new Point(0, 0), host)!.Value;
+        Point Expected() => MapsComposer.LabelOffset(zoom.Scale, zoom.OffsetX, zoom.OffsetY, vm.HighlightLeft, vm.HighlightTop,
+            zoom.Bounds.Size, label.Bounds.Size);
+        void AssertTracks()
+        {
+            var (expected, rendered) = (Expected(), Rendered());
+            Assert.Equal(expected.X, rendered.X, 3);
+            Assert.Equal(expected.Y, rendered.Y, 3);
+        }
+
+        AssertTracks();
+        var before = Rendered();
+
+        zoom.Scale = 2;      // zoom in…
+        zoom.OffsetX -= 40;  // …and pan
+        zoom.OffsetY -= 25;
+        Assert.True(label.IsMeasureValid, "moving the label must not invalidate its measure");
+        Assert.True(label.IsArrangeValid, "…nor its arrange: that is a layout pass on every frame of a pan");
+
+        Pump();
+        Assert.NotEqual(before, Rendered());
+        AssertTracks();
+        AssertNoBindingErrors();
+    }
+
+    /// <summary>Viewport 600×400 (the card the plan is clipped to) with a 40×22 room chip in every row.</summary>
+    [Theory]
+    [InlineData(1.0, 0, 0, 100, 60, 100, 34)]
+    [InlineData(2.0, 10, 20, 100, 60, 210, 114)]
+    [InlineData(0.5, -300, 0, 100, 10, 0, 0)]     // off the left/top edge: clamped so the label stays readable
+    [InlineData(1.0, 900, 0, 100, 60, 560, 34)]   // panned right: the chip stays inside the clipped card
+    [InlineData(1.0, 0, 700, 100, 60, 100, 378)]  // panned down: same at the far edge
+    public void Highlight_Label_Sits_Above_The_Rectangle_In_Viewport_Space(double scale, double ox, double oy, double left, double top, double x, double y) =>
+        Assert.Equal(new Point(x, y), MapsComposer.LabelOffset(scale, ox, oy, left, top, new Size(600, 400), new Size(40, 22)));
+
+    /// <summary>
+    /// VOGRAPH_OFFLINE=1 promises «no lecturer or map downloads» (App.axaml.cs), and the «…» menu's «Скачать
+    /// свежие планы» was the one door out of this section that ignored it: EnsureAsync stops at the bundled copy
+    /// with the switch off, DownloadAllAsync went straight to MapService and pulled all nine plans. The package
+    /// stands in for the site here, so both halves cost no network: with the switch on the call fills the cache
+    /// from the bundled folder, with it off the cache stays untouched and the log says why.
+    /// </summary>
+    [Fact]
+    public async Task Download_All_Stops_At_The_Offline_Switch()
+    {
+        using var db = TestDb.Create();
+        var bundled = Path.Combine(db.Dir, "bundled-maps");
+        var cache = Path.Combine(db.Dir, "maps-cache");
+        Directory.CreateDirectory(bundled);
+        foreach (var url in MapService.MapUrls.Values)
+            await File.WriteAllBytesAsync(Path.Combine(bundled, Path.GetFileName(new Uri(url).LocalPath)), new byte[2048], TestContext.Current.CancellationToken);
+        var online = false;
+        var files = new MapFiles(new MapService(db.Services.Db, db.Services.Schedule, cache, bundled), db.Services.Log, () => online);
+
+        await files.DownloadAllAsync(null, TestContext.Current.CancellationToken);
+
+        Assert.Empty(Directory.GetFiles(cache, "*.jpg")); // nothing fetched, nothing even copied
+        Assert.Contains("maps: «Скачать свежие планы» skipped, network disabled for this run", File.ReadAllText(db.Services.Log.CurrentFile));
+
+        online = true;
+        await files.DownloadAllAsync(null, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MapService.MapUrls.Count, Directory.GetFiles(cache, "*.jpg").Length); // the same call does its work when the run is online
+    }
+}

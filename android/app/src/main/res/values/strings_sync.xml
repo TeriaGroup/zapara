@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sync_conflict_title">Конфликт синхронизации</string>
+    <string name="sync_keep_local">Оставить локальные</string>
+    <string name="sync_keep_server">Оставить серверные</string>
+    <string name="sync_conflict_body">Локальные и серверные данные разошлись. Выберите версию.</string>
+    <string name="sync_expired">Сессия синхронизации истекла</string>
+    <string name="sync_offline">Нет сети для синхронизации</string>
+</resources>

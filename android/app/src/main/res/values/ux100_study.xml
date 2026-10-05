@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ux100_study_deadline_all">Любой срок</string>
+    <string name="ux100_study_deadline_overdue">Просрочено</string>
+    <string name="ux100_study_deadline_urgent">Срочно</string>
+    <string name="ux100_study_deadline_soon">Скоро</string>
+    <string name="ux100_study_deadline_none">Без срока</string>
+    <string name="ux100_study_origin_all">Все задания</string>
+    <string name="ux100_study_origin_personal">Личные</string>
+    <string name="ux100_study_origin_shared">Общие</string>
+    <string name="ux100_study_with_files">С файлами</string>
+    <string name="ux100_study_sort_subject">По предмету</string>
+    <string name="ux100_study_reset_filters">Сбросить фильтры</string>
+    <string name="ux100_study_more_filters">Ещё фильтры</string>
+    <string name="ux100_study_hide_more_filters">Скрыть фильтры</string>
+    <string name="ux100_study_delete_assignment">Удалить задание по предмету %1$s</string>
+    <string name="ux100_study_delete_detail">%1$s: %2$s</string>
+    <string name="ux100_study_week_classes_only">Только дни с парами</string>
+    <string name="ux100_study_week_open_next">Первый день с парами</string>
+    <string name="ux100_study_week_show_days">Показать все дни</string>
+    <string name="ux100_study_week_search">Найти предмет, преподавателя или аудиторию</string>
+    <string name="ux100_study_week_no_match">На этой неделе совпадений нет</string>
+    <string name="ux100_study_week_clear_search">Очистить поиск</string>
+    <string name="ux100_study_summary_count">Позиций: %1$d</string>
+    <string name="ux100_study_summary_all">Показать все</string>
+    <string name="ux100_study_summary_less">Свернуть список</string>
+    <string name="ux100_study_teacher_my_group_only">Только моя группа</string>
+    <string name="ux100_study_teacher_no_my_group">У преподавателя нет пар моей группы для выбранной недели</string>
+    <string name="ux100_study_teacher_show_all_groups">Показать другие группы</string>
+    <string name="ux100_study_jump_current">К ближайшей паре</string>
+    <string name="ux100_study_jump_deadlines">К срокам сдачи</string>
+    <string name="ux100_study_expand_groups">Раскрыть все разделы</string>
+    <string name="ux100_study_collapse_groups">Свернуть все разделы</string>
+</resources>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_schedule_preview_subject1">Математический анализ</string>
+    <string name="widget_schedule_preview_meta1">09:00 – 10:35 · 493 ГК</string>
+    <string name="widget_schedule_preview_number1">1</string>
+    <string name="widget_schedule_preview_subject2">История России</string>
+    <string name="widget_schedule_preview_meta2">10:45 – 12:20 · 201 ЛК</string>
+    <string name="widget_schedule_preview_number2">2</string>
+    <string name="widget_homework_preview_subject1">Математический анализ</string>
+    <string name="widget_homework_preview_detail1">Задачи 1–5 · до завтра</string>
+    <string name="widget_homework_preview_subject2">Физика</string>
+    <string name="widget_homework_preview_detail2">Лабораторная работа · до пятницы</string>
+</resources>

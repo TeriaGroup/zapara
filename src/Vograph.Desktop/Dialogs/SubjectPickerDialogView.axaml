@@ -1,0 +1,34 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="using:Vograph.Desktop.Dialogs"
+             xmlns:h="using:Vograph.Desktop.Features.Homeworks"
+             xmlns:loc="using:Vograph.Desktop.Services"
+             x:Class="Vograph.Desktop.Dialogs.SubjectPickerDialogView"
+             x:DataType="d:SubjectPickerDialogViewModel">
+  <StackPanel Spacing="12" Width="460">
+    <TextBlock Classes="micro" Text="{Binding Title}" />
+    <TextBlock Text="В расписании нет предметов. Введите название вручную; срок появится, когда занятие по нему будет найдено." IsVisible="{Binding ManualEntry}" TextWrapping="Wrap" />
+    <TextBox Text="{Binding ManualSubject}" PlaceholderText="Название предмета" IsVisible="{Binding ManualEntry}" AutomationProperties.AutomationId="Dialog.ManualSubject" />
+    <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding ShowList}">
+      <TextBox Name="SearchBox" Text="{Binding Query}" KeyDown="OnSearchKeyDown" PlaceholderText="{loc:T hwPickSubjectHint}" AutomationProperties.AutomationId="Dialog.Search" />
+      <Button Grid.Column="1" Margin="8,0,0,0" IsVisible="{Binding HasQuery}" Content="Сбросить" Command="{Binding ClearQueryCommand}" AutomationProperties.AutomationId="Dialog.ClearSearch" />
+    </Grid>
+    <TextBlock IsVisible="{Binding NoResults}" Text="Предметы не найдены. Попробуйте другое название или сбросьте поиск." Classes="muted caption" TextWrapping="Wrap" />
+    <ListBox Name="List" ItemsSource="{Binding Filtered}" SelectedItem="{Binding Selected}" MaxHeight="320" IsVisible="{Binding ShowList}" AutomationProperties.AutomationId="Dialog.List">
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="h:SubjectOption">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="{Binding Display}" VerticalAlignment="Center" />
+            <Border Classes="chip type" VerticalAlignment="Center" IsVisible="{Binding TypeLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+              <TextBlock Text="{Binding TypeLabel}" />
+            </Border>
+          </StackPanel>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+    <Grid ColumnDefinitions="*,Auto,Auto">
+      <Button Grid.Column="1" Content="{loc:T cancel}" Command="{Binding CancelCommand}" Margin="0,0,8,0" AutomationProperties.AutomationId="Dialog.Cancel" />
+      <Button Grid.Column="2" Classes="primary" Content="{loc:T select}" Command="{Binding ConfirmCommand}" AutomationProperties.AutomationId="Dialog.Confirm" />
+    </Grid>
+  </StackPanel>
+</UserControl>

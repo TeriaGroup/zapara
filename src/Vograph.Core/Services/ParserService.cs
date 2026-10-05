@@ -1,13 +1,13 @@
 using System.Text;
-using System.Xml;
 using Vograph.Core.Models;
+using Vograph.Timetable;
 
 namespace Vograph.Core.Services;
 
 public class ParserService
 {
     private readonly Database _db;
-    public const string DefaultUrl = "https://voenmeh.ru/wp-content/themes/Avada-Child-Theme-Voenmeh/_voenmeh_grafics/TimetableGroup50.xml";
+    public const string DefaultUrl = TimetableParser.DefaultUrl;
 
     public ParserService(Database db)
     {
@@ -15,219 +15,36 @@ public class ParserService
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
     }
 
+    private HttpClient? _http;
+    private HttpClient Http => _http ??= CreateHttpClient();
+
+    /// <summary>One client per service instance (was one per call): the same UA header, no socket churn.</summary>
+    public static HttpClient CreateHttpClient()
+    {
+        var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Vograph/2.0");
+        return http;
+    }
+
     public async Task<(string xml, string raw)> FetchXmlAsync(string url = DefaultUrl, HttpClient? client = null)
     {
-        var http = client ?? new HttpClient();
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Vograph/1.0");
-        var bytes = await http.GetByteArrayAsync(url);
-        // Detect BOM
-        string xml;
-        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
-        {
-            // UTF-16LE
-            xml = Encoding.Unicode.GetString(bytes);
-        }
-        else if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
-        {
-            xml = Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
-        }
-        else
-        {
-            // try UTF-8
-            xml = Encoding.UTF8.GetString(bytes);
-            // if contains null chars, maybe UTF-16BE?
-            if (xml.Contains('\0'))
-            {
-                xml = Encoding.Unicode.GetString(bytes);
-            }
-        }
-        return (xml, Convert.ToBase64String(bytes)); // raw as base64 for storage if needed
+        var bytes = await (client ?? Http).GetByteArrayAsync(url);
+        var xml = RequireTimetable(DecodeXml(bytes));
+        return (xml, Convert.ToBase64String(bytes));
+    }
+
+    /// <summary>voenmeh.ru serves the XML as UTF-16LE with a BOM; archives came as UTF-8 with and without one.
+    /// The single decoder for timetables, lecturers and the desktop refresher.</summary>
+    public static string DecodeXml(byte[] bytes) => TimetableParser.DecodeXml(bytes);
+
+    public static string RequireTimetable(string xml)
+    {
+        if (TimetableParser.IsHtml(xml)) throw new InvalidOperationException(TimetableParser.NotTimetable);
+        return xml;
     }
 
     public (List<Group> groups, List<Lesson> lessons, DateTime periodStart, int weekCount, string periodTitle) Parse(string xml)
-    {
-        var doc = new XmlDocument();
-        doc.LoadXml(xml);
-        var periodNode = doc.SelectSingleNode("/Timetable/Period");
-        if (periodNode == null) throw new Exception("Period not found");
-        var title = periodNode.Attributes!["Title"]?.Value ?? "";
-        var sy = int.Parse(periodNode.Attributes!["StartYear"]?.Value ?? "2026");
-        var sm = int.Parse(periodNode.Attributes!["StartMonth"]?.Value ?? "9");
-        var sd = int.Parse(periodNode.Attributes!["StartDay"]?.Value ?? "1");
-        var periodStart = new DateTime(sy, sm, sd);
-        var weeksNode = doc.SelectSingleNode("/Timetable/Weeks");
-        var weekCount = 2;
-        if (weeksNode?.Attributes?["WeekCount"] != null)
-            int.TryParse(weeksNode.Attributes["WeekCount"]!.Value, out weekCount);
-
-        var groups = new List<Group>();
-        var lessons = new List<Lesson>();
-
-        var dayMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["Понедельник"] = 1,
-            ["Вторник"] = 2,
-            ["Среда"] = 3,
-            ["Четверг"] = 4,
-            ["Пятница"] = 5,
-            ["Суббота"] = 6,
-            ["Воскресенье"] = 7
-        };
-
-        var groupNodes = doc.SelectNodes("/Timetable/Group");
-        if (groupNodes != null)
-        {
-            foreach (XmlNode gn in groupNodes)
-            {
-                var id = gn.Attributes?["IdGroup"]?.Value ?? "";
-                var name = gn.Attributes?["Number"]?.Value ?? "";
-                if (string.IsNullOrEmpty(id)) continue;
-                // Group without Days is just a list entry (no schedule yet)
-                groups.Add(new Group { Id = id, Name = name, Url = DefaultUrl });
-
-                var daysNode = gn.SelectSingleNode("Days");
-                if (daysNode == null) continue;
-
-                var dayNodes = daysNode.SelectNodes("Day");
-                if (dayNodes == null) continue;
-                foreach (XmlNode dayNode in dayNodes)
-                {
-                    var dayTitle = dayNode.Attributes?["Title"]?.Value ?? "";
-                    int dayNum = dayMap.TryGetValue(dayTitle, out var v) ? v : 0;
-                    if (dayNum == 0) continue;
-
-                    var lessonNodes = dayNode.SelectNodes("GroupLessons/Lesson");
-                    if (lessonNodes == null) continue;
-                    // need to keep index per day+parity
-                    var indexPerParity = new Dictionary<int, int>();
-                    foreach (XmlNode ln in lessonNodes)
-                    {
-                        var wcStr = ln.SelectSingleNode("WeekCode")?.InnerText?.Trim() ?? "0";
-                        int.TryParse(wcStr, out var parity);
-                        if (parity < 0 || parity > 2) parity = 0;
-
-                        var timeRaw = ln.SelectSingleNode("Time")?.InnerText?.Trim() ?? "";
-                        var discRaw = ln.SelectSingleNode("Discipline")?.InnerText?.Trim() ?? "";
-                        var classroomRaw = ln.SelectSingleNode("Classroom")?.InnerText?.Trim() ?? "";
-
-                        // teacher raw: join ShortName
-                        var lectNodes = ln.SelectNodes("Lecturers/Lecturer");
-                        var teachers = new List<string>();
-                        if (lectNodes != null)
-                        {
-                            foreach (XmlNode lec in lectNodes)
-                            {
-                                var sn = lec.SelectSingleNode("ShortName")?.InnerText?.Trim();
-                                if (!string.IsNullOrEmpty(sn)) teachers.Add(sn);
-                            }
-                        }
-                        var teacherRaw = string.Join("; ", teachers);
-
-                        // Parse type and subject
-                        string typeRaw = "";
-                        string subjectRaw = discRaw;
-                        if (!string.IsNullOrWhiteSpace(discRaw))
-                        {
-                            var parts = discRaw.Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
-                            if (parts.Length == 2)
-                            {
-                                // Heuristic: first token is type if it's short (лек, пр, лаб, etc.)
-                                var first = parts[0].ToLowerInvariant();
-                                if (first is "лек" or "пр" or "лаб" or "конс" or "зач" or "экз" or "курс" or "практика")
-                                {
-                                    typeRaw = parts[0];
-                                    subjectRaw = parts[1];
-                                }
-                                else
-                                {
-                                    // keep full as subject, type empty
-                                    typeRaw = "";
-                                    subjectRaw = discRaw;
-                                }
-                            }
-                        }
-
-                        // Parse timeStart/timeEnd
-                        string timeStart = "";
-                        string timeEnd = "";
-                        if (!string.IsNullOrWhiteSpace(timeRaw))
-                        {
-                            // Time like "9:00 Нечетная" -> extract HH:mm
-                            var m = System.Text.RegularExpressions.Regex.Match(timeRaw, @"(\d{1,2}:\d{2})");
-                            if (m.Success) timeStart = m.Groups[1].Value.PadLeft(5, '0'); // ensure 09:00
-                            // derive end +95 min
-                            if (!string.IsNullOrEmpty(timeStart) && TimeSpan.TryParse(timeStart, out var ts))
-                            {
-                                var te = ts.Add(TimeSpan.FromMinutes(95));
-                                timeEnd = te.ToString(@"hh\:mm");
-                            }
-                        }
-
-                        // Parse room/building
-                        string roomRaw = "";
-                        string buildingRaw = "";
-                        if (!string.IsNullOrWhiteSpace(classroomRaw))
-                        {
-                            var raw = classroomRaw.Trim().TrimEnd(';').Trim();
-                            // split first token if building prefix like "ВЦ 282"
-                            // If raw contains letters and digits, separate
-                            // Simple: if raw contains space, building = before space, room = after
-                            // Also handle "дистанционно"
-                            if (raw.Equals("дистанционно", StringComparison.OrdinalIgnoreCase))
-                            {
-                                roomRaw = raw;
-                                buildingRaw = "";
-                            }
-                            else
-                            {
-                                // remove * indicator
-                                var clean = raw.Replace("*", "").Trim();
-                                // check for building codes
-                                var parts = clean.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                                if (parts.Length >= 2 && parts[0].Any(char.IsLetter))
-                                {
-                                    buildingRaw = parts[0];
-                                    roomRaw = string.Join(" ", parts.Skip(1)).TrimEnd(';');
-                                }
-                                else
-                                {
-                                    roomRaw = clean;
-                                    buildingRaw = raw.Contains("*") ? "*" : "";
-                                    // Keep building as "*" or empty? Spec says buildingRaw separate
-                                    // if original had "*", building is main corpus
-                                    if (raw.Contains("*")) buildingRaw = "main";
-                                }
-                            }
-                        }
-
-                        if (!indexPerParity.ContainsKey(parity)) indexPerParity[parity] = 0;
-                        indexPerParity[parity]++;
-                        int idx = indexPerParity[parity];
-
-                        var lesson = new Lesson
-                        {
-                            GroupId = id,
-                            DayOfWeek = dayNum,
-                            Parity = parity,
-                            Index = idx,
-                            TimeStart = timeStart,
-                            TimeEnd = timeEnd,
-                            SubjectRaw = discRaw, // keep full discipline as spec says raw
-                            SubjectNormalized = ParityService.NormalizeSubject(discRaw),
-                            TeacherRaw = teacherRaw,
-                            RoomRaw = roomRaw,
-                            BuildingRaw = buildingRaw,
-                            TypeRaw = typeRaw,
-                            ClassroomRaw = classroomRaw
-                        };
-                        lessons.Add(lesson);
-                    }
-                }
-            }
-        }
-
-        return (groups, lessons, periodStart, weekCount, title);
-    }
+        => new TimetableParser().Parse(xml);
 
     public async Task<(DateTime periodStart, int weekCount, string periodTitle)> RefreshAsync(string url = DefaultUrl, string? xmlOverride = null)
     {
@@ -243,13 +60,14 @@ public class ParserService
         }
 
         var (groups, lessons, periodStart, weekCount, periodTitle) = Parse(xml);
+        var existing = _db.GetSettings();
+        if (TimetableParser.IsOlderPeriod(periodStart, existing.PeriodStart, existing.LastFetchedAt))
+            throw new InvalidOperationException(TimetableParser.OlderTimetable);
 
         // Preserve overrides/homework (do not delete them) — only refresh schedule_cache and groups
-        // Use transaction: clear schedule_cache per group, upsert groups, insert lessons
         using var tx = _db.Connection.BeginTransaction();
         try
         {
-            // Save period info to settings
             var settings = _db.GetSettings();
             settings.PeriodTitle = periodTitle;
             settings.PeriodStart = periodStart.ToString("yyyy-MM-dd");
@@ -257,21 +75,15 @@ public class ParserService
             settings.LastFetchedAt = DateTime.UtcNow.ToString("o");
             _db.SaveSettings(settings);
 
-            // Upsert groups first
             foreach (var g in groups)
             {
                 g.LastFetchedAt = DateTime.UtcNow;
                 g.Url = url;
-                // keep rawXml for groups with schedule
-                if (lessons.Any(l => l.GroupId == g.Id))
-                {
-                    // store raw group xml snippet? Not needed
-                }
                 _db.UpsertGroup(g);
             }
 
-            // Group lessons by groupId to clear and reinsert per group
             var lessonsByGroup = lessons.GroupBy(l => l.GroupId);
+            var idsWithLessons = new HashSet<string>(lessonsByGroup.Select(g => g.Key));
             foreach (var grp in lessonsByGroup)
             {
                 _db.ClearScheduleForGroup(grp.Key);
@@ -280,9 +92,11 @@ public class ParserService
                     _db.InsertLesson(lesson);
                 }
             }
-
-            // For groups that existed but now have zero lessons (maybe empty), ensure schedule cleared? Already cleared only if in lessonsByGroup.
-            // If a group had no Days (like just listing), we already upserted but not cleared; leave as is (no schedule).
+            foreach (var g in groups)
+            {
+                if (!idsWithLessons.Contains(g.Id))
+                    _db.ClearScheduleForGroup(g.Id);
+            }
 
             tx.Commit();
         }
@@ -292,15 +106,101 @@ public class ParserService
             throw;
         }
 
-        // Recompute homework due dates after schedule change (per spec: recompute on every cache update, never delete overrides/homework)
+        RecomputeHomework();
+        return (periodStart, weekCount, periodTitle);
+    }
+
+    /// <summary>Selected group plus enabled friends — live JSON fetches these names only, never the whole catalog.</summary>
+    public static List<string> NeededGroupNames(Database db)
+    {
+        var s = db.GetSettings();
+        var names = new List<string>();
+        var selected = string.IsNullOrEmpty(s.MyGroupId) ? null : db.GetGroup(s.MyGroupId);
+        if (selected is { Name.Length: > 0 }) names.Add(selected.Name);
+        else if (!string.IsNullOrWhiteSpace(s.MyGroupId)) names.Add(s.MyGroupId);
+        foreach (var friend in db.GetFriends())
+            if (friend.Enabled && !string.IsNullOrWhiteSpace(friend.GroupName)) names.Add(friend.GroupName);
+        return names.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>Ingest the live Voenmeh JSON snapshot. Incoming group ids are names; keep existing SQLite ids by name
+    /// so homework, overrides and MyGroupId=3313 survive. Lessons are replaced only for groups that were fetched —
+    /// a catalog-only payload must not wipe last-good pairs.</summary>
+    public (DateTime periodStart, int weekCount, string periodTitle) RefreshParsed(ParsedSchedule parsed)
+    {
+        var existing = _db.GetSettings();
+        if (TimetableParser.IsOlderPeriod(parsed.PeriodStart, existing.PeriodStart, existing.LastFetchedAt))
+            throw new InvalidOperationException(TimetableParser.OlderTimetable);
+
+        using var tx = _db.Connection.BeginTransaction();
         try
         {
-            var hwService = new HomeworkService(_db);
-            hwService.RecomputeAllStatuses();
+            var settings = _db.GetSettings();
+            settings.PeriodTitle = parsed.PeriodTitle;
+            settings.PeriodStart = parsed.PeriodStart.ToString("yyyy-MM-dd");
+            settings.WeekCount = parsed.WeekCount;
+            settings.LastFetchedAt = DateTime.UtcNow.ToString("o");
+            _db.SaveSettings(settings);
+
+            var existingByName = _db.GetAllGroups()
+                .GroupBy(g => g.Name, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+            var idByIncoming = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var g in parsed.Groups)
+                idByIncoming[g.Id] = existingByName.TryGetValue(g.Name, out var kept) ? kept.Id : g.Id;
+
+            var now = DateTime.UtcNow;
+            foreach (var g in parsed.Groups)
+            {
+                _db.UpsertGroup(new Group
+                {
+                    Id = idByIncoming[g.Id],
+                    Name = g.Name,
+                    Url = string.IsNullOrWhiteSpace(g.Url) ? VoenmehScheduleClient.Origin : g.Url,
+                    LastFetchedAt = now
+                });
+            }
+
+            var lessonsByIncoming = parsed.Lessons.GroupBy(l => l.GroupId, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+            foreach (var name in parsed.FetchedGroupNames ?? Array.Empty<string>())
+            {
+                var storedId = idByIncoming.TryGetValue(name, out var id) ? id
+                    : existingByName.TryGetValue(name, out var kept) ? kept.Id : name;
+                var listed = idByIncoming.ContainsKey(name);
+                var delivered = lessonsByIncoming.ContainsKey(name) || lessonsByIncoming.ContainsKey(storedId);
+                // A name that was requested but is neither in this catalog nor in the lesson rows
+                // did not deliver a timetable. Clearing it would drop last-good pairs.
+                if (!listed && !delivered) continue;
+                _db.ClearScheduleForGroup(storedId);
+                if (!lessonsByIncoming.TryGetValue(name, out var list)
+                    && !lessonsByIncoming.TryGetValue(storedId, out list)) continue;
+                foreach (var lesson in list.OrderBy(l => l.DayOfWeek).ThenBy(l => l.Parity).ThenBy(l => l.Index))
+                {
+                    lesson.GroupId = storedId;
+                    _db.InsertLesson(lesson);
+                }
+            }
+
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+
+        RecomputeHomework();
+        return (parsed.PeriodStart, parsed.WeekCount, parsed.PeriodTitle);
+    }
+
+    private void RecomputeHomework()
+    {
+        try
+        {
+            new HomeworkService(_db).RecomputeAllStatuses();
         }
         catch { }
-
-        return (periodStart, weekCount, periodTitle);
     }
 
     public async Task<string> FetchAndCacheRawAsync(string destPath, string url = DefaultUrl)

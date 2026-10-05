@@ -1,0 +1,24 @@
+@using Vograph.Core.Campus
+<Modal Title="@Title" Class="map-picker" OnClose="OnClose">
+    <label class="search-field"><Icon Name="search" /><input @bind="query" @bind:event="oninput" placeholder="Аудитория или вход" aria-label="Поиск точки маршрута" autofocus /></label>
+    <div class="map-picker-buildings"><button class="button @(building == "" ? "primary" : "")" @onclick='() => building = ""'>Все</button>@foreach (var b in new[] { "ГК", "УЛК" }) { <button class="button @(building == b ? "primary" : "")" @onclick="() => building = b">@b</button> }</div>
+    <div class="picker-list">
+        @foreach (var place in Matches)
+        {
+            <button class="picker-row" @onclick="() => OnSelect.InvokeAsync(place)"><span>@Label(place)</span><span class="muted caption">@place.Building · @place.Floor этаж</span></button>
+        }
+        @if (!Matches.Any()) { <p class="empty-hint">Точка не найдена в графе маршрутов. Попробуйте другой номер или корпус.</p> }
+    </div>
+    <p class="caption muted">Показаны только размеченные аудитории и входы.</p>
+</Modal>
+@code {
+    [Parameter] public string Title { get; set; } = "Выбрать точку";
+    [Parameter, EditorRequired] public CampusGraph Graph { get; set; } = null!;
+    [Parameter] public EventCallback<Node> OnSelect { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    private string query = "", building = "";
+    private IEnumerable<Node> Matches => Graph.Nodes.Where(n => n.Kind is "room" or "entrance")
+        .Where(n => (building.Length == 0 || n.Building == building) && (query.Trim().Length == 0 || Label(n).Contains(query.Trim(), StringComparison.OrdinalIgnoreCase)))
+        .OrderBy(n => n.Kind == "entrance" ? 0 : 1).ThenBy(n => n.Building).ThenBy(n => n.Room ?? n.Label).Take(100);
+    public static string Label(Node node) => node.Kind == "entrance" ? node.Label ?? "Вход" : "Аудитория " + (node.Room ?? node.Label ?? node.Id);
+}

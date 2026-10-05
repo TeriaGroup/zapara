@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="schedule_pair_count">
+        <item quantity="one">%d пара</item>
+        <item quantity="few">%d пары</item>
+        <item quantity="many">%d пар</item>
+        <item quantity="other">%d пары</item>
+    </plurals>
+    <string name="schedule_empty_title">День без занятий</string>
+    <string name="schedule_next_day">К занятиям · %1$s</string>
+    <string name="maps_route_expand">Маршрут · раскрыть</string>
+    <string name="maps_route_collapse">Маршрут · свернуть</string>
+    <string name="maps_floor_label">Этаж</string>
+    <string name="maps_stack_short">3D</string>
+    <string name="maps_fit_action">Весь план</string>
+    <string name="maps_zoom_percentage">Масштаб %1$d процентов</string>
+    <string name="maps_gestures_hint">Масштаб — двумя пальцами. Двойное касание возвращает весь план.</string>
+    <string name="maps_unavailable_hint">Повторите загрузку или выберите другой этаж.</string>
+    <string name="maps_viewer_title">План этажа</string>
+</resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ux300_visual_day_tools">Действия дня</string>
+    <string name="ux300_visual_day_close">Скрыть действия дня</string>
+    <string name="ux300_visual_week_tools">Инструменты</string>
+    <string name="ux300_visual_week_close">Скрыть инструменты</string>
+    <string name="ux300_visual_week_share">Поделиться</string>
+    <string name="ux300_visual_homework_tools">Инструменты домашки</string>
+    <string name="ux300_visual_homework_close">Скрыть инструменты</string>
+</resources>

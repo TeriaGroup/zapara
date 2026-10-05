@@ -1,14 +1,16 @@
 package ru.bgtu_voenmeh.zapara.data
 
+import java.io.InputStream
+import java.io.InputStreamReader
 import java.io.StringReader
+import java.nio.charset.StandardCharsets
 import java.time.LocalDate
 import java.time.LocalTime
 import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
 
-// Port of Vograph.Core ParserService (student XML). DOM-based so it runs
-// in JVM unit tests and on device (same approach as Windows XmlDocument).
+// DOM-based so it runs in JVM unit tests and on device (same approach as Windows XmlDocument).
 data class ParsedSchedule(
     val groups: List<GroupInfo>,
     val lessons: List<Lesson>,
@@ -25,22 +27,28 @@ object GroupParser {
     private val TIME_RE = Regex("""(\d{1,2}:\d{2})""")
     private val DIGITS_RE = Regex("""\d+""")
 
-    fun parse(xml: String, url: String = DEFAULT_URL): ParsedSchedule {
+    fun parse(xml: String, url: String = DEFAULT_URL): ParsedSchedule =
+        parse(InputSource(StringReader(TimetablePayload.requireXml(xml))), url)
+
+    fun parse(stream: InputStream, url: String = DEFAULT_URL): ParsedSchedule =
+        parse(InputSource(InputStreamReader(stream, StandardCharsets.UTF_8)), url)
+
+    private fun parse(source: InputSource, url: String): ParsedSchedule {
         val dbf = DocumentBuilderFactory.newInstance()
         dbf.isNamespaceAware = false
-        // Harden against XXE; source has no DOCTYPE.
         try { dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) } catch (_: Exception) {}
-        val doc = dbf.newDocumentBuilder().parse(InputSource(StringReader(xml)))
+        val doc = dbf.newDocumentBuilder().parse(source)
         doc.documentElement.normalize()
 
-        val periodEl = doc.getElementsByTagName("Period").item(0) as Element
+        val periodEl = doc.getElementsByTagName("Period").item(0) as? Element
+            ?: throw IllegalStateException("нет Period")
         val title = periodEl.getAttribute("Title")
         val sy = periodEl.getAttribute("StartYear").toIntOrNull() ?: 2026
         val sm = periodEl.getAttribute("StartMonth").toIntOrNull() ?: 9
         val sd = periodEl.getAttribute("StartDay").toIntOrNull() ?: 1
         val periodStart = LocalDate.of(sy, sm, sd)
         val weeksEl = doc.getElementsByTagName("Weeks").item(0) as? Element
-        val weekCount = weeksEl?.getAttribute("WeekCount")?.toIntOrNull() ?: 2
+        val weekCount = weeksEl?.getAttribute("WeekCount")?.toIntOrNull()?.takeIf { it > 0 } ?: 2
 
         val groups = mutableListOf<GroupInfo>()
         val lessons = mutableListOf<Lesson>()
@@ -66,8 +74,8 @@ object GroupParser {
                 val indexPerParity = mutableMapOf<Int, Int>()
                 for (li in 0 until lessonNodes.length) {
                     val ln = lessonNodes.item(li) as? Element ?: continue
-                    val parity = textOf(ln, "WeekCode").toIntOrNull() ?: 0
                     val timeRaw = textOf(ln, "Time")
+                    val parity = Parity.parseXmlParity(textOf(ln, "WeekCode"), timeRaw)
                     val discRaw = textOf(ln, "Discipline")
                     val classroomRaw = textOf(ln, "Classroom")
 
@@ -82,16 +90,12 @@ object GroupParser {
                     }
 
                     var typeRaw = ""
-                    var subjectOnly = discRaw
                     if (discRaw.isNotBlank()) {
                         val parts = discRaw.trim().split(Regex("\\s+"), limit = 2)
                         if (parts.size == 2 && parts[0].lowercase() in TYPE_TOKENS) {
                             typeRaw = parts[0]
-                            subjectOnly = parts[1]
                         }
                     }
-                    @Suppress("UNUSED_VARIABLE")
-                    val ignoredSubjectOnly = subjectOnly
 
                     var timeStart = ""
                     var timeEnd = ""
@@ -104,29 +108,7 @@ object GroupParser {
                         } catch (_: Exception) {}
                     }
 
-                    var roomRaw = ""
-                    var buildingRaw = ""
-                    val raw = classroomRaw.trim().trimEnd(';').trim()
-                    if (raw.isNotEmpty()) {
-                        if (raw.equals("дистанционно", ignoreCase = true)) {
-                            roomRaw = raw
-                        } else {
-                            val clean = raw.replace("*", "").trim()
-                            val parts = clean.split(Regex("[ \t]+")).filter { it.isNotEmpty() }
-                            if (parts.size >= 2 && parts[0].any { it.isLetter() }) {
-                                buildingRaw = parts[0]
-                                roomRaw = parts.drop(1).joinToString(" ").trimEnd(';')
-                            } else {
-                                roomRaw = clean
-                                buildingRaw = when {
-                                    raw.contains("ВЦ", ignoreCase = true) -> "ВЦ"
-                                    raw.contains("*") -> "УЛК" // star = УЛК (user correction 2026-09-01)
-                                    else -> "ГК"
-                                }
-                            }
-                            if (buildingRaw == "main") buildingRaw = "ГК"
-                        }
-                    }
+                    val place = placeOf(classroomRaw)
 
                     val idx = (indexPerParity[parity] ?: 0) + 1
                     indexPerParity[parity] = idx
@@ -137,7 +119,7 @@ object GroupParser {
                             subjectRaw = discRaw,
                             subjectNormalized = Parity.normalizeSubject(discRaw),
                             teacherRaw = teachers.joinToString("; "),
-                            roomRaw = roomRaw, buildingRaw = buildingRaw,
+                            roomRaw = place.first, buildingRaw = place.second,
                             typeRaw = typeRaw, classroomRaw = classroomRaw
                         )
                     )
@@ -152,5 +134,28 @@ object GroupParser {
         // Direct child only (avoid nested matches).
         if (n.parentNode != parent) return ""
         return n.textContent?.trim().orEmpty()
+    }
+
+    internal fun placeOf(classroomRaw: String): Pair<String, String> {
+        val raw = classroomRaw.trim().trimEnd(';').trim()
+        if (raw.isEmpty()) return "" to ""
+        if (raw.equals("дистанционно", ignoreCase = true)) return raw to ""
+        val clean = raw.replace("*", "").trim()
+        val parts = clean.split(Regex("[ \t]+")).filter { it.isNotEmpty() }
+        var buildingRaw: String
+        val roomRaw: String
+        if (parts.size >= 2 && parts[0].any { it.isLetter() }) {
+            buildingRaw = parts[0]
+            roomRaw = parts.drop(1).joinToString(" ").trimEnd(';')
+        } else {
+            roomRaw = clean
+            buildingRaw = when {
+                raw.contains("ВЦ", ignoreCase = true) -> "ВЦ"
+                raw.contains("*") -> "УЛК"
+                else -> "ГК"
+            }
+        }
+        if (buildingRaw == "main") buildingRaw = "ГК"
+        return roomRaw to buildingRaw
     }
 }

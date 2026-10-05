@@ -1,0 +1,34 @@
+using Vograph.Desktop.Services;
+
+namespace Vograph.Desktop.Tests;
+
+/// <summary>Scripted Save/Open pickers: the view model gets the paths a user would have picked, no OS dialog opens.</summary>
+public sealed class FakeFileDialogs : IFileDialogs
+{
+    public string? SavePath { get; set; }
+    public string? OpenPath { get; set; }
+    public string? LastSuggestedName { get; private set; }
+    public Func<string, Task<IReadOnlyList<string>>>? SupportOpen { get; set; }
+
+    public Task<string?> SaveJsonAsync(string suggestedName)
+    {
+        LastSuggestedName = suggestedName;
+        return Task.FromResult(SavePath);
+    }
+    public Task<string?> SaveCalendarAsync(string suggestedName)
+    {
+        LastSuggestedName = suggestedName;
+        return Task.FromResult(SavePath);
+    }
+
+    public Task<string?> OpenJsonAsync() => Task.FromResult(OpenPath);
+    public Task<string?> OpenHomeworkAsync(bool photo) => Task.FromResult(OpenPath);
+    public Task<string?> OpenChatMediaAsync(string kind) => Task.FromResult(OpenPath);
+    public Task<string?> SaveChatMediaAsync(string suggestedName)
+    {
+        LastSuggestedName = suggestedName;
+        return Task.FromResult(SavePath);
+    }
+    public Task<IReadOnlyList<string>> OpenSupportAsync(string kind) => SupportOpen?.Invoke(kind)
+        ?? Task.FromResult<IReadOnlyList<string>>(OpenPath is null ? [] : [OpenPath]);
+}

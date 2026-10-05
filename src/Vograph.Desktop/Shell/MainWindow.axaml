@@ -1,0 +1,112 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="using:Vograph.Desktop.Controls"
+        xmlns:shell="using:Vograph.Desktop.Shell"
+        xmlns:loc="using:Vograph.Desktop.Services"
+        xmlns:d="using:Vograph.Desktop.Dialogs"
+        x:Class="Vograph.Desktop.Shell.MainWindow"
+        x:DataType="shell:ShellViewModel"
+        Title="Военмех — расписание и карты"
+        Icon="/Assets/voenmeh.ico"
+        Width="1280" Height="800" MinWidth="960" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        ExtendClientAreaToDecorationsHint="True"
+        WindowDecorations="None"
+        Background="{DynamicResource Brush.Canvas}">
+
+  <!-- Digits must be spelled D1..D9: KeyGesture.Parse reads a bare "1" as the numeric Key value (Key.Cancel). -->
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Ctrl+D1" Command="{Binding NavigateCommand}" CommandParameter="Schedule" />
+    <KeyBinding Gesture="Ctrl+D2" Command="{Binding NavigateCommand}" CommandParameter="Week" />
+    <KeyBinding Gesture="Ctrl+D3" Command="{Binding NavigateCommand}" CommandParameter="Summary" />
+    <KeyBinding Gesture="Ctrl+D4" Command="{Binding NavigateCommand}" CommandParameter="Teachers" />
+    <KeyBinding Gesture="Ctrl+D5" Command="{Binding NavigateCommand}" CommandParameter="Maps" />
+    <KeyBinding Gesture="Ctrl+D6" Command="{Binding NavigateCommand}" CommandParameter="Friends" />
+    <KeyBinding Gesture="Ctrl+D7" Command="{Binding NavigateCommand}" CommandParameter="Homework" />
+    <KeyBinding Gesture="Ctrl+D8" Command="{Binding NavigateCommand}" CommandParameter="Settings" />
+    <KeyBinding Gesture="Ctrl+D9" Command="{Binding NavigateCommand}" CommandParameter="Community" />
+    <KeyBinding Gesture="Ctrl+D0" Command="{Binding NavigateCommand}" CommandParameter="Group" />
+    <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding NavigateCommand}" CommandParameter="Settings" />
+    <KeyBinding Gesture="Ctrl+B" Command="{Binding ToggleSidebarCommand}" />
+    <KeyBinding Gesture="Ctrl+K" Command="{Binding OpenCommandPaletteCommand}" />
+    <KeyBinding Gesture="F5" Command="{Binding RefreshScheduleCommand}" />
+    <!-- Enter is NOT bound here: Window.KeyBindings matches gestures even when a nested control (a
+         multi-line TextBox inserting a newline) already marked the key event Handled. DialogHostView's
+         own KeyDown handler respects that flag instead, so Enter only confirms when nothing consumed it.
+         Escape is not bound here either: it has to pick between the dialog and the fullscreen map overlay,
+         which ShellViewModel.HandleShortcut does from the bubbling OnShellKeyDown handler below. -->
+  </Window.KeyBindings>
+
+  <Panel x:Name="RootPanel">
+    <Grid RowDefinitions="40,*" ColumnDefinitions="Auto,*">
+
+      <!-- Custom title bar: the OS handles drag / double-click via ElementRole. -->
+      <Border Grid.ColumnSpan="2" Background="{DynamicResource Brush.Surface}"
+              BorderBrush="{DynamicResource Brush.Line}" BorderThickness="0,0,0,1"
+              WindowDecorationProperties.ElementRole="TitleBar">
+        <DockPanel LastChildFill="True">
+          <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="8" Margin="16,0" VerticalAlignment="Center">
+            <Border Width="18" Height="18" CornerRadius="5" Background="{DynamicResource Brush.Accent}">
+              <Border Width="8" Height="8" CornerRadius="2" Background="{DynamicResource Brush.OnAccent}" />
+            </Border>
+            <TextBlock Text="Военмех" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
+          </StackPanel>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+            <Button Classes="caption" WindowDecorationProperties.ElementRole="MinimizeButton" Click="OnMinimize" ToolTip.Tip="{loc:T winMinimize}"
+                    AutomationProperties.AutomationId="Win.Minimize" AutomationProperties.Name="{loc:T winMinimize}">
+              <c:Icon Data="{StaticResource Icon.Minus}" Size="14" />
+            </Button>
+            <Button Classes="caption" WindowDecorationProperties.ElementRole="MaximizeButton" Click="OnMaximize" ToolTip.Tip="{Binding MaximizeTip}"
+                    AutomationProperties.AutomationId="Win.Maximize" AutomationProperties.Name="{Binding MaximizeTip}">
+              <c:Icon Data="{Binding IsMaximized, Converter={x:Static loc:Converters.MaximizeIcon}}" Size="12" />
+            </Button>
+            <Button Classes="caption close" WindowDecorationProperties.ElementRole="CloseButton" Click="OnClose" ToolTip.Tip="{loc:T winClose}"
+                    AutomationProperties.AutomationId="Win.Close" AutomationProperties.Name="{loc:T winClose}">
+              <c:Icon Data="{StaticResource Icon.X}" Size="14" />
+            </Button>
+          </StackPanel>
+          <Panel />
+        </DockPanel>
+      </Border>
+
+      <shell:SidebarView Grid.Row="1" Grid.Column="0" />
+
+      <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="Auto,*">
+        <Button Grid.Row="0" Content="{Binding SyncConflictSummary}" Command="{Binding ResolveSyncConflictsCommand}"
+                IsVisible="{Binding HasSyncConflicts}" HorizontalAlignment="Stretch" Margin="24,12,24,0"
+                AutomationProperties.AutomationId="Sync.ResolveConflicts" />
+      <TransitioningContentControl x:Name="Host" Grid.Row="1" Content="{Binding Current}"
+                                   ClipToBounds="True"
+                                   PageTransition="{Binding Motion.Enabled, Converter={x:Static loc:Converters.PageTransition}}" />
+      </Grid>
+    </Grid>
+
+    <ContentControl Content="{Binding Overlay}" IsVisible="{Binding HasOverlay}" />
+
+    <Panel IsVisible="{Binding ShowCommandPalette}" Background="{DynamicResource Brush.Backdrop}">
+    <Border Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.Line}" BorderThickness="1" CornerRadius="12"
+            HorizontalAlignment="Center" VerticalAlignment="Top" Width="560" MaxWidth="560"
+            Margin="0,64,0,0" Padding="16">
+      <StackPanel Spacing="10">
+        <TextBlock Classes="subject" Text="Перейти к разделу" />
+        <TextBox Name="PaletteSearch" Text="{Binding CommandQuery, Mode=TwoWay}" PlaceholderText="Название раздела"
+                 KeyDown="OnPaletteSearchKeyDown" AutomationProperties.Name="Поиск раздела" />
+        <TextBlock Text="Подходящих разделов нет" IsVisible="{Binding NoPaletteMatches}" />
+        <ItemsControl ItemsSource="{Binding PaletteSections}"><ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="shell:NavSection">
+            <Button Classes="ghost" Content="{Binding Label}" Command="{Binding $parent[Window].((shell:ShellViewModel)DataContext).OpenPaletteSectionCommand}"
+                    CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate></ItemsControl>
+        <Button Content="Закрыть" Command="{Binding CloseCommandPaletteCommand}" HorizontalAlignment="Right" />
+      </StackPanel>
+    </Border>
+    </Panel>
+
+    <d:DialogHostView DataContext="{Binding Dialogs}" />
+    <c:ToastHost DataContext="{Binding Toasts}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,18,16" />
+    <!-- Spec §7: the outgoing theme, snapshotted and fading away over the switched-over window underneath. -->
+    <Image x:Name="ThemeSnapshot" IsVisible="False" IsHitTestVisible="False" Stretch="Fill" />
+  </Panel>
+</Window>

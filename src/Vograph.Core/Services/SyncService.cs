@@ -41,7 +41,6 @@ public class SyncService
         var json = ExportToJson();
         Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
         File.WriteAllText(path, json, Encoding.UTF8);
-        // Update lastSyncAt
         var s = _db.GetSettings();
         s.LastSyncAt = DateTime.UtcNow;
         _db.SaveSettings(s);
@@ -60,7 +59,6 @@ public class SyncService
             var match = existingOv.FirstOrDefault(x => x.SubjectRawNormalized == ov.SubjectRawNormalized && x.Scope == ov.Scope);
             if (match != null)
             {
-                // compare CreatedAt: last wins
                 if (ov.CreatedAt > match.CreatedAt)
                 {
                     using var cmd = _db.Connection.CreateCommand();
@@ -80,17 +78,15 @@ public class SyncService
             }
         }
 
-        // Merge homework by id? But ids may collide across devices; merge by subjectNormalized+text+createdAt
+        // Ids collide across devices; a matching subject, text, and createdAt is a duplicate and is skipped.
         var existingHw = new HomeworkService(_db).GetAll();
         foreach (var hw in payload.Homework)
         {
             var match = existingHw.FirstOrDefault(x => x.SubjectRawNormalized == hw.SubjectRawNormalized && x.Text == hw.Text && x.CreatedAt == hw.CreatedAt);
             if (match != null)
             {
-                // lastWriteWins based on CreatedAt? For MVP, skip duplicate
                 continue;
             }
-            // Insert with new id
             using var cmd = _db.Connection.CreateCommand();
             cmd.CommandText = @"INSERT INTO homework (subjectRawNormalized, text, createdAt, targetNthOccurrence, dueDateComputed, status, doneAt)
 VALUES (@s,@t,@ca,@n,@due,@st,@da)";
@@ -105,39 +101,39 @@ VALUES (@s,@t,@ca,@n,@due,@st,@da)";
             h++;
         }
 
-        // Merge friends by groupName
         var existingFr = _db.GetFriends();
         foreach (var fr in payload.Friends)
         {
             if (existingFr.Any(x => x.GroupName == fr.GroupName)) continue;
             if (existingFr.Count >= 5) break;
-            _db.InsertFriend(new FriendGroup { GroupName = fr.GroupName, ColorHex = fr.ColorHex, Enabled = fr.Enabled });
+            var added = new FriendGroup
+            {
+                GroupName = fr.GroupName,
+                ColorHex = fr.ColorHex,
+                Enabled = fr.Enabled,
+                MemberNames = fr.MemberNames ?? ""
+            };
+            _db.InsertFriend(added);
+            existingFr.Add(added);
             f++;
         }
 
-        // Merge settings lastSyncWins? Keep myGroupId if not set, else lastWriteWins by ExportedAt
-        // For MVP, if payload.Settings.MyGroupId not null and current is null, adopt
         var curSettings = _db.GetSettings();
         if (string.IsNullOrEmpty(curSettings.MyGroupId) && !string.IsNullOrEmpty(payload.Settings.MyGroupId))
         {
             curSettings.MyGroupId = payload.Settings.MyGroupId;
         }
-        // Merge notify times and strictness if payload newer? Use ExportedAt > LastSyncAt
-        // Language: keep receiver's choice per doc (do not overwrite) — documented in docs/API.md §9
-        // If you want to sync language, uncomment next line: curSettings.Language = payload.Settings.Language;
+        // Language stays the receiver's choice; do not overwrite it.
         if (payload.ExportedAt > (curSettings.LastSyncAt ?? DateTime.MinValue))
         {
             if (!string.IsNullOrEmpty(payload.Settings.NotifyTime1)) curSettings.NotifyTime1 = payload.Settings.NotifyTime1;
             if (!string.IsNullOrEmpty(payload.Settings.NotifyTime2)) curSettings.NotifyTime2 = payload.Settings.NotifyTime2;
             curSettings.IntersectionStrictness = payload.Settings.IntersectionStrictness;
             curSettings.ParityInvert = payload.Settings.ParityInvert;
-            // language sync is optional; we preserve receiver's choice, but also support lastWriteWins if needed:
-            // if (!string.IsNullOrEmpty(payload.Settings.Language)) curSettings.Language = payload.Settings.Language;
         }
         curSettings.LastSyncAt = DateTime.UtcNow;
         _db.SaveSettings(curSettings);
 
-        // Recompute homework statuses after import
         try { new HomeworkService(_db).RecomputeAllStatuses(); } catch { }
 
         return (o, h, f);
@@ -152,19 +148,11 @@ VALUES (@s,@t,@ca,@n,@due,@st,@da)";
         _db.SaveSettings(s);
     }
 
-    public string GenerateQrContent(string json)
-    {
-        // If json small (< 2000 chars), encode directly, else encode http://ip:8765/sync#token
-        if (json.Length < 1500)
-        {
-            return json;
-        }
-        else
-        {
-            var ip = GetLocalIp();
-            return $"http://{ip}:8765/sync#token";
-        }
-    }
+    public string GenerateQrContent(string json) => GenerateQrContent(json, GetLocalIp());
+
+    /// <summary>The QR carries the export itself while it is small; otherwise a link to the LAN server. The host is a
+    /// parameter so the caller can resolve it off the UI thread and outside the Core gate (the desktop does).</summary>
+    public static string GenerateQrContent(string json, string ip) => json.Length < 1500 ? json : $"http://{ip}:8765/sync#token";
 
     public string GetLocalIp()
     {
@@ -187,81 +175,4 @@ VALUES (@s,@t,@ca,@n,@due,@st,@da)";
         File.WriteAllBytes(path, bytes);
     }
 
-    // Simple HTTP host for LAN sync (host mode)
-    public class SyncHost : IDisposable
-    {
-        private readonly HttpListener _listener;
-        private readonly Database _db;
-        private Task? _task;
-        private bool _running;
-
-        public SyncHost(Database db, int port = 8765)
-        {
-            _db = db;
-            _listener = new HttpListener();
-            _listener.Prefixes.Add($"http://+:{port}/sync/");
-            // Also listen on localhost for fallback
-            try { _listener.Prefixes.Add($"http://localhost:{port}/sync/"); } catch { }
-        }
-
-        public void Start()
-        {
-            _running = true;
-            _listener.Start();
-            _task = Task.Run(async () =>
-            {
-                while (_running)
-                {
-                    try
-                    {
-                        var ctx = await _listener.GetContextAsync();
-                        await Handle(ctx);
-                    }
-                    catch { if (!_running) break; }
-                }
-            });
-        }
-
-        private async Task Handle(HttpListenerContext ctx)
-        {
-            var svc = new SyncService(_db);
-            if (ctx.Request.HttpMethod == "GET")
-            {
-                var json = svc.ExportToJson();
-                var bytes = Encoding.UTF8.GetBytes(json);
-                ctx.Response.ContentType = "application/json";
-                ctx.Response.ContentLength64 = bytes.Length;
-                await ctx.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
-                ctx.Response.Close();
-            }
-            else if (ctx.Request.HttpMethod == "POST")
-            {
-                using var reader = new StreamReader(ctx.Request.InputStream, Encoding.UTF8);
-                var body = await reader.ReadToEndAsync();
-                try { svc.ImportFromJson(body); ctx.Response.StatusCode = 200; }
-                catch { ctx.Response.StatusCode = 400; }
-                var resp = Encoding.UTF8.GetBytes("{\"status\":\"ok\"}");
-                ctx.Response.ContentLength64 = resp.Length;
-                await ctx.Response.OutputStream.WriteAsync(resp, 0, resp.Length);
-                ctx.Response.Close();
-            }
-            else { ctx.Response.StatusCode = 405; ctx.Response.Close(); }
-        }
-
-        public void Stop()
-        {
-            _running = false;
-            try { _listener.Stop(); } catch { }
-        }
-
-        public void Dispose() => Stop();
-    }
-
-    public static async Task<string> JoinViaHttp(string ip, int port = 8765)
-    {
-        using var http = new HttpClient();
-        var url = $"http://{ip}:{port}/sync/";
-        var resp = await http.GetStringAsync(url);
-        return resp;
-    }
 }

@@ -1,0 +1,151 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Threading;
+using Vograph.Desktop.Controls;
+using Vograph.Desktop.Services;
+
+namespace Vograph.Desktop.Shell;
+
+public partial class MainWindow : Window
+{
+    public MainWindow()
+    {
+        InitializeComponent();
+        Opened += OnOpened;
+        Closing += OnClosing;
+        Closed += OnClosed;
+        DataContextChanged += (_, _) =>
+        {
+            WireTheme();
+            WirePalette();
+            if (DataContext is ShellViewModel vm) vm.IsMaximized = WindowState == WindowState.Maximized;
+        };
+        AddHandler(KeyDownEvent, OnShellKeyDown, RoutingStrategies.Bubble, handledEventsToo: true);
+        PositionChanged += (_, _) => RememberNormalBounds();
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == WidthProperty || change.Property == HeightProperty || change.Property == WindowStateProperty)
+            RememberNormalBounds();
+        if (change.Property == WindowStateProperty && DataContext is ShellViewModel vm) vm.IsMaximized = WindowState == WindowState.Maximized;
+    }
+
+    /// <summary>The crossfade this window installed on the theme service, kept so OnClosed can tell it from someone
+    /// else's: the service holds one delegate, and a second window (a test opening its own shell) overwrites it.</summary>
+    private Func<Action, Task>? _themeTransition;
+    private ThemeService? _wiredTheme;
+    private ShellViewModel? _paletteShell;
+    private WindowBounds? _normalBounds;
+
+    /// <summary>The theme service switches inside a crossfade of this window (spec §7); a window without a shell switches plainly.</summary>
+    private void WireTheme()
+    {
+        if (_wiredTheme is { } previous && ReferenceEquals(previous.Transition, _themeTransition)) previous.Transition = null;
+        _wiredTheme = null;
+        if (DataContext is ShellViewModel vm && vm.App.Theme is { } theme)
+        {
+            _wiredTheme = theme;
+            _themeTransition = async apply =>
+            {
+                using var operation = vm.App.Work.Enter();
+                if (!operation.IsCurrent) return;
+                await ThemeCrossfade.RunAsync(this, RootPanel, ThemeSnapshot, apply, vm.Motion, vm.App.Log);
+            };
+            theme.Transition = _themeTransition;
+        }
+    }
+
+    /// <summary>A closed window produces no more compositor frames, so a crossfade in flight would never finish: it
+    /// would keep its ~8 MB snapshot alive and the service would go on switching the theme through a dead window.
+    /// Only this window's own delegate is unhooked — clearing whatever is there would take the crossfade away from
+    /// the window that installed it after us.</summary>
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        if (_paletteShell is not null) _paletteShell.PropertyChanged -= OnPaletteChanged;
+        _paletteShell = null;
+        if (DataContext is ShellViewModel { App.Theme: { } theme } && ReferenceEquals(theme.Transition, _themeTransition))
+            theme.Transition = null;
+        ThemeCrossfade.Teardown(ThemeSnapshot);
+    }
+
+    private void WirePalette()
+    {
+        if (_paletteShell is not null) _paletteShell.PropertyChanged -= OnPaletteChanged;
+        _paletteShell = DataContext as ShellViewModel;
+        if (_paletteShell is not null) _paletteShell.PropertyChanged += OnPaletteChanged;
+    }
+
+    private void OnPaletteChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(ShellViewModel.ShowCommandPalette) ||
+            _paletteShell?.ShowCommandPalette != true) return;
+        Dispatcher.UIThread.Post(() => PaletteSearch.Focus(), DispatcherPriority.Loaded);
+    }
+
+    private void OnPaletteSearchKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not ShellViewModel vm) return;
+        if (e.Key == Key.Escape) { vm.CloseCommandPaletteCommand.Execute(null); e.Handled = true; }
+        else if (e.Key == Key.Enter && vm.PaletteSections.FirstOrDefault() is { } section)
+        { vm.OpenPaletteSectionCommand.Execute(section); e.Handled = true; }
+    }
+
+    /// <summary>←/→/Home step the schedule day, Escape closes the dialog or the fullscreen map. A bubbling handler
+    /// rather than a KeyBinding, so the focused element gets first refusal: a child that already consumed the key
+    /// (TextBox caret keys, ListBox/Slider/ComboBox arrows) keeps it, because the first line bails on an event some
+    /// descendant marked Handled. The one Handled event we still act on is the one raised on the window itself: with
+    /// nothing focused Avalonia's TopLevel keyboard-navigation handler — registered before this window's — marks arrow
+    /// keys Handled while looking for a focus target, and a plain Bubble registration would never be called at all.
+    /// Hence handledEventsToo plus the Source check rather than plain Bubble (which loses the shortcut on a
+    /// freshly opened window) or Tunnel (which would steal the keys from every child before it can react).
+    /// Text fields are excluded by Source — except for Escape, which must still close a dialog whose search box has
+    /// focus — and dialogs by HandleShortcut's own Dialogs.HasDialog guard.</summary>
+    private void OnShellKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled && !ReferenceEquals(e.Source, this)) return; // a focused child answered first
+        if (e.KeyModifiers != KeyModifiers.None || (e.Key != Key.Escape && e.Source is TextBox)) return;
+        if (DataContext is ShellViewModel vm && vm.HandleShortcut(e.Key)) e.Handled = true;
+    }
+
+    private UiPrefs? Prefs => (DataContext as ShellViewModel)?.App.Prefs;
+
+    private void RememberNormalBounds()
+    {
+        if (WindowState != WindowState.Normal) return;
+        _normalBounds = new WindowBounds(Position.X, Position.Y, (int)Width, (int)Height, false);
+    }
+
+    private void OnOpened(object? sender, EventArgs e)
+    {
+        var prefs = Prefs;
+        if (prefs?.Window is null) return;
+        var restored = WindowBoundsLogic.Restore(prefs.Window, Screens.All.Select(s => s.Bounds).ToList(), new PixelSize((int)MinWidth, (int)MinHeight));
+        if (restored is null) return;
+        Position = new PixelPoint(restored.X, restored.Y);
+        Width = restored.Width;
+        Height = restored.Height;
+        if (restored.Maximized) WindowState = WindowState.Maximized;
+    }
+
+    private void OnClosing(object? sender, WindowClosingEventArgs e)
+    {
+        var prefs = Prefs;
+        if (prefs is null) return;
+        prefs.Window = WindowBoundsLogic.Capture(
+            _normalBounds,
+            WindowState == WindowState.Maximized,
+            Position.X, Position.Y, (int)Width, (int)Height);
+        prefs.Save();
+    }
+
+    private void OnMinimize(object? sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void OnMaximize(object? sender, RoutedEventArgs e) =>
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
+    private void OnClose(object? sender, RoutedEventArgs e) => Close();
+}

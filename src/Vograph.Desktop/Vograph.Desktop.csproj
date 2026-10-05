@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Vograph</AssemblyName>
+    <RootNamespace>Vograph.Desktop</RootNamespace>
+    <Version>2.1.40</Version>
+    <ApplicationIcon>Assets\voenmeh.ico</ApplicationIcon>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\voenmeh.ico" />
+    <PackageReference Include="Avalonia" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.1" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vograph.Core\Vograph.Core.csproj" />
+    <Compile Include="..\Zapara.Client.Domain\MessengerHold.cs" Link="MessengerHold.cs" />
+    <Compile Include="..\Zapara.Client.Domain\SupportChat.cs" Link="SupportChat.cs" />
+    <Compile Include="..\Zapara.Client.Domain\DayPlanning.cs" Link="DayPlanning.cs" />
+    <Compile Include="..\Zapara.Client.Domain\CalendarExport.cs" Link="CalendarExport.cs" />
+    <Compile Include="..\Zapara.Client.Domain\StudyPlanning.cs" Link="StudyPlanning.cs" />
+  </ItemGroup>
+
+  <!-- ShellViewModel is sealed, so its event raisers are internal rather than protected (CS0628);
+       the tests drive them directly to check that a detached section stops listening. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Vograph.Desktop.Tests" />
+  </ItemGroup>
+
+  <!-- Offline bundle Core reads next to the exe (maps\*.jpg, maps\coords.json, maps\campus-graph.json, TimetableLecturer50.xml); the updater zip ships the same layout. -->
+  <ItemGroup>
+    <None Include="Assets\maps\*.jpg" Link="maps\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\maps\coords.json" Link="maps\coords.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\maps\campus-graph.json" Link="maps\campus-graph.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\TimetableLecturer50.xml" Link="TimetableLecturer50.xml" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="..\..\legal\user-agreement.txt">
+      <LogicalName>legal.user-agreement.txt</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\legal\privacy-policy.txt">
+      <LogicalName>legal.privacy-policy.txt</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>

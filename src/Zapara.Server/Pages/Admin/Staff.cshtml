@@ -1,0 +1,25 @@
+@page
+@model Zapara.Server.Pages.Admin.StaffModel
+<h1>Персонал</h1>
+<p class="hint">Назначение старосты или куратора конкретного сообщества. Нужно подтверждение пароля.</p>
+@if (Model.Error is not null) { <div class="error" role="alert">@Model.Error</div> }
+<form method="post" class="card">
+    <h2>Назначить персонал</h2>
+    <label asp-for="CommunityId">Сообщество</label>
+    <select asp-for="CommunityId">
+        @foreach (var item in Model.Communities.DistinctBy(i => i.CommunityId))
+        {
+            <option value="@item.CommunityId.ToString("D")">@item.Name</option>
+        }
+    </select>
+    <label asp-for="UserId">Идентификатор пользователя</label>
+    <input asp-for="UserId" />
+    <label asp-for="Role">Роль</label>
+    <select asp-for="Role">
+        <option value="headman">Староста</option>
+        <option value="curator">Куратор</option>
+    </select>
+    <label asp-for="CurrentPassword">Подтверждение пароля</label>
+    <input asp-for="CurrentPassword" type="password" autocomplete="current-password" />
+    <button class="primary" type="submit">Назначить</button>
+</form>

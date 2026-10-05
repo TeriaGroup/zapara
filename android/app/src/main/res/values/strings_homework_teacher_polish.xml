@@ -1,0 +1,8 @@
+<resources>
+    <string name="polish_homework_task">Задание</string>
+    <string name="polish_homework_deadline">Срок сдачи</string>
+    <string name="polish_homework_attachments">Вложения</string>
+    <string name="polish_subject_no_results">Предметы не найдены. Попробуйте другой запрос.</string>
+    <string name="polish_homework_completion">Выполнено</string>
+    <string name="polish_teacher_day_count">Пар за день: %1$d</string>
+</resources>

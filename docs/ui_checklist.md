@@ -1,5 +1,8 @@
 ﻿# UI Checklist — Phase 2 (VOG-ZAVTRA)
 
+Журнал снятого клиента WPF от начала сентября 2026. Живой Windows — Avalonia, картина продукта — `docs/STATUS.md`.
+Ниже сохранён чеклист той фазы.
+
 ## Build
 - WPF .NET 8, Window 1360x820 Min 1180x640 CenterScreen, Background #0E1013 (Obsidian)
 - Header Border Bronze #6CA5E0 bottom 1px, Padding 10,6 (MainWindow.xaml:8-10 + Charon style)

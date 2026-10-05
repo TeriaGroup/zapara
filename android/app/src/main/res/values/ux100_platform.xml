@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ux100_platform_clear_selected">Убрать выбранную точку</string>
+    <string name="ux100_platform_recent_places">Недавние места</string>
+    <string name="ux100_platform_clear_recent">Очистить историю</string>
+    <string name="ux100_platform_show_start">Показать начало</string>
+    <string name="ux100_platform_show_destination">Показать цель</string>
+    <string name="ux100_platform_use_login">Взять логин из формы входа</string>
+    <string name="ux100_platform_all_devices">Все устройства: %1$d</string>
+    <string name="ux100_platform_other_devices">Другие: %1$d</string>
+    <string name="ux100_platform_password_same">Новый пароль должен отличаться от текущего</string>
+    <string name="ux100_platform_profile_unsaved_title">Имя профиля не сохранено</string>
+    <string name="ux100_platform_profile_unsaved_body">Сохраните имя или отмените изменение перед уходом.</string>
+    <string name="ux100_platform_legal_search">Поиск по документу</string>
+    <string name="ux100_platform_legal_results">Найдено абзацев: %1$d</string>
+    <string name="ux100_platform_legal_no_match">В документе ничего не найдено</string>
+    <string name="ux100_platform_text_smaller">Мельче</string>
+    <string name="ux100_platform_text_larger">Крупнее</string>
+    <string name="ux100_platform_to_top">К началу</string>
+    <string name="ux100_platform_open_account">Открыть аккаунт</string>
+    <string name="ux100_platform_retry_sync">Повторить синхронизацию</string>
+    <string name="ux100_platform_no_sync_conflicts">Конфликтов синхронизации нет</string>
+    <string name="ux100_platform_time_presets">Быстрая настройка времени — сохраните выбор ниже</string>
+    <string name="ux100_platform_preset_early">19:00 и 07:00</string>
+    <string name="ux100_platform_preset_late">21:00 и 09:00</string>
+    <string name="ux100_platform_search_threads">Поиск обращений по теме</string>
+    <string name="ux100_platform_no_threads_found">По этой теме обращений нет</string>
+    <string name="ux100_platform_discard_support">Очистить черновик</string>
+    <string name="ux100_platform_discard_support_title">Очистить черновик?</string>
+    <string name="ux100_platform_discard_support_body">Текст и вложения этого черновика будут убраны.</string>
+    <string name="ux100_platform_current_floor">Показать места на этом этаже</string>
+    <string name="ux100_platform_route_empty">Для шагов маршрута выберите начало и цель.</string>
+    <string name="ux100_platform_all_conflicts">Все конфликты</string>
+    <string name="ux100_platform_no_other_devices">Других активных устройств нет</string>
+    <string name="ux100_platform_load_other_devices">Другие устройства могут быть на следующих страницах списка</string>
+    <string name="ux100_platform_support_signed_in_hint">Опишите вопрос в новом обращении или ответьте в существующем.</string>
+</resources>

@@ -1,0 +1,233 @@
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { Icon } from "./icons";
+import { groupWireText } from "./scalar-input";
+import { sendOnEnter } from "./personal-composer";
+import { groupCircleLimit, groupVoiceLimit, recordingFilename } from "./group-media";
+
+type RecordingKind = "voice" | "circle";
+type AttachmentKind = "image" | "video" | "file";
+type Capture = {
+  kind: RecordingKind;
+  recorder: MediaRecorder;
+  stream: MediaStream;
+  chunks: Blob[];
+  bytes: number;
+  startedAt: number;
+  timer: number | null;
+  send: boolean;
+  failed: boolean;
+};
+
+const voiceTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+const circleTypes = ["video/webm;codecs=vp8,opus", "video/webm;codecs=vp9,opus", "video/webm", "video/mp4"];
+
+function clock(ms: number) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+export function GroupComposer({ draft, editing, replyTo, contextText, wireContext = "", allowMedia, onPoll, onLesson, onDraft, onSubmit, onCancelContext, onChoose, onRecorded, onError }: {
+  draft: string;
+  editing: boolean;
+  replyTo: boolean;
+  contextText: string;
+  wireContext?: string;
+  allowMedia: boolean;
+  onPoll?: () => void;
+  onLesson?: () => void;
+  onDraft: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onCancelContext: () => void;
+  onChoose: (kind: AttachmentKind) => void;
+  onRecorded: (kind: RecordingKind, name: string, blob: Blob, durationMs: number) => Promise<void>;
+  onError: (message: string) => void;
+}) {
+  const composing = useRef(false);
+  const wire = groupWireText(draft, wireContext, editing);
+  const [panel, setPanel] = useState(false);
+  const [recording, setRecording] = useState<RecordingKind | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [captured, setCaptured] = useState<{ kind: RecordingKind; blob: Blob; durationMs: number; url: string } | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const active = useRef<Capture | null>(null);
+  const preview = useRef<HTMLVideoElement>(null);
+  const mounted = useRef(false);
+  const requestEpoch = useRef(0);
+  const startingRef = useRef(false);
+  const canRecord = useRef(allowMedia && !editing);
+  canRecord.current = allowMedia && !editing;
+
+  function release(capture: Capture) {
+    if (capture.timer !== null) window.clearInterval(capture.timer);
+    capture.stream.getTracks().forEach(track => track.stop());
+    if (preview.current) preview.current.srcObject = null;
+    if (active.current === capture) active.current = null;
+  }
+
+  function stop(send: boolean) {
+    const capture = active.current;
+    if (!capture) return;
+    capture.send = send;
+    if (capture.recorder.state !== "inactive") capture.recorder.stop();
+  }
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      requestEpoch.current += 1;
+      const capture = active.current;
+      if (capture) {
+        capture.send = false;
+        if (capture.recorder.state !== "inactive") capture.recorder.stop();
+        release(capture);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!allowMedia || editing) {
+      requestEpoch.current += 1;
+      setPanel(false);
+      stop(false);
+      setCaptured(null);
+    }
+  }, [allowMedia, editing]);
+
+  useEffect(() => {
+    if (recording !== "circle" || !preview.current || !active.current) return;
+    preview.current.srcObject = active.current.stream;
+    void preview.current.play().catch(() => undefined);
+  }, [recording]);
+
+  async function begin(kind: RecordingKind) {
+    if (active.current || startingRef.current || sending || !allowMedia || editing) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") {
+      onError(kind === "voice" ? "Этот браузер не записывает голос" : "Этот браузер не снимает кружочки");
+      return;
+    }
+    startingRef.current = true;
+    setStarting(true);
+    setPanel(false);
+    const epoch = ++requestEpoch.current;
+    let stream: MediaStream | null = null;
+    try {
+      const audio = { sampleRate: { ideal: 48_000 }, channelCount: { ideal: 1 } };
+      stream = await navigator.mediaDevices.getUserMedia(kind === "voice" ? { audio } : {
+        audio,
+        video: { facingMode: "user", width: { ideal: 720, max: 1280 }, height: { ideal: 720, max: 1280 }, frameRate: { ideal: 24, max: 30 } },
+      });
+      if (!mounted.current || requestEpoch.current !== epoch || !canRecord.current) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
+      const mime = (kind === "voice" ? voiceTypes : circleTypes).find(value => MediaRecorder.isTypeSupported(value));
+      if (!mime) throw new Error("unsupported format");
+      let recorder: MediaRecorder;
+      try {
+        recorder = new MediaRecorder(stream, kind === "voice"
+          ? { mimeType: mime, audioBitsPerSecond: 96_000 }
+          : { mimeType: mime, videoBitsPerSecond: 2_000_000, audioBitsPerSecond: 96_000 });
+      } catch {
+        recorder = new MediaRecorder(stream, { mimeType: mime });
+      }
+      recordingFilename(kind, recorder.mimeType || mime);
+      const capture: Capture = { kind, recorder, stream, chunks: [], bytes: 0, startedAt: Date.now(), timer: null, send: false, failed: false };
+      active.current = capture;
+      recorder.ondataavailable = event => {
+        if (!event.data.size) return;
+        capture.chunks.push(event.data);
+        capture.bytes += event.data.size;
+        if (capture.bytes > (kind === "voice" ? groupVoiceLimit : groupCircleLimit)) {
+          capture.send = false;
+          if (!capture.failed && mounted.current) onError("Запись слишком большая");
+          capture.failed = true;
+          if (recorder.state !== "inactive") recorder.stop();
+        }
+      };
+      recorder.onerror = () => {
+        capture.send = false;
+        if (!capture.failed && mounted.current) onError("Запись прервалась");
+        capture.failed = true;
+        if (recorder.state !== "inactive") recorder.stop();
+      };
+      recorder.onstop = () => {
+        release(capture);
+        if (!mounted.current) return;
+        setRecording(null);
+        if (!capture.send || capture.failed) return;
+        const blob = new Blob(capture.chunks, { type: recorder.mimeType || mime });
+        if (blob.size < (kind === "voice" ? 200 : 1000)) {
+          onError(kind === "voice" ? "Слишком короткое сообщение" : "Слишком короткий кружок");
+          return;
+        }
+        if (blob.size > (kind === "voice" ? groupVoiceLimit : groupCircleLimit)) { onError("Запись слишком большая"); return; }
+        const durationMs = Math.max(1, Math.min(kind === "voice" ? 180_000 : 60_000, Date.now() - capture.startedAt));
+        setCaptured({ kind, blob, durationMs, url: URL.createObjectURL(blob) });
+      };
+      recorder.start(250);
+      capture.timer = window.setInterval(() => {
+        const milliseconds = Date.now() - capture.startedAt;
+        if (mounted.current) setElapsed(milliseconds);
+        if (milliseconds >= (kind === "voice" ? 180_000 : 60_000) && recorder.state !== "inactive") stop(true);
+      }, 200);
+      setElapsed(0);
+      setRecording(kind);
+    } catch {
+      const capture = active.current;
+      if (capture) release(capture);
+      if (stream) stream.getTracks().forEach(track => track.stop());
+      if (mounted.current) onError(kind === "voice" ? "Нет доступа к микрофону или формат записи не поддерживается" : "Нет доступа к камере или формат записи не поддерживается");
+    } finally {
+      startingRef.current = false;
+      if (mounted.current) setStarting(false);
+    }
+  }
+
+  useEffect(() => () => { if (captured) URL.revokeObjectURL(captured.url); }, [captured]);
+
+  if (captured) return <div className="card stack"><h2>{captured.kind === "voice" ? "Прослушать запись" : "Просмотреть кружок"}</h2>{captured.kind === "voice" ? <audio controls src={captured.url} /> : <video className="record-preview" controls playsInline src={captured.url} />}<div className="row"><button className="btn quiet" disabled={sending} type="button" onClick={() => setCaptured(null)}>Отменить</button><button className="btn primary" type="button" disabled={sending || !allowMedia} onClick={() => { if (sending) return; setSending(true); void onRecorded(captured.kind, recordingFilename(captured.kind,captured.blob.type),captured.blob,captured.durationMs).then(() => setCaptured(null)).catch(() => onError("Сообщение не отправилось. Запись сохранена для повторения.")).finally(() => setSending(false)); }}>{sending ? "Отправляем…" : "Отправить запись"}</button></div></div>;
+
+  if (recording) return (
+    <div className="group-recording">
+      {recording === "circle" && <div className="circle live"><video ref={preview} muted playsInline autoPlay /><span className="time">{clock(elapsed)}</span></div>}
+      <div className="compose">
+        {recording === "voice" && <span>Запись {clock(elapsed)}</span>}
+        <button className="btn" type="button" onClick={() => stop(false)}>Отменить</button>
+        <button className="btn primary" type="button" onClick={() => stop(true)}>Завершить запись</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {(editing || replyTo) && <div className="compose-context">
+        <span className="compose-context-text">{editing ? "Редактирование" : "Ответ"}: {contextText}</span>
+        <button className="btn tool" type="button" aria-label={editing ? "Отменить редактирование" : "Отменить ответ"} onClick={onCancelContext}>Отменить</button>
+      </div>}
+      <form className="compose" onSubmit={onSubmit}>
+        {!editing && allowMedia && <button className="btn tool" type="button" aria-label="Вложения" disabled={starting || sending}
+          onClick={() => setPanel(value => !value)}><Icon name="paperclip" size={18} /></button>}
+        <textarea rows={2} value={draft} onChange={event => onDraft(event.target.value)} placeholder="Сообщение" aria-label="Сообщение" onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }} onKeyDown={event => { if (sendOnEnter(event.key, event.shiftKey, composing.current || event.nativeEvent.isComposing, event.keyCode === 229, window.matchMedia("(pointer: fine)").matches)) { event.preventDefault(); if (wire.valid && !sending) event.currentTarget.form?.requestSubmit(); } }} />
+        {draft.trim() || editing || !allowMedia
+          ? <button className="btn primary" type="submit" disabled={!wire.valid || sending}>{editing ? "Сохранить" : "Отправить"}</button>
+          : <>
+              <button className="btn tool" type="button" aria-label="Кружок" disabled={starting || sending} onClick={() => void begin("circle")}><Icon name="circle" size={18} /></button>
+              <button className="btn primary tool" type="button" aria-label="Голосовое" disabled={starting || sending} onClick={() => void begin("voice")}><Icon name="mic" size={18} /></button>
+            </>}
+      </form>
+      <p className="muted" role="status">{wire.count}/2000 · Shift+Enter — новая строка{draft.trim() && wire.error ? ` · ${wire.error}` : ""}</p>
+      {sending && <p className="muted">Отправка записи…</p>}
+      {panel && allowMedia && !editing && <div className="actions group-attachment-menu">
+        <button type="button" onClick={() => { setPanel(false); onChoose("image"); }}>Фото</button>
+        <button type="button" onClick={() => { setPanel(false); onChoose("video"); }}>Видео</button>
+        <button type="button" onClick={() => { setPanel(false); onChoose("file"); }}>Документ</button>
+        <button type="button" onClick={() => void begin("voice")}>Голосовое сообщение</button>
+        <button type="button" onClick={() => void begin("circle")}>Кружок</button>
+        {onPoll && <button type="button" onClick={() => { setPanel(false); onPoll(); }}>Опрос</button>}
+        {onLesson && <button type="button" onClick={() => { setPanel(false); onLesson(); }}>Карточка пары</button>}
+      </div>}
+    </>
+  );
+}

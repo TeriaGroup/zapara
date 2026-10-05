@@ -1,0 +1,324 @@
+using Avalonia.Controls;
+using Avalonia.Headless.XUnit;
+using Avalonia.VisualTree;
+using Vograph.Core.Services.Communities;
+using Vograph.Desktop.Controls;
+using Vograph.Desktop.Features.Communities;
+using Vograph.Desktop.Features.Groups;
+using Vograph.Desktop.Shell;
+using Xunit;
+using Zapara.Contracts.Communities;
+using static Vograph.Desktop.Tests.AccountClientTestSupport;
+using static Vograph.Desktop.Tests.CommunityClientTestSupport;
+
+namespace Vograph.Desktop.Tests;
+
+public sealed class CommunitiesUiTests : UiTest
+{
+    [Fact]
+    public async Task Section_built_before_sign_in_uses_the_session_and_selected_group_on_the_next_open()
+    {
+        using var db = TestDb.Create(seedPersonalization: false);
+        var shell = new ShellViewModel(db.Services);
+        try
+        {
+            var communities = shell.Section<CommunitiesViewModel>(SectionKey.Community);
+            var group = shell.Section<GroupViewModel>(SectionKey.Group);
+            await communities.ActivateAsync();
+            await group.ActivateAsync();
+            Assert.True(communities.NeedAccount);
+            Assert.True(group.NeedAccount);
+
+            var paths = new List<string>();
+            using var handler = new AccountClientHandler
+            {
+                Send = (request, _) =>
+                {
+                    paths.Add(request.RequestUri!.PathAndQuery);
+                    return Task.FromResult(Payload(Array.Empty<CommunityResponse>()));
+                }
+            };
+            using var http = new HttpClient(handler);
+            using var client = new CommunityHttpClient(http, Root);
+            db.Services.UseCommunities(client, _ => Task.FromResult<string?>(Access));
+            await communities.ActivateAsync();
+            await group.ActivateAsync();
+
+            Assert.False(communities.NeedAccount);
+            Assert.False(group.NeedAccount);
+            Assert.True(communities.IsEmpty);
+            var name = db.Services.Db.GetGroup(TestDb.MyGroupId)!.Name;
+            Assert.Contains(paths, path => path.Contains("groupId=" + Uri.EscapeDataString(name), StringComparison.Ordinal));
+            Assert.Contains(paths, path => !path.Contains("groupId=", StringComparison.Ordinal));
+        }
+        finally { shell.Stop(); }
+    }
+
+    [Fact]
+    public async Task Guest_shows_need_account_and_never_touches_the_network()
+    {
+        using var guest = new CommunitiesUiHarness(guest: true);
+        await guest.Vm.ActivateAsync();
+        Assert.True(guest.Vm.NeedAccount);
+        Assert.False(guest.Vm.IsEmpty);
+        Assert.False(guest.Vm.IsForbidden);
+        Assert.Empty(guest.Vm.Communities);
+        Assert.Equal("Сообщества", guest.Vm.Title);
+        Assert.Equal("Чтобы вступить в сообщество, войдите в аккаунт", guest.Vm.Status);
+        Assert.Equal(0, guest.Calls);
+
+        using var withClient = new CommunitiesUiHarness(guestWithClient: true);
+        await withClient.Vm.LoadAsync();
+        Assert.True(withClient.Vm.NeedAccount);
+        Assert.Equal(0, withClient.Calls);
+        Assert.Equal("Чтобы вступить в сообщество, войдите в аккаунт", withClient.Vm.Status);
+    }
+
+    [Fact]
+    public async Task Empty_memberships_show_communityEmpty()
+    {
+        using var h = new CommunitiesUiHarness();
+        await h.Vm.LoadAsync();
+        Assert.False(h.Vm.NeedAccount);
+        Assert.True(h.Vm.IsEmpty);
+        Assert.Empty(h.Vm.Communities);
+        Assert.Equal("Сообществ пока нет", h.Vm.Status);
+        Assert.Equal(1, h.Calls);
+        Assert.Equal(("GET", ""), Assert.Single(h.Requests));
+    }
+
+    [Fact]
+    public async Task Catalog_search_filters_loaded_rows_and_clear_restores_them()
+    {
+        using var h = new CommunitiesUiHarness(groupId: "O3313");
+        h.Catalog.Add(new CommunityResponse(Guid.NewGuid(), "О3313", "Проекты", 1, null));
+        h.Catalog.Add(new CommunityResponse(Guid.NewGuid(), "А4313", "Объявления", 1, null));
+        await h.Vm.LoadAsync();
+        Assert.Equal(2, h.Vm.Communities.Count);
+        h.Vm.CommunitySearch = "  ПРОЕКТ ";
+        Assert.Equal("О3313", Assert.Single(h.Vm.FilteredCommunities).Name);
+        Assert.Equal("Показано 1 из 2", h.Vm.CommunityResultCount);
+        h.Vm.CommunitySearch = "нет";
+        Assert.True(h.Vm.NoCommunitySearchResults);
+        h.Vm.ClearCommunitySearchCommand.Execute(null);
+        Assert.Equal(2, h.Vm.FilteredCommunities.Count);
+    }
+
+    [Fact]
+    public async Task Failed_refresh_keeps_last_good_community_and_retry_restores_status()
+    {
+        using var h = new CommunitiesUiHarness(groupId: "O3313");
+        h.Catalog.Add(new CommunityResponse(Guid.NewGuid(), "О3313", "Проекты", 1, null));
+        await h.Vm.LoadAsync();
+        var current = Assert.Single(h.Vm.Communities);
+        h.Force = (503, "server_unavailable");
+        await h.Vm.LoadAsync();
+        Assert.True(h.Vm.LoadFailed);
+        Assert.Same(current, Assert.Single(h.Vm.Communities));
+        h.Force = null;
+        await h.Vm.RetryCommunitiesCommand.ExecuteAsync(null);
+        Assert.False(h.Vm.LoadFailed);
+        Assert.Single(h.Vm.Communities);
+    }
+
+    [Fact]
+    public async Task Late_detail_failure_cannot_replace_a_newer_selected_community_status()
+    {
+        using var h = new CommunitiesUiHarness();
+        var firstId = Guid.NewGuid(); var secondId = Guid.NewGuid();
+        h.Memberships.Add(new CommunityResponse(firstId, "Первая", "", 1, "member"));
+        h.Memberships.Add(new CommunityResponse(secondId, "Вторая", "", 1, "member"));
+        await h.Vm.LoadAsync();
+        var first = h.Vm.Communities.Single(row => row.CommunityId == firstId);
+        var second = h.Vm.Communities.Single(row => row.CommunityId == secondId);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        h.Handler.Send = (request, ct) =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains(firstId.ToString("D"), StringComparison.Ordinal)
+                && request.RequestUri.AbsolutePath.EndsWith("/homework", StringComparison.Ordinal))
+            { started.TrySetResult(); return release.Task.WaitAsync(ct); }
+            return h.Respond(request, ct);
+        };
+        var old = first.SelectCommand.ExecuteAsync(null);
+        await started.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await second.SelectCommand.ExecuteAsync(null);
+        Assert.Same(second, h.Vm.Selected);
+        var status = h.Vm.Status;
+        release.SetResult(Problem(503, "db_unavailable"));
+        await old;
+        Assert.Same(second, h.Vm.Selected);
+        Assert.Equal(status, h.Vm.Status);
+        Assert.False(h.Vm.SelectedLoadFailed);
+    }
+
+    [Fact]
+    public async Task List_forbidden_maps_to_communityForbidden()
+    {
+        using var h = new CommunitiesUiHarness();
+        h.Force = (403, "forbidden");
+        await h.Vm.LoadAsync();
+        Assert.True(h.Vm.IsForbidden);
+        Assert.Equal("Нет доступа к этому сообществу", h.Vm.Status);
+        Assert.Empty(h.Vm.Communities);
+        Assert.Equal(1, h.Calls);
+    }
+
+    [Fact]
+    public async Task Member_lists_joins_pending_homework_completion_announcements_vote_and_results()
+    {
+        using var h = new CommunitiesUiHarness(groupId: "O3313");
+        h.Catalog.Add(Catalog);
+        await h.Vm.LoadAsync();
+        var item = Assert.Single(h.Vm.Communities);
+        Assert.True(item.CanJoin);
+        Assert.False(item.IsMember);
+        Assert.False(item.IsPending);
+        Assert.Equal("О3313", item.Name);
+
+        await item.JoinCommand.ExecuteAsync(null);
+        Assert.True(item.IsPending);
+        Assert.False(item.CanJoin);
+        Assert.Equal("Заявка на рассмотрении", h.Vm.Status);
+        Assert.Contains(h.Requests, r => r.Method == "POST" && r.Path.EndsWith("/join-requests", StringComparison.Ordinal));
+
+        h.Memberships.Add(Membership);
+        h.Homework.Add(Homework);
+        h.Announcements.Add(Announcement);
+        h.Polls.Add(Poll);
+        await h.Vm.LoadAsync();
+        var member = Assert.Single(h.Vm.Communities);
+        Assert.True(member.IsMember);
+        Assert.False(member.IsStaff);
+        Assert.False(member.CanJoin);
+
+        await member.SelectCommand.ExecuteAsync(null);
+        Assert.Same(member, h.Vm.Selected);
+        var hw = Assert.Single(member.Homework);
+        Assert.Equal(("ДЗ", "Текст", false), (hw.Title, hw.Body, hw.Completed));
+        Assert.Equal("Собрание", Assert.Single(member.Announcements).Title);
+        var poll = Assert.Single(member.Polls);
+        Assert.Equal("Придете?", poll.Question);
+        Assert.False(poll.HasResults);
+        Assert.Empty(member.JoinRequests);
+
+        await hw.ToggleCompletionCommand.ExecuteAsync(null);
+        Assert.True(hw.Completed);
+        Assert.Contains(h.Requests, r => r.Method == "PUT" && r.Path.Contains("/completion", StringComparison.Ordinal));
+
+        await poll.Options[0].VoteCommand.ExecuteAsync(null);
+        Assert.True(poll.HasResults);
+        Assert.Equal("Да — 1 · Нет — 1", poll.ResultsText);
+        Assert.DoesNotContain(UserId.ToString("D"), poll.ResultsText);
+        Assert.Contains(h.Requests, r => r.Path.Contains("/votes", StringComparison.Ordinal));
+        Assert.Contains(h.Requests, r => r.Path.Contains("/results", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Staff_accepts_rejects_and_publishes_or_updates_content()
+    {
+        using var h = new CommunitiesUiHarness();
+        h.Memberships.Add(new CommunityResponse(CommunityId, "О3313", "Сообщество учебной группы", 1, "headman"));
+        h.Joins.Add(Pending);
+        h.Homework.Add(Homework);
+        h.Announcements.Add(Announcement);
+        h.Polls.Add(Poll);
+        await h.Vm.LoadAsync();
+        var staff = Assert.Single(h.Vm.Communities);
+        Assert.True(staff.IsStaff);
+        await staff.SelectCommand.ExecuteAsync(null);
+
+        var request = Assert.Single(staff.JoinRequests);
+        await request.AcceptCommand.ExecuteAsync(null);
+        Assert.Empty(staff.JoinRequests);
+        Assert.Contains(h.Requests, r => r.Method == "POST" && r.Path.Contains("/accept", StringComparison.Ordinal));
+
+        h.Joins.Add(new JoinRequestResponse(RequestId, CommunityId, UserId, "pending", CommunityClientTestSupport.Now));
+        await staff.SelectCommand.ExecuteAsync(null);
+        await Assert.Single(staff.JoinRequests).RejectCommand.ExecuteAsync(null);
+        Assert.Contains(h.Requests, r => r.Method == "POST" && r.Path.Contains("/reject", StringComparison.Ordinal));
+
+        staff.DraftTitle = "ДЗ";
+        staff.DraftBody = "Текст";
+        await staff.PublishHomeworkCommand.ExecuteAsync(null);
+        Assert.Contains(h.Requests, r => r.Method == "POST" && r.Path.EndsWith("/homework", StringComparison.Ordinal));
+        Assert.Contains(staff.Homework, x => x.Title == "ДЗ");
+
+        var hw = staff.Homework[0];
+        hw.Title = "ДЗ+";
+        hw.Body = "Текст+";
+        await hw.UpdateCommand.ExecuteAsync(null);
+        Assert.Contains(h.Requests, r => r.Method == "PUT" && r.Path.Contains("/homework/", StringComparison.Ordinal));
+
+        staff.DraftTitle = "Собрание";
+        staff.DraftBody = "Текст";
+        await staff.PublishAnnouncementCommand.ExecuteAsync(null);
+        Assert.Contains(h.Requests, r => r.Method == "POST" && r.Path.EndsWith("/announcements", StringComparison.Ordinal));
+        var announcement = staff.Announcements[0];
+        announcement.Title = "Собрание+";
+        announcement.Body = "Текст+";
+        await announcement.UpdateCommand.ExecuteAsync(null);
+        Assert.Contains(h.Requests, r => r.Method == "PUT" && r.Path.Contains("/announcements/", StringComparison.Ordinal));
+
+        staff.DraftQuestion = "Придете?";
+        staff.DraftOptionA = "Да";
+        staff.DraftOptionB = "Нет";
+        staff.DraftDeadline = Deadline;
+        await staff.PublishPollCommand.ExecuteAsync(null);
+        Assert.Contains(h.Requests, r => r.Method == "POST" && r.Path.EndsWith("/polls", StringComparison.Ordinal));
+        Assert.Contains(staff.Polls, p => p.Question == "Придете?");
+        Assert.Contains(staff.Members, m => m.Role is "headman" or "curator");
+        Assert.Equal(2, staff.Staff.Count);
+    }
+
+    [Fact]
+    public async Task Member_publish_forbidden_sets_communityForbidden_without_dropping_the_list()
+    {
+        using var h = new CommunitiesUiHarness();
+        h.Memberships.Add(Membership);
+        await h.Vm.LoadAsync();
+        var member = Assert.Single(h.Vm.Communities);
+        await member.SelectCommand.ExecuteAsync(null);
+        h.Force = (403, "forbidden");
+        member.DraftTitle = "ДЗ";
+        member.DraftBody = "Текст";
+        await member.PublishHomeworkCommand.ExecuteAsync(null);
+        Assert.True(h.Vm.IsForbidden);
+        Assert.Equal("Нет доступа к этому сообществу", h.Vm.Status);
+        Assert.Single(h.Vm.Communities);
+    }
+
+    [AvaloniaFact]
+    public async Task Guest_and_member_views_render_russian_copy_without_binding_errors()
+    {
+        using var guest = new CommunitiesUiHarness(guest: true);
+        await guest.Vm.LoadAsync();
+        var guestView = new CommunitiesView { DataContext = guest.Vm };
+        var guestWindow = new Window { Width = 1280, Height = 800, Content = guestView };
+        guestWindow.Show();
+        Pump();
+        var need = guestWindow.GetVisualDescendants().OfType<EmptyState>().Single(e => e.IsVisible);
+        Assert.Equal("Чтобы вступить в сообщество, войдите в аккаунт", need.Title);
+        Assert.Equal("Сообщества", guest.Vm.Title);
+        AssertNoBindingErrors();
+        guestWindow.Close();
+
+        using var member = new CommunitiesUiHarness();
+        member.Memberships.Add(Membership);
+        member.Homework.Add(Homework);
+        member.Announcements.Add(Announcement);
+        member.Polls.Add(Poll);
+        await member.Vm.LoadAsync();
+        await member.Vm.Communities[0].SelectCommand.ExecuteAsync(null);
+        var view = new CommunitiesView { DataContext = member.Vm };
+        var window = new Window { Width = 1280, Height = 800, Content = view };
+        window.Show();
+        Pump();
+        Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "О3313");
+        Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "ДЗ");
+        Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Общая домашка");
+        Assert.DoesNotContain(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == UserId.ToString("D") && t.IsVisible);
+        AssertNoBindingErrors();
+        window.Close();
+    }
+}

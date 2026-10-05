@@ -1,7 +1,5 @@
 package ru.bgtu_voenmeh.zapara.data
 
-// Port of Vograph.Core Models (Lesson, Group, FriendGroup, Settings, Override, Homework).
-
 data class GroupInfo(
     val id: String,
     val name: String,

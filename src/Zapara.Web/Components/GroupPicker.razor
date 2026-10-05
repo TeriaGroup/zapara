@@ -1,0 +1,48 @@
+@inject WebAppState State
+@inject BrowserDraftService Drafts
+@implements IDisposable
+@using Zapara.Contracts.Sync
+@if (!hidden)
+{
+    var shown = State.Settings;
+    var original = State.Values<SettingsValue>("settings").FirstOrDefault();
+    <Modal Title="Выбор группы" OnClose="Close">
+        <label class="search-field"><Icon Name="search" /><input @bind="query" @bind:event="oninput" placeholder="Найти группу" aria-label="Найти группу" autofocus /></label>
+        <div class="picker-list">
+            @foreach (var group in State.Groups.Where(g => g.Name.Contains(query, StringComparison.OrdinalIgnoreCase)))
+            {
+                <button class="picker-row @(State.GroupId == group.Id ? "selected" : "")" disabled="@(busy || !Drafts.IsCurrent(owner))" @onclick="() => Pick(group.Id, shown, original)"><span>@group.Name</span>@if (State.GroupId == group.Id) { <Icon Name="check" /> }</button>
+            }
+            @if (!State.Groups.Any(g => g.Name.Contains(query, StringComparison.OrdinalIgnoreCase))) { <p class="empty-hint">Такой группы нет в загруженном расписании.</p> }
+        </div>
+        @if (error is not null) { <p class="form-error" role="alert">@error</p> }
+    </Modal>
+}
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+    private string query = "";
+    private DraftScope owner = null!;
+    private bool hidden, busy;
+    private string? error;
+    protected override void OnInitialized() { owner = Drafts.CaptureScope(); State.Changed += Changed; Drafts.ScopeChanged += ScopeChanged; }
+    private void Changed() { if (!Drafts.IsCurrent(owner)) ScopeChanged(); else _ = InvokeAsync(StateHasChanged); }
+    private void ScopeChanged() { if (hidden) return; hidden = true; query = ""; _ = InvokeAsync(() => OnClose.InvokeAsync()); }
+    private Task Close() => busy ? Task.CompletedTask : OnClose.InvokeAsync();
+    private async Task Pick(string id, SettingsValue shown, EntityValue<SettingsValue>? original)
+    {
+        if (busy || hidden || !Drafts.IsCurrent(owner)) return;
+        if (State.Groups.All(g => g.Id != id)) { error = "Группа больше не найдена в расписании. Обновите список."; return; }
+        busy = true;
+        try
+        {
+            await State.PutEditorAsync(owner.Owner, owner.Generation, "settings", SyncValidation.SettingsId,
+                new SettingsValue(id, shown.ParityInvert, shown.NotifyTime1, shown.NotifyTime2, shown.Strictness, shown.AlwaysShow), original?.Value, original?.Revision);
+            if (!Drafts.IsCurrent(owner)) return;
+            await OnClose.InvokeAsync();
+            if (!State.FromBundle) await State.RefreshAsync();
+        }
+        catch (Exception) { if (Drafts.IsCurrent(owner)) error = "Выбор группы не сохранён. Настройки могли измениться — попробуйте ещё раз."; }
+        finally { busy = false; }
+    }
+    public void Dispose() { State.Changed -= Changed; Drafts.ScopeChanged -= ScopeChanged; }
+}

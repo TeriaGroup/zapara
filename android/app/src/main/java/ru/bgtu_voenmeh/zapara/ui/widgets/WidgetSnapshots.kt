@@ -1,0 +1,398 @@
+package ru.bgtu_voenmeh.zapara.ui.widgets
+
+import ru.bgtu_voenmeh.zapara.AppContainer
+import ru.bgtu_voenmeh.zapara.data.Homework
+import ru.bgtu_voenmeh.zapara.data.Lesson
+import ru.bgtu_voenmeh.zapara.data.Parity
+import ru.bgtu_voenmeh.zapara.data.Schedule
+import ru.bgtu_voenmeh.zapara.data.ScheduleRepository
+import ru.bgtu_voenmeh.zapara.ui.LessonFormat
+import ru.bgtu_voenmeh.zapara.ui.UiCopy
+import ru.bgtu_voenmeh.zapara.ui.homework.HomeworkGroups
+import ru.bgtu_voenmeh.zapara.ui.schedule.SmartStart
+import java.time.Duration
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+data class ScheduleWidgetRow(
+    val name: String,
+    val meta: String,
+    val isPast: Boolean,
+    val number: Int = 0,
+    val date: LocalDate? = null,
+    val timeStart: String? = null,
+    val subjectNorm: String? = null,
+    val groupId: String? = null
+) {
+    fun faceKey(): String = "$number\u001f$name\u001f$meta"
+}
+
+data class ScheduleWidgetSnapshot(
+    val identity: WidgetJobIdentity,
+    val title: String,
+    val subtitle: String,
+    val empty: String?,
+    val rows: List<ScheduleWidgetRow>,
+    val cleared: Boolean = false,
+    val isDark: Boolean = false,
+    val nextRefreshAt: java.time.LocalDateTime? = null,
+    val toss: ScheduleWidgetRow? = null,
+    val dayLabel: String = "",
+    val readError: String? = null,
+    val hiddenRemainingCount: Int = 0,
+    val staleDays: Int? = null
+)
+
+data class HomeworkWidgetRow(
+    val subject: String,
+    val detail: String,
+    val tone: String,
+    val id: Long = 0
+)
+
+data class HomeworkWidgetSnapshot(
+    val identity: WidgetJobIdentity,
+    val title: String,
+    val subtitle: String,
+    val empty: String?,
+    val rows: List<HomeworkWidgetRow>,
+    val cleared: Boolean = false,
+    val isDark: Boolean = false,
+    val doneIds: Set<Long> = emptySet(),
+    val readError: String? = null,
+    val hiddenActiveCount: Int = 0,
+    val staleDays: Int? = null
+)
+
+internal fun widgetStaleDays(lastFetchedAt: String?, today: LocalDate): Int? {
+    val fetched = lastFetchedAt?.let { runCatching { java.time.OffsetDateTime.parse(it)
+        .atZoneSameInstant(java.time.ZoneId.of("Europe/Moscow")).toLocalDate() }.getOrNull() }
+        ?: return null
+    return java.time.temporal.ChronoUnit.DAYS.between(fetched, today).toInt().takeIf { it >= 2 }
+}
+
+internal fun widgetSubtitle(identity: WidgetJobIdentity, groupName: String?, copy: UiCopy): String {
+    val group = groupName.orEmpty()
+    return when {
+        identity.isGuest && group.isNotEmpty() -> copy.get("chip_group", copy.get("widget_guest"), group)
+        identity.isGuest -> copy.get("widget_guest")
+        group.isNotEmpty() -> group
+        else -> copy.get("empty_no_group")
+    }
+}
+
+object ScheduleWidgetComposer {
+    const val MAX_ROWS = 4
+    private val upcomingDate = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.forLanguageTag("ru"))
+
+    fun rowsForHeightDp(heightDp: Int, fontScale: Float = 1f): Int {
+        val scale = fontScale.coerceAtLeast(1f)
+        val chrome = 24 + 40 * scale
+        val row = 8 + 36 * scale
+        return if (heightDp < 120) 1 else ((heightDp - chrome) / row).toInt().coerceIn(1, MAX_ROWS)
+    }
+
+    internal fun stillOn(lesson: Lesson, now: LocalTime): Boolean {
+        val end = runCatching { LocalTime.parse(lesson.timeEnd) }.getOrNull() ?: return true
+        return end.isAfter(now)
+    }
+
+    fun cleared(identity: WidgetJobIdentity, copy: UiCopy, isDark: Boolean = false) = fromSchedule(
+        identity = identity,
+        settings = ScheduleRepository.SettingsState(),
+        allLessons = emptyList(),
+        now = LocalDateTime.of(2026, 1, 1, 0, 0),
+        groupName = null,
+        displayName = { "" },
+        copy = copy,
+        cleared = true,
+        isDark = isDark
+    )
+
+    fun fromSchedule(
+        identity: WidgetJobIdentity,
+        settings: ScheduleRepository.SettingsState,
+        allLessons: List<Lesson>,
+        now: LocalDateTime,
+        groupName: String?,
+        displayName: (Lesson) -> String,
+        copy: UiCopy,
+        cleared: Boolean = false,
+        isDark: Boolean = false,
+        capacity: Int = MAX_ROWS
+    ): ScheduleWidgetSnapshot {
+        val title = copy.get("nav_schedule")
+        if (cleared) {
+            return ScheduleWidgetSnapshot(identity, title, "", copy.get("widget_loading"), emptyList(), true, isDark)
+        }
+        val gid = settings.myGroupId.orEmpty()
+        val groupSubtitle = widgetSubtitle(identity, groupName, copy)
+        if (gid.isEmpty()) {
+            return ScheduleWidgetSnapshot(identity, title, groupSubtitle, copy.get("empty_no_group"), emptyList(), false, isDark)
+        }
+        val today = now.toLocalDate()
+        val todayLessons = Schedule.lessonsForDate(
+            allLessons, gid, today, settings.periodStart, settings.weekCount, settings.parityInvert
+        )
+        val date = SmartStart.initialDate(now, todayLessons)
+        val dayLabel = when (date) {
+            today -> copy.get("widget_schedule_today")
+            today.plusDays(1) -> copy.get("widget_schedule_tomorrow")
+            else -> date.format(upcomingDate)
+        }
+        val subtitle = "$dayLabel · $groupSubtitle"
+        val lessons = if (date == today) todayLessons else Schedule.lessonsForDate(
+            allLessons, gid, date, settings.periodStart, settings.weekCount, settings.parityInvert
+        )
+        val clock = now.toLocalTime()
+        val slots = lessons.map { it.timeStart }.filter { it.length >= 4 }.distinct().sorted()
+        fun numberOf(start: String): Int {
+            val at = slots.indexOf(start)
+            return if (at < 0) 0 else at + 1
+        }
+        fun row(lesson: Lesson, past: Boolean): ScheduleWidgetRow {
+            val shown = displayName(lesson).ifBlank { LessonFormat.stripType(lesson.subjectRaw, lesson.typeRaw) }
+            val room = LessonFormat.roomLabel(lesson, copy)
+            return ScheduleWidgetRow(
+                name = shown,
+                meta = "${lesson.timeStart} – ${lesson.timeEnd} · $room",
+                isPast = past,
+                number = numberOf(lesson.timeStart), date = date,
+                timeStart = lesson.timeStart, subjectNorm = lesson.subjectNormalized,
+                groupId = gid
+            )
+        }
+        val remaining = if (date == today) lessons.filter { stillOn(it, clock) } else lessons
+        val cap = capacity.coerceIn(1, MAX_ROWS)
+        val rows = remaining.take(cap).map { lesson ->
+            val end = runCatching { LocalTime.parse(lesson.timeEnd) }.getOrNull()
+            row(lesson, past = date == today && end != null && !end.isAfter(clock))
+        }
+        val toss = if (date == today) justEnded(lessons, today, now, ::row) else null
+        val pairEnd = if (date == today) {
+            remaining.firstOrNull()?.let { runCatching { LocalTime.parse(it.timeEnd) }.getOrNull() }
+                ?.takeIf { it.isAfter(clock) }
+                ?.let { today.atTime(it) }
+        } else null
+        val lastEnd = todayLessons.mapNotNull { runCatching { LocalTime.parse(it.timeEnd) }.getOrNull() }.maxOrNull()
+        val smartJump = lastEnd?.plusMinutes(15)?.takeIf { it.isAfter(clock) }?.let { today.atTime(it) }
+        val midnight = today.plusDays(1).atStartOfDay()
+        val nextRefreshAt = listOfNotNull(pairEnd, smartJump, midnight).minOrNull()
+        val empty = when {
+            rows.isNotEmpty() -> null
+            date == today && lessons.isNotEmpty() -> copy.get("widget_timer_done")
+            else -> copy.get("no_lessons_day")
+        }
+        return ScheduleWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark,
+            nextRefreshAt, toss, dayLabel,
+            hiddenRemainingCount = (remaining.size - rows.size).coerceAtLeast(0),
+            staleDays = widgetStaleDays(settings.lastFetchedAt, today))
+    }
+
+    private fun justEnded(
+        lessons: List<Lesson>,
+        today: java.time.LocalDate,
+        now: LocalDateTime,
+        row: (Lesson, Boolean) -> ScheduleWidgetRow
+    ): ScheduleWidgetRow? {
+        val clock = now.toLocalTime()
+        val ended = lessons.mapNotNull { lesson ->
+            val end = runCatching { LocalTime.parse(lesson.timeEnd) }.getOrNull() ?: return@mapNotNull null
+            if (end.isAfter(clock)) return@mapNotNull null
+            val ago = Duration.between(today.atTime(end), now)
+            if (ago.isNegative || ago > Duration.ofMinutes(2)) return@mapNotNull null
+            lesson to end
+        }
+        val lesson = ended.maxWithOrNull(compareBy({ it.second }, { -it.first.index }))?.first ?: return null
+        return row(lesson, true)
+    }
+}
+
+object HomeworkWidgetComposer {
+    const val MAX_ROWS = 4
+
+    fun rowsForHeightDp(heightDp: Int, fontScale: Float = 1f): Int {
+        // Outer padding + title/subtitle, then margin + subject + two detail lines.
+        // Budget font metrics as well as text sizes: two wrapped rows do not fit 160dp.
+        val scale = fontScale.coerceAtLeast(1f)
+        val chrome = 28 + 40 * scale
+        val row = 8 + 52 * scale
+        return if (heightDp < 120) 1 else ((heightDp - chrome) / row).toInt().coerceIn(1, MAX_ROWS)
+    }
+
+    fun cleared(identity: WidgetJobIdentity, copy: UiCopy, isDark: Boolean = false) = fromHomework(
+        identity = identity,
+        settings = ScheduleRepository.SettingsState(),
+        homework = emptyList(),
+        lessons = emptyList(),
+        today = LocalDate.of(2026, 1, 1),
+        groupName = null,
+        displayName = { it },
+        copy = copy,
+        cleared = true,
+        isDark = isDark
+    )
+
+    fun fromHomework(
+        identity: WidgetJobIdentity,
+        settings: ScheduleRepository.SettingsState,
+        homework: List<Homework>,
+        lessons: List<Lesson>,
+        today: LocalDate,
+        groupName: String?,
+        displayName: (String) -> String,
+        copy: UiCopy,
+        cleared: Boolean = false,
+        isDark: Boolean = false,
+        current: (Homework) -> Homework = { it }
+    ): HomeworkWidgetSnapshot {
+        val title = copy.get("nav_homework")
+        if (cleared) {
+            return HomeworkWidgetSnapshot(identity, title, "", copy.get("widget_loading"), emptyList(), true, isDark)
+        }
+        val gid = settings.myGroupId.orEmpty()
+        val subtitle = widgetSubtitle(identity, groupName, copy)
+        if (gid.isEmpty()) {
+            return HomeworkWidgetSnapshot(identity, title, subtitle, copy.get("empty_no_group"), emptyList(), false, isDark)
+        }
+        val currentHomework = homework.map(current)
+        val active = currentHomework
+            .filter { !it.done && it.status != "done" }
+            .sortedWith(compareBy({ rank(it.status) }, { it.due ?: LocalDate.MAX }, { it.id }))
+        val rows = active
+            .take(MAX_ROWS)
+            .map { hw ->
+                val lesson = lessons.firstOrNull { Parity.sameSubject(it.subjectNormalized, hw.norm) }
+                val subject = displayName(hw.norm).ifBlank {
+                    lesson?.let { LessonFormat.stripType(it.subjectRaw, it.typeRaw) } ?: hw.norm
+                }
+                val due = HomeworkGroups.dueLabel(hw, today, copy)
+                val detail = if (hw.text.isBlank()) due else "${hw.text} · $due"
+                HomeworkWidgetRow(subject, detail, tone(hw.status), hw.id)
+            }
+        val empty = if (rows.isEmpty()) copy.get("hw_empty_title") else null
+        return HomeworkWidgetSnapshot(identity, title, subtitle, empty, rows, false, isDark,
+            currentHomework.filter { it.done || it.status == "done" }.map { it.id }.toSet(),
+            hiddenActiveCount = (active.size - rows.size).coerceAtLeast(0),
+            staleDays = widgetStaleDays(settings.lastFetchedAt, today))
+    }
+
+    internal fun rank(status: String): Int = when (status) {
+        "overdue" -> 0
+        "burning_urgent" -> 1
+        "burning" -> 2
+        "approaching" -> 3
+        else -> 4
+    }
+
+    internal fun tone(status: String): String = when (status) {
+        "overdue" -> "bad"
+        "burning", "burning_urgent" -> "warn"
+        "done" -> "ok"
+        else -> "text2"
+    }
+}
+
+object WidgetSnapshots {
+    fun wayfinder(container: AppContainer, identity: WidgetJobIdentity, cleared: Boolean, systemNight: Boolean): WayfinderWidgetSnapshot {
+        val settings = container.repo.settings()
+        val dark = WidgetTheme.isDark(settings.theme, systemNight)
+        if (cleared) return WayfinderWidgetComposer.cleared(identity, container.copy, dark)
+        val lessons = if (settings.myGroupId.isNullOrBlank()) emptyList() else container.ownLessons()
+        return WayfinderWidgetComposer.fromSchedule(
+            identity = identity,
+            settings = settings,
+            allLessons = lessons,
+            now = container.clock(),
+            displayName = { lesson -> container.overrides.displayNameByNorm(lesson.subjectNormalized, lesson.dayOfWeek) },
+            copy = container.copy,
+            isDark = dark
+        )
+    }
+
+    fun schedule(container: AppContainer, identity: WidgetJobIdentity, cleared: Boolean, systemNight: Boolean): ScheduleWidgetSnapshot {
+        val settings = container.repo.settings()
+        val dark = WidgetTheme.isDark(settings.theme, systemNight)
+        if (cleared) return ScheduleWidgetComposer.cleared(identity, container.copy, dark)
+        val gid = settings.myGroupId.orEmpty()
+        val groupName = container.repo.groups().firstOrNull { it.id == gid }?.name
+        val lessons = if (gid.isEmpty()) emptyList() else container.ownLessons()
+        return ScheduleWidgetComposer.fromSchedule(
+            identity = identity,
+            settings = settings,
+            allLessons = lessons,
+            now = container.clock(),
+            groupName = groupName,
+            displayName = { lesson -> container.overrides.displayNameByNorm(lesson.subjectNormalized, lesson.dayOfWeek) },
+            copy = container.copy,
+            isDark = dark
+        )
+    }
+
+    fun homework(container: AppContainer, identity: WidgetJobIdentity, cleared: Boolean, systemNight: Boolean): HomeworkWidgetSnapshot {
+        val settings = container.repo.settings()
+        val dark = WidgetTheme.isDark(settings.theme, systemNight)
+        if (cleared) return HomeworkWidgetComposer.cleared(identity, container.copy, dark)
+        val gid = settings.myGroupId.orEmpty()
+        val groupName = container.repo.groups().firstOrNull { it.id == gid }?.name
+        val lessons = if (gid.isEmpty()) emptyList() else container.repo.allForGroup(gid)
+        val today = container.clock().toLocalDate()
+        return HomeworkWidgetComposer.fromHomework(
+            identity = identity,
+            settings = settings,
+            homework = container.homework.all(),
+            lessons = lessons,
+            today = today,
+            groupName = groupName,
+            displayName = { norm ->
+                val lesson = lessons.firstOrNull { Parity.sameSubject(it.subjectNormalized, norm) }
+                if (lesson != null) container.overrides.displayNameByNorm(norm, lesson.dayOfWeek) else ""
+            },
+            copy = container.copy,
+            isDark = dark,
+            current = { hw -> if (hw.done) hw else {
+                val due = container.homework.computeDueDate(hw.norm, hw.createdAt, hw.n)
+                hw.copy(due = due, status = container.homework.computeStatus(hw.norm,
+                    hw.createdAt, hw.n, due, false, today))
+            } }
+        )
+    }
+
+    fun week(container: AppContainer, identity: WidgetJobIdentity, cleared: Boolean, systemNight: Boolean): WeekWidgetSnapshot {
+        val settings = container.repo.settings()
+        val dark = WidgetTheme.isDark(settings.theme, systemNight)
+        if (cleared) return WeekWidgetComposer.cleared(identity, container.copy, dark)
+        val gid = settings.myGroupId.orEmpty()
+        val groupName = container.repo.groups().firstOrNull { it.id == gid }?.name
+        val lessons = if (gid.isEmpty()) emptyList() else container.ownLessons()
+        return WeekWidgetComposer.fromSchedule(
+            identity = identity,
+            settings = settings,
+            allLessons = lessons,
+            today = container.clock().toLocalDate(),
+            groupName = groupName,
+            copy = container.copy,
+            isDark = dark
+        )
+    }
+
+    fun timer(container: AppContainer, identity: WidgetJobIdentity, cleared: Boolean, systemNight: Boolean): TimerWidgetSnapshot {
+        val settings = container.repo.settings()
+        val dark = WidgetTheme.isDark(settings.theme, systemNight)
+        if (cleared) return TimerWidgetComposer.cleared(identity, container.copy, dark)
+        val gid = settings.myGroupId.orEmpty()
+        val lessons = if (gid.isEmpty()) emptyList() else container.ownLessons()
+        return TimerWidgetComposer.fromTimer(
+            identity = identity,
+            settings = settings,
+            allLessons = lessons,
+            now = container.clock(),
+            displayName = { lesson -> container.overrides.displayNameByNorm(lesson.subjectNormalized, lesson.dayOfWeek) },
+            copy = container.copy,
+            isDark = dark
+        )
+    }
+}

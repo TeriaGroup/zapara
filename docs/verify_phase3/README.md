@@ -1,5 +1,7 @@
 ﻿# Phase 3 — Personalization Verification
 
+Журнал проверки 2026-09-01…03, не описание текущего клиента. Картина продукта — `docs/STATUS.md`.
+
 ## Checks
 - [x] Rename survives "Refresh schedule" (global and weekday:3) — DB count 2 → after refresh 2, display "МатАн (переименовано)" retained
 - [x] Homework N=2 due = 2nd next occurrence — created 2026-09-02 лек ВЫСШ. МАТЕМАТ N=2 → due 2026-09-14 Monday (2 Mondays later) PASS

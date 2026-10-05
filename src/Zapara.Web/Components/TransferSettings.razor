@@ -1,0 +1,107 @@
+@using Microsoft.AspNetCore.Components.Forms
+@using Zapara.Contracts.Sync
+@implements IDisposable
+@inject BrowserTransferService Transfer
+@inject BrowserApiClient Api
+@inject WebAppState State
+<section class="card stack" aria-labelledby="transfer-title">
+    <h2 id="transfer-title">Перенос данных</h2>
+    <p class="muted">JSON-файл переносит задания, отметки выполнения, названия предметов, группы друзей и выбранные настройки. Перед применением вы увидите список изменений.</p>
+    <div class="toolbar"><button class="button" disabled="@busy" @onclick="Export">Скачать JSON текущего профиля</button><button class="button" disabled="@(busy || !State.Authenticated)" @onclick="Guest">Перенести гостевые записи в аккаунт</button></div>
+    @if (!State.Authenticated) { <p class="caption muted">Для переноса гостевых записей в аккаунт нужен подтверждённый вход. Гостевой оригинал сохранится на устройстве.</p> }
+    <label class="field"><span>Открыть файл переноса · JSON, не больше 16 МиБ</span><InputFile OnChange="FileSelected" accept=".json,application/json" disabled="@busy" /></label>
+    @if (Transfer.Backups.Count > 0)
+    {
+        <div class="stack">
+            <h3>Копии перед переносом</h3>
+            <label class="field"><span>Выберите копию текущего профиля</span><select @bind="backupKey" disabled="@busy"><option value="">Выберите дату</option>@foreach (var backup in Transfer.Backups) { <option value="@backup.Key">@backup.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")</option> }</select></label>
+            <div class="toolbar"><button class="button" disabled="@(busy || string.IsNullOrEmpty(backupKey))" @onclick="Restore">Просмотреть восстановление</button><button class="button" disabled="@(busy || string.IsNullOrEmpty(backupKey))" @onclick="DownloadBackup">Скачать эту копию</button></div>
+        </div>
+    }
+    @if (message is not null) { <p role="status">@message</p> }
+    @if (error is not null) { <p role="alert" class="account-error">@error</p> }
+</section>
+@if (Transfer.Preview is { } preview)
+{
+    <Modal Title="@(preview.Source.Kind == "guest" ? "Перенос гостевых записей" : preview.Source.Kind.StartsWith("backup:") ? "Восстановление из копии" : "Просмотр файла переноса")" OnClose="Close" Class="account-sheet">
+        <p>Профиль назначения: <strong>@State.AccountName</strong></p>
+        <p class="muted">Новых записей: @preview.NewCount. Совпадений: @preview.AlreadyCount. Конфликтов: @preview.Conflicts. Исходные записи сохранятся; перед переносом будет проверена резервная копия.</p>
+        @foreach (var warning in preview.Source.Warnings) { <p class="caption muted">@warning</p> }
+        @if (error is not null) { <p role="alert" class="account-error">@error</p> }
+        <div class="stack">
+            @foreach (var row in preview.Rows.Take(visibleCount))
+            {
+                <article class="card stack" @key="row.Record.SourceKey">
+                    <div class="row"><strong>@TypeLabel(row.Record.EntityType)</strong><span class="chip">@KindLabel(row.Kind)</span></div>
+                    <p style="overflow-wrap:anywhere">@ValueLabel(row.Record.Value)</p>
+                    @if (row.Kind is "already" or "same") { <p class="caption muted">Эта запись уже есть в профиле; повторно добавлять её не нужно.</p> }
+                    else if (row.Kind is "new" or "alternatives")
+                    {
+                        @if (row.Kind == "alternatives") { <p class="caption muted">В источнике несколько названий одного предмета. Выберите один вариант; остальные будут пропущены.</p> }
+                        <label class="field"><span>Действие с записью</span><select @bind="row.Choice" disabled="@busy"><option value="add">Добавить</option><option value="keep">Пропустить</option></select></label>
+                    }
+                    else
+                    {
+                        @if (row.ExistingLabel is not null) { <p class="caption muted" style="overflow-wrap:anywhere">Сейчас: @row.ExistingLabel</p> }
+                        <label class="field"><span>@(row.Kind == "settings" ? "Настройки выбираются отдельно" : "Выберите вариант")</span><select @bind="row.Choice" disabled="@busy"><option value="keep">Оставить текущий вариант</option>@if (row.CanReplace) { <option value="incoming">Использовать импортируемый вариант</option> } else { <option value="copy">Добавить отдельную копию</option> }</select></label>
+                    }
+                </article>
+            }
+        </div>
+        @if (visibleCount < preview.Rows.Count) { <button class="button" disabled="@busy" @onclick="() => visibleCount += 100">Показать ещё записи</button> }
+        <p class="caption muted">Отметки выполнения переносятся вместе с отдельной копией задания. В профиле может быть не больше пяти групп друзей. Для переименования предмета исходная дата текущей записи сохранится.</p>
+        <div class="form-actions"><button class="button" disabled="@busy" @onclick="Close">Отмена</button><button class="button primary" disabled="@busy" @onclick="Apply">@(busy ? "Сохраняем копию и переносим…" : "Подтвердить перенос")</button></div>
+    </Modal>
+}
+@code {
+    private bool busy, disposed;
+    private string? error, message;
+    private string backupKey = "";
+    private int visibleCount = 100;
+    private readonly CancellationTokenSource lifetime = new();
+    protected override void OnInitialized() => State.Changed += Changed;
+    private void Changed()
+    {
+        if (Transfer.Preview is { } preview && (preview.Owner != State.ProfileKey || preview.Generation != State.Generation || preview.FamilyId != Api.Session.FamilyId))
+        { Transfer.ClearPreview(); error = "Профиль изменился. Откройте просмотр переноса заново."; }
+        if (!disposed) _ = InvokeAsync(StateHasChanged);
+    }
+    private Task Export() => Run(async () => { await Transfer.ExportAsync(lifetime.Token); message = "Файл передан браузеру для сохранения."; });
+    private Task Guest() => Run(async () => { await Transfer.PreviewGuestAsync(lifetime.Token); visibleCount = 100; });
+    private Task FileSelected(InputFileChangeEventArgs args) => Run(async () => { await Transfer.PreviewFileAsync(args.File, lifetime.Token); visibleCount = 100; });
+    private Task Restore() => Run(async () => { await Transfer.PreviewBackupAsync(backupKey, lifetime.Token); visibleCount = 100; });
+    private Task DownloadBackup() => Run(async () => { await Transfer.DownloadBackupAsync(backupKey, lifetime.Token); message = "Резервная копия передана браузеру для сохранения."; });
+    private Task Apply() => Run(async () =>
+    {
+        var result = await Transfer.ApplyAsync(lifetime.Token);
+        backupKey = result.BackupKey ?? backupKey;
+        message = result.Changed == 0 ? "Новых изменений не было. Исходные записи сохранены."
+            : result.ActiveProfile ? $"Перенесено изменений: {result.Changed}. Резервная копия сохранена на устройстве."
+            : "Изменения сохранены в исходном профиле. Текущий аккаунт не изменён.";
+    });
+    private void Close() { if (!busy) { Transfer.ClearPreview(); error = null; } }
+    private async Task Run(Func<Task> action)
+    {
+        if (busy) return;
+        busy = true; error = null; message = null;
+        try { await action(); }
+        catch (BrowserApiException exception) { error = exception.Message; }
+        catch (Exception exception) when (exception is InvalidDataException or InvalidOperationException) { error = exception.Message; }
+        catch (JSException) { error = "Не удалось сохранить или проверить данные. Проверьте свободное место и доступ к хранилищу."; }
+        catch (IOException) { error = "Не удалось прочитать файл. Данные не изменены."; }
+        catch (OperationCanceledException) { }
+        finally { busy = false; if (!disposed) await InvokeAsync(StateHasChanged); }
+    }
+    private static string TypeLabel(string type) => type switch { "homework" => "Задание", "completion" => "Отметка выполнения", "override" => "Название предмета", "friend" => "Группа друзей", _ => "Настройки" };
+    private static string KindLabel(string kind) => kind switch { "new" => "Новое", "conflict" or "alternatives" => "Нужен выбор", "settings" => "Выберите настройки", _ => "Уже есть" };
+    private static string ValueLabel(SyncValue value) => value switch
+    {
+        HomeworkValue h => h.SubjectRaw + " · " + h.Text + " · срок: " + h.TargetNthOccurrence + "-е занятие",
+        CompletionValue c => c.Done ? "Задание отмечено выполненным" : "Задание не выполнено",
+        OverrideValue o => o.SubjectRaw + " → " + o.DisplayName + (o.Scope == "global" ? " · все дни" : " · день " + o.Scope[8..]) + (o.Note is null ? "" : " · " + o.Note),
+        FriendValue f => f.GroupName + " · " + f.MemberNames + (f.Enabled ? " · включена" : " · выключена"),
+        SettingsValue s => "Группа: " + (s.SelectedGroupId ?? "не выбрана") + "; напоминания: " + (s.NotifyTime1 ?? "выключено") + " и " + (s.NotifyTime2 ?? "выключено") + "; инверсия чётности: " + (s.ParityInvert ? "да" : "нет") + "; строгость: " + s.Strictness,
+        _ => "Запись"
+    };
+    public void Dispose() { disposed = true; State.Changed -= Changed; lifetime.Cancel(); lifetime.Dispose(); Transfer.ClearPreview(); }
+}

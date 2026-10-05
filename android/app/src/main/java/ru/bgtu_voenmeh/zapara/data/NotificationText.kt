@@ -4,7 +4,7 @@ import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
 
-// Pure port of NotificationService.BuildNotificationText (no Android deps).
+// No Android dependencies: JVM unit tests call this directly.
 object NotificationText {
 
     fun build(
@@ -33,8 +33,8 @@ object NotificationText {
         return sb.toString().trimEnd(' ', ';')
     }
 
-    fun localDayName(date: LocalDate, ru: Boolean): String {
-        val loc = if (ru) Locale("ru") else Locale.ENGLISH
+    fun localDayName(date: LocalDate): String {
+        val loc = Locale("ru")
         return date.dayOfWeek.getDisplayName(TextStyle.FULL, loc)
             .replaceFirstChar { it.uppercase() }
     }

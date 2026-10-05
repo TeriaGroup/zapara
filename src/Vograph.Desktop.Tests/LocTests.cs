@@ -1,0 +1,124 @@
+using System.ComponentModel;
+using Vograph.Core.Services;
+using Vograph.Desktop.Services;
+using Xunit;
+
+namespace Vograph.Desktop.Tests;
+
+public class LocTests
+{
+    [Fact]
+    public void Indexer_And_T_Return_Russian_By_Default()
+    {
+        var loc = new Loc(new I18nService("ru"));
+
+        Assert.Equal("Сегодня", loc["today"]);
+        Assert.Equal("Расписание", loc.T("navSchedule"));
+        Assert.Equal("след. 14.09", loc.T("nextShort", "14.09"));
+    }
+
+    [Fact]
+    public void Stored_English_Still_Returns_Russian_Chrome()
+    {
+        var i18n = new I18nService("en");
+        Assert.Equal("ru", i18n.Language);
+        Assert.Equal("Обновить расписание", i18n.T("refresh"));
+        Assert.Equal("Аккаунт", i18n.T("accountTitle"));
+        Assert.Equal("Настройки", i18n.T("navSettings"));
+        i18n.SetLanguage("en");
+        Assert.Equal("ru", i18n.Language);
+        Assert.Equal("Обновить расписание", i18n.T("refresh"));
+        Assert.Equal("07.09.2026", i18n.FormatDate(new DateTime(2026, 9, 7)));
+    }
+
+    [Fact]
+    public void LocString_Stays_Russian_When_Stored_Language_Is_English()
+    {
+        var loc = new Loc(new I18nService("ru"));
+        var s = new LocString(loc, "tomorrow");
+        string? changed = null;
+        ((INotifyPropertyChanged)s).PropertyChanged += (_, e) => changed = e.PropertyName;
+
+        Assert.Equal("Завтра", s.Value);
+        loc.SetLanguage("en");
+
+        Assert.Equal("Завтра", s.Value);
+        Assert.Null(changed);
+    }
+
+    [Fact]
+    public void LocString_Is_Cached_Per_Key_And_Ignores_Stored_English()
+    {
+        var loc = new Loc(new I18nService("ru"));
+        var a = loc.String("today");
+        Assert.Same(a, loc.String("today"));
+        Assert.Same(a, loc.String("TODAY")); // keys are case-insensitive in Core
+        Assert.Equal("Сегодня", a.Value);
+        loc.SetLanguage("en");
+        Assert.Equal("Сегодня", a.Value);
+    }
+
+    [Theory]
+    [InlineData(1, "1 пара")]
+    [InlineData(2, "2 пары")]
+    [InlineData(4, "4 пары")]
+    [InlineData(5, "5 пар")]
+    [InlineData(11, "11 пар")]
+    [InlineData(21, "21 пара")]
+    [InlineData(22, "22 пары")]
+    [InlineData(112, "112 пар")]
+    public void Plural_Follows_Russian_Rules(int n, string expected)
+    {
+        var loc = new Loc(new I18nService("ru"));
+        Assert.Equal(expected, loc.Plural(n, "lessons1", "lessons2", "lessons5"));
+    }
+
+    [Fact]
+    public void Plural_Ignores_Stored_English_And_Uses_Russian_Rules()
+    {
+        var loc = new Loc(new I18nService("en"));
+        Assert.Equal("1 пара", loc.Plural(1, "lessons1", "lessons2", "lessons5"));
+        Assert.Equal("3 пары", loc.Plural(3, "lessons1", "lessons2", "lessons5"));
+    }
+
+    [Fact]
+    public void Every_New_Key_Has_Russian_Value()
+    {
+        var storedEn = new I18nService("en");
+        foreach (var key in NewKeys)
+            Assert.NotEqual(key, storedEn.T(key)); // T returns the key itself when missing
+    }
+
+    public static readonly string[] NewKeys =
+    {
+        "navSchedule","navWeek","navSummary","navTools","navTeachers","navMaps","navFriends","navHomework","navSettings",
+        "goToday","prevDay","nextDay","lessons1","lessons2","lessons5","weekOf","parityWeek","nextShort",
+        "noLessonsDay","noLessonsSunday","nextLessonHint","typeLek","typePr","typeLab","typeKons","typeZach","typeEkz","typeKurs","typePraktika",
+        "remote","originalLabel","hwLabel","hwBurningTomorrow","hwBurningToday","hwOverdue","hwDone","hwDueOn",
+        "hwInLessons1","hwInLessons2","hwInLessons5","hwMarkDone","hwUndo","hwEdit","hwDelete","hwAdd","hwDeleteConfirm","hwEditTitle",
+        "renameTip","mapTip","placeholderTitle","placeholderHint","loadingTitle","themeToggleTip","sidebarToggleTip","sidebarExpandTip","winRestore",
+        "groupPickTitle","search","groupSearchHint","select","confirm","delete","updatedChip","errorTitle",
+        "bootstrapError","bootstrapHint","retry","friendAbsent","inter100","inter75","inter50","inter25","savedOk","noGroup","noGroupHint",
+        "winMinimize","winMaximize","winClose",
+        "refreshOk","refreshNone","refreshFail","refreshTip","offlineMode",
+        "weekCurrentSuffix","weekOpenDayTip",
+        "summaryTotal","summaryByDay","summaryByType","summarySubjects","summaryTeachers","summaryRooms","summaryBothShort",
+        "teachersSearchHint","teachersOnlyMine","teachersCount","teachersPick","teachersPickHint","teachersLoading",
+        "teachersLoadFail","teachersNoSource","teachersMine","teachersTeachesMine","teachersNotMine",
+        "mapNextLesson","mapLessonPrefix","mapPickPlan","mapFloorN","mapInMinutes","mapInHours","mapInDays","mapNow",
+        "mapToNext","mapVc","mapDownloadAll","mapOpenFolder","mapVerify","mapCacheStatus","mapDownloaded","mapDownloadPartial",
+        "mapFullscreen","mapExitFullscreen","mapFit","mapStack","mapZoomIn","mapZoomOut","mapReset","mapMore","mapNoImage","mapRemoteHint",
+        "friendsSubtitle","friendsCount","friendsAdd","friendsMax","friendsNames","friendsEnabled","friendsRemove","friendsRemoveConfirm",
+        "friendsEmpty","friendsEmptyHint","friendsColor","friendAdded","intersections","strictnessHint","alwaysShowAll","alwaysShowAllHint",
+        "previewTitle","previewNone","strictTick25","strictTick50","strictTick75","strictTick100",
+        "hwGroupUrgent","hwGroupBurning","hwGroupApproaching","hwGroupFar","hwGroupOverdue","hwGroupDone",
+        "hwOpen1","hwOpen2","hwOpen5","hwDoneCount","hwAddShort","hwEmpty","hwEmptyHint","hwPickSubject","hwPickSubjectHint","hwNoSubjects",
+        "setAppearance","setTheme","themeSystem","themeLight","themeDark","setCompactSidebar","setAnimations","setSchedule","setChange",
+        "setAutoCheckAt","setNever","setAbout","setVersion","setReleases","setSources","setSourceTimetable","setSourceMaps","setDataFolder",
+        "setNotifications","notifEnabled","notifTime1Label","notifTime2Label","notifSave","notifTest","notifBadTime","notifSaved",
+        "setSync","syncExport","syncImport","syncShowQr","syncHideQr","syncQrHint","syncQrServerHint","syncLan","syncLanAddress","syncLanFail","syncLanBusy","syncExported",
+        "setUpdates","updIdle","updChecking","updUpToDate","updAvailable","updDownloaded","updInstall","updLater","updCheck","updInBrowser",
+        "updRateLimited","updFailWith","updNoReleases","updUpdatingTo","updDialogHint",
+        "updDownloadFail","updApplyFail","updBadZip"
+    };
+}

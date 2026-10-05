@@ -1,0 +1,500 @@
+package ru.bgtu_voenmeh.zapara.ui.friends
+
+import androidx.compose.foundation.border
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import ru.bgtu_voenmeh.zapara.ui.components.ZTextField
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import kotlinx.coroutines.delay
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import ru.bgtu_voenmeh.zapara.R
+import ru.bgtu_voenmeh.zapara.ui.components.FriendDot
+import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
+import ru.bgtu_voenmeh.zapara.ui.components.ZChip
+import ru.bgtu_voenmeh.zapara.ui.components.ZSegmented
+import ru.bgtu_voenmeh.zapara.ui.components.SkeletonList
+import ru.bgtu_voenmeh.zapara.ui.components.ZSwitch
+import ru.bgtu_voenmeh.zapara.ui.shell.GroupPickerSheet
+import ru.bgtu_voenmeh.zapara.ui.shell.ZTopBar
+import ru.bgtu_voenmeh.zapara.ui.theme.ZButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZCompactButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZDisclosureButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
+import ru.bgtu_voenmeh.zapara.ui.theme.ZIconButton
+import ru.bgtu_voenmeh.zapara.ui.theme.ZIcon
+import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
+import ru.bgtu_voenmeh.zapara.ui.theme.controlFocusRing
+import ru.bgtu_voenmeh.zapara.ui.theme.appear
+import ru.bgtu_voenmeh.zapara.data.Intersection
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) =
+    FriendsSection(state, onEvent) { _, _, _ -> }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun FriendsSection(state: FriendsUiState, onEvent: (FriendsEvent) -> Unit,
+    onOpenEncounter: (FriendEncounter, String, String) -> Unit) {
+    val c = Zapara.colors
+    val ctx = LocalContext.current
+    val focus = LocalFocusManager.current
+    var query by rememberSaveable(state.profileName, state.myGroupId) { mutableStateOf("") }
+    var status by rememberSaveable(state.profileName, state.myGroupId) { mutableStateOf(0) }
+    var encounterDay by rememberSaveable(state.profileName, state.myGroupId) { mutableStateOf(0) }
+    var encounterDate by rememberSaveable(state.profileName, state.myGroupId) { mutableStateOf("") }
+    var encounterFriend by rememberSaveable(state.profileName, state.myGroupId) { mutableStateOf("") }
+    var encounterFriendMenu by rememberSaveable(state.profileName, state.myGroupId) { mutableStateOf(false) }
+    var encountersExpanded by rememberSaveable(state.profileName, state.myGroupId, encounterDay) { mutableStateOf(false) }
+    val visibleFriends = browseFriends(state.friends, query, status)
+    val selectedDate = encounterDate.takeIf(String::isNotBlank)?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+    val visibleEncounters = browseEncounters(state.encounters, if (selectedDate == null) encounterDay else 0,
+        java.time.LocalDate.now()).filter { encounter ->
+            (selectedDate == null || encounter.date == selectedDate) &&
+                (encounterFriend.isBlank() || encounter.groupName == encounterFriend)
+        }
+    val latestEvent = rememberUpdatedState(onEvent)
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000)
+            latestEvent.value(FriendsEvent.Retry)
+        }
+    }
+    Column(Modifier.fillMaxSize()) {
+        ZTopBar(stringResource(R.string.nav_friends)) {
+            if (state.canAdd) ZIconButton(R.drawable.ic_plus, stringResource(R.string.add), { onEvent(FriendsEvent.Add) }, "Friends.Add")
+        }
+        if (!state.loaded) Box(Modifier.fillMaxSize().padding(Zapara.space.l)) { SkeletonList() }
+        else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            if (state.friends.isNotEmpty()) item("browse") {
+                Column(verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                    ZTextField(query, { query = it }, modifier = Modifier.fillMaxWidth().testTag("Friends.Search"),
+                        placeholder = { Text(stringResource(R.string.ux100_common_friend_search)) }, singleLine = true,
+                        leadingIcon = { ZIcon(R.drawable.ic_search, null) },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+                        trailingIcon = if (query.isNotEmpty()) {{ ZIconButton(R.drawable.ic_x,
+                            stringResource(R.string.ux100_common_clear_search), { query = "" }, "Friends.ClearSearch") }} else null)
+                    FriendsTabs(listOf(stringResource(R.string.ux100_common_filter_all),
+                        stringResource(R.string.friends_filter_enabled_short),
+                        stringResource(R.string.friends_filter_disabled_short)),
+                        status, { status = it }, "Friends.Filter", Modifier.fillMaxWidth())
+                    if (visibleFriends.isEmpty()) Text(stringResource(R.string.ux100_common_no_friends_found), color = c.text2)
+                    if (query.isNotBlank() || status != 0) ZButton(stringResource(R.string.ux100_common_reset),
+                        { query = ""; status = 0 }, ghost = true, tag = "Friends.Reset")
+                }
+            }
+            if (state.friends.isNotEmpty() || !state.failed) item("overview") {
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                    verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                    Text(stringResource(R.string.friends_detail_count, state.friends.size),
+                        style = Zapara.typography.caption, color = c.text2, modifier = Modifier.testTag("Friends.Count"))
+                    Text(stringResource(R.string.friends_detail_active, state.friends.count { it.enabled }),
+                        style = Zapara.typography.caption, color = c.text2, modifier = Modifier.testTag("Friends.Active"))
+                }
+            }
+            if (state.failed) item("load-failed") {
+                ZCard(Modifier.fillMaxWidth(), tag = "Friends.LoadFailed") {
+                    Text(stringResource(R.string.friends_detail_load_failed), style = Zapara.typography.bodyStrong, color = c.bad)
+                    ZButton(stringResource(R.string.friends_detail_retry), { onEvent(FriendsEvent.Retry) }, ghost = true)
+                }
+            }
+            if (!state.failed) item("forecast") {
+                ZCard(Modifier.fillMaxWidth(), tag = "Friends.Forecast") {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        Text(stringResource(R.string.friends_forecast_title), style = Zapara.typography.section,
+                            color = c.text1, modifier = Modifier.weight(1f))
+                        ZIconButton(R.drawable.ic_refresh,
+                            stringResource(if (state.refreshing) R.string.friends_forecast_refreshing else R.string.friends_forecast_refresh),
+                            { onEvent(FriendsEvent.RefreshSchedules) }, "Friends.RefreshSchedules", enabled = !state.refreshing)
+                    }
+                    Text(stringResource(R.string.friends_forecast_hint), style = Zapara.typography.caption, color = c.text2)
+                    if (state.refreshing) Text(stringResource(R.string.friends_forecast_refreshing),
+                        style = Zapara.typography.caption, color = c.text2)
+                    if (state.refreshFailed) Text(stringResource(R.string.friends_forecast_refresh_failed),
+                        style = Zapara.typography.caption, color = c.bad)
+                    when {
+                        !state.hasOwnSchedule -> Text(stringResource(R.string.friends_forecast_no_schedule), style = Zapara.typography.body, color = c.text2)
+                        state.friends.none { it.enabled } -> Text(stringResource(R.string.friends_forecast_no_friends), style = Zapara.typography.body, color = c.text2)
+                        state.encounters.isEmpty() -> Text(state.previewLine, style = Zapara.typography.body, color = c.text2, modifier = Modifier.testTag("Friends.Preview"))
+                    }
+                    val dateFormat = DateTimeFormatter.ofPattern("EEE d MMM", Locale.forLanguageTag("ru"))
+                    FriendsTabs(listOf(stringResource(R.string.friends_forecast_all_days_short),
+                        stringResource(R.string.ux100_common_today), stringResource(R.string.ux100_common_tomorrow)),
+                        if (selectedDate == null) encounterDay else -1,
+                        { encounterDate = ""; encounterDay = it }, "Friends.Day", Modifier.fillMaxWidth())
+                    val encounterGroups = state.encounters.map { it.groupName }.filter(String::isNotBlank).distinct().sorted()
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                        verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                        val dateLabel = selectedDate?.format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("ru")))
+                            ?: stringResource(R.string.friends_forecast_pick_date_short)
+                        val dateDescription = stringResource(R.string.ux300_android_pick_encounter_date)
+                        val selectedDescription = stringResource(R.string.ux100_common_selected)
+                        ZCompactButton(dateLabel, {
+                            val contextDate = selectedDate ?: java.time.LocalDate.now()
+                            android.app.DatePickerDialog(ctx, if (c.isDark) R.style.Zapara_DatePicker_Dark
+                                else R.style.Zapara_DatePicker_Light, { _, year, month, day ->
+                                encounterDate = java.time.LocalDate.of(year, month + 1, day).toString()
+                            }, contextDate.year, contextDate.monthValue - 1, contextDate.dayOfMonth).show()
+                        }, leadingIcon = R.drawable.ic_calendar, tag = "Friends.PickForecastDate",
+                            modifier = Modifier.semantics {
+                                contentDescription = if (selectedDate != null) "$dateDescription: $dateLabel" else dateDescription
+                                if (selectedDate != null) stateDescription = selectedDescription
+                            })
+                        if (encounterGroups.size > 1) Box {
+                            ZCompactButton(encounterFriend.ifBlank { stringResource(R.string.ux300_android_all_friends) },
+                                { encounterFriendMenu = true }, tag = "Friends.ForecastFriend",
+                                modifier = Modifier.semantics {
+                                    if (encounterFriend.isNotBlank()) stateDescription = selectedDescription
+                                })
+                            androidx.compose.material3.DropdownMenu(expanded = encounterFriendMenu,
+                                onDismissRequest = { encounterFriendMenu = false }) {
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.ux300_android_all_friends)) },
+                                    onClick = { encounterFriend = ""; encounterFriendMenu = false })
+                                encounterGroups.forEach { group -> androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(group) }, onClick = { encounterFriend = group; encounterFriendMenu = false }) }
+                            }
+                        }
+                    }
+                    if ((encounterDay != 0 || selectedDate != null || encounterFriend.isNotEmpty()) && visibleEncounters.isEmpty()) {
+                        Text(stringResource(R.string.ux100_common_no_encounters), color = c.text2)
+                        ZButton(stringResource(R.string.ux100_common_all_days), {
+                            encounterDay = 0; encounterDate = ""; encounterFriend = ""
+                        }, ghost = true)
+                    }
+                    (if (encountersExpanded) visibleEncounters else visibleEncounters.take(3)).forEachIndexed { index, encounter ->
+                        if (index > 0) HorizontalDivider(color = c.line, thickness = Zapara.space.hairline)
+                        EncounterRow(encounter, index, dateFormat) {
+                            onOpenEncounter(encounter, state.myGroupId, state.profileName)
+                        }
+                    }
+                    if (visibleEncounters.size > 3) ZDisclosureButton(stringResource(if (encountersExpanded)
+                        R.string.ux100_common_less_encounters else R.string.ux100_common_more_encounters,
+                        visibleEncounters.size - 3), encountersExpanded, { encountersExpanded = !encountersExpanded },
+                        tag = "Friends.ExpandForecast")
+                    if (state.missingGroups.isNotEmpty()) {
+                        Text(stringResource(R.string.friends_forecast_missing, state.missingGroups.joinToString(", ")),
+                            style = Zapara.typography.caption, color = c.text2)
+                    }
+                }
+            }
+            if (!state.failed) item("meeting-planner") { FriendMeetingPlanner(state, onEvent) }
+            if (state.friends.isEmpty() && !state.failed) item("empty") {
+                ZCard(Modifier.fillMaxWidth(), tag = "Empty.Friends") {
+                    Text(stringResource(R.string.friends_detail_empty), style = Zapara.typography.bodyStrong, color = c.text1)
+                    Text(stringResource(R.string.friends_detail_empty_hint), style = Zapara.typography.caption, color = c.text2)
+                    if (state.canAdd) ZButton(stringResource(R.string.add), { onEvent(FriendsEvent.Add) }, tag = "Friends.AddFirst")
+                }
+            }
+            itemsIndexed(visibleFriends, key = { _, it -> it.id }) { index, friend ->
+                val scope = FriendActionScope(friend.id, state.myGroupId, state.profileName)
+                ZCard(onClick = { onEvent(FriendsEvent.Edit(scope)) }, tag = "Friends.Row.${friend.index}", modifier = Modifier.fillMaxWidth().appear(index)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                        FriendDot(friend.colorIndex, size = 10.dp)
+                        Column(Modifier.weight(1f)) {
+                            Text(friend.groupName, style = Zapara.typography.bodyStrong, color = c.text1)
+                            Text(friend.members, style = Zapara.typography.caption, color = c.text2)
+                            Text(stringResource(if (friend.enabled) R.string.ux100_common_active_explanation
+                                else R.string.ux100_common_disabled_explanation), style = Zapara.typography.caption, color = c.text2)
+                        }
+                        val enabledLabel = stringResource(R.string.friends_enabled_label, friend.groupName)
+                        ZSwitch(friend.enabled, { onEvent(FriendsEvent.Toggle(scope, it)) }, "Friends.Enabled.${friend.index}",
+                            Modifier.semantics { contentDescription = enabledLabel })
+                    }
+                }
+            }
+            item {
+                ZCard(Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.friends_intersections), style = Zapara.typography.section, color = c.text1)
+                    Text(stringResource(R.string.friends_forecast_source_hint), style = Zapara.typography.caption, color = c.text2)
+                    Text(stringResource(R.string.friends_strictness), style = Zapara.typography.body, color = c.text1)
+                    val strictnessLabel = stringResource(R.string.friends_strictness)
+                    val active = Strictness.nearest(state.strictness)
+                    val steps = listOf(
+                        50 to R.string.strict_building,
+                        75 to R.string.strict_floor,
+                        100 to R.string.strict_room
+                    )
+                    FlowRow(Modifier.fillMaxWidth().testTag("Friends.Strictness").semantics { contentDescription = strictnessLabel }, horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                        verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                        steps.forEach { (value, label) ->
+                            ZChip(
+                                stringResource(label),
+                                selected = value == active,
+                                onClick = { onEvent(FriendsEvent.Strictness(value)) },
+                                tag = "Friends.Strict.$value"
+                            )
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        val label = stringResource(R.string.friends_always_show)
+                        Text(label, style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f).clearAndSetSemantics {})
+                        ZSwitch(state.alwaysShow, { onEvent(FriendsEvent.AlwaysShow(it)) }, "Friends.AlwaysShow", Modifier.semantics { contentDescription = label })
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        val label = stringResource(R.string.friends_invert)
+                        Column(Modifier.weight(1f)) {
+                            Text(label, style = Zapara.typography.body, color = c.text1, modifier = Modifier.clearAndSetSemantics {})
+                            Text(stringResource(R.string.friends_invert_hint), style = Zapara.typography.caption, color = c.text2)
+                        }
+                        ZSwitch(state.invert, { onEvent(FriendsEvent.Invert(it)) }, "Friends.Invert", Modifier.semantics { contentDescription = label })
+                    }
+                }
+            }
+        }
+    }
+    state.editor?.let { editor ->
+        FriendEditorSheet(editor, state, onEvent)
+        if (editor.pickerOpen) {
+            val available = state.groups.filter { group ->
+                group.id != state.myGroupId && state.friends.none { friend ->
+                    friend.id != editor.id && (friend.groupName.equals(group.name, ignoreCase = true) || friend.groupName == group.id)
+                }
+            }
+            GroupPickerSheet(available, null, { id ->
+                val name = state.groups.firstOrNull { it.id == id }?.name ?: id
+                onEvent(FriendsEvent.EditorGroup(name))
+            }, { onEvent(FriendsEvent.ClosePicker) })
+        }
+    }
+    state.confirmDelete?.let {
+        AlertDialog(
+            onDismissRequest = { if (!state.deletePending) onEvent(FriendsEvent.CancelDelete) },
+            title = { Text(stringResource(R.string.friends_delete_title), style = Zapara.typography.section) },
+            text = { Column {
+                state.friends.firstOrNull { friend -> friend.id == it }?.let { friend ->
+                    Text(friend.groupName, style = Zapara.typography.bodyStrong)
+                    if (friend.members.isNotBlank()) Text(friend.members, style = Zapara.typography.body)
+                }
+                state.deleteError?.let { error -> Text(error, color = Zapara.colors.bad) }
+            } },
+            confirmButton = { Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZButton(stringResource(R.string.delete), { onEvent(FriendsEvent.ConfirmDelete) },
+                    enabled = !state.deletePending, busy = state.deletePending, modifier = Modifier.fillMaxWidth())
+                ZButton(stringResource(R.string.theme_cancel), { onEvent(FriendsEvent.CancelDelete) },
+                    ghost = true, enabled = !state.deletePending, modifier = Modifier.fillMaxWidth())
+            } },
+            containerColor = Zapara.colors.card
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FriendsTabs(items: List<String>, selected: Int, onSelect: (Int) -> Unit, tag: String,
+    modifier: Modifier = Modifier) {
+    if (LocalDensity.current.fontScale < 1.5f) {
+        ZSegmented(items, selected, onSelect, tag, modifier)
+        return
+    }
+    val c = Zapara.colors
+    FlowRow(
+        modifier.testTag(tag).selectableGroup().clip(RoundedCornerShape(Zapara.radii.control))
+            .background(c.chip).padding(Zapara.space.xs),
+        horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
+        verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)
+    ) {
+        items.forEachIndexed { index, label ->
+            val active = index == selected
+            val interaction = remember { MutableInteractionSource() }
+            val focused by interaction.collectIsFocusedAsState()
+            Box(
+                Modifier.sizeIn(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch)
+                    .testTag("$tag.$index")
+                    .clip(RoundedCornerShape(Zapara.radii.control))
+                    .background(if (active) c.segThumb else c.chip)
+                    .controlFocusRing(focused, c.text1, Zapara.radii.control)
+                    .selectable(selected = active, role = Role.Tab, interactionSource = interaction,
+                        indication = if (Zapara.motion.enabled) LocalIndication.current else null,
+                        onClick = { onSelect(index) })
+                    .padding(Zapara.space.s),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(label, style = if (active) Zapara.typography.bodyStrong else Zapara.typography.body,
+                    color = if (active) c.text1 else c.text2)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EncounterRow(encounter: FriendEncounter, index: Int, dateFormat: DateTimeFormatter, onOpen: () -> Unit) {
+    val c = Zapara.colors
+    val interactions = remember { MutableInteractionSource() }
+    val focused by interactions.collectIsFocusedAsState()
+    val pressed by interactions.collectIsPressedAsState()
+    val actionLabel = stringResource(R.string.uxnext_friend_open_pair)
+    val shape = RoundedCornerShape(Zapara.radii.control)
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = Zapara.space.minTouch)
+            .testTag("Friends.OpenEncounter.$index")
+            .clip(shape)
+            .background(if (pressed) c.cardPressed else c.card)
+            .controlFocusRing(focused, c.focusRing, Zapara.radii.control)
+            .clickable(interactionSource = interactions,
+                indication = if (Zapara.motion.enabled) LocalIndication.current else null,
+                role = Role.Button, onClickLabel = actionLabel, onClick = onOpen)
+            .padding(horizontal = Zapara.space.xs, vertical = Zapara.space.s),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)
+    ) {
+        FriendDot(FriendPalette.indexOf(encounter.colorHex), size = 10.dp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+            Text("${encounter.date.format(dateFormat)} · ${encounter.time}",
+                style = Zapara.typography.caption, color = c.text2,
+                modifier = Modifier.testTag("Friends.Encounter.$index"))
+            Text(encounter.subject, style = Zapara.typography.bodyStrong, color = c.text1)
+            Text(listOf(encounter.groupName, encounter.members).filter(String::isNotBlank).joinToString(" · "),
+                style = Zapara.typography.body, color = c.text1)
+            Text(listOf(Intersection.scoreToTextRu(encounter.score), encounter.friendRoom)
+                .filter(String::isNotBlank).joinToString(" · "), style = Zapara.typography.caption, color = c.text2)
+        }
+        Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.size(20.dp), tint = c.text2)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FriendEditorSheet(editor: FriendEditorUi, state: FriendsUiState, onEvent: (FriendsEvent) -> Unit) {
+    val c = Zapara.colors
+    var discard by rememberSaveable(editor.id, editor.sourceGroupId, editor.sourceProfileName) { mutableStateOf(false) }
+    val initialColor = remember(editor.id, editor.sourceGroupId, editor.sourceProfileName) { editor.colorIndex }
+    val dirty = friendEditorDirty(editor, state.friends.firstOrNull { it.id == editor.id }, initialColor)
+    val validGroup = validFriendGroupName(editor.groupName, state.groups, editor.manualOffline,
+        state.friends.firstOrNull { it.id == editor.id }?.groupName) != null
+    val canClose = {
+        when { state.editorSaving -> false; dirty -> { discard = true; false }; else -> true }
+    }
+    val cancel = { if (canClose()) onEvent(FriendsEvent.EditorCancel) }
+    ZBottomSheet({ onEvent(FriendsEvent.EditorCancel) }, "Sheet.Friend",
+        scrollable = true, canDismiss = canClose, footer = {
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+                ZButton(stringResource(R.string.theme_cancel), cancel, ghost = true,
+                    tag = "Editor.Cancel", enabled = !state.editorSaving)
+                if (editor.id != null) ZButton(stringResource(R.string.delete), { onEvent(FriendsEvent.AskDelete(editor.id)) },
+                    ghost = true, tag = "Editor.Delete", enabled = !state.editorSaving)
+                ZButton(stringResource(R.string.theme_save), { onEvent(FriendsEvent.EditorSave) },
+                    enabled = validGroup && !state.editorSaving, busy = state.editorSaving, tag = "Editor.Save")
+            }
+        }) {
+        Text(stringResource(R.string.friends_group), style = Zapara.typography.section, color = c.text1)
+        if (state.groups.isNotEmpty()) {
+            ZButton(editor.groupName.ifBlank { stringResource(R.string.group_pick) },
+                { onEvent(FriendsEvent.OpenPicker) }, ghost = true, enabled = !state.editorSaving)
+        } else {
+            Text(stringResource(R.string.ux30_friends_offline_catalog), style = Zapara.typography.caption, color = c.text2)
+            ZButton(stringResource(R.string.ux30_friends_manual),
+                { onEvent(FriendsEvent.ManualOffline(!editor.manualOffline)) },
+                ghost = true, tag = "Friends.ManualOffline", enabled = !state.editorSaving)
+            if (editor.manualOffline) OutlinedTextField(editor.groupName,
+                { onEvent(FriendsEvent.EditorGroup(it)) }, modifier = Modifier.fillMaxWidth().testTag("Friends.ManualGroup"),
+                label = { Text(stringResource(R.string.friends_group)) }, singleLine = true,
+                enabled = !state.editorSaving)
+        }
+        val membersHint = stringResource(R.string.ux100_common_members_hint)
+        Text(membersHint, style = Zapara.typography.caption, color = c.text2)
+        OutlinedTextField(
+            value = editor.members, onValueChange = { onEvent(FriendsEvent.EditorMembers(it)) },
+            modifier = Modifier.fillMaxWidth().testTag("Editor.Text").semantics { contentDescription = membersHint },
+            placeholder = { Text(stringResource(R.string.friends_members), color = c.text3) },
+            minLines = 2, maxLines = 4,
+            enabled = !state.editorSaving,
+            shape = RoundedCornerShape(Zapara.radii.control),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = c.chip, unfocusedContainerColor = c.chip,
+                focusedBorderColor = c.lineStrong, unfocusedBorderColor = c.chip,
+                focusedTextColor = c.text1, unfocusedTextColor = c.text1
+            )
+        )
+        val colorNames = listOf(R.string.friend_color_orange, R.string.friend_color_green,
+            R.string.friend_color_blue, R.string.friend_color_purple, R.string.friend_color_pink)
+        FlowRow(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            repeat(5) { i ->
+                val selected = editor.colorIndex == i
+                val label = stringResource(R.string.friend_color_label, stringResource(colorNames[i]))
+                val selection = stringResource(if (selected) R.string.control_selected else R.string.control_not_selected)
+                Box(Modifier.size(Zapara.space.minTouch)
+                        .testTag("Editor.Color.$i")
+                        .clip(CircleShape)
+                        .selectable(selected, enabled = !state.editorSaving, role = Role.RadioButton,
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = if (Zapara.motion.enabled) LocalIndication.current else null,
+                            onClick = { onEvent(FriendsEvent.EditorColor(i)) })
+                        .semantics { contentDescription = label; stateDescription = selection },
+                    contentAlignment = Alignment.Center) {
+                    FriendDot(i, size = Zapara.space.xl, modifier =
+                        if (selected) Modifier.border(Zapara.space.hairline * 2, c.text1, CircleShape) else Modifier)
+                }
+            }
+        }
+        state.editorError?.let { Text(it, style = Zapara.typography.caption, color = c.bad) }
+        if (!validGroup) Text(stringResource(if (editor.groupName.isBlank()) R.string.ux100_common_choose_group
+            else R.string.ux100_common_group_invalid), color = c.warn, style = Zapara.typography.caption)
+    }
+    if (discard) AlertDialog(onDismissRequest = { discard = false },
+        title = { Text(stringResource(R.string.ux100_common_friend_discard_title)) },
+        text = { Text(stringResource(R.string.ux100_common_friend_discard_body)) },
+        confirmButton = { Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            ZButton(stringResource(R.string.ux100_common_keep_editing), { discard = false }, modifier = Modifier.fillMaxWidth())
+            ZButton(stringResource(R.string.ux100_common_discard), { discard = false; onEvent(FriendsEvent.EditorCancel) },
+                ghost = true, modifier = Modifier.fillMaxWidth(), enabled = !state.editorSaving)
+        } }, containerColor = c.card)
+}

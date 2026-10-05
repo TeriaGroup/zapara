@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <PreserveCompilationContext>true</PreserveCompilationContext>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.30" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.55.0" />
+    <ProjectReference Include="..\Zapara.Server\Zapara.Server.csproj" />
+    <ProjectReference Include="..\Zapara.Contracts\Zapara.Contracts.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Accounts\Zapara.Server.Accounts.csproj" />
+    <ProjectReference Include="..\Zapara.Server.Communities\Zapara.Server.Communities.csproj" />
+  </ItemGroup>
+</Project>

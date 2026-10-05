@@ -3,36 +3,41 @@ using System.Text.Json;
 
 namespace Vograph.Core.Services;
 
-public class AutoUpdateService
+public class AutoUpdateService : IDisposable
 {
     private readonly HttpClient _http;
+    private readonly bool _ownsClient;
+    private bool _disposed;
     private const string Owner = "TeriaGroup";
     private const string Repo = "zapara";
-    // tag prefix for windows
-    private const string Prefix = "windows-";
 
-    public AutoUpdateService()
+    public AutoUpdateService() : this(new HttpClient()) { _ownsClient = true; }
+
+    public AutoUpdateService(HttpClient client)
     {
-        _http = new HttpClient();
+        _http = client ?? throw new ArgumentNullException(nameof(client));
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Zapara-AutoUpdate/1.0");
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
     }
 
     public record UpdateInfo(string Tag, string HtmlUrl, string? ZipUrl, string PublishedAt);
 
-    public async Task<UpdateInfo?> GetLatestAsync(string channel = "windows")
+    public async Task<UpdateInfo?> GetLatestAsync(string channel = "windows", CancellationToken ct = default)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         string pfx = channel == "android" ? "android-" : "windows-";
         // fetch all releases, pick latest matching prefix (api/releases/latest may be android)
-        var url = $"https://api.github.com/repos/{Owner}/{Repo}/releases?per_page=20";
-        var resp = await _http.GetAsync(url);
+        var url = $"https://api.github.com/repos/{Owner}/{Repo}/releases?per_page=100";
+        using var resp = await _http.GetAsync(url, ct);
         resp.EnsureSuccessStatusCode();
-        var json = await resp.Content.ReadAsStringAsync();
+        var json = await resp.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(json);
+        var wantZip = !string.Equals(channel, "android", StringComparison.OrdinalIgnoreCase);
+        UpdateInfo? best = null;
         foreach (var el in doc.RootElement.EnumerateArray())
         {
             var tag = el.GetProperty("tag_name").GetString() ?? "";
-            if (!tag.StartsWith(pfx, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!TagMatchesChannel(tag, pfx)) continue;
             var html = el.GetProperty("html_url").GetString() ?? $"https://github.com/{Owner}/{Repo}/releases/tag/{tag}";
             var published = el.TryGetProperty("published_at", out var p) ? p.GetString() ?? "" : "";
             string? zip = null;
@@ -41,24 +46,27 @@ public class AutoUpdateService
                 foreach (var a in assets.EnumerateArray())
                 {
                     var name = a.GetProperty("name").GetString() ?? "";
-                    if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".apk", StringComparison.OrdinalIgnoreCase))
-                    {
-                        zip = a.GetProperty("browser_download_url").GetString();
-                        if (name.Contains("ZAPARA", StringComparison.OrdinalIgnoreCase)) break;
-                    }
+                    var ok = wantZip
+                        ? name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+                        : name.EndsWith(".apk", StringComparison.OrdinalIgnoreCase);
+                    if (!ok) continue;
+                    zip = a.GetProperty("browser_download_url").GetString();
+                    if (name.Contains("ZAPARA", StringComparison.OrdinalIgnoreCase)) break;
                 }
             }
-            return new UpdateInfo(tag, html, zip, published);
+            if (zip == null) continue;
+            var cand = new UpdateInfo(tag, html, zip, published);
+            if (best == null || BetterTag(best.Tag, tag, pfx) == tag) best = cand;
         }
-        return null;
+        return best;
     }
 
-    public static string CurrentTagWindows => "windows-v1.2.3";
-    public static string CurrentTagAndroid => "android-v1.2.1";
+    public static string CurrentTagWindows => "windows-v2.1.40";
 
     /// <summary>Download a release asset with progress (0..1, -1 if size unknown).</summary>
     public async Task DownloadAssetAsync(string url, string destPath, IProgress<double>? progress = null, CancellationToken ct = default)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         Directory.CreateDirectory(Path.GetDirectoryName(destPath) ?? ".");
         string tmp = destPath + ".part";
         try
@@ -89,12 +97,28 @@ public class AutoUpdateService
         }
     }
 
-    public static string UpdatesDir =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vograph", "updates");
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        if (_ownsClient) _http.Dispose();
+    }
+
+    public static bool TagMatchesChannel(string tag, string prefix) =>
+        tag.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
+        (tag.Length > 1 && (tag[0] == 'v' || tag[0] == 'V') && char.IsDigit(tag[1]));
+
+    static string BetterTag(string current, string candidate, string prefix)
+    {
+        if (IsNewer(candidate, current)) return candidate;
+        if (IsNewer(current, candidate)) return current;
+        var curPfx = current.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+        var candPfx = candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+        return candPfx && !curPfx ? candidate : current;
+    }
 
     public static bool IsNewer(string latestTag, string currentTag)
     {
-        // simple semver compare after prefix: v1.0, v1.1 etc
         static string ver(string t) => t.Contains("-v") ? t[(t.IndexOf("-v")+2)..] : t.Contains("-") ? t[(t.IndexOf("-")+1)..] : t;
         try
         {

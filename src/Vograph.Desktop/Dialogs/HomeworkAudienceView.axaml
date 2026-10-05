@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Vograph.Desktop.Controls" xmlns:h="using:Vograph.Desktop.Features.Homeworks"
+             x:Class="Vograph.Desktop.Dialogs.HomeworkAudienceView" x:DataType="h:HomeworkAudienceSelection">
+  <StackPanel Spacing="8">
+    <TextBlock Classes="subject" Text="{Binding GroupLabel}" TextWrapping="Wrap" />
+    <c:SegmentedControl Items="{Binding Modes}" SelectedIndex="{Binding Mode}" IsEnabled="{Binding CanChoose}" />
+    <TextBlock Classes="muted caption" Text="{Binding Availability}" TextWrapping="Wrap" />
+    <Button Content="Выбрать всю группу" Command="{Binding SelectWholeGroupCommand}" IsVisible="{Binding !Supported}" IsEnabled="{Binding Enabled}" HorizontalAlignment="Left" />
+    <StackPanel Spacing="8" IsVisible="{Binding Selecting}" IsEnabled="{Binding CanChoose}">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+        <TextBox Text="{Binding Query}" PlaceholderText="Найти подгруппу или участника" AutomationProperties.Name="Поиск получателя" />
+        <Button Grid.Column="1" Content="Сбросить" Command="{Binding ClearQueryCommand}" />
+      </Grid>
+      <ScrollViewer MaxHeight="250" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="caption" Text="Подгруппы и роли" />
+          <ItemsControl ItemsSource="{Binding VisibleRoles}"><ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="h:HomeworkRecipientChoice"><CheckBox IsChecked="{Binding Selected}" MinHeight="48">
+              <StackPanel><TextBlock Text="{Binding Name}" TextWrapping="Wrap" /><TextBlock Text="{Binding Detail}" Classes="muted caption" /></StackPanel>
+            </CheckBox></DataTemplate>
+          </ItemsControl.ItemTemplate></ItemsControl>
+          <TextBlock Classes="caption" Text="Отдельные участники" />
+          <ItemsControl ItemsSource="{Binding VisiblePeople}"><ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="h:HomeworkRecipientChoice"><CheckBox IsChecked="{Binding Selected}" MinHeight="48">
+              <StackPanel><TextBlock Text="{Binding Name}" TextWrapping="Wrap" /><TextBlock Text="{Binding Detail}" Classes="muted caption" /></StackPanel>
+            </CheckBox></DataTemplate>
+          </ItemsControl.ItemTemplate></ItemsControl>
+          <TextBlock Text="По запросу никто не найден" IsVisible="{Binding NoMatches}" Classes="muted caption" />
+        </StackPanel>
+      </ScrollViewer>
+      <Button Content="Снять выбор" Command="{Binding ClearSelectionCommand}" HorizontalAlignment="Left" />
+    </StackPanel>
+    <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
+    <TextBlock Text="{Binding Validation}" TextWrapping="Wrap" />
+  </StackPanel>
+</UserControl>

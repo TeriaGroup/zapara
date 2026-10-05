@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ux30_chat_drafts_only">С черновиками</string>
+    <string name="ux30_chat_inbox_search">Имя, группа или текст сообщения</string>
+    <string name="ux30_chat_group_search">Текст, автор или имя файла</string>
+    <string name="ux30_chat_unread_first">Непрочитанные сверху</string>
+    <string name="ux30_chat_history_filters">Фильтры сообщений</string>
+    <string name="ux30_chat_result_count">Найдено: %1$d из %2$d загруженных</string>
+    <string name="ux30_chat_reply_author">Ответ: %1$s</string>
+    <string name="ux30_chat_preview_voice">Голосовое сообщение</string>
+    <string name="ux30_chat_preview_circle">Видеокружок</string>
+    <string name="ux30_chat_seek_back">Назад на 10 секунд</string>
+    <string name="ux30_chat_seek_forward">Вперёд на 10 секунд</string>
+    <string name="ux30_chat_seek_back_short">−10 с</string>
+    <string name="ux30_chat_seek_forward_short">+10 с</string>
+    <string name="ux30_chat_play">Воспроизвести</string>
+    <string name="ux30_chat_pause">Пауза</string>
+    <string name="ux30_chat_zoom_in">Увеличить фото</string>
+    <string name="ux30_chat_zoom_out">Уменьшить фото</string>
+    <string name="ux30_chat_zoom_reset">Сбросить масштаб</string>
+</resources>

@@ -1,0 +1,46 @@
+@using Zapara.Contracts.Communities
+<Modal Title="Новый опрос" OnClose="Close" Class="community-editor">
+    @if (discard)
+    {
+        <p>Отменить несохранённый опрос?</p><div class="form-actions"><button class="button" @onclick="() => discard = false">Продолжить</button><button class="button danger" @onclick="() => OnClose.InvokeAsync()">Отменить опрос</button></div>
+    }
+    else
+    {
+        <form class="stack" @onsubmit="Save" @onsubmit:preventDefault>
+            <label class="field"><span>Вопрос</span><input required maxlength="400" @bind="question" @bind:event="oninput" disabled="@Busy" /></label>
+            <label class="field"><span>Окончание (московское время)</span><input type="datetime-local" required value="@deadline" @onchange="e => deadline = e.Value?.ToString() ?? string.Empty" disabled="@Busy" /></label>
+            <fieldset class="community-options-editor"><legend>Варианты ответа</legend>
+                @for (var i = 0; i < options.Count; i++)
+                {
+                    var index = i;
+                    <div class="community-option-editor"><label class="field"><span>Вариант @(index + 1)</span><input required maxlength="80" value="@options[index]" @oninput="e => options[index] = e.Value?.ToString() ?? string.Empty" disabled="@Busy" /></label><button type="button" class="icon-button outlined" aria-label="@("Удалить вариант " + (index + 1))" disabled="@(Busy || options.Count <= 2)" @onclick="() => options.RemoveAt(index)"><Icon Name="close" /></button></div>
+                }
+                <button type="button" class="button" disabled="@(Busy || options.Count >= 16)" @onclick="() => options.Add(string.Empty)"><Icon Name="plus" />Добавить вариант</button>
+            </fieldset>
+            <p class="caption muted">От 2 до 16 разных вариантов. Голос можно отправить только один раз.</p>
+            @if (Error is not null || validation is not null) { <p class="community-inline-error" role="alert">@(validation ?? Error)</p> }
+            <div class="form-actions"><button type="button" class="button" disabled="@Busy" @onclick="Close">Отмена</button><button type="submit" class="button primary" disabled="@(Busy || !Allowed)">@(Busy ? "Публикуем…" : "Опубликовать")</button></div>
+        </form>
+    }
+</Modal>
+@code {
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool Allowed { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public EventCallback<CommunityPollDraft> OnSave { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    private string question = "", deadline = DateTime.UtcNow.AddHours(3).AddDays(1).ToString("yyyy-MM-ddTHH:mm", CultureInfo.InvariantCulture);
+    private List<string> options = ["", ""];
+    private string? validation;
+    private bool discard;
+    private async Task Close() { if (Busy) return; if (question.Length > 0 || options.Any(o => o.Length > 0)) discard = true; else await OnClose.InvokeAsync(); }
+    private async Task Save()
+    {
+        if (Busy || !Allowed) return;
+        if (!DateTime.TryParseExact(deadline, "yyyy-MM-ddTHH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)) { validation = "Укажите дату и время окончания опроса."; return; }
+        var utc = new DateTimeOffset(DateTime.SpecifyKind(parsed, DateTimeKind.Unspecified), TimeSpan.FromHours(3)).ToUniversalTime();
+        if (utc <= DateTimeOffset.UtcNow) { validation = "Окончание должно быть в будущем."; return; }
+        try { var value = new PollUpsert(question.Trim(), utc, options.Select(o => o.Trim()).ToArray(), 0); validation = null; await OnSave.InvokeAsync(new(value.Question, value.DeadlineAt, value.Options)); }
+        catch (ArgumentException) { validation = "Введите вопрос и от 2 до 16 разных непустых вариантов ответа длиной до 80 символов."; }
+    }
+}

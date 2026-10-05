@@ -1,0 +1,112 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:c="using:Vograph.Desktop.Controls">
+
+  <ControlTheme x:Key="{x:Type c:Icon}" TargetType="c:Icon">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Viewbox Width="{TemplateBinding Size}" Height="{TemplateBinding Size}" Stretch="Uniform">
+          <Canvas Width="24" Height="24">
+            <Path Data="{TemplateBinding Data}" Stroke="{TemplateBinding Foreground}" StrokeThickness="{TemplateBinding StrokeThickness}"
+                  StrokeLineCap="Round" StrokeJoin="Round" Fill="{x:Null}" />
+          </Canvas>
+        </Viewbox>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <ControlTheme x:Key="{x:Type c:SegmentedControl}" TargetType="c:SegmentedControl">
+    <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" CornerRadius="{DynamicResource Radius.Control}" Padding="3">
+          <Panel>
+            <Border x:Name="PART_Thumb" HorizontalAlignment="Left" VerticalAlignment="Top" CornerRadius="{DynamicResource Radius.Control}"
+                    Background="{DynamicResource Brush.SegThumb}" BoxShadow="{DynamicResource Shadow.Thumb}" IsVisible="False" />
+            <StackPanel x:Name="PART_Items" Orientation="Horizontal" />
+          </Panel>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+    <!-- The Button.seg look lives in Buttons.axaml: a ControlTheme may not carry a descendant selector. -->
+  </ControlTheme>
+
+  <ControlTheme x:Key="{x:Type c:NavItem}" TargetType="c:NavItem">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
+    <Setter Property="Padding" Value="10,8" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Radius.Control}" />
+    <Setter Property="MinHeight" Value="48" />
+    <Setter Property="MinWidth" Value="48" />
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="RenderTransformOrigin" Value="50%,50%" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Panel>
+          <Border Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}">
+            <DockPanel HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" LastChildFill="True">
+              <c:Icon Data="{TemplateBinding Icon}" Size="16" Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center" DockPanel.Dock="Left" />
+              <Border x:Name="PART_Badge" Classes="badge" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"
+                      IsVisible="{TemplateBinding Badge, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <TextBlock Text="{TemplateBinding Badge}" />
+              </Border>
+              <ContentPresenter x:Name="PART_ContentPresenter" Content="{TemplateBinding Content}" Margin="10,0,0,0"
+                                VerticalAlignment="Center" Foreground="{TemplateBinding Foreground}" FontSize="15" />
+            </DockPanel>
+          </Border>
+        </Panel>
+      </ControlTemplate>
+    </Setter>
+    <Style Selector="^:pointerover"><Setter Property="Background" Value="{DynamicResource Brush.Selection}" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /></Style>
+    <Style Selector="^:active"><Setter Property="Background" Value="{DynamicResource Brush.Selection}" /><Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" /><Setter Property="FontWeight" Value="Medium" /></Style>
+    <Style Selector="^:pressed"><Setter Property="RenderTransform" Value="scale(0.98)" /></Style>
+    <Style Selector="^:compact"><Setter Property="HorizontalContentAlignment" Value="Center" /><Setter Property="Padding" Value="0,9" /></Style>
+    <Style Selector="^:compact /template/ ContentPresenter#PART_ContentPresenter"><Setter Property="IsVisible" Value="False" /></Style>
+  </ControlTheme>
+
+  <ControlTheme x:Key="{x:Type c:Skeleton}" TargetType="c:Skeleton">
+    <Setter Property="Height" Value="12" />
+    <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource Radius.Chip}" />
+    <Setter Property="ClipToBounds" Value="True" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}" ClipToBounds="True">
+          <!-- The shine is a 120px gradient parked off the clipped left edge. Skeleton.cs sweeps it to the right on a
+               loop, by animating TranslateTransform.X — so this Margin is the park, and it never moves (no layout
+               pass per frame). RenderTransform must stay unset here: Avalonia's transform animator only builds its
+               own group when it finds none, and a value of ours would leave the sweep with nothing to animate. -->
+          <Border x:Name="PART_Shine" Width="120" HorizontalAlignment="Left" Margin="-140,0,0,0">
+            <Border.Background>
+              <LinearGradientBrush StartPoint="0%,50%" EndPoint="100%,50%">
+                <GradientStop Offset="0" Color="#00FFFFFF" />
+                <GradientStop Offset="0.5" Color="#22FFFFFF" />
+                <GradientStop Offset="1" Color="#00FFFFFF" />
+              </LinearGradientBrush>
+            </Border.Background>
+          </Border>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+  <ControlTheme x:Key="{x:Type c:EmptyState}" TargetType="c:EmptyState">
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <StackPanel Spacing="8" HorizontalAlignment="Center">
+          <c:Icon Data="{TemplateBinding Icon}" Size="24" Foreground="{DynamicResource Brush.Text3}" HorizontalAlignment="Center"
+                  IsVisible="{TemplateBinding Icon, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          <TextBlock Text="{TemplateBinding Title}" Foreground="{DynamicResource Brush.Text2}" FontSize="15" TextAlignment="Center" TextWrapping="Wrap" />
+          <TextBlock Text="{TemplateBinding Hint}" Foreground="{DynamicResource Brush.Text3}" FontSize="12" TextAlignment="Center" TextWrapping="Wrap"
+                     IsVisible="{TemplateBinding Hint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+      </ControlTemplate>
+    </Setter>
+  </ControlTheme>
+
+</ResourceDictionary>
