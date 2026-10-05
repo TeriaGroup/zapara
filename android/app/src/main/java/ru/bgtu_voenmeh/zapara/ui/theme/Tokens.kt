@@ -13,7 +13,7 @@ data class ZaparaColors(
     val accent: Color, val onAccent: Color, val selection: Color,
     val focusRing: Color, val backdrop: Color, val segThumb: Color,
     val ok: Color, val warn: Color, val warnSoft: Color, val onWarn: Color,
-    val bad: Color, val badSoft: Color, val onBad: Color, val info: Color,
+    val bad: Color, val badSoft: Color, val onBad: Color, val info: Color, val typeCredit: Color,
     val friends: List<Color>,
     val mapInk: Color = Color(0xFF2B7FD9),
     val mapInkSoft: Color = Color(0x402B7FD9),
@@ -34,6 +34,7 @@ val DarkColors = ZaparaColors(
     focusRing = Color(0xFFA0A0A0), backdrop = Color(0x8C000000), segThumb = Color(0xFF171717),
     ok = Color(0xFF4CC38A), warn = Color(0xFFF2A33C), warnSoft = Color(0x24F2A33C), onWarn = Color(0xFF1A1A1A),
     bad = Color(0xFFEF5B6B), badSoft = Color(0x24EF5B6B), onBad = Color(0xFFFFFFFF), info = Color(0xFF5AA9FF),
+    typeCredit = Color(0xFF5EEAD4),
     friends = listOf(Color(0xFFF2A33C), Color(0xFF4CC38A), Color(0xFF5AA9FF), Color(0xFFC77DFF), Color(0xFFFF7A9C))
 )
 
@@ -47,6 +48,7 @@ val LightColors = ZaparaColors(
     focusRing = Color(0xFF595959), backdrop = Color(0x59000000), segThumb = Color(0xFFFFFFFF),
     ok = Color(0xFF2FA36B), warn = Color(0xFFD9861B), warnSoft = Color(0x1FD9861B), onWarn = Color(0xFFFFFFFF),
     bad = Color(0xFFD7404F), badSoft = Color(0x1FD7404F), onBad = Color(0xFFFFFFFF), info = Color(0xFF2B7FD9),
+    typeCredit = Color(0xFF0F766E),
     friends = listOf(Color(0xFFD9861B), Color(0xFF2FA36B), Color(0xFF2B7FD9), Color(0xFF9B51E0), Color(0xFFE0527A))
 )
 
@@ -56,7 +58,7 @@ object TypeInks {
         ru.bgtu_voenmeh.zapara.data.LessonTypeKind.Practice -> if (dark) Color(0xFF4CC38A) else Color(0xFF2FA36B)
         ru.bgtu_voenmeh.zapara.data.LessonTypeKind.Lab -> if (dark) Color(0xFFF2A33C) else Color(0xFFD9861B)
         ru.bgtu_voenmeh.zapara.data.LessonTypeKind.Consult -> if (dark) Color(0xFFC77DFF) else Color(0xFF9B51E0)
-        ru.bgtu_voenmeh.zapara.data.LessonTypeKind.Credit -> if (dark) Color(0xFF5EEAD4) else Color(0xFF0F766E)
+        ru.bgtu_voenmeh.zapara.data.LessonTypeKind.Credit -> if (dark) DarkColors.typeCredit else LightColors.typeCredit
         ru.bgtu_voenmeh.zapara.data.LessonTypeKind.Exam -> if (dark) Color(0xFFEF5B6B) else Color(0xFFD7404F)
         ru.bgtu_voenmeh.zapara.data.LessonTypeKind.Course -> if (dark) Color(0xFFFF7A9C) else Color(0xFFE0527A)
     }

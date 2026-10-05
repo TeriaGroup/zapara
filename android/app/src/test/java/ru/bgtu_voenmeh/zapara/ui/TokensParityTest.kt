@@ -22,6 +22,7 @@ class TokensParityTest {
                 "Backdrop" to c.backdrop, "SegThumb" to c.segThumb, "Ok" to c.ok,
                 "Warn" to c.warn, "WarnSoft" to c.warnSoft, "OnWarn" to c.onWarn,
                 "Bad" to c.bad, "BadSoft" to c.badSoft, "OnBad" to c.onBad, "Info" to c.info,
+                "TypeCredit" to c.typeCredit,
                 "MapInk" to c.mapInk, "MapInkSoft" to c.mapInkSoft, "OnMapInk" to c.onMapInk,
                 "QrPaper" to c.qrPaper, "CloseHover" to c.closeHover
             )
