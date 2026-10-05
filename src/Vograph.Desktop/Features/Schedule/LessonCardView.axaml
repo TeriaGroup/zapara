@@ -20,14 +20,20 @@
       <StackPanel Grid.Column="1" Margin="12,0">
         <TextBlock Text="Пересечение времени занятий" IsVisible="{Binding HasConflict}" Classes="muted caption" />
         <TextBlock Classes="muted caption" Text="{Binding PriorityCaption}" IsVisible="{Binding IsNext}" />
-        <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsUpcoming}" Margin="0,0,0,4">
-          <Ellipse Width="7" Height="7" Fill="{DynamicResource Brush.Info}" VerticalAlignment="Center" />
-          <TextBlock Classes="muted caption" Text="Предстоит" />
-        </StackPanel>
         <WrapPanel>
           <TextBlock Classes="subject" FontSize="17" FontWeight="Medium" TextWrapping="Wrap" Text="{Binding DisplayName}" VerticalAlignment="Center" AutomationProperties.AutomationId="Lesson.Title" />
-          <Border Classes="chip type" Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding HasType}">
-            <TextBlock Text="{Binding TypeLabel}" />
+          <Border Classes="chip type lessonbadge" Classes.lecture="{Binding IsLectureType}" Classes.practice="{Binding IsPracticeType}"
+                  Classes.lab="{Binding IsLabType}" Classes.consult="{Binding IsConsultType}"
+                  Classes.credit="{Binding IsCreditType}" Classes.exam="{Binding IsExamType}"
+                  Classes.course="{Binding IsCourseType}" Margin="8,0,0,0"
+                  VerticalAlignment="Center" IsVisible="{Binding HasType}">
+            <Grid>
+              <Border Classes="typewash" />
+              <StackPanel Orientation="Horizontal" Spacing="4" Margin="8,3">
+                <Ellipse Classes="typedot" Width="6" Height="6" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding TypeLabel}" VerticalAlignment="Center" />
+              </StackPanel>
+            </Grid>
           </Border>
         </WrapPanel>
           <ItemsControl ItemsSource="{Binding Friends}" Margin="0,5,0,0" IsVisible="{Binding HasFriends}">

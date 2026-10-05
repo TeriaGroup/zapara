@@ -114,8 +114,8 @@ function LessonCard({ lesson, marks = [], presence = [], share, subgroup, upcomi
   return (
     <article className="lesson">
       <div className="lesson-top">
-        <span className={"time" + (upcoming ? " lesson-upcoming" : "")} aria-label={upcoming ? `Предстоит: ${lesson.timeStart} – ${lesson.timeEnd}` : undefined}>{lesson.timeStart} – {lesson.timeEnd}</span>
-        {lesson.typeRaw && <TypeChip type={lesson.typeRaw} />}
+        <span className="time" aria-label={upcoming ? `Предстоит: ${lesson.timeStart} – ${lesson.timeEnd}` : undefined}>{lesson.timeStart} – {lesson.timeEnd}</span>
+        {lesson.typeRaw?.trim() && <TypeChip type={lesson.typeRaw.trim()} />}
         <span className="chip">{lesson.roomRaw || lesson.classroomRaw || "—"}</span>
       </div>
       <div>

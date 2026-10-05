@@ -25,7 +25,7 @@ public sealed partial class LessonRowViewModel : ObservableObject
     {
         Row=row;
         RefreshRelated(row);
-        foreach(var name in new[]{nameof(DisplayName),nameof(TeacherLine),nameof(CanOpenTeacher),nameof(Note),nameof(RoomText),nameof(TypeLabel),nameof(IsPast),nameof(IsNext),nameof(IsUpcoming),nameof(CanShowMap),nameof(PriorityCaption)})OnPropertyChanged(name);
+        foreach(var name in new[]{nameof(DisplayName),nameof(TeacherLine),nameof(CanOpenTeacher),nameof(Note),nameof(RoomText),nameof(TypeLabel),nameof(HasType),nameof(IsLectureType),nameof(IsPracticeType),nameof(IsLabType),nameof(IsConsultType),nameof(IsCreditType),nameof(IsExamType),nameof(IsCourseType),nameof(IsPast),nameof(IsNext),nameof(IsUpcoming),nameof(CanShowMap),nameof(PriorityCaption)})OnPropertyChanged(name);
     }
     private void RefreshRelated(LessonRow row)
     {
@@ -63,7 +63,15 @@ public sealed partial class LessonRowViewModel : ObservableObject
     public string? Note => Row.Note;
     public bool HasNote => Row.Note is not null;
     public string TypeLabel => Row.TypeLabel;
-    public bool HasType => Row.TypeLabel.Length > 0;
+    public bool HasType => !string.IsNullOrWhiteSpace(Row.TypeLabel);
+    private LessonTypeBadgeKind TypeKind => LessonTypeBadge.KindOf(Row.Lesson.TypeRaw);
+    public bool IsLectureType => TypeKind == LessonTypeBadgeKind.Lecture;
+    public bool IsPracticeType => TypeKind == LessonTypeBadgeKind.Practice;
+    public bool IsLabType => TypeKind == LessonTypeBadgeKind.Lab;
+    public bool IsConsultType => TypeKind == LessonTypeBadgeKind.Consult;
+    public bool IsCreditType => TypeKind == LessonTypeBadgeKind.Credit;
+    public bool IsExamType => TypeKind == LessonTypeBadgeKind.Exam;
+    public bool IsCourseType => TypeKind == LessonTypeBadgeKind.Course;
     public string RoomText => Row.RoomText;
     public string? BuildingTag => Row.BuildingTag;
     public bool HasBuildingTag => Row.BuildingTag is not null;

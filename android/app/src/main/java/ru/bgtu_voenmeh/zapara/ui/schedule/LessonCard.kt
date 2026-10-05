@@ -23,11 +23,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.constrainHeight
@@ -55,6 +54,7 @@ fun LessonCard(
     actions: (@Composable ColumnScope.() -> Unit)? = null
 ) {
     val c = Zapara.colors
+    val upcomingDescription = stringResource(R.string.schedule_upcoming_lesson_mark)
     var expanded by remember(lesson.index, lesson.name) { mutableStateOf(false) }
     val hw = if (!expanded && lesson.homework.size > 2) lesson.homework.take(2) else lesson.homework
     ZCard(
@@ -69,12 +69,13 @@ fun LessonCard(
             horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)
         ) {
-            if (lesson.isUpcoming) UpcomingLessonMark()
             Text(
                 "${lesson.timeStart} – ${lesson.timeEnd}",
                 style = Zapara.typography.bodyStrong,
                 color = c.text1,
-                modifier = Modifier.align(Alignment.CenterVertically)
+                modifier = Modifier.align(Alignment.CenterVertically).semantics {
+                    if (lesson.isUpcoming) stateDescription = upcomingDescription
+                }
             )
             if (lesson.type.isNotBlank()) {
                 LessonTypeChip(lesson.type, "Lesson.Type.${lesson.index}", Modifier.align(Alignment.CenterVertically))
@@ -147,15 +148,6 @@ fun LessonCard(
             onClick = { expanded = !expanded }, tag = "Lesson.HomeworkExpand.${lesson.index}")
         actions?.invoke(this)
     }
-}
-
-@Composable
-internal fun UpcomingLessonMark() {
-    val label = stringResource(R.string.schedule_upcoming_lesson_mark)
-    Box(
-        Modifier.size(7.dp).clip(CircleShape).background(Zapara.colors.info)
-            .semantics { contentDescription = label }.testTag("Lesson.UpcomingMark")
-    )
 }
 
 @Composable

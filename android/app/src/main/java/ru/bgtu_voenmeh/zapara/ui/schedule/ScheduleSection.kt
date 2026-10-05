@@ -49,6 +49,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import ru.bgtu_voenmeh.zapara.ui.theme.ZCard
 import ru.bgtu_voenmeh.zapara.ui.components.rememberUiText
 import androidx.compose.ui.Modifier
@@ -416,9 +417,14 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
                         }
                     })
             } else ZCard(Modifier.fillMaxWidth(), onClick = { onEvent(ScheduleEvent.LongPress(lesson)) }) {
-                Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs), verticalAlignment = Alignment.CenterVertically) {
-                    if (lesson.isUpcoming) UpcomingLessonMark()
-                    Text("${lesson.timeStart}–${lesson.timeEnd} · ${lesson.type}", style = Zapara.typography.caption, color = Zapara.colors.text2)
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Zapara.space.s),
+                    verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                    Text("${lesson.timeStart}–${lesson.timeEnd}", style = Zapara.typography.caption, color = Zapara.colors.text2,
+                        modifier = Modifier.align(Alignment.CenterVertically).semantics {
+                            if (lesson.isUpcoming) stateDescription = uiText(R.string.schedule_upcoming_lesson_mark)
+                        })
+                    if (lesson.type.isNotBlank()) LessonTypeChip(lesson.type, "Lesson.Type.${lesson.index}",
+                        Modifier.align(Alignment.CenterVertically))
                 }
                 Text(lesson.name, style = Zapara.typography.bodyStrong)
                 val placeAndTeacher = listOf(lesson.room, lesson.teacher).filter(String::isNotBlank).joinToString(" · ")

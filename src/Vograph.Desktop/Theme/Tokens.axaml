@@ -46,6 +46,7 @@
       <SolidColorBrush x:Key="Brush.BadSoft" Color="#24EF5B6B" />
       <SolidColorBrush x:Key="Brush.OnBad" Color="#FFFFFF" />
       <SolidColorBrush x:Key="Brush.Info" Color="#5AA9FF" />
+      <SolidColorBrush x:Key="Brush.TypeCredit" Color="#5EEAD4" />
 
       <SolidColorBrush x:Key="Brush.Friend1" Color="#F2A33C" />
       <SolidColorBrush x:Key="Brush.Friend2" Color="#4CC38A" />
@@ -123,6 +124,7 @@
       <SolidColorBrush x:Key="Brush.BadSoft" Color="#1FD7404F" />
       <SolidColorBrush x:Key="Brush.OnBad" Color="#FFFFFF" />
       <SolidColorBrush x:Key="Brush.Info" Color="#2B7FD9" />
+      <SolidColorBrush x:Key="Brush.TypeCredit" Color="#0F766E" />
 
       <SolidColorBrush x:Key="Brush.Friend1" Color="#D9861B" />
       <SolidColorBrush x:Key="Brush.Friend2" Color="#2FA36B" />
