@@ -53,10 +53,12 @@ object WidgetRemoteViews {
         }
         val views = RemoteViews(context.packageName, if (compact) R.layout.widget_schedule_compact else R.layout.widget_schedule)
         val colors = WidgetPalette.of(context, snapshot.isDark)
+        val largeTight = !compact && heightDp <= 160 && context.resources.configuration.fontScale >= 1.25f
         val title = if (compact && !snapshot.cleared && snapshot.dayLabel.isNotBlank())
             context.getString(R.string.widget_schedule_short_title, snapshot.dayLabel) else snapshot.title
         paintChrome(context, views, R.id.widget_schedule_root, R.id.widget_schedule_title, R.id.widget_schedule_subtitle, R.id.widget_schedule_empty,
-            title, snapshot.readError ?: if (compact) compactStatus
+            title, snapshot.readError ?: if (compact) compactStatus.takeUnless { heightDp <= 90 }.orEmpty()
+                else if (largeTight) staleLabel.ifBlank { snapshot.subtitle }
                 else listOf(snapshot.subtitle, hiddenLabel, staleLabel).filter(String::isNotBlank).joinToString(" · "),
             snapshot.empty, snapshot.cleared, colors)
         if (snapshot.readError != null) views.setOnClickPendingIntent(R.id.widget_schedule_subtitle,
@@ -83,7 +85,9 @@ object WidgetRemoteViews {
             val row = visibleRows.getOrNull(index)
             val bind = WidgetRowBind.of(row)
             views.setTextViewText(slot.name, bind.primary)
-            views.setTextViewText(slot.meta, bind.secondary)
+            views.setTextViewText(slot.meta, if (largeTight && index == 0)
+                bind.secondary.replaceFirst(" · ", "\n") else bind.secondary)
+            views.setInt(slot.meta, "setMaxLines", if (largeTight && index == 0) 2 else 1)
             views.setTextViewText(slot.number, if (!compact && row != null && row.number > 0) row.number.toString() else "")
             views.setViewVisibility(slot.row, if (bind.visible) View.VISIBLE else View.GONE)
             views.setOnClickPendingIntent(slot.row, row?.let {
@@ -102,6 +106,8 @@ object WidgetRemoteViews {
     }
 
     fun homework(context: Context, snapshot: HomeworkWidgetSnapshot, heightDp: Int = 160, widgetId: Int = 0): RemoteViews {
+        val widthDp = AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
+            .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 180).takeIf { it > 0 } ?: 180
         val compact = heightDp < 120
         val visibleRows = if (snapshot.cleared) emptyList() else snapshot.rows.take(
             HomeworkWidgetComposer.rowsForHeightDp(heightDp, context.resources.configuration.fontScale))
@@ -120,7 +126,7 @@ object WidgetRemoteViews {
         val views = RemoteViews(context.packageName, if (compact) R.layout.widget_homework_compact else R.layout.widget_homework)
         val colors = WidgetPalette.of(context, snapshot.isDark)
         paintChrome(context, views, R.id.widget_homework_root, R.id.widget_homework_title, R.id.widget_homework_subtitle, R.id.widget_homework_empty,
-            snapshot.title, snapshot.readError ?: if (compact) compactStatus
+            snapshot.title, snapshot.readError ?: if (compact) compactStatus.takeUnless { heightDp <= 90 }.orEmpty()
                 else listOf(snapshot.subtitle, hiddenLabel, staleLabel).filter(String::isNotBlank).joinToString(" · "),
             snapshot.empty, snapshot.cleared, colors)
         if (snapshot.readError != null) views.setOnClickPendingIntent(R.id.widget_homework_subtitle,
@@ -133,7 +139,14 @@ object WidgetRemoteViews {
             val row = visibleRows.getOrNull(index)
             val bind = WidgetRowBind.of(row)
             views.setTextViewText(ids.second, bind.primary)
-            views.setTextViewText(ids.third, if (compact && row != null) row.detail.substringAfterLast(" · ") else bind.secondary)
+            val detail = when {
+                row == null -> bind.secondary
+                compact -> row.detail.substringAfterLast(" · ")
+                (widthDp <= 220 || context.resources.configuration.fontScale >= 1.25f) && " · " in row.detail ->
+                    "${row.detail.substringAfterLast(" · ")} · ${row.detail.substringBeforeLast(" · ")}"
+                else -> bind.secondary
+            }
+            views.setTextViewText(ids.third, detail)
             views.setViewVisibility(ids.first, if (bind.visible) View.VISIBLE else View.GONE)
             views.setOnClickPendingIntent(ids.first, when {
                 row == null -> null
@@ -183,8 +196,11 @@ object WidgetRemoteViews {
         if (snapshot.readError != null) views.setOnClickPendingIntent(R.id.widget_timer_phase,
             WidgetIntents.retry(context, 0, "timer"))
         bindLine(views, R.id.widget_timer_subject, if (snapshot.cleared) "" else snapshot.subject, colors.text1)
+        views.setTextViewTextSize(R.id.widget_timer_subject, TypedValue.COMPLEX_UNIT_SP,
+            if (widthDp <= 180 && context.resources.configuration.fontScale >= 1.2f) 12f else 14f)
+        val detailMinHeight = if (context.resources.configuration.fontScale >= 1.2f) 170 else 111
         bindLine(views, R.id.widget_timer_detail,
-            if (snapshot.cleared || heightDp <= 110 || context.resources.configuration.fontScale >= 1.2f) "" else snapshot.detail, colors.text2)
+            if (snapshot.cleared || heightDp < detailMinHeight) "" else snapshot.detail, colors.text2)
         bindTimerDescription(context, views, snapshot)
         val scope = WidgetLaunchScope(snapshot.identity.profileId, snapshot.identity.databaseName)
         val focused = WidgetIntents.scheduleRow(context, 4104, 0,

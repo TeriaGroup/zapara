@@ -8,6 +8,7 @@
     <string name="widget_guest">Гость</string>
     <string name="widget_loading">Обновляем…</string>
     <string name="widget_wayfinder_title">Куда идти</string>
+    <string name="widget_wayfinder_compact_title">Куда</string>
     <string name="widget_wayfinder_description">Аудитория текущей или ближайшей пары</string>
     <string name="widget_wayfinder_preview_room">493 ГК</string>
     <string name="widget_wayfinder_preview_subject">Математика</string>

@@ -1,6 +1,7 @@
 package ru.bgtu_voenmeh.zapara.ui.widgets
 
 import android.content.Context
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 import ru.bgtu_voenmeh.zapara.R
@@ -17,17 +18,22 @@ object WidgetExtraViews {
     fun wayfinder(context: Context, snapshot: WayfinderWidgetSnapshot, widgetId: Int): RemoteViews {
         val face = if (snapshot.cleared) snapshot.copy(
             status = "", subject = "", time = "", room = "", classroomRaw = "",
-            targetDate = null, opensMap = false, empty = context.getString(R.string.widget_loading)
+            targetDate = null, opensMap = false, empty = "", readError = null, lessonTarget = null
         ) else snapshot
         val views = RemoteViews(context.packageName, R.layout.widget_wayfinder)
         val colors = WidgetPalette.of(context, snapshot.isDark)
+        val options = android.appwidget.AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
+        val tight = !snapshot.cleared && context.resources.configuration.fontScale >= 1.2f &&
+            options.getInt(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 110) <= 120
         views.setInt(R.id.widget_wayfinder_root, "setBackgroundResource", colors.background)
-        line(views, R.id.widget_wayfinder_title, face.title, colors.text1)
+        line(views, R.id.widget_wayfinder_title,
+            if (tight) context.getString(R.string.widget_wayfinder_compact_title) else face.title, colors.text1)
         line(views, R.id.widget_wayfinder_status,
             if (face.subject.isNotBlank()) face.readError ?: face.status else face.status, colors.text2)
         line(views, R.id.widget_wayfinder_room, face.room, colors.text1)
         line(views, R.id.widget_wayfinder_subject, face.subject, colors.text1)
-        line(views, R.id.widget_wayfinder_time, face.time, colors.text2)
+        views.setTextViewTextSize(R.id.widget_wayfinder_subject, TypedValue.COMPLEX_UNIT_SP, if (tight) 13f else 15f)
+        line(views, R.id.widget_wayfinder_time, if (tight) "" else face.time, colors.text2)
         line(views, R.id.widget_wayfinder_empty, face.empty.orEmpty(), colors.text2)
         if (face.readError != null) {
             val retry = WidgetIntents.retry(context, widgetId, "wayfinder")
@@ -43,7 +49,6 @@ object WidgetExtraViews {
             if (face.opensMap) "maps" else "schedule",
             if (face.opensMap) face.classroomRaw else face.targetDate?.toString(),
             ru.bgtu_voenmeh.zapara.ui.shell.WidgetLaunchScope(face.identity.profileId, face.identity.databaseName)))
-        val options = android.appwidget.AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
         val showLesson = !snapshot.cleared && face.lessonTarget != null && face.opensMap &&
             options.getInt(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0) >=
                 (200 * context.resources.configuration.fontScale.coerceAtLeast(1f)).toInt()

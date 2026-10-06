@@ -18,7 +18,13 @@ export function Sheet({ title, onClose, children, id, open = true, inline = fals
     origin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (openSheets.length === 0) { bodyOverflow = document.body.style.overflow; document.body.style.overflow = "hidden"; }
     openSheets.push(node);
-    const focusable = () => [...node.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(item => item.getClientRects().length > 0 && !item.closest('[hidden]'));
+    const focusable = () => [...node.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],summary,[tabindex="0"]')].filter(item => {
+      if (item.tabIndex < 0 || item.getClientRects().length === 0 || item.closest('[hidden]') || getComputedStyle(item).visibility === 'hidden') return false;
+      for (let parent = item.parentElement; parent && parent !== node; parent = parent.parentElement) {
+        if (parent.tagName === 'DETAILS' && !(parent as HTMLDetailsElement).open && !parent.querySelector(':scope > summary')?.contains(item)) return false;
+      }
+      return true;
+    });
     focusable()[0]?.focus();
     const keys = (event: KeyboardEvent) => {
       if (openSheets.at(-1) !== node) return;

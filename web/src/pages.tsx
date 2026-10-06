@@ -5,7 +5,6 @@ import { HomeworkPostpone } from "./homework-postpone-view";
 import { HomeworkPublication } from "./homework-publication-view";
 import { duplicatePersonalHomework } from "./personal-homework-batch";
 import { CommonFreeTime } from "./common-free-view";
-import { StudyTransferCheck } from "./study-transfer-view";
 import { WeekComparison, WeekHomework, HomeworkSubjectOverview } from "./study-overviews-view";
 import {AssessmentPlanner,RecentWeekChanges,SubgroupPreview,RoomActivity,SupportDiagnostics,studyOwner} from './study-discovery-view';
 import {exactLessonIndex} from './study-discovery';
@@ -55,7 +54,7 @@ import { selectedTopicAuthority } from "./topic-authority";
 import { topicAction } from "./topic-policy";
 import { useCommunityTimetable } from "./use-community-timetable";
 import { useApp } from "./store";
-import { absoluteDate, freeGaps, gapsBeforeLessons, hasLessonOverlap, heroLesson, isUpcomingLesson, localDay, minuteClock, nearbyHomework, personalHomeworkDue } from "./planner";
+import { absoluteDate, freeGaps, gapsBeforeLessons, heroLesson, isUpcomingLesson, localDay, minuteClock, nearbyHomework, personalHomeworkDue } from "./planner";
 import { homeworkCard, lessonFrom, placeCard } from "./cards";
 import { BallotBoardView } from "./ballots";
 import { GroupTopics, TopicMark } from "./topics";
@@ -246,7 +245,8 @@ export function SchedulePage() {
     {exactTargetNote&&<p className="banner" role="status">{exactTargetNote}</p>}
     {app.canUndoSubgroup&&<div className="banner row" role="status"><span>Выбор подгруппы изменён</span><button className="btn" type="button" onClick={app.undoSubgroup}>Отменить выбор подгруппы</button></div>}
     {overlaps.length>0&&<details className="banner"><summary>Совпадает время занятий · {overlaps.length}</summary>{overlaps.map(({left,right})=><div className="row" key={`${left}:${right}`}><span>{lessons[left].subjectRaw} {lessons[left].timeStart}–{lessons[left].timeEnd} · {lessons[right].subjectRaw} {lessons[right].timeStart}–{lessons[right].timeEnd}</span>{[left,right].map(index=><button key={index} className="btn quiet" type="button" onClick={()=>{const node=document.getElementById(`schedule-lesson-${index}`);node?.focus();node?.scrollIntoView({block:"center"});}}>К {lessons[index].timeStart}</button>)}</div>)}</details>}
-    <Head title="Расписание" text={absoluteDate(app.date)} mobileActions>
+    <Head title="Расписание" text={app.groupId ? absoluteDate(app.date) : undefined} mobileActions={!!app.groupId}>
+      {app.groupId && <>
       <div className="study-desktop-day-controls">
         <button className="icon-btn quiet" type="button" title="Предыдущий день" aria-label="Предыдущий день" onClick={() => app.setDate(addDays(app.date, -1))}><Icon name="left" /></button>
         <button className="btn quiet" type="button" aria-expanded={calendar} onClick={() => setCalendar(value => !value)}><Icon name="calendar" />Календарь</button>
@@ -256,7 +256,9 @@ export function SchedulePage() {
         <button className="btn quiet" type="button" onClick={() => focusElement("schedule-deadlines")}>К срокам домашки</button>
       </div>
       <Link className="btn quiet study-mobile-week" to="/week">Неделя</Link>
+      </>}
     </Head>
+    {!app.groupId ? <div className="card empty day-empty schedule-no-group"><Icon name="calendar" size={32} /><h2>Выберите учебную группу</h2><p>После выбора появится расписание и даты занятий.</p><Link className="btn primary" to="/settings?section=study">Выбрать группу</Link></div> : <>
     <div className="study-date-shell">
     <div className="seg quick-days" aria-label="Быстрый выбор дня">{["Сегодня", "Завтра", "Послезавтра"].map((title, i) => <button type="button" key={title} aria-pressed={isoDay(app.date) === isoDay(addDays(now, i))} className={isoDay(app.date) === isoDay(addDays(now, i)) ? "active" : ""} onClick={() => app.setDate(addDays(now, i))}>{title}</button>)}</div>
     <div className="study-mobile-day-nav" role="group" aria-label="Выбор даты">
@@ -267,30 +269,31 @@ export function SchedulePage() {
     {calendar && <label className="field day-calendar">Выберите дату<input ref={calendarRef} type="date" value={isoDay(app.date)} onChange={event => { const value = localDay(event.target.value); if (value) app.setDate(value); }} /></label>}
     <div className="dates day-strip">{strip.map(date => {
       const count = app.timetableAvailable && period && isoDay(date) >= period.start.slice(0,10) ? lessonsOn(shown, date, period.start, period.weekCount, app.invert).length : null;
-      return <button className={"date" + (isoDay(date) === isoDay(app.date) ? " active" : "")} key={isoDay(date)} type="button" aria-pressed={isoDay(date) === isoDay(app.date)} aria-label={`${absoluteDate(date)}, ${count === null ? "нет данных" : pairCount(count)}`} onClick={() => app.setDate(date)}><span>{date.toLocaleDateString("ru-RU", { weekday: "short" })}</span><strong>{date.getDate()}</strong><small>{count === null ? "Нет данных" : count ? pairCount(count) : "Без пар"}</small></button>;
+      return <button className={"date" + (isoDay(date) === isoDay(app.date) ? " active" : "")} key={isoDay(date)} type="button" aria-pressed={isoDay(date) === isoDay(app.date)} aria-label={`${absoluteDate(date)}, ${count === null ? "нет данных" : pairCount(count)}`} onClick={() => app.setDate(date)}><span>{date.toLocaleDateString("ru-RU", { weekday: "short" })}</span><strong>{date.getDate()}</strong><small>{count === null ? "—" : count ? pairCount(count) : "Без пар"}</small></button>;
     })}</div>
     <p className="study-selected-day-caption">{absoluteDate(app.date)}</p>
-    {app.timetableAvailable&&<div className="study-day-tools">
-      <button className="btn quiet study-day-tools-trigger" type="button" aria-expanded={dayToolsOpen} onClick={() => setDayToolsOpen(value => !value)}><Icon name="menu" size={18} />Действия дня</button>
-      <div className={"study-day-tools-body" + (dayToolsOpen ? " open" : "")}><TimetableExportTools days={[{date:app.date,lessons,known:!outsidePeriod}]} groupId={app.groupId} groupName={groupName}/></div>
-    </div>}
-    </div>
-    <div className="study-mobile-day-shortcuts">
-      <span>{isoDay(app.date) === isoDay(addDays(now, 2)) ? "Послезавтра" : dayTitle(app.date, now)}</span>
-      {hero && <button className="btn quiet" type="button" onClick={() => focusElement(`schedule-lesson-${lessons.indexOf(hero)}`)}>К ближайшей паре</button>}
-      <button className="btn quiet" type="button" onClick={() => focusElement("schedule-deadlines")}>К срокам домашки</button>
     </div>
     <div className="day-space date-reveal" ref={dateReveal}>
       <main className="stack swipe" {...swipe}>
-        <div className="section-overview"><strong>{groupName || "Группа не выбрана"}</strong><span>{app.timetableAvailable && !outsidePeriod ? `${pairCount(lessons.length)}${lessons.length ? ` · ${lessons[0].timeStart}–${lessons.at(-1)?.timeEnd}` : ""}` : "Нет данных"}</span>
-          <button className="btn quiet" type="button" disabled={app.loading || app.timetableLoading} onClick={app.refresh}>{app.loading || app.timetableLoading ? "Обновляем…" : "Обновить"}</button></div>
-        {app.timetableAvailable && !outsidePeriod && <p className="muted">Учебное время: {dayLoad(lessons).minutes} мин · Окна между парами: {dayLoad(lessons).gaps} мин</p>}
-        {app.timetableAvailable&&!outsidePeriod&&<StudyTransferCheck lessons={lessons}/>}
+        <div className="section-overview study-compact-overview"><strong>{groupName || app.groupId}</strong><span>{app.timetableAvailable && !outsidePeriod ? `${pairCount(lessons.length)}${lessons.length ? ` · ${lessons[0].timeStart}–${lessons.at(-1)?.timeEnd}` : ""}` : "Нет данных"}</span>
+          <button className="icon-btn quiet study-refresh-button" type="button" aria-label={app.loading || app.timetableLoading ? "Обновляем расписание" : "Обновить расписание"} title={app.loading || app.timetableLoading ? "Обновляем расписание" : "Обновить расписание"} disabled={app.loading || app.timetableLoading} onClick={app.refresh}><Icon name="refresh" size={18} /></button></div>
         {ownTimetable && <p className="schedule-cache muted">{!online ? "Нет сети · сохранённая копия" : app.timetableFailed ? "Не удалось обновить · сохранённая копия" : "Обновлено"} {new Date(ownTimetable.meta.fetchedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
-        {hasLessonOverlap(lessons) && <p className="banner">Записи пар пересекаются по времени. Проверьте выбранные подгруппы.</p>}
         {!app.timetableAvailable ? <div className="card empty"><p>{app.timetableLoading ? "Загружаем расписание" : app.groupId ? "Расписание не загружено. Нет сохранённой копии." : "Выберите учебную группу"}</p>{app.groupId ? <button className="btn" type="button" disabled={app.timetableLoading || app.loading} onClick={app.refresh}>{app.timetableLoading || app.loading ? "Загружаем…" : "Повторить загрузку"}</button> : <Link className="btn" to="/settings?section=study">Выбрать группу</Link>}</div>
           : outsidePeriod ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>Дата вне учебного периода</h2><p>Начало сохранённого учебного периода: {period && localDay(period.start.slice(0,10)) ? absoluteDate(localDay(period.start.slice(0,10))!) : "неизвестно"}</p></div> : lessons.length === 0 ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>В этот день пар нет</h2><p>{nextDate ? `Ближайшие занятия — ${absoluteDate(nextDate)}.` : "В ближайшие три недели в сохранённом расписании занятий нет."}</p>{nextDate && <button className="btn" type="button" onClick={() => app.setDate(nextDate)}>Открыть {nextDate.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}<Icon name="right" /></button>}</div>
-          : <>{isoDay(app.date) === isoDay(now) && !hero && <p className="banner">Пары закончились</p>}{lessons.map(renderLesson)}</>}
+          : <>{isoDay(app.date) === isoDay(now) && !hero && !app.timetableFailed && overlaps.length === 0 && !exactTargetNote && <p className="study-day-ended" role="status">Пары закончились</p>}{lessons.map(renderLesson)}</>}
+        {app.timetableAvailable && <div className="study-day-tools">
+          <button className="btn quiet study-day-tools-trigger" type="button" aria-expanded={dayToolsOpen} onClick={() => setDayToolsOpen(value => !value)}><Icon name="menu" size={18} />Действия дня</button>
+          <div className={"study-day-tools-body" + (dayToolsOpen ? " open" : "")}>
+            <div className="study-day-actions-list">
+              {!outsidePeriod && <p className="muted">Учебное время: {dayLoad(lessons).minutes} мин · Окна между парами: {dayLoad(lessons).gaps} мин</p>}
+              <div className="study-day-action-links">
+                {hero && <button className="btn quiet" type="button" onClick={() => focusElement(`schedule-lesson-${lessons.indexOf(hero)}`)}>К ближайшей паре</button>}
+                <button className="btn quiet" type="button" onClick={() => focusElement("schedule-deadlines")}>К срокам домашки</button>
+              </div>
+              <TimetableExportTools days={[{date:app.date,lessons,known:!outsidePeriod}]} groupId={app.groupId} groupName={groupName}/>
+            </div>
+          </div>
+        </div>}
       </main>
       <aside id="schedule-deadlines" tabIndex={-1} className="stack day-context"><h2>Ближайшие сроки · {deadlines.length + sharedDeadlines.length}</h2><p className="muted">{app.date.toLocaleDateString("ru-RU")}–{addDays(app.date, 2).toLocaleDateString("ru-RU")}</p>
         {deadlines.length + sharedDeadlines.length === 0 && <p className="muted">На выбранные дни заданий нет</p>}
@@ -303,6 +306,7 @@ export function SchedulePage() {
         <Link className="btn quiet" to={`/group?date=${isoDay(app.date)}`}>Обсуждение группы</Link>
       </aside>
     </div>
+    </>}
   </section>;
 }
 
@@ -632,9 +636,9 @@ export function MapsPage() {
   const automatic = upcoming ? roomPlan(plans, upcoming.roomRaw || upcoming.classroomRaw || "", upcoming.buildingRaw || "") : null;
   return (
     <section className="page maps-page" ref={mapHost}>
-      <Head title="Карты" text="Планы корпусов Военмеха">
-        {contextDate && <Link className="btn quiet" to={`/schedule?date=${isoDay(contextDate)}&subject=${encodeURIComponent(mapContext.get("subject")||"")}&time=${encodeURIComponent(mapContext.get("time")||"")}`} onClick={() => app.setDate(contextDate)}>К выбранной паре</Link>}
-        <ShareMenu card={plan ? placeCard(plan.building, String(plan.floor), "", `${plan.building}, ${plan.floor} этаж`) : null} label="Этаж в чат" />
+      <Head title="Карты" text="Планы корпусов Военмеха" mobileActions>
+        {contextDate && <Link className="btn quiet map-head-selected-lesson" aria-label="К выбранной паре" to={`/schedule?date=${isoDay(contextDate)}&subject=${encodeURIComponent(mapContext.get("subject")||"")}&time=${encodeURIComponent(mapContext.get("time")||"")}`} onClick={() => app.setDate(contextDate)}><Icon name="calendar" size={18} /><span>К выбранной паре</span></Link>}
+        <span className="maps-header-share"><ShareMenu card={plan ? placeCard(plan.building, String(plan.floor), "", `${plan.building}, ${plan.floor} этаж`) : null} label="Поделиться этажом" /></span>
       </Head>
       {(mapContext.get("subject") || mapContext.get("room")) && <div className="map-context"><Icon name="pin" /><div><strong>{mapContext.get("room") ? `Аудитория ${mapContext.get("room")}` : "Аудитория не указана"}</strong><p>{[mapContext.get("subject"), contextDate ? absoluteDate(contextDate) : null, mapContext.get("time")].filter(Boolean).join(" · ")}</p><small>{/дистанц|онлайн/i.test(mapContext.get("room")||"")?"Дистанционное занятие — карта аудитории не требуется.":roomPlan(plans,mapContext.get("room")||"",mapContext.get("building")||"")?"Найдите аудиторию на плане выбранного этажа.":"План этой аудитории не распознан. Выберите корпус и этаж вручную ниже."}</small></div></div>}
       {error && <p className="banner" role="alert">{error}</p>}
@@ -643,7 +647,7 @@ export function MapsPage() {
       <div className="map-tools map-selectors" role="group" aria-label="Выбор корпуса и этажа">
         {buildings.length > 0 && <div className="seg" role="group" aria-label="Корпус">{buildings.map(building => <button key={building} className={plan?.building === building ? "active" : ""} aria-pressed={plan?.building === building} type="button" onClick={() => setPlan(chooseBuildingPlan(plans,building,plan?.floor))}>{building}</button>)}</div>}
         {floors.length > 0 && <div className="map-floors" role="group" aria-label="Этаж"><span className="muted">Этаж</span>{floors.map(item => (
-          <button key={item.id} className={"icon-btn" + (item.id === plan?.id ? " selected" : "")} aria-label={`${item.floor} этаж`} aria-pressed={item.id === plan?.id} type="button" onClick={() => setPlan(item)}>{item.floor}</button>
+          <button key={item.id} className={"icon-btn map-floor-choice" + (item.id === plan?.id ? " selected" : "")} aria-label={`${item.floor} этаж`} aria-pressed={item.id === plan?.id} type="button" onClick={() => setPlan(item)}>{item.floor}</button>
         ))}</div>}
       </div>
       <div className="map-tools map-navigation" role="group" aria-label="Переход между этажами">
@@ -1233,7 +1237,7 @@ export function HomeworkPage() {
       <div className="stack" style={{ marginTop: safeCopies.length > 0 ? 12 : 0 }}>
         {visibleCopies.map(item => (
           <article className={"card homework-task" + (item.completed ? " homework-completed" : "")} id={`homework-shared-${item.homeworkId}`} tabIndex={-1} aria-current={target?.kind === "shared" && target.id === item.homeworkId ? "true" : undefined} key={item.homeworkId}>
-            <div className="row" style={{ justifyContent: "space-between" }}>
+            <div className="row homework-card-head" style={{ justifyContent: "space-between" }}>
               <span className="row"><b>{item.title}</b><span className="chip">{audienceLabel(item.audience)}</span></span>
               {item.canComplete !== false && <button className="btn" type="button" disabled={!!copyBusy} onClick={() => void toggleCopy(item)}>{copyBusy === item.homeworkId ? "Сохраняем…" : item.completed ? "Снять отметку" : "Готово у меня"}</button>}
               {item.canEdit && <button className="btn quiet" type="button" disabled={!!copyBusy} onClick={() => { setEditingCopy({ id: item.homeworkId, revision: item.revision, title: item.title, body: item.body, deadline: localDateTimeInput(item.deadlineAt), audience: item.audience || allHomeworkAudience(), topicId: item.topicId || null }); setCopyEditConflict(false); }}>Изменить</button>}
@@ -1251,7 +1255,7 @@ export function HomeworkPage() {
       <div className="stack" style={{ marginTop: 12 }}>
         {homeworkBuckets.map(group=><section className="stack" key={group.key}><button className="btn" aria-expanded={!collapsedBuckets.includes(group.key)} onClick={()=>setCollapsedBuckets(rows=>rows.includes(group.key)?rows.filter(key=>key!==group.key):[...rows,group.key])}>{group.label} · {group.rows.length}</button><div className="stack" hidden={collapsedBuckets.includes(group.key)}>{group.rows.map(item => (
           <article className={"card homework-task" + (item.done ? " homework-completed" : "")} id={item.id} tabIndex={-1} key={item.id} aria-current={target?.kind === "local" && target.id === item.id ? "true" : undefined}>
-            <div className="row" style={{ justifyContent: "space-between" }}>
+            <div className="row homework-card-head" style={{ justifyContent: "space-between" }}>
               <span className="row"><b>{item.subject}</b><span className="chip">{item.done ? "Выполнено" : "Личное"}</span></span>
               <button className="btn" type="button" onClick={() => togglePersonal(item)}>{item.done ? "Снова открыть" : "Сделано"}</button>
               <button className="btn quiet" type="button" onClick={()=>setPersonalEdit({id:item.id,owner:copyOwnerKey,subject:item.subject,text:item.text,nth:item.targetNthOccurrence??1})}>Изменить</button>
@@ -1673,7 +1677,7 @@ function GroupContent() {
     topics: topicPage?.topics ?? [],
     now: app.date,
   });
-  const contextExpanded = contextExpandedByGroup[communityId] !== false;
+  const contextExpanded = contextExpandedByGroup[communityId] ?? !compact;
   const activeBallotTopic = topicPage?.topics.find(topic => topic.topicId !== null && topic.kind === "ballots" && topic.activeBallots > 0);
   const nextUnread = chat?.kind === "group" && thread !== "list" && topicPage
     ? nextUnreadTopic(topicPage.topics, thread.topicId) : null;
@@ -1907,8 +1911,11 @@ function GroupContent() {
   }
   if (!app.session?.authenticated) return <section className="page group-page"><Head title="Группа"/><div className="card empty"><p>Войдите в аккаунт, чтобы открыть группу, разделы чата и голосования.</p><Link className="btn primary" to="/settings?section=account">Открыть настройки аккаунта</Link></div></section>;
   return (
-    <section className={`page group-page group-pane-${mobilePane}${focusChat ? " group-chat-focused" : ""}`}>
-      <Head title={chat && chat.kind !== "group" ? chat.title : "Группа"} text={home ? `${home.name}${home.groupName ? " · " + home.groupName : ""}` : error || "Одногруппники и чат"}>{home && (chat && chat.kind !== "group" ? <Avatar kind="user" id={chat.peerUserId} name={chat.title} /> : <Avatar kind="group" id={home.communityId} name={home.groupName || home.name} />)}</Head>
+    <section className={`page group-page group-pane-${mobilePane}${home ? " group-workspace" : ""}${focusChat ? " group-chat-focused" : ""}`}>
+      <Head title={chat && chat.kind !== "group" ? chat.title : "Группа"} text={home ? `${home.name}${home.groupName ? " · " + home.groupName : ""}` : error || "Одногруппники и чат"}>
+        {home && (chat && chat.kind !== "group" ? <Avatar kind="user" id={chat.peerUserId} name={chat.title} /> : <Avatar kind="group" id={home.communityId} name={home.groupName || home.name} />)}
+        {home && !compact && <button className="btn" type="button" aria-expanded={mobileDetailsOpen} onClick={() => setMobileDetailsOpen(true)}>Сведения и действия группы</button>}
+      </Head>
       {home && chat?.kind === "group" && <div className="group-mobile-topline">
         <Link className="btn tool" to="/chat" aria-label="К чатам"><Icon name="left" size={18}/></Link>
         <Avatar kind="group" id={home.communityId} name={home.groupName || home.name} />
@@ -1920,7 +1927,7 @@ function GroupContent() {
       </nav>}
       {error && <div className="banner row" role="alert"><span>{error}</span><button className="btn quiet" type="button" onClick={()=>setError("")}>Закрыть сообщение</button></div>}
       {error && <button className="btn" type="button" onClick={() => setReloadEpoch(value => value + 1)}>Повторить загрузку группы</button>}
-      <Sheet title="Сведения и действия группы" open={mobileDetailsOpen} inline={!compact} onClose={() => setMobileDetailsOpen(false)}>
+      <Sheet title="Сведения и действия группы" open={mobileDetailsOpen} onClose={() => setMobileDetailsOpen(false)}>
       <div className="group-prelude">
       {home && <p className="muted group-role-disclaimer">Роли старосты и куратора действуют только внутри «Расписание военмех» и не подтверждены университетом.</p>}
       {home && desk && (desk.mine.length > 0 || desk.headman) && <GroupAdmin communityId={home.communityId} groupName={home.groupName || home.name} classmates={home.classmates} desk={desk} onChange={updateDesk} onReload={async () => { const [loaded, office] = await Promise.all([api.groupHome(home.communityId), api.groupDesk(home.communityId)]); setHome(loaded); updateDesk(office); }} onError={setError} />}
@@ -1984,7 +1991,7 @@ function GroupContent() {
             {home.directs.filter(item=>noteSearch(memberSearch,item.title,item.lastBody||"")).map(item => <button className="person" key={item.conversationId} type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setChat(item); setThread("list"); setFocusChat(true); }}><Avatar kind="user" id={item.peerUserId} name={item.title} /><span className="person-main"><b>{item.title}</b><span className="muted preview-line">{item.lastBody || "Нет сообщений"}</span></span></button>)}
           </div>
           <section className={"card chat split-detail" + (chat?.kind === "group" && thread !== "list" && !isChatChannel(thread) ? " group-specialized-detail" : "")}>
-            <button className="btn back-only" type="button" onClick={() => { if(chat?.kind === "group" && thread !== "list") openMobileGroupTab("channels"); else { setMobilePane("people"); setFocusChat(false); } }}>К списку</button>
+            <button className={"btn back-only" + (chat?.kind === "group" && (thread === "list" || thread.topicId === null || isChatChannel(thread) && !!topicPage) ? " group-redundant-back" : "")} type="button" onClick={() => { if(chat?.kind === "group" && thread !== "list") openMobileGroupTab("channels"); else { setMobilePane("people"); setFocusChat(false); } }}>К списку</button>
             {!chat && <p className="muted">{error || "Чат открывается…"}</p>}
             {chat?.kind === "group" && thread === "list" && <GroupTopics key={home.communityId} communityId={home.communityId} groupName={home.groupName} onOpen={(next, allowed) => { selectionEpoch.current += 1; clearLog(); setCanManageChannels(allowed); setThread(next); setMobilePane("channels"); }} onError={setError} />}
             {chat?.kind === "group" && thread !== "list" && !isChatChannel(thread) && <>
@@ -2006,8 +2013,9 @@ function GroupContent() {
               <SpecializedChannel communityId={home.communityId} conversationId={home.groupChat.conversationId} groupName={home.groupName} topic={thread} onError={setError} targetId={obligationTarget?.source===thread.topicId?obligationTarget.id:undefined}/>
             </>}
             {chat && (chat.kind !== "group" || (thread !== "list" && isChatChannel(thread))) && <>
-            <div className="row">
-              {chat?.kind === "group" && <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setThread("list"); }}>Все разделы</button>}
+            <div className="group-thread-tools">
+            <div className="row group-thread-heading">
+              {chat?.kind === "group" && <button className={"btn" + (topicPage || thread !== "list" && thread.topicId === null ? " group-redundant-back" : "")} type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setThread("list"); }}>Все разделы</button>}
               <Avatar kind={chat.kind === "group" ? "group" : "user"} id={chat.kind === "group" ? home.communityId : chat.peerUserId} name={chat.kind === "group" ? home.groupName || home.name : chat.title} />
               <h2>{chat?.kind === "group" && thread !== "list" ? `${thread.icon} ${thread.title}` : (chat?.title || "Чат")}</h2>
               {chat.kind === "group" && nextUnread && <button className="btn" type="button" disabled={nextUnreadBusy} onClick={() => void openNextUnread()}
@@ -2077,6 +2085,7 @@ function GroupContent() {
               <div className="row chat-sheet-actions"><button className="btn primary" type="button" onClick={()=>setMessageBrowseOpen(false)}>Готово</button></div>
             </div></Sheet>}
             {copyNotice?.key === viewKey && <p className="muted copy-notice" role="status">{copyNotice.text}</p>}
+            </div>
             <div className="log" ref={logBoxRef} onScroll={event => {
               const node = event.currentTarget;
               setAtLatest(isNearLatest(node.scrollTop, node.clientHeight, node.scrollHeight));
@@ -2160,6 +2169,7 @@ function GroupContent() {
                 );
               })}
             </div>
+            <div className="group-compose-area">
             {!atLatest && log.length > 0 && <button className="btn latest-jump" type="button" onClick={() => {
               const node = logBoxRef.current;
               node?.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
@@ -2178,6 +2188,7 @@ function GroupContent() {
               onRecorded={(kind, name, blob, durationMs) => sendGroupAttachment(viewKey, chat.conversationId, kind, name, blob, replyTo, selectionEpoch.current, durationMs,
                 chat.kind === "group" && thread !== "list" ? thread.topicId ?? undefined : undefined)}
               onError={setError} />}
+            </div>
             </>}
           </section>
         </div>
@@ -2292,7 +2303,7 @@ function SettingsContent() {
     <section className="page settings-page">
       <Head title={section ? sections.find(item => item.id === section)?.title || "Настройки" : "Настройки"}
         text={section ? undefined : "Неофициальное приложение для студентов БГТУ «Военмех»."} mobileActions={!!section}>
-        {section && <button className="btn" type="button" onClick={() => navigate("/settings")}>Все настройки</button>}
+        {section && <button className="btn settings-back-action" type="button" aria-label="Все настройки" onClick={() => navigate("/settings")}><Icon name="left" size={18} /><span>Все настройки</span></button>}
       </Head>
       {!section&&<label className="field">Найти настройки<input type="search" value={categoryQuery} onChange={event=>setCategoryQuery(event.target.value)} placeholder="Например, пароль или подгруппа"/></label>}
       {!section&&categoryQuery&&<div className="row"><span className="muted">Найдено: {sections.filter(item=>matchesWords(categoryQuery,item.title,`${settingsAliases[item.id] || ""} ${item.summary}`)).length}</span><button className="btn quiet" type="button" onClick={()=>setCategoryQuery("")}>Сбросить поиск</button></div>}
@@ -2332,7 +2343,7 @@ function SettingsContent() {
         {section === "updates" && <UpdateSettings supportState={supportState}/>}
         {section === "appearance" && <article className="card">
           <h2>Оформление</h2>
-          <div className="seg">
+          <div className="seg settings-theme-segment">
             <button type="button" className={app.theme === "system" ? "active" : ""} aria-pressed={app.theme === "system"} onClick={() => app.setTheme("system")}>Системная</button>
             <button type="button" className={app.theme === "light" ? "active" : ""} aria-pressed={app.theme === "light"} onClick={() => app.setTheme("light")}><Icon name="sun" size={16} />Светлая</button>
             <button type="button" className={app.theme === "dark" ? "active" : ""} aria-pressed={app.theme === "dark"} onClick={() => app.setTheme("dark")}><Icon name="moon" size={16} />Тёмная</button>

@@ -1,4 +1,9 @@
 @media (max-width: 959px) {
+  .group-page > .page-head {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  .group-page .group-redundant-back { display: none; }
   .inbox .inbox-browse { gap: 8px; padding: 12px; }
   .inbox .inbox-filter-toggle { width: 100%; justify-content: flex-start; text-align: left; }
   .inbox .inbox-filter-options { gap: 6px; }
@@ -31,7 +36,7 @@
   .sheet .chat-sheet-actions .btn.primary { flex: 1; }
   .sheet .message-browse { display: flex; flex-direction: column; max-height: none; overflow: visible; border: 0; padding: 0; }
 
-  .group-page .group-mobile-topline { display: flex; align-items: center; gap: 8px; min-height: 56px; }
+  .group-page .group-mobile-topline { display: flex; flex: none; align-items: center; gap: 8px; min-height: 48px; }
   .group-page .group-mobile-topline strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .group-page .group-mobile-topline .btn.tool { width: 48px; min-width: 48px; padding: 0; }
   .group-page .group-mobile-tabs { display: flex; flex: none; width: 100%; gap: 2px; padding: 4px; background: var(--chip); border-radius: 10px; }
@@ -54,17 +59,32 @@
     padding: 0; border: 0; border-radius: 0; background: var(--surface); overflow: hidden;
   }
   .group-page.group-chat-focused .split.focus .log { flex: 1; min-height: 0; max-height: none; overflow-y: auto; }
+  .group-page .group-thread-tools {
+    display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0;
+    max-height: min(32%, 200px); gap: 8px; overflow-y: auto; overflow-x: hidden;
+    overscroll-behavior: contain;
+  }
+  .group-page .group-thread-tools > * { flex-shrink: 0; }
+  .group-page .group-thread-heading h2 { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .group-page .group-thread-heading > .avatar { display: none; }
+  .group-page .group-compose-area {
+    display: flex; flex-direction: column; flex: 0 0 auto; min-height: 0;
+    max-height: 45%; gap: 6px; overflow-y: auto; overscroll-behavior: contain;
+  }
+  .group-page .group-compose-area > * { flex-shrink: 0; }
+  .group-page .group-compose-area .compose-context > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .group-page.group-chat-focused .split.focus .group-specialized-detail { display: block; overflow-y: auto; }
   .group-page.group-chat-focused .split.focus .topics { flex: 1; min-height: 0; overflow-y: auto; }
   .group-page.group-chat-focused .topics .topic-list { max-height: none; overflow: visible; }
   .group-page .group-quick-rail { width: 100%; }
   .group-page .group-quick-rail-items { width: 100%; flex: 1; }
   .group-page .group-all-channels { flex: none; min-height: 48px; }
-  .group-page .group-context { max-height: min(28dvh, 184px); overflow-y: auto; }
+  .group-page .group-context { margin: 0; }
   .group-page .message-browse-toggle { align-self: flex-start; }
   .group-page .compose { flex: none; }
-  .group-page .compose textarea { min-width: 0; min-height: 48px; flex: 1 1 120px; max-height: min(128px, 30dvh); resize: none; overflow-y: auto; }
-  .group-page .group-composer-help { font-size: 12px; }
+  .group-page .compose textarea { min-width: 0; min-height: 48px; flex: 1 1 120px; max-height: min(128px, 30dvh); padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--chip); color: var(--text); font-size: 16px; line-height: 1.3; resize: none; overflow-y: auto; }
+  .group-page .compose textarea::placeholder { color: var(--muted); opacity: 1; }
+  .group-page .group-composer-help { margin: 0; font-size: 12px; }
 
   .group-page .topics .topic-search-panel,
   .group-page .topics .topic-tools-panel,
@@ -87,6 +107,35 @@
 }
 
 @media (min-width: 960px) {
+  .group-page.group-workspace {
+    display: flex; flex-direction: column; gap: 12px; height: 100dvh; min-height: 0;
+    padding-bottom: 24px; overflow: hidden;
+  }
+  .group-workspace > .page-head { flex: none; margin-bottom: 0; }
+  .group-workspace > .split { flex: 1; min-height: 0; overflow: hidden; }
+  .group-workspace > .split > .split-list {
+    height: 100%; min-height: 0; max-height: none; overflow-y: auto;
+  }
+  .group-workspace > .split > .split-detail {
+    position: static; display: flex; flex-direction: column; gap: 8px;
+    height: 100%; min-height: 0; max-height: none; overflow: hidden;
+  }
+  .group-workspace .group-thread-tools {
+    display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0;
+    max-height: min(35%, 260px); gap: 8px; overflow-y: auto; overscroll-behavior: contain;
+  }
+  .group-workspace .group-thread-tools > * { flex-shrink: 0; }
+  .group-workspace .split-detail > .log { flex: 1; min-height: 0; max-height: none; overflow-y: auto; }
+  .group-workspace .group-compose-area {
+    display: flex; flex-direction: column; flex: 0 0 auto; min-height: 0;
+    max-height: 40%; gap: 6px; overflow-y: auto; overscroll-behavior: contain;
+  }
+  .group-workspace .group-compose-area > * { flex-shrink: 0; }
+  .group-workspace .group-composer-help { margin: 0; }
+  .group-workspace .compose textarea { min-height: 48px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--chip); color: var(--text); font: inherit; line-height: 1.3; resize: none; }
+  .group-workspace .compose textarea::placeholder { color: var(--muted); opacity: 1; }
+  .group-workspace > .split > .group-specialized-detail { display: block; overflow-y: auto; }
+  .group-workspace .split-detail > .topics { flex: 1; min-height: 0; overflow-y: auto; }
   .group-mobile-topline, .group-mobile-tabs,
   .topic-kind-rail { display: none !important; }
 }

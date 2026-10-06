@@ -81,7 +81,7 @@ class WidgetRemoteViewsTest {
         }
     }
 
-    @Test fun timer_theme_crossfade_uses_old_card_and_finishes_transparent() {
+    @Test fun timer_theme_motion_keeps_native_center_transparent_and_finishes_transparent() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val ctx = instrumentation.targetContext
         val old = TimerWidgetSnapshot(extraIdentity, "10:00", "Lesson", "Subject", "Room",
@@ -92,14 +92,23 @@ class WidgetRemoteViewsTest {
         assertTrue("Theme changes should have a finite timer scene", scene != null)
         assertTrue(WidgetFaceEffects.timer(old, next, WidgetMotionPolicy.Disabled) == null)
         instrumentation.runOnMainSync {
-            val first = scene!!.bitmapAt(ctx, 901, 180, 180, 0f)
-            val middle = scene.bitmapAt(ctx, 901, 180, 180, 0.5f)
-            val last = scene.bitmapAt(ctx, 901, 180, 180, 1f)
-            val x = first.width / 2
-            val y = first.height / 2
-            assertEquals(255, android.graphics.Color.alpha(first.getPixel(x, y)))
-            assertTrue(android.graphics.Color.alpha(middle.getPixel(x, y)) in 1..254)
-            assertEquals(0, android.graphics.Color.alpha(last.getPixel(x, y)))
+            val tree = measured(ctx, WidgetRemoteViews.timer(ctx, next, 180, heightDp = 180), 180, 180)
+            val ring = descendantBounds(tree, tree.findViewById(R.id.widget_timer_ring))
+            for (progress in listOf(0f, 0.35f, 0.7f, 1f)) {
+                val frame = scene!!.bitmapAt(ctx, 901, 180, 180, progress)
+                assertTrue(frame.width <= 640 && frame.height <= 640)
+                val ratio = frame.width.toFloat() / tree.width
+                val radius = minOf(ring.width(), ring.height()) * ratio
+                var decoration = 0
+                for (y in 0 until frame.height) for (x in 0 until frame.width) {
+                    val alpha = android.graphics.Color.alpha(frame.getPixel(x, y))
+                    val distance = kotlin.math.hypot(x - ring.exactCenterX() * ratio, y - ring.exactCenterY() * ratio)
+                    if (progress == 1f || distance < radius * 0.345f - 1 || distance > radius * 0.5f + 1)
+                        assertEquals("Native center and content outside annulus stay transparent", 0, alpha)
+                    if (alpha > 0) decoration++
+                }
+                if (progress != 1f) assertTrue("Ring decoration remains visible", decoration > 0)
+            }
         }
     }
 
@@ -136,7 +145,7 @@ class WidgetRemoteViewsTest {
         }
     }
 
-    @Test fun room_reel_masks_only_room_and_new_text_enters_below_in_both_themes() {
+    @Test fun room_sweep_preserves_native_text_in_both_themes_and_finishes_transparent() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val ctx = instrumentation.targetContext
         instrumentation.runOnMainSync {
@@ -148,30 +157,22 @@ class WidgetRemoteViewsTest {
                 val tree = measured(ctx, final, 280, 160)
                 val rect = descendantBounds(tree, tree.findViewById(R.id.widget_wayfinder_room))
                 val scene = WidgetFaceEffects.room(old, next, WidgetMotionPolicy.of(true, 1f, true))!!
-                val first = scene.bitmapAt(ctx, 903, 280, 160, 0f)
-                val middle = scene.bitmapAt(ctx, 903, 280, 160, 0.1f)
-                val last = scene.bitmapAt(ctx, 903, 280, 160, 1f)
-                val ratio = first.width.toFloat() / tree.width
-                val card = ctx.getColor(if (dark) R.color.widget_dark_card else R.color.widget_light_card)
-                val right = (rect.right * ratio).toInt() - 2
-                val top = (rect.top * ratio).toInt() + 2
-                val bottom = (rect.bottom * ratio).toInt() - 3
-                val left = ((rect.left + 50 * ctx.resources.displayMetrics.density) * ratio).toInt()
-                assertEquals("The initial overlay must hide the final room, including blank area", card,
-                    first.getPixel(right, (top + bottom) / 2))
-                for (y in 0 until first.height) for (x in 0 until first.width) {
-                    if (x < rect.left * ratio - 1 || x > rect.right * ratio + 1 ||
-                        y < rect.top * ratio - 1 || y > rect.bottom * ratio + 1)
-                        assertEquals("No mask outside room at $x,$y", 0, android.graphics.Color.alpha(first.getPixel(x, y)))
-                }
-                fun inkTop(frame: android.graphics.Bitmap): Int = (top until bottom).firstOrNull { y ->
-                    (left until right).any { x ->
-                        val pixel = frame.getPixel(x, y)
-                        android.graphics.Color.alpha(pixel) > 0 && kotlin.math.abs(android.graphics.Color.red(pixel) - android.graphics.Color.red(card)) > 12
+                for (progress in listOf(0f, 0.35f, 0.7f, 1f)) {
+                    val frame = scene.bitmapAt(ctx, 903, 280, 160, progress)
+                    assertTrue(frame.width <= 640 && frame.height <= 640)
+                    val ratio = frame.width.toFloat() / tree.width
+                    val bandBottom = (rect.bottom + 2 * ctx.resources.displayMetrics.density) * ratio + 1
+                    var decoration = 0
+                    for (y in 0 until frame.height) for (x in 0 until frame.width) {
+                        val alpha = android.graphics.Color.alpha(frame.getPixel(x, y))
+                        if (progress == 1f || y < rect.bottom * ratio || y > bandBottom ||
+                            x < rect.left * ratio || x >= rect.right * ratio)
+                            assertEquals("Only a thin band below native room may draw", 0, alpha)
+                        if (alpha > 0) decoration++
                     }
-                } ?: error("Incoming room ink missing")
-                assertTrue("Incoming room must enter from below, not stay static behind old room",
-                    inkTop(middle) > inkTop(last) + 2)
+                    if (progress == 0.35f || progress == 0.7f) assertTrue(decoration > 0)
+                }
+                val middle = scene.bitmapAt(ctx, 903, 280, 160, 0.35f)
                 val partial = android.widget.RemoteViews(ctx.packageName, R.layout.widget_wayfinder).apply {
                     setImageViewBitmap(R.id.widget_wayfinder_overlay, middle)
                     setViewVisibility(R.id.widget_wayfinder_overlay, View.VISIBLE)
@@ -217,7 +218,7 @@ class WidgetRemoteViewsTest {
         }
     }
 
-    @Test fun week_transition_covers_static_marker_edges_after_bitmap_downscaling() {
+    @Test fun week_transition_never_masks_static_marker_edges_after_bitmap_downscaling() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val density = ctx.resources.displayMetrics.density
         val date = LocalDate.of(2026, 9, 21)
@@ -239,7 +240,7 @@ class WidgetRemoteViewsTest {
             // Bilinear filtering samples across this edge. Its coverage must extend past the final chip.
             val x = ((rect.left - density / 2) * frame.width / tree.width).toInt()
             val y = (rect.centerY().toFloat() * frame.height / tree.height).toInt()
-            assertEquals(ctx.getColor(R.color.widget_light_card), frame.getPixel(x, y))
+            assertEquals(0, android.graphics.Color.alpha(frame.getPixel(x, y)))
         }
     }
 

@@ -84,7 +84,7 @@ function Shell() {
           <span>{app.session?.authenticated ? "Аккаунт" : "На этом устройстве"}</span>
         </button>
         <nav className="nav">
-          {items.map(([path, title, icon], index) => <div key={path}>{[0, 7, 10].includes(index) && <h2 className="nav-section">{index === 0 ? "Учёба" : index === 7 ? "Группа" : "Приложение"}</h2>}<NavLink key={path} to={"/" + path} className={({ isActive }) => "nav-btn" + (isActive ? " active" : "")}><Icon name={icon} size={18} />{title}</NavLink></div>)}
+          {items.map(([path, title, icon], index) => <div key={path}>{[0, 7, 10].includes(index) && <h2 className="nav-section">{index === 0 ? "Учёба" : index === 7 ? "Группа" : "Приложение"}</h2>}<NavLink key={path} to={"/" + path} aria-current={path === "schedule" && location.pathname === "/" ? "page" : undefined} className={({ isActive }) => "nav-btn" + (isActive || path === "schedule" && location.pathname === "/" ? " active" : "")}><Icon name={icon} size={18} />{title}</NavLink></div>)}
         </nav>
         <div className="side-foot">
           <div>{app.session?.authenticated ? app.session.user?.displayName || app.session.user?.username : "Гостевой режим"}</div>
