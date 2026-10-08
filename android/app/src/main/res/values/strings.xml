@@ -202,6 +202,11 @@
     <string name="settings_perm_alarm">Без точных будильников сработает неточно</string>
     <string name="settings_updates">Обновления</string>
     <string name="settings_auto_update">Проверять автоматически</string>
+    <string name="settings_upd_release">Релизы</string>
+    <string name="settings_upd_alpha">Альфа</string>
+    <string name="settings_upd_token">Ключ GitHub</string>
+    <string name="settings_upd_token_hint">Для закрытой альфы нужен ключ с доступом к репозиторию</string>
+    <string name="upd_err_token">Для альфы впишите ключ GitHub</string>
     <string name="settings_upd_check">Проверить</string>
     <string name="settings_upd_download">Скачать</string>
     <string name="settings_upd_install">Установить</string>

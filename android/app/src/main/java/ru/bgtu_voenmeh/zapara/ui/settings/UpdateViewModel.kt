@@ -68,7 +68,7 @@ class UpdateViewModel(
             try {
                 val cached = source.cached()
                 // 6h: GitHub allows 60 anon API calls/hour per IP — VPNs share one IP, don't burn it.
-                val info = if (!manual && cached.tag != null && System.currentTimeMillis() - cached.at < 6 * 3600_000L) {
+                val info = if (!manual && cached.tag != null && cached.channel == source.channel() && System.currentTimeMillis() - cached.at < 6 * 3600_000L) {
                     UpdateInfo(cached.tag, cached.htmlUrl.orEmpty(), cached.apkUrl, "")
                 } else {
                     source.latest()?.also { source.saveCheck(it.tag, it.apkUrl, it.htmlUrl) }
@@ -99,6 +99,7 @@ class UpdateViewModel(
             } catch (e: Exception) {
                 val raw = e.message ?: e.javaClass.simpleName
                 val friendly = when {
+                    "ключ" in raw || "401" in raw -> copy.get("upd_err_token")
                     "403" in raw -> copy.get("upd_err_403")
                     e.isConnectionFailure() -> copy.get("load_fail_network")
                     else -> copy.get("upd_log_fail")

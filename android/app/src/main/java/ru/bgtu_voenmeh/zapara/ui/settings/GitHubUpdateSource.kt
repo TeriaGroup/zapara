@@ -7,8 +7,12 @@ import java.io.File
 class GitHubUpdateSource(private val ctx: Context) : UpdateSource {
     @Volatile private var cancelled = false
 
+    override fun channel(): String = AutoUpdate.channel(ctx)
+
     override suspend fun latest(): UpdateInfo? {
-        val info = AutoUpdate.getLatestSmart("android") ?: return null
+        val selected = AutoUpdate.channel(ctx)
+        val token = AutoUpdate.token(ctx).takeIf { selected == AutoUpdate.CHANNEL_ALPHA }
+        val info = AutoUpdate.getLatestSmart("android", AutoUpdate.repo(selected), token) ?: return null
         return UpdateInfo(info.tag, info.htmlUrl, info.apkUrl, info.publishedAt)
     }
 
@@ -16,7 +20,8 @@ class GitHubUpdateSource(private val ctx: Context) : UpdateSource {
         cancelled = false
         val dest = AutoUpdate.apkFileFor(ctx, tag)
         if (!dest.exists()) {
-            AutoUpdate.downloadAsset(url, dest, onProgress) { cancelled }
+            val token = AutoUpdate.token(ctx).takeIf { AutoUpdate.channel(ctx) == AutoUpdate.CHANNEL_ALPHA }
+            AutoUpdate.downloadAsset(url, dest, onProgress, { cancelled }, token)
         }
         return dest
     }
@@ -31,7 +36,7 @@ class GitHubUpdateSource(private val ctx: Context) : UpdateSource {
 
     override fun cached(): CachedCheck {
         val c = AutoUpdate.cachedCheck(ctx)
-        return CachedCheck(c.at, c.tag, c.apkUrl, c.htmlUrl)
+        return CachedCheck(c.at, c.tag, c.apkUrl, c.htmlUrl, c.channel)
     }
 
     override fun saveCheck(tag: String?, apkUrl: String?, htmlUrl: String?) {

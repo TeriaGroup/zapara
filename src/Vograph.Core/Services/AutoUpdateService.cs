@@ -9,7 +9,7 @@ public class AutoUpdateService : IDisposable
     private readonly bool _ownsClient;
     private bool _disposed;
     private const string Owner = "TeriaGroup";
-    private const string Repo = "zapara";
+    private const string Repo = "zapara-releases";
 
     public AutoUpdateService() : this(new HttpClient()) { _ownsClient = true; }
 
@@ -22,13 +22,18 @@ public class AutoUpdateService : IDisposable
 
     public record UpdateInfo(string Tag, string HtmlUrl, string? ZipUrl, string PublishedAt);
 
-    public async Task<UpdateInfo?> GetLatestAsync(string channel = "windows", CancellationToken ct = default)
+    public async Task<UpdateInfo?> GetLatestAsync(string channel = "windows", CancellationToken ct = default, string? repo = null, string? token = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        var repoName = string.IsNullOrWhiteSpace(repo) ? Repo : repo;
+        if (repoName == UpdateChannelStore.AlphaRepo && string.IsNullOrWhiteSpace(token))
+            throw new InvalidOperationException("Нужен ключ GitHub");
         string pfx = channel == "android" ? "android-" : "windows-";
-        // fetch all releases, pick latest matching prefix (api/releases/latest may be android)
-        var url = $"https://api.github.com/repos/{Owner}/{Repo}/releases?per_page=100";
-        using var resp = await _http.GetAsync(url, ct);
+        var url = $"https://api.github.com/repos/{Owner}/{repoName}/releases?per_page=100";
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        if (!string.IsNullOrWhiteSpace(token))
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
+        using var resp = await _http.SendAsync(req, ct);
         resp.EnsureSuccessStatusCode();
         var json = await resp.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(json);
@@ -38,7 +43,7 @@ public class AutoUpdateService : IDisposable
         {
             var tag = el.GetProperty("tag_name").GetString() ?? "";
             if (!TagMatchesChannel(tag, pfx)) continue;
-            var html = el.GetProperty("html_url").GetString() ?? $"https://github.com/{Owner}/{Repo}/releases/tag/{tag}";
+            var html = el.GetProperty("html_url").GetString() ?? $"https://github.com/{Owner}/{repoName}/releases/tag/{tag}";
             var published = el.TryGetProperty("published_at", out var p) ? p.GetString() ?? "" : "";
             string? zip = null;
             if (el.TryGetProperty("assets", out var assets))
@@ -64,14 +69,17 @@ public class AutoUpdateService : IDisposable
     public static string CurrentTagWindows => "windows-v2.1.41";
 
     /// <summary>Download a release asset with progress (0..1, -1 if size unknown).</summary>
-    public async Task DownloadAssetAsync(string url, string destPath, IProgress<double>? progress = null, CancellationToken ct = default)
+    public async Task DownloadAssetAsync(string url, string destPath, IProgress<double>? progress = null, CancellationToken ct = default, string? token = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         Directory.CreateDirectory(Path.GetDirectoryName(destPath) ?? ".");
         string tmp = destPath + ".part";
         try
         {
-            using var resp = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            if (!string.IsNullOrWhiteSpace(token))
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
+            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
             resp.EnsureSuccessStatusCode();
             long total = resp.Content.Headers.ContentLength ?? -1;
             using var src = await resp.Content.ReadAsStreamAsync(ct);

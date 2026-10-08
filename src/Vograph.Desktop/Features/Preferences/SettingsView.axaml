@@ -189,6 +189,12 @@
       <Border Classes="card">
         <StackPanel Spacing="10" DataContext="{Binding Updates}" x:DataType="st:UpdateCheckViewModel">
           <TextBlock Classes="micro" Text="{loc:TU setUpdates}" />
+          <TextBlock Classes="muted caption" Text="{loc:T updChannelHint}" TextWrapping="Wrap" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="{loc:T updRelease}" Command="{Binding SelectReleaseCommand}" Classes.primary="{Binding !IsAlpha}" AutomationProperties.AutomationId="Updates.Release" />
+            <Button Content="{loc:T updAlpha}" Command="{Binding SelectAlphaCommand}" Classes.primary="{Binding IsAlpha}" AutomationProperties.AutomationId="Updates.Alpha" />
+          </StackPanel>
+          <TextBox PasswordChar="●" Text="{Binding GithubToken}" PlaceholderText="{loc:T updToken}" IsVisible="{Binding IsAlpha}" AutomationProperties.AutomationId="Updates.Token" />
           <c:Switch Content="{loc:T autoUpdate}" IsChecked="{Binding AutoUpdate}" AutomationProperties.AutomationId="Updates.AutoUpdate" />
           <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Classes.bad="{Binding IsFailed}" AutomationProperties.AutomationId="Updates.Status" />
           <TextBlock Classes="muted caption" Text="{Binding PublishedText}" IsVisible="{Binding PublishedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />

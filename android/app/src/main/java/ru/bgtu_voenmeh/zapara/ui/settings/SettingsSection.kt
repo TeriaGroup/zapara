@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
 import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -688,8 +689,36 @@ private fun RustoreUpdatesCard() {
 fun UpdatesCard(state: SettingsUiState, updates: UpdateUiState, onEvent: (SettingsEvent) -> Unit) {
     val uiText = rememberUiText()
     val c = Zapara.colors
+    val ctx = LocalContext.current
+    var alpha by rememberSaveable { mutableStateOf(AutoUpdate.channel(ctx) == AutoUpdate.CHANNEL_ALPHA) }
+    var token by rememberSaveable { mutableStateOf(AutoUpdate.token(ctx)) }
     ZCard(Modifier.fillMaxWidth()) {
         Text(stringResource(R.string.settings_updates), style = Zapara.typography.section, color = c.text1)
+        Row(horizontalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
+            ZButton(stringResource(R.string.settings_upd_release), {
+                alpha = false
+                AutoUpdate.setChannel(ctx, AutoUpdate.CHANNEL_RELEASE)
+            }, ghost = alpha, tag = "Settings.UpdRelease")
+            ZButton(stringResource(R.string.settings_upd_alpha), {
+                alpha = true
+                AutoUpdate.setChannel(ctx, AutoUpdate.CHANNEL_ALPHA)
+            }, ghost = !alpha, tag = "Settings.UpdAlpha")
+        }
+        if (alpha) {
+            Text(stringResource(R.string.settings_upd_token_hint), style = Zapara.typography.caption, color = c.text2)
+            ZTextField(
+                value = token,
+                onValueChange = {
+                    token = it
+                    AutoUpdate.setToken(ctx, it)
+                },
+                modifier = Modifier.fillMaxWidth().testTag("Settings.UpdToken"),
+                label = { Text(stringResource(R.string.settings_upd_token), style = Zapara.typography.caption) },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+            )
+        }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.settings_auto_update), style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
             ZSwitch(state.autoUpdate, { onEvent(SettingsEvent.AutoUpdate(it)) }, "Settings.AutoUpdate")

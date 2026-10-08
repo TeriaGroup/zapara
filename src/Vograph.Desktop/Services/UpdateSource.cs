@@ -15,6 +15,14 @@ public sealed class GitHubUpdateSource : IUpdateSource
     public GitHubUpdateSource(AutoUpdateService service) => _service = service; // the app's single instance and HttpClient
     /// <summary>The app's single AutoUpdateService (and its HttpClient) — exposed so the wiring can be asserted.</summary>
     internal AutoUpdateService Service => _service;
-    public Task<AutoUpdateService.UpdateInfo?> GetLatestAsync(CancellationToken ct = default) => _service.GetLatestAsync("windows", ct);
-    public Task DownloadAsync(string url, string destPath, IProgress<double>? progress, CancellationToken ct = default) => _service.DownloadAssetAsync(url, destPath, progress, ct);
+    public Task<AutoUpdateService.UpdateInfo?> GetLatestAsync(CancellationToken ct = default)
+    {
+        var choice = UpdateChannelStore.Read();
+        return _service.GetLatestAsync("windows", ct, choice.Repo, choice.Alpha ? choice.Token : null);
+    }
+    public Task DownloadAsync(string url, string destPath, IProgress<double>? progress, CancellationToken ct = default)
+    {
+        var choice = UpdateChannelStore.Read();
+        return _service.DownloadAssetAsync(url, destPath, progress, ct, choice.Alpha ? choice.Token : null);
+    }
 }

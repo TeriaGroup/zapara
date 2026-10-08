@@ -68,6 +68,6 @@ class DistFlavorTest {
     }
 
     private fun assertEqualsReleasePage() {
-        assertTrue(AutoUpdate.RELEASES_PAGE.startsWith("https://github.com/TeriaGroup/zapara/releases"))
+        assertTrue(AutoUpdate.RELEASES_PAGE.startsWith("https://github.com/TeriaGroup/zapara-releases/releases"))
     }
 }

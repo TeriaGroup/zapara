@@ -29,6 +29,9 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         _clock = clock ?? (() => DateTime.Now);
         _updatesDir = updatesDir ?? Path.Combine(App.DataDir, "updates");
         _statusText = T("updIdle");
+        var choice = UpdateChannelStore.Read();
+        _isAlpha = choice.Alpha;
+        _githubToken = choice.Token;
         Installer = zip => UpdateRunner.Apply(zip, AppContext.BaseDirectory, Shutdown ?? (() => { }));
         Delay = span => Task.Delay(span);
     }
@@ -52,6 +55,8 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
     [ObservableProperty] private double _progress = -1;
     [ObservableProperty] private string _checkedAt = "";
     [ObservableProperty] private bool _autoUpdate = true;
+    [ObservableProperty] private bool _isAlpha;
+    [ObservableProperty] private string _githubToken = "";
 
     public bool IsAvailable => State is UpdateState.Available or UpdateState.Downloading or UpdateState.Ready;
     public bool IsChecking => State is UpdateState.Checking or UpdateState.Downloading;
@@ -78,6 +83,13 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         if (_suppress) return;
         _ = RunAsync(() => { var s = App.Db.GetSettings(); s.AutoUpdate = value; App.Db.SaveSettings(s); }, "auto-update");
     }
+
+    partial void OnIsAlphaChanged(bool value) => UpdateChannelStore.Write(value, GithubToken);
+
+    partial void OnGithubTokenChanged(string value) => UpdateChannelStore.Write(IsAlpha, value);
+
+    [RelayCommand] private void SelectRelease() => IsAlpha = false;
+    [RelayCommand] private void SelectAlpha() => IsAlpha = true;
 
     public async Task LoadAsync()
     {
@@ -123,8 +135,8 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
             App.Log.Error("update check", ex);
             if (!operation.IsCurrent) return false;
             CheckedAt = Stamp();
-            HtmlUrl = SettingsViewModel.ReleasesUrl;
-            Fail(Friendly(ex, App.Loc));
+            HtmlUrl = UpdateChannelStore.Read().Page;
+            Fail(ex.Message.Contains("ключ") ? T("updNeedToken") : Friendly(ex, App.Loc));
             return false;
         }
         if (!operation.IsCurrent) return false;
@@ -132,7 +144,7 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         CheckedAt = Stamp();
         if (info is null || string.IsNullOrEmpty(info.ZipUrl))
         {
-            HtmlUrl = SettingsViewModel.ReleasesUrl;
+            HtmlUrl = UpdateChannelStore.Read().Page;
             Fail(T("updNoReleases"));
             return false;
         }

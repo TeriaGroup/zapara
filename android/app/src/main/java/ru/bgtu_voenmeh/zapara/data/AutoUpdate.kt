@@ -13,16 +13,45 @@ import java.net.URL
 object AutoUpdate {
     const val CURRENT_TAG = "android-v2.1.41"
     private const val OWNER = "TeriaGroup"
-    private const val REPO = "zapara"
+    const val PUBLIC_REPO = "zapara-releases"
+    const val ALPHA_REPO = "zapara"
+    const val CHANNEL_RELEASE = "release"
+    const val CHANNEL_ALPHA = "alpha"
     private const val PREFS = "zapara"
     private const val KEY_AUTO = "auto_update"
     private const val KEY_CHECK_AT = "update_check_at"
     private const val KEY_CHECK_TAG = "update_check_tag"
     private const val KEY_CHECK_APK = "update_check_apk"
     private const val KEY_CHECK_HTML = "update_check_html"
-    const val RELEASES_PAGE = "https://github.com/TeriaGroup/zapara/releases/latest"
+    private const val KEY_CHANNEL = "update_channel"
+    private const val KEY_TOKEN = "update_github_token"
+    const val RELEASES_PAGE = "https://github.com/$OWNER/$PUBLIC_REPO/releases/latest"
 
-    data class CachedCheck(val at: Long, val tag: String?, val apkUrl: String?, val htmlUrl: String?)
+    fun channel(ctx: Context): String {
+        val saved = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_CHANNEL, CHANNEL_RELEASE)
+        return if (saved == CHANNEL_ALPHA) CHANNEL_ALPHA else CHANNEL_RELEASE
+    }
+
+    fun setChannel(ctx: Context, channel: String) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_CHANNEL, if (channel == CHANNEL_ALPHA) CHANNEL_ALPHA else CHANNEL_RELEASE)
+            .apply()
+    }
+
+    fun token(ctx: Context): String =
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_TOKEN, "") ?: ""
+
+    fun setToken(ctx: Context, value: String) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_TOKEN, value.trim())
+            .apply()
+    }
+
+    fun repo(channel: String) = if (channel == CHANNEL_ALPHA) ALPHA_REPO else PUBLIC_REPO
+
+    fun releasesPage(channel: String) = "https://github.com/$OWNER/${repo(channel)}/releases"
+
+    data class CachedCheck(val at: Long, val tag: String?, val apkUrl: String?, val htmlUrl: String?, val channel: String = CHANNEL_RELEASE)
 
     fun cachedCheck(ctx: Context): CachedCheck {
         val p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -30,7 +59,8 @@ object AutoUpdate {
             p.getLong(KEY_CHECK_AT, 0),
             p.getString(KEY_CHECK_TAG, null),
             p.getString(KEY_CHECK_APK, null),
-            p.getString(KEY_CHECK_HTML, null)
+            p.getString(KEY_CHECK_HTML, null),
+            p.getString("update_check_channel", CHANNEL_RELEASE) ?: CHANNEL_RELEASE
         )
     }
 
@@ -40,34 +70,36 @@ object AutoUpdate {
             .putString(KEY_CHECK_TAG, tag)
             .putString(KEY_CHECK_APK, apkUrl)
             .putString(KEY_CHECK_HTML, htmlUrl)
+            .putString("update_check_channel", channel(ctx))
             .apply()
     }
 
     data class UpdateInfo(val tag: String, val htmlUrl: String, val apkUrl: String?, val publishedAt: String)
 
-    private const val FEED_URL = "https://github.com/$OWNER/$REPO/releases.atom"
+    private fun feedUrl(repo: String) = "https://github.com/$OWNER/$repo/releases.atom"
 
     /**
      * Primary lookup: releases Atom feed (plain web traffic — NO API quota, VPN-proof).
      * Asset URLs are stable: .../releases/download/<tag>/<filename>.
      * Returns null when the feed is unreachable or the file 404s (caller falls back to API).
      */
-    fun getLatestViaFeed(channel: String = "android"): UpdateInfo? {
+    fun getLatestViaFeed(channel: String = "android", repo: String = PUBLIC_REPO, token: String? = null): UpdateInfo? {
         val pfx = if (channel == "windows") "windows-" else "android-"
         val assetName = if (channel == "windows") "ZAPARA_win-x64.zip" else "ZAPARA_android-debug.apk"
-        val conn = (URL(FEED_URL).openConnection() as HttpURLConnection).apply {
+        val conn = (URL(feedUrl(repo)).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             setRequestProperty("User-Agent", "Zapara-AutoUpdate/1.0")
             setRequestProperty("Cache-Control", "no-cache")
+            auth(token)
             connectTimeout = 10000; readTimeout = 15000
         }
         try {
             if (conn.responseCode !in 200..299) return null
             val xml = conn.inputStream.bufferedReader().readText()
             val tag = parseFeedTag(xml, pfx) ?: return null
-            val apkUrl = "https://github.com/$OWNER/$REPO/releases/download/$tag/$assetName"
-            if (!urlExists(apkUrl)) return null
-            return UpdateInfo(tag, "https://github.com/$OWNER/$REPO/releases/tag/$tag", apkUrl, "")
+            val apkUrl = "https://github.com/$OWNER/$repo/releases/download/$tag/$assetName"
+            if (!urlExists(apkUrl, token)) return null
+            return UpdateInfo(tag, "https://github.com/$OWNER/$repo/releases/tag/$tag", apkUrl, "")
         } finally {
             conn.disconnect()
         }
@@ -88,12 +120,21 @@ object AutoUpdate {
         tag.startsWith(prefix, ignoreCase = true) ||
             tag.matches(Regex("""v\d[\d.]*""", RegexOption.IGNORE_CASE))
 
-    private fun urlExists(url: String): Boolean {
+    private fun HttpURLConnection.auth(token: String?) {
+        if (!token.isNullOrBlank()) setRequestProperty("Authorization", "Bearer ${token.trim()}")
+    }
+
+    private fun requireToken(repo: String, token: String?) {
+        if (repo == ALPHA_REPO && token.isNullOrBlank()) throw IOException("Нужен ключ GitHub")
+    }
+
+    private fun urlExists(url: String, token: String? = null): Boolean {
         var c: HttpURLConnection? = null
         return try {
             c = (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "HEAD"
                 setRequestProperty("User-Agent", "Zapara-AutoUpdate/1.0")
+                auth(token)
                 connectTimeout = 10000; readTimeout = 10000
                 instanceFollowRedirects = true
             }
@@ -109,23 +150,27 @@ object AutoUpdate {
      * Smart lookup: feed first (no quota), API fallback (exact asset URLs, quota-limited).
      * Throws only when BOTH fail — with the API error (it carries the HTTP code).
      */
-    fun getLatestSmart(channel: String = "android"): UpdateInfo? {
+    fun getLatestSmart(channel: String = "android", repo: String = PUBLIC_REPO, token: String? = null): UpdateInfo? {
+        requireToken(repo, token)
         try {
-            getLatestViaFeed(channel)?.let { return it }
+            getLatestViaFeed(channel, repo, token)?.let { return it }
+        } catch (e: IOException) {
+            if (e.message?.contains("ключ") == true) throw e
         } catch (_: Exception) {
         }
-        return getLatest(channel)
+        return getLatest(channel, repo, token)
     }
 
-    fun getLatest(channel: String = "android"): UpdateInfo? {
+    fun getLatest(channel: String = "android", repo: String = PUBLIC_REPO, token: String? = null): UpdateInfo? {
+        requireToken(repo, token)
         val pfx = if (channel == "windows") "windows-" else "android-"
-        // Cache-buster: some networks/VPNs serve stale API responses without it.
-        val url = URL("https://api.github.com/repos/$OWNER/$REPO/releases?per_page=100&t=${System.currentTimeMillis()}")
+        val url = URL("https://api.github.com/repos/$OWNER/$repo/releases?per_page=100&t=${System.currentTimeMillis()}")
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             setRequestProperty("User-Agent", "Zapara-AutoUpdate/1.0")
             setRequestProperty("Accept", "application/vnd.github+json")
             setRequestProperty("Cache-Control", "no-cache")
+            auth(token)
             connectTimeout = 8000; readTimeout = 8000
         }
         // Throw with the code (visible in UI) instead of silent null — null now means "no matching release".
@@ -173,11 +218,13 @@ object AutoUpdate {
         url: String,
         dest: File,
         onProgress: (done: Long, total: Long) -> Unit,
-        isCancelled: () -> Boolean
+        isCancelled: () -> Boolean,
+        token: String? = null
     ) {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             setRequestProperty("User-Agent", "Zapara-AutoUpdate/1.0")
+            auth(token)
             connectTimeout = 10000
             readTimeout = 30000
             instanceFollowRedirects = true
