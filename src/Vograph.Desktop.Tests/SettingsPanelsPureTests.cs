@@ -101,15 +101,15 @@ public sealed class SettingsPanelsPureTests
     {
         using var db=TestDb.Create();var shell=new ShellViewModel(db.Services);var settings=new SettingsViewModel(db.Services,shell);
         var dialog=new FakeFileDialogs();db.Services.FileDialogs=dialog;
-        var first=Path.Combine(db.Dir,"report-a.txt");var second=Path.Combine(db.Dir,"report-b.txt");
-        await File.WriteAllTextAsync(first,"first");await File.WriteAllTextAsync(second,"second");
+        var first=Path.Combine(db.Dir,"report-a.png");var second=Path.Combine(db.Dir,"report-b.png");
+        await File.WriteAllBytesAsync(first,[1]);await File.WriteAllBytesAsync(second,[2]);
         settings.ReportBody="Ошибка в карточке";
-        dialog.OpenPath=first;await settings.PickReportLogCommand.ExecuteAsync(null);
-        dialog.OpenPath=second;await settings.PickReportLogCommand.ExecuteAsync(null);
-        var file=Assert.Single(settings.ReportFiles.Where(item=>item.Name=="report-a.txt"));
+        dialog.OpenPath=first;await settings.PickReportPhotoCommand.ExecuteAsync(null);
+        dialog.OpenPath=second;await settings.PickReportPhotoCommand.ExecuteAsync(null);
+        var file=Assert.Single(settings.ReportFiles.Where(item=>item.Name=="report-a.png"));
         settings.RemoveReportFileCommand.Execute(file);
         Assert.Equal("Ошибка в карточке",settings.ReportBody);
-        Assert.Equal("report-b.txt",Assert.Single(settings.ReportFiles).Name);
+        Assert.Equal("report-b.png",Assert.Single(settings.ReportFiles).Name);
         await settings.SendReportCommand.ExecuteAsync(null);
         Assert.Equal("Ошибка в карточке",settings.ReportBody);
         Assert.Single(settings.ReportFiles);
@@ -127,7 +127,7 @@ public sealed class SettingsPanelsPureTests
         var pending=new TaskCompletionSource<IReadOnlyList<string>>(TaskCreationOptions.RunContinuationsAsynchronously);
         dialog.SupportOpen=_=>pending.Task;
         settings.ReportSubject="Ошибка";settings.ReportBody="Важный текст";
-        var pick=settings.PickReportLogCommand.ExecuteAsync(null);
+        var pick=settings.PickReportPhotoCommand.ExecuteAsync(null);
         Assert.True(settings.ReportAttachmentLoading);
         await settings.SendReportCommand.ExecuteAsync(null);
         Assert.Equal("Важный текст",settings.ReportBody);

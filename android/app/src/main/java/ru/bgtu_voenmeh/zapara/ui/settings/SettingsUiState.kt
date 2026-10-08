@@ -95,7 +95,7 @@ sealed interface SettingsEvent {
     data class MapsAlpha(val enabled: Boolean) : SettingsEvent
     data class ResolveSync(val conflict: ru.bgtu_voenmeh.zapara.data.sync.SyncConflict, val keepLocal: Boolean) : SettingsEvent
     data class Report(val subject: String, val body: String, val photos: List<Pair<String, ByteArray>> = emptyList(),
-        val logs: List<Pair<String, ByteArray>> = emptyList(), val draftRevision: Long? = null) : SettingsEvent
+        val draftRevision: Long? = null) : SettingsEvent
     data object RetrySupport : SettingsEvent
     data class SelectSupportThread(val id: String?) : SettingsEvent
 }

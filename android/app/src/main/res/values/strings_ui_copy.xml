@@ -68,17 +68,13 @@
     <string name="face_no_space">Нет места для вложения</string>
     <string name="face_save_attachment_failed">Не удалось сохранить вложение</string>
     <string name="face_photo_too_big">Фото больше 4 МиБ.</string>
-    <string name="face_log_too_big">Лог больше 512 КиБ.</string>
     <string name="face_photo_type">Нужна фотография JPEG, PNG или WebP.</string>
-    <string name="face_log_type">Лог должен быть текстовым файлом .txt или .log.</string>
     <string name="face_photo_limit">Можно приложить не больше трёх фотографий.</string>
-    <string name="face_log_limit">Можно приложить не больше трёх логов.</string>
     <string name="face_subject">Тема</string>
     <string name="face_what_happened">Что случилось</string>
-    <string name="face_attach_limits">До трёх фотографий JPEG, PNG или WebP, до 4 МиБ. До трёх логов .txt или .log, до 512 КиБ.</string>
+    <string name="face_attach_limits">Логи приложения отправятся вместе с сообщением. Фото можно приложить отдельно: до трёх JPEG, PNG или WebP, до 4 МиБ.</string>
     <string name="face_photo_named">Фото: %1$s</string>
     <string name="face_log_named">Лог: %1$s</string>
-    <string name="face_log_button">Лог</string>
     <string name="face_support_line">"Поддержка. "</string>
     <string name="face_you_line">"Вы. "</string>
 </resources>

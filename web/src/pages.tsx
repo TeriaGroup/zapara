@@ -39,6 +39,7 @@ import { lessonsOfGroupTeacher, teacherCode, teacherRows, teacherWeek, type Teac
 import { subgroupIndex, subgroupMark, visibleLessons } from "./subgroups";
 import { HOMEWORK_FILE_LIMIT, checkHomeworkFile, compressHomeworkPhoto, deleteHomeworkBlob, putHomeworkBlob, readHomeworkBlob } from "./homework-files";
 import { supportAppend, supportDraft, supportFiles, sendSupportDraft } from "./support";
+import { supportLogFiles } from "./app-log";
 import { holdActions, runHold } from "./hold";
 import { groupBubbleText, groupMediaDownload, GroupMediaError, type GroupMediaDownload } from "./group-media";
 import { canComposeChannel, canCreateBallot, isChatChannel, nextUnreadTopic, orderedTopics, topicPreview } from "./channels";
@@ -2407,31 +2408,30 @@ function SettingsContent() {
   );
 }
 
-function FollowUp({ onSend, onState }: { onSend: (text: string, photos: File[], logs: File[]) => Promise<boolean>; onState?:(dirty:boolean,busy:boolean)=>void }) {
+function FollowUp({ onSend, onState }: { onSend: (text: string, photos: File[]) => Promise<boolean>; onState?:(dirty:boolean,busy:boolean)=>void }) {
   const [text, setText] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
-  const [logs, setLogs] = useState<File[]>([]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
-  useEffect(()=>{onState?.(!!text.trim()||photos.length>0||logs.length>0,busy);},[text,photos,logs,busy]);
+  useEffect(()=>{onState?.(!!text.trim()||photos.length>0,busy);},[text,photos,busy]);
   return (
     <form className="stack" onSubmit={async event => {
       event.preventDefault();
       if (pending.current) return;
       const value = text.trim();
       if (!value) return;
-      const files = supportFiles(photos, logs);
+      const files = supportFiles(photos, []);
       if (files.error) { setNote(files.error); return; }
       pending.current = true; setBusy(true);
       setNote("");
-      const saved = await sendSupportDraft(() => onSend(value, photos, logs), () => { setText(""); setPhotos([]); setLogs([]); });
+      const saved = await sendSupportDraft(() => onSend(value, photos), () => { setText(""); setPhotos([]); });
       if (!saved) setNote("Ответ не отправлен. Текст и вложения сохранены — можно повторить.");
       pending.current = false; setBusy(false);
     }}>
       <fieldset className="stack" disabled={busy}>
       <label className="field">Уточнение<textarea value={text} onChange={event => setText(event.target.value)} maxLength={4000} rows={3} /></label>
-      <Attach photos={photos} logs={logs} onPhotos={setPhotos} onLogs={setLogs} onNote={setNote} />
+      <Attach photos={photos} onPhotos={setPhotos} onNote={setNote} />
       {note && <p className="banner">{note}</p>}
       <button className="btn" type="submit">{busy ? "Отправляем…" : "Ответить"}</button>
       </fieldset>
@@ -2439,26 +2439,23 @@ function FollowUp({ onSend, onState }: { onSend: (text: string, photos: File[], 
   );
 }
 
-function Attach({ photos, logs, onPhotos, onLogs, onNote }: { photos: File[]; logs: File[]; onPhotos: (files: File[]) => void; onLogs: (files: File[]) => void; onNote: (note: string) => void }) {
-  function add(kind: "photo" | "log", list: FileList | null, input: HTMLInputElement) {
-    const next = [...(kind === "photo" ? photos : logs), ...Array.from(list ?? [])];
-    const check = supportFiles(kind === "photo" ? next : photos, kind === "log" ? next : logs);
+function Attach({ photos, onPhotos, onNote }: { photos: File[]; onPhotos: (files: File[]) => void; onNote: (note: string) => void }) {
+  function add(list: FileList | null, input: HTMLInputElement) {
+    const next = [...photos, ...Array.from(list ?? [])];
+    const check = supportFiles(next, []);
     input.value = "";
     if (check.error) { onNote(check.error); return; }
     onNote("");
-    if (kind === "photo") onPhotos(next);
-    else onLogs(next);
+    onPhotos(next);
   }
   return (
     <div className="stack">
       <div className="attach">
-        <label className="btn file">Фото<input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple aria-label="Фото" onChange={event => add("photo", event.target.files, event.target)} /></label>
-        <label className="btn file">Лог<input type="file" accept=".txt,.log,text/plain" multiple aria-label="Лог" onChange={event => add("log", event.target.files, event.target)} /></label>
+        <label className="btn file">Фото<input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple aria-label="Фото" onChange={event => add(event.target.files, event.target)} /></label>
       </div>
-      <p className="muted">До трёх фотографий JPEG, PNG или WebP, до 4 МиБ. До трёх логов .txt или .log, до 512 КиБ.</p>
+      <p className="muted">Логи приложения отправятся вместе с сообщением. Фото можно приложить отдельно: до трёх JPEG, PNG или WebP, до 4 МиБ.</p>
       <div className="attach">
         {photos.map((file, index) => <button className="btn" type="button" key={"p" + file.name + index} onClick={() => onPhotos(photos.filter((_, item) => item !== index))}>{file.name} · убрать</button>)}
-        {logs.map((file, index) => <button className="btn" type="button" key={"l" + file.name + index} onClick={() => onLogs(logs.filter((_, item) => item !== index))}>{file.name} · убрать</button>)}
       </div>
     </div>
   );
@@ -2485,7 +2482,6 @@ function SupportContent({onState}:{onState:(state:SupportPendingState)=>void}) {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
-  const [logs, setLogs] = useState<File[]>([]);
   const [threads, setThreads] = useState<api.SupportThread[]>([]);
   const [historyError, setHistoryError] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -2494,7 +2490,7 @@ function SupportContent({onState}:{onState:(state:SupportPendingState)=>void}) {
   const [replyDirty,setReplyDirty]=useState(false);const[replyBusy,setReplyBusy]=useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(()=>{onState({dirty:!!subject||!!body||photos.length>0||logs.length>0||replyDirty,busy:busy||replyBusy});},[subject,body,photos,logs,replyDirty,busy,replyBusy,onState]);
+  useEffect(()=>{onState({dirty:!!subject||!!body||photos.length>0||replyDirty,busy:busy||replyBusy});},[subject,body,photos,replyDirty,busy,replyBusy,onState]);
   useEffect(()=>()=>onState({dirty:false,busy:false}),[onState]);
   const pending = useRef(false);
   const alive = useRef(true);
@@ -2512,6 +2508,7 @@ function SupportContent({onState}:{onState:(state:SupportPendingState)=>void}) {
     setNote("");
     const draft = supportDraft(!!app.session?.authenticated, subject, body);
     if (draft.error || !draft.subject || !draft.body) { setNote(draft.error || "Опишите тему и что случилось."); return; }
+    const logs = supportLogFiles();
     const files = supportFiles(photos, logs);
     if (files.error) { setNote(files.error); return; }
     pending.current = true; setBusy(true);
@@ -2523,18 +2520,20 @@ function SupportContent({onState}:{onState:(state:SupportPendingState)=>void}) {
       setSubject("");
       setBody("");
       setPhotos([]);
-      setLogs([]);
     } catch (error) {
       if (alive.current) setNote(error instanceof Error && error.message ? error.message : "Не удалось отправить сообщение. Черновик сохранён.");
     } finally { pending.current = false; if (alive.current) setBusy(false); }
   }
-  async function follow(id: string, text: string, nextPhotos: File[], nextLogs: File[]) {
+  async function follow(id: string, text: string, nextPhotos: File[]) {
     const draft = supportDraft(!!app.session?.authenticated, "уточнение", text);
     if (draft.error || !draft.body) { setNote(draft.error || "Опишите, что случилось."); return false; }
     const next = supportAppend([], "user", draft.body);
     if (next.length !== 1) return false;
+    const logs = supportLogFiles();
+    const files = supportFiles(nextPhotos, logs);
+    if (files.error) { setNote(files.error); return false; }
     try {
-      const updated = await api.supportReply(id, next[0].body, nextPhotos, nextLogs);
+      const updated = await api.supportReply(id, next[0].body, nextPhotos, logs);
       if (!alive.current) return false;
       setThreads(list => list.map(item => item.id === updated.id ? updated : item));
       return true;
@@ -2552,9 +2551,9 @@ function SupportContent({onState}:{onState:(state:SupportPendingState)=>void}) {
         {!app.session?.authenticated && <p>Войдите в аккаунт, чтобы отправить сообщение об ошибке и увидеть ответ. Расписание и карты остаются доступны без входа.</p>}
         <label className="field">Тема<input value={subject} onChange={event => setSubject(event.target.value)} maxLength={120} required={!!app.session?.authenticated} /></label>
         <label className="field">Что случилось<textarea value={body} onChange={event => setBody(event.target.value)} maxLength={4000} required={!!app.session?.authenticated} rows={4} /></label>
-        <Attach photos={photos} logs={logs} onPhotos={setPhotos} onLogs={setLogs} onNote={setNote} />
+        <Attach photos={photos} onPhotos={setPhotos} onNote={setNote} />
         <button className="btn primary" type="submit">{busy ? "Отправляем…" : "Отправить"}</button>
-        {(subject||body||photos.length>0||logs.length>0)&&<button className="btn quiet" type="button" onClick={()=>{if(window.confirm("Очистить тему, текст и выбранные вложения этого черновика?")){setSubject("");setBody("");setPhotos([]);setLogs([]);setNote("");}}}>Очистить черновик обращения</button>}
+        {(subject||body||photos.length>0)&&<button className="btn quiet" type="button" onClick={()=>{if(window.confirm("Очистить тему, текст и выбранные вложения этого черновика?")){setSubject("");setBody("");setPhotos([]);setNote("");}}}>Очистить черновик обращения</button>}
         </fieldset>
       </form>
       {note && <p className="banner">{note}</p>}
@@ -2567,7 +2566,7 @@ function SupportContent({onState}:{onState:(state:SupportPendingState)=>void}) {
         <div key={thread.id} className="stack">
           <h3>{thread.subject}</h3>
           {thread.messages.map((line, index) => <SupportLineView key={thread.id + index} line={line} />)}
-          <FollowUp key={thread.id} onState={(dirty,busy)=>{setReplyDirty(dirty);setReplyBusy(busy);}} onSend={(text, nextPhotos, nextLogs) => follow(thread.id, text, nextPhotos, nextLogs)} />
+          <FollowUp key={thread.id} onState={(dirty,busy)=>{setReplyDirty(dirty);setReplyBusy(busy);}} onSend={(text, nextPhotos) => follow(thread.id, text, nextPhotos)} />
         </div>
       ))}
     </article>

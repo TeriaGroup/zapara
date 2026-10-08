@@ -181,13 +181,12 @@ public sealed partial class SettingsViewModel : ViewModelBase
         if (pendingDiscardReportRevision != reportDraftRevision)
         { ReportNote = "Черновик изменился. Подтвердите очистку ещё раз."; return; }
         ReportSubject = ""; ReportBody = "";
-        reportPhotos.Clear(); reportLogs.Clear(); ReportFiles.Clear(); ReportFilesText = "";
+        reportPhotos.Clear(); ReportFiles.Clear(); ReportFilesText = "";
         reportDraftRevision++;
         ReportNote = "Черновик очищен.";
     }
     private Guid? reportThreadId;
     private readonly List<SupportUpload> reportPhotos = [];
-    private readonly List<SupportUpload> reportLogs = [];
     private readonly Dictionary<Guid, string> reportReplyDrafts = [];
     private int reportHistoryVersion;
 
@@ -287,9 +286,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
         var revision = reportDraftRevision;
         var subject = ReportSubject.Trim();
         var body = ReportBody.Trim();
-        var files = reportPhotos.Concat(reportLogs).ToArray();
         try
         {
+            var logs = await Task.Run(() => SupportLogPack.FromLog(App.Log));
+            if (!operation.IsCurrent) return;
+            var files = reportPhotos.Concat(logs).ToArray();
             var saved = await AccountPanel.SendSupportAsync(null, subject, body, files, operation.Token);
             if (!operation.IsCurrent) return;
             if (saved is null)
@@ -303,7 +304,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 ReportSubject = "";
                 ReportBody = "";
                 reportPhotos.Clear();
-                reportLogs.Clear();
                 ReportFiles.Clear();
                 ReportFilesText = "";
             }
@@ -326,7 +326,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
         var draft = ReportReplyBody;
         try
         {
-            var saved = await AccountPanel.SendSupportAsync(id, "", text, operation.Token);
+            var logs = await Task.Run(() => SupportLogPack.FromLog(App.Log));
+            if (!operation.IsCurrent) return;
+            var saved = await AccountPanel.SendSupportAsync(id, "", text, logs, operation.Token);
             if (!operation.IsCurrent) return;
             if (saved is null) { if (reportThreadId == id) ReportNote = "Войдите в аккаунт, чтобы отправить ответ."; return; }
             var stillSelected = reportThreadId == id;
@@ -344,53 +346,42 @@ public sealed partial class SettingsViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private Task PickReportPhoto() => PickReport("photo");
-
-    [RelayCommand]
-    private Task PickReportLog() => PickReport("log");
-
-    private async Task PickReport(string kind)
+    private async Task PickReportPhoto()
     {
         if (ReportAttachmentLoading) return;
         ReportAttachmentLoading = true;
         try
         {
-        var paths = await App.FileDialogs.OpenSupportAsync(kind);
-        var list = kind == "photo" ? reportPhotos : reportLogs;
+        var paths = await App.FileDialogs.OpenSupportAsync("photo");
         foreach (var path in paths)
         {
-            if (list.Count >= 3)
+            if (reportPhotos.Count >= 3)
             {
-                ReportNote = kind == "photo" ? "Можно приложить не больше трёх фотографий." : "Можно приложить не больше трёх логов.";
+                ReportNote = "Можно приложить не больше трёх фотографий.";
                 break;
             }
             var info = new FileInfo(path);
             var ext = info.Extension.ToLowerInvariant();
-            if (kind == "photo" && ext is not (".jpg" or ".jpeg" or ".png" or ".webp"))
+            if (ext is not (".jpg" or ".jpeg" or ".png" or ".webp"))
             {
                 ReportNote = "Нужна фотография JPEG, PNG или WebP.";
                 break;
             }
-            if (kind == "log" && ext is not (".txt" or ".log"))
-            {
-                ReportNote = "Лог должен быть текстовым файлом .txt или .log.";
-                break;
-            }
             if (info.Length <= 0) { ReportNote = "Файл пустой."; break; }
-            if (info.Length > (kind == "photo" ? 4 * 1024 * 1024 : 512 * 1024))
+            if (info.Length > 4 * 1024 * 1024)
             {
-                ReportNote = kind == "photo" ? "Фото больше 4 МиБ." : "Лог больше 512 КиБ.";
+                ReportNote = "Фото больше 4 МиБ.";
                 break;
             }
             var bytes = await File.ReadAllBytesAsync(path);
-            var type = ext switch { ".png" => "image/png", ".webp" => "image/webp", ".jpg" or ".jpeg" => "image/jpeg", _ => "text/plain" };
-            var upload = new SupportUpload(kind, info.Name, type, bytes);
-            list.Add(upload);
-            ReportFiles.Add(new SupportDraftAttachment(Guid.NewGuid(), kind, info.Name, upload));
+            var type = ext switch { ".png" => "image/png", ".webp" => "image/webp", _ => "image/jpeg" };
+            var upload = new SupportUpload("photo", info.Name, type, bytes);
+            reportPhotos.Add(upload);
+            ReportFiles.Add(new SupportDraftAttachment(Guid.NewGuid(), "photo", info.Name, upload));
             reportDraftRevision++;
             ReportNote = "";
         }
-        ReportFilesText = string.Join("\n", reportPhotos.Select(file => "Фото: " + file.Name).Concat(reportLogs.Select(file => "Лог: " + file.Name)));
+        ReportFilesText = string.Join("\n", reportPhotos.Select(file => "Фото: " + file.Name));
         }
         finally { ReportAttachmentLoading = false; }
     }
@@ -399,9 +390,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
     {
         if (file is null || !ReportFiles.Remove(file)) return;
         if (file.Kind == "photo") reportPhotos.Remove(file.Upload);
-        else reportLogs.Remove(file.Upload);
         reportDraftRevision++;
-        ReportFilesText = string.Join("\n", reportPhotos.Select(item => "Фото: " + item.Name).Concat(reportLogs.Select(item => "Лог: " + item.Name)));
+        ReportFilesText = string.Join("\n", reportPhotos.Select(item => "Фото: " + item.Name));
     }
 
     private static string Shown(SupportLineResponse line)

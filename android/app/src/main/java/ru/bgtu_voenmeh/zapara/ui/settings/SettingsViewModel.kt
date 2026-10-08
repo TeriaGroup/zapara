@@ -23,6 +23,7 @@ import ru.bgtu_voenmeh.zapara.BuildConfig
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.data.AutoUpdate
 import ru.bgtu_voenmeh.zapara.data.Notifications
+import ru.bgtu_voenmeh.zapara.data.SupportLogs
 import ru.bgtu_voenmeh.zapara.data.accounts.SupportThread
 import ru.bgtu_voenmeh.zapara.data.Subgroups
 import ru.bgtu_voenmeh.zapara.ui.AppEvent
@@ -148,7 +149,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 mutable.update { it.copy(useUniversityXml = event.enabled) }
                 save("source", event.enabled, transform = { it.copy(useUniversityXml = event.enabled) })
             }
-            is SettingsEvent.Report -> report(event.subject, event.body, event.photos, event.logs, event.draftRevision)
+            is SettingsEvent.Report -> report(event.subject, event.body, event.photos, event.draftRevision)
             SettingsEvent.RetrySupport -> viewModelScope.launch { refreshSupport() }
             is SettingsEvent.SelectSupportThread -> selectSupportThread(event.id)
             is SettingsEvent.MapsAlpha -> {
@@ -577,8 +578,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         return if (extra.isEmpty()) message.body else message.body + "\n" + extra
     }
 
-    private fun report(subject: String, body: String, photos: List<Pair<String, ByteArray>>, logs: List<Pair<String, ByteArray>>,
-        draftRevision: Long?) {
+    private fun report(subject: String, body: String, photos: List<Pair<String, ByteArray>>, draftRevision: Long?) {
         if (mutable.value.reportSending) return
         val selectedId = mutable.value.selectedSupportThreadId
         val selected = selectedId?.let { id -> supportData.firstOrNull { it.id == id } }
@@ -609,6 +609,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     return@launch
                 }
                 val saved = withContext(Dispatchers.IO) {
+                    val logs = SupportLogs.collect()
                     if (selectedId == null) client.openSupport(token, subject.trim(), body.trim(), photos, logs)
                     else client.continueSupport(token, selectedId, body.trim(), photos, logs)
                 }

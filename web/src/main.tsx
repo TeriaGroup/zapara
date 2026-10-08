@@ -2,11 +2,14 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
+import { installAppLog } from "./app-log";
 import "./styles.css";
 import "./mobile-shell.css";
 import "./mobile-study.css";
 import "./mobile-personal.css";
 import "./mobile-chat.css";
+
+installAppLog();
 
 if ("serviceWorker" in navigator) {
   void navigator.serviceWorker.register("/app/react-worker.js", { scope: "/app/" }).catch(() => undefined);

@@ -130,8 +130,8 @@ test("actual support publishes text, attachment and selected reply dirty/busy st
   nodes(tree).find(node=>node.type==="input"&&node.props.maxLength===120).props.onChange({target:{value:"Помогите"}});tree=render();assert.equal(current.dirty,true);
   button(tree,"Очистить черновик обращения").props.onClick();tree=render();assert.equal(current.dirty,false);
   const attach=nodes(tree).find(node=>typeof node.props?.onPhotos==="function");attach.props.onPhotos([{name:"photo.jpg"}]);tree=render();assert.equal(current.dirty,true);
-  button(tree,"Очистить черновик обращения").props.onClick();tree=render();nodes(tree).find(node=>typeof node.props?.onLogs==="function").props.onLogs([{name:"log.txt"}]);tree=render();assert.equal(current.dirty,true);
-  button(tree,"Очистить черновик обращения").props.onClick();tree=render();nodes(tree).find(node=>node.type==="button"&&text(node).includes("сообщений:")).props.onClick();tree=render();const reply=nodes(tree).find(node=>typeof node.props?.onSend==="function");reply.props.onState(true,true);render();assert.equal(current.dirty,true);assert.equal(current.busy,true);
+  button(tree,"Очистить черновик обращения").props.onClick();tree=render();assert.equal(nodes(tree).some(node=>node.props?.["aria-label"]==="Лог"||typeof node.props?.onLogs==="function"),false);assert.equal(current.dirty,false);
+  nodes(tree).find(node=>node.type==="button"&&text(node).includes("сообщений:")).props.onClick();tree=render();const reply=nodes(tree).find(node=>typeof node.props?.onSend==="function");reply.props.onState(true,true);render();assert.equal(current.dirty,true);assert.equal(current.busy,true);
   h.unmount();assert.equal(current.dirty,false);assert.equal(current.busy,false);
 });
 

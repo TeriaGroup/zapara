@@ -806,7 +806,7 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
     var subject by remember { mutableStateOf(initial.subject) }
     var body by remember { mutableStateOf(initial.body) }
     var photos by remember { mutableStateOf(initial.photos) }
-    var logs by remember { mutableStateOf(initial.logs) }
+    var logs by remember { mutableStateOf(emptyList<SupportAttachmentDraft>()) }
     var fileNote by remember { mutableStateOf(initial.fileNote) }
     var draftRevision by remember { mutableLongStateOf(initial.revision) }
     var draftKey by remember { mutableStateOf(state.selectedSupportThreadId ?: "new") }
@@ -830,7 +830,7 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
             drafts = drafts + (draftKey to currentDraft())
             val next = drafts[nextKey] ?: SupportLocalDraft()
             draftKey = nextKey
-            subject = next.subject; body = next.body; photos = next.photos; logs = next.logs; fileNote = next.fileNote
+            subject = next.subject; body = next.body; photos = next.photos; logs = emptyList(); fileNote = next.fileNote
             draftRevision = next.revision
         }
     }
@@ -850,53 +850,41 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
     val scope = rememberCoroutineScope()
     LaunchedEffect(draftKey) {
         val existingPhotos = photos
-        val existingLogs = logs
-        if (existingPhotos.none { it.bytes == null } && existingLogs.none { it.bytes == null }) return@LaunchedEffect
+        if (existingPhotos.none { it.bytes == null }) return@LaunchedEffect
         attachmentReads++
         try {
             val restoredPhotos = withContext(Dispatchers.IO) { existingPhotos.map { ref ->
                 if (ref.bytes != null) ref else readSupportFile(ctx, Uri.parse(ref.uri), 4 * 1024 * 1024)
                     ?.let { ref.copy(name = it.first, bytes = it.second) } ?: ref
             } }
-            val restoredLogs = withContext(Dispatchers.IO) { existingLogs.map { ref ->
-                if (ref.bytes != null) ref else readSupportFile(ctx, Uri.parse(ref.uri), 512 * 1024)
-                    ?.let { ref.copy(name = it.first, bytes = it.second) } ?: ref
-            } }
-            if (photos == existingPhotos && logs == existingLogs) {
-                photos = restoredPhotos; logs = restoredLogs
-                if (restoredPhotos.any { it.bytes == null } || restoredLogs.any { it.bytes == null })
+            if (photos == existingPhotos) {
+                photos = restoredPhotos
+                if (restoredPhotos.any { it.bytes == null })
                     fileNote = ctx.getString(R.string.ux60_support_reselect_file)
             }
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (_: Exception) { fileNote = ctx.getString(R.string.ux60_support_reselect_file) }
         finally { attachmentReads-- }
     }
-    fun take(kind: String, uri: Uri?) {
+    fun take(uri: Uri?) {
         if (uri == null) return
         attachmentReads++
         scope.launch {
             try {
-            val read = withContext(Dispatchers.IO) { readSupportFile(ctx, uri, if (kind == "photo") 4 * 1024 * 1024 else 512 * 1024) }
+            val read = withContext(Dispatchers.IO) { readSupportFile(ctx, uri, 4 * 1024 * 1024) }
             if (read == null) {
-                fileNote = ctx.getString(if (kind == "photo") R.string.face_photo_too_big else R.string.face_log_too_big)
+                fileNote = ctx.getString(R.string.face_photo_too_big)
                 return@launch
             }
-            val name = read.first
-            val ext = name.substringAfterLast('.', "").lowercase()
-            if (kind == "photo" && ext !in setOf("jpg", "jpeg", "png", "webp")) {
+            val ext = read.first.substringAfterLast('.', "").lowercase()
+            if (ext !in setOf("jpg", "jpeg", "png", "webp")) {
                 fileNote = ctx.getString(R.string.face_photo_type)
                 return@launch
             }
-            if (kind == "log" && ext !in setOf("txt", "log")) {
-                fileNote = ctx.getString(R.string.face_log_type)
-                return@launch
-            }
-            if (kind == "photo" && photos.size >= 3) { fileNote = ctx.getString(R.string.face_photo_limit); return@launch }
-            if (kind == "log" && logs.size >= 3) { fileNote = ctx.getString(R.string.face_log_limit); return@launch }
+            if (photos.size >= 3) { fileNote = ctx.getString(R.string.face_photo_limit); return@launch }
             fileNote = ""
             runCatching { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            val attachment = SupportAttachmentDraft(uri.toString(), read.first, read.second)
-            if (kind == "photo") photos = photos + attachment else logs = logs + attachment
+            photos = photos + SupportAttachmentDraft(uri.toString(), read.first, read.second)
             persistDraft(changed = true)
             } catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Exception) {
@@ -906,10 +894,7 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
         }
     }
     val photo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
-        selectingAttachment = false; take("photo", it)
-    }
-    val log = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
-        selectingAttachment = false; take("log", it)
+        selectingAttachment = false; take(it)
     }
     ZCard(Modifier.fillMaxWidth().testTag("Settings.About")) {
         Text(stringResource(R.string.settings_about_title), style = Zapara.typography.section, color = c.text1)
@@ -1009,13 +994,6 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
                     }
                 }, ghost = true, tag = "Settings.ReportPhoto",
                     enabled = !state.reportSending && !selectingAttachment && attachmentReads == 0)
-                ZButton(stringResource(R.string.face_log_button), {
-                    selectingAttachment = true
-                    try { log.launch(arrayOf("*/*")) } catch (e: Exception) {
-                        selectingAttachment = false; fileNote = ctx.getString(R.string.face_file_unavailable)
-                    }
-                }, ghost = true, tag = "Settings.ReportLog",
-                    enabled = !state.reportSending && !selectingAttachment && attachmentReads == 0)
             }
             Text(stringResource(R.string.face_attach_limits), style = Zapara.typography.caption, color = c.text2)
             if (attachmentReads > 0 || selectingAttachment) Text(stringResource(R.string.ux30_support_reading),
@@ -1025,23 +1003,17 @@ private fun AboutCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit,
                     { photos = photos.filterIndexed { i, _ -> i != index }; persistDraft(changed = true) }, ghost = true,
                     enabled = !state.reportSending, tag = "Settings.RemovePhoto.$index")
             }
-            logs.forEachIndexed { index, file ->
-                ZButton(stringResource(R.string.ux30_support_remove_file, file.name),
-                    { logs = logs.filterIndexed { i, _ -> i != index }; persistDraft(changed = true) }, ghost = true,
-                    enabled = !state.reportSending, tag = "Settings.RemoveLog.$index")
-            }
             if (fileNote.isNotBlank()) Text(fileNote, style = Zapara.typography.body, color = c.text1)
             ZButton(stringResource(R.string.face_send), {
-                if (photos.any { it.bytes == null } || logs.any { it.bytes == null }) {
+                if (photos.any { it.bytes == null }) {
                     fileNote = ctx.getString(R.string.ux60_support_reselect_file)
                     return@ZButton
                 }
                 submitted = draftKey to currentDraft()
-                onEvent(SettingsEvent.Report(subject, body,
-                    photos.map { it.name to it.bytes!! }, logs.map { it.name to it.bytes!! }, draftRevision))
+                onEvent(SettingsEvent.Report(subject, body, photos.map { it.name to it.bytes!! }, draftRevision))
             }, tag = "Settings.ReportSend", enabled = SettingsLogic.supportSendReady(
                 state.reportSending, selectingAttachment, attachmentReads) && inputStatus.canSend &&
-                photos.all { it.bytes != null } && logs.all { it.bytes != null },
+                photos.all { it.bytes != null },
                 busy = state.reportSending)
             if (state.reportNote.isNotBlank()) Text(state.reportNote, style = Zapara.typography.body, color = c.text1)
             state.reportThread.forEach { line ->
