@@ -5,6 +5,31 @@ import org.junit.Test
 import kotlin.math.abs
 
 class WidgetEffectPolishTest {
+    @Test fun same_room_metadata_change_gets_an_accent_without_animating_an_unchanged_face() {
+        val identity = WidgetJobIdentity("guest", "local", 1)
+        val policy = WidgetMotionPolicy.of(true, 1f, true)
+        val room = WayfinderWidgetSnapshot(identity, "Куда идти", "Сейчас", "Физика", "09:00", "201", "201", null, true, null)
+        assertNotNull(WidgetFaceEffects.room(room, room.copy(subject = "Математика"), policy))
+        assertNotNull(WidgetFaceEffects.room(room, room.copy(time = "10:50"), policy))
+        assertNull(WidgetFaceEffects.room(room, room, policy))
+        assertNull(WidgetFaceEffects.room(room, room.copy(subject = "Математика"), WidgetMotionPolicy.Disabled))
+    }
+
+    @Test fun week_time_span_and_date_changes_get_an_accent_without_faking_a_count_change() {
+        val identity = WidgetJobIdentity("guest", "local", 1)
+        val policy = WidgetMotionPolicy.of(true, 1f, true)
+        val date = java.time.LocalDate.of(2026, 10, 5)
+        val week = WeekWidgetSnapshot(identity, "Неделя", "", (0..6).map {
+            WeekWidgetDay(date.plusDays(it.toLong()), "День", 2, it == 0, "09:00–12:00")
+        }, null)
+        val changed = week.copy(days = week.days.mapIndexed { index, day -> if (index == 2) day.copy(timeSpan = "10:50–14:00") else day })
+        val scene = WidgetFaceEffects.week(week, changed, policy)!!
+        assertTrue(scene.changedCountIndices.isEmpty())
+        assertEquals(setOf(2), scene.changedDetailIndices)
+        assertNotNull(WidgetFaceEffects.week(week, week.copy(days = week.days.map { it.copy(date = it.date.plusDays(7)) }), policy))
+        assertNull(WidgetFaceEffects.week(week, changed.copy(readError = "Ошибка"), policy))
+    }
+
     @Test fun read_errors_keep_static_retry_content_instead_of_starting_a_scene() {
         val identity = WidgetJobIdentity("guest", "local", 1)
         val policy = WidgetMotionPolicy.of(true, 1f, true)

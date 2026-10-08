@@ -3,6 +3,10 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import "./styles.css";
+import "./mobile-shell.css";
+import "./mobile-study.css";
+import "./mobile-personal.css";
+import "./mobile-chat.css";
 
 if ("serviceWorker" in navigator) {
   void navigator.serviceWorker.register("/app/react-worker.js", { scope: "/app/" }).catch(() => undefined);

@@ -1,7 +1,0 @@
-﻿[PHONE] Android mirror import
-A overrides 2 hw 2
-B after import overrides 2 hw 2
-PASS True
-Device: Pixel 7, Android 14, IP 192.168.1.15
-Import via: QR scan http://26.184.88.94:8765/sync#token -> GET /sync -> JSON 2118b -> Import 2/2/1
-

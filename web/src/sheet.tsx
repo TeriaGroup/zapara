@@ -1,19 +1,30 @@
 import { ReactNode, useEffect, useRef } from "react";
 import { useSheetDismiss } from "./swipe";
+import { Icon } from "./icons";
 
 const openSheets: HTMLElement[] = [];
 let bodyOverflow = "";
-export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Sheet({ title, onClose, children, id, open = true, inline = false }: {
+  title: string; onClose: () => void; children: ReactNode; id?: string; open?: boolean; inline?: boolean;
+}) {
   const dismiss = useSheetDismiss(onClose);
   const root = useRef<HTMLDivElement>(null);
-  const origin = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  const origin = useRef<HTMLElement | null>(null);
   const close = useRef(onClose); close.current = onClose;
   useEffect(() => {
+    if (!open || inline) return;
     const node = root.current;
     if (!node) return;
+    origin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (openSheets.length === 0) { bodyOverflow = document.body.style.overflow; document.body.style.overflow = "hidden"; }
     openSheets.push(node);
-    const focusable = () => [...node.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')].filter(item => item.getClientRects().length > 0 && !item.closest('[hidden]'));
+    const focusable = () => [...node.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],summary,[tabindex="0"]')].filter(item => {
+      if (item.tabIndex < 0 || item.getClientRects().length === 0 || item.closest('[hidden]') || getComputedStyle(item).visibility === 'hidden') return false;
+      for (let parent = item.parentElement; parent && parent !== node; parent = parent.parentElement) {
+        if (parent.tagName === 'DETAILS' && !(parent as HTMLDetailsElement).open && !parent.querySelector(':scope > summary')?.contains(item)) return false;
+      }
+      return true;
+    });
     focusable()[0]?.focus();
     const keys = (event: KeyboardEvent) => {
       if (openSheets.at(-1) !== node) return;
@@ -33,12 +44,14 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
       if (origin.current?.isConnected) origin.current.focus();
       else (openSheets.at(-1) ?? document.querySelector<HTMLElement>(".stage h1"))?.focus();
     };
-  }, []);
-  return <div ref={root} className="sheet" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} onClick={onClose}>
+  }, [open, inline]);
+  return <div ref={root} id={id} className={"sheet" + (inline ? " inline" : "")} hidden={!open && !inline}
+    role={inline ? undefined : "dialog"} aria-modal={inline ? undefined : true} aria-label={inline ? undefined : title}
+    tabIndex={inline ? undefined : -1} onClick={inline ? undefined : onClose}>
     <div className="card" onClick={event => event.stopPropagation()}>
       <div className="sheet-heading" {...dismiss}>
         <span className="sheet-handle" aria-hidden="true" />
-        <div className="row"><h2>{title}</h2><button className="btn quiet" type="button" onClick={onClose}>Закрыть</button></div>
+        <div className="row"><h2>{title}</h2><button className="icon-btn quiet" type="button" aria-label={`Закрыть: ${title}`} onClick={onClose}><Icon name="close" /></button></div>
       </div>
       {children}
     </div>

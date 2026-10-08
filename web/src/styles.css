@@ -374,7 +374,7 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .channel-edit input, .channel-create input { flex: 1 1 150px; min-width: 0; }
 .channel-edit .danger { color: var(--bad); }
 .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; z-index: 20; animation: veil .15s linear; }
-.sheet .card { width: min(560px, 100%); margin: 0 auto; border-radius: 16px 16px 0 0; max-height: 80dvh; overflow: auto; animation: dock .22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.sheet > .card { width: min(560px, 100%); margin: 0 auto; border-radius: 16px 16px 0 0; max-height: 80dvh; overflow: auto; animation: dock .22s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .tile { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 12px 14px; font-weight: 500; text-decoration: none; }
 .stage { animation: rise .18s cubic-bezier(0.2, 0.8, 0.2, 1); }
@@ -402,7 +402,7 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 @keyframes veil { from { opacity: 0; } to { opacity: 1; } }
 @keyframes dock { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .stage, .sheet, .sheet .card, .stack.swipe > .lesson { animation: none; }
+  .stage, .sheet, .sheet > .card, .stack.swipe > .lesson { animation: none; }
   .nav-btn, .btn, .icon-btn, .date, .tile, .bottom a, .bottom button { transition: none; }
   .nav-btn:active, .btn:active, .icon-btn:active, .date:active, .tile:active, .bottom a:active, .bottom button:active { transform: none; }
 }

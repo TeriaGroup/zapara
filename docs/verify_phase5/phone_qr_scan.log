@@ -1,5 +1,0 @@
-﻿[2026-09-01 21:30] PC Host: Export vograph-sync-20260901.json 2118b, QR generated http://26.184.88.94:8765/sync#token (632b png)
-[2026-09-01 21:31] Phone Join: Scanned QR from PC screen (Camera), GET http://26.184.88.94:8765/sync -> 200 OK, imported 2 overrides 2 hw 1 friend
-[2026-09-01 21:32] Phone Host: Export vograph-sync-phone-20260901.json 2105b, QR http://192.168.1.15:8765/sync#token
-[2026-09-01 21:33] PC Join: Scanned QR from phone screen, GET http://192.168.1.15:8765/sync -> 200 OK, imported phone's 1 new hw
-Log: data/runs/sync-20260901.log

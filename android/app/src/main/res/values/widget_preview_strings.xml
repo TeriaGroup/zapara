@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="widget_timer_preview_time">41:59</string>
+    <string name="widget_timer_preview_phase">Пара</string>
+    <string name="widget_timer_preview_subject">Математический анализ</string>
+    <string name="widget_timer_preview_room">493 ГК</string>
     <string name="widget_schedule_preview_subject1">Математический анализ</string>
     <string name="widget_schedule_preview_meta1">09:00 – 10:35 · 493 ГК</string>
     <string name="widget_schedule_preview_number1">1</string>

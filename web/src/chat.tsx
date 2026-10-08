@@ -9,6 +9,7 @@ import { emptyChatState } from "./personal-composer";
 import { Avatar } from "./avatar-view";
 import { usePersonalDrafts } from "./personal-composer-context";
 import { startVisibleRefresh } from "./visible-refresh";
+import { PageHead } from "./page-head";
 
 function destination(item: ChatInboxItem): string {
   if (item.kind === "personal") return `/chat/person/${encodeURIComponent(item.conversationId)}`;
@@ -39,6 +40,7 @@ function ChatInboxContent() {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [draftsOnly,setDraftsOnly]=useState(false);
   const [unreadFirst,setUnreadFirst]=useState(false);
+  const [filtersExpanded,setFiltersExpanded]=useState(false);
   const drafts=usePersonalDrafts();
   const [failedSources,setFailedSources]=useState<{id:string;name:string}[]>([]);
   const [retryingSource,setRetryingSource]=useState("");
@@ -54,7 +56,9 @@ function ChatInboxContent() {
     : "";
   const visible = filterChatInbox(rows.map(row=>{const draft=drafts.find(draft=>draft.conversationId===row.conversationId);return draft?{...row,preview:`${draft.editing?"Правка":"Черновик"}: ${draft.text}`} : row;}), query, kind, unreadOnly).filter(row=>!draftsOnly||drafts.some(draft=>draft.conversationId===row.conversationId)).sort((a,b)=>unreadFirst?Number(b.unread>0)-Number(a.unread>0):0);
   const unread = unreadChatTotal(rows);
-  const filtered = !!query.trim() || kind !== "all" || unreadOnly || draftsOnly;
+  const activeFilters = Number(kind !== "all") + Number(unreadOnly) + Number(draftsOnly) + Number(unreadFirst);
+  const filtered = !!query.trim() || activeFilters > 0;
+  function resetFilters(){setQuery("");setKind("all");setUnreadOnly(false);setDraftsOnly(false);setUnreadFirst(false);}
   async function retrySource(id:string){
     if(retryingSource)return;
     const source=id==="social"?"social":id==="memberships"?"memberships":`group:${id}`;
@@ -130,14 +134,15 @@ function ChatInboxContent() {
     return () => { stopped = true; stopRefresh(); };
   }, [accountId, retry]);
 
-  if (!accountId) return <section className="page"><div className="card empty">
-    <h1>Чат</h1><p>Войдите в аккаунт, чтобы переписываться с группой и другими людьми.</p>
+  if (!accountId) return <section className="page inbox"><PageHead title="Чат"/><div className="card empty">
+    <p>Войдите в аккаунт, чтобы переписываться с группой и другими людьми.</p>
     <Link className="btn primary" to="/settings?section=account">Открыть настройки аккаунта</Link>
   </div></section>;
 
   return <section className="page inbox">
-    <div className="page-head"><div><h1>Чат</h1><p className="sub">Сообщения группы и личные беседы в одном месте.</p></div>
-      {unread > 0 && <span className="chip inbox-total" aria-label={`Непрочитанных сообщений: ${unread}`}>Непрочитано: {unread > 99 ? "99+" : unread}</span>}</div>
+    <PageHead title="Чат" text="Сообщения группы и личные беседы в одном месте.">
+      {unread > 0 && <span className="chip inbox-total" aria-label={`Непрочитанных сообщений: ${unread}`}>Непрочитано: {unread > 99 ? "99+" : unread}</span>}
+    </PageHead>
     <div className="row">
       <Link className="btn" to="/chat/people">Код, запросы и люди</Link>
       <button className="btn" type="button" onClick={() => setRetry(value => value + 1)}>Обновить</button>
@@ -148,20 +153,22 @@ function ChatInboxContent() {
       <label className="field">Поиск беседы
         <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Название или последнее сообщение" />
       </label>
-      <div className="row" role="group" aria-label="Источник беседы">
+      <button className="btn inbox-filter-toggle" type="button" aria-expanded={filtersExpanded} aria-controls="inbox-filter-options"
+        onClick={() => setFiltersExpanded(value => !value)}>Фильтры чатов{activeFilters ? ` · ${activeFilters}` : ""}</button>
+      {filtersExpanded && <div id="inbox-filter-options" className="row inbox-filter-options" role="group" aria-label="Источник беседы">
         <button className={unreadOnly ? "btn primary" : "btn"} type="button" aria-pressed={unreadOnly} onClick={() => setUnreadOnly(value => !value)}>Непрочитанные</button>
         <button className={draftsOnly?"btn primary":"btn"} aria-pressed={draftsOnly} onClick={()=>setDraftsOnly(value=>!value)}>Черновики личных чатов</button><button className={unreadFirst?"btn primary":"btn"} aria-pressed={unreadFirst} onClick={()=>setUnreadFirst(value=>!value)}>Непрочитанные сверху</button>
         {inboxKinds.map(option => <button key={option.value} className={kind === option.value ? "btn primary" : "btn"} type="button"
           aria-pressed={kind === option.value} onClick={() => setKind(option.value)}>{option.label}</button>)}
-      </div>
+      </div>}
       <div className="row"><span className="muted">Показано {visible.length} из {rows.length}</span>
-        {filtered && <button className="btn" type="button" onClick={() => { setQuery(""); setKind("all"); setUnreadOnly(false);setDraftsOnly(false); }}>Сбросить</button>}
+        {filtered && <button className="btn" type="button" onClick={resetFilters}>Сбросить</button>}
       </div>
     </div>}
     {emptyChatState(loading, error, rows.length) === "loading" && <p className="muted">Загружаем беседы…</p>}
     {emptyChatState(loading, error, rows.length) === "empty" && <div className="card empty">Пока нет бесед. Вступите в учебную группу или добавьте человека по коду.</div>}
     {rows.length > 0 && visible.length === 0 && <div className="card empty">По запросу бесед нет.
-      <button className="btn" type="button" onClick={() => { setQuery(""); setKind("all"); setUnreadOnly(false);setDraftsOnly(false); }}>Показать все</button>
+      <button className="btn" type="button" onClick={resetFilters}>Показать все</button>
     </div>}
     <div className="people">
       {visible.map(item => <Link className="person" key={`${item.kind}:${item.conversationId}`} to={destination(item)}>
@@ -177,8 +184,10 @@ function ChatInboxContent() {
 
 export function PersonalChatPage() {
   const { conversationId } = useParams();
-  return <section className="page"><div className="page-head"><h1>Личные чаты</h1></div>
-    <Link className="btn" to="/chat">Ко всем беседам</Link>
-    <PeoplePanel initialConversationId={conversationId} />
+  const [personTitle, setPersonTitle] = useState<string | null>(null);
+  return <section className={"page personal-page" + (conversationId ? " personal-deep-link" : "")}>
+    <PageHead title={personTitle || (conversationId ? "Переписка" : "Личные чаты")} />
+    <Link className="btn personal-list-back" to="/chat">Ко всем беседам</Link>
+    <PeoplePanel initialConversationId={conversationId} onTitleChange={setPersonTitle} />
   </section>;
 }

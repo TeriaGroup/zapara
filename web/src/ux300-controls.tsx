@@ -1,5 +1,6 @@
 import { useEffect, useState, type SetStateAction } from "react";
 import { useApp } from "./store";
+import { Icon } from "./icons";
 
 const browseMemory=new Map<string,unknown>();
 /** Session-local list controls only. Account, session and selected group are always part of the key. */
@@ -13,7 +14,7 @@ export function useBrowseValue<T>(key:string,initial:T):[T,(next:SetStateAction<
 export function focusElement(id:string){const node=document.getElementById(id);if(node){node.tabIndex=-1;node.focus({preventScroll:true});node.scrollIntoView({block:"center"});}}
 
 export function SearchField({ value, onChange, label, placeholder }: { value: string; onChange: (value: string) => void; label: string; placeholder?: string }) {
-  return <div className="row"><label className="field" style={{ flex: "1 1 220px" }}>{label}<input type="search" value={value} placeholder={placeholder} onChange={event => onChange(event.target.value)} /></label>{value && <button className="btn quiet" type="button" onClick={() => onChange("")}>Очистить поиск</button>}</div>;
+  return <div className="row search-field-row"><label className="field search-field"><span className="search-field-label">{label}</span><span className="search-field-input"><Icon name="search" size={20} /><input type="search" value={value} placeholder={placeholder || label} onChange={event => onChange(event.target.value)} /></span></label>{value && <button className="icon-btn quiet search-field-clear" type="button" aria-label={`Очистить поиск: ${label}`} onClick={() => onChange("")}><Icon name="close" size={20} /></button>}</div>;
 }
 export function FilterEmpty({ onReset, text = "По выбранным условиям ничего не найдено." }: { onReset: () => void; text?: string }) {
   return <div className="card stack" role="status"><p>{text}</p><button className="btn" type="button" onClick={onReset}>Показать все</button></div>;

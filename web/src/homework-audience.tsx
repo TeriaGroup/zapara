@@ -33,8 +33,10 @@ export function HomeworkRecipients({ communityId, value, onChange, disabled = fa
   const toggle = (key: "roleIds" | "userIds", id: string) => onChange({ ...value, kind: "selected",
     [key]: value[key].includes(id) ? value[key].filter(item => item !== id) : [...value[key], id] });
   return <div className="homework-recipients stack" aria-label="Получатели общей домашки">
-    <div className="row"><label className="check"><input type="radio" name={`homework-audience-${communityId}`} checked={!selected} disabled={disabled} onChange={() => onChange(allHomeworkAudience())}/>Вся учебная группа</label>
-      <label className="check"><input type="radio" name={`homework-audience-${communityId}`} checked={selected} disabled={disabled || !data.supported} onChange={() => onChange({ ...value, kind: "selected" })}/>Подгруппы и участники</label></div>
+    <div className="row homework-audience-mode" role="group" aria-label="Кому отправить">
+      <button className={"chip" + (!selected ? " on" : "")} type="button" aria-pressed={!selected} disabled={disabled} onClick={() => onChange(allHomeworkAudience())}>Вся учебная группа</button>
+      <button className={"chip" + (selected ? " on" : "")} type="button" aria-pressed={selected} disabled={disabled || !data.supported} onClick={() => onChange({ ...value, kind: "selected" })}>Подгруппы и участники</button>
+    </div>
     {data.loading && <p className="muted" role="status">Загружаем состав группы…</p>}
     {data.error && <div role="alert"><p>Состав группы не загрузился. Черновик получателей сохранён.</p><button className="btn" type="button" disabled={disabled} onClick={data.retry}>Повторить загрузку состава</button></div>}
     {!data.loading && !data.error && !data.supported && <p className="muted">Адресная домашка недоступна на этом сервере. Можно отправить всей группе.</p>}
