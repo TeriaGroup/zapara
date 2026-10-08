@@ -22,7 +22,7 @@ android {
         applicationId = "ru.zapara.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 67
+        versionCode = 68
         versionName = "2.1.41"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
