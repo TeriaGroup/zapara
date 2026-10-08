@@ -66,7 +66,7 @@ public class AutoUpdateService : IDisposable
         return best;
     }
 
-    public static string CurrentTagWindows => "windows-v2.1.41";
+    public static string CurrentTagWindows => "windows-v2.1.42";
 
     /// <summary>Download a release asset with progress (0..1, -1 if size unknown).</summary>
     public async Task DownloadAssetAsync(string url, string destPath, IProgress<double>? progress = null, CancellationToken ct = default, string? token = null)
