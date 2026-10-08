@@ -283,8 +283,5 @@ src/Zapara.Web/                  # Статика оболочки и прове
 src/Zapara.Web.Tests/
 android/app/src/main/            # Android: Compose, Room, виджеты, автообновление
 docs/STATUS.md                   # Текущая картина продукта
-docs/API.md                      # Осмотр XML вуза 2026-09-01
-docs/PROGRESS.md                 # Журнал фаз Windows
-docs/PROGRESS_ANDROID.md         # Журнал фаз Android
-docs/dist/                       # Знаки и старые сборки около 1.2, не релиз 2.1.16
+docs/dist/                       # Знаки: иконка и svg
 ```
