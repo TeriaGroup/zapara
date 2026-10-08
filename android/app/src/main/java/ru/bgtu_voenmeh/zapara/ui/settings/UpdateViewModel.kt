@@ -99,7 +99,7 @@ class UpdateViewModel(
             } catch (e: Exception) {
                 val raw = e.message ?: e.javaClass.simpleName
                 val friendly = when {
-                    "ключ" in raw || "401" in raw -> copy.get("upd_err_token")
+                    "github-token" in raw || "401" in raw -> copy.get("upd_err_token")
                     "403" in raw -> copy.get("upd_err_403")
                     e.isConnectionFailure() -> copy.get("load_fail_network")
                     else -> copy.get("upd_log_fail")

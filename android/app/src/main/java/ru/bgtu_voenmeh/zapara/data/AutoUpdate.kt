@@ -125,7 +125,7 @@ object AutoUpdate {
     }
 
     private fun requireToken(repo: String, token: String?) {
-        if (repo == ALPHA_REPO && token.isNullOrBlank()) throw IOException("Нужен ключ GitHub")
+        if (repo == ALPHA_REPO && token.isNullOrBlank()) throw IOException("github-token")
     }
 
     private fun urlExists(url: String, token: String? = null): Boolean {
@@ -155,7 +155,7 @@ object AutoUpdate {
         try {
             getLatestViaFeed(channel, repo, token)?.let { return it }
         } catch (e: IOException) {
-            if (e.message?.contains("ключ") == true) throw e
+            if (e.message?.contains("github-token") == true) throw e
         } catch (_: Exception) {
         }
         return getLatest(channel, repo, token)

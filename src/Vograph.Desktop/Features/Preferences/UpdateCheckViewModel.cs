@@ -136,7 +136,7 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
             if (!operation.IsCurrent) return false;
             CheckedAt = Stamp();
             HtmlUrl = UpdateChannelStore.Read().Page;
-            Fail(ex.Message.Contains("ключ") ? T("updNeedToken") : Friendly(ex, App.Loc));
+            Fail(ex.Message.Contains("github-token") ? T("updNeedToken") : Friendly(ex, App.Loc));
             return false;
         }
         if (!operation.IsCurrent) return false;

@@ -27,7 +27,7 @@ public class AutoUpdateService : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         var repoName = string.IsNullOrWhiteSpace(repo) ? Repo : repo;
         if (repoName == UpdateChannelStore.AlphaRepo && string.IsNullOrWhiteSpace(token))
-            throw new InvalidOperationException("Нужен ключ GitHub");
+            throw new InvalidOperationException("github-token");
         string pfx = channel == "android" ? "android-" : "windows-";
         var url = $"https://api.github.com/repos/{Owner}/{repoName}/releases?per_page=100";
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
