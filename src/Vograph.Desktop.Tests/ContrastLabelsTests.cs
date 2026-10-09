@@ -143,6 +143,6 @@ public class ContrastLabelsTests : UiTest
         var window = new MainWindow();
         Assert.Equal("Военмех — расписание и карты", window.Title);
         Assert.Equal(window.Title, new Vograph.Core.Services.I18nService().T("appTitle"));
-        Assert.Contains(window.GetLogicalDescendantsOrSelf().OfType<TextBlock>(), t => t.Text == "Военмех");
+        Assert.Contains(window.GetLogicalDescendants().OfType<TextBlock>(), t => t.Text == "Военмех");
     }
 }
