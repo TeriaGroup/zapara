@@ -182,6 +182,8 @@ dotnet publish src/Zapara.Server -c Release -o "$env:ZAPARA_PUBLISH_DIR"
 dotnet test src/Zapara.Web.Tests
 ```
 
+Сервер зависит от SixLabors.ImageSharp 3.2+. Эта версия проверяет лицензию Six Labors при сборке: Release без ключа падает с ошибкой, Debug только предупреждает. Проект открытый, поэтому подходит бесплатный Community-ключ: <https://licensing.sixlabors.com/>. Ключ в репозиторий не кладут. Его передают через переменную окружения `SIXLABORS_LICENSE_KEY` (всё содержимое `sixlabors.lic`) или кладут файл `sixlabors.lic` рядом с `src/Zapara.Server.Social/Zapara.Server.Social.csproj` (файл в `.gitignore`).
+
 Гостевой запуск из каталога опубликованной сборки:
 
 ```text

@@ -6,6 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- ImageSharp 3.2+ checks a Six Labors license at build time. The key is never committed: pass it through the
+         SIXLABORS_LICENSE_KEY environment variable or keep sixlabors.lic next to the project (ignored by git). -->
+    <SixLaborsLicenseKey Condition="'$(SixLaborsLicenseKey)' == ''">$(SIXLABORS_LICENSE_KEY)</SixLaborsLicenseKey>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Zapara.Contracts\Zapara.Contracts.csproj" />
@@ -21,7 +24,7 @@
     <ProjectReference Include="..\Zapara.Server.Timetable\Zapara.Server.Timetable.csproj" />
     <ProjectReference Include="..\Zapara.Server\Zapara.Server.csproj" />
     <ProjectReference Include="..\Zapara.Server.Social\Zapara.Server.Social.csproj" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.2.0" />
     <ProjectReference Include="..\Zapara.Ingest\Zapara.Ingest.csproj" />
   </ItemGroup>
   <ItemGroup>

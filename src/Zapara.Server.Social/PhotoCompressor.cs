@@ -14,14 +14,10 @@ public static class PhotoCompressor
 
     public static (byte[] Bytes, int Width, int Height) Compress(ReadOnlySpan<byte> input)
     {
-        if (input.Length < 12) throw new SocialException(400, "invalid_image");
-        if (input.Length > MaxInputBytes) throw new SocialException(413, "payload_too_large");
         try
         {
-            var info = Image.Identify(input);
-            if (info is null || info.Width < 1 || info.Height < 1) throw new SocialException(400, "invalid_image");
-            if ((long)info.Width * info.Height > MaxPixels) throw new SocialException(413, "payload_too_large");
-            using var image = Image.Load(input);
+            UploadImagePolicy.Inspect(input, MaxInputBytes, MaxPixels);
+            using var image = Image.Load(UploadImagePolicy.Options(), input);
             image.Mutate(operation => operation.AutoOrient());
             if (image.Width > MaxEdge || image.Height > MaxEdge)
                 image.Mutate(operation => operation.Resize(new ResizeOptions

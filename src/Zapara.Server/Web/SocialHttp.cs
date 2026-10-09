@@ -21,6 +21,7 @@ internal static partial class SocialHttp
         {
             "quota_user" => "Превышен лимит трафика студента.",
             "quota_group" => "Превышен лимит трафика группы.",
+            "unsupported_image_format" => "Поддерживаются только изображения JPEG, PNG и WebP.",
             _ => exception.Status switch
             {
                 400 or 413 or 415 => "Некорректный запрос",

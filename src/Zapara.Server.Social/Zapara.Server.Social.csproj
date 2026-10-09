@@ -4,11 +4,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- ImageSharp 3.2+ checks a Six Labors license at build time. The key is never committed: pass it through the
+         SIXLABORS_LICENSE_KEY environment variable or keep sixlabors.lic next to the project (ignored by git). -->
+    <SixLaborsLicenseKey Condition="'$(SixLaborsLicenseKey)' == ''">$(SIXLABORS_LICENSE_KEY)</SixLaborsLicenseKey>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Zapara.Contracts\Zapara.Contracts.csproj" />
     <ProjectReference Include="..\Zapara.Server.Accounts\Zapara.Server.Accounts.csproj" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.2.0" />
   </ItemGroup>
 </Project>

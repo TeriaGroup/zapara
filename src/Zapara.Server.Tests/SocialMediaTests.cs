@@ -65,6 +65,39 @@ public sealed class SocialMediaTests
     }
 
     [Fact]
+    public void Photo_accepts_only_jpeg_png_and_webp()
+    {
+        using var image = new Image<Rgba32>(40, 30);
+        foreach (var encode in new Action<Stream>[] { s => image.SaveAsJpeg(s), s => image.SaveAsPng(s), s => image.SaveAsWebp(s) })
+        {
+            using var allowed = new MemoryStream();
+            encode(allowed);
+            var (bytes, width, height) = PhotoCompressor.Compress(allowed.ToArray());
+            Assert.Equal((40, 30), (width, height));
+            Assert.Equal("WEBP", System.Text.Encoding.ASCII.GetString(bytes, 8, 4));
+        }
+        foreach (var encode in new Action<Stream>[] { s => image.SaveAsTiff(s), s => image.SaveAsBmp(s), s => image.SaveAsGif(s),
+                     s => image.SaveAsTga(s), s => image.SaveAsPbm(s), s => image.SaveAsQoi(s) })
+        {
+            using var refused = new MemoryStream();
+            encode(refused);
+            var error = Assert.Throws<SocialException>(() => PhotoCompressor.Compress(refused.ToArray()));
+            Assert.Equal(415, error.Status);
+            Assert.Equal(UploadImagePolicy.UnsupportedFormat, error.Code);
+        }
+    }
+
+    [Fact]
+    public void Photo_dimensions_are_checked_from_the_header_before_decoding()
+    {
+        // Header-only PNGs: no pixel data exists, so a rejection proves the limit ran before the decoder.
+        Assert.Equal(413, Assert.Throws<SocialException>(() => PhotoCompressor.Compress(Png(UploadImagePolicy.MaxDimension + 1, 1))).Status);
+        Assert.Equal(413, Assert.Throws<SocialException>(() => PhotoCompressor.Compress(Png(1, UploadImagePolicy.MaxDimension + 1))).Status);
+        Assert.Equal(413, Assert.Throws<SocialException>(() => PhotoCompressor.Compress(new byte[PhotoCompressor.MaxInputBytes + 1])).Status);
+        Assert.Equal(400, Assert.Throws<SocialException>(() => PhotoCompressor.Compress(new byte[11])).Status);
+    }
+
+    [Fact]
     public void Documents_keep_one_safe_extension()
     {
         Assert.Equal("отчёт.pdf", DocumentPolicy.CleanName(@"C:\temp\отчёт.pdf", 128));
