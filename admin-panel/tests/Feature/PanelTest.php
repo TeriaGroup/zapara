@@ -260,6 +260,39 @@ class PanelTest extends TestCase
         $this->assertTrue($provider->verifyCode($provider->getCurrentCode($admin, $secret), $secret, shouldPreventCodeReuse: true));
     }
 
+    public function test_overlong_totp_inputs_are_refused_and_counted(): void
+    {
+        $admin = $this->makeUser(true);
+        $provider = $this->appProvider();
+        $secret = $provider->generateSecret();
+        $this->assertLessThanOrEqual(ThrottledAppAuthentication::MAX_INPUT_BYTES, strlen($secret));
+        $provider->saveSecret($admin, $secret);
+        $provider->saveRecoveryCodes($admin, ['length-recovery-code']);
+        $long = str_repeat('1', ThrottledAppAuthentication::MAX_INPUT_BYTES + 1);
+
+        // A secret over the limit is never stored and never checked.
+        try {
+            $provider->saveSecret($admin, str_repeat('A', ThrottledAppAuthentication::MAX_INPUT_BYTES + 1));
+            $this->fail('An overlong secret was saved.');
+        } catch (\InvalidArgumentException) {
+            $this->assertSame($secret, $provider->getSecret($admin->fresh()));
+        }
+        $this->assertFalse($provider->verifyCode('000000', str_repeat('A', ThrottledAppAuthentication::MAX_INPUT_BYTES + 1)));
+
+        // Overlong code and recovery code: refused, and they count as wrong attempts.
+        $this->assertFalse($provider->verifyCode($long, $secret, shouldPreventCodeReuse: true));
+        $this->assertFalse($provider->verifyCode($provider->getCurrentCode($admin, $secret).str_repeat(' ', 64), $secret));
+        $this->assertFalse($provider->verifyRecoveryCode('length-recovery-code'.str_repeat('x', 64), $admin));
+        $this->assertCount(1, $admin->fresh()->getAppAuthenticationRecoveryCodes());
+        for ($i = 0; $i < MfaThrottle::FAILURE_LIMIT - 3; $i++) {
+            $this->assertFalse($provider->verifyCode('000000', $secret));
+        }
+        $this->assertFalse($provider->verifyCode($provider->getCurrentCode($admin, $secret), $secret));
+        $this->travel(MfaThrottle::WINDOW_SECONDS + 1)->seconds();
+        $this->assertTrue($provider->verifyCode($provider->getCurrentCode($admin, $secret), $secret));
+        $this->assertTrue($provider->verifyRecoveryCode('length-recovery-code', $admin));
+    }
+
     public function test_admin_without_totp_logs_in_while_enforcement_is_off(): void
     {
         $this->assertFalse(Filament::getPanel('admin')->isMultiFactorAuthenticationRequired());

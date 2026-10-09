@@ -15,6 +15,12 @@ use SensitiveParameter;
  */
 class ThrottledAppAuthentication extends AppAuthentication
 {
+    /**
+     * Longest TOTP secret, TOTP code and recovery code accepted, in bytes. Filament generates 32-character base32
+     * secrets, 6-digit codes and 21-character recovery codes; longer input is refused before any hashing.
+     */
+    public const MAX_INPUT_BYTES = 64;
+
     public function verifyCode(#[SensitiveParameter] string $code, #[SensitiveParameter] ?string $secret = null, bool $shouldPreventCodeReuse = false): bool
     {
         if ($secret === null) {
@@ -22,13 +28,17 @@ class ThrottledAppAuthentication extends AppAuthentication
             $user = Filament::auth()->user();
             $secret = $this->getSecret($user);
         }
+        if (strlen($secret) > self::MAX_INPUT_BYTES) {
+            return false;
+        }
         // During login the admin is not authenticated yet; the secret is unique per admin, so it names the admin.
         $admin = self::adminForSecret($secret);
         $throttle = app(MfaThrottle::class);
         if ($throttle->tooManyFailures($admin)) {
             return false;
         }
-        $valid = parent::verifyCode($code, $secret, $shouldPreventCodeReuse);
+        // An overlong code is a wrong code: refused and counted, without reaching the TOTP check.
+        $valid = strlen($code) <= self::MAX_INPUT_BYTES && parent::verifyCode($code, $secret, $shouldPreventCodeReuse);
         $valid ? $throttle->succeeded($admin) : $throttle->failed($admin);
 
         return $valid;
@@ -44,10 +54,18 @@ class ThrottledAppAuthentication extends AppAuthentication
         if ($throttle->tooManyFailures($admin)) {
             return false;
         }
-        $valid = parent::verifyRecoveryCode($recoveryCode, $user);
+        $valid = strlen($recoveryCode) <= self::MAX_INPUT_BYTES && parent::verifyRecoveryCode($recoveryCode, $user);
         $valid ? $throttle->succeeded($admin) : $throttle->failed($admin);
 
         return $valid;
+    }
+
+    public function saveSecret(HasAppAuthentication $user, #[SensitiveParameter] ?string $secret): void
+    {
+        if ($secret !== null && strlen($secret) > self::MAX_INPUT_BYTES) {
+            throw new \InvalidArgumentException('TOTP secret is longer than '.self::MAX_INPUT_BYTES.' bytes.');
+        }
+        parent::saveSecret($user, $secret);
     }
 
     /** Same management actions as Filament's, with a stable key (used by tests to reach the actions). */
