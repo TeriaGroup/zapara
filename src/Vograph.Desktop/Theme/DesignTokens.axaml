@@ -1,0 +1,85 @@
+<!-- Сгенерировано scripts/design/tokens.mjs из design/tokens.json — не править вручную. -->
+<!-- Ключи Zp.* — общие токены (#11). Прежние Brush.* из Tokens.axaml переводятся на них в задачах эпика G-1. -->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+  <sys:Double x:Key="Zp.Font.Display">26</sys:Double>
+  <sys:Double x:Key="Zp.Font.Title">22</sys:Double>
+  <sys:Double x:Key="Zp.Font.Section">17</sys:Double>
+  <sys:Double x:Key="Zp.Font.Body">15</sys:Double>
+  <sys:Double x:Key="Zp.Font.Secondary">13</sys:Double>
+  <sys:Double x:Key="Zp.Space.1">4</sys:Double>
+  <sys:Double x:Key="Zp.Space.2">8</sys:Double>
+  <sys:Double x:Key="Zp.Space.3">12</sys:Double>
+  <sys:Double x:Key="Zp.Space.4">16</sys:Double>
+  <sys:Double x:Key="Zp.Space.5">24</sys:Double>
+  <sys:Double x:Key="Zp.Space.6">32</sys:Double>
+  <CornerRadius x:Key="Zp.Radius.Control">8</CornerRadius>
+  <CornerRadius x:Key="Zp.Radius.Card">12</CornerRadius>
+  <CornerRadius x:Key="Zp.Radius.Pill">999</CornerRadius>
+  <sys:Double x:Key="Zp.Control.MinHeight">48</sys:Double>
+  <sys:Double x:Key="Zp.Control.DisabledOpacity">0.45</sys:Double>
+
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <SolidColorBrush x:Key="Zp.Surface0" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="Zp.Surface1" Color="#F7F7F7" />
+      <SolidColorBrush x:Key="Zp.Surface2" Color="#F5F5F5" />
+      <SolidColorBrush x:Key="Zp.SurfacePressed" Color="#EFEFEF" />
+      <SolidColorBrush x:Key="Zp.SurfaceChip" Color="#EBEBEB" />
+      <SolidColorBrush x:Key="Zp.TextPrimary" Color="#111111" />
+      <SolidColorBrush x:Key="Zp.TextSecondary" Color="#595959" />
+      <SolidColorBrush x:Key="Zp.BorderControl" Color="#767676" />
+      <SolidColorBrush x:Key="Zp.BorderSubtle" Color="#E5E5E5" />
+      <SolidColorBrush x:Key="Zp.Focus" Color="#595959" />
+      <SolidColorBrush x:Key="Zp.Accent" Color="#111111" />
+      <SolidColorBrush x:Key="Zp.OnAccent" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="Zp.Danger" Color="#C53444" />
+      <SolidColorBrush x:Key="Zp.OnDanger" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="Zp.DangerSoft" Color="#1FC53444" />
+      <SolidColorBrush x:Key="Zp.Warning" Color="#B26A0F" />
+      <SolidColorBrush x:Key="Zp.WarningSoft" Color="#1FB26A0F" />
+      <SolidColorBrush x:Key="Zp.Success" Color="#1F8A56" />
+      <SolidColorBrush x:Key="Zp.Info" Color="#2272C3" />
+      <SolidColorBrush x:Key="Zp.Selection" Color="#0D000000" />
+      <SolidColorBrush x:Key="Zp.Backdrop" Color="#59000000" />
+      <SolidColorBrush x:Key="Zp.Lesson.Lecture" Color="#2B7FD9" />
+      <SolidColorBrush x:Key="Zp.Lesson.Practice" Color="#2FA36B" />
+      <SolidColorBrush x:Key="Zp.Lesson.Lab" Color="#D9861B" />
+      <SolidColorBrush x:Key="Zp.Lesson.Consult" Color="#9B51E0" />
+      <SolidColorBrush x:Key="Zp.Lesson.Credit" Color="#0F766E" />
+      <SolidColorBrush x:Key="Zp.Lesson.Exam" Color="#D7404F" />
+      <SolidColorBrush x:Key="Zp.Lesson.Course" Color="#E0527A" />
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="Dark">
+      <SolidColorBrush x:Key="Zp.Surface0" Color="#0D0D0D" />
+      <SolidColorBrush x:Key="Zp.Surface1" Color="#111111" />
+      <SolidColorBrush x:Key="Zp.Surface2" Color="#171717" />
+      <SolidColorBrush x:Key="Zp.SurfacePressed" Color="#1C1C1C" />
+      <SolidColorBrush x:Key="Zp.SurfaceChip" Color="#222222" />
+      <SolidColorBrush x:Key="Zp.TextPrimary" Color="#F2F2F2" />
+      <SolidColorBrush x:Key="Zp.TextSecondary" Color="#A0A0A0" />
+      <SolidColorBrush x:Key="Zp.BorderControl" Color="#7A7A7A" />
+      <SolidColorBrush x:Key="Zp.BorderSubtle" Color="#262626" />
+      <SolidColorBrush x:Key="Zp.Focus" Color="#A0A0A0" />
+      <SolidColorBrush x:Key="Zp.Accent" Color="#F2F2F2" />
+      <SolidColorBrush x:Key="Zp.OnAccent" Color="#0D0D0D" />
+      <SolidColorBrush x:Key="Zp.Danger" Color="#EF5B6B" />
+      <SolidColorBrush x:Key="Zp.OnDanger" Color="#0D0D0D" />
+      <SolidColorBrush x:Key="Zp.DangerSoft" Color="#24EF5B6B" />
+      <SolidColorBrush x:Key="Zp.Warning" Color="#F2A33C" />
+      <SolidColorBrush x:Key="Zp.WarningSoft" Color="#24F2A33C" />
+      <SolidColorBrush x:Key="Zp.Success" Color="#4CC38A" />
+      <SolidColorBrush x:Key="Zp.Info" Color="#5AA9FF" />
+      <SolidColorBrush x:Key="Zp.Selection" Color="#14FFFFFF" />
+      <SolidColorBrush x:Key="Zp.Backdrop" Color="#8C000000" />
+      <SolidColorBrush x:Key="Zp.Lesson.Lecture" Color="#5AA9FF" />
+      <SolidColorBrush x:Key="Zp.Lesson.Practice" Color="#4CC38A" />
+      <SolidColorBrush x:Key="Zp.Lesson.Lab" Color="#F2A33C" />
+      <SolidColorBrush x:Key="Zp.Lesson.Consult" Color="#C77DFF" />
+      <SolidColorBrush x:Key="Zp.Lesson.Credit" Color="#5EEAD4" />
+      <SolidColorBrush x:Key="Zp.Lesson.Exam" Color="#EF5B6B" />
+      <SolidColorBrush x:Key="Zp.Lesson.Course" Color="#FF7A9C" />
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>
