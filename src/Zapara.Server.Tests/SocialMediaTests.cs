@@ -98,6 +98,88 @@ public sealed class SocialMediaTests
     }
 
     [Fact]
+    public void Animated_png_is_reduced_to_its_first_frame()
+    {
+        using var source = new Image<Rgba32>(24, 16, new Rgba32(255, 0, 0));
+        using var second = new Image<Rgba32>(24, 16, new Rgba32(0, 0, 255));
+        source.Frames.AddFrame(second.Frames.RootFrame);
+        using var apng = new MemoryStream();
+        source.SaveAsPng(apng);
+        var input = apng.ToArray();
+        // Guard: the fixture really is an APNG (acTL chunk, two frames when decoded without limits).
+        Assert.Contains("acTL", System.Text.Encoding.ASCII.GetString(input));
+        using (var unrestricted = Image.Load(input)) Assert.Equal(2, unrestricted.Frames.Count);
+
+        var (bytes, width, height) = PhotoCompressor.Compress(input);
+        Assert.Equal((24, 16), (width, height));
+        using var photo = Image.Load<Rgba32>(bytes);
+        Assert.Equal(1, photo.Frames.Count);
+        Assert.True(photo[12, 8].R > 200 && photo[12, 8].B < 60);
+        using var avatar = Image.Load(AvatarCompressor.Compress(input));
+        Assert.Equal(1, avatar.Frames.Count);
+    }
+
+    [Fact]
+    public void Tiff_named_as_jpeg_is_rejected_by_content()
+    {
+        // The upload name and extension (e.g. "photo.jpg") never reach the decoder: only the bytes are inspected,
+        // so a TIFF sent as .jpg is still refused as an unsupported format.
+        using var image = new Image<Rgba32>(32, 32);
+        using var tiff = new MemoryStream();
+        image.SaveAsTiff(tiff);
+        var renamed = tiff.ToArray();
+        Assert.True(renamed[0..4].SequenceEqual(new byte[] { 0x49, 0x49, 0x2A, 0x00 }) || renamed[0..4].SequenceEqual(new byte[] { 0x4D, 0x4D, 0x00, 0x2A }));
+        foreach (var compress in new Action[] { () => PhotoCompressor.Compress(renamed), () => AvatarCompressor.Compress(renamed) })
+        {
+            var error = Assert.Throws<SocialException>(compress);
+            Assert.Equal(415, error.Status);
+            Assert.Equal(UploadImagePolicy.UnsupportedFormat, error.Code);
+        }
+    }
+
+    [Fact]
+    public async Task Decode_gate_limits_concurrent_decodes_and_reports_busy()
+    {
+        var gate = new DecodeGate(2, TimeSpan.FromMilliseconds(200));
+        using var release = new ManualResetEventSlim();
+        var running = 0;
+        var peak = 0;
+        int Work()
+        {
+            var now = Interlocked.Increment(ref running);
+            InterlockedMax(ref peak, now);
+            release.Wait(TimeSpan.FromSeconds(10));
+            Interlocked.Decrement(ref running);
+            return now;
+        }
+        var first = Task.Run(() => gate.RunAsync(Work), TestContext.Current.CancellationToken);
+        var second = Task.Run(() => gate.RunAsync(Work), TestContext.Current.CancellationToken);
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (gate.Available > 0 && DateTime.UtcNow < deadline) await Task.Delay(10, TestContext.Current.CancellationToken);
+        Assert.Equal(0, gate.Available);
+
+        var busy = await Assert.ThrowsAsync<SocialException>(() => gate.RunAsync(() => 0, TestContext.Current.CancellationToken));
+        Assert.Equal(503, busy.Status);
+        Assert.Equal(DecodeGate.BusyCode, busy.Code);
+
+        release.Set();
+        await Task.WhenAll(first, second);
+        Assert.Equal(2, peak);
+        Assert.Equal(2, gate.Available);
+        Assert.Equal(7, await gate.RunAsync(() => 7, TestContext.Current.CancellationToken));
+        // A failing decode still frees its slot.
+        await Assert.ThrowsAsync<SocialException>(() => gate.RunAsync<int>(() => throw new SocialException(400, "invalid_image"), TestContext.Current.CancellationToken));
+        Assert.Equal(2, gate.Available);
+        Assert.Equal(2, DecodeGate.Shared.MaxConcurrent);
+    }
+
+    private static void InterlockedMax(ref int target, int value)
+    {
+        int seen;
+        while ((seen = Volatile.Read(ref target)) < value && Interlocked.CompareExchange(ref target, value, seen) != seen) { }
+    }
+
+    [Fact]
     public void Documents_keep_one_safe_extension()
     {
         Assert.Equal("отчёт.pdf", DocumentPolicy.CleanName(@"C:\temp\отчёт.pdf", 128));
