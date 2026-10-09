@@ -803,7 +803,7 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
               )}
               <div className="meta">
                 <span className="muted" title={new Date(message.createdAt).toLocaleString("ru-RU")}>{when(message.createdAt)}{message.editedAt && !message.deleted ? " · изменено" : ""}{mine && message.read ? " · прочитано" : ""}</span>
-                {!message.deleted && <button className="tool message-action-toggle" type="button" aria-label="Действия с сообщением" title="Действия с сообщением" onClick={() => { setReactFor(null); setOpenMenu(openMenu === message.messageId ? null : message.messageId); }}><Icon name="more" size={16} /></button>}
+                {!message.deleted && <button className="tool" type="button" aria-label="Действия с сообщением" title="Действия с сообщением" onClick={() => { setReactFor(null); setOpenMenu(openMenu === message.messageId ? null : message.messageId); }}><Icon name="more" size={16} /></button>}
               </div>
               {message.reactions.length > 0 && (
                 <div className="react-chips">
@@ -862,7 +862,7 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
           )}
           <form className="compose personal-compose" onSubmit={event => void submit(event)}>
             {!editing && <button className="btn tool" type="button" aria-label="Прикрепить файл, опрос или карточку пары" title="Прикрепить файл, опрос или карточку пары" onClick={() => setPanel(panel === "attach" ? null : "attach")}><Icon name="paperclip" size={18} /></button>}
-            {!editing && <button className={"btn tool" + (panel === "emoji" ? " primary" : "")} type="button" aria-label="Смайлы" onClick={() => setPanel(panel === "emoji" ? null : "emoji")}><Icon name="smile" size={18} /></button>}
+            {!editing && <button className={"btn tool" + (panel === "emoji" ? " primary" : "")} type="button" aria-label="Смайлы и стикеры" title="Смайлы и стикеры" aria-expanded={panel === "emoji"} onClick={() => setPanel(panel === "emoji" ? null : "emoji")}><Icon name="smile" size={18} /></button>}
             <textarea ref={inputRef} rows={1} value={draft} onChange={event => setDraft(event.target.value)} placeholder={editing ? "Новый текст" : "Сообщение"} aria-label="Сообщение" aria-describedby="personal-compose-help" aria-invalid={!!draft.trim() && !personalTextValid(draft)}
               onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; }}
               onKeyDown={event => { if (sendOnEnter(event.key, event.shiftKey, composingRef.current || event.nativeEvent.isComposing, event.keyCode === 229, desktopKeyboard)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
