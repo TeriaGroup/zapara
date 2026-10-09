@@ -32,7 +32,7 @@ public class ContrastLabelsTests : UiTest
     {
         foreach (var a in v.GetVisualAncestors())
         {
-            var brush = a switch { Border b => b.Background, Panel p => p.Background, Avalonia.Controls.Presenters.ContentPresenter c => c.Background, TemplatedControl t => t.Background, _ => null };
+            var brush = a switch { Border b => b.Background, Panel p => p.Background, Avalonia.Controls.Presenters.ContentPresenter c => c.Background, Avalonia.Controls.Primitives.TemplatedControl t => t.Background, _ => null };
             if (brush is ISolidColorBrush s && s.Color.A == 255 && brush.Opacity >= 1) return s.Color;
         }
         return Colors.White;
