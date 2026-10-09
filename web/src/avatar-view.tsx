@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "./api";
-import { avatarInitials, createAvatarCache, validateAvatarFile, type AvatarKind } from "./avatar";
+import { avatarFallback, avatarInitials, createAvatarCache, validateAvatarFile, type AvatarKind } from "./avatar";
+import { Icon } from "./icons";
 import { prepareAvatarFile } from "./avatar-photo";
 import { useApp } from "./store";
 
@@ -58,8 +59,11 @@ export function Avatar({ kind, id, name, className = "", onPresence }: {
   useEffect(() => watchAvatar(key, () => setRevision(value => value + 1)), [key]);
 
   const url = image.scope === scope && image.key === key ? image.url : null;
-  return <span className={`avatar ${className}`} role="img" aria-label={`Аватар: ${name}`}>
-    {url ? <img src={url} alt="" onError={() => { cache.fail(key); onPresence?.(false); }} /> : <span aria-hidden="true">{avatarInitials(name)}</span>}
+  const fallback = avatarFallback(kind);
+  return <span className={`avatar ${className}${!url && fallback === "icon" ? " avatar-icon" : ""}`} role="img" aria-label={`Аватар: ${name}`}>
+    {url ? <img src={url} alt="" onError={() => { cache.fail(key); onPresence?.(false); }} />
+      : fallback === "icon" ? <span aria-hidden="true" className="avatar-glyph"><Icon name="users" size={20} /></span>
+      : <span aria-hidden="true">{avatarInitials(name)}</span>}
   </span>;
 }
 

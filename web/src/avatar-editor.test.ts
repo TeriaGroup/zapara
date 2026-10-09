@@ -37,7 +37,8 @@ test("avatar editor does not upload after account change during photo preparatio
     react,
     "react/jsx-runtime": { jsx, jsxs: jsx },
     "./api": { saveAvatar: async () => { uploads++; return { revision: "new" }; }, deleteAvatar: async () => {} },
-    "./avatar": { createAvatarCache: () => ({ invalidate() {} }), validateAvatarFile: () => null },
+    "./avatar": { createAvatarCache: () => ({ invalidate() {} }), validateAvatarFile: () => null, avatarFallback: () => "initials", avatarInitials: () => "" },
+    "./icons": { Icon: () => null },
     "./avatar-photo": { prepareAvatarFile: () => prepared },
     "./store": { useApp: () => ({ session }) },
   };
