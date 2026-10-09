@@ -69,6 +69,7 @@ class AccountUserResource extends Resource
                     }),
             ])
             ->defaultSort('created_at', 'desc')
+            ->stackedOnMobile()
             ->recordActions([
                 Action::make('edit')->label('Изменить')->url(fn (AccountUser $record): string => static::getUrl('edit', ['record' => $record])),
                 Action::make('disable')
