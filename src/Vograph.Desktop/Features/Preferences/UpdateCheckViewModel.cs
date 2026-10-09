@@ -46,6 +46,8 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
     public bool CheckedThisSession { get; private set; }
     /// <summary>Release signing key; empty means SHA256SUMS is checked without a signature. Replaced in tests.</summary>
     public string ReleasePublicKeyPem { get; set; } = UpdateVerifier.ReleasePublicKeyPem;
+    /// <summary>The final re-hash before install; replaced in tests to act while it runs.</summary>
+    public Func<string, string> HashArchive { get; set; } = UpdateVerifier.Sha256File;
 
     /// <summary>Where downloaded release zips (and their .attempted / .part companions) live; tests point it at their
     /// own scratch dir via the constructor and read it back to inspect what DownloadAsync/CleanupAsync left behind.</summary>
@@ -280,7 +282,7 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
             var expected = _verifiedSha256;
             var stillValid = expected is not null && await Task.Run(() =>
             {
-                try { return UpdateVerifier.Sha256File(zipPath) == expected; }
+                try { return HashArchive(zipPath) == expected; }
                 catch (IOException) { return false; }
                 catch (UnauthorizedAccessException) { return false; }
             });

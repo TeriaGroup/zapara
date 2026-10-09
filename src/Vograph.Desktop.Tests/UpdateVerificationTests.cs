@@ -197,3 +197,183 @@ public class UpdateVerificationTests
         Assert.Single(installed);
     }
 }
+
+/// <summary>Review follow-ups: the manifest is bound to its release, superseded work never installs, and a
+/// manifest that cannot be fetched right now keeps the archive.</summary>
+public class UpdateVerificationBindingTests
+{
+    private static readonly DateTime Sun6 = new(2026, 9, 6, 15, 0, 0);
+    private const string ZipName = "ZAPARA_windows-v2.2.0_win-x64.zip";
+    private static AutoUpdateService.UpdateInfo Newer => new("windows-v2.2.0", "https://example.test/releases/tag/windows-v2.2.0",
+        "https://example.test/download/" + ZipName, "2026-09-05T10:00:00Z", ZipName,
+        "https://example.test/download/SHA256SUMS", "https://example.test/download/SHA256SUMS.sig");
+
+    private static (UpdateCheckViewModel Vm, FakeUpdateSource Source, List<string> Installed) Make(TestDb db)
+    {
+        var source = new FakeUpdateSource { Latest = Newer };
+        db.Services.UpdateSource = source;
+        var installed = new List<string>();
+        var vm = new UpdateCheckViewModel(db.Services, () => Sun6, Path.Combine(db.Dir, "updates"))
+        {
+            Installer = installed.Add,
+            Delay = _ => Task.CompletedTask
+        };
+        return (vm, source, installed);
+    }
+
+    private static string Hex(byte[] data) => Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
+
+    private static UpdateVerifier.Result VerifyWith(string manifest, string? key = null, byte[]? sig = null,
+        string? releaseTag = "windows-v2.2.0", string? currentTag = "windows-v2.1.42")
+    {
+        var dir = Directory.CreateTempSubdirectory("upd-bind-");
+        try
+        {
+            var path = Path.Combine(dir.FullName, ZipName);
+            File.WriteAllBytes(path, FakeUpdateSource.ReleaseZip());
+            return UpdateVerifier.Verify(path, ZipName, Encoding.UTF8.GetBytes(manifest), sig, key ?? "", releaseTag, currentTag);
+        }
+        finally { dir.Delete(true); }
+    }
+
+    private static string Line => $"{Hex(FakeUpdateSource.ReleaseZip())}  {ZipName}\n";
+
+    [Fact]
+    public void Version_header_is_parsed_and_files_without_it_still_parse()
+    {
+        var withHeader = UpdateVerifier.ParseManifest("version: 2.2.0\n" + Line);
+        Assert.Equal("2.2.0", withHeader.Version);
+        Assert.Single(withHeader.Checksums);
+        var plain = UpdateVerifier.ParseManifest(Line);
+        Assert.Null(plain.Version);
+        Assert.Single(plain.Checksums);
+        Assert.True(UpdateVerifier.ParseManifest("version: 2.2.0\nversion: 2.1.0\n" + Line).Conflicting);
+        Assert.Equal(AutoUpdateService.ParseVersion("2.2.0"), AutoUpdateService.ParseVersion("windows-v2.2.0"));
+        Assert.Equal(AutoUpdateService.ParseVersion("v2.2.0.0"), AutoUpdateService.ParseVersion("2.2"));
+    }
+
+    [Fact]
+    public void Manifest_version_must_match_the_release_and_not_be_older_than_the_app()
+    {
+        Assert.True(VerifyWith("version: 2.2.0\n" + Line).Ok);
+        Assert.True(VerifyWith(Line).Ok); // unsigned, legacy format: checksum only
+        Assert.Equal(UpdateVerifier.Outcome.WrongVersion, VerifyWith("version: 2.1.50\n" + Line).Outcome);
+        Assert.Equal(UpdateVerifier.Outcome.Downgrade, VerifyWith("version: 2.1.0\n" + Line, releaseTag: "v2.1.0").Outcome);
+        Assert.Equal(UpdateVerifier.Outcome.NoVersion, VerifyWith("version: banana\n" + Line).Outcome);
+    }
+
+    [Fact]
+    public void Signed_manifest_must_name_its_version()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var pem = key.ExportSubjectPublicKeyInfoPem();
+        byte[] Sign(string m) => key.SignData(Encoding.UTF8.GetBytes(m), HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence);
+        Assert.Equal(UpdateVerifier.Outcome.NoVersion, VerifyWith(Line, pem, Sign(Line)).Outcome);
+        var bound = "version: 2.2.0\n" + Line;
+        Assert.True(VerifyWith(bound, pem, Sign(bound)).Ok);
+    }
+
+    [Fact]
+    public async Task Signed_manifest_of_an_older_release_is_rejected_under_a_newer_tag()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var db = TestDb.Create();
+        var (vm, source, installed) = Make(db);
+        vm.ReleasePublicKeyPem = key.ExportSubjectPublicKeyInfoPem();
+        var old = "version: 2.1.30\n" + FakeUpdateSource.ChecksumsFor(Newer with { Tag = "x" }, FakeUpdateSource.ReleaseZip());
+        source.Checksums = old;
+        source.Signature = key.SignData(Encoding.UTF8.GetBytes(old), HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence);
+        Assert.True(await vm.CheckAsync());
+
+        await vm.InstallCommand.ExecuteAsync(null);
+
+        Assert.Empty(installed);
+        Assert.Equal(UpdateState.Failed, vm.State);
+        Assert.Equal(db.Services.Loc.T("updBadVersion"), vm.StatusText);
+        Assert.Empty(Directory.GetFiles(vm.UpdatesDir, "*.zip"));
+    }
+
+    [Fact]
+    public async Task Work_superseded_while_hashing_never_reaches_the_installer()
+    {
+        using var db = TestDb.Create();
+        var (vm, _, installed) = Make(db);
+        Assert.True(await vm.CheckAsync());
+        Assert.True(await vm.DownloadAsync());
+        vm.HashArchive = path =>
+        {
+            db.Services.Work.Suspend(); // e.g. a profile switch while the archive is being hashed
+            return UpdateVerifier.Sha256File(path);
+        };
+
+        await vm.InstallAsync();
+
+        Assert.Empty(installed);
+        Assert.False(File.Exists(Path.Combine(vm.UpdatesDir, ZipName + ".attempted")));
+    }
+
+    [Fact]
+    public async Task Transient_manifest_failure_keeps_the_cached_archive_and_a_retry_installs_it()
+    {
+        using var db = TestDb.Create();
+        var (vm, source, installed) = Make(db);
+        Directory.CreateDirectory(vm.UpdatesDir);
+        var path = Path.Combine(vm.UpdatesDir, ZipName);
+        File.WriteAllBytes(path, FakeUpdateSource.ReleaseZip());
+        source.ChecksumsFailure = new HttpRequestException("503", null, System.Net.HttpStatusCode.ServiceUnavailable);
+        Assert.True(await vm.CheckAsync());
+
+        Assert.False(await vm.DownloadAsync());
+        Assert.Equal(UpdateState.Failed, vm.State);
+        Assert.Equal(db.Services.Loc.T("updVerifyRetry"), vm.StatusText);
+        Assert.True(File.Exists(path));
+
+        source.ChecksumsFailure = new TaskCanceledException("timeout"); // HttpClient timeout, not our cancellation
+        Assert.True(await vm.CheckAsync());
+        Assert.False(await vm.DownloadAsync());
+        Assert.True(File.Exists(path));
+
+        source.ChecksumsFailure = null;
+        Assert.True(await vm.CheckAsync());
+        await vm.InstallCommand.ExecuteAsync(null);
+        Assert.Empty(source.Downloads);
+        Assert.Single(installed);
+    }
+
+    [Fact]
+    public async Task Transient_failure_after_a_fresh_download_keeps_it_for_the_next_attempt()
+    {
+        using var db = TestDb.Create();
+        var (vm, source, _) = Make(db);
+        source.ChecksumsFailure = new HttpRequestException("network down");
+        Assert.True(await vm.CheckAsync());
+
+        Assert.False(await vm.DownloadAsync());
+        Assert.Equal(db.Services.Loc.T("updVerifyRetry"), vm.StatusText);
+        Assert.True(File.Exists(Path.Combine(vm.UpdatesDir, ZipName)));
+
+        source.ChecksumsFailure = null;
+        Assert.True(await vm.CheckAsync());
+        Assert.True(await vm.DownloadAsync());
+        Assert.Single(source.Downloads);
+    }
+
+    [Fact]
+    public async Task Missing_manifest_404_deletes_the_cached_archive()
+    {
+        using var db = TestDb.Create();
+        var (vm, source, installed) = Make(db);
+        Directory.CreateDirectory(vm.UpdatesDir);
+        var path = Path.Combine(vm.UpdatesDir, ZipName);
+        File.WriteAllBytes(path, FakeUpdateSource.ReleaseZip());
+        source.ChecksumsFailure = new HttpRequestException("404", null, System.Net.HttpStatusCode.NotFound);
+        Assert.True(await vm.CheckAsync());
+
+        await vm.InstallCommand.ExecuteAsync(null);
+
+        Assert.Empty(installed);
+        Assert.Empty(source.Downloads);
+        Assert.Equal(db.Services.Loc.T("updNoChecksum"), vm.StatusText);
+        Assert.False(File.Exists(path));
+    }
+}
