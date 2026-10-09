@@ -8,6 +8,7 @@ use App\Support\ByteSize;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\TextInput\Actions\CopyAction;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\ToggleButtons;
 use Filament\Notifications\Notification;
@@ -24,6 +25,8 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Exceptions\Halt;
+use Illuminate\Support\Js;
+use Livewire\Attributes\Locked;
 
 class SystemSettings extends Page
 {
@@ -59,8 +62,11 @@ class SystemSettings extends Page
     /**
      * Квоты в байтах на момент открытия формы: без правок сохраняются как были.
      *
+     * Только сервер: клиент не может подменить исходные байты (#[Locked]).
+     *
      * @var array<string, int>
      */
+    #[Locked]
     public array $quotaBytes = [];
 
     public function mount(): void
@@ -69,10 +75,11 @@ class SystemSettings extends Page
             'registration_enabled' => OperatorSettings::registrationEnabled() ?? false,
             'vk_enabled' => OperatorSettings::read('vk_enabled') === 'true',
             'vk_client_id' => OperatorSettings::read('vk_client_id') ?? '',
-            'vk_callback' => OperatorSettings::read('vk_callback') ?? '',
+            // Пустое поле на новой установке заполняется единственным допустимым адресом.
+            'vk_callback' => OperatorSettings::read('vk_callback') ?: self::VK_CALLBACK,
             'yandex_enabled' => OperatorSettings::read('yandex_enabled') === 'true',
             'yandex_client_id' => OperatorSettings::read('yandex_client_id') ?? '',
-            'yandex_callback' => OperatorSettings::read('yandex_callback') ?? '',
+            'yandex_callback' => OperatorSettings::read('yandex_callback') ?: self::YANDEX_CALLBACK,
             's3_endpoint' => OperatorSettings::read('s3_endpoint') ?? '',
             's3_region' => OperatorSettings::read('s3_region') ?? '',
             's3_bucket' => OperatorSettings::read('s3_bucket') ?? '',
@@ -150,7 +157,12 @@ class SystemSettings extends Page
             TextInput::make($prefix.'_callback')
                 ->label('Адрес возврата')
                 ->placeholder($callback)
-                ->copyable(copyMessage: 'Адрес скопирован')
+                // Копируется фиксированный адрес, а не то, что сейчас введено в поле.
+                ->suffixAction(
+                    CopyAction::make($prefix.'_callback_copy')
+                        ->label('Скопировать адрес')
+                        ->alpineClickHandler('window.navigator.clipboard.writeText('.Js::from($callback).'); $tooltip('.Js::from('Адрес скопирован').', { theme: $store.theme, timeout: 2000 })'),
+                )
                 ->helperText('Укажите этот адрес в настройках приложения '.$name.': '.$callback),
         ];
     }
@@ -195,6 +207,8 @@ class SystemSettings extends Page
                 ->numeric()
                 ->required()
                 ->minValue(0)
+                // Байты хранятся в int64: больше этого число в выбранной единице не переводится.
+                ->maxValue(fn (Get $get): int => ByteSize::maxAmount($get($field.'_unit')))
                 ->step('any')
                 ->inputMode('decimal')
                 ->helperText($help),
@@ -245,7 +259,7 @@ class SystemSettings extends Page
         $callback = trim((string) ($state[$key] ?? ''));
         if ($callback !== $expected) {
             Notification::make()->title($name.': адрес возврата должен быть '.$expected)->danger()->send();
-            throw new Halt();
+            throw new Halt;
         }
         $state[$key] = $callback;
     }

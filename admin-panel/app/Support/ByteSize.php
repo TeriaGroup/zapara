@@ -42,7 +42,23 @@ final class ByteSize
             return $original;
         }
 
-        return (int) round((float) $amount * self::UNITS[$unit]);
+        $bytes = round((float) $amount * self::UNITS[$unit]);
+        // Форма ограничивает число через maxValue; здесь — на случай обхода: без переполнения int64.
+        if (! is_finite($bytes) || $bytes < 0 || $bytes > self::maxAmount($unit) * self::UNITS[$unit]) {
+            throw new \InvalidArgumentException('Размер вне допустимого диапазона.');
+        }
+
+        return (int) $bytes;
+    }
+
+    /**
+     * Наибольшее целое число в единице, которое ещё помещается в int64 после перевода в байты.
+     */
+    public static function maxAmount(mixed $unit): int
+    {
+        $unit = is_string($unit) && isset(self::UNITS[$unit]) ? $unit : 'mb';
+
+        return intdiv(PHP_INT_MAX, self::UNITS[$unit]);
     }
 
     /**

@@ -12,6 +12,5 @@ return [
     ],
     'empty' => [
         'heading' => 'Ничего не найдено',
-        'description' => '',
     ],
 ];

@@ -76,6 +76,8 @@ class AccountUserResource extends Resource
                     }),
             ])
             ->defaultSort('created_at', 'desc')
+            // Без «Создать … для старта»: кнопка создания уже есть в заголовке страницы.
+            ->emptyStateDescription(null)
             ->recordActions([
                 Action::make('edit')->label('Изменить')->url(fn (AccountUser $record): string => static::getUrl('edit', ['record' => $record])),
                 Action::make('disable')
