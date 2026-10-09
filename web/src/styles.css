@@ -695,3 +695,30 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
 
 .quote-target { outline: 2px solid currentColor; outline-offset: 3px; }
 .compose textarea { flex: 1; min-width: 0; resize: vertical; max-height: 12rem; }
+
+/* #13: карточка пары — вся область нажатия; текущая тонирована с прогрессом; прошедшие приглушены (контраст ≥4.5:1). */
+.lesson.lesson-tappable { position: relative; }
+.lesson-open { position: absolute; inset: 0; z-index: 0; width: 100%; border: 0; border-radius: inherit; background: transparent; padding: 0; margin: 0; cursor: pointer; }
+.lesson-open:hover { background: var(--selection); }
+.lesson-open:focus-visible { outline: 2px solid var(--line-strong); outline-offset: 2px; }
+.lesson-tappable > :not(.lesson-open) { position: relative; z-index: 1; pointer-events: none; }
+.lesson-tappable button:not(.lesson-open), .lesson-tappable a, .lesson-tappable .chip[aria-label], .lesson-tappable .lesson-inline { pointer-events: auto; }
+.lesson-status { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.lesson-current, .day-hero .lesson.lesson-current { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); border-radius: 12px; box-shadow: inset 3px 0 0 var(--accent); padding: 12px 12px 12px 15px; }
+.lesson-current .lesson-status { color: var(--text); }
+.lesson-past .subject, .lesson-past .time, .lesson-past .muted { color: var(--muted); }
+.lesson-past .subject { font-weight: 500; }
+.lesson-inline { position: absolute !important; top: 8px; right: 8px; }
+.lesson-progress { height: 4px; border-radius: 2px; background: var(--chip); overflow: hidden; }
+.lesson-progress > i { display: block; height: 100%; background: var(--accent); }
+.day-hero:has(.lesson-current) { background: transparent; border: 0; padding: 0; }
+.day-hero .lesson.lesson-current { border-radius: 12px; padding: 12px 12px 12px 15px; }
+.day-row, .day-hero { padding-block: 2px; }
+.today-next-summary { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); font-weight: 600; }
+.free-window { border: 1px dashed var(--line-strong); }
+.lesson-sheet-meta { margin: 0; color: var(--muted); }
+.lesson-sheet-actions { display: grid; gap: 8px; }
+.lesson-sheet-actions > .btn { justify-content: flex-start; }
+.week-lesson { display: grid; gap: 2px; width: 100%; text-align: left; background: transparent; border: 0; border-radius: 8px; padding: 8px; margin: 0 -8px; color: inherit; font: inherit; cursor: pointer; }
+.week-lesson:hover { background: var(--selection); }
+.week-lesson:focus-visible { outline: 2px solid var(--line-strong); }

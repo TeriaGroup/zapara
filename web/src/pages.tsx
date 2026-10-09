@@ -55,7 +55,7 @@ import { selectedTopicAuthority } from "./topic-authority";
 import { topicAction } from "./topic-policy";
 import { useCommunityTimetable } from "./use-community-timetable";
 import { useApp } from "./store";
-import { absoluteDate, freeGaps, gapsBeforeLessons, heroLesson, isUpcomingLesson, localDay, minuteClock, nearbyHomework, personalHomeworkDue } from "./planner";
+import { absoluteDate, heroLesson, isUpcomingLesson, localDay, nearbyHomework, personalHomeworkDue } from "./planner";
 import { homeworkCard, lessonFrom, placeCard } from "./cards";
 import { BallotBoardView } from "./ballots";
 import { GroupTopics, TopicMark } from "./topics";
@@ -65,6 +65,8 @@ import { GroupAdmin, titlesOf } from "./group-admin";
 import { reconcileGroupHomeChat } from "./group-home-refresh";
 import { Avatar, AvatarEditor } from "./avatar-view";
 import { ShareMenu } from "./share";
+import { LessonSheet } from "./lesson-sheet";
+import { dayTimeline, lessonStatuses, nextSummary, type LessonStatus } from "./day-timeline";
 import { Icon } from "./icons";
 import { MapViewer } from "./map-viewer";
 import { CampusRouteView } from "./campus-route-view";
@@ -105,9 +107,14 @@ function TypeChip({ type }: { type: string }) {
   return <span className={"type" + (kind ? " " + kind : "")}><i />{kind ? typeLabels[kind] : type}</span>;
 }
 
-function LessonCard({ lesson, marks = [], presence = [], share, subgroup, upcoming = false, onPick }: { lesson: Lesson; marks?: FriendMark[]; presence?: FriendPresence[]; share?: string | null; subgroup?: ReturnType<typeof subgroupMark>; upcoming?: boolean; onPick?: (streamId: string, optionId: string) => void }) {
+function LessonCard({ lesson, marks = [], presence = [], subgroup, upcoming = false, onPick, status, onOpen, inline }: { lesson: Lesson; marks?: FriendMark[]; presence?: FriendPresence[]; subgroup?: ReturnType<typeof subgroupMark>; upcoming?: boolean; onPick?: (streamId: string, optionId: string) => void; status?: LessonStatus; onOpen?: () => void; inline?: import("react").ReactNode }) {
+  const room = lesson.roomRaw || lesson.classroomRaw || "";
   return (
-    <article className="lesson">
+    <article className={"lesson" + (status ? ` lesson-${status.phase}` : "") + (onOpen ? " lesson-tappable" : "")}>
+      {/* Вся карточка — область нажатия: открывает лист пары (#13). Вложенные кнопки лежат поверх. */}
+      {onOpen && <button className="lesson-open" type="button" onClick={onOpen}
+        aria-label={`${lesson.timeStart}–${lesson.timeEnd}, ${lesson.subjectRaw}${room ? `, ${room}` : ""}${status?.caption ? `, ${status.caption}` : ""}. Действия пары`} />}
+      {status?.caption && status.phase !== "past" && <p className="lesson-status">{status.caption}</p>}
       <div className="lesson-top">
         <span className="time" aria-label={upcoming ? `Предстоит: ${lesson.timeStart} – ${lesson.timeEnd}` : undefined}>{lesson.timeStart} – {lesson.timeEnd}</span>
         {lesson.typeRaw?.trim() && <TypeChip type={lesson.typeRaw.trim()} />}
@@ -135,16 +142,29 @@ function LessonCard({ lesson, marks = [], presence = [], share, subgroup, upcomi
             aria-label={`${item.groupName}${item.members ? " (" + item.members + ")" : ""}: ${lessonPresenceCaption(item.hasLesson)}`}>
             {item.groupName}{item.members ? ` · ${item.members}` : ""}<span className="friend-presence"><Icon name="calendar" size={13} />{lessonPresenceCaption(item.hasLesson)}</span>
           </span>)}
-          <ShareMenu card={share ?? null} />
         </div>
       </div>
+      {inline && <div className="lesson-inline">{inline}</div>}
+      {status?.phase === "current" && <div className="lesson-progress" role="progressbar" aria-label="Прошло от пары" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(status.progress * 100)}><i style={{ width: `${Math.round(status.progress * 100)}%` }} /></div>}
     </article>
   );
 }
 
+function lessonContext(lesson: Lesson, date: Date) { return new URLSearchParams({ subject: lesson.subjectRaw, date: isoDay(date), time: lesson.timeStart }); }
+function lessonMapHref(lesson: Lesson, date: Date) {
+  const where = `${lesson.roomRaw || ""} ${lesson.classroomRaw || ""}`;
+  return !lesson.roomRaw && !lesson.classroomRaw || /дистанц|онлайн/i.test(where) ? null : `/maps?${lessonContext(lesson, date)}&${lessonMapContext(lesson)}`;
+}
+function LessonSheetFor({ open, groupName, onClose, dayHref }: { open: { lesson: Lesson; date: Date } | null; groupName: string; onClose: () => void; dayHref?: (lesson: Lesson, date: Date) => string }) {
+  if (!open) return null;
+  const { lesson, date } = open;
+  return <LessonSheet lesson={lesson} dateLabel={date.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "short" })}
+    mapHref={lessonMapHref(lesson, date)} homeworkHref={`/homework?${lessonContext(lesson, date)}`} chatHref={`/group?${lessonContext(lesson, date)}`}
+    dayHref={dayHref?.(lesson, date)} share={lessonFrom(groupName, date, lesson)} onClose={onClose} />;
+}
+
 export function SchedulePage() {
   const app = useApp();
-  const navigate = useNavigate();
   const location = useLocation();
   const online = useConnectivity();
   useEffect(() => { const day = localDay(new URLSearchParams(location.search).get("date") || ""); if (day) app.setDate(day); }, [location.search]);
@@ -164,7 +184,10 @@ export function SchedulePage() {
   useEffect(() => { const timer = window.setInterval(() => setNow(new Date()), 30_000); return () => window.clearInterval(timer); }, []);
   useEffect(() => { setUndo(null); }, [isoDay(app.date)]);
   useEffect(() => { if (calendar) calendarRef.current?.focus(); }, [calendar]);
-  const gaps = gapsBeforeLessons(lessons);
+  const statuses = lessonStatuses(lessons, app.date, now);
+  const summary = nextSummary(lessons, app.date, now);
+  const [sheet, setSheet] = useState<{ lesson: Lesson; date: Date } | null>(null);
+  useEffect(() => { setSheet(null); }, [isoDay(app.date), app.groupId]);
   const overlaps = overlapPairs(lessons);
   const [exactTargetNote,setExactTargetNote]=useState('');
   useEffect(()=>{const query=new URLSearchParams(location.search),key=query.get('rawTarget');setExactTargetNote('');if(!key||app.timetableLoading||query.get('date')!==isoDay(app.date))return;const at=query.get('group')===app.groupId&&app.timetableAvailable?exactLessonIndex(lessons,key):-1;if(at<0){setExactTargetNote('Пара изменилась или недоступна в текущей группе и подгруппе. Похожая пара не выбрана.');return;}const node=document.getElementById(`schedule-lesson-${at}`);node?.focus();node?.scrollIntoView({block:'center'});},[location.search,isoDay(app.date),app.groupId,app.subgroups,app.lessons,app.timetableLoading,app.timetableAvailable]);
@@ -218,29 +241,20 @@ export function SchedulePage() {
   const swipe = useSwipe(() => app.setDate(addDays(app.date, 1)), () => app.setDate(addDays(app.date, -1)), isoDay(app.date));
   const dateReveal = useDateReveal(isoDay(app.date));
   const nextDate = app.timetableAvailable && period ? Array.from({ length: 21 }, (_, i) => addDays(app.date, i + 1)).find(date => lessonsOn(shown, date, period.start, period.weekCount, app.invert).length > 0) : null;
-  function actions(lesson: Lesson, compact = false) {
-    const context = new URLSearchParams({ subject: lesson.subjectRaw, date: isoDay(app.date), time: lesson.timeStart });
-    return <div className={"row lesson-actions" + (compact ? " study-compact-actions" : "")}>
-      <button className="btn primary" type="button" disabled={!lesson.roomRaw && !lesson.classroomRaw || /дистанц|онлайн/i.test(`${lesson.roomRaw||""} ${lesson.classroomRaw||""}`)} title={!lesson.roomRaw && !lesson.classroomRaw ? "Аудитория не указана" : undefined}
-        onClick={() => navigate(`/maps?${context}&${lessonMapContext(lesson)}`)}><Icon name="map" size={16} />{compact ? "Карта" : "Открыть карту"}</button>
-      <Link className="btn" to={`/homework?${context}`}><Icon name="homework" size={16} />Домашка</Link>
-      <Link className="btn quiet" to={`/group?${context}`}><Icon name="chat" size={16} />Обсудить</Link>
-    </div>;
-  }
   function renderLesson(lesson: Lesson, lessonIndex: number) {
-    const gap = gaps.get(lessonIndex);
     const upcoming = isUpcomingLesson(lesson, app.date, now);
     const intersectionInput = period ? { mineLessons: shown, friends: friendSchedules, period, invert: app.invert, strictness: app.intersectionStrictness, now } : null;
     const marks = intersectionInput ? marksForLesson(lesson, app.date, intersectionInput, app.showAbsentFriends) : [];
     const presence = upcoming && intersectionInput ? presenceForLesson(lesson, app.date, intersectionInput) : [];
-    return <Fragment key={`${lesson.index}:${lesson.timeStart}:${lesson.subjectRaw}:${lesson.teacherRaw}:${lessonIndex}`}>
-      {gap && <p className="free-gap"><span>Перерыв {minuteClock(gap.start)}–{minuteClock(gap.end)}</span><span className="free-gap-duration">{Math.floor(gap.duration / 60) ? `${Math.floor(gap.duration / 60)} ч ` : ""}{gap.duration % 60 ? `${gap.duration % 60} мин` : ""}</span></p>}
-      <div className={hero === lesson ? "day-hero" : "day-row"} id={`schedule-lesson-${lessonIndex}`} tabIndex={-1}>
-        {hero === lesson && <p className="muted">{isoDay(app.date) > isoDay(now) ? "Первая пара" : lesson.timeStart <= minuteClock(now.getHours() * 60 + now.getMinutes()) ? "Сейчас" : "Следующая пара"}</p>}
-        <LessonCard lesson={lesson} marks={marks} presence={presence} upcoming={upcoming} share={lessonFrom(groupName, app.date, lesson)} subgroup={subgroupMark(lesson, lessons, index, choices)} onPick={app.pickSubgroup} />
-        {actions(lesson, hero !== lesson)}
-      </div>
-    </Fragment>;
+    const status = statuses[lessonIndex];
+    const map = lessonMapHref(lesson, app.date);
+    // Одно встроенное действие — «Карта», и только у текущей/следующей пары; остальное в листе пары.
+    const inline = map && (status.phase === "current" || status.phase === "next")
+      ? <Link className="icon-btn quiet lesson-inline-map" to={map} aria-label={`Карта: ${lesson.roomRaw || lesson.classroomRaw}`} title="Карта"><Icon name="map" size={18} /></Link> : null;
+    return <div className={hero === lesson ? "day-hero" : "day-row"} id={`schedule-lesson-${lessonIndex}`} tabIndex={-1} key={`${lesson.index}:${lesson.timeStart}:${lesson.subjectRaw}:${lesson.teacherRaw}:${lessonIndex}`}>
+      <LessonCard lesson={lesson} marks={marks} presence={presence} upcoming={upcoming} subgroup={subgroupMark(lesson, lessons, index, choices)} onPick={app.pickSubgroup}
+        status={status} inline={inline} onOpen={() => setSheet({ lesson, date: app.date })} />
+    </div>;
   }
   return <section className="page day-page">
     {exactTargetNote&&<p className="banner" role="status">{exactTargetNote}</p>}
@@ -281,12 +295,13 @@ export function SchedulePage() {
         {ownTimetable && <p className="schedule-cache muted">{!online ? "Нет сети · сохранённая копия" : app.timetableFailed ? "Не удалось обновить · сохранённая копия" : "Обновлено"} {new Date(ownTimetable.meta.fetchedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
         {!app.timetableAvailable ? <div className="card empty"><p>{app.timetableLoading ? "Загружаем расписание" : app.groupId ? "Расписание не загружено. Нет сохранённой копии." : "Выберите учебную группу"}</p>{app.groupId ? <button className="btn" type="button" disabled={app.timetableLoading || app.loading} onClick={app.refresh}>{app.timetableLoading || app.loading ? "Загружаем…" : "Повторить загрузку"}</button> : <Link className="btn" to="/settings?section=study">Выбрать группу</Link>}</div>
           : outsidePeriod ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>Дата вне учебного периода</h2><p>Начало сохранённого учебного периода: {period && localDay(period.start.slice(0,10)) ? absoluteDate(localDay(period.start.slice(0,10))!) : "неизвестно"}</p></div> : lessons.length === 0 ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>В этот день пар нет</h2><p>{nextDate ? `Ближайшие занятия — ${absoluteDate(nextDate)}.` : "В ближайшие три недели в сохранённом расписании занятий нет."}</p>{nextDate && <button className="btn" type="button" onClick={() => app.setDate(nextDate)}>Открыть {nextDate.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}<Icon name="right" /></button>}</div>
-          : <>{isoDay(app.date) === isoDay(now) && !hero && !app.timetableFailed && overlaps.length === 0 && !exactTargetNote && <p className="study-day-ended" role="status">Пары закончились</p>}{lessons.map(renderLesson)}</>}
+          : <>{isoDay(app.date) === isoDay(now) && !hero && !app.timetableFailed && overlaps.length === 0 && !exactTargetNote && <p className="study-day-ended" role="status">Пары закончились</p>}{summary && <p className="today-next-summary" role="status"><Icon name="calendar" size={16} />{summary}</p>}{dayTimeline(lessons).map(item => item.kind === "lesson" ? renderLesson(item.lesson, item.index)
+            : <p className={"free-gap free-" + item.kind} key={`gap-${item.start}`}><span>{item.label}</span><span className="free-gap-duration">{item.durationLabel}</span></p>)}</>}
         {app.timetableAvailable && <div className="study-day-tools">
           <button className="btn quiet study-day-tools-trigger" type="button" aria-expanded={dayToolsOpen} onClick={() => setDayToolsOpen(value => !value)}><Icon name="menu" size={18} />Действия дня</button>
           <div className={"study-day-tools-body" + (dayToolsOpen ? " open" : "")}>
             <div className="study-day-actions-list">
-              {!outsidePeriod && <p className="muted">Учебное время: {dayLoad(lessons).minutes} мин · Окна между парами: {dayLoad(lessons).gaps} мин</p>}
+              {!outsidePeriod && <p className="muted">Учебное время: {dayLoad(lessons).minutes} мин · Перерывы и окна: {dayLoad(lessons).gaps} мин</p>}
               <div className="study-day-action-links">
                 {hero && <button className="btn quiet" type="button" onClick={() => focusElement(`schedule-lesson-${lessons.indexOf(hero)}`)}>К ближайшей паре</button>}
                 <button className="btn quiet" type="button" onClick={() => focusElement("schedule-deadlines")}>К срокам домашки</button>
@@ -308,6 +323,7 @@ export function SchedulePage() {
       </aside>
     </div>
     </>}
+    <LessonSheetFor open={sheet} groupName={groupName} onClose={() => setSheet(null)} />
   </section>;
 }
 
@@ -325,6 +341,8 @@ export function WeekPage() {
   const visibleDays = weekDays.map(day=>({...day, matches:day.lessons.filter(lesson=>noteSearch(query,lesson.subjectRaw,lesson.teacherRaw||"",lesson.roomRaw||"",lesson.classroomRaw||"",lesson.typeRaw||""))})).filter(day=>(!hideEmpty || !day.known || day.lessons.length>0) && (!query.trim() || day.matches.length>0));
   const swipe = useSwipe(() => app.setDate(addDays(app.date, 7)), () => app.setDate(addDays(app.date, -7)), isoDay(app.date));
   const dateReveal = useDateReveal(isoDay(monday));
+  const [sheet, setSheet] = useState<{ lesson: Lesson; date: Date } | null>(null);
+  const weekGroupName = app.catalog?.groups.find(group => group.id === app.groupId)?.name || "";
   return (
     <section className="page">
       <Head title="Неделя" text={period?.title}>
@@ -354,15 +372,20 @@ export function WeekPage() {
             <h2 className="week-day-head">{dayTitle(date)} <span className="muted">{date.getDate()}</span>{app.timetableAvailable && <span className="chip">{known?`Пар: ${dayLessons.length}`:"Нет данных"}</span>}</h2>
             {isoDay(date) === isoDay(new Date()) && <span className="chip">Сегодня</span>}
             <button className="btn" type="button" onClick={() => { app.setDate(date); navigate(`/schedule?date=${isoDay(date)}`); }}>Открыть день</button>
-            {known&&<p className="muted">Учебное время: {dayLoad(originalLessons).minutes} мин</p>}{freeGaps(originalLessons).map(gap=><p className="free-gap" key={gap.start}>Окно {minuteClock(gap.start)}–{minuteClock(gap.end)} · {gap.duration} мин</p>)}<div className="stack">
-              {dayLessons.map(lesson => (
-                <div key={lesson.timeStart + lesson.subjectRaw + (lesson.teacherRaw || "")}><b>{lesson.timeStart}–{lesson.timeEnd}</b> {lesson.subjectRaw}<div className="muted">{roomLabel(lesson)} · {lesson.teacherRaw}</div><div className="row"><Link className="btn quiet" to={`/schedule?date=${isoDay(date)}&time=${lesson.timeStart}&subject=${encodeURIComponent(lesson.subjectRaw)}`} onClick={()=>app.setDate(date)}>Открыть пару</Link><Link className="btn quiet" to={`/homework?date=${isoDay(date)}&subject=${encodeURIComponent(lesson.subjectRaw)}`}>Домашка</Link>{lesson.classroomRaw && <Link className="btn quiet" to={`/maps?date=${isoDay(date)}&time=${lesson.timeStart}&subject=${encodeURIComponent(lesson.subjectRaw)}&${lessonMapContext(lesson)}`}>Карта</Link>}</div></div>
-              ))}
+            {known&&<p className="muted">Учебное время: {dayLoad(originalLessons).minutes} мин</p>}<div className="stack">
+              {/* Пары, перерывы и окна — одним списком по времени; при поиске показываем только найденные пары (#13). */}
+              {(query.trim() ? dayLessons.map((lesson, index) => ({ kind: "lesson" as const, lesson, index })) : dayTimeline(dayLessons)).map(item => item.kind === "lesson"
+                ? <button className="week-lesson" type="button" key={item.lesson.timeStart + item.lesson.subjectRaw + (item.lesson.teacherRaw || "")} onClick={() => setSheet({ lesson: item.lesson, date })}
+                    aria-label={`${item.lesson.timeStart}–${item.lesson.timeEnd}, ${item.lesson.subjectRaw}. Действия пары`}>
+                    <b>{item.lesson.timeStart}–{item.lesson.timeEnd}</b> {item.lesson.subjectRaw}<span className="muted">{[roomLabel(item.lesson), item.lesson.teacherRaw].filter(Boolean).join(" · ")}</span></button>
+                : <p className={"free-gap free-" + item.kind} key={`gap-${item.start}`}><span>{item.label}</span><span className="free-gap-duration">{item.durationLabel}</span></p>)}
               {app.timetableAvailable && period && dayLessons.length === 0 && <span className="muted">{known ? "Нет пар" : "Дата вне известного периода"}</span>}
             </div>
           </article>
         ))}
       </div>
+      <LessonSheetFor open={sheet} groupName={weekGroupName} onClose={() => setSheet(null)}
+        dayHref={(lesson, date) => `/schedule?date=${isoDay(date)}&time=${lesson.timeStart}&subject=${encodeURIComponent(lesson.subjectRaw)}`} />
     </section>
   );
 }
@@ -2350,7 +2373,7 @@ function SettingsContent() {
             <button type="button" className={app.theme === "dark" ? "active" : ""} aria-pressed={app.theme === "dark"} onClick={() => app.setTheme("dark")}><Icon name="moon" size={16} />Тёмная</button>
           </div>
         </article>}
-        {section === "appearance" && <article className="card stack"><label className="switch-row"><span>Анимации</span><input type="checkbox" role="switch" checked={app.animations} onChange={event => app.setAnimations(event.target.checked)} /></label><p className="muted">Системное уменьшение движения имеет приоритет.</p><div className="lesson"><span className="muted">08:30–10:05 · Лекция · 312</span><h2>Предпросмотр карточки пары</h2><div className="row"><button className="btn primary" type="button">Открыть карту</button><button className="btn" type="button">Домашка</button></div></div></article>}
+        {section === "appearance" && <article className="card stack"><label className="switch-row"><span>Анимации</span><input type="checkbox" role="switch" checked={app.animations} onChange={event => app.setAnimations(event.target.checked)} /></label><p className="muted">Системное уменьшение движения имеет приоритет.</p><div className="lesson"><span className="muted">08:30–10:05 · Лекция · 312</span><h2>Предпросмотр карточки пары</h2><div className="row"><button className="btn primary" type="button">Карта</button><button className="btn" type="button">Домашка</button></div></div></article>}
         {section === "account" && app.session?.authenticated && <><article className="card stack"><h2>Фото профиля</h2><AvatarEditor kind="user" id={app.session.user!.userId} name={app.session.user!.displayName || app.session.user!.username} /></article><AccountDetails /></>}
         {section === "account" && <article className="card">
           <h2>Аккаунт</h2>
