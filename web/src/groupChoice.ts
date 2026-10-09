@@ -15,7 +15,8 @@ export function homeworkCommunityId(
   return rows.find(row => row.role && row.groupId === selected)?.communityId ?? "";
 }
 
-export type CommunityFollow = { communityId: string; failed: boolean };
+/** pending: true — старое сообщество сброшено, поиск нового ещё идёт; это ещё не «сообщества нет» (#32). */
+export type CommunityFollow = { communityId: string; failed: boolean; pending?: boolean };
 export type GroupFace = { communityId: string; error: string };
 
 type Membership = { communityId: string; role: string | null };
@@ -26,9 +27,9 @@ export async function followGroupCommunity(
   load: (groupId: string) => Promise<Membership[]>,
   publish: (state: CommunityFollow) => void,
 ): Promise<void> {
-  publish({ communityId: "", failed: false });
+  publish({ communityId: "", failed: false, pending: true });
   const selected = input.groupId.trim();
-  if (!input.authenticated || !selected) return;
+  if (!input.authenticated || !selected) { publish({ communityId: "", failed: false }); return; }
   try {
     const list = await load(selected);
     publish({

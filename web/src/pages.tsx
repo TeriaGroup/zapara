@@ -1040,6 +1040,8 @@ export function HomeworkPage() {
       state => {
         if (!current()) return;
         setCommunityId(state.communityId);
+        // Пока ищем сообщество группы, общие задания ещё не загружены — не показываем «Заданий пока нет» (#32).
+        if (state.pending) return;
         if (!state.communityId) { setCopies([]); setCopiesScopeTag(JSON.stringify([!!app.session?.authenticated, app.session?.user?.userId, app.groupId, ""])); setCopiesLoading(false); }
         if (state.failed) { setCopiesFailed(true); setCopiesLoading(false); }
         else if (state.communityId) void api.groupHomework(state.communityId)
@@ -1233,6 +1235,7 @@ export function HomeworkPage() {
       </Sheet>}
       {copiesFailed && <div className="card empty"><p>Общая домашка не загрузилась. Проверьте сеть и попробуйте ещё раз.</p><button className="btn primary" type="button" onClick={() => setCopiesRetry(value => value + 1)}>Повторить</button></div>}
       {targetMissing && browsing.shown > 0 && <div className="banner row" role="status"><span>Задание по ссылке не найдено в текущей группе или недоступно вашему аккаунту.</span><button className="btn quiet" type="button" onClick={() => { const query = new URLSearchParams(location.search); query.delete("id"); query.delete("sharedId"); navigate({ pathname: location.pathname, search: query.toString() }, { replace: true }); }}>Показать список</button></div>}
+      {!emptyKind && browsing.shown === 0 && !copiesFailed && (!homeworkReady || !copiesReady || copiesLoading) && <p className="muted homework-loading" role="status">Загружаем задания…</p>}
       {emptyKind && <div className="card empty"><p>{emptyKind === "missing" ? "Задание по ссылке не найдено в текущей группе или недоступно вашему аккаунту." : emptyKind === "empty" ? app.groupId ? "Заданий пока нет." : "Учебная группа не выбрана. Выберите группу, чтобы видеть пары и сроки." : "По выбранным фильтрам заданий нет."}</p>{emptyKind === "empty" ? app.groupId ? <button className="btn" type="button" onClick={() => setEditorOpen(true)}>Добавить первое</button> : <Link className="btn" to="/settings?section=study">Выбрать группу</Link> : <button className="btn" type="button" onClick={() => { resetFilters(); const query = new URLSearchParams(location.search); query.delete("subject"); query.delete("subjectKey"); query.delete("id"); query.delete("sharedId"); navigate({ pathname: location.pathname, search: query.toString() }); }}>Сбросить фильтры</button>}</div>}
       {visibleCopies.length > 0 && <h2 className="section-list-title">Общая домашка <span className="chip">{visibleCopies.length}</span></h2>}
       <div className="stack" style={{ marginTop: safeCopies.length > 0 ? 12 : 0 }}>
