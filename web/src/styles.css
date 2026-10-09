@@ -41,8 +41,7 @@ a { color: inherit; }
 .nav-btn { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 8px 12px; border: 0; background: transparent; border-radius: 8px; color: var(--muted); min-height: 48px; text-decoration: none; }
 .nav-btn.active, .nav-btn:hover { background: var(--selection); color: var(--text); }
 .nav-btn.active { border-left: 2px solid var(--line-strong); padding-left: 10px; font-weight: 600; }
-.side-foot { flex: none; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
-.side-user { padding: 0 12px; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-foot { margin-top: auto; padding-top: 16px; font-size: 12px; color: var(--muted); }
 .main { flex: 1; min-width: 0; }
 .topbar { display: none; }
 .page { max-width: 1280px; margin: 0 auto; padding: 24px 24px 48px; }
@@ -576,7 +575,7 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
 @media (min-width: 1300px) { .day-space { grid-template-columns: minmax(0, 720px) 320px; justify-content: center; } }
 @media (max-width: 900px) { .day-space { grid-template-columns: minmax(0, 1fr); } .day-context { position: static; } .day-strip .date:nth-child(n+6) { display: none; } .day-strip { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .quick-days { width: 100%; } .quick-days button { flex: 1; padding-inline: 8px; } .day-strip small { font-size: 12px; } .template-grid { grid-template-columns: minmax(0, 1fr); } .access-line { flex-wrap: wrap; padding-block: 8px; } .access-line select { width: 100%; } .sheet .tiles { grid-template-columns: 1fr; } }
-.settings-space { display: grid; grid-template-columns: 260px minmax(0, 720px); gap: 24px; justify-content: start; align-items: start; }
+.settings-space { display: grid; grid-template-columns: 260px minmax(0, 720px); gap: 24px; justify-content: center; align-items: start; }
 .settings-rail { position: sticky; top: 24px; }
 .settings-rail .active { background: var(--selection); border-radius: 8px; }
 .settings-space .settings-detail { margin: 0; }
@@ -680,6 +679,10 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
 .settings-page .settings-rail .settings-overview-row { padding: 12px 8px; }
 .settings-page .settings-rail .settings-overview-row:last-child { border-bottom: 0; }
 .settings-page .notification-time { padding-top: 16px; border-top: 1px solid var(--line); }
+/* #27: «Настройки» закреплены под прокручиваемым списком разделов; настройки с тем же левым краем, что другие страницы. */
+.sidebar .side-foot { flex: none; padding-top: 8px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.sidebar .side-user { padding: 0 12px; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-page .settings-space { justify-content: start; }
 .settings-page .notification-time .field { max-width: 240px; }
 .settings-page .notification-preview { background: var(--chip); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
 .notification-preview > .muted { font-size: 12px; }
