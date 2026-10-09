@@ -197,9 +197,32 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     [ObservableProperty] private string _title = "";
     [ObservableProperty] private string _subtitle = "";
     /// <summary>#12: заголовок страницы — «Расписание», как на web; относительный день («Сегодня») — в начале этой строки.</summary>
-    public string DayLine => string.IsNullOrWhiteSpace(Subtitle) ? Title : Subtitle.StartsWith(Title, StringComparison.OrdinalIgnoreCase) ? Subtitle : $"{Title} · {Subtitle}";
+    public string DayLine
+    {
+        get
+        {
+            // #19 (D-05): число пар — в строке DayMeta, здесь только день, чётность и номер недели.
+            var parts = Subtitle.Split(" · ", StringSplitOptions.RemoveEmptyEntries)
+                .Where(part => Lessons.Count == 0 || part != App.Loc.Plural(Lessons.Count, "lessons1", "lessons2", "lessons5")).ToList();
+            if (parts.Count == 0) return Title;
+            if (!parts[0].StartsWith(Title, StringComparison.OrdinalIgnoreCase)) parts.Insert(0, Title);
+            return string.Join(" · ", parts);
+        }
+    }
     partial void OnTitleChanged(string value) => OnPropertyChanged(nameof(DayLine));
     partial void OnSubtitleChanged(string value) => OnPropertyChanged(nameof(DayLine));
+
+    /// <summary>#19 (D-05): одна строка метаданных дня — «4 пары · 14:55–21:40 · перерывы 25 мин».</summary>
+    [ObservableProperty] private string _dayMeta = "";
+    public bool HasDayMeta => DayMeta.Length > 0;
+    partial void OnDayMetaChanged(string value) => OnPropertyChanged(nameof(HasDayMeta));
+
+    internal static string DurationText(int minutes) => minutes < 60 ? $"{minutes} мин"
+        : minutes % 60 == 0 ? $"{minutes / 60} ч" : $"{minutes / 60} ч {minutes % 60} мин";
+
+    /// <summary>#19 (D-05): текущая или следующая пара — сама карточка под заголовком, а не кнопки-якоря.</summary>
+    public LessonRowViewModel? HeroLesson => Lessons.FirstOrDefault(row => row.IsNext);
+    public bool HasHeroLesson => HeroLesson is { } hero && Lessons.IndexOf(hero) > 0; // первая пара и так сразу под заголовком
     [ObservableProperty] private bool _isEmpty;
     [ObservableProperty] private bool _isUnavailable;
     public IAsyncRelayCommand ChangeGroupCommand => _shell.OpenGroupPickerCommand;
@@ -344,6 +367,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         Overlaps.Clear(); foreach (var conflict in ScheduleOverlap.Find(Lessons.ToArray())) Overlaps.Add(conflict);
         OnPropertyChanged(nameof(HasOverlaps));
         OnPropertyChanged(nameof(DayPriorityCaption));OnPropertyChanged(nameof(HasPriority));OnPropertyChanged(nameof(ShowDayState));
+        OnPropertyChanged(nameof(HeroLesson));OnPropertyChanged(nameof(HasHeroLesson));
         NextStudyDate = model.NextStudyDate;
         SourceSummary = model.SourceSummary;
         IsEmpty = model.Rows.Count == 0;
@@ -361,6 +385,14 @@ public sealed partial class ScheduleViewModel : ViewModelBase
             .Where(time => time is not null).Select(time => time!.Value).ToArray();
         WorkloadSpan = starts.Length == 0 || ends.Length == 0 ? "" :
             $"С {starts.Min():hh\\:mm} до {ends.Max():hh\\:mm} · перерывы: {(model.Breaks?.Sum(gap => gap.Minutes) ?? 0)} мин";
+        var breakMinutes = model.Breaks?.Sum(gap => gap.Minutes) ?? 0;
+        DayMeta = starts.Length == 0 || ends.Length == 0 ? "" : string.Join(" · ", new[]
+        {
+            App.Loc.Plural(model.Rows.Count, "lessons1", "lessons2", "lessons5"),
+            $"{starts.Min():hh\\:mm}–{ends.Max():hh\\:mm}",
+            breakMinutes > 0 ? $"перерывы {DurationText(breakMinutes)}" : "",
+        }.Where(part => part.Length > 0));
+        OnPropertyChanged(nameof(DayLine));
         RebuildDayRows();
         DayShown?.Invoke(direction);
     }

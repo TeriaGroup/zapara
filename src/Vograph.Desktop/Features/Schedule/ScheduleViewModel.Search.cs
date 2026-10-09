@@ -7,6 +7,16 @@ public sealed partial class ScheduleViewModel
 {
     [ObservableProperty] private string lessonSearch = "";
     public bool HasLessonSearch => LessonSearch.Trim().Length > 0;
+    /// <summary>#19 (D-03): поле поиска дня открывается кнопкой в тулбаре.</summary>
+    [ObservableProperty] private bool lessonSearchOpen;
+    public bool ShowLessonSearch => LessonSearchOpen || HasLessonSearch;
+    partial void OnLessonSearchOpenChanged(bool value) => OnPropertyChanged(nameof(ShowLessonSearch));
+    [RelayCommand] private void ToggleLessonSearch()
+    {
+        if (ShowLessonSearch) { LessonSearch = ""; LessonSearchOpen = false; }
+        else LessonSearchOpen = true;
+        OnPropertyChanged(nameof(ShowLessonSearch));
+    }
     public IReadOnlyList<LessonRowViewModel> MatchingLessons
     {
         get
@@ -24,7 +34,7 @@ public sealed partial class ScheduleViewModel
     public bool NoLessonMatches => HasLessonSearch && Lessons.Count > 0 && MatchingLessons.Count == 0;
     partial void OnLessonSearchChanged(string value) => RefreshLessonSearch();
     internal void RefreshLessonSearch()
-    { OnPropertyChanged(nameof(HasLessonSearch)); OnPropertyChanged(nameof(MatchingLessons)); OnPropertyChanged(nameof(NoLessonMatches)); }
+    { OnPropertyChanged(nameof(HasLessonSearch)); OnPropertyChanged(nameof(ShowLessonSearch)); OnPropertyChanged(nameof(MatchingLessons)); OnPropertyChanged(nameof(NoLessonMatches)); }
     [RelayCommand] private void ClearLessonSearch() => LessonSearch = "";
     [RelayCommand] private void OpenSearchResult(LessonRowViewModel? row)
     {
