@@ -680,7 +680,7 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
 .settings-page .settings-rail .settings-overview-row:last-child { border-bottom: 0; }
 .settings-page .notification-time { padding-top: 16px; border-top: 1px solid var(--line); }
 /* #27: «Настройки» закреплены под прокручиваемым списком разделов; настройки с тем же левым краем, что другие страницы. */
-.sidebar .side-foot { flex: none; padding-top: 8px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.sidebar .side-foot { flex: none; font-size: inherit; padding-top: 8px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
 .sidebar .side-user { padding: 0 12px; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings-page .settings-space { justify-content: start; }
 .settings-page .notification-time .field { max-width: 240px; }
