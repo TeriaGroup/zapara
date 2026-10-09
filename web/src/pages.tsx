@@ -69,10 +69,11 @@ import { Icon } from "./icons";
 import { MapViewer } from "./map-viewer";
 import { CampusRouteView } from "./campus-route-view";
 import type { CampusNode, CampusRoute } from "./campus-routing";
+import { resolveCampusClassroom } from "./campus-routing";
 import type { PublicMapAsset } from "./types";
 import { pairCount } from "./map-viewport";
 import { calendarWeek, currentSummarySegment, summaryDayDate, roomPlan, RequestEpoch } from "./ux-navigation";
-import { buildingName, findRoom, nextLessonCaption } from "./map-labels";
+import { autoZoomNextRoom, buildingName, findRoom, loadCampusGraph, nextLessonCaption } from "./map-labels";
 import { friendGroupChoice } from "./friend-group-choice";
 import { overlapPairs, nextTeacherDay, matchesWords, settingsAliases } from "./next-workflows";
 import { PersonalHomeworkEditor, type PersonalEditDraft } from "./personal-homework-editor";
@@ -640,6 +641,17 @@ export function MapsPage() {
   // #28: без аудитории в адресе карты открываются на плане следующей пары (один раз, дальше — выбор пользователя).
   const autoPlan = useRef(false);
   useEffect(() => { if (!autoPlan.current && automatic && !mapContext.get("room")) { autoPlan.current = true; setPlan(automatic); } }, [automatic?.id]);
+  // #28: автозум к аудитории следующей пары — за флагом autoZoomNextRoom (по умолчанию выключен).
+  const autoMarked = useRef(false);
+  useEffect(() => {
+    if (!autoZoomNextRoom || autoMarked.current || !graphAsset || !automatic || !upcoming || mapContext.get("room")) return;
+    const abort = new AbortController();
+    loadCampusGraph(graphAsset, abort.signal).then(graph => {
+      const node = resolveCampusClassroom(graph, upcoming.classroomRaw || upcoming.roomRaw || "");
+      if (node) { autoMarked.current = true; revealPlace(node); }
+    }).catch(() => { /* без графа остаётся план этажа по ширине */ });
+    return () => abort.abort();
+  }, [graphAsset?.url, automatic?.id, plans.length]);
   const [roomQuery, setRoomQuery] = useState("");
   const [roomNote, setRoomNote] = useState("");
   function searchRoom(event: FormEvent) { event.preventDefault(); const found = findRoom(plans, roomQuery); setRoomNote(found.message); if (found.plan) { setPlan(found.plan); showMap(); } }

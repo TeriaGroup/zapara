@@ -1,4 +1,5 @@
-import type { Lesson, MapPlan } from "./types.ts";
+import type { Lesson, MapPlan, PublicMapAsset } from "./types.ts";
+import { parseCampusGraph, type CampusGraph } from "./campus-routing.ts";
 import { roomPlan } from "./ux-navigation.ts";
 
 /** #28: расшифровка кодов корпусов — рядом с переключателем и в подсказках. */
@@ -47,4 +48,27 @@ export function findRoom(plans: MapPlan[], query: string): RoomSearch {
   return plan
     ? { plan, message: `Аудитория ${value.replace(/^(ГК|УЛК|ВЦ)\s*/i, "")}: ${buildingName(plan.building)}, ${plan.floor} этаж` }
     : { plan: null, message: `Плана для «${value}» нет. Проверьте номер — корпус и этаж можно выбрать вручную.` };
+}
+
+/**
+ * #28, решение по умолчанию: автозум к аудитории следующей пары выключен.
+ * Включение грузит граф кампуса (тот же файл, что у «Маршрута») и ставит метку на аудиторию —
+ * MapViewer сам приближает план к метке. Выключено, пока не решено, нужен ли лишний запрос графа при каждом открытии карт.
+ */
+export const autoZoomNextRoom = false;
+
+/** Граф кампуса с теми же проверками, что в «Маршруте»: свой origin, размер и SHA-256. */
+export async function loadCampusGraph(asset: PublicMapAsset, signal?: AbortSignal, fetcher: typeof fetch = fetch, origin = globalThis.location?.origin || "http://localhost"): Promise<CampusGraph> {
+  const url = new URL(asset.url, origin);
+  if (url.origin !== origin || !url.pathname.startsWith("/api/v1/maps/assets/")) throw Error("origin");
+  const response = await fetcher(url, { credentials: "same-origin", signal });
+  if (!response.ok) throw Error("graph");
+  const data = await response.arrayBuffer();
+  if (data.byteLength !== asset.bytes) throw Error("size");
+  if (globalThis.crypto?.subtle && asset.sha256) {
+    const digest = await crypto.subtle.digest("SHA-256", data);
+    const actual = [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, "0")).join("");
+    if (actual.toLowerCase() !== asset.sha256.toLowerCase()) throw Error("hash");
+  }
+  return parseCampusGraph(JSON.parse(new TextDecoder().decode(data)));
 }

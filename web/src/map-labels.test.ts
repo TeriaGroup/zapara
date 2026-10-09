@@ -36,3 +36,18 @@ test("room search opens the matching building and floor", () => {
   assert.match(findRoom(plans, "Фесто").message, /номер аудитории/);
   assert.equal(findRoom(plans, "999").plan, null);
 });
+
+test("auto-zoom is off by default; the graph loader keeps the route checks", async () => {
+  const { autoZoomNextRoom, loadCampusGraph } = await import("./map-labels.ts");
+  const { readFileSync } = await import("node:fs");
+  const { createHash } = await import("node:crypto");
+  assert.equal(autoZoomNextRoom, false);
+  const bytes = readFileSync(new URL("../../src/Vograph.Desktop/Assets/maps/campus-graph.json", import.meta.url));
+  const asset = { url: "/api/v1/maps/assets/graph.json", bytes: bytes.byteLength, sha256: createHash("sha256").update(bytes).digest("hex") };
+  const fetcher = (async () => new Response(bytes)) as unknown as typeof fetch;
+  const graph = await loadCampusGraph(asset, undefined, fetcher, "http://localhost");
+  assert.ok(graph.nodes.some(node => node.kind === "room"));
+  await assert.rejects(loadCampusGraph({ ...asset, bytes: 1 }, undefined, fetcher, "http://localhost"), /size/);
+  await assert.rejects(loadCampusGraph({ ...asset, sha256: "00" }, undefined, fetcher, "http://localhost"), /hash/);
+  await assert.rejects(loadCampusGraph({ ...asset, url: "https://evil.example/api/v1/maps/assets/g" }, undefined, fetcher, "http://localhost"), /origin/);
+});
