@@ -10,4 +10,9 @@ final class MoscowTime
     {
         return Carbon::parse($value)->timezone('Europe/Moscow')->locale('ru')->isoFormat('D MMMM, HH:mm').' МСК';
     }
+
+    public static function time(string $value): string
+    {
+        return Carbon::parse($value)->timezone('Europe/Moscow')->format('H:i').' МСК';
+    }
 }
