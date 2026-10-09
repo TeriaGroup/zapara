@@ -65,6 +65,8 @@ import { GroupAdmin, titlesOf } from "./group-admin";
 import { reconcileGroupHomeChat } from "./group-home-refresh";
 import { Avatar, AvatarEditor } from "./avatar-view";
 import { ShareMenu } from "./share";
+import { HomeworkActions } from "./homework-actions";
+import { homeworkSummary, taskCount } from "./homework-counts";
 import { Icon } from "./icons";
 import { MapViewer } from "./map-viewer";
 import { CampusRouteView } from "./campus-route-view";
@@ -925,6 +927,7 @@ export function HomeworkPage() {
   const { subject, text, share, nth, sharedDeadline, deadlineMode, audience, topicId, pending } = draft;
   const setNote = (value: string) => { controller.note = value; refresh(); };
   const [editorOpen, setEditorOpen] = useState(false);
+  const [selecting, setSelecting] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -1173,7 +1176,7 @@ export function HomeworkPage() {
   }
   return (
     <section className="page homework-page">
-      <Head title="Домашка" text="Личное задание хранится на устройстве. Общая публикация содержит текст и срок; вложения остаются личными." mobileActions>
+      <Head title="Домашка" mobileActions>
         <button className="btn primary homework-add-action" type="button" disabled={busy} aria-expanded={editorOpen} aria-controls="homework-editor"
           aria-label={controller.dirty ? "Продолжить задание" : "Добавить задание"} onClick={() => setEditorOpen(true)}>
           <Icon name="plus" size={18} /><span>{controller.dirty ? "Продолжить задание" : "Добавить задание"}</span>
@@ -1187,8 +1190,7 @@ export function HomeworkPage() {
       <label className="field homework-search">Поиск по предмету и заданию<input type="search" value={browse.query} onChange={event => setBrowse({ query: event.target.value })} placeholder="Предмет или текст задания" /></label>
       <details className="card stack homework-advanced"><summary>Дополнительные фильтры</summary><div className="row"><label className="field">Источник<select value={sourceFilter} onChange={event=>setSourceFilter(event.target.value as typeof sourceFilter)}><option value="all">Личные и общие</option><option value="personal">Личные</option><option value="shared">Общие</option></select></label><label className="field">Срок<select value={deadlineFilter} onChange={event=>setDeadlineFilter(event.target.value as typeof deadlineFilter)}><option value="all">Все сроки</option><option value="overdue">Просроченные</option><option value="today">Сегодня</option><option value="soon">В ближайшие дни</option><option value="later">Позже</option><option value="none">Без даты</option></select></label><label className="field">Порядок<select value={order} onChange={event=>setOrder(event.target.value as typeof order)}><option value="original">Исходный</option><option value="subject">По предмету</option><option value="deadline">По сроку</option></select></label></div><label className="check"><input type="checkbox" checked={fileFilter} onChange={event=>setFileFilter(event.target.checked)}/>Только личные задания с файлами</label><button className="btn quiet" type="button" onClick={resetFilters}>Сбросить все условия</button></details>
       <div className="row homework-summary" aria-label="Сводка заданий">
-        <span className="chip">Открыто: {app.homework.filter(item => !item.done).length + safeCopies.filter(item => !item.completed).length}</span>
-        <span className="chip">Выполнено: {app.homework.filter(item => item.done).length + safeCopies.filter(item => item.completed).length}</span>
+        {app.homework.length + safeCopies.length > 0 && <span>{homeworkSummary([...app.homework.map(item => ({ subject: item.subject, done: item.done })), ...safeCopies.map(item => ({ subject: item.title, done: item.completed }))])}</span>}
         <span className="muted">Показано: {browsing.shown}{copiesFailed ? " · общая домашка недоступна" : copiesLoading || !copiesReady ? " · общая домашка загружается" : ` из ${browsing.total}`}</span>
       </div>
       <div className="row homework-filters" role="group" aria-label="Показать задания"><button type="button" className={"chip" + (browse.status === "active" ? " on" : "")} aria-pressed={browse.status === "active"} onClick={() => setBrowse({ status: "active" })}>Активные</button><button type="button" className={"chip" + (browse.status === "done" ? " on" : "")} aria-pressed={browse.status === "done"} onClick={() => setBrowse({ status: "done" })}>Готово у меня</button><button type="button" className={"chip" + (browse.status === "all" ? " on" : "")} aria-pressed={browse.status === "all"} onClick={() => setBrowse({ status: "all" })}>Все</button>{(chosenSubject || exactSubjectKey!==null || browse.query.trim() || browse.status !== "all") && <button type="button" className="btn quiet" onClick={() => { resetFilters(); if (chosenSubject||exactSubjectKey!==null) { const query = new URLSearchParams(location.search); query.delete("subject"); query.delete("subjectKey"); navigate({ pathname: location.pathname, search: query.toString() }); } }}>Сбросить фильтры</button>}</div>
@@ -1197,6 +1199,7 @@ export function HomeworkPage() {
         <fieldset className="stack homework-fields" disabled={busy}>
         <legend className="sr-only">Новое задание</legend>
         {note && <p id="homework-sheet-status" className="banner" role="status">{note}</p>}
+        <p className="muted homework-privacy">Личное задание хранится на устройстве. Общая публикация содержит текст и срок; вложения остаются личными.</p>
         <div className="homework-editor-group"><h2>Задание</h2><label className="field">Предмет (обязательно)<input required list="subjects" value={subject} onChange={event => field("subject", event.target.value)} /></label>
         <datalist id="subjects">{subjects.map(item => <option key={item} value={item} />)}</datalist>
         {subjects.length===0&&<p className="muted">Предмет можно ввести вручную. Пока расписание не содержит подходящих занятий, срок неизвестен; он появится после загрузки расписания.</p>}
@@ -1233,44 +1236,52 @@ export function HomeworkPage() {
       </Sheet>}
       {copiesFailed && <div className="card empty"><p>Общая домашка не загрузилась. Проверьте сеть и попробуйте ещё раз.</p><button className="btn primary" type="button" onClick={() => setCopiesRetry(value => value + 1)}>Повторить</button></div>}
       {targetMissing && browsing.shown > 0 && <div className="banner row" role="status"><span>Задание по ссылке не найдено в текущей группе или недоступно вашему аккаунту.</span><button className="btn quiet" type="button" onClick={() => { const query = new URLSearchParams(location.search); query.delete("id"); query.delete("sharedId"); navigate({ pathname: location.pathname, search: query.toString() }, { replace: true }); }}>Показать список</button></div>}
-      {emptyKind && <div className="card empty"><p>{emptyKind === "missing" ? "Задание по ссылке не найдено в текущей группе или недоступно вашему аккаунту." : emptyKind === "empty" ? app.groupId ? "Заданий пока нет." : "Учебная группа не выбрана. Выберите группу, чтобы видеть пары и сроки." : "По выбранным фильтрам заданий нет."}</p>{emptyKind === "empty" ? app.groupId ? <button className="btn" type="button" onClick={() => setEditorOpen(true)}>Добавить первое</button> : <Link className="btn" to="/settings?section=study">Выбрать группу</Link> : <button className="btn" type="button" onClick={() => { resetFilters(); const query = new URLSearchParams(location.search); query.delete("subject"); query.delete("subjectKey"); query.delete("id"); query.delete("sharedId"); navigate({ pathname: location.pathname, search: query.toString() }); }}>Сбросить фильтры</button>}</div>}
+      {emptyKind && <div className="card empty"><p>{emptyKind === "missing" ? "Задание по ссылке не найдено в текущей группе или недоступно вашему аккаунту." : emptyKind === "empty" ? app.groupId ? "Заданий пока нет." : "Учебная группа не выбрана. Выберите группу, чтобы видеть пары и сроки." : "По выбранным фильтрам заданий нет."}</p>{emptyKind === "empty" ? app.groupId ? <button className="btn primary" type="button" onClick={() => setEditorOpen(true)}><Icon name="plus" size={18} />Добавить задание</button> : <Link className="btn" to="/settings?section=study">Выбрать группу</Link> : <button className="btn" type="button" onClick={() => { resetFilters(); const query = new URLSearchParams(location.search); query.delete("subject"); query.delete("subjectKey"); query.delete("id"); query.delete("sharedId"); navigate({ pathname: location.pathname, search: query.toString() }); }}>Сбросить фильтры</button>}</div>}
       {visibleCopies.length > 0 && <h2 className="section-list-title">Общая домашка <span className="chip">{visibleCopies.length}</span></h2>}
       <div className="stack" style={{ marginTop: safeCopies.length > 0 ? 12 : 0 }}>
         {visibleCopies.map(item => (
           <article className={"card homework-task" + (item.completed ? " homework-completed" : "")} id={`homework-shared-${item.homeworkId}`} tabIndex={-1} aria-current={target?.kind === "shared" && target.id === item.homeworkId ? "true" : undefined} key={item.homeworkId}>
-            <div className="row homework-card-head" style={{ justifyContent: "space-between" }}>
-              <span className="row"><b>{item.title}</b><span className="chip">{audienceLabel(item.audience)}</span></span>
-              {item.canComplete !== false && <button className="btn" type="button" disabled={!!copyBusy} onClick={() => void toggleCopy(item)}>{copyBusy === item.homeworkId ? "Сохраняем…" : item.completed ? "Снять отметку" : "Готово у меня"}</button>}
-              {item.canEdit && <button className="btn quiet" type="button" disabled={!!copyBusy} onClick={() => { setEditingCopy({ id: item.homeworkId, revision: item.revision, title: item.title, body: item.body, deadline: localDateTimeInput(item.deadlineAt), audience: item.audience || allHomeworkAudience(), topicId: item.topicId || null }); setCopyEditConflict(false); }}>Изменить</button>}
+            <div className="homework-row">
+              <label className="homework-check">{item.canComplete !== false && <input type="checkbox" checked={item.completed} disabled={!!copyBusy} aria-label={`Выполнено: ${item.title}`} onChange={() => void toggleCopy(item)} />}</label>
+              <div className="homework-row-body">
+                <span className="homework-row-subject">{item.title} <span className="chip">{audienceLabel(item.audience)}</span></span>
+                <p className={item.completed ? "done-title" : ""}>{item.body}</p>
+                <span className="homework-row-meta homework-deadline">{copyBusy === item.homeworkId ? "Сохраняем…" : item.deadlineAt ? `Срок: ${new Date(item.deadlineAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "Срок не указан"}</span>
+              </div>
+              {item.canEdit && <HomeworkActions title={item.title} actions={[{ label: "Изменить", icon: "file", onSelect: () => { setEditingCopy({ id: item.homeworkId, revision: item.revision, title: item.title, body: item.body, deadline: localDateTimeInput(item.deadlineAt), audience: item.audience || allHomeworkAudience(), topicId: item.topicId || null }); setCopyEditConflict(false); } }]} />}
             </div>
-            <p className={item.completed ? "done-title" : ""}>{item.body}</p><p className="muted homework-deadline">Срок: {item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p>
             {editingCopy?.id === item.homeworkId && <form className="stack" onSubmit={event => void saveCopyEdit(event)}><label className="field">Предмет<input required value={editingCopy.title} onChange={event => setEditingCopy({ ...editingCopy, title: event.target.value })}/></label><label className="field">Задание<textarea required value={editingCopy.body} onChange={event => setEditingCopy({ ...editingCopy, body: event.target.value })}/></label><label className="field">Срок<input type="datetime-local" value={editingCopy.deadline} onChange={event => setEditingCopy({ ...editingCopy, deadline: event.target.value })}/></label><HomeworkRecipients communityId={`${communityId}-copy`} value={editingCopy.audience} onChange={audience => setEditingCopy({ ...editingCopy, audience })} data={recipients}/>{copyEditConflict && <div className="banner" role="alert">Актуальная ревизия: {safeCopies.find(row => row.homeworkId === item.homeworkId)?.revision}. Сверьте поля перед повторной отправкой.<button className="btn" type="button" onClick={() => { setEditingCopy({ ...editingCopy, revision: safeCopies.find(row => row.homeworkId === item.homeworkId)?.revision ?? editingCopy.revision }); setCopyEditConflict(false); }}>Использовать актуальную ревизию</button></div>}<div className="row"><button className="btn primary" disabled={!!copyBusy || copyEditConflict}>Сохранить изменения</button><button className="btn quiet" type="button" onClick={() => { setEditingCopy(null); setCopyEditConflict(false); }}>Отмена</button></div></form>}
           </article>
         ))}
       </div>
+      {visibleHomework.length > 0 && <div className="homework-select-bar"><button className="btn quiet" type="button" aria-expanded={selecting} onClick={() => setSelecting(value => !value)}>{selecting ? "Готово" : "Выбрать несколько"}</button></div>}
+      {selecting && visibleHomework.length > 0 && <div className="card stack homework-bulk" role="region" aria-label="Действия с несколькими заданиями">
       <PersonalHomeworkBatch key={JSON.stringify(["complete",copyOwnerKey,app.session?.familyId,app.groupId])} items={visibleHomework}/>
       <HomeworkPostpone key={JSON.stringify(["postpone",copyOwnerKey,app.session?.familyId,app.groupId])} items={visibleHomework} dateOf={personalDate}/>
       <HomeworkPublication key={JSON.stringify(["publish",copyOwnerKey,app.session?.familyId,app.groupId,communityId])} items={visibleHomework} communityId={communityId} recipients={recipients} dateOf={personalDate}/>
-      {visibleHomework.length > 0 && <><h2 id="homework-personal-results" tabIndex={-1} className="section-list-title">Мои задания <span className="chip">{visibleHomework.length}</span></h2><HomeworkExportTools key={JSON.stringify([copyOwnerKey,app.session?.familyId,app.groupId])} items={visibleHomework} groupId={app.groupId} groupName={app.catalog?.groups.find(group=>group.id===app.groupId)?.name||app.groupId}/></>}
+      <HomeworkExportTools key={JSON.stringify([copyOwnerKey,app.session?.familyId,app.groupId])} items={visibleHomework} groupId={app.groupId} groupName={app.catalog?.groups.find(group=>group.id===app.groupId)?.name||app.groupId}/>
+      </div>}
+      {visibleHomework.length > 0 && <><h2 id="homework-personal-results" tabIndex={-1} className="section-list-title">Мои задания <span className="chip">{taskCount(visibleHomework.length)}</span></h2></>}
       {homeworkBuckets.length>1 && <button className="btn quiet" onClick={()=>setCollapsedBuckets(rows=>rows.length?[]:homeworkBuckets.map(group=>group.key))}>{collapsedBuckets.length?"Развернуть все сроки":"Свернуть все сроки"}</button>}
       <div className="stack" style={{ marginTop: 12 }}>
-        {homeworkBuckets.map(group=><section className="stack" key={group.key}><button className="btn" aria-expanded={!collapsedBuckets.includes(group.key)} onClick={()=>setCollapsedBuckets(rows=>rows.includes(group.key)?rows.filter(key=>key!==group.key):[...rows,group.key])}>{group.label} · {group.rows.length}</button><div className="stack" hidden={collapsedBuckets.includes(group.key)}>{group.rows.map(item => (
+        {homeworkBuckets.map(group=><section className="stack" key={group.key}><button className="btn" aria-expanded={!collapsedBuckets.includes(group.key)} onClick={()=>setCollapsedBuckets(rows=>rows.includes(group.key)?rows.filter(key=>key!==group.key):[...rows,group.key])}>{group.label} · {taskCount(group.rows.length)}</button><div className="stack" hidden={collapsedBuckets.includes(group.key)}>{group.rows.map(item => (
           <article className={"card homework-task" + (item.done ? " homework-completed" : "")} id={item.id} tabIndex={-1} key={item.id} aria-current={target?.kind === "local" && target.id === item.id ? "true" : undefined}>
-            <div className="row homework-card-head" style={{ justifyContent: "space-between" }}>
-              <span className="row"><b>{item.subject}</b><span className="chip">{item.done ? "Выполнено" : "Личное"}</span></span>
-              <button className="btn" type="button" onClick={() => togglePersonal(item)}>{item.done ? "Снова открыть" : "Сделано"}</button>
-              <button className="btn quiet" type="button" onClick={()=>setPersonalEdit({id:item.id,owner:copyOwnerKey,subject:item.subject,text:item.text,nth:item.targetNthOccurrence??1})}>Изменить</button>
-              <button className="btn quiet" type="button" onClick={()=>{if(controller.dirty&&!window.confirm("Заменить текущий черновик копией этого задания?"))return;controller.clear(item.subject);field("text",item.text);field("share",false);field("nth",1);setEditorOpen(true);}}>Создать похожее</button>
-              <button className="btn quiet" type="button" onClick={()=>{if(!window.confirm(`Удалить личное задание «${item.subject}»? ${item.text.slice(0,100)}`))return;try{app.privateHomework.remove(item.id);setPersonalEdit(current=>current?.id===item.id?null:current);setNote("Задание удалено");}catch(reason){setNote(reason instanceof Error?reason.message:"Удалить не удалось. Задание сохранено.");}}}>Удалить</button>
+            <div className="homework-row">
+              <label className="homework-check"><input type="checkbox" checked={item.done} aria-label={`Сделано: ${item.subject}`} onChange={() => togglePersonal(item)} /></label>
+              <div className="homework-row-body">
+                <span className="homework-row-subject">{item.subject}</span>
+                <p className={item.done ? "done-title" : ""}>{item.text}</p>
+                <span className="homework-row-meta homework-deadline">{(() => { const due = personalHomeworkDue(item,visibleLessons(app.lessons,app.subgroups[app.groupId]||{}),api.readCache().lessons[app.groupId]?.period||app.catalog?.period||{start:isoDay(app.date),weekCount:2,title:"",timeZone:""},app.invert); return due ? `Срок: ${due.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}` : "Срок не указан"; })()}</span>
+              </div>
+              <HomeworkActions title={`${item.subject}: ${item.text.slice(0, 80)}`} onDelete={() => { try { app.privateHomework.remove(item.id); setPersonalEdit(current => current?.id === item.id ? null : current); setNote("Задание удалено"); } catch (reason) { setNote(reason instanceof Error ? reason.message : "Удалить не удалось. Задание сохранено."); } }} actions={[
+                { label: "Изменить", icon: "file", onSelect: () => setPersonalEdit({ id: item.id, owner: copyOwnerKey, subject: item.subject, text: item.text, nth: item.targetNthOccurrence ?? 1 }) },
+                { label: "Создать похожее", icon: "plus", onSelect: () => { if (controller.dirty && !window.confirm("Заменить текущий черновик копией этого задания?")) return; controller.clear(item.subject); field("text", item.text); field("share", false); field("nth", 1); setEditorOpen(true); } },
+                ...(browsePeriod ? [{ label: "К ближайшему занятию", icon: "calendar" as const, onSelect: () => { const date = Array.from({ length: 56 }, (_, i) => addDays(new Date(), i)).find(date => lessonsOn(visibleLessons(app.lessons, app.subgroups[app.groupId] || {}), date, browsePeriod.start, browsePeriod.weekCount, app.invert).some(lesson => sameSubject(lesson.subjectRaw, item.subject))); if (date) { app.setDate(date); navigate(`/schedule?date=${isoDay(date)}&subject=${encodeURIComponent(item.subject)}`); } else setNote("В ближайшие восемь недель подходящее занятие не найдено."); } }] : []),
+                { label: "Обсудить в чате группы", icon: "chat", onSelect: () => navigate(`/group?homework=${encodeURIComponent(item.text)}&subject=${encodeURIComponent(item.subject)}&date=${isoDay(app.date)}`) },
+                { node: <ShareMenu card={homeworkCard(item)} label="Отправить другу" /> },
+              ]} />
             </div>
-            <p className={item.done ? "done-title" : ""}>{item.text}</p><p className="muted homework-deadline">Срок: {personalHomeworkDue(item,visibleLessons(app.lessons,app.subgroups[app.groupId]||{}),api.readCache().lessons[app.groupId]?.period||app.catalog?.period||{start:isoDay(app.date),weekCount:2,title:"",timeZone:""},app.invert)?.toLocaleDateString("ru-RU") || "Без срока"}</p>
             <HomeworkAttachments files={item.files || []} />
-            <div className="row homework-task-footer">
-              {app.lessons.some(lesson => sameSubject(lesson.subjectRaw, item.subject)) && <span className="chip">есть в расписании</span>}
-              <ShareMenu card={homeworkCard(item)} />
-              {browsePeriod && <button className="btn quiet" onClick={()=>{const date=Array.from({length:56},(_,i)=>addDays(new Date(),i)).find(date=>lessonsOn(visibleLessons(app.lessons,app.subgroups[app.groupId]||{}),date,browsePeriod.start,browsePeriod.weekCount,app.invert).some(lesson=>sameSubject(lesson.subjectRaw,item.subject)));if(date){app.setDate(date);navigate(`/schedule?date=${isoDay(date)}&subject=${encodeURIComponent(item.subject)}`);}else setNote("В ближайшие восемь недель подходящее занятие не найдено.");}}>К ближайшему занятию</button>}
-              <Link className="btn quiet" to={`/group?homework=${encodeURIComponent(item.text)}&subject=${encodeURIComponent(item.subject)}&date=${isoDay(app.date)}`}>Обсудить задание</Link>
-            </div>
           </article>
         ))}</div></section>)}
       </div>

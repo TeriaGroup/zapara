@@ -1,3 +1,4 @@
+import { subjectCount } from "./homework-counts";
 import { Link } from "react-router-dom";
 import { useBrowseValue } from "./ux300-controls";
 import { actualStudyWeek, compareStudyWeeks, weekHomework, homeworkSubjectOverview } from "./study-overviews";
@@ -20,5 +21,5 @@ export function WeekHomework({items,days,dateOf}:{items:HomeworkItem[];days:Date
 }
 export function HomeworkSubjectOverview({items,dateOf,today,onPick}:{items:HomeworkItem[];dateOf:(row:HomeworkItem)=>string|null;today:string;onPick:(subject:string,key:string)=>void}){
   const rows=homeworkSubjectOverview(items,dateOf,today);
-  return <details className="card stack"><summary>Личная домашка по предметам · {rows.length}</summary><p className="muted">Обзор всех личных заданий. Просроченные, ближайшая дата и неизвестные сроки посчитаны среди невыполненных; сегодняшний срок не считается просроченным.</p>{!rows.length&&<p>Личных заданий пока нет.</p>}{rows.map(row=><article className="card stack" key={row.key}><h3>{row.subject||"Без предмета"}</h3><p>Активно: {row.active} · выполнено: {row.done} · просрочено: {row.overdue}</p><p className="muted">Ближайший известный срок: {row.nearest||"нет"} · без даты: {row.noDate}</p><button className="btn quiet" onClick={()=>onPick(row.subject,row.key)}>Открыть задания предмета · {row.ids.length}</button></article>)}</details>;
+  return <details className="card stack"><summary>Личная домашка по предметам · {subjectCount(rows.length)}</summary><p className="muted">Обзор всех личных заданий. Просроченные, ближайшая дата и неизвестные сроки посчитаны среди невыполненных; сегодняшний срок не считается просроченным.</p>{!rows.length&&<p>Личных заданий пока нет.</p>}{rows.map(row=><article className="card stack" key={row.key}><h3>{row.subject||"Без предмета"}</h3><p>Активно: {row.active} · выполнено: {row.done} · просрочено: {row.overdue}</p><p className="muted">Ближайший известный срок: {row.nearest||"нет"} · без даты: {row.noDate}</p><button className="btn quiet" onClick={()=>onPick(row.subject,row.key)}>Открыть задания предмета · {row.ids.length}</button></article>)}</details>;
 }

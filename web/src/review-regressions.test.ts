@@ -22,6 +22,7 @@ import * as personalBatch from "./personal-homework-batch.ts";
 import * as publication from "./homework-publication-batch.ts";
 import * as postpone from "./homework-postpone.ts";
 import * as overviews from "./study-overviews.ts";
+import * as homeworkCounts from "./homework-counts.ts";
 import * as summary from "./summary.ts";
 import * as discovery from './study-discovery.ts';
 import * as obligations from './group-obligations.ts';
@@ -221,7 +222,7 @@ test("actual week comparison responds to chosen real date and rejects an empty c
 });
 
 test("actual weekly deadline and subject-overview links keep precise task identity and canonical selection",async()=>{
-  const h=hooks();const out=await load("./study-overviews-view.tsx",[],{react:h.react,"react-router-dom":{Link:"link"},"./study-overviews":overviews,"./parity":parity,"./planner":planner});
+  const h=hooks();const out=await load("./study-overviews-view.tsx",[],{react:h.react,"react-router-dom":{Link:"link"},"./study-overviews":overviews,"./parity":parity,"./planner":planner,"./homework-counts":homeworkCounts});
   const items=[{id:"a&b",subject:" МАТЕМАТИКА ",text:"Задача",done:true,created:""},{id:"unknown",subject:"Математика",text:"Без даты",done:false,created:""}];const days=Array.from({length:7},(_,i)=>new Date(2026,11,28+i));const dateOf=(row:any)=>row.id==="a&b"?"2027-01-01":null;
   const week=out.WeekHomework({items,days,dateOf});assert.equal(nodes(week).find(node=>node.type==="link").props.to,"/homework?id=a%26b");assert.match(text(week),/Выполнено/);assert.match(text(week),/Без известной даты:.*1/);
   let picked:any;const tree=out.HomeworkSubjectOverview({items,dateOf,today:"2026-10-02",onPick:(...args:any[])=>{picked=args;}});nodes(tree).find(node=>node.type==="button").props.onClick();assert.equal(picked[1],"математика");assert.match(text(tree),/Активно:.*1.*выполнено:.*1/);
