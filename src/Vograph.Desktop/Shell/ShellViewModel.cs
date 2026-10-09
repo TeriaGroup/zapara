@@ -664,9 +664,11 @@ public sealed partial class ShellViewModel : ViewModelBase
         if (!operation.IsCurrent) return;
         var data = await RunAsync(() => new PickerData(App.Db.GetAllGroups(), App.Db.GetSettings().MyGroupId), "groups");
         if (data is null) return;
-        var dlg = new GroupPickerDialogViewModel(data.Groups, data.CurrentId);
+        var dlg = new GroupPickerDialogViewModel(data.Groups, data.CurrentId, recentIds: App.Prefs.RecentGroupIds);
         if (!await Dialogs.ShowAsync(dlg) || dlg.Selected is null) return;
         var chosen = dlg.Selected;
+        App.Prefs.RememberGroup(chosen.Id, GroupPickerDialogViewModel.RecentLimit);
+        App.Prefs.Save();
         var saved = await RunAsync(() =>
         {
             var s = App.Db.GetSettings();

@@ -10,17 +10,27 @@
     <TextBlock Classes="title" Text="{Binding Title}" />
     <TextBlock Text="Каталог недоступен. Укажите группу вручную; расписание появится после загрузки." TextWrapping="Wrap" IsVisible="{Binding AllowManual}" />
     <TextBox Text="{Binding ManualName}" PlaceholderText="Номер группы" IsVisible="{Binding AllowManual}" />
-    <TextBox Name="SearchBox" Text="{Binding Query}" PlaceholderText="{loc:T groupSearchHint}" KeyDown="OnSearchKeyDown" IsVisible="{Binding ShowCatalog}"
+    <TextBox Name="SearchBox" Text="{Binding Query}" PlaceholderText="{loc:T groupSearchExample}" KeyDown="OnSearchKeyDown" IsVisible="{Binding ShowCatalog}"
              AutomationProperties.AutomationId="Dialog.Search">
       <TextBox.InnerLeftContent>
         <c:Icon Data="{StaticResource Icon.Search}" Size="14" Foreground="{DynamicResource Brush.Text3}" />
       </TextBox.InnerLeftContent>
     </TextBox>
-    <ListBox x:Name="List" ItemsSource="{Binding Filtered}" SelectedItem="{Binding Selected}" Height="320" DoubleTapped="OnDoubleTapped" IsVisible="{Binding ShowCatalog}"
+    <ListBox x:Name="List" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}" Height="320" DoubleTapped="OnDoubleTapped" IsVisible="{Binding ShowCatalog}"
              AutomationProperties.AutomationId="Dialog.List">
+      <ListBox.Styles>
+        <!-- #21: заголовки разделов («Недавние», «Факультет И») не выбираются и пропускаются стрелками. -->
+        <Style Selector="ListBoxItem" x:DataType="d:GroupPickRow">
+          <Setter Property="IsEnabled" Value="{Binding IsGroup}" />
+        </Style>
+      </ListBox.Styles>
       <ListBox.ItemTemplate>
-        <DataTemplate x:DataType="m:Group">
-          <c:HighlightText Source="{Binding Name}" Query="{Binding $parent[ListBox].((d:GroupPickerDialogViewModel)DataContext).Query}" />
+        <DataTemplate x:DataType="d:GroupPickRow">
+          <Panel>
+            <TextBlock Classes="micro" Text="{Binding Header}" IsVisible="{Binding IsHeader}" Margin="0,6,0,0" />
+            <c:HighlightText Source="{Binding Group.Name, FallbackValue=''}" IsVisible="{Binding IsGroup}"
+                             Query="{Binding $parent[ListBox].((d:GroupPickerDialogViewModel)DataContext).Query}" />
+          </Panel>
         </DataTemplate>
       </ListBox.ItemTemplate>
     </ListBox>
