@@ -10,6 +10,7 @@ object WidgetCopy : UiCopy {
         val factory = DocumentBuilderFactory.newInstance()
         listOf(
             File("src/main/res/values/strings.xml"),
+            File("src/main/res/values/strings_catalog.xml"), // #12: строки из общего каталога (nav_schedule и др.)
             File("src/main/res/values/widget_strings.xml")
         ).fold(linkedMapOf<String, String>()) { acc, file ->
             val doc = factory.newDocumentBuilder().parse(file)
