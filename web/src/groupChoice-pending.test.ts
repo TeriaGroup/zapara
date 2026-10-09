@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { followGroupCommunity, type CommunityFollow } from "./groupChoice.ts";
+import { followGroupCommunity, type CommunityFollowState as CommunityFollow } from "./groupChoice.ts";
 
 test("the cleared community is pending, not «no community», until the lookup answers (#32)", async () => {
   let release: (rows: { communityId: string; role: string | null }[]) => void = () => {};
