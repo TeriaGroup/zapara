@@ -62,7 +62,7 @@ public sealed partial class PasswordAccountTests
     }
 
     [Fact]
-    public async Task Known_device_passes_a_network_block_but_not_the_account_cap()
+    public async Task Known_device_is_exempt_and_many_networks_only_delay_the_account()
     {
         await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);
         var clock = new AccountClock();
@@ -81,12 +81,25 @@ public sealed partial class PasswordAccountTests
         for (var i = 0; i < LoginThrottle.PairFailureLimit; i++)
             await Failure(AccountFailure.InvalidCredentials, () => service.LoginAsync(Login("other.user", NewPassword), shared));
         await Failure(AccountFailure.RateLimited, () => service.LoginAsync(Login("other.user", device: phone), shared));
-        // The account cap stops everyone, the known device included.
-        for (var i = 0; i < LoginThrottle.AccountFailureCap; i++)
-            await Failure(AccountFailure.InvalidCredentials, () => service.LoginAsync(Login(password: NewPassword), $"4:203.0.{i / 256}.{i % 256}"));
-        await Failure(AccountFailure.RateLimited, () => service.LoginAsync(Login(device: phone), shared));
-        clock.Now += LoginThrottle.Window;
-        Assert.NotNull(await service.LoginAsync(Login(device: phone), shared, TestContext.Current.CancellationToken));
+
+        // Failures from many networks: every new attempt waits the account delay, never longer than its cap.
+        for (var i = 0; i < 40; i++)
+        {
+            var network = $"4:203.0.113.{i}";
+            try { await service.LoginAsync(Login(password: NewPassword), network, TestContext.Current.CancellationToken); }
+            catch (AccountServiceException e) when (e.Failure == AccountFailure.RateLimited)
+            {
+                Assert.InRange(e.RetryAfter!.Value, TimeSpan.FromSeconds(1), LoginThrottle.MaxAccountDelay);
+                clock.Now += e.RetryAfter.Value;
+                await Failure(AccountFailure.InvalidCredentials, () => service.LoginAsync(Login(password: NewPassword), network));
+            }
+            catch (AccountServiceException e) when (e.Failure == AccountFailure.InvalidCredentials) { }
+        }
+        // A new device on a clean network waits at most the cap (never a block); the known device is not delayed.
+        var delayed = await Assert.ThrowsAsync<AccountServiceException>(() => service.LoginAsync(Login(), "4:192.0.2.200"));
+        Assert.Equal(AccountFailure.RateLimited, delayed.Failure);
+        Assert.InRange(delayed.RetryAfter!.Value, TimeSpan.FromSeconds(1), LoginThrottle.MaxAccountDelay);
+        Assert.NotNull(await service.LoginAsync(Login(device: phone), "4:192.0.2.201", TestContext.Current.CancellationToken));
     }
 
     [Fact]

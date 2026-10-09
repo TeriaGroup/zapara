@@ -57,15 +57,18 @@ class LoginThrottleTest extends TestCase
         $this->assertSame(0, $throttle->availableIn('fresh.user', '6:20010db8000000ab::/64'));
     }
 
-    public function test_distributed_failures_delay_failing_networks_but_not_clean_ones(): void
+    public function test_distributed_failures_delay_every_network_up_to_the_cap(): void
     {
         $throttle = new LoginThrottle;
         for ($i = 0; $i < 30; $i++) {
             $throttle->failed('platform.admin', '4:192.0.2.'.$i);
         }
-        $wait = $throttle->availableIn('platform.admin', '4:192.0.2.1');
-        $this->assertGreaterThan(0, $wait);
-        $this->assertLessThanOrEqual(LoginThrottle::MAX_ACCOUNT_DELAY_SECONDS, $wait);
+        foreach (['4:192.0.2.1', '4:203.0.113.50'] as $network) {
+            $wait = $throttle->availableIn('platform.admin', $network);
+            $this->assertGreaterThan(0, $wait);
+            $this->assertLessThanOrEqual(LoginThrottle::MAX_ACCOUNT_DELAY_SECONDS, $wait);
+        }
+        $this->travel(LoginThrottle::MAX_ACCOUNT_DELAY_SECONDS)->seconds();
         $this->assertSame(0, $throttle->availableIn('platform.admin', '4:203.0.113.50'));
     }
 
@@ -131,18 +134,30 @@ class LoginThrottleTest extends TestCase
         $this->assertSame(0, $throttle->availableIn('fresh.user', '4:198.51.100.1'));
     }
 
-    public function test_account_cap_bounds_guesses_from_fresh_networks(): void
+    public function test_many_networks_cannot_lock_an_account(): void
     {
         $throttle = new LoginThrottle;
-        for ($i = 0; $i < LoginThrottle::ACCOUNT_FAILURE_CAP; $i++) {
+        $owner = LoginThrottle::networkKey('2001:db8:ffff::1');
+        $start = now()->getTimestamp();
+        $guesses = 0;
+        for ($i = 0; $i < 1000 && now()->getTimestamp() < $start + 1800; $i++) {
             $network = LoginThrottle::networkKey(sprintf('2001:db8:%x::1', $i));
+            $wait = $throttle->availableIn('platform.admin', $network);
+            $this->assertLessThanOrEqual(LoginThrottle::MAX_ACCOUNT_DELAY_SECONDS, $wait);
+            if ($wait > 0) {
+                $this->travel($wait)->seconds();
+            }
             $this->assertSame(0, $throttle->availableIn('platform.admin', $network));
             $throttle->failed('platform.admin', $network);
+            $guesses++;
+            $this->assertLessThanOrEqual(LoginThrottle::MAX_ACCOUNT_DELAY_SECONDS, $throttle->availableIn('platform.admin', $owner));
         }
-        $this->assertGreaterThan(0, $throttle->availableIn('platform.admin', LoginThrottle::networkKey('2001:db8:ffff::1')));
-        $this->assertSame(0, $throttle->availableIn('other.user', LoginThrottle::networkKey('2001:db8:ffff::1')));
-        $this->travel(LoginThrottle::WINDOW_SECONDS + 1)->seconds();
-        $this->assertSame(0, $throttle->availableIn('platform.admin', LoginThrottle::networkKey('2001:db8:ffff::1')));
+        // The delay still spaces out guesses from fresh networks to about one per minute.
+        $this->assertGreaterThanOrEqual(LoginThrottle::ACCOUNT_DELAY_THRESHOLD, $guesses);
+        $this->assertLessThanOrEqual(60, $guesses);
+        $this->assertSame(0, $throttle->availableIn('other.user', $owner));
+        $this->travel(LoginThrottle::MAX_ACCOUNT_DELAY_SECONDS)->seconds();
+        $this->assertSame(0, $throttle->availableIn('platform.admin', $owner));
     }
 
     public function test_forwarded_for_is_trusted_only_from_configured_proxies(): void

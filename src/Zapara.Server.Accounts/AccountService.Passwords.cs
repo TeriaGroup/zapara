@@ -55,10 +55,9 @@ public sealed partial class AccountService
         Validate(() => AccountValidation.Platform(request.Device.Platform));
         // Checked before the password: a throttled attempt never learns whether the password was right.
         var decision = throttle.Evaluate(normalized, network);
-        // A device that has logged in to this account before skips network blocks (so a shared or attacked network
-        // does not lock its owner out), but never the per-account cap.
-        if (decision.Block == LoginBlock.Account ||
-            (decision.Block == LoginBlock.Network && !await KnownDeviceAsync(normalized, request.Device.DeviceId, ct)))
+        // A device that has logged in to this account before is exempt from network blocks and the account delay,
+        // so neither a shared/attacked network nor failures elsewhere slow its owner down.
+        if (!decision.IsAllowed && !await KnownDeviceAsync(normalized, request.Device.DeviceId, ct))
             throw new AccountServiceException(AccountFailure.RateLimited) { RetryAfter = decision.Wait };
         try
         {

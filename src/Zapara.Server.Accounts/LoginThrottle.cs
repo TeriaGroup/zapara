@@ -11,10 +11,11 @@ public enum LoginBlock
 {
     None,
     /// <summary>The client network (or its wider IPv6 block, or the account on that network) has too many failures.
-    /// A device that has logged in to this account before may skip this kind of block.</summary>
+    /// Lasts until the window that triggered it ends.</summary>
     Network,
-    /// <summary>The account reached its total failure cap for the window. Applies to every network and device.</summary>
-    Account
+    /// <summary>The account has many recent failures from any networks: a short progressive delay since the last
+    /// failure, capped at <see cref="LoginThrottle.MaxAccountDelay"/>. Never a full denial.</summary>
+    AccountDelay
 }
 
 public readonly record struct LoginDecision(LoginBlock Block, TimeSpan Wait)
@@ -26,9 +27,11 @@ public readonly record struct LoginDecision(LoginBlock Block, TimeSpan Wait)
 /// <summary>
 /// Failed-login throttling keyed by client network instead of a per-account lock. Failures are counted per client
 /// network (IPv4 address, IPv6 /64), per wider IPv6 block (/48), per (account, network) pair and per account.
-/// Repeated failures block the network that produces them; failures against one account from many networks add a
-/// bounded progressive delay for networks that have failed, and a total per-account cap bounds how many guesses all
-/// networks together get in one window. State is in memory: one server process.
+/// Repeated failures block the network that produces them. Failures of one account, from any number of networks,
+/// only add a progressive delay between attempts (at most <see cref="MaxAccountDelay"/>), so no set of networks can
+/// lock an account; the delay still bounds how fast guesses can be spread over many fresh networks.
+/// Devices that have logged in to the account before are exempt from both (decided by the caller).
+/// State is in memory: one server process.
 /// </summary>
 public sealed class LoginThrottle
 {
@@ -42,10 +45,9 @@ public sealed class LoginThrottle
     public const int WidePrefixLength = 48;
     /// <summary>Failed logins one network may make against one account per window.</summary>
     public const int PairFailureLimit = 5;
-    /// <summary>Failures of one account (all networks) after which networks with failures must wait between attempts.</summary>
+    /// <summary>Recent failures of one account (all networks) from which every attempt waits a progressive delay
+    /// after the last failure.</summary>
     public const int AccountDelayThreshold = 10;
-    /// <summary>Failures of one account (all networks) after which every attempt waits for the window to end.</summary>
-    public const int AccountFailureCap = 50;
     public static readonly TimeSpan MaxAccountDelay = TimeSpan.FromSeconds(60);
     public const int DefaultCapacity = 100_000;
 
@@ -91,10 +93,6 @@ public sealed class LoginThrottle
         var now = clock.GetUtcNow();
         lock (gate)
         {
-            var accountEntry = Live(Key("a", account), now);
-            // The cap is shared by every network, so many fresh IPv6 networks cannot add up to unlimited guesses.
-            if (accountEntry is { Count: >= AccountFailureCap })
-                return new(LoginBlock.Account, Until(accountEntry.Started + Window, now));
             var networkEntry = Live(Key("n", network), now);
             if (networkEntry is { Count: >= NetworkFailureLimit })
                 return new(LoginBlock.Network, Until(networkEntry.Started + Window, now));
@@ -103,27 +101,23 @@ public sealed class LoginThrottle
             var pair = Live(Key("p", account + "\n" + network), now);
             if (pair is { Count: >= PairFailureLimit })
                 return new(LoginBlock.Network, Until(pair.Started + Window, now));
-            // A network without recent failures is not delayed by failures that other networks caused
-            // (the account cap above still bounds the total).
-            if (networkEntry is null) return LoginDecision.Allowed;
+            // Applies to every network, including ones without failures, so many fresh IPv6 networks cannot add up
+            // to unlimited fast guesses. It only spaces attempts out; it never refuses the account outright.
+            var accountEntry = Live(Key("a", account), now);
             if (accountEntry is null || accountEntry.Count < AccountDelayThreshold) return LoginDecision.Allowed;
             var ready = accountEntry.Last + AccountDelay(accountEntry.Count);
-            return ready > now ? new(LoginBlock.Network, Until(ready, now)) : LoginDecision.Allowed;
+            return ready > now ? new(LoginBlock.AccountDelay, Until(ready, now)) : LoginDecision.Allowed;
         }
     }
 
     /// <summary>Returns how long the caller must wait before this attempt may be checked, or null when it may proceed.</summary>
     /// <param name="knownDevice">The attempt comes from a device that has logged in to this account before:
-    /// network blocks are skipped, the account cap is not.</param>
+    /// it is exempt from network blocks and from the account delay.</param>
     public TimeSpan? Check(string account, string network, bool knownDevice = false)
     {
+        if (knownDevice) return null;
         var decision = Evaluate(account, network);
-        return decision.Block switch
-        {
-            LoginBlock.None => null,
-            LoginBlock.Network when knownDevice => null,
-            _ => decision.Wait
-        };
+        return decision.IsAllowed ? null : decision.Wait;
     }
 
     public void Failed(string account, string network)

@@ -10,8 +10,8 @@ use Illuminate\Support\Facades\RateLimiter;
  *
  * Mirrors Zapara.Server.Accounts.LoginThrottle: failures are counted per client network
  * (IPv4 address, IPv6 /64), per wider IPv6 block (/48) and per (account, network) pair, so the network that
- * keeps failing is blocked. Failures against one account from many networks add a bounded progressive delay
- * for networks that have failed, and a total per-account cap bounds the guesses all networks get per window.
+ * keeps failing is blocked. Failures against one account from many networks only add a progressive delay
+ * (1 s doubling up to 60 s after the last failure) for every network; the account is never denied outright.
  */
 final class LoginThrottle
 {
@@ -21,9 +21,6 @@ final class LoginThrottle
 
     /** Failures one IPv6 /48 may make across all its /64 networks per window. */
     public const WIDE_NETWORK_FAILURE_LIMIT = 60;
-
-    /** Failures of one account from all networks after which every attempt waits for the window to end. */
-    public const ACCOUNT_FAILURE_CAP = 50;
 
     public const PAIR_FAILURE_LIMIT = 5;
 
@@ -66,10 +63,6 @@ final class LoginThrottle
     /** Seconds the client must wait before this attempt may be checked; 0 when it may proceed. */
     public function availableIn(string $account, string $network): int
     {
-        $accountKey = $this->key('account', $account);
-        if (RateLimiter::attempts($accountKey) >= self::ACCOUNT_FAILURE_CAP) {
-            return max(1, RateLimiter::availableIn($accountKey));
-        }
         $networkKey = $this->key('network', $network);
         if (RateLimiter::attempts($networkKey) >= self::NETWORK_FAILURE_LIMIT) {
             return max(1, RateLimiter::availableIn($networkKey));
@@ -85,10 +78,7 @@ final class LoginThrottle
         if (RateLimiter::attempts($pairKey) >= self::PAIR_FAILURE_LIMIT) {
             return max(1, RateLimiter::availableIn($pairKey));
         }
-        if (RateLimiter::attempts($networkKey) === 0) {
-            return 0;
-        }
-        $failures = (int) RateLimiter::attempts($accountKey);
+        $failures = (int) RateLimiter::attempts($this->key('account', $account));
         $delay = self::accountDelay($failures);
         if ($delay === 0) {
             return 0;
@@ -96,7 +86,7 @@ final class LoginThrottle
         $last = (int) Cache::get($this->key('account-last', $account), 0);
         $ready = $last + $delay;
 
-        return $ready > time() ? $ready - time() : 0;
+        return $ready > now()->getTimestamp() ? $ready - now()->getTimestamp() : 0;
     }
 
     public function failed(string $account, string $network): void
@@ -108,7 +98,7 @@ final class LoginThrottle
         }
         RateLimiter::hit($this->key('pair', $account."\n".$network), self::WINDOW_SECONDS);
         RateLimiter::hit($this->key('account', $account), self::WINDOW_SECONDS);
-        Cache::put($this->key('account-last', $account), time(), self::WINDOW_SECONDS);
+        Cache::put($this->key('account-last', $account), now()->getTimestamp(), self::WINDOW_SECONDS);
     }
 
     /** The network counter stays: a valid login must not reset failures the network made against other accounts. */

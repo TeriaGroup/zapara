@@ -49,18 +49,19 @@ public sealed class LoginThrottleTests
     }
 
     [Fact]
-    public void Account_under_distributed_attack_delays_failing_networks_but_not_clean_ones()
+    public void Account_under_distributed_attack_gets_a_capped_delay_on_every_network()
     {
         var clock = new AccountClock();
         var throttle = new LoginThrottle(clock);
         for (var i = 0; i < 30; i++) throttle.Failed("platform.admin", "4:192.0.2." + i);
-        // A network that has failed before must wait the progressive delay, capped at one minute.
-        var wait = throttle.Check("platform.admin", "4:192.0.2.1");
-        Assert.Equal(LoginThrottle.MaxAccountDelay, wait);
-        // The owner on a network without failures is not delayed at all.
-        Assert.Null(throttle.Check("platform.admin", "4:203.0.113.50"));
+        // Every network waits the progressive delay after the last failure, capped at one minute,
+        // including a network that never failed, so fresh networks do not give extra fast guesses.
+        var failing = throttle.Evaluate("platform.admin", "4:192.0.2.1");
+        Assert.Equal(new LoginDecision(LoginBlock.AccountDelay, LoginThrottle.MaxAccountDelay), failing);
+        Assert.Equal(LoginThrottle.MaxAccountDelay, throttle.Check("platform.admin", "4:203.0.113.50"));
         clock.Now += LoginThrottle.MaxAccountDelay;
         Assert.Null(throttle.Check("platform.admin", "4:192.0.2.1"));
+        Assert.Null(throttle.Check("platform.admin", "4:203.0.113.50"));
     }
 
     [Fact]
@@ -125,30 +126,37 @@ public sealed class LoginThrottleTests
     }
 
     [Fact]
-    public void Account_cap_bounds_guesses_from_any_number_of_fresh_networks()
+    public void Many_networks_cannot_lock_an_account_only_space_out_attempts()
     {
         var clock = new AccountClock();
         var throttle = new LoginThrottle(clock);
-        // Every attempt from a different /48, so no network tier ever fills up.
-        for (var i = 0; i < LoginThrottle.AccountFailureCap; i++)
+        var fresh = LoginThrottle.NetworkKey(IPAddress.Parse("2001:db8:ffff::1"));
+        var guesses = 0;
+        var start = clock.Now;
+        // Attackers on 1000 different /48s keep failing as fast as the throttle lets them for 30 minutes.
+        for (var i = 0; i < 1000 && clock.Now < start + TimeSpan.FromMinutes(30); i++)
         {
             var network = LoginThrottle.NetworkKey(IPAddress.Parse($"2001:db8:{i:x}::1"));
-            Assert.Equal(LoginBlock.None, throttle.Evaluate("platform.admin", network).Block);
+            if (throttle.Evaluate("platform.admin", network) is { IsAllowed: false } waiting) clock.Now += waiting.Wait;
+            Assert.True(throttle.Evaluate("platform.admin", network).IsAllowed);
             throttle.Failed("platform.admin", network);
+            guesses++;
+            // At any moment the owner on a clean network waits at most the capped delay; never a block.
+            var owner = throttle.Evaluate("platform.admin", fresh);
+            Assert.NotEqual(LoginBlock.Network, owner.Block);
+            Assert.InRange(owner.Wait, TimeSpan.Zero, LoginThrottle.MaxAccountDelay);
         }
-        var fresh = LoginThrottle.NetworkKey(IPAddress.Parse("2001:db8:ffff::1"));
-        var decision = throttle.Evaluate("platform.admin", fresh);
-        Assert.Equal(LoginBlock.Account, decision.Block);
-        Assert.Equal(LoginThrottle.Window, decision.Wait);
-        // The cap applies to known devices too, and only to this account.
-        Assert.NotNull(throttle.Check("platform.admin", fresh, knownDevice: true));
-        Assert.Null(throttle.Check("other.user", fresh));
-        clock.Now += LoginThrottle.Window;
+        // The delay still bounds guesses spread over fresh networks: about one per minute once it is at its cap.
+        Assert.InRange(guesses, LoginThrottle.AccountDelayThreshold, 60);
+        // The owner gets in after waiting the delay, and other accounts are not delayed at all.
+        var wait = throttle.Check("platform.admin", fresh);
+        if (wait is { } w) clock.Now += w;
         Assert.Null(throttle.Check("platform.admin", fresh));
+        Assert.Null(throttle.Check("other.user", fresh));
     }
 
     [Fact]
-    public void Known_device_skips_network_blocks_only()
+    public void Known_device_is_exempt_from_network_blocks_and_the_account_delay()
     {
         var clock = new AccountClock();
         var throttle = new LoginThrottle(clock);
@@ -158,6 +166,9 @@ public sealed class LoginThrottleTests
         Assert.Equal(LoginBlock.Network, throttle.Evaluate("owner", shared).Block);
         Assert.NotNull(throttle.Check("owner", shared));
         Assert.Null(throttle.Check("owner", shared, knownDevice: true));
+        for (var i = 0; i < 40; i++) throttle.Failed("owner", "4:192.0.2." + i);
+        Assert.Equal(LoginBlock.AccountDelay, throttle.Evaluate("owner", "4:203.0.113.9").Block);
+        Assert.Null(throttle.Check("owner", "4:203.0.113.9", knownDevice: true));
     }
 
     [Fact]
