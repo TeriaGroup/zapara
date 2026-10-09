@@ -1,6 +1,7 @@
 using System.Net;
 using Xunit;
 using Zapara.Server.Accounts;
+using Zapara.Server.Admin;
 
 namespace Zapara.Server.Tests;
 
@@ -90,5 +91,126 @@ public sealed class LoginThrottleTests
         var throttle = new LoginThrottle(clock, capacity: 64);
         for (var i = 0; i < 1000; i++) throttle.Failed("user" + i, "4:10.0." + (i / 256) + "." + (i % 256));
         Assert.InRange(throttle.Count(), 1, 64);
+    }
+
+    [Theory]
+    [InlineData("6:20010db8000100aa::/64", "6:20010db80001::/48")]
+    [InlineData("6:20010db8000100ff::/64", "6:20010db80001::/48")]
+    [InlineData("4:203.0.113.9", null)]
+    [InlineData("none", null)]
+    public void Wide_key_is_the_ipv6_slash_48(string network, string? expected)
+        => Assert.Equal(expected, LoginThrottle.WideNetworkKey(network));
+
+    [Fact]
+    public void Wide_tier_blocks_a_slash_48_that_rotates_slash_64_networks()
+    {
+        var clock = new AccountClock();
+        var throttle = new LoginThrottle(clock);
+        // A fresh /64 for every attempt, all inside 2001:db8:1::/48, against different accounts.
+        for (var i = 0; i < LoginThrottle.WideNetworkFailureLimit; i++)
+        {
+            var network = LoginThrottle.NetworkKey(IPAddress.Parse($"2001:db8:1:{i:x}::1"));
+            Assert.Null(throttle.Check("user" + i, network));
+            throttle.Failed("user" + i, network);
+        }
+        var untouched = LoginThrottle.NetworkKey(IPAddress.Parse("2001:db8:1:ffff::1"));
+        var decision = throttle.Evaluate("fresh.user", untouched);
+        Assert.Equal(LoginBlock.Network, decision.Block);
+        Assert.Equal(LoginThrottle.Window, decision.Wait);
+        // Another /48 and IPv4 clients are unaffected.
+        Assert.Null(throttle.Check("fresh.user", LoginThrottle.NetworkKey(IPAddress.Parse("2001:db8:2::1"))));
+        Assert.Null(throttle.Check("fresh.user", "4:198.51.100.1"));
+        clock.Now += LoginThrottle.Window;
+        Assert.Null(throttle.Check("fresh.user", untouched));
+    }
+
+    [Fact]
+    public void Account_cap_bounds_guesses_from_any_number_of_fresh_networks()
+    {
+        var clock = new AccountClock();
+        var throttle = new LoginThrottle(clock);
+        // Every attempt from a different /48, so no network tier ever fills up.
+        for (var i = 0; i < LoginThrottle.AccountFailureCap; i++)
+        {
+            var network = LoginThrottle.NetworkKey(IPAddress.Parse($"2001:db8:{i:x}::1"));
+            Assert.Equal(LoginBlock.None, throttle.Evaluate("platform.admin", network).Block);
+            throttle.Failed("platform.admin", network);
+        }
+        var fresh = LoginThrottle.NetworkKey(IPAddress.Parse("2001:db8:ffff::1"));
+        var decision = throttle.Evaluate("platform.admin", fresh);
+        Assert.Equal(LoginBlock.Account, decision.Block);
+        Assert.Equal(LoginThrottle.Window, decision.Wait);
+        // The cap applies to known devices too, and only to this account.
+        Assert.NotNull(throttle.Check("platform.admin", fresh, knownDevice: true));
+        Assert.Null(throttle.Check("other.user", fresh));
+        clock.Now += LoginThrottle.Window;
+        Assert.Null(throttle.Check("platform.admin", fresh));
+    }
+
+    [Fact]
+    public void Known_device_skips_network_blocks_only()
+    {
+        var clock = new AccountClock();
+        var throttle = new LoginThrottle(clock);
+        const string shared = "4:198.51.100.20";
+        for (var i = 0; i < LoginThrottle.NetworkFailureLimit; i++) throttle.Failed("user" + i, shared);
+        for (var i = 0; i < LoginThrottle.PairFailureLimit; i++) throttle.Failed("owner", shared);
+        Assert.Equal(LoginBlock.Network, throttle.Evaluate("owner", shared).Block);
+        Assert.NotNull(throttle.Check("owner", shared));
+        Assert.Null(throttle.Check("owner", shared, knownDevice: true));
+    }
+
+    [Fact]
+    public void Eviction_drops_expired_and_idle_entries_but_keeps_active_blocks()
+    {
+        var clock = new AccountClock();
+        var throttle = new LoginThrottle(clock, capacity: 64);
+        // Old entries that have already expired by the time the table fills up.
+        for (var i = 0; i < 15; i++) throttle.Failed("old" + i, "4:192.0.2." + i);
+        clock.Now += LoginThrottle.Window;
+        // An active block: one network over the pair limit for one account.
+        const string blocked = "4:198.51.100.66";
+        for (var i = 0; i < LoginThrottle.PairFailureLimit; i++) throttle.Failed("victim", blocked);
+        Assert.NotNull(throttle.Check("victim", blocked));
+        // Flood with one-off failures that would previously push the block out of the table.
+        for (var i = 0; i < 5000; i++)
+        {
+            clock.Now += TimeSpan.FromMilliseconds(1);
+            throttle.Failed("flood" + i, "4:10." + (i / 65536) + "." + (i / 256 % 256) + "." + (i % 256));
+        }
+        Assert.InRange(throttle.Count(), 1, 64);
+        Assert.Equal(LoginBlock.Network, throttle.Evaluate("victim", blocked).Block);
+    }
+
+    [Fact]
+    public void Table_of_only_active_blocks_still_has_a_hard_memory_bound()
+    {
+        var clock = new AccountClock();
+        const int capacity = 64;
+        var throttle = new LoginThrottle(clock, capacity);
+        for (var n = 0; n < 200; n++)
+            for (var i = 0; i < LoginThrottle.PairFailureLimit; i++)
+            {
+                clock.Now += TimeSpan.FromMilliseconds(1);
+                throttle.Failed("victim" + n, "4:10.1." + (n / 256) + "." + (n % 256));
+            }
+        Assert.InRange(throttle.Count(), capacity, 2 * capacity);
+        // The newest blocks survive.
+        Assert.NotNull(throttle.Check("victim199", "4:10.1.0.199"));
+    }
+
+    [Fact]
+    public void Admin_reauth_keys_are_per_admin_so_one_admin_cannot_block_another()
+    {
+        var clock = new AccountClock();
+        var throttle = new LoginThrottle(clock);
+        var first = AdminAuthService.ReauthThrottleKeys(Guid.Parse("11111111-1111-4111-8111-111111111111"));
+        var second = AdminAuthService.ReauthThrottleKeys(Guid.Parse("22222222-2222-4222-8222-222222222222"));
+        Assert.NotEqual(first.Network, second.Network);
+        Assert.NotEqual(first.Account, second.Account);
+        // Far more failures than the network limit from the first admin.
+        for (var i = 0; i < LoginThrottle.NetworkFailureLimit * 2; i++) throttle.Failed(first.Account, first.Network);
+        Assert.NotNull(throttle.Check(first.Account, first.Network));
+        Assert.Null(throttle.Check(second.Account, second.Network));
     }
 }

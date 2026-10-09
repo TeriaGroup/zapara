@@ -62,6 +62,34 @@ public sealed partial class PasswordAccountTests
     }
 
     [Fact]
+    public async Task Known_device_passes_a_network_block_but_not_the_account_cap()
+    {
+        await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);
+        var clock = new AccountClock();
+        var service = new AccountService(db.DataSource, db.Configuration, clock, throttle: new LoginThrottle(clock));
+        await service.RegisterAsync(new("test.user", Password), TestContext.Current.CancellationToken);
+        var phone = Guid.NewGuid();
+        const string shared = "4:198.51.100.30";
+        Assert.NotNull(await service.LoginAsync(Login(device: phone), shared, TestContext.Current.CancellationToken));
+        for (var i = 0; i < LoginThrottle.PairFailureLimit; i++)
+            await Failure(AccountFailure.InvalidCredentials, () => service.LoginAsync(Login(password: NewPassword), shared));
+        // A new device on the blocked network waits; the device that signed in before does not.
+        await Failure(AccountFailure.RateLimited, () => service.LoginAsync(Login(), shared));
+        Assert.NotNull(await service.LoginAsync(Login(device: phone), shared, TestContext.Current.CancellationToken));
+        // A device id known for another account gives nothing here.
+        await service.RegisterAsync(new("other.user", Password), TestContext.Current.CancellationToken);
+        for (var i = 0; i < LoginThrottle.PairFailureLimit; i++)
+            await Failure(AccountFailure.InvalidCredentials, () => service.LoginAsync(Login("other.user", NewPassword), shared));
+        await Failure(AccountFailure.RateLimited, () => service.LoginAsync(Login("other.user", device: phone), shared));
+        // The account cap stops everyone, the known device included.
+        for (var i = 0; i < LoginThrottle.AccountFailureCap; i++)
+            await Failure(AccountFailure.InvalidCredentials, () => service.LoginAsync(Login(password: NewPassword), $"4:203.0.{i / 256}.{i % 256}"));
+        await Failure(AccountFailure.RateLimited, () => service.LoginAsync(Login(device: phone), shared));
+        clock.Now += LoginThrottle.Window;
+        Assert.NotNull(await service.LoginAsync(Login(device: phone), shared, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task Legacy_locked_until_no_longer_blocks_login()
     {
         await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);

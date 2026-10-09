@@ -54,8 +54,12 @@ public sealed partial class AccountService
         Validate(() => AccountValidation.DeviceName(request.Device.DeviceName));
         Validate(() => AccountValidation.Platform(request.Device.Platform));
         // Checked before the password: a throttled attempt never learns whether the password was right.
-        if (throttle.Check(normalized, network) is { } wait)
-            throw new AccountServiceException(AccountFailure.RateLimited) { RetryAfter = wait };
+        var decision = throttle.Evaluate(normalized, network);
+        // A device that has logged in to this account before skips network blocks (so a shared or attacked network
+        // does not lock its owner out), but never the per-account cap.
+        if (decision.Block == LoginBlock.Account ||
+            (decision.Block == LoginBlock.Network && !await KnownDeviceAsync(normalized, request.Device.DeviceId, ct)))
+            throw new AccountServiceException(AccountFailure.RateLimited) { RetryAfter = decision.Wait };
         try
         {
             var session = await PasswordLoginAsync(request, normalized, ct);
@@ -69,6 +73,21 @@ public sealed partial class AccountService
             throw;
         }
     }
+
+    /// <summary>How long a device stays "known" for throttling after it was last used with the account.</summary>
+    internal static readonly TimeSpan KnownDeviceLifetime = TimeSpan.FromDays(90);
+
+    /// <summary>True when this device id has an earlier session for this account, seen within <see cref="KnownDeviceLifetime"/>.
+    /// Device ids are random per installation and never shown to other users.</summary>
+    private Task<bool> KnownDeviceAsync(string normalized, Guid deviceId, CancellationToken ct)
+        => DatabaseAsync(async db =>
+        {
+            await using var command = db.Command($"""
+                SELECT EXISTS(SELECT 1 FROM {schema}.session_families f JOIN {schema}.users u ON u.user_id=f.user_id
+                WHERE u.normalized_username=@p0 AND u.status='active' AND f.device_id=@p1 AND f.last_seen_at>@p2)
+                """, normalized, deviceId, db.Now - KnownDeviceLifetime);
+            return await command.ExecuteScalarAsync(ct) is true;
+        }, ct);
 
     private Task<SessionResponse> PasswordLoginAsync(LoginRequest request, string normalized, CancellationToken ct)
     {

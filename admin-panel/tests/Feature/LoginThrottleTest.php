@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Auth\LoginThrottle;
 use App\Filament\Pages\Login;
 use Filament\Facades\Filament;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -107,5 +109,57 @@ class LoginThrottleTest extends TestCase
             ->assertNoRedirect();
 
         $this->assertSame(0, $queries);
+    }
+
+    public function test_wide_key_is_the_ipv6_slash_48(): void
+    {
+        $this->assertSame('6:20010db80001::/48', LoginThrottle::wideNetworkKey('6:20010db8000100aa::/64'));
+        $this->assertNull(LoginThrottle::wideNetworkKey('4:203.0.113.9'));
+        $this->assertNull(LoginThrottle::wideNetworkKey('none'));
+    }
+
+    public function test_wide_tier_blocks_a_slash_48_rotating_slash_64_networks(): void
+    {
+        $throttle = new LoginThrottle;
+        for ($i = 0; $i < LoginThrottle::WIDE_NETWORK_FAILURE_LIMIT; $i++) {
+            $network = LoginThrottle::networkKey(sprintf('2001:db8:1:%x::1', $i));
+            $this->assertSame(0, $throttle->availableIn('user'.$i, $network));
+            $throttle->failed('user'.$i, $network);
+        }
+        $this->assertGreaterThan(0, $throttle->availableIn('fresh.user', LoginThrottle::networkKey('2001:db8:1:ffff::1')));
+        $this->assertSame(0, $throttle->availableIn('fresh.user', LoginThrottle::networkKey('2001:db8:2::1')));
+        $this->assertSame(0, $throttle->availableIn('fresh.user', '4:198.51.100.1'));
+    }
+
+    public function test_account_cap_bounds_guesses_from_fresh_networks(): void
+    {
+        $throttle = new LoginThrottle;
+        for ($i = 0; $i < LoginThrottle::ACCOUNT_FAILURE_CAP; $i++) {
+            $network = LoginThrottle::networkKey(sprintf('2001:db8:%x::1', $i));
+            $this->assertSame(0, $throttle->availableIn('platform.admin', $network));
+            $throttle->failed('platform.admin', $network);
+        }
+        $this->assertGreaterThan(0, $throttle->availableIn('platform.admin', LoginThrottle::networkKey('2001:db8:ffff::1')));
+        $this->assertSame(0, $throttle->availableIn('other.user', LoginThrottle::networkKey('2001:db8:ffff::1')));
+        $this->travel(LoginThrottle::WINDOW_SECONDS + 1)->seconds();
+        $this->assertSame(0, $throttle->availableIn('platform.admin', LoginThrottle::networkKey('2001:db8:ffff::1')));
+    }
+
+    public function test_forwarded_for_is_trusted_only_from_configured_proxies(): void
+    {
+        Route::get('/_test/ip', fn (Request $request) => $request->ip());
+
+        // Default: private ranges (the Docker network) are trusted, public peers are not.
+        $this->withServerVariables(['REMOTE_ADDR' => '172.18.0.3'])->withHeader('X-Forwarded-For', '203.0.113.7')
+            ->get('/_test/ip')->assertSeeText('203.0.113.7');
+        $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.5'])->withHeader('X-Forwarded-For', '203.0.113.7')
+            ->get('/_test/ip')->assertSeeText('198.51.100.5');
+
+        // A narrower configured network excludes everything else.
+        config(['trustedproxy.proxies' => ['172.18.0.0/16']]);
+        $this->withServerVariables(['REMOTE_ADDR' => '10.0.0.2'])->withHeader('X-Forwarded-For', '203.0.113.7')
+            ->get('/_test/ip')->assertSeeText('10.0.0.2');
+        $this->withServerVariables(['REMOTE_ADDR' => '172.18.5.9'])->withHeader('X-Forwarded-For', '203.0.113.7')
+            ->get('/_test/ip')->assertSeeText('203.0.113.7');
     }
 }

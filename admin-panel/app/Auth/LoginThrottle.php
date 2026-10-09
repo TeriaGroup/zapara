@@ -9,15 +9,21 @@ use Illuminate\Support\Facades\RateLimiter;
  * Failed-login throttling for the admin panel that never locks an account for everyone.
  *
  * Mirrors Zapara.Server.Accounts.LoginThrottle: failures are counted per client network
- * (IPv4 address, IPv6 /64) and per (account, network) pair, so the network that keeps failing is blocked.
- * Failures against one account from many networks only add a bounded progressive delay,
- * and networks without recent failures skip that delay.
+ * (IPv4 address, IPv6 /64), per wider IPv6 block (/48) and per (account, network) pair, so the network that
+ * keeps failing is blocked. Failures against one account from many networks add a bounded progressive delay
+ * for networks that have failed, and a total per-account cap bounds the guesses all networks get per window.
  */
 final class LoginThrottle
 {
     public const WINDOW_SECONDS = 900;
 
     public const NETWORK_FAILURE_LIMIT = 20;
+
+    /** Failures one IPv6 /48 may make across all its /64 networks per window. */
+    public const WIDE_NETWORK_FAILURE_LIMIT = 60;
+
+    /** Failures of one account from all networks after which every attempt waits for the window to end. */
+    public const ACCOUNT_FAILURE_CAP = 50;
 
     public const PAIR_FAILURE_LIMIT = 5;
 
@@ -42,6 +48,16 @@ final class LoginThrottle
         return '6:'.bin2hex(substr($packed, 0, 8)).'::/64';
     }
 
+    /** The IPv6 /48 containing a /64 network key, or null for IPv4 and unknown networks. */
+    public static function wideNetworkKey(string $network): ?string
+    {
+        if (! str_starts_with($network, '6:') || strlen($network) < 14) {
+            return null;
+        }
+
+        return '6:'.substr($network, 2, 12).'::/48';
+    }
+
     public static function normalizeAccount(mixed $username): string
     {
         return is_string($username) ? strtolower(trim($username)) : '';
@@ -50,9 +66,20 @@ final class LoginThrottle
     /** Seconds the client must wait before this attempt may be checked; 0 when it may proceed. */
     public function availableIn(string $account, string $network): int
     {
+        $accountKey = $this->key('account', $account);
+        if (RateLimiter::attempts($accountKey) >= self::ACCOUNT_FAILURE_CAP) {
+            return max(1, RateLimiter::availableIn($accountKey));
+        }
         $networkKey = $this->key('network', $network);
         if (RateLimiter::attempts($networkKey) >= self::NETWORK_FAILURE_LIMIT) {
             return max(1, RateLimiter::availableIn($networkKey));
+        }
+        $wide = self::wideNetworkKey($network);
+        if ($wide !== null) {
+            $wideKey = $this->key('wide', $wide);
+            if (RateLimiter::attempts($wideKey) >= self::WIDE_NETWORK_FAILURE_LIMIT) {
+                return max(1, RateLimiter::availableIn($wideKey));
+            }
         }
         $pairKey = $this->key('pair', $account."\n".$network);
         if (RateLimiter::attempts($pairKey) >= self::PAIR_FAILURE_LIMIT) {
@@ -61,7 +88,7 @@ final class LoginThrottle
         if (RateLimiter::attempts($networkKey) === 0) {
             return 0;
         }
-        $failures = (int) RateLimiter::attempts($this->key('account', $account));
+        $failures = (int) RateLimiter::attempts($accountKey);
         $delay = self::accountDelay($failures);
         if ($delay === 0) {
             return 0;
@@ -75,6 +102,10 @@ final class LoginThrottle
     public function failed(string $account, string $network): void
     {
         RateLimiter::hit($this->key('network', $network), self::WINDOW_SECONDS);
+        $wide = self::wideNetworkKey($network);
+        if ($wide !== null) {
+            RateLimiter::hit($this->key('wide', $wide), self::WINDOW_SECONDS);
+        }
         RateLimiter::hit($this->key('pair', $account."\n".$network), self::WINDOW_SECONDS);
         RateLimiter::hit($this->key('account', $account), self::WINDOW_SECONDS);
         Cache::put($this->key('account-last', $account), time(), self::WINDOW_SECONDS);

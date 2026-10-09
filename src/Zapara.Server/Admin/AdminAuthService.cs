@@ -172,16 +172,21 @@ public sealed class AdminAuthService(AccountsDataSource dataSource, AdminConfigu
         var hash = reader.GetString(2);
         await reader.DisposeAsync();
         // Re-authentication happens inside an admin session, so the session owner is the only one who can fail it:
-        // throttle that user only, without touching login or the stored credential state.
-        var key = "reauth:" + userId.ToString("N");
-        if (throttle.Check(key, "admin-session") is not null) throw AdminException.Reauth();
+        // throttle that admin only, without touching login or the stored credential state. Both throttle keys are
+        // per admin, so one admin's failures never block another admin.
+        var (key, scope) = ReauthThrottleKeys(userId);
+        if (throttle.Check(key, scope) is not null) throw AdminException.Reauth();
         if (hasher.VerifyHashedPassword(new(userId), hash, password) == PasswordVerificationResult.Failed)
         {
-            throttle.Failed(key, "admin-session");
+            throttle.Failed(key, scope);
             throw AdminException.Reauth();
         }
-        throttle.Succeeded(key, "admin-session");
+        throttle.Succeeded(key, scope);
     }
+
+    /// <summary>Throttle account and network keys for an admin's re-authentication; unique per admin.</summary>
+    public static (string Account, string Network) ReauthThrottleKeys(Guid userId)
+        => ("reauth:" + userId.ToString("N"), "admin-session:" + userId.ToString("N"));
 
     private async Task Audit(NpgsqlConnection connection, NpgsqlTransaction tx, Guid? actor, string action, string objectType,
         string objectId, string outcome, DateTimeOffset now, CancellationToken ct)
