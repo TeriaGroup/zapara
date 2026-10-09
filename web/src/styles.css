@@ -350,6 +350,9 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .topic-edit { min-height: 48px; padding: 0 10px; }
 .topic-icon { width: 36px; height: 36px; border-radius: 8px; display: grid; place-items: center; font-size: 18px; flex: none; position: relative; background: var(--chip); color: var(--text); }
 .topic-icon .ico { width: 20px; height: 20px; }
+/* Значок канала в заголовке — в строку с названием (#30). */
+.topic-heading { display: inline-flex; align-items: center; gap: 8px; }
+.topic-heading .topic-icon { width: 28px; height: 28px; border-radius: 8px; }
 .topic-accent-dot { position: absolute; right: 3px; bottom: 3px; width: 5px; height: 5px; border-radius: 50%; }
 .topic-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .topic-main b { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
