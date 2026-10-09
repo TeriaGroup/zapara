@@ -46,6 +46,7 @@ class Content extends Page
         return $schema->components([
             Select::make('community_id')
                 ->label('Сообщество')
+                ->placeholder('Выберите сообщество')
                 ->options(fn (): array => app(OperatorWork::class)->communityOptions()),
             TextInput::make('title')->label('Заголовок'),
             Textarea::make('body')->label('Текст'),

@@ -28,8 +28,8 @@ class Quotas extends Page
         $schema = \App\Support\Zapara::settings();
         try {
             DB::statement('CREATE TABLE IF NOT EXISTS '.$schema.'.quota_counters (scope text NOT NULL, scope_id text NOT NULL, bytes bigint NOT NULL, PRIMARY KEY (scope, scope_id))');
-            $userLimit = (int) (\App\Services\OperatorSettings::read('quota_user_bytes') ?: '524288000');
-            $groupLimit = (int) (\App\Services\OperatorSettings::read('quota_group_bytes') ?: '1073741824');
+            $userLimit = $this->userLimit();
+            $groupLimit = $this->groupLimit();
             return array_map(static function ($row) use ($userLimit, $groupLimit): array {
                 $scope = (string) $row->scope;
 
@@ -43,5 +43,15 @@ class Quotas extends Page
         } catch (\Throwable) {
             return [];
         }
+    }
+
+    public function userLimit(): int
+    {
+        return (int) (\App\Services\OperatorSettings::read('quota_user_bytes') ?: '524288000');
+    }
+
+    public function groupLimit(): int
+    {
+        return (int) (\App\Services\OperatorSettings::read('quota_group_bytes') ?: '1073741824');
     }
 }
