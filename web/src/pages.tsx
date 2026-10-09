@@ -2258,10 +2258,10 @@ function SettingsContent() {
     { id: "account" as const, icon: "users" as const, title: "Аккаунт", summary: app.session?.authenticated ? (app.session.user?.displayName || app.session.user?.username || "Вход выполнен") : "Гостевой режим" },
     { id: "study" as const, icon: "calendar" as const, title: "Учёба", summary: chosenGroupName || "Группа не выбрана" },
     { id: "appearance" as const, icon: "sun" as const, title: "Оформление", summary: app.theme === "system" ? "Как в системе" : app.theme === "dark" ? "Тёмная тема" : "Светлая тема" },
-    { id: "notifications" as const, icon: "calendar" as const, title: "Уведомления", summary: readReminders().enabled ? "Напоминания включены" : "Выключены" },
+    { id: "notifications" as const, icon: "bell" as const, title: "Уведомления", summary: readReminders().enabled ? "Напоминания включены" : "Выключены" },
     { id: "maps" as const, icon: "map" as const, title: "Карты", summary: "Планы корпусов и маршруты" },
     { id: "data" as const, icon: "refresh" as const, title: "Данные и синхронизация", summary: app.session?.authenticated ? "Аккаунт и локальная копия" : "Копия на устройстве" },
-    { id: "updates" as const, icon: "refresh" as const, title: "Обновления", summary: "Проверка версии приложения" },
+    { id: "updates" as const, icon: "upload" as const, title: "Обновления", summary: "Проверка версии приложения" },
     { id: "help" as const, icon: "file" as const, title: "Помощь", summary: "Поддержка и документы" },
   ];
   async function external(provider: "vk" | "yandex") {

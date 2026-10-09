@@ -12,7 +12,7 @@ import { PersonalComposerProvider } from "./personal-composer-context";
 import { noteSearch } from "./ux300";
 import { SearchField, useRoutePosition, focusRouteHeading, useClock } from "./ux300-controls";
 import { MobileChromeContext, useCompactLayout, useMobileKeyboard } from "./mobile-chrome";
-import { mobileTabForPath, studyGroupCaption } from "./mobile-navigation";
+import { showGroupChip, mobileTabForPath, studyGroupCaption } from "./mobile-navigation";
 import { PageHead } from "./page-head";
 
 const items: [string, string, IconName][] = [
@@ -95,9 +95,9 @@ function Shell() {
         <header className="topbar" ref={header}>
           <div className="mobile-screen-title">{screenTitle || fallbackTitle}</div>
           <div className="mobile-header-actions" ref={setActionsHost} />
-          <NavLink to="/settings?section=study" className="top-group" aria-label={`Учебная группа: ${groupLabel}. Изменить группу`}>
+          {showGroupChip(location.pathname, !!group) && <NavLink to="/settings?section=study" className="top-group" aria-label={`Учебная группа: ${groupLabel}. Изменить группу`}>
             {app.catalog?.meta.stale && <span className="group-stale-dot" aria-hidden="true" />}{groupLabel}
-          </NavLink>
+          </NavLink>}
         </header>
         {app.notice && <div className="page" style={{ paddingBottom: 0 }}><div className="banner" role="status">{app.notice}</div></div>}
         <div className="stage" key={location.pathname}>
@@ -126,7 +126,7 @@ function Shell() {
           <NavLink to="/maps" className={selectedTab === "maps" ? "active" : ""}><Icon name="map" />Карты</NavLink>
           <NavLink to="/homework" className={selectedTab === "homework" ? "active" : ""}><Icon name="homework" />Домашка</NavLink>
           <NavLink to="/chat" className={selectedTab === "chat" ? "active" : ""} aria-current={selectedTab === "chat" ? "page" : undefined}><Icon name="chat" />Чат</NavLink>
-          <button type="button" className={selectedTab === "sections" || menu ? "active" : ""} aria-expanded={menu} aria-controls={menu ? "sections-menu" : undefined} onClick={() => { setMenuQuery(""); setMenu(true); }}><Icon name="menu" />Разделы</button>
+          <button type="button" className={menu ? "active" : ""} aria-expanded={menu} aria-controls={menu ? "sections-menu" : undefined} onClick={() => { setMenuQuery(""); setMenu(true); }}><Icon name="menu" />Разделы</button>
         </nav>
       </div>
       {menu && (
