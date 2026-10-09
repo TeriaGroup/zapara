@@ -29,7 +29,8 @@ public class UpdateTests : UiTest
         var vm = new UpdateCheckViewModel(db.Services, () => Sun6, Path.Combine(db.Dir, "updates"))
         {
             Installer = installed.Add,
-            Delay = _ => Task.CompletedTask
+            Delay = _ => Task.CompletedTask,
+            StagingRoot = Path.Combine(db.Dir, "staging")
         };
         return (vm, source, installed);
     }
@@ -151,7 +152,8 @@ public class UpdateTests : UiTest
         {
             Installer = installed.Add,
             Shutdown = () => { },
-            Delay = _ => Task.CompletedTask
+            Delay = _ => Task.CompletedTask,
+            StagingRoot = Path.Combine(db.Dir, "staging")
         };
         await vm1.RunStartupFlowAsync();
         Assert.Single(installed);
@@ -161,7 +163,8 @@ public class UpdateTests : UiTest
         {
             Installer = installed.Add,
             Shutdown = () => { },
-            Delay = _ => Task.CompletedTask
+            Delay = _ => Task.CompletedTask,
+            StagingRoot = Path.Combine(db.Dir, "staging")
         };
         await vm2.RunStartupFlowAsync();
         Assert.Single(installed); // the installer is not called a second time

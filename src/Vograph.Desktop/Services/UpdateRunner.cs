@@ -22,7 +22,8 @@ public static class UpdateRunner
 
     public static void Apply(string zipPath, string appDir, Action shutdown, string exeName = "Vograph.exe")
     {
-        var bat = Path.Combine(Path.GetTempPath(), "vograph_update.bat");
+        // Next to the staged archive: that folder is private to the current user (UpdateCheckViewModel.Stage).
+        var bat = Path.Combine(Path.GetDirectoryName(zipPath) ?? Path.GetTempPath(), "vograph_update.bat");
         File.WriteAllText(bat, BuildBatch(appDir, zipPath, exeName), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         Process.Start(new ProcessStartInfo(bat) { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Hidden });
         shutdown();

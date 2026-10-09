@@ -24,7 +24,8 @@ public class UpdateVerificationTests
         var vm = new UpdateCheckViewModel(db.Services, () => Sun6, Path.Combine(db.Dir, "updates"))
         {
             Installer = installed.Add,
-            Delay = _ => Task.CompletedTask
+            Delay = _ => Task.CompletedTask,
+            StagingRoot = Path.Combine(db.Dir, "staging")
         };
         return (vm, source, installed);
     }
@@ -216,7 +217,8 @@ public class UpdateVerificationBindingTests
         var vm = new UpdateCheckViewModel(db.Services, () => Sun6, Path.Combine(db.Dir, "updates"))
         {
             Installer = installed.Add,
-            Delay = _ => Task.CompletedTask
+            Delay = _ => Task.CompletedTask,
+            StagingRoot = Path.Combine(db.Dir, "staging")
         };
         return (vm, source, installed);
     }
@@ -375,5 +377,47 @@ public class UpdateVerificationBindingTests
         Assert.Empty(source.Downloads);
         Assert.Equal(db.Services.Loc.T("updNoChecksum"), vm.StatusText);
         Assert.False(File.Exists(path));
+    }
+}
+
+public class UpdateStagingTests
+{
+    private static readonly DateTime Sun6 = new(2026, 9, 6, 15, 0, 0);
+    private const string ZipName = "ZAPARA_windows-v2.2.0_win-x64.zip";
+    private static AutoUpdateService.UpdateInfo Newer => new("windows-v2.2.0", "https://example.test/releases/tag/windows-v2.2.0",
+        "https://example.test/download/" + ZipName, "2026-09-05T10:00:00Z", ZipName,
+        "https://example.test/download/SHA256SUMS", "https://example.test/download/SHA256SUMS.sig");
+
+    [Fact]
+    public async Task Installer_gets_a_verified_copy_in_a_private_folder_not_the_download()
+    {
+        using var db = TestDb.Create();
+        var source = new FakeUpdateSource { Latest = Newer };
+        db.Services.UpdateSource = source;
+        var staging = Path.Combine(db.Dir, "staging");
+        string? handed = null;
+        byte[]? handedBytes = null;
+        var vm = new UpdateCheckViewModel(db.Services, () => Sun6, Path.Combine(db.Dir, "updates"))
+        {
+            Installer = p => { handed = p; handedBytes = File.ReadAllBytes(p); },
+            Delay = _ => Task.CompletedTask,
+            StagingRoot = staging
+        };
+        Assert.True(await vm.CheckAsync());
+        await vm.InstallCommand.ExecuteAsync(null);
+
+        Assert.NotNull(handed);
+        var dir = Path.GetDirectoryName(handed)!;
+        Assert.Equal(Path.GetFullPath(staging), Path.GetFullPath(Path.GetDirectoryName(dir)!));
+        Assert.NotEqual(Path.Combine(vm.UpdatesDir, ZipName), handed);
+        Assert.Equal(FakeUpdateSource.ReleaseZip(), handedBytes);
+        if (!OperatingSystem.IsWindows())
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute, File.GetUnixFileMode(dir));
+        Assert.True(File.Exists(Path.Combine(vm.UpdatesDir, ZipName + ".attempted"))); // R45 marker stays with the download
+
+        // Each install stages into its own folder; old staged folders are removed at the next start.
+        Directory.SetLastWriteTimeUtc(dir, DateTime.UtcNow.AddDays(-1));
+        await vm.CleanupAsync();
+        Assert.False(Directory.Exists(dir));
     }
 }

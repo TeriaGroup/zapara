@@ -48,6 +48,9 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
     public string ReleasePublicKeyPem { get; set; } = UpdateVerifier.ReleasePublicKeyPem;
     /// <summary>The final re-hash before install; replaced in tests to act while it runs.</summary>
     public Func<string, string> HashArchive { get; set; } = UpdateVerifier.Sha256File;
+    /// <summary>Per-user folder for the copy handed to the installer (under the user's own %TEMP%). Each install gets
+    /// a fresh subfolder readable only by the current user; replaced in tests.</summary>
+    public string StagingRoot { get; set; } = Path.Combine(Path.GetTempPath(), "Vograph-update");
 
     /// <summary>Where downloaded release zips (and their .attempted / .part companions) live; tests point it at their
     /// own scratch dir via the constructor and read it back to inspect what DownloadAsync/CleanupAsync left behind.</summary>
@@ -276,18 +279,13 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
             if (State == UpdateState.Available && !await DownloadAsync()) return;
             if (!operation.IsCurrent) return;
             if (State != UpdateState.Ready || _zipPath is null) return;
-            // The archive is hashed again right before it is handed over: the file on disk must still be the one
-            // that matched the release checksums.
+            // The verified archive is copied into a private per-user folder and the COPY is hashed again: what the
+            // installer unpacks is exactly what matched the release checksums, and nothing else can replace it there.
             var zipPath = _zipPath;
             var expected = _verifiedSha256;
-            var stillValid = expected is not null && await Task.Run(() =>
-            {
-                try { return HashArchive(zipPath) == expected; }
-                catch (IOException) { return false; }
-                catch (UnauthorizedAccessException) { return false; }
-            });
-            if (!operation.IsCurrent) return;
-            if (!stillValid)
+            var staged = expected is null ? null : await Task.Run(() => Stage(zipPath, expected));
+            if (!operation.IsCurrent) { DeleteStaged(staged); return; }
+            if (staged is null)
             {
                 App.Log.Warn($"update: {zipPath} changed after verification, deleting it");
                 DeleteZip(zipPath);
@@ -296,9 +294,9 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
                 Fail(T("updBadChecksum"));
                 return;
             }
-            if (_zipPath != zipPath || _verifiedSha256 != expected) return; // replaced while hashing
+            if (_zipPath != zipPath || _verifiedSha256 != expected) { DeleteStaged(staged); return; } // replaced meanwhile
             WriteAttemptedMarker(zipPath);
-            try { Installer(zipPath); }
+            try { Installer(staged); }
             catch (Exception ex)
             {
                 App.Log.Error("update apply", ex);
@@ -419,6 +417,57 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         _ => "updBadChecksum"
     };
 
+    /// <summary>Copies <paramref name="zipPath"/> into a new private folder under <see cref="StagingRoot"/> and returns
+    /// the copy if its SHA-256 is <paramref name="expected"/>; otherwise removes it and returns null.</summary>
+    private string? Stage(string zipPath, string expected)
+    {
+        string? dir = null;
+        try
+        {
+            Directory.CreateDirectory(StagingRoot);
+            dir = Path.Combine(StagingRoot, Guid.NewGuid().ToString("N"));
+            CreatePrivateDirectory(dir);
+            var copy = Path.Combine(dir, Path.GetFileName(zipPath));
+            using (var src = new FileStream(zipPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var dst = new FileStream(copy, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                src.CopyTo(dst);
+            if (HashArchive(copy) == expected) return copy;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            App.Log.Error("update stage", ex);
+        }
+        DeleteStaged(dir is null ? null : Path.Combine(dir, "_"));
+        return null;
+    }
+
+    /// <summary>Windows: an ACL with only the current user, no inherited entries. Elsewhere: mode 700.</summary>
+    private static void CreatePrivateDirectory(string dir)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            var user = System.Security.Principal.WindowsIdentity.GetCurrent().User!;
+            var security = new System.Security.AccessControl.DirectorySecurity();
+            security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+            security.SetOwner(user);
+            security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(user,
+                System.Security.AccessControl.FileSystemRights.FullControl,
+                System.Security.AccessControl.InheritanceFlags.ContainerInherit | System.Security.AccessControl.InheritanceFlags.ObjectInherit,
+                System.Security.AccessControl.PropagationFlags.None, System.Security.AccessControl.AccessControlType.Allow));
+            new DirectoryInfo(dir).Create(security);
+            return;
+        }
+        Directory.CreateDirectory(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    private void DeleteStaged(string? staged)
+    {
+        var dir = staged is null ? null : Path.GetDirectoryName(staged);
+        if (dir is null) return;
+        try { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log.Error("update stage delete", ex); }
+    }
+
     private void DeleteZip(string zip)
     {
         try { if (File.Exists(zip)) File.Delete(zip); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log.Error("update zip delete", ex); }
@@ -466,6 +515,21 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
     /// they were installed or superseded. Newer ones stay (a download the user has not applied yet). Never throws.</summary>
     public Task CleanupAsync() => Task.Run(() =>
     {
+        try
+        {
+            // Copies staged for an earlier install: the batch that unpacked them has finished long ago.
+            if (Directory.Exists(StagingRoot))
+                foreach (var dir in Directory.GetDirectories(StagingRoot))
+                {
+                    if (Directory.GetLastWriteTimeUtc(dir) > DateTime.UtcNow.AddHours(-1)) continue;
+                    try { Directory.Delete(dir, recursive: true); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log.Warn($"update: could not remove {dir}: {ex.Message}"); }
+                }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            App.Log.Error("update staging cleanup", ex);
+        }
         try
         {
             if (!Directory.Exists(_updatesDir)) return;
