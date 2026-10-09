@@ -466,3 +466,50 @@ public class UpdateAssetNameTests
             Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(json) });
     }
 }
+
+public class UpdateSignatureRequiredTests
+{
+    private static readonly DateTime Sun6 = new(2026, 9, 6, 15, 0, 0);
+    private const string ZipName = "ZAPARA_windows-v2.2.0_win-x64.zip";
+    private static AutoUpdateService.UpdateInfo Newer => new("windows-v2.2.0", "https://example.test/releases/tag/windows-v2.2.0",
+        "https://example.test/download/" + ZipName, "2026-09-05T10:00:00Z", ZipName,
+        "https://example.test/download/SHA256SUMS", "https://example.test/download/SHA256SUMS.sig");
+
+    [Theory]
+    [InlineData("missing-asset")]
+    [InlineData("404")]
+    [InlineData("garbage")]
+    [InlineData("other-key")]
+    public async Task With_a_release_key_an_unsigned_or_badly_signed_release_is_refused(string kind)
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var other = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var db = TestDb.Create();
+        var source = new FakeUpdateSource { Latest = kind == "missing-asset" ? Newer with { SignatureUrl = null } : Newer };
+        db.Services.UpdateSource = source;
+        var installed = new List<string>();
+        var vm = new UpdateCheckViewModel(db.Services, () => Sun6, Path.Combine(db.Dir, "updates"))
+        {
+            Installer = installed.Add,
+            Delay = _ => Task.CompletedTask,
+            StagingRoot = Path.Combine(db.Dir, "staging"),
+            ReleasePublicKeyPem = key.ExportSubjectPublicKeyInfoPem()
+        };
+        var sums = FakeUpdateSource.ChecksumsFor(Newer, FakeUpdateSource.ReleaseZip());
+        source.Checksums = sums;
+        source.Signature = kind switch
+        {
+            "garbage" => new byte[] { 1, 2, 3 },
+            "other-key" => other.SignData(Encoding.UTF8.GetBytes(sums), HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence),
+            _ => null // "404": the fake answers 404 for the .sig
+        };
+        Assert.True(await vm.CheckAsync());
+
+        await vm.InstallCommand.ExecuteAsync(null);
+
+        Assert.Empty(installed);
+        Assert.Equal(UpdateState.Failed, vm.State);
+        Assert.Equal(db.Services.Loc.T("updBadSignature"), vm.StatusText);
+        Assert.Empty(Directory.GetFiles(vm.UpdatesDir, "*.zip"));
+    }
+}
