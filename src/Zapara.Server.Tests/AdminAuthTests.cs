@@ -15,7 +15,9 @@ public sealed class AdminAuthTests
         await using var host = new AdminTestHost(db);
         var user = await host.RegisterAsync("admin.cookie");
         Assert.Equal(AdminBootstrapOutcome.Committed, await AdminBootstrap.RunAsync(db.Accounts.DataSource, db.Configuration, user.UserId, Ct));
-        foreach (var path in new[] { "/Admin", "/Admin/Login", "/Admin/Accounts", "/Admin/Communities", "/Admin/Logout" })
+        // The Razor admin is superseded by the Filament panel (Caddy sends /admin to it) and has no second factor:
+        // it must stay unreachable on the server in any letter case, even with Admin:Enabled=true.
+        foreach (var path in new[] { "/Admin", "/Admin/Login", "/Admin/Accounts", "/Admin/Communities", "/Admin/Logout", "/admin", "/admin/login", "/ADMIN/Index" })
         {
             using var response = await host.Client.GetAsync(path, Ct);
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);

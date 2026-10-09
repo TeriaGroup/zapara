@@ -12,6 +12,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // Idempotent: the container entrypoint runs migrations on every start.
+        if (Schema::hasTable('admin_mfa_credentials')) {
+            return;
+        }
         Schema::create('admin_mfa_credentials', function (Blueprint $table) {
             // accounts.users.user_id of the administrator.
             $table->uuid('user_id')->primary();

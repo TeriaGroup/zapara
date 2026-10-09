@@ -24,3 +24,7 @@ RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/fra
     && chmod -R ug+rwx storage bootstrap/cache
 
 EXPOSE 80
+
+# Runs pending migrations (idempotent) before Apache starts; see docker/entrypoint.sh.
+ENTRYPOINT ["/var/www/html/docker/entrypoint.sh"]
+CMD ["apache2-foreground"]

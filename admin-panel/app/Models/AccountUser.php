@@ -62,6 +62,20 @@ class AccountUser extends Authenticatable implements FilamentUser, HasAppAuthent
             ->exists();
     }
 
+    /**
+     * The account's password hash (ASP.NET Identity, owned by Zapara.Server). Used by Laravel's `current_password`
+     * rule through {@see \App\Auth\ZaparaHasher} and by AuthenticateSession, which ends panel sessions after a
+     * password change.
+     */
+    public function getAuthPassword(): string
+    {
+        $hash = DB::table(Zapara::accounts().'.password_credentials')
+            ->where('user_id', $this->user_id)
+            ->value('password_hash');
+
+        return is_string($hash) ? $hash : '';
+    }
+
     /** TOTP data is kept in the panel's own table, keyed by user_id; accounts.users stays untouched. */
     public function mfaCredential(): HasOne
     {

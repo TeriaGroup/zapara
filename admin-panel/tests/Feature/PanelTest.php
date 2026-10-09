@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Auth\IdentityPassword;
+use App\Auth\MfaThrottle;
+use App\Auth\ThrottledAppAuthentication;
 use App\Filament\Pages\AuditLog;
 use App\Filament\Pages\Communities;
 use App\Filament\Pages\Content;
@@ -10,6 +12,7 @@ use App\Filament\Pages\Login;
 use App\Filament\Pages\Memberships;
 use App\Filament\Pages\PlatformStatus;
 use App\Filament\Pages\Quotas;
+use App\Filament\Pages\Security;
 use App\Filament\Pages\Sessions;
 use App\Filament\Pages\Staff;
 use App\Filament\Pages\SupportDesk;
@@ -25,6 +28,7 @@ use Filament\Actions\Testing\TestAction;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -128,6 +132,132 @@ class PanelTest extends TestCase
             ->call('authenticate')
             ->assertHasNoErrors();
         $this->assertAuthenticatedAs($admin);
+    }
+
+    public function test_totp_window_is_one_step_and_an_accepted_code_cannot_be_replayed(): void
+    {
+        $admin = $this->makeUser(true);
+        $provider = $this->appProvider();
+        $this->assertInstanceOf(ThrottledAppAuthentication::class, $provider);
+        $this->assertSame(1, $provider->getCodeWindow());
+        $secret = $provider->generateSecret();
+        $provider->saveSecret($admin, $secret);
+        $code = $provider->getCurrentCode($admin, $secret);
+
+        $this->passwordStep($admin)->set('data.multiFactor.app.code', $code)->call('authenticate');
+        $this->assertAuthenticatedAs($admin);
+        Filament::auth()->logout();
+
+        // Same code again within its validity window: refused.
+        $this->passwordStep($admin)->set('data.multiFactor.app.code', $code)->call('authenticate');
+        $this->assertGuest();
+
+        // A code from more than one step away is refused even though it was never used.
+        $google2fa = new \PragmaRX\Google2FA\Google2FA;
+        $old = $google2fa->oathTotp($secret, $google2fa->getTimestamp() - 3);
+        $this->assertFalse($provider->verifyCode($old, $secret));
+    }
+
+    public function test_recovery_code_works_once(): void
+    {
+        $admin = $this->makeUser(true);
+        $provider = $this->appProvider();
+        $provider->saveSecret($admin, $provider->generateSecret());
+        $provider->saveRecoveryCodes($admin, ['first-recovery-code', 'second-recovery-code']);
+
+        $this->passwordStep($admin)
+            ->set('data.multiFactor.app.useRecoveryCode', true)
+            ->set('data.multiFactor.app.recoveryCode', 'first-recovery-code')
+            ->call('authenticate');
+        $this->assertAuthenticatedAs($admin);
+        Filament::auth()->logout();
+        $this->assertCount(1, $admin->fresh()->getAppAuthenticationRecoveryCodes());
+
+        $this->passwordStep($admin)
+            ->set('data.multiFactor.app.useRecoveryCode', true)
+            ->set('data.multiFactor.app.recoveryCode', 'first-recovery-code')
+            ->call('authenticate');
+        $this->assertGuest();
+
+        // Past Filament's own per-minute login limit, which the attempts above have used up.
+        $this->travel(61)->seconds();
+        $this->passwordStep($admin)
+            ->set('data.multiFactor.app.useRecoveryCode', true)
+            ->set('data.multiFactor.app.recoveryCode', 'second-recovery-code')
+            ->call('authenticate');
+        $this->assertAuthenticatedAs($admin);
+    }
+
+    public function test_password_confirmation_for_mfa_setup_and_disabling_uses_the_account_password(): void
+    {
+        $admin = $this->makeUser(true);
+        $this->actingAs($admin);
+        $guard = Filament::getAuthGuard();
+        // Filament confirms the current password with Laravel's current_password rule before set-up and disabling.
+        $this->assertTrue(Validator::make(['password' => self::PASSWORD], ['password' => 'current_password:'.$guard])->passes());
+        $this->assertFalse(Validator::make(['password' => 'wrong-password'], ['password' => 'current_password:'.$guard])->passes());
+        // Panel-made hashes (recovery codes) still use bcrypt.
+        $this->assertStringStartsWith('$2y$', \Illuminate\Support\Facades\Hash::make('x'));
+    }
+
+    public function test_disabling_mfa_needs_password_and_code_and_removes_secret_and_recovery_codes(): void
+    {
+        $admin = $this->makeUser(true);
+        $provider = $this->appProvider();
+        $secret = $provider->generateSecret();
+        $provider->saveSecret($admin, $secret);
+        $provider->saveRecoveryCodes($admin, ['only-recovery-code']);
+        $this->actingAs($admin);
+        $action = TestAction::make('disableAppAuthentication')->schemaComponent(self::MFA_ACTIONS_COMPONENT, 'content');
+
+        Livewire::test(Security::class)
+            ->callAction($action, ['password' => 'wrong-password', 'code' => $provider->getCurrentCode($admin, $secret)])
+            ->assertHasActionErrors(['password']);
+        $this->assertTrue($provider->isEnabled($admin->fresh()));
+
+        Livewire::test(Security::class)
+            ->callAction($action, ['password' => self::PASSWORD, 'code' => '000000'])
+            ->assertHasActionErrors(['code']);
+        $this->assertTrue($provider->isEnabled($admin->fresh()));
+
+        Livewire::test(Security::class)
+            ->callAction($action, ['password' => self::PASSWORD, 'code' => $provider->getCurrentCode($admin, $secret)])
+            ->assertHasNoActionErrors();
+        $fresh = $admin->fresh();
+        $this->assertFalse($provider->isEnabled($fresh));
+        $this->assertNull($fresh->getAppAuthenticationRecoveryCodes());
+
+        // Without TOTP the admin signs in with the password alone again.
+        Filament::auth()->logout();
+        $this->passwordStep($fresh, expectChallenge: false);
+        $this->assertAuthenticatedAs($fresh);
+    }
+
+    public function test_wrong_mfa_codes_are_limited_per_admin(): void
+    {
+        $admin = $this->makeUser(true);
+        $other = $this->makeUser(true);
+        $provider = $this->appProvider();
+        $secret = $provider->generateSecret();
+        $otherSecret = $provider->generateSecret();
+        $provider->saveSecret($admin, $secret);
+        $provider->saveSecret($other, $otherSecret);
+        $provider->saveRecoveryCodes($admin, ['limited-recovery-code']);
+
+        for ($i = 0; $i < MfaThrottle::FAILURE_LIMIT - 1; $i++) {
+            $this->assertFalse($provider->verifyCode('000000', $secret, shouldPreventCodeReuse: true));
+        }
+        // Wrong recovery codes count against the same admin.
+        $this->assertFalse($provider->verifyRecoveryCode('wrong-recovery-code', $admin));
+        // Limit reached: even the right code and the right recovery code are refused.
+        $this->assertFalse($provider->verifyCode($provider->getCurrentCode($admin, $secret), $secret, shouldPreventCodeReuse: true));
+        $this->assertFalse($provider->verifyRecoveryCode('limited-recovery-code', $admin));
+        $this->assertCount(1, $admin->fresh()->getAppAuthenticationRecoveryCodes());
+        // Another admin is not affected.
+        $this->assertTrue($provider->verifyCode($provider->getCurrentCode($other, $otherSecret), $otherSecret, shouldPreventCodeReuse: true));
+
+        $this->travel(MfaThrottle::WINDOW_SECONDS + 1)->seconds();
+        $this->assertTrue($provider->verifyCode($provider->getCurrentCode($admin, $secret), $secret, shouldPreventCodeReuse: true));
     }
 
     public function test_admin_without_totp_logs_in_while_enforcement_is_off(): void
@@ -695,6 +825,30 @@ class PanelTest extends TestCase
         $html = preg_replace('/value="[^"]{16,}"/', 'value=""', $html) ?? $html;
 
         return $html;
+    }
+
+    private const MFA_ACTIONS_COMPONENT = 'app.mfa-app-actions';
+
+    private function appProvider(): ThrottledAppAuthentication
+    {
+        $provider = Filament::getPanel('admin')->getMultiFactorAuthenticationProviders()['app'];
+        $this->assertInstanceOf(ThrottledAppAuthentication::class, $provider);
+
+        return $provider;
+    }
+
+    private function passwordStep(AccountUser $admin, bool $expectChallenge = true): \Livewire\Features\SupportTesting\Testable
+    {
+        $login = Livewire::test(Login::class)
+            ->fillForm(['username' => $admin->username, 'password' => self::PASSWORD])
+            ->call('authenticate')
+            ->assertHasNoFormErrors();
+        if ($expectChallenge) {
+            $this->assertGuest();
+            $this->assertNotNull($login->get('userUndertakingMultiFactorAuthentication'));
+        }
+
+        return $login;
     }
 
     private function makeUser(bool $admin): AccountUser
