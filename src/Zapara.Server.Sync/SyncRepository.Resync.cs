@@ -10,7 +10,8 @@ internal sealed partial class SyncRepository
     internal async Task<SyncResyncManifest> BeginResyncAsync(SyncMetadata metadata)
     {
         await CleanManifestsAsync(metadata.SyncEpoch);
-        var existing = await ManifestAsync(null);
+        // Повторно выдаём только снимок без более поздних изменений: старый снимок вернул бы удалённые записи живыми (#31).
+        var existing = await ManifestAsync(null, metadata.CurrentSequence);
         if (existing is not null) return existing;
         var id = Guid.NewGuid();
         await ExecuteAsync($"""
@@ -30,11 +31,11 @@ internal sealed partial class SyncRepository
         return new(id, metadata.SyncEpoch, metadata.CurrentSequence, Now, Now.AddMinutes(10), count);
     }
 
-    private async Task<SyncResyncManifest?> ManifestAsync(Guid? id)
+    private async Task<SyncResyncManifest?> ManifestAsync(Guid? id, long highWater = 0)
     {
         await using var command = id.HasValue
             ? Command($"SELECT id,epoch,high_water,created_at,expires_at,item_count FROM {Schema}.sync_manifests WHERE user_id=@p0 AND id=@p1", UserId, id.Value)
-            : Command($"SELECT id,epoch,high_water,created_at,expires_at,item_count FROM {Schema}.sync_manifests WHERE user_id=@p0 ORDER BY created_at,id LIMIT 1", UserId);
+            : Command($"SELECT id,epoch,high_water,created_at,expires_at,item_count FROM {Schema}.sync_manifests WHERE user_id=@p0 AND high_water=@p1 ORDER BY created_at,id LIMIT 1", UserId, highWater);
         await using var reader = await command.ExecuteReaderAsync(ct);
         return await reader.ReadAsync(ct) ? new(reader.GetGuid(0), reader.GetGuid(1), reader.GetInt64(2),
             reader.GetFieldValue<DateTimeOffset>(3), reader.GetFieldValue<DateTimeOffset>(4), reader.GetInt64(5)) : null;
