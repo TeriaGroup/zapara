@@ -10,6 +10,7 @@ public sealed record GroupPickRow(string? Header, Group? Group)
 {
     public bool IsHeader => Header is not null;
     public bool IsGroup => Group is not null;
+    public string Name => Group?.Name ?? "";
 }
 
 public sealed partial class GroupPickerDialogViewModel : DialogViewModelBase

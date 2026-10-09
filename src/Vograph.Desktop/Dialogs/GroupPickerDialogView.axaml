@@ -28,7 +28,7 @@
         <DataTemplate x:DataType="d:GroupPickRow">
           <Panel>
             <TextBlock Classes="micro" Text="{Binding Header}" IsVisible="{Binding IsHeader}" Margin="0,6,0,0" />
-            <c:HighlightText Source="{Binding Group.Name, FallbackValue=''}" IsVisible="{Binding IsGroup}"
+            <c:HighlightText Source="{Binding Name}" IsVisible="{Binding IsGroup}"
                              Query="{Binding $parent[ListBox].((d:GroupPickerDialogViewModel)DataContext).Query}" />
           </Panel>
         </DataTemplate>
