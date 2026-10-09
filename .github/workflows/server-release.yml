@@ -14,6 +14,11 @@ on:
 permissions:
   contents: read
 
+# One run per branch or pull request; a newer push cancels the run still in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   publish:
     # Self-hosted Linux runner of the owner. The repo is public: never run code from fork pull requests on it.
@@ -24,12 +29,12 @@ jobs:
       DOTNET_NOLOGO: "1"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           clean: true
           persist-credentials: false
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: 8.0.x
 
@@ -43,12 +48,15 @@ jobs:
             -method "Zapara.Server.Tests.SocialMediaTests.Tiff_named_as_jpeg_is_rejected_by_content" \
             -method "Zapara.Server.Tests.SocialMediaTests.Decode_gate_limits_concurrent_decodes_and_reports_busy"
 
+      # The license secret is used only for push and workflow_dispatch: pull request runs on the self-hosted
+      # runner never receive it and do only the Debug build and tests above.
       - name: Check license secret
         id: license
+        if: github.event_name != 'pull_request'
         env:
           SIXLABORS_LICENSE_KEY: ${{ secrets.SIXLABORS_LICENSE_KEY }}
         run: |
-          # Fork pull requests do not reach this job (see the job condition), so a missing key is a configuration error.
+          # Only push and workflow_dispatch reach this step, so a missing key is a configuration error.
           if [ -n "$SIXLABORS_LICENSE_KEY" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
@@ -58,13 +66,13 @@ jobs:
           fi
 
       - name: Publish server (Release)
-        if: steps.license.outputs.present == 'true'
+        if: github.event_name != 'pull_request' && steps.license.outputs.present == 'true'
         env:
           SIXLABORS_LICENSE_KEY: ${{ secrets.SIXLABORS_LICENSE_KEY }}
         run: dotnet publish src/Zapara.Server -c Release -o "$RUNNER_TEMP/server"
 
-      - uses: actions/upload-artifact@v4
-        if: steps.license.outputs.present == 'true' && github.event_name != 'pull_request'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: github.event_name != 'pull_request' && steps.license.outputs.present == 'true'
         with:
           name: zapara-server
           path: ${{ runner.temp }}/server
