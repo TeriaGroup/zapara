@@ -12,9 +12,9 @@
     <string name="ux30_teachers_load_failed">Не удалось открыть каталог преподавателей. Сохранённые результаты доступны.</string>
     <string name="ux30_summary_no_saved">Расписание ещё не загружено</string>
     <string name="ux30_summary_no_saved_hint">Загрузите расписание группы, чтобы увидеть сводку.</string>
-    <string name="ux30_summary_no_lessons">В выбранной неделе занятий нет.</string>
+    <string name="ux30_summary_no_lessons">В выбранной неделе пар нет.</string>
     <string name="ux30_maps_no_group">Для маршрута к следующей паре выберите группу. Планы этажей доступны ниже.</string>
-    <string name="ux30_maps_no_next">Предстоящих занятий нет. Можно выбрать корпус и этаж вручную.</string>
+    <string name="ux30_maps_no_next">Предстоящих пар нет. Можно выбрать корпус и этаж вручную.</string>
     <string name="ux30_maps_unknown_room">Аудитория не найдена. Выберите план вручную.</string>
     <string name="ux30_maps_load_failed">Не удалось обновить карту. Доступен последний загруженный план.</string>
     <string name="ux30_maps_back_to_lesson">К выбранному дню</string>

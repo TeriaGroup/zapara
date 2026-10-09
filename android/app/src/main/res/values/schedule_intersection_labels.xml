@@ -3,7 +3,7 @@
     <string name="schedule_intersection_same_room">Одна аудитория</string>
     <string name="schedule_intersection_same_floor">Один этаж</string>
     <string name="schedule_intersection_same_building">Один корпус</string>
-    <string name="schedule_intersection_same_time">Занятия в одно время</string>
+    <string name="schedule_intersection_same_time">Пары в одно время</string>
     <string name="schedule_intersection_none">Нет пересечения по времени</string>
     <string name="schedule_upcoming_lesson_mark">Пара ещё не началась</string>
     <string name="schedule_friend_has_lesson">Пара в это время</string>

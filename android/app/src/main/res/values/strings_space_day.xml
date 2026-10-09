@@ -13,7 +13,7 @@
     <string name="space_day_11">Обсудить задание</string>
     <string name="space_day_12">Без пар</string>
     <string name="space_day_13">%1$s пар · %2$s–%3$s</string>
-    <string name="space_day_14">В этот день занятий нет</string>
+    <string name="space_day_14">В этот день пар нет</string>
     <string name="space_day_15">Пары закончились</string>
     <string name="schedule_break_time">Перерыв %1$s–%2$s</string>
     <string name="schedule_break_minutes">%1$d мин</string>
@@ -25,8 +25,8 @@
     <string name="space_day_21">Домашка</string>
     <string name="space_day_22">Обсудить</string>
     <string name="space_day_23">Ближайшие сроки · %1$s/%2$s</string>
-    <string name="space_day_24">Готово у меня: %1$s</string>
-    <string name="space_day_25">Готово у меня</string>
+    <string name="space_day_24">Выполнено: %1$s</string>
+    <string name="space_day_25">Выполнено</string>
     <string name="space_day_26">Готовность сохранена</string>
     <string name="space_day_27">Отменить</string>
     <string name="space_day_28">Обсудить</string>
@@ -122,7 +122,7 @@
     <string name="space_day_118">Готовность отмечается только у вас</string>
     <string name="space_day_119">Предыдущий день</string>
     <string name="space_day_120">Следующий день</string>
-    <string name="space_day_121">Нет занятий в сохранённом расписании выбранной группы</string>
+    <string name="space_day_121">Нет пар в сохранённом расписании выбранной группы</string>
     <string name="space_day_122">Обновите приложение, чтобы открыть этот тип канала</string>
     <string name="space_day_123">Создать анкету</string>
     <string name="space_day_124">Название</string>
@@ -179,7 +179,7 @@
     <string name="space_day_load_more">Загрузить ещё</string>
     <string name="space_day_response_count">Загружено %1$s из %2$s ответов</string>
     <string name="space_day_no_network_copy">Нет сети · %1$s</string>
-    <string name="space_day_overlap">Занятия пересекаются по времени</string>
+    <string name="space_day_overlap">Пары пересекаются по времени</string>
     <string name="space_day_current_pair">Сейчас идёт пара</string>
     <string name="space_day_next_pair">Следующая пара</string>
     <string name="space_day_edit_homework">Редактировать задание</string>

@@ -35,7 +35,6 @@
     <string name="ux300_android_all_deadlines">Все сроки</string>
     <string name="ux300_android_overdue">Просрочено</string>
     <string name="ux300_android_due_soon">Сегодня или завтра</string>
-    <string name="ux300_android_no_deadline">Без срока</string>
     <string name="ux300_android_sort_deadline">Сначала ближайшие</string>
     <string name="ux300_android_sort_title">По названию</string>
     <string name="ux300_android_group_homework_count">Показано %1$d из %2$d задач</string>

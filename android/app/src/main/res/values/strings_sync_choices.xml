@@ -13,7 +13,7 @@
     <string name="sync_type_friend">Группа друзей</string>
     <string name="sync_type_settings">Настройки</string>
     <string name="sync_value_missing">Запись удалена или отсутствует</string>
-    <string name="sync_value_homework">%1$s\n%2$s\nК занятию: %3$d</string>
+    <string name="sync_value_homework">%1$s\n%2$s\nК паре: %3$d</string>
     <string name="sync_value_done">Выполнено</string>
     <string name="sync_value_not_done">Не выполнено</string>
     <string name="sync_value_override">Предмет: %1$s\nНазвание: %2$s\nЗаметка: %3$s\n%4$s</string>
