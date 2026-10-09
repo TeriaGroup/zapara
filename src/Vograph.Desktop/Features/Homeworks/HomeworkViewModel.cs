@@ -135,6 +135,9 @@ public sealed partial class HomeworkViewModel : ViewModelBase
     public bool ShowBrowseEmpty => IsLoaded && HasGroup && !LoadFailed && !SharedLoading && (!ShowSharedTasks || SharedLoaded) && Groups.Count == 0 && VisibleSharedTasks.Count == 0;
     public string BrowseEmptyTitle => TotalBrowseCount > 0 ? "По выбранным фильтрам заданий нет" : "Заданий пока нет";
     public string BrowseEmptyHint => TotalBrowseCount > 0 ? "Измените поиск или выберите другой статус." : "Добавьте личное задание или обновите задания группы.";
+    /// <summary>#21: основная кнопка пустого списка — «Добавить задание», а если пусто из-за фильтров — «Сбросить фильтры».</summary>
+    public string BrowseEmptyAction => TotalBrowseCount > 0 ? "Сбросить фильтры" : T("hwAddTask");
+    public System.Windows.Input.ICommand BrowseEmptyCommand => TotalBrowseCount > 0 ? ClearBrowseFiltersCommand : AddCommand;
     private int TotalBrowseCount => (_model?.Open ?? 0) + (_model?.Done ?? 0) + (ShowSharedTasks && SharedLoaded ? SharedTasks.Count : 0);
     public string BrowseSummary
     {
@@ -200,7 +203,7 @@ public sealed partial class HomeworkViewModel : ViewModelBase
         if (_completionUndo is { } undo && !undo.Allows(model.Groups.SelectMany(group => group.Items).FirstOrDefault(item => item.Homework.Id == undo.Id)?.Homework, scope, DateTimeOffset.UtcNow))
             ClearCompletionUndo();
         ApplyFilters();
-        Subtitle = $"{App.Loc.Plural(model.Open, "hwOpen1", "hwOpen2", "hwOpen5")} · {T("hwDoneCount", model.Done)}";
+        Subtitle = T("hwOpenDone", model.Open, model.Done); // #21: «Открыто: N · Сдано: N» — без склонений и сокращений
         OnPropertyChanged(nameof(Title));
         _ = RefreshSharedTasks();
     }

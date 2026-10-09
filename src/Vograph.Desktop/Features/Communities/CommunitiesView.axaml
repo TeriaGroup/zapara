@@ -16,8 +16,8 @@
 
       <c:EmptyState IsVisible="{Binding NeedAccount}" Title="{loc:T communityNeedAccount}"
                     Hint="{loc:T accountIsolation}" Icon="{StaticResource Icon.Friends}" Margin="0,24"
+                    ActionText="Войти в аккаунт" Command="{Binding OpenAccountCommand}"
                     AutomationProperties.AutomationId="Community.NeedAccount" />
-      <Button Content="Открыть настройки аккаунта" Command="{Binding OpenAccountCommand}" IsVisible="{Binding NeedAccount}" HorizontalAlignment="Left" />
       <Button Content="Повторить загрузку сообществ" Command="{Binding RetryCommunitiesCommand}" IsVisible="{Binding LoadFailed}" HorizontalAlignment="Left" />
       <c:EmptyState IsVisible="{Binding IsEmpty}" Title="{loc:T communityEmpty}"
                     Icon="{StaticResource Icon.Friends}" Margin="0,24"

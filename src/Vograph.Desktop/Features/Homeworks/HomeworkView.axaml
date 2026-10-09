@@ -8,19 +8,35 @@
              x:DataType="h:HomeworkViewModel">
   <Grid RowDefinitions="*,Auto">
   <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Margin="24,20" Spacing="12" MaxWidth="880" HorizontalAlignment="Left">
+    <StackPanel Margin="24,20" Spacing="12" HorizontalAlignment="Stretch">
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel Margin="0,0,16,0">
           <TextBlock Classes="display" Text="{Binding Title}" />
           <TextBlock Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" />
         </StackPanel>
-        <Button Grid.Column="1" Classes="primary" VerticalAlignment="Bottom" Command="{Binding AddCommand}" IsEnabled="{Binding HasGroup}"
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
+        <Button Classes="primary" Command="{Binding AddCommand}" IsEnabled="{Binding HasGroup}"
                 AutomationProperties.AutomationId="Homework.Add" AutomationProperties.Name="{loc:T hwAddShort}">
           <StackPanel Orientation="Horizontal" Spacing="6">
             <c:Icon Data="{StaticResource Icon.Plus}" Size="14" />
             <TextBlock Text="{loc:T hwAddShort}" />
           </StackPanel>
         </Button>
+        <!-- #21: служебные действия списка — в «⋯», а не отдельными строками над заданиями. -->
+        <Button Name="HomeworkMore" ToolTip.Tip="{loc:T hwMore}" AutomationProperties.Name="{loc:T hwMore}" AutomationProperties.AutomationId="Homework.More">
+          <c:Icon Data="{StaticResource Icon.More}" Size="14" />
+          <Button.Flyout>
+            <MenuFlyout Placement="BottomEdgeAlignedRight">
+              <MenuItem Header="Сохранить сроки в календарь" Command="{Binding ExportDeadlinesCommand}" IsEnabled="{Binding HasGroups}" />
+              <MenuItem Header="Предпросмотр текущего списка" Command="{Binding PreviewFilteredPlanCommand}" />
+              <MenuItem Header="Выбрать несколько" Command="{Binding ToggleBulkModeCommand}" />
+              <Separator />
+              <MenuItem Header="Раскрыть все разделы" Command="{Binding ExpandAllGroupsCommand}" IsEnabled="{Binding HasGroups}" />
+              <MenuItem Header="Свернуть все разделы" Command="{Binding CollapseAllGroupsCommand}" IsEnabled="{Binding HasGroups}" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
+        </StackPanel>
       </Grid>
 
       <WrapPanel IsVisible="{Binding HasSubjectFilter}"><TextBlock Text="{Binding SubjectFilter}" VerticalAlignment="Center" /><Button Content="Все предметы" Command="{Binding ClearSubjectFilterCommand}" /></WrapPanel>
@@ -33,12 +49,10 @@
         <CheckBox Content="С файлами" IsChecked="{Binding FilesOnly}" VerticalAlignment="Center" />
       </WrapPanel>
       <WrapPanel ItemSpacing="8"><TextBlock Classes="muted" Text="{Binding BrowseSummary}" VerticalAlignment="Center" /><Button Content="Сбросить фильтры" Command="{Binding ClearBrowseFiltersCommand}" IsVisible="{Binding HasBrowseFilters}" /></WrapPanel>
-      <Button Content="Сохранить сроки в календарь" Command="{Binding ExportDeadlinesCommand}" IsEnabled="{Binding HasGroups}" HorizontalAlignment="Left" />
-      <Button Content="Предпросмотр текущего списка" Command="{Binding PreviewFilteredPlanCommand}" HorizontalAlignment="Left" />
       <TextBlock Text="Личные задания по предметам" Classes="subject" IsVisible="{Binding HasSubjectOverview}" />
       <ItemsControl ItemsSource="{Binding SubjectOverview}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="h:HomeworkSubjectOverviewRow"><Button Classes="ghost" Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" MinHeight="48"><StackPanel><TextBlock Text="{Binding Subject}" Classes="subject" /><TextBlock Text="{Binding Summary}" TextWrapping="Wrap" /></StackPanel></Button></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
       <Border Classes="card" IsVisible="{Binding ShowFilteredPlanPreview}"><StackPanel Spacing="8"><TextBlock Text="{Binding FilteredPlanPreview}" TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Content="Копировать список" Command="{Binding CopyFilteredPlanCommand}" /><Button Content="Скрыть" Command="{Binding HideFilteredPlanCommand}" /></WrapPanel></StackPanel></Border>
-      <WrapPanel ItemSpacing="8" LineSpacing="8"><Button Content="Выбрать несколько" Command="{Binding ToggleBulkModeCommand}" /><TextBlock Text="{Binding BulkSelectedCount, StringFormat='Выбрано: {0}'}" IsVisible="{Binding BulkMode}" VerticalAlignment="Center" /><Button Content="Отметить выбранные готовыми" Command="{Binding RequestBulkCompletionCommand}" IsVisible="{Binding BulkMode}" /><Button Content="Перенести на следующую пару" Command="{Binding RequestBulkPostponeCommand}" IsVisible="{Binding BulkMode}" /><Button Content="Опубликовать выбранные группе" Command="{Binding LoadBulkPublishRecipientsCommand}" IsVisible="{Binding BulkMode}" IsEnabled="{Binding !BulkPublishBusy}" /><Button Content="Вернуться к ожидающей публикации" Command="{Binding ReopenBulkPublicationCommand}" IsVisible="{Binding HasPendingBulkPublication}" /></WrapPanel>
+      <WrapPanel ItemSpacing="8" LineSpacing="8" IsVisible="{Binding BulkMode}"><Button Content="Готово" Command="{Binding ToggleBulkModeCommand}" /><TextBlock Text="{Binding BulkSelectedCount, StringFormat='Выбрано: {0}'}" IsVisible="{Binding BulkMode}" VerticalAlignment="Center" /><Button Content="Отметить выбранные готовыми" Command="{Binding RequestBulkCompletionCommand}" IsVisible="{Binding BulkMode}" /><Button Content="Перенести на следующую пару" Command="{Binding RequestBulkPostponeCommand}" IsVisible="{Binding BulkMode}" /><Button Content="Опубликовать выбранные группе" Command="{Binding LoadBulkPublishRecipientsCommand}" IsVisible="{Binding BulkMode}" IsEnabled="{Binding !BulkPublishBusy}" /><Button Content="Вернуться к ожидающей публикации" Command="{Binding ReopenBulkPublicationCommand}" IsVisible="{Binding HasPendingBulkPublication}" /></WrapPanel>
       <StackPanel Spacing="8" IsVisible="{Binding ShowBulkPublishRecipients}"><d:HomeworkAudienceView DataContext="{Binding BulkPublishRecipients}" /><Button Content="Проверить публикацию" Command="{Binding PreviewBulkPublicationCommand}" IsEnabled="{Binding !BulkPublishBusy}" HorizontalAlignment="Left" /></StackPanel>
       <Border Classes="card" IsVisible="{Binding ShowBulkPublishPreview}"><StackPanel Spacing="8"><TextBlock Text="{Binding BulkPublishPreviewText}" TextWrapping="Wrap" /><WrapPanel ItemSpacing="8"><Button Classes="primary" Content="Опубликовать / повторить неподтверждённые" Command="{Binding ConfirmBulkPublicationCommand}" IsEnabled="{Binding !BulkPublishBusy}" /><Button Content="Скрыть" Command="{Binding HideBulkPublicationCommand}" /></WrapPanel></StackPanel></Border>
       <TextBlock Text="{Binding BulkPublishFeedback}" TextWrapping="Wrap" />
@@ -48,11 +62,11 @@
       <WrapPanel ItemSpacing="8"><TextBlock Text="{Binding PostponeFeedback}" TextWrapping="Wrap" VerticalAlignment="Center" /><Button Content="Повторить неуспешные" Command="{Binding RetryFailedPostponeCommand}" IsVisible="{Binding HasPostponeFailures}" /></WrapPanel>
       <StackPanel Spacing="6" IsVisible="{Binding LoadFailed}"><TextBlock Text="Личные задания не загрузились. Показан последний доступный список." TextWrapping="Wrap" /><Button Content="Повторить загрузку" Command="{Binding RetryLoadCommand}" HorizontalAlignment="Left" /></StackPanel>
       <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,0,0,2" />
-      <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Homework}" Margin="0,24" />
-      <Button Content="Выбрать группу" Command="{Binding ChangeGroupCommand}" IsVisible="{Binding ShowNoGroup}" HorizontalAlignment="Left" />
-      <c:EmptyState IsVisible="{Binding ShowBrowseEmpty}" Title="{Binding BrowseEmptyTitle}" Hint="{Binding BrowseEmptyHint}" Icon="{StaticResource Icon.Homework}" Margin="0,12" />
       <TextBlock Text="Личные задания" Classes="subject" IsVisible="{Binding ShowPersonalTasksSection}" />
-      <WrapPanel ItemSpacing="8" IsVisible="{Binding HasGroups}"><Button Content="Раскрыть все разделы" Command="{Binding ExpandAllGroupsCommand}" /><Button Content="Свернуть все разделы" Command="{Binding CollapseAllGroupsCommand}" /></WrapPanel>
+      <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Homework}" Margin="0,24"
+                    ActionText="{loc:T chooseGroup}" Command="{Binding ChangeGroupCommand}" AutomationProperties.AutomationId="Homework.NoGroup" />
+      <c:EmptyState IsVisible="{Binding ShowBrowseEmpty}" Title="{Binding BrowseEmptyTitle}" Hint="{Binding BrowseEmptyHint}" Icon="{StaticResource Icon.Homework}" Margin="0,12"
+                    ActionText="{Binding BrowseEmptyAction}" Command="{Binding BrowseEmptyCommand}" AutomationProperties.AutomationId="Homework.Empty" />
 
       <ItemsControl ItemsSource="{Binding Groups}" c:Appear.CascadeHost="True">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Spacing="14" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
