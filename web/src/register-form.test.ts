@@ -14,7 +14,7 @@ test("#16: rules are judged after blur and on submit", () => {
   assert.deepEqual(passwordRules("long enough pass", "long enough pass", { password: true, confirmation: true }).map(rule => rule.state), ["ok", "ok", "ok"]);
   assert.deepEqual(passwordRules("long enough pass", "other", { password: true, confirmation: true }).map(rule => rule.state), ["ok", "ok", "bad"]);
   assert.deepEqual(passwordRules("", "", { submitted: true }).map(rule => rule.state), ["bad", "bad", "bad"]);
-  assert.equal(passwordRules("bad\u0007password!!", "", { password: true })[1].state, "bad");
+  assert.equal(passwordRules("bad\u0000password!!", "", { password: true })[1].state, "bad");
 });
 
 test("#16: submit lists what is missing instead of a silent disabled button", () => {
