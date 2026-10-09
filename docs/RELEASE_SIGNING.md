@@ -12,7 +12,8 @@
    со строкой `version:`. Без валидной подписи или без строки `version:` установка тоже отменяется. Пока ключ
    пустой, проверяется только `SHA256SUMS`, а файл без строки `version:` принимается.
 
-Перед запуском установщика хеш архива на диске проверяется ещё раз.
+Перед запуском установщика проверенный архив копируется в отдельную папку внутри временной папки пользователя
+(доступ только у текущего пользователя), и хеш копии проверяется ещё раз. Распаковывается именно эта копия.
 
 Клиенты 2.1.42 и старше ничего не проверяют. Проверка работает начиная с версии, в которую вошло это изменение.
 После её выхода каждый Windows-релиз обязан содержать `SHA256SUMS`, иначе новые клиенты не обновятся
@@ -22,19 +23,26 @@
 
 Ключ создаёт и хранит владелец релизов, вне репозитория и вне облачных папок. Подойдёт любой из вариантов.
 
-OpenSSL:
+Закрытый ключ сразу сохраняется зашифрованным паролем (PKCS#8, AES-256). Скрипт выпуска спрашивает пароль
+при подписи.
+
+OpenSSL (пароль спрашивается интерактивно):
 
 ```sh
-openssl ecparam -name prime256v1 -genkey -noout -out zapara-release.key
-openssl ec -in zapara-release.key -pubout -out zapara-release.pub.pem
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -aes-256-cbc -out zapara-release.key
+openssl pkey -in zapara-release.key -pubout -out zapara-release.pub.pem
 ```
 
 PowerShell 7:
 
 ```powershell
 $k = [System.Security.Cryptography.ECDsa]::Create([System.Security.Cryptography.ECCurve+NamedCurves]::nistP256)
-Set-Content zapara-release.key $k.ExportPkcs8PrivateKeyPem() -NoNewline
+$pw = Read-Host -AsSecureString 'Passphrase'
+$p = [System.Net.NetworkCredential]::new('', $pw).Password
+$pbe = [System.Security.Cryptography.PbeParameters]::new('Aes256Cbc', 'SHA256', 600000)
+Set-Content zapara-release.key $k.ExportEncryptedPkcs8PrivateKeyPem($p, $pbe) -NoNewline
 Set-Content zapara-release.pub.pem $k.ExportSubjectPublicKeyInfoPem() -NoNewline
+$p = $null; $k.Dispose()
 ```
 
 Дальше:
@@ -42,8 +50,15 @@ Set-Content zapara-release.pub.pem $k.ExportSubjectPublicKeyInfoPem() -NoNewline
 1. Содержимое `zapara-release.pub.pem` вставить в `ReleasePublicKeyPem` целиком, вместе со строками
    `-----BEGIN PUBLIC KEY-----` и `-----END PUBLIC KEY-----`, и выпустить версию с этим ключом.
 2. С этого релиза каждый Windows-релиз подписывать (см. ниже). Клиент с ключом не примет неподписанный релиз.
-3. Закрытый ключ `zapara-release.key` нельзя коммитить и публиковать. Резервную копию держать офлайн.
+3. Хранение закрытого ключа:
+   - только в зашифрованном виде (`BEGIN ENCRYPTED PRIVATE KEY`), длинный пароль хранить в менеджере паролей
+     отдельно от файла;
+   - на машине, где собираются релизы, лучше на зашифрованном диске (BitLocker) или съёмном носителе, который
+     подключается только для подписи. Не класть в репозиторий, облачные папки, чаты, CI без отдельного решения;
+   - резервная копия (тоже зашифрованная) офлайн, в другом месте;
+   - доступ только у того, кто выпускает релизы.
    Если ключ утерян, придётся выпустить версию с новым открытым ключом, и пользователи обновят её вручную.
+   Если ключ мог утечь, сразу выпустить версию с новым ключом и перестать подписывать старым.
 
 ## Выпуск релиза
 
@@ -53,8 +68,10 @@ pwsh scripts/release/sign-release.ps1 -Version 2.1.43 `
   -PrivateKey D:\keys\zapara-release.key -PublicKey D:\keys\zapara-release.pub.pem
 ```
 
-`-Version` должен совпадать с тегом релиза (`v2.1.43` → `2.1.43`). Скрипт пишет рядом с первым файлом `SHA256SUMS` и `SHA256SUMS.sig`. Их нужно загрузить в релиз вместе
-с ассетами, имена менять нельзя. Без `-PrivateKey` создаётся только `SHA256SUMS`: так можно работать,
+`-Version` должен совпадать с тегом релиза (`v2.1.43` → `2.1.43`). Если среди файлов есть `ZAPARA_win-x64.zip`,
+скрипт кладёт рядом копию `ZAPARA_win-x64_<версия>.zip`. Автообновление берёт файл с версией в имени,
+а если его нет, прежнее имя `ZAPARA_win-x64.zip`. Скрипт пишет рядом с первым файлом `SHA256SUMS` и `SHA256SUMS.sig`. Их нужно загрузить в релиз вместе
+со всеми ассетами (включая копию с версией), имена менять нельзя. Без `-PrivateKey` создаётся только `SHA256SUMS`: так можно работать,
 пока ключ не заведён. Подписывать заново нужно после любой замены ассета в релизе.
 
 Ручная проверка через OpenSSL:

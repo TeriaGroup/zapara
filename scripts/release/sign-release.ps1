@@ -16,7 +16,8 @@ param(
     # Release version without prefix, matching the tag (v2.1.43 / windows-v2.1.43 -> 2.1.43).
     [Parameter(Mandatory)] [string] $Version,
     [Parameter(Mandatory)] [string[]] $Assets,
-    # PEM private key (EC P-256). Without it only SHA256SUMS is written.
+    # PEM private key (EC P-256), preferably encrypted (BEGIN ENCRYPTED PRIVATE KEY): the passphrase is asked
+    # interactively. Without a key only SHA256SUMS is written.
     [string] $PrivateKey = $env:ZAPARA_RELEASE_KEY,
     # Where SHA256SUMS and SHA256SUMS.sig go; defaults to the folder of the first asset.
     [string] $OutDir,
@@ -29,7 +30,17 @@ Set-StrictMode -Version Latest
 $Version = $Version.Trim() -replace '^(windows-)?[vV]', ''
 if ($Version -notmatch '^\d+(\.\d+){1,3}$') { throw "Version must look like 2.1.43, got '$Version'." }
 
-$files = $Assets | ForEach-Object { Get-Item -LiteralPath $_ }
+$files = @($Assets | ForEach-Object { Get-Item -LiteralPath $_ })
+# The updater prefers ZAPARA_win-x64_<version>.zip and falls back to ZAPARA_win-x64.zip. Add the versioned copy
+# next to the legacy archive (README links keep using the legacy name); upload both.
+$versionedName = "ZAPARA_win-x64_$Version.zip"
+$legacy = $files | Where-Object Name -eq 'ZAPARA_win-x64.zip' | Select-Object -First 1
+if ($legacy -and -not ($files | Where-Object Name -eq $versionedName)) {
+    $copy = Join-Path $legacy.DirectoryName $versionedName
+    Copy-Item -LiteralPath $legacy.FullName -Destination $copy -Force
+    $files += Get-Item -LiteralPath $copy
+    Write-Host "Added $copy"
+}
 if (-not $OutDir) { $OutDir = $files[0].DirectoryName }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
@@ -53,7 +64,15 @@ if (-not $PrivateKey) {
 
 $ecdsa = [System.Security.Cryptography.ECDsa]::Create()
 try {
-    $ecdsa.ImportFromPem((Get-Content -Raw -LiteralPath $PrivateKey))
+    $pem = Get-Content -Raw -LiteralPath $PrivateKey
+    if ($pem -match 'BEGIN ENCRYPTED PRIVATE KEY') {
+        $secure = Read-Host -AsSecureString 'Release key passphrase'
+        $plain = [System.Net.NetworkCredential]::new('', $secure).Password
+        try { $ecdsa.ImportFromEncryptedPem($pem, $plain) } finally { $plain = $null }
+    } else {
+        Write-Warning 'The release key is not encrypted. See docs/RELEASE_SIGNING.md.'
+        $ecdsa.ImportFromPem($pem)
+    }
     if ($ecdsa.KeySize -ne 256) { throw 'The release key must be an EC P-256 key.' }
     $sig = $ecdsa.SignData($sums, [System.Security.Cryptography.HashAlgorithmName]::SHA256,
         [System.Security.Cryptography.DSASignatureFormat]::Rfc3279DerSequence)
