@@ -108,6 +108,7 @@ class CommunityResource extends Resource
                     ->visibleFrom('md'),
             ])
             ->defaultSort('name')
+            ->stackedOnMobile()
             ->recordUrl(fn (Community $record): string => static::getUrl('view', ['record' => $record]))
             ->emptyStateHeading('Сообществ пока нет')
             ->emptyStateDescription('Создайте сообщество, затем привяжите к нему группы и назначьте персонал.');

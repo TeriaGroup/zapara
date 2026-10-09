@@ -50,6 +50,7 @@ class GroupsRelationManager extends RelationManager
                     ->visibleFrom('md'),
             ])
             ->defaultSort('group_id')
+            ->stackedOnMobile()
             ->headerActions([
                 Action::make('mapCatalog')
                     ->label('Привязать группу')

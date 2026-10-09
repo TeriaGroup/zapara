@@ -80,6 +80,7 @@ class StaffAssignmentResource extends Resource
                     ->visibleFrom('md'),
             ])
             ->defaultSort('assigned_at', 'desc')
+            ->stackedOnMobile()
             ->filters([
                 SelectFilter::make('role')->label('Роль')->options(StaffAssignment::ROLES),
             ])

@@ -56,6 +56,7 @@ class StaffRelationManager extends RelationManager
                     ->visibleFrom('md'),
             ])
             ->defaultSort('assigned_at', 'desc')
+            ->stackedOnMobile()
             ->headerActions([
                 Action::make('assignStaff')
                     ->label('Назначить')
