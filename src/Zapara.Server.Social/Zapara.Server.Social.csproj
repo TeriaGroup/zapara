@@ -4,14 +4,24 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <!-- ImageSharp 4.x checks a Six Labors license at build time. The key is never committed: pass it through the
-         SIXLABORS_LICENSE_KEY environment variable or keep sixlabors.lic next to the project (ignored by git). -->
+    <!-- ImageSharp 3.2.0 checks a Six Labors license at build time (Release fails without one, Debug only warns).
+         The free community key is scoped to Zapara.Server.Social and Zapara.Server.Tests and is not committed:
+         pass it through the SIXLABORS_LICENSE_KEY environment variable or keep sixlabors.lic next to the project. -->
     <SixLaborsLicenseKey Condition="'$(SixLaborsLicenseKey)' == ''">$(SIXLABORS_LICENSE_KEY)</SixLaborsLicenseKey>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Zapara.Contracts\Zapara.Contracts.csproj" />
     <ProjectReference Include="..\Zapara.Server.Accounts\Zapara.Server.Accounts.csproj" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="4.1.3" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.2.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- ImageSharp 3.2.0 includes the backported fixes for these advisories (SixLabors/ImageSharp#3208), but GitHub's
+         advisory database still lists 3.2.0 as affected. Suppress only these advisories; any other stays a warning. -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-gwg2-r3hj-4w44" /> <!-- fixed in 3.2.0 via #3208 -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j3p4-wp97-rph4" /> <!-- fixed in 3.2.0 via #3208 -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j9gm-c75j-xc9q" /> <!-- fixed in 3.2.0 via #3208 -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-jjfr-hcj7-qf5w" /> <!-- fixed in 3.2.0 via #3208 -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-wmxv-xphr-5c9g" /> <!-- fixed in 3.2.0 via #3208 -->
   </ItemGroup>
 </Project>

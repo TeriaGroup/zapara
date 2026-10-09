@@ -1,5 +1,6 @@
-# Release build of the server. SixLabors.ImageSharp 4.x validates a Six Labors license at build time and fails
-# Release builds without one, so the key comes from the repository secret SIXLABORS_LICENSE_KEY
+# Release build of the server. SixLabors.ImageSharp 3.2.0 validates a Six Labors license at build time and fails
+# Release builds without one, so the key (a free community key scoped to Zapara.Server.Social and
+# Zapara.Server.Tests) comes from the repository secret SIXLABORS_LICENSE_KEY
 # (Settings → Secrets and variables → Actions). The key is never written to the log or the repository.
 name: server-release
 
