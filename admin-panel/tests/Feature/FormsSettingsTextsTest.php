@@ -209,15 +209,14 @@ class FormsSettingsTextsTest extends TestCase
         }
 
         $page = (string) $this->get('/admin/settings')->assertOk()->getContent();
-        $this->assertMatchesRegularExpression('/:root\s*\{\s*--zp-border-control-tmp:\s*(#[0-9a-f]{6})/i', $page);
-        preg_match('/:root\s*\{\s*--zp-border-control-tmp:\s*(#[0-9a-f]{6})/i', $page, $light);
-        preg_match('/\.dark\s*\{\s*--zp-border-control-tmp:\s*(#[0-9a-f]{6})/i', $page, $dark);
+        // Граница — токен border-control из #11; его контраст проверяет web/src/design-tokens.test.ts.
+        // Здесь проверяем запасной цвет, который действует, пока токен не подключён.
+        $this->assertDoesNotMatchRegularExpression('/--zp-border-control-tmp/', $page);
+        $this->assertMatchesRegularExpression('/--tw-ring-color:\s*var\(--zp-border-control,\s*(#[0-9a-f]{6})\)/i', $page);
+        preg_match('/--tw-ring-color:\s*var\(--zp-border-control,\s*(#[0-9a-f]{6})\)/i', $page, $fallback);
         // Фон поля и страницы в светлой теме; фон секции и поля в тёмной (gray-900 и white 5% поверх него).
-        foreach (['#ffffff', '#fafafa'] as $background) {
-            $this->assertGreaterThanOrEqual(3.0, self::contrast($light[1], $background), $light[1].' / '.$background);
-        }
-        foreach (['#18181b', '#242427'] as $background) {
-            $this->assertGreaterThanOrEqual(3.0, self::contrast($dark[1], $background), $dark[1].' / '.$background);
+        foreach (['#ffffff', '#fafafa', '#18181b', '#242427'] as $background) {
+            $this->assertGreaterThanOrEqual(3.0, self::contrast($fallback[1], $background), $fallback[1].' / '.$background);
         }
     }
 
