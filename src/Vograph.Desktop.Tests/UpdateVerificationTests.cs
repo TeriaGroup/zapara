@@ -421,3 +421,48 @@ public class UpdateStagingTests
         Assert.False(Directory.Exists(dir));
     }
 }
+
+public class UpdateAssetNameTests
+{
+    private static (string, string) A(string name) => (name, "https://example.test/" + name);
+
+    [Fact]
+    public void Versioned_windows_archive_is_preferred_then_the_legacy_name()
+    {
+        Assert.Equal("ZAPARA_win-x64_2.1.43.zip", AutoUpdateService.VersionedWindowsAssetName("v2.1.43"));
+        var both = new[] { A("ZAPARA_win-x64.zip"), A("ZAPARA_win-x64_2.1.42.zip"), A("ZAPARA_win-x64_2.1.43.zip"), A("ZAPARA_android-debug.apk") };
+        Assert.Equal("ZAPARA_win-x64_2.1.43.zip", AutoUpdateService.PickAsset(both, "windows-v2.1.43", wantZip: true)!.Value.Name);
+        // A versioned file of another version is not «this release's» archive: fall back to the legacy name.
+        var legacy = new[] { A("ZAPARA_win-x64_2.1.42.zip"), A("ZAPARA_win-x64.zip") };
+        Assert.Equal("ZAPARA_win-x64.zip", AutoUpdateService.PickAsset(legacy, "v2.1.43", wantZip: true)!.Value.Name);
+        var old = new[] { A("other.zip"), A("ZAPARA_old.zip"), A("last.zip") };
+        Assert.Equal("ZAPARA_old.zip", AutoUpdateService.PickAsset(old, "v1.2", wantZip: true)!.Value.Name);
+        Assert.Equal("ZAPARA_android-debug.apk", AutoUpdateService.PickAsset(both, "android-v1.2.21", wantZip: false)!.Value.Name);
+        Assert.Null(AutoUpdateService.PickAsset(new[] { A("SHA256SUMS") }, "v2.1.43", wantZip: true));
+    }
+
+    [Fact]
+    public async Task Latest_release_reports_the_versioned_archive_and_manifest_assets()
+    {
+        const string json = """
+        [{"tag_name":"v2.1.43","html_url":"https://example.test/r","published_at":"2026-10-01T00:00:00Z","assets":[
+          {"name":"ZAPARA_win-x64.zip","browser_download_url":"https://example.test/d/ZAPARA_win-x64.zip"},
+          {"name":"ZAPARA_win-x64_2.1.43.zip","browser_download_url":"https://example.test/d/ZAPARA_win-x64_2.1.43.zip"},
+          {"name":"SHA256SUMS","browser_download_url":"https://example.test/d/SHA256SUMS"},
+          {"name":"SHA256SUMS.sig","browser_download_url":"https://example.test/d/SHA256SUMS.sig"}]}]
+        """;
+        using var service = new AutoUpdateService(new HttpClient(new StubHandler(json)));
+        var info = await service.GetLatestAsync("windows");
+        Assert.NotNull(info);
+        Assert.Equal("ZAPARA_win-x64_2.1.43.zip", info!.ZipName);
+        Assert.Equal("https://example.test/d/ZAPARA_win-x64_2.1.43.zip", info.ZipUrl);
+        Assert.Equal("https://example.test/d/SHA256SUMS", info.ChecksumsUrl);
+        Assert.Equal("https://example.test/d/SHA256SUMS.sig", info.SignatureUrl);
+    }
+
+    private sealed class StubHandler(string json) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(json) });
+    }
+}

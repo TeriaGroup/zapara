@@ -49,28 +49,52 @@ public class AutoUpdateService : IDisposable
             if (!TagMatchesChannel(tag, pfx)) continue;
             var html = el.GetProperty("html_url").GetString() ?? $"https://github.com/{Owner}/{repoName}/releases/tag/{tag}";
             var published = el.TryGetProperty("published_at", out var p) ? p.GetString() ?? "" : "";
-            string? zip = null, zipName = null, sums = null, sig = null;
+            string? sums = null, sig = null;
+            var packages = new List<(string Name, string Url)>();
             if (el.TryGetProperty("assets", out var assets))
             {
                 foreach (var a in assets.EnumerateArray())
                 {
                     var name = a.GetProperty("name").GetString() ?? "";
-                    if (name == UpdateVerifier.ChecksumsAssetName) { sums = a.GetProperty("browser_download_url").GetString(); continue; }
-                    if (name == UpdateVerifier.SignatureAssetName) { sig = a.GetProperty("browser_download_url").GetString(); continue; }
-                    if (zip != null && zipName!.Contains("ZAPARA", StringComparison.OrdinalIgnoreCase)) continue;
-                    var ok = wantZip
-                        ? name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
-                        : name.EndsWith(".apk", StringComparison.OrdinalIgnoreCase);
-                    if (!ok) continue;
-                    zip = a.GetProperty("browser_download_url").GetString();
-                    zipName = name;
+                    var assetUrl = a.GetProperty("browser_download_url").GetString();
+                    if (assetUrl is null) continue;
+                    if (name == UpdateVerifier.ChecksumsAssetName) { sums = assetUrl; continue; }
+                    if (name == UpdateVerifier.SignatureAssetName) { sig = assetUrl; continue; }
+                    packages.Add((name, assetUrl));
                 }
             }
-            if (zip == null) continue;
+            var picked = PickAsset(packages, tag, wantZip);
+            if (picked is null) continue;
+            var (zipName, zip) = picked.Value;
             var cand = new UpdateInfo(tag, html, zip, published, zipName, sums, sig);
             if (best == null || BetterTag(best.Tag, tag, pfx) == tag) best = cand;
         }
         return best;
+    }
+
+    /// <summary>Windows asset name carrying the release version: ZAPARA_win-x64_2.1.43.zip.</summary>
+    public static string VersionedWindowsAssetName(string tag) =>
+        ParseVersion(tag) is { } v ? $"ZAPARA_win-x64_{v.ToString(3)}.zip" : "ZAPARA_win-x64.zip";
+
+    public const string LegacyWindowsAssetName = "ZAPARA_win-x64.zip";
+
+    /// <summary>Windows: the versioned archive for this tag, then the legacy ZAPARA_win-x64.zip, then (older
+    /// releases) the first zip with ZAPARA in its name or the last zip. Android: the first ZAPARA apk or the last apk.</summary>
+    public static (string Name, string Url)? PickAsset(IReadOnlyList<(string Name, string Url)> assets, string tag, bool wantZip)
+    {
+        var ext = wantZip ? ".zip" : ".apk";
+        var candidates = assets.Where(a => a.Name.EndsWith(ext, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (candidates.Count == 0) return null;
+        if (wantZip)
+        {
+            var versioned = VersionedWindowsAssetName(tag);
+            foreach (var preferred in new[] { versioned, LegacyWindowsAssetName })
+                foreach (var a in candidates)
+                    if (string.Equals(a.Name, preferred, StringComparison.OrdinalIgnoreCase)) return a;
+        }
+        foreach (var a in candidates)
+            if (a.Name.Contains("ZAPARA", StringComparison.OrdinalIgnoreCase)) return a;
+        return candidates[^1];
     }
 
     public static string CurrentTagWindows => "windows-v2.1.42";
