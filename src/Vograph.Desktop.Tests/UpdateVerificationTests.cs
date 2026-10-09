@@ -84,7 +84,7 @@ public class UpdateVerificationTests
             var path = Path.Combine(dir.FullName, ZipName);
             var bytes = FakeUpdateSource.ReleaseZip();
             File.WriteAllBytes(path, bytes);
-            var sums = Encoding.UTF8.GetBytes($"{Hex(bytes)}  {ZipName}\n");
+            var sums = Encoding.UTF8.GetBytes($"version: 2.2.0\n{Hex(bytes)}  {ZipName}\n");
             var der = key.SignData(sums, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence);
             var raw = key.SignData(sums, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
 
