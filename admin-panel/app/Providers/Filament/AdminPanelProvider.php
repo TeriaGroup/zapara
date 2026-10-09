@@ -7,6 +7,8 @@ use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use App\Filament\Pages\Login;
+use App\Filament\Pages\Security;
+use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
@@ -28,6 +30,16 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login(Login::class)
+            ->profile(Security::class, isSimple: false)
+            // TOTP (RFC 6238) with one-time recovery codes. Enforcement is a deploy switch, see admin-panel/README.md.
+            ->multiFactorAuthentication(
+                [
+                    AppAuthentication::make()
+                        ->brandName('Расписание военмех')
+                        ->recoverable(),
+                ],
+                isRequired: fn (): bool => (bool) config('zapara.admin_mfa_required'),
+            )
             ->brandName('Расписание военмех')
             ->colors([
                 'primary' => Color::Amber,

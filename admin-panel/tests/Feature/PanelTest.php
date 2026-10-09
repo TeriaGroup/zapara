@@ -18,11 +18,14 @@ use App\Filament\Resources\AccountUsers\Pages\CreateAccountUser;
 use App\Filament\Resources\AccountUsers\Pages\EditAccountUser;
 use App\Filament\Resources\AccountUsers\Pages\ListAccountUsers;
 use App\Models\AccountUser;
+use App\Models\AdminMfaCredential;
 use App\Services\OperatorSettings;
 use App\Support\Zapara;
 use Filament\Actions\Testing\TestAction;
+use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Symfony\Component\Process\Process;
@@ -52,10 +55,17 @@ class PanelTest extends TestCase
         }
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         config(['app.env' => 'local']);
+        if (! Schema::hasTable('admin_mfa_credentials')) {
+            (require database_path('migrations/2026_10_09_000000_create_admin_mfa_credentials_table.php'))->up();
+        }
     }
 
     protected function tearDown(): void
     {
+        if ($this->users !== [] && Schema::hasTable('admin_mfa_credentials')) {
+            AdminMfaCredential::query()->whereIn('user_id', $this->users)->delete();
+        }
+        putenv('ZAPARA_ADMIN_MFA_REQUIRED');
         foreach ($this->users as $id) {
             $this->deleteUser($id);
         }
@@ -87,6 +97,68 @@ class PanelTest extends TestCase
             file_put_contents($dir.DIRECTORY_SEPARATOR.'panel-launch-1.txt', $first);
             file_put_contents($dir.DIRECTORY_SEPARATOR.'panel-launch-2.txt', $second);
         }
+    }
+
+    public function test_enrolled_admin_needs_totp_code_after_password(): void
+    {
+        $admin = $this->makeUser(true);
+        $provider = Filament::getPanel('admin')->getMultiFactorAuthenticationProviders()['app'];
+        $this->assertInstanceOf(AppAuthentication::class, $provider);
+        $secret = $provider->generateSecret();
+        $provider->saveSecret($admin, $secret);
+        $provider->saveRecoveryCodes($admin, ['recovery-one-0000', 'recovery-two-0000']);
+
+        $stored = DB::table('admin_mfa_credentials')->where('user_id', $admin->user_id)->first();
+        $this->assertNotNull($stored);
+        $this->assertStringNotContainsString($secret, (string) $stored->app_authentication_secret);
+        $this->assertStringNotContainsString('recovery-one', (string) $stored->app_authentication_recovery_codes);
+
+        $login = Livewire::test(Login::class)
+            ->fillForm(['username' => $admin->username, 'password' => self::PASSWORD])
+            ->call('authenticate')
+            ->assertHasNoFormErrors();
+        $this->assertGuest();
+        $this->assertNotNull($login->get('userUndertakingMultiFactorAuthentication'));
+
+        $login->set('data.multiFactor.app.code', '000000')
+            ->call('authenticate');
+        $this->assertGuest();
+
+        $login->set('data.multiFactor.app.code', $provider->getCurrentCode($admin, $secret))
+            ->call('authenticate')
+            ->assertHasNoErrors();
+        $this->assertAuthenticatedAs($admin);
+    }
+
+    public function test_admin_without_totp_logs_in_while_enforcement_is_off(): void
+    {
+        $this->assertFalse(Filament::getPanel('admin')->isMultiFactorAuthenticationRequired());
+        $admin = $this->makeUser(true);
+        Livewire::test(Login::class)
+            ->fillForm(['username' => $admin->username, 'password' => self::PASSWORD])
+            ->call('authenticate')
+            ->assertHasNoFormErrors();
+        $this->assertAuthenticatedAs($admin);
+        $this->get('/admin/security')->assertOk()->assertSee('Двухфакторная защита');
+    }
+
+    public function test_enforcement_sends_admin_without_totp_to_enrollment(): void
+    {
+        putenv('ZAPARA_ADMIN_MFA_REQUIRED=true');
+        $this->refreshApplication();
+        config(['app.env' => 'local']);
+        $panel = Filament::getPanel('admin');
+        Filament::setCurrentPanel($panel);
+        $this->assertTrue($panel->isMultiFactorAuthenticationRequired());
+        $admin = $this->makeUser(true);
+        $this->actingAs($admin);
+        $response = $this->get('/admin');
+        $response->assertRedirect();
+        $this->assertStringContainsString('multi-factor-authentication', (string) $response->headers->get('Location'));
+
+        $provider = $panel->getMultiFactorAuthenticationProviders()['app'];
+        $provider->saveSecret($admin, $provider->generateSecret());
+        $this->get('/admin')->assertOk();
     }
 
     public function test_identity_hash_round_trips(): void
