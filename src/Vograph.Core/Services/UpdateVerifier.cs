@@ -17,7 +17,13 @@ public static class UpdateVerifier
     /// archive is checked against SHA256SUMS only; once it is set, a valid signature of SHA256SUMS is required.</summary>
     public const string ReleasePublicKeyPem = "";
 
-    public enum Outcome { Ok, NoChecksums, NotListed, Mismatch, NoSignature, BadSignature }
+    /// <summary>Manifest header line naming the release the checksums belong to: «version: 2.1.43». It is part of the
+    /// signed bytes, so a signed manifest cannot be reused for another release.</summary>
+    public const string VersionHeader = "version:";
+
+    /// <summary><see cref="Unavailable"/> is a transport problem (the manifest could not be fetched right now) and
+    /// is retryable; every other non-Ok outcome means the archive must not be installed.</summary>
+    public enum Outcome { Ok, NoChecksums, NotListed, Mismatch, NoSignature, BadSignature, NoVersion, WrongVersion, Downgrade, Unavailable }
 
     public sealed record Result(Outcome Outcome, string? Sha256)
     {
@@ -26,7 +32,29 @@ public static class UpdateVerifier
 
     /// <summary>Lines of «&lt;64 hex&gt;  name» or «&lt;64 hex&gt; *name». Anything else is ignored; a name listed
     /// twice with different hashes makes the whole file unusable.</summary>
-    public static IReadOnlyDictionary<string, string> ParseChecksums(string text)
+    public static IReadOnlyDictionary<string, string> ParseChecksums(string text) => ParseManifest(text).Checksums;
+
+    public sealed record Manifest(IReadOnlyDictionary<string, string> Checksums, string? Version, bool Conflicting);
+
+    /// <summary>SHA256SUMS plus an optional «version: X» header line. Files without the header (older releases,
+    /// plain sha256sum output) parse as before with <see cref="Manifest.Version"/> null. Two different version
+    /// lines or two hashes for one name make the manifest unusable (<see cref="Manifest.Conflicting"/>).</summary>
+    public static Manifest ParseManifest(string text)
+    {
+        string? version = null;
+        foreach (var raw in text.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (!line.StartsWith(VersionHeader, StringComparison.OrdinalIgnoreCase)) continue;
+            var value = line[VersionHeader.Length..].Trim();
+            if (version is not null && version != value) return new Manifest(new Dictionary<string, string>(), null, true);
+            version = value;
+        }
+        var map = ParseHashes(text);
+        return new Manifest(map ?? new Dictionary<string, string>(), version, map is null);
+    }
+
+    private static Dictionary<string, string>? ParseHashes(string text)
     {
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var raw in text.Split('\n'))
@@ -40,7 +68,7 @@ public static class UpdateVerifier
             name = name.Trim();
             if (name.Length == 0) continue;
             hash = hash.ToLowerInvariant();
-            if (map.TryGetValue(name, out var existing) && existing != hash) return new Dictionary<string, string>();
+            if (map.TryGetValue(name, out var existing) && existing != hash) return null;
             map[name] = hash;
         }
         return map;
@@ -71,8 +99,11 @@ public static class UpdateVerifier
         }
     }
 
-    /// <summary>Never throws for bad input; IO errors on <paramref name="filePath"/> propagate.</summary>
-    public static Result Verify(string filePath, string assetName, byte[]? checksums, byte[]? signature, string publicKeyPem)
+    /// <summary>Never throws for bad input; IO errors on <paramref name="filePath"/> propagate.
+    /// When the manifest names a version it must equal <paramref name="releaseTag"/>'s and must not be older than
+    /// <paramref name="currentTag"/>. A signed manifest (key set) must name a version.</summary>
+    public static Result Verify(string filePath, string assetName, byte[]? checksums, byte[]? signature, string publicKeyPem,
+        string? releaseTag = null, string? currentTag = null)
     {
         if (checksums is null || checksums.Length == 0 || checksums.Length > MaxChecksumsBytes) return new(Outcome.NoChecksums, null);
         if (!string.IsNullOrWhiteSpace(publicKeyPem))
@@ -83,7 +114,21 @@ public static class UpdateVerifier
         string text;
         try { text = new UTF8Encoding(false, true).GetString(checksums); }
         catch (DecoderFallbackException) { return new(Outcome.NoChecksums, null); }
-        if (!ParseChecksums(text).TryGetValue(assetName, out var expected)) return new(Outcome.NotListed, null);
+        var manifest = ParseManifest(text);
+        if (manifest.Conflicting) return new(Outcome.NoChecksums, null);
+        if (manifest.Version is null)
+        {
+            if (!string.IsNullOrWhiteSpace(publicKeyPem)) return new(Outcome.NoVersion, null);
+        }
+        else
+        {
+            var named = AutoUpdateService.ParseVersion(manifest.Version);
+            if (named is null) return new(Outcome.NoVersion, null);
+            if (releaseTag is not null && AutoUpdateService.ParseVersion(releaseTag) != named) return new(Outcome.WrongVersion, null);
+            var current = AutoUpdateService.ParseVersion(currentTag);
+            if (current is not null && named < current) return new(Outcome.Downgrade, null);
+        }
+        if (!manifest.Checksums.TryGetValue(assetName, out var expected)) return new(Outcome.NotListed, null);
         var actual = Sha256File(filePath);
         return CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(actual), Encoding.ASCII.GetBytes(expected))
             ? new(Outcome.Ok, actual)

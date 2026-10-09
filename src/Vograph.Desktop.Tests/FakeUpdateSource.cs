@@ -22,6 +22,8 @@ public sealed class FakeUpdateSource : IUpdateSource
     public byte[]? Signature { get; set; }
     public int Checks { get; private set; }
     public List<string> SmallDownloads { get; } = new();
+    /// <summary>Thrown by the next SHA256SUMS fetches (a network error, a 5xx, a 404), then cleared.</summary>
+    public Exception? ChecksumsFailure { get; set; }
     public List<string> Downloads { get; } = new();
 
     public Task<AutoUpdateService.UpdateInfo?> GetLatestAsync(CancellationToken ct = default)
@@ -49,6 +51,7 @@ public sealed class FakeUpdateSource : IUpdateSource
             return Signature is null
                 ? Task.FromException<byte[]>(new HttpRequestException("404", null, System.Net.HttpStatusCode.NotFound))
                 : Task.FromResult(Signature);
+        if (ChecksumsFailure is not null) return Task.FromException<byte[]>(ChecksumsFailure);
         return Task.FromResult(Encoding.UTF8.GetBytes(Checksums ?? ChecksumsFor(Latest, Corrupt ? new byte[4096] : ReleaseZip(Nested))));
     }
 
@@ -56,7 +59,9 @@ public sealed class FakeUpdateSource : IUpdateSource
     public static string ChecksumsFor(AutoUpdateService.UpdateInfo? release, byte[] archive)
     {
         var name = release?.ZipName ?? UpdateVerifier.AssetNameFromUrl(release?.ZipUrl ?? "");
-        return $"{Convert.ToHexString(SHA256.HashData(archive)).ToLowerInvariant()}  {name}\n";
+        var version = AutoUpdateService.ParseVersion(release?.Tag)?.ToString(3);
+        var header = version is null ? "" : $"{UpdateVerifier.VersionHeader} {version}\n";
+        return $"{header}{Convert.ToHexString(SHA256.HashData(archive)).ToLowerInvariant()}  {name}\n";
     }
 
     /// <summary>What a real release zip looks like to the installer's check: an archive with Vograph.exe inside.</summary>

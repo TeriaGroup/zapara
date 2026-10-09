@@ -184,11 +184,17 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         var zip = Path.Combine(_updatesDir, $"ZAPARA_{SafeTag(LatestTag)}_win-x64.zip");
         if (File.Exists(zip) && new FileInfo(zip).Length > 0)
         {
-            UpdateVerifier.Result? cached = null;
+            UpdateVerifier.Result cached;
             try { cached = await VerifyAsync(zip, operation.Token); }
-            catch (Exception ex) { App.Log.Error("update verify", ex); }
+            catch (OperationCanceledException) { return false; }
             if (!operation.IsCurrent) return false;
-            if (cached is { Ok: true } && LooksLikeZip(zip))
+            if (cached.Outcome == UpdateVerifier.Outcome.Unavailable)
+            {
+                // The manifest could not be fetched right now: keep the archive, the next check retries.
+                Fail(T("updVerifyRetry"));
+                return false;
+            }
+            if (cached.Ok && LooksLikeZip(zip))
             {
                 _zipPath = zip;
                 _verifiedSha256 = cached.Sha256;
@@ -197,9 +203,17 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
                 StatusText = T("updDownloaded", LatestTag);
                 return true;
             }
-            // Left over from a previous, bad download (truncated, an HTML error page saved as .zip, not the archive
-            // the release lists): drop it and fall through to a fresh download, which is verified again.
             DeleteZip(zip);
+            if (!cached.Ok && cached.Outcome != UpdateVerifier.Outcome.Mismatch)
+            {
+                // The release itself does not check out (no entry, bad signature, wrong version): downloading the
+                // archive again cannot fix that.
+                App.Log.Warn($"update: {zip} failed verification ({cached.Outcome}), deleted");
+                Fail(T(VerificationMessageKey(cached.Outcome)));
+                return false;
+            }
+            // Left over from a previous, bad download (truncated, an HTML error page saved as .zip, not the archive
+            // the release lists): fall through to a fresh download, which is verified again.
         }
         State = UpdateState.Downloading;
         Progress = -1;
@@ -211,6 +225,12 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
             if (!operation.IsCurrent) return false;
             var verified = await VerifyAsync(zip, operation.Token);
             if (!operation.IsCurrent) return false;
+            if (verified.Outcome == UpdateVerifier.Outcome.Unavailable)
+            {
+                // Downloaded, but the manifest is unreachable for now: keep the archive for the next attempt.
+                Fail(T("updVerifyRetry"));
+                return false;
+            }
             if (!verified.Ok)
             {
                 App.Log.Warn($"update: {zip} failed verification ({verified.Outcome}), deleting it");
@@ -252,6 +272,7 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         try
         {
             if (State == UpdateState.Available && !await DownloadAsync()) return;
+            if (!operation.IsCurrent) return;
             if (State != UpdateState.Ready || _zipPath is null) return;
             // The archive is hashed again right before it is handed over: the file on disk must still be the one
             // that matched the release checksums.
@@ -263,6 +284,7 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
                 catch (IOException) { return false; }
                 catch (UnauthorizedAccessException) { return false; }
             });
+            if (!operation.IsCurrent) return;
             if (!stillValid)
             {
                 App.Log.Warn($"update: {zipPath} changed after verification, deleting it");
@@ -272,8 +294,9 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
                 Fail(T("updBadChecksum"));
                 return;
             }
-            WriteAttemptedMarker(_zipPath);
-            try { Installer(_zipPath); }
+            if (_zipPath != zipPath || _verifiedSha256 != expected) return; // replaced while hashing
+            WriteAttemptedMarker(zipPath);
+            try { Installer(zipPath); }
             catch (Exception ex)
             {
                 App.Log.Error("update apply", ex);
@@ -319,9 +342,11 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         _suppress = false;
         if (!await CheckAsync()) return;
         if (!await DownloadAsync()) return;
+        if (!operation.IsCurrent) return;
         if (_zipPath is not null && File.Exists(AttemptedMarkerPath(_zipPath))) return;
         App.Toasts.Info(T("updUpdatingTo", LatestTag!));
         await Delay(TimeSpan.FromSeconds(2));
+        if (!operation.IsCurrent) return;
         await InstallAsync();
     }
 
@@ -341,24 +366,54 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
     }
 
     /// <summary>Fetches the release's SHA256SUMS (and signature) and checks the archive against them. A release
-    /// without SHA256SUMS is never installable.</summary>
+    /// without SHA256SUMS is never installable. Transport problems (network, timeout, HTTP 5xx/429, a local read
+    /// error) come back as <see cref="UpdateVerifier.Outcome.Unavailable"/> so the caller keeps the archive; a 404 for
+    /// the manifest or signature is a release without it and fails verification. Only cancellation of
+    /// <paramref name="ct"/> throws.</summary>
     private async Task<UpdateVerifier.Result> VerifyAsync(string zip, CancellationToken ct)
     {
         var release = _release;
         if (release?.ChecksumsUrl is null) return new UpdateVerifier.Result(UpdateVerifier.Outcome.NoChecksums, null);
-        var sums = await App.UpdateSource.DownloadSmallAsync(release.ChecksumsUrl, UpdateVerifier.MaxChecksumsBytes, ct);
+        var useKey = !string.IsNullOrWhiteSpace(ReleasePublicKeyPem);
+        byte[] sums;
+        try { sums = await App.UpdateSource.DownloadSmallAsync(release.ChecksumsUrl, UpdateVerifier.MaxChecksumsBytes, ct); }
+        catch (Exception ex) when (!ct.IsCancellationRequested) { return FetchFailure(ex, UpdateVerifier.Outcome.NoChecksums); }
         byte[]? signature = null;
-        if (!string.IsNullOrWhiteSpace(ReleasePublicKeyPem) && release.SignatureUrl is not null)
-            signature = await App.UpdateSource.DownloadSmallAsync(release.SignatureUrl, UpdateVerifier.MaxSignatureBytes, ct);
+        if (useKey && release.SignatureUrl is not null)
+        {
+            try { signature = await App.UpdateSource.DownloadSmallAsync(release.SignatureUrl, UpdateVerifier.MaxSignatureBytes, ct); }
+            catch (Exception ex) when (!ct.IsCancellationRequested) { return FetchFailure(ex, UpdateVerifier.Outcome.NoSignature); }
+        }
         var asset = release.ZipName ?? UpdateVerifier.AssetNameFromUrl(release.ZipUrl ?? "");
         var key = ReleasePublicKeyPem;
-        return await Task.Run(() => UpdateVerifier.Verify(zip, asset, sums, signature, key), ct);
+        var tag = release.Tag;
+        try
+        {
+            return await Task.Run(() => UpdateVerifier.Verify(zip, asset, sums, signature, key, tag, AppVersion.Tag), ct);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            App.Log.Error("update verify", ex);
+            return new UpdateVerifier.Result(UpdateVerifier.Outcome.Unavailable, null);
+        }
+    }
+
+    /// <summary>404 = the asset is not there (a verification failure); an oversized asset is not a manifest; anything
+    /// else reaching here is transport and retryable.</summary>
+    private UpdateVerifier.Result FetchFailure(Exception ex, UpdateVerifier.Outcome missing)
+    {
+        App.Log.Error("update verify fetch", ex);
+        if (ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.NotFound } or InvalidDataException)
+            return new UpdateVerifier.Result(missing, null);
+        return new UpdateVerifier.Result(UpdateVerifier.Outcome.Unavailable, null);
     }
 
     public static string VerificationMessageKey(UpdateVerifier.Outcome outcome) => outcome switch
     {
         UpdateVerifier.Outcome.NoChecksums or UpdateVerifier.Outcome.NotListed => "updNoChecksum",
         UpdateVerifier.Outcome.NoSignature or UpdateVerifier.Outcome.BadSignature => "updBadSignature",
+        UpdateVerifier.Outcome.NoVersion or UpdateVerifier.Outcome.WrongVersion or UpdateVerifier.Outcome.Downgrade => "updBadVersion",
+        UpdateVerifier.Outcome.Unavailable => "updVerifyRetry",
         _ => "updBadChecksum"
     };
 

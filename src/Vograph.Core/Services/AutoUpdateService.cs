@@ -155,6 +155,17 @@ public class AutoUpdateService : IDisposable
         return candPfx && !curPfx ? candidate : current;
     }
 
+    /// <summary>The version a release tag or a bare version string names («windows-v2.1.43», «v2.1.43», «2.1.43»),
+    /// padded to four components so 2.1.43 equals 2.1.43.0. Null when it is not a version.</summary>
+    public static Version? ParseVersion(string? tagOrVersion)
+    {
+        if (string.IsNullOrWhiteSpace(tagOrVersion)) return null;
+        var t = tagOrVersion.Trim();
+        t = t.Contains("-v") ? t[(t.IndexOf("-v") + 2)..] : t.Contains('-') ? t[(t.IndexOf('-') + 1)..] : t;
+        if (!Version.TryParse(t.TrimStart('v', 'V'), out var v)) return null;
+        return new Version(v.Major, v.Minor, Math.Max(v.Build, 0), Math.Max(v.Revision, 0));
+    }
+
     public static bool IsNewer(string latestTag, string currentTag)
     {
         static string ver(string t) => t.Contains("-v") ? t[(t.IndexOf("-v")+2)..] : t.Contains("-") ? t[(t.IndexOf("-")+1)..] : t;
