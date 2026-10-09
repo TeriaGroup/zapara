@@ -144,7 +144,7 @@ public class WeekTests : UiTest
         using var db = TestDb.Create();
         var vm = new WeekViewModel(db.Services, new ShellViewModel(db.Services), () => Wed9);
         await vm.ReloadAsync();
-        Assert.Contains("7 сентября", vm.WeekRange);
+        Assert.Equal("7–13 сент.", vm.WeekRange); // #12: формат диапазона из глоссария
         await vm.NextWeekCommand.ExecuteAsync(null);
         Assert.Equal("14.09", vm.Days[0].Date.ToString("dd.MM"));
         Assert.Equal(0, vm.ParityIndex);

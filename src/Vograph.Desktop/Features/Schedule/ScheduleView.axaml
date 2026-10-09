@@ -67,7 +67,7 @@
         <ItemsControl ItemsSource="{Binding TransferWarnings}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
       </StackPanel>
       <TextBlock Classes="subject" Text="{Binding DayPriorityCaption}" IsVisible="{Binding ShowDayState}" />
-      <WrapPanel ItemSpacing="8"><Button Content="К ближайшей паре" Command="{Binding JumpNearestLessonCommand}" IsVisible="{Binding HasLessons}" /><Button Content="К срокам сдачи" Command="{Binding JumpDeadlinesCommand}" /></WrapPanel>
+      <WrapPanel ItemSpacing="8"><Button Content="К ближайшей паре" Command="{Binding JumpNearestLessonCommand}" IsVisible="{Binding HasLessons}" /><Button Content="{loc:T toDeadlines}" Command="{Binding JumpDeadlinesCommand}" /></WrapPanel>
       <TextBlock Classes="muted caption" Text="{Binding DeadlineAttention}" IsVisible="{Binding HasDeadlineAttention}" />
       <TextBlock Classes="muted caption" Text="{Binding LessonJumpStatus}" IsVisible="{Binding LessonJumpStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       <c:Switch Content="Осталось сегодня" IsChecked="{Binding RemainingToday}" IsVisible="{Binding CanFilterRemainingToday}" />

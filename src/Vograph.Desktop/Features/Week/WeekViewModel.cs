@@ -1,3 +1,4 @@
+using Vograph.Core.Services;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Text;
@@ -209,7 +210,7 @@ public sealed partial class WeekViewModel : ViewModelBase
         Subtitle = $"{T("parityWeek", App.I18n.FormatParity(m.Parity == 1))} · {App.Loc.Plural(m.Total, "lessons1", "lessons2", "lessons5")}";
         var monday = m.WeekStart ?? _selectedDate.Date.AddDays(-((int)_selectedDate.DayOfWeek + 6) % 7);
         ValidateWeekComparison(monday);
-        WeekRange = $"{monday.ToString("d MMMM", CultureInfo.GetCultureInfo("ru-RU"))} — {monday.AddDays(6).ToString("d MMMM yyyy", CultureInfo.GetCultureInfo("ru-RU"))}";
+        WeekRange = ScheduleText.Range(monday, monday.AddDays(6), _clock()); // #12: «5–11 окт.»
         Days.Clear();
         foreach (var d in m.Days) Days.Add(new WeekDayViewModel(d, this, _collapsedDays.Contains(d.Date.Date)));
         UnknownDeadlines = (m.UnknownDeadlines ?? []).Select(deadline => new WeekDeadlineViewModel(deadline, this)).ToArray();
