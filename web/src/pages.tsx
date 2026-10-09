@@ -21,7 +21,8 @@ import { ChangeEvent, FormEvent, Fragment, useEffect, useMemo, useRef, useState 
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useDateReveal, useSwipe } from "./swipe";
 import * as api from "./api";
-import { followGroupCommunity, openGroupFace } from "./groupChoice";
+import { followGroupCommunity, openGroupFace, type GroupFace } from "./groupChoice";
+import { GroupNoMembership } from "./group-no-membership";
 import { clearSentGroupDraft, createGroupPoller, groupMediaSelectionIsCurrent, mergeGroupMessages } from "./groupChat";
 import { completeGroupCopy } from "./groupHomework";
 import { browseHomework, homeworkEmptyKind, type HomeworkBrowseStatus, type HomeworkTarget } from "./homework-browse";
@@ -1458,6 +1459,7 @@ function GroupContent() {
   const [menu, setMenu] = useState<string | null>(null);
   const [reactionFor, setReactionFor] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [missing, setMissing] = useState<Pick<GroupFace, "missing" | "candidate"> | null>(null);
   const [focusChat, setFocusChat] = useState(false);
   const [mobilePane, setMobilePane] = useState<"channels" | "people" | "general">("channels");
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
@@ -1550,6 +1552,7 @@ function GroupContent() {
     const retain = !!home && (!selectedCommunityId || home.communityId === selectedCommunityId) && (!selectedConversationId || selectedConversationId === chat?.conversationId);
     if (!retain) drop();
     setError("");
+    setMissing(null);
     const openHome = (id: string) => void api.groupHome(id).then(loaded => {
       if (stop) return;
       registerGroupConversation(sessionStorage,app.session?.user?.userId||"guest",loaded.communityId,loaded.groupChat.conversationId);
@@ -1577,6 +1580,7 @@ function GroupContent() {
       face => {
         if (stop) return;
         setError(face.error);
+        setMissing(face.missing ? { missing: face.missing, candidate: face.candidate ?? null } : null);
         if (!face.communityId) return;
         openHome(face.communityId);
       },
@@ -1913,7 +1917,7 @@ function GroupContent() {
   if (!app.session?.authenticated) return <section className="page group-page"><Head title="Группа"/><div className="card empty"><p>Войдите в аккаунт, чтобы открыть группу, разделы чата и голосования.</p><Link className="btn primary" to="/settings?section=account">Открыть настройки аккаунта</Link></div></section>;
   return (
     <section className={`page group-page group-pane-${mobilePane}${home ? " group-workspace" : ""}${focusChat ? " group-chat-focused" : ""}`}>
-      <Head title={chat && chat.kind !== "group" ? chat.title : "Группа"} text={home ? `${home.name}${home.groupName ? " · " + home.groupName : ""}` : error || "Одногруппники и чат"}>
+      <Head title={chat && chat.kind !== "group" ? chat.title : "Группа"} text={home ? `${home.name}${home.groupName ? " · " + home.groupName : ""}` : "Одногруппники и чат"}>
         {home && (chat && chat.kind !== "group" ? <Avatar kind="user" id={chat.peerUserId} name={chat.title} /> : <Avatar kind="group" id={home.communityId} name={home.groupName || home.name} />)}
         {home && !compact && <button className="btn" type="button" aria-expanded={mobileDetailsOpen} onClick={() => setMobileDetailsOpen(true)}>Сведения и действия группы</button>}
       </Head>
@@ -1928,6 +1932,7 @@ function GroupContent() {
       </nav>}
       {error && <div className="banner row" role="alert"><span>{error}</span><button className="btn quiet" type="button" onClick={()=>setError("")}>Закрыть сообщение</button></div>}
       {error && <button className="btn" type="button" onClick={() => setReloadEpoch(value => value + 1)}>Повторить загрузку группы</button>}
+      {!home && missing?.missing && <GroupNoMembership missing={missing.missing} candidate={missing.candidate} onRecheck={() => setReloadEpoch(value => value + 1)} />}
       <Sheet title="Сведения и действия группы" open={mobileDetailsOpen} onClose={() => setMobileDetailsOpen(false)}>
       <div className="group-prelude">
       {home && <p className="muted group-role-disclaimer">Роли старосты и куратора действуют только внутри «Расписание военмех» и не подтверждены университетом.</p>}
