@@ -79,5 +79,12 @@ class Memberships extends Page
             throw ValidationException::withMessages(['data.request_id' => 'Объект не найден.']);
         }
         app(OperatorWork::class)->resolveJoin($this->actor(), $row['community_id'], $requestId, $accepted);
+        $this->refreshList();
+    }
+
+    private function refreshList(): void
+    {
+        // Список собран до действия и закэширован на время запроса; без сброса карточка остаётся до перезагрузки.
+        $this->cacheSchema('content', null);
     }
 }
