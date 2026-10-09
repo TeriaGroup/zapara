@@ -281,4 +281,8 @@
     <Setter Property="MinHeight" Value="28" />
   </Style>
 
+  <!-- #20: видимая граница полей ввода (≥3:1 к фону в обеих темах). Стилем, а не в ControlTheme,
+       чтобы не пересекаться с #11; цвета совпадают с токеном border-control. -->
+  <Style Selector="TextBox"><Setter Property="BorderBrush" Value="{DynamicResource Brush.ControlBorder}" /></Style>
+  <Style Selector="TextBox:focus"><Setter Property="BorderBrush" Value="{DynamicResource Brush.Text1}" /></Style>
 </Styles>

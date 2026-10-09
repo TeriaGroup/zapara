@@ -248,7 +248,7 @@ public sealed partial class ShellViewModel : ViewModelBase
     /// <summary>Expanded: «Моя группа». On the rail the tooltip carries what the card cannot show: the number and the stale chip's text.</summary>
     public string GroupCardTip => SidebarCollapsed ? (StaleText is null ? GroupName : $"{GroupName}\n{StaleText}") : T("myGroup");
 
-    public string SidebarToggleTip => T(SidebarCollapsed ? "sidebarExpandTip" : "sidebarToggleTip");
+    public string SidebarToggleTip => T(SidebarCollapsed ? "menuExpandTip" : "menuCollapseTip");
     /// <summary>#20: имя для экранного диктора — без сочетания клавиш.</summary>
     public string SidebarToggleName => T(SidebarCollapsed ? "sidebarExpandName" : "sidebarToggleName");
     /// <summary>#20: подсказка и доступное имя переключателя темы — тема, на которую он переключит.</summary>
