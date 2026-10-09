@@ -662,7 +662,7 @@ export function MapsPage() {
         ))}</div>}
       </div>
       {buildings.length > 0 && <p className="muted map-building-legend">{buildings.map(code => `${code} — ${buildingName(code)}`).join(" · ")}</p>}
-      <form className="map-room-search row" role="search" onSubmit={searchRoom}><input aria-label="Найти аудиторию" placeholder="Аудитория, например 268 или УЛК 320" value={roomQuery} onChange={event => { setRoomQuery(event.target.value); setRoomNote(""); }} /><button className="btn" type="submit" disabled={!roomQuery.trim()}>Найти</button></form>
+      <form className="map-room-search row" role="search" onSubmit={searchRoom}><input className="search" aria-label="Найти аудиторию" placeholder="Аудитория, например 268 или УЛК 320" value={roomQuery} onChange={event => { setRoomQuery(event.target.value); setRoomNote(""); }} /><button className="btn" type="submit" disabled={!roomQuery.trim()}>Найти</button></form>
       {roomNote && <p className="muted" role="status">{roomNote}</p>}
       <div className="map-tools map-navigation" role="group" aria-label="Переход между этажами">
         <button className="btn" type="button" disabled={floorAt <= 0} onClick={() => floorAt > 0 && setPlan(floors[floorAt - 1])}><Icon name="down" size={16} />Ниже</button>
