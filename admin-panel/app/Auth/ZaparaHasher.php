@@ -24,7 +24,8 @@ final class ZaparaHasher implements Hasher
         }
         $decoded = base64_decode($hashedValue, true);
 
-        return $decoded !== false && strlen($decoded) >= 14 && ord($decoded[0]) === 0x01;
+        // 0x01: Identity v3; 0x00: Identity v2, recognised only so that it is rejected instead of reaching bcrypt.
+        return $decoded !== false && strlen($decoded) >= 13 && in_array(ord($decoded[0]), [0x00, 0x01], true);
     }
 
     public function info($hashedValue): array
