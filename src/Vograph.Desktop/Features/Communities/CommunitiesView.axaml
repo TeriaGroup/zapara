@@ -6,7 +6,7 @@
              x:Class="Vograph.Desktop.Features.Communities.CommunitiesView"
              x:DataType="cm:CommunitiesViewModel">
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Margin="32,26" Spacing="14" MaxWidth="880" HorizontalAlignment="Left">
+    <StackPanel Margin="24,20" Spacing="14" MaxWidth="880" HorizontalAlignment="Left">
       <StackPanel>
         <TextBlock Classes="display" Text="{Binding Title}" />
         <TextBlock Classes="muted" Text="{Binding Status}" Margin="0,4,0,0" TextWrapping="Wrap"
