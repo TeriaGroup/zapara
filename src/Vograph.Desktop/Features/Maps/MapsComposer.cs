@@ -143,6 +143,8 @@ public static class MapsComposer
         }
         var where = map is null ? "" : $" · {RoomText(map)} · {Place(map, loc)}";
         if (mode == MapMode.Lesson) return loc.T("mapLessonPrefix", lessonName ?? RoomText(map!)) + where;
+        // #28: пара уже идёт — «Сейчас · 268 · УЛК, 2 этаж», а не «Следующая пара … · идёт сейчас».
+        if (start is { } started && end is { } ends && now >= started && now < ends) return loc.T("mapNowLesson") + where;
         var when = start is { } s && end is { } e && now < e ? $" · {Until(now, s, e, loc)}" : "";
         return loc.T("mapNextLesson") + where + when;
     }
@@ -246,5 +248,12 @@ public static class MapsComposer
     }
 
     /// <summary>«ГК, 4 этаж» — the plan actually shown (ВЦ lessons show the ГК plan).</summary>
+    /// <summary>#28: аудитории из расписания нет на плане — без упрёка пользователю и с тем, что открыто вместо неё.</summary>
+    public static string RoomNotMarked(string? room, MapInfo? opened, Loc loc)
+    {
+        var name = string.IsNullOrWhiteSpace(room) ? "" : " " + LessonText.CleanRoom(room).Trim();
+        return opened is null ? loc.T("mapRoomNotMarked", name) : loc.T("mapRoomNotMarkedOpened", name, Place(opened, loc));
+    }
+
     public static string Place(MapInfo map, Loc loc) => $"{(map.Building == "ВЦ" ? "ГК" : map.Building)}, {loc.T("mapFloorN", map.Floor)}";
 }
