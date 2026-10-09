@@ -215,7 +215,7 @@ public class I18nService
             ["hwDeleteConfirm"] = "Удалить домашку «{0}»?", ["hwEditTitle"] = "ИЗМЕНИТЬ ДОМАШКУ",
             ["renameTip"] = "Переименовать", ["mapTip"] = "Показать на карте",
             ["placeholderTitle"] = "Раздел в разработке", ["placeholderHint"] = "Появится на следующем этапе", ["loadingTitle"] = "Загружаю расписание…",
-            ["themeToggleTip"] = "Переключить тему", ["sidebarToggleTip"] = "Свернуть панель (Ctrl+B)", ["sidebarExpandTip"] = "Развернуть панель (Ctrl+B)",
+            ["themeToggleTip"] = "Переключить тему", ["themeToDark"] = "Тёмная тема", ["themeToLight"] = "Светлая тема", ["sidebarToggleTip"] = "Свернуть меню (Ctrl+B)", ["sidebarExpandTip"] = "Развернуть меню (Ctrl+B)", ["sidebarToggleName"] = "Свернуть меню", ["sidebarExpandName"] = "Развернуть меню", ["pastLesson"] = "Прошла",
             ["groupPickTitle"] = "Выбор группы", ["search"] = "Поиск", ["groupSearchHint"] = "Номер группы…", ["select"] = "Выбрать",
             ["confirm"] = "Подтвердить", ["delete"] = "Удалить", ["updatedChip"] = "обновлено {0}", ["errorTitle"] = "Ошибка",
             ["bootstrapError"] = "Не удалось загрузить расписание", ["bootstrapHint"] = "Проверьте сеть и повторите", ["retry"] = "Повторить",

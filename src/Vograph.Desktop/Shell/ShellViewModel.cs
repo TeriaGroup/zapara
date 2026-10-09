@@ -249,9 +249,15 @@ public sealed partial class ShellViewModel : ViewModelBase
     public string GroupCardTip => SidebarCollapsed ? (StaleText is null ? GroupName : $"{GroupName}\n{StaleText}") : T("myGroup");
 
     public string SidebarToggleTip => T(SidebarCollapsed ? "sidebarExpandTip" : "sidebarToggleTip");
+    /// <summary>#20: имя для экранного диктора — без сочетания клавиш.</summary>
+    public string SidebarToggleName => T(SidebarCollapsed ? "sidebarExpandName" : "sidebarToggleName");
+    /// <summary>#20: подсказка и доступное имя переключателя темы — тема, на которую он переключит.</summary>
+    public string ThemeToggleTip => T(IsDark ? "themeToLight" : "themeToDark");
 
     /// <summary>Mirrors ThemeService.IsDark for the footer button's glyph (Sun in the dark, Moon in the light).</summary>
-    [ObservableProperty] private bool _isDark;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ThemeToggleTip))]
+    private bool _isDark;
 
     /// <summary>Set by MainWindow from its WindowState; drives the maximize button's glyph and tooltip.</summary>
     [ObservableProperty]
@@ -564,6 +570,7 @@ public sealed partial class ShellViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowStaleDot));
         OnPropertyChanged(nameof(GroupCardTip));
         OnPropertyChanged(nameof(SidebarToggleTip));
+        OnPropertyChanged(nameof(SidebarToggleName));
     }
 
     [RelayCommand]

@@ -7,7 +7,8 @@
     <Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" />
     <Setter Property="CaretBrush" Value="{DynamicResource Brush.Text1}" />
     <Setter Property="SelectionBrush" Value="{DynamicResource Brush.LineStrong}" />
-    <Setter Property="BorderBrush" Value="Transparent" />
+    <!-- #20: видимая граница поля ≥3:1 к соседнему фону в обеих темах. -->
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.ControlBorder}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="{DynamicResource Radius.Control}" />
     <Setter Property="Padding" Value="10,7" />
@@ -46,7 +47,7 @@
       </ControlTemplate>
     </Setter>
     <Style Selector="^:empty /template/ TextBlock#PART_Watermark"><Setter Property="IsVisible" Value="True" /></Style>
-    <Style Selector="^:focus"><Setter Property="BorderBrush" Value="{DynamicResource Brush.LineStrong}" /></Style>
+    <Style Selector="^:focus"><Setter Property="BorderBrush" Value="{DynamicResource Brush.Text1}" /></Style>
     <Style Selector="^:disabled"><Setter Property="Opacity" Value="0.5" /></Style>
   </ControlTheme>
 

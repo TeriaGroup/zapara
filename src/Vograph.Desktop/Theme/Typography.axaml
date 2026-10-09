@@ -10,6 +10,7 @@
   </Style>
 
   <Style Selector="ComboBox, CheckBox, NumericUpDown, CalendarDatePicker"><Setter Property="MinHeight" Value="48" /><Setter Property="FontSize" Value="15" /></Style>
+  <Style Selector="ComboBox, NumericUpDown"><Setter Property="BorderBrush" Value="{DynamicResource Brush.ControlBorder}" /></Style>
 
   <!-- Text scale. Foreground is NOT set on plain TextBlock so it keeps inheriting (buttons, chips). -->
   <Style Selector="TextBlock.display">
@@ -63,8 +64,19 @@
   <Style Selector="Border.card.next">
     <Setter Property="BorderBrush" Value="{DynamicResource Brush.LineStrong}" />
   </Style>
+  <!-- #20: прошедшая пара приглушается фоном и меткой «Прошла», текст остаётся контрастным (≥4.5:1). -->
   <Style Selector="Border.card.past">
-    <Setter Property="Opacity" Value="0.6" />
+    <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
+  </Style>
+  <Style Selector="Border.card.past Button.primary">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.ControlBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Border.card.past Button.primary:pointerover">
+    <Setter Property="Background" Value="{DynamicResource Brush.CardHover}" />
+    <Setter Property="Opacity" Value="1" />
   </Style>
   <!-- Scoped to .hwrow (the Homework section's own row card) on purpose: Border.card.past is shared with
        LessonCardView's lesson card, whose .past means "this lesson's time slot already ended today" —
@@ -154,8 +166,8 @@
   <Style Selector="Border.chip.overdue TextBlock">
     <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
   </Style>
-  <Style Selector="Border.chip.done">
-    <Setter Property="Opacity" Value="0.55" />
+  <Style Selector="Border.chip.done TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
   </Style>
 
   <Style Selector="Border.chip.stale TextBlock">
@@ -219,7 +231,7 @@
     <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
   </Style>
   <Style Selector="Button.hw.done">
-    <Setter Property="Opacity" Value="0.55" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
   </Style>
   <Style Selector="Button.hw.done TextBlock.hwtext">
     <Setter Property="TextDecorations" Value="Strikethrough" />
