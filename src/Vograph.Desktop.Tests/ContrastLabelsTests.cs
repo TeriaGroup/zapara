@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.LogicalTree;
 using Avalonia.VisualTree;
 using Vograph.Desktop.Features.Schedule;
 using Vograph.Desktop.Services;
@@ -134,5 +135,14 @@ public class ContrastLabelsTests : UiTest
         Assert.Equal("Светлая тема", Avalonia.Automation.AutomationProperties.GetName(theme));
         Assert.Equal("Развернуть меню", Avalonia.Automation.AutomationProperties.GetName(ById("Shell.SidebarToggle")));
         AssertNoBindingErrors();
+    }
+
+    [AvaloniaFact]
+    public void Product_name_is_the_same_in_window_title_title_bar_and_strings()
+    {
+        var window = new MainWindow();
+        Assert.Equal("Военмех — расписание и карты", window.Title);
+        Assert.Equal(window.Title, new Vograph.Core.Services.I18nService().T("appTitle"));
+        Assert.Contains(window.GetLogicalDescendantsOrSelf().OfType<TextBlock>(), t => t.Text == "Военмех");
     }
 }
