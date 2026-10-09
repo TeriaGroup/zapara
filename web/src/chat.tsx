@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
 import * as api from "./api";
 import { chatInboxTime, createChatInboxSourceSequence, filterChatInbox, mergeChatInbox, sortChatInbox, unreadChatTotal, type ChatInboxItem } from "./chatInbox";
 import { PeoplePanel } from "./people";
@@ -10,6 +10,7 @@ import { Avatar } from "./avatar-view";
 import { usePersonalDrafts } from "./personal-composer-context";
 import { startVisibleRefresh } from "./visible-refresh";
 import { PageHead } from "./page-head";
+import { showInboxFilters, singleChat } from "./chat-ui";
 
 function destination(item: ChatInboxItem): string {
   if (item.kind === "personal") return `/chat/person/${encodeURIComponent(item.conversationId)}`;
@@ -139,17 +140,21 @@ function ChatInboxContent() {
     <Link className="btn primary" to="/settings?section=account">Открыть настройки аккаунта</Link>
   </div></section>;
 
+  // #17: единственная беседа — групповой чат: «Чат» открывает его сразу. Не при частичной загрузке (баннер источников важнее).
+  const only = singleChat(rows, loading, error || (failedSources.length ? "partial" : ""), typeof window === "undefined" ? "" : window.location?.search ?? "");
+  if (only?.kind === "group") return <Navigate replace to={destination(only)} />;
+
   return <section className="page inbox">
     <PageHead title="Чат" text="Сообщения группы и личные беседы в одном месте.">
       {unread > 0 && <span className="chip inbox-total" aria-label={`Непрочитанных сообщений: ${unread}`}>Непрочитано: {unread > 99 ? "99+" : unread}</span>}
     </PageHead>
+    {/* #17: одна понятная кнопка; список обновляется сам (startVisibleRefresh), ручное «Обновить» — только при ошибке. */}
     <div className="row">
-      <Link className="btn" to="/chat/people">Код, запросы и люди</Link>
-      <button className="btn" type="button" onClick={() => setRetry(value => value + 1)}>Обновить</button>
+      <Link className="btn" to="/chat/people">Вступить по коду / Новый чат</Link>
     </div>
-    {error && <div className="banner" role="status">{error}</div>}
+    {error && <div className="banner row" role="status"><span>{error}</span><button className="btn" type="button" onClick={() => setRetry(value => value + 1)}>Повторить</button></div>}
     {failedSources.map(source=><div className="banner row" key={source.id}><span>{source.name} · показаны ранее загруженные сведения</span><button className="btn" disabled={!!retryingSource} onClick={()=>void retrySource(source.id)}>Повторить этот источник</button></div>)}
-    {rows.length > 0 && <div className="card stack inbox-browse">
+    {showInboxFilters(rows.length) && <div className="card stack inbox-browse">
       <label className="field">Поиск беседы
         <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Название или последнее сообщение" />
       </label>
@@ -187,7 +192,7 @@ export function PersonalChatPage() {
   const [personTitle, setPersonTitle] = useState<string | null>(null);
   return <section className={"page personal-page" + (conversationId ? " personal-deep-link" : "")}>
     <PageHead title={personTitle || (conversationId ? "Переписка" : "Личные чаты")} />
-    <Link className="btn personal-list-back" to="/chat">Ко всем беседам</Link>
+    <Link className="btn personal-list-back" to="/chat?all=1">Ко всем беседам</Link>
     <PeoplePanel initialConversationId={conversationId} onTitleChange={setPersonTitle} />
   </section>;
 }

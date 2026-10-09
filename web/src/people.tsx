@@ -163,7 +163,7 @@ function PeopleContent({ initialConversationId, onTitleChange }: { initialConver
   return (
     <div className={"stack people-panel" + (initialConversationId ? " direct-route" : "") + (active ? " active-conversation" : "")}>
       {error && <div className="banner">{error}</div>}
-      {unavailableRoute&&<div className="banner" role="status">Беседа по ссылке недоступна в этом аккаунте.<Link className="btn" to="/chat">К списку бесед</Link><button className="btn quiet" onClick={()=>{openedFromRoute.current=null;setUnavailableRoute(false);}}>Проверить снова</button></div>}
+      {unavailableRoute&&<div className="banner" role="status">Беседа по ссылке недоступна в этом аккаунте.<Link className="btn" to="/chat?all=1">К списку бесед</Link><button className="btn quiet" onClick={()=>{openedFromRoute.current=null;setUnavailableRoute(false);}}>Проверить снова</button></div>}
       {!!home?.incoming.length && (
         <div className="stack">
           <h2>Входящие запросы</h2>
@@ -215,7 +215,7 @@ function PeopleContent({ initialConversationId, onTitleChange }: { initialConver
           {home&&home.friends.length>0&&!home.friends.some(friend=>noteSearch(personQuery,friend.displayName||"",friend.username))&&<p role="status">Человек по запросу не найден. Очистите поиск, чтобы вернуться к списку.</p>}
           </div>
         </div>
-        {active ? <section className="split-detail">{initialConversationId ? <Link className="btn back-only" to="/chat">К чатам</Link> : <button className="btn back-only" type="button" onClick={() => { activeIdRef.current = null; setError(""); setActive(null); }}>К списку</button>}<Chat key={active.conversationId} friend={active} self={app.session.user?.userId || ""} familyId={app.session.familyId} onError={chatError} /></section> : <section className="card chat split-detail"><h2>Чат</h2><p className="muted">Выберите человека в списке.</p></section>}
+        {active ? <section className="split-detail">{initialConversationId ? <Link className="btn back-only" to="/chat?all=1">К чатам</Link> : <button className="btn back-only" type="button" onClick={() => { activeIdRef.current = null; setError(""); setActive(null); }}>К списку</button>}<Chat key={active.conversationId} friend={active} self={app.session.user?.userId || ""} familyId={app.session.familyId} onError={chatError} /></section> : <section className="card chat split-detail"><h2>Чат</h2><p className="muted">Выберите человека в списке.</p></section>}
       </div>
     </div>
   );
@@ -803,7 +803,7 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
               )}
               <div className="meta">
                 <span className="muted" title={new Date(message.createdAt).toLocaleString("ru-RU")}>{when(message.createdAt)}{message.editedAt && !message.deleted ? " · изменено" : ""}{mine && message.read ? " · прочитано" : ""}</span>
-                {!message.deleted && <button className="tool" type="button" aria-label="Действия" onClick={() => { setReactFor(null); setOpenMenu(openMenu === message.messageId ? null : message.messageId); }}><Icon name="more" size={16} /></button>}
+                {!message.deleted && <button className="tool message-action-toggle" type="button" aria-label="Действия с сообщением" title="Действия с сообщением" onClick={() => { setReactFor(null); setOpenMenu(openMenu === message.messageId ? null : message.messageId); }}><Icon name="more" size={16} /></button>}
               </div>
               {message.reactions.length > 0 && (
                 <div className="react-chips">
@@ -861,7 +861,7 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
             </div>
           )}
           <form className="compose personal-compose" onSubmit={event => void submit(event)}>
-            {!editing && <button className="btn tool" type="button" aria-label="Вложения" onClick={() => setPanel(panel === "attach" ? null : "attach")}><Icon name="paperclip" size={18} /></button>}
+            {!editing && <button className="btn tool" type="button" aria-label="Прикрепить файл, опрос или карточку пары" title="Прикрепить файл, опрос или карточку пары" onClick={() => setPanel(panel === "attach" ? null : "attach")}><Icon name="paperclip" size={18} /></button>}
             {!editing && <button className={"btn tool" + (panel === "emoji" ? " primary" : "")} type="button" aria-label="Смайлы" onClick={() => setPanel(panel === "emoji" ? null : "emoji")}><Icon name="smile" size={18} /></button>}
             <textarea ref={inputRef} rows={1} value={draft} onChange={event => setDraft(event.target.value)} placeholder={editing ? "Новый текст" : "Сообщение"} aria-label="Сообщение" aria-describedby="personal-compose-help" aria-invalid={!!draft.trim() && !personalTextValid(draft)}
               onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; }}
@@ -869,8 +869,8 @@ function Chat({ friend, self, familyId, onError }: { friend: SocialFriend; self:
             {draft.trim() || editing
               ? <button className="btn primary" type="submit" disabled={sending || !personalTextValid(draft)}>{sending ? "Отправляем…" : editing ? "Сохранить" : "Отправить"}</button>
               : <>
-                  <button className="btn tool" type="button" aria-label="Кружок" disabled={sending} onClick={() => void startCircle()}><Icon name="circle" size={18} /></button>
-                  <button className="btn primary tool" type="button" aria-label="Голосовое" disabled={sending} onClick={() => { setPanel(null); void toggleVoice(); }}><Icon name="mic" size={18} /></button>
+                  <button className="btn tool" type="button" aria-label="Записать кружок" title="Записать кружок" disabled={sending} onClick={() => void startCircle()}><Icon name="circle" size={18} /></button>
+                  <button className="btn primary tool" type="button" aria-label="Записать голосовое" title="Записать голосовое" disabled={sending} onClick={() => { setPanel(null); void toggleVoice(); }}><Icon name="mic" size={18} /></button>
                 </>}
           </form>
           <div className="composer-help muted" id="personal-compose-help">
