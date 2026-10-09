@@ -44,3 +44,10 @@ test("files compiled by stubbed UI tests inline the same wording", async () => {
   assert.ok(!/Shift\+Enter — новая строка\{/.test(composer) && composer.includes("composerHelp("));
   assert.ok(chat.includes("Вступить по коду / Новый чат") && !chat.includes("Код, запросы и люди") && !/>Обновить</.test(chat));
 });
+
+test("channel emoji stay as typed by default (icon replacement is a constant set to off)", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const pages = await readFile(new URL("./pages.tsx", import.meta.url), "utf8");
+  assert.match(pages, /^const replaceChannelEmojiWithIcons = false;$/m);
+  assert.equal((pages.match(/replaceChannelEmojiWithIcons \? <TopicMark topic=\{thread\} \/> : thread\.icon/g) || []).length, 2);
+});

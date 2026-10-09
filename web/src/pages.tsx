@@ -59,6 +59,12 @@ import { absoluteDate, freeGaps, gapsBeforeLessons, heroLesson, isUpcomingLesson
 import { homeworkCard, lessonFrom, placeCard } from "./cards";
 import { BallotBoardView } from "./ballots";
 import { GroupTopics, TopicMark } from "./topics";
+/**
+ * #17, решение по умолчанию: эмодзи канала, введённое пользователем, показываем как есть.
+ * true — в заголовке канала вместо эмодзи значок TopicMark (как в списке каналов). Константа здесь, а не в chat-ui.ts:
+ * UI-тесты собирают pages.tsx с заглушками модулей.
+ */
+const replaceChannelEmojiWithIcons = false;
 import { AccountDetails, PasswordRecovery, DataSettings, NotificationSettings, readReminders, StudyExtras, UpdateSettings } from "./settings-panels";
 import { SpecializedChannel, SubjectChannelContext } from "./group-panels";
 import { GroupAdmin, titlesOf } from "./group-admin";
@@ -1999,7 +2005,7 @@ function GroupContent() {
               {obligationTarget&&obligationTarget.source===thread.topicId&&<GroupObjectFocus key={JSON.stringify(obligationTarget)} id={`obligation-${obligationTarget.kind}-${obligationTarget.kind==="ballot"?obligationTarget.source+"-":""}${obligationTarget.id}`}/>}
               <div className="row">
                 <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; setThread("list"); }}>Каналы</button>
-                <h2>{thread.icon} {thread.title}</h2>
+                <h2>{replaceChannelEmojiWithIcons ? <TopicMark topic={thread} /> : thread.icon} {thread.title}</h2>
                 {nextUnread && <button className="btn" type="button" disabled={nextUnreadBusy} onClick={() => void openNextUnread()}
                   title={`Открыть: ${nextUnread.title}`}>{nextUnreadBusy ? "Проверяем…" : "Следующий непрочитанный"}</button>}
               </div>
@@ -2018,7 +2024,7 @@ function GroupContent() {
             <div className="row group-thread-heading">
               {chat?.kind === "group" && <button className={"btn" + (topicPage || thread !== "list" && thread.topicId === null ? " group-redundant-back" : "")} type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setThread("list"); }}>Каналы</button>}
               <Avatar kind={chat.kind === "group" ? "group" : "user"} id={chat.kind === "group" ? home.communityId : chat.peerUserId} name={chat.kind === "group" ? home.groupName || home.name : chat.title} />
-              <h2>{chat?.kind === "group" && thread !== "list" ? (thread.topicId === null ? "Чат" : `${thread.icon} ${thread.title}`) : (chat?.title || "Чат")}</h2>
+              <h2>{chat?.kind === "group" && thread !== "list" ? (thread.topicId === null ? "Чат" : <>{replaceChannelEmojiWithIcons ? <TopicMark topic={thread} /> : thread.icon} {thread.title}</>) : (chat?.title || "Чат")}</h2>
               {chat.kind === "group" && nextUnread && <button className="btn" type="button" disabled={nextUnreadBusy} onClick={() => void openNextUnread()}
                 title={`Открыть: ${nextUnread.title}`}>{nextUnreadBusy ? "Проверяем…" : "Следующий непрочитанный"}</button>}
             </div>
