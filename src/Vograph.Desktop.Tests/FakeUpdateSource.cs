@@ -1,4 +1,6 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
 using Vograph.Core.Services;
 using Vograph.Desktop.Services;
 
@@ -14,7 +16,12 @@ public sealed class FakeUpdateSource : IUpdateSource
     /// <summary>Write a mis-built release: the same files one folder down. UpdateRunner unpacks flat and starts
     /// {dir}\Vograph.exe, so such an archive must be refused before anything is installed on its account.</summary>
     public bool Nested { get; set; }
+    /// <summary>SHA256SUMS served for the release; null = computed from the archive this fake writes.</summary>
+    public string? Checksums { get; set; }
+    /// <summary>SHA256SUMS.sig served for the release; null = HTTP 404.</summary>
+    public byte[]? Signature { get; set; }
     public int Checks { get; private set; }
+    public List<string> SmallDownloads { get; } = new();
     public List<string> Downloads { get; } = new();
 
     public Task<AutoUpdateService.UpdateInfo?> GetLatestAsync(CancellationToken ct = default)
@@ -33,6 +40,23 @@ public sealed class FakeUpdateSource : IUpdateSource
         File.WriteAllBytes(destPath, Corrupt ? new byte[4096] : ReleaseZip(Nested));
         progress?.Report(1.0);
         return Task.CompletedTask;
+    }
+
+    public Task<byte[]> DownloadSmallAsync(string url, int maxBytes, CancellationToken ct = default)
+    {
+        SmallDownloads.Add(url);
+        if (url.EndsWith(".sig", StringComparison.Ordinal))
+            return Signature is null
+                ? Task.FromException<byte[]>(new HttpRequestException("404", null, System.Net.HttpStatusCode.NotFound))
+                : Task.FromResult(Signature);
+        return Task.FromResult(Encoding.UTF8.GetBytes(Checksums ?? ChecksumsFor(Latest, Corrupt ? new byte[4096] : ReleaseZip(Nested))));
+    }
+
+    /// <summary>A SHA256SUMS line for <paramref name="archive"/> under the release's zip asset name.</summary>
+    public static string ChecksumsFor(AutoUpdateService.UpdateInfo? release, byte[] archive)
+    {
+        var name = release?.ZipName ?? UpdateVerifier.AssetNameFromUrl(release?.ZipUrl ?? "");
+        return $"{Convert.ToHexString(SHA256.HashData(archive)).ToLowerInvariant()}  {name}\n";
     }
 
     /// <summary>What a real release zip looks like to the installer's check: an archive with Vograph.exe inside.</summary>

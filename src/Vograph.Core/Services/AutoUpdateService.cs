@@ -20,7 +20,11 @@ public class AutoUpdateService : IDisposable
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
     }
 
-    public record UpdateInfo(string Tag, string HtmlUrl, string? ZipUrl, string PublishedAt);
+    /// <param name="ZipName">Asset name of the archive, as listed in SHA256SUMS.</param>
+    /// <param name="ChecksumsUrl">The release's SHA256SUMS asset, if any.</param>
+    /// <param name="SignatureUrl">The release's SHA256SUMS.sig asset, if any.</param>
+    public record UpdateInfo(string Tag, string HtmlUrl, string? ZipUrl, string PublishedAt,
+        string? ZipName = null, string? ChecksumsUrl = null, string? SignatureUrl = null);
 
     public async Task<UpdateInfo?> GetLatestAsync(string channel = "windows", CancellationToken ct = default, string? repo = null, string? token = null)
     {
@@ -45,22 +49,25 @@ public class AutoUpdateService : IDisposable
             if (!TagMatchesChannel(tag, pfx)) continue;
             var html = el.GetProperty("html_url").GetString() ?? $"https://github.com/{Owner}/{repoName}/releases/tag/{tag}";
             var published = el.TryGetProperty("published_at", out var p) ? p.GetString() ?? "" : "";
-            string? zip = null;
+            string? zip = null, zipName = null, sums = null, sig = null;
             if (el.TryGetProperty("assets", out var assets))
             {
                 foreach (var a in assets.EnumerateArray())
                 {
                     var name = a.GetProperty("name").GetString() ?? "";
+                    if (name == UpdateVerifier.ChecksumsAssetName) { sums = a.GetProperty("browser_download_url").GetString(); continue; }
+                    if (name == UpdateVerifier.SignatureAssetName) { sig = a.GetProperty("browser_download_url").GetString(); continue; }
+                    if (zip != null && zipName!.Contains("ZAPARA", StringComparison.OrdinalIgnoreCase)) continue;
                     var ok = wantZip
                         ? name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
                         : name.EndsWith(".apk", StringComparison.OrdinalIgnoreCase);
                     if (!ok) continue;
                     zip = a.GetProperty("browser_download_url").GetString();
-                    if (name.Contains("ZAPARA", StringComparison.OrdinalIgnoreCase)) break;
+                    zipName = name;
                 }
             }
             if (zip == null) continue;
-            var cand = new UpdateInfo(tag, html, zip, published);
+            var cand = new UpdateInfo(tag, html, zip, published, zipName, sums, sig);
             if (best == null || BetterTag(best.Tag, tag, pfx) == tag) best = cand;
         }
         return best;
@@ -103,6 +110,29 @@ public class AutoUpdateService : IDisposable
             try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
             throw;
         }
+    }
+
+    /// <summary>Download a small release asset (SHA256SUMS, its signature) into memory, refusing anything larger
+    /// than <paramref name="maxBytes"/>.</summary>
+    public async Task<byte[]> DownloadSmallAsync(string url, int maxBytes, CancellationToken ct = default, string? token = null)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        if (!string.IsNullOrWhiteSpace(token))
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
+        using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+        resp.EnsureSuccessStatusCode();
+        if (resp.Content.Headers.ContentLength > maxBytes) throw new InvalidDataException("asset too large");
+        using var src = await resp.Content.ReadAsStreamAsync(ct);
+        using var dst = new MemoryStream();
+        var buf = new byte[8192];
+        int n;
+        while ((n = await src.ReadAsync(buf, ct)) > 0)
+        {
+            if (dst.Length + n > maxBytes) throw new InvalidDataException("asset too large");
+            dst.Write(buf, 0, n);
+        }
+        return dst.ToArray();
     }
 
     public void Dispose()

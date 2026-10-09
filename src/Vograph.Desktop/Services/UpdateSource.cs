@@ -7,6 +7,8 @@ public interface IUpdateSource
 {
     Task<AutoUpdateService.UpdateInfo?> GetLatestAsync(CancellationToken ct = default);
     Task DownloadAsync(string url, string destPath, IProgress<double>? progress, CancellationToken ct = default);
+    /// <summary>A small asset (SHA256SUMS, its signature) into memory, at most <paramref name="maxBytes"/>.</summary>
+    Task<byte[]> DownloadSmallAsync(string url, int maxBytes, CancellationToken ct = default);
 }
 
 public sealed class GitHubUpdateSource : IUpdateSource
@@ -24,5 +26,10 @@ public sealed class GitHubUpdateSource : IUpdateSource
     {
         var choice = UpdateChannelStore.Read();
         return _service.DownloadAssetAsync(url, destPath, progress, ct, choice.Alpha ? choice.Token : null);
+    }
+    public Task<byte[]> DownloadSmallAsync(string url, int maxBytes, CancellationToken ct = default)
+    {
+        var choice = UpdateChannelStore.Read();
+        return _service.DownloadSmallAsync(url, maxBytes, ct, choice.Alpha ? choice.Token : null);
     }
 }

@@ -22,6 +22,8 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
     private readonly string _updatesDir;
     private string? _zipUrl;
     private string? _zipPath;
+    private AutoUpdateService.UpdateInfo? _release;
+    private string? _verifiedSha256;
     private bool _suppress;
 
     public UpdateCheckViewModel(AppServices app, Func<DateTime>? clock = null, string? updatesDir = null) : base(app)
@@ -42,6 +44,8 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
     /// <summary>The pause that lets the «Обновляюсь до …» toast be seen before the restart.</summary>
     public Func<TimeSpan, Task> Delay { get; set; }
     public bool CheckedThisSession { get; private set; }
+    /// <summary>Release signing key; empty means SHA256SUMS is checked without a signature. Replaced in tests.</summary>
+    public string ReleasePublicKeyPem { get; set; } = UpdateVerifier.ReleasePublicKeyPem;
 
     /// <summary>Where downloaded release zips (and their .attempted / .part companions) live; tests point it at their
     /// own scratch dir via the constructor and read it back to inspect what DownloadAsync/CleanupAsync left behind.</summary>
@@ -123,6 +127,8 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         PublishedText = null;
         _zipUrl = null;
         _zipPath = null;
+        _release = null;
+        _verifiedSha256 = null;
         Progress = -1;
         StatusText = T("updChecking");
         AutoUpdateService.UpdateInfo? info;
@@ -157,6 +163,7 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         }
         LatestTag = info.Tag;
         _zipUrl = info.ZipUrl;
+        _release = info;
         PublishedText = DateTime.TryParse(info.PublishedAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var p) ? p.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) : null;
         State = UpdateState.Available;
         StatusText = T("updAvailable", info.Tag);
@@ -168,20 +175,31 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         using var operation = App.Work.Enter();
         if (!operation.IsCurrent) return false;
         if (State != UpdateState.Available || _zipUrl is null || LatestTag is null) return false;
+        if (_release?.ChecksumsUrl is null)
+        {
+            // Nothing to verify the archive against: do not download or install it automatically.
+            Fail(T("updNoChecksum"));
+            return false;
+        }
         var zip = Path.Combine(_updatesDir, $"ZAPARA_{SafeTag(LatestTag)}_win-x64.zip");
         if (File.Exists(zip) && new FileInfo(zip).Length > 0)
         {
-            if (LooksLikeZip(zip))
+            UpdateVerifier.Result? cached = null;
+            try { cached = await VerifyAsync(zip, operation.Token); }
+            catch (Exception ex) { App.Log.Error("update verify", ex); }
+            if (!operation.IsCurrent) return false;
+            if (cached is { Ok: true } && LooksLikeZip(zip))
             {
                 _zipPath = zip;
+                _verifiedSha256 = cached.Sha256;
                 Progress = 1;
                 State = UpdateState.Ready;
                 StatusText = T("updDownloaded", LatestTag);
                 return true;
             }
-            // Left over from a previous, bad download (truncated, an HTML error page saved as .zip): drop it and
-            // fall through to a fresh download instead of handing the installer a file it cannot unpack.
-            try { File.Delete(zip); } catch (IOException ex) { App.Log.Error("update zip delete", ex); }
+            // Left over from a previous, bad download (truncated, an HTML error page saved as .zip, not the archive
+            // the release lists): drop it and fall through to a fresh download, which is verified again.
+            DeleteZip(zip);
         }
         State = UpdateState.Downloading;
         Progress = -1;
@@ -191,6 +209,15 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
             await App.UpdateSource.DownloadAsync(_zipUrl, zip, new Services.Profiles.ProfileProgress<double>(App.Work, operation,
                 p => Progress = p, ex => App.Log.Error("update progress", ex)), operation.Token);
             if (!operation.IsCurrent) return false;
+            var verified = await VerifyAsync(zip, operation.Token);
+            if (!operation.IsCurrent) return false;
+            if (!verified.Ok)
+            {
+                App.Log.Warn($"update: {zip} failed verification ({verified.Outcome}), deleting it");
+                DeleteZip(zip);
+                Fail(T(VerificationMessageKey(verified.Outcome)));
+                return false;
+            }
             if (!await Task.Run(() => LooksLikeZip(zip)))
             {
                 App.Log.Warn($"update: {zip} is not a release archive, deleting it");
@@ -199,6 +226,7 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
                 return false;
             }
             _zipPath = zip;
+            _verifiedSha256 = verified.Sha256;
             State = UpdateState.Ready;
             StatusText = T("updDownloaded", LatestTag);
             return true;
@@ -225,6 +253,25 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         {
             if (State == UpdateState.Available && !await DownloadAsync()) return;
             if (State != UpdateState.Ready || _zipPath is null) return;
+            // The archive is hashed again right before it is handed over: the file on disk must still be the one
+            // that matched the release checksums.
+            var zipPath = _zipPath;
+            var expected = _verifiedSha256;
+            var stillValid = expected is not null && await Task.Run(() =>
+            {
+                try { return UpdateVerifier.Sha256File(zipPath) == expected; }
+                catch (IOException) { return false; }
+                catch (UnauthorizedAccessException) { return false; }
+            });
+            if (!stillValid)
+            {
+                App.Log.Warn($"update: {zipPath} changed after verification, deleting it");
+                DeleteZip(zipPath);
+                _zipPath = null;
+                _verifiedSha256 = null;
+                Fail(T("updBadChecksum"));
+                return;
+            }
             WriteAttemptedMarker(_zipPath);
             try { Installer(_zipPath); }
             catch (Exception ex)
@@ -291,6 +338,33 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         {
             App.Log.Error("update marker", ex);
         }
+    }
+
+    /// <summary>Fetches the release's SHA256SUMS (and signature) and checks the archive against them. A release
+    /// without SHA256SUMS is never installable.</summary>
+    private async Task<UpdateVerifier.Result> VerifyAsync(string zip, CancellationToken ct)
+    {
+        var release = _release;
+        if (release?.ChecksumsUrl is null) return new UpdateVerifier.Result(UpdateVerifier.Outcome.NoChecksums, null);
+        var sums = await App.UpdateSource.DownloadSmallAsync(release.ChecksumsUrl, UpdateVerifier.MaxChecksumsBytes, ct);
+        byte[]? signature = null;
+        if (!string.IsNullOrWhiteSpace(ReleasePublicKeyPem) && release.SignatureUrl is not null)
+            signature = await App.UpdateSource.DownloadSmallAsync(release.SignatureUrl, UpdateVerifier.MaxSignatureBytes, ct);
+        var asset = release.ZipName ?? UpdateVerifier.AssetNameFromUrl(release.ZipUrl ?? "");
+        var key = ReleasePublicKeyPem;
+        return await Task.Run(() => UpdateVerifier.Verify(zip, asset, sums, signature, key), ct);
+    }
+
+    public static string VerificationMessageKey(UpdateVerifier.Outcome outcome) => outcome switch
+    {
+        UpdateVerifier.Outcome.NoChecksums or UpdateVerifier.Outcome.NotListed => "updNoChecksum",
+        UpdateVerifier.Outcome.NoSignature or UpdateVerifier.Outcome.BadSignature => "updBadSignature",
+        _ => "updBadChecksum"
+    };
+
+    private void DeleteZip(string zip)
+    {
+        try { if (File.Exists(zip)) File.Delete(zip); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log.Error("update zip delete", ex); }
     }
 
     private void Fail(string text)
