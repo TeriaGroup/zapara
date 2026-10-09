@@ -16,13 +16,18 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # Self-hosted Linux runner of the owner. The repo is public: never run code from fork pull requests on it.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
     env:
       DOTNET_NOLOGO: "1"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          clean: true
+          persist-credentials: false
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -43,17 +48,13 @@ jobs:
         env:
           SIXLABORS_LICENSE_KEY: ${{ secrets.SIXLABORS_LICENSE_KEY }}
         run: |
+          # Fork pull requests do not reach this job (see the job condition), so a missing key is a configuration error.
           if [ -n "$SIXLABORS_LICENSE_KEY" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            # Pull requests from forks never receive secrets; everywhere else a missing key is a configuration error.
-            if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
-              echo "::notice::SIXLABORS_LICENSE_KEY is not available to fork pull requests; Release publish skipped."
-            else
-              echo "::error::Repository secret SIXLABORS_LICENSE_KEY is not set; Release builds of the server need it."
-              exit 1
-            fi
+            echo "::error::Repository secret SIXLABORS_LICENSE_KEY is not set; Release builds of the server need it."
+            exit 1
           fi
 
       - name: Publish server (Release)
@@ -68,3 +69,10 @@ jobs:
           name: zapara-server
           path: ${{ runner.temp }}/server
           retention-days: 7
+
+      # Persistent runner: remove build output and the published server from the workspace and temp dir.
+      - name: Clean up
+        if: always()
+        run: |
+          rm -rf "$RUNNER_TEMP/server"
+          git clean -ffdx
