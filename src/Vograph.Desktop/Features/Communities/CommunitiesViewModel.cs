@@ -42,7 +42,13 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
     }
 
     public override void Detach() => App.Loc.LanguageChanged -= relabel;
-    public override Task ActivateAsync() => LoadAsync();
+    public override Task ActivateAsync() { RaiseSignIn(); return LoadAsync(); }
+    /// <summary>Без входа (#18, D-02): понятное объяснение и кнопка «Войти» — только если вход реально работает.</summary>
+    public bool SignInWorks => App.Shared.AccountPanel.SignInWorks;
+    public bool ShowSignIn => NeedAccount && SignInWorks;
+    public string NeedAccountHint => SignInWorks ? "Сообщества групп открываются после входа в аккаунт." : T("accountUnconfigured");
+    private void RaiseSignIn() { OnPropertyChanged(nameof(SignInWorks)); OnPropertyChanged(nameof(ShowSignIn)); OnPropertyChanged(nameof(NeedAccountHint)); }
+
 
     public string Title => T("communityTitle");
     public ObservableCollection<CommunityItemViewModel> Communities { get; } = [];
@@ -55,7 +61,7 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
     public string CommunityResultCount => $"Показано {FilteredCommunities.Count} из {Communities.Count}";
     public string CommunityMembershipCount => $"Моих сообществ: {Communities.Count(row => row.IsMember)}";
     partial void OnCommunitySearchChanged(string value) => RefreshCommunityBrowse();
-    partial void OnNeedAccountChanged(bool value) => RefreshCommunityBrowse();
+    partial void OnNeedAccountChanged(bool value) { RefreshCommunityBrowse(); RaiseSignIn(); }
     partial void OnIsForbiddenChanged(bool value) => RefreshCommunityBrowse();
     [CommunityToolkit.Mvvm.Input.RelayCommand]
     private void ClearCommunitySearch() => CommunitySearch = "";
