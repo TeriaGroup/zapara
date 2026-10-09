@@ -5,11 +5,12 @@ import { addDays, isoDay } from "./parity";
 import { localDay, absoluteDate } from "./planner";
 import { roomLabel } from "./summary";
 import type { HomeworkItem, Lesson, Period } from "./types";
+import { formatRange } from "./schedule-text";
 
 export function WeekComparison({lessons,date,period,invert,available}:{lessons:Lesson[];date:Date;period?:Period;invert:boolean;available:boolean}){
   const [otherDate,setOtherDate]=useBrowseValue("week-compare-date",isoDay(addDays(date,7)));const other=localDay(otherDate);
   const first=actualStudyWeek(lessons,date,period,invert,available),second=other?actualStudyWeek(lessons,other,period,invert,available):[];const diff=compareStudyWeeks(first,second);
-  const range=(rows:typeof first)=>rows.length?`${isoDay(rows[0].date)} — ${isoDay(rows[6].date)}`:"дата не выбрана";
+  const range=(rows:typeof first)=>rows.length?formatRange(rows[0].date,rows[6].date):"дата не выбрана";
   return <details className="card stack"><summary>Сравнить две недели</summary><p className="muted">Две реальные недели по одной текущей сохранённой копии и выбранным подгруппам. Это не история изменений источника.</p><label className="field">Дата второй недели<input type="date" value={otherDate} onChange={event=>setOtherDate(event.target.value)}/></label><p>Первая: {range(first)}<br/>Вторая: {range(second)}</p>
     {!diff.known?<p role="status">Для полного сравнения нужны данные всех семи дней обеих недель. Выберите даты в известном учебном периоде.</p>:<><p role="status">Во второй неделе добавлено: {diff.added.length} · отсутствует: {diff.removed.length}</p>{!diff.added.length&&!diff.removed.length&&<p>Состав пар совпадает по дням, времени, предметам, типам, преподавателям и аудиториям.</p>}{([["Нет во второй неделе",diff.removed],["Добавлено во второй неделе",diff.added]] as const).map(([title,rows])=>rows.length>0&&<section className="stack" key={title}><h3>{title}</h3>{rows.map((row,index)=><article className="card" key={index}><b>{absoluteDate(row.date)} · {row.lesson.timeStart}–{row.lesson.timeEnd}</b><p>{row.lesson.subjectRaw} · {row.lesson.typeRaw}<br/>{row.lesson.teacherRaw} · {roomLabel(row.lesson)}</p></article>)}</section>)}</>}
   </details>;

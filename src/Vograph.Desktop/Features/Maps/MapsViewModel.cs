@@ -13,7 +13,11 @@ using Vograph.Desktop.ViewModels;
 
 namespace Vograph.Desktop.Features.Maps;
 
-public sealed record FloorPill(int Floor, string Label, bool IsSelected);
+/// <summary>Кнопка этажа: на кнопке номер, имя для экранного диктора — «2 этаж» (#12, как на web).</summary>
+public sealed record FloorPill(int Floor, string Label, bool IsSelected)
+{
+    public string Number => Floor.ToString(System.Globalization.CultureInfo.InvariantCulture);
+}
 
 public sealed record EntranceItem(string Id, string Label, bool IsSelected);
 

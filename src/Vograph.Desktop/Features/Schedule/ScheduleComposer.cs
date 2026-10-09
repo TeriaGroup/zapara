@@ -121,7 +121,7 @@ public sealed class ScheduleComposer
                 OriginalName: shownName == shownOriginal ? null : shownOriginal,
                 Note: string.IsNullOrWhiteSpace(note) ? null : note,
                 TypeLabel: DayTitles.TypeLabel(l.TypeRaw, loc),
-                Teacher: string.IsNullOrWhiteSpace(l.TeacherRaw) ? "—" : l.TeacherRaw,
+                Teacher: string.IsNullOrWhiteSpace(l.TeacherRaw) ? "—" : LessonText.Teacher(l.TeacherRaw),
                 RoomText: roomText,
                 BuildingTag: tag,
                 IsRemote: remote,

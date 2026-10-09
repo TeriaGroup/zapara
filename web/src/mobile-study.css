@@ -32,10 +32,10 @@
   .day-page .study-date-shell { display: flex; flex-direction: column; }
   .day-page .study-compact-overview { display: grid; grid-template-columns: minmax(0, 1fr) 48px; align-items: center; gap: 2px 8px; min-height: 0; margin: 0 0 4px; padding: 8px; }
   .day-page .study-compact-overview > strong { min-width: 0; overflow-wrap: anywhere; }
-  .day-page .study-compact-overview > span { min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+  .day-page .study-compact-overview > span { min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
   .day-page .study-compact-overview .study-refresh-button { grid-column: 2; grid-row: 1 / 3; width: 48px; min-width: 48px; height: 48px; padding: 0; }
-  .day-page .schedule-cache { margin: 0 0 8px; font-size: 11px; }
-  .day-page .study-day-ended { margin: 0 0 4px; color: var(--muted); font-size: 12px; }
+  .day-page .schedule-cache { margin: 0 0 8px; font-size: 13px; }
+  .day-page .study-day-ended { margin: 0 0 4px; color: var(--muted); font-size: 13px; }
   .day-page .study-day-tools { display: block; margin-bottom: 8px; }
   .day-page .study-day-tools-trigger { display: flex !important; width: 100%; justify-content: flex-start; min-height: 48px; }
   .day-page .study-day-tools-body { display: none; }
@@ -56,7 +56,7 @@
   .day-page .day-strip { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 0 0 12px; }
   .day-page .day-strip .date { min-height: 68px; padding: 6px 2px; gap: 2px; }
   .day-page .day-strip .date strong { font-size: 17px; }
-  .day-page .day-strip small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  .day-page .day-strip small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
   .day-page .day-row { border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 12px; }
   .day-page .day-row .lesson { border: 0; padding: 0; background: transparent; }
   .day-page .day-row .lesson .subject { font-size: 15px; }

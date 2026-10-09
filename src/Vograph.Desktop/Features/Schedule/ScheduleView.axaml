@@ -11,9 +11,9 @@
 
       <Grid ColumnDefinitions="*" RowDefinitions="Auto,Auto,Auto" Margin="0,0,0,8" MinWidth="0">
         <!-- Subtitle is its own row so the day controls cannot squeeze "4 пары" onto a leftover line. -->
-        <TextBlock Grid.Row="0" Classes="display" Text="{Binding Title}" TextWrapping="Wrap" VerticalAlignment="Center"
+        <TextBlock Grid.Row="0" Classes="display" Text="{loc:T navSchedule}" TextWrapping="Wrap" VerticalAlignment="Center"
                    Margin="0,0,16,0" AutomationProperties.AutomationId="Schedule.Title" />
-        <TextBlock Grid.Row="1" Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" TextWrapping="Wrap"
+        <TextBlock Grid.Row="1" Classes="muted" Text="{Binding DayLine}" Margin="0,4,0,0" TextWrapping="Wrap"
                    AutomationProperties.AutomationId="Schedule.Subtitle" />
         <WrapPanel Grid.Row="2" ItemSpacing="8" LineSpacing="8" Margin="0,12,0,0" VerticalAlignment="Center">
           <Button Classes="ghost icon" Command="{Binding PrevDayCommand}" ToolTip.Tip="{loc:T prevDay}"
@@ -116,7 +116,7 @@
               <Button Classes="ghost" Command="{Binding OpenCommand}" HorizontalContentAlignment="Left" HorizontalAlignment="Stretch"><TextBlock Text="{Binding Text}" TextWrapping="Wrap" Classes.done="{Binding Done}" /></Button>
               <TextBlock Classes="muted caption" Text="{Binding Subject}" TextWrapping="Wrap" />
               <TextBlock Text="{Binding Deadline}" FontWeight="Medium" />
-              <TextBlock Classes="muted caption" Text="Готово у меня" IsVisible="{Binding Done}" />
+              <TextBlock Classes="muted caption" Text="Выполнено" IsVisible="{Binding Done}" />
               <Button Content="Обсудить задание" Classes="ghost" Command="{Binding DiscussCommand}" HorizontalAlignment="Left" />
             </StackPanel>
           </Grid>

@@ -49,11 +49,12 @@
         <Expander Header="Планы без сети"><ScrollViewer MaxHeight="150" HorizontalScrollBarVisibility="Disabled"><ItemsControl ItemsSource="{Binding OfflinePlans}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:OfflinePlanRow"><StackPanel Spacing="3"><TextBlock Text="{Binding Label}" TextWrapping="Wrap" /><Button Content="Подготовить план" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).PrepareOfflinePlanCommand}" CommandParameter="{Binding}" IsVisible="{Binding CanPrepare}" HorizontalAlignment="Left" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer></Expander>
       </StackPanel>
       <c:SegmentedControl Name="MapsBuilding" Items="{Binding SegmentItems}" SelectedIndex="{Binding BuildingIndex}" VerticalAlignment="Center" />
+      <TextBlock Classes="muted" Text="{loc:T mapFloor}" VerticalAlignment="Center" />
       <ItemsControl ItemsSource="{Binding Floors}" VerticalAlignment="Center">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" LineSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="m:FloorPill">
-            <Button Classes="pill" Classes.on="{Binding IsSelected}" Content="{Binding Label}"
+            <Button Classes="pill" Classes.on="{Binding IsSelected}" Content="{Binding Number}" ToolTip.Tip="{Binding Label}"
                     Command="{Binding $parent[ItemsControl].((m:MapsViewModel)DataContext).SelectFloorCommand}" CommandParameter="{Binding}"
                     AutomationProperties.AutomationId="Maps.Floor" AutomationProperties.Name="{Binding Label}" />
           </DataTemplate>

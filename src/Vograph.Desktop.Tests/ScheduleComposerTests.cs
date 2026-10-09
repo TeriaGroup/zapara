@@ -18,17 +18,17 @@ public class ScheduleComposerTests
         var day = new ScheduleComposer(db.Services).Compose(0, OddMondayMorning);
 
         Assert.Equal("Сегодня", day.Title);
-        Assert.Equal("Понедельник, 14 сентября · нечетная неделя · неделя 3 · 2 пары", day.Subtitle);
+        Assert.Equal("Понедельник, 14 сентября · нечётная неделя · неделя 3 · 2 пары", day.Subtitle);
         Assert.Equal(2, day.Rows.Count);
 
         var math = day.Rows[0];
         Assert.Equal("09:00", math.TimeStart);
         Assert.Equal("10:35", math.TimeEnd);
         Assert.Equal("Матан", math.DisplayName);
-        Assert.Equal("ВЫСШ. МАТЕМАТ", math.OriginalName);
+        Assert.Equal("Высшая математика", math.OriginalName);
         Assert.Equal("лекции — в 493", math.Note);
-        Assert.Equal("лекция", math.TypeLabel);
-        Assert.Equal("Барт Е.Л.", math.Teacher);
+        Assert.Equal("Лекция", math.TypeLabel);
+        Assert.Equal("Барт Е. Л.", math.Teacher);
         Assert.Equal("493", math.RoomText);
         Assert.Equal("ГК", math.BuildingTag);
         Assert.Equal("след. 21.09", math.NextDateText); // next odd-week Monday lecture after 14.09
@@ -44,7 +44,7 @@ public class ScheduleComposerTests
         Assert.Contains("Иван", friend.Tooltip);
 
         var law = day.Rows[1];
-        Assert.Equal("ОСН РОС ГОС", law.DisplayName);
+        Assert.Equal("Основы российской государственности", law.DisplayName);
         Assert.Null(law.OriginalName);
         Assert.Equal("563", law.RoomText);
         Assert.Equal("УЛК", law.BuildingTag);

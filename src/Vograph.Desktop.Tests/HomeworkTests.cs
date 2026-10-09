@@ -66,14 +66,14 @@ public class HomeworkTests : UiTest
         Assert.Equal(new[] { "Матан" }, burning.Select(i => i.Subject).ToArray()); // fixture math is due Mon 07.09 (even)
         Assert.All(burning, i => Assert.Equal("горит завтра", i.Label));
         var far = model.Groups[1].Items.OrderBy(i => i.Subject).ToList();
-        Assert.Equal(new[] { "ИСТОРИЯ", "ОСН РОС ГОС" }, far.Select(i => i.Subject));
-        Assert.Equal(("ИСТОРИЯ", "лек ИСТОРИЯ", history), (far[0].Subject, far[0].SubjectRaw, far[0].Homework.Id));
+        Assert.Equal(new[] { "История", "Основы российской государственности" }, far.Select(i => i.Subject));
+        Assert.Equal(("История", "лек ИСТОРИЯ", history), (far[0].Subject, far[0].SubjectRaw, far[0].Homework.Id));
         Assert.Equal("срок 16.09", far[0].Label);
         Assert.Equal("сдано", Assert.Single(model.Groups[2].Items).Label);
 
         var subjects = new HomeworkComposer(db.Services).Subjects();
         Assert.Equal(6, subjects.Count);
-        Assert.Contains(subjects, s => s.SubjectRaw == "лек ИСТОРИЯ" && s.Display == "ИСТОРИЯ" && s.TypeLabel == "лекция");
+        Assert.Contains(subjects, s => s.SubjectRaw == "лек ИСТОРИЯ" && s.Display == "История" && s.TypeLabel == "Лекция");
         Assert.Contains(subjects, s => s.SubjectRaw == "лек ВЫСШ. МАТЕМАТ" && s.Display == "Матан");
     }
 

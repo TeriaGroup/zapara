@@ -1,5 +1,6 @@
 import type { Lesson } from "./types.ts";
 import { visibleLessons } from "./subgroups.ts";
+import { roomText, subjectShort } from "./schedule-text.ts";
 
 export type CountItem = { name: string; count: number };
 
@@ -60,11 +61,9 @@ function typeLabel(value: string | null | undefined): string {
   return types[raw] || (value || "").trim();
 }
 
+/** Короткое читаемое имя предмета без префикса типа (#12, schedule-text.ts). */
 export function stripType(name: string | null | undefined, typeRaw: string | null | undefined): string {
-  const subject = (name || "").trim();
-  const type = (typeRaw || "").trim();
-  if (type && subject.toLocaleLowerCase("ru").startsWith((type + " ").toLocaleLowerCase("ru"))) return subject.slice(type.length + 1).trim();
-  return subject;
+  return subjectShort(name, typeRaw);
 }
 
 function teacherParts(raw: string | null | undefined): string[] {
@@ -79,7 +78,7 @@ export function roomLabel(lesson: Pick<Lesson, "classroomRaw" | "roomRaw" | "bui
   if ((!room || room === "—") && (!cleaned || cleaned === "—")) return "";
   const building = (lesson.buildingRaw || "").trim()
     || (classroom.includes("*") ? "УЛК" : /вц/i.test(classroom) ? "ВЦ" : "ГК");
-  const number = (room && room !== "—" ? room : cleaned).replaceAll("*", "").trim();
+  const number = roomText(room && room !== "—" ? room : cleaned);
   return `${number} ${building}`.trim();
 }
 

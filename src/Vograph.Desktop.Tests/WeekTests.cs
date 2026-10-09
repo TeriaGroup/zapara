@@ -35,8 +35,8 @@ public class WeekTests : UiTest
         Assert.Equal("Понедельник", model.Days[0].Title);
 
         var mon = model.Days[0].Rows;
-        Assert.Equal(("09:00", "Матан", "лекция", "493 ГК"), (mon[0].Time, mon[0].Name, mon[0].TypeLabel, mon[0].Room));
-        Assert.Equal(("12:40", "ОСН РОС ГОС", "практика", "563 УЛК"), (mon[1].Time, mon[1].Name, mon[1].TypeLabel, mon[1].Room));
+        Assert.Equal(("09:00", "Матан", "Лекция", "493 ГК"), (mon[0].Time, mon[0].Name, mon[0].TypeLabel, mon[0].Room));
+        Assert.Equal(("12:40", "Основы российской государственности", "Практика", "563 УЛК"), (mon[1].Time, mon[1].Name, mon[1].TypeLabel, mon[1].Room));
         Assert.Equal("дистанционно", model.Days[5].Rows[0].Room);
     }
 
@@ -175,15 +175,15 @@ public class WeekTests : UiTest
         await vm.ReloadAsync();
 
         Assert.Equal(1, vm.ParityIndex); // even week is current
-        Assert.Equal("Нечетная", vm.SegmentItems[0]);
-        Assert.Equal("Четная · текущая", vm.SegmentItems[1]);
+        Assert.Equal("Нечётная", vm.SegmentItems[0]);
+        Assert.Equal("Чётная · текущая", vm.SegmentItems[1]);
         Assert.Equal(2, vm.Days.Sum(d => d.Rows.Count));
         Assert.Contains("2 пары", vm.Subtitle);
 
         vm.ParityIndex = 0;
         await vm.ReloadAsync(); // the property change already queued a reload; awaiting another one drains the gate in order
         Assert.Equal(5, vm.Days.Sum(d => d.Rows.Count));
-        Assert.Equal("Нечетная", vm.SegmentItems[0]);
+        Assert.Equal("Нечётная", vm.SegmentItems[0]);
     }
 
     [AvaloniaFact]

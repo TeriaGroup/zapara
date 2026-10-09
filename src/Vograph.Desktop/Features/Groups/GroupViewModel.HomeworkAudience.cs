@@ -18,7 +18,7 @@ public sealed partial class GroupViewModel
         && !string.IsNullOrWhiteSpace(SharedHomeworkTitle) && !string.IsNullOrWhiteSpace(SharedHomeworkBody)
         && (editingSharedHomework is { } id ? ChannelHomeworks.Any(row => row.Item.HomeworkId == id && row.Editable) : CanCreateChannelHomework);
     public string SharedHomeworkSaveLabel => sharedHomeworkPending ? "Повторить публикацию" : editingSharedHomework is null ? "Назначить задание" : "Сохранить изменения";
-    public IReadOnlyList<string> HomeworkFilters { get; } = ["Все", "Активные", "Готово у меня"];
+    public IReadOnlyList<string> HomeworkFilters { get; } = ["Все", "Активные", "Выполненные"];
     [ObservableProperty] private int homeworkFilter;
     [ObservableProperty] private int homeworkSortIndex;
     public IReadOnlyList<string> HomeworkSortOptions { get; } = ["Исходный порядок", "Ближайший срок", "По предмету"];

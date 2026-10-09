@@ -18,6 +18,7 @@ import * as homeworkExport from "./homework-export.ts";
 import * as studyPlanning from "./study-planning.ts";
 import * as parity from "./parity.ts";
 import * as planner from "./planner.ts";
+import * as scheduleText from "./schedule-text.ts";
 import * as personalBatch from "./personal-homework-batch.ts";
 import * as publication from "./homework-publication-batch.ts";
 import * as postpone from "./homework-postpone.ts";
@@ -213,10 +214,10 @@ test("actual publication requires preview and explicit consent, retaining uncert
 });
 
 test("actual week comparison responds to chosen real date and rejects an empty comparison date",async()=>{
-  const h=hooks();const out=await load("./study-overviews-view.tsx",[],{react:h.react,"./study-overviews":overviews,"./parity":parity,"./planner":planner,"./summary":summary,"./ux300-controls":{useBrowseValue:(_key:string,initial:any)=>h.react.useState(initial)}});
+  const h=hooks();const out=await load("./study-overviews-view.tsx",[],{react:h.react,"./study-overviews":overviews,"./parity":parity,"./planner":planner,"./summary":summary,"./schedule-text":scheduleText,"./ux300-controls":{useBrowseValue:(_key:string,initial:any)=>h.react.useState(initial)}});
   const lesson={dayOfWeek:1,timeStart:"09:00",timeEnd:"10:00",parity:1,subjectRaw:"Математика"};
   const render=()=>h.render(()=>out.WeekComparison({lessons:[lesson],date:new Date(2026,9,5),period:{start:"2026-09-01",weekCount:2},invert:false,available:true}));
-  let tree=render();assert.match(text(tree),/2026-10-05.*2026-10-11/);nodes(tree).find(node=>node.type==="input").props.onChange({target:{value:"2026-10-05"}});tree=render();assert.match(text(tree),/Состав пар совпадает/);
+  let tree=render();assert.match(text(tree),/5–11 окт\./);nodes(tree).find(node=>node.type==="input").props.onChange({target:{value:"2026-10-05"}});tree=render();assert.match(text(tree),/Состав пар совпадает/);
   nodes(tree).find(node=>node.type==="input").props.onChange({target:{value:""}});tree=render();assert.match(text(tree),/нужны данные всех семи дней/);
 });
 

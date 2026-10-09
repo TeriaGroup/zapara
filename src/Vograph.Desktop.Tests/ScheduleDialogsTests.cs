@@ -35,7 +35,7 @@ public class ScheduleDialogsTests : UiTest
         var task = vm.RenameAsync(vm.Lessons[1]); // ОСН РОС ГОС — no override yet
         var dlg = await Waits.ForDialogAsync<RenameDialogViewModel>(shell);
         Assert.False(dlg.HasExisting);
-        Assert.Equal("Оригинал: ОСН РОС ГОС", dlg.OriginalLine);
+        Assert.Equal("Оригинал: Основы российской государственности", dlg.OriginalLine);
 
         dlg.DisplayName = "Основы гос.";
         dlg.ScopeIndex = 1;
@@ -64,7 +64,7 @@ public class ScheduleDialogsTests : UiTest
         await task;
 
         Assert.Equal(TestDb.MathSubject, db.Services.Overrides.GetDisplayName(TestDb.MathSubject, 1)); // raw (full) name again
-        Assert.Equal("ВЫСШ. МАТЕМАТ", vm.Lessons[0].DisplayName);
+        Assert.Equal("Высшая математика", vm.Lessons[0].DisplayName);
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public class ScheduleDialogsTests : UiTest
         var task = vm.RenameAsync(vm.Lessons[1]); // пр ОСН РОС ГОС — no override yet
         var dlg = await Waits.ForDialogAsync<RenameDialogViewModel>(shell);
         dlg.Note = "зачёт в декабре";
-        Assert.Equal("Предпросмотр: ОСН РОС ГОС", dlg.Preview); // preview stays in display form
+        Assert.Equal("Предпросмотр: Основы российской государственности", dlg.Preview); // preview stays in display form
         dlg.ConfirmCommand.Execute(null);
         await task;
 
@@ -96,7 +96,7 @@ public class ScheduleDialogsTests : UiTest
         Assert.NotNull(o);
         Assert.Equal("пр ОСН РОС ГОС", o!.DisplayName);       // legacy shape: a note, not a rename
         Assert.Equal("зачёт в декабре", o.Note);
-        Assert.Equal("ОСН РОС ГОС", vm.Lessons[1].DisplayName);
+        Assert.Equal("Основы российской государственности", vm.Lessons[1].DisplayName);
         Assert.Null(vm.Lessons[1].Row.OriginalName);          // no «оригинал: …» line — nothing was renamed
 
         // Reopening shows the note and an empty name field (also covers overrides written by the WPF client).

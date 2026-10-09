@@ -69,7 +69,7 @@
       </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowStudyPanel}">
       <Border Classes="card">
         <StackPanel Spacing="10">
-          <TextBlock Classes="micro" Text="{loc:TU setSchedule}" />
+          <TextBlock Classes="micro" Text="{loc:T setSchedule}" />
           <Grid Classes="row" ColumnDefinitions="200,*">
             <TextBlock Text="{loc:T myGroup}" />
             <Button Name="GroupChoiceControl" Grid.Column="1" HorizontalAlignment="Left" Command="{Binding ChangeGroupCommand}"
@@ -108,7 +108,7 @@
       </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowAppearancePanel}">
       <Border Classes="card">
         <StackPanel Spacing="10">
-          <TextBlock Classes="micro" Text="{loc:TU setAppearance}" />
+          <TextBlock Classes="micro" Text="{loc:T setAppearance}" />
           <Grid Classes="row" ColumnDefinitions="200,*">
             <TextBlock Text="{loc:T setTheme}" />
             <c:SegmentedControl Name="SettingsTheme" Grid.Column="1" Items="{Binding ThemeItems}" SelectedIndex="{Binding ThemeIndex}" />
@@ -121,7 +121,7 @@
       </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowNotificationsPanel}">
       <Border Classes="card">
         <StackPanel Spacing="10">
-          <TextBlock Classes="micro" Text="{loc:TU setNotifications}" />
+          <TextBlock Classes="micro" Text="{loc:T setNotifications}" />
           <c:Switch Content="{loc:T notifEnabled}" IsChecked="{Binding NotificationsEnabled}" AutomationProperties.AutomationId="Settings.NotifyEnabled" />
           <TextBlock Classes="muted caption" Text="Включите напоминания, чтобы изменить время." IsVisible="{Binding !NotificationsEnabled}" TextWrapping="Wrap" />
           <StackPanel Spacing="4" IsEnabled="{Binding NotificationsEnabled}">
@@ -157,7 +157,7 @@
       <Border Classes="card"><StackPanel Spacing="8"><TextBlock Classes="subject" Text="Копия на устройстве" /><TextBlock Text="{Binding DataSummary}" TextWrapping="Wrap" /><Button Name="SyncNowControl" Content="Синхронизировать сейчас" Command="{Binding SyncDataCommand}" IsEnabled="{Binding CanSyncData}" /><Button Content="{Binding SyncConflictSummary}" Command="{Binding ResolveDataConflictsCommand}" IsVisible="{Binding HasDataConflicts}" /><Button Content="Аккаунт и активные устройства" Command="{Binding OpenPanelCommand}" CommandParameter="account" /></StackPanel></Border>
       <Border Classes="card" IsVisible="{Binding LegacyTransferAvailable}">
         <StackPanel Spacing="10">
-          <TextBlock Classes="micro" Text="{loc:TU setSync}" />
+          <TextBlock Classes="micro" Text="{loc:T setSync}" />
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Button Command="{Binding ExportCommand}" AutomationProperties.AutomationId="Settings.Export" AutomationProperties.Name="{loc:T syncExport}">
               <StackPanel Orientation="Horizontal" Spacing="6"><c:Icon Data="{StaticResource Icon.Download}" Size="14" /><TextBlock Text="{loc:T syncExport}" /></StackPanel>
@@ -188,7 +188,7 @@
       </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowHelpPanel}">
       <Border Classes="card">
         <StackPanel Spacing="10" DataContext="{Binding Updates}" x:DataType="st:UpdateCheckViewModel">
-          <TextBlock Classes="micro" Text="{loc:TU setUpdates}" />
+          <TextBlock Classes="micro" Text="{loc:T setUpdates}" />
           <TextBlock Classes="muted caption" Text="{loc:T updChannelHint}" TextWrapping="Wrap" />
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Button Content="{loc:T updRelease}" Command="{Binding SelectReleaseCommand}" Classes.primary="{Binding !IsAlpha}" AutomationProperties.AutomationId="Updates.Release" />
@@ -217,7 +217,7 @@
           <TextBlock TextWrapping="Wrap" Text="Сообщить о баге или ошибке. Войдите в аккаунт, чтобы отправить сообщение и увидеть ответ. Логи приложения отправятся вместе с сообщением." />
           <TextBlock Classes="subject" Text="Новое обращение" />
           <TextBox Name="ReportSubjectControl" Text="{Binding ReportSubject}" PlaceholderText="Тема" MinHeight="48" AutomationProperties.AutomationId="Settings.ReportSubject" />
-          <TextBox Text="{Binding ReportBody}" PlaceholderText="Что случилось" AcceptsReturn="True" MinHeight="96" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings.ReportBody" />
+          <TextBox Text="{Binding ReportBody}" PlaceholderText="Что случилось?" AcceptsReturn="True" MinHeight="96" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings.ReportBody" />
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Button Content="Фото" MinHeight="48" MinWidth="48" Command="{Binding PickReportPhotoCommand}" AutomationProperties.AutomationId="Settings.ReportPhoto" />
           </StackPanel>
@@ -257,7 +257,7 @@
       </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowHelpPanel}">
       <Border Classes="card">
         <StackPanel Spacing="8">
-          <TextBlock Classes="micro" Text="{loc:TU setAbout}" />
+          <TextBlock Classes="micro" Text="{loc:T setAbout}" />
           <TextBlock Text="{Binding VersionText}" AutomationProperties.AutomationId="About.Version" />
           <Button Classes="link" Content="{loc:T setReleases}" Command="{Binding OpenReleasesCommand}" HorizontalAlignment="Left" AutomationProperties.AutomationId="About.Releases" />
           <TextBlock Classes="muted caption" Text="{loc:T setSources}" Margin="0,6,0,0" />

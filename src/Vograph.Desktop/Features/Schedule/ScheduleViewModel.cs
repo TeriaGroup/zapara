@@ -196,6 +196,10 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     }
     [ObservableProperty] private string _title = "";
     [ObservableProperty] private string _subtitle = "";
+    /// <summary>#12: заголовок страницы — «Расписание», как на web; относительный день («Сегодня») — в начале этой строки.</summary>
+    public string DayLine => string.IsNullOrWhiteSpace(Subtitle) ? Title : Subtitle.StartsWith(Title, StringComparison.OrdinalIgnoreCase) ? Subtitle : $"{Title} · {Subtitle}";
+    partial void OnTitleChanged(string value) => OnPropertyChanged(nameof(DayLine));
+    partial void OnSubtitleChanged(string value) => OnPropertyChanged(nameof(DayLine));
     [ObservableProperty] private bool _isEmpty;
     [ObservableProperty] private bool _isUnavailable;
     public IAsyncRelayCommand ChangeGroupCommand => _shell.OpenGroupPickerCommand;

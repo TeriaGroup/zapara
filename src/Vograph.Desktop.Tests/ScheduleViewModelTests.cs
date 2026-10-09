@@ -29,7 +29,7 @@ public class ScheduleViewModelTests
         Assert.False(vm.ShowGoToday);
         Assert.False(vm.IsEmpty);
         Assert.Equal("Матан", vm.Lessons[0].DisplayName);
-        Assert.Equal("Барт Е.Л. · оригинал: ВЫСШ. МАТЕМАТ", vm.Lessons[0].TeacherLine);
+        Assert.Equal("Барт Е. Л. · оригинал: Высшая математика", vm.Lessons[0].TeacherLine);
         Assert.True(vm.Lessons[0].CanShowMap);
     }
 
