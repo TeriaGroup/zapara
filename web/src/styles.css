@@ -595,6 +595,11 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
 .map-context { display: flex; gap: 12px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
 .map-context p { margin: 4px 0; color: var(--muted); }
 .map-context small { color: var(--muted); }
+/* #28: следующая пара сверху, расшифровка корпусов, поиск аудитории */
+.map-next { gap: 8px 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.map-building-legend { margin: 0 0 8px; font-size: 13px; }
+.map-room-search { gap: 8px; margin-bottom: 8px; flex-wrap: nowrap; }
+.map-room-search input { flex: 1 1 auto; min-width: 0; }
 .map-selectors { display: flex; flex-wrap: wrap; justify-content: space-between; padding: 0 0 12px; gap: 12px; }
 .map-selectors .seg button { min-height: 48px; min-width: 64px; }
 .map-floors { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

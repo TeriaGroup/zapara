@@ -72,6 +72,7 @@ import type { CampusNode, CampusRoute } from "./campus-routing";
 import type { PublicMapAsset } from "./types";
 import { pairCount } from "./map-viewport";
 import { calendarWeek, currentSummarySegment, summaryDayDate, roomPlan, RequestEpoch } from "./ux-navigation";
+import { buildingName, findRoom, nextLessonCaption } from "./map-labels";
 import { friendGroupChoice } from "./friend-group-choice";
 import { overlapPairs, nextTeacherDay, matchesWords, settingsAliases } from "./next-workflows";
 import { PersonalHomeworkEditor, type PersonalEditDraft } from "./personal-homework-editor";
@@ -635,6 +636,13 @@ export function MapsPage() {
   const todayLessons = period && app.timetableAvailable ? lessonsOn(visibleLessons(app.lessons, app.subgroups[app.groupId] || {}), today, period.start, period.weekCount, app.invert) : [];
   const upcoming = heroLesson(todayLessons, today, today);
   const automatic = upcoming ? roomPlan(plans, upcoming.roomRaw || upcoming.classroomRaw || "", upcoming.buildingRaw || "") : null;
+  const nextCaption = nextLessonCaption(upcoming, plans, today);
+  // #28: без аудитории в адресе карты открываются на плане следующей пары (один раз, дальше — выбор пользователя).
+  const autoPlan = useRef(false);
+  useEffect(() => { if (!autoPlan.current && automatic && !mapContext.get("room")) { autoPlan.current = true; setPlan(automatic); } }, [automatic?.id]);
+  const [roomQuery, setRoomQuery] = useState("");
+  const [roomNote, setRoomNote] = useState("");
+  function searchRoom(event: FormEvent) { event.preventDefault(); const found = findRoom(plans, roomQuery); setRoomNote(found.message); if (found.plan) { setPlan(found.plan); showMap(); } }
   return (
     <section className="page maps-page" ref={mapHost}>
       <Head title="Карты" text="Планы корпусов Военмеха" mobileActions>
@@ -643,14 +651,19 @@ export function MapsPage() {
       </Head>
       {(mapContext.get("subject") || mapContext.get("room")) && <div className="map-context"><Icon name="pin" /><div><strong>{mapContext.get("room") ? `Аудитория ${mapContext.get("room")}` : "Аудитория не указана"}</strong><p>{[mapContext.get("subject"), contextDate ? absoluteDate(contextDate) : null, mapContext.get("time")].filter(Boolean).join(" · ")}</p><small>{/дистанц|онлайн/i.test(mapContext.get("room")||"")?"Дистанционное занятие — карта аудитории не требуется.":roomPlan(plans,mapContext.get("room")||"",mapContext.get("building")||"")?"Найдите аудиторию на плане выбранного этажа.":"План этой аудитории не распознан. Выберите корпус и этаж вручную ниже."}</small></div></div>}
       {error && <p className="banner" role="alert">{error}</p>}
+      {/* #28: следующая пара — на первом экране: время · аудитория · корпус и этаж. */}
+      {!mapContext.get("room") && <div className="card row map-next" aria-live="polite">{nextCaption ? <span><b>{nextCaption.label}:</b> {nextCaption.text}</span> : <span className="muted">{!app.groupId ? "Группа не выбрана. Корпус и этаж можно выбрать вручную." : !app.timetableAvailable ? "Расписание ещё не загружено. Доступен ручной выбор плана." : "Сегодня предстоящих занятий нет. Планы доступны ниже."}</span>}{nextCaption && !automatic && <span className="muted">Аудитория на плане не отмечена — корпус и этаж можно выбрать ниже.</span>}{!app.groupId && <Link className="btn" to="/settings?section=study">Выбрать группу</Link>}{automatic && <button className="btn" type="button" onClick={() => {setPlan(automatic);showMap();}}>Показать на плане</button>}</div>}
       <div className="study-map-layout">
       <div className="study-map-selection">
       <div className="map-tools map-selectors" role="group" aria-label="Выбор корпуса и этажа">
-        {buildings.length > 0 && <div className="seg" role="group" aria-label="Корпус">{buildings.map(building => <button key={building} className={plan?.building === building ? "active" : ""} aria-pressed={plan?.building === building} type="button" onClick={() => setPlan(chooseBuildingPlan(plans,building,plan?.floor))}>{building}</button>)}</div>}
+        {buildings.length > 0 && <div className="seg" role="group" aria-label="Корпус">{buildings.map(building => <button key={building} title={buildingName(building)} className={plan?.building === building ? "active" : ""} aria-pressed={plan?.building === building} type="button" onClick={() => setPlan(chooseBuildingPlan(plans,building,plan?.floor))}>{building}</button>)}</div>}
         {floors.length > 0 && <div className="map-floors" role="group" aria-label="Этаж"><span className="muted">Этаж</span>{floors.map(item => (
           <button key={item.id} className={"icon-btn map-floor-choice" + (item.id === plan?.id ? " selected" : "")} aria-label={`${item.floor} этаж`} aria-pressed={item.id === plan?.id} type="button" onClick={() => setPlan(item)}>{item.floor}</button>
         ))}</div>}
       </div>
+      {buildings.length > 0 && <p className="muted map-building-legend">{buildings.map(code => `${code} — ${buildingName(code)}`).join(" · ")}</p>}
+      <form className="map-room-search row" role="search" onSubmit={searchRoom}><input aria-label="Найти аудиторию" placeholder="Аудитория, например 268 или УЛК 320" value={roomQuery} onChange={event => { setRoomQuery(event.target.value); setRoomNote(""); }} /><button className="btn" type="submit" disabled={!roomQuery.trim()}>Найти</button></form>
+      {roomNote && <p className="muted" role="status">{roomNote}</p>}
       <div className="map-tools map-navigation" role="group" aria-label="Переход между этажами">
         <button className="btn" type="button" disabled={floorAt <= 0} onClick={() => floorAt > 0 && setPlan(floors[floorAt - 1])}><Icon name="down" size={16} />Ниже</button>
         <button className="btn" type="button" disabled={floorAt < 0 || floorAt >= floors.length - 1} onClick={() => floorAt >= 0 && floorAt < floors.length - 1 && setPlan(floors[floorAt + 1])}><Icon name="up" size={16} />Выше</button>
@@ -665,7 +678,6 @@ export function MapsPage() {
         {graphAsset && <button className="btn" aria-expanded={routeOpen} onClick={()=>setRouteOpen(value=>!value)}>{routeOpen?"Скрыть маршрут":"Построить маршрут по кампусу"}</button>}
         {graphAsset&&routeOpen&&<CampusRouteView key={JSON.stringify([app.session?.user?.userId||"guest",app.session?.familyId||"",app.groupId])} asset={graphAsset} plan={plan} plans={plans} classroom={routeClassroom(mapContext.get("classroom"),mapContext.get("room"),mapContext.get("building"))} onPlan={setPlan} onMark={revealPlace} onRoute={setRoute}/>}
         {recentPlans.length>1&&<details><summary>Недавно просмотренные этажи</summary><div className="row">{recentPlans.map(id=>plans.find(row=>row.id===id)).filter((row):row is MapPlan=>!!row).map(row=><button className="btn quiet" key={row.id} onClick={()=>setPlan(row)}>{row.building} · {row.floor} этаж</button>)}</div></details>}
-        {!mapContext.get("room") && <div className="card row"><span className="muted">{!app.groupId ? "Группа не выбрана. Корпус и этаж можно выбрать вручную." : !app.timetableAvailable ? "Расписание ещё не загружено. Доступен ручной выбор плана." : !upcoming ? "Сегодня предстоящих занятий нет. Планы доступны ниже." : automatic ? `Ближайшая пара: ${upcoming.roomRaw || upcoming.classroomRaw}` : "Для аудитории ближайшей пары подходящий план не найден. Выберите его вручную."}</span>{!app.groupId && <Link className="btn" to="/settings?section=study">Выбрать группу</Link>}{automatic && <button className="btn" type="button" onClick={() => {setPlan(automatic);showMap();}}>К ближайшей паре</button>}</div>}
       </div>
       {error && <button className="btn primary" type="button" onClick={() => setRetry(value => value + 1)}>Повторить</button>}
     </section>
