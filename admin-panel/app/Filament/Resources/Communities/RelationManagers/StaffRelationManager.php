@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Communities\RelationManagers;
 
+use App\Filament\Resources\Communities\CommunityResource;
 use App\Filament\Support\OperatorActions;
 use App\Models\StaffAssignment;
 use Filament\Actions\Action;
@@ -22,7 +23,7 @@ class StaffRelationManager extends RelationManager
 
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
-        return true;
+        return CommunityResource::canAccess();
     }
 
     public static function getBadge(Model $ownerRecord, string $pageClass): ?string

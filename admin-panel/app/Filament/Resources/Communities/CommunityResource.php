@@ -8,6 +8,7 @@ use App\Filament\Resources\Communities\RelationManagers\GroupsRelationManager;
 use App\Filament\Resources\Communities\RelationManagers\StaffRelationManager;
 use App\Models\AccountUser;
 use App\Models\Community;
+use Closure;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
@@ -15,6 +16,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class CommunityResource extends Resource
 {
@@ -57,6 +59,18 @@ class CommunityResource extends Resource
     public static function canView(Model $record): bool
     {
         return static::canAccess();
+    }
+
+    /**
+     * community_id — uuid: другое значение в адресе даёт 404, а не ошибку PostgreSQL (500).
+     */
+    public static function resolveRecordRouteBinding(int|string $key, ?Closure $modifyQuery = null): ?Model
+    {
+        if (! Str::isUuid((string) $key)) {
+            return null;
+        }
+
+        return parent::resolveRecordRouteBinding($key, $modifyQuery);
     }
 
     public static function infolist(Schema $schema): Schema

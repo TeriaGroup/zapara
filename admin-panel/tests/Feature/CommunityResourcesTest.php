@@ -12,6 +12,7 @@ use App\Models\Community;
 use App\Support\Zapara;
 use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\Concerns\PanelFixtures;
 use Tests\TestCase;
@@ -116,5 +117,25 @@ class CommunityResourcesTest extends TestCase
         $this->actingAs($this->makeUser(false));
         $this->get('/admin/communities')->assertForbidden();
         $this->get('/admin/staff')->assertForbidden();
+    }
+
+    public function test_non_uuid_community_id_is_not_found(): void
+    {
+        $this->actingAs($this->makeUser(true));
+        foreach (['not-a-uuid', '123', "1'--", '00000000-0000-0000-0000-00000000000g'] as $id) {
+            $this->get('/admin/communities/'.rawurlencode($id))->assertNotFound();
+        }
+        $this->get('/admin/communities/'.Str::uuid()->toString())->assertNotFound();
+    }
+
+    public function test_relation_managers_follow_the_resource_access_rule(): void
+    {
+        $community = new Community;
+        $this->actingAs($this->makeUser(false));
+        $this->assertFalse(GroupsRelationManager::canViewForRecord($community, ViewCommunity::class));
+        $this->assertFalse(StaffRelationManager::canViewForRecord($community, ViewCommunity::class));
+        $this->actingAs($this->makeUser(true));
+        $this->assertTrue(GroupsRelationManager::canViewForRecord($community, ViewCommunity::class));
+        $this->assertTrue(StaffRelationManager::canViewForRecord($community, ViewCommunity::class));
     }
 }
