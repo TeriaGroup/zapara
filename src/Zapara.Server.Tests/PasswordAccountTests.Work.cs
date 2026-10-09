@@ -10,16 +10,15 @@ namespace Zapara.Server.Tests;
 public sealed partial class PasswordAccountTests
 {
     [Fact]
-    public async Task Unknown_disabled_and_locked_attempts_each_do_one_dummy_verification()
+    public async Task Unknown_and_disabled_attempts_each_do_one_dummy_verification()
     {
         await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);
         using var controlled = new AccountControlledHasher();
         var service = new AccountService(db.DataSource, db.Configuration, new AccountClock(), new(controlled));
         await Seed(service);
-        foreach (var state in new[] { "unknown", "disabled", "locked" })
+        foreach (var state in new[] { "unknown", "disabled" })
         {
             await db.ExecuteAsync($"UPDATE {db.QuotedSchema}.users SET status='{(state == "disabled" ? "disabled" : "active")}'");
-            if (state == "locked") await db.ExecuteAsync($"UPDATE {db.QuotedSchema}.password_credentials SET locked_until='2026-09-08T12:15:00Z'");
             var before = controlled.VerifyCalls;
             await Failure(AccountFailure.InvalidCredentials, () => service.LoginAsync(Login(state == "unknown" ? "missing.user" : "test.user")));
             Assert.Equal(before + 1, controlled.VerifyCalls);

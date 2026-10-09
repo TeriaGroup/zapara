@@ -37,23 +37,39 @@ public sealed partial class PasswordAccountTests
     }
 
     [Fact]
-    public async Task Lockout_is_persisted_fixed_nonextending_and_success_clears()
+    public async Task Failed_logins_throttle_the_failing_network_and_never_lock_the_account()
     {
         await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);
         var clock = new AccountClock();
-        var service = new AccountService(db.DataSource, db.Configuration, clock);
+        var service = new AccountService(db.DataSource, db.Configuration, clock, throttle: new LoginThrottle(clock));
         await Seed(service);
-        await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => Failure(AccountFailure.InvalidCredentials,
-            () => service.LoginAsync(Login(password: NewPassword)))));
+        const string attacker = "4:198.51.100.7";
+        const string owner = "6:20010db8000000010000::/64";
+        for (var i = 0; i < LoginThrottle.PairFailureLimit; i++)
+            await Failure(AccountFailure.InvalidCredentials, () => service.LoginAsync(Login(password: NewPassword), attacker));
+        var blocked = await Assert.ThrowsAsync<AccountServiceException>(() => service.LoginAsync(Login(), attacker));
+        Assert.Equal(AccountFailure.RateLimited, blocked.Failure);
+        Assert.InRange(blocked.RetryAfter!.Value, TimeSpan.FromSeconds(1), LoginThrottle.Window);
+        // The stored credential is not locked: the owner signs in from another network right away.
         Assert.Equal(5, await db.ScalarAsync<int>($"SELECT failed_count FROM {db.QuotedSchema}.password_credentials"));
-        var locked = await db.ScalarAsync<DateTime>($"SELECT locked_until FROM {db.QuotedSchema}.password_credentials");
-        clock.Now += TimeSpan.FromMinutes(14);
-        await using var reopened = db.Configuration.CreateDataSource();
-        await Failure(AccountFailure.InvalidCredentials, () => new AccountService(reopened, db.Configuration, clock).LoginAsync(Login()));
-        Assert.Equal(locked, await db.ScalarAsync<DateTime>($"SELECT locked_until FROM {db.QuotedSchema}.password_credentials"));
-        clock.Now += TimeSpan.FromMinutes(1);
-        Assert.NotNull(await service.LoginAsync(Login(), TestContext.Current.CancellationToken));
+        Assert.Equal(0L, await db.ScalarAsync<long>($"SELECT count(*) FROM {db.QuotedSchema}.password_credentials WHERE locked_until IS NOT NULL"));
+        Assert.NotNull(await service.LoginAsync(Login(), owner, TestContext.Current.CancellationToken));
         Assert.Equal(0, await db.ScalarAsync<int>($"SELECT failed_count FROM {db.QuotedSchema}.password_credentials"));
+        // The failing network stays blocked until its window ends, then it may try again.
+        await Failure(AccountFailure.RateLimited, () => service.LoginAsync(Login(), attacker));
+        clock.Now += LoginThrottle.Window;
+        Assert.NotNull(await service.LoginAsync(Login(), attacker, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Legacy_locked_until_no_longer_blocks_login()
+    {
+        await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);
+        var service = new AccountService(db.DataSource, db.Configuration, new AccountClock());
+        await Seed(service);
+        await db.ExecuteAsync($"UPDATE {db.QuotedSchema}.password_credentials SET failed_count=5,locked_until='2026-09-08T12:15:00Z'");
+        Assert.NotNull(await service.LoginAsync(Login(), TestContext.Current.CancellationToken));
+        Assert.Equal(0L, await db.ScalarAsync<long>($"SELECT count(*) FROM {db.QuotedSchema}.password_credentials WHERE locked_until IS NOT NULL"));
     }
 
     [Fact]

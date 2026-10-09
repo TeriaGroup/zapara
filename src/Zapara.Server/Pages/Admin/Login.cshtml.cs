@@ -28,7 +28,8 @@ public sealed class LoginModel(AdminAuthService auth) : PageModel
         ViewData["Title"] = "Вход";
         try
         {
-            var identity = await auth.AuthenticateAsync(Username, Password, HttpContext.RequestAborted);
+            var identity = await auth.AuthenticateAsync(Username, Password,
+                Zapara.Server.Accounts.LoginThrottle.NetworkKey(HttpContext.Connection.RemoteIpAddress), HttpContext.RequestAborted);
             var principal = new ClaimsPrincipal(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.NameIdentifier, identity.UserId.ToString("D")),
