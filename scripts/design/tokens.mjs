@@ -93,6 +93,24 @@ function filamentPrimary(t) {
   };
 }
 
+/**
+ * Filament держит одну палитру primary на обе темы и подбирает оттенки текста по светлой шкале,
+ * поэтому шкалу не переворачиваем. В тёмной теме правим только то, что иначе сливается с фоном:
+ * сплошную кнопку primary (почти чёрная на чёрном) — accent/on-accent тёмной темы,
+ * и оттенок 400 (активный пункт меню, иконки) — text-primary.
+ */
+function adminDarkPrimary(t) {
+  const d = t.color.dark;
+  return `        --primary-400: ${css(d["text-primary"])};
+    }
+
+    .dark .fi-btn.fi-color-primary {
+        --dark-bg: ${css(d.accent)};
+        --dark-hover-bg: ${css(d["text-secondary"])};
+        --dark-text: ${css(d["on-accent"])};
+        --dark-hover-text: ${css(d["on-accent"])};`;
+}
+
 function adminPhp(t) {
   const arr = (o, indent) => Object.entries(o).filter(([k]) => !k.startsWith("$"))
     .map(([k, v]) => `${indent}${typeof k === "string" && isNaN(Number(k)) ? `'${k}'` : k} => '${css(v)}',`).join("\n");
@@ -126,6 +144,7 @@ ${block("light")}
 
     .dark {
 ${block("dark")}
+${adminDarkPrimary(t)}
     }
 </style>
 `;

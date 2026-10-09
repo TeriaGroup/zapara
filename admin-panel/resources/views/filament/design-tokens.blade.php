@@ -46,5 +46,13 @@
         --zp-info: #5aa9ff;
         --zp-selection: #ffffff14;
         --zp-backdrop: #0000008c;
+        --primary-400: #f2f2f2;
+    }
+
+    .dark .fi-btn.fi-color-primary {
+        --dark-bg: #f2f2f2;
+        --dark-hover-bg: #a0a0a0;
+        --dark-text: #0d0d0d;
+        --dark-hover-text: #0d0d0d;
     }
 </style>
