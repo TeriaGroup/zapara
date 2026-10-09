@@ -9,8 +9,8 @@
 | postgres | `postgres` (70) | `pgdata` |
 | migrate, seed, server | `app` (1654) | `keys` → `/var/lib/zapara/keys`, `media` → `/var/lib/zapara/media` |
 | admin | `www-data` (33), порт 8080 | `storage/`, `bootstrap/cache/` внутри образа |
-| caddy, certsync | `caddy` (10001) | `caddy_data`, `caddy_config`, `maddy_certs` |
-| maddy | `maddy` (10002) | `maddy_data` (кроме `/data/tls`, его пишет certsync) |
+| caddy, certsync | `caddy` (10001), certsync с доп. группой `mail-tls` (10003) | `caddy_data`, `caddy_config`, `maddy_certs` |
+| maddy | `maddy` (10002), доп. группа `mail-tls` (10003) | `maddy_data` (кроме `/data/tls`, его пишет certsync) |
 | webmail | `www-data` (33) | `webmail_db` |
 
 Образы caddy, maddy и webmail собираются из `images/*` поверх официальных: в них добавлен пользователь
@@ -26,13 +26,20 @@ docker compose down            # тома сохраняются
 ./fix-volume-owners.sh         # пересобирает образы и меняет владельцев файлов в томах
 docker compose up -d postgres admin server caddy
 docker compose --profile ops run --rm migrate   # как обычно при обновлении
+./mail/up.sh                   # поднимает certsync, maddy и webmail (почта)
 ```
 
 Скрипт можно запускать повторно. Если сервис не стартует с ошибкой доступа к файлу, значит в его
 томе остались файлы другого владельца: повторите скрипт.
 
+`docker compose down` останавливает и почту, поэтому `./mail/up.sh` обязателен: без него входящая почта
+и webmail не работают. Скрипт идемпотентен: существующие ящики и пароли не меняются.
+
 ## Заметки
 
+- TLS-ключ почты (`maddy_certs/privkey.pem`) имеет режим 640 и группу с gid 10003 (`mail-tls`; имя условное, в образах группа задаётся только числом): его читают
+  только certsync (владелец) и maddy (через `group_add`). certsync сам исправляет права у файлов,
+  оставшихся от прежней версии.
 - Ключи Data Protection должны лежать в томе `keys` (`Web__DataProtectionKeysPath` и, если включена
   админка .NET, `Admin__DataProtectionKeysPath` внутри `/var/lib/zapara/keys`). Домашний каталог
   процесса теперь `/home/app`, он не сохраняется между пересозданиями контейнера, как и прежний `/root`.

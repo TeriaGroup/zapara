@@ -125,6 +125,8 @@ services:
     environment:
       MADDY_HOSTNAME: mail.voen.teriahost.ru
       MADDY_DOMAIN: voen.teriahost.ru
+    # Shared group mail-tls (10003) gives read access to the TLS private key (mode 640) written by certsync.
+    group_add: ["10003"]
     volumes:
       - maddy_data:/data
       - maddy_certs:/data/tls
@@ -144,6 +146,8 @@ services:
     image: zapara-caddy
     <<: [*log, *hardening]
     entrypoint: ["/bin/sh", "/sync.sh"]
+    # Writes the maddy key as 640 with group mail-tls (10003), which maddy also joins.
+    group_add: ["10003"]
     volumes:
       - ./mail/sync-certs.sh:/sync.sh:ro
       - caddy_data:/caddy:ro
