@@ -145,7 +145,7 @@ public class PageFrameTests : UiTest
         var vm = (HomeworkViewModel)shell.Current!;
         await Waits.Until(() => vm.Groups.Count > 0, "homework loaded");
         Pump();
-        Assert.Matches(@"^Открыто: \d+ · Сдано: \d+$", vm.Subtitle);
+        Assert.Matches(@"^Открыто: \d+ · Сдано: \d+$", vm.Counter);
 
         var buttons = window.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible).ToList();
         Assert.DoesNotContain(buttons, b => b.Content is "Сохранить сроки в календарь" or "Предпросмотр текущего списка" or "Выбрать несколько" or "Раскрыть все разделы");
@@ -167,14 +167,14 @@ public class PageFrameTests : UiTest
         empty.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "PART_Action");
 
     [AvaloniaFact]
-    public async Task Every_empty_state_offers_one_primary_action()
+    public async Task No_group_empty_states_offer_choose_group_and_sidebar_card_invites_to_pick()
     {
         var (db, shell, window) = await Open(noGroup: true);
         using var _ = db;
         var expected = new (SectionKey Key, string Action)[]
         {
+            // Сообщества и Чаты без входа — в #18 (PR #59), там своя логика кнопки входа.
             (SectionKey.Schedule, "Выбрать группу"), (SectionKey.Homework, "Выбрать группу"),
-            (SectionKey.Community, "Войти в аккаунт"), (SectionKey.Chat, "Войти в аккаунт"),
         };
         foreach (var (key, action) in expected)
         {

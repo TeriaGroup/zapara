@@ -19,8 +19,10 @@
       <TextBlock Classes="muted caption" Text="Общение внутри приложения «Расписание военмех»" />
       <TextBlock Classes="muted" Text="{Binding Status}" TextWrapping="Wrap" />
     </StackPanel>
-    <c:EmptyState Grid.Row="1" IsVisible="{Binding NeedAccount}" Margin="0,24" VerticalAlignment="Top" Title="Войдите в аккаунт" Hint="Личные чаты и группы доступны после входа."
-                  Icon="{StaticResource Icon.Chat}" ActionText="Войти в аккаунт" Command="{Binding OpenAccountCommand}" AutomationProperties.AutomationId="Chat.NeedAccount" />
+    <StackPanel Grid.Row="1" IsVisible="{Binding NeedAccount}" Spacing="10" VerticalAlignment="Center">
+      <c:EmptyState Title="Войдите в аккаунт" Hint="Личные чаты и группы доступны после входа." Icon="{StaticResource Icon.Chat}" />
+      <Button Content="Открыть настройки аккаунта" Command="{Binding OpenAccountCommand}" HorizontalAlignment="Center" />
+    </StackPanel>
     <Grid Grid.Row="1" Margin="0,18,0,0" ColumnDefinitions="340,16,*" IsVisible="{Binding !NeedAccount}">
       <Border Classes="card" Padding="10" ClipToBounds="True">
         <DockPanel LastChildFill="True">

@@ -6,7 +6,7 @@
              x:Class="Vograph.Desktop.Features.Week.WeekView"
              x:DataType="w:WeekViewModel">
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Margin="24,20" Spacing="12">
+    <StackPanel Margin="32,26" Spacing="12">
       <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
         <StackPanel Margin="0,0,16,0">
           <TextBlock Classes="display" Text="{Binding Title}" />

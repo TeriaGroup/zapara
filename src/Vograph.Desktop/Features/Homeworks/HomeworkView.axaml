@@ -12,7 +12,7 @@
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel Margin="0,0,16,0">
           <TextBlock Classes="display" Text="{Binding Title}" />
-          <TextBlock Classes="muted" Text="{Binding Subtitle}" Margin="0,4,0,0" />
+          <TextBlock Classes="muted" Text="{Binding Counter}" Margin="0,4,0,0" AutomationProperties.AutomationId="Homework.Counter" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
         <Button Classes="primary" Command="{Binding AddCommand}" IsEnabled="{Binding HasGroup}"
