@@ -52,6 +52,15 @@ public sealed partial class GroupPickerDialogViewModel : DialogViewModelBase
         var letter = g.Name.Trim().FirstOrDefault();
         return char.IsLetter(letter) ? Loc.Current.T("groupFaculty", char.ToUpper(letter, System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))) : Loc.Current.T("groupOther");
     }
+    /// <summary>
+    /// #21, решение по умолчанию: курс по номеру группы не выводим — в каталоге и XML нет поля курса,
+    /// подтверждённого правила кодировки тоже нет. Когда правило подтвердят, задать его здесь —
+    /// разделы станут «Факультет И · 2 курс». null = группировка только по факультету.
+    /// </summary>
+    public static readonly Func<Group, int?>? YearRule = null;
+
+    /// <summary>Заголовок раздела: факультет, а при заданном <see cref="YearRule"/> — ещё и курс.</summary>
+    public static string SectionOf(Group g, Func<Group, int?>? yearRule) => yearRule?.Invoke(g) is int year ? $"{FacultyOf(g)} · {year} курс" : FacultyOf(g);
     public bool AllowManual { get; }
     public bool ShowCatalog => !AllowManual;
     [ObservableProperty] private string manualName = "";
@@ -84,7 +93,7 @@ public sealed partial class GroupPickerDialogViewModel : DialogViewModelBase
             Rows.Add(new GroupPickRow(Loc.Current.T("groupRecent"), null));
             foreach (var g in recent) Rows.Add(new GroupPickRow(null, g));
         }
-        foreach (var section in Filtered.Except(recent).GroupBy(FacultyOf))
+        foreach (var section in Filtered.Except(recent).GroupBy(g => SectionOf(g, YearRule)))
         {
             Rows.Add(new GroupPickRow(section.Key, null));
             foreach (var g in section) Rows.Add(new GroupPickRow(null, g));

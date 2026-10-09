@@ -208,4 +208,13 @@ public class PageFrameTests : UiTest
         Assert.Same(vm.AddCommand, button.Command);
         window.Close();
     }
+
+    [Fact]
+    public void Year_is_not_derived_by_default_and_a_confirmed_rule_adds_it_to_sections()
+    {
+        var g = new Group { Id = "1", Name = "И831Б" };
+        Assert.Null(GroupPickerDialogViewModel.YearRule);
+        Assert.Equal("Факультет И", GroupPickerDialogViewModel.SectionOf(g, GroupPickerDialogViewModel.YearRule));
+        Assert.Equal("Факультет И · 2 курс", GroupPickerDialogViewModel.SectionOf(g, _ => 2));
+    }
 }
