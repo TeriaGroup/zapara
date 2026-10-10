@@ -6,5 +6,4 @@
     <string name="signed_out_communities_hint">Вступить в сообщество и видеть его участников можно после входа. Расписание, неделя и карты работают без аккаунта.</string>
     <string name="account_tab_login">Вход</string>
     <string name="account_tab_register">Регистрация</string>
-    <string name="account_accept_required">Чтобы создать аккаунт, примите документы.</string>
 </resources>
