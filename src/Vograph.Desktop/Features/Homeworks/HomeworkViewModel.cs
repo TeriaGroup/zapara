@@ -135,7 +135,7 @@ public sealed partial class HomeworkViewModel : ViewModelBase
     public bool ShowBrowseEmpty => IsLoaded && HasGroup && !LoadFailed && !SharedLoading && (!ShowSharedTasks || SharedLoaded) && Groups.Count == 0 && VisibleSharedTasks.Count == 0;
     public string BrowseEmptyTitle => TotalBrowseCount > 0 ? "По выбранным фильтрам заданий нет" : "Заданий пока нет";
     public string BrowseEmptyHint => TotalBrowseCount > 0 ? "Измените поиск или выберите другой статус." : "Добавьте личное задание или обновите задания группы.";
-    /// <summary>#21: счётчик под заголовком — «Открыто: N · Сдано: N», без склонений и сокращений.</summary>
+    /// <summary>#21, G-3: счётчик под заголовком — «открыто N · выполнено N» (ключ каталога homeworkOpenDone, как на web).</summary>
     public string Counter => T("hwOpenDone", _model?.Open ?? 0, _model?.Done ?? 0);
     /// <summary>#21: основная кнопка пустого списка — «Добавить задание», а если пусто из-за фильтров — «Сбросить фильтры».</summary>
     public string BrowseEmptyAction => TotalBrowseCount > 0 ? "Сбросить фильтры" : T("hwAddTask");
@@ -513,6 +513,10 @@ public sealed partial class HomeworkRowViewModel : ObservableObject
         catch (System.ComponentModel.Win32Exception) { _owner.App.Toasts.Info(_owner.App.Loc.T("hwFileBad")); }
     }
 
+    /// <summary>#9 (G-2): как карточка задания на web — на карточке только отметка «Готово»,
+    /// остальные действия в листе «⋯»; «Удалить» в нём последнее.</summary>
+    [ObservableProperty] private bool isSheetOpen;
+    [RelayCommand] private void ToggleSheet() => IsSheetOpen = !IsSheetOpen;
     [RelayCommand] private Task ToggleDone() => _owner.ToggleDoneAsync(this);
     [RelayCommand] private Task Edit() => _owner.EditAsync(this);
     [RelayCommand] private Task Delete() => _owner.DeleteAsync(this);

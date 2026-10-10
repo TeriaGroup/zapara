@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -94,13 +95,18 @@ data class AccountDeviceRow(
     val lastSeenAt: java.time.Instant? = null,
     val expiresAt: java.time.Instant? = null
 ) {
-    val label: String get() = "$deviceName · ${when (platform.lowercase()) {
+    /** #106 / AN-28: названия «Веб» и «Устройство» — из ресурсов ([shownLabel]). */
+    fun label(webName: String, unknownName: String): String = "$deviceName · ${when (platform.lowercase()) {
         "android" -> "Android"
         "windows" -> "Windows"
-        "web" -> "Веб"
-        else -> platform.ifBlank { "Устройство" }
+        "web" -> webName
+        else -> platform.ifBlank { unknownName }
     }} · …${deviceId.takeLast(6).uppercase()}"
 }
+
+@Composable
+internal fun AccountDeviceRow.shownLabel(): String =
+    label(stringResource(R.string.account_platform_web), stringResource(R.string.account_platform_unknown))
 
 internal fun mergeAccountDevices(current: List<AccountDeviceRow>, incoming: List<AccountDeviceRow>): List<AccountDeviceRow> =
     (current + incoming).associateBy { it.familyId }.values.toList()
@@ -504,7 +510,7 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
     val visibleDevices = state.devices.filter { device ->
         (deviceFilter == "all" || !device.current) &&
             (devicePlatform.isBlank() || device.platform.equals(devicePlatform, ignoreCase = true)) &&
-            (deviceQuery.isBlank() || device.label.contains(deviceQuery.trim(), ignoreCase = true))
+            (deviceQuery.isBlank() || device.shownLabel().contains(deviceQuery.trim(), ignoreCase = true))
     }
     var launchedExportVersion by rememberSaveable { mutableLongStateOf(0L) }
     var launchedExportToken by rememberSaveable { mutableStateOf("") }
@@ -562,7 +568,7 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
     visibleDevices.forEachIndexed { index, device ->
         Column(Modifier.fillMaxWidth().padding(vertical = Zapara.space.s),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
-            Text(device.label, style = Zapara.typography.body, color = Zapara.colors.text1, modifier = Modifier.testTag("Account.Device"))
+            Text(device.shownLabel(), style = Zapara.typography.body, color = Zapara.colors.text1, modifier = Modifier.testTag("Account.Device"))
             if (device.current) Text(stringResource(R.string.ux30_devices_current),
                 style = Zapara.typography.caption, color = Zapara.colors.text2)
             var detailOpen by rememberSaveable(device.familyId) { mutableStateOf(false) }
@@ -580,7 +586,7 @@ private fun AccountLifecyclePanel(state: AccountUiState, onEvent: (AccountEvent)
             }
             if (state.confirmRevoke == device.familyId) {
                 Text(if (device.current) stringResource(R.string.ux30_devices_current_confirm)
-                    else stringResource(R.string.ux30_devices_other_confirm, device.label),
+                    else stringResource(R.string.ux30_devices_other_confirm, device.shownLabel()),
                     style = Zapara.typography.body, color = Zapara.colors.text1)
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
                     ZButton(stringResource(R.string.account_revoke), { onEvent(AccountEvent.ConfirmRevoke) },
@@ -801,13 +807,14 @@ private fun PasswordProgress(value: String) {
     val count = value.codePointCount(0, value.length)
     val label = when {
         value.contains('\u0000') -> stringResource(R.string.ux300_android_password_invalid)
-        count < 12 -> stringResource(R.string.ux300_android_password_remaining, 12 - count)
-        count > 128 -> stringResource(R.string.ux300_android_password_over, count - 128)
+        count < 12 -> pluralStringResource(R.plurals.ux300_android_password_remaining, 12 - count, 12 - count)
+        count > 128 -> pluralStringResource(R.plurals.ux300_android_password_over, count - 128, count - 128)
         else -> stringResource(R.string.ux300_android_password_length_ok)
     }
     Text(label, style = Zapara.typography.caption,
+        // #109 / AN-11: подсказка о длине — Text2 (warn-текст был 2.6:1), «готово» — Ok.
         color = if (count in 12..128 && !value.contains('\u0000')) Zapara.colors.ok
-            else Zapara.colors.warn)
+            else Zapara.colors.text2)
 }
 
 @Composable
@@ -837,7 +844,7 @@ private fun AccountField(value: String, label: String, tag: String, password: Bo
         shape = RoundedCornerShape(Zapara.radii.control),
         colors = OutlinedTextFieldDefaults.colors(
             focusedContainerColor = c.chip, unfocusedContainerColor = c.chip,
-            focusedBorderColor = c.lineStrong, unfocusedBorderColor = c.chip,
+            focusedBorderColor = c.text1, unfocusedBorderColor = c.lineStrong, // #109 / AN-12
             focusedTextColor = c.text1, unfocusedTextColor = c.text1
         )
     )

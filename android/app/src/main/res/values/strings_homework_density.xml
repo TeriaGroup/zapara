@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- #101 (AN-04, AN-10, AN-20, AN-26): экран «Домашка» — служебное в «⋯», одна строка счётчиков, лист задания. -->
+<resources>
+    <string name="hw_more">Ещё действия с домашкой</string>
+    <string name="hw_counts">Открыто %1$d · Выполнено %2$d</string>
+    <string name="hw_counts_found">Открыто %1$d · Выполнено %2$d · Найдено %3$d</string>
+    <string name="hw_load_error_title">Не удалось загрузить домашку</string>
+    <string name="hw_add_task">Добавить задание</string>
+    <string name="hw_task_edit">Изменить</string>
+    <string name="hw_task_delete">Удалить</string>
+    <string name="hw_task_open">Открыть действия с заданием</string>
+</resources>

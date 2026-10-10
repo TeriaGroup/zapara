@@ -53,7 +53,7 @@ class StaffRelationManager extends RelationManager
                     ->formatStateUsing(fn (string $state): string => StaffAssignment::ROLES[$state] ?? $state)
                     ->color(fn (string $state): string => $state === 'headman' ? 'info' : 'success'),
                 TextColumn::make('assigned_at')
-                    ->label('Назначен')
+                    ->label('Назначен (МСК)')
                     ->formatStateUsing(fn ($state): string => MoscowTime::short($state)) // G-3: «9 окт., 18:49», год — если не текущий
                     ->visibleFrom('md'),
             ])

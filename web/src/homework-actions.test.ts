@@ -14,6 +14,15 @@ test("counters say what they count: «4 предмета · 5 заданий · 
   ]), "2 предмета · 3 задания · открыто 2 · выполнено 1");
 });
 
+test("G-3: the open/done counter is the catalog key homeworkOpenDone, shared with the desktop counter (hwOpenDone)", async () => {
+  const catalog = JSON.parse(await readFile(new URL("../../design/strings/ru.json", import.meta.url), "utf8"));
+  assert.equal(catalog.strings.homeworkOpenDone.ru, "открыто {0} · выполнено {1}");
+  assert.deepEqual(catalog.strings.homeworkOpenDone.desktop, ["hwOpenDone"]);
+  const source = await readFile(new URL("./homework-counts.ts", import.meta.url), "utf8");
+  assert.match(source, /t\("homeworkOpenDone", rows\.length - done, done\)/);
+  assert.doesNotMatch(source, /`[^`]*открыто \$\{/);
+});
+
 const pages = await readFile(new URL("./pages.tsx", import.meta.url), "utf8");
 const page = pages.slice(pages.indexOf('<section className="page homework-page">'), pages.indexOf("function communityRoleLabel("));
 

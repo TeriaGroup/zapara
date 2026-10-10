@@ -26,7 +26,7 @@ final class PlatformHealth
             $error = is_object($attempt) ? (string) ($attempt->error_code ?? '') : '';
             $rows[] = match ($status) {
                 'running' => $this->row('Парсер расписания', 'ok', 'Сейчас идёт обновление расписания.'),
-                'success' => $this->row('Парсер расписания', 'ok', 'Последняя попытка обновления прошла.'),
+                'success' => $this->row('Парсер расписания', 'ok', 'Последнее обновление прошло успешно.'),
                 'failed', 'abandoned' => $this->row('Парсер расписания', 'error', 'Обновление сорвалось'.($error !== '' ? ': '.$error : '.').' На сайте остаётся прежний снимок.'),
                 default => $this->row('Парсер расписания', 'warning', 'Попыток обновления ещё не было.', 'Нет данных'),
             };
@@ -52,11 +52,12 @@ final class PlatformHealth
         } catch (\Throwable) {
             $rows[] = $this->row('Снимок расписания', 'error', 'Таблицы расписания не найдены.');
         }
+        // R2-20: «Данные доступны», а не «Таблицы … открываются» — без языка разработчика.
         $schemas = [
-            'Расписание' => [$timetable.'.schema_version', 'Таблицы расписания открываются.'],
-            'Аккаунты' => [$this->identifier('Accounts__Schema', 'accounts').'.users', 'Таблицы пользователей открываются.'],
-            'Синхронизация' => [$this->identifier('Sync__Schema', 'sync').'.schema_migrations', 'Таблицы синхронизации открываются.'],
-            'Сообщества' => [$this->identifier('Communities__Schema', 'communities').'.schema_migrations', 'Таблицы сообществ открываются.'],
+            'Расписание' => [$timetable.'.schema_version', 'Данные доступны.'],
+            'Аккаунты' => [$this->identifier('Accounts__Schema', 'accounts').'.users', 'Данные доступны.'],
+            'Синхронизация' => [$this->identifier('Sync__Schema', 'sync').'.schema_migrations', 'Данные доступны.'],
+            'Сообщества' => [$this->identifier('Communities__Schema', 'communities').'.schema_migrations', 'Данные доступны.'],
         ];
         foreach ($schemas as $name => $probe) {
             try {

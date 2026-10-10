@@ -79,6 +79,7 @@ fun InboxSection(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
         }
     }
     if (state.active != null) BackHandler { onEvent(InboxEvent.Back) }
+    ru.bgtu_voenmeh.zapara.ui.shell.ReportConversationOpen(state.active != null) // #108 / AN-17: без нижней панели в беседе
     Column(modifier.fillMaxSize()) {
         if (state.active != null && !state.guest) {
             BoxWithConstraints(Modifier.fillMaxWidth().background(Zapara.colors.canvas)) {
@@ -96,7 +97,7 @@ fun InboxSection(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
                     }
                     Text(state.active.title, color = Zapara.colors.text1, style = Zapara.typography.bodyStrong,
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
-                    Text(state.active.subtitle, color = Zapara.colors.text2, style = Zapara.typography.caption,
+                    Text(inboxSubtitle(state.active), color = Zapara.colors.text2, style = Zapara.typography.caption,
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
                 } else Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
                     .padding(horizontal = Zapara.space.l), verticalAlignment = Alignment.CenterVertically) {
@@ -106,7 +107,7 @@ fun InboxSection(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
                     Column(Modifier.weight(1f)) {
                         Text(state.active.title, color = Zapara.colors.text1, style = Zapara.typography.bodyStrong,
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
-                        Text(state.active.subtitle, color = Zapara.colors.text2, style = Zapara.typography.caption,
+                        Text(inboxSubtitle(state.active), color = Zapara.colors.text2, style = Zapara.typography.caption,
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
                     }
                     ChatHeaderAction(R.drawable.ic_refresh, stringResource(R.string.chat_header_refresh), !state.loading,
@@ -157,7 +158,8 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
             ZTextField(query, onQuery, label = { Text(stringResource(R.string.ux30_chat_inbox_search)) },
                 singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Inbox.Search"))
         }
-        item {
+        // #108 / AN-13: фильтры — только от 10 чатов (или пока фильтр включён, чтобы его можно было снять).
+        if (InboxDensity.showFilters(state.rows.size, activeFilters)) item {
             ZDisclosureButton(
                 text = if (activeFilters == 0) stringResource(R.string.inbox_compact_filters)
                     else stringResource(R.string.inbox_compact_filters_count, activeFilters),
@@ -184,14 +186,11 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
                 }
             }
         }
-        item {
-            Text(stringResource(R.string.inbox_results, visible.size, state.rows.size),
-                color = Zapara.colors.text2, style = Zapara.typography.caption)
-            Text(stringResource(R.string.inbox_unread_total, totalInboxUnread(state.rows)),
-                color = Zapara.colors.text2, style = Zapara.typography.caption)
-            Text(stringResource(R.string.ux30_inbox_unread_chats, unreadInboxConversations(state.rows)),
-                color = Zapara.colors.text2, style = Zapara.typography.caption)
-            if (filtered || unreadFirst) ZButton(stringResource(R.string.inbox_compact_reset_search_filters), {
+        // #108 / AN-13: вместо трёх строк статистики — одна строка «Найдено», и только пока список сужен.
+        if (filtered || unreadFirst) item {
+            if (filtered) Text(stringResource(R.string.inbox_results, visible.size, state.rows.size),
+                color = Zapara.colors.text2, style = Zapara.typography.caption, modifier = Modifier.testTag("Inbox.Found"))
+            ZButton(stringResource(R.string.inbox_compact_reset_search_filters), {
                 onQuery(""); onSource(InboxSourceFilter.All.name); onUnreadOnly(false); onDraftsOnly(false); onUnreadFirst(false)
             }, ghost = true, tag = "Inbox.Reset")
         }
@@ -262,7 +261,7 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
                         Text(row.lastBody?.takeIf { it.isNotBlank() } ?: stringResource(R.string.face_no_messages_yet),
                             color = Zapara.colors.text2, maxLines = if (largeText) 3 else 2,
                             overflow = TextOverflow.Ellipsis)
-                        if (row.source != InboxSource.Friend) Text(row.subtitle,
+                        if (row.source != InboxSource.Friend) Text(inboxSubtitle(row),
                             color = Zapara.colors.text2, style = Zapara.typography.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (largeText && (row.lastAt != null || row.unread > 0)) {
                             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -504,7 +503,8 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                                 Text(message.createdAt.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm")) +
                                     (if (message.edited) stringResource(R.string.face_edited) else "") +
                                     (if (mine) stringResource(if (message.read) R.string.face_read else R.string.face_sent) else ""),
-                                    modifier = Modifier.weight(1f), color = Zapara.colors.text2, style = Zapara.typography.caption)
+                                    color = Zapara.colors.text2, style = Zapara.typography.caption,
+                                    modifier = Modifier.testTag("Inbox.MessageTime.${message.id}"))
                                 if (!message.deleted) IconButton({ selected = message },
                                     modifier = Modifier.size(Zapara.space.minTouch)
                                         .testTag("Inbox.MessageActions.${message.id}")) {
@@ -702,3 +702,12 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
         dismissButton = { ZButton(stringResource(R.string.face_cancel), { deleting = null }, ghost = true, quiet = true) }) }
 }
 private fun emoji(code: String) = when(code) { "like" -> "👍"; "heart" -> "❤️"; "laugh" -> "😂"; "wow" -> "😮"; "sad" -> "😢"; else -> code }
+
+/** #106 / AN-28: «Личный чат», «Личный чат · ИВТ-1», «Учебная группа» — из ресурсов; явная подпись строки важнее. */
+@Composable
+internal fun inboxSubtitle(row: InboxRow): String = when (row.source) {
+    InboxSource.GroupDirect -> if (row.subtitle.isBlank()) stringResource(R.string.inbox_subtitle_personal)
+        else stringResource(R.string.inbox_subtitle_personal_in, row.subtitle)
+    InboxSource.Group -> row.subtitle.ifBlank { stringResource(R.string.inbox_subtitle_group) }
+    else -> row.subtitle.ifBlank { stringResource(R.string.inbox_subtitle_personal) }
+}

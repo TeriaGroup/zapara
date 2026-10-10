@@ -85,6 +85,26 @@ class FormsSettingsTextsTest extends TestCase
         $this->get('/admin/quotas')->assertOk()->assertSee('2 ГБ')->assertSee('300 МБ')->assertDontSee('ГиБ');
     }
 
+    public function test_r2_switch_labels_follow_the_switch_and_tabs_wrap_on_a_phone(): void
+    {
+        $this->rememberSettings();
+        $this->actingAs($this->makeUser(true));
+
+        $this->assertSame('Регистрация закрыта', SystemSettings::switchLabel('Регистрация', false, 'открыта', 'закрыта'));
+        $page = Livewire::test(SystemSettings::class)
+            ->fillForm(['registration_enabled' => false, 'vk_enabled' => false])
+            ->assertSee('Регистрация закрыта')
+            ->assertDontSee('Регистрация открыта')
+            ->assertSee('VK ID выключен');
+        $page->fillForm(['registration_enabled' => true, 'vk_enabled' => true])
+            ->assertSee('Регистрация открыта')
+            ->assertDontSee('Регистрация закрыта')
+            ->assertSee('VK ID включён');
+
+        $html = $this->get('/admin/settings')->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('/@media \(max-width: 767px\) \{\s*\.fi-tabs \{\s*flex-wrap: wrap;/', $html);
+    }
+
     public function test_secret_fields_show_whether_a_key_is_set_and_change_only_on_request(): void
     {
         $this->rememberSettings();
@@ -184,7 +204,7 @@ class FormsSettingsTextsTest extends TestCase
     public function test_login_says_administration_and_shows_the_error_above_the_form(): void
     {
         $member = $this->makeUser(false);
-        $this->get('/admin/login')->assertOk()->assertSee('Военмех · Администрирование');
+        $this->get('/admin/login')->assertOk()->assertSee('Администрирование')->assertDontSee('Военмех · Администрирование'); // R2-17
 
         Livewire::test(Login::class)
             ->fillForm(['username' => $member->username, 'password' => 'wrong-password-1'])
@@ -209,14 +229,16 @@ class FormsSettingsTextsTest extends TestCase
         }
 
         $page = (string) $this->get('/admin/settings')->assertOk()->getContent();
-        // Граница — токен border-control из #11; его контраст проверяет web/src/design-tokens.test.ts.
-        // Здесь проверяем запасной цвет, который действует, пока токен не подключён.
+        // Граница — токен border-control из #11, без запасного hex (#8, G-1): токены подключены на каждой странице панели.
         $this->assertDoesNotMatchRegularExpression('/--zp-border-control-tmp/', $page);
-        $this->assertMatchesRegularExpression('/--tw-ring-color:\s*var\(--zp-border-control,\s*(#[0-9a-f]{6})\)/i', $page);
-        preg_match('/--tw-ring-color:\s*var\(--zp-border-control,\s*(#[0-9a-f]{6})\)/i', $page, $fallback);
+        $this->assertMatchesRegularExpression('/--tw-ring-color:\s*var\(--zp-border-control\);/', $page);
+        $this->assertDoesNotMatchRegularExpression('/var\(--zp-border-control,/', $page);
         // Фон поля и страницы в светлой теме; фон секции и поля в тёмной (gray-900 и white 5% поверх него).
-        foreach (['#ffffff', '#fafafa', '#18181b', '#242427'] as $background) {
-            $this->assertGreaterThanOrEqual(3.0, self::contrast($fallback[1], $background), $fallback[1].' / '.$background);
+        foreach (['light' => ['#ffffff', '#fafafa'], 'dark' => ['#18181b', '#242427']] as $theme => $backgrounds) {
+            $border = config("design-tokens.$theme.border-control");
+            foreach ($backgrounds as $background) {
+                $this->assertGreaterThanOrEqual(3.0, self::contrast($border, $background), "$theme $border / $background");
+            }
         }
     }
 

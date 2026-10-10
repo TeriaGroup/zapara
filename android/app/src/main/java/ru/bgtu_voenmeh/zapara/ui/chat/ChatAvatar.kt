@@ -82,6 +82,9 @@ fun ChatAvatar(name: String, target: AvatarTarget?, size: Dp = 40.dp, modifier: 
         val image = bitmap
         if (image != null) Image(image.asImageBitmap(), stringResource(R.string.avatar_photo, name),
             Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        // #108 / AN-13: у группы без фото — значок группы, а не две буквы из одного слова («И8» у «И831Б»).
+        else if (target?.kind == AvatarKind.Group) Icon(painterResource(R.drawable.ic_users), contentDescription = null,
+            tint = Zapara.colors.text2, modifier = Modifier.size(size * 0.5f).testTag("Avatar.GroupGlyph"))
         else Text(avatarInitials(name), style = if (size < 36.dp) Zapara.typography.caption else Zapara.typography.bodyStrong,
             color = Zapara.colors.text2)
     }

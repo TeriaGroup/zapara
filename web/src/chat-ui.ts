@@ -1,11 +1,12 @@
 /** #17: общая лексика и правила чата — одни на desktop и телефоне. */
+import { S } from "./strings.gen.ts";
 
 /** Вкладки группы на всех размерах: «Чат · Каналы · Участники». */
-export const groupTabs = [["general", "Чат"], ["channels", "Каналы"], ["people", "Участники"]] as const;
+export const groupTabs = [["general", S.groupChat], ["channels", "Каналы"], ["people", "Участники"]] as const;
 
 /** Общий поток группы называется «Чат», как и вкладка; остальные каналы — своим названием. */
 export function channelTitle(topic: { topicId: string | null; title: string }): string {
-  return topic.topicId === null ? "Чат" : topic.title;
+  return topic.topicId === null ? S.groupChat : topic.title;
 }
 
 /** Есть физическая клавиатура и точный указатель — тогда подсказка про Shift+Enter уместна. */

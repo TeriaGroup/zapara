@@ -66,19 +66,24 @@ public sealed class OperatorPanelStoreTests
         }
     }
 
+    /// <summary>Called by the panel's PanelTest: the panel saves the setting, this reads it the way the server does and
+    /// checks the register route. ZAPARA_PANEL_OPERATOR_SCHEMA names the panel test's own settings schema (#47);
+    /// without it the shared default schema "operator" is used.</summary>
     [Fact]
     public async Task Default_operator_store_matches_register_route()
     {
+        var schema = Environment.GetEnvironmentVariable("ZAPARA_PANEL_OPERATOR_SCHEMA") is { Length: > 0 } own ? own : "operator";
         bool? stored = null;
         await using (var connection = new NpgsqlConnection(Dsn))
         {
             await connection.OpenAsync(Ct);
-            if (OperatorSettings.TryReadRegistration(connection, "operator", out var enabled)) stored = enabled;
+            if (OperatorSettings.TryReadRegistration(connection, schema, out var enabled)) stored = enabled;
         }
         await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);
-        await using var host = new AccountApiTestHost(db);
+        await using var host = new AccountApiTestHost(db, overrides: new() { ["Operator:Schema"] = schema });
         var closed = stored == false;
         await host.Send("POST", "/auth/register", closed ? 503 : 400, raw: "{}", code: closed ? "registration_unavailable" : "invalid_request");
+        Mark("OPERATOR_SCHEMA=" + schema);
         Mark("OPERATOR_REGISTRATION=" + (stored is null ? "absent" : stored.Value ? "true" : "false"));
         Mark("REGISTER_STATUS=" + (closed ? 503 : 400));
     }

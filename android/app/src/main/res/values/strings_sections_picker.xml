@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- #108: «Разделы» и выбор группы (AN-18, AN-19). -->
+<resources>
+    <string name="group_picker_recent">Недавние</string>
+    <string name="group_picker_faculty">Факультет %1$s</string>
+    <string name="group_picker_other">Другие</string>
+</resources>

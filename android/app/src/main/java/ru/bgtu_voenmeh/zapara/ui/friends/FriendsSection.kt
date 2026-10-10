@@ -460,7 +460,7 @@ private fun FriendEditorSheet(editor: FriendEditorUi, state: FriendsUiState, onE
             shape = RoundedCornerShape(Zapara.radii.control),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = c.chip, unfocusedContainerColor = c.chip,
-                focusedBorderColor = c.lineStrong, unfocusedBorderColor = c.chip,
+                focusedBorderColor = c.text1, unfocusedBorderColor = c.lineStrong, // #109 / AN-12
                 focusedTextColor = c.text1, unfocusedTextColor = c.text1
             )
         )

@@ -69,14 +69,14 @@
     <string name="hw_status_burning">Горит</string>
     <string name="hw_status_soon">Скоро</string>
     <string name="hw_status_later">Позже</string>
-    <string name="hw_completion_label">Сдано: %1$s, %2$s</string>
+    <string name="hw_completion_label">Выполнено: %1$s, %2$s</string>
     <string name="hw_overdue">просрочено</string>
     <string name="hw_burning">горит</string>
     <string name="hw_due">срок %1$s (%2$s)</string>
     <string name="next_short">следующая: %1$s</string>
     <string name="hw_pick_subject">Название предмета</string>
     <string name="hw_empty_title">Домашки нет</string>
-    <string name="hw_empty_hint">Добавьте задание по паре из расписания или кнопкой ＋</string>
+    <string name="hw_empty_hint">Задание можно добавить из карточки пары в расписании или кнопкой ниже.</string>
     <string name="hw_group_overdue">Просрочено</string>
     <string name="hw_group_burning">Горит</string>
     <string name="hw_group_soon">Скоро</string>

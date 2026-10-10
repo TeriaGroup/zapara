@@ -14,7 +14,8 @@ data class InboxRow(
     val lastBody: String? = null,
     val lastAt: Instant? = null,
     val unread: Int = 0,
-    val subtitle: String = if (communityId == null) "Личный чат" else "Учебная группа",
+    /** #106 / AN-28: только данные (название группы у личного чата в группе). Подпись «Личный чат» / «Учебная группа» — в UI из ресурсов. */
+    val subtitle: String = "",
     val source: InboxSource = if (communityId == null) InboxSource.Friend else InboxSource.Group,
     val peerUserId: String? = null
 )
@@ -22,7 +23,7 @@ fun orderInbox(rows: List<InboxRow>): List<InboxRow> = rows.distinctBy { it.id }
 fun groupInboxRows(home: ru.bgtu_voenmeh.zapara.data.communities.GroupHome): List<InboxRow> =
     (listOf(home.groupChat) + home.directs).map { conversation ->
         InboxRow(conversation.conversationId, conversation.title, home.communityId, conversation.lastBody, conversation.lastAt, conversation.unread,
-            if (conversation.kind == "direct") "Личный чат · ${home.groupName ?: home.name}" else "Учебная группа",
+            if (conversation.kind == "direct") home.groupName ?: home.name else "",
             if (conversation.kind == "direct") InboxSource.GroupDirect else InboxSource.Group,
             peerUserId = conversation.peerUserId)
     }

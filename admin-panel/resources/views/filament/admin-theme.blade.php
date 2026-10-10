@@ -1,5 +1,10 @@
 {{-- Правки темы панели без сборки Vite. Подключается в AdminPanelProvider через render hook HEAD_END. --}}
 <style>
+    /* R2-21: пустой блок действий таблицы (у «Персонала» нет действий над таблицей) не занимает строку над поиском. */
+    .fi-ta-header-toolbar > .fi-ta-actions:not(:has(*)) {
+        display: none;
+    }
+
     /* Телефон (ниже md): кнопки и поля не ниже 44px, подпись чекбокса — часть области нажатия. */
     @media (max-width: 767px) {
         .fi-btn,
@@ -55,6 +60,16 @@
         }
     }
 
+    /* R2-18: вкладки (например, «Системные настройки») на телефоне не уходят за край без признака прокрутки,
+       а переносятся на следующую строку — видны все сразу. */
+    @media (max-width: 767px) {
+        .fi-tabs {
+            flex-wrap: wrap;
+            row-gap: 0.25rem;
+            overflow-x: visible;
+        }
+    }
+
     /* Длинные идентификаторы — в одну строку с многоточием, полностью видны в подсказке или копировании. */
     .zp-id {
         display: inline-block;
@@ -64,5 +79,11 @@
         white-space: nowrap;
         vertical-align: bottom;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    /* r2: «Последние действия» на инфопанели — на телефоне только первые 5 (RecentAudit::PHONE_LIMIT). */
+    @media (max-width: 767px) {
+        .zp-recent-audit-extra {
+            display: none !important;
+        }
     }
 </style>

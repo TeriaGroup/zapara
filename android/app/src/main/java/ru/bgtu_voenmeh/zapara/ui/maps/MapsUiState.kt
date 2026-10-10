@@ -83,6 +83,8 @@ data class MapsUiState(
     val rasterCatalog: Map<FloorKey, FloorRaster> = emptyMap(),
     val decodeFailedFloors: Set<FloorKey> = emptySet(),
     val roomUnmarked: Boolean = false,
+    /** #103: какая аудитория не нашлась на плане — для строки «Аудитории 229 нет на плане этого этажа». */
+    val unmarkedRoom: String = "",
     val availableRooms: List<FloorRoom> = emptyList(),
     val alphaMaps: Boolean = false,
     val mapError: String? = null,
@@ -125,7 +127,7 @@ internal class RecentPlaceIds(private val limit: Int = 5) {
 /** Return to a local manual map after both route endpoints have been cleared. */
 internal fun MapsUiState.clearedRouteDisplay(): MapsUiState = copy(
     mode = MapMode.Manual, contextLine = "", note = null, remoteNote = null, remote = false,
-    automaticNote = null, highlight = null, roomUnmarked = false,
+    automaticNote = null, highlight = null, roomUnmarked = false, unmarkedRoom = "",
     route = null, presentation = null, path = emptyList(), stairMarkers = emptyList(),
     routeSteps = emptyList(), activeStepId = null, routeLoading = false,
     routeFailure = null, routeUnmarked = "", unmarked = true,

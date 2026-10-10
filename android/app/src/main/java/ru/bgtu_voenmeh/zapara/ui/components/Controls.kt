@@ -1,5 +1,7 @@
 package ru.bgtu_voenmeh.zapara.ui.components
 
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -62,6 +64,8 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
@@ -126,8 +130,9 @@ fun ZTextField(
         colors = OutlinedTextFieldDefaults.colors(
             focusedContainerColor = c.chip, unfocusedContainerColor = c.chip,
             disabledContainerColor = c.chip.copy(alpha = 0.5f), errorContainerColor = c.chip,
-            focusedBorderColor = c.lineStrong, unfocusedBorderColor = c.chip,
-            disabledBorderColor = Color.Transparent, errorBorderColor = c.bad,
+            // #109 / AN-12: поле видно и без фокуса — 1 dp LineStrong; фокус — 2 dp (толщина Material3) Text1.
+            focusedBorderColor = c.text1, unfocusedBorderColor = c.lineStrong,
+            disabledBorderColor = c.line, errorBorderColor = c.bad,
             focusedTextColor = c.text1, unfocusedTextColor = c.text1,
             disabledTextColor = c.text2, errorTextColor = c.text1,
             cursorColor = c.text1, errorCursorColor = c.bad,
@@ -231,21 +236,48 @@ fun ZSegmented(items: List<String>, selected: Int, onSelect: (Int) -> Unit, tag:
             )
         }
     }
-    BoxWithConstraints(container) {
-        val itemWidth = if (constraints.hasBoundedWidth && items.isNotEmpty()) (maxWidth / items.size).coerceAtLeast(Zapara.space.minTouch) else Zapara.space.minTouch
-        Row(Modifier.horizontalScroll(rememberScrollState()).height(IntrinsicSize.Min)) {
-            items.forEachIndexed { index, label -> segment(index, label, Modifier.widthIn(min = itemWidth).fillMaxHeight()) }
+    // #100 / AN-02: раньше ряд прокручивался вбок без признака, и при крупном шрифте «Послезавтра» уходило за край.
+    // Теперь сегменты меряются по собственной ширине; если не влезают в одну строку — переносятся (FontFit.segmentRows).
+    val minTouch = Zapara.space.minTouch
+    Layout(
+        modifier = container,
+        content = { items.forEachIndexed { index, label -> segment(index, label, Modifier) } }
+    ) { measurables, constraints ->
+        val bounded = constraints.hasBoundedWidth && measurables.isNotEmpty()
+        val available = if (bounded) constraints.maxWidth else Int.MAX_VALUE
+        val minItem = if (bounded) (available / measurables.size).coerceAtLeast(minTouch.roundToPx()) else minTouch.roundToPx()
+        val natural = measurables.map { maxOf(it.maxIntrinsicWidth(Constraints.Infinity), minItem) }
+        val cells = if (bounded) FontFit.segmentRows(natural, available) else natural.map { it to 0 }
+        val rowCount = (cells.maxOfOrNull { it.second } ?: -1) + 1
+        val rowHeights = (0 until rowCount).map { r ->
+            measurables.indices.filter { cells[it].second == r }.maxOf { measurables[it].minIntrinsicHeight(cells[it].first) }
+        }
+        val placeables = measurables.mapIndexed { i, m ->
+            val (w, r) = cells[i]
+            m.measure(Constraints.fixed(w, rowHeights[r]))
+        }
+        val width = if (bounded) available else placeables.sumOf { it.width }
+        layout(width, rowHeights.sum()) {
+            var y = 0
+            (0 until rowCount).forEach { r ->
+                var x = 0
+                placeables.forEachIndexed { i, p -> if (cells[i].second == r) { p.placeRelative(x, y); x += p.width } }
+                y += rowHeights[r]
+            }
         }
     }
 }
 
 @Composable
-fun ZSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, tag: String, modifier: Modifier = Modifier) {
+fun ZSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, tag: String, modifier: Modifier = Modifier,
+    label: String? = null) {
     val c = Zapara.colors
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
         modifier = modifier
+            // #105 / AN-25: доступное имя у переключателя без соседней подписи (иначе TalkBack: «Выкл., переключатель»).
+            .then(if (label != null) Modifier.semantics { contentDescription = label } else Modifier)
             .testTag(tag)
             .sizeIn(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch),
         colors = SwitchDefaults.colors(
@@ -290,7 +322,9 @@ fun ZBottomSheet(
                 .fillMaxSize()
                 .graphicsLayer { alpha = sheetMotion.visibility.value }
                 .background(c.backdrop)
-                .clickable(onClick = requestDismiss)
+                // #105 / AN-27: касание по подложке закрывает лист, но в дереве доступности её нет —
+                // раньше TalkBack находил неподписанный элемент 390×844. Закрыть: «Назад» или кнопка листа.
+                .pointerInput(requestDismiss) { detectTapGestures { requestDismiss() } }
         )
         BoxWithConstraints(
             Modifier
@@ -403,7 +437,8 @@ fun EmptyState(
         }
         if (actionText != null && onAction != null) {
             Spacer(Modifier.height(Zapara.space.m))
-            ZButton(actionText, onAction, Modifier.widthIn(max = 320.dp).fillMaxWidth(), ghost = true)
+            // #109 / AN-09: единственное действие пустого/ошибочного состояния — основная (инверсная) кнопка.
+            ZButton(actionText, onAction, Modifier.widthIn(max = 320.dp).fillMaxWidth())
         }
     }
 }

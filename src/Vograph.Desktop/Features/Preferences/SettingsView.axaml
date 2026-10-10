@@ -22,15 +22,17 @@
   </UserControl.Styles>
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
     <Grid Name="SettingsColumns" Margin="24,20" ColumnDefinitions="*" ColumnSpacing="20" MaxWidth="960" HorizontalAlignment="Left"><StackPanel Name="SettingsOverview" Spacing="6" IsVisible="{Binding ShowOverview}"><TextBlock Classes="display" Text="Настройки" /><TextBox Text="{Binding SettingsSearch}" PlaceholderText="Поиск по настройкам" AutomationProperties.AutomationId="Settings.Search" /><WrapPanel ItemSpacing="8"><TextBlock Classes="muted caption" Text="{Binding SettingsSearchCount, StringFormat='Найдено разделов: {0}'}" IsVisible="{Binding HasSettingsSearch}" /><Button Content="Очистить поиск" Command="{Binding ClearSettingsSearchCommand}" IsVisible="{Binding HasSettingsSearch}" /></WrapPanel><TextBlock Text="Раздел не найден. Попробуйте другое слово или очистите поиск." TextWrapping="Wrap" IsVisible="{Binding NoSettingsSearchResults}" /><ItemsControl ItemsSource="{Binding SpecificSettingResults}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="st:SettingsSearchHit"><Button Classes="ghost" Content="{Binding Title}" Command="{Binding $parent[UserControl].((st:SettingsViewModel)DataContext).OpenSpecificSettingCommand}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="account" Classes.active="{Binding ShowAccountPanel}" AutomationProperties.AutomationId="Settings.Category.Account" MinHeight="64" IsVisible="{Binding ShowAccountCategory}">
-          <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
+          <!-- r2: Grid, а не горизонтальный StackPanel: тот даёт тексту бесконечную ширину, и статус обрезался
+               краем кнопки без многоточия. Теперь статус ограничен шириной строки и переносится. -->
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" MinHeight="56">
             <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center">
               <c:Icon Data="{StaticResource Icon.Users}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Border>
-            <StackPanel Spacing="2" VerticalAlignment="Center">
+            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
               <TextBlock Text="Аккаунт" FontWeight="Medium" />
-              <TextBlock Classes="muted caption" Text="{Binding AccountPanel.Status}" TextTrimming="CharacterEllipsis" MaxWidth="550" />
+              <TextBlock Classes="muted caption" Text="{Binding AccountPanel.Status}" TextWrapping="Wrap" MaxWidth="550" HorizontalAlignment="Left" />
             </StackPanel>
-          </StackPanel>
+          </Grid>
         </Button><Button Classes="ghost" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch" Command="{Binding OpenPanelCommand}" CommandParameter="study" Classes.active="{Binding ShowStudyPanel}" AutomationProperties.AutomationId="Settings.Category.Study" MinHeight="64" IsVisible="{Binding ShowStudyCategory}">
           <StackPanel Orientation="Horizontal" Spacing="10" MinHeight="56">
             <Border Background="{DynamicResource Brush.Chip}" CornerRadius="8" Width="36" Height="36" VerticalAlignment="Center"><c:Icon Data="{StaticResource Icon.Calendar}" Size="20" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
@@ -216,44 +218,57 @@
         <StackPanel Spacing="8">
           <TextBlock Classes="micro" Text="Поддержка" />
           <Border Classes="card"><StackPanel Spacing="8"><TextBlock Classes="subject" Text="Диагностика без личных данных" /><TextBlock Classes="muted caption" Text="Только версия, платформа и числа сохранённых копий, планов и изменений в очереди. Без имён, путей, адресов, токенов, текстов и файлов." TextWrapping="Wrap" /><Button Content="Проверить сводку" Command="{Binding PreviewDiagnosticsCommand}" HorizontalAlignment="Left" /><TextBox Text="{Binding DiagnosticsPreview}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" IsVisible="{Binding HasDiagnosticsPreview}" MinHeight="100" AutomationProperties.AutomationId="Settings.DiagnosticsPreview" /><Button Content="Копировать сводку" Command="{Binding CopyDiagnosticsCommand}" IsVisible="{Binding HasDiagnosticsPreview}" HorizontalAlignment="Left" /><TextBlock Text="{Binding DiagnosticsStatus}" TextWrapping="Wrap" /></StackPanel></Border>
-          <TextBlock TextWrapping="Wrap" Text="Расскажите, что пошло не так. Чтобы отправить сообщение и получить ответ, войдите в аккаунт. Вместе с сообщением отправится технический отчёт (без личных данных)." />
-          <TextBlock Classes="subject" Text="Новое обращение" />
-          <TextBox Name="ReportSubjectControl" Text="{Binding ReportSubject}" PlaceholderText="Тема" MinHeight="48" AutomationProperties.AutomationId="Settings.ReportSubject" />
-          <TextBox Text="{Binding ReportBody}" PlaceholderText="Что случилось?" AcceptsReturn="True" MinHeight="96" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings.ReportBody" />
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Content="Фото" MinHeight="48" MinWidth="48" Command="{Binding PickReportPhotoCommand}" AutomationProperties.AutomationId="Settings.ReportPhoto" />
+          <!-- R2-02: обращения работают только через аккаунт (сервер принимает их от вошедших). Гостю форму не показываем,
+               а объясняем, что делать: войти, или — если вход недоступен — другой канал (SupportGate.FallbackUrl). -->
+          <Border Classes="card" IsVisible="{Binding AccountPanel.IsGuest}" AutomationProperties.AutomationId="Settings.SupportGuest">
+            <StackPanel Spacing="8">
+              <TextBlock TextWrapping="Wrap" Text="{Binding AccountPanel.SignInWorks, Converter={x:Static st:SupportGate.GuestTextConverter}}" />
+              <WrapPanel ItemSpacing="8" LineSpacing="8">
+                <Button Classes="primary" Content="Войти" MinHeight="40" Command="{Binding OpenSupportSignInCommand}" IsVisible="{Binding AccountPanel.SignInWorks}" AutomationProperties.AutomationId="Settings.SupportSignIn" />
+                <Button Content="Написать в поддержку" MinHeight="40" Command="{Binding OpenSupportFallbackCommand}" IsVisible="{Binding HasSupportFallback}" AutomationProperties.AutomationId="Settings.SupportFallback" />
+              </WrapPanel>
+            </StackPanel>
+          </Border>
+          <StackPanel Spacing="8" IsVisible="{Binding !AccountPanel.IsGuest}">
+            <TextBlock TextWrapping="Wrap" Text="Расскажите, что пошло не так. Вместе с сообщением отправится технический отчёт (без личных данных)." />
+            <TextBlock Classes="subject" Text="Новое обращение" />
+            <TextBox Name="ReportSubjectControl" Text="{Binding ReportSubject}" PlaceholderText="Тема" MinHeight="48" AutomationProperties.AutomationId="Settings.ReportSubject" />
+            <TextBox Text="{Binding ReportBody}" PlaceholderText="Что случилось?" AcceptsReturn="True" MinHeight="96" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings.ReportBody" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="Фото" MinHeight="48" MinWidth="48" Command="{Binding PickReportPhotoCommand}" AutomationProperties.AutomationId="Settings.ReportPhoto" />
+            </StackPanel>
+            <TextBlock TextWrapping="Wrap" Text="Фото можно приложить отдельно: до трёх JPEG, PNG или WebP, до 4 МиБ." />
+            <ItemsControl ItemsSource="{Binding ReportFiles}"><ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="st:SupportDraftAttachment"><WrapPanel ItemSpacing="8" Margin="0,3">
+                <TextBlock Text="{Binding Label}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                <Button Content="Убрать" Command="{Binding $parent[UserControl].((st:SettingsViewModel)DataContext).RemoveReportFileCommand}" CommandParameter="{Binding}" AutomationProperties.Name="Убрать вложение" />
+              </WrapPanel></DataTemplate>
+            </ItemsControl.ItemTemplate></ItemsControl>
+            <TextBlock Text="Добавляем вложение…" IsVisible="{Binding ReportAttachmentLoading}" Classes="muted caption" />
+            <Button Content="Сообщить о баге" HorizontalAlignment="Left" MinHeight="48" Command="{Binding SendReportCommand}" IsEnabled="{Binding CanSendReport}" AutomationProperties.AutomationId="Settings.Report" />
+            <Button Content="Очистить черновик" Command="{Binding RequestDiscardReportCommand}" IsEnabled="{Binding !ReportSending}" HorizontalAlignment="Left" />
+            <Border Classes="card" IsVisible="{Binding ConfirmDiscardReport}"><StackPanel Spacing="8">
+              <TextBlock Text="Очистить текст и вложения этого черновика?" TextWrapping="Wrap" />
+              <WrapPanel ItemSpacing="8"><Button Content="Продолжить редактирование" Command="{Binding CancelDiscardReportCommand}" /><Button Classes="danger" Content="Очистить черновик" Command="{Binding DiscardReportCommand}" /></WrapPanel>
+            </StackPanel></Border>
+            <TextBlock Text="{Binding ReportNote}" TextWrapping="Wrap" />
+            <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,8" />
+            <WrapPanel ItemSpacing="8"><TextBlock Classes="subject" Text="Ваши обращения" VerticalAlignment="Center" /><Button Content="Обновить обращения" Command="{Binding RetryReportHistoryCommand}" IsEnabled="{Binding !ReportHistoryLoading}" AutomationProperties.AutomationId="Settings.ReportHistoryRetry" /></WrapPanel>
+            <TextBlock Text="{Binding ReportHistoryStatus}" TextWrapping="Wrap" />
+            <TextBox Text="{Binding ReportThreadSearch, Mode=TwoWay}" PlaceholderText="Поиск обращений по теме" AutomationProperties.Name="Поиск обращений" />
+            <Button Content="Очистить поиск обращений" Command="{Binding ClearReportThreadSearchCommand}" IsVisible="{Binding ReportThreadSearch, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" HorizontalAlignment="Left" />
+            <TextBlock Text="По этой теме обращений нет" IsVisible="{Binding NoReportThreadMatches}" />
+            <ItemsControl ItemsSource="{Binding FilteredReportThreads}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="8" LineSpacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="st:SupportThreadItem"><Button Content="{Binding Label}" Command="{Binding $parent[UserControl].((st:SettingsViewModel)DataContext).SelectReportThreadCommand}" CommandParameter="{Binding}" AutomationProperties.Name="Открыть обращение" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+            <TextBlock Classes="subject" Text="{Binding SelectedReportSubject}" IsVisible="{Binding HasSelectedReportThread}" TextWrapping="Wrap" />
+            <ItemsControl ItemsSource="{Binding ReportMessages}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="domain:SupportNote">
+                  <TextBlock Text="{Binding Body}" TextWrapping="Wrap" Margin="0,4" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <StackPanel Spacing="8" IsVisible="{Binding HasSelectedReportThread}"><TextBox Text="{Binding ReportReplyBody}" PlaceholderText="Ответ в выбранном обращении" AcceptsReturn="True" MinHeight="72" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings.ReportReply" /><Button Content="Отправить ответ" Command="{Binding SendReportReplyCommand}" HorizontalAlignment="Left" AutomationProperties.AutomationId="Settings.ReportReplySend" /></StackPanel>
           </StackPanel>
-          <TextBlock TextWrapping="Wrap" Text="Фото можно приложить отдельно: до трёх JPEG, PNG или WebP, до 4 МиБ." />
-          <ItemsControl ItemsSource="{Binding ReportFiles}"><ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="st:SupportDraftAttachment"><WrapPanel ItemSpacing="8" Margin="0,3">
-              <TextBlock Text="{Binding Label}" TextWrapping="Wrap" VerticalAlignment="Center" />
-              <Button Content="Убрать" Command="{Binding $parent[UserControl].((st:SettingsViewModel)DataContext).RemoveReportFileCommand}" CommandParameter="{Binding}" AutomationProperties.Name="Убрать вложение" />
-            </WrapPanel></DataTemplate>
-          </ItemsControl.ItemTemplate></ItemsControl>
-          <TextBlock Text="Добавляем вложение…" IsVisible="{Binding ReportAttachmentLoading}" Classes="muted caption" />
-          <Button Content="Сообщить о баге" HorizontalAlignment="Left" MinHeight="48" Command="{Binding SendReportCommand}" IsEnabled="{Binding CanSendReport}" AutomationProperties.AutomationId="Settings.Report" />
-          <Button Content="Очистить черновик" Command="{Binding RequestDiscardReportCommand}" IsEnabled="{Binding !ReportSending}" HorizontalAlignment="Left" />
-          <Border Classes="card" IsVisible="{Binding ConfirmDiscardReport}"><StackPanel Spacing="8">
-            <TextBlock Text="Очистить текст и вложения этого черновика?" TextWrapping="Wrap" />
-            <WrapPanel ItemSpacing="8"><Button Content="Продолжить редактирование" Command="{Binding CancelDiscardReportCommand}" /><Button Classes="danger" Content="Очистить черновик" Command="{Binding DiscardReportCommand}" /></WrapPanel>
-          </StackPanel></Border>
-          <TextBlock Text="{Binding ReportNote}" TextWrapping="Wrap" />
-          <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,8" />
-          <WrapPanel ItemSpacing="8"><TextBlock Classes="subject" Text="Ваши обращения" VerticalAlignment="Center" /><Button Content="Обновить обращения" Command="{Binding RetryReportHistoryCommand}" IsEnabled="{Binding !ReportHistoryLoading}" AutomationProperties.AutomationId="Settings.ReportHistoryRetry" /></WrapPanel>
-          <TextBlock Text="{Binding ReportHistoryStatus}" TextWrapping="Wrap" />
-          <TextBox Text="{Binding ReportThreadSearch, Mode=TwoWay}" PlaceholderText="Поиск обращений по теме" AutomationProperties.Name="Поиск обращений" />
-          <Button Content="Очистить поиск обращений" Command="{Binding ClearReportThreadSearchCommand}" IsVisible="{Binding ReportThreadSearch, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" HorizontalAlignment="Left" />
-          <TextBlock Text="По этой теме обращений нет" IsVisible="{Binding NoReportThreadMatches}" />
-          <ItemsControl ItemsSource="{Binding FilteredReportThreads}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="8" LineSpacing="8" /></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate x:DataType="st:SupportThreadItem"><Button Content="{Binding Label}" Command="{Binding $parent[UserControl].((st:SettingsViewModel)DataContext).SelectReportThreadCommand}" CommandParameter="{Binding}" AutomationProperties.Name="Открыть обращение" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-          <TextBlock Classes="subject" Text="{Binding SelectedReportSubject}" IsVisible="{Binding HasSelectedReportThread}" TextWrapping="Wrap" />
-          <ItemsControl ItemsSource="{Binding ReportMessages}">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="domain:SupportNote">
-                <TextBlock Text="{Binding Body}" TextWrapping="Wrap" Margin="0,4" />
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-          <StackPanel Spacing="8" IsVisible="{Binding HasSelectedReportThread}"><TextBox Text="{Binding ReportReplyBody}" PlaceholderText="Ответ в выбранном обращении" AcceptsReturn="True" MinHeight="72" TextWrapping="Wrap" AutomationProperties.AutomationId="Settings.ReportReply" /><Button Content="Отправить ответ" Command="{Binding SendReportReplyCommand}" HorizontalAlignment="Left" AutomationProperties.AutomationId="Settings.ReportReplySend" /></StackPanel>
         </StackPanel>
       </Border>
       </StackPanel><StackPanel Spacing="10" IsVisible="{Binding ShowHelpPanel}">

@@ -92,9 +92,12 @@ class AccountUiStateTest {
     @Test fun duplicate_device_names_have_distinct_safe_labels_and_keep_exact_revoke_ids() {
         val a = AccountDeviceRow("family-a", "11111111-1111-4111-8111-111111111111", "Android", "android", true)
         val b = AccountDeviceRow("family-b", "22222222-2222-4222-8222-222222222222", "Android", "windows", false)
-        assertTrue(a.label.contains("Android"))
-        assertTrue(b.label.contains("Windows"))
-        assertTrue(a.label != b.label)
+        assertTrue(a.label("Веб", "Устройство").contains("Android"))
+        assertTrue(b.label("Веб", "Устройство").contains("Windows"))
+        assertTrue(a.label("Веб", "Устройство") != b.label("Веб", "Устройство"))
+        val web = AccountDeviceRow("w", "33333333-3333-4333-8333-333333333333", "Браузер", "web", false)
+        assertTrue(web.label("Веб", "Устройство").contains("· Веб ·"))
+        assertTrue(web.copy(platform = "").label("Веб", "Устройство").contains("· Устройство ·"))
         assertEquals("family-b", b.familyId)
     }
 

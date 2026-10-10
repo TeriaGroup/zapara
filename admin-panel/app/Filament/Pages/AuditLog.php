@@ -103,7 +103,7 @@ class AuditLog extends Page implements HasTable
                 TextColumn::make('actor.username')
                     ->label('Кто')
                     ->placeholder('Система')
-                    ->description(fn (AdminAudit $record): ?string => $record->actor?->display_name ?: null),
+                    ->description(fn (AdminAudit $record): ?string => static::actorNote($record->actor?->username, $record->actor?->display_name)),
                 TextColumn::make('action')
                     ->label('Действие')
                     ->formatStateUsing(fn (string $state): string => AuditDictionary::action($state))
@@ -136,6 +136,20 @@ class AuditLog extends Page implements HasTable
     /**
      * @return array<string, string>
      */
+    /**
+     * r2: вторая строка «Кто» — имя, только если оно отличается от логина. Раньше при одинаковых
+     * имени и логине (design.admin) колонка показывала одно и то же дважды.
+     */
+    public static function actorNote(?string $username, ?string $displayName): ?string
+    {
+        $name = trim((string) $displayName);
+        if ($name === '') {
+            return null;
+        }
+
+        return mb_strtolower($name) === mb_strtolower(trim((string) $username)) ? null : $name;
+    }
+
     private static function actorOptions(): array
     {
         return DB::table(Zapara::admin().'.admin_audit as a')
