@@ -12,6 +12,8 @@ class EditAccountUser extends EditRecord
 {
     protected static string $resource = AccountUserResource::class;
 
+    protected static ?string $title = 'Изменить пользователя';
+
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
         /** @var AccountUser $record */

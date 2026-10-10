@@ -16,6 +16,8 @@
     <ResourceDictionary>
       <ResourceDictionary.MergedDictionaries>
         <ResourceInclude Source="avares://Vograph/Theme/Tokens.axaml" />
+        <!-- Общие токены web/desktop/admin (#11), генерируются из design/tokens.json. -->
+        <ResourceInclude Source="avares://Vograph/Theme/DesignTokens.axaml" />
         <ResourceInclude Source="avares://Vograph/Theme/Icons.axaml" />
         <ResourceInclude Source="avares://Vograph/Theme/Controls/Buttons.axaml" />
         <ResourceInclude Source="avares://Vograph/Theme/Controls/Inputs.axaml" />

@@ -225,6 +225,9 @@ public sealed partial class ScheduleViewModel : ViewModelBase
     public bool HasHeroLesson => HeroLesson is { } hero && Lessons.IndexOf(hero) > 0; // первая пара и так сразу под заголовком
     [ObservableProperty] private bool _isEmpty;
     [ObservableProperty] private bool _isUnavailable;
+    /// <summary>#21: группа не выбрана — пустое состояние с кнопкой «Выбрать группу» вместо «нажмите слева».</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(EmptyAction))] private bool _needsGroup;
+    public string? EmptyAction => NeedsGroup ? T("chooseGroup") : null;
     public IAsyncRelayCommand ChangeGroupCommand => _shell.OpenGroupPickerCommand;
 
     [RelayCommand]
@@ -372,6 +375,7 @@ public sealed partial class ScheduleViewModel : ViewModelBase
         SourceSummary = model.SourceSummary;
         IsEmpty = model.Rows.Count == 0;
         IsUnavailable = model.IsUnavailable;
+        NeedsGroup = model.NeedsGroup;
         EmptyTitle = model.EmptyTitle;
         EmptyHint = model.EmptyHint;
         DateChoices.Clear();

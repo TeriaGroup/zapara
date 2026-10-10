@@ -1,12 +1,12 @@
 <x-filament-panels::page>
     <div class="operator-board">
         <article class="operator-row">
-            <p class="operator-note">По умолчанию группа — 1 ГиБ, студент — 500 МиБ. Один файл считается в оба лимита.</p>
+            <p class="operator-note">Сейчас лимит группы — {{ \App\Support\ByteSize::format($this->groupLimit()) }}, студента — {{ \App\Support\ByteSize::format($this->userLimit()) }}. Один файл считается в оба лимита. Изменить: Настройки системы → Квоты.</p>
         </article>
         @forelse ($this->rows() as $row)
             <article class="operator-row">
                 <strong>{{ $row['scope'] }}</strong>
-                <p>{{ $row['id'] }}: {{ $row['bytes'] }} из {{ $row['limit'] }} байт</p>
+                <p>{{ $row['id'] }}: {{ \App\Support\ByteSize::format($row['bytes']) }} из {{ \App\Support\ByteSize::format($row['limit']) }}</p>
             </article>
         @empty
             <article class="operator-row">

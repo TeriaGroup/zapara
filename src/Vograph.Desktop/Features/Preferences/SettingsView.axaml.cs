@@ -50,5 +50,7 @@ public partial class SettingsView : UserControl
         Grid.SetColumn(SettingsDetails,wide?1:0);
         SettingsOverview.IsVisible=wide||boundSettings.ShowOverview;
         SettingsDetails.IsVisible=!boundSettings.ShowOverview;
+        // #21: при списке рядом с деталями (≥1000 px) «Назад к настройкам» не нужна.
+        SettingsBack.IsVisible=!wide&&!boundSettings.ShowOverview;
     }
 }

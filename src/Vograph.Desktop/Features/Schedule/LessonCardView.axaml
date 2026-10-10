@@ -22,6 +22,9 @@
         <TextBlock Classes="muted caption" Text="{Binding PriorityCaption}" IsVisible="{Binding IsNext}" />
         <WrapPanel>
           <TextBlock Classes="subject" FontSize="17" FontWeight="Medium" TextWrapping="Wrap" Text="{Binding DisplayName}" VerticalAlignment="Center" AutomationProperties.AutomationId="Lesson.Title" />
+          <Border Classes="chip pastmark" Margin="8,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsPast}" AutomationProperties.AutomationId="Lesson.Past">
+            <TextBlock Classes="caption" Text="{loc:T pastLesson}" Foreground="{DynamicResource Brush.Text2}" />
+          </Border>
           <Border Classes="chip type lessonbadge" Classes.lecture="{Binding IsLectureType}" Classes.practice="{Binding IsPracticeType}"
                   Classes.lab="{Binding IsLabType}" Classes.consult="{Binding IsConsultType}"
                   Classes.credit="{Binding IsCreditType}" Classes.exam="{Binding IsExamType}"

@@ -298,7 +298,7 @@ public sealed class CommunitiesUiTests : UiTest
         guestWindow.Show();
         Pump();
         var need = guestWindow.GetVisualDescendants().OfType<EmptyState>().Single(e => e.IsVisible);
-        Assert.Equal("Чтобы вступить в сообщество, войдите в аккаунт", need.Title);
+        Assert.Equal("Недоступно без входа", need.Title); // #18: причина и действие — в подсказке
         Assert.Equal("Сообщества", guest.Vm.Title);
         AssertNoBindingErrors();
         guestWindow.Close();

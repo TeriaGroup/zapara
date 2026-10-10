@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { S } from "./strings.gen.ts";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -67,4 +68,9 @@ test("lint catches the mistakes it is meant to catch", () => {
   assert.equal(problems("x.ts", `const a = "четная неделя";`).length, 1);
   assert.equal(problems("x.ts", `const a = "чётная неделя";`).length, 0);
   assert.equal(problems("x.ts", `if (value === "зачет") return;`).length, 0);
+});
+
+test("product name is one catalog constant and keeps the name the app already shows", () => {
+  assert.equal(S.productName, "Расписание военмех");
+  assert.match(read("web/src/App.tsx"), /className="brand">\{S\.productName\}</);
 });

@@ -1,5 +1,6 @@
 // Сгенерировано scripts/design/strings.mjs из design/strings/ru.json — не править вручную.
 export const S = {
+  "productName": "Расписание военмех",
   "scheduleTitle": "Расписание",
   "parityOdd": "нечётная",
   "parityEven": "чётная",

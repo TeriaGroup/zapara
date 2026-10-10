@@ -304,7 +304,7 @@ final class OperatorWork
     }
 
     /**
-     * @return list<array{request_id: string, community_id: string, community_name: string, username: string}>
+     * @return list<array{request_id: string, community_id: string, community_name: string, username: string, display_name: string, created_at: string}>
      */
     public function pendingJoins(): array
     {
@@ -316,14 +316,27 @@ final class OperatorWork
             ->where('r.status', 'pending')
             ->orderBy('r.created_at')
             ->orderBy('r.request_id')
-            ->get(['r.request_id', 'r.community_id', 'c.name as community_name', 'u.username'])
+            ->get(['r.request_id', 'r.community_id', 'c.name as community_name', 'u.username', 'u.display_name', 'r.created_at'])
             ->map(fn ($row): array => [
                 'request_id' => (string) $row->request_id,
                 'community_id' => (string) $row->community_id,
                 'community_name' => (string) $row->community_name,
                 'username' => (string) $row->username,
+                'display_name' => (string) ($row->display_name ?? ''),
+                'created_at' => (string) $row->created_at,
             ])
             ->all();
+    }
+
+    public function pendingJoinCount(): int
+    {
+        $communities = Zapara::communities();
+
+        return DB::table($communities.'.join_requests as r')
+            ->join(Zapara::accounts().'.users as u', 'u.user_id', '=', 'r.user_id')
+            ->join($communities.'.communities as c', 'c.community_id', '=', 'r.community_id')
+            ->where('r.status', 'pending')
+            ->count();
     }
 
     /**
