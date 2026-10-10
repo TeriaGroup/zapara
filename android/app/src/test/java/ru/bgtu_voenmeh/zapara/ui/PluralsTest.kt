@@ -71,7 +71,7 @@ class PluralsTest {
         assertTrue(File(res, "strings_schedule_maps_presentation.xml").readText().contains("<string name=\"schedule_empty_title\">Пар нет</string>"))
     }
 
-    /** AN-28: перечисленные подписи больше не литералы в Kotlin (сообщения внутренних исключений не в UI и не трогаются). */
+    /** AN-28: перечисленные подписи больше не литералы в Kotlin. */
     @Test fun an28_labels_are_resources_not_kotlin_literals() {
         val social = File("src/main/java/ru/bgtu_voenmeh/zapara/data/social/SocialHttpClient.kt").readText()
         val account = File("src/main/java/ru/bgtu_voenmeh/zapara/ui/account/AccountUi.kt").readText()
@@ -80,5 +80,16 @@ class PluralsTest {
         val xml = File(res, "strings_plurals_an07.xml").readText()
         listOf(">Личный чат<", ">Личный чат · %1\$s<", ">Учебная группа<", ">Веб<", ">Устройство<").forEach { assertTrue(it, xml.contains(it)) }
         assertTrue(File("src/main/java/ru/bgtu_voenmeh/zapara/ui/inbox/InboxSection.kt").readText().contains("internal fun inboxSubtitle(row: InboxRow)"))
+    }
+
+    /** #106, критерий «нет литералов кириллицы в перечисленных Kotlin-файлах»: и внутренние сообщения исключений — на английском. */
+    @Test fun listed_kotlin_files_have_no_cyrillic_literals() {
+        val cyrillic = Regex("\"[^\"\\n]*\\p{IsCyrillic}[^\"\\n]*\"")
+        listOf("src/main/java/ru/bgtu_voenmeh/zapara/data/social/SocialHttpClient.kt", "src/main/java/ru/bgtu_voenmeh/zapara/ui/account/AccountUi.kt").forEach { path ->
+            val hits = File(path).readLines().withIndex()
+                .filter { (_, line) -> !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*") && cyrillic.containsMatchIn(line) }
+                .map { (i, _) -> "$path:${i + 1}" }
+            assertTrue(hits.joinToString(), hits.isEmpty())
+        }
     }
 }
