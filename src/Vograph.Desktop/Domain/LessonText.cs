@@ -26,7 +26,11 @@ public static class LessonText
         if (map is null) return (string.IsNullOrWhiteSpace(l.RoomRaw) ? "—" : CleanRoom(l.RoomRaw), null, false);
         // map.RoomRaw is already the bare number from the map catalog.
         if (map.IsRemote) return (loc.T("remote"), null, true);
-        if (map.Building == "ВЦ") return ($"ВЦ {map.RoomRaw}", "ГК", false);
-        return (map.RoomRaw, map.Building, false);
+        // G-3: номер из каталога карт — в том же виде, что и без карты: «267 (К.кл)», не «267(К.кл)».
+        if (map.Building == "ВЦ") return ($"ВЦ {CleanRoom(map.RoomRaw)}", "ГК", false);
+        return (CleanRoom(map.RoomRaw), map.Building, false);
     }
+
+    /// <summary>G-3: дата в общем формате глоссария — «пн, 12 окт.».</summary>
+    public static string ShortDate(DateTime date) => date.ToString("ddd, d MMM", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"));
 }

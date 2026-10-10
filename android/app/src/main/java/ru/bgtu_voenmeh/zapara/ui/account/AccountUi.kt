@@ -849,8 +849,9 @@ private fun PasswordProgress(value: String) {
         else -> stringResource(R.string.ux300_android_password_length_ok)
     }
     Text(label, style = Zapara.typography.caption,
+        // #109 / AN-11: подсказка о длине — Text2 (warn-текст был 2.6:1), «готово» — Ok.
         color = if (count in 12..128 && !value.contains('\u0000')) Zapara.colors.ok
-            else Zapara.colors.warn)
+            else Zapara.colors.text2)
 }
 
 @Composable
@@ -882,7 +883,7 @@ private fun AccountField(value: String, label: String, tag: String, password: Bo
         shape = RoundedCornerShape(Zapara.radii.control),
         colors = OutlinedTextFieldDefaults.colors(
             focusedContainerColor = c.chip, unfocusedContainerColor = c.chip,
-            focusedBorderColor = c.lineStrong, unfocusedBorderColor = c.chip,
+            focusedBorderColor = c.text1, unfocusedBorderColor = c.lineStrong, // #109 / AN-12
             focusedTextColor = c.text1, unfocusedTextColor = c.text1
         )
     )

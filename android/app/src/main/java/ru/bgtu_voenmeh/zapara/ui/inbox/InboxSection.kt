@@ -79,6 +79,7 @@ fun InboxSection(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
         }
     }
     if (state.active != null) BackHandler { onEvent(InboxEvent.Back) }
+    ru.bgtu_voenmeh.zapara.ui.shell.ReportConversationOpen(state.active != null) // #108 / AN-17: без нижней панели в беседе
     Column(modifier.fillMaxSize()) {
         if (state.active != null && !state.guest) {
             BoxWithConstraints(Modifier.fillMaxWidth().background(Zapara.colors.canvas)) {
@@ -156,7 +157,8 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
             ZTextField(query, onQuery, label = { Text(stringResource(R.string.ux30_chat_inbox_search)) },
                 singleLine = true, modifier = Modifier.fillMaxWidth().testTag("Inbox.Search"))
         }
-        item {
+        // #108 / AN-13: фильтры — только от 10 чатов (или пока фильтр включён, чтобы его можно было снять).
+        if (InboxDensity.showFilters(state.rows.size, activeFilters)) item {
             ZDisclosureButton(
                 text = if (activeFilters == 0) stringResource(R.string.inbox_compact_filters)
                     else stringResource(R.string.inbox_compact_filters_count, activeFilters),
@@ -183,14 +185,11 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
                 }
             }
         }
-        item {
-            Text(stringResource(R.string.inbox_results, visible.size, state.rows.size),
-                color = Zapara.colors.text2, style = Zapara.typography.caption)
-            Text(stringResource(R.string.inbox_unread_total, totalInboxUnread(state.rows)),
-                color = Zapara.colors.text2, style = Zapara.typography.caption)
-            Text(stringResource(R.string.ux30_inbox_unread_chats, unreadInboxConversations(state.rows)),
-                color = Zapara.colors.text2, style = Zapara.typography.caption)
-            if (filtered || unreadFirst) ZButton(stringResource(R.string.inbox_compact_reset_search_filters), {
+        // #108 / AN-13: вместо трёх строк статистики — одна строка «Найдено», и только пока список сужен.
+        if (filtered || unreadFirst) item {
+            if (filtered) Text(stringResource(R.string.inbox_results, visible.size, state.rows.size),
+                color = Zapara.colors.text2, style = Zapara.typography.caption, modifier = Modifier.testTag("Inbox.Found"))
+            ZButton(stringResource(R.string.inbox_compact_reset_search_filters), {
                 onQuery(""); onSource(InboxSourceFilter.All.name); onUnreadOnly(false); onDraftsOnly(false); onUnreadFirst(false)
             }, ghost = true, tag = "Inbox.Reset")
         }
@@ -503,7 +502,8 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
                                 Text(message.createdAt.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm")) +
                                     (if (message.edited) stringResource(R.string.face_edited) else "") +
                                     (if (mine) stringResource(if (message.read) R.string.face_read else R.string.face_sent) else ""),
-                                    modifier = Modifier.weight(1f), color = Zapara.colors.text2, style = Zapara.typography.caption)
+                                    color = Zapara.colors.text2, style = Zapara.typography.caption,
+                                    modifier = Modifier.testTag("Inbox.MessageTime.${message.id}"))
                                 if (!message.deleted) IconButton({ selected = message },
                                     modifier = Modifier.size(Zapara.space.minTouch)
                                         .testTag("Inbox.MessageActions.${message.id}")) {

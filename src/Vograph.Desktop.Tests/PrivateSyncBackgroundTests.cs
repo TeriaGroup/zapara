@@ -32,8 +32,12 @@ public sealed class PrivateSyncBackgroundTests
         app.PrivateSync.Attach(client, _ => Task.FromResult(Access), background: true);
         await Until(() => { lock (calls) return calls.Count(path => path == "changes") >= 1; });
         app.Homework.AddHomework("лек ИСТОРИЯ", "после входа", 1, new DateTime(2026, 9, 29));
-        await Until(() => { lock (calls) return calls.Contains("mutations"); });
+        // #95: «сервер получил mutations» ещё не значит «клиент обработал ответ». Фейковый сервер пишет вызов до ответа,
+        // а запись уходит из outbox только в ApplyPush — после ответа, CoreGate и транзакции. Ждём само условие.
+        // Окно 10 с при PollInterval 5 мин: если отправку будит не локальная запись, тест по-прежнему падает.
+        await UntilOutboxEmpty(app, TimeSpan.FromSeconds(10));
         Assert.Empty(app.Outbox.Pending());
+        lock (calls) Assert.Contains("mutations", calls);
     }
 
     [Fact]
@@ -168,6 +172,29 @@ public sealed class PrivateSyncBackgroundTests
         var response = new HttpResponseMessage(status) { Content = new ByteArrayContent(SyncJson.Serialize(value)) };
         response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         return response;
+    }
+
+    /// <summary>
+    /// Ждёт пустого outbox без опроса по таймеру: координатор поднимает HealthChanged после каждого
+    /// применённого ответа (ReportSuccess/ReportFailure) и в начале/конце цикла. Обработчик только будит
+    /// ожидание; Pending() читается здесь, вне CoreGate координатора.
+    /// </summary>
+    private static async Task UntilOutboxEmpty(AppServices app, TimeSpan timeout)
+    {
+        using var wake = new SemaphoreSlim(0);
+        void Wake() => wake.Release();
+        app.PrivateSync!.HealthChanged += Wake;
+        try
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (app.Outbox.Pending().Count > 0)
+            {
+                var left = deadline - DateTime.UtcNow;
+                if (left <= TimeSpan.Zero || !await wake.WaitAsync(left))
+                    Assert.Fail($"outbox не опустел за {timeout.TotalSeconds:0} с: {app.Outbox.Pending().Count} записей");
+            }
+        }
+        finally { app.PrivateSync!.HealthChanged -= Wake; }
     }
 
     private static async Task Until(Func<bool> ready)

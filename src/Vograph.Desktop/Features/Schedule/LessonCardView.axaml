@@ -116,9 +116,17 @@
           <Button Classes="primary" Content="{loc:T openMap}" Command="{Binding ShowMapCommand}" IsEnabled="{Binding CanShowMap}" ToolTip.Tip="{loc:T mapTip}" AutomationProperties.AutomationId="Lesson.Map" />
           <Button Classes="secondary" Content="Домашка" Command="{Binding OpenHomeworksCommand}" AutomationProperties.AutomationId="Lesson.Homework" />
           <Button Classes="ghost" Content="{loc:T discussInGroupChat}" Command="{Binding DiscussCommand}" />
-          <Button Classes="ghost" Content="{Binding DetailsCaption}" Command="{Binding ToggleDetailsCommand}" />
-          <Button Classes="ghost" Content="Добавить задание" Command="{Binding AddHomeworkCommand}" />
-          <Button Classes="ghost" Content="Переименовать" Command="{Binding RenameCommand}" AutomationProperties.AutomationId="Lesson.Rename" />
+          <!-- R2-07 / G-2: в листе три действия, как LessonSheet на web; редкие — в «⋯». «Подробнее» не нужен:
+               открытый лист сам показывает преподавателя и домашку (OnIsSheetOpenChanged). -->
+          <Button Classes="ghost icon" Content="⋯" ToolTip.Tip="Ещё" AutomationProperties.Name="Ещё действия с парой"
+                  AutomationProperties.AutomationId="Lesson.SheetMore">
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                <MenuItem Header="Добавить задание" Command="{Binding AddHomeworkCommand}" AutomationProperties.AutomationId="Lesson.AddHomework" />
+                <MenuItem Header="Переименовать" Command="{Binding RenameCommand}" AutomationProperties.AutomationId="Lesson.Rename" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
         </WrapPanel>
       </Border>
     </Grid>

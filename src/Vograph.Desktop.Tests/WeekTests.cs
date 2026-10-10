@@ -35,8 +35,8 @@ public class WeekTests : UiTest
         Assert.Equal("Понедельник", model.Days[0].Title);
 
         var mon = model.Days[0].Rows;
-        Assert.Equal(("09:00", "Матан", "Лекция", "493 ГК"), (mon[0].Time, mon[0].Name, mon[0].TypeLabel, mon[0].Room));
-        Assert.Equal(("12:40", "Основы российской государственности", "Практика", "563 УЛК"), (mon[1].Time, mon[1].Name, mon[1].TypeLabel, mon[1].Room));
+        Assert.Equal(("09:00", "Матан", "Лекция", "493 · ГК"), (mon[0].Time, mon[0].Name, mon[0].TypeLabel, mon[0].Room));
+        Assert.Equal(("12:40", "Основы российской государственности", "Практика", "563 · УЛК"), (mon[1].Time, mon[1].Name, mon[1].TypeLabel, mon[1].Room));
         Assert.Equal("дистанционно", model.Days[5].Rows[0].Room);
     }
 
@@ -49,7 +49,7 @@ public class WeekTests : UiTest
         var even = composer.Compose(2, Mon7);
         Assert.Equal(new[] { 1, 0, 1, 0, 0, 0 }, even.Days.Select(d => d.Rows.Count));
         Assert.Equal(new[] { "07.09", "08.09", "09.09", "10.09", "11.09", "12.09" }, even.Days.Select(d => d.Date.ToString("dd.MM")));
-        Assert.Equal("ВЦ 280 ГК", even.Days[2].Rows[0].Room);
+        Assert.Equal("ВЦ 280 · ГК", even.Days[2].Rows[0].Room);
 
         var current = composer.Compose(0, Wed9); // 0 = whatever week today is
         Assert.Equal(2, current.Parity);
