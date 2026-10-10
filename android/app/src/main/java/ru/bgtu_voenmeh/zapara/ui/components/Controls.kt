@@ -130,8 +130,9 @@ fun ZTextField(
         colors = OutlinedTextFieldDefaults.colors(
             focusedContainerColor = c.chip, unfocusedContainerColor = c.chip,
             disabledContainerColor = c.chip.copy(alpha = 0.5f), errorContainerColor = c.chip,
-            focusedBorderColor = c.lineStrong, unfocusedBorderColor = c.chip,
-            disabledBorderColor = Color.Transparent, errorBorderColor = c.bad,
+            // #109 / AN-12: поле видно и без фокуса — 1 dp LineStrong; фокус — 2 dp (толщина Material3) Text1.
+            focusedBorderColor = c.text1, unfocusedBorderColor = c.lineStrong,
+            disabledBorderColor = c.line, errorBorderColor = c.bad,
             focusedTextColor = c.text1, unfocusedTextColor = c.text1,
             disabledTextColor = c.text2, errorTextColor = c.text1,
             cursorColor = c.text1, errorCursorColor = c.bad,
@@ -436,7 +437,8 @@ fun EmptyState(
         }
         if (actionText != null && onAction != null) {
             Spacer(Modifier.height(Zapara.space.m))
-            ZButton(actionText, onAction, Modifier.widthIn(max = 320.dp).fillMaxWidth(), ghost = true)
+            // #109 / AN-09: единственное действие пустого/ошибочного состояния — основная (инверсная) кнопка.
+            ZButton(actionText, onAction, Modifier.widthIn(max = 320.dp).fillMaxWidth())
         }
     }
 }

@@ -283,6 +283,10 @@ internal fun MapsPlanPane(state: MapsUiState, onEvent: (MapsEvent) -> Unit, modi
                 }
             }
         }
+        // #103 / AN-03: без шагов маршрута (alphaMaps выключен) строка про аудиторию вне плана раньше не показывалась вовсе.
+        if (!state.alphaMaps && !state.remote && !state.showStack && state.roomUnmarked)
+            RoomNotOnPlan(state, Modifier.fillMaxWidth().padding(horizontal = Zapara.space.m, vertical = Zapara.space.s)
+                .testTag("Maps.RoomNotOnPlan"))
         if (!compact && !state.remote && !state.showStack && state.planFile != null) {
             Text(stringResource(R.string.maps_gestures_hint), style = Zapara.typography.caption, color = Zapara.colors.text2,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = Zapara.space.m, vertical = Zapara.space.s).testTag("Maps.GesturesHint"))
@@ -357,11 +361,18 @@ private fun MapsPlanHeading(state: MapsUiState) {
     }
 }
 
+/** «Аудитории 229 нет на плане этого этажа»; без номера — прежняя «Аудитория не размечена на плане». */
+@Composable
+private fun RoomNotOnPlan(state: MapsUiState, modifier: Modifier) {
+    Text(if (state.unmarkedRoom.isNotBlank()) stringResource(R.string.maps_room_not_on_plan, state.unmarkedRoom)
+        else stringResource(R.string.maps_room_unmarked), style = Zapara.typography.caption, color = Zapara.colors.text1,
+        modifier = modifier)
+}
+
 @Composable
 private fun MapsStepChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, compactSteps: Boolean = false) {
             if (!state.remote && state.roomUnmarked) {
-                Text(stringResource(R.string.maps_room_unmarked), style = Zapara.typography.caption, color = Zapara.colors.text2,
-                    modifier = Modifier.testTag("Maps.RouteUnmarked"))
+                RoomNotOnPlan(state, Modifier.testTag("Maps.RouteUnmarked"))
             }
             RouteStepBar(state, onEvent, compact = compactSteps)
             RouteRoomAction(state, onEvent)

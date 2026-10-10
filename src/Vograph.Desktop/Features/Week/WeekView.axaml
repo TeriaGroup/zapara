@@ -135,7 +135,7 @@
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
                   <StackPanel Spacing="4" IsVisible="{Binding ShowFreeIntervals}">
-                    <TextBlock Classes="muted caption" Text="Окна между парами" />
+                    <TextBlock Classes="muted caption" Text="{loc:T breaksTitle}" />
                     <ItemsControl ItemsSource="{Binding FreeIntervals}"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Classes="muted caption" Text="{Binding}" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
                   </StackPanel>
                 </StackPanel>

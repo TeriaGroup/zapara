@@ -14,7 +14,7 @@ public sealed partial class ScheduleViewModel
         if (next is null)
         { LessonJumpStatus = Lessons.Count == 0 ? "В выбранном дне пар нет." : "На сегодня пары закончились."; return; }
         LessonJumpStatus = "";
-        next.ShowDetails = true;
+        next.Reveal();
         LessonFocusRequested?.Invoke(next);
     }
     [RelayCommand] private void JumpDeadlines() => DeadlineFocusRequested?.Invoke();

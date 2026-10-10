@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import ru.bgtu_voenmeh.zapara.ui.components.rememberUiText
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -40,11 +41,8 @@ fun SectionsSheet(current: Section, onPick: (Section) -> Unit, onDismiss: () -> 
     val uiText = rememberUiText()
     val c = Zapara.colors
     var query by rememberSaveable { mutableStateOf("") }
-    val sectionGroups = listOf(
-        uiText(R.string.space_day_167) to listOf(Section.Schedule, Section.Week, Section.Homework, Section.Maps, Section.Teachers, Section.Summary),
-        uiText(R.string.space_day_168) to listOf(Section.Group, Section.Chat, Section.Friends, Section.Community),
-        uiText(R.string.space_day_169) to listOf(Section.Settings)
-    )
+    // #108 / AN-18: без повторов вкладок нижней панели; сетка 2 колонки по DESIGN.md §4, «Настройки» — на всю ширину.
+    val sectionGroups = listOf("" to SectionsGrid.tiles + Section.Settings)
     val titles = Section.entries.associateWith { stringResource(it.title) }
     val descriptions = mapOf(Section.Friends to stringResource(R.string.ux100_common_description_friends),
         Section.Group to stringResource(R.string.ux100_common_description_group),
@@ -67,26 +65,33 @@ fun SectionsSheet(current: Section, onPick: (Section) -> Unit, onDismiss: () -> 
             trailingIcon = if (query.isNotEmpty()) {{ ZIconButton(R.drawable.ic_x,
                 stringResource(R.string.ux100_common_clear_search), { query = "" }, "Sections.ClearSearch") }} else null)
         Spacer(Modifier.height(Zapara.space.s))
+        val columns = if (LocalDensity.current.fontScale >= 1.5f) 1 else 2 // крупный шрифт — одна колонка, без обрезки
         LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 600.dp).clipToBounds(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             if (visibleGroups.isEmpty()) item {
                 Text(stringResource(R.string.ux100_common_section_empty), color = c.text2)
                 ZButton(stringResource(R.string.ux100_common_clear_search), { query = "" }, ghost = true)
             }
-            visibleGroups.forEach { (title, sections) ->
-                item { Text(title, style = Zapara.typography.caption, color = c.text2, modifier = Modifier.padding(top = Zapara.space.m)) }
-                items(sections, key = { it.route }) { section -> SectionCard(section, current == section) { onPick(section) } }
+            val sections = visibleGroups.flatMap { it.second }
+            SectionsGrid.rows(sections, columns).forEach { row ->
+                item(key = row.joinToString("|") { it.route }) {
+                    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
+                        row.forEach { section ->
+                            Box(Modifier.weight(1f).fillMaxHeight()) { SectionCard(section, current == section, tile = section != Section.Settings && columns > 1) { onPick(section) } }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun SectionCard(section: Section, active: Boolean, onClick: () -> Unit) {
+private fun SectionCard(section: Section, active: Boolean, tile: Boolean = false, onClick: () -> Unit) {
     val uiText = rememberUiText()
     val c = Zapara.colors
     ZCard(
         Modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .testTag(section.tag)
             .heightIn(min = Zapara.space.minTouch) // #105 / AN-18
             .semantics { selected = active }
@@ -107,10 +112,10 @@ private fun SectionCard(section: Section, active: Boolean, onClick: () -> Unit) 
                     Section.Chat -> R.string.ux100_common_description_chat
                     else -> null
                 }
-                description?.let { Text(stringResource(it), style = Zapara.typography.caption, color = c.text2) }
+                if (!tile) description?.let { Text(stringResource(it), style = Zapara.typography.caption, color = c.text2) }
             }
-            ZIcon(if (active) R.drawable.ic_check else R.drawable.ic_chevron_right, null,
-                Modifier.size(20.dp))
+            if (active) ZIcon(R.drawable.ic_check, null, Modifier.size(20.dp))
+            else if (!tile) ZIcon(R.drawable.ic_chevron_right, null, Modifier.size(20.dp))
         }
     }
 }
@@ -123,7 +128,8 @@ fun GroupPickerSheet(
     onDismiss: () -> Unit,
     busy: Boolean = false,
     error: String? = null,
-    onRetry: () -> Unit = {}
+    onRetry: () -> Unit = {},
+    recentIds: List<String> = emptyList()
 ) {
     val uiText = rememberUiText()
     val c = Zapara.colors
@@ -138,8 +144,6 @@ fun GroupPickerSheet(
         LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false),
             verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         item("controls") { Column(Modifier.fillMaxWidth()) {
-        current?.let { Text(stringResource(R.string.ux100_common_current_group, it.name),
-            style = Zapara.typography.caption, color = c.text2) }
         if (busy) Text(stringResource(R.string.ux60_group_pick_saving),
             style = Zapara.typography.caption, color = c.text2)
         if (error != null) {
@@ -188,8 +192,16 @@ fun GroupPickerSheet(
                     }
                 }
             }
-            items(if (query.isBlank() && current != null) listOf(current) + filtered.filterNot { it.id == currentId } else filtered,
-                key = { it.id }) { group ->
+            GroupPickerLogic.blocks(filtered, currentId, recentIds, searching = query.isNotBlank()).forEach { block ->
+            item(key = "header:${block.header}") {
+                Text(when (val h = block.header) {
+                    GroupPickerLogic.Header.Recent -> stringResource(R.string.group_picker_recent)
+                    is GroupPickerLogic.Header.Faculty -> stringResource(R.string.group_picker_faculty, h.letter)
+                    GroupPickerLogic.Header.Other -> stringResource(R.string.group_picker_other)
+                }, style = Zapara.typography.caption, color = c.text2,
+                    modifier = Modifier.padding(top = Zapara.space.s).testTag("Picker.Header"))
+            }
+            items(block.groups, key = { "${block.header}:${it.id}" }) { group ->
                 ZCard(
                     Modifier
                         .fillMaxWidth()
@@ -205,6 +217,7 @@ fun GroupPickerSheet(
                         }
                     }
                 }
+            }
             }
         }
     }

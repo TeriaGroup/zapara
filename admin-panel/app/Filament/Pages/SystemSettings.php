@@ -110,8 +110,10 @@ class SystemSettings extends Page
                 ->persistTabInQueryString('tab')
                 ->tabs([
                     Tab::make('Регистрация')->schema([
+                        // R2-05: подпись — текущее положение переключателя, а не всегда «открыта».
                         Toggle::make('registration_enabled')
-                            ->label('Регистрация открыта')
+                            ->label(fn (Get $get): string => self::switchLabel('Регистрация', (bool) $get('registration_enabled'), 'открыта', 'закрыта'))
+                            ->live()
                             ->helperText('Если выключено, новые пользователи не смогут зарегистрироваться.'),
                     ]),
                     Tab::make('Вход через VK')->schema($this->provider('vk', 'VK ID', self::VK_CALLBACK)),
@@ -146,12 +148,23 @@ class SystemSettings extends Page
     }
 
     /**
+     * R2-05: подпись переключателя по его положению — «Регистрация открыта» / «Регистрация закрыта».
+     * Раньше выключенный переключатель подписывался «Регистрация открыта».
+     */
+    public static function switchLabel(string $subject, bool $on, string $onWord, string $offWord): string
+    {
+        return $subject.' '.($on ? $onWord : $offWord);
+    }
+
+    /**
      * @return list<Component>
      */
     private function provider(string $prefix, string $name, string $callback): array
     {
         return [
-            Toggle::make($prefix.'_enabled')->label($name.' включён'),
+            Toggle::make($prefix.'_enabled')
+                ->label(fn (Get $get): string => self::switchLabel($name, (bool) $get($prefix.'_enabled'), 'включён', 'выключен'))
+                ->live(),
             TextInput::make($prefix.'_client_id')->label('Идентификатор приложения (client ID)'),
             $this->secret($prefix.'_secret', 'Секрет приложения'),
             TextInput::make($prefix.'_callback')

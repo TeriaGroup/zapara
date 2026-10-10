@@ -1,5 +1,8 @@
 package ru.bgtu_voenmeh.zapara.ui.homework
 
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -356,7 +359,11 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit,
                                         FlowRow(horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
                                             Text(item.dueLabel, style = Zapara.typography.caption, color = c.text1, modifier = Modifier.testTag("Homework.Due.${item.id}"))
                                             Text("·", style = Zapara.typography.caption, color = c.text2)
-                                            Text(item.statusLabel, style = Zapara.typography.caption, color = if (burning) c.warn else c.text2, modifier = Modifier.testTag("Homework.Status.${item.id}"))
+                                            // #109 / AN-11: просрочено — пилюля BadSoft с Text1; «горит» — Text1 (не warn-текст).
+                                            val overdue = group.status == GroupStatus.Overdue && !item.done
+                                            Text(item.statusLabel, style = Zapara.typography.caption, color = if (burning || overdue) c.text1 else c.text2,
+                                                modifier = (if (overdue) Modifier.clip(RoundedCornerShape(Zapara.radii.pill)).background(c.badSoft)
+                                                    .padding(horizontal = Zapara.space.xs) else Modifier).testTag("Homework.Status.${item.id}"))
                                         }
                                         if (item.id in state.personalBusyIds) Text(stringResource(R.string.ux60_saving),
                                             style = Zapara.typography.caption, color = c.text2)

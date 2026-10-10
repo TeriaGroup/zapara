@@ -65,7 +65,7 @@ public class ScheduleViewModelTests
         await vm.ReloadAsync();
         Assert.Equal(1, vm.DayOffset);
         Assert.Equal("Завтра", vm.Title);
-        Assert.Equal("следующая пара — среда, 14:55", vm.EmptyHint);
+        Assert.Equal("Следующая пара: ср, 9 сент., 14:55", vm.EmptyHint);
     }
 
     [Fact]

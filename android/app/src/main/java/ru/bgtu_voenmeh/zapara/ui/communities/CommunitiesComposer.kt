@@ -63,6 +63,21 @@ object CommunityPeople {
             else -> Label(null, null)
         }
     }
+
+    /**
+     * #115 follow-up: номер «Участник №N» без имени — постоянный для человека, а не позиция в списке. Один и тот же
+     * человек получает тот же номер в «Участниках», «Модераторах» и «Заявках» и после обновления списка.
+     * FNV-1a (32 бита) по userId → 1000…9999; совпадения номеров у разных людей возможны, но редки
+     * (номер не идентификатор, решение — имя из сервера, см. PR).
+     */
+    fun stableNumber(userId: String): Int {
+        var hash = 0x811C9DC5.toInt()
+        for (b in userId.trim().lowercase().toByteArray(Charsets.UTF_8)) {
+            hash = hash xor (b.toInt() and 0xFF)
+            hash *= 0x01000193
+        }
+        return 1000 + ((hash.toLong() and 0xFFFFFFFFL) % 9000).toInt()
+    }
 }
 
 data class CommunityJoinRequestUi(
