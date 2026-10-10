@@ -360,7 +360,8 @@ private fun MapsPlanHeading(state: MapsUiState) {
 @Composable
 private fun MapsStepChrome(state: MapsUiState, onEvent: (MapsEvent) -> Unit, compactSteps: Boolean = false) {
             if (!state.remote && state.roomUnmarked) {
-                Text(stringResource(R.string.maps_room_unmarked), style = Zapara.typography.caption, color = Zapara.colors.text2,
+                Text(if (state.unmarkedRoom.isNotBlank()) stringResource(R.string.maps_room_not_on_plan, state.unmarkedRoom)
+                    else stringResource(R.string.maps_room_unmarked), style = Zapara.typography.caption, color = Zapara.colors.text2,
                     modifier = Modifier.testTag("Maps.RouteUnmarked"))
             }
             RouteStepBar(state, onEvent, compact = compactSteps)

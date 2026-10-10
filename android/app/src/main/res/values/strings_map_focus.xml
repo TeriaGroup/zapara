@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- #103 (AN-03): аудитория пары на карте. -->
+<resources>
+    <string name="maps_room_not_on_plan">Аудитории %1$s нет на плане этого этажа</string>
+</resources>

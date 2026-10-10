@@ -79,7 +79,7 @@ class MapsViewModel internal constructor(
             is MapsEvent.FocusRoom -> mutable.update { state ->
                 val room = state.availableRooms.firstOrNull { it.id == event.id }
                 if (room == null || state.planFile == null) state else state.copy(
-                    highlight = HighlightUi(room.rect, room.room), roomUnmarked = false,
+                    highlight = HighlightUi(room.rect, room.room), roomUnmarked = false, unmarkedRoom = "",
                     zoom = 1f, panX = 0f, panY = 0f, fitGeneration = state.fitGeneration + 1)
             }
             MapsEvent.Browse -> launchMap { openBrowse() }
@@ -346,6 +346,8 @@ class MapsViewModel internal constructor(
         val rooms = loadFloorRooms(shown, level)
         mapLoads.ensureCurrent()
         floorRooms = rooms
+        // #103 / AN-03: аудитория пары — в центре и крупнее; ручные жесты и «Весь план» работают как раньше.
+        val focus = if (MapFocus.applies(mode, selected != null, coords)) MapFocus.focus(coords!!) else null
         mutable.update {
             val routed = it.withRoute(shown).copy(activeStepId = it.activeStepId)
             val chosen = selectedId?.let { id -> RouteNavigation.select(routed, id) } ?: routed
@@ -353,12 +355,13 @@ class MapsViewModel internal constructor(
                 loaded = true, hasGroup = true, remote = false,
                 rasterCatalog = catalog,
                 floor = level, planFile = rasters.files[level],
-                zoom = if (shown != it.building || level != it.floor) 1f else it.zoom,
-                panX = if (shown != it.building || level != it.floor) 0f else it.panX,
-                panY = if (shown != it.building || level != it.floor) 0f else it.panY,
+                zoom = focus?.zoom ?: if (shown != it.building || level != it.floor) 1f else it.zoom,
+                panX = focus?.panX ?: if (shown != it.building || level != it.floor) 0f else it.panX,
+                panY = focus?.panY ?: if (shown != it.building || level != it.floor) 0f else it.panY,
                 highlight = coords?.let { rect -> HighlightUi(rect, room.orEmpty()) },
                 availableRooms = rooms,
                 roomUnmarked = !room.isNullOrBlank() && coords == null,
+                unmarkedRoom = if (!room.isNullOrBlank() && coords == null) room else "",
                 contextLine = line, mode = mode, note = note?.ifBlank { null },
                 remoteNote = if (vc) container.copy.get("maps_vc_note") else null,
                 mapError = null, automaticNote = null
@@ -446,7 +449,8 @@ class MapsViewModel internal constructor(
                     it.copy(
                         highlight = coords?.let { rect -> HighlightUi(rect, hit.room) },
                         planPick = null,
-                        roomUnmarked = coords == null
+                        roomUnmarked = coords == null,
+                        unmarkedRoom = if (coords == null) hit.room else ""
                     )
                 }
             }
