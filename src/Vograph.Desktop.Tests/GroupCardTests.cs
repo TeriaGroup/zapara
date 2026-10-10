@@ -18,13 +18,40 @@ public class GroupCardTests
     [InlineData(null, null, false)]
     [InlineData("garbage", null, false)]
     [InlineData("2026-09-11T10:00:00.0000000Z", null, false)]                 // 1 day: fresh
-    [InlineData("2026-09-08T10:00:00.0000000Z", "обновлено 08.09", false)]   // 4 days: chip
-    [InlineData("2026-09-01T10:00:00.0000000Z", "обновлено 01.09", true)]    // 11 days: warn
+    [InlineData("2026-09-08T10:00:00.0000000Z", "Расписание от 8 сент.", false)]   // 4 days: chip
+    [InlineData("2026-09-01T10:00:00.0000000Z", "Расписание от 1 сент.", true)]    // 11 days: warn
     public void Stale_Chip_After_Three_Days_Warn_After_Seven(string? fetched, string? text, bool warn)
     {
         var (t, w) = GroupCardLogic.Stale(fetched, Now, Ru);
         Assert.Equal(text, t);
         Assert.Equal(warn, w);
+    }
+
+    [Theory]
+    [InlineData("2026-09-11T10:00:00.0000000Z", null, false)]                       // R2-01: свежая копия — без плашки, даже при stale-источнике
+    [InlineData("2026-09-08T10:00:00.0000000Z", "Расписание от 8 сент.", true)]    // 4 дня + stale-источник: предупреждение
+    [InlineData(null, "Расписание может быть неактуальным", true)]                  // даты нет, источник устарел
+    public void Stale_source_only_warns_when_the_copy_is_old_or_unknown(string? fetched, string? text, bool warn)
+    {
+        var (t, w) = GroupCardLogic.Stale(fetched, Now, Ru, sourceStale: true);
+        Assert.Equal(text, t);
+        Assert.Equal(warn, w);
+    }
+
+    [Fact]
+    public void Stale_warning_chip_uses_the_shared_warning_pair_not_the_off_token_orange()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(dir, "Vograph.slnx"))) dir = Path.GetDirectoryName(dir)!;
+        var xaml = File.ReadAllText(Path.Combine(dir, "src", "Vograph.Desktop", "Theme", "Typography.axaml"));
+        var warn = xaml[xaml.IndexOf("<Style Selector=\"Border.chip.stale.warn\">", StringComparison.Ordinal)..];
+        warn = warn[..warn.IndexOf("<Style Selector=\"Border.badge\">", StringComparison.Ordinal)];
+        Assert.Contains("Zp.WarningSurface", warn);
+        Assert.Contains("Zp.WarningText", warn);
+        Assert.DoesNotContain("Brush.Warn", warn);
+        var tokens = File.ReadAllText(Path.Combine(dir, "src", "Vograph.Desktop", "Theme", "DesignTokens.axaml"));
+        Assert.Contains("x:Key=\"Zp.WarningText\" Color=\"#8A5300\"", tokens);   // 5.70:1 на #FFF2D6
+        Assert.Contains("x:Key=\"Zp.WarningSurface\" Color=\"#FFF2D6\"", tokens);
     }
 
     [Fact]
