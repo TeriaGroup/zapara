@@ -146,7 +146,7 @@ fun ScheduleSection(state: ScheduleUiState, onEvent: (ScheduleEvent) -> Unit,
                         LazyColumn(Modifier.width(320.dp)
                             .plannerSwipe(state.selected) { onEvent(ScheduleEvent.Select(state.selected.plusDays(it.dayDelta))) }
                             .plannerContentReveal(state.selected), contentPadding = PaddingValues(Zapara.space.l)) {
-                            item { Text(pluralStringResource(R.plurals.deadlines_title_count, page.deadlines.size, page.deadlines.size, page.deadlines.count { it.done }), style = Zapara.typography.section) }
+                            item { Text(page.deadlines.count { it.done }.let { done -> stringResource(DeadlineCounter.res(done), page.deadlines.size, done) }, style = Zapara.typography.section) }
                              itemsIndexed(page.deadlines, key = { _, row -> row.sharedId ?: row.id }) { _, row -> DeadlineRow(row, state, onEvent) }
                         }
                     }
@@ -445,7 +445,7 @@ private fun LessonList(page: DayPage, state: ScheduleUiState, onEvent: (Schedule
             }
         }
         if (page.deadlines.isNotEmpty()) {
-            item { Text(pluralStringResource(R.plurals.deadlines_title_count, page.deadlines.size, page.deadlines.size, page.deadlines.count { it.done }), style = Zapara.typography.section) }
+            item { Text(page.deadlines.count { it.done }.let { done -> stringResource(DeadlineCounter.res(done), page.deadlines.size, done) }, style = Zapara.typography.section) }
             itemsIndexed(page.deadlines, key = { _, row -> "deadline:${row.sharedId ?: row.id}" }) { _, row ->
                 DeadlineRow(row, state, onEvent)
             }
@@ -490,4 +490,9 @@ private fun DeadlineRow(row: HomeworkRowUi, state: ScheduleUiState, onEvent: (Sc
             if (row.done) Text(uiText(R.string.space_day_25), style = Zapara.typography.caption)
         }
     }
+}
+
+/** #117 follow-up: счётчик сроков — «Ближайшие сроки · N · выполнено K», часть про выполненные только при K > 0. */
+object DeadlineCounter {
+    fun res(done: Int): Int = if (done > 0) R.string.deadlines_title_count_done else R.string.deadlines_title_count
 }

@@ -31,12 +31,9 @@
         <item quantity="many">Показать ещё %d заданий</item>
         <item quantity="other">Показать ещё %d задания</item>
     </plurals>
-    <plurals name="deadlines_title_count">
-        <item quantity="one">Ближайшие сроки: %1$d задание, выполнено %2$d</item>
-        <item quantity="few">Ближайшие сроки: %1$d задания, выполнено %2$d</item>
-        <item quantity="many">Ближайшие сроки: %1$d заданий, выполнено %2$d</item>
-        <item quantity="other">Ближайшие сроки: %1$d задания, выполнено %2$d</item>
-    </plurals>
+    <!-- #117 follow-up: «Ближайшие сроки · 5 · выполнено 2»; без выполненных — «Ближайшие сроки · 5». Счётного слова нет — plurals не нужны. -->
+    <string name="deadlines_title_count">Ближайшие сроки · %1$d</string>
+    <string name="deadlines_title_count_done">Ближайшие сроки · %1$d · выполнено %2$d</string>
     <string name="inbox_subtitle_personal">Личный чат</string>
     <string name="inbox_subtitle_personal_in">Личный чат · %1$s</string>
     <string name="inbox_subtitle_group">Учебная группа</string>

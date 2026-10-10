@@ -3,6 +3,7 @@ package ru.bgtu_voenmeh.zapara.ui
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.data.social.InboxRow
 import ru.bgtu_voenmeh.zapara.data.social.InboxSource
 import ru.bgtu_voenmeh.zapara.ui.inbox.InboxSubtitleCopy
@@ -37,8 +38,13 @@ class ReviewFollowupsTextTest {
 
     @Test fun deadline_counter_passes_done_count() {
         val s = src("schedule/ScheduleSection.kt")
-        assertEquals(2, Regex("deadlines_title_count, page.deadlines.size, page.deadlines.size, page.deadlines.count \\{ it.done \\}")
+        assertEquals(2, Regex("page.deadlines.count \\{ it.done \\}.let \\{ done -> stringResource\\(DeadlineCounter.res\\(done\\), page.deadlines.size, done\\) \\}")
             .findAll(s).count())
+        assertEquals(R.string.deadlines_title_count_done, ru.bgtu_voenmeh.zapara.ui.schedule.DeadlineCounter.res(2))
+        assertEquals(R.string.deadlines_title_count, ru.bgtu_voenmeh.zapara.ui.schedule.DeadlineCounter.res(0))
+        assertEquals("Ближайшие сроки · 5 · выполнено 2", XmlCopy.get("deadlines_title_count_done", 5, 2))
+        assertEquals("Ближайшие сроки · 5", XmlCopy.get("deadlines_title_count", 5))
+        assertEquals("Ближайшие сроки · 1", XmlCopy.get("deadlines_title_count", 1))
     }
 
     @Test fun homework_card_names_its_click_action() {
