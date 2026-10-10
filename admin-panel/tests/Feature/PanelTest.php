@@ -401,28 +401,43 @@ class PanelTest extends TestCase
 
     public function test_settings_are_saved_and_read_by_the_panel_and_the_server(): void
     {
-        $admin = $this->makeUser(true);
-        $this->actingAs($admin);
+        // #47: the round trip runs in its own settings schema. operator.system_settings is shared by every panel
+        // and server test (and by any other suite on the same test database); a write to registration_enabled
+        // there between the panel save and the .NET read made this test flaky.
+        $schema = 'op_panel_'.bin2hex(random_bytes(6));
+        config(['zapara.schemas.settings' => $schema]);
+        try {
+            $admin = $this->makeUser(true);
+            $this->actingAs($admin);
 
-        Livewire::test(SystemSettings::class)
-            ->fillForm(['registration_enabled' => false])
-            ->call('save')
-            ->assertHasNoFormErrors();
+            Livewire::test(SystemSettings::class)
+                ->fillForm(['registration_enabled' => false])
+                ->call('save')
+                ->assertHasNoFormErrors();
 
-        Livewire::test(SystemSettings::class)
-            ->assertSchemaStateSet(['registration_enabled' => false]);
-        $this->assertFalse(OperatorSettings::registrationEnabled());
+            Livewire::test(SystemSettings::class)
+                ->assertSchemaStateSet(['registration_enabled' => false]);
+            $this->assertFalse(OperatorSettings::registrationEnabled());
 
-        $server = self::dotnet('Default_operator_store_matches_register_route');
-        $this->assertSame(0, $server['code'], self::redact($server['output']));
-        $this->assertStringContainsString('OPERATOR_REGISTRATION=false', $server['marker']);
-        $this->assertStringContainsString('REGISTER_STATUS=503', $server['marker']);
+            $server = self::dotnet('Default_operator_store_matches_register_route', ['ZAPARA_PANEL_OPERATOR_SCHEMA' => $schema]);
+            $this->assertSame(0, $server['code'], self::redact($server['output']));
+            $this->assertStringContainsString('OPERATOR_SCHEMA='.$schema, $server['marker']);
+            $this->assertStringContainsString('OPERATOR_REGISTRATION=false', $server['marker']);
+            $this->assertStringContainsString('REGISTER_STATUS=503', $server['marker']);
 
-        Livewire::test(SystemSettings::class)
-            ->fillForm(['registration_enabled' => true])
-            ->call('save')
-            ->assertHasNoFormErrors();
-        $this->assertTrue(OperatorSettings::registrationEnabled());
+            Livewire::test(SystemSettings::class)
+                ->fillForm(['registration_enabled' => true])
+                ->call('save')
+                ->assertHasNoFormErrors();
+            $this->assertTrue(OperatorSettings::registrationEnabled());
+
+            $server = self::dotnet('Default_operator_store_matches_register_route', ['ZAPARA_PANEL_OPERATOR_SCHEMA' => $schema]);
+            $this->assertSame(0, $server['code'], self::redact($server['output']));
+            $this->assertStringContainsString('OPERATOR_REGISTRATION=true', $server['marker']);
+            $this->assertStringContainsString('REGISTER_STATUS=400', $server['marker']);
+        } finally {
+            DB::statement('DROP SCHEMA IF EXISTS '.$schema.' CASCADE');
+        }
     }
 
     public function test_provider_storage_and_limits_round_trip_without_showing_secrets(): void

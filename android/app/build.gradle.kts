@@ -72,6 +72,25 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+    // Рендеры экранов (Roborazzi + Robolectric, src/test/.../design): только при DESIGN_OUT=<папка>.
+    // Без переменной эти тесты исключены, и обычный прогон JVM-тестов не меняется.
+    val designOut = System.getenv("DESIGN_OUT")
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = designOut != null
+            all {
+                if (designOut == null) {
+                    it.exclude("**/zapara/design/**")
+                } else {
+                    it.systemProperty("roborazzi.test.record", "true")
+                    it.systemProperty("design.out", designOut)
+                    it.outputs.upToDateWhen { false }
+                    it.maxHeapSize = "1536m"
+                    it.jvmArgs("-Dfile.encoding=UTF-8")
+                }
+            }
+        }
+    }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -120,6 +139,13 @@ dependencies {
     implementation("androidx.security:security-crypto:1.0.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.40.1")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.40.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.compose.ui:ui-test-manifest")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     // API 37 removed InputManager.getInstance; Espresso 3.7 uses getSystemService.

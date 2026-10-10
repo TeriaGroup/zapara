@@ -51,7 +51,9 @@ class Memberships extends Page
         $joins = app(OperatorWork::class)->pendingJoins();
         if ($joins === []) {
             return $schema->components([
-                Text::make('Нет заявок'),
+                // R2-19: пустое состояние — карточкой с объяснением, как у «Поддержки», а не голым «Нет заявок».
+                Section::make('Заявок нет')
+                    ->description('Они появляются, когда студент просит вступить в группу.'),
             ]);
         }
 

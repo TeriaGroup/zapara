@@ -97,7 +97,7 @@ fun InboxSection(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
                     }
                     Text(state.active.title, color = Zapara.colors.text1, style = Zapara.typography.bodyStrong,
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
-                    Text(state.active.subtitle, color = Zapara.colors.text2, style = Zapara.typography.caption,
+                    Text(inboxSubtitle(state.active), color = Zapara.colors.text2, style = Zapara.typography.caption,
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
                 } else Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
                     .padding(horizontal = Zapara.space.l), verticalAlignment = Alignment.CenterVertically) {
@@ -107,7 +107,7 @@ fun InboxSection(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
                     Column(Modifier.weight(1f)) {
                         Text(state.active.title, color = Zapara.colors.text1, style = Zapara.typography.bodyStrong,
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
-                        Text(state.active.subtitle, color = Zapara.colors.text2, style = Zapara.typography.caption,
+                        Text(inboxSubtitle(state.active), color = Zapara.colors.text2, style = Zapara.typography.caption,
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), softWrap = false)
                     }
                     ChatHeaderAction(R.drawable.ic_refresh, stringResource(R.string.chat_header_refresh), !state.loading,
@@ -261,7 +261,7 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
                         Text(row.lastBody?.takeIf { it.isNotBlank() } ?: stringResource(R.string.face_no_messages_yet),
                             color = Zapara.colors.text2, maxLines = if (largeText) 3 else 2,
                             overflow = TextOverflow.Ellipsis)
-                        if (row.source != InboxSource.Friend) Text(row.subtitle,
+                        if (row.source != InboxSource.Friend) Text(inboxSubtitle(row),
                             color = Zapara.colors.text2, style = Zapara.typography.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (largeText && (row.lastAt != null || row.unread > 0)) {
                             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -702,3 +702,12 @@ private fun PersonalChat(state: InboxUiState, onEvent: (InboxEvent) -> Unit, mod
         dismissButton = { ZButton(stringResource(R.string.face_cancel), { deleting = null }, ghost = true, quiet = true) }) }
 }
 private fun emoji(code: String) = when(code) { "like" -> "👍"; "heart" -> "❤️"; "laugh" -> "😂"; "wow" -> "😮"; "sad" -> "😢"; else -> code }
+
+/** #106 / AN-28: «Личный чат», «Личный чат · ИВТ-1», «Учебная группа» — из ресурсов; явная подпись строки важнее. */
+@Composable
+internal fun inboxSubtitle(row: InboxRow): String = when (row.source) {
+    InboxSource.GroupDirect -> if (row.subtitle.isBlank()) stringResource(R.string.inbox_subtitle_personal)
+        else stringResource(R.string.inbox_subtitle_personal_in, row.subtitle)
+    InboxSource.Group -> row.subtitle.ifBlank { stringResource(R.string.inbox_subtitle_group) }
+    else -> row.subtitle.ifBlank { stringResource(R.string.inbox_subtitle_personal) }
+}
