@@ -62,6 +62,8 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
@@ -193,7 +195,7 @@ fun ZChip(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ZSegmented(items: List<String>, selected: Int, onSelect: (Int) -> Unit, tag: String, modifier: Modifier = Modifier) {
     val c = Zapara.colors
@@ -231,9 +233,20 @@ fun ZSegmented(items: List<String>, selected: Int, onSelect: (Int) -> Unit, tag:
             )
         }
     }
+    val measurer = rememberTextMeasurer()
+    val strong = Zapara.typography.bodyStrong
+    val pad = Zapara.space.s
     BoxWithConstraints(container) {
         val itemWidth = if (constraints.hasBoundedWidth && items.isNotEmpty()) (maxWidth / items.size).coerceAtLeast(Zapara.space.minTouch) else Zapara.space.minTouch
-        Row(Modifier.horizontalScroll(rememberScrollState()).height(IntrinsicSize.Min)) {
+        val density = LocalDensity.current
+        // #100 / AN-02: при крупном шрифте «Послезавтра» уходило за край прокрутки без признака. Если подписи
+        // не влезают в одну строку — сегменты переносятся на следующую, каждый виден целиком.
+        val wrap = constraints.hasBoundedWidth && FontFit.segmentsOverflow(
+            items.map { with(density) { measurer.measure(AnnotatedString(it), strong).size.width.toDp().value } + (pad * 2).value },
+            0f, maxWidth.value)
+        if (wrap) FlowRow(Modifier.fillMaxWidth().testTag("$tag.Wrapped")) {
+            items.forEachIndexed { index, label -> segment(index, label, Modifier.weight(1f)) }
+        } else Row(Modifier.horizontalScroll(rememberScrollState()).height(IntrinsicSize.Min)) {
             items.forEachIndexed { index, label -> segment(index, label, Modifier.widthIn(min = itemWidth).fillMaxHeight()) }
         }
     }
