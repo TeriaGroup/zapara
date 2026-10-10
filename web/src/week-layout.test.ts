@@ -14,7 +14,8 @@ const rule = (selector: string) => {
 test("R2-03: дорожка пар дня не раздувается длинным словом", () => {
   assert.match(rule(".week-day-lessons"), /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
   assert.ok(css.includes(".week-grid .week-day { min-width: 0; }"), "карточка дня может сжиматься");
-  const words = rule(".week-lesson-subject, .week-lesson-room, .week-grid .free-gap > span:first-child");
+  const words = rule(".week-lesson-subject, .week-lesson-room");
+  assert.match(rule(".week-grid .free-gap > span:first-child"), /min-width:\s*auto/);
   assert.match(words, /overflow-wrap:\s*anywhere/);
   assert.match(words, /min-width:\s*0/);
   assert.match(rule(".week-grid .free-gap"), /flex-wrap:\s*wrap/);

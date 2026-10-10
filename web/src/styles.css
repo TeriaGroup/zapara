@@ -815,7 +815,9 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
    неразрывного слова («КОНСТР.МОД.МИРТС»), и пары, аудитории и плашки перерывов вылезали за край карточки. */
 .week-grid .week-day { min-width: 0; }
 .week-day-lessons { grid-template-columns: minmax(0, 1fr); }
-.week-lesson-subject, .week-lesson-room, .week-grid .free-gap > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.week-lesson-subject, .week-lesson-room { min-width: 0; overflow-wrap: anywhere; }
+/* Подпись перерыва не рвём посреди слова («Перер|ыв»): длительность при нехватке места уходит на следующую строку. */
+.week-grid .free-gap > span:first-child { min-width: auto; }
 .week-grid .free-gap { flex-wrap: wrap; gap: 2px 8px; }
 .week-grid .free-gap-duration { white-space: nowrap; }
 /* «Сегодня» — в строке с датой. В узкой колонке (7 дней на 1280–1600px) метка не помещается рядом с «Сб, 10 окт»,
