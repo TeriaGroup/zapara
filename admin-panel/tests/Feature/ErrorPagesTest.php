@@ -16,6 +16,9 @@ class ErrorPagesTest extends TestCase
         parent::setUp();
         config(['app.debug' => false]);
         Route::get('/__zp-error/500', fn () => throw new \RuntimeException('секретная-деталь-исключения'));
+        Route::post('/__zp-error/500', fn () => throw new \RuntimeException('секретная-деталь-исключения'));
+        Route::get('/__zp-error/502', fn () => abort(502, 'detail-from-abort'));
+        Route::get('/__zp-error/418', fn () => abort(418, 'detail-from-abort'));
         foreach ([403, 419, 503] as $code) {
             Route::get("/__zp-error/{$code}", fn () => abort($code, 'detail-from-abort'));
         }
@@ -30,7 +33,7 @@ class ErrorPagesTest extends TestCase
         $this->assertStringContainsString("localStorage.getItem('theme')", $html, 'panel theme choice');
         $this->assertStringContainsString('prefers-color-scheme: dark', $html, 'system theme');
         $this->assertStringContainsString('Расписание военмех', $html);
-        foreach (['Not Found', 'Server Error', 'Forbidden', 'Page Expired', 'Service Unavailable'] as $english) {
+        foreach (['Not Found', 'Server Error', 'Forbidden', 'Page Expired', 'Service Unavailable', 'Method Not Allowed', 'Bad Gateway'] as $english) {
             $this->assertStringNotContainsString($english, $html);
         }
     }
@@ -78,5 +81,54 @@ class ErrorPagesTest extends TestCase
     {
         $html = (string) $this->get('/admin/no-such-page')->getContent();
         $this->assertMatchesRegularExpression('/\.zp-error-actions a \{[^}]*min-height: 44px;/', $html);
+    }
+
+    public function test_get_on_the_logout_route_is_a_themed_405_not_the_english_default(): void
+    {
+        $response = $this->get('/admin/logout');
+        $response->assertStatus(405);
+        $html = (string) $response->getContent();
+        $this->assertThemedPage($html);
+        $this->assertStringContainsString('Ошибка 405', $html);
+        $this->assertStringContainsString('Запрос не выполнен', $html);
+        $this->assertStringContainsString('<a class="zp-primary" href="'.url('/admin').'">На инфопанель</a>', $html);
+    }
+
+    public function test_other_4xx_and_5xx_use_the_generic_fallbacks(): void
+    {
+        $teapot = (string) $this->get('/__zp-error/418')->assertStatus(418)->getContent();
+        $this->assertThemedPage($teapot);
+        $this->assertStringContainsString('Ошибка 418', $teapot);
+        $this->assertStringNotContainsString('detail-from-abort', $teapot);
+
+        $gateway = (string) $this->get('/__zp-error/502')->assertStatus(502)->getContent();
+        $this->assertThemedPage($gateway);
+        $this->assertStringContainsString('Ошибка 502', $gateway);
+        $this->assertStringContainsString('Подробности записаны в журнал сервера.', $gateway);
+        $this->assertStringNotContainsString('detail-from-abort', $gateway);
+    }
+
+    public function test_500_copy_and_reload_link_returns_to_the_page_a_post_came_from(): void
+    {
+        $from = url('/admin/users/create');
+        $html = (string) $this->withHeader('Referer', $from)->post('/__zp-error/500')->assertStatus(500)->getContent();
+        $this->assertStringContainsString('Подробности записаны в журнал сервера.', $html);
+        $this->assertStringNotContainsString('Мы уже записали', $html);
+        $this->assertStringContainsString('<a href="'.$from.'">Обновить страницу</a>', $html);
+        $this->assertStringNotContainsString('href="'.url('/__zp-error/500').'"', $html);
+    }
+
+    public function test_403_says_account_not_uchetnaya_zapis(): void
+    {
+        $html = (string) $this->get('/__zp-error/403')->getContent();
+        $this->assertStringContainsString('У вашего аккаунта нет прав', $html);
+        $this->assertStringNotContainsString('учётной записи', $html);
+    }
+
+    public function test_env_example_ships_with_debug_off(): void
+    {
+        $env = (string) file_get_contents(base_path('.env.example'));
+        $this->assertMatchesRegularExpression('/^APP_DEBUG=false$/m', $env);
+        $this->assertDoesNotMatchRegularExpression('/^APP_DEBUG=true$/m', $env);
     }
 }

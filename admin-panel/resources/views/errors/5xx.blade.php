@@ -1,5 +1,6 @@
 @extends('errors.layout')
-@section('code', '500')
+{{-- #149: общий запасной вариант для 5xx без своей страницы. --}}
+@section('code', isset($exception) && method_exists($exception, 'getStatusCode') ? (string) $exception->getStatusCode() : '5xx')
 @section('title', 'Что-то пошло не так')
 @section('message', 'На сервере произошла ошибка. Подробности записаны в журнал сервера. Попробуйте ещё раз чуть позже.')
 @section('actions')
