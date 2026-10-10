@@ -48,7 +48,7 @@ class GroupsRelationManager extends RelationManager
                 TextColumn::make('group_name')->label('Название в каталоге'),
                 TextColumn::make('created_at')
                     ->label('Привязана')
-                    ->formatStateUsing(fn ($state): string => MoscowTime::short($state, year: true)) // G-3: «9 окт. 2026, 18:49»
+                    ->formatStateUsing(fn ($state): string => MoscowTime::short($state)) // G-3: «9 окт., 18:49», год — если не текущий
                     ->visibleFrom('md'),
             ])
             ->defaultSort('group_id')

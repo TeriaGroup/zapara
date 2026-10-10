@@ -85,8 +85,7 @@ class CommunityResource extends Resource
                     TextEntry::make('description')->label('Описание')->placeholder('Нет описания'),
                     TextEntry::make('created_at')
                         ->label('Создано')
-                        ->dateTime('j F Y, H:i', 'Europe/Moscow')
-                        ->suffix(' МСК'),
+                        ->formatStateUsing(fn ($state): string => MoscowTime::dateTime($state)), // G-3: «9 окт., 18:49 МСК»
                     TextEntry::make('community_id')
                         ->label('ID')
                         ->copyable()
@@ -118,7 +117,7 @@ class CommunityResource extends Resource
                     ->numeric(),
                 TextColumn::make('created_at')
                     ->label('Создано')
-                    ->formatStateUsing(fn ($state): string => MoscowTime::short($state, year: true, time: false)) // G-3: «9 окт. 2026»
+                    ->formatStateUsing(fn ($state): string => MoscowTime::short($state, time: false)) // G-3: «9 окт.», год — если не текущий
                     ->sortable()
                     ->visibleFrom('md'),
             ])

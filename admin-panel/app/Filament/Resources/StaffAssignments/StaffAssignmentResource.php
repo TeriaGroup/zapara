@@ -76,7 +76,7 @@ class StaffAssignmentResource extends Resource
                     ->color(fn (string $state): string => $state === 'headman' ? 'info' : 'success'),
                 TextColumn::make('assigned_at')
                     ->label('Назначен')
-                    ->formatStateUsing(fn ($state): string => MoscowTime::short($state, year: true)) // G-3: «9 окт. 2026, 18:49»
+                    ->formatStateUsing(fn ($state): string => MoscowTime::short($state)) // G-3: «9 окт., 18:49», год — если не текущий
                     ->sortable()
                     ->visibleFrom('md'),
             ])
