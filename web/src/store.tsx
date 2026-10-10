@@ -8,6 +8,7 @@ import { subgroupIndex } from "./subgroups";
 import { subgroupUndoCurrent, type SubgroupUndo } from "./next-workflows";
 
 import type { FriendItem, GroupsPayload, HomeworkItem, Lesson, Session, TimetablePayload } from "./types";
+import { catalogFailureNotice } from "./catalog-notice";
 
 type State = {
   theme: "light" | "dark" | "system";
@@ -179,7 +180,8 @@ export function Provider({ children }: { children: ReactNode }) {
       if(!next||next!==live.groupId)setNotice(payload.meta.stale ? "Список групп может быть устаревшим. Показана сохранённая копия." : "");
     }).catch(() => {
       if (stop) return;
-      setNotice(catalog ? "Список групп не обновился. Сохранённое расписание остаётся доступным." : "Список групп недоступен, сохранённой копии списка нет.");
+      const current = groupSelection.current.groupId;
+      setNotice(catalogFailureNotice(!!catalog, !!current && !!api.readCache().lessons[current]));
     }).finally(() => { if (!stop) setLoading(false); });
     return () => { stop = true; };
   }, [tick]);
