@@ -70,7 +70,7 @@ public class AutomationIdsTests : UiTest
         "Maps.ToNext", "MapsBuilding.0", "MapsBuilding.1", "Maps.Floor", "Maps.ZoomIn", "Maps.ZoomOut", "Maps.Fit",
         "Maps.Reset", "Maps.Fullscreen", "Maps.More", "Maps.Plan", "MapsFull.Close", "MapsFull.ZoomIn",
         "Friends.Add", "Friend.Color", "Friend.Names", "Friend.Enabled", "Friend.Remove", "Friends.Strictness", "Friends.AlwaysAll",
-        "Homework.Add", "Homework.Done", "Homework.Edit", "Homework.Delete", "HomeworkRow.More", "HomeworkRow.Sheet",
+        "Homework.Add", "Homework.Done", "Homework.Edit", "Homework.Delete", "HomeworkRow.More", "HomeworkRow.Sheet", "HomeworkRow.Card",
         "Settings.Category.Account", "Settings.Category.Study", "Settings.Category.Appearance",
         "Settings.Category.Notifications", "Settings.Category.Data", "Settings.Category.Help", "Settings.Back",
         "SettingsTheme.0", "SettingsTheme.1", "SettingsTheme.2", "Account.Card", "Account.Status", "Account.Login",
