@@ -5,7 +5,7 @@
     <string name="ux300_android_week_expand">Показать пары</string>
     <string name="ux300_android_week_collapse">Свернуть пары</string>
     <string name="ux300_android_week_open_previous">Предыдущий учебный день</string>
-    <string name="ux300_android_week_free_window">Свободное окно: %1$d мин</string>
+    <string name="ux300_android_week_free_window">Перерыв %1$d мин</string>
     <string name="ux300_android_week_show_tools">Поиск и действия</string>
     <string name="ux300_android_week_hide_tools">Скрыть поиск и действия</string>
     <string name="ux300_android_summary_alphabetical">По алфавиту</string>
