@@ -12,6 +12,7 @@
     <string name="teacher_filter_even">Чётная</string> <!-- parityEvenTitle -->
     <string name="chip_odd">нечёт.</string> <!-- parityOddShort -->
     <string name="chip_even">чёт.</string> <!-- parityEvenShort -->
+    <string name="schedule_empty_title">Пар нет</string> <!-- emptyDay -->
     <string name="schedule_lesson_action_map">Карта</string> <!-- openMap -->
     <string name="ux100_study_deadline_none">Без срока</string> <!-- noDeadline -->
     <string name="ux300_android_no_deadline">Без срока</string> <!-- noDeadline -->

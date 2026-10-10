@@ -68,7 +68,9 @@ class PluralsTest {
     }
 
     @Test fun empty_day_uses_glossary() {
-        assertTrue(File(res, "strings_schedule_maps_presentation.xml").readText().contains("<string name=\"schedule_empty_title\">Пар нет</string>"))
+        // После #97 «Пар нет» — строка общего каталога (design/strings/ru.json, emptyDay), Android-имя schedule_empty_title.
+        assertTrue(File(res, "strings_catalog.xml").readText().contains("<string name=\"schedule_empty_title\">Пар нет</string>"))
+        assertFalse(File(res, "strings_schedule_maps_presentation.xml").readText().contains("schedule_empty_title"))
     }
 
     /** AN-28: перечисленные подписи больше не литералы в Kotlin. */
