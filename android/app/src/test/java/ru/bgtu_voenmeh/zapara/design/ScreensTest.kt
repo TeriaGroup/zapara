@@ -86,13 +86,9 @@ class ScreensTest {
         audit(name)
     }
 
-    /** Масштаб и сдвиг для аудитории пары: MapFocus (#103), если он есть в ветке; иначе как на develop — весь этаж. */
-    private fun lessonFocus(rect: ru.bgtu_voenmeh.zapara.data.CoordsRect): Triple<Float, Float, Float> = try {
-        val cls = Class.forName("ru.bgtu_voenmeh.zapara.ui.maps.MapFocus")
-        val f = cls.getMethod("focus", ru.bgtu_voenmeh.zapara.data.CoordsRect::class.java).invoke(cls.getField("INSTANCE").get(null), rect)
-        Triple(f.javaClass.getMethod("getZoom").invoke(f) as Float, f.javaClass.getMethod("getPanX").invoke(f) as Float,
-            f.javaClass.getMethod("getPanY").invoke(f) as Float)
-    } catch (_: ClassNotFoundException) { Triple(1f, 0f, 0f) }
+    /** Масштаб и сдвиг для аудитории пары — MapFocus (#103), как в MapsViewModel. */
+    private fun lessonFocus(rect: ru.bgtu_voenmeh.zapara.data.CoordsRect): Triple<Float, Float, Float> =
+        ru.bgtu_voenmeh.zapara.ui.maps.MapFocus.focus(rect).let { Triple(it.zoom, it.panX, it.panY) }
 
     private fun mapsLesson(room: String, line: String): ru.bgtu_voenmeh.zapara.ui.maps.MapsUiState {
         val plan = File(ctx.cacheDir, "gk2.jpg").also { f -> f.outputStream().use { o -> File("src/main/assets/maps/karta-glavnyj-korpus-2-etazh-2022.jpg").inputStream().use { it.copyTo(o) } } }
@@ -104,10 +100,7 @@ class ScreensTest {
             mode = ru.bgtu_voenmeh.zapara.ui.maps.MapMode.Lesson, contextLine = line, unmarked = false,
             rasterCatalog = mapOf(key to ru.bgtu_voenmeh.zapara.ui.maps.FloorRaster(plan, ru.bgtu_voenmeh.zapara.ui.maps.RasterSize(maxOf(1, size.outWidth), maxOf(1, size.outHeight)))),
             floorFiles = mapOf(2 to plan), highlight = rect?.let { ru.bgtu_voenmeh.zapara.ui.maps.HighlightUi(it, room) },
-            roomUnmarked = rect == null, zoom = zoom, panX = panX, panY = panY)
-        if (rect == null) try { // поле из #103; на develop его нет
-            ru.bgtu_voenmeh.zapara.ui.maps.MapsUiState::class.java.getDeclaredField("unmarkedRoom").apply { isAccessible = true }.set(st, room)
-        } catch (_: NoSuchFieldException) {}
+            roomUnmarked = rect == null, unmarkedRoom = if (rect == null) room else "", zoom = zoom, panX = panX, panY = panY)
         return st
     }
 
