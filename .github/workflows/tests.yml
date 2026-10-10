@@ -281,7 +281,11 @@ jobs:
 
       # Vograph.Desktop targets net8.0-windows10.0.19041.0; EnableWindowsTargeting lets the Linux SDK build it.
       # The tests run headless (Avalonia.Headless) and do not need a display.
+      # Tests create folders under Path.GetTempPath() (e.g. /tmp/opencode/...); on a shared runner /tmp may already
+      # hold such a folder owned by another user, so each job uses its own temp directory.
       - name: Vograph.Desktop.Tests
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: >-
           dotnet test src/Vograph.Desktop.Tests -p:EnableWindowsTargeting=true
           --filter "$DESKTOP_TEST_FILTER" --logger "console;verbosity=normal"
