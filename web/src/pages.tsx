@@ -2465,8 +2465,8 @@ function SettingsContent() {
                 </div>
               )}
               <div className="seg">
-                <button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setAccepted(false); }}>Вход</button>
-                <button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")} disabled={!app.session?.capabilities.registration}>Регистрация</button>
+                <button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setAccepted(false); setError(""); }}>Вход</button>
+                <button type="button" className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setError(""); }} disabled={!app.session?.capabilities.registration}>Регистрация</button>
               </div>
               {app.session?.capabilities.password !== false && <><label className="field">Логин<input value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" /></label>
               <SecretInput label="Пароль" value={password} onChange={setPassword} autoComplete={mode==="register"?"new-password":"current-password"} onBlur={()=>setTouched(value=>({...value,password:true}))} describedBy={mode==="register"?"password-rules":undefined} invalid={mode==="register"&&passwordRules(password,confirmation,touched).slice(0,2).some(rule=>rule.state==="bad")}/>

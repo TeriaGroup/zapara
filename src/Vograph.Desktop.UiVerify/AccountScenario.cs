@@ -43,7 +43,7 @@ public static class AccountScenario
                 ui.SetAccountField("Account.Username", names[i]);
                 ui.SetAccountField("Account.Password", "short");
                 ui.Click("Account.Login");
-                Require(ui.WaitText("Account.Status", s => s.Contains("3–32")), "validation missing");
+                Require(ui.WaitText("Account.FormError", s => s.Contains("3–32")), "validation missing");
                 Require(ui.WaitFor(() => ui.Find("Account.Mode").IsEnabled), "registration mode still busy");
                 ui.Click("Account.Mode");
                 Require(ui.WaitFor(() => ui.FindAll("Account.Register").Any(e => e.IsEnabled)), "registration form did not open");
@@ -88,7 +88,7 @@ public static class AccountScenario
                     ui.SetAccountField("Account.Username", names[i]);
                     ui.SetAccountField("Account.Password", password);
                     ui.Click("Account.Login");
-                    Require(ui.WaitText("Account.Status", s => s.Contains("Неверный")), "old password still accepted");
+                    Require(ui.WaitText("Account.FormError", s => s.Contains("Неверный")), "old password still accepted");
                     password += "new";
                     report.Pass("Смена пароля: выход и отклонение старого пароля", ui.Shot("account-password-changed"));
                 }

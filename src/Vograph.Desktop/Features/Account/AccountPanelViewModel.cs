@@ -50,7 +50,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     [ObservableProperty] private string password = "";
     [ObservableProperty] private string displayName = "";
     public bool HasUnsavedDisplayName => IsAccount && DisplayName != lastPresentedDisplayName;
-    partial void OnDisplayNameChanged(string value) => OnPropertyChanged(nameof(HasUnsavedDisplayName));
+    partial void OnDisplayNameChanged(string value) { OnPropertyChanged(nameof(HasUnsavedDisplayName)); FormError = ""; }
     public void DiscardDisplayNameDraft()
     { if (!Busy) DisplayName = lastPresentedDisplayName; }
     [ObservableProperty] private string currentPassword = "";
@@ -60,6 +60,12 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     partial void OnNewPasswordChanged(string value) => OnPropertyChanged(nameof(IsSameNewPassword));
     [ObservableProperty] private string accountName = "";
     [ObservableProperty] private string status = "";
+    /// <summary>
+    /// #148 (R3-02): ошибка формы входа/регистрации — отдельно от нейтральной строки состояния, которую повторяет
+    /// подзаголовок «Аккаунт» в настройках. Очищается при смене «Вход / Регистрация», правке полей и новой отправке.
+    /// </summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasFormError))] private string formError = "";
+    public bool HasFormError => FormError.Length > 0;
     [ObservableProperty] private bool registration;
     [ObservableProperty] private bool busy;
     [ObservableProperty] private bool ready;
@@ -88,7 +94,8 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     partial void OnResetRequestedChanged(bool value) => OnPropertyChanged(nameof(CanConfirmReset));
     partial void OnResetTokenChanged(string value) => OnPropertyChanged(nameof(CanConfirmReset));
     partial void OnResetNewPasswordChanged(string value) => OnPropertyChanged(nameof(CanConfirmReset));
-    partial void OnUsernameChanged(string value) => OnPropertyChanged(nameof(CanRequestReset));
+    partial void OnUsernameChanged(string value) { OnPropertyChanged(nameof(CanRequestReset)); FormError = ""; }
+    partial void OnPasswordChanged(string value) { if (value.Length > 0) FormError = ""; }
     [ObservableProperty] private string proof = "";
     [ObservableProperty] private ExportJobResponse? exportJob;
     [ObservableProperty] private byte[]? exportPayload;
@@ -181,6 +188,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
 
     partial void OnRegistrationChanged(bool value)
     {
+        FormError = "";
         ClearSecrets();
         DocumentsAccepted = false;
         if (value && !RegistrationAvailable) Registration = false;
@@ -218,7 +226,9 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         snapshot = value;
         if (value.ReauthRequired) Avatar = null;
         Status = value.Phase == ProfilePhase.RecoveryRequired ? T("accountRecovery")
-            : value.AccountFailure is { } failure ? FailureText(failure)
+            // #148: у гостя сбой аккаунта бывает только от попытки входа — он в FormError, а не в строке состояния
+            // (её повторяет подзаголовок «Аккаунт» в настройках, и там «Неверный логин или пароль» висел бы дальше).
+            : value.AccountFailure is { } failure ? (value.Profile.IsGuest ? T("accountGuest") : FailureText(failure))
             : value.Failure is not null ? T("accountTransitionFailed")
             : value.ReauthRequired ? T("accountReauth") : T(value.Profile.IsGuest ? "accountGuest" : "accountLocal");
         foreach (var name in new[] { nameof(IsGuest), nameof(IsAccount), nameof(CanAct), nameof(NeedsRecovery), nameof(ShowLogin), nameof(ShowLoginForm) })
@@ -311,13 +321,14 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         var secret = Password;
         ClearSecrets();
         if (!CanAct) return;
+        FormError = "";
         await RunAsync(async () =>
         {
             var request = new RegisterRequest(Username, secret, string.IsNullOrWhiteSpace(DisplayName) ? null : DisplayName);
             if (Registration)
             {
-                if (!RegistrationAvailable) { Status = T("accountRegistrationUnavailable"); return; }
-                if (!DocumentsAccepted) { Status = T("accountAcceptRequired"); return; }
+                if (!RegistrationAvailable) { FormError = T("accountRegistrationUnavailable"); return; }
+                if (!DocumentsAccepted) { FormError = T("accountAcceptRequired"); return; }
                 await service!.RegisterAsync(request, lifetime.Token);
                 Registration = false;
                 Status = T("accountCreated");
@@ -326,6 +337,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
             {
                 var result = await profiles!.LoginAsync(request.Username, request.Password, lifetime.Token);
                 Apply(result.Snapshot);
+                FormFailure(result.Snapshot);
                 if (result.Committed && result.Snapshot.Phase == ProfilePhase.Idle)
                 {
                     HasPassword = true; // This session was authenticated with the app password.
@@ -333,7 +345,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
                     if (user is not null) Present(user);
                 }
             }
-        });
+        }, form: true);
     }
 
     [RelayCommand]
@@ -356,7 +368,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         await RunAsync(async () => Apply(await profiles!.RecoverAsync(lifetime.Token)));
     }
 
-    private async Task RunAsync(Func<Task> action)
+    private async Task RunAsync(Func<Task> action, bool form = false)
     {
         if (Busy || disposed) return;
         var expected = profiles?.Snapshot.Identity;
@@ -368,14 +380,22 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
             {
                 if (ex.Failure is AccountClientFailure.InvalidSession or AccountClientFailure.ReauthenticationRequired && snapshot is not null)
                     Apply(snapshot with { ReauthRequired = true });
-                Status = FailureText(ex.Failure);
+                Fail(FailureText(ex.Failure));
             }
         }
-        catch (ArgumentException) { if (IsCurrent()) Status = T("accountValidation"); }
-        catch (OperationCanceledException) { if (IsCurrent()) Status = T("accountCancelled"); }
-        catch (Exception) { if (IsCurrent()) Status = T("accountFailed"); }
+        catch (ArgumentException) { if (IsCurrent()) Fail(T("accountValidation")); }
+        catch (OperationCanceledException) { if (IsCurrent()) Fail(T("accountCancelled")); }
+        catch (Exception) { if (IsCurrent()) Fail(T("accountFailed")); }
         finally { ClearSecrets(); Busy = false; }
         bool IsCurrent() => !disposed && profiles?.Snapshot.Identity == expected;
+        // #148: ошибки формы входа/регистрации — в FormError, остальные операции — в строку состояния, как раньше.
+        void Fail(string text) { if (form) FormError = text; else Status = text; }
+    }
+
+    /// <summary>#148: сбой входа из снимка профиля — в слот ошибки формы.</summary>
+    private void FormFailure(ProfileSnapshot value)
+    {
+        if (value.Profile.IsGuest && value.AccountFailure is { } failure) FormError = FailureText(failure);
     }
 
     private string FailureText(AccountClientFailure failure) => T(failure switch

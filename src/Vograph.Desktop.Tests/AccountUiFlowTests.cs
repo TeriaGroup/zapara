@@ -37,7 +37,7 @@ public sealed partial class AccountUiFlowTests
         f.Vm.DocumentsAccepted = true;
         f.Vm.Username = "Test.User"; f.Vm.Password = Password;
         await f.Vm.SubmitCommand.ExecuteAsync(null);
-        Assert.Contains("Регистрация на этом сервере недоступна", f.Vm.Status);
+        Assert.Contains("Регистрация на этом сервере недоступна", f.Vm.FormError);
         Assert.Empty(f.Vm.Password);
         Assert.Null(f.Vault.Entry);
     }
@@ -70,7 +70,7 @@ public sealed partial class AccountUiFlowTests
         await f.Vm.SubmitCommand.ExecuteAsync(null);
         Assert.Equal(1, f.Handler.Calls);
         Assert.Equal("", f.Vm.Password);
-        Assert.Contains("3–32", f.Vm.Status);
+        Assert.Contains("3–32", f.Vm.FormError);
     }
 
     [Fact]
@@ -155,7 +155,7 @@ public sealed partial class AccountUiFlowTests
         f.Handler.Send = (_, _) => Task.FromResult(Json(new AccountError("ignored", code, error), (HttpStatusCode)code));
         f.Vm.Username = "Test.User"; f.Vm.Password = Password;
         await f.Vm.SubmitCommand.ExecuteAsync(null);
-        Assert.Contains(text, f.Vm.Status);
+        Assert.Contains(text, f.Vm.FormError);
         Assert.True(f.Vm.IsGuest);
         Assert.Equal("", f.Vm.Password);
     }

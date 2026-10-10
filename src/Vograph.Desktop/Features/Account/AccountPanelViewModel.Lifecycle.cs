@@ -120,7 +120,8 @@ public sealed partial class AccountPanelViewModel
         var secret = Proof;
         ClearSecrets();
         if (!CanAct) return;
-        if (!link && Registration && !DocumentsAccepted) { Status = T("accountAcceptRequired"); return; }
+        if (!link) FormError = "";
+        if (!link && Registration && !DocumentsAccepted) { FormError = T("accountAcceptRequired"); return; }
         if (link)
         {
             if (IsGuest || (provider == "vk" ? !ShowVkLink : !ShowYandexLink)) return;
@@ -140,6 +141,7 @@ public sealed partial class AccountPanelViewModel
                     : await service!.CompleteExternalAsync(provider, link ? secret : null,
                         url => LaunchExternalAsync(provider, url), pending.Token);
                 Apply(result.Snapshot);
+                if (!link) FormFailure(result.Snapshot);
                 if (result.Committed && IsAccount)
                 {
                     var user = await service.CachedUserAsync(lifetime.Token);
@@ -159,7 +161,7 @@ public sealed partial class AccountPanelViewModel
                 AuthorizeUrl = null;
                 OnPropertyChanged(nameof(ExternalPending));
             }
-        });
+        }, form: !link);
     }
 
     private CancellationTokenSource? externalCancellation;
