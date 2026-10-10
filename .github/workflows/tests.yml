@@ -44,9 +44,27 @@ jobs:
           clean: true
           persist-credentials: false
 
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      # .NET goes into the runner's tool cache (a stable path, not RUNNER_TEMP), so a runner downloads each SDK once:
+      # install-dotnet skips a version that is already there. A hung download (seen for 45 min on one runner) stops
+      # after 5 min and is retried once from a clean directory (docs/CI.md).
+      - id: dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        timeout-minutes: 5
+        continue-on-error: true
         env:
-          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/zapara-dotnet-8
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Retry .NET setup from a clean directory
+        if: steps.dotnet.outcome == 'failure'
+        run: rm -rf "$RUNNER_TOOL_CACHE/zapara-dotnet-8"
+
+      - if: steps.dotnet.outcome == 'failure'
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        timeout-minutes: 5
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/zapara-dotnet-8
         with:
           dotnet-version: 8.0.x
 
@@ -188,12 +206,32 @@ jobs:
 
       # node --test loads the .ts sources directly: Node 24 strips types without flags.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        # Normally instant (the runner's tool cache); stop a hung download instead of waiting for the job timeout.
+        timeout-minutes: 10
         with:
           node-version: "24"
 
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      # .NET goes into the runner's tool cache (a stable path, not RUNNER_TEMP), so a runner downloads each SDK once:
+      # install-dotnet skips a version that is already there. A hung download (seen for 45 min on one runner) stops
+      # after 5 min and is retried once from a clean directory (docs/CI.md).
+      - id: dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        timeout-minutes: 5
+        continue-on-error: true
         env:
-          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/zapara-dotnet-8
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Retry .NET setup from a clean directory
+        if: steps.dotnet.outcome == 'failure'
+        run: rm -rf "$RUNNER_TOOL_CACHE/zapara-dotnet-8"
+
+      - if: steps.dotnet.outcome == 'failure'
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        timeout-minutes: 5
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/zapara-dotnet-8
         with:
           dotnet-version: 8.0.x
 
@@ -247,9 +285,29 @@ jobs:
 
       # Avalonia 12 source generators (InitializeComponent, x:Name fields) need Roslyn 4.14+, which the
       # .NET 8 SDK does not ship; the newest installed SDK (10) builds, the .NET 8 runtime runs the tests.
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      # .NET goes into the runner's tool cache (a stable path, not RUNNER_TEMP), so a runner downloads each SDK once:
+      # install-dotnet skips a version that is already there. A hung download (seen for 45 min on one runner) stops
+      # after 5 min and is retried once from a clean directory (docs/CI.md).
+      - id: dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        timeout-minutes: 5
+        continue-on-error: true
         env:
-          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/zapara-dotnet-8-10
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Retry .NET setup from a clean directory
+        if: steps.dotnet.outcome == 'failure'
+        run: rm -rf "$RUNNER_TOOL_CACHE/zapara-dotnet-8-10"
+
+      - if: steps.dotnet.outcome == 'failure'
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        timeout-minutes: 5
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/zapara-dotnet-8-10
         with:
           dotnet-version: |
             8.0.x
@@ -338,6 +396,8 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        # Normally instant (the runner's tool cache); stop a hung download instead of waiting for the job timeout.
+        timeout-minutes: 10
         with:
           distribution: temurin
           java-version: "17"
