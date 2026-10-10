@@ -60,7 +60,7 @@ Android (`gradlew`), `scripts/timetable/Verify-Milestone.ps1`.
 
 ## Что нужно на раннере
 
-SDK и интерпретаторы ставят сами задания: `actions/setup-dotnet` (.NET 8 в `$RUNNER_TEMP/dotnet`: каталоги по умолчанию пользователю раннера недоступны для записи),
+SDK и интерпретаторы ставят сами задания: `actions/setup-dotnet` (.NET 8 в `$RUNNER_TEMP/dotnet`: каталоги по умолчанию пользователю раннера недоступны для записи; задание `desktop` ставит ещё SDK 10, генераторам Avalonia 12 нужен Roslyn 4.14+),
 `actions/setup-node` (Node 24), `shivammathur/setup-php` (PHP 8.3, `pdo_pgsql`, `pdo_sqlite`, `intl`, `zip`, `mbstring`, Composer 2).
 Предустановить нужно:
 
