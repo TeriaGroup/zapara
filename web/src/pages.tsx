@@ -1982,13 +1982,13 @@ function GroupContent() {
         {home && !compact && <button className="btn" type="button" aria-expanded={mobileDetailsOpen} onClick={() => setMobileDetailsOpen(true)}>Сведения и действия группы</button>}
       </Head>
       {home && chat?.kind === "group" && <div className="group-mobile-topline">
-        <Link className="btn tool" to="/chat" aria-label="К чатам"><Icon name="left" size={18}/></Link>
+        <Link className="btn tool" to="/chat?all=1" aria-label="К чатам"><Icon name="left" size={18}/></Link>
         <Avatar kind="group" id={home.communityId} name={home.groupName || home.name} />
         <strong>{home.groupName || home.name}</strong>
         <button className="btn tool" type="button" aria-label="Сведения и действия группы" aria-expanded={mobileDetailsOpen} onClick={()=>setMobileDetailsOpen(value=>!value)}><Icon name="menu" size={18}/></button>
       </div>}
       {home && chat?.kind === "group" && (thread === "list" || thread.topicId === null && isChatChannel(thread)) && <nav className="group-mobile-tabs" aria-label="Разделы группы">
-        {([ ["channels","Каналы"], ["people","Состав"], ["general","Общее"] ] as const).map(([pane,label])=><button key={pane} type="button" aria-current={(focusChat ? thread !== "list" && thread.topicId === null && isChatChannel(thread) ? "general" : "channels" : mobilePane)===pane?"page":undefined} onClick={()=>openMobileGroupTab(pane)}>{label}</button>)}
+        {([ ["general","Чат"], ["channels","Каналы"], ["people","Участники"] ] as const).map(([pane,label])=><button key={pane} type="button" aria-current={(focusChat ? thread !== "list" && thread.topicId === null && isChatChannel(thread) ? "general" : "channels" : mobilePane)===pane?"page":undefined} onClick={()=>openMobileGroupTab(pane)}>{label}</button>)}
       </nav>}
       {error && <div className="banner row" role="alert"><span>{error}</span><button className="btn quiet" type="button" onClick={()=>setError("")}>Закрыть сообщение</button></div>}
       {error && <button className="btn" type="button" onClick={() => setReloadEpoch(value => value + 1)}>Повторить загрузку группы</button>}
@@ -2028,7 +2028,7 @@ function GroupContent() {
                   }}>
                   <TopicMark topic={topic} />
                   <span className="group-quick-topic-main">
-                    <span className="group-quick-topic-top"><b>{topic.title}</b><span className="muted">{groupTopicWhen(topic.lastAt)}</span></span>
+                    <span className="group-quick-topic-top"><b>{topic.topicId === null ? "Чат" : topic.title}</b><span className="muted">{groupTopicWhen(topic.lastAt)}</span></span>
                     <span className="group-quick-topic-bottom"><span className="muted">{topicPreview(topic)}</span>
                       {topic.unread > 0 && <span className="chip" aria-label={unreadBadgeDescription(topic.unread)}>{unreadBadgeText(topic.unread)}</span>}</span>
                   </span>
@@ -2062,7 +2062,7 @@ function GroupContent() {
             {chat?.kind === "group" && thread !== "list" && !isChatChannel(thread) && <>
               {obligationTarget&&obligationTarget.source===thread.topicId&&<GroupObjectFocus key={JSON.stringify(obligationTarget)} id={`obligation-${obligationTarget.kind}-${obligationTarget.kind==="ballot"?obligationTarget.source+"-":""}${obligationTarget.id}`}/>}
               <div className="row">
-                <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; setThread("list"); }}>Все разделы</button>
+                <button className="btn" type="button" onClick={() => { selectionEpoch.current += 1; setThread("list"); }}>Каналы</button>
                 <h2 className="topic-heading"><TopicMark topic={thread} /> {thread.title}</h2>
                 {nextUnread && <button className="btn" type="button" disabled={nextUnreadBusy} onClick={() => void openNextUnread()}
                   title={`Открыть: ${nextUnread.title}`}>{nextUnreadBusy ? "Проверяем…" : "Следующий непрочитанный"}</button>}
@@ -2080,9 +2080,9 @@ function GroupContent() {
             {chat && (chat.kind !== "group" || (thread !== "list" && isChatChannel(thread))) && <>
             <div className="group-thread-tools">
             <div className="row group-thread-heading">
-              {chat?.kind === "group" && <button className={"btn" + (topicPage || thread !== "list" && thread.topicId === null ? " group-redundant-back" : "")} type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setThread("list"); }}>Все разделы</button>}
+              {chat?.kind === "group" && <button className={"btn" + (topicPage || thread !== "list" && thread.topicId === null ? " group-redundant-back" : "")} type="button" onClick={() => { selectionEpoch.current += 1; clearLog(); setThread("list"); }}>Каналы</button>}
               <Avatar kind={chat.kind === "group" ? "group" : "user"} id={chat.kind === "group" ? home.communityId : chat.peerUserId} name={chat.kind === "group" ? home.groupName || home.name : chat.title} />
-              <h2 className={chat?.kind === "group" && thread !== "list" ? "topic-heading" : undefined}>{chat?.kind === "group" && thread !== "list" ? <><TopicMark topic={thread} /> {thread.title}</> : (chat?.title || "Чат")}</h2>
+              <h2 className={chat?.kind === "group" && thread !== "list" && thread.topicId !== null ? "topic-heading" : undefined}>{chat?.kind === "group" && thread !== "list" ? (thread.topicId === null ? "Чат" : <><TopicMark topic={thread} /> {thread.title}</>) : (chat?.title || "Чат")}</h2>
               {chat.kind === "group" && nextUnread && <button className="btn" type="button" disabled={nextUnreadBusy} onClick={() => void openNextUnread()}
                 title={`Открыть: ${nextUnread.title}`}>{nextUnreadBusy ? "Проверяем…" : "Следующий непрочитанный"}</button>}
             </div>
@@ -2186,7 +2186,7 @@ function GroupContent() {
                     {!mine && !grouped && <Avatar kind="user" id={message.senderId} name={message.senderName} className="message-avatar" />}
                     {!mine && !grouped && <b>{message.senderName}</b>}
                     {message.replyTo && <button type="button" className="btn quiet quote" onClick={() => setError(revealQuote(log,message.replyTo!,"group-message-"))}>↳ {log.find(item => item.messageId === message.replyTo)?.body || "Сообщение"}</button>}
-                    <div>{download
+                    <div className="message-text">{download
                       ? download.kind === "file"
                         ? <button className="group-media-download" type="button" disabled={mediaBusy.includes(download.href)} onClick={() => { setMenu(null); void downloadMedia(download); }}>{mediaBusy.includes(download.href) ? "Загрузка…" : download.label}</button>
                         : <GroupInlineMedia download={download} busy={mediaBusy.includes(download.href)} onDownload={() => { setMenu(null); void downloadMedia(download); }} />

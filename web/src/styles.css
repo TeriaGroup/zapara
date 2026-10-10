@@ -342,6 +342,13 @@ input::placeholder, textarea::placeholder { color: var(--field-placeholder); opa
 .message-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
 .message-action-toggle { border: 0; background: transparent; border-radius: 8px; color: inherit; }
 .message-action-toggle:hover, .message-action-toggle:focus-visible { background: var(--selection); }
+/* #17: свои — справа с заливкой без полосы-цитаты; время и «···» в строке с текстом, справа внизу; «···» на телефоне ≥44 px */
+.bubble.mine { border-left: 0; }
+.bubble { display: flow-root; }
+.bubble > .message-text, .bubble > .text { display: inline; }
+.bubble > .message-meta, .bubble > .meta { float: right; display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; margin: 4px -6px -6px 12px; }
+.bubble .message-action-toggle { color: var(--text); }
+@media (pointer: coarse) { .bubble .message-action-toggle, .bubble > .meta .tool { min-width: 44px; min-height: 44px; } }
 .message-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .copy-notice { margin: 0; }
 .topics { display: flex; flex-direction: column; gap: 10px; }
