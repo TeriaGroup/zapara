@@ -65,4 +65,10 @@
         vertical-align: bottom;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
+    /* r2: «Последние действия» на инфопанели — на телефоне только первые 5 (RecentAudit::PHONE_LIMIT). */
+    @media (max-width: 767px) {
+        .zp-recent-audit-extra {
+            display: none !important;
+        }
+    }
 </style>
