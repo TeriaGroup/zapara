@@ -11,7 +11,8 @@ const webKey: Record<string, string> = { schedule: "Schedule", week: "Week", sum
   maps: "Maps", friends: "Friends", homework: "Homework", chat: "Chat", community: "Community", group: "Group", settings: "Settings" };
 
 const webItems = [...web.slice(web.indexOf("const items"), web.indexOf("];", web.indexOf("const items")))
-  .matchAll(/\["(\w+)", "[^"]+", "(\w+)"\]/g)].map(m => ({ key: webKey[m[1]], icon: m[2].toLowerCase() }));
+  // подпись пункта — литерал или ключ каталога S.* (G-3, #98)
+  .matchAll(/\["(\w+)", (?:"[^"]+"|S\.\w+), "(\w+)"\]/g)].map(m => ({ key: webKey[m[1]], icon: m[2].toLowerCase() }));
 const desktopItems = [...desktop.matchAll(/Make\(SectionKey\.(\w+), "\w+", "Icon\.(\w+)"/g)]
   .map(m => ({ key: m[1], icon: m[2].toLowerCase() }));
 
