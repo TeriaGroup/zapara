@@ -15,7 +15,7 @@ public class GlossaryTests
     [InlineData("noLessonsShort", "Пар нет")]
     [InlineData("noLessonsDay", "Пар нет")]
     [InlineData("emptyWeek", "Пар нет")]
-    [InlineData("breaksTitle", "Перерывы")]
+    [InlineData("breaksTitle", "Перерывы и окна")]
     [InlineData("hwMarkDone", "Выполнено")]
     [InlineData("hwGroupDone", "Выполнено")]
     [InlineData("hwDone", "выполнено")]
@@ -26,7 +26,7 @@ public class GlossaryTests
     [Fact]
     public void Formats_follow_the_glossary()
     {
-        Assert.Equal("Открыто: 2 · Выполнено: 0", I18n.T("hwOpenDone", 2, 0));
+        Assert.Equal("открыто 2 · выполнено 0", I18n.T("hwOpenDone", 2, 0));
         Assert.Equal("пн, 12 окт.", LessonText.ShortDate(new DateTime(2026, 10, 12)));
         Assert.Equal("Следующая пара: пн, 12 окт., 10:50", I18n.T("nextLessonHint", LessonText.ShortDate(new DateTime(2026, 10, 12)), "10:50"));
         Assert.Equal("268 (Фесто)", LessonText.CleanRoom("268(фесто)"));
