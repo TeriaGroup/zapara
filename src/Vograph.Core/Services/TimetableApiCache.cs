@@ -40,6 +40,7 @@ public sealed class TimetableApiCache(Database db)
         Validate(snapshot);
         if (selectedGroupId is not null && !snapshot.DownloadedGroups.ContainsKey(selectedGroupId))
             throw new TimetableApiException(TimetableApiFailure.InvalidPayload);
+        using var write = db.EnterWrite(); // #154
         using var tx = db.Connection.BeginTransaction();
         // Capture old legacy periods before any later settings save can copy the selected API period.
         var settings = db.GetSettings();

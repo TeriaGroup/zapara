@@ -65,6 +65,7 @@ public class ParserService
             throw new InvalidOperationException(TimetableParser.OlderTimetable);
 
         // Preserve overrides/homework (do not delete them) — only refresh schedule_cache and groups
+        using var write = _db.EnterWrite(); // #154: no await below in this method
         using var tx = _db.Connection.BeginTransaction();
         try
         {
@@ -132,6 +133,7 @@ public class ParserService
         if (TimetableParser.IsOlderPeriod(parsed.PeriodStart, existing.PeriodStart, existing.LastFetchedAt))
             throw new InvalidOperationException(TimetableParser.OlderTimetable);
 
+        using var write = _db.EnterWrite(); // #154: no await below in this method
         using var tx = _db.Connection.BeginTransaction();
         try
         {
