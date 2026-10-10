@@ -138,4 +138,21 @@ class CommunityResourcesTest extends TestCase
         $this->assertTrue(GroupsRelationManager::canViewForRecord($community, ViewCommunity::class));
         $this->assertTrue(StaffRelationManager::canViewForRecord($community, ViewCommunity::class));
     }
+
+    /** Ревью: колонки времени «Привязана» и «Назначен» помечены МСК, как «Когда (МСК)» в журнале. */
+    public function test_assignment_and_link_time_columns_are_marked_moscow(): void
+    {
+        $this->actingAs($this->makeUser(true));
+        $community = Community::query()->findOrFail($this->makeCommunity('Группа '.$this->token('c')));
+        $owner = ['ownerRecord' => $community, 'pageClass' => ViewCommunity::class];
+        $label = fn (string $expected) => fn ($column): bool => $column->getLabel() === $expected;
+
+        Livewire::test(GroupsRelationManager::class, $owner)
+            ->assertTableColumnExists('created_at', $label('Привязана (МСК)'));
+        Livewire::test(StaffRelationManager::class, $owner)
+            ->assertTableColumnExists('assigned_at', $label('Назначен (МСК)'));
+        Livewire::test(ManageStaffAssignments::class)
+            ->assertTableColumnExists('assigned_at', $label('Назначен (МСК)'));
+    }
 }
+
