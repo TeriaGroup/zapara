@@ -596,6 +596,12 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
 :root { --danger-ink: var(--bad); }
 :root[data-theme="light"] { --danger-ink: #b42318; }
 .homework-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; }
+/* #9 (G-2): строка задания с действиями — область нажатия, как .lesson-open у пары. Флажок, ссылки и кнопки лежат поверх. */
+.homework-row:has(> .homework-open) { position: relative; }
+.homework-open { position: absolute; inset: -8px; z-index: 0; border: 0; border-radius: 8px; background: transparent; padding: 0; margin: 0; cursor: pointer; }
+.homework-open:hover { background: var(--selection); }
+.homework-row:has(> .homework-open) > :not(.homework-open) { position: relative; z-index: 1; pointer-events: none; }
+.homework-row:has(> .homework-open) :is(input, button:not(.homework-open), a, .chip[aria-label]) { pointer-events: auto; }
 .homework-row > .homework-check { padding-top: 2px; }
 .homework-check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
 .homework-row-body { display: grid; gap: 2px; min-width: 0; }

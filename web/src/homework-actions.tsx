@@ -7,12 +7,16 @@ export type HomeworkAction = { label: string; icon?: Parameters<typeof Icon>[0][
 /**
  * Действия задания в «⋯» (#15): на карточке остаются только предмет, текст, срок и чекбокс.
  * «Удалить» — опасное действие, последним пунктом и только после подтверждения.
+ * Лист открывается и кнопкой «⋯», и нажатием на строку задания (#9, G-2).
  */
 export function HomeworkActions({ title, actions, onDelete }: { title: string; actions: HomeworkAction[]; onDelete?: () => void }) {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const close = () => { setOpen(false); setConfirm(false); };
   return <>
+    {/* #9 (G-2): нажатие в любое место строки задания открывает этот же лист — как карточка пары (.lesson-open) и
+        карточка задания на desktop. Для клавиатуры и экранного диктора действие одно — кнопка «⋯» ниже. */}
+    <button className="homework-open" type="button" tabIndex={-1} aria-hidden="true" onClick={() => setOpen(true)} />
     <button className="icon-btn quiet homework-more" type="button" aria-haspopup="dialog" aria-expanded={open} aria-label={`Действия: ${title}`} onClick={() => setOpen(true)}><Icon name="more" size={18} /></button>
     {open && <Sheet title={confirm ? "Удалить задание?" : "Действия с заданием"} onClose={close}>
       {!confirm ? <div className="homework-action-list">
