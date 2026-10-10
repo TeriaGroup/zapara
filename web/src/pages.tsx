@@ -90,11 +90,12 @@ import { useCompactLayout } from "./mobile-chrome";
 import type { BallotBoard, ChatMessage, Community, Conversation, FriendItem, GroupDesk, GroupHome, GroupHomeworkCopy, GroupTopic, GroupTopicPage, HomeworkAudience, HomeworkFile, HomeworkItem, Lesson, MapPlan, Teacher, TeacherLesson } from "./types";
 
 import { PageHead as Head } from "./page-head";
-import { lessonKind, lessonKindLabels as typeLabels } from "./ui/lesson-kind.ts";
+import { S, subjectText, subjectShort, teacherText, roomText, metaLine, typeLabel as lessonTypeLabel, lessonKindOf, formatDateTime, formatRange } from "./schedule-text";
 
+// Тип пары и подписи — из общего каталога (#12): design/strings/ru.json → strings.gen.ts.
 function TypeChip({ type }: { type: string }) {
-  const kind = lessonKind(type);
-  return <span className={"type" + (kind ? " " + kind : "")}><i />{kind ? typeLabels[kind] : type}</span>;
+  const kind = lessonKindOf(type);
+  return <span className={"type" + (kind ? " " + kind : "")}><i />{lessonTypeLabel(type)}</span>;
 }
 
 function LessonCard({ lesson, marks = [], presence = [], subgroup, upcoming = false, onPick, status, onOpen, inline }: { lesson: Lesson; marks?: FriendMark[]; presence?: FriendPresence[]; subgroup?: ReturnType<typeof subgroupMark>; upcoming?: boolean; onPick?: (streamId: string, optionId: string) => void; status?: LessonStatus; onOpen?: () => void; inline?: import("react").ReactNode }) {
@@ -108,11 +109,11 @@ function LessonCard({ lesson, marks = [], presence = [], subgroup, upcoming = fa
       <div className="lesson-top">
         <span className="time" aria-label={upcoming ? `Предстоит: ${lesson.timeStart} – ${lesson.timeEnd}` : undefined}>{lesson.timeStart} – {lesson.timeEnd}</span>
         {lesson.typeRaw?.trim() && <TypeChip type={lesson.typeRaw.trim()} />}
-        <span className="chip">{lesson.roomRaw || lesson.classroomRaw || "—"}</span>
+        <span className="chip">{roomText(lesson.classroomRaw) || roomText(lesson.roomRaw) || "—"}</span>
       </div>
       <div>
-        <strong className="subject">{lesson.subjectRaw}</strong>
-        <div className="muted">{lesson.teacherRaw}</div>
+        <strong className="subject" title={subjectText(lesson.subjectRaw, lesson.typeRaw).full}>{subjectShort(lesson.subjectRaw, lesson.typeRaw)}</strong>
+        {teacherText(lesson.teacherRaw) && <div className="muted">{teacherText(lesson.teacherRaw)}</div>}
         {subgroup?.showChooser && (
           <div className="row" style={{ marginTop: 8 }}>
             <span className="muted">{subgroup.chosenId ? "Ваша подгруппа" : "Выберите подгруппу"}</span>
@@ -258,7 +259,7 @@ export function SchedulePage() {
         <button className="icon-btn quiet" type="button" title="Следующий день" aria-label="Следующий день" onClick={() => app.setDate(addDays(app.date, 1))}><Icon name="right" /></button>
         <Link className="btn" to="/week">Неделя</Link>
         {hero && <button className="btn quiet" type="button" onClick={() => focusElement(`schedule-lesson-${lessons.indexOf(hero)}`)}>К ближайшей паре</button>}
-        <button className="btn quiet" type="button" onClick={() => focusElement("schedule-deadlines")}>К срокам домашки</button>
+        <button className="btn quiet" type="button" onClick={() => focusElement("schedule-deadlines")}>{S.toDeadlines}</button>
       </div>
       <Link className="btn quiet study-mobile-week" to="/week">Неделя</Link>
       </>}
@@ -294,17 +295,17 @@ export function SchedulePage() {
               {!outsidePeriod && <p className="muted">Учебное время: {dayLoad(lessons).minutes} мин · Перерывы и окна: {dayLoad(lessons).gaps} мин</p>}
               <div className="study-day-action-links">
                 {hero && <button className="btn quiet" type="button" onClick={() => focusElement(`schedule-lesson-${lessons.indexOf(hero)}`)}>К ближайшей паре</button>}
-                <button className="btn quiet" type="button" onClick={() => focusElement("schedule-deadlines")}>К срокам домашки</button>
+                <button className="btn quiet" type="button" onClick={() => focusElement("schedule-deadlines")}>{S.toDeadlines}</button>
               </div>
               <TimetableExportTools days={[{date:app.date,lessons,known:!outsidePeriod}]} groupId={app.groupId} groupName={groupName}/>
             </div>
           </div>
         </div>}
       </main>
-      <aside id="schedule-deadlines" tabIndex={-1} className="stack day-context"><h2>Ближайшие сроки · {deadlines.length + sharedDeadlines.length}</h2><p className="muted">{app.date.toLocaleDateString("ru-RU")}–{addDays(app.date, 2).toLocaleDateString("ru-RU")}</p>
+      <aside id="schedule-deadlines" tabIndex={-1} className="stack day-context"><h2>{S.deadlinesTitle} · {deadlines.length + sharedDeadlines.length}</h2><p className="muted">{formatRange(app.date, addDays(app.date, 2))}</p>
         {deadlines.length + sharedDeadlines.length === 0 && <p className="muted">На выбранные дни заданий нет</p>}
-        {deadlines.map(item => <article className="deadline" key={item.id}><label className="check"><input type="checkbox" checked={item.done} aria-label={`Готово у меня: ${item.text}`} onChange={() => { const saved=app.homework.find(row=>row.id===item.id);if(!saved)return;setSharedUndo(null); setUndo({ id: saved.id, done: saved.done }); app.saveHomework({ ...saved, done: !saved.done }); }} /><Link to={`/homework?id=${item.id}&subject=${encodeURIComponent(item.subject)}`}><span className={item.done ? "done-title" : ""}>{item.text}</span><small>{item.subject}</small></Link></label><p className="muted">{item.done ? "Готово у меня · " : ""}{item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}{!item.done && item.deadlineAt && dueBucket(item.deadlineAt,now,"date")==="overdue" ? " · Просрочено" : ""}</p></article>)}
-        {sharedDeadlines.map(item => { const copy = visibleSharedHomework.find(row => row.homeworkId === item.id); return <article className="deadline" key={item.id}><Link to={`/homework?sharedId=${encodeURIComponent(item.id)}&subject=${encodeURIComponent(item.subject)}`}><b>{item.text}</b></Link><p className="muted">{audienceLabel(copy?.audience)} · {item.subject} · {item.deadlineAt ? new Date(item.deadlineAt).toLocaleString("ru-RU") : "Без срока"}</p>{copy?.canComplete !== false && <label className="check"><input type="checkbox" aria-label={`Готово у меня: ${item.text}`} checked={item.done} disabled={sharedBusy} onChange={() => { if (copy) void changeSharedCompletion(copy, !copy.completed); }} />Готово у меня</label>}</article>; })}
+        {deadlines.map(item => <article className="deadline" key={item.id}><label className="check"><input type="checkbox" checked={item.done} aria-label={`Выполнено: ${item.text}`} onChange={() => { const saved=app.homework.find(row=>row.id===item.id);if(!saved)return;setSharedUndo(null); setUndo({ id: saved.id, done: saved.done }); app.saveHomework({ ...saved, done: !saved.done }); }} /><Link to={`/homework?id=${item.id}&subject=${encodeURIComponent(item.subject)}`}><span className={item.done ? "done-title" : ""}>{item.text}</span><small>{subjectShort(item.subject)}</small></Link></label><p className="muted">{item.done ? "Выполнено · " : ""}{item.deadlineAt ? formatDateTime(item.deadlineAt) : S.noDeadline}{!item.done && item.deadlineAt && dueBucket(item.deadlineAt,now,"date")==="overdue" ? " · Просрочено" : ""}</p></article>)}
+        {sharedDeadlines.map(item => { const copy = visibleSharedHomework.find(row => row.homeworkId === item.id); return <article className="deadline" key={item.id}><Link to={`/homework?sharedId=${encodeURIComponent(item.id)}&subject=${encodeURIComponent(item.subject)}`}><b>{item.text}</b></Link><p className="muted">{metaLine(audienceLabel(copy?.audience), subjectShort(item.subject), item.deadlineAt ? formatDateTime(item.deadlineAt) : S.noDeadline)}</p>{copy?.canComplete !== false && <label className="check"><input type="checkbox" aria-label={`Выполнено: ${item.text}`} checked={item.done} disabled={sharedBusy} onChange={() => { if (copy) void changeSharedCompletion(copy, !copy.completed); }} />Готово у меня</label>}</article>; })}
         {deadlineError && <div className="banner" role="alert">{deadlineError}<button className="btn" onClick={() => setDeadlineRetry(value=>value+1)}>Обновить общую домашку</button></div>}
         {sharedUndo && <div className="banner row" role="status"><span>{sharedUndo.done ? "Отметка снята" : "Отмечено готово"}</span><button className="btn quiet" type="button" disabled={sharedBusy} onClick={()=>{ const item=visibleSharedHomework.find(row=>row.homeworkId===sharedUndo.id); if (item) void changeSharedCompletion(item, sharedUndo.done, true); }}>Отменить</button></div>}
         {undo && <div className="banner row" role="status"><span>{!undo.done ? "Отмечено готово" : "Отметка снята"}</span><button className="btn quiet" type="button" onClick={() => { const item = app.homework.find(row => row.id === undo.id); if (item) app.saveHomework({ ...item, done: undo.done }); setUndo(null); }}>Отменить</button></div>}
@@ -370,7 +371,7 @@ export function WeekPage() {
       {searchOpen && <SearchField label="Найти пару на этой неделе" value={query} onChange={setQuery} />}
       <TimetableState />
       {app.timetableAvailable && visibleDays.length===0 && <FilterEmpty onReset={()=>{setQuery("");setHideEmpty(false);}}/>}
-      <p className="swipe-hint">Смахните, чтобы сменить неделю</p>
+      <p className="swipe-hint">{S.swipeWeekHint}</p>
       <div className="week week-grid swipe date-reveal" {...swipe} ref={node => { swipe.ref(node); dateReveal.current = node; }}>
         {visibleDays.map(({ date, matches: dayLessons, known }) => {
           const isToday = isoDay(date) === today;
@@ -589,9 +590,9 @@ function TeachersContent() {
               {!collapsedDays.includes(day.day) && day.rows.map((row, index) => (
                 <div className="teacher-lesson-row" key={day.day + row.time + row.subject + index}>
                   <div className="time">{row.time}</div>
-                  <strong className="subject">{row.subject}</strong>
+                  <strong className="subject" title={subjectText(row.subject).full}>{subjectShort(row.subject)}</strong>
                   {row.groups && <div className="muted">{row.groups}</div>}
-                  <div className="muted">{row.room}</div>
+                  {roomText(row.room) && <div className="muted">{roomText(row.room)}</div>}
                   {row.room && !/дистанционно/i.test(row.room) && <Link className="btn quiet" to={`/maps?${lessonMapContext(row)}&subject=${encodeURIComponent(row.subject)}`}>Открыть аудиторию</Link>}
                   <div>{row.parityLabel}</div>
                   {row.mine && <div>Моя группа {teacherPeriod&&<button className="btn quiet" type="button" onClick={()=>{if(!teacherAlive.current)return;const date=nextTeacherDay(new Date(),day.day,row.parity,teacherPeriod,app.invert);if(date){app.setDate(date);navigate(`/schedule?date=${isoDay(date)}`);}}}>Открыть день своей группы</button>}</div>}
@@ -1253,7 +1254,7 @@ export function HomeworkPage() {
         <span className="chip">Выполнено: {app.homework.filter(item => item.done).length + safeCopies.filter(item => item.completed).length}</span>
         <span className="muted">Показано: {browsing.shown}{copiesFailed ? " · общая домашка недоступна" : copiesLoading || !copiesReady ? " · общая домашка загружается" : ` из ${browsing.total}`}</span>
       </div>
-      <div className="row homework-filters" role="group" aria-label="Показать задания"><button type="button" className={"chip" + (browse.status === "active" ? " on" : "")} aria-pressed={browse.status === "active"} onClick={() => setBrowse({ status: "active" })}>Активные</button><button type="button" className={"chip" + (browse.status === "done" ? " on" : "")} aria-pressed={browse.status === "done"} onClick={() => setBrowse({ status: "done" })}>Готово у меня</button><button type="button" className={"chip" + (browse.status === "all" ? " on" : "")} aria-pressed={browse.status === "all"} onClick={() => setBrowse({ status: "all" })}>Все</button>{(chosenSubject || exactSubjectKey!==null || browse.query.trim() || browse.status !== "all") && <button type="button" className="btn quiet" onClick={() => { resetFilters(); if (chosenSubject||exactSubjectKey!==null) { const query = new URLSearchParams(location.search); query.delete("subject"); query.delete("subjectKey"); navigate({ pathname: location.pathname, search: query.toString() }); } }}>Сбросить фильтры</button>}</div>
+      <div className="row homework-filters" role="group" aria-label="Показать задания"><button type="button" className={"chip" + (browse.status === "active" ? " on" : "")} aria-pressed={browse.status === "active"} onClick={() => setBrowse({ status: "active" })}>Активные</button><button type="button" className={"chip" + (browse.status === "done" ? " on" : "")} aria-pressed={browse.status === "done"} onClick={() => setBrowse({ status: "done" })}>{S.doneFilter}</button><button type="button" className={"chip" + (browse.status === "all" ? " on" : "")} aria-pressed={browse.status === "all"} onClick={() => setBrowse({ status: "all" })}>Все</button>{(chosenSubject || exactSubjectKey!==null || browse.query.trim() || browse.status !== "all") && <button type="button" className="btn quiet" onClick={() => { resetFilters(); if (chosenSubject||exactSubjectKey!==null) { const query = new URLSearchParams(location.search); query.delete("subject"); query.delete("subjectKey"); navigate({ pathname: location.pathname, search: query.toString() }); } }}>Сбросить фильтры</button>}</div>
       {editorOpen && <Sheet title="Новое задание" onClose={() => { if (!busy) setEditorOpen(false); }}>
       <form id="homework-editor" className="stack homework-compose mobile-homework-compose" aria-busy={busy} aria-describedby={note ? "homework-save-status homework-sheet-status" : "homework-save-status"} onInvalid={() => setNote(validateHomeworkDraft(controller.draft) || "Проверьте поля задания")} onSubmit={event => void add(event)}>
         <fieldset className="stack homework-fields" disabled={busy}>

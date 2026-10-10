@@ -34,11 +34,12 @@
     <WrapPanel Grid.Row="1" ItemSpacing="12" LineSpacing="8" Margin="0,14,0,10">
       <TextBox Width="200" VerticalAlignment="Center" Text="{Binding PlaceSearch, Mode=TwoWay}" PlaceholderText="Найти аудиторию" AutomationProperties.Name="Поиск аудитории на карте" />
       <c:SegmentedControl Name="MapsBuilding" Items="{Binding SegmentItems}" SelectedIndex="{Binding BuildingIndex}" VerticalAlignment="Center" />
+      <TextBlock Classes="muted" Text="{loc:T mapFloor}" VerticalAlignment="Center" />
       <ItemsControl ItemsSource="{Binding Floors}" VerticalAlignment="Center">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" LineSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="m:FloorPill">
-            <Button Classes="pill" Classes.on="{Binding IsSelected}" Content="{Binding Label}"
+            <Button Classes="pill" Classes.on="{Binding IsSelected}" Content="{Binding Number}" ToolTip.Tip="{Binding Label}"
                     Command="{Binding $parent[ItemsControl].((m:MapsViewModel)DataContext).SelectFloorCommand}" CommandParameter="{Binding}"
                     AutomationProperties.AutomationId="Maps.Floor" AutomationProperties.Name="{Binding Label}" />
           </DataTemplate>

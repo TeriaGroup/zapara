@@ -113,7 +113,7 @@ public sealed partial class HomeworkViewModel : ViewModelBase
     [ObservableProperty] private string searchQuery = "";
     partial void OnSearchQueryChanged(string value) => ApplyFilters();
     [ObservableProperty] private int statusFilter;
-    public IReadOnlyList<string> StatusFilters { get; } = ["Активные", "Готово у меня", "Все"];
+    public IReadOnlyList<string> StatusFilters { get; } = ["Активные", "Выполненные", "Все"];
     partial void OnStatusFilterChanged(int value) => ApplyFilters();
     [ObservableProperty] private int deadlineFilter;
     public IReadOnlyList<string> DeadlineFilters { get; } = ["Любой срок", "Просрочено", "Срочно", "Скоро", "Без срока"];
@@ -206,7 +206,7 @@ public sealed partial class HomeworkViewModel : ViewModelBase
         if (_completionUndo is { } undo && !undo.Allows(model.Groups.SelectMany(group => group.Items).FirstOrDefault(item => item.Homework.Id == undo.Id)?.Homework, scope, DateTimeOffset.UtcNow))
             ClearCompletionUndo();
         ApplyFilters();
-        Subtitle = $"{App.Loc.Plural(model.Open, "hwOpen1", "hwOpen2", "hwOpen5")} · {T("hwDoneCount", model.Done)}";
+        Subtitle = $"{T("countOpen", model.Open)} · {T("hwDoneCount", model.Done)}"; // #12: как на web
         OnPropertyChanged(nameof(Title));
         _ = RefreshSharedTasks();
     }

@@ -66,9 +66,9 @@ public class DomainTests
         Assert.Equal(expected, LessonText.CleanRoom(raw));
 
     [Theory]
-    [InlineData("лек ВЫСШ. МАТЕМАТ", "лек", "ВЫСШ. МАТЕМАТ")]
+    [InlineData("лек ВЫСШ. МАТЕМАТ", "лек", "Высшая математика")] // #12: читаемое имя из словаря
     [InlineData("Матан", "лек", "Матан")]
-    [InlineData("пр ОСН РОС ГОС", "пр", "ОСН РОС ГОС")]
+    [InlineData("пр ОСН РОС ГОС", "пр", "Основы российской государственности")]
     [InlineData("практика", "практика", "практика")]
     [InlineData("лекарство от скуки", "лек", "лекарство от скуки")]
     public void StripType_Removes_Only_The_Leading_Type_Token(string name, string type, string expected) =>

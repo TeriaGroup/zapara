@@ -22,16 +22,16 @@ public class ScheduleLogicTests
 
     [Fact]
     public void Subtitle_Joins_Date_Parity_Week_And_Count() =>
-        Assert.Equal("Понедельник, 7 сентября · нечетная неделя · неделя 1 · 2 пары", DayTitles.Subtitle(Mon, isOdd: true, weekNumber: 1, lessonCount: 2, Ru));
+        Assert.Equal("Понедельник, 7 сентября · нечётная неделя · неделя 1 · 2 пары", DayTitles.Subtitle(Mon, isOdd: true, weekNumber: 1, lessonCount: 2, Ru));
 
     [Fact]
     public void Subtitle_Without_Lessons_Says_So() =>
         Assert.EndsWith("· Пар нет", DayTitles.Subtitle(Mon.AddDays(1), false, 2, 0, Ru));
 
     [Theory]
-    [InlineData("лек", "лекция")]
-    [InlineData("пр", "практика")]
-    [InlineData("лаб", "лабораторная")]
+    [InlineData("лек", "Лекция")]
+    [InlineData("пр", "Практика")]
+    [InlineData("лаб", "Лабораторная")]
     [InlineData("", "")]
     [InlineData("сем", "сем")]
     public void TypeLabel_Maps_Known_Types(string raw, string expected) => Assert.Equal(expected, DayTitles.TypeLabel(raw, Ru));

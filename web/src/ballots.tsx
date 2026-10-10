@@ -8,6 +8,7 @@ import { emptyId, groupPowers } from "./powers";
 import type { Ballot, BallotBoard, Classmate, GroupRole } from "./types";
 import { ballotDraftProblem } from "./ux300";
 import { useClock } from "./ux300-controls";
+import { formatDateTime } from "./schedule-text";
 
 function plural(n: number, one: string, few: string, many: string) {
   const mod10 = n % 10;
@@ -103,7 +104,7 @@ function BallotForm({ storageKey, title, hint, submitLabel, action, onDone, onEr
         </select>
         <button className="btn primary" type="submit" disabled={busy || !!problem}>{submitLabel}</button><button className="btn quiet" type="button" disabled={busy} onClick={() => { if (window.confirm("Удалить черновик этого голосования?")) clearDraft(draft); }}>Удалить черновик</button>
       </div>
-      <p className="muted">Закроется примерно {new Date(now.getTime() + days * 86_400_000).toLocaleString("ru-RU")}</p>{problem && <p role="status">{problem}</p>}
+      <p className="muted">Закроется примерно {formatDateTime(new Date(now.getTime() + days * 86_400_000))}</p>{problem && <p role="status">{problem}</p>}
     </form>
   );
 }

@@ -22,7 +22,7 @@ public class SummaryDrilldownUx300Tests : UiTest
         Assert.Equal(SectionKey.Schedule, shell.CurrentKey);
         await Waits.Until(() => shell.Section<Vograph.Desktop.Features.Schedule.ScheduleViewModel>(SectionKey.Schedule).Date == first.Date,
             "summary exact lesson date");
-        var type = vm.Types.Single(row => row.Name == "лекция");
+        var type = vm.Types.Single(row => row.Name == "Лекция");
         vm.OpenSummaryTypeCommand.Execute(type);
         Assert.Equal(type.Count, vm.SummaryMatches.Count);
     }

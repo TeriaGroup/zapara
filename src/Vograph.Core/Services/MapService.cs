@@ -376,7 +376,7 @@ public class MapService
                 {
                     try
                     {
-                        progress?.Report($"Копирование {kv.Key.building} {kv.Key.floor} из пакета...");
+                        progress?.Report($"Копирование {kv.Key.building} {kv.Key.floor} из пакета…");
                         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                         File.Copy(bundled, path, true);
                         progress?.Report($"Готово {Path.GetFileName(path)} (из пакета)");

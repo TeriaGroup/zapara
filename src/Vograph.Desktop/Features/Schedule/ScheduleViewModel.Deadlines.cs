@@ -23,7 +23,8 @@ public sealed partial class ScheduleViewModel
     public bool HasDeadlineFeedback=>DeadlineFeedback.Length>0;
     public bool HasNextStudyDate=>NextStudyDate is not null;
     public string NextStudyCaption=>NextStudyDate is {} date?$"Следующий учебный день · {date.ToString("d MMMM", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))}" : "";
-    public string DeadlineTitle=>$"Ближайшие сроки · {Deadlines.Count} заданий · готово {Deadlines.Count(x=>x.Done)}";
+    // #12: как на web — «Ближайшие сроки · N».
+    public string DeadlineTitle=>$"{Vograph.Desktop.Services.Loc.Current.T("deadlinesTitle")} · {Deadlines.Count}";
     public string DeadlineAttention=>$"Невыполненные сроки: {Deadlines.Count(x=>!x.Done)}";
     public bool HasDeadlineAttention=>Deadlines.Any(row=>!row.Done);
     private void RefreshDeadlineSummary()
@@ -151,7 +152,7 @@ public sealed partial class PlannerDeadlineRow : ObservableObject
     [ObservableProperty] private string subject="";
     [ObservableProperty] private string deadline="";
     [ObservableProperty] private bool done;
-    public string CompletionCaption=>Done?"Готово у меня":"Готово у меня: "+Text;
+    public string CompletionCaption=>Done?"Выполнено":"Выполнено: "+Text;
     partial void OnDoneChanged(bool value)=>OnPropertyChanged(nameof(CompletionCaption));
     public IAsyncRelayCommand OpenCommand{get;} public IAsyncRelayCommand ToggleCommand{get;} public IRelayCommand DiscussCommand{get;}
     internal void Update(string text,string subject,DateTime? due,bool done,bool overdue){Text=text;Subject=subject;Due=due;Done=done;Deadline=due is {} date?$"{date:dd.MM.yyyy}"+(overdue?" · Просрочено":""):"Без срока";}

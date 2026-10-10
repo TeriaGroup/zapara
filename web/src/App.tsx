@@ -14,6 +14,7 @@ import { SearchField, useRoutePosition, focusRouteHeading, useClock } from "./ux
 import { MobileChromeContext, useCompactLayout, useMobileKeyboard } from "./mobile-chrome";
 import { showGroupChip, mobileTabForPath, studyGroupCaption } from "./mobile-navigation";
 import { PageHead } from "./page-head";
+import { S } from "./strings.gen";
 
 const items: [string, string, IconName][] = [
   ["schedule", "Расписание", "calendar"],
@@ -76,7 +77,7 @@ function Shell() {
     <MobileChromeContext.Provider value={chrome}>
     <div className="app" data-mobile-keyboard={keyboardOpen ? "open" : "closed"}>
       <aside className="sidebar">
-        <NavLink to="/schedule" className="brand">Расписание военмех</NavLink>
+        <NavLink to="/schedule" className="brand">{S.productName}</NavLink>
         <p className="caption">Расписание и карты Военмеха</p>
         <button className="group-card" onClick={() => navigate("/settings?section=study")} type="button">
           <span className="with-ico"><Icon name="users" size={16} /> Моя группа</span>

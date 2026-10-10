@@ -89,7 +89,7 @@ public sealed class SpaceModelsTests
     {
         var row=new PlannerDeadlineRow("local:1",()=>Task.CompletedTask,r=>{r.Done=!r.Done;return Task.CompletedTask;},()=>{});
         row.Update("Задание","Предмет",new DateTime(2026,9,30),false,false);
-        await row.ToggleCommand.ExecuteAsync(null);Assert.True(row.Done);Assert.Equal("Готово у меня",row.CompletionCaption);
+        await row.ToggleCommand.ExecuteAsync(null);Assert.True(row.Done);Assert.Equal("Выполнено",row.CompletionCaption);
         await row.ToggleCommand.ExecuteAsync(null);Assert.False(row.Done);Assert.Contains("Задание",row.CompletionCaption);
     }
     [Fact] public void Question_editor_deduplicates_options_and_never_adds_options_to_text()
