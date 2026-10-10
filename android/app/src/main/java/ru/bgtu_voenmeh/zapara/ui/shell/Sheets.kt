@@ -65,13 +65,13 @@ fun SectionsSheet(current: Section, onPick: (Section) -> Unit, onDismiss: () -> 
             trailingIcon = if (query.isNotEmpty()) {{ ZIconButton(R.drawable.ic_x,
                 stringResource(R.string.ux100_common_clear_search), { query = "" }, "Sections.ClearSearch") }} else null)
         Spacer(Modifier.height(Zapara.space.s))
+        val columns = if (LocalDensity.current.fontScale >= 1.5f) 1 else 2 // крупный шрифт — одна колонка, без обрезки
         LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 600.dp).clipToBounds(), verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
             if (visibleGroups.isEmpty()) item {
                 Text(stringResource(R.string.ux100_common_section_empty), color = c.text2)
                 ZButton(stringResource(R.string.ux100_common_clear_search), { query = "" }, ghost = true)
             }
             val sections = visibleGroups.flatMap { it.second }
-            val columns = if (LocalDensity.current.fontScale >= 1.5f) 1 else 2
             SectionsGrid.rows(sections, columns).forEach { row ->
                 item(key = row.joinToString("|") { it.route }) {
                     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs)) {
