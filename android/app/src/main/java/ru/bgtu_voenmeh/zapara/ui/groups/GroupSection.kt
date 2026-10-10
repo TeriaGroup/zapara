@@ -773,13 +773,8 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                 "red" -> c.bad
                 else -> null
             }
-            val iconRes = when (channel.icon) {
-                "💬" -> R.drawable.ic_chat
-                "📌" -> R.drawable.ic_pin
-                "🗳️" -> R.drawable.ic_ballot
-                "📚" -> R.drawable.ic_homework
-                else -> null
-            }
+            val iconView = ChannelIcons.resolve(channel.icon, channel.kind) // #30: имя значка не показывается текстом
+            val iconRes = (iconView as? ChannelIconView.Glyph)?.glyph?.drawable
             val preview = if (channel.kind == "ballots") stringResource(R.string.channel_ballot_count, channel.activeBallots)
                 else if (!channel.lastBody.isNullOrBlank()) {
                     if (channel.lastAuthor.isNullOrBlank()) channel.lastBody!! else "${channel.lastAuthor}: ${channel.lastBody}"
@@ -797,7 +792,7 @@ private fun ChannelList(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
                             Box(contentAlignment = Alignment.Center) {
                                 if (iconRes != null) Icon(painterResource(iconRes), null, tint = c.text1,
                                     modifier = Modifier.size(20.dp))
-                                else Text(channel.icon, style = Zapara.typography.section, color = c.text1)
+                                else Text((iconView as ChannelIconView.Emoji).text, style = Zapara.typography.section, color = c.text1)
                             }
                         }
                         Column(Modifier.weight(1f)) {
