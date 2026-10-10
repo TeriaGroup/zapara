@@ -125,7 +125,8 @@
                               <TextBlock Text="{Binding TypeLabel}" />
                             </Border>
                           </StackPanel>
-                          <Border Grid.Column="2" Classes="chip" VerticalAlignment="Center">
+                          <Border Grid.Column="2" Classes="chip" VerticalAlignment="Center"
+                                  IsVisible="{Binding Room, Converter={x:Static loc:RoomChip.Visible}}">
                             <TextBlock Classes="tnum" Text="{Binding Room}" />
                           </Border>
                         </Grid>
