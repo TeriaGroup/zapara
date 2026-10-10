@@ -2,6 +2,7 @@
 export const S = {
   "productName": "Расписание военмех",
   "scheduleTitle": "Расписание",
+  "navChats": "Чаты",
   "parityOdd": "нечётная",
   "parityEven": "чётная",
   "parityOddTitle": "Нечётная",

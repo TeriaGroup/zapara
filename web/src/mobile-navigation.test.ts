@@ -60,6 +60,21 @@ test("r2: at 200% zoom (720×450) the bottom nav is compact and pages reserve it
   assert.doesNotMatch(narrow, /display: none/); // подпись остаётся доступным именем
   const app = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
   const nav = app.slice(app.indexOf('<nav className="bottom"'), app.indexOf("</nav>", app.indexOf('<nav className="bottom"')));
-  for (const label of ["Расписание", "Карты", "Домашка", "Чаты", "Разделы"]) assert.ok(nav.includes(`<span className="bottom-label">${label}</span>`), label);
+  for (const label of ["Расписание", "Карты", "Домашка", "Разделы"]) assert.ok(nav.includes(`<span className="bottom-label">${label}</span>`), label);
+  assert.ok(nav.includes('<span className="bottom-label">{S.navChats}</span>'), "Чаты (из каталога)");
   assert.ok(app.includes("bottomNavReserve(node.getBoundingClientRect().height)") && !app.includes("Math.max(64,"));
+});
+
+test("G-3: the chats section is «Чаты» everywhere — tab, «Разделы», fallback title and the inbox heading — from the catalog", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { S } = await import("./strings.gen.ts");
+  assert.equal(S.navChats, "Чаты");
+  const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+  const chat = readFileSync(new URL("./chat.tsx", import.meta.url), "utf8");
+  assert.match(app, /\["chat", S\.navChats, "chat"\]/, "«Разделы» list");
+  assert.match(app, /selectedTab === "chat" \? S\.navChats :/, "fallback title");
+  assert.match(app, /<span className="bottom-label">\{S\.navChats\}<\/span>/, "bottom tab");
+  assert.equal((chat.match(/<PageHead title=\{S\.navChats\}/g) ?? []).length, 2, "inbox heading, signed in and out");
+  for (const [name, text] of [["App.tsx", app], ["chat.tsx", chat]] as const)
+    assert.doesNotMatch(text, /"Чат"(?! *\])|>Чаты?</, `${name}: section name written by hand`);
 });

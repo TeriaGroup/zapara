@@ -24,7 +24,7 @@ const items: [string, string, IconName][] = [
   ["maps", "Карты", "map"],
   ["friends", "Пересечения", "friends"],
   ["homework", "Домашка", "homework"],
-  ["chat", "Чат", "chat"],
+  ["chat", S.navChats, "chat"],
   ["community", "Сообщество", "community"],
   ["group", "Группа", "users"],
   ["settings", "Настройки", "settings"]
@@ -71,7 +71,7 @@ function Shell() {
   useEffect(()=>{if(!menu)return;const close=(event:KeyboardEvent)=>{if(event.key==="Escape"){event.preventDefault();setMenu(false);}};window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close);},[menu]);
   const group = app.catalog?.groups.find(item => item.id === app.groupId);
   const selectedTab = mobileTabForPath(location.pathname);
-  const fallbackTitle = items.find(([path]) => location.pathname === `/${path}`)?.[1] || (selectedTab === "chat" ? "Чат" : "Расписание");
+  const fallbackTitle = items.find(([path]) => location.pathname === `/${path}`)?.[1] || (selectedTab === "chat" ? S.navChats : S.scheduleTitle);
   const groupLabel = studyGroupCaption(group?.name, app.catalog?.period, now, app.invert);
   return (
     <MobileChromeContext.Provider value={chrome}>
@@ -127,7 +127,7 @@ function Shell() {
           <NavLink to="/schedule" className={selectedTab === "schedule" ? "active" : ""}><Icon name="calendar" /><span className="bottom-label">Расписание</span></NavLink>
           <NavLink to="/maps" className={selectedTab === "maps" ? "active" : ""}><Icon name="map" /><span className="bottom-label">Карты</span></NavLink>
           <NavLink to="/homework" className={selectedTab === "homework" ? "active" : ""}><Icon name="homework" /><span className="bottom-label">Домашка</span></NavLink>
-          <NavLink to="/chat" className={selectedTab === "chat" ? "active" : ""} aria-current={selectedTab === "chat" ? "page" : undefined}><Icon name="chat" /><span className="bottom-label">Чаты</span></NavLink>
+          <NavLink to="/chat" className={selectedTab === "chat" ? "active" : ""} aria-current={selectedTab === "chat" ? "page" : undefined}><Icon name="chat" /><span className="bottom-label">{S.navChats}</span></NavLink>
           <button type="button" className={menu ? "active" : ""} aria-expanded={menu} aria-controls={menu ? "sections-menu" : undefined} onClick={() => { setMenuQuery(""); setMenu(true); }}><Icon name="menu" /><span className="bottom-label">Разделы</span></button>
         </nav>
       </div>
