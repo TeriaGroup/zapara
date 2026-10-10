@@ -161,6 +161,9 @@ jobs:
           app_key="base64:$(php -r 'echo base64_encode(random_bytes(32));')"
           echo "::add-mask::$app_key"
           export APP_KEY="$app_key"
+          # Settings come from phpunit.xml and the job env; without an .env file "artisan test" turns every test into
+          # a warning (file_get_contents(.env): No such file or directory).
+          touch .env
           socat "TCP-LISTEN:${PG_PORT},bind=127.0.0.1,fork,reuseaddr" TCP:postgres:5432 &
           for _ in $(seq 1 30); do
             if php -r 'exit(@fsockopen("127.0.0.1", (int) getenv("PG_PORT")) ? 0 : 1);'; then break; fi
