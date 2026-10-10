@@ -59,3 +59,48 @@ test("bulk actions hidden until «Выбрать несколько»; empty sta
   const form = page.slice(page.indexOf('<form id="homework-editor"'), page.indexOf("</form>"));
   assert.match(form, /Личное задание хранится на устройстве/);
 });
+
+test("#9 (G-2): tapping the task row opens the same sheet as «⋯», like a lesson card; the checkbox stays its own", async () => {
+  const { createRequire } = await import("node:module");
+  const { runInNewContext } = await import("node:vm");
+  const ts = (await import("typescript")).default;
+  const require = createRequire(import.meta.url);
+  const source = await readFile(new URL("./homework-actions.tsx", import.meta.url), "utf8");
+  const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  // A tiny hook runtime: the component is called directly, state lives here, a click is the element's onClick.
+  const state: unknown[] = [];
+  let slot = 0;
+  const react = { useState: (initial: unknown) => { const at = slot++; if (!(at in state)) state[at] = initial; return [state[at], (value: unknown) => { state[at] = value; }]; }, useRef: (current: unknown) => ({ current }) };
+  const Sheet = (props: unknown) => props;
+  const context: any = { exports: {}, require: (name: string) => name === "react" ? react : name === "./sheet" ? { Sheet } : name === "./icons" ? { Icon: () => null } : require(name) };
+  runInNewContext(code, context);
+  const render = () => { slot = 0; return context.exports.HomeworkActions({ title: "Физика: задачи", actions: [{ label: "Изменить", onSelect() {} }], onDelete() {} }); };
+  const flat = (node: any): any[] => node == null || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(flat) : [node, ...flat(node.props?.children)];
+  const find = (tree: any, cls: string) => flat(tree).find(n => n.type === "button" && n.props.className?.split(" ").includes(cls));
+  const sheetOpen = (tree: any) => flat(tree).some(n => n.type === Sheet);
+
+  let tree = render();
+  const row = find(tree, "homework-open");
+  assert.ok(row, "row opener");
+  assert.equal(row.props["aria-hidden"], "true", "one accessible action: «⋯»");
+  assert.equal(row.props.tabIndex, -1);
+  assert.equal(sheetOpen(tree), false);
+  row.props.onClick();
+  tree = render();
+  assert.equal(sheetOpen(tree), true, "tapping the row opens the task sheet");
+  assert.equal(flat(tree).find(n => n.type === Sheet).props.title, "Действия с заданием");
+
+  state.length = 0; tree = render();
+  find(tree, "homework-more").props.onClick();
+  assert.equal(sheetOpen(render()), true, "«⋯» opens the same sheet");
+
+  const css = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  assert.match(css, /\.homework-open \{ position: absolute; inset: -8px; z-index: 0;/);
+  assert.match(css, /\.homework-row:has\(> \.homework-open\) > :not\(\.homework-open, \.sheet\) \{ position: relative; z-index: 1; pointer-events: none; \}/);
+  assert.match(css, /\.homework-row:has\(> \.homework-open\) :is\(input, \.homework-check, button:not\(\.homework-open\), a, \.chip\[aria-label\]\) \{ pointer-events: auto; \}/);
+  // Both task lists (shared copies with edit rights and personal tasks) render HomeworkActions inside .homework-row.
+  for (const marker of ['<HomeworkActions title={item.title}', '<HomeworkActions title={`${item.subject}: ${item.text.slice(0, 80)}`}']) {
+    const at = page.indexOf(marker);
+    assert.ok(at > 0 && page.lastIndexOf('<div className="homework-row">', at) > page.lastIndexOf("</article>", at), marker);
+  }
+});
