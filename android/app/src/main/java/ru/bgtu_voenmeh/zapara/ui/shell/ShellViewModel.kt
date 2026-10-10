@@ -109,6 +109,7 @@ class ShellViewModel(private val container: AppContainer) : ViewModel() {
 
     private fun pickGroup(id: String) {
         val pending = mutable.value.beginGroupPick(id) ?: return
+        val profile = container.profile.databaseName // #123: «Недавние» — профиля, в котором начали выбор
         projectionGate.invalidate()
         mutable.value = pending
         viewModelScope.launch {
@@ -120,6 +121,7 @@ class ShellViewModel(private val container: AppContainer) : ViewModel() {
                         }
                     }
                     container.events.emit(ru.bgtu_voenmeh.zapara.ui.AppEvent.GroupChanged)
+                    recentGroups.push(profile, id) // #123: только после сохранения; неудачный выбор в «Недавние» не попадает
                     val name = mutable.value.groups.firstOrNull { it.id == id }?.name ?: id
                     container.toasts.show(container.app.getString(ru.bgtu_voenmeh.zapara.R.string.toast_group, name), ru.bgtu_voenmeh.zapara.ui.components.ToastKind.Ok)
                     mutable.update { it.copy(overlay = ShellOverlay.None, groupId = id, groupName = name,
@@ -136,6 +138,11 @@ class ShellViewModel(private val container: AppContainer) : ViewModel() {
     fun refresh() {
         viewModelScope.launch { recompute() }
     }
+
+    private val recentGroups by lazy { RecentGroups.of(container.app) }
+
+    /** #123: недавние группы текущего профиля для «Выбрать группу». */
+    fun recentGroupIds(): List<String> = recentGroups.ids(container.profile.databaseName)
 
     private fun save(finished: () -> Unit = {}, transform: (ScheduleRepository.SettingsState) -> ScheduleRepository.SettingsState) {
         viewModelScope.launch {

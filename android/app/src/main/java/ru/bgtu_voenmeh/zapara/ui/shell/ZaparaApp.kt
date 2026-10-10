@@ -158,8 +158,6 @@ private fun ZaparaAppBody(
         val slidePx = with(LocalDensity.current) { 8.dp.roundToPx() }
         ThemeCrossfade(key = Zapara.colors.isDark, motion = motion) {
         val nav = rememberNavController()
-        val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
-        val recentGroups = remember(appContext) { RecentGroups(appContext) } // #108 / AN-19
         val entry by nav.currentBackStackEntryAsState()
         val current = Section.byRoute(entry?.destination?.route) ?: Section.Schedule
         val barCurrent = if (current == Section.Group && !entry?.arguments?.getString("communityId").isNullOrBlank()) Section.Chat else current
@@ -647,11 +645,11 @@ private fun ZaparaAppBody(
                     GroupPickerSheet(
                         groups = state.groups,
                         currentId = state.groupId,
-                        onPick = { id -> recentGroups.push(id); shellVm.onEvent(ShellEvent.PickGroup(id)) },
+                        onPick = { id -> shellVm.onEvent(ShellEvent.PickGroup(id)) },
                         onDismiss = { shellVm.onEvent(ShellEvent.Overlay(ShellOverlay.None)) },
                         busy = state.groupPickPending, error = state.groupPickError,
                         onRetry = { shellVm.onEvent(ShellEvent.RetryGroupPick) },
-                        recentIds = remember(state.overlay) { recentGroups.ids() }
+                        recentIds = remember(state.overlay, state.groupId) { shellVm.recentGroupIds() }
                     )
                 }
             }
