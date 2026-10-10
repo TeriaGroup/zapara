@@ -67,7 +67,7 @@ test("#9 (G-2): tapping the task row opens the same sheet as «⋯», like a les
   // A tiny hook runtime: the component is called directly, state lives here, a click is the element's onClick.
   const state: unknown[] = [];
   let slot = 0;
-  const react = { useState: (initial: unknown) => { const at = slot++; if (!(at in state)) state[at] = initial; return [state[at], (value: unknown) => { state[at] = value; }]; } };
+  const react = { useState: (initial: unknown) => { const at = slot++; if (!(at in state)) state[at] = initial; return [state[at], (value: unknown) => { state[at] = value; }]; }, useRef: (current: unknown) => ({ current }) };
   const Sheet = (props: unknown) => props;
   const context: any = { exports: {}, require: (name: string) => name === "react" ? react : name === "./sheet" ? { Sheet } : name === "./icons" ? { Icon: () => null } : require(name) };
   runInNewContext(code, context);
@@ -94,7 +94,7 @@ test("#9 (G-2): tapping the task row opens the same sheet as «⋯», like a les
   const css = await readFile(new URL("./styles.css", import.meta.url), "utf8");
   assert.match(css, /\.homework-open \{ position: absolute; inset: -8px; z-index: 0;/);
   assert.match(css, /\.homework-row:has\(> \.homework-open\) > :not\(\.homework-open, \.sheet\) \{ position: relative; z-index: 1; pointer-events: none; \}/);
-  assert.match(css, /\.homework-row:has\(> \.homework-open\) :is\(input, button:not\(\.homework-open\), a, \.chip\[aria-label\]\) \{ pointer-events: auto; \}/);
+  assert.match(css, /\.homework-row:has\(> \.homework-open\) :is\(input, \.homework-check, button:not\(\.homework-open\), a, \.chip\[aria-label\]\) \{ pointer-events: auto; \}/);
   // Both task lists (shared copies with edit rights and personal tasks) render HomeworkActions inside .homework-row.
   for (const marker of ['<HomeworkActions title={item.title}', '<HomeworkActions title={`${item.subject}: ${item.text.slice(0, 80)}`}']) {
     const at = page.indexOf(marker);

@@ -48,3 +48,33 @@ test("row rule excludes the sheet and keeps the others above the tap target", ()
   assert.equal(specificity(".homework-row:has(> .homework-open) > :not(.homework-open)").join(), "0,3,0");
   assert.equal(specificity(".sheet").join(), "0,1,0");
 });
+
+// #132, Codex: фокус, вложения и 48px-зона флажка (проверено и в Chromium: Playwright, клики по точкам).
+const actionsSource = readFileSync(new URL("./homework-actions.tsx", import.meta.url), "utf8");
+const pagesSource = readFileSync(new URL("./pages.tsx", import.meta.url), "utf8");
+
+test("row tap focuses the visible ⋯ button before opening, so closing the sheet returns focus there", () => {
+  assert.match(actionsSource, /const openFromRow = \(\) => \{ more\.current\?\.focus\(\); setOpen\(true\); \};/);
+  assert.match(actionsSource, /className="homework-open"[^>]*onClick=\{openFromRow\}/);
+  assert.match(actionsSource, /<button ref=\{more\} className="icon-btn quiet homework-more"/);
+  assert.doesNotMatch(actionsSource, /className="homework-open"[^>]*onClick=\{\(\) => setOpen\(true\)\}/);
+});
+
+test("attachments sit above the row opener's inset", () => {
+  assert.match(pagesSource, /<div className="row homework-files">/);
+  const rule = css.match(/\.homework-task > \.homework-files \{([^}]*)\}/);
+  assert.ok(rule, "rule for attachments");
+  assert.match(rule[1], /position: relative/);
+  assert.match(rule[1], /z-index: 1/);
+  // подложка — z-index 0 и выступает на 8px: вложения (z-index 1, позже в потоке) выше неё
+  assert.match(css, /\.homework-open \{[^}]*inset: -8px[^}]*z-index: 0/);
+});
+
+test("the checkbox label is a 48×48 hit area that takes pointer events", () => {
+  assert.match(css, /\.homework-row:has\(> \.homework-open\) :is\(input, \.homework-check, button:not\(\.homework-open\), a, \.chip\[aria-label\]\) \{ pointer-events: auto; \}/);
+  assert.match(css, /\.homework-row > \.homework-check \{ position: relative;/);
+  const zone = css.match(/\.homework-row > \.homework-check::before \{([^}]*)\}/);
+  assert.ok(zone, "48px zone");
+  assert.match(zone[1], /width: 48px; height: 48px/);
+  assert.match(zone[1], /position: absolute/);
+});

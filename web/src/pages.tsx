@@ -965,7 +965,7 @@ function HomeworkAttachments({ files }: { files: HomeworkFile[] }) {
   }, [files]);
   if (files.length === 0) return null;
   return (
-    <div className="row">
+    <div className="row homework-files">
       {files.map(file => {
         const url = urls[file.id];
         if (!url) return <span className="chip" key={file.id}>{file.name}</span>;

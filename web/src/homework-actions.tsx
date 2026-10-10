@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useRef, useState } from "react";
 import { Icon } from "./icons";
 import { Sheet } from "./sheet";
 
@@ -12,12 +12,16 @@ export type HomeworkAction = { label: string; icon?: Parameters<typeof Icon>[0][
 export function HomeworkActions({ title, actions, onDelete }: { title: string; actions: HomeworkAction[]; onDelete?: () => void }) {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const more = useRef<HTMLButtonElement>(null);
+  // #9: нажатие на строку фокусирует видимую кнопку «⋯» до открытия — Sheet запоминает её и после закрытия вернёт
+  // фокус туда, а не на невидимую кнопку-подложку (aria-hidden, tabIndex -1).
+  const openFromRow = () => { more.current?.focus(); setOpen(true); };
   const close = () => { setOpen(false); setConfirm(false); };
   return <>
     {/* #9 (G-2): нажатие в любое место строки задания открывает этот же лист — как карточка пары (.lesson-open) и
         карточка задания на desktop. Для клавиатуры и экранного диктора действие одно — кнопка «⋯» ниже. */}
-    <button className="homework-open" type="button" tabIndex={-1} aria-hidden="true" onClick={() => setOpen(true)} />
-    <button className="icon-btn quiet homework-more" type="button" aria-haspopup="dialog" aria-expanded={open} aria-label={`Действия: ${title}`} onClick={() => setOpen(true)}><Icon name="more" size={18} /></button>
+    <button className="homework-open" type="button" tabIndex={-1} aria-hidden="true" onClick={openFromRow} />
+    <button ref={more} className="icon-btn quiet homework-more" type="button" aria-haspopup="dialog" aria-expanded={open} aria-label={`Действия: ${title}`} onClick={() => setOpen(true)}><Icon name="more" size={18} /></button>
     {open && <Sheet title={confirm ? "Удалить задание?" : "Действия с заданием"} onClose={close}>
       {!confirm ? <div className="homework-action-list">
         <p className="muted homework-action-title">{title}</p>
