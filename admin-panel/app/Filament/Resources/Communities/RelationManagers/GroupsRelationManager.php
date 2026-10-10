@@ -46,7 +46,7 @@ class GroupsRelationManager extends RelationManager
                 TextColumn::make('group_id')->label('Код группы')->weight('medium')->searchable(),
                 TextColumn::make('group_name')->label('Название в каталоге'),
                 TextColumn::make('created_at')
-                    ->label('Привязана')
+                    ->label('Привязана (МСК)')
                     ->dateTime('j M Y, H:i', 'Europe/Moscow')
                     ->visibleFrom('md'),
             ])
