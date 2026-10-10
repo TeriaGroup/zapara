@@ -1,0 +1,90 @@
+# Release build of the server. SixLabors.ImageSharp 3.2.0 validates a Six Labors license at build time and fails
+# Release builds without one, so the key (a free community key scoped to Zapara.Server.Social and
+# Zapara.Server.Tests) comes from the repository secret SIXLABORS_LICENSE_KEY
+# (Settings → Secrets and variables → Actions). The key is never written to the log or the repository.
+name: server-release
+
+on:
+  push:
+    branches: [develop, master]
+  pull_request:
+    branches: [develop, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run per branch or pull request; a newer push cancels the run still in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    # Self-hosted Linux runner of the owner. The repo is public: never run code from fork pull requests on it.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          clean: true
+          persist-credentials: false
+
+      # The runner user cannot write the default /usr/share/dotnet. The runner context is not available in
+      # job-level env, so the install dir is set on this step; setup-dotnet exports DOTNET_ROOT and PATH for the rest.
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Image upload tests (Debug, no license needed)
+        run: |
+          dotnet build src/Zapara.Server.Tests -c Debug
+          dotnet src/Zapara.Server.Tests/bin/Debug/net8.0/Zapara.Server.Tests.dll \
+            -method "Zapara.Server.Tests.AvatarTests.*" -method "Zapara.Server.Tests.AvatarHttpTests.*" \
+            -method "Zapara.Server.Tests.SocialMediaTests.Photo_*" \
+            -method "Zapara.Server.Tests.SocialMediaTests.Animated_png_is_reduced_to_its_first_frame" \
+            -method "Zapara.Server.Tests.SocialMediaTests.Tiff_named_as_jpeg_is_rejected_by_content" \
+            -method "Zapara.Server.Tests.SocialMediaTests.Decode_gate_limits_concurrent_decodes_and_reports_busy"
+
+      # The license secret is used only for push and workflow_dispatch: pull request runs on the self-hosted
+      # runner never receive it and do only the Debug build and tests above.
+      - name: Check license secret
+        id: license
+        if: github.event_name != 'pull_request'
+        env:
+          SIXLABORS_LICENSE_KEY: ${{ secrets.SIXLABORS_LICENSE_KEY }}
+        run: |
+          # Only push and workflow_dispatch reach this step, so a missing key is a configuration error.
+          if [ -n "$SIXLABORS_LICENSE_KEY" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Repository secret SIXLABORS_LICENSE_KEY is not set; Release builds of the server need it."
+            exit 1
+          fi
+
+      - name: Publish server (Release)
+        if: github.event_name != 'pull_request' && steps.license.outputs.present == 'true'
+        env:
+          SIXLABORS_LICENSE_KEY: ${{ secrets.SIXLABORS_LICENSE_KEY }}
+        run: dotnet publish src/Zapara.Server -c Release -o "$RUNNER_TEMP/server"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: github.event_name != 'pull_request' && steps.license.outputs.present == 'true'
+        with:
+          name: zapara-server
+          path: ${{ runner.temp }}/server
+          retention-days: 7
+
+      # Persistent runner: remove build output and the published server from the workspace and temp dir.
+      - name: Clean up
+        if: always()
+        run: |
+          rm -rf "$RUNNER_TEMP/server"
+          git clean -ffdx

@@ -36,3 +36,6 @@ AGENTS.md
 
 # Mailbox passwords generated next to the compose file
 deploy/server/mail-secrets/
+
+# Six Labors (ImageSharp) build license: personal, never commit
+sixlabors.lic

@@ -39,9 +39,30 @@ public sealed class AvatarTests
         using var source = new Image<Rgba32>(16, 16);
         source.Frames.AddFrame(source.Frames.RootFrame);
         using var input = new MemoryStream();
-        source.SaveAsGif(input);
+        source.SaveAsWebp(input);
+        using (var animated = Image.Load(input.ToArray())) Assert.Equal(2, animated.Frames.Count);
         using var actual = Image.Load(AvatarCompressor.Compress(input.ToArray()));
         Assert.Equal(1, actual.Frames.Count);
+    }
+
+    [Fact]
+    public void Avatar_accepts_only_jpeg_png_and_webp()
+    {
+        using var source = new Image<Rgba32>(32, 32);
+        foreach (var encode in new Action<Stream>[] { s => source.SaveAsJpeg(s), s => source.SaveAsPng(s), s => source.SaveAsWebp(s) })
+        {
+            using var allowed = new MemoryStream();
+            encode(allowed);
+            Assert.Equal("WEBP", System.Text.Encoding.ASCII.GetString(AvatarCompressor.Compress(allowed.ToArray()), 8, 4));
+        }
+        foreach (var encode in new Action<Stream>[] { s => source.SaveAsGif(s), s => source.SaveAsBmp(s), s => source.SaveAsTiff(s), s => source.SaveAsTga(s) })
+        {
+            using var refused = new MemoryStream();
+            encode(refused);
+            var error = Assert.Throws<SocialException>(() => AvatarCompressor.Compress(refused.ToArray()));
+            Assert.Equal(415, error.Status);
+            Assert.Equal(UploadImagePolicy.UnsupportedFormat, error.Code);
+        }
     }
 
     [Fact]

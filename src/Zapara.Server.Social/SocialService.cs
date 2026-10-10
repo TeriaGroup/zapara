@@ -66,7 +66,7 @@ public sealed class SocialService(IAccountUnitOfWork trustedAccounts, SocialConf
 
     public async Task<SocialMessageResponse> SendImageAsync(string token, Guid conversationId, byte[] input, Guid? replyTo = null, CancellationToken ct = default)
     {
-        var (bytes, width, height) = PhotoCompressor.Compress(input);
+        var (bytes, width, height) = await DecodeGate.Shared.RunAsync(() => PhotoCompressor.Compress(input), ct);
         var stored = Guid.NewGuid().ToString("N") + ".webp";
         return await Keep(token, bytes.LongLength, null, stored, bytes, db => db.SendFileAsync(conversationId, "image", stored, "Фото.webp", "image/webp", bytes.Length, width, height, replyTo), ct);
     }

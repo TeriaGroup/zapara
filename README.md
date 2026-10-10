@@ -190,6 +190,10 @@ dotnet publish src/Zapara.Server -c Release -o "$env:ZAPARA_PUBLISH_DIR"
 dotnet test src/Zapara.Web.Tests
 ```
 
+Сервер зависит от SixLabors.ImageSharp 3.2.0. Пакет проверяет лицензию Six Labors при сборке: Release без ключа падает с ошибкой, Debug только предупреждает. Для Release нужен ключ: бесплатный community-ключ Six Labors (<https://licensing.sixlabors.com/>), выданный на сборки `Zapara.Server.Social` и `Zapara.Server.Tests`. Ключ в репозиторий не кладут. Его передают через переменную окружения `SIXLABORS_LICENSE_KEY` (всё содержимое `sixlabors.lic`, работает и для `dotnet publish` выше) или кладут файл `sixlabors.lic` рядом с `src/Zapara.Server.Social/Zapara.Server.Social.csproj` (файл в `.gitignore`).
+
+В GitHub Actions (`.github/workflows/server-release.yml`) Release-публикация сервера берёт ключ из секрета репозитория `SIXLABORS_LICENSE_KEY`. Workflow выполняется на self-hosted раннере (`[self-hosted, Linux, X64]`). Секрет и Release-публикация используются только при push и `workflow_dispatch`; для pull request выполняются только Debug-сборка и тесты загрузки изображений. Без секрета push-сборка падает с понятной ошибкой. Действия закреплены по SHA коммита, новый запуск для той же ветки или PR отменяет предыдущий. Pull request из форков на этом раннере не запускаются (job пропускается), checkout не сохраняет токен в `.git`, а в конце job всегда удаляет опубликованную сборку и неотслеживаемые файлы.
+
 Гостевой запуск из каталога опубликованной сборки:
 
 ```text

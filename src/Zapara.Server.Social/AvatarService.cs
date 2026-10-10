@@ -53,7 +53,7 @@ public sealed class AvatarService(IAccountUnitOfWork accounts, SocialConfigurati
         {
             return communityId is { } group ? await RequireGroupAsync(context, group, true, cancellation) : null;
         }, ct);
-        var bytes = AvatarCompressor.Compress(input);
+        var bytes = await DecodeGate.Shared.RunAsync(() => AvatarCompressor.Compress(input), ct);
         var revision = Guid.NewGuid();
         var stored = "avatar-" + revision.ToString("N") + ".webp";
         var accepted = await uploads.AcceptTrackedAsync(accounts, token, quotaGroup, stored, bytes, ct);

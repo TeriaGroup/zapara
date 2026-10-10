@@ -15,15 +15,10 @@ public static class AvatarCompressor
     public static byte[] Compress(ReadOnlySpan<byte> input)
     {
         if (input.Length > MaxInputBytes) throw new SocialException(413, "payload_too_large");
-        if (input.Length < 12) throw new SocialException(400, "invalid_image");
         try
         {
-            // Identification and decoding both stop after one frame, including animated uploads.
-            var options = new DecoderOptions { MaxFrames = 1 };
-            var info = Image.Identify(options, input);
-            if (info.Width < 1 || info.Height < 1) throw new SocialException(400, "invalid_image");
-            if ((long)info.Width * info.Height > MaxPixels) throw new SocialException(413, "payload_too_large");
-            using var image = Image.Load(options, input);
+            UploadImagePolicy.Inspect(input, MaxInputBytes, MaxPixels);
+            using var image = Image.Load(UploadImagePolicy.Options(), input);
             image.Mutate(operation => operation.AutoOrient().Resize(new ResizeOptions
             {
                 Mode = ResizeMode.Crop,
