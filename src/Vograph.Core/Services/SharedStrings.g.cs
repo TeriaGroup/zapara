@@ -9,6 +9,9 @@ public static class SharedStrings
         ["groupChat"] = "Чат группы",
         ["productName"] = "Расписание военмех",
         ["scheduleTitle"] = "Расписание",
+        ["navFriends"] = "Друзья",
+        ["navChats"] = "Чаты",
+        ["navCommunities"] = "Сообщества",
         ["parityOdd"] = "нечётная",
         ["parityEven"] = "чётная",
         ["parityOddTitle"] = "Нечётная",
@@ -42,6 +45,10 @@ public static class SharedStrings
     public static readonly IReadOnlyDictionary<string, string> Desktop = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         ["navSchedule"] = "Расписание",
+        ["navFriends"] = "Друзья",
+        ["navChat"] = "Чаты",
+        ["navCommunity"] = "Сообщества",
+        ["communityTitle"] = "Сообщества",
         ["odd"] = "нечётная",
         ["even"] = "чётная",
         ["weekOdd"] = "Нечётная",
