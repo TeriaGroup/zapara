@@ -39,4 +39,33 @@ class DesignTokensTest extends TestCase
         // Активный пункт меню в тёмной теме — основной цвет текста, а не тусклый серый.
         $this->assertMatchesRegularExpression('/\.dark\s*\{[^}]*--primary-400: '.preg_quote(config('design-tokens.dark.text-primary'), '/').';/s', $html);
     }
+
+    // #8 (G-1): страницы оператора («Состояние», «Квоты», «Поддержка») и стили форм не задают цвета текста, границ и
+    // опасных состояний вручную — только переменные токенов, свои для светлой и тёмной темы.
+    public function test_panel_views_use_token_variables_instead_of_hard_coded_colors(): void
+    {
+        $root = resource_path('views/filament');
+        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS));
+        $hits = [];
+        $used = [];
+        foreach ($files as $file) {
+            $path = $file->getPathname();
+            if (! str_ends_with($path, '.blade.php') || basename($path) === 'design-tokens.blade.php') {
+                continue; // design-tokens.blade.php генерирует scripts/design/tokens.mjs из design/tokens.json
+            }
+            foreach (file($path) as $number => $line) {
+                if (preg_match('/#[0-9a-fA-F]{3,8}\b|rgba?\(/', $line)) {
+                    $hits[] = substr($path, strlen($root) + 1).':'.($number + 1);
+                }
+                preg_match_all('/var\(--zp-([a-z0-9-]+)/', $line, $vars);
+                $used = array_merge($used, $vars[1]);
+            }
+        }
+        $this->assertSame([], $hits);
+        $this->assertNotEmpty($used);
+        foreach (array_unique($used) as $token) {
+            $this->assertArrayHasKey($token, config('design-tokens.light'), $token);
+            $this->assertArrayHasKey($token, config('design-tokens.dark'), $token);
+        }
+    }
 }

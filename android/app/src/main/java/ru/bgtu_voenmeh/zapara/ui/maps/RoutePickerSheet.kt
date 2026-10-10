@@ -69,8 +69,8 @@ fun RoutePickerSheet(state: RoutePickerUi, onEvent: (MapsEvent) -> Unit) {
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = c.chip,
                         unfocusedContainerColor = c.chip,
-                        focusedBorderColor = c.lineStrong,
-                        unfocusedBorderColor = c.chip,
+                        focusedBorderColor = c.text1, // #109 / AN-12
+                        unfocusedBorderColor = c.lineStrong,
                         focusedTextColor = c.text1,
                         unfocusedTextColor = c.text1
                     )

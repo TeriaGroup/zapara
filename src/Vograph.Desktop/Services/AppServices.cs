@@ -167,8 +167,11 @@ public sealed partial class AppServices : IDisposable
         // Take the gate before the SQLite connection goes: a gated Core call caught mid-query used to fault
         // inside SqliteConnection.Dispose. The gate is deliberately NOT released — disposal follows it, and
         // callers queued behind it land on the ObjectDisposedException path in ViewModelBase.GatedAsync.
-        if (!CoreGate.Wait(TimeSpan.FromSeconds(2))) Log.Warn("shutdown: a Core call still holds the gate after 2 s, closing the database anyway");
-        Db.Dispose();
+        if (!CoreGate.Wait(TimeSpan.FromSeconds(2))) Log.Warn("shutdown: a Core call still holds the gate after 2 s");
+        // #130: not every Db call is gated (UI-thread reads, continuations of fire-and-forget work). Shutdown refuses new
+        // commands, waits for the ones in flight and never closes the connection under a running command: if one
+        // outlives the wait, the connection closes when that command finishes.
+        if (!Db.Shutdown(TimeSpan.FromSeconds(5))) Log.Warn("shutdown: a database command is still running after 5 s; the connection closes when it ends");
         CoreGate.Dispose();
     }
 }

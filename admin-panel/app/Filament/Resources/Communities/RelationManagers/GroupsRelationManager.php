@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Communities\RelationManagers;
 
+use App\Filament\Support\MoscowTime;
 use App\Filament\Resources\Communities\CommunityResource;
 use App\Filament\Support\OperatorActions;
 use App\Services\OperatorWork;
@@ -46,8 +47,8 @@ class GroupsRelationManager extends RelationManager
                 TextColumn::make('group_id')->label('Код группы')->weight('medium')->searchable(),
                 TextColumn::make('group_name')->label('Название в каталоге'),
                 TextColumn::make('created_at')
-                    ->label('Привязана')
-                    ->dateTime('j M Y, H:i', 'Europe/Moscow')
+                    ->label('Привязана (МСК)')
+                    ->formatStateUsing(fn ($state): string => MoscowTime::short($state)) // G-3: «9 окт., 18:49», год — если не текущий
                     ->visibleFrom('md'),
             ])
             ->defaultSort('group_id')
