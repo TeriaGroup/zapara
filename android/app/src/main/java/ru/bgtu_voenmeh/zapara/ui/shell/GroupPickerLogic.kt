@@ -43,11 +43,19 @@ object GroupPickerLogic {
     }
 }
 
-/** Недавние группы на устройстве (SharedPreferences, не синхронизируются). */
-class RecentGroups(context: Context) {
-    private val prefs = context.getSharedPreferences("group_picker", Context.MODE_PRIVATE)
-    fun ids(): List<String> = prefs.getString(KEY, "").orEmpty().split(',').filter(String::isNotBlank)
-    fun push(id: String) { prefs.edit().putString(KEY, GroupPickerLogic.pushRecent(ids(), id).joinToString(",")).apply() }
-    private companion object { const val KEY = "recent" }
-}
+/**
+ * Недавние группы на устройстве (SharedPreferences, не синхронизируются) — отдельно для каждого профиля.
+ * Пишет ShellViewModel только после успешного выбора группы.
+ */
+class RecentGroups internal constructor(private val read: (String) -> String?, private val write: (String, String) -> Unit) {
+    fun ids(profile: String): List<String> = read(key(profile)).orEmpty().split(',').filter(String::isNotBlank)
+    fun push(profile: String, id: String) = write(key(profile), GroupPickerLogic.pushRecent(ids(profile), id).joinToString(","))
 
+    companion object {
+        fun key(profile: String) = "recent:$profile"
+        fun of(context: Context): RecentGroups {
+            val prefs = context.getSharedPreferences("group_picker", Context.MODE_PRIVATE)
+            return RecentGroups({ prefs.getString(it, null) }, { k, v -> prefs.edit().putString(k, v).apply() })
+        }
+    }
+}
