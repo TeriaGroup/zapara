@@ -40,9 +40,26 @@ object FontFit {
         end in 1 until text.length && text[end - 1].isLetterOrDigit() && text[end].isLetterOrDigit()
     }
 
-    /** Сегменты не влезают в ширину одной строкой — их нужно переносить, а не прятать за краем. */
-    fun segmentsOverflow(widths: List<Float>, gap: Float, available: Float): Boolean =
-        widths.sum() + gap * (widths.size - 1).coerceAtLeast(0) > available
+    /**
+     * Раскладка сегментов по строкам: [natural] — собственные ширины (уже не меньше трети ряда), [available] — ширина ряда.
+     * Всё влезает — одна строка; иначе жадно по строкам. Остаток строки делится поровну, так что строка всегда заполнена.
+     * Возвращает ширину каждого сегмента и номер его строки.
+     */
+    fun segmentRows(natural: List<Int>, available: Int): List<Pair<Int, Int>> {
+        val rows = mutableListOf<MutableList<Int>>()
+        var used = 0
+        natural.forEachIndexed { i, w ->
+            if (rows.isEmpty() || (used + w > available && rows.last().isNotEmpty())) { rows += mutableListOf<Int>(); used = 0 }
+            rows.last() += i; used += w
+        }
+        val out = MutableList(natural.size) { 0 to 0 }
+        rows.forEachIndexed { r, row ->
+            val sum = row.sumOf { natural[it] }
+            val extra = (available - sum).coerceAtLeast(0)
+            row.forEachIndexed { k, i -> out[i] = (minOf(available, natural[i] + extra / row.size + if (k < extra % row.size) 1 else 0)) to r }
+        }
+        return out
+    }
 }
 
 private fun TextUnit.times(k: Float): TextUnit = if (isSpecified) this * k else this

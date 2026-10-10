@@ -42,10 +42,20 @@ class FontScaleTest {
     }
 
     @Test fun day_tabs_wrap_instead_of_hiding_behind_the_edge() {
-        // «Сегодня · Завтра · Послезавтра» при 2.0 ≈ 140 + 120 + 200 dp в строке 350 dp.
-        assertTrue(FontFit.segmentsOverflow(listOf(140f, 120f, 200f), 0f, 350f))
-        assertFalse(FontFit.segmentsOverflow(listOf(80f, 70f, 110f), 0f, 350f))
-        assertTrue(src("ui/components/Controls.kt").contains("FlowRow(Modifier.fillMaxWidth().testTag(\"\$tag.Wrapped\"))"))
+        assertTrue(src("ui/components/Controls.kt").contains("FontFit.segmentRows(natural, available)"))
+        assertFalse("ряд больше не прячется в прокрутке", src("ui/components/Controls.kt").substringAfter("fun ZSegmented").substringBefore("fun ZSwitch").contains("horizontalScroll"))
+    }
+
+    @Test fun segment_rows_fill_the_width_and_wrap_only_when_needed() {
+        // Влезает: одна строка, каждому по трети.
+        assertEquals(listOf(117 to 0, 117 to 0, 116 to 0), FontFit.segmentRows(listOf(117, 117, 116), 350))
+        // «Послезавтра» шире трети: перенос, вторая строка во всю ширину, первая заполнена.
+        val wrapped = FontFit.segmentRows(listOf(117, 117, 140), 350)
+        assertEquals(listOf(0, 0, 1), wrapped.map { it.second })
+        assertEquals(350, wrapped[0].first + wrapped[1].first)
+        assertEquals(350, wrapped[2].first)
+        // Слишком длинный сегмент не шире ряда.
+        assertEquals(350, FontFit.segmentRows(listOf(500), 350)[0].first)
     }
 
     @Test fun buttons_keep_words_whole_and_header_chip_has_room() {
