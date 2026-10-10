@@ -77,10 +77,22 @@ public class LessonSheetTests : UiTest
         Assert.Equal(Loc.Current.T("openMap"), labels[0]);
         Assert.Contains("Домашка", labels);
         Assert.Contains(Loc.Current.T("discussInGroupChat"), labels);
-        Assert.Contains("Переименовать", labels);
+        // R2-07 / G-2: в листе — Карта · Домашка · Обсудить · «⋯»; редкие действия только в меню «⋯».
+        Assert.Equal(new[] { Loc.Current.T("openMap"), "Домашка", Loc.Current.T("discussInGroupChat"), "⋯" }, labels);
+        Assert.DoesNotContain("Переименовать", labels);
+        Assert.DoesNotContain("Подробнее", labels);
         Assert.True(ById(card, "Lesson.Map").IsEffectivelyVisible);
         Assert.True(ById(card, "Lesson.Homework").IsEffectivelyVisible);
-        Assert.True(ById(card, "Lesson.Rename").IsEffectivelyVisible);
+        var more = (Button)ById(card, "Lesson.SheetMore");
+        var menu = Assert.IsType<MenuFlyout>(more.Flyout);
+        Assert.Equal(new[] { "Добавить задание", "Переименовать" }, menu.Items.OfType<MenuItem>().Select(i => i.Header as string));
+        menu.ShowAt(more);
+        Pump();
+        Assert.Same(row.RenameCommand, menu.Items.OfType<MenuItem>().Single(i => AutomationProperties.GetAutomationId(i) == "Lesson.Rename").Command);
+        Assert.Same(row.AddHomeworkCommand, menu.Items.OfType<MenuItem>().Single(i => AutomationProperties.GetAutomationId(i) == "Lesson.AddHomework").Command);
+        menu.Hide();
+        Pump();
+        Assert.True(row.ShowDetails, "открытый лист показывает подробности (преподаватель, домашка)");
 
         Click(window, ById(card, "Lesson.Title"));
         Pump();
@@ -100,17 +112,57 @@ public class LessonSheetTests : UiTest
         Pump();
         Assert.True(row.IsSheetOpen);
 
-        // «Подробнее» inside the sheet toggles the details, not the sheet.
-        var details = ((Control)ById(card, "Lesson.Sheet")).GetVisualDescendants().OfType<Button>().First(b => b.Command == row.ToggleDetailsCommand);
-        var shown = row.ShowDetails;
-        Click(window, details);
+        // A button inside the sheet keeps its own click: «⋯» of the sheet opens its menu, not closes the sheet.
+        Click(window, ById(card, "Lesson.SheetMore"));
         Pump();
-        Assert.NotEqual(shown, row.ShowDetails);
         Assert.True(row.IsSheetOpen);
+        ((Button)ById(card, "Lesson.SheetMore")).Flyout!.Hide();
+        Pump();
 
         Click(window, ById(card, "Lesson.More"));
         Pump();
         Assert.False(row.IsSheetOpen);
         AssertNoBindingErrors();
+    }
+
+    [AvaloniaFact]
+    public async Task Default_expansion_is_the_same_in_light_and_dark_and_on_a_past_day()
+    {
+        // R2-07: в ревью раскрытых карточек было разное число в светлой и тёмной теме. По умолчанию раскрыта
+        // не больше одной (ближайшая пара дня), лист закрыт — независимо от темы и дня.
+        var seen = new List<string>();
+        foreach (var theme in new[] { Avalonia.Styling.ThemeVariant.Light, Avalonia.Styling.ThemeVariant.Dark })
+        {
+            var (window, vm, db) = await OpenAsync();
+            using var _ = db;
+            SetTheme(theme);
+            foreach (var day in new[] { Mon8.Date, Mon8.Date.AddDays(-7) })
+            {
+                vm.SelectDate(day);
+                await Task.Delay(100); Pump();
+                Assert.NotEmpty(vm.Lessons);
+                Assert.True(vm.Lessons.Count(r => r.ShowDetails) <= 1, $"{theme} {day:dd.MM}: раскрыто {vm.Lessons.Count(r => r.ShowDetails)}");
+                Assert.DoesNotContain(vm.Lessons, r => r.IsSheetOpen);
+                seen.Add($"{day:dd.MM}:" + string.Join("", vm.Lessons.Select(r => r.ShowDetails ? "1" : "0")));
+            }
+            window.Close();
+        }
+        Assert.Equal(seen.Take(2), seen.Skip(2));
+    }
+
+    [AvaloniaFact]
+    public async Task Opening_a_lesson_from_the_week_lands_on_its_sheet()
+    {
+        // G-2: в «Неделе» нажатие на пару ведёт в её день — и сразу открывает лист этой пары (на web — тоже лист).
+        var (window, vm, db) = await OpenAsync();
+        using var _ = db;
+        var target = vm.Lessons.Last();
+        var shell = (ShellViewModel)window.DataContext!;
+        shell.OpenScheduleAt(Mon8.Date, target.Row.Lesson.SubjectRaw, target.TimeStart);
+        await Waits.Until(() => vm.Lessons.Any(r => r.IsSheetOpen), "лист пары открыт");
+        var open = Assert.Single(vm.Lessons, r => r.IsSheetOpen);
+        Assert.Equal(target.Row.Lesson.SubjectRaw, open.Row.Lesson.SubjectRaw);
+        Assert.Equal(target.TimeStart, open.TimeStart);
+        window.Close();
     }
 }

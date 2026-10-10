@@ -53,9 +53,12 @@ public sealed partial class LessonRowViewModel : ObservableObject
     /// <summary>#9 (G-2): действия пары — в листе, который открывает нажатие на карточку или «⋯», как лист пары на web.
     /// На закрытой карточке остаётся не больше одного действия: «Карта» у текущей/следующей пары.</summary>
     [ObservableProperty] private bool isSheetOpen;
-    partial void OnIsSheetOpenChanged(bool value)=>OnPropertyChanged(nameof(ShowInlineMap));
+    partial void OnIsSheetOpenChanged(bool value){OnPropertyChanged(nameof(ShowInlineMap));if(value)ShowDetails=true;}
     public bool ShowInlineMap => IsNext && !IsSheetOpen;
     [RelayCommand] private void ToggleSheet()=>IsSheetOpen=!IsSheetOpen;
+    /// <summary>R2-07 / G-2: переход к паре (из «Недели», поиска, «К ближайшей паре», пересечений) раскрывает её лист —
+    /// там теперь действия. Значение по умолчанию (подробности у ближайшей пары) лист не открывает, одинаково в обеих темах.</summary>
+    public void Reveal(){ShowDetails=true;IsSheetOpen=true;}
     /// <summary>#19: карточка «Сейчас / Следующая пара» под заголовком раскрывает эту пару в списке.</summary>
     [RelayCommand] private void FocusInDay() => _owner.JumpNearestLessonCommand.Execute(null);
     public int Index { get; }

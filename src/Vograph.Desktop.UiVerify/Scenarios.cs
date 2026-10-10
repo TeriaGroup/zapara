@@ -128,6 +128,7 @@ public static class Scenarios
             var (day, titles) = GoToLessonDay(ui, t => t.Contains("Матан"), "день с парой «Матан»");
             // #9: the lesson's actions live in its sheet, opened from «⋯» (or a tap on the card).
             ui.Click("Lesson.More");
+            ui.Click("Lesson.SheetMore"); // R2-07: «Переименовать» — в меню «⋯» листа
             ui.Click("Lesson.Rename");
             ui.Find("Dialog.Name");
             // The dialog is really about that lesson: both fields carry the seeded override back.
