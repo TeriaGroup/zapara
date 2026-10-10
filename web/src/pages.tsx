@@ -1327,7 +1327,7 @@ export function HomeworkPage() {
       <HomeworkPublication key={JSON.stringify(["publish",copyOwnerKey,app.session?.familyId,app.groupId,communityId])} items={visibleHomework} communityId={communityId} recipients={recipients} dateOf={personalDate}/>
       <HomeworkExportTools key={JSON.stringify([copyOwnerKey,app.session?.familyId,app.groupId])} items={visibleHomework} groupId={app.groupId} groupName={app.catalog?.groups.find(group=>group.id===app.groupId)?.name||app.groupId}/>
       </div>}
-      {visibleHomework.length > 0 && <><h2 id="homework-personal-results" tabIndex={-1} className="section-list-title">Мои задания <span className="chip">{taskCount(visibleHomework.length)}</span></h2></>}
+      {visibleHomework.length > 0 && <><h2 id="homework-personal-results" tabIndex={-1} className="section-list-title">Мои задания <span className="muted" aria-label={taskCount(visibleHomework.length)}>· {visibleHomework.length}</span></h2></>}
       {homeworkBuckets.length>1 && <button className="btn quiet" onClick={()=>setCollapsedBuckets(rows=>rows.length?[]:homeworkBuckets.map(group=>group.key))}>{collapsedBuckets.length?"Развернуть все сроки":"Свернуть все сроки"}</button>}
       <div className="stack" style={{ marginTop: 12 }}>
         {homeworkBuckets.map(group=><section className="stack" key={group.key}><button className="btn" aria-expanded={!collapsedBuckets.includes(group.key)} onClick={()=>setCollapsedBuckets(rows=>rows.includes(group.key)?rows.filter(key=>key!==group.key):[...rows,group.key])}>{group.label} · {taskCount(group.rows.length)}</button><div className="stack" hidden={collapsedBuckets.includes(group.key)}>{group.rows.map(item => (
