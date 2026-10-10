@@ -1,5 +1,7 @@
 package ru.bgtu_voenmeh.zapara.ui.components
 
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -240,12 +242,15 @@ fun ZSegmented(items: List<String>, selected: Int, onSelect: (Int) -> Unit, tag:
 }
 
 @Composable
-fun ZSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, tag: String, modifier: Modifier = Modifier) {
+fun ZSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, tag: String, modifier: Modifier = Modifier,
+    label: String? = null) {
     val c = Zapara.colors
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
         modifier = modifier
+            // #105 / AN-25: доступное имя у переключателя без соседней подписи (иначе TalkBack: «Выкл., переключатель»).
+            .then(if (label != null) Modifier.semantics { contentDescription = label } else Modifier)
             .testTag(tag)
             .sizeIn(minWidth = Zapara.space.minTouch, minHeight = Zapara.space.minTouch),
         colors = SwitchDefaults.colors(
@@ -290,7 +295,9 @@ fun ZBottomSheet(
                 .fillMaxSize()
                 .graphicsLayer { alpha = sheetMotion.visibility.value }
                 .background(c.backdrop)
-                .clickable(onClick = requestDismiss)
+                // #105 / AN-27: касание по подложке закрывает лист, но в дереве доступности её нет —
+                // раньше TalkBack находил неподписанный элемент 390×844. Закрыть: «Назад» или кнопка листа.
+                .pointerInput(requestDismiss) { detectTapGestures { requestDismiss() } }
         )
         BoxWithConstraints(
             Modifier

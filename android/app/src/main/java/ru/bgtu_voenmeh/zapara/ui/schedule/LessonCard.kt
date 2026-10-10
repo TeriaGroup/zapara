@@ -121,7 +121,8 @@ fun LessonCard(
                         Box(Modifier.size(8.dp).clip(CircleShape).background(c.warn).breath(true))
                     }
                     ZChip(row.label, selected = row.status == "burning" || row.status == "burning_urgent")
-                    ZSwitch(row.done, { if (row.id !in pendingDoneIds) onToggleDone(row.id) }, "Homework.Done.${row.id}")
+                    ZSwitch(row.done, { if (row.id !in pendingDoneIds) onToggleDone(row.id) }, "Homework.Done.${row.id}",
+                        label = stringResource(R.string.hw_done_switch_label, row.text))
                     if (row.id in pendingDoneIds) Text(stringResource(R.string.ux60_saving),
                         style = Zapara.typography.caption, color = c.text2)
                 }
