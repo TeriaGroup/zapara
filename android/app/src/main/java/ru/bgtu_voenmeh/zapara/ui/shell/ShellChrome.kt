@@ -49,6 +49,8 @@ data class ShellChrome(
     val chip: String?,
     val stale: Boolean,
     val hasGroup: Boolean,
+    /** #108 / AN-23: короткая форма («И831Б · чёт.») — только если полная не помещается в одну строку с заголовком. */
+    val chipShort: String? = null,
     val onGroupChip: () -> Unit
 )
 
@@ -56,6 +58,7 @@ val LocalShellChrome = staticCompositionLocalOf { ShellChrome(null, false, false
 
 @Composable
 fun ZTopBar(title: String, actions: @Composable RowScope.() -> Unit = {}) {
+    val chrome = LocalShellChrome.current
     val line = Zapara.colors.line
     val container = Modifier.fillMaxWidth().heightIn(min = 56.dp)
         .background(Zapara.colors.canvas).drawBehind {
@@ -70,11 +73,15 @@ fun ZTopBar(title: String, actions: @Composable RowScope.() -> Unit = {}) {
             Text(title, style = Zapara.typography.title, color = Zapara.colors.text1,
                 modifier = Modifier.testTag("Top.Title"))
             Row(verticalAlignment = Alignment.CenterVertically, content = actions)
-            Box { GroupChip() }
+            Box { GroupChip(chrome.chip) }
+            Box { GroupChip(chrome.chipShort ?: chrome.chip) }
         }
-    ) { measurables, constraints ->
+    ) { all, constraints ->
         val gap = spacing.roundToPx()
-        val widths = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity) }
+        val fullWidths = all.map { it.maxIntrinsicWidth(Constraints.Infinity) }
+        val chipIndex = ShellLogic.chipVariant(fullWidths[0], fullWidths[1], fullWidths[2], fullWidths[3], gap, constraints.maxWidth)
+        val measurables = listOf(all[0], all[1], all[chipIndex])
+        val widths = listOf(fullWidths[0], fullWidths[1], fullWidths[chipIndex])
         val actionGap = if (widths[1] > 0) gap else 0
         val controlsWidth = widths[1].toLong() + actionGap + widths[2]
         val stacked = widths[0].toLong() + gap + controlsWidth > constraints.maxWidth
@@ -107,15 +114,15 @@ fun ZTopBar(title: String, actions: @Composable RowScope.() -> Unit = {}) {
 }
 
 @Composable
-private fun GroupChip() {
+private fun GroupChip(text: String?) {
     val chrome = LocalShellChrome.current
     val c = Zapara.colors
-    val staleDescription = if (chrome.stale && chrome.chip != null) {
-        stringResource(R.string.group_stale_chip_accessibility, chrome.chip)
+    val staleDescription = if (chrome.stale && text != null) {
+        stringResource(R.string.group_stale_chip_accessibility, text)
     } else null
-    if (chrome.hasGroup && chrome.chip != null) {
+    if (chrome.hasGroup && text != null) {
         ZChip(
-            text = chrome.chip,
+            text = text,
             onClick = chrome.onGroupChip,
             tag = "Top.GroupChip",
             modifier = staleDescription?.let { description ->

@@ -21,6 +21,21 @@ object ShellLogic {
         !it.done && it.status != "done" && (it.due == today || it.due == today.plusDays(1))
     }
 
+    /** Короткая форма чипа из каталога («нечёт.»/«чёт.»). */
+    fun chipShort(groupName: String, odd: Boolean, copy: ru.bgtu_voenmeh.zapara.ui.UiCopy): String =
+        copy.get("chip_group", groupName, copy.get(if (odd) "chip_odd" else "chip_even"))
+
+    /**
+     * #108 / AN-23: индекс чипа в шапке — 2 (полный «И831Б · чётная»), если заголовок, действия и чип помещаются
+     * в одну строку; иначе 3 (короткий), если так помещается; если не помещается и короткий — полный (шапка
+     * всё равно переносится, а полная форма читается лучше).
+     */
+    fun chipVariant(title: Int, actions: Int, full: Int, short: Int, gap: Int, max: Int): Int {
+        val actionGap = if (actions > 0) gap else 0
+        fun fits(chip: Int) = title.toLong() + gap + actions + actionGap + chip <= max
+        return if (fits(full) || !fits(short)) 2 else 3
+    }
+
     fun chip(groupName: String, odd: Boolean, copy: ru.bgtu_voenmeh.zapara.ui.UiCopy): String =
         // #108 / AN-23: чётность полностью («И831Б · чётная»), как на web и desktop.
         copy.get("chip_group", groupName, copy.get(if (odd) "week_odd" else "week_even").lowercase(java.util.Locale("ru")))
