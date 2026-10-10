@@ -1,6 +1,7 @@
 {
   "$comment": "Общий каталог русских строк web и desktop (#12). Правила — docs/glossary.md. После правки: node scripts/design/strings.mjs",
   "strings": {
+    "groupChat": { "ru": "Чат", "$comment": "Общий поток группы: вкладка, заголовок и пункт быстрых каналов (r2: не «Чатик» с сервера)." },
     "productName": { "ru": "Расписание военмех", "$comment": "#12, решение по умолчанию: название, которое уже показывает приложение. Сменить здесь и перегенерировать.", "android": ["ux100_common_public_name", "settings_about_title"] },
     "scheduleTitle": { "ru": "Расписание", "desktop": ["navSchedule"], "android": ["nav_schedule"] },
     "parityOdd": { "ru": "нечётная", "desktop": ["odd"], "android": ["notification_odd"] },
