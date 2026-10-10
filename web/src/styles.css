@@ -585,6 +585,26 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
 .homework-recipient-list .check { min-height: 44px; }
 .homework-recipient-chips .chip { cursor: pointer; }
 .homework-filters { flex-wrap: wrap; margin-block: 12px; }
+/* #15: карточка задания — чекбокс, предмет, текст, срок; действия в «⋯»; «Удалить» — опасное. */
+:root { --danger-ink: var(--bad); }
+:root[data-theme="light"] { --danger-ink: #b42318; }
+.homework-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; }
+.homework-row > .homework-check { padding-top: 2px; }
+.homework-check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+.homework-row-body { display: grid; gap: 2px; min-width: 0; }
+.homework-row-body > p { margin: 0; overflow-wrap: anywhere; }
+.homework-row-subject { font-weight: 600; }
+.homework-row-meta { color: var(--muted); font-size: 13px; }
+.homework-action-list { display: grid; gap: 4px; }
+.homework-action-list > .btn, .homework-action-list > div > .btn { justify-content: flex-start; width: 100%; }
+.homework-action-title { margin: 0 0 4px; }
+.btn.danger { color: var(--danger-ink); }
+.homework-delete { margin-top: 8px; border-top: 1px solid var(--line); border-radius: 0; padding-top: 12px; }
+.btn.danger-solid { background: var(--danger-ink); border-color: var(--danger-ink); color: #ffffff; }
+.btn.danger-solid:hover { filter: brightness(0.92); }
+:root:not([data-theme="light"]) .btn.danger-solid { color: #0d0d0d; }
+.homework-confirm-row { justify-content: flex-end; }
+.homework-select-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .form-question { display: flex; flex-direction: column; gap: 8px; }
 .device-line { justify-content: space-between; border-bottom: 1px solid var(--line); padding: 8px 0; }
 .record-preview { width: min(100%, 320px); aspect-ratio: 1; border-radius: 50%; object-fit: cover; }
