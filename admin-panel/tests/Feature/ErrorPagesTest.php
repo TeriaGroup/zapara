@@ -131,4 +131,49 @@ class ErrorPagesTest extends TestCase
         $this->assertMatchesRegularExpression('/^APP_DEBUG=false$/m', $env);
         $this->assertDoesNotMatchRegularExpression('/^APP_DEBUG=true$/m', $env);
     }
+
+    public function test_500_and_5xx_render_without_touching_the_session(): void
+    {
+        // StartSession упал (например, недоступен драйвер сессий) — страница ошибки не должна обращаться к сессии.
+        // Раньше «Обновить страницу» брала url()->previous(), а это чтение сессии.
+        $request = \Illuminate\Http\Request::create('/admin/users/1/edit', 'POST', server: ['HTTP_REFERER' => 'http://localhost/admin/users']);
+        $this->app->instance('request', $request);
+        $boom = fn () => throw new \RuntimeException('session store unavailable');
+        app('url')->setRequest($request);
+        app('url')->setSessionResolver($boom);
+        $this->app->bind('session', $boom);
+        $this->app->bind('session.store', $boom);
+
+        foreach (['errors.500', 'errors.5xx', 'errors.503'] as $view) {
+            $html = view($view, ['exception' => new \Symfony\Component\HttpKernel\Exception\HttpException(502)])->render();
+            $this->assertStringContainsString('Расписание военмех', $html, $view);
+        }
+        $this->assertStringContainsString('<a href="http://localhost/admin/users">Обновить страницу</a>', view('errors.500')->render());
+
+        // Без Referer url()->previous() шёл бы в сессию; теперь — на инфопанель, сессия не нужна.
+        $bare = \Illuminate\Http\Request::create('/admin/users/1/edit', 'POST');
+        $this->app->instance('request', $bare);
+        app('url')->setRequest($bare);
+        $this->assertStringContainsString('<a href="http://localhost/admin">Обновить страницу</a>', view('errors.500')->render());
+        $this->assertStringContainsString('Обновить страницу', view('errors.5xx', ['exception' => new \Symfony\Component\HttpKernel\Exception\HttpException(502)])->render());
+    }
+
+    public function test_back_link_ignores_foreign_or_missing_referers(): void
+    {
+        foreach (['https://evil.example/phish', 'javascript:alert(1)', '//evil.example/x', ''] as $referer) {
+            $request = $referer === '' ? $this : $this->withHeader('Referer', $referer);
+            $html = (string) $request->post('/__zp-error/500')->assertStatus(500)->getContent();
+            $this->assertStringContainsString('<a href="'.url('/admin').'">Обновить страницу</a>', $html, $referer);
+            if ($referer !== '') {
+                $this->assertStringNotContainsString($referer, $html);
+            }
+            $this->flushHeaders();
+        }
+    }
+
+    public function test_503_retry_keeps_the_query_string(): void
+    {
+        $html = (string) $this->get('/__zp-error/503?tab=quotas&page=2')->assertStatus(503)->getContent();
+        $this->assertStringContainsString('href="'.url('/__zp-error/503').'?page=2&amp;tab=quotas"', $html);
+    }
 }
