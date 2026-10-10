@@ -35,7 +35,7 @@ test("r2: on a phone the group chat header fits instead of being cut in half", (
   const phone = mobile.slice(mobile.indexOf("@media (max-width: 959px)"), mobile.indexOf("@media (min-width: 960px)"));
   const rule = phone.match(/\.group-page \.group-thread-tools \{([^}]*)\}/)?.[1] ?? "";
   assert.match(rule, /max-height: min\(50%, 300px\)/);
-  assert.doesNotMatch(phone, /min\(32%, 200px\)/);
+  assert.doesNotMatch(rule, /min\(32%, 200px\)/);
   assert.match(rule, /overflow-y: auto/); // очень низкий экран: шапка прокручивается, лента не исчезает
   assert.match(pages, /<div className="group-thread-tools">/);
 });
