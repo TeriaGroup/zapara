@@ -12,6 +12,7 @@ Windows-раннера нет: всё, что можно, собирается �
 
 Новый запуск для той же ветки или PR отменяет предыдущий (`concurrency`). Права токена: только `contents: read`.
 Секреты в заданиях не используются. Пароль тестовой БД и `APP_KEY` создаются на время задания и маскируются в журнале.
+Исключение — пароль БД задания `admin`: PostgreSQL там в закрытой сети Docker этого задания, порт на раннере не открыт, поэтому пароль постоянный и не секретный.
 
 В настройках репозитория (Settings → Actions → General) должно быть включено
 «Require approval for all outside collaborators».
@@ -21,17 +22,41 @@ Windows-раннера нет: всё, что можно, собирается �
 | Задание | Что делает |
 | --- | --- |
 | `server` | PostgreSQL 16 в контейнере на `127.0.0.1:56543`, `dotnet test src/Zapara.Server.Tests` |
-| `admin` | PostgreSQL 16 на `127.0.0.1:56432`, `composer install`, `php artisan test` в `admin-panel` (PanelTest сам вызывает `dotnet test`) |
+| `admin` | В контейнере `php:8.3-cli-bookworm`: расширения PHP, Composer, .NET 8, `composer install`, `php artisan test` в `admin-panel` (PanelTest сам вызывает `dotnet test`). PostgreSQL 16 — service-контейнер, доступен как `127.0.0.1:56432` |
 | `web` | `npm ci`, `node --test` для `web/src/**/*.test.ts`, `npm run build` (tsc --noEmit и vite), `node --test` для `src/Zapara.Web.Tests/*.test.mjs`, `dotnet test src/Zapara.Web.Tests` |
 | `desktop` | `Zapara.Client.Domain.Tests`, `Vograph.Timetable.Tests` и `Vograph.Desktop.Tests` с `-p:EnableWindowsTargeting=true` (Avalonia headless, без дисплея) |
 | `android` | JDK 17 (Temurin), Android SDK в `$RUNNER_TEMP`, `./gradlew :app:testGithubDebugUnitTest --max-workers=2` в `android`; при падении — отчёты тестов артефактом на 7 дней |
 
-Задание `desktop` идёт только на раннерах с меткой `docker` (`runs-on: [self-hosted, Linux, X64, docker]`). Сейчас она есть
+Задания `desktop` и `admin` идут только на раннерах с меткой `docker` (`runs-on: [self-hosted, Linux, X64, docker]`). Сейчас она есть
 у `gha-servernote` и `urban-children`. На `dev-workstation` (метки только `self-hosted, Linux, X64`) `Vograph.Desktop.Tests`
 каждый раз роняют тестовый процесс нативно (`free(): invalid pointer`, exit 134). Метка уже была на раннерах, настройки раннеров
-не менялись. Если `dev-workstation` починят, задание можно вернуть на общие метки.
+не менялись. Если `dev-workstation` починят, задание можно вернуть на общие метки. Задание `admin` — контейнерное (см. ниже),
+а Docker у пользователя раннера проверен только на раннерах с этой меткой.
 
-Порты 56432 и 56543 зашиты в тестах как единственные разрешённые порты фикстуры. На раннере они должны быть свободны.
+### Задание `admin`: PHP в контейнере
+
+У пользователя раннера нет root, поэтому PHP на раннер не ставится: задание идёт в контейнере (`container:`) из официального образа
+`php:8.3-cli-bookworm`, закреплённого по digest. Внутри контейнера задание работает от root, раннер не трогает.
+
+- Первый шаг (до checkout, которому нужен `git`) ставит через `apt` `git`, `unzip`, `socat` и библиотеки, собирает расширения
+  `pdo_pgsql`, `intl`, `zip` (`docker-php-ext-install`; `mbstring`, `pdo_sqlite` и остальные, что требует `composer.lock`,
+  в образе уже есть) и проверяет, что все пять загружены.
+- Composer 2.10.3 скачивается с `getcomposer.org` и сверяется по SHA-256 (`COMPOSER_SHA256` в `tests.yml`; совпадает с опубликованным
+  `composer.phar.sha256sum`). Обновление — поменять версию и хеш вместе.
+- .NET 8 для PanelTest ставит `actions/setup-dotnet` внутрь контейнера (`DOTNET_INSTALL_DIR=/usr/share/dotnet`), не в кэш раннера:
+  файлы root в общих каталогах раннера помешали бы следующим заданиям.
+- PostgreSQL 16 — `services: postgres` (образ закреплён по digest, данные в tmpfs, проверка готовности `pg_isready`). Сервис доступен
+  по имени `postgres` в сети задания, а `App\Support\Zapara` и фикстуры .NET принимают только `127.0.0.1:56432`. Поэтому шаг тестов
+  запускает внутри контейнера `socat`, который пересылает `127.0.0.1:56432` на `postgres:5432`. Проверка адреса в тестах не ослаблена.
+- Перед `php artisan test` создаётся пустой `admin-panel/.env`: настройки берутся из `phpunit.xml` и окружения задания, а без файла
+  `artisan test` помечает каждый тест предупреждением (`file_get_contents(.env)`).
+- Рабочий каталог, `RUNNER_TEMP` и `HOME` задания — каталоги раннера, смонтированные в контейнер. Всё, что там создано от root,
+  шаг очистки (`if: always()`) возвращает владельцу каталога `_work` (`chown -R`), иначе следующий checkout и очистка самого раннера
+  упали бы на чужих файлах.
+- Кэши Composer и NuGet лежат в `HOME` задания (`RUNNER_TEMP`) и между запусками не сохраняются: пакеты качаются каждый раз.
+
+Порты 56432 и 56543 зашиты в тестах как единственные разрешённые порты фикстуры. На раннере должен быть свободен 56543 (задание `server`);
+56432 задание `admin` занимает только внутри своего контейнера.
 
 ## Что пропускается на Linux
 
@@ -77,18 +102,18 @@ SDK и интерпретаторы ставят сами задания: `actio
 `actions/setup-node` (Node 24), `actions/setup-java` (JDK 17, Temurin) и `gradle/actions/setup-gradle` (`cache-provider: basic` —
 открытый кэш на GitHub Actions cache; по умолчанию там коммерческий сервис). Android SDK задание `android` ставит без `sudo` в
 `$RUNNER_TEMP/android-sdk`: command-line tools 23.0 (архив сверяется по SHA-256), `platforms;android-34`, `build-tools;34.0.0`;
-Gradle home — `$RUNNER_TEMP/gradle-home`; его не удаляет шаг очистки: `setup-gradle` сохраняет его в кэш в своём post-шаге, уже после очистки (сам `RUNNER_TEMP` раннер чистит после задания). Кэш пишут `push` в `develop` и `master` (по умолчанию — только ветка по умолчанию, `master`), PR его только читают. PHP задания не ставят: у пользователя раннера нет `sudo`, а `setup-php` ставит PHP через `apt`.
+Gradle home — `$RUNNER_TEMP/gradle-home`; его не удаляет шаг очистки: `setup-gradle` сохраняет его в кэш в своём post-шаге, уже после очистки (сам `RUNNER_TEMP` раннер чистит после задания). Кэш пишут `push` в `develop` и `master` (по умолчанию — только ветка по умолчанию, `master`), PR его только читают. PHP на раннер не ставится: задание `admin` идёт в контейнере (см. выше).
 Предустановить нужно:
 
 - Linux x64, Ubuntu или Debian;
-- PHP 8.3 или новее с расширениями `pdo_pgsql`, `pdo_sqlite`, `intl`, `zip`, `mbstring` и Composer 2 в `PATH` пользователя раннера.
-  На Ubuntu/Debian (от root): `apt-get install php8.3-cli php8.3-pgsql php8.3-sqlite3 php8.3-intl php8.3-zip php8.3-mbstring composer`
-  (имена пакетов зависят от версии PHP в дистрибутиве). Задание `admin` первым шагом проверяет PHP, расширения и Composer;
-  если чего-то нет, оно за несколько секунд падает с `::error::` и списком недостающего. `sudo` раннеру не нужен;
-- Docker Engine, пользователь раннера в группе `docker`; образ `postgres:16-alpine` скачивается при первом запуске;
+- Docker Engine, пользователь раннера в группе `docker`; образы `postgres:16-alpine` и `php:8.3-cli-bookworm` скачиваются при первом запуске.
+  Задание `admin` использует контейнер задания и service-контейнер, поэтому раннер должен поддерживать `container:` (Linux, Docker
+  доступен пользователю раннера). Сейчас это раннеры с меткой `docker`;
 - `git`, `curl`, `openssl`, `tar`, `xz-utils`, `unzip`;
 - библиотеки для .NET и Avalonia headless: `libicu`, `libssl`, `libfontconfig1` и хотя бы один шрифт (если `libfontconfig1` или шрифтов нет, задание `desktop` распаковывает `libfontconfig1` и `fonts-dejavu-core` из `.deb` в `$RUNNER_TEMP` без root);
-- свободные порты `127.0.0.1:56432` и `127.0.0.1:56543`.
+- свободный порт `127.0.0.1:56543` (порт `56432` задание `admin` открывает только внутри своего контейнера).
+
+Контейнеры задания `admin` (PHP и `postgres`) раннер создаёт и удаляет сам (шаги «Initialize containers» и «Stop containers»).
 
 ### Установка .NET: кэш, таймаут и повтор
 
