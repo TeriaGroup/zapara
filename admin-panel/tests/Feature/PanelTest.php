@@ -6,7 +6,6 @@ use App\Auth\IdentityPassword;
 use App\Auth\MfaThrottle;
 use App\Auth\ThrottledAppAuthentication;
 use App\Filament\Pages\AuditLog;
-use App\Filament\Pages\Communities;
 use App\Filament\Pages\Content;
 use App\Filament\Pages\Login;
 use App\Filament\Pages\Memberships;
@@ -14,14 +13,18 @@ use App\Filament\Pages\PlatformStatus;
 use App\Filament\Pages\Quotas;
 use App\Filament\Pages\Security;
 use App\Filament\Pages\Sessions;
-use App\Filament\Pages\Staff;
 use App\Filament\Pages\SupportDesk;
 use App\Filament\Pages\SystemSettings;
 use App\Filament\Resources\AccountUsers\Pages\CreateAccountUser;
 use App\Filament\Resources\AccountUsers\Pages\EditAccountUser;
 use App\Filament\Resources\AccountUsers\Pages\ListAccountUsers;
+use App\Filament\Resources\Communities\Pages\ListCommunities;
+use App\Filament\Resources\Communities\Pages\ViewCommunity;
+use App\Filament\Resources\Communities\RelationManagers\GroupsRelationManager;
+use App\Filament\Resources\Communities\RelationManagers\StaffRelationManager;
 use App\Models\AccountUser;
 use App\Models\AdminMfaCredential;
+use App\Models\Community;
 use App\Services\OperatorSettings;
 use App\Support\Zapara;
 use Filament\Actions\Testing\TestAction;
@@ -132,6 +135,35 @@ class PanelTest extends TestCase
             ->call('authenticate')
             ->assertHasNoErrors();
         $this->assertAuthenticatedAs($admin);
+    }
+
+    public function test_mfa_login_and_the_password_throttle_from_3_work_together(): void
+    {
+        $admin = $this->makeUser(true);
+        $provider = $this->appProvider();
+        $secret = $provider->generateSecret();
+        $provider->saveSecret($admin, $secret);
+        $throttle = app(\App\Auth\LoginThrottle::class);
+        $account = \App\Auth\LoginThrottle::normalizeAccount($admin->username);
+        $network = \App\Auth\LoginThrottle::networkKey('127.0.0.1');
+        for ($i = 0; $i < \App\Auth\LoginThrottle::PAIR_FAILURE_LIMIT - 1; $i++) {
+            $throttle->failed($account, $network);
+        }
+
+        // Wrong TOTP codes are counted by MfaThrottle, not as password failures, so the network is not blocked.
+        $login = $this->passwordStep($admin);
+        $login->set('data.multiFactor.app.code', '000000')->call('authenticate');
+        $login->set('data.multiFactor.app.code', '000001')->call('authenticate');
+        $this->assertGuest();
+        $this->assertSame(0, $throttle->availableIn($account, $network));
+
+        // The completed login (password + code) clears the account's password failures.
+        $login->set('data.multiFactor.app.code', $provider->getCurrentCode($admin, $secret))->call('authenticate');
+        $this->assertAuthenticatedAs($admin);
+        for ($i = 0; $i < \App\Auth\LoginThrottle::PAIR_FAILURE_LIMIT - 1; $i++) {
+            $throttle->failed($account, $network);
+        }
+        $this->assertSame(0, $throttle->availableIn($account, $network));
     }
 
     public function test_totp_window_is_one_step_and_an_accepted_code_cannot_be_replayed(): void
@@ -596,61 +628,53 @@ class PanelTest extends TestCase
         $this->actingAs($admin);
         $name = 'Группа '.$this->token('c');
 
-        $created = Livewire::test(Communities::class)
-            ->fillForm(['name' => $name, 'description' => 'Учебная группа'])
-            ->call('createCommunity')
-            ->assertHasNoFormErrors();
+        Livewire::test(ListCommunities::class)
+            ->callAction('createCommunity', ['name' => $name, 'description' => 'Учебная группа'])
+            ->assertHasNoActionErrors();
         $communityId = (string) DB::table(Zapara::communities().'.communities')->where('name', $name)->value('community_id');
         $this->assertNotSame('', $communityId);
-        $created->assertSee($communityId)->assertSee($name);
+        $community = Community::query()->findOrFail($communityId);
+        Livewire::test(ListCommunities::class)->searchTable($name)->assertSee($name);
+        Livewire::test(ViewCommunity::class, ['record' => $communityId])->assertSee($communityId)->assertSee($name);
+        $owner = ['ownerRecord' => $community, 'pageClass' => ViewCommunity::class];
 
         $groupId = 'g'.$this->token('g');
-        Livewire::test(Communities::class)
-            ->assertSee($communityId)
-            ->assertSee($name)
-            ->fillForm([
-                'community_id' => $communityId,
+        Livewire::test(GroupsRelationManager::class, $owner)
+            ->callAction(TestAction::make('mapCatalog')->table(), [
                 'group_id' => $groupId,
                 'group_name' => 'Группа каталога',
             ])
-            ->call('mapCatalog')
-            ->assertHasNoFormErrors();
+            ->assertHasNoActionErrors();
         $this->assertSame(1, DB::table(Zapara::communities().'.catalog_maps')->where('group_id', $groupId)->count());
-        Livewire::test(Communities::class)->assertSee($groupId);
+        Livewire::test(GroupsRelationManager::class, $owner)->assertSee($groupId);
+        Livewire::test(ListCommunities::class)->searchTable($name)->assertSee($groupId);
 
-        Livewire::test(Staff::class)
-            ->assertSee($communityId)
-            ->assertSee($name)
-            ->assertSee($staff->username)
-            ->fillForm([
-                'community_id' => $communityId,
+        Livewire::test(StaffRelationManager::class, $owner)
+            ->callAction(TestAction::make('assignStaff')->table(), [
                 'user_id' => $staff->user_id,
                 'role' => 'headman',
                 'current_password' => '',
-            ])
-            ->call('assignStaff');
+            ]);
         $this->assertSame(0, DB::table(Zapara::communities().'.staff_assignments')->where('user_id', $staff->user_id)->count());
 
-        Livewire::test(Staff::class)
-            ->fillForm([
-                'community_id' => $communityId,
+        Livewire::test(StaffRelationManager::class, $owner)
+            ->callAction(TestAction::make('assignStaff')->table(), [
                 'user_id' => $staff->user_id,
                 'role' => 'headman',
                 'current_password' => 'wrong-password',
             ])
-            ->call('assignStaff');
+            ->assertHasActionErrors(['current_password']);
         $this->assertSame(0, DB::table(Zapara::communities().'.staff_assignments')->where('user_id', $staff->user_id)->count());
 
-        Livewire::test(Staff::class)
-            ->fillForm([
-                'community_id' => $communityId,
+        Livewire::test(StaffRelationManager::class, $owner)
+            ->callAction(TestAction::make('assignStaff')->table(), [
                 'user_id' => $staff->user_id,
                 'role' => 'headman',
                 'current_password' => self::PASSWORD,
             ])
-            ->call('assignStaff')
-            ->assertHasNoFormErrors();
+            ->assertHasNoActionErrors();
         $this->assertSame('headman', DB::table(Zapara::communities().'.memberships')->where('user_id', $staff->user_id)->value('role'));
+        Livewire::test(StaffRelationManager::class, $owner)->assertSee($staff->username)->assertSee('Староста');
 
         $requestId = (string) Str::uuid();
         DB::table(Zapara::communities().'.join_requests')->insert([
@@ -761,13 +785,14 @@ class PanelTest extends TestCase
         $this->assertNull(DB::table(Zapara::accounts().'.session_families')->where('family_id', $otherFamilyId)->value('revoked_at'));
 
         Livewire::test(AuditLog::class)
-            ->assertSee('community_created')
-            ->assertSee('catalog_mapped')
-            ->assertSee('staff_assigned')
-            ->assertSee('join_accepted')
-            ->assertSee('join_rejected')
-            ->assertSee('content_moderated')
-            ->assertSee('session_revoked');
+            ->filterTable('actor_id', $admin->user_id)
+            ->assertSee('Создано сообщество')
+            ->assertSee('Привязана группа')
+            ->assertSee('Назначен персонал')
+            ->assertSee('Заявка принята')
+            ->assertSee('Заявка отклонена')
+            ->assertSee('Материал удалён')
+            ->assertSee('Сеанс завершён');
     }
 
     public function test_user_list_shows_russian_statuses_without_changing_the_stored_value(): void

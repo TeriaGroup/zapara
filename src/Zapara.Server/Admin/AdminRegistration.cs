@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
@@ -19,6 +20,7 @@ public static class AdminRegistration
             try { return AdminConfiguration.FromConfiguration(provider.GetRequiredService<IConfiguration>()); }
             catch (ArgumentException) { throw new AccountServiceException(AccountFailure.DbUnavailable); }
         });
+        services.TryAddSingleton(provider => new LoginThrottle(provider.GetRequiredService<TimeProvider>()));
         services.AddSingleton<AdminAuthService>();
         services.AddSingleton<AdminService>();
         services.AddSingleton<ITicketStore, AdminTicketStore>();

@@ -7,7 +7,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
+# Apache runs as www-data and listens on 8080, so no root process and no privileged port are needed.
 RUN sed -ri 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/000-default.conf \
+    && sed -ri 's!^Listen 80$!Listen 8080!' /etc/apache2/ports.conf \
+    && sed -ri 's!<VirtualHost \*:80>!<VirtualHost *:8080>!' /etc/apache2/sites-available/000-default.conf \
     && printf '%s\n' \
         '<Directory /var/www/html/public>' \
         '    AllowOverride All' \
@@ -18,13 +21,15 @@ RUN sed -ri 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-avail
     && printf '%s\n' 'memory_limit=128M' 'expose_php=0' > /usr/local/etc/php/conf.d/zapara.ini
 
 WORKDIR /var/www/html
+# Code stays root-owned (read-only for the web user); only Laravel's runtime directories are writable.
 COPY . /var/www/html
 RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
     && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R ug+rwx storage bootstrap/cache
 
-EXPOSE 80
+USER www-data
+EXPOSE 8080
 
-# Runs pending migrations (idempotent) before Apache starts; see docker/entrypoint.sh.
+# Runs pending migrations (idempotent) as www-data before Apache starts; see docker/entrypoint.sh.
 ENTRYPOINT ["/var/www/html/docker/entrypoint.sh"]
 CMD ["apache2-foreground"]

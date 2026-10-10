@@ -3,15 +3,28 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Concerns\GuardsPlatformAdmin;
-use App\Services\OperatorWork;
+use App\Models\AdminAudit;
+use App\Support\AuditDictionary;
+use App\Support\AuditObjects;
+use App\Support\Zapara;
+use Filament\Forms\Components\DatePicker;
 use Filament\Pages\Page;
-use Filament\Schemas\Components\Html;
+use Filament\Schemas\Components\EmbeddedTable;
 use Filament\Schemas\Schema;
-use Illuminate\Support\HtmlString;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Concerns\InteractsWithTable;
+use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
-class AuditLog extends Page
+class AuditLog extends Page implements HasTable
 {
     use GuardsPlatformAdmin;
+    use InteractsWithTable;
 
     protected static ?string $navigationLabel = 'Журнал';
 
@@ -21,24 +34,115 @@ class AuditLog extends Page
 
     protected static ?int $navigationSort = 80;
 
-    /** @var list<array{created_at: string, action: string, object_type: string, object_id: string, outcome: string}> */
-    public array $rows = [];
-
-    public function mount(): void
-    {
-        $this->rows = app(OperatorWork::class)->auditRows();
-    }
-
     public function content(Schema $schema): Schema
     {
-        $html = '<table><thead><tr><th>Действие</th><th>Объект</th><th>Идентификатор</th><th>Исход</th></tr></thead><tbody>';
-        foreach ($this->rows as $row) {
-            $html .= '<tr><td>'.e($row['action']).'</td><td>'.e($row['object_type']).'</td><td>'.e($row['object_id']).'</td><td>'.e($row['outcome']).'</td></tr>';
-        }
-        $html .= '</tbody></table>';
-
         return $schema->components([
-            Html::make(new HtmlString($html)),
+            EmbeddedTable::make(),
         ]);
+    }
+
+    public function table(Table $table): Table
+    {
+        return static::configureTable($table)
+            ->query(AdminAudit::query()->with('actor'))
+            ->filters([
+                SelectFilter::make('actor_id')
+                    ->label('Кто')
+                    ->placeholder('Все')
+                    ->options(fn (): array => static::actorOptions())
+                    ->searchable(),
+                SelectFilter::make('action')
+                    ->label('Действие')
+                    ->placeholder('Все')
+                    ->multiple()
+                    ->options(AuditDictionary::ACTIONS),
+                Filter::make('created_at')
+                    ->label('Когда')
+                    ->schema([
+                        DatePicker::make('from')->label('С')->native(false)->displayFormat('d.m.Y'),
+                        DatePicker::make('until')->label('По')->native(false)->displayFormat('d.m.Y'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        if (filled($data['from'] ?? null)) {
+                            $query->where('created_at', '>=', Carbon::parse($data['from'], 'Europe/Moscow')->startOfDay()->utc());
+                        }
+                        if (filled($data['until'] ?? null)) {
+                            $query->where('created_at', '<', Carbon::parse($data['until'], 'Europe/Moscow')->addDay()->startOfDay()->utc());
+                        }
+
+                        return $query;
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+                        if (filled($data['from'] ?? null)) {
+                            $indicators[] = 'С '.Carbon::parse($data['from'])->format('d.m.Y');
+                        }
+                        if (filled($data['until'] ?? null)) {
+                            $indicators[] = 'По '.Carbon::parse($data['until'])->format('d.m.Y');
+                        }
+
+                        return $indicators;
+                    }),
+            ]);
+    }
+
+    /**
+     * Общая настройка таблицы журнала: страница «Журнал» и блок «Последние действия» на инфопанели.
+     */
+    public static function configureTable(Table $table): Table
+    {
+        $objects = app(AuditObjects::class);
+
+        return $table
+            ->columns([
+                TextColumn::make('created_at')
+                    ->label('Когда (МСК)')
+                    ->dateTime('j M, H:i', 'Europe/Moscow')
+                    ->description(fn (AdminAudit $record): string => $record->created_at?->timezone('Europe/Moscow')->format('Y') !== now('Europe/Moscow')->format('Y') ? $record->created_at->timezone('Europe/Moscow')->format('Y') : '')
+                    ->sortable(),
+                TextColumn::make('actor.username')
+                    ->label('Кто')
+                    ->placeholder('Система')
+                    ->description(fn (AdminAudit $record): ?string => $record->actor?->display_name ?: null),
+                TextColumn::make('action')
+                    ->label('Действие')
+                    ->formatStateUsing(fn (string $state): string => AuditDictionary::action($state))
+                    ->weight('medium'),
+                TextColumn::make('object_id')
+                    ->label('Объект')
+                    ->formatStateUsing(fn (AdminAudit $record): string => $objects->describe((string) $record->object_type, (string) $record->object_id)['label'])
+                    ->description(fn (AdminAudit $record): string => $objects->describe((string) $record->object_type, (string) $record->object_id)['note'])
+                    ->url(fn (AdminAudit $record): ?string => $objects->describe((string) $record->object_type, (string) $record->object_id)['url'])
+                    ->color(fn (AdminAudit $record): string => $objects->describe((string) $record->object_type, (string) $record->object_id)['url'] === null ? 'gray' : 'primary')
+                    ->tooltip(fn (AdminAudit $record): string => 'ID: '.$record->object_id.' (нажмите на значок, чтобы скопировать)')
+                    ->icon('heroicon-m-clipboard-document')
+                    ->iconPosition('after')
+                    ->copyable()
+                    ->copyableState(fn (AdminAudit $record): string => (string) $record->object_id)
+                    ->copyMessage('ID скопирован')
+                    ->wrap(),
+                TextColumn::make('outcome')
+                    ->label('Результат')
+                    ->badge()
+                    ->formatStateUsing(fn (string $state): string => AuditDictionary::outcome($state))
+                    ->color(fn (string $state): string => AuditDictionary::outcomeColor($state)),
+            ])
+            ->defaultSort(fn (Builder $query): Builder => $query->orderByDesc('created_at')->orderByDesc('event_id'))
+            ->stackedOnMobile()
+            ->emptyStateHeading('Записей нет')
+            ->emptyStateDescription('Здесь появятся действия администраторов: заявки, назначения, отключения.');
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function actorOptions(): array
+    {
+        return DB::table(Zapara::admin().'.admin_audit as a')
+            ->join(Zapara::accounts().'.users as u', 'u.user_id', '=', 'a.actor_id')
+            ->distinct()
+            ->orderBy('u.username')
+            ->pluck('u.username', 'u.user_id')
+            ->all();
     }
 }
