@@ -343,6 +343,8 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit,
                                 // #101 / AN-04: нажатие открывает лист задания (изменить, удалить, следующая пара).
                                 onClick = { if (selectionMode) toggleSelected(item) else taskSheet = item.id },
                                 onLongClick = { if (selectionMode) toggleSelected(item) else taskSheet = item.id },
+                                // #112 follow-up: TalkBack называет действие по нажатию — открыть лист задания.
+                                onClickLabel = if (selectionMode) null else stringResource(R.string.hw_task_open),
                                 tag = "Homework.Row.${item.id}",
                                 modifier = Modifier.fillMaxWidth().appear(cascade["i-${item.id}"] ?: 0)
                             ) {

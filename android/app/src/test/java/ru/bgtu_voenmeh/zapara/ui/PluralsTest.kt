@@ -52,9 +52,11 @@ class PluralsTest {
         assertEquals("И ещё 22 пары", say("ux300_android_rename_more", 22))
         assertEquals("Показать ещё 1 задание", say("ux30_study_show_more_homework", 1))
         assertEquals("Показать ещё 5 заданий", say("ux30_study_show_more_homework", 5))
-        assertEquals("Ближайшие сроки: 1 задание", say("deadlines_title_count", 1))
-        assertEquals("Ближайшие сроки: 3 задания", say("deadlines_title_count", 3))
-        assertEquals("Ближайшие сроки: 11 заданий", say("deadlines_title_count", 11))
+        // #117 follow-up: счётчик снова показывает, сколько выполнено.
+        fun deadlines(n: Int, done: Int) = plurals.getValue("deadlines_title_count").getValue(quantity(n)).format(n, done)
+        assertEquals("Ближайшие сроки: 1 задание, выполнено 0", deadlines(1, 0))
+        assertEquals("Ближайшие сроки: 3 задания, выполнено 2", deadlines(3, 2))
+        assertEquals("Ближайшие сроки: 11 заданий, выполнено 11", deadlines(11, 11))
     }
 
     @Test fun old_single_form_strings_are_gone_and_calls_use_plurals() {

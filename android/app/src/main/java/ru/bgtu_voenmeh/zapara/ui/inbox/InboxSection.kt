@@ -150,7 +150,10 @@ private fun InboxList(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
     val largeText = LocalDensity.current.fontScale >= 1.5f
     val sourceFilter = InboxSourceFilter.entries.firstOrNull { it.name == source } ?: InboxSourceFilter.All
     val activeFilters = listOf(sourceFilter != InboxSourceFilter.All, unreadOnly, draftsOnly, unreadFirst).count { it }
-    val visible = browseInbox(state.rows, query, sourceFilter, unreadOnly, state.draftPreviews.keys, draftsOnly, unreadFirst)
+    // #117 follow-up: поиск снова находит «Личный чат»/«Учебная группа» — по той же подписи, что видна в строке.
+    val subtitles = rememberInboxSubtitleCopy()
+    val visible = browseInbox(state.rows, query, sourceFilter, unreadOnly, state.draftPreviews.keys, draftsOnly, unreadFirst,
+        subtitleOf = { inboxSubtitleText(it, subtitles) })
     val filtered = query.isNotBlank() || sourceFilter != InboxSourceFilter.All || unreadOnly || draftsOnly
     LazyColumn(modifier, contentPadding = PaddingValues(Zapara.space.l), verticalArrangement = Arrangement.spacedBy(Zapara.space.s)) {
         item {
@@ -705,9 +708,12 @@ private fun emoji(code: String) = when(code) { "like" -> "👍"; "heart" -> "❤
 
 /** #106 / AN-28: «Личный чат», «Личный чат · ИВТ-1», «Учебная группа» — из ресурсов; явная подпись строки важнее. */
 @Composable
-internal fun inboxSubtitle(row: InboxRow): String = when (row.source) {
-    InboxSource.GroupDirect -> if (row.subtitle.isBlank()) stringResource(R.string.inbox_subtitle_personal)
-        else stringResource(R.string.inbox_subtitle_personal_in, row.subtitle)
-    InboxSource.Group -> row.subtitle.ifBlank { stringResource(R.string.inbox_subtitle_group) }
-    else -> row.subtitle.ifBlank { stringResource(R.string.inbox_subtitle_personal) }
+internal fun inboxSubtitle(row: InboxRow): String = inboxSubtitleText(row, rememberInboxSubtitleCopy())
+
+@Composable
+internal fun rememberInboxSubtitleCopy(): InboxSubtitleCopy {
+    val personal = stringResource(R.string.inbox_subtitle_personal)
+    val group = stringResource(R.string.inbox_subtitle_group)
+    val personalIn = stringResource(R.string.inbox_subtitle_personal_in)
+    return InboxSubtitleCopy(personal, group) { name -> personalIn.format(name) }
 }

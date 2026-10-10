@@ -32,10 +32,10 @@
         <item quantity="other">Показать ещё %d задания</item>
     </plurals>
     <plurals name="deadlines_title_count">
-        <item quantity="one">Ближайшие сроки: %d задание</item>
-        <item quantity="few">Ближайшие сроки: %d задания</item>
-        <item quantity="many">Ближайшие сроки: %d заданий</item>
-        <item quantity="other">Ближайшие сроки: %d задания</item>
+        <item quantity="one">Ближайшие сроки: %1$d задание, выполнено %2$d</item>
+        <item quantity="few">Ближайшие сроки: %1$d задания, выполнено %2$d</item>
+        <item quantity="many">Ближайшие сроки: %1$d заданий, выполнено %2$d</item>
+        <item quantity="other">Ближайшие сроки: %1$d задания, выполнено %2$d</item>
     </plurals>
     <string name="inbox_subtitle_personal">Личный чат</string>
     <string name="inbox_subtitle_personal_in">Личный чат · %1$s</string>

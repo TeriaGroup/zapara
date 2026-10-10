@@ -266,12 +266,12 @@ fun WeekSection(state: WeekUiState, onEvent: (WeekEvent) -> Unit,
                                         horizontalArrangement = Arrangement.spacedBy(Zapara.space.xs),
                                         verticalArrangement = Arrangement.spacedBy(Zapara.space.xs)
                                     ) {
-                                        Text(WeekHeader.noBreak(row.name), style = Zapara.typography.body, color = c.text1)
+                                        Text(WeekHeader.keepCpp(row.name), style = Zapara.typography.body, color = c.text1)
                                         if (row.type.isNotBlank()) {
                                             LessonTypeChip(row.type, "Week.Type.${day.dow}.$rowIndex")
                                         }
                                     }
-                                    Text(WeekHeader.noBreak(row.room), style = Zapara.typography.caption, color = c.text2)
+                                    Text(WeekHeader.noBreakRoom(row.room), style = Zapara.typography.caption, color = c.text2)
                                 }) { measurables, constraints ->
                                     val gap = spacing.roundToPx()
                                     val timeWidth = measurables[0].maxIntrinsicWidth(Constraints.Infinity)

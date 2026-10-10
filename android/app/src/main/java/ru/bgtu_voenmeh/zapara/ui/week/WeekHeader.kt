@@ -22,11 +22,14 @@ object WeekHeader {
         if (range.isBlank()) parity.lowercase(Locale("ru")) else "$range ·$NBSP${parity.lowercase(Locale("ru"))}"
 
     /**
-     * «С++»/«C++» без разрыва между буквой и плюсами (word joiner), дефис внутри «ВЦ-3», «А-101» — неразрывный.
-     * Текст на экране тот же, меняется только место переноса.
+     * Название пары: только «С++»/«C++» без разрыва между буквой и плюсами (word joiner). Дефис в названии
+     * обычный — «Научно-исследовательская» должна переноситься при крупном шрифте (#113, follow-up).
      */
-    fun noBreak(text: String): String = text
+    fun keepCpp(text: String): String =
         // Латинская и кириллическая «С» (\u0421, \u0441) перед «++».
-        .replace(Regex("([Cc\u0421\u0441])\\+\\+")) { "${it.groupValues[1]}\u2060+\u2060+" }
-        .replace(Regex("(?<=[\\p{L}\\d])-(?=[\\p{L}\\d])"), "\u2011")
+        text.replace(Regex("([Cc\u0421\u0441])\\+\\+")) { "${it.groupValues[1]}\u2060+\u2060+" }
+
+    /** Аудитория: дефис внутри «ВЦ-3», «А-101» — неразрывный. Текст на экране тот же, меняется только место переноса. */
+    fun noBreakRoom(text: String): String =
+        keepCpp(text).replace(Regex("(?<=[\\p{L}\\d])-(?=[\\p{L}\\d])"), "\u2011")
 }

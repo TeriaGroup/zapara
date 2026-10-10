@@ -49,6 +49,8 @@ fun ZCard(
     onLongClick: (() -> Unit)? = null,
     tag: String? = null,
     padded: Boolean = true,
+    /** Подпись действия по нажатию для TalkBack («Дважды нажмите, чтобы …»). */
+    onClickLabel: String? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val source = remember { MutableInteractionSource() }
@@ -58,6 +60,7 @@ fun ZCard(
         Modifier.pressScale(source).combinedClickable(
             interactionSource = source,
             indication = if (Zapara.motion.enabled) LocalIndication.current else null,
+            onClickLabel = onClickLabel,
             onClick = { onClick?.invoke() },
             onLongClick = onLongClick
         )
