@@ -133,7 +133,7 @@ private fun GroupChip() {
                 }
             } else null
         )
-    } else {
+    } else if (!LocalGroupPickInContent.current) {
         ZButton(
             text = stringResource(R.string.group_pick),
             onClick = chrome.onGroupChip,
@@ -250,13 +250,14 @@ private fun BarItem(
                                 .offset(x = 10.dp, y = (-4).dp)
                                 .sizeIn(minWidth = 16.dp, minHeight = 16.dp)
                                 .clip(CircleShape)
-                                .background(c.bad)
+                                // #109 / AN-11: бейдж ≥4.5:1 в обеих темах — Accent/OnAccent (Bad/OnBad давал 4.4:1 и 3.3:1).
+                                .background(c.accent)
                                 .padding(horizontal = 3.dp)
                                 .testTag("$tag.Badge"),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(badge, style = Zapara.typography.caption.copy(fontSize = fixed, lineHeight = fixed),
-                                color = c.onBad, maxLines = 1)
+                                color = c.onAccent, maxLines = 1)
                         }
                     } else if (dot) {
                         Box(

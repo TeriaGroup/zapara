@@ -812,8 +812,9 @@ private fun PasswordProgress(value: String) {
         else -> stringResource(R.string.ux300_android_password_length_ok)
     }
     Text(label, style = Zapara.typography.caption,
+        // #109 / AN-11: подсказка о длине — Text2 (warn-текст был 2.6:1), «готово» — Ok.
         color = if (count in 12..128 && !value.contains('\u0000')) Zapara.colors.ok
-            else Zapara.colors.warn)
+            else Zapara.colors.text2)
 }
 
 @Composable
