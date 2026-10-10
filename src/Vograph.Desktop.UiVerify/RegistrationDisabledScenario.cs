@@ -24,7 +24,7 @@ public static class RegistrationDisabledScenario
             throw new InvalidOperationException("Password focus missing after theme change.");
         report.Pass("Регистрация отключена: светлая тема, пароль скрыт", ui.Shot("registration-disabled-light-masked-focus"));
         ui.Click("Account.Login");
-        if (!ui.WaitText("Account.Status", s => s.Contains("Неверный")))
+        if (!ui.WaitText("Account.FormError", s => s.Contains("Неверный")))
             throw new InvalidOperationException("Synthetic invalid login was not rejected.");
         RequireLoginOnly(ui);
         report.Pass("Вход доступен: сервер отклонил синтетические данные", ui.Shot("registration-disabled-light-login-rejected"));

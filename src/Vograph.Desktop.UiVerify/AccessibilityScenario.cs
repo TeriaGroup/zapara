@@ -25,8 +25,8 @@ public static class AccessibilityScenario
             ui.SetAccountField("Account.Username", "qa.a." + Guid.NewGuid().ToString("N")[..12]);
             ui.SetAccountField("Account.Password", "");
             ui.Click("Account.Login");
-            Require(ui.WaitText("Account.Status", s => s.Contains("3–32")), "validation status unavailable");
-            Status(ui, facts, "validation");
+            Require(ui.WaitText("Account.FormError", s => s.Contains("3–32")), "validation status unavailable");
+            Status(ui, facts, "validation", "Account.FormError");
             report.Pass("Validation discoverable via UIA (not announcement proof)", frame: ui.Shot("a11y-validation"));
             var credential = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24));
             ui.Click("Account.Mode");
@@ -121,9 +121,9 @@ public static class AccessibilityScenario
         }
     }
 
-    private static void Status(Ui ui, List<object> facts, string stage)
+    private static void Status(Ui ui, List<object> facts, string stage, string id = "Account.Status")
     {
-        var status = ui.Find("Account.Status");
+        var status = ui.Find(id);
         string live;
         try { live = status.Properties.LiveSetting.Value.ToString(); } catch { live = "unsupported"; }
         facts.Add(new { stage, statusDiscoverable = !string.IsNullOrWhiteSpace(status.Name), liveSetting = live, announcementsVerified = false });

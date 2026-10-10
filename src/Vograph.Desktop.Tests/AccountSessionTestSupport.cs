@@ -10,6 +10,8 @@ internal sealed class AccountMemoryVault(string key) : IAccountSessionVault, IDi
     internal AccountVaultEntry? Entry;
     internal bool FailReady;
     internal bool FailPending;
+    /// <summary>#148: чтение хранилища сеанса падает (как повреждённый vault при запуске).</summary>
+    internal bool FailRead;
     public async Task<IAccountVaultLease> AcquireAsync(CancellationToken ct = default)
     {
         await gate.WaitAsync(ct);
@@ -17,7 +19,7 @@ internal sealed class AccountMemoryVault(string key) : IAccountSessionVault, IDi
     }
     private sealed class Lease(AccountMemoryVault owner) : IAccountVaultLease
     {
-        public AccountVaultEntry? Read() => owner.Entry;
+        public AccountVaultEntry? Read() => owner.FailRead ? throw new AccountClientException(AccountClientFailure.VaultUnavailable) : owner.Entry;
         public void Write(AccountVaultEntry entry)
         {
             if ((owner.FailReady && entry.RefreshState == AccountRefreshState.Ready)

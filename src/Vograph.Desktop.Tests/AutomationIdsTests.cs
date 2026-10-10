@@ -73,7 +73,7 @@ public class AutomationIdsTests : UiTest
         "Homework.Add", "Homework.Done", "Homework.Edit", "Homework.Delete", "HomeworkRow.More", "HomeworkRow.Sheet", "HomeworkRow.Card",
         "Settings.Category.Account", "Settings.Category.Study", "Settings.Category.Appearance",
         "Settings.Category.Notifications", "Settings.Category.Data", "Settings.Category.Help", "Settings.Back",
-        "SettingsTheme.0", "SettingsTheme.1", "SettingsTheme.2", "Account.Card", "Account.Status", "Account.Login",
+        "SettingsTheme.0", "SettingsTheme.1", "SettingsTheme.2", "Account.Card", "Account.Status", "Account.FormError", "Account.Login",
         "Settings.CompactSidebar", "Settings.Animations", "Settings.ChangeGroup", "Settings.ParityInvert", "Settings.Refresh",
         "Settings.NotifyEnabled", "Settings.NotifyTime1", "Settings.NotifyTime2", "Settings.SaveTimes", "Settings.TestNotification",
         "Settings.Export", "Settings.Import", "Settings.Qr", "Settings.LanSync", "Settings.LanAddress",

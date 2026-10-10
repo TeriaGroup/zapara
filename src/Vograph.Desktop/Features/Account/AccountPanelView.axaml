@@ -63,6 +63,14 @@
             </CheckBox>
           </StackPanel>
           <TextBlock Classes="caption" Text="{loc:T accountValidation}" TextWrapping="Wrap" />
+          <!-- #148 (R3-02): ошибка формы — отдельный блок с цветом ошибки и значком, объявляется диктором; не в строке состояния. -->
+          <Border IsVisible="{Binding HasFormError}" Background="{DynamicResource Brush.BadSoft}" CornerRadius="8" Padding="12,10" HorizontalAlignment="Left" MaxWidth="560">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <c:Icon Data="{StaticResource Icon.Alert}" Size="16" VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{DynamicResource Brush.Bad}" />
+              <TextBlock Classes="bad" Text="{Binding FormError}" TextWrapping="Wrap" MaxWidth="510"
+                         AutomationProperties.AutomationId="Account.FormError" AutomationProperties.LiveSetting="Assertive" />
+            </StackPanel>
+          </Border>
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Button Classes="primary" Content="{loc:T accountLogin}" Command="{Binding SubmitCommand}" IsVisible="{Binding !Registration}" AutomationProperties.AutomationId="Account.Login" />
             <Button Classes="primary" Content="{loc:T accountRegister}" Command="{Binding SubmitCommand}" IsVisible="{Binding Registration}" IsEnabled="{Binding DocumentsAccepted}" AutomationProperties.AutomationId="Account.Register" />

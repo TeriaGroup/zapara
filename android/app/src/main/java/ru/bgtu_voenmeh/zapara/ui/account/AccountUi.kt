@@ -218,7 +218,9 @@ data class AccountUiState(
         is AccountEvent.Proof -> copy(proof = event.value)
         is AccountEvent.RecoveryUsername -> copy(recoveryUsername = event.value)
         AccountEvent.ToggleRegistration ->
-            if (!registrationAvailable) this else copy(registration = !registration, password = "", documentsAccepted = false)
+            // #148 (R3-02): «Неверный логин или пароль» не переживает смену «Вход / Регистрация».
+            if (!registrationAvailable) this else copy(registration = !registration, password = "", documentsAccepted = false,
+                status = if (showAccount) status else "")
         is AccountEvent.AcceptDocuments -> copy(documentsAccepted = event.value)
         AccountEvent.RequestLogout -> copy(confirmLogout = true).clearSecrets()
         AccountEvent.CancelLogout -> copy(confirmLogout = false)

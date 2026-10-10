@@ -162,6 +162,38 @@ public sealed class AccountUiLifecycleTests
     }
 
     [Fact]
+    public async Task External_sign_in_failure_returns_the_status_to_neutral_and_reports_in_the_form()
+    {
+        // #153: «Войти с VK ID…» в строке состояния (её повторяет подзаголовок в настройках) не остаётся после сбоя.
+        await using var f = new Fixture(vk: true, yandex: true);
+        await f.Vm.InitializeAsync();
+        var neutral = f.Vm.Status;
+        var start = new ExternalStartResponse(Guid.Parse("50000000-0000-0000-0000-000000000002"),
+            "https://example.invalid/mock/authorize?state=def", DateTimeOffset.UtcNow.AddMinutes(10));
+        f.Handler.Send = (_, _) => Task.FromResult(Json(start));
+        var pending = f.Vm.StartVkCommand.ExecuteAsync(null);
+        Assert.Contains("VK ID", f.Vm.Status);
+        f.Vm.CancelExternalCommand.Execute(null);
+        await pending.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.False(f.Vm.ExternalPending);
+        Assert.Equal(neutral, f.Vm.Status);
+        Assert.False(string.IsNullOrEmpty(f.Vm.FormError));
+    }
+
+    [Fact]
+    public async Task Consent_error_clears_once_the_documents_are_accepted()
+    {
+        await using var f = new Fixture(vk: true, yandex: true);
+        await f.Vm.InitializeAsync();
+        f.Vm.Registration = true;
+        await f.Vm.StartVkCommand.ExecuteAsync(null);
+        Assert.Equal(Loc.Current.T("accountAcceptRequired"), f.Vm.FormError);
+        f.Vm.DocumentsAccepted = true;
+        Assert.Equal("", f.Vm.FormError);
+        Assert.False(f.Vm.HasFormError);
+    }
+
+    [Fact]
     public async Task Vk_start_uses_mock_authorize_url_pkce_and_never_embeds_secrets()
     {
         await using var f = new Fixture(vk: true, yandex: true);
