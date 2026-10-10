@@ -1,4 +1,5 @@
 import { addDays, isoDay, lessonsOn, sameSubject } from "./parity.ts";
+import { pairCount } from "./map-viewport.ts";
 import type { HomeworkItem, Lesson } from "./types";
 export function localDay(value: string): Date | null {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value))
@@ -68,6 +69,12 @@ export function nearbyHomework(items: HomeworkItem[], date: Date, subjects: stri
 export function absoluteDate(date: Date) { return date.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); }
 /** Точка в конце фразы — только если её там ещё нет: absoluteDate() с годом уже кончается на « г.» (r2: «2026 г..»). */
 export function endSentence(text: string) { return /[.!?…]$/.test(text.trimEnd()) ? text.trimEnd() : text.trimEnd() + "."; }
+/** R2-14: сводка дня в шапке — «Пар нет» вместо «0 пар»; с парами — «2 пары · 09:00–14:15». */
+export function dayOverviewText(lessons: readonly { timeStart: string; timeEnd: string }[]) {
+    if (lessons.length === 0) return "Пар нет";
+    return `${pairCount(lessons.length)} · ${lessons[0].timeStart}–${lessons[lessons.length - 1].timeEnd}`;
+}
+
 /** Строка пустого дня: когда ближайшие пары (глоссарий: «пары», не «занятия»). */
 export function nextLessonsLine(next?: Date | null) {
     return next ? endSentence(`Ближайшие пары — ${absoluteDate(next)}`) : "В ближайшие три недели в сохранённом расписании пар нет.";

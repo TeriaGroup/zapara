@@ -57,7 +57,7 @@ import { selectedTopicAuthority } from "./topic-authority";
 import { topicAction } from "./topic-policy";
 import { useCommunityTimetable } from "./use-community-timetable";
 import { useApp } from "./store";
-import { absoluteDate, nextLessonsLine, heroLesson, isUpcomingLesson, localDay, nearbyHomework, personalHomeworkDue } from "./planner";
+import { absoluteDate, dayOverviewText, nextLessonsLine, heroLesson, isUpcomingLesson, localDay, nearbyHomework, personalHomeworkDue } from "./planner";
 import { homeworkCard, lessonFrom, placeCard } from "./cards";
 import { BallotBoardView } from "./ballots";
 import { GroupTopics, TopicMark } from "./topics";
@@ -284,7 +284,7 @@ export function SchedulePage() {
     </div>
     <div className="day-space date-reveal" ref={dateReveal}>
       <main className="stack swipe" {...swipe}>
-        <div className="section-overview study-compact-overview"><strong>{groupName || app.groupId}</strong><span>{app.timetableAvailable && !outsidePeriod ? `${pairCount(lessons.length)}${lessons.length ? ` · ${lessons[0].timeStart}–${lessons.at(-1)?.timeEnd}` : ""}` : "Нет данных"}</span>
+        <div className="section-overview study-compact-overview"><strong>{groupName || app.groupId}</strong><span>{app.timetableAvailable && !outsidePeriod ? dayOverviewText(lessons) : "Нет данных"}</span>
           <button className="icon-btn quiet study-refresh-button" type="button" aria-label={app.loading || app.timetableLoading ? "Обновляем расписание" : "Обновить расписание"} title={app.loading || app.timetableLoading ? "Обновляем расписание" : "Обновить расписание"} disabled={app.loading || app.timetableLoading} onClick={app.refresh}><Icon name="refresh" size={18} /></button></div>
         {ownTimetable && <p className="schedule-cache muted">{!online ? "Нет сети · сохранённая копия" : app.timetableFailed ? "Не удалось обновить · сохранённая копия" : "Обновлено"} {new Date(ownTimetable.meta.fetchedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
         {!app.timetableAvailable ? <div className="card empty"><p>{app.timetableLoading ? "Загружаем расписание" : app.groupId ? "Расписание не загружено. Нет сохранённой копии." : "Выберите учебную группу"}</p>{app.groupId ? <button className="btn" type="button" disabled={app.timetableLoading || app.loading} onClick={app.refresh}>{app.timetableLoading || app.loading ? "Загружаем…" : "Повторить загрузку"}</button> : <Link className="btn" to="/settings?section=study">Выбрать группу</Link>}</div>
@@ -295,7 +295,7 @@ export function SchedulePage() {
           <button className="btn quiet study-day-tools-trigger" type="button" aria-expanded={dayToolsOpen} onClick={() => setDayToolsOpen(value => !value)}><Icon name="menu" size={18} />Действия дня</button>
           <div className={"study-day-tools-body" + (dayToolsOpen ? " open" : "")}>
             <div className="study-day-actions-list">
-              {!outsidePeriod && <p className="muted">Учебное время: {dayLoad(lessons).minutes} мин · Перерывы и окна: {dayLoad(lessons).gaps} мин</p>}
+              {!outsidePeriod && lessons.length > 0 && <p className="muted">Учебное время: {dayLoad(lessons).minutes} мин · Перерывы и окна: {dayLoad(lessons).gaps} мин</p>}
               <div className="study-day-action-links">
                 {hero && <button className="btn quiet" type="button" onClick={() => focusElement(`schedule-lesson-${lessons.indexOf(hero)}`)}>К ближайшей паре</button>}
                 <button className="btn quiet" type="button" onClick={() => focusElement("schedule-deadlines")}>{S.toDeadlines}</button>

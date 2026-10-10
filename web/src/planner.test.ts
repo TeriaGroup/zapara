@@ -37,3 +37,15 @@ test("r2: the empty-day line ends with one period after Intl's « г.», and say
   assert.equal(endSentence("Загрузка…"), "Загрузка…");
   assert.equal(endSentence("Правда? "), "Правда?");
 });
+
+test("R2-14: на пустом дне — «Пар нет», без нулевой статистики и второй ссылки «К срокам домашки» на ПК", async () => {
+  const planner = await import("./planner.ts");
+  assert.equal(planner.dayOverviewText([]), "Пар нет");
+  assert.equal(planner.dayOverviewText([{ timeStart: "09:00", timeEnd: "10:30" }, { timeStart: "12:40", timeEnd: "14:15" }]), "2 пары · 09:00–14:15");
+  const { readFileSync } = await import("node:fs");
+  const pages = readFileSync(new URL("./pages.tsx", import.meta.url), "utf8");
+  assert.match(pages, /lessons\.length > 0 && <p className="muted">Учебное время:/);
+  assert.doesNotMatch(pages, /pairCount\(lessons\.length\)/);
+  const css = readFileSync(new URL("./mobile-study.css", import.meta.url), "utf8");
+  assert.match(css, /@media \(min-width: 960px\) \{\n  \.study-day-action-links \{ display: none; \}/);
+});
