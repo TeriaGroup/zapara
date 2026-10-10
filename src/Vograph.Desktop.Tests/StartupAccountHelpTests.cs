@@ -171,7 +171,7 @@ public class StartupAccountHelpTests : UiTest
         Assert.Equal("Открыть страницу загрузки", download.Content);
         Assert.False(download.Classes.Contains("link"));
         var texts = window.GetVisualDescendants().OfType<TextBlock>().Where(t => t.IsEffectivelyVisible).Select(t => t.Text ?? "").ToList();
-        Assert.Contains(texts, t => t.Contains("технический отчёт (без личных данных)"));
+        Assert.Contains(texts, t => t.Contains("вход сейчас временно недоступен")); // R2-02: гостю без входа — объяснение вместо формы (текст про отчёт — у формы для вошедших)
         Assert.DoesNotContain(texts, t => t.Contains("GitHub") || t.Contains("репы") || t.Contains("Логи") || t.Contains("Альфа"));
         Assert.Equal("Версия 2.1.42 — последняя · проверено в 19:04", Loc.Current.T("updUpToDate", "2.1.42", "19:04"));
         Assert.Equal("Обновлять автоматически", Loc.Current.T("autoUpdate"));
