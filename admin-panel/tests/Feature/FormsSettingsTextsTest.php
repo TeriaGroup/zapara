@@ -209,14 +209,16 @@ class FormsSettingsTextsTest extends TestCase
         }
 
         $page = (string) $this->get('/admin/settings')->assertOk()->getContent();
-        // Граница — токен border-control из #11; его контраст проверяет web/src/design-tokens.test.ts.
-        // Здесь проверяем запасной цвет, который действует, пока токен не подключён.
+        // Граница — токен border-control из #11, без запасного hex (#8, G-1): токены подключены на каждой странице панели.
         $this->assertDoesNotMatchRegularExpression('/--zp-border-control-tmp/', $page);
-        $this->assertMatchesRegularExpression('/--tw-ring-color:\s*var\(--zp-border-control,\s*(#[0-9a-f]{6})\)/i', $page);
-        preg_match('/--tw-ring-color:\s*var\(--zp-border-control,\s*(#[0-9a-f]{6})\)/i', $page, $fallback);
+        $this->assertMatchesRegularExpression('/--tw-ring-color:\s*var\(--zp-border-control\);/', $page);
+        $this->assertDoesNotMatchRegularExpression('/var\(--zp-border-control,/', $page);
         // Фон поля и страницы в светлой теме; фон секции и поля в тёмной (gray-900 и white 5% поверх него).
-        foreach (['#ffffff', '#fafafa', '#18181b', '#242427'] as $background) {
-            $this->assertGreaterThanOrEqual(3.0, self::contrast($fallback[1], $background), $fallback[1].' / '.$background);
+        foreach (['light' => ['#ffffff', '#fafafa'], 'dark' => ['#18181b', '#242427']] as $theme => $backgrounds) {
+            $border = config("design-tokens.$theme.border-control");
+            foreach ($backgrounds as $background) {
+                $this->assertGreaterThanOrEqual(3.0, self::contrast($border, $background), "$theme $border / $background");
+            }
         }
     }
 
