@@ -21,6 +21,10 @@ object ShellLogic {
         !it.done && it.status != "done" && (it.due == today || it.due == today.plusDays(1))
     }
 
+    /** #108 / AN-17: в открытой беседе (личной или чате группы) нижней панели нет; назад — кнопкой в шапке. */
+    fun showBottomBar(current: Section, conversationOpen: Boolean): Boolean =
+        !(conversationOpen && (current == Section.Chat || current == Section.Group))
+
     fun chip(groupName: String, odd: Boolean, copy: ru.bgtu_voenmeh.zapara.ui.UiCopy): String =
         copy.get("chip_group", groupName, copy.get(if (odd) "chip_odd" else "chip_even"))
 }

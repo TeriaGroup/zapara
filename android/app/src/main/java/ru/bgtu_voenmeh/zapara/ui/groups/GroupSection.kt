@@ -249,6 +249,7 @@ private fun Home(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     val c = Zapara.colors
     val channelState = rememberSaveableStateHolder()
     val conversation = isChannelDetail(state)
+    ru.bgtu_voenmeh.zapara.ui.shell.ReportConversationOpen(conversation) // #108 / AN-17: без нижней панели в беседе
     val keyboardVisible = rememberKeyboardVisible()
     val browsingWithKeyboard = (state.showChannels || state.showPeople) && keyboardVisible
     var detailsOpen by rememberSaveable(state.communityId, state.activeTopicId) { mutableStateOf(false) }

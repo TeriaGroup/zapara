@@ -185,7 +185,8 @@ private fun ZaparaAppBody(
                 else -> if (!nav.popBackStack()) nav.openSection(Section.Schedule)
             }
         }
-        CompositionLocalProvider(LocalShellChrome provides chrome,
+        var conversationOpen by remember { mutableStateOf(false) }
+        CompositionLocalProvider(LocalShellChrome provides chrome, LocalConversationOpen provides { conversationOpen = it },
             ru.bgtu_voenmeh.zapara.ui.chat.LocalAvatarStore provides container.avatars) {
             Box(Modifier.fillMaxSize()) {
                 ZAppScaffold(
@@ -195,7 +196,7 @@ private fun ZaparaAppBody(
                     },
                     conversation = current == Section.Chat || current == Section.Group,
                     bottomBar = {
-                        ZBottomBar(
+                        if (ShellLogic.showBottomBar(current, conversationOpen)) ZBottomBar(
                             current = barCurrent,
                             sectionsActive = barCurrent !in Section.bar || state.overlay == ShellOverlay.Sections,
                             homeworkBadge = state.homeworkBadge,
