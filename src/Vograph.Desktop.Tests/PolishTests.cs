@@ -50,9 +50,9 @@ public class PolishTests : UiTest
         Assert.True(shell.ShowStaleDot);
         Assert.StartsWith("А863С", shell.GroupCardTip);
         Assert.Contains("обновлено", shell.GroupCardTip); // the rail tooltip carries what the chip would have said
-        Assert.Equal("Развернуть панель (Ctrl+B)", shell.SidebarToggleTip);
+        Assert.Equal("Развернуть меню (Ctrl+B)", shell.SidebarToggleTip);
         shell.SidebarCollapsed = false;
-        Assert.Equal("Свернуть панель (Ctrl+B)", shell.SidebarToggleTip);
+        Assert.Equal("Свернуть меню (Ctrl+B)", shell.SidebarToggleTip);
     }
 
     [Fact]

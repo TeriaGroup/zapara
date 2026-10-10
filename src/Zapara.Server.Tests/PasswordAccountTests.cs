@@ -37,23 +37,80 @@ public sealed partial class PasswordAccountTests
     }
 
     [Fact]
-    public async Task Lockout_is_persisted_fixed_nonextending_and_success_clears()
+    public async Task Failed_logins_throttle_the_failing_network_and_never_lock_the_account()
     {
         await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);
         var clock = new AccountClock();
-        var service = new AccountService(db.DataSource, db.Configuration, clock);
+        var service = new AccountService(db.DataSource, db.Configuration, clock, throttle: new LoginThrottle(clock));
         await Seed(service);
-        await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => Failure(AccountFailure.InvalidCredentials,
-            () => service.LoginAsync(Login(password: NewPassword)))));
+        const string attacker = "4:198.51.100.7";
+        const string owner = "6:20010db8000000010000::/64";
+        for (var i = 0; i < LoginThrottle.PairFailureLimit; i++)
+            await Failure(AccountFailure.InvalidCredentials, () => service.LoginAsync(Login(password: NewPassword), attacker));
+        var blocked = await Assert.ThrowsAsync<AccountServiceException>(() => service.LoginAsync(Login(), attacker));
+        Assert.Equal(AccountFailure.RateLimited, blocked.Failure);
+        Assert.InRange(blocked.RetryAfter!.Value, TimeSpan.FromSeconds(1), LoginThrottle.Window);
+        // The stored credential is not locked: the owner signs in from another network right away.
         Assert.Equal(5, await db.ScalarAsync<int>($"SELECT failed_count FROM {db.QuotedSchema}.password_credentials"));
-        var locked = await db.ScalarAsync<DateTime>($"SELECT locked_until FROM {db.QuotedSchema}.password_credentials");
-        clock.Now += TimeSpan.FromMinutes(14);
-        await using var reopened = db.Configuration.CreateDataSource();
-        await Failure(AccountFailure.InvalidCredentials, () => new AccountService(reopened, db.Configuration, clock).LoginAsync(Login()));
-        Assert.Equal(locked, await db.ScalarAsync<DateTime>($"SELECT locked_until FROM {db.QuotedSchema}.password_credentials"));
-        clock.Now += TimeSpan.FromMinutes(1);
-        Assert.NotNull(await service.LoginAsync(Login(), TestContext.Current.CancellationToken));
+        Assert.Equal(0L, await db.ScalarAsync<long>($"SELECT count(*) FROM {db.QuotedSchema}.password_credentials WHERE locked_until IS NOT NULL"));
+        Assert.NotNull(await service.LoginAsync(Login(), owner, TestContext.Current.CancellationToken));
         Assert.Equal(0, await db.ScalarAsync<int>($"SELECT failed_count FROM {db.QuotedSchema}.password_credentials"));
+        // The failing network stays blocked until its window ends, then it may try again.
+        await Failure(AccountFailure.RateLimited, () => service.LoginAsync(Login(), attacker));
+        clock.Now += LoginThrottle.Window;
+        Assert.NotNull(await service.LoginAsync(Login(), attacker, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Known_device_is_exempt_and_many_networks_only_delay_the_account()
+    {
+        await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);
+        var clock = new AccountClock();
+        var service = new AccountService(db.DataSource, db.Configuration, clock, throttle: new LoginThrottle(clock));
+        await service.RegisterAsync(new("test.user", Password), TestContext.Current.CancellationToken);
+        var phone = Guid.NewGuid();
+        const string shared = "4:198.51.100.30";
+        Assert.NotNull(await service.LoginAsync(Login(device: phone), shared, TestContext.Current.CancellationToken));
+        for (var i = 0; i < LoginThrottle.PairFailureLimit; i++)
+            await Failure(AccountFailure.InvalidCredentials, () => service.LoginAsync(Login(password: NewPassword), shared));
+        // A new device on the blocked network waits; the device that signed in before does not.
+        await Failure(AccountFailure.RateLimited, () => service.LoginAsync(Login(), shared));
+        Assert.NotNull(await service.LoginAsync(Login(device: phone), shared, TestContext.Current.CancellationToken));
+        // A device id known for another account gives nothing here.
+        await service.RegisterAsync(new("other.user", Password), TestContext.Current.CancellationToken);
+        for (var i = 0; i < LoginThrottle.PairFailureLimit; i++)
+            await Failure(AccountFailure.InvalidCredentials, () => service.LoginAsync(Login("other.user", NewPassword), shared));
+        await Failure(AccountFailure.RateLimited, () => service.LoginAsync(Login("other.user", device: phone), shared));
+
+        // Failures from many networks: every new attempt waits the account delay, never longer than its cap.
+        for (var i = 0; i < 40; i++)
+        {
+            var network = $"4:203.0.113.{i}";
+            try { await service.LoginAsync(Login(password: NewPassword), network, TestContext.Current.CancellationToken); }
+            catch (AccountServiceException e) when (e.Failure == AccountFailure.RateLimited)
+            {
+                Assert.InRange(e.RetryAfter!.Value, TimeSpan.FromSeconds(1), LoginThrottle.MaxAccountDelay);
+                clock.Now += e.RetryAfter.Value;
+                await Failure(AccountFailure.InvalidCredentials, () => service.LoginAsync(Login(password: NewPassword), network));
+            }
+            catch (AccountServiceException e) when (e.Failure == AccountFailure.InvalidCredentials) { }
+        }
+        // A new device on a clean network waits at most the cap (never a block); the known device is not delayed.
+        var delayed = await Assert.ThrowsAsync<AccountServiceException>(() => service.LoginAsync(Login(), "4:192.0.2.200"));
+        Assert.Equal(AccountFailure.RateLimited, delayed.Failure);
+        Assert.InRange(delayed.RetryAfter!.Value, TimeSpan.FromSeconds(1), LoginThrottle.MaxAccountDelay);
+        Assert.NotNull(await service.LoginAsync(Login(device: phone), "4:192.0.2.201", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Legacy_locked_until_no_longer_blocks_login()
+    {
+        await using var db = await AccountsPostgresFixture.CreateAsync(Console.WriteLine, true);
+        var service = new AccountService(db.DataSource, db.Configuration, new AccountClock());
+        await Seed(service);
+        await db.ExecuteAsync($"UPDATE {db.QuotedSchema}.password_credentials SET failed_count=5,locked_until='2026-09-08T12:15:00Z'");
+        Assert.NotNull(await service.LoginAsync(Login(), TestContext.Current.CancellationToken));
+        Assert.Equal(0L, await db.ScalarAsync<long>($"SELECT count(*) FROM {db.QuotedSchema}.password_credentials WHERE locked_until IS NOT NULL"));
     }
 
     [Fact]

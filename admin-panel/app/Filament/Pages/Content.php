@@ -15,6 +15,7 @@ use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Illuminate\Support\HtmlString;
 
 class Content extends Page
 {
@@ -72,7 +73,7 @@ class Content extends Page
             $communityId = $row['community_id'];
             $key = str_replace('-', '', $objectId);
             $components[] = Section::make($row['title'])
-                ->description($this->kindLabel($kind).' · '.$row['community_name'].' · '.$communityId)
+                ->description(new HtmlString(e($this->kindLabel($kind).' · '.$row['community_name']).' · <span class="zp-id" title="'.e($communityId).'">'.e($communityId).'</span>'))
                 ->key('content-'.$key)
                 ->headerActions([
                     Action::make('moderate'.$key)

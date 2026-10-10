@@ -30,6 +30,11 @@ internal static class AccountErrors
             _ => "Внутренняя ошибка сервера"
         }, status, code), AccountJson.CreateOptions(), "application/problem+json", status);
 
+    /// <summary>Retry-After for a rate-limited account operation: the throttle's own wait when known, otherwise 60 s.</summary>
+    internal static string RetryAfter(AccountServiceException exception) => exception.RetryAfter is { } wait
+        ? Math.Clamp((int)Math.Ceiling(wait.TotalSeconds), 1, 3600).ToString(System.Globalization.CultureInfo.InvariantCulture)
+        : "60";
+
     internal static Task Write(HttpContext context, int status, string code)
     {
         context.Response.Headers.CacheControl = "no-store";

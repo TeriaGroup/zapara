@@ -2,25 +2,17 @@
 @font-face { font-family: Inter; src: url("/app/fonts/inter_medium.ttf") format("truetype"); font-weight: 500; font-display: swap; }
 @font-face { font-family: Inter; src: url("/app/fonts/inter_semibold.ttf") format("truetype"); font-weight: 600; font-display: swap; }
 :root {
+  /* Прежние имена переменных — псевдонимы общих токенов (tokens.css, #11). Новый код берёт --zp-* напрямую. */
   color-scheme: dark;
-  --canvas: #0d0d0d; --surface: #111111; --card: #171717; --card-pressed: #1c1c1c;
-  --chip: #222222; --line: #262626; --line-strong: #a0a0a0;
-  --text: #f2f2f2; --muted: #a0a0a0; --faint: #a0a0a0;
-  --accent: #f2f2f2; --on-accent: #0d0d0d; --selection: #ffffff14;
-  --warn: #f2a33c; --warn-soft: #f2a33c24; --bad: #ef5b6b; --ok: #4cc38a; --info: #5aa9ff;
-  --ink-lecture: #5aa9ff; --ink-practice: #4cc38a; --ink-lab: #f2a33c; --ink-consult: #c77dff;
-  --ink-credit: #5eead4; --ink-exam: #ef5b6b; --ink-course: #ff7a9c;
+  --canvas: var(--zp-surface-0); --surface: var(--zp-surface-1); --card: var(--zp-surface-2); --card-pressed: var(--zp-surface-pressed);
+  --chip: var(--zp-surface-chip); --line: var(--zp-border-subtle); --line-strong: var(--zp-focus);
+  --text: var(--zp-text-primary); --muted: var(--zp-text-secondary); --faint: var(--zp-text-secondary);
+  --accent: var(--zp-accent); --on-accent: var(--zp-on-accent); --selection: var(--zp-selection);
+  --warn: var(--zp-warning); --warn-soft: var(--zp-warning-soft); --bad: var(--zp-danger); --ok: var(--zp-success); --info: var(--zp-info);
+  --ink-lecture: var(--zp-lesson-lecture); --ink-practice: var(--zp-lesson-practice); --ink-lab: var(--zp-lesson-lab); --ink-consult: var(--zp-lesson-consult);
+  --ink-credit: var(--zp-lesson-credit); --ink-exam: var(--zp-lesson-exam); --ink-course: var(--zp-lesson-course);
 }
-:root[data-theme="light"] {
-  color-scheme: light;
-  --canvas: #ffffff; --surface: #f7f7f7; --card: #f5f5f5; --card-pressed: #efefef;
-  --chip: #ebebeb; --line: #e5e5e5; --line-strong: #595959;
-  --text: #111111; --muted: #595959; --faint: #595959;
-  --accent: #111111; --on-accent: #ffffff; --selection: #0000000d;
-  --warn: #d9861b; --warn-soft: #d9861b1f; --bad: #d7404f; --ok: #2fa36b; --info: #2b7fd9;
-  --ink-lecture: #2b7fd9; --ink-practice: #2fa36b; --ink-lab: #d9861b; --ink-consult: #9b51e0;
-  --ink-credit: #0f766e; --ink-exam: #d7404f; --ink-course: #e0527a;
-}
+:root[data-theme="light"] { color-scheme: light; }
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; min-height: 100%; }
 body { font: 15px/1.3 Inter, "Segoe UI", sans-serif; background: var(--canvas); color: var(--text); }

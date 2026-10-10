@@ -53,6 +53,7 @@ public sealed partial class ShellViewModel
         _ = RefreshGroupCardAsync();
         OnPropertyChanged(nameof(GroupCardTip));
         OnPropertyChanged(nameof(SidebarToggleTip));
+        OnPropertyChanged(nameof(SidebarToggleName));
         OnPropertyChanged(nameof(MaximizeTip));
     }
     private void LanImported() => App.Work.Post(a => Dispatcher.UIThread.Post(a), NotifyImportedAsync,

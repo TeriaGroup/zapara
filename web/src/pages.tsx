@@ -82,23 +82,7 @@ import { useCompactLayout } from "./mobile-chrome";
 import type { BallotBoard, ChatMessage, Community, Conversation, FriendItem, GroupDesk, GroupHome, GroupHomeworkCopy, GroupTopic, GroupTopicPage, HomeworkAudience, HomeworkFile, HomeworkItem, Lesson, MapPlan, Teacher, TeacherLesson } from "./types";
 
 import { PageHead as Head } from "./page-head";
-
-function lessonKind(type: string) {
-  const value = type.trim().toLowerCase();
-  if (value === "лек" || value === "лекция") return "lecture";
-  if (value === "пр" || value === "практика") return "practice";
-  if (value === "лаб" || value === "лабораторная" || value === "лабораторная работа") return "lab";
-  if (value === "конс" || value === "консультация") return "consult";
-  if (value === "зач" || value === "зачёт" || value === "зачет") return "credit";
-  if (value === "экз" || value === "экзамен") return "exam";
-  if (value === "курс" || value === "курсовая") return "course";
-  return "";
-}
-
-const typeLabels: Record<string, string> = {
-  lecture: "Лекция", practice: "Практика", lab: "Лаба", consult: "Консульт.",
-  credit: "Зачёт", exam: "Экзамен", course: "Курсовая"
-};
+import { lessonKind, lessonKindLabels as typeLabels } from "./ui/lesson-kind.ts";
 
 function TypeChip({ type }: { type: string }) {
   const kind = lessonKind(type);
