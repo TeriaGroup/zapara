@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- #102 (AN-05): шапка «Недели» в одну строку, редкое — в «⋯». -->
+<resources>
+    <string name="week_more">Ещё действия с неделей</string>
+    <string name="week_open_day_named">Открыть день: %1$s</string>
+</resources>

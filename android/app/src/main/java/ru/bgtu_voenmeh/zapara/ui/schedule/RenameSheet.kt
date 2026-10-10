@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import ru.bgtu_voenmeh.zapara.R
 import ru.bgtu_voenmeh.zapara.ui.components.ZBottomSheet
@@ -66,8 +67,8 @@ fun RenameSheet(ui: RenameUi, onEvent: (ScheduleEvent) -> Unit) {
             style = Zapara.typography.caption, color = c.text2)
         affected.take(5).forEach { row -> Text(row, style = Zapara.typography.caption,
             color = c.text1) }
-        if (affected.size > 5) Text(stringResource(R.string.ux300_android_rename_more,
-            affected.size - 5), style = Zapara.typography.caption, color = c.text2)
+        if (affected.size > 5) Text(pluralStringResource(R.plurals.ux300_android_rename_more,
+            affected.size - 5, affected.size - 5), style = Zapara.typography.caption, color = c.text2)
         ui.error?.let { Text(it, style = Zapara.typography.caption, color = c.bad) }
         if (ui.busy) Text(stringResource(R.string.ux60_saving), style = Zapara.typography.caption, color = c.text2)
     }

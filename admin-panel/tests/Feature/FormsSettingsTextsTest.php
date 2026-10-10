@@ -184,7 +184,7 @@ class FormsSettingsTextsTest extends TestCase
     public function test_login_says_administration_and_shows_the_error_above_the_form(): void
     {
         $member = $this->makeUser(false);
-        $this->get('/admin/login')->assertOk()->assertSee('Военмех · Администрирование');
+        $this->get('/admin/login')->assertOk()->assertSee('Администрирование')->assertDontSee('Военмех · Администрирование'); // R2-17
 
         Livewire::test(Login::class)
             ->fillForm(['username' => $member->username, 'password' => 'wrong-password-1'])

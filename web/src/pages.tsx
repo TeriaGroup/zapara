@@ -57,7 +57,7 @@ import { selectedTopicAuthority } from "./topic-authority";
 import { topicAction } from "./topic-policy";
 import { useCommunityTimetable } from "./use-community-timetable";
 import { useApp } from "./store";
-import { absoluteDate, heroLesson, isUpcomingLesson, localDay, nearbyHomework, personalHomeworkDue } from "./planner";
+import { absoluteDate, dayOverviewText, nextLessonsLine, shortDate, heroLesson, isUpcomingLesson, localDay, nearbyHomework, personalHomeworkDue } from "./planner";
 import { homeworkCard, lessonFrom, placeCard } from "./cards";
 import { BallotBoardView } from "./ballots";
 import { GroupTopics, TopicMark } from "./topics";
@@ -284,18 +284,18 @@ export function SchedulePage() {
     </div>
     <div className="day-space date-reveal" ref={dateReveal}>
       <main className="stack swipe" {...swipe}>
-        <div className="section-overview study-compact-overview"><strong>{groupName || app.groupId}</strong><span>{app.timetableAvailable && !outsidePeriod ? `${pairCount(lessons.length)}${lessons.length ? ` · ${lessons[0].timeStart}–${lessons.at(-1)?.timeEnd}` : ""}` : "Нет данных"}</span>
+        <div className="section-overview study-compact-overview"><strong>{groupName || app.groupId}</strong><span>{app.timetableAvailable && !outsidePeriod ? dayOverviewText(lessons) : "Нет данных"}</span>
           <button className="icon-btn quiet study-refresh-button" type="button" aria-label={app.loading || app.timetableLoading ? "Обновляем расписание" : "Обновить расписание"} title={app.loading || app.timetableLoading ? "Обновляем расписание" : "Обновить расписание"} disabled={app.loading || app.timetableLoading} onClick={app.refresh}><Icon name="refresh" size={18} /></button></div>
         {ownTimetable && <p className="schedule-cache muted">{!online ? "Нет сети · сохранённая копия" : app.timetableFailed ? "Не удалось обновить · сохранённая копия" : "Обновлено"} {new Date(ownTimetable.meta.fetchedAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>}
         {!app.timetableAvailable ? <div className="card empty"><p>{app.timetableLoading ? "Загружаем расписание" : app.groupId ? "Расписание не загружено. Нет сохранённой копии." : "Выберите учебную группу"}</p>{app.groupId ? <button className="btn" type="button" disabled={app.timetableLoading || app.loading} onClick={app.refresh}>{app.timetableLoading || app.loading ? "Загружаем…" : "Повторить загрузку"}</button> : <Link className="btn" to="/settings?section=study">Выбрать группу</Link>}</div>
-          : outsidePeriod ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>Дата вне учебного периода</h2><p>Начало сохранённого учебного периода: {period && localDay(period.start.slice(0,10)) ? absoluteDate(localDay(period.start.slice(0,10))!) : "неизвестно"}</p></div> : lessons.length === 0 ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>В этот день пар нет</h2><p>{nextDate ? `Ближайшие занятия — ${absoluteDate(nextDate)}.` : "В ближайшие три недели в сохранённом расписании занятий нет."}</p>{nextDate && <button className="btn" type="button" onClick={() => app.setDate(nextDate)}>Открыть {nextDate.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}<Icon name="right" /></button>}</div>
+          : outsidePeriod ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>Дата вне учебного периода</h2><p>Начало сохранённого учебного периода: {period && localDay(period.start.slice(0,10)) ? absoluteDate(localDay(period.start.slice(0,10))!) : "неизвестно"}</p></div> : lessons.length === 0 ? <div className="card empty day-empty"><Icon name="calendar" size={32} /><h2>Пар нет</h2><p>{nextLessonsLine(nextDate, nextDate && period ? lessonsOn(shown, nextDate, period.start, period.weekCount, app.invert)[0]?.timeStart : null)}</p>{nextDate && <button className="btn" type="button" onClick={() => app.setDate(nextDate)}>Открыть {shortDate(nextDate)}<Icon name="right" /></button>}</div>
           : <>{isoDay(app.date) === isoDay(now) && !hero && !app.timetableFailed && overlaps.length === 0 && !exactTargetNote && <p className="study-day-ended" role="status">Пары закончились</p>}{summary && <p className="today-next-summary" role="status"><Icon name="calendar" size={16} />{summary}</p>}{dayTimeline(lessons).map(item => item.kind === "lesson" ? renderLesson(item.lesson, item.index)
             : <p className={"free-gap free-" + item.kind} key={`gap-${item.start}`}><span>{item.label}</span><span className="free-gap-duration">{item.durationLabel}</span></p>)}</>}
         {app.timetableAvailable && <div className="study-day-tools">
           <button className="btn quiet study-day-tools-trigger" type="button" aria-expanded={dayToolsOpen} onClick={() => setDayToolsOpen(value => !value)}><Icon name="menu" size={18} />Действия дня</button>
           <div className={"study-day-tools-body" + (dayToolsOpen ? " open" : "")}>
             <div className="study-day-actions-list">
-              {!outsidePeriod && <p className="muted">Учебное время: {dayLoad(lessons).minutes} мин · Перерывы и окна: {dayLoad(lessons).gaps} мин</p>}
+              {!outsidePeriod && lessons.length > 0 && <p className="muted">Учебное время: {dayLoad(lessons).minutes} мин · Перерывы и окна: {dayLoad(lessons).gaps} мин</p>}
               <div className="study-day-action-links">
                 {hero && <button className="btn quiet" type="button" onClick={() => focusElement(`schedule-lesson-${lessons.indexOf(hero)}`)}>К ближайшей паре</button>}
                 <button className="btn quiet" type="button" onClick={() => focusElement("schedule-deadlines")}>{S.toDeadlines}</button>

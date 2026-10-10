@@ -200,6 +200,47 @@ class CommunitiesViewModelTest {
         assertTrue(http.requests.none { it.url.contains("/join-requests") && it.method == "GET" })
     }
 
+    private fun staffHttp(home: HttpReply) = FakeHttp { call ->
+        when (suffix(call)) {
+            "GET " -> ok(arr(communityJson("headman")))
+            "GET /$CID/homework", "GET /$CID/announcements", "GET /$CID/polls" -> ok("[]")
+            "GET /$CID/members" -> ok(arr("""{"userId":"$UID","role":"member"}""", """{"userId":"$U2","role":"member"}"""))
+            "GET /$CID/staff" -> ok(arr("""{"userId":"$U3","role":"headman"}"""))
+            "GET /$CID/join-requests" -> ok(arr(joinJson("pending")))
+            "GET /$CID/home" -> home
+            else -> error(suffix(call))
+        }
+    }
+
+    @Test
+    fun staff_sees_people_by_name_not_user_id() = runTest(dispatcher) {
+        val home = """{"communityId":"$CID","name":"Группа О3313","groupName":"О3313","groupChat":{"conversationId":"$CONV","kind":"group","communityId":"$CID","title":"Чат группы","peerUserId":null,"lastBody":null,"lastAt":null,"unread":0},"classmates":[""" +
+            """{"userId":"$UID","username":"ivanov","displayName":"Иванов Иван","role":"member","self":false},""" +
+            """{"userId":"$U3","username":"petrova","displayName":null,"role":"headman","self":true}],"directs":[]}"""
+        val vm = signedIn(staffHttp(ok(home)), groupId = null)
+        advanceUntilIdle()
+        vm.onEvent(CommunitiesEvent.Open(CID))
+        advanceUntilIdle()
+        val detail = vm.state.value.selected!!
+        assertEquals(CommunityPersonUi(UID, "member", "Иванов Иван", "ivanov"), detail.members[0])
+        assertEquals("нет в /home — без имени", null, detail.members[1].name)
+        assertEquals(CommunityPersonUi(U3, "headman", "petrova", null), detail.staff.single())
+        assertEquals("Иванов Иван", detail.joinRequests.single().name)
+    }
+
+    @Test
+    fun non_group_community_falls_back_without_failing() = runTest(dispatcher) {
+        val vm = signedIn(staffHttp(problem(404, "not_found")), groupId = null)
+        advanceUntilIdle()
+        vm.onEvent(CommunitiesEvent.Open(CID))
+        advanceUntilIdle()
+        assertEquals(CommunityPane.Detail, vm.state.value.pane)
+        assertFalse(vm.state.value.failed)
+        val detail = vm.state.value.selected!!
+        assertEquals(2, detail.members.size)
+        assertTrue(detail.members.all { it.name == null && it.login == null })
+    }
+
     private fun signedIn(http: FakeHttp, groupId: String? = "O3313") = CommunitiesViewModel(
         CommunitiesRuntime(
             guest = false,
@@ -220,6 +261,9 @@ private const val CID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 private const val HID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 private const val RID = "11111111-1111-4111-8111-111111111111"
 private const val UID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+private const val U2 = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+private const val U3 = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+private const val CONV = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 private const val AT = "2026-09-08T12:00:00Z"
 
 private fun suffix(call: HttpCall) = call.method + " " + call.url.removePrefix(BASE)

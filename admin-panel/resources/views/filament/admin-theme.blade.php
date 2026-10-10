@@ -1,5 +1,10 @@
 {{-- Правки темы панели без сборки Vite. Подключается в AdminPanelProvider через render hook HEAD_END. --}}
 <style>
+    /* R2-21: пустой блок действий таблицы (у «Персонала» нет действий над таблицей) не занимает строку над поиском. */
+    .fi-ta-header-toolbar > .fi-ta-actions:not(:has(*)) {
+        display: none;
+    }
+
     /* Телефон (ниже md): кнопки и поля не ниже 44px, подпись чекбокса — часть области нажатия. */
     @media (max-width: 767px) {
         .fi-btn,
@@ -64,5 +69,11 @@
         white-space: nowrap;
         vertical-align: bottom;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    /* r2: «Последние действия» на инфопанели — на телефоне только первые 5 (RecentAudit::PHONE_LIMIT). */
+    @media (max-width: 767px) {
+        .zp-recent-audit-extra {
+            display: none !important;
+        }
     }
 </style>

@@ -255,6 +255,10 @@ public class ScheduleDialogsTests : UiTest
         var pastCard = window.GetVisualDescendants().OfType<Border>().Single(b => b.Classes.Contains("past"));
         Assert.DoesNotContain(pastCard.GetVisualDescendants().OfType<TextBlock>(),
             text => text.Classes.Contains("hwtext"));
+        // #9: «Подробнее» lives in the lesson sheet, opened from «⋯».
+        Click(window, pastCard.GetVisualDescendants().OfType<Avalonia.Controls.Button>()
+            .Single(button => Avalonia.Automation.AutomationProperties.GetAutomationId(button) == "Lesson.More"));
+        Pump();
         var expand = pastCard.GetVisualDescendants().OfType<Avalonia.Controls.Button>()
             .Single(button => button.Content as string == "Подробнее");
         Click(window, expand);

@@ -67,8 +67,9 @@ class SocialHttpClientTest {
         assertTrue(rows.all { it.communityId == "community" })
         assertEquals(InboxSource.GroupDirect, rows.first().source)
         assertEquals(InboxSource.Group, rows.last().source)
-        assertEquals("Личный чат · ИВТ-1", rows.first().subtitle)
-        assertEquals("Учебная группа", rows.last().subtitle)
+        // #106: данные без русских подписей; «Личный чат · …» / «Учебная группа» собирает UI (inboxSubtitle).
+        assertEquals("ИВТ-1", rows.first().subtitle)
+        assertEquals("", rows.last().subtitle)
     }
     @Test fun inbox_orders_latest_then_unread_and_keeps_empty_chats() {
         val rows = listOf(InboxRow("a", "А", lastAt = java.time.Instant.parse("2026-01-01T00:00:00Z")), InboxRow("b", "Б", unread = 1), InboxRow("c", "В"))
