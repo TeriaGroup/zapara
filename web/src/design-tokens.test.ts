@@ -61,3 +61,19 @@ test("lesson type colors are the same set for both themes", () => {
 test("generated web, desktop and admin files are up to date with design/tokens.json", () => {
   assert.deepEqual(stale(), [], "запустите node scripts/design/tokens.mjs");
 });
+
+// #8 (G-1): «в коде нет захардкоженных цветов для текста, границ полей и опасных действий». Цвет текста и границ в
+// styles.css — только переменные токенов. Исключения — то, что не меняется с темой: кнопки входа VK ID / Яндекс ID
+// (вид по правилам брендов) и подписи поверх видео.
+test("styles.css sets text and border colors through token variables only", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const css = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  const allowed = [/^\.id-btn\b/, /^\.circle \.(play|time)\b/];
+  const hits: string[] = [];
+  for (const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = rule[1].trim().replace(/^\/\*[\s\S]*?\*\/\s*/g, "");
+    for (const d of rule[2].matchAll(/(?:^|;)\s*((?:-webkit-text-fill-)?color|caret-color|border(?:-[a-z]+)*|outline(?:-color)?|--danger-ink|--field-[a-z]+)\s*:\s*([^;]+)/g))
+      if (/#[0-9a-f]{3,8}\b|rgba?\(/i.test(d[2]) && !allowed.some(a => a.test(selector))) hits.push(`${selector} { ${d[1]}: ${d[2].trim()} }`);
+  }
+  assert.deepEqual(hits, []);
+});

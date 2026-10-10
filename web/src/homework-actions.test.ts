@@ -43,7 +43,10 @@ test("delete is a danger action, last in the list, behind a confirmation (#15)",
   assert.match(source, /className="btn quiet danger homework-delete" type="button" onClick=\{\(\) => setConfirm\(true\)\}/);
   assert.match(source, /className="btn primary danger-solid" type="button" onClick=\{\(\) => \{ close\(\); onDelete\?\.\(\); \}\}/);
   const css = await readFile(new URL("./styles.css", import.meta.url), "utf8");
-  assert.match(css, /:root\[data-theme="light"\] \{ --danger-ink: #b42318; \}/);
+  // #8 (G-1): цвет опасного действия и текст на нём — токены danger / on-danger (свои в каждой теме), без hex в стилях.
+  assert.match(css, /:root \{ --danger-ink: var\(--bad\); \}/);
+  assert.match(css, /\.btn\.danger-solid \{ background: var\(--danger-ink\); border-color: var\(--danger-ink\); color: var\(--zp-on-danger\); \}/);
+  assert.doesNotMatch(css, /--danger-ink: #|danger-solid \{[^}]*color: #/);
 });
 
 test("bulk actions hidden until «Выбрать несколько»; empty state has primary «Добавить задание»; privacy note in the form (#15)", () => {

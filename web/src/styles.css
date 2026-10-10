@@ -200,8 +200,7 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .field textarea { min-height: 90px; resize: vertical; }
 /* #16: поля видны на любом фоне — граница ≥3:1 (токен --zp-border-control из #50, до его слияния — запасное значение),
    плейсхолдер ≥4.5:1 к заливке поля, кольцо фокуса 2 px. */
-:root { --field-border: var(--zp-border-control, #7a7a7a); --field-fill: var(--canvas); --field-placeholder: var(--zp-text-secondary, #a0a0a0); --field-focus: var(--zp-focus, var(--text)); }
-:root[data-theme="light"] { --field-border: var(--zp-border-control, #767676); --field-placeholder: var(--zp-text-secondary, #595959); }
+:root { --field-border: var(--zp-border-control); --field-fill: var(--canvas); --field-placeholder: var(--zp-text-secondary); --field-focus: var(--zp-focus); }
 .field input, .field textarea, .field select, select, .search, .search-field-input, .personal-compose textarea, .compose input, .compose textarea { border: 1px solid var(--field-border); background: var(--field-fill); }
 .search-field-input input { border: 0; background: transparent; }
 input::placeholder, textarea::placeholder { color: var(--field-placeholder); opacity: 1; }
@@ -594,7 +593,6 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
 .homework-filters { flex-wrap: wrap; margin-block: 12px; }
 /* #15: карточка задания — чекбокс, предмет, текст, срок; действия в «⋯»; «Удалить» — опасное. */
 :root { --danger-ink: var(--bad); }
-:root[data-theme="light"] { --danger-ink: #b42318; }
 .homework-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; }
 .homework-row > .homework-check { padding-top: 2px; }
 .homework-check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
@@ -607,9 +605,8 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
 .homework-action-title { margin: 0 0 4px; }
 .btn.danger { color: var(--danger-ink); }
 .homework-delete { margin-top: 8px; border-top: 1px solid var(--line); border-radius: 0; padding-top: 12px; }
-.btn.danger-solid { background: var(--danger-ink); border-color: var(--danger-ink); color: #ffffff; }
+.btn.danger-solid { background: var(--danger-ink); border-color: var(--danger-ink); color: var(--zp-on-danger); }
 .btn.danger-solid:hover { filter: brightness(0.92); }
-:root:not([data-theme="light"]) .btn.danger-solid { color: #0d0d0d; }
 .homework-confirm-row { justify-content: flex-end; }
 .homework-select-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .form-question { display: flex; flex-direction: column; gap: 8px; }
@@ -795,7 +792,7 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
 .ru-date-row { display: flex; align-items: center; gap: 6px; }
 .ru-date-row input:not(.ru-date-native) { flex: 1; min-width: 0; }
 .ru-date-native { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.ru-date-error { color: var(--danger, #b42318); font-size: 13px; }
+.ru-date-error { color: var(--bad); font-size: 13px; }
 .week-grid .card.week-day { gap: 8px; padding: 12px; }
 .week-day-head { font-size: 15px; }
 .week-day-head a { color: inherit; text-decoration: none; font-weight: 600; }
