@@ -40,6 +40,11 @@ class StatesFieldsTest {
         val field = src("components/Controls.kt")
         assertTrue(field.contains("focusedBorderColor = c.text1, unfocusedBorderColor = c.lineStrong,"))
         assertFalse(field.contains("unfocusedBorderColor = c.chip"))
+        // Все поля со своими цветами — тоже: вход, переименование, пересечения, маршрут.
+        val root = File("src/main/java")
+        val offenders = root.walkTopDown().filter { it.extension == "kt" }
+            .filter { Regex("unfocusedBorderColor = c\\.(chip|card|canvas)").containsMatchIn(it.readText()) }.map { it.name }.toList()
+        assertTrue("$offenders", offenders.isEmpty())
     }
 
     @Test fun homework_badge_is_at_least_4_5_to_1_in_both_themes() {
