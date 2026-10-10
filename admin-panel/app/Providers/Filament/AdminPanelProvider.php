@@ -9,6 +9,11 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use App\Filament\Pages\Login;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
+use App\Filament\Navigation\AdminNavigation;
+use Filament\Facades\Filament;
+use Filament\Navigation\NavigationBuilder;
+use Filament\View\PanelsRenderHook;
+use Illuminate\Contracts\View\View;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
 use Illuminate\Support\Facades\Route;
@@ -43,6 +48,8 @@ class AdminPanelProvider extends PanelProvider
             })
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([])
+            ->navigation(fn (NavigationBuilder $builder): NavigationBuilder => AdminNavigation::build($builder, Filament::getCurrentOrDefaultPanel()))
+            ->renderHook(PanelsRenderHook::HEAD_END, fn (): View => view('filament.admin-theme'))
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
