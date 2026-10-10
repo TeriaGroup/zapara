@@ -119,7 +119,7 @@ import ru.bgtu_voenmeh.zapara.ui.theme.Zapara
 
 @Composable
 fun GroupSection(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
-    onReturnToInbox: (() -> Unit)? = null, onOpenHomework: (Long) -> Unit = {}) {
+    onReturnToInbox: (() -> Unit)? = null, onOpenAccount: () -> Unit = {}, onOpenHomework: (Long) -> Unit = {}) {
     val uiText = rememberUiText()
     GroupObligationsSheet(state, onEvent)
     var groupSearch by rememberSaveable { mutableStateOf("") }
@@ -139,7 +139,8 @@ fun GroupSection(state: GroupUiState, onEvent: (GroupEvent) -> Unit,
     if (!isChannelDetail(state)) ZTopBar(stringResource(R.string.group_title))
         when {
             state.accessRevoked -> EmptyState(R.drawable.ic_chat, uiText(R.string.space_day_55), actionText = stringResource(R.string.group_retry), onAction = { onEvent(GroupEvent.Refresh) })
-            state.guest -> EmptyState(R.drawable.ic_chat, stringResource(R.string.group_need_account), tag = "Empty.GroupAccount")
+            state.guest -> ru.bgtu_voenmeh.zapara.ui.components.SignedOutState(R.drawable.ic_users,
+                stringResource(R.string.signed_out_chats_hint), onOpenAccount, tag = "Empty.GroupAccount") // #109 / AN-14
             state.loading && !state.hasHome -> Column(
                 Modifier.padding(Zapara.space.l),
                 verticalArrangement = Arrangement.spacedBy(Zapara.space.s)

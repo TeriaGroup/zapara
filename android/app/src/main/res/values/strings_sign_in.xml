@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- #109: вход и состояние «не вошли» (AN-14, AN-16). -->
+<resources>
+    <string name="signed_out_title">Войдите в аккаунт</string>
+    <string name="signed_out_chats_hint">Чат группы и личные чаты — после входа. Расписание, неделя и карты работают без аккаунта.</string>
+    <string name="signed_out_communities_hint">Вступить в сообщество и видеть его участников можно после входа. Расписание, неделя и карты работают без аккаунта.</string>
+    <string name="account_tab_login">Вход</string>
+    <string name="account_tab_register">Регистрация</string>
+</resources>

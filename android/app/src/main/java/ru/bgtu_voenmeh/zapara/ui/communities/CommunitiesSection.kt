@@ -49,11 +49,10 @@ fun CommunitiesSection(state: CommunitiesUiState, onEvent: (CommunitiesEvent) ->
     Column(Modifier.fillMaxSize()) {
         ZTopBar(stringResource(R.string.nav_community))
         when (state.pane) {
-            CommunityPane.Guest -> EmptyState(
+            CommunityPane.Guest -> ru.bgtu_voenmeh.zapara.ui.components.SignedOutState(
                 R.drawable.ic_community,
-                stringResource(R.string.community_need_account),
-                actionText = stringResource(R.string.ux30_open_account),
-                onAction = onOpenAccount,
+                stringResource(R.string.signed_out_communities_hint),
+                onOpenAccount,
                 tag = "Empty.NeedAccount"
             )
             CommunityPane.Empty -> if (state.loading) Column(Modifier.padding(Zapara.space.l)) {

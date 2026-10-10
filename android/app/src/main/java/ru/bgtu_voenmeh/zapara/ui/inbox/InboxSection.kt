@@ -119,9 +119,8 @@ fun InboxSection(state: InboxUiState, onEvent: (InboxEvent) -> Unit,
                 "Inbox.Refresh", { onEvent(InboxEvent.Refresh) })
         }
         if (state.guest) {
-            ru.bgtu_voenmeh.zapara.ui.components.EmptyState(R.drawable.ic_chat,
-                stringResource(R.string.face_inbox_guest), actionText = stringResource(R.string.ux30_open_account),
-                onAction = onOpenAccount, tag = "Inbox.Guest")
+            ru.bgtu_voenmeh.zapara.ui.components.SignedOutState(R.drawable.ic_chat,
+                stringResource(R.string.signed_out_chats_hint), onOpenAccount, tag = "Inbox.Guest")
         } else {
             state.error?.let { Text(it, Modifier.padding(horizontal = Zapara.space.l, vertical = 8.dp).testTag("Inbox.Error"), color = Zapara.colors.bad, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             if (state.active == null) InboxList(state, onEvent, onOpenGroup,
