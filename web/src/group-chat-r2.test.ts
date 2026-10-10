@@ -30,9 +30,13 @@ test("r2 regression: group sender name sits on its own line above the text (#69 
   assert.equal(declarations(".bubble > .message-sender", "display").at(-1), "block");
 });
 
-test("r2: the group chat header does not shrink under the message list on a phone", () => {
-  assert.equal(declarations(".chat > .group-thread-tools", "flex").at(-1), "none");
-  assert.equal(declarations(".chat > .group-thread-tools", "overflow-y").at(-1), "auto");
+test("r2: on a phone the group chat header fits instead of being cut in half", () => {
+  const mobile = readFileSync(new URL("./mobile-chat.css", import.meta.url), "utf8");
+  const phone = mobile.slice(mobile.indexOf("@media (max-width: 959px)"), mobile.indexOf("@media (min-width: 960px)"));
+  const rule = phone.match(/\.group-page \.group-thread-tools \{([^}]*)\}/)?.[1] ?? "";
+  assert.match(rule, /max-height: min\(50%, 300px\)/);
+  assert.doesNotMatch(phone, /min\(32%, 200px\)/);
+  assert.match(rule, /overflow-y: auto/); // очень низкий экран: шапка прокручивается, лента не исчезает
   assert.match(pages, /<div className="group-thread-tools">/);
 });
 
