@@ -109,16 +109,29 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      # setup-php installs PHP with passwordless sudo/apt (docs/CI.md); without it the step would wait, so it is bounded.
-      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
-        timeout-minutes: 10
-        env:
-          runner: self-hosted
-        with:
-          php-version: "8.3"
-          extensions: pdo_pgsql, pdo_sqlite, intl, zip, mbstring
-          coverage: none
-          tools: composer:v2
+      # PHP comes preinstalled on the runner (docs/CI.md): the runner user has no sudo, and setup-php would
+      # need it for apt. This only checks what is there and stops within seconds with a clear list if not.
+      - name: Check preinstalled PHP and Composer
+        run: |
+          missing=()
+          if ! command -v php >/dev/null 2>&1; then
+            missing+=("php 8.3+ (php8.3-cli)")
+          else
+            if ! php -r 'exit(PHP_VERSION_ID >= 80300 ? 0 : 1);'; then
+              missing+=("php 8.3+ (found $(php -r 'echo PHP_VERSION;'))")
+            fi
+            for ext in pdo_pgsql pdo_sqlite intl zip mbstring; do
+              if ! php -r "exit(extension_loaded('$ext') ? 0 : 1);"; then missing+=("PHP extension $ext"); fi
+            done
+          fi
+          if ! command -v composer >/dev/null 2>&1; then missing+=("composer 2"); fi
+          if [ "${#missing[@]}" -gt 0 ]; then
+            list="$(printf '%s, ' "${missing[@]}")"
+            echo "::error title=PHP is not preinstalled on the runner::Missing: ${list%, }. Install on the runner (as root): php8.3-cli php8.3-pgsql php8.3-sqlite3 php8.3-intl php8.3-zip php8.3-mbstring composer. See docs/CI.md."
+            exit 1
+          fi
+          php --version | head -n 1
+          composer --version
 
       - name: Start PostgreSQL 16
         run: |
