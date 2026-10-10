@@ -25,9 +25,11 @@ public sealed class PrivateSyncDraft
 public sealed partial class PrivateSyncOutbox
 {
     private readonly SqliteConnection conn;
+    private readonly Database db;
     public PrivateSyncOutbox(Database db, bool enabled)
     {
         ArgumentNullException.ThrowIfNull(db);
+        this.db = db;
         conn = db.Connection;
         Enabled = enabled;
     }
@@ -40,30 +42,37 @@ public sealed partial class PrivateSyncOutbox
     {
         ArgumentNullException.ThrowIfNull(action);
         if (!Enabled) return action();
-        var name = "o" + Guid.NewGuid().ToString("N");
-        Exec($"SAVEPOINT {name}");
-        try
+        T result;
+        // #154: the background sync (under CoreGate) and UI writes (not under CoreGate) both get here on the same
+        // connection. Without the scope a second thread's SAVEPOINT nests inside the first one's (see Database.EnterWrite).
+        using (db.EnterWrite())
         {
-            var result = action();
-            BeforeCommit?.Invoke();
-            validateCommit?.Invoke();
-            Exec($"RELEASE {name}");
-            Changed?.Invoke();
-            return result;
-        }
-        catch (Exception ex)
-        {
+            var name = "o" + Guid.NewGuid().ToString("N");
+            Exec($"SAVEPOINT {name}");
             try
             {
-                Exec($"ROLLBACK TO {name}");
+                result = action();
+                BeforeCommit?.Invoke();
+                validateCommit?.Invoke();
                 Exec($"RELEASE {name}");
             }
-            catch (SqliteException rollback)
+            catch (Exception ex)
             {
-                throw new InvalidOperationException(rollback.Message, ex);
+                try
+                {
+                    Exec($"ROLLBACK TO {name}");
+                    Exec($"RELEASE {name}");
+                }
+                catch (SqliteException rollback)
+                {
+                    throw new InvalidOperationException(rollback.Message, ex);
+                }
+                throw;
             }
-            throw;
         }
+        // Outside the scope: handlers may wake other threads that write.
+        Changed?.Invoke();
+        return result;
     }
 
     public IReadOnlyList<PrivateSyncOutboxEntry> Pending()
