@@ -378,7 +378,7 @@ fun AccountCard(state: AccountUiState, onEvent: (AccountEvent) -> Unit, onOpenLe
             if (state.registration) {
                 AccountField(confirmPassword, stringResource(R.string.ux300_android_confirm_password),
                     "Account.ConfirmPassword", password = true) { confirmPassword = it }
-                if (confirmPassword.isNotEmpty() && confirmPassword != state.password)
+                if (confirmMismatchShown(attempted, confirmPassword, state.password))
                     Text(stringResource(R.string.ux300_android_password_mismatch),
                         style = Zapara.typography.caption, color = c.bad,
                         modifier = Modifier.testTag("Account.PasswordMismatch"))
@@ -889,3 +889,10 @@ private fun AccountField(value: String, label: String, tag: String, password: Bo
     )
     }
 }
+
+/**
+ * #109 / AN-16: «Пароли не совпадают» — когда подтверждение уже введено или была попытка отправить форму
+ * (тогда и с пустым подтверждением), и оно не равно паролю.
+ */
+internal fun confirmMismatchShown(attempted: Boolean, confirmPassword: String, password: String): Boolean =
+    (attempted || confirmPassword.isNotEmpty()) && confirmPassword != password

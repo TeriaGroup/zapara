@@ -3,6 +3,7 @@ package ru.bgtu_voenmeh.zapara.ui
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import ru.bgtu_voenmeh.zapara.ui.account.confirmMismatchShown
 import org.junit.Test
 import java.io.File
 
@@ -53,5 +54,17 @@ class SignInTest {
         val link = account.substring(account.indexOf("private fun DocLink("), account.indexOf("private fun DocLink(") + 600)
         assertTrue(link.contains("TextDecoration.Underline") && link.contains("heightIn(min = 48.dp)"))
         assertTrue(account.contains("ghost = true, quiet = true, tag = \"Account.RecoveryToggle\""))
+    }
+
+    @Test fun confirm_mismatch_shows_after_a_submit_attempt_even_when_empty() {
+        val f = ::confirmMismatchShown
+        assertTrue("после попытки и с пустым подтверждением", f(true, "", "secret-password"))
+        assertTrue("введено и не совпадает", f(false, "secret", "secret-password"))
+        assertFalse("ничего не введено и попытки не было", f(false, "", "secret-password"))
+        assertFalse("совпадает", f(true, "secret-password", "secret-password"))
+        assertFalse("оба пустые после попытки — ошибки длины, не несовпадения", f(true, "", ""))
+        val ui = java.io.File("src/main/java/ru/bgtu_voenmeh/zapara/ui/account/AccountUi.kt").readText()
+        assertTrue(ui.contains("if (confirmMismatchShown(attempted, confirmPassword, state.password))"))
+        assertFalse(ui.contains("if (confirmPassword.isNotEmpty() && confirmPassword != state.password)"))
     }
 }
