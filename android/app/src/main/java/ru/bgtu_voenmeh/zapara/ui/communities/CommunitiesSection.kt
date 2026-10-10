@@ -240,10 +240,12 @@ private fun CommunityDetail(selected: CommunityDetailUi, state: CommunitiesUiSta
                     Text(item.body, style = Zapara.typography.body, color = if (item.completed) c.text2 else c.text1)
                     if (item.canToggle) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                            // #105: переключатель на карточке озвучивается «Выполнено: <предмет>, <задание>», как в «Домашке».
                             ZSwitch(
                                 item.completed,
                                 { onEvent(CommunitiesEvent.ToggleCompletion(selected.communityId, item.homeworkId, it, item.completionRevision)) },
-                                "Community.Done.${item.homeworkId}"
+                                "Community.Done.${item.homeworkId}",
+                                label = stringResource(R.string.hw_completion_label, item.title, item.body)
                             )
                         }
                     }

@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
@@ -414,12 +415,13 @@ fun HomeworkSection(state: HomeworkUiState, onEvent: (HomeworkEvent) -> Unit,
                             Text(stringResource(if (row.audienceSelected) R.string.homework_audience_selected
                                 else R.string.homework_audience_all), style = Zapara.typography.caption, color = c.text2)
                             if (row.canComplete) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                // #105: «Выполнено: <предмет>, <задание>», как у личных заданий; подпись слева TalkBack не повторяет.
                                 Text(stringResource(R.string.polish_homework_completion),
-                                    style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f))
+                                    style = Zapara.typography.caption, color = c.text2, modifier = Modifier.weight(1f).clearAndSetSemantics {})
                                 ZSwitch(row.completed, { if (row.id !in state.sharedBusyIds)
                                     onEvent(HomeworkEvent.ToggleShared(row.id)) },
                                     "Homework.SharedDone.${row.id}",
-                                    Modifier.semantics { contentDescription = row.title })
+                                    label = stringResource(R.string.hw_completion_label, row.title, row.body))
                             }
                             if (row.id in state.sharedBusyIds) Text(stringResource(R.string.ux60_saving),
                                 style = Zapara.typography.caption, color = c.text2)

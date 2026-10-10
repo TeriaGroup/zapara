@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.res.painterResource
@@ -453,8 +454,10 @@ fun SettingsSection(
                     ZDisclosureButton(uiText(R.string.space_day_advanced), expanded = advanced,
                         onClick = { advanced = !advanced }, leadingIcon = R.drawable.ic_settings)
                     if (advanced) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(uiText(R.string.space_day_invert), Modifier.weight(1f), style = Zapara.typography.body)
-                        ZSwitch(state.parityInvert, { if ("parity" !in state.preferencePending) onEvent(SettingsEvent.Invert(it)) }, "Settings.ParityInvert")
+                        val invertLabel = uiText(R.string.space_day_invert)
+                        Text(invertLabel, Modifier.weight(1f).clearAndSetSemantics {}, style = Zapara.typography.body)
+                        ZSwitch(state.parityInvert, { if ("parity" !in state.preferencePending) onEvent(SettingsEvent.Invert(it)) }, "Settings.ParityInvert",
+                            label = invertLabel)
                     }
                     if (advanced) PreferenceFeedback(state, "parity", onEvent)
                     GroupActions(state.refreshing, onChangeGroup) { onEvent(SettingsEvent.Refresh) }
@@ -483,8 +486,10 @@ fun SettingsSection(
                 ZCard(Modifier.fillMaxWidth().testTag("Settings.Source")) {
                     Text(stringResource(R.string.settings_source), style = Zapara.typography.section, color = c.text1)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.settings_source_university), style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
-                        ZSwitch(state.useUniversityXml, { if ("source" !in state.preferencePending) onEvent(SettingsEvent.UseUniversityXml(it)) }, "Settings.UniversityXml")
+                        val sourceLabel = stringResource(R.string.settings_source_university)
+                        Text(sourceLabel, style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f).clearAndSetSemantics {})
+                        ZSwitch(state.useUniversityXml, { if ("source" !in state.preferencePending) onEvent(SettingsEvent.UseUniversityXml(it)) }, "Settings.UniversityXml",
+                            label = sourceLabel)
                     }
                     Text(stringResource(R.string.settings_source_hint), style = Zapara.typography.caption, color = c.text2)
                     PreferenceFeedback(state, "source", onEvent)
@@ -519,8 +524,10 @@ fun SettingsSection(
                         ZButton(uiText(R.string.space_day_164), {}, enabled = false)
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.theme_animations), style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
-                        ZSwitch(state.animations, { if ("animations" !in state.preferencePending) onEvent(SettingsEvent.Animations(it)) }, "Settings.Animations")
+                        val animationsLabel = stringResource(R.string.theme_animations)
+                        Text(animationsLabel, style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f).clearAndSetSemantics {})
+                        ZSwitch(state.animations, { if ("animations" !in state.preferencePending) onEvent(SettingsEvent.Animations(it)) }, "Settings.Animations",
+                            label = animationsLabel)
                     }
                     PreferenceFeedback(state, "animations", onEvent)
                 }
@@ -534,8 +541,10 @@ fun SettingsSection(
                         ZChip(stringResource(R.string.settings_maps_alpha), selected = true, tag = "Settings.MapsAlphaBadge")
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.settings_maps_routes), style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
-                        ZSwitch(state.mapsAlpha, { if ("maps" !in state.preferencePending) onEvent(SettingsEvent.MapsAlpha(it)) }, "Settings.MapsAlpha")
+                        val routesLabel = stringResource(R.string.settings_maps_routes)
+                        Text(routesLabel, style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f).clearAndSetSemantics {})
+                        ZSwitch(state.mapsAlpha, { if ("maps" !in state.preferencePending) onEvent(SettingsEvent.MapsAlpha(it)) }, "Settings.MapsAlpha",
+                            label = routesLabel)
                     }
                     PreferenceFeedback(state, "maps", onEvent)
                     Text(stringResource(R.string.settings_maps_alpha_hint), style = Zapara.typography.caption, color = c.text2)
@@ -546,8 +555,10 @@ fun SettingsSection(
             item {
                 ZCard(Modifier.fillMaxWidth()) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.settings_notify), style = Zapara.typography.section, color = c.text1, modifier = Modifier.weight(1f))
-                        ZSwitch(state.notifyEnabled, { if ("notify" !in state.preferencePending) onEvent(SettingsEvent.Notify(it)) }, "Settings.Notify")
+                        val notifyLabel = stringResource(R.string.settings_notify)
+                        Text(notifyLabel, style = Zapara.typography.section, color = c.text1, modifier = Modifier.weight(1f).clearAndSetSemantics {})
+                        ZSwitch(state.notifyEnabled, { if ("notify" !in state.preferencePending) onEvent(SettingsEvent.Notify(it)) }, "Settings.Notify",
+                            label = notifyLabel)
                     }
                     PreferenceFeedback(state, "notify", onEvent)
                     TimeField(state.time1, stringResource(R.string.settings_time_evening), "Settings.Time1", !state.timeSaving, state.timeError != null) { onEvent(SettingsEvent.Time1(it)) }
@@ -720,8 +731,9 @@ fun UpdatesCard(state: SettingsUiState, updates: UpdateUiState, onEvent: (Settin
             )
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.settings_auto_update), style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f))
-            ZSwitch(state.autoUpdate, { onEvent(SettingsEvent.AutoUpdate(it)) }, "Settings.AutoUpdate")
+            val autoUpdateLabel = stringResource(R.string.settings_auto_update)
+            Text(autoUpdateLabel, style = Zapara.typography.body, color = c.text1, modifier = Modifier.weight(1f).clearAndSetSemantics {})
+            ZSwitch(state.autoUpdate, { onEvent(SettingsEvent.AutoUpdate(it)) }, "Settings.AutoUpdate", label = autoUpdateLabel)
         }
         val status = when {
             updates.error != null -> updates.error
