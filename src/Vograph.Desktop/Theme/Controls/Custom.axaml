@@ -106,6 +106,7 @@
                      IsVisible="{TemplateBinding Hint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
           <Button x:Name="PART_Action" Classes="primary" Content="{TemplateBinding ActionText}" Command="{TemplateBinding Command}"
                   CommandParameter="{TemplateBinding CommandParameter}" HorizontalAlignment="Center" Margin="0,8,0,0"
+                  AutomationProperties.AutomationId="{TemplateBinding ActionAutomationId}"
                   IsVisible="{TemplateBinding ActionText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
         </StackPanel>
       </ControlTemplate>

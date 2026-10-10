@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.LogicalTree;
@@ -7,6 +8,7 @@ using Avalonia.VisualTree;
 using Vograph.Core.Models;
 using Vograph.Desktop.Controls;
 using Vograph.Desktop.Dialogs;
+using Vograph.Desktop.Features.Chat;
 using Vograph.Desktop.Features.Communities;
 using Vograph.Desktop.Features.Homeworks;
 using Vograph.Desktop.Features.Preferences;
@@ -216,5 +218,45 @@ public class PageFrameTests : UiTest
         Assert.Null(GroupPickerDialogViewModel.YearRule);
         Assert.Equal("Факультет И", GroupPickerDialogViewModel.SectionOf(g, GroupPickerDialogViewModel.YearRule));
         Assert.Equal("Факультет И · 2 курс", GroupPickerDialogViewModel.SectionOf(g, _ => 2));
+    }
+
+    [AvaloniaFact]
+    public void Empty_state_action_is_a_primary_button_with_its_automation_id()
+    {
+        var clicks = 0;
+        var empty = new EmptyState { Title = "Нужен аккаунт", ActionText = "Войти в аккаунт", ActionAutomationId = "Chat.SignIn",
+            Command = new CommunityToolkit.Mvvm.Input.RelayCommand(() => clicks++) };
+        var window = new Window { Content = empty, Width = 600, Height = 400 };
+        window.Show(); Pump();
+        var button = window.GetVisualDescendants().OfType<Button>().Single(b => AutomationProperties.GetAutomationId(b) == "Chat.SignIn");
+        Assert.True(button.IsEffectivelyVisible);
+        Assert.Contains("primary", button.Classes);
+        button.Command!.Execute(null);
+        Assert.Equal(1, clicks);
+        empty.ActionText = null; Pump();
+        Assert.False(button.IsVisible);
+    }
+
+    [AvaloniaFact]
+    public async Task Chats_and_communities_sign_in_lives_in_the_empty_state_not_beside_it()
+    {
+        // Разметка: основная кнопка «Войти» — у самого EmptyState «Нужен аккаунт», отдельной кнопки рядом нет.
+        var root = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Vograph.Desktop", "Features");
+        foreach (var (file, area) in new[] { ("Communities/CommunitiesView.axaml", "Community"), ("Chat/ChatInboxView.axaml", "Chat") })
+        {
+            var xaml = File.ReadAllText(Path.Combine(root, file));
+            Assert.Matches($@"<c:EmptyState[^>]*AutomationId=""{area}\.NeedAccount""[^>]*ActionText=""\{{Binding SignInAction\}}"" Command=""\{{Binding OpenAccountCommand\}}"" ActionAutomationId=""{area}\.SignIn""", xaml);
+            Assert.DoesNotContain("Content=\"{loc:T accountLogin}\"", xaml);
+        }
+        // Окно: без доступного входа у пустого состояния нет кнопки (тупиков нет — как в StartupAccountHelpTests).
+        var (db, shell, window) = await Open();
+        using var _ = db;
+        foreach (var (key, area) in new[] { (SectionKey.Community, "Community"), (SectionKey.Chat, "Chat") })
+        {
+            shell.NavigateTo(key); await shell.Current!.ActivateAsync(); Pump();
+            var (show, action) = shell.Current switch { CommunitiesViewModel c => (c.ShowSignIn, c.SignInAction), ChatInboxViewModel c => (c.ShowSignIn, c.SignInAction), _ => (true, "") };
+            Assert.Equal(show ? Loc.Current.T("accountLogin") : null, action);
+            Assert.Equal(show, window.GetVisualDescendants().OfType<Button>().Any(b => b.IsEffectivelyVisible && AutomationProperties.GetAutomationId(b) == $"{area}.SignIn"));
+        }
     }
 }

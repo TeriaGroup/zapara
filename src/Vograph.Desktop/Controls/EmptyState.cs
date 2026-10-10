@@ -19,8 +19,11 @@ public class EmptyState : TemplatedControl
     public static readonly StyledProperty<string?> ActionTextProperty = AvaloniaProperty.Register<EmptyState, string?>(nameof(ActionText));
     public static readonly StyledProperty<ICommand?> CommandProperty = AvaloniaProperty.Register<EmptyState, ICommand?>(nameof(Command));
     public static readonly StyledProperty<object?> CommandParameterProperty = AvaloniaProperty.Register<EmptyState, object?>(nameof(CommandParameter));
+    /// <summary>AutomationId основной кнопки — UI-тесты ищут кнопку по нему (например «Chat.SignIn»).</summary>
+    public static readonly StyledProperty<string?> ActionAutomationIdProperty = AvaloniaProperty.Register<EmptyState, string?>(nameof(ActionAutomationId));
 
     public string? ActionText { get => GetValue(ActionTextProperty); set => SetValue(ActionTextProperty, value); }
     public ICommand? Command { get => GetValue(CommandProperty); set => SetValue(CommandProperty, value); }
     public object? CommandParameter { get => GetValue(CommandParameterProperty); set => SetValue(CommandParameterProperty, value); }
+    public string? ActionAutomationId { get => GetValue(ActionAutomationIdProperty); set => SetValue(ActionAutomationIdProperty, value); }
 }

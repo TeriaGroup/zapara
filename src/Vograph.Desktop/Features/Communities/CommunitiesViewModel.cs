@@ -46,8 +46,10 @@ public sealed partial class CommunitiesViewModel : ViewModelBase
     /// <summary>Без входа (#18, D-02): понятное объяснение и кнопка «Войти» — только если вход реально работает.</summary>
     public bool SignInWorks => App.Shared.AccountPanel.SignInWorks;
     public bool ShowSignIn => NeedAccount && SignInWorks;
+    /// <summary>#21: подпись основной кнопки EmptyState «Нужен аккаунт» — только когда вход возможен.</summary>
+    public string? SignInAction => ShowSignIn ? T("accountLogin") : null;
     public string NeedAccountHint => SignInWorks ? "Сообщества групп открываются после входа в аккаунт." : T("accountUnconfigured");
-    private void RaiseSignIn() { OnPropertyChanged(nameof(SignInWorks)); OnPropertyChanged(nameof(ShowSignIn)); OnPropertyChanged(nameof(NeedAccountHint)); }
+    private void RaiseSignIn() { OnPropertyChanged(nameof(SignInWorks)); OnPropertyChanged(nameof(ShowSignIn)); OnPropertyChanged(nameof(SignInAction)); OnPropertyChanged(nameof(NeedAccountHint)); }
 
 
     public string Title => T("communityTitle");
