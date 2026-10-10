@@ -61,7 +61,7 @@ public class HomeworkTests : UiTest
         Assert.True(model.HasGroup);
         Assert.Equal((3, 1), (model.Open, model.Done));
         Assert.Equal(new[] { "burning", "far", "done" }, model.Groups.Select(g => g.Status));
-        Assert.Equal(new[] { "Горит", "Далеко", "Сдано" }, model.Groups.Select(g => g.Title));
+        Assert.Equal(new[] { "Горит", "Далеко", "Выполнено" }, model.Groups.Select(g => g.Title));
         var burning = model.Groups[0].Items;
         Assert.Equal(new[] { "Матан" }, burning.Select(i => i.Subject).ToArray()); // fixture math is due Mon 07.09 (even)
         Assert.All(burning, i => Assert.Equal("горит завтра", i.Label));
@@ -69,7 +69,7 @@ public class HomeworkTests : UiTest
         Assert.Equal(new[] { "История", "Основы российской государственности" }, far.Select(i => i.Subject));
         Assert.Equal(("История", "лек ИСТОРИЯ", history), (far[0].Subject, far[0].SubjectRaw, far[0].Homework.Id));
         Assert.Equal("срок 16.09", far[0].Label);
-        Assert.Equal("сдано", Assert.Single(model.Groups[2].Items).Label);
+        Assert.Equal("выполнено", Assert.Single(model.Groups[2].Items).Label);
 
         var subjects = new HomeworkComposer(db.Services).Subjects();
         Assert.Equal(6, subjects.Count);
@@ -345,7 +345,7 @@ public class HomeworkTests : UiTest
         var items = flyout.Items.OfType<MenuItem>().ToList();
         Assert.Equal(3, items.Count);
         Assert.All(items, mi => Assert.NotNull(mi.Command));
-        Assert.Equal("Сдано", items[0].Header);
+        Assert.Equal("Выполнено", items[0].Header);
         flyout.Hide();
 
         shell.NavigateTo(SectionKey.Homework);

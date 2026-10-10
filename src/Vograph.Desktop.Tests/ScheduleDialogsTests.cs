@@ -186,7 +186,7 @@ public class ScheduleDialogsTests : UiTest
         await vm.ToggleDoneAsync(hw);
         hw = Assert.Single(vm.Lessons[1].Homework);
         Assert.True(hw.IsDone);
-        Assert.Equal("сдано", hw.Label);
+        Assert.Equal("выполнено", hw.Label);
         await vm.ToggleDoneAsync(hw);
         Assert.False(Assert.Single(vm.Lessons[1].Homework).IsDone);
 

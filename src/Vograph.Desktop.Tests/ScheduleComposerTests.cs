@@ -81,7 +81,7 @@ public class ScheduleComposerTests
         var day = new ScheduleComposer(db.Services).Compose(1, MonMorning); // Tue 08.09, even: no lessons
         Assert.Empty(day.Rows);
         Assert.Equal("Пар нет", day.EmptyTitle);
-        Assert.Equal("следующая пара — среда, 14:55", day.EmptyHint);
+        Assert.Equal("Следующая пара: ср, 9 сент., 14:55", day.EmptyHint);
     }
 
     [Fact]
