@@ -39,8 +39,8 @@
       <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,0,0,4" />
       <ComboBox ItemsSource="{Binding SortOptions}" SelectedIndex="{Binding SortIndex}" Width="170"
                 HorizontalAlignment="Left" AutomationProperties.Name="Порядок списков сводки" />
-      <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Summary}" Margin="0,48,0,0" />
-      <Button Content="Выбрать группу" Command="{Binding ChooseGroupCommand}" IsVisible="{Binding ShowNoGroup}" HorizontalAlignment="Left" />
+      <c:EmptyState IsVisible="{Binding ShowNoGroup}" Title="{loc:T noGroup}" Hint="{loc:T noGroupHint}" Icon="{StaticResource Icon.Summary}" Margin="0,48,0,0"
+                    ActionText="{loc:T chooseGroup}" Command="{Binding ChooseGroupCommand}" />
       <StackPanel Spacing="8" IsVisible="{Binding ShowNoCopy}">
         <TextBlock Text="Расписание группы не загружено. Сводку пока нельзя посчитать." TextWrapping="Wrap" />
         <Button Content="Загрузить расписание" Command="{Binding RetrySummaryCommand}" HorizontalAlignment="Left" />
@@ -60,7 +60,7 @@
 
         <Border Classes="card" Width="300" c:Appear.Kind="Cascade" c:Appear.Index="1">
           <StackPanel Spacing="10">
-            <TextBlock Classes="micro" Text="{loc:TU summaryByDay}" />
+            <TextBlock Classes="micro" Text="{loc:T summaryByDay}" />
             <ItemsControl ItemsSource="{Binding DayBars}">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
@@ -84,7 +84,7 @@
 
         <Border Classes="card" Width="300" c:Appear.Kind="Cascade" c:Appear.Index="2">
           <StackPanel Spacing="10">
-            <TextBlock Classes="micro" Text="{loc:TU summaryByType}" />
+            <TextBlock Classes="micro" Text="{loc:T summaryByType}" />
             <ItemsControl ItemsSource="{Binding Types}" ItemTemplate="{StaticResource TypeAction}">
               <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
             </ItemsControl>
@@ -93,7 +93,7 @@
 
         <Border Classes="card" Width="360" c:Appear.Kind="Cascade" c:Appear.Index="3">
           <StackPanel Spacing="10">
-            <TextBlock Classes="micro" Text="{loc:TU summarySubjects}" />
+            <TextBlock Classes="micro" Text="{loc:T summarySubjects}" />
             <ItemsControl ItemsSource="{Binding VisibleSubjects}" ItemTemplate="{StaticResource SubjectAction}" />
             <Button Classes="ghost" Content="{Binding SubjectExpandCaption}" Command="{Binding ToggleSubjectsCommand}" IsVisible="{Binding CanExpandSubjects}" HorizontalAlignment="Left" />
           </StackPanel>
@@ -101,7 +101,7 @@
 
         <Border Classes="card" Width="360" IsVisible="{Binding HasTeachers}" c:Appear.Kind="Cascade" c:Appear.Index="4">
           <StackPanel Spacing="10">
-            <TextBlock Classes="micro" Text="{loc:TU summaryTeachers}" />
+            <TextBlock Classes="micro" Text="{loc:T summaryTeachers}" />
             <ItemsControl ItemsSource="{Binding VisibleTeachers}" ItemTemplate="{StaticResource TeacherAction}" />
             <Button Classes="ghost" Content="{Binding TeacherExpandCaption}" Command="{Binding ToggleTeachersCommand}" IsVisible="{Binding CanExpandTeachers}" HorizontalAlignment="Left" />
           </StackPanel>
@@ -109,7 +109,7 @@
 
         <Border Classes="card" Width="360" IsVisible="{Binding HasRooms}" c:Appear.Kind="Cascade" c:Appear.Index="5">
           <StackPanel Spacing="10">
-            <TextBlock Classes="micro" Text="{loc:TU summaryRooms}" />
+            <TextBlock Classes="micro" Text="{loc:T summaryRooms}" />
             <ItemsControl ItemsSource="{Binding Rooms}" ItemTemplate="{StaticResource RoomAction}">
               <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
             </ItemsControl>

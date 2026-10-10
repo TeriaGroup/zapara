@@ -8,7 +8,10 @@ public class I18nService
     private readonly Dictionary<string, string> _dict = new(StringComparer.OrdinalIgnoreCase)
     {
             ["accountTitle"] = "Аккаунт",
-            ["accountUnconfigured"] = "Сервер аккаунтов не настроен",
+            ["accountUnconfigured"] = "Вход временно недоступен. Расписание, карты и домашка работают без аккаунта.",
+            ["accountChecking"] = "Проверяем, доступен ли вход…",
+            ["accountCapabilitiesFailed"] = "Сервер входа не отвечает. Расписание, карты и домашка работают без аккаунта.",
+            ["signInRequired"] = "Недоступно без входа",
             ["accountGuest"] = "Гостевой профиль: данные доступны без аккаунта и сети.",
             ["accountLocal"] = "Вы вошли в аккаунт. Общие данные и функции аккаунта доступны при подключении к серверу.",
             ["accountIsolation"] = "Данные гостя и каждого аккаунта хранятся отдельно. Автоматического переноса и отправки личных данных нет.",
@@ -87,15 +90,14 @@ public class I18nService
             ["syncExpired"] = "Операция синхронизации устарела — повторите действие",
             ["syncOffline"] = "Сервер недоступен. Синхронизация отложена; локальные данные сохранены.",
             // Header
-            ["appTitle"] = "Военмех - расписание и карты",
+            ["appTitle"] = "Военмех — расписание и карты",
             ["headerHint"] = "Группа {0} · {1} неделя",
             ["headerSub"] = "Расписание Военмеха · завтра по умолчанию",
-            ["odd"] = "нечетная",
-            ["even"] = "четная",
+            
             ["oddShort"] = "нечет",
             ["evenShort"] = "чет",
-            ["oddBadge"] = "НЕЧЕТНАЯ",
-            ["evenBadge"] = "ЧЕТНАЯ",
+            ["oddBadge"] = "НЕЧЁТНАЯ",
+            ["evenBadge"] = "ЧЁТНАЯ",
             // Days full
             ["mon"] = "Понедельник", ["tue"] = "Вторник", ["wed"] = "Среда", ["thu"] = "Четверг", ["fri"] = "Пятница", ["sat"] = "Суббота", ["sun"] = "Воскресенье",
             ["monShort"] = "Пн", ["tueShort"] = "Вт", ["wedShort"] = "Ср", ["thuShort"] = "Чт", ["friShort"] = "Пт", ["satShort"] = "Сб", ["sunShort"] = "Вс",
@@ -108,7 +110,7 @@ public class I18nService
             // Settings
             ["settings"] = "НАСТРОЙКИ",
             ["myGroup"] = "Моя группа",
-            ["invertParity"] = "Инвертировать четность недели",
+            ["invertParity"] = "Инвертировать чётность недели",
             ["invertHint"] = "Если вуз сдвинул неделю, включите инверсию.",
             ["friends"] = "ДРУЗЬЯ (до 5)",
             ["friendsHint"] = "Цвет — один из 5, иконка внутри ячейки.",
@@ -119,25 +121,25 @@ public class I18nService
             ["time1"] = "Время 1", ["time2"] = "Время 2", ["saveTimes"] = "Сохранить времена",
             ["sync"] = "СИНХРОНИЗАЦИЯ", ["export"] = "Экспорт", ["import"] = "Импорт", ["refresh"] = "Обновить расписание", ["updated"] = "Обновлено: {0}", ["lastAutoCheck"] = "Автопроверка: {0}",
             ["auto"] = "авто", ["invert"] = "инвертировать",
-            ["parity"] = "Четность",
+            ["parity"] = "Чётность",
             ["group"] = "ГРУППА",
             ["onlyCurrentWeek"] = "Только текущая неделя",
             ["weekLabel"] = "Неделя:",
-            ["weekOdd"] = "Нечетная", ["weekEven"] = "Четная",
             ["emptyWeek"] = "Нет занятий",
             // Dialogs
             ["renameTitle"] = "ПЕРЕИМЕНОВАНИЕ", ["original"] = "Оригинал: {0}", ["newName"] = "Новое название", ["footnote"] = "Примечание (сноска)", ["scope"] = "Область", ["global"] = "Глобально (все вхождения предмета)", ["weekdayOnly"] = "Только в этот день", ["preview"] = "Предпросмотр: {0}", ["reset"] = "Сбросить", ["cancel"] = "Отмена", ["save"] = "Сохранить",
             ["hwTitle"] = "ДОМАШНЕЕ ЗАДАНИЕ", ["hwSubject"] = "Предмет: {0}", ["hwText"] = "Текст задания", ["hwN"] = "Через сколько занятий этого предмета сдать (1..10)", ["hwDue"] = "Срок: {0}", ["hwNoDate"] = "Срок: — (нет занятий)", ["hwStatusHint"] = "Статус: far (скрыт) → approaching (серый) → burning (яркий)",
+            // #28: карты — пара идёт сейчас; аудитории нет на плане (без «проверьте корпус и номер»)
+            ["mapNowLesson"] = "Сейчас", ["mapRoomNotMarked"] = "Аудитория{0} на плане не отмечена", ["mapRoomNotMarkedOpened"] = "Аудитория{0} на плане не отмечена — открыли {1}",
             // Notifications
             ["notifNoLessons"] = "Сегодня пар нет",
             ["notifBurning"] = "[ДЗ!]",
             // Intersections tooltip
             ["room"] = "ауд.",
             // Parity note
-            ["semesterOddNote"] = "Обратите внимание! Семестр начинается с нечетной недели!",
+            ["semesterOddNote"] = "Обратите внимание! Семестр начинается с нечётной недели!",
             ["stale"] = " · устаревшие данные",
             ["ready"] = "Готово",
-            ["loading"] = "Загрузка...",
             ["updatedOk"] = "Готово — расписание обновлено",
             ["exportOk"] = "Экспорт сохранен {0} + QR {1}",
             ["importOk"] = "Импорт: {0} переименований, {1} ДЗ, {2} друзей",
@@ -146,7 +148,6 @@ public class I18nService
             ["mapNext"] = "Куда идти — следующая пара",
             ["mapNoNext"] = "Нет предстоящих занятий",
             ["mapBuilding"] = "Корпус",
-            ["mapFloor"] = "Этаж",
             ["mapRoom"] = "Ауд.",
             ["mapOpen"] = "Открыть полностью",
             ["mapOpenSite"] = "Открыть на сайте",
@@ -158,13 +159,15 @@ public class I18nService
             ["mapWhere"] = "Куда: {0}",
             ["mapWhen"] = "Когда: {0}",
             ["mapCacheDir"] = "Кэш: {0}",
-            ["mapDownloading"] = "Загрузка карт...",
+            ["mapDownloading"] = "Загрузка карт…",
             ["blockWidth"] = "ШИРИНА БЛОКОВ",
             ["blockWidthHint"] = "Тяните разделитель между расписанием и картой или двигайте ползунок. Все блоки подстраиваются.",
             ["blockWidthReset"] = "Сбросить 300",
             ["blockWidthWide"] = "На всю ширину",
             ["summaryTitle"] = "СВОДКА",
             ["summaryBoth"] = "Обе недели (2 недели)",
+            // #21: каркас страниц — выбор группы, домашка, пустые состояния
+            ["noGroupCard"] = "Выберите группу", ["chooseGroup"] = "Выбрать группу", ["groupSearchExample"] = "Например, И831Б", ["groupRecent"] = "Недавние", ["groupFaculty"] = "Факультет {0}", ["groupOther"] = "Другие", ["hwOpenDone"] = "Открыто: {0} · Сдано: {1}", ["hwAddTask"] = "Добавить задание", ["hwMore"] = "Ещё действия",
             ["summaryHint"] = "Сводка по всем парам группы: типы, предметы, преподаватели, аудитории",
             ["teachers"] = "Преподаватели",
             ["teachersHint"] = "Список всех преподавателей по предметам студента — где и когда ведут",
@@ -172,14 +175,14 @@ public class I18nService
             ["nextPairHint"] = "Дата следующей пары по этому предмету",
             ["weekNum"] = "неделя {0}",
             // Self-update (GitHub releases)
-            ["autoUpdate"] = "Автообновление с GitHub",
+            ["autoUpdate"] = "Обновлять автоматически",
             ["updTitle"] = "Обновление",
             ["updDownloading"] = "Скачивание обновления {0}...",
             ["updReady"] = "Обновление {0} скачано. Перезапустить сейчас для установки?",
             ["updNone"] = "У вас последняя версия {0}",
             ["updFail"] = "Не удалось проверить обновление",
             // ---- Desktop v2 (Avalonia) ----
-            ["navSchedule"] = "Расписание", ["navWeek"] = "Неделя", ["navSummary"] = "Сводка", ["navTools"] = "Инструменты",
+            ["navWeek"] = "Неделя", ["navSummary"] = "Сводка", ["navTools"] = "Инструменты",
             ["navTeachers"] = "Преподаватели", ["navMaps"] = "Карты", ["navFriends"] = "Друзья", ["navHomework"] = "Домашка", ["navCommunity"] = "Сообщества", ["navGroup"] = "Группа", ["navChat"] = "Чаты", ["navSettings"] = "Настройки",
             ["groupTitle"] = "Группа",
             ["groupNeedAccount"] = "Войдите в аккаунт, чтобы открыть группу.",
@@ -201,11 +204,10 @@ public class I18nService
             ["groupRoleHeadman"] = "Староста", ["groupRoleCurator"] = "Куратор", ["groupRoleMember"] = "Участник",
             ["goToday"] = "К сегодня", ["prevDay"] = "Предыдущий день", ["nextDay"] = "Следующий день",
             ["lessons1"] = "{0} пара", ["lessons2"] = "{0} пары", ["lessons5"] = "{0} пар",
-            ["weekOf"] = "неделя {0}", ["parityWeek"] = "{0} неделя", ["nextShort"] = "след. {0}",
+            ["weekOf"] = "неделя {0}", ["nextShort"] = "след. {0}",
             ["noLessonsDay"] = "Пар нет", ["noLessonsSunday"] = "Воскресенье — пар нет", ["nextLessonHint"] = "следующая пара — {0}, {1}",
             ["subgroupPick"] = "Выберите подгруппу", ["subgroupYours"] = "Ваша подгруппа",
-            ["typeLek"] = "лекция", ["typePr"] = "практика", ["typeLab"] = "лабораторная", ["typeKons"] = "консультация",
-            ["typeZach"] = "зачёт", ["typeEkz"] = "экзамен", ["typeKurs"] = "курсовая", ["typePraktika"] = "практика",
+            
             ["remote"] = "дистанционно", ["originalLabel"] = "оригинал: {0}",
             ["hwLabel"] = "Домашка", ["hwBurningTomorrow"] = "горит завтра", ["hwBurningToday"] = "горит сегодня", ["hwOverdue"] = "просрочено {0}",
             ["hwDone"] = "сдано", ["hwDueOn"] = "срок {0}", ["hwInLessons1"] = "через {0} пару", ["hwInLessons2"] = "через {0} пары", ["hwInLessons5"] = "через {0} пар",
@@ -216,11 +218,11 @@ public class I18nService
             ["renameTip"] = "Переименовать", ["mapTip"] = "Показать на карте",
             ["placeholderTitle"] = "Раздел в разработке", ["placeholderHint"] = "Появится на следующем этапе", ["loadingTitle"] = "Загружаю расписание…",
             ["themeToggleTip"] = "Переключить тему", ["sidebarToggleTip"] = "Свернуть панель (Ctrl+B)", ["sidebarExpandTip"] = "Развернуть панель (Ctrl+B)",
-            ["groupPickTitle"] = "Выбор группы", ["search"] = "Поиск", ["groupSearchHint"] = "Номер группы…", ["select"] = "Выбрать",
+            ["groupPickTitle"] = "Выбор группы", ["search"] = "Поиск", ["groupSearchHint"] = "Номер группы", ["select"] = "Выбрать",
             ["confirm"] = "Подтвердить", ["delete"] = "Удалить", ["updatedChip"] = "обновлено {0}", ["errorTitle"] = "Ошибка",
             ["bootstrapError"] = "Не удалось загрузить расписание", ["bootstrapHint"] = "Проверьте сеть и повторите", ["retry"] = "Повторить",
             ["friendAbsent"] = "нет рядом", ["inter100"] = "в той же аудитории", ["inter75"] = "на том же этаже", ["inter50"] = "в том же корпусе", ["inter25"] = "в вузе",
-            ["savedOk"] = "Сохранено", ["noGroup"] = "Группа не выбрана", ["noGroupHint"] = "Нажмите на карточку группы слева",
+            ["savedOk"] = "Сохранено", ["noGroup"] = "Группа не выбрана", ["noGroupHint"] = "Расписание и задания появятся после выбора группы",
             ["winMinimize"] = "Свернуть", ["winMaximize"] = "Развернуть", ["winClose"] = "Закрыть", ["winRestore"] = "Свернуть в окно",
             ["refreshOk"] = "Расписание обновлено", ["refreshNone"] = "Расписание актуально",
             ["refreshFail"] = "Не удалось обновить расписание: {0}", ["refreshTip"] = "Обновить расписание (F5)",
@@ -234,7 +236,7 @@ public class I18nService
             ["teachersLoading"] = "Загружаем справочник…", ["teachersLoadFail"] = "Справочник преподавателей недоступен: {0}",
             ["teachersNoSource"] = "нет ни кэша, ни встроенной копии, ни сети", ["teachersMine"] = "моя",
             ["teachersTeachesMine"] = "Ведёт у вашей группы", ["teachersNotMine"] = "Не ведёт у вашей группы",
-            ["mapNextLesson"] = "Следующая пара", ["mapLessonPrefix"] = "Пара: {0}", ["mapPickPlan"] = "Выберите план", ["mapFloorN"] = "{0} этаж",
+            ["mapNextLesson"] = "Следующая пара", ["mapLessonPrefix"] = "Пара: {0}", ["mapPickPlan"] = "Выберите план", 
             ["mapInMinutes"] = "через {0} мин", ["mapInHours"] = "через {0} ч", ["mapInDays"] = "через {0} дн.", ["mapNow"] = "идёт сейчас",
             ["mapToNext"] = "К следующей паре", ["mapVc"] = "ВЦ — показан план ГК",
             ["mapDownloadAll"] = "Скачать свежие планы", ["mapOpenFolder"] = "Открыть папку карт", ["mapVerify"] = "Проверить офлайн-кэш",
@@ -254,8 +256,8 @@ public class I18nService
             ["friendsSubtitle"] = "До пяти групп: их пары появляются точками на ваших карточках", ["friendsCount"] = "{0} из {1}", ["friendsAdd"] = "Добавить группу", ["friendsMax"] = "Максимум пять групп", ["friendsNames"] = "Имена товарищей", ["friendsEnabled"] = "Показывать", ["friendsRemove"] = "Удалить", ["friendsRemoveConfirm"] = "Убрать группу {0} из друзей?", ["friendsEmpty"] = "Друзей пока нет", ["friendsEmptyHint"] = "Добавьте группу — её пары появятся точками на ваших карточках", ["friendsColor"] = "Цвет", ["friendAdded"] = "Группа {0} добавлена", ["intersections"] = "Пересечения", ["strictnessHint"] = "Точка загорается, когда друг в это же время не дальше выбранного уровня", ["alwaysShowAll"] = "Всегда все светофоры", ["alwaysShowAllHint"] = "Друзья без пересечения — серой точкой", ["previewTitle"] = "Превью", ["previewNone"] = "В ближайшие две недели пересечений нет",
             ["strictTick25"] = "в вузе", ["strictTick50"] = "корпус", ["strictTick75"] = "этаж", ["strictTick100"] = "аудитория",
             ["hwGroupUrgent"] = "Горит сегодня", ["hwGroupBurning"] = "Горит", ["hwGroupApproaching"] = "Скоро", ["hwGroupFar"] = "Далеко", ["hwGroupOverdue"] = "Просрочено", ["hwGroupDone"] = "Сдано",
-            ["hwOpen1"] = "{0} открытая", ["hwOpen2"] = "{0} открытые", ["hwOpen5"] = "{0} открытых", ["hwDoneCount"] = "сдано {0}",
-            ["hwAddShort"] = "Добавить", ["hwEmpty"] = "Домашки нет", ["hwEmptyHint"] = "Добавьте задание кнопкой выше или через ＋ на карточке пары",
+            ["hwOpen1"] = "{0} открытая", ["hwOpen2"] = "{0} открытые", ["hwOpen5"] = "{0} открытых", 
+            ["hwEmpty"] = "Домашки нет", ["hwEmptyHint"] = "Добавьте задание кнопкой выше или через ＋ на карточке пары",
             ["hwPickSubject"] = "ПРЕДМЕТ", ["hwPickSubjectHint"] = "Название предмета…", ["hwNoSubjects"] = "У группы нет пар — добавить домашку не к чему",
             ["setAppearance"] = "Внешний вид", ["setTheme"] = "Тема", ["themeSystem"] = "Как в системе", ["themeLight"] = "Светлая", ["themeDark"] = "Тёмная",
             ["setCompactSidebar"] = "Компактный сайдбар", ["setAnimations"] = "Анимации", ["setSchedule"] = "Расписание", ["setChange"] = "изменить",
@@ -274,14 +276,16 @@ public class I18nService
             ["syncLanFail"] = "Не удалось запустить сервер: {0}",
             ["syncLanBusy"] = "Порт {0} занят другой программой",
             ["syncExported"] = "Экспорт сохранён: {0}",
+            // #20: подсказки и имена кнопок сайдбара и темы
+            ["menuCollapseTip"] = "Свернуть меню (Ctrl+B)", ["menuExpandTip"] = "Развернуть меню (Ctrl+B)", ["themeToDark"] = "Тёмная тема", ["themeToLight"] = "Светлая тема", ["sidebarToggleName"] = "Свернуть меню", ["sidebarExpandName"] = "Развернуть меню", ["pastLesson"] = "Прошла",
             // Updates card / sidebar item («updTitle», «autoUpdate» and «updDownloading» above are reused as they are)
             ["setUpdates"] = "Обновления", ["updIdle"] = "Проверка ещё не выполнялась", ["updChecking"] = "Проверка…",
-            ["updUpToDate"] = "Актуальная версия {0} · проверено {1}", ["updAvailable"] = "Доступна {0}",
+            ["updUpToDate"] = "Версия {0} — последняя · проверено в {1}", ["updAvailable"] = "Доступна {0}",
             ["updDownloaded"] = "Скачано {0} — готово к установке", ["updInstall"] = "Установить и перезапустить", ["updLater"] = "Позже",
-            ["updCheck"] = "Проверить обновление", ["updInBrowser"] = "В браузере",
-            ["updRelease"] = "Релизы", ["updAlpha"] = "Альфа",
-            ["updChannelHint"] = "Релизы берутся из открытой репы. Альфа берётся из закрытой, для неё нужен ключ GitHub.",
-            ["updToken"] = "Ключ GitHub", ["updNeedToken"] = "Для альфы впишите ключ GitHub",
+            ["updCheck"] = "Проверить обновление", ["updInBrowser"] = "Открыть страницу загрузки",
+            ["updRelease"] = "Стабильная", ["updAlpha"] = "Тестовая (нужен код доступа)",
+            ["updChannelHint"] = "Стабильная версия подходит всем. Тестовая — ранние сборки для тех, кому выдали код доступа.",
+            ["updToken"] = "Код доступа", ["updNeedToken"] = "Для тестовой версии впишите код доступа",
             ["updRateLimited"] = "GitHub ограничил запросы с вашей сети (лимит или VPN). Попробуйте позже или откройте страницу релизов",
             ["updFailWith"] = "Не удалось проверить обновление: {0}", ["updNoReleases"] = "Релизов для Windows не найдено",
             ["updUpdatingTo"] = "Обновляюсь до {0}…",
@@ -290,7 +294,12 @@ public class I18nService
             ["updBadZip"] = "Скачанный архив повреждён — попробуйте ещё раз",
     };
 
-    public I18nService(string lang = "ru") { _ = lang; }
+    public I18nService(string lang = "ru")
+    {
+        _ = lang;
+        // #12: строки из общего каталога design/strings/ru.json — единый источник для web и desktop.
+        foreach (var (key, value) in SharedStrings.Desktop) _dict[key] = value;
+    }
 
     public void SetLanguage(string lang) { _ = lang; _ = LanguageChanged; }
 

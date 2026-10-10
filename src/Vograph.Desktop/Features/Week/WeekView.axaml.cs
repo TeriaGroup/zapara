@@ -23,6 +23,10 @@ public partial class WeekView : UserControl
             });
         DataContextChanged += (_, _) => { _swipe.Reset(); BindClipboard(); if (DataContext is WeekViewModel vm) vm.SetViewportWidth(Bounds.Width); };
         SizeChanged += (_, _) => { if (DataContext is WeekViewModel vm) vm.SetViewportWidth(Bounds.Width); };
+        // #19: заголовок недели открывает календарь; выбор дня закрывает его.
+        if (WeekTitle.Flyout is Flyout flyout)
+            flyout.Opening += (_, _) => { if (DataContext is WeekViewModel { CalendarWeekDate: { } date }) WeekCalendar.DisplayDate = date; };
+        WeekCalendar.SelectedDatesChanged += (_, _) => WeekTitle.Flyout?.Hide();
     }
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     { base.OnAttachedToVisualTree(e); BindClipboard(); }

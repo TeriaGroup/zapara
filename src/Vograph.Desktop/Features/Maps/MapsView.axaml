@@ -8,7 +8,7 @@
   <UserControl.Styles><Style Selector="TextBlock.display"><Setter Property="FontSize" Value="22" /><Setter Property="FontWeight" Value="Medium" /></Style></UserControl.Styles>
   <Grid RowDefinitions="Auto,*" Margin="24">
     <ScrollViewer MaxHeight="240" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-      <Grid RowDefinitions="Auto,Auto">
+      <Grid RowDefinitions="Auto,Auto,Auto">
     <Grid ColumnDefinitions="*,Auto">
       <StackPanel Margin="0,0,16,0">
         <TextBlock Classes="display" Text="{Binding Title}" />
@@ -32,40 +32,16 @@
     </Grid>
 
     <WrapPanel Grid.Row="1" ItemSpacing="12" LineSpacing="8" Margin="0,14,0,10">
-      <StackPanel Width="260" Spacing="4">
-        <TextBox Text="{Binding PlaceSearch, Mode=TwoWay}" PlaceholderText="Найти аудиторию" AutomationProperties.Name="Поиск аудитории на карте" />
-        <TextBlock Text="Аудитория не найдена" IsVisible="{Binding NoPlaceMatches}" />
-        <ScrollViewer MaxHeight="150" HorizontalScrollBarVisibility="Disabled"><ItemsControl ItemsSource="{Binding PlaceResults}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:MapPlaceChoice"><StackPanel Spacing="3"><TextBlock Text="{Binding Label}" TextWrapping="Wrap" /><WrapPanel ItemSpacing="4"><Button Classes="ghost" Content="Откуда" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).SelectRouteStartCommand}" CommandParameter="{Binding}" /><Button Classes="ghost" Content="Куда" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).SelectRouteDestinationCommand}" CommandParameter="{Binding}" /><Button Classes="ghost" Content="Показать" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).SelectPlaceCommand}" CommandParameter="{Binding}" /><Button Classes="ghost" Content="Закрепить" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).PinPlaceCommand}" CommandParameter="{Binding}" /><Button Classes="ghost" Content="Занятия" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).ChooseRoomActivityCommand}" CommandParameter="{Binding}" /></WrapPanel></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
-        <StackPanel Spacing="4" IsVisible="{Binding ShowActivity}"><TextBlock Classes="subject" Text="Занятия в аудитории" /><TextBlock Text="{Binding ActivityRoomLabel}" TextWrapping="Wrap" /><CalendarDatePicker SelectedDate="{Binding ActivityDate}" AutomationProperties.Name="Дата активности аудитории" /><Button Content="Проверить сохранённые группы" Command="{Binding LoadRoomActivityCommand}" HorizontalAlignment="Left" /><TextBlock Text="{Binding ActivityStatus}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding ActivityRows}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:ClassroomActivityChoice"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel>
-        <TextBlock Classes="muted caption" Text="{Binding ManualStartCaption}" TextWrapping="Wrap" IsVisible="{Binding ManualStartCaption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-        <Button Content="Показать начало" Command="{Binding ShowRouteStartCommand}" IsVisible="{Binding ManualStartCaption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" HorizontalAlignment="Left" />
-        <TextBlock Classes="muted caption" Text="{Binding ManualDestinationCaption}" TextWrapping="Wrap" IsVisible="{Binding ManualDestinationCaption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-        <Button Content="Показать цель" Command="{Binding ShowRouteDestinationCommand}" IsVisible="{Binding ManualDestinationCaption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" HorizontalAlignment="Left" />
-        <Button Content="Убрать выбранные точки" Command="{Binding ClearManualRouteCommand}" IsVisible="{Binding HasManualRoutePoints}" HorizontalAlignment="Left" />
-        <Expander Header="Недавние места" IsVisible="{Binding HasRecentPlaces}"><StackPanel Spacing="4"><ItemsControl ItemsSource="{Binding RecentPlaces}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:MapPlaceChoice"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).SelectPlaceCommand}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><Button Content="Очистить историю" Command="{Binding ClearRecentPlacesCommand}" HorizontalAlignment="Left" /></StackPanel></Expander>
-        <Expander Header="Места на этом этаже" IsVisible="{Binding HasFloorPlaces}"><ScrollViewer MaxHeight="150" HorizontalScrollBarVisibility="Disabled"><ItemsControl ItemsSource="{Binding CurrentFloorPlaces}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:MapPlaceChoice"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).SelectPlaceCommand}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer></Expander>
-        <Expander Header="Недавние маршруты" IsVisible="{Binding HasRecentRoutes}"><StackPanel Spacing="4"><ItemsControl ItemsSource="{Binding RecentRoutes}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:MapRouteChoice"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).RepeatRecentRouteCommand}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><Button Content="Очистить маршруты" Command="{Binding ClearRecentRoutesCommand}" HorizontalAlignment="Left" /></StackPanel></Expander>
-        <Expander Header="Закреплённые места" IsVisible="{Binding HasPinnedPlaces}"><ItemsControl ItemsSource="{Binding PinnedPlaces}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:MapPlaceChoice"><WrapPanel ItemSpacing="4"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).SelectPlaceCommand}" CommandParameter="{Binding}" /><Button Content="Убрать" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).UnpinPlaceCommand}" CommandParameter="{Binding}" /></WrapPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
-        <Expander Header="Планы без сети"><ScrollViewer MaxHeight="150" HorizontalScrollBarVisibility="Disabled"><ItemsControl ItemsSource="{Binding OfflinePlans}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:OfflinePlanRow"><StackPanel Spacing="3"><TextBlock Text="{Binding Label}" TextWrapping="Wrap" /><Button Content="Подготовить план" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).PrepareOfflinePlanCommand}" CommandParameter="{Binding}" IsVisible="{Binding CanPrepare}" HorizontalAlignment="Left" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer></Expander>
-      </StackPanel>
+      <TextBox Width="200" VerticalAlignment="Center" Text="{Binding PlaceSearch, Mode=TwoWay}" PlaceholderText="Найти аудиторию" AutomationProperties.Name="Поиск аудитории на карте" />
       <c:SegmentedControl Name="MapsBuilding" Items="{Binding SegmentItems}" SelectedIndex="{Binding BuildingIndex}" VerticalAlignment="Center" />
+      <TextBlock Classes="muted" Text="{loc:T mapFloor}" VerticalAlignment="Center" />
       <ItemsControl ItemsSource="{Binding Floors}" VerticalAlignment="Center">
         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" LineSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="m:FloorPill">
-            <Button Classes="pill" Classes.on="{Binding IsSelected}" Content="{Binding Label}"
+            <Button Classes="pill" Classes.on="{Binding IsSelected}" Content="{Binding Number}" ToolTip.Tip="{Binding Label}"
                     Command="{Binding $parent[ItemsControl].((m:MapsViewModel)DataContext).SelectFloorCommand}" CommandParameter="{Binding}"
                     AutomationProperties.AutomationId="Maps.Floor" AutomationProperties.Name="{Binding Label}" />
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-      <ItemsControl ItemsSource="{Binding Entrances}" VerticalAlignment="Center" IsVisible="{Binding HasEntrances}">
-        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" LineSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="m:EntranceItem">
-            <Button Classes="pill" Classes.on="{Binding IsSelected}" Content="{Binding Label}"
-                    Command="{Binding $parent[ItemsControl].((m:MapsViewModel)DataContext).SelectEntranceCommand}" CommandParameter="{Binding}"
-                    AutomationProperties.AutomationId="Maps.Entrance" AutomationProperties.Name="{Binding Label}" />
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
@@ -101,6 +77,36 @@
         </Button>
       </StackPanel>
     </WrapPanel>
+    <!-- #28: тулбар — одна строка (поиск, корпус, этаж, вид, масштаб); результаты поиска и списки мест — строкой ниже. -->
+    <StackPanel Grid.Row="2" Spacing="4" Margin="0,0,0,10" AutomationProperties.AutomationId="Maps.Extras">
+      <StackPanel Spacing="4" MaxWidth="560" HorizontalAlignment="Left">
+        <TextBlock Text="Аудитория не найдена" IsVisible="{Binding NoPlaceMatches}" />
+        <ScrollViewer MaxHeight="150" HorizontalScrollBarVisibility="Disabled"><ItemsControl ItemsSource="{Binding PlaceResults}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:MapPlaceChoice"><StackPanel Spacing="3"><TextBlock Text="{Binding Label}" TextWrapping="Wrap" /><WrapPanel ItemSpacing="4"><Button Classes="ghost" Content="Откуда" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).SelectRouteStartCommand}" CommandParameter="{Binding}" /><Button Classes="ghost" Content="Куда" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).SelectRouteDestinationCommand}" CommandParameter="{Binding}" /><Button Classes="ghost" Content="Показать" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).SelectPlaceCommand}" CommandParameter="{Binding}" /><Button Classes="ghost" Content="Закрепить" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).PinPlaceCommand}" CommandParameter="{Binding}" /><Button Classes="ghost" Content="Занятия" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).ChooseRoomActivityCommand}" CommandParameter="{Binding}" /></WrapPanel></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
+        <StackPanel Spacing="4" IsVisible="{Binding ShowActivity}"><TextBlock Classes="subject" Text="Занятия в аудитории" /><TextBlock Text="{Binding ActivityRoomLabel}" TextWrapping="Wrap" /><CalendarDatePicker SelectedDate="{Binding ActivityDate}" AutomationProperties.Name="Дата активности аудитории" /><Button Content="Проверить сохранённые группы" Command="{Binding LoadRoomActivityCommand}" HorizontalAlignment="Left" /><TextBlock Text="{Binding ActivityStatus}" TextWrapping="Wrap" /><ItemsControl ItemsSource="{Binding ActivityRows}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:ClassroomActivityChoice"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding OpenCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel>
+        <TextBlock Classes="muted caption" Text="{Binding ManualStartCaption}" TextWrapping="Wrap" IsVisible="{Binding ManualStartCaption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <Button Content="Показать начало" Command="{Binding ShowRouteStartCommand}" IsVisible="{Binding ManualStartCaption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" HorizontalAlignment="Left" />
+        <TextBlock Classes="muted caption" Text="{Binding ManualDestinationCaption}" TextWrapping="Wrap" IsVisible="{Binding ManualDestinationCaption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <Button Content="Показать цель" Command="{Binding ShowRouteDestinationCommand}" IsVisible="{Binding ManualDestinationCaption, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" HorizontalAlignment="Left" />
+        <Button Content="Убрать выбранные точки" Command="{Binding ClearManualRouteCommand}" IsVisible="{Binding HasManualRoutePoints}" HorizontalAlignment="Left" />
+      </StackPanel>
+      <ItemsControl ItemsSource="{Binding Entrances}" IsVisible="{Binding HasEntrances}" AutomationProperties.Name="Вход для начала маршрута">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel ItemSpacing="6" LineSpacing="6" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="m:EntranceItem">
+            <Button Classes="pill" Classes.on="{Binding IsSelected}" Content="{Binding Label}"
+                    Command="{Binding $parent[ItemsControl].((m:MapsViewModel)DataContext).SelectEntranceCommand}" CommandParameter="{Binding}"
+                    AutomationProperties.AutomationId="Maps.Entrance" AutomationProperties.Name="{Binding Label}" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <WrapPanel ItemSpacing="12" LineSpacing="4">
+        <Expander Header="Недавние места" IsVisible="{Binding HasRecentPlaces}"><StackPanel Spacing="4"><ItemsControl ItemsSource="{Binding RecentPlaces}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:MapPlaceChoice"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).SelectPlaceCommand}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><Button Content="Очистить историю" Command="{Binding ClearRecentPlacesCommand}" HorizontalAlignment="Left" /></StackPanel></Expander>
+        <Expander Header="Места на этом этаже" IsVisible="{Binding HasFloorPlaces}"><ScrollViewer MaxHeight="150" HorizontalScrollBarVisibility="Disabled"><ItemsControl ItemsSource="{Binding CurrentFloorPlaces}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:MapPlaceChoice"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).SelectPlaceCommand}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer></Expander>
+        <Expander Header="Недавние маршруты" IsVisible="{Binding HasRecentRoutes}"><StackPanel Spacing="4"><ItemsControl ItemsSource="{Binding RecentRoutes}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:MapRouteChoice"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).RepeatRecentRouteCommand}" CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" /></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><Button Content="Очистить маршруты" Command="{Binding ClearRecentRoutesCommand}" HorizontalAlignment="Left" /></StackPanel></Expander>
+        <Expander Header="Закреплённые места" IsVisible="{Binding HasPinnedPlaces}"><ItemsControl ItemsSource="{Binding PinnedPlaces}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:MapPlaceChoice"><WrapPanel ItemSpacing="4"><Button Classes="ghost" Content="{Binding Label}" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).SelectPlaceCommand}" CommandParameter="{Binding}" /><Button Content="Убрать" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).UnpinPlaceCommand}" CommandParameter="{Binding}" /></WrapPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
+        <Expander Header="Планы без сети"><ScrollViewer MaxHeight="150" HorizontalScrollBarVisibility="Disabled"><ItemsControl ItemsSource="{Binding OfflinePlans}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="m:OfflinePlanRow"><StackPanel Spacing="3"><TextBlock Text="{Binding Label}" TextWrapping="Wrap" /><Button Content="Подготовить план" Command="{Binding $parent[UserControl].((m:MapsViewModel)DataContext).PrepareOfflinePlanCommand}" CommandParameter="{Binding}" IsVisible="{Binding CanPrepare}" HorizontalAlignment="Left" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer></Expander>
+      </WrapPanel>
+    </StackPanel>
       </Grid>
     </ScrollViewer>
 

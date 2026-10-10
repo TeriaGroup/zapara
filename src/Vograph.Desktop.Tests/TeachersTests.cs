@@ -126,7 +126,7 @@ public class TeachersTests : UiTest
         Assert.Equal(2, d.Days[0].Rows.Count);          // both Mondays
         Assert.True(d.Days[2].IsToday);                 // Wednesday
         var wed = Assert.Single(d.Days[2].Rows);
-        Assert.Equal(("14:55", "16:30", "ВЫСШ. МАТЕМАТ", "практика", "ВЦ 280", "А863С", "чет", true),
+        Assert.Equal(("14:55", "16:30", "Высшая математика", "Практика", "ВЦ 280", "А863С", "чет", true),
             (wed.Time, wed.TimeEnd, wed.Name, wed.TypeLabel, wed.Room, wed.Groups, wed.ParityLabel, wed.IsMine));
         Assert.Equal("А863С, А864С", d.Days[0].Rows[0].Groups);
 

@@ -62,6 +62,37 @@ public sealed partial class SyncDomainTests
     }
 
     [Fact]
+    public async Task Resync_after_new_changes_starts_fresh_manifest_so_deleted_records_stay_deleted()
+    {
+        // #31: повторный вход в течение жизни снимка получал старый снимок, и удалённые задания возвращались.
+        await using var db = await SyncPostgresFixture.CreateAsync(true);
+        var clock = new AccountClock();
+        var accounts = new AccountService(db.Accounts.DataSource, db.Accounts.Configuration, clock);
+        var session = await Seed(accounts);
+        var service = new SyncService(accounts, db.Configuration);
+        var m = await service.MetadataAsync(session.AccessToken, Ct);
+        Assert.NotNull(m);
+        var kept = (await service.MutateAsync(session.AccessToken, Put(m, Guid.NewGuid()), Ct)).ServerRecord!;
+        var removed = (await service.MutateAsync(session.AccessToken, Put(m, Guid.NewGuid()), Ct)).ServerRecord!;
+        var before = await service.BeginResyncAsync(session.AccessToken, Ct);
+        clock.Now = clock.Now.AddMinutes(1);
+        var tombstone = (await service.MutateAsync(session.AccessToken, Delete(m, removed), Ct)).ServerRecord!;
+        Assert.True(tombstone.Tombstone);
+
+        var after = await service.BeginResyncAsync(session.AccessToken, Ct);
+        Assert.NotEqual(before.ManifestId, after.ManifestId);
+        Assert.True(after.HighWater > before.HighWater);
+        var records = Value(await service.ReadResyncPageAsync(session.AccessToken, after.ManifestId, 0, 200, Ct)).Items.Select(x => x.Record).ToList();
+        Assert.Equal(tombstone, Assert.Single(records, x => x.EntityId == removed.EntityId));
+        Assert.Equal(kept, Assert.Single(records, x => x.EntityId == kept.EntityId));
+        Assert.Empty(Value(await service.ChangesAsync(session.AccessToken, m.SyncEpoch, after.HighWater, 200, Ct)).Changes);
+
+        // Без новых изменений снимок по-прежнему переиспользуется; начатое чтение старого снимка не обрывается.
+        Assert.Equal(after, await service.BeginResyncAsync(session.AccessToken, Ct));
+        Assert.Equal(2, Value(await service.ReadResyncPageAsync(session.AccessToken, before.ManifestId, 0, 200, Ct)).Items.Count);
+    }
+
+    [Fact]
     public async Task Foreign_epoch_and_manifest_never_expose_owner_content()
     {
         await using var db = await SyncPostgresFixture.CreateAsync(true);

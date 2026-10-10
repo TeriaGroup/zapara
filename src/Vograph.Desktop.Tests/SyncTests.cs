@@ -417,6 +417,6 @@ public class SyncTests : UiTest
 
         Assert.Equal("А863С", shell.GroupName);
         Assert.True(target.Services.Db.GetSettings().ParityInvert);
-        Assert.Equal("нечетная неделя · 6 окт.", shell.GroupSubtitle);
+        Assert.Equal("нечётная неделя · 6 окт.", shell.GroupSubtitle);
     }
 }

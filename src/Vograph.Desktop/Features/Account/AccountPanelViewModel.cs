@@ -43,7 +43,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         if (profiles is not null) profiles.Changed += Apply;
         Identities.CollectionChanged += OnIdentitiesChanged;
         Devices.CollectionChanged += (_, _) => RefreshDeviceBrowse();
-        Status = T("accountUnconfigured");
+        Status = T("accountChecking");
     }
 
     [ObservableProperty] private string username = "";
@@ -160,7 +160,13 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
     public bool CanUnlinkIdentity => HasPassword || Identities.Count > 1;
     public bool CanDownloadExport => ExportJob?.Status == "ready";
     partial void OnBusyChanged(bool value) { OnPropertyChanged(nameof(CanAct)); OnPropertyChanged(nameof(CanRequestReset)); OnPropertyChanged(nameof(CanConfirmReset)); }
-    partial void OnReadyChanged(bool value) => OnPropertyChanged(nameof(CanAct));
+    partial void OnReadyChanged(bool value) { OnPropertyChanged(nameof(CanAct)); RaiseSignIn(); }
+    partial void OnCapabilitiesFailedChanged(bool value) => RaiseSignIn();
+    /// <summary>Вход реально работает (#18, D-02): проверка завершена, сервер настроен и ответил. Иначе форму входа не показываем.</summary>
+    public bool SignInWorks => Ready && !disposed && service is not null && !CapabilitiesFailed;
+    public bool ShowLoginForm => ShowLogin && SignInWorks;
+    public event EventHandler? SignInChanged;
+    private void RaiseSignIn() { OnPropertyChanged(nameof(SignInWorks)); OnPropertyChanged(nameof(ShowLoginForm)); SignInChanged?.Invoke(this, EventArgs.Empty); }
     partial void OnVkAvailableChanged(bool value) => NotifyExternal();
     partial void OnYandexAvailableChanged(bool value) => NotifyExternal();
     partial void OnRecoveryAvailableChanged(bool value) { OnPropertyChanged(nameof(ShowRecovery)); OnPropertyChanged(nameof(CanRequestReset)); OnPropertyChanged(nameof(CanConfirmReset)); }
@@ -182,7 +188,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
 
     public async Task InitializeAsync()
     {
-        if (profiles is null) { Ready = true; return; }
+        if (profiles is null) { Ready = true; Status = T("accountUnconfigured"); return; }
         await RunAsync(async () =>
         {
             Apply(await profiles.RestoreAsync(lifetime.Token));
@@ -215,7 +221,7 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
             : value.AccountFailure is { } failure ? FailureText(failure)
             : value.Failure is not null ? T("accountTransitionFailed")
             : value.ReauthRequired ? T("accountReauth") : T(value.Profile.IsGuest ? "accountGuest" : "accountLocal");
-        foreach (var name in new[] { nameof(IsGuest), nameof(IsAccount), nameof(CanAct), nameof(NeedsRecovery), nameof(ShowLogin) })
+        foreach (var name in new[] { nameof(IsGuest), nameof(IsAccount), nameof(CanAct), nameof(NeedsRecovery), nameof(ShowLogin), nameof(ShowLoginForm) })
             OnPropertyChanged(name);
         OnPropertyChanged(nameof(HasUnsavedDisplayName));
         OnPropertyChanged(nameof(ShowProviderProof));

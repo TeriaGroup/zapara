@@ -13,7 +13,11 @@ using Vograph.Desktop.ViewModels;
 
 namespace Vograph.Desktop.Features.Maps;
 
-public sealed record FloorPill(int Floor, string Label, bool IsSelected);
+/// <summary>Кнопка этажа: на кнопке номер, имя для экранного диктора — «2 этаж» (#12, как на web).</summary>
+public sealed record FloorPill(int Floor, string Label, bool IsSelected)
+{
+    public string Number => Floor.ToString(System.Globalization.CultureInfo.InvariantCulture);
+}
 
 public sealed record EntranceItem(string Id, string Label, bool IsSelected);
 
@@ -674,7 +678,7 @@ public sealed partial class MapsViewModel : ViewModelBase
         var from = manualStartId is not null ? guessed : MapsComposer.StartFor(_graph, guessed?.Id, dest?.Id) ?? guessed;
         if (from is null || dest is null)
         {
-            SetRouteIssue(dest is null ? "Аудитория не найдена на плане. Проверьте корпус и номер."
+            SetRouteIssue(dest is null ? MapsComposer.RoomNotMarked(_destRoomKey, Current, App.Loc)
                 : "Не удалось выбрать начало маршрута. Выберите вход.");
             ApplyRoute(null);
             NotifyStartFallback(guessed, from);

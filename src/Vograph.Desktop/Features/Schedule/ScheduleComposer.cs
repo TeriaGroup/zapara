@@ -52,7 +52,7 @@ public sealed class ScheduleComposer
         var title = DayTitles.Title(offset, date, loc);
 
         if (string.IsNullOrEmpty(GroupId))
-            return new DayModel(date, offset, title, "", Array.Empty<LessonRow>(), loc.T("noGroup"), loc.T("noGroupHint"));
+            return new DayModel(date, offset, title, "", Array.Empty<LessonRow>(), loc.T("noGroup"), loc.T("noGroupHint"), NeedsGroup: true);
 
         var groupId = GroupId!;
         if(DateTime.TryParse(settings.PeriodStart,out var knownStart) && date.Date<knownStart.Date)
@@ -121,7 +121,7 @@ public sealed class ScheduleComposer
                 OriginalName: shownName == shownOriginal ? null : shownOriginal,
                 Note: string.IsNullOrWhiteSpace(note) ? null : note,
                 TypeLabel: DayTitles.TypeLabel(l.TypeRaw, loc),
-                Teacher: string.IsNullOrWhiteSpace(l.TeacherRaw) ? "—" : l.TeacherRaw,
+                Teacher: string.IsNullOrWhiteSpace(l.TeacherRaw) ? "—" : LessonText.Teacher(l.TeacherRaw),
                 RoomText: roomText,
                 BuildingTag: tag,
                 IsRemote: remote,

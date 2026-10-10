@@ -23,11 +23,14 @@ public sealed partial class ScheduleViewModel
     public bool HasDeadlineFeedback=>DeadlineFeedback.Length>0;
     public bool HasNextStudyDate=>NextStudyDate is not null;
     public string NextStudyCaption=>NextStudyDate is {} date?$"Следующий учебный день · {date.ToString("d MMMM", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))}" : "";
-    public string DeadlineTitle=>$"Ближайшие сроки · {Deadlines.Count} заданий · готово {Deadlines.Count(x=>x.Done)}";
+    // #12: как на web — «Ближайшие сроки · N».
+    // #12: как на web — «Ближайшие сроки · N»; #19 (D-05): пустой блок — одна строка.
+    public string DeadlineTitle=>Deadlines.Count==0?"Сроков на 3 дня нет":$"{Vograph.Desktop.Services.Loc.Current.T("deadlinesTitle")} · {Deadlines.Count}";
+    public bool HasDeadlineRows=>Deadlines.Count>0;
     public string DeadlineAttention=>$"Невыполненные сроки: {Deadlines.Count(x=>!x.Done)}";
     public bool HasDeadlineAttention=>Deadlines.Any(row=>!row.Done);
     private void RefreshDeadlineSummary()
-    {OnPropertyChanged(nameof(DeadlineTitle));OnPropertyChanged(nameof(DeadlineAttention));OnPropertyChanged(nameof(HasDeadlineAttention));}
+    {OnPropertyChanged(nameof(DeadlineTitle));OnPropertyChanged(nameof(HasDeadlineRows));OnPropertyChanged(nameof(DeadlineAttention));OnPropertyChanged(nameof(HasDeadlineAttention));}
     public string DayPriorityCaption=>Date.Date==_clock().Date && Lessons.Count>0 && Lessons.All(x=>x.IsPast)?"Пары закончились":Date.Date>_clock().Date?"Первая пара":"Текущая или следующая пара";
     public bool HasPriority=>Lessons.Any(x=>x.IsNext);
     public bool ShowDayState=>HasPriority || Date.Date==_clock().Date && Lessons.Count>0 && Lessons.All(x=>x.IsPast);
@@ -151,7 +154,7 @@ public sealed partial class PlannerDeadlineRow : ObservableObject
     [ObservableProperty] private string subject="";
     [ObservableProperty] private string deadline="";
     [ObservableProperty] private bool done;
-    public string CompletionCaption=>Done?"Готово у меня":"Готово у меня: "+Text;
+    public string CompletionCaption=>Done?"Выполнено":"Выполнено: "+Text;
     partial void OnDoneChanged(bool value)=>OnPropertyChanged(nameof(CompletionCaption));
     public IAsyncRelayCommand OpenCommand{get;} public IAsyncRelayCommand ToggleCommand{get;} public IRelayCommand DiscussCommand{get;}
     internal void Update(string text,string subject,DateTime? due,bool done,bool overdue){Text=text;Subject=subject;Due=due;Done=done;Deadline=due is {} date?$"{date:dd.MM.yyyy}"+(overdue?" · Просрочено":""):"Без срока";}

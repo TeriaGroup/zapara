@@ -3,6 +3,17 @@ using Zapara.Server.Communities;
 namespace Zapara.Server.Web;
 internal static partial class WebEndpoints
 {
+    // Клиент web добавляет ?typed=1 (как в основном API), а режим групп передаёт ещё и заголовком.
+    // Разрешаем только typed=1; любые другие параметры по-прежнему дают 400.
+    private static bool TypedTopics(HttpContext context)
+    {
+        CommunityHttpInput.Query(context, "typed");
+        if (!context.Request.Query.TryGetValue("typed", out var values))
+            return context.Request.Headers["X-Zapara-Group-Space"].ToString() == "1";
+        if (values.ToString() != "1") throw new CommunityInputException();
+        return true;
+    }
+
     private static void MapCommunities(RouteGroupBuilder root, IConfiguration configuration)
     {
         if (!CommunitiesConfiguration.IsEnabled(configuration)) return;
@@ -265,26 +276,26 @@ internal static partial class WebEndpoints
         });
         Route(group, "GET", "/{communityId}/topics", async context =>
         {
-            CommunityHttpInput.Query(context);
-            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().TopicsAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), context.RequestAborted,includeTyped:context.Request.Headers["X-Zapara-Group-Space"].ToString()=="1"));
+            var typed = TypedTopics(context);
+            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().TopicsAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), context.RequestAborted,includeTyped:typed));
         });
         Route(group, "POST", "/{communityId}/topics", async context =>
         {
-            CommunityHttpInput.Query(context);
+            var typed = TypedTopics(context);
             var body = await CommunityHttpInput.Body<GroupTopicRequest>(context);
-            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().CreateTopicAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), body, context.RequestAborted,includeTyped:context.Request.Headers["X-Zapara-Group-Space"].ToString()=="1"), 201);
+            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().CreateTopicAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), body, context.RequestAborted,includeTyped:typed), 201);
         });
         Route(group, "POST", "/{communityId}/topics/{topicId}", async context =>
         {
-            CommunityHttpInput.Query(context);
+            var typed = TypedTopics(context);
             var body = await CommunityHttpInput.Body<GroupTopicRequest>(context);
-            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().RenameTopicAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), CommunityHttpInput.Id(context.Request.RouteValues["topicId"]), body, context.RequestAborted,includeTyped:context.Request.Headers["X-Zapara-Group-Space"].ToString()=="1",modernMetadata:context.Request.Headers["X-Zapara-Group-Space"].ToString()=="1"));
+            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().RenameTopicAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), CommunityHttpInput.Id(context.Request.RouteValues["topicId"]), body, context.RequestAborted,includeTyped:typed,modernMetadata:context.Request.Headers["X-Zapara-Group-Space"].ToString()=="1"));
         });
         Route(group, "POST", "/{communityId}/topics/{topicId}/delete", async context =>
         {
-            CommunityHttpInput.Query(context);
+            var typed = TypedTopics(context);
             await CommunityHttpInput.Empty(context);
-            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().DeleteTopicAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), CommunityHttpInput.Id(context.Request.RouteValues["topicId"]), context.RequestAborted,includeTyped:context.Request.Headers["X-Zapara-Group-Space"].ToString()=="1"));
+            return CommunityHttpResult.Json(await context.RequestServices.GetRequiredService<CommunityService>().DeleteTopicAsync(Token(context), CommunityHttpInput.Id(context.Request.RouteValues["communityId"]), CommunityHttpInput.Id(context.Request.RouteValues["topicId"]), context.RequestAborted,includeTyped:typed));
         });
         Route(group, "POST", "/direct", async context =>
         {

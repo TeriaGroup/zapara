@@ -60,7 +60,7 @@ public class MapService
     {
         _ = db;
         _schedule = schedule;
-        CacheDir = cacheDir ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vograph", "maps");
+        CacheDir = cacheDir ?? Path.Combine(VographDataRoot.DefaultDir, "maps");
         BundledDir = bundledDir ?? Path.Combine(AppContext.BaseDirectory, "maps");
         LoadCoords();
     }
@@ -376,7 +376,7 @@ public class MapService
                 {
                     try
                     {
-                        progress?.Report($"Копирование {kv.Key.building} {kv.Key.floor} из пакета...");
+                        progress?.Report($"Копирование {kv.Key.building} {kv.Key.floor} из пакета…");
                         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                         File.Copy(bundled, path, true);
                         progress?.Report($"Готово {Path.GetFileName(path)} (из пакета)");

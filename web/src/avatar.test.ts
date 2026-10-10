@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { avatarInitials, avatarPath, createAvatarCache, validateAvatarFile } from "./avatar.ts";
+import { avatarFallback, avatarInitials, avatarPath, createAvatarCache, validateAvatarFile } from "./avatar.ts";
 import { readAvatarDimensions } from "./avatar-photo.ts";
 
 test("avatar initials use two name parts or two letters of one name", () => {
@@ -110,4 +110,60 @@ test("conditional refresh reuses an unchanged image and swaps a newer one", asyn
   assert.deepEqual(revoked, []);
   release();
   assert.deepEqual(revoked, ["blob:1"]);
+});
+
+test("a missing avatar is not requested again by periodic refresh until the pause ends (#34)", async () => {
+  let clock = 0, reads = 0;
+  let answer: { url: string | null; etag: string | null; missing?: boolean } = { url: null, etag: null, missing: true };
+  const cache = createAvatarCache(async () => { reads++; return answer; }, 2, () => {}, 10 * 60_000, () => clock);
+  cache.scope("account");
+  assert.equal(await cache.read("user:a"), null);
+  assert.equal(reads, 1);
+  await cache.refreshAll();
+  clock += 60_000; await cache.refreshAll();
+  assert.equal(reads, 1, "the 60 s timer and tab switches do not repeat the 404");
+
+  // Even after LRU eviction the answer is remembered.
+  await cache.read("user:b"); await cache.read("user:c"); await new Promise(done => setTimeout(done, 0));
+  const before = reads;
+  assert.equal(await cache.read("user:a"), null);
+  assert.equal(reads, before);
+
+  clock += 10 * 60_000;
+  answer = { url: "blob:new", etag: "1" };
+  assert.equal(await cache.read("user:a"), "blob:new", "after the pause the avatar is checked again");
+});
+
+test("own upload and account change clear the remembered missing avatar (#34)", async () => {
+  let reads = 0;
+  const cache = createAvatarCache(async () => { reads++; return reads === 1 ? { url: null, etag: null, missing: true } : { url: "blob:mine", etag: "2" }; }, 4, () => {}, 10 * 60_000, () => 0);
+  cache.scope("account");
+  assert.equal(await cache.read("user:me"), null);
+  cache.invalidate("user:me");
+  assert.equal(await cache.read("user:me"), "blob:mine");
+
+  let other = 0;
+  const scoped = createAvatarCache(async () => { other++; return { url: null, etag: null, missing: true }; }, 4, () => {}, 10 * 60_000, () => 0);
+  scoped.scope("a"); await scoped.read("user:x");
+  scoped.scope("b"); await scoped.read("user:x");
+  assert.equal(other, 2, "another account asks again");
+});
+
+test("network errors and 401/403 are not remembered as missing (#34)", async () => {
+  let reads = 0;
+  const cache = createAvatarCache(async () => { reads++; if (reads === 1) throw new Error("offline"); return { url: null, etag: null }; }, 4, () => {}, 10 * 60_000, () => 0);
+  cache.scope("account");
+  await cache.read("user:a");
+  await cache.refresh("user:a");
+  await cache.refresh("user:a");
+  assert.equal(reads, 3);
+});
+
+test("#17: a group without a photo shows the group icon, a person shows initials", async () => {
+  assert.equal(avatarFallback("group"), "icon");
+  assert.equal(avatarFallback("user"), "initials");
+  const { readFile } = await import("node:fs/promises");
+  const view = await readFile(new URL("./avatar-view.tsx", import.meta.url), "utf8");
+  assert.match(view, /fallback === "icon" \? <span aria-hidden="true" className="avatar-glyph"><Icon name="users"/);
+  assert.match(view, /\{url \? <img/);
 });

@@ -28,7 +28,8 @@
             </article>
         @empty
             <article class="operator-row">
-                <p class="operator-note">Обращений пока нет.</p>
+                <strong>Обращений пока нет.</strong>
+                <p>Студенты пишут из приложения: Настройки → Помощь. Новые обращения появятся здесь.</p>
             </article>
         @endforelse
     </div>

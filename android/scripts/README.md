@@ -1,6 +1,6 @@
 # Android verify
 
-JDK 17 и Android SDK задаются скриптом (не системным PATH): `local.properties` `sdk.dir`, либо `ANDROID_HOME`, либо `C:\Android\sdk`. JDK: `ZAPARA_JAVA_HOME`, `C:\Android\jdk17`, либо частный Temurin 17 из `%TEMP%\opencode\zapara-android-tools-*`. Эмулятор по умолчанию — AVD `zapara-api34`; если уже есть `emulator-5554` (или любой `emulator-*` в `device`), скрипт берёт его и **не останавливает**.
+JDK 17 и Android SDK задаются скриптом (не системным PATH): `local.properties` `sdk.dir`, либо `ANDROID_HOME`, либо `C:\Android\sdk`. JDK: `ZAPARA_JAVA_HOME`, `C:\Android\jdk17`, либо частный Temurin 17 из `%TEMP%\opencode\zapara-android-tools-*`. Найденный JDK скрипт передаёт Gradle через `-Dorg.gradle.java.home`; в `android/gradle.properties` путь не задан. Для ручного запуска `gradlew` нужен `JAVA_HOME` на JDK 17 или `org.gradle.java.home` в `~/.gradle/gradle.properties`. Эмулятор по умолчанию — AVD `zapara-api34`; если уже есть `emulator-5554` (или любой `emulator-*` в `device`), скрипт берёт его и **не останавливает**.
 
 ```powershell
 powershell -NoProfile -File android\scripts\verify.ps1

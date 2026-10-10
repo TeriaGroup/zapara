@@ -10,6 +10,7 @@
   </Style>
 
   <Style Selector="ComboBox, CheckBox, NumericUpDown, CalendarDatePicker"><Setter Property="MinHeight" Value="48" /><Setter Property="FontSize" Value="15" /></Style>
+  <Style Selector="ComboBox, NumericUpDown"><Setter Property="BorderBrush" Value="{DynamicResource Brush.ControlBorder}" /></Style>
 
   <!-- Text scale. Foreground is NOT set on plain TextBlock so it keeps inheriting (buttons, chips). -->
   <Style Selector="TextBlock.display">
@@ -26,10 +27,10 @@
     <Setter Property="FontWeight" Value="Medium" />
   </Style>
   <Style Selector="TextBlock.caption">
-    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontSize" Value="13" />
   </Style>
   <Style Selector="TextBlock.micro">
-    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontSize" Value="13" />
     <Setter Property="FontWeight" Value="Medium" />
     <Setter Property="LetterSpacing" Value="0" />
     <Setter Property="Foreground" Value="{DynamicResource Brush.Text3}" />
@@ -49,8 +50,8 @@
 
   <!-- Card: flat surface with a 1px line; hover lifts it. -->
   <Style Selector="Border.card">
-    <Setter Property="Background" Value="{DynamicResource Brush.Card}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource Brush.Line}" />
+    <Setter Property="Background" Value="{DynamicResource Zp.Surface2}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Zp.BorderSubtle}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="{DynamicResource Radius.Card}" />
     <Setter Property="Padding" Value="16,14" />
@@ -63,8 +64,19 @@
   <Style Selector="Border.card.next">
     <Setter Property="BorderBrush" Value="{DynamicResource Brush.LineStrong}" />
   </Style>
+  <!-- #20: прошедшая пара приглушается фоном и меткой «Прошла», текст остаётся контрастным (≥4.5:1). -->
   <Style Selector="Border.card.past">
-    <Setter Property="Opacity" Value="0.6" />
+    <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
+  </Style>
+  <Style Selector="Border.card.past Button.primary">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.ControlBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Border.card.past Button.primary:pointerover">
+    <Setter Property="Background" Value="{DynamicResource Brush.CardHover}" />
+    <Setter Property="Opacity" Value="1" />
   </Style>
   <!-- Scoped to .hwrow (the Homework section's own row card) on purpose: Border.card.past is shared with
        LessonCardView's lesson card, whose .past means "this lesson's time slot already ended today" —
@@ -75,12 +87,12 @@
   </Style>
 
   <Style Selector="Border.chip">
-    <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
+    <Setter Property="Background" Value="{DynamicResource Zp.SurfaceChip}" />
     <Setter Property="CornerRadius" Value="{DynamicResource Radius.Control}" />
     <Setter Property="Padding" Value="8,3" />
   </Style>
   <Style Selector="Border.chip TextBlock">
-    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontSize" Value="{DynamicResource Zp.Font.Secondary}" />
   </Style>
   <Style Selector="Border.chip.type.lessonbadge">
     <Setter Property="Background" Value="Transparent" />
@@ -94,29 +106,29 @@
     <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
   </Style>
   <Style Selector="Border.chip.type.lessonbadge TextBlock">
-    <Setter Property="FontSize" Value="12" />
-    <Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" />
+    <Setter Property="FontSize" Value="{DynamicResource Zp.Font.Secondary}" />
+    <Setter Property="Foreground" Value="{DynamicResource Zp.TextPrimary}" />
   </Style>
   <Style Selector="Border.chip.type.lessonbadge Border.typewash">
-    <Setter Property="Background" Value="{DynamicResource Brush.Chip}" />
+    <Setter Property="Background" Value="{DynamicResource Zp.SurfaceChip}" />
     <Setter Property="CornerRadius" Value="{DynamicResource Radius.Pill}" />
   </Style>
-  <Style Selector="Border.chip.type.lessonbadge Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Brush.Text2}" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Zp.TextSecondary}" /></Style>
 
-  <Style Selector="Border.chip.type.lessonbadge.lecture Border.typewash"><Setter Property="Background" Value="{DynamicResource Brush.Info}" /><Setter Property="Opacity" Value="0.18" /></Style>
-  <Style Selector="Border.chip.type.lessonbadge.lecture Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Brush.Info}" /></Style>
-  <Style Selector="Border.chip.type.lessonbadge.practice Border.typewash"><Setter Property="Background" Value="{DynamicResource Brush.Ok}" /><Setter Property="Opacity" Value="0.18" /></Style>
-  <Style Selector="Border.chip.type.lessonbadge.practice Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Brush.Ok}" /></Style>
-  <Style Selector="Border.chip.type.lessonbadge.lab Border.typewash"><Setter Property="Background" Value="{DynamicResource Brush.Warn}" /><Setter Property="Opacity" Value="0.18" /></Style>
-  <Style Selector="Border.chip.type.lessonbadge.lab Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Brush.Warn}" /></Style>
-  <Style Selector="Border.chip.type.lessonbadge.consult Border.typewash"><Setter Property="Background" Value="{DynamicResource Brush.Friend4}" /><Setter Property="Opacity" Value="0.18" /></Style>
-  <Style Selector="Border.chip.type.lessonbadge.consult Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Brush.Friend4}" /></Style>
-  <Style Selector="Border.chip.type.lessonbadge.credit Border.typewash"><Setter Property="Background" Value="{DynamicResource Brush.TypeCredit}" /><Setter Property="Opacity" Value="0.18" /></Style>
-  <Style Selector="Border.chip.type.lessonbadge.credit Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Brush.TypeCredit}" /></Style>
-  <Style Selector="Border.chip.type.lessonbadge.exam Border.typewash"><Setter Property="Background" Value="{DynamicResource Brush.Bad}" /><Setter Property="Opacity" Value="0.18" /></Style>
-  <Style Selector="Border.chip.type.lessonbadge.exam Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Brush.Bad}" /></Style>
-  <Style Selector="Border.chip.type.lessonbadge.course Border.typewash"><Setter Property="Background" Value="{DynamicResource Brush.Friend5}" /><Setter Property="Opacity" Value="0.18" /></Style>
-  <Style Selector="Border.chip.type.lessonbadge.course Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Brush.Friend5}" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge.lecture Border.typewash"><Setter Property="Background" Value="{DynamicResource Zp.Lesson.Lecture}" /><Setter Property="Opacity" Value="0.18" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge.lecture Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Zp.Lesson.Lecture}" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge.practice Border.typewash"><Setter Property="Background" Value="{DynamicResource Zp.Lesson.Practice}" /><Setter Property="Opacity" Value="0.18" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge.practice Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Zp.Lesson.Practice}" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge.lab Border.typewash"><Setter Property="Background" Value="{DynamicResource Zp.Lesson.Lab}" /><Setter Property="Opacity" Value="0.18" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge.lab Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Zp.Lesson.Lab}" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge.consult Border.typewash"><Setter Property="Background" Value="{DynamicResource Zp.Lesson.Consult}" /><Setter Property="Opacity" Value="0.18" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge.consult Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Zp.Lesson.Consult}" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge.credit Border.typewash"><Setter Property="Background" Value="{DynamicResource Zp.Lesson.Credit}" /><Setter Property="Opacity" Value="0.18" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge.credit Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Zp.Lesson.Credit}" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge.exam Border.typewash"><Setter Property="Background" Value="{DynamicResource Zp.Lesson.Exam}" /><Setter Property="Opacity" Value="0.18" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge.exam Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Zp.Lesson.Exam}" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge.course Border.typewash"><Setter Property="Background" Value="{DynamicResource Zp.Lesson.Course}" /><Setter Property="Opacity" Value="0.18" /></Style>
+  <Style Selector="Border.chip.type.lessonbadge.course Ellipse.typedot"><Setter Property="Fill" Value="{DynamicResource Zp.Lesson.Course}" /></Style>
   <Style Selector="Border.chip.room">
     <Setter Property="Padding" Value="10,5" />
   </Style>
@@ -154,8 +166,8 @@
   <Style Selector="Border.chip.overdue TextBlock">
     <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
   </Style>
-  <Style Selector="Border.chip.done">
-    <Setter Property="Opacity" Value="0.55" />
+  <Style Selector="Border.chip.done TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
   </Style>
 
   <Style Selector="Border.chip.stale TextBlock">
@@ -219,7 +231,7 @@
     <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
   </Style>
   <Style Selector="Button.hw.done">
-    <Setter Property="Opacity" Value="0.55" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
   </Style>
   <Style Selector="Button.hw.done TextBlock.hwtext">
     <Setter Property="TextDecorations" Value="Strikethrough" />
@@ -269,4 +281,8 @@
     <Setter Property="MinHeight" Value="28" />
   </Style>
 
+  <!-- #20: видимая граница полей ввода (≥3:1 к фону в обеих темах). Стилем, а не в ControlTheme,
+       чтобы не пересекаться с #11; цвета совпадают с токеном border-control. -->
+  <Style Selector="TextBox"><Setter Property="BorderBrush" Value="{DynamicResource Brush.ControlBorder}" /></Style>
+  <Style Selector="TextBox:focus"><Setter Property="BorderBrush" Value="{DynamicResource Brush.Text1}" /></Style>
 </Styles>

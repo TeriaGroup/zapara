@@ -26,16 +26,16 @@ public class SummaryTests : UiTest
         Assert.True(odd.HasGroup);
         Assert.Equal(5, odd.Total);
         Assert.Equal(new[] { ("Пн", 2), ("Вт", 1), ("Ср", 1), ("Чт", 0), ("Пт", 0), ("Сб", 1) }, odd.ByDay.Select(c => (c.Name, c.Count)));
-        Assert.Equal(new[] { ("лекция", 3), ("практика", 2) }, odd.ByType.Select(c => (c.Name, c.Count)));
+        Assert.Equal(new[] { ("Лекция", 3), ("Практика", 2) }, odd.ByType.Select(c => (c.Name, c.Count)));
         Assert.Equal(5, odd.Subjects.Count);
         Assert.Contains(odd.Subjects, c => c.Name == "Матан" && c.Count == 1);      // renamed, type stripped
-        Assert.Contains(odd.Subjects, c => c.Name == "ОСН РОС ГОС" && c.Count == 1);
+        Assert.Contains(odd.Subjects, c => c.Name == "Основы российской государственности" && c.Count == 1);
         Assert.Equal(4, odd.Teachers.Count);                                          // the Tuesday lesson has no teacher
         Assert.Equal(new[] { "493", "563*", "526*", "дистанционно" }.OrderBy(r => r), odd.Rooms.Select(r => r.Name).OrderBy(r => r));
 
         var even = composer.Compose(2, Mon7);
         Assert.Equal(2, even.Total);
-        Assert.Equal(new[] { ("ВЫСШ. МАТЕМАТ", 1), ("Матан", 1) }, even.Subjects.Select(c => (c.Name, c.Count))); // lecture renamed, practice not
+        Assert.Equal(new[] { ("Высшая математика", 1), ("Матан", 1) }, even.Subjects.Select(c => (c.Name, c.Count))); // lecture renamed, practice not
 
         var both = composer.Compose(0, Mon7);
         Assert.Equal(7, both.Total);
@@ -113,7 +113,7 @@ public class SummaryTests : UiTest
 
         await vm.ReloadAsync();
         Assert.Equal(0, vm.SegmentIndex);
-        Assert.Equal(new[] { "Нечетная", "Четная", "Обе" }, vm.SegmentItems);
+        Assert.Equal(new[] { "Нечётная", "Чётная", "Обе" }, vm.SegmentItems);
         Assert.Equal("5", vm.TotalText);
         Assert.Equal(6, vm.DayBars.Count);
         Assert.Equal(40, vm.DayBars[0].Height);   // the busiest day fills the bar

@@ -148,13 +148,15 @@ export function logout() {
   return send<void>("POST", "/web-api/auth/logout", undefined, true);
 }
 
-export async function avatarImage(kind: AvatarKind, id: string, etag: string | null = null): Promise<{ url: string | null; etag: string | null; notModified?: boolean }> {
+export async function avatarImage(kind: AvatarKind, id: string, etag: string | null = null): Promise<{ url: string | null; etag: string | null; notModified?: boolean; missing?: boolean }> {
   const response = await fetch(avatarPath(kind, id), {
     credentials: "same-origin", cache: "no-store",
     headers: { ...authHeaders(false, kind === "group"), Accept: "image/webp", ...(etag ? { "If-None-Match": etag } : {}) },
   });
   if (response.status === 304) return { url: null, etag, notModified: true };
-  if (response.status === 404 || response.status === 401 || response.status === 403) return { url: null, etag: null };
+  // 404 — аватара нет или он недоступен; кэш запоминает это и не повторяет запрос при каждом обновлении (#34).
+  if (response.status === 404) return { url: null, etag: null, missing: true };
+  if (response.status === 401 || response.status === 403) return { url: null, etag: null };
   if (!response.ok || !response.headers.get("Content-Type")?.toLowerCase().startsWith("image/webp")) throw new Error(String(response.status));
   const limit = 512 * 1024;
   if (Number(response.headers.get("Content-Length")) > limit) {

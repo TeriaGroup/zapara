@@ -153,6 +153,14 @@ dotnet run --project src\Vograph.Desktop.UiVerify -- --exe <путь>\publish\Vo
 
 Android:
 
+Нужен JDK 17. Путь к нему в репозитории не задан: Gradle берёт JDK из `JAVA_HOME` (или `java` в `PATH`). Если основной JDK другой, путь к JDK 17 задают только у себя, в `~/.gradle/gradle.properties` (Windows: `%USERPROFILE%\.gradle\gradle.properties`):
+
+```properties
+org.gradle.java.home=C:/Android/jdk17
+```
+
+`android/local.properties` для этого не подходит: оттуда читается только `sdk.dir`, а `org.gradle.java.home` Gradle берёт из `gradle.properties`. `android/scripts/verify.ps1` передаёт найденный JDK сам (`-Dorg.gradle.java.home`, см. `android/scripts/README.md`).
+
 ```powershell
 cd android
 .\gradlew.bat :app:assembleGithubDebug
@@ -217,6 +225,7 @@ HTTP localhost: только для локальной разработки. П�
 | ConnectionStrings:AccountsMigration | Операторское подключение миграций; локально допустим runtime DSN |
 | Accounts:RegistrationEnabled | Явное разрешение регистрации. Без значения она разрешена только в Development и Testing |
 | Web:DataProtectionKeysPath | Абсолютный операторский каталог устойчивых ключей веб-сессий вне публичных файлов |
+| ForwardedHeaders:KnownNetworks, ForwardedHeaders:KnownProxies | Сети (CIDR) и адреса обратного прокси, которым разрешено передавать X-Forwarded-For/Proto; список через запятую. Без значения доверяются loopback и частные диапазоны (там живут Docker-сети). Лучше указать точную подсеть Docker-сети Caddy |
 
 Имена схем должны различаться. Нумерованные схемы runtime не создаёт и не чинит. Схемы переписки он создаёт сам, когда родители уже смигрированы. До изменений сделайте резервную копию и проверьте её. После создания пустых схем и настройки подключений:
 

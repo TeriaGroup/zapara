@@ -6,7 +6,7 @@
              x:Class="Vograph.Desktop.Features.Friends.FriendsView"
              x:DataType="f:FriendsViewModel">
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Margin="32,26" Spacing="14" MaxWidth="880" HorizontalAlignment="Left">
+    <StackPanel Margin="24,20" Spacing="14" MaxWidth="880" HorizontalAlignment="Left">
       <Grid ColumnDefinitions="*,Auto">
         <StackPanel Margin="0,0,16,0">
           <TextBlock Classes="display" Text="{Binding Title}" />
@@ -117,7 +117,7 @@
 
       <Border Classes="card" Margin="0,10,0,0">
         <StackPanel Spacing="12">
-          <TextBlock Classes="micro" Text="{loc:TU intersections}" />
+          <TextBlock Classes="micro" Text="{loc:T intersections}" />
           <TextBlock Classes="muted caption" Text="Совпадение рассчитано по времени и аудиториям в расписании, а не по фактическому местоположению." TextWrapping="Wrap" />
           <c:SegmentedControl Items="{Binding TickLabels}" SelectedIndex="{Binding StrictnessIndex}"
                               AutomationProperties.AutomationId="Friends.Strictness" />

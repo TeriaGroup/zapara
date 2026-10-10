@@ -50,6 +50,8 @@ public sealed partial class LessonRowViewModel : ObservableObject
     public string DetailsCaption => ShowDetails ? "Свернуть" : "Подробнее";
     partial void OnShowDetailsChanged(bool value){OnPropertyChanged(nameof(ShowHomeworkDetails));OnPropertyChanged(nameof(DetailsCaption));}
     [RelayCommand] private void ToggleDetails()=>ShowDetails=!ShowDetails;
+    /// <summary>#19: карточка «Сейчас / Следующая пара» под заголовком раскрывает эту пару в списке.</summary>
+    [RelayCommand] private void FocusInDay() => _owner.JumpNearestLessonCommand.Execute(null);
     public int Index { get; }
     public ScheduleViewModel Owner => _owner;
 

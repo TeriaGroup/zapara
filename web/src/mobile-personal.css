@@ -15,7 +15,7 @@
   .mobile-header-actions .settings-back-action span,
   .mobile-header-actions .map-head-selected-lesson span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   .homework-page .homework-summary { gap: 6px; align-items: center; }
-  .homework-page .homework-summary .muted { flex-basis: 100%; font-size: 12px; }
+  .homework-page .homework-summary .muted { flex-basis: 100%; font-size: 13px; }
   .homework-page .homework-filters { gap: 6px; }
   .homework-page .homework-filters .chip { min-height: 48px; padding-inline: 12px; }
   .homework-page .mobile-homework-compose { margin: 0; }
@@ -28,9 +28,9 @@
   .homework-page .homework-audience-mode .chip { min-height: 48px; flex: 1 1 150px; padding-inline: 12px; }
   .homework-page .mobile-homework-stepper { display: flex; align-items: center; gap: 12px; min-height: 48px; }
   .homework-page .mobile-homework-stepper strong { flex: 1; text-align: center; }
-  .homework-page .mobile-homework-deadline .field-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
+  .homework-page .mobile-homework-deadline .field-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 13px; }
   .homework-page .mobile-homework-compose .homework-editor-footer,
   .sheet .mobile-personal-editor-footer { position: sticky; bottom: 0; z-index: 2; display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin: 8px -16px -16px; padding: 12px 16px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--card); }
-  .homework-page .mobile-homework-compose .homework-editor-footer .muted { font-size: 12px; }
+  .homework-page .mobile-homework-compose .homework-editor-footer .muted { font-size: 13px; }
   .settings-page .settings-category-card .settings-overview-row { min-height: 64px; padding-block: 8px; }
 }
