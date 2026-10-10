@@ -134,6 +134,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public string Title => T("navSettings");
     public Features.Account.AccountPanelViewModel AccountPanel => App.Shared.AccountPanel;
+    /// <summary>R2-02: гостю — кнопка другого канала поддержки, только если он задан (SupportGate.FallbackUrl).</summary>
+    public bool HasSupportFallback => SupportGate.HasFallback;
+    [RelayCommand] private void OpenSupportSignIn() => OpenPanel("account");
+    [RelayCommand] private Task OpenSupportFallback() => SupportGate.HasFallback ? App.Launcher.OpenUrlAsync(SupportGate.FallbackUrl!) : Task.CompletedTask;
     public ObservableCollection<SupportNote> ReportMessages { get; } = [];
     public ObservableCollection<SupportThreadItem> ReportThreads { get; } = [];
     [ObservableProperty] private string reportThreadSearch = "";
