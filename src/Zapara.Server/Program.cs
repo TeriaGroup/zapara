@@ -48,13 +48,9 @@ public class Program
         builder.Services.AddPublicCatalogs();
         builder.Services.AddTimetableRefresh(builder.Configuration);
         builder.Services.AddSingleton(CreatePlatformReady);
+        // Forwarded headers are honoured only from the reverse proxy network (ForwardedHeaders:KnownNetworks/KnownProxies).
         builder.Services.Configure<ForwardedHeadersOptions>(options =>
-        {
-            // TLS ends at the reverse proxy. Kestrel is not published off the Docker network.
-            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-            options.KnownNetworks.Clear();
-            options.KnownProxies.Clear();
-        });
+            ForwardedHeadersSetup.Configure(options, builder.Configuration));
         var app = builder.Build();
         // A forwarding chain requires an actual transport peer. Header-only requests
         // must not manufacture an address and select a fresh rate-limit partition.

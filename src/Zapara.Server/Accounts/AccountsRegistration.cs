@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Authentication;
 using Npgsql;
 
@@ -20,6 +21,7 @@ public static class AccountsRegistration
             { throw new AccountServiceException(AccountFailure.DbUnavailable); }
         });
         services.AddSingleton<AccountPasswordWork>();
+        services.TryAddSingleton(provider => new LoginThrottle(provider.GetRequiredService<TimeProvider>()));
         services.AddSingleton<AccountService>();
         services.AddSingleton<IRecoverySmtpTransport, MailKitRecoveryTransport>();
         services.AddSingleton<IRecoveryDelivery>(provider =>

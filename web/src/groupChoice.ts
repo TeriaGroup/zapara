@@ -34,11 +34,11 @@ type Membership = { communityId: string; role: string | null; name?: string };
 export async function followGroupCommunity(
   input: { authenticated: boolean; groupId: string },
   load: (groupId: string) => Promise<Membership[]>,
-  publish: (state: CommunityFollow) => void,
+  publish: (state: CommunityFollowState) => void,
 ): Promise<void> {
-  publish({ communityId: "", failed: false });
+  publish({ communityId: "", failed: false, pending: true });
   const selected = input.groupId.trim();
-  if (!input.authenticated || !selected) return;
+  if (!input.authenticated || !selected) { publish({ communityId: "", failed: false }); return; }
   try {
     const list = await load(selected);
     publish({
@@ -49,6 +49,9 @@ export async function followGroupCommunity(
     publish({ communityId: "", failed: true });
   }
 }
+
+/** pending: true — старое сообщество сброшено, поиск нового ещё идёт; это ещё не «сообщества нет» (#32). */
+export type CommunityFollowState = CommunityFollow & { pending?: boolean };
 
 /** The open group, chat, desk, and ballots belong to the timetable group. A new choice starts blank. */
 export async function openGroupFace(

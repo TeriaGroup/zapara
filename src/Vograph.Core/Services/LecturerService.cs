@@ -23,7 +23,7 @@ public class LecturerService
     {
         _ = db;
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-        CachePath = cachePath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vograph", "TimetableLecturer50.xml");
+        CachePath = cachePath ?? Path.Combine(VographDataRoot.DefaultDir, "TimetableLecturer50.xml");
         BundledPath = bundledPath ?? Path.Combine(AppContext.BaseDirectory, "TimetableLecturer50.xml");
     }
 

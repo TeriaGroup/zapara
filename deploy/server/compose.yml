@@ -5,10 +5,23 @@ x-log: &log
       max-size: "10m"
       max-file: "3"
 
+# Every service runs as a non-root user (see README.md). No extra capabilities are needed:
+# low ports are opened through the per-container sysctl below instead of CAP_NET_BIND_SERVICE.
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+x-low-ports: &low-ports
+  sysctls:
+    net.ipv4.ip_unprivileged_port_start: 0
+
 services:
   postgres:
     image: postgres:16-alpine
-    <<: *log
+    <<: [*log, *hardening]
+    # The image's postgres user; the data volume is already owned by it.
+    user: "70:70"
     environment:
       POSTGRES_USER: zapara
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -26,10 +39,9 @@ services:
 
   migrate:
     build: .
-    <<: *log
+    <<: [*log, *hardening]
     env_file: .env
     profiles: ["ops"]
-    user: "0:0"
     entrypoint: ["/opt/zapara/migrate.sh"]
     depends_on:
       postgres:
@@ -38,10 +50,9 @@ services:
 
   seed:
     build: .
-    <<: *log
+    <<: [*log, *hardening]
     env_file: .env
     profiles: ["ops"]
-    user: "0:0"
     entrypoint: ["/opt/zapara/seed.sh"]
     depends_on:
       postgres:
@@ -50,13 +61,12 @@ services:
 
   server:
     build: .
-    <<: *log
+    <<: [*log, *hardening]
     env_file: .env
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
       Social__MediaRoot: /var/lib/zapara/media
-    user: "0:0"
     volumes:
       - keys:/var/lib/zapara/keys
       - media:/var/lib/zapara/media
@@ -75,24 +85,25 @@ services:
 
   admin:
     build: ./admin-panel
-    <<: *log
+    <<: [*log, *hardening]
     env_file: ./admin.env
     expose:
-      - "80"
+      - "8080"
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
     mem_limit: 192m
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/up"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/up"]
       interval: 10s
       timeout: 3s
       retries: 12
 
   caddy:
-    image: caddy:2-alpine
-    <<: *log
+    build: ./images/caddy
+    image: zapara-caddy
+    <<: [*log, *hardening, *low-ports]
     ports:
       - "80:80"
       - "443:443"
@@ -107,12 +118,15 @@ services:
 
   # Inbound mail only. Submission and IMAP stay on the compose network for webmail.
   maddy:
-    image: foxcpp/maddy:0.7.1
-    <<: *log
+    build: ./images/maddy
+    image: zapara-maddy
+    <<: [*log, *hardening, *low-ports]
     hostname: mail.voen.teriahost.ru
     environment:
       MADDY_HOSTNAME: mail.voen.teriahost.ru
       MADDY_DOMAIN: voen.teriahost.ru
+    # Shared group mail-tls (10003) gives read access to the TLS private key (mode 640) written by certsync.
+    group_add: ["10003"]
     volumes:
       - maddy_data:/data
       - maddy_certs:/data/tls
@@ -127,10 +141,13 @@ services:
     memswap_limit: 96m
 
   certsync:
-    image: caddy:2-alpine
-    <<: *log
-    user: "0:0"
+    # Same image and uid as caddy: it reads caddy's private keys and copies them for maddy.
+    build: ./images/caddy
+    image: zapara-caddy
+    <<: [*log, *hardening]
     entrypoint: ["/bin/sh", "/sync.sh"]
+    # Writes the maddy key as 640 with group mail-tls (10003), which maddy also joins.
+    group_add: ["10003"]
     volumes:
       - ./mail/sync-certs.sh:/sync.sh:ro
       - caddy_data:/caddy:ro
@@ -142,8 +159,9 @@ services:
     memswap_limit: 24m
 
   webmail:
-    image: roundcube/roundcubemail:1.6.x-apache
-    <<: *log
+    build: ./images/webmail
+    image: zapara-webmail
+    <<: [*log, *hardening, *low-ports]
     environment:
       ROUNDCUBEMAIL_DB_TYPE: sqlite
       ROUNDCUBEMAIL_SKIN: elastic
