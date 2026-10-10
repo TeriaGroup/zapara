@@ -49,9 +49,11 @@ public sealed partial class ShellViewModel : ViewModelBase
             Make(SectionKey.Maps, "navMaps", "Icon.Map", "Ctrl+5"),
             Make(SectionKey.Friends, "navFriends", "Icon.Friends", "Ctrl+6"),
             Make(SectionKey.Homework, "navHomework", "Icon.Homework", "Ctrl+7"),
-            Make(SectionKey.Community, "navCommunity", "Icon.Community", "Ctrl+9"),
-            Make(SectionKey.Group, "navGroup", "Icon.Chat", "Ctrl+0"),
+            // #27 (X-02): порядок и значки — как в боковом меню web (design/navigation.md); у «Группы» свой значок,
+            // а не тот же, что у «Чатов». Сочетания клавиш не менялись.
             Make(SectionKey.Chat, "navChat", "Icon.Chat", ""),
+            Make(SectionKey.Community, "navCommunity", "Icon.Community", "Ctrl+9"),
+            Make(SectionKey.Group, "navGroup", "Icon.Users", "Ctrl+0"),
         };
         SettingsSection = Make(SectionKey.Settings, "navSettings", "Icon.Settings", "Ctrl+8");
 
