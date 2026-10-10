@@ -4,10 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -32,19 +29,18 @@ fun Shell(
     content: @Composable () -> Unit
 ) {
     val d = LocalDensity.current
+    // Как ZaparaApp (#108 / AN-17): открытая беседа сообщает о себе своим токеном, и нижняя панель скрывается.
+    val conversation = remember { ru.bgtu_voenmeh.zapara.ui.shell.ConversationOpenState() }
     CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale)) {
         ZaparaTheme(choice = if (dark) ThemeChoice.Dark else ThemeChoice.Light, motion = MotionSettings(false, 0f)) {
-            // Как ZaparaApp (#108 / AN-17): открытая беседа сообщает о себе, и нижняя панель скрывается.
-            val conversation = remember { ru.bgtu_voenmeh.zapara.ui.shell.ConversationOpenState() }
-            CompositionLocalProvider(LocalShellChrome provides ShellChrome(chip, stale, hasGroup) {},
-                ru.bgtu_voenmeh.zapara.ui.shell.LocalConversationOpen provides conversation) {
+            CompositionLocalProvider(LocalShellChrome provides ShellChrome(chip, stale, hasGroup) {}) {
                 if (section == null) Box(Modifier.fillMaxSize()) { content() }
                 else ZAppScaffold(conversation = section == Section.Chat || section == Section.Group,
                     bottomBar = {
                         if (ru.bgtu_voenmeh.zapara.ui.shell.ShellLogic.showBottomBar(section, conversation.open))
                             ZBottomBar(current = section, sectionsActive = section !in Section.bar,
                                 homeworkBadge = homeworkBadge, updateBadge = false, onSection = {}, onSections = {})
-                    }) { content() }
+                    }) { CompositionLocalProvider(ru.bgtu_voenmeh.zapara.ui.shell.LocalConversationOpen provides conversation) { content() } }
             }
         }
     }
