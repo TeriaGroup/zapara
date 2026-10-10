@@ -108,6 +108,6 @@ public sealed class WeekComposer
     private string RoomLabel(Lesson l, Loc loc)
     {
         var (room, tag, _) = LessonText.RoomParts(l, _app.Maps.Resolve(l.ClassroomRaw), loc);
-        return tag is null ? room : $"{room} {tag}";
+        return tag is null ? room : $"{room} · {tag}"; // G-3: «268 (Фесто) · УЛК»
     }
 }

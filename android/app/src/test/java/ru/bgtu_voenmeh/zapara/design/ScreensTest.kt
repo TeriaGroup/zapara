@@ -86,13 +86,9 @@ class ScreensTest {
         audit(name)
     }
 
-    /** Масштаб и сдвиг для аудитории пары: MapFocus (#103), если он есть в ветке; иначе как на develop — весь этаж. */
-    private fun lessonFocus(rect: ru.bgtu_voenmeh.zapara.data.CoordsRect): Triple<Float, Float, Float> = try {
-        val cls = Class.forName("ru.bgtu_voenmeh.zapara.ui.maps.MapFocus")
-        val f = cls.getMethod("focus", ru.bgtu_voenmeh.zapara.data.CoordsRect::class.java).invoke(cls.getField("INSTANCE").get(null), rect)
-        Triple(f.javaClass.getMethod("getZoom").invoke(f) as Float, f.javaClass.getMethod("getPanX").invoke(f) as Float,
-            f.javaClass.getMethod("getPanY").invoke(f) as Float)
-    } catch (_: ClassNotFoundException) { Triple(1f, 0f, 0f) }
+    /** Масштаб и сдвиг для аудитории пары — MapFocus (#103), как в MapsViewModel. */
+    private fun lessonFocus(rect: ru.bgtu_voenmeh.zapara.data.CoordsRect): Triple<Float, Float, Float> =
+        ru.bgtu_voenmeh.zapara.ui.maps.MapFocus.focus(rect).let { Triple(it.zoom, it.panX, it.panY) }
 
     private fun mapsLesson(room: String, line: String): ru.bgtu_voenmeh.zapara.ui.maps.MapsUiState {
         val plan = File(ctx.cacheDir, "gk2.jpg").also { f -> f.outputStream().use { o -> File("src/main/assets/maps/karta-glavnyj-korpus-2-etazh-2022.jpg").inputStream().use { it.copyTo(o) } } }
@@ -104,10 +100,7 @@ class ScreensTest {
             mode = ru.bgtu_voenmeh.zapara.ui.maps.MapMode.Lesson, contextLine = line, unmarked = false,
             rasterCatalog = mapOf(key to ru.bgtu_voenmeh.zapara.ui.maps.FloorRaster(plan, ru.bgtu_voenmeh.zapara.ui.maps.RasterSize(maxOf(1, size.outWidth), maxOf(1, size.outHeight)))),
             floorFiles = mapOf(2 to plan), highlight = rect?.let { ru.bgtu_voenmeh.zapara.ui.maps.HighlightUi(it, room) },
-            roomUnmarked = rect == null, zoom = zoom, panX = panX, panY = panY)
-        if (rect == null) try { // поле из #103; на develop его нет
-            ru.bgtu_voenmeh.zapara.ui.maps.MapsUiState::class.java.getDeclaredField("unmarkedRoom").apply { isAccessible = true }.set(st, room)
-        } catch (_: NoSuchFieldException) {}
+            roomUnmarked = rect == null, unmarkedRoom = if (rect == null) room else "", zoom = zoom, panX = panX, panY = panY)
         return st
     }
 
@@ -116,9 +109,8 @@ class ScreensTest {
     @Test fun s39() { val st = mapsLesson("229", "Физика · 10:50–12:20 · 229 ГК")
         shotSettled("39-maps-lesson-room-not-on-plan-light") { Shell(false, Section.Maps, chipOdd) { ru.bgtu_voenmeh.zapara.ui.maps.MapsSection(st, {}) } } }
 
-    /** Карточка сообщества у старосты: участники, персонал, заявка. Имена (#104) — из поля people, если оно есть в ветке. */
+    /** Карточка сообщества у старосты: участники, персонал, заявка. Имена (#104) — из поля people. */
     @Test fun s40() {
-        val cd = ru.bgtu_voenmeh.zapara.data.communities.CommunityMember::class
         val u1 = "3f6c2a9e-1b7d-4c8e-9a51-2d0e7b4f8c11"; val u2 = "8a1e4d27-6c3b-4f90-b2a8-5e7d1c9f0a32"
         val u3 = "c5b9e0f4-2a6d-4e1b-8f73-9d4c2b6a1e53"; val u4 = "e27d8c1a-9f4b-4a6e-b3c5-0f1e8d2a7b94"
         var snap = ru.bgtu_voenmeh.zapara.ui.communities.CommunitySnapshot(guest = false,
@@ -133,10 +125,8 @@ class ScreensTest {
             u1 to ru.bgtu_voenmeh.zapara.data.communities.Classmate(u1, "sokolova.a", "Соколова Анна", "member", false),
             u2 to ru.bgtu_voenmeh.zapara.data.communities.Classmate(u2, "ivanov_i", "Иванов Иван", "member", false),
             u3 to ru.bgtu_voenmeh.zapara.data.communities.Classmate(u3, "petrov", null, "headman", true))
-        try { ru.bgtu_voenmeh.zapara.ui.communities.CommunitySnapshot::class.java.getDeclaredField("people").apply { isAccessible = true }.set(snap, people) }
-        catch (_: NoSuchFieldException) {}
+        snap = snap.copy(people = people) // #110 follow-up: #115 в develop, без reflection
         val st = ru.bgtu_voenmeh.zapara.ui.communities.CommunitiesComposer.compose(snap)
-        check(cd.simpleName != null)
         shot("40-community-moderator-light") { Shell(false, Section.Community, chipOdd) { CommunitiesSection(st, {}) } }
     }
 

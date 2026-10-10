@@ -31,16 +31,21 @@
                      IsActive="{Binding SettingsSection.IsActive}" IsCompact="{Binding SettingsSection.IsCompact}"
                      Command="{Binding NavigateCommand}" CommandParameter="Settings" ToolTip.Tip="{Binding SettingsSection.Tip}"
                      AutomationProperties.AutomationId="{Binding SettingsSection.AutomationId}" />
+        </StackPanel>
+
+        <!-- r2: переключатель темы — в верхней строке рядом с «меню», а не отдельной строкой внизу: при 900px и
+             предупреждении об устаревших данных «Чаты» уходил под нижний блок. -->
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8" Spacing="4"
+                    Orientation="{Binding SidebarCollapsed, Converter={x:Static loc:Converters.RailOrientation}}"
+                    HorizontalAlignment="{Binding SidebarCollapsed, Converter={x:Static loc:Converters.RailAlignment}}">
           <Button Classes="icon" Command="{Binding ToggleThemeCommand}" ToolTip.Tip="{Binding ThemeToggleTip}" AutomationProperties.AutomationId="Shell.ThemeToggle" AutomationProperties.Name="{Binding ThemeToggleTip}">
             <c:Icon Data="{Binding IsDark, Converter={x:Static loc:Converters.ThemeIcon}}" Size="16" />
           </Button>
+          <Button Classes="icon" Command="{Binding ToggleSidebarCommand}" ToolTip.Tip="{Binding SidebarToggleTip}"
+                  AutomationProperties.AutomationId="Shell.SidebarToggle" AutomationProperties.Name="{Binding SidebarToggleName}">
+            <c:Icon Data="{StaticResource Icon.Menu}" Size="16" />
+          </Button>
         </StackPanel>
-
-        <Button Classes="icon" DockPanel.Dock="Top" Command="{Binding ToggleSidebarCommand}" ToolTip.Tip="{Binding SidebarToggleTip}" Margin="0,0,0,8"
-                HorizontalAlignment="{Binding SidebarCollapsed, Converter={x:Static loc:Converters.RailAlignment}}"
-                AutomationProperties.AutomationId="Shell.SidebarToggle" AutomationProperties.Name="{Binding SidebarToggleName}">
-          <c:Icon Data="{StaticResource Icon.Menu}" Size="16" />
-        </Button>
         <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Background="Transparent">
         <StackPanel Spacing="2">
           <Button Classes="ghost" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
@@ -59,8 +64,10 @@
                   <TextBlock Text="{Binding GroupSubtitle}" FontSize="12" FontWeight="Medium" TextWrapping="Wrap" />
                   <c:Icon Grid.Column="1" Data="{StaticResource Icon.ChevronRight}" Size="14" VerticalAlignment="Center" />
                 </Grid>
-                <Border Classes="chip stale" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Stretch" Padding="8,5" IsVisible="{Binding ShowStaleChip}">
-                  <TextBlock Text="{Binding StaleText}" TextWrapping="Wrap" />
+                <!-- r2: одной строкой с многоточием, полный текст — в подсказке. -->
+                <Border Classes="chip stale" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Stretch" Padding="8,5" IsVisible="{Binding ShowStaleChip}"
+                        ToolTip.Tip="{Binding StaleText}">
+                  <TextBlock Text="{Binding StaleText}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                 </Border>
                 <Ellipse Classes="staledot" Classes.warn="{Binding StaleWarn}" HorizontalAlignment="Center" IsVisible="{Binding ShowStaleDot}" />
               </StackPanel>

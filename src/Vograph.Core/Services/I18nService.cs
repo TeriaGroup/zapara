@@ -67,7 +67,6 @@ public class I18nService
             ["accountUnlink"] = "Отвязать",
             ["accountIdentities"] = "Способы входа",
             // Communities
-            ["communityTitle"] = "Сообщества",
             ["communityJoin"] = "Подать заявку",
             ["communityPending"] = "Заявка на рассмотрении",
             ["communityMembers"] = "Участники",
@@ -103,8 +102,6 @@ public class I18nService
             ["monShort"] = "Пн", ["tueShort"] = "Вт", ["wedShort"] = "Ср", ["thuShort"] = "Чт", ["friShort"] = "Пт", ["satShort"] = "Сб", ["sunShort"] = "Вс",
             // Tabs
             ["yesterday"] = "Вчера", ["today"] = "Сегодня", ["tomorrow"] = "Завтра", ["week"] = "Неделя",
-            ["noLessons"] = "Нет занятий",
-            ["noLessonsShort"] = "Пар нет",
             // Table
             ["colNo"] = "№", ["colTime"] = "Время", ["colSubject"] = "Предмет", ["colTeacher"] = "Преподаватель", ["colRoom"] = "Ауд./Корп.", ["colType"] = "Тип",
             // Settings
@@ -125,7 +122,6 @@ public class I18nService
             ["group"] = "ГРУППА",
             ["onlyCurrentWeek"] = "Только текущая неделя",
             ["weekLabel"] = "Неделя:",
-            ["emptyWeek"] = "Нет занятий",
             // Dialogs
             ["renameTitle"] = "ПЕРЕИМЕНОВАНИЕ", ["original"] = "Оригинал: {0}", ["newName"] = "Новое название", ["footnote"] = "Примечание (сноска)", ["scope"] = "Область", ["global"] = "Глобально (все вхождения предмета)", ["weekdayOnly"] = "Только в этот день", ["preview"] = "Предпросмотр: {0}", ["reset"] = "Сбросить", ["cancel"] = "Отмена", ["save"] = "Сохранить",
             ["hwTitle"] = "ДОМАШНЕЕ ЗАДАНИЕ", ["hwSubject"] = "Предмет: {0}", ["hwText"] = "Текст задания", ["hwN"] = "Через сколько занятий этого предмета сдать (1..10)", ["hwDue"] = "Срок: {0}", ["hwNoDate"] = "Срок: — (нет занятий)", ["hwStatusHint"] = "Статус: far (скрыт) → approaching (серый) → burning (яркий)",
@@ -167,7 +163,7 @@ public class I18nService
             ["summaryTitle"] = "СВОДКА",
             ["summaryBoth"] = "Обе недели (2 недели)",
             // #21: каркас страниц — выбор группы, домашка, пустые состояния
-            ["noGroupCard"] = "Выберите группу", ["chooseGroup"] = "Выбрать группу", ["groupSearchExample"] = "Например, И831Б", ["groupRecent"] = "Недавние", ["groupFaculty"] = "Факультет {0}", ["groupOther"] = "Другие", ["hwOpenDone"] = "Открыто: {0} · Сдано: {1}", ["hwAddTask"] = "Добавить задание", ["hwMore"] = "Ещё действия",
+            ["noGroupCard"] = "Выберите группу", ["chooseGroup"] = "Выбрать группу", ["groupSearchExample"] = "Например, И831Б", ["groupRecent"] = "Недавние", ["groupFaculty"] = "Факультет {0}", ["groupOther"] = "Другие", ["hwAddTask"] = "Добавить задание", ["hwMore"] = "Ещё действия",
             ["summaryHint"] = "Сводка по всем парам группы: типы, предметы, преподаватели, аудитории",
             ["teachers"] = "Преподаватели",
             ["teachersHint"] = "Список всех преподавателей по предметам студента — где и когда ведут",
@@ -183,7 +179,7 @@ public class I18nService
             ["updFail"] = "Не удалось проверить обновление",
             // ---- Desktop v2 (Avalonia) ----
             ["navWeek"] = "Неделя", ["navSummary"] = "Сводка", ["navTools"] = "Инструменты",
-            ["navTeachers"] = "Преподаватели", ["navMaps"] = "Карты", ["navFriends"] = "Друзья", ["navHomework"] = "Домашка", ["navCommunity"] = "Сообщества", ["navGroup"] = "Группа", ["navChat"] = "Чаты", ["navSettings"] = "Настройки",
+            ["navTeachers"] = "Преподаватели", ["navMaps"] = "Карты", ["navHomework"] = "Домашка", ["navGroup"] = "Группа", ["navSettings"] = "Настройки",
             ["groupTitle"] = "Группа",
             ["groupNeedAccount"] = "Войдите в аккаунт, чтобы открыть группу.",
             ["groupEmpty"] = "Вы ещё не в группе.",
@@ -205,13 +201,13 @@ public class I18nService
             ["goToday"] = "К сегодня", ["prevDay"] = "Предыдущий день", ["nextDay"] = "Следующий день",
             ["lessons1"] = "{0} пара", ["lessons2"] = "{0} пары", ["lessons5"] = "{0} пар",
             ["weekOf"] = "неделя {0}", ["nextShort"] = "след. {0}",
-            ["noLessonsDay"] = "Пар нет", ["noLessonsSunday"] = "Воскресенье — пар нет", ["nextLessonHint"] = "следующая пара — {0}, {1}",
+            ["noLessonsSunday"] = "Воскресенье — пар нет",
             ["subgroupPick"] = "Выберите подгруппу", ["subgroupYours"] = "Ваша подгруппа",
             
             ["remote"] = "дистанционно", ["originalLabel"] = "оригинал: {0}",
             ["hwLabel"] = "Домашка", ["hwBurningTomorrow"] = "горит завтра", ["hwBurningToday"] = "горит сегодня", ["hwOverdue"] = "просрочено {0}",
-            ["hwDone"] = "сдано", ["hwDueOn"] = "срок {0}", ["hwInLessons1"] = "через {0} пару", ["hwInLessons2"] = "через {0} пары", ["hwInLessons5"] = "через {0} пар",
-            ["hwMarkDone"] = "Сдано", ["hwUndo"] = "Вернуть", ["hwEdit"] = "Изменить", ["hwDelete"] = "Удалить", ["hwAdd"] = "Добавить домашку",
+            ["hwDueOn"] = "срок {0}", ["hwInLessons1"] = "через {0} пару", ["hwInLessons2"] = "через {0} пары", ["hwInLessons5"] = "через {0} пар",
+            ["hwUndo"] = "Вернуть", ["hwEdit"] = "Изменить", ["hwDelete"] = "Удалить", ["hwAdd"] = "Добавить домашку",
             ["hwPhoto"] = "Фото", ["hwDocument"] = "Документ", ["hwFileRemove"] = "Убрать",
             ["hwFileBig"] = "Файл слишком большой", ["hwFileBad"] = "Такой файл приложить нельзя", ["hwFileFull"] = "Можно приложить не больше шести файлов",
             ["hwDeleteConfirm"] = "Удалить домашку «{0}»?", ["hwEditTitle"] = "ИЗМЕНИТЬ ДОМАШКУ",
@@ -219,7 +215,7 @@ public class I18nService
             ["placeholderTitle"] = "Раздел в разработке", ["placeholderHint"] = "Появится на следующем этапе", ["loadingTitle"] = "Загружаю расписание…",
             ["themeToggleTip"] = "Переключить тему", ["sidebarToggleTip"] = "Свернуть панель (Ctrl+B)", ["sidebarExpandTip"] = "Развернуть панель (Ctrl+B)",
             ["groupPickTitle"] = "Выбор группы", ["search"] = "Поиск", ["groupSearchHint"] = "Номер группы", ["select"] = "Выбрать",
-            ["confirm"] = "Подтвердить", ["delete"] = "Удалить", ["updatedChip"] = "обновлено {0}", ["errorTitle"] = "Ошибка",
+            ["confirm"] = "Подтвердить", ["delete"] = "Удалить", ["updatedChip"] = "обновлено {0}", ["scheduleFromChip"] = "Расписание от {0}", ["scheduleMaybeOld"] = "Расписание может быть неактуальным", ["errorTitle"] = "Ошибка",
             ["bootstrapError"] = "Не удалось загрузить расписание", ["bootstrapHint"] = "Проверьте сеть и повторите", ["retry"] = "Повторить",
             ["friendAbsent"] = "нет рядом", ["inter100"] = "в той же аудитории", ["inter75"] = "на том же этаже", ["inter50"] = "в том же корпусе", ["inter25"] = "в вузе",
             ["savedOk"] = "Сохранено", ["noGroup"] = "Группа не выбрана", ["noGroupHint"] = "Расписание и задания появятся после выбора группы",
@@ -255,7 +251,7 @@ public class I18nService
             ["mapsRouteStartFallback"] = "От выбранного места пройти нельзя. Маршрут от: {0}",
             ["friendsSubtitle"] = "До пяти групп: их пары появляются точками на ваших карточках", ["friendsCount"] = "{0} из {1}", ["friendsAdd"] = "Добавить группу", ["friendsMax"] = "Максимум пять групп", ["friendsNames"] = "Имена товарищей", ["friendsEnabled"] = "Показывать", ["friendsRemove"] = "Удалить", ["friendsRemoveConfirm"] = "Убрать группу {0} из друзей?", ["friendsEmpty"] = "Друзей пока нет", ["friendsEmptyHint"] = "Добавьте группу — её пары появятся точками на ваших карточках", ["friendsColor"] = "Цвет", ["friendAdded"] = "Группа {0} добавлена", ["intersections"] = "Пересечения", ["strictnessHint"] = "Точка загорается, когда друг в это же время не дальше выбранного уровня", ["alwaysShowAll"] = "Всегда все светофоры", ["alwaysShowAllHint"] = "Друзья без пересечения — серой точкой", ["previewTitle"] = "Превью", ["previewNone"] = "В ближайшие две недели пересечений нет",
             ["strictTick25"] = "в вузе", ["strictTick50"] = "корпус", ["strictTick75"] = "этаж", ["strictTick100"] = "аудитория",
-            ["hwGroupUrgent"] = "Горит сегодня", ["hwGroupBurning"] = "Горит", ["hwGroupApproaching"] = "Скоро", ["hwGroupFar"] = "Далеко", ["hwGroupOverdue"] = "Просрочено", ["hwGroupDone"] = "Сдано",
+            ["hwGroupUrgent"] = "Горит сегодня", ["hwGroupBurning"] = "Горит", ["hwGroupApproaching"] = "Скоро", ["hwGroupFar"] = "Далеко", ["hwGroupOverdue"] = "Просрочено",
             ["hwOpen1"] = "{0} открытая", ["hwOpen2"] = "{0} открытые", ["hwOpen5"] = "{0} открытых", 
             ["hwEmpty"] = "Домашки нет", ["hwEmptyHint"] = "Добавьте задание кнопкой выше или через ＋ на карточке пары",
             ["hwPickSubject"] = "ПРЕДМЕТ", ["hwPickSubjectHint"] = "Название предмета…", ["hwNoSubjects"] = "У группы нет пар — добавить домашку не к чему",

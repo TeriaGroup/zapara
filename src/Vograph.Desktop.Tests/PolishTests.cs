@@ -49,7 +49,7 @@ public class PolishTests : UiTest
         Assert.False(shell.ShowStaleChip);
         Assert.True(shell.ShowStaleDot);
         Assert.StartsWith("А863С", shell.GroupCardTip);
-        Assert.Contains("обновлено", shell.GroupCardTip); // the rail tooltip carries what the chip would have said
+        Assert.Contains("Расписание от", shell.GroupCardTip); // R2-01; the rail tooltip carries what the chip would have said
         Assert.Equal("Развернуть меню (Ctrl+B)", shell.SidebarToggleTip);
         shell.SidebarCollapsed = false;
         Assert.Equal("Свернуть меню (Ctrl+B)", shell.SidebarToggleTip);
