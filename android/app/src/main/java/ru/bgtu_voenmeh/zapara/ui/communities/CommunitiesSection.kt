@@ -313,9 +313,10 @@ private fun CommunityDetail(selected: CommunityDetailUi, state: CommunitiesUiSta
 @Composable
 private fun CommunityPersonRow(name: String?, login: String?, userId: String, tag: String) {
     val c = Zapara.colors
+    // userId не печатается: без имени — постоянный номер человека (#115 follow-up).
+    val shown = name ?: stringResource(R.string.community_person_unnamed, CommunityPeople.stableNumber(userId))
     Column(Modifier.fillMaxWidth().testTag(tag)) {
-        Text(name ?: stringResource(R.string.community_person_unnamed, CommunityPeople.stableNumber(userId)),
-            style = Zapara.typography.body, color = c.text1)
+        Text(shown, style = Zapara.typography.body, color = c.text1)
         if (login != null) Text(login, style = Zapara.typography.caption, color = c.text2)
     }
 }
