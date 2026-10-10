@@ -21,6 +21,7 @@ public sealed partial class AccountPanelViewModel
             received = true;
         });
         if (!disposed) CapabilitiesFailed = !received;
+        if (!disposed && !received && IsGuest) Status = T("accountCapabilitiesFailed");
     }
 
     [RelayCommand]

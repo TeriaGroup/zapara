@@ -20,8 +20,9 @@
       <TextBlock Classes="muted" Text="{Binding Status}" TextWrapping="Wrap" />
     </StackPanel>
     <StackPanel Grid.Row="1" IsVisible="{Binding NeedAccount}" Spacing="10" VerticalAlignment="Center">
-      <c:EmptyState Title="Войдите в аккаунт" Hint="Личные чаты и группы доступны после входа." Icon="{StaticResource Icon.Chat}" />
-      <Button Content="Открыть настройки аккаунта" Command="{Binding OpenAccountCommand}" HorizontalAlignment="Center" />
+      <c:EmptyState Title="{loc:T signInRequired}" Hint="{Binding NeedAccountHint}" Icon="{StaticResource Icon.Chat}" AutomationProperties.AutomationId="Chat.NeedAccount" />
+      <Button Classes="primary" Content="{loc:T accountLogin}" Command="{Binding OpenAccountCommand}" IsVisible="{Binding ShowSignIn}" HorizontalAlignment="Center"
+              AutomationProperties.AutomationId="Chat.SignIn" />
     </StackPanel>
     <Grid Grid.Row="1" Margin="0,18,0,0" ColumnDefinitions="340,16,*" IsVisible="{Binding !NeedAccount}">
       <Border Classes="card" Padding="10" ClipToBounds="True">

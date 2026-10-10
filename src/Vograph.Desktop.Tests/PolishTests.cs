@@ -153,7 +153,7 @@ public class PolishTests : UiTest
         Pump();
         SetTheme(ThemeVariant.Dark);
         Frames.Capture(window, "startup-error-dark");
-        Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text?.Contains("SQLite Error 14") == true);
+        Assert.Contains(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Нет доступа к папке с данными");
         AssertNoBindingErrors();
     }
 

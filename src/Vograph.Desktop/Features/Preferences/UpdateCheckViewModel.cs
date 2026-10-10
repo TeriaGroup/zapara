@@ -152,7 +152,7 @@ public sealed partial class UpdateCheckViewModel : ViewModelBase
         if (!AutoUpdateService.IsNewer(info.Tag, AppVersion.Tag))
         {
             State = UpdateState.UpToDate;
-            StatusText = T("updUpToDate", AppVersion.Tag, CheckedAt);
+            StatusText = T("updUpToDate", AppVersion.Short, CheckedAt);
             return false;
         }
         LatestTag = info.Tag;
