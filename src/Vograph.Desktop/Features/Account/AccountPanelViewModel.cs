@@ -256,8 +256,10 @@ public sealed partial class AccountPanelViewModel : ObservableObject, IDisposabl
         }
         // #148: успешный переход (восстановление профиля, выход, новый вход) отменяет сбой формы — иначе устаревшая
         // ошибка, скрытая вместе с формой, всплыла бы при следующем показе формы (после выхода или «войдите снова»).
-        if (value.Failure is null && value.AccountFailure is null && (snapshot is null || snapshot.Failure is not null
-                || snapshot.AccountFailure is not null || snapshot.Phase != value.Phase || snapshot.Identity != value.Identity))
+        // #157: переход — это смена идентичности или фазы. Чистый снимок той же идентичности и фазы (например, повторный
+        // invalid_session при фоновом обновлении после отклонённого повторного входа) ошибку формы не снимает.
+        if (value.Failure is null && value.AccountFailure is null
+            && (snapshot is null || snapshot.Phase != value.Phase || snapshot.Identity != value.Identity))
         {
             FormError = "";
             formSnapshot = null;
