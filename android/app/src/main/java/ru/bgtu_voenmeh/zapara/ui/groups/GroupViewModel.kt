@@ -680,7 +680,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
             return
         }
         if (topic.kind == "ballots") openBallots(topic.topicId, topic.title)
-        else openChat(loaded.groupChat.conversationId, "${topic.icon} ${topic.title}", false, topic.topicId)
+        else openChat(loaded.groupChat.conversationId, ChannelIcons.title(topic.icon, topic.kind, topic.title), false, topic.topicId)
     }
 
     private suspend fun direct(userId: String) {
@@ -1046,7 +1046,7 @@ class GroupViewModel internal constructor(private val runtime: GroupRuntime) : V
                     mutable.value = mutable.value.copy(space = fresh, desk = fresh.desk)
                 }
                 if (active != null && result.topics.none { it.topicId == active }) showHomePane(false)
-                else if (active != null) mutable.value = mutable.value.copy(chatTitle = result.topics.first { it.topicId == active }.let { "${it.icon} ${it.title}" })
+                else if (active != null) mutable.value = mutable.value.copy(chatTitle = result.topics.first { it.topicId == active }.let { ChannelIcons.title(it.icon, it.kind, it.title) })
             } catch (e: CancellationException) {
                 throw e
             } catch (e: CommunityClientException) {

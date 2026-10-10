@@ -24,11 +24,13 @@ public sealed partial class ScheduleViewModel
     public bool HasNextStudyDate=>NextStudyDate is not null;
     public string NextStudyCaption=>NextStudyDate is {} date?$"Следующий учебный день · {date.ToString("d MMMM", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"))}" : "";
     // #12: как на web — «Ближайшие сроки · N».
-    public string DeadlineTitle=>$"{Vograph.Desktop.Services.Loc.Current.T("deadlinesTitle")} · {Deadlines.Count}";
+    // #12: как на web — «Ближайшие сроки · N»; #19 (D-05): пустой блок — одна строка.
+    public string DeadlineTitle=>Deadlines.Count==0?"Сроков на 3 дня нет":$"{Vograph.Desktop.Services.Loc.Current.T("deadlinesTitle")} · {Deadlines.Count}";
+    public bool HasDeadlineRows=>Deadlines.Count>0;
     public string DeadlineAttention=>$"Невыполненные сроки: {Deadlines.Count(x=>!x.Done)}";
     public bool HasDeadlineAttention=>Deadlines.Any(row=>!row.Done);
     private void RefreshDeadlineSummary()
-    {OnPropertyChanged(nameof(DeadlineTitle));OnPropertyChanged(nameof(DeadlineAttention));OnPropertyChanged(nameof(HasDeadlineAttention));}
+    {OnPropertyChanged(nameof(DeadlineTitle));OnPropertyChanged(nameof(HasDeadlineRows));OnPropertyChanged(nameof(DeadlineAttention));OnPropertyChanged(nameof(HasDeadlineAttention));}
     public string DayPriorityCaption=>Date.Date==_clock().Date && Lessons.Count>0 && Lessons.All(x=>x.IsPast)?"Пары закончились":Date.Date>_clock().Date?"Первая пара":"Текущая или следующая пара";
     public bool HasPriority=>Lessons.Any(x=>x.IsNext);
     public bool ShowDayState=>HasPriority || Date.Date==_clock().Date && Lessons.Count>0 && Lessons.All(x=>x.IsPast);

@@ -16,7 +16,7 @@ class TokensParityTest {
                 .associate { it.groupValues[1] to it.groupValues[2].let { hex -> (if (hex.length == 6) "FF$hex" else hex).toLong(16).toInt() } }
             val actual = linkedMapOf(
                 "Canvas" to c.canvas, "Surface" to c.surface, "Card" to c.card, "CardHover" to c.cardPressed,
-                "Chip" to c.chip, "Line" to c.line, "LineStrong" to c.lineStrong,
+                "Chip" to c.chip, "Line" to c.line, "LineStrong" to c.lineStrong, "ControlBorder" to c.controlBorder,
                 "Text1" to c.text1, "Text2" to c.text2, "Text3" to c.text3, "Accent" to c.accent,
                 "OnAccent" to c.onAccent, "Selection" to c.selection, "FocusRing" to c.focusRing,
                 "Backdrop" to c.backdrop, "SegThumb" to c.segThumb, "Ok" to c.ok,
@@ -35,6 +35,16 @@ class TokensParityTest {
                 val required = if (key in androidExceptions) accessibleArgb else expected[key]
                 assertEquals("$name.$key", required, color.toArgb())
             }
+        }
+    }
+
+    /** #20/#11: граница полей совпадает с общим токеном border-control из design/tokens.json (источник Zp.BorderControl). */
+    @Test fun control_border_matches_shared_border_control_token() {
+        val json = File("../../design/tokens.json").readText()
+        for ((theme, c) in listOf("light" to LightColors, "dark" to DarkColors)) {
+            val section = json.substringAfter("\"$theme\": {").substringBefore("}")
+            val hex = Regex("\"border-control\":\\s*\"#([A-Fa-f0-9]{6})\"").find(section)!!.groupValues[1]
+            assertEquals("$theme.controlBorder", ("FF$hex").toLong(16).toInt(), c.controlBorder.toArgb())
         }
     }
 

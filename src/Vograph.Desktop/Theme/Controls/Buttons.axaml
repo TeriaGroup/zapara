@@ -77,6 +77,8 @@
       <Setter Property="FontSize" Value="15" /><Setter Property="FontWeight" Value="Normal" />
     </Style>
     <Style Selector="^.pill:pointerover"><Setter Property="Background" Value="{DynamicResource Zp.Selection}" /><Setter Property="Foreground" Value="{DynamicResource Zp.TextPrimary}" /></Style>
+    <!-- #19: открытый поиск в тулбаре — подсвеченная кнопка-иконка. -->
+    <Style Selector="^.ghost.on"><Setter Property="Background" Value="{DynamicResource Zp.SurfaceChip}" /></Style>
     <Style Selector="^.pill.on"><Setter Property="FontWeight" Value="Medium" /><Setter Property="Background" Value="{DynamicResource Zp.Accent}" /><Setter Property="Foreground" Value="{DynamicResource Zp.OnAccent}" /></Style>
     <Style Selector="^.pill.on:pointerover"><Setter Property="Background" Value="{DynamicResource Zp.Accent}" /></Style>
 

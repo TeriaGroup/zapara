@@ -29,7 +29,7 @@ public static class Scenarios
             return ($"окно и сайдбар на месте, снимок содержателен ({spread.Min():0.##}–{spread.Max():0.##})", ui.Shot("start"));
         });
 
-        foreach (var (key, probe) in new[] { ("Week", "WeekSegment.0"), ("Summary", "Summary.Total"), ("Teachers", "Teachers.Search"), ("Maps", "Maps.ZoomIn"), ("Friends", "Friends.Add"), ("Homework", "Homework.Add"), ("Settings", "Settings.Refresh"), ("Schedule", "Schedule.Title") })
+        foreach (var (key, probe) in new[] { ("Week", "Week.Title"), ("Summary", "Summary.Total"), ("Teachers", "Teachers.Search"), ("Maps", "Maps.ZoomIn"), ("Friends", "Friends.Add"), ("Homework", "Homework.Add"), ("Settings", "Settings.Refresh"), ("Schedule", "Schedule.Title") })
             Step(report, ui, $"Раздел {key}", () =>
             {
                 ui.Click($"Nav.{key}");

@@ -1,5 +1,10 @@
 export type AvatarKind = "user" | "group";
 
+/** #17: у группы без загруженного фото — значок группы, а не буквы названия («И8», «А8» читались как код). У человека — инициалы. */
+export function avatarFallback(kind: AvatarKind): "icon" | "initials" {
+  return kind === "group" ? "icon" : "initials";
+}
+
 export function avatarInitials(name: string): string {
   const words = name.trim().split(/\s+/u).map(word => Array.from(word).filter(char => /[\p{L}\p{N}]/u.test(char))).filter(letters => letters.length > 0);
   if (!words.length) return "?";

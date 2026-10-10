@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { avatarInitials, avatarPath, createAvatarCache, validateAvatarFile } from "./avatar.ts";
+import { avatarFallback, avatarInitials, avatarPath, createAvatarCache, validateAvatarFile } from "./avatar.ts";
 import { readAvatarDimensions } from "./avatar-photo.ts";
 
 test("avatar initials use two name parts or two letters of one name", () => {
@@ -157,4 +157,13 @@ test("network errors and 401/403 are not remembered as missing (#34)", async () 
   await cache.refresh("user:a");
   await cache.refresh("user:a");
   assert.equal(reads, 3);
+});
+
+test("#17: a group without a photo shows the group icon, a person shows initials", async () => {
+  assert.equal(avatarFallback("group"), "icon");
+  assert.equal(avatarFallback("user"), "initials");
+  const { readFile } = await import("node:fs/promises");
+  const view = await readFile(new URL("./avatar-view.tsx", import.meta.url), "utf8");
+  assert.match(view, /fallback === "icon" \? <span aria-hidden="true" className="avatar-glyph"><Icon name="users"/);
+  assert.match(view, /\{url \? <img/);
 });
