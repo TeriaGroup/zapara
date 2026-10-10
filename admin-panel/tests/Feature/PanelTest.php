@@ -521,13 +521,14 @@ class PanelTest extends TestCase
         $this->assertNull(DB::table(Zapara::accounts().'.session_families')->where('family_id', $otherFamilyId)->value('revoked_at'));
 
         Livewire::test(AuditLog::class)
-            ->assertSee('community_created')
-            ->assertSee('catalog_mapped')
-            ->assertSee('staff_assigned')
-            ->assertSee('join_accepted')
-            ->assertSee('join_rejected')
-            ->assertSee('content_moderated')
-            ->assertSee('session_revoked');
+            ->filterTable('actor_id', $admin->user_id)
+            ->assertSee('Создано сообщество')
+            ->assertSee('Привязана группа')
+            ->assertSee('Назначен персонал')
+            ->assertSee('Заявка принята')
+            ->assertSee('Заявка отклонена')
+            ->assertSee('Материал удалён')
+            ->assertSee('Сеанс завершён');
     }
 
     public function test_user_list_shows_russian_statuses_without_changing_the_stored_value(): void
