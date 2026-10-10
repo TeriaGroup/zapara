@@ -797,3 +797,6 @@ input[role="switch"]:disabled { opacity: .4; cursor: default; }
 }
 .parity-short { display: none; }
 @media (max-width: 480px) { .parity-long { display: none; } .parity-short { display: inline; } }
+/* /group без членства (#36): одно пустое состояние с действием. */
+.group-no-membership { display: grid; justify-items: center; text-align: center; gap: 12px; }
+.group-no-membership .row { justify-content: center; flex-wrap: wrap; }
